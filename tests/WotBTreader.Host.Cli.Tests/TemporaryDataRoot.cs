@@ -20,19 +20,26 @@ internal sealed class TemporaryDataRoot : IDisposable
     public void Dispose()
     {
         // Pooled SQLite connections keep the database file handle open after the
-        // owning host is disposed, so the pool must be drained first.
+        // owning host is disposed, so the pool must be drained first. The Serilog
+        // file sink can also outlive host disposal briefly, so deletion is
+        // retried and then abandoned: a temporary directory that survives is not
+        // worth failing an otherwise passing assertion over.
         SqliteConnection.ClearAllPools();
-        for (int attempt = 0; attempt < 5 && Directory.Exists(Path); attempt++)
+        for (int attempt = 0; attempt < 10 && Directory.Exists(Path); attempt++)
         {
             try
             {
                 Directory.Delete(Path, recursive: true);
                 return;
             }
-            catch (IOException) when (attempt < 4)
+            catch (IOException)
             {
-                Thread.Sleep(TimeSpan.FromMilliseconds(20 * (attempt + 1)));
+                Thread.Sleep(TimeSpan.FromMilliseconds(50 * (attempt + 1)));
                 SqliteConnection.ClearAllPools();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                Thread.Sleep(TimeSpan.FromMilliseconds(50 * (attempt + 1)));
             }
         }
     }

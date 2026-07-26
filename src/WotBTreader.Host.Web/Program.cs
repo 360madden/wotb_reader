@@ -2,6 +2,7 @@ using System.Net;
 using WotBTreader.Bootstrap.Configuration;
 using WotBTreader.Bootstrap.DependencyInjection;
 using WotBTreader.Host.Web.Components;
+using WotBTreader.Host.Web.Endpoints;
 using WotBTreader.Host.Web.Hubs;
 using WotBTreader.Host.Web.Infrastructure;
 
@@ -56,6 +57,7 @@ app.UseAntiforgery();
 app.UseMiddleware<MutationProtectionMiddleware>();
 app.UseStaticFiles();
 
+app.MapReadApi();
 app.MapHub<TelemetryHub>("/api/v1/stream");
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();

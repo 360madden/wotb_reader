@@ -343,10 +343,8 @@ be deliberately exempted.
 
 ### Recommended next steps
 
-1. ~~Prove the decode path end to end.~~ Done; see the amendment below.
-2. Author the dashboard read API (query services plus JSON endpoints, with
-   tests) and commit it before writing any UI. It is the largest remaining
-   piece and splits cleanly into API and presentation halves.
+1. ~~Prove the decode path end to end.~~ Done; see U7 below.
+2. ~~Author the dashboard read API.~~ Done; see U8 below.
 3. Build the UI pages against that API, resolving the hub/mutation-middleware
    interaction above.
 4. Run the opt-in private replay compatibility pass and record the outcome in
@@ -391,3 +389,34 @@ decision rather than a drive-by change.
 
 Validation: `scripts/validate.ps1` exits zero; 165 tests pass, 2 opt-in skips;
 repository scan clean over 300 tracked files.
+
+## Amendment — U8 dashboard read API (`2026-07-26T23:07:00Z`)
+
+Closes recommended step 2. The web host now exposes a read-only loopback JSON
+API over the existing storage query ports, with dedicated wire DTOs so clients
+do not inherit the domain identifier wrappers.
+
+Routes (all GET, so mutation middleware does not require a capability):
+
+- `/api/v1/doctor`
+- `/api/v1/sessions` (offset/limit paging; default 50, max 200)
+- `/api/v1/sessions/{battleSessionId}`
+- `/api/v1/decode-runs/{decodeRunId}`
+
+Contract choices: identifiers are plain GUID strings; `AccountId` is never
+exposed; bot status and confidence are passed through and never inferred;
+capability flags expand to names; position series are capped at 5000 samples
+with `positionsTruncated` / `totalPositionCount` when a battle exceeds that.
+Application error codes map to stable HTTP statuses (404/409/400/501/500).
+
+`ReadApiEndpointsTests` covers paging bounds, truncation, error mapping, and
+the privacy/bot-status rules. A process smoke against the real host confirmed
+empty sessions, over-limit 400 (problem+json), unknown 404, doctor 200, and
+forged-Host 403.
+
+Also hardens `TemporaryDataRoot` cleanup: Serilog's file sink can briefly
+outlive host disposal, so directory deletion is retried then abandoned rather
+than failing an otherwise passing CLI assertion.
+
+Validation: `scripts/validate.ps1` exits zero; 183 tests pass, 2 opt-in skips;
+repository scan clean over 304 tracked files.
