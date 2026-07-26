@@ -8,6 +8,7 @@ public enum CliExitCode
     UnsupportedCapability = 3,
     InvalidInput = 4,
     ConflictOrBusy = 5,
+    Cancelled = 6,
 }
 
 public sealed record CliError(

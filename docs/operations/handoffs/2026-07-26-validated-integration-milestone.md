@@ -138,6 +138,47 @@ Note for the next session: the storage adapter's own default database path is
 `LocalApplicationPaths.Database` (`treader.db` under the data root). Bootstrap
 is the single source of truth for layout.
 
+## Amendment — U2 CLI entry point and first working vertical slice (`2026-07-26T22:29:30Z`)
+
+`src/WotBTreader.Host.Cli/Program.cs` was still the project template's
+`Console.WriteLine("Hello, World!")`. The whole CLI surface — invocation
+parsing, the router with `doctor`/`import`/`inspect`/`reprocess`/`sessions`,
+envelope rendering, and exit-code mapping — was unreachable dead code with no
+coverage beyond two isolated unit tests.
+
+Changes:
+
+- Added `CliEntryPoint.RunAsync`, which parses arguments, composes a host,
+  starts it (so migrations run), dispatches through `CliCommandRouter`, writes
+  the envelope, and shuts down. `Program.cs` is now only argument forwarding
+  plus a `Console.CancelKeyPress` handler that cancels cooperatively so
+  shutdown and the error envelope still run.
+- Added `CliExitCode.Cancelled` and mapped error codes containing `cancelled`
+  onto it, so user interruption is distinguishable from internal failure.
+- Chose `Host.CreateEmptyApplicationBuilder` deliberately: the default host
+  logging providers write to stdout and would corrupt the machine-readable
+  envelope. `TreaderLogging` is added explicitly, and its console sink is
+  already configured with `standardErrorFromLevel: Verbose`, so every log
+  event goes to stderr and stdout carries only the envelope.
+- Output routing rule: JSON always goes to stdout so a failed command stays
+  pipeable; human-readable failures go to stderr.
+- The catch-all surfaces only the exception *type* name, never its message,
+  because exception text routinely embeds local paths.
+
+Guard added: `tests/WotBTreader.Host.Cli.Tests/CliEntryPointTests.cs` runs the
+full path in-process against a temporary data root and parses stdout as JSON,
+which also proves no log line leaks onto stdout.
+
+Real-process smoke test (the item this handoff previously listed as pending):
+`doctor --json`, `sessions --json`, and `sessions` in human mode all exit zero
+against a temporary data root. `doctor` reported five checks passing, including
+`installed-game-metadata`, which discovered and version-gated the local
+`11.18.0.7` installation through read-only probing. No private paths, names, or
+identifiers appeared in output.
+
+Validation: `scripts/validate.ps1` exits zero; 105 tests pass (was 100), 2
+opt-in skips; repository scan clean over 288 tracked files.
+
 ## Recommended next steps
 
 1. Author the dashboard query/endpoint services and re-register them in the

@@ -275,6 +275,11 @@ public sealed class CliCommandRouter
 
     private static CliExitCode MapExitCode(string errorCode)
     {
+        if (errorCode.Contains("cancelled", StringComparison.Ordinal))
+        {
+            return CliExitCode.Cancelled;
+        }
+
         if (errorCode.Contains("unsupported", StringComparison.Ordinal))
         {
             return CliExitCode.UnsupportedCapability;
