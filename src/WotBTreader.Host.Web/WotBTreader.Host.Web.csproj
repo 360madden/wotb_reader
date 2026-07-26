@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WotBTreader.Application\WotBTreader.Application.csproj" />
+    <ProjectReference Include="..\WotBTreader.Bootstrap\WotBTreader.Bootstrap.csproj" />
+    <ProjectReference Include="..\WotBTreader.Core\WotBTreader.Core.csproj" />
+  </ItemGroup>
+
+</Project>
