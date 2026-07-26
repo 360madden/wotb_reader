@@ -221,3 +221,77 @@ entries rather than silently erasing prior evidence.
 - Prevention/follow-up: the scanner now runs the hidden-source probe on every
   validation. New runtime ignore patterns must be reviewed against source
   folder names case-insensitively.
+
+## BLK-0013 — Composition root registered no adapters, so no host could run
+
+- First observed: `2026-07-26T22:20:00Z`
+- Status: resolved and validated
+- Impact: every host was unrunnable. `AddWotBTreaderFoundation` registered
+  paths, application services, and the diagnostics pair, but never called
+  `AddSqliteStorage`, `AddReplayDecoding`, `AddCaptureLogs`, or
+  `AddGameIntegration`, so `IReplayIngestionService` resolved while none of its
+  ports did, and the bootstrap game roots were accepted and discarded.
+  `SequencedTelemetryEventPublisher` separately exposed an all-optional
+  `(int, int)` constructor beside `(TimeProvider)`, which the DI activator
+  treats as ambiguous, so the telemetry publisher and the SignalR hub could
+  never be constructed in any host.
+- Evidence: a new composition test building the real container with
+  `ValidateOnBuild` reported "Unable to resolve service for type
+  `ISourceArtifactStore`" and "The following constructors are ambiguous". The
+  CLI entry point was still the template's `Console.WriteLine("Hello, World!")`,
+  so no process had ever exercised the container.
+- Cause: adapters were built and unit-tested project by project, and the
+  milestone treated a green per-project suite as integration. No test built the
+  composition root or started a host, so the one file that closes the
+  dependency direction was never exercised.
+- Resolution: register the four adapters plus `AddLogging` in the foundation,
+  derive `SqliteStorageOptions` from `LocalApplicationPaths` so Bootstrap owns
+  the on-disk layout, add `StorageInitializationHostedService` to migrate at
+  startup with fatal-on-failure semantics, remove the ambiguous constructor
+  defaults, and give the CLI a real entry point.
+- Why: a container-level test is the only guard that fails for the whole class
+  of "compiles and unit-tests but cannot start", which per-project suites are
+  structurally unable to catch.
+- Validation: `CompositionRootTests` resolves all 18 published ports and starts
+  a real host that migrates the schema; `CliEntryPointTests` runs the CLI
+  in-process; and the built executable returned exit code zero for `doctor`,
+  `sessions --json`, and `sessions`.
+- Prevention/follow-up: any new port must be added to the published-port list
+  in `CompositionRootTests`. Treat "the unit tests pass" as insufficient
+  evidence that a host starts.
+
+## BLK-0014 — Rendezvous capability file relied on inherited permissions
+
+- First observed: `2026-07-26T22:36:40Z`
+- Status: resolved and validated
+- Impact: `docs/architecture/overview.md` promises discovery through "a
+  short-lived rendezvous file with owner-only permissions", but the file was
+  written with `FileShare.None`, which is a sharing mode rather than an access
+  control entry, into a directory created by plain
+  `Directory.CreateDirectory`. The record contains a live capability token that
+  authorizes mutations against the local API. Under the default
+  `%LOCALAPPDATA%` root the inherited ACL is already user-private, so shipped
+  defaults were not exposed; a custom `Paths:ApplicationDataRoot` under a
+  permissive parent would have published the credential to every local account.
+- Evidence: `LocalApplicationPaths.EnsureDirectoriesExist` applied no DACL, and
+  `RendezvousPublisher.PublishAsync` re-created the directory with
+  `Directory.CreateDirectory` on every refresh, which would restore inherited
+  permissions even after an out-of-band fix.
+- Cause: the security property was stated in the architecture document and
+  implemented only as far as the default location happened to satisfy it. A
+  sharing mode was mistaken for a permission.
+- Resolution: `LocalApplicationPaths` now creates or re-secures the rendezvous
+  directory with a protected DACL granting only the current user, severing
+  inheritance so a permissive parent cannot re-grant access, with an
+  `OperatingSystem.IsWindows()` guard and a `0700` equivalent elsewhere. The
+  publisher calls that helper instead of `Directory.CreateDirectory`.
+- Why: securing the directory rather than each file means the temporary file
+  the publisher writes and renames inherits the restriction, so there is no
+  window in which the token exists under weaker permissions.
+- Validation: a Bootstrap test asserts the rendezvous directory's access rules
+  are protected and contain exactly one allow entry for the current user's SID;
+  `scripts/validate.ps1` passes with 135 tests.
+- Prevention/follow-up: any future file holding a credential or capability must
+  be created inside a directory secured by this helper. Security properties
+  asserted in architecture documents need a test that fails when the property
+  regresses.

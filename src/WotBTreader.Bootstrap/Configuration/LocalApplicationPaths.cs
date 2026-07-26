@@ -1,3 +1,7 @@
+using System.Runtime.Versioning;
+using System.Security.AccessControl;
+using System.Security.Principal;
+
 namespace WotBTreader.Bootstrap.Configuration;
 
 public sealed record LocalApplicationPaths(
@@ -31,7 +35,62 @@ public sealed record LocalApplicationPaths(
         Directory.CreateDirectory(ContentStore);
         Directory.CreateDirectory(Logs);
         Directory.CreateDirectory(Diagnostics);
-        Directory.CreateDirectory(Rendezvous);
+        EnsureRendezvousDirectory();
+    }
+
+    /// <summary>
+    /// Creates or re-secures the rendezvous directory so only the current user
+    /// may read it. Callers that may run after the directory was removed must
+    /// use this instead of <see cref="Directory.CreateDirectory(string)"/>, which
+    /// would silently restore inherited permissions.
+    /// </summary>
+    public void EnsureRendezvousDirectory() => EnsureOwnerOnlyDirectory(Rendezvous);
+
+    /// <summary>
+    /// The rendezvous record carries a live mutation capability, so inheriting a
+    /// permissive parent ACL from a custom data root would hand that credential
+    /// to every other local account.
+    /// </summary>
+    private static void EnsureOwnerOnlyDirectory(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            EnsureWindowsOwnerOnlyDirectory(path);
+            return;
+        }
+
+        Directory.CreateDirectory(
+            path,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void EnsureWindowsOwnerOnlyDirectory(string path)
+    {
+        SecurityIdentifier owner = WindowsIdentity.GetCurrent().User
+            ?? throw new InvalidOperationException(
+                "The current Windows account has no security identifier.");
+
+        DirectorySecurity security = new();
+
+        // Inheritance is severed so a permissive parent cannot re-grant access,
+        // and the single allow rule covers files created inside the directory.
+        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        security.AddAccessRule(new FileSystemAccessRule(
+            owner,
+            FileSystemRights.FullControl,
+            InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+            PropagationFlags.None,
+            AccessControlType.Allow));
+
+        DirectoryInfo directory = new(path);
+        if (directory.Exists)
+        {
+            directory.SetAccessControl(security);
+            return;
+        }
+
+        directory.Create(security);
     }
 }
 

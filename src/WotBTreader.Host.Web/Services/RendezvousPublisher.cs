@@ -128,7 +128,10 @@ internal sealed class RendezvousPublisher(
 
         var directory = Path.GetDirectoryName(rendezvousFile)
             ?? throw new InvalidOperationException("Rendezvous path has no parent directory.");
-        Directory.CreateDirectory(directory);
+
+        // Re-securing rather than plain creation: the capability written below
+        // must never land in a directory that inherited a permissive parent ACL.
+        paths.EnsureRendezvousDirectory();
 
         var temporaryFile = Path.Combine(
             directory,

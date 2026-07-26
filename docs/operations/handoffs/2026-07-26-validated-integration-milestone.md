@@ -211,6 +211,28 @@ parent grants.
 Validation: `scripts/validate.ps1` exits zero; 134 tests pass (was 105), 2
 opt-in skips; repository scan clean over 290 tracked files.
 
+## Amendment — U4 rendezvous capability file secured (`2026-07-26T22:36:40Z`)
+
+Closes the gap U3 left open. `LocalApplicationPaths` now creates or re-secures
+the rendezvous directory with a protected DACL granting only the current user's
+SID, severing inheritance so a permissive parent cannot re-grant access, under
+an `OperatingSystem.IsWindows()` guard with a `0700` equivalent elsewhere. No
+new package was needed; the ACL APIs are in the shared framework and the
+platform guard satisfies CA1416.
+
+`RendezvousPublisher` re-created the directory with plain
+`Directory.CreateDirectory` on every refresh, which would have restored
+inherited permissions even after an out-of-band fix, so it now calls the
+hardening helper. Securing the directory rather than each file also means the
+temporary file the publisher writes and renames inherits the restriction, so
+the token is never briefly present under weaker permissions.
+
+Recorded as BLK-0014, along with BLK-0013 for the composition-root defect from
+U1/U2.
+
+Validation: `scripts/validate.ps1` exits zero; 135 tests pass, 2 opt-in skips;
+repository scan clean over 296 tracked files.
+
 ## Recommended next steps
 
 1. Author the dashboard query/endpoint services and re-register them in the
