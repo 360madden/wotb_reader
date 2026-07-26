@@ -233,6 +233,29 @@ U1/U2.
 Validation: `scripts/validate.ps1` exits zero; 135 tests pass, 2 opt-in skips;
 repository scan clean over 296 tracked files.
 
+## Amendment — web host smoke test against a running process (`2026-07-26T22:38:21Z`)
+
+The web host had never been started as a process either. Ran the Release
+executable with a temporary data root and a fixed loopback port:
+
+- the host starts and `GET /` from loopback returns `200`;
+- the same request carrying a rebinding `Host: attacker.example.com` header
+  returns `403`, so `LoopbackOnlyMiddleware` behaves in a real pipeline exactly
+  as the unit tests assert;
+- exactly one rendezvous record is published and it contains the capability
+  field;
+- the record's access control lists a single identity, the current user.
+
+On the last point, the file itself reports `AreAccessRulesProtected == False`
+because it *inherits* its entry from the hardened directory rather than
+carrying a protected list of its own. That is the intended design: inheritance
+is severed at the directory, and the single inherited entry is the current
+user, so the effective access is owner-only. The Bootstrap unit test asserts
+the protection flag on the directory, which is where it belongs.
+
+This closes the "web host not smoke-run" unknown recorded earlier in this
+document. No code changed for this amendment.
+
 ## Recommended next steps
 
 1. Author the dashboard query/endpoint services and re-register them in the
