@@ -42,8 +42,8 @@ public sealed class DependencyDirectionTests
         [
             typeof(CaptureLogsAssemblyMarker).Assembly,
             typeof(GameIntegrationAssemblyMarker).Assembly,
-            typeof(ReplaysAssemblyMarker).Assembly,
-            typeof(SqliteAssemblyMarker).Assembly,
+            typeof(WotbReplayDecoder).Assembly,
+            typeof(SqliteStorageOptions).Assembly,
         ];
 
         string[] adapterNames = adapters.Select(static assembly => assembly.GetName().Name!).ToArray();

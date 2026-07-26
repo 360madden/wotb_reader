@@ -34,6 +34,15 @@ public interface ITelemetrySource
         CancellationToken cancellationToken);
 }
 
+/// <summary>Writes the versioned telemetry-capture format independently from application logs.</summary>
+public interface ITelemetryCaptureWriter
+{
+    ValueTask WriteAsync(
+        Stream destination,
+        IAsyncEnumerable<TelemetryEvent> events,
+        CancellationToken cancellationToken);
+}
+
 /// <summary>Normalizes explicitly understood fields while retaining raw provenance.</summary>
 public interface ITelemetryNormalizer
 {

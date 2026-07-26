@@ -74,3 +74,150 @@ entries rather than silently erasing prior evidence.
   the local Windows host.
 - Prevention/follow-up: architecture tests enforce adapter dependency
   direction, and future platform-specific code stays behind injectable ports.
+
+## BLK-0004 — Native-log inspection conflicted with privacy boundaries
+
+- First observed: `2026-07-26T21:04:21.3745337Z`
+- Status: safe implementation path implemented and synthetically validated
+- Impact: direct inspection of local WotB log lines could have accelerated
+  lifecycle parsing, but even filtered output might expose private player
+  identifiers, chat, tokens, or unrelated session data.
+- Evidence: the integration task's privacy gate denied the read before any raw
+  log content was returned, retained, or written.
+- Cause: native game logs mix the small set of required replay lifecycle
+  markers with unrelated, potentially sensitive free-form data.
+- Resolution: implement a strict marker-only parser from already established
+  lifecycle marker names and validate it with synthetic lines. Unrecognized
+  text is discarded at the read boundary and is never included in output or
+  application logs.
+- Why: native logs are only a synchronization anchor, not a telemetry source of
+  record. Reading broader content would add privacy risk without improving
+  replay evidence.
+- Validation: seven focused cases passed: positive offline start, three known
+  non-start markers, unknown private text discarded, oversized input discarded
+  before marker search, and initial watcher reconciliation emitting only
+  recognized marker metadata. The full owned synthetic run passed 25 tests
+  with two opt-in tests skipped; two read-only installed-game tests also
+  passed. Real-log marker validation remains an explicit local opt-in.
+- Prevention/follow-up: keep allowlisted markers versioned, never expose a
+  generic log-tail API, and include log-content scanning in final diagnostics
+  and PII review.
+
+## BLK-0005 — Database ignore pattern hid the SQLite source project
+
+- First observed: `2026-07-26T21:12:36.3874593Z`
+- Status: resolved and validated
+- Impact: new files created under `src/WotBTreader.Storage.Sqlite` and its test
+  project could be silently omitted from status, review, and milestone commits.
+- Evidence: `git check-ignore -v
+  src/WotBTreader.Storage.Sqlite/SqliteDecodeRunRepository.cs` identified
+  `.gitignore` line 48, pattern `*.sqlite`, as the matching rule.
+- Cause: Git ignore patterns without a slash can match directory names as well
+  as files. On the Windows worktree the comparison is case-insensitive, so the
+  runtime database extension pattern also matched the `.Sqlite` project suffix.
+- Resolution: keep the runtime database-file patterns but explicitly unignore
+  `src/WotBTreader.Storage.Sqlite/**` and
+  `tests/WotBTreader.Storage.Sqlite.Tests/**`.
+- Why: explicit project exceptions preserve broad protection against accidental
+  database commits while making the intended source/test trees auditable.
+- Validation: `git ls-files --others --exclude-standard` exposed all 23 new
+  storage source/test/lock files and zero `bin`, `obj`, or `TestResults`
+  descendants. `git check-ignore -q --no-index` returned not-ignored for a
+  source file and ignored for an `obj` file.
+- Prevention/follow-up: add an ignore-policy regression check to repository
+  scanning and verify every project has at least one tracked source file during
+  final clean-state validation.
+
+## BLK-0006 — Validation script returned success after native failures
+
+- First observed: `2026-07-26T21:17:10.3588567Z`
+- Status: guardrail fixed; clean full-solution validation pending integration
+- Impact: `scripts/validate.ps1` printed restore, format, build, and compiler
+  failures but continued into tests/repository scanning and returned exit code
+  zero. A milestone could therefore appear validated when it was not.
+- Evidence: the run contained `NU1004`, compiler, and formatting errors, then
+  printed `Repository scan passed`; its shell result was success.
+- Cause: PowerShell's `$ErrorActionPreference = 'Stop'` applies to PowerShell
+  errors, not non-zero exit codes from native executables such as `dotnet`.
+- Resolution: route every native validation command through
+  `Invoke-CheckedNative`, immediately inspect `$LASTEXITCODE`, and throw with
+  the failed phase and exit code. Harden the repository scanner's native Git
+  calls the same way.
+- Why: explicit exit-code handling is deterministic across PowerShell versions
+  and preserves the readable sequential validation script.
+- Validation: a deliberately stale locked restore must now terminate the script
+  non-zero before later phases; after integration, the same script must run all
+  phases and exit zero only when each passes.
+- Prevention/follow-up: CI retains independent steps in addition to the local
+  script, and future native commands must use the checked wrapper.
+
+## BLK-0007 — Command execution blocked by the environment usage gate
+
+- First observed: `2026-07-26T21:18:46.329Z`
+- Status: externally blocked; implementation work continues without bypass
+- Impact: the lead's deliberate validation-script regression run and an
+  agent's final owned format/test rerun were rejected before process launch.
+  Build, test, formatter, Git, and local-game commands cannot currently be
+  executed through the approved command path.
+- Evidence: the command tool reported that automatic approval review was
+  rejected because the execution usage limit had been reached and explicitly
+  prohibited retrying through a workaround. No repository command ran.
+- Cause: an external Codex execution quota/approval gate, not repository code,
+  test failure, sandbox policy, or user authorization.
+- Resolution: do not bypass the gate. Continue reviewable source,
+  documentation, test authoring, and agent integration that use supported
+  non-command tools. Preserve every unexecuted validation command and run them
+  through the normal approved path when it becomes available.
+- Why: honoring the execution boundary protects the workspace and keeps
+  validation evidence honest; a synthetic or indirect command result would not
+  prove the repository.
+- Validation: pending external gate availability. The first checks are the
+  BLK-0006 non-zero regression, owned GameIntegration format/tests, full locked
+  restore, release build, and complete test suite.
+- Prevention/follow-up: keep validation phases independently reproducible and
+  report this environmental gap explicitly if it remains at handoff.
+- Resolution amendment (`2026-07-26T21:59:25Z`): command execution became
+  available again in a later session. The full pending-validation ledger was
+  executed through `scripts/validate.ps1 -AuditPackages`: locked restore,
+  format verification, Release build, complete test suite (95 passed, 2 opt-in
+  skipped), transitive vulnerability audit (clean), and repository scan all
+  passed. Eleven compile/analyzer errors and one product bug found in
+  never-compiled post-gate source were fixed first; see BLK-0012 for a hidden
+  ignored-source recurrence discovered during the same run. UI/overlay smoke
+  tests and the guarded game scenario remain pending because the dashboard and
+  overlay surfaces are not yet implemented.
+
+## BLK-0012 — `diagnostics/` and `dist/` ignore patterns hid tracked sources
+
+- First observed: `2026-07-26T21:59:25Z`
+- Status: resolved and validated
+- Impact: `src/WotBTreader.Bootstrap/Diagnostics/` (doctor and diagnostic
+  bundle services), `src/WotBTreader.Application/Diagnostics/` (their
+  contracts), and the Blazor template assets under
+  `src/WotBTreader.Host.Web/wwwroot/lib/bootstrap/dist/` were invisible to
+  `git status`, searches that respect ignore files, and any milestone commit.
+  A fresh clone would have failed to compile the Bootstrap test project and
+  rendered the web host without styles.
+- Evidence: `git check-ignore -v` matched `.gitignore` pattern `diagnostics/`
+  for the source folders and `dist/` for the static assets. A test referencing
+  `DiagnosticBundleService` compiled locally while the type's source file was
+  untrackable.
+- Cause: the same hazard as BLK-0005 — unanchored directory ignore patterns
+  match anywhere in the tree, and Windows worktrees compare them
+  case-insensitively, so runtime-data names collide with source folder names.
+  The BLK-0005 prevention check only guarded a single storage sentinel path.
+- Resolution: add `!src/**/Diagnostics/`(`**`) and `!src/**/wwwroot/lib/`(`**`)
+  exceptions, and extend `scripts/scan-repository.ps1` to fail when any
+  ignored file exists under `src`, `tests`, `tools/src`, `scripts`, or `docs`
+  (excluding `bin`/`obj`/`TestResults`, local settings overrides, and `.user`
+  files).
+- Why: a general detector removes the whole class of silent omissions instead
+  of guarding one more hand-picked sentinel, while the intentional runtime and
+  `tools/external` ignore rules stay intact.
+- Validation: `git check-ignore -v` now resolves the affected files to the
+  negation rules, and the strengthened repository scan passes; the same
+  `git ls-files --others --ignored` probe listed the hidden files before the
+  fix and lists none after it.
+- Prevention/follow-up: the scanner now runs the hidden-source probe on every
+  validation. New runtime ignore patterns must be reviewed against source
+  folder names case-insensitively.

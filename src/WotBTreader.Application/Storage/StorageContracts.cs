@@ -91,3 +91,15 @@ public interface IComparisonRunRepository
         ComparisonRunId comparisonRunId,
         CancellationToken cancellationToken);
 }
+
+/// <summary>Appends and reads immutable monotonic replay-clock synchronization segments.</summary>
+public interface IReplayClockSegmentRepository
+{
+    ValueTask<OperationResult<ReplayClockSegment>> AppendAsync(
+        ReplayClockSegment segment,
+        CancellationToken cancellationToken);
+
+    ValueTask<OperationResult<IReadOnlyList<ReplayClockSegment>>> ListAsync(
+        BattleSessionId battleSessionId,
+        CancellationToken cancellationToken);
+}

@@ -47,6 +47,13 @@ venv/
 *.db-wal
 *.sqlite
 *.sqlite3
+!src/WotBTreader.Storage.Sqlite/
+!src/WotBTreader.Storage.Sqlite/**
+!tests/WotBTreader.Storage.Sqlite.Tests/
+!tests/WotBTreader.Storage.Sqlite.Tests/**
+bin/
+obj/
+TestResults/
 *.wotbreplay
 !tests/fixtures/**/*.wotbreplay
 captures/
@@ -59,6 +66,13 @@ telemetry/
 tools/external/installed/
 tools/external/downloads/
 tools/external/cache/
+
+# Source-tree folders that the runtime data patterns above must never hide.
+# Windows worktrees compare ignore patterns case-insensitively (BLK-0005).
+!src/**/Diagnostics/
+!src/**/Diagnostics/**
+!src/**/wwwroot/lib/
+!src/**/wwwroot/lib/**
 
 # Local rendezvous and machine-specific settings
 *.rendezvous.json

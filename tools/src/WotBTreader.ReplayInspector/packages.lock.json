@@ -5,6 +5,7 @@
       "wotbtreader.application": {
         "type": "Project",
         "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.10, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.10, )",
           "WotBTreader.Core": "[1.0.0, )"
         }
@@ -15,6 +16,7 @@
       "wotbtreader.replays": {
         "type": "Project",
         "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.10, )",
           "WotBTreader.Application": "[1.0.0, )",
           "WotBTreader.Core": "[1.0.0, )"
         }
