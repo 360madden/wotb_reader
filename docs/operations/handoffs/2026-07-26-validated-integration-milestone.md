@@ -288,3 +288,70 @@ repository scan clean.
    outcome in the replay decoder blocker record.
 4. Smoke-run the web host and CLI, then implement the overlay against the
    loopback API.
+
+## Amendment — superseding status and next steps (`2026-07-26T22:41:57Z`)
+
+The four-item list directly above is historical and no longer accurate. Items 2
+and 4 were completed in the amendments recorded earlier in this document. This
+section replaces it and is the authoritative state at the end of this session.
+
+### Repository state
+
+`main`, working tree clean, never pushed. Six commits were added this session,
+each independently validated before it was made:
+
+- `9860142` register every adapter in the composition root
+- `89771b4` run the CLI end to end from a composed host
+- `db97a53` cover the loopback trust boundary
+- `e6f8c47` give the rendezvous capability file owner-only permissions
+- `713b270` record web host process smoke test evidence
+- `464909f` pin every game harness safety denial path
+
+Test count went from 95 to 161 with 2 opt-in skips. `scripts/validate.ps1`
+exits zero.
+
+### What now actually works
+
+Both hosts start and do real work. The CLI executes `doctor`, `sessions`,
+`import`, `inspect`, and `reprocess` against a composed container with storage
+migrated at startup; `compare`, `export`, `watch`, and `serve` remain reserved
+and return `UnsupportedCapability` by design. The web host serves on loopback,
+rejects rebinding hosts, and publishes an owner-only rendezvous record.
+
+### Honest gaps
+
+- Only `doctor` and `sessions` were exercised against a real process. `import`,
+  `inspect`, and `reprocess` are wired and unit-tested but have never run
+  against an actual replay file, so the decode-to-storage path is unproven end
+  to end.
+- The dashboard does not exist. There are no query services, no API endpoints,
+  and no pages beyond the Blazor template; the previously removed
+  `DashboardQueryService` and `MinimapProjector` registrations were never
+  reinstated because the types were never written.
+- The overlay is still the WPF project template.
+- The private replay compatibility pass has still not been run. It needs local
+  replays and explicit opt-in.
+
+### Integration risk worth knowing before building a client
+
+`TelemetryHub` is mapped at `/api/v1/stream`, which sits under the path prefix
+`MutationProtectionMiddleware` guards. SignalR's negotiate step is a `POST`, so
+it will be required to carry both the capability header and an antiforgery
+token. No client exercises this today, so the interaction is untested; whoever
+builds the first hub client should expect to handle it, or the hub path should
+be deliberately exempted.
+
+### Recommended next steps
+
+1. Prove the decode path end to end: run `import` against a real replay,
+   confirm `inspect` and `sessions` report it, and record the outcome. This is
+   the cheapest remaining action with the highest information value, and it
+   needs only one replay file.
+2. Author the dashboard read API (query services plus JSON endpoints, with
+   tests) and commit it before writing any UI. It is the largest remaining
+   piece and splits cleanly into API and presentation halves.
+3. Build the UI pages against that API, resolving the hub/mutation-middleware
+   interaction above.
+4. Run the opt-in private replay compatibility pass and record the outcome in
+   the replay decoder blocker record.
+5. Implement the overlay last, against the loopback contract only.
