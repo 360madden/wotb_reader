@@ -55,6 +55,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WotBTreader.Host.Cli.Tests"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WotBTreader.Bootstrap.Tests", "tests\WotBTreader.Bootstrap.Tests\WotBTreader.Bootstrap.Tests.csproj", "{65C7700E-E5D6-47B2-BD1F-B8ADDA9684D6}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WotBTreader.Host.Web.Tests", "tests\WotBTreader.Host.Web.Tests\WotBTreader.Host.Web.Tests.csproj", "{4FD04FF4-1F7B-4CDA-A355-B656D0EF457F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -329,6 +331,18 @@ Global
 		{65C7700E-E5D6-47B2-BD1F-B8ADDA9684D6}.Release|x64.Build.0 = Release|Any CPU
 		{65C7700E-E5D6-47B2-BD1F-B8ADDA9684D6}.Release|x86.ActiveCfg = Release|Any CPU
 		{65C7700E-E5D6-47B2-BD1F-B8ADDA9684D6}.Release|x86.Build.0 = Release|Any CPU
+		{4FD04FF4-1F7B-4CDA-A355-B656D0EF457F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4FD04FF4-1F7B-4CDA-A355-B656D0EF457F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4FD04FF4-1F7B-4CDA-A355-B656D0EF457F}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{4FD04FF4-1F7B-4CDA-A355-B656D0EF457F}.Debug|x64.Build.0 = Debug|Any CPU
+		{4FD04FF4-1F7B-4CDA-A355-B656D0EF457F}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{4FD04FF4-1F7B-4CDA-A355-B656D0EF457F}.Debug|x86.Build.0 = Debug|Any CPU
+		{4FD04FF4-1F7B-4CDA-A355-B656D0EF457F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4FD04FF4-1F7B-4CDA-A355-B656D0EF457F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4FD04FF4-1F7B-4CDA-A355-B656D0EF457F}.Release|x64.ActiveCfg = Release|Any CPU
+		{4FD04FF4-1F7B-4CDA-A355-B656D0EF457F}.Release|x64.Build.0 = Release|Any CPU
+		{4FD04FF4-1F7B-4CDA-A355-B656D0EF457F}.Release|x86.ActiveCfg = Release|Any CPU
+		{4FD04FF4-1F7B-4CDA-A355-B656D0EF457F}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -357,5 +371,6 @@ Global
 		{46ACDA19-5CD8-4682-88A6-6DBC03E1E2A5} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{69B5C9EA-7C6B-46D4-9F78-2A98566CCA4D} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{65C7700E-E5D6-47B2-BD1F-B8ADDA9684D6} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{4FD04FF4-1F7B-4CDA-A355-B656D0EF457F} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal

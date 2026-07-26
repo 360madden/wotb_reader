@@ -179,6 +179,38 @@ identifiers appeared in output.
 Validation: `scripts/validate.ps1` exits zero; 105 tests pass (was 100), 2
 opt-in skips; repository scan clean over 288 tracked files.
 
+## Amendment — U3 loopback trust boundary now has tests (`2026-07-26T22:33:26Z`)
+
+`WotBTreader.Host.Web` had no test project at all, so the entire local trust
+boundary — the loopback gate, the capability lease, and the mutation
+middleware — shipped unverified. Added `tests/WotBTreader.Host.Web.Tests` with
+29 cases and `InternalsVisibleTo` on the web host.
+
+Covered: loopback host recognition including `localhost`, `127.0.0.0/8`, and
+both `::1` spellings; rejection of lookalike hosts such as
+`localhost.example.com` and `127.0.0.1.example.com`; rejection of remote
+addresses, of DNS-rebinding Host headers arriving on the loopback socket, of
+another local site's origin on a different port, and of non-HTTP origins;
+capability token entropy, URL-safety, rotation, expiry, and constant-time
+comparison behavior.
+
+One hypothesis was disproved rather than fixed: bracketed IPv6 hosts
+(`[::1]`), which is the form `HostString.Host` yields, were expected to fail
+`IPAddress.TryParse`. They parse correctly on .NET 10, so no change was needed
+and the behavior is now pinned by a test.
+
+Still open from this audit, carried into the next unit: the architecture
+overview promises the rendezvous file has "owner-only permissions," but
+`RendezvousPublisher` writes it with `FileShare.None` (a sharing mode, not an
+ACL) and `LocalApplicationPaths.EnsureDirectoriesExist` calls plain
+`Directory.CreateDirectory`. The file carries a live mutation capability. The
+default `%LOCALAPPDATA%` location is user-private so the shipped default is
+safe, but a custom `Paths:ApplicationDataRoot` would inherit whatever the
+parent grants.
+
+Validation: `scripts/validate.ps1` exits zero; 134 tests pass (was 105), 2
+opt-in skips; repository scan clean over 290 tracked files.
+
 ## Recommended next steps
 
 1. Author the dashboard query/endpoint services and re-register them in the
