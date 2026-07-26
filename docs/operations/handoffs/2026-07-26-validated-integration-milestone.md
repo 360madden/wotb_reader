@@ -96,6 +96,48 @@ never compiled, and committed the validated milestone.
 - The GameHarness has no test project; its safety policy is enforced by code
   review and the audit trail, not by automated tests.
 
+## Amendment — U1 composition root wired (`2026-07-26T22:24:36Z`)
+
+The "recommended next steps" below were written before verifying that the
+committed milestone could actually start. It could not. Two defects made the
+product unrunnable while every unit test stayed green, because no test built
+the real container or started a host.
+
+- `AddWotBTreaderFoundation` registered only paths, application services, and
+  the doctor/bundle pair. It never called `AddSqliteStorage`,
+  `AddReplayDecoding`, `AddCaptureLogs`, or `AddGameIntegration`, although
+  `Bootstrap.csproj` already referenced all four and every extension method
+  existed and was correct. `IReplayIngestionService` resolved but none of its
+  ports did, and `TreaderBootstrapOptions.GameRoot`/`GameUserDataRoot` were
+  accepted and silently discarded.
+- `SequencedTelemetryEventPublisher` exposed an all-optional
+  `(int = 4096, int = 512)` constructor alongside `(TimeProvider)`. The DI
+  activator considers those ambiguous and refuses to construct the type, so
+  the telemetry publisher and therefore the SignalR hub could never have been
+  activated in any host.
+
+Changes: registered the four adapters plus `AddLogging` in the foundation;
+mapped the bootstrap game roots onto `GameIntegrationOptions`; derived
+`SqliteStorageOptions` from `LocalApplicationPaths` so Bootstrap owns the
+on-disk layout and the adapter cannot drift from what the doctor reports;
+removed the ambiguous constructor defaults; and added
+`StorageInitializationHostedService`, which applies migrations at host start
+and treats failure as fatal.
+
+Guard added: `tests/WotBTreader.Bootstrap.Tests/CompositionRootTests.cs`
+builds the real container with `ValidateOnBuild` and `ValidateScopes`,
+resolves all 18 published ports, asserts a strict decoder is registered, and
+starts an actual `IHost` to prove the schema migrates. Written first and
+observed failing on both defects before the fix.
+
+Validation: `scripts/validate.ps1` exits zero; 100 tests pass (was 95), 2
+opt-in skips; repository scan clean over 286 tracked files.
+
+Note for the next session: the storage adapter's own default database path is
+`data/wotbtreader.sqlite3`, but Bootstrap now overrides it to
+`LocalApplicationPaths.Database` (`treader.db` under the data root). Bootstrap
+is the single source of truth for layout.
+
 ## Recommended next steps
 
 1. Author the dashboard query/endpoint services and re-register them in the

@@ -15,7 +15,10 @@ public sealed class SequencedTelemetryEventPublisher : ITelemetryEventPublisher
     private readonly TimeProvider _timeProvider;
     private long _sequence;
 
-    public SequencedTelemetryEventPublisher(int historyCapacity = 4096, int subscriberCapacity = 512)
+    // Capacities carry no default values: an all-optional constructor is
+    // indistinguishable from the injectable one to the DI activator, which
+    // then refuses to construct this service at all.
+    public SequencedTelemetryEventPublisher(int historyCapacity, int subscriberCapacity)
         : this(TimeProvider.System, historyCapacity, subscriberCapacity)
     {
     }
