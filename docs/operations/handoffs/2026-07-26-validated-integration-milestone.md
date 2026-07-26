@@ -343,10 +343,7 @@ be deliberately exempted.
 
 ### Recommended next steps
 
-1. Prove the decode path end to end: run `import` against a real replay,
-   confirm `inspect` and `sessions` report it, and record the outcome. This is
-   the cheapest remaining action with the highest information value, and it
-   needs only one replay file.
+1. ~~Prove the decode path end to end.~~ Done; see the amendment below.
 2. Author the dashboard read API (query services plus JSON endpoints, with
    tests) and commit it before writing any UI. It is the largest remaining
    piece and splits cleanly into API and presentation halves.
@@ -355,3 +352,42 @@ be deliberately exempted.
 4. Run the opt-in private replay compatibility pass and record the outcome in
    the replay decoder blocker record.
 5. Implement the overlay last, against the loopback contract only.
+
+## Amendment — U7 decode path proven end to end (`2026-07-26T22:55:26Z`)
+
+Closes recommended step 1. The import path was wired and unit-tested but had
+never carried a replay archive from disk through decode into storage and back
+out through the query commands. It does now, and the pass needs no private
+game files.
+
+`SyntheticReplayFactory` moved from `tests/WotBTreader.Replays.Tests` into a new
+`tests/WotBTreader.TestSupport` library so both the decoder tests and the CLI
+tests can build the same fixtures. `WotBTreader.Replays` grants it
+`InternalsVisibleTo` because fixtures are generated from the real format
+constants and must not be able to drift from the decoder they exercise. The
+three existing consumers needed only an added namespace import; all 18 decoder
+tests still pass unchanged.
+
+`CliReplayIngestionTests` adds four cases through the real `CliEntryPoint`:
+
+- `import` of a synthetic archive succeeds, decodes a non-zero participant and
+  position count, `sessions` then reports exactly one session, and `inspect`
+  returns the same decode run that `import` created;
+- importing identical bytes twice reuses the content-addressed artifact but
+  still creates a second, distinct decode run, which is the evidence-first
+  reprocessing rule stated in the architecture overview;
+- a file with a valid extension but corrupt contents is rejected with a
+  non-zero exit code and at least one stable error code;
+- `inspect` of an unknown decode run identifier fails rather than inventing an
+  empty result.
+
+Finding recorded, not fixed: the envelope renders identifiers as nested objects
+(`"id": { "value": "..." }`) because the `Core` identifier types are
+`readonly record struct` wrappers with no JSON converter. That is awkward for
+scripting against the CLI. It was left alone deliberately because adding
+converters would also change the NDJSON capture format documented in
+`docs/formats/telemetry-capture-ndjson-v1.md`, which needs a versioning
+decision rather than a drive-by change.
+
+Validation: `scripts/validate.ps1` exits zero; 165 tests pass, 2 opt-in skips;
+repository scan clean over 300 tracked files.

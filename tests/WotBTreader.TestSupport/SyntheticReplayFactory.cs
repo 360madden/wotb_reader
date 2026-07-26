@@ -5,10 +5,16 @@ using System.Text;
 using System.Text.Json;
 using WotBTreader.Application.Replay;
 using WotBTreader.Core;
+using WotBTreader.Replays;
 
-namespace WotBTreader.Replays.Tests;
+namespace WotBTreader.TestSupport;
 
-internal static class SyntheticReplayFactory
+/// <summary>
+/// Builds deterministic synthetic replay archives. CI never uses private game
+/// files, so every decoder and ingestion test is exercised against fixtures
+/// generated here from the real format constants.
+/// </summary>
+public static class SyntheticReplayFactory
 {
     public static byte[] CreateReplay(
         string version = "11.18.0",

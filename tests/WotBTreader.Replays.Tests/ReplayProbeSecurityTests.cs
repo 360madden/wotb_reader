@@ -1,5 +1,6 @@
 using WotBTreader.Application.Replay;
 using WotBTreader.Core;
+using WotBTreader.TestSupport;
 
 namespace WotBTreader.Replays.Tests;
 

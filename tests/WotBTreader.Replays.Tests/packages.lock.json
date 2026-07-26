@@ -171,6 +171,14 @@
           "WotBTreader.Core": "[1.0.0, )"
         }
       },
+      "wotbtreader.testsupport": {
+        "type": "Project",
+        "dependencies": {
+          "WotBTreader.Application": "[1.0.0, )",
+          "WotBTreader.Core": "[1.0.0, )",
+          "WotBTreader.Replays": "[1.0.0, )"
+        }
+      },
       "Microsoft.Extensions.DependencyInjection.Abstractions": {
         "type": "CentralTransitive",
         "requested": "[10.0.10, )",

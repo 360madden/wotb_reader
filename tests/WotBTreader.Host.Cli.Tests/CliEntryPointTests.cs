@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Microsoft.Data.Sqlite;
 using WotBTreader.Host.Cli.Cli;
 
 namespace WotBTreader.Host.Cli.Tests;
@@ -14,7 +13,7 @@ public sealed class CliEntryPointTests
     [TestMethod]
     public async Task SessionsReturnsAnEmptyEnvelopeOnAFreshDataRoot()
     {
-        using TemporaryRoot root = new();
+        using TemporaryDataRoot root = new();
         StringWriter output = new();
         StringWriter error = new();
 
@@ -38,7 +37,7 @@ public sealed class CliEntryPointTests
     [TestMethod]
     public async Task StartupCreatesStorageBeneathTheRequestedDataRoot()
     {
-        using TemporaryRoot root = new();
+        using TemporaryDataRoot root = new();
         StringWriter output = new();
         StringWriter error = new();
 
@@ -60,7 +59,7 @@ public sealed class CliEntryPointTests
     [TestMethod]
     public async Task UnknownCommandFailsWithArgumentExitCodeAndStderrText()
     {
-        using TemporaryRoot root = new();
+        using TemporaryDataRoot root = new();
         StringWriter output = new();
         StringWriter error = new();
 
@@ -94,7 +93,7 @@ public sealed class CliEntryPointTests
     [TestMethod]
     public async Task ReservedCommandReportsUnsupportedCapability()
     {
-        using TemporaryRoot root = new();
+        using TemporaryDataRoot root = new();
         StringWriter output = new();
         StringWriter error = new();
 
@@ -110,34 +109,4 @@ public sealed class CliEntryPointTests
     }
 
     public TestContext TestContext { get; set; } = null!;
-
-    private sealed class TemporaryRoot : IDisposable
-    {
-        public TemporaryRoot() =>
-            Path = System.IO.Path.Combine(
-                System.IO.Path.GetTempPath(),
-                $"wotbtreader-cli-{Guid.CreateVersion7():N}");
-
-        public string Path { get; }
-
-        public void Dispose()
-        {
-            // Pooled SQLite connections keep the database file handle open after
-            // the owning host is disposed, so the pool must be drained first.
-            SqliteConnection.ClearAllPools();
-            for (int attempt = 0; attempt < 5 && Directory.Exists(Path); attempt++)
-            {
-                try
-                {
-                    Directory.Delete(Path, recursive: true);
-                    return;
-                }
-                catch (IOException) when (attempt < 4)
-                {
-                    Thread.Sleep(TimeSpan.FromMilliseconds(20 * (attempt + 1)));
-                    SqliteConnection.ClearAllPools();
-                }
-            }
-        }
-    }
 }
