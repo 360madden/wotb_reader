@@ -13,6 +13,7 @@ internal static class WebSurfaceServiceCollectionExtensions
         services.Configure<RendezvousOptions>(
             configuration.GetSection(RendezvousOptions.SectionName));
         services.AddHostedService<RendezvousPublisher>();
+        services.AddScoped<IDashboardReadClient, DashboardReadClient>();
         return services;
     }
 }

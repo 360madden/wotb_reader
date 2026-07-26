@@ -1,0 +1,121 @@
+@page "/sessions/{BattleSessionId:guid}"
+@using WotBTreader.Host.Web.Contracts
+@using WotBTreader.Host.Web.Services
+@inject IDashboardReadClient ReadClient
+
+<PageTitle>Session</PageTitle>
+
+<p><a href="/">← Sessions</a></p>
+
+@if (_error is not null)
+{
+    <p class="text-danger" role="alert">@_error</p>
+}
+else if (_loading)
+{
+    <p>Loading session…</p>
+}
+else if (_detail is null)
+{
+    <h1>Session not found</h1>
+    <p>No battle session matched that identifier.</p>
+}
+else
+{
+    <h1>@( _detail.Session?.MapName ?? "Session" )</h1>
+
+    <dl class="row">
+        <dt class="col-sm-3">Status</dt>
+        <dd class="col-sm-9">@_detail.DecodeRun.Status</dd>
+        <dt class="col-sm-3">Game version</dt>
+        <dd class="col-sm-9">@( _detail.Session?.GameVersion ?? "unknown" )</dd>
+        <dt class="col-sm-3">Decoder</dt>
+        <dd class="col-sm-9">@_detail.DecodeRun.DecoderId @_detail.DecodeRun.DecoderVersion</dd>
+        <dt class="col-sm-3">Positions</dt>
+        <dd class="col-sm-9">
+            @_detail.Positions.Count shown
+            @if (_detail.PositionsTruncated)
+            {
+                <span>(truncated; @_detail.TotalPositionCount total)</span>
+            }
+        </dd>
+        <dt class="col-sm-3">Events / raw records</dt>
+        <dd class="col-sm-9">@_detail.EventCount / @_detail.RawRecordCount</dd>
+        @if (!string.IsNullOrWhiteSpace(_detail.DecodeRun.FailureSummary))
+        {
+            <dt class="col-sm-3">Failure</dt>
+            <dd class="col-sm-9">@_detail.DecodeRun.FailureCode — @_detail.DecodeRun.FailureSummary</dd>
+        }
+    </dl>
+
+    @if (_detail.Warnings.Count > 0)
+    {
+        <h2>Warnings</h2>
+        <ul>
+            @foreach (string warning in _detail.Warnings)
+            {
+                <li>@warning</li>
+            }
+        </ul>
+    }
+
+    <h2>Participants</h2>
+    @if (_detail.Participants.Count == 0)
+    {
+        <p>No participants in this projection.</p>
+    }
+    else
+    {
+        <table class="table table-sm table-striped">
+            <thead>
+                <tr>
+                    <th scope="col">Name</th>
+                    <th scope="col">Clan</th>
+                    <th scope="col">Team</th>
+                    <th scope="col">Tank</th>
+                    <th scope="col">Bot status</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (ParticipantResponse participant in _detail.Participants)
+                {
+                    <tr>
+                        <td>@(participant.PlayerName ?? "unknown")</td>
+                        <td>@(participant.ClanTag ?? "—")</td>
+                        <td>@(participant.TeamNumber?.ToString() ?? "—")</td>
+                        <td>@(participant.TankName ?? participant.TankId ?? "unknown")</td>
+                        <td>@participant.BotStatus (@participant.BotStatusConfidence)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    [Parameter]
+    public Guid BattleSessionId { get; set; }
+
+    private SessionDetailResponse? _detail;
+    private bool _loading = true;
+    private string? _error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        _error = null;
+        _detail = null;
+        try
+        {
+            _detail = await ReadClient.GetSessionAsync(BattleSessionId, CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            _error = $"Could not load session ({exception.GetType().Name}).";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

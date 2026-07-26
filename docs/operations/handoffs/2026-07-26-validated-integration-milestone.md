@@ -345,8 +345,8 @@ be deliberately exempted.
 
 1. ~~Prove the decode path end to end.~~ Done; see U7 below.
 2. ~~Author the dashboard read API.~~ Done; see U8 below.
-3. Build the UI pages against that API, resolving the hub/mutation-middleware
-   interaction above.
+3. ~~Build the UI pages against that API~~ (read UI done; hub/mutation
+   interaction still deferred — see U9).
 4. Run the opt-in private replay compatibility pass and record the outcome in
    the replay decoder blocker record.
 5. Implement the overlay last, against the loopback contract only.
@@ -420,3 +420,22 @@ than failing an otherwise passing CLI assertion.
 
 Validation: `scripts/validate.ps1` exits zero; 183 tests pass, 2 opt-in skips;
 repository scan clean over 304 tracked files.
+
+## Amendment — U9 dashboard read UI (`2026-07-26T23:14:00Z`)
+
+Delivers the Grok-safe half of recommended step 3: Blazor pages over the U8
+wire DTOs, without touching SignalR or mutation middleware.
+
+`IDashboardReadClient` / `DashboardReadClient` map storage/doctor ports into
+the same `Contracts` types the HTTP API returns, including the 5000-sample
+position cap. Pages: sessions list at `/`, session detail at
+`/sessions/{id}`, diagnostics at `/diagnostics`, overlay stub at
+`/overlay`. Template Weather/Counter pages removed. Nav links already pointed
+here; they now resolve.
+
+Hub negotiate still requires capability + antiforgery under
+`MutationProtectionMiddleware`; left deferred on purpose.
+
+Plan: `docs/superpowers/plans/2026-07-26-dashboard-read-ui.md`.
+
+Validation: `scripts/validate.ps1` exits zero; 188 tests pass, 2 opt-in skips.

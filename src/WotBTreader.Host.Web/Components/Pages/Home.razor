@@ -1,7 +1,80 @@
 ﻿@page "/"
+@using WotBTreader.Host.Web.Contracts
+@using WotBTreader.Host.Web.Endpoints
+@using WotBTreader.Host.Web.Services
+@inject IDashboardReadClient ReadClient
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Sessions</PageTitle>
 
-<h1>Hello, world!</h1>
+<h1>Sessions</h1>
 
-Welcome to your new app.
+@if (_error is not null)
+{
+    <p class="text-danger" role="alert">@_error</p>
+}
+else if (_page is null)
+{
+    <p>Loading sessions…</p>
+}
+else if (_page.Items.Count == 0)
+{
+    <p>No decoded sessions yet. Import a replay with the CLI to populate this list.</p>
+}
+else
+{
+    <table class="table table-sm table-striped">
+        <thead>
+            <tr>
+                <th scope="col">Map</th>
+                <th scope="col">Game version</th>
+                <th scope="col">Status</th>
+                <th scope="col">Participants</th>
+                <th scope="col">Positions</th>
+                <th scope="col"></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (SessionSummaryResponse item in _page.Items)
+            {
+                string? sessionId = item.Session?.BattleSessionId;
+                <tr>
+                    <td>@(item.Session?.MapName ?? "unknown")</td>
+                    <td>@(item.Session?.GameVersion ?? item.DecodeRun.SchemaVersion)</td>
+                    <td>@item.DecodeRun.Status</td>
+                    <td>@item.ParticipantCount</td>
+                    <td>@item.PositionCount</td>
+                    <td>
+                        @if (sessionId is not null)
+                        {
+                            <a href="@($"sessions/{sessionId}")">Open</a>
+                        }
+                        else
+                        {
+                            <span class="text-muted">No session</span>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private SessionPageResponse? _page;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _page = await ReadClient.ListSessionsAsync(
+                0,
+                ReadApiEndpoints.DefaultPageSize,
+                CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            _error = $"Could not load sessions ({exception.GetType().Name}).";
+        }
+    }
+}

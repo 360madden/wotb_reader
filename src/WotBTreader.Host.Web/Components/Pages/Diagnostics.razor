@@ -1,0 +1,60 @@
+@page "/diagnostics"
+@using WotBTreader.Application.Diagnostics
+@using WotBTreader.Host.Web.Services
+@inject IDashboardReadClient ReadClient
+
+<PageTitle>Diagnostics</PageTitle>
+
+<h1>Diagnostics</h1>
+
+@if (_error is not null)
+{
+    <p class="text-danger" role="alert">@_error</p>
+}
+else if (_report is null)
+{
+    <p>Running doctor checks…</p>
+}
+else
+{
+    <p>Schema @_report.SchemaVersion · generated @_report.GeneratedAtUtc.ToString("u")</p>
+
+    <table class="table table-sm">
+        <thead>
+            <tr>
+                <th scope="col">Check</th>
+                <th scope="col">Status</th>
+                <th scope="col">Summary</th>
+                <th scope="col">Required</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (DiagnosticCheck check in _report.Checks)
+            {
+                <tr>
+                    <td>@check.Id</td>
+                    <td>@check.Status</td>
+                    <td>@check.Summary</td>
+                    <td>@(check.Required ? "yes" : "no")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private DoctorReport? _report;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _report = await ReadClient.GetDoctorAsync(CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            _error = $"Could not run doctor ({exception.GetType().Name}).";
+        }
+    }
+}
