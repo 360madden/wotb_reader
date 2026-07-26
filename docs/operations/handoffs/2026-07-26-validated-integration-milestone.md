@@ -256,6 +256,29 @@ the protection flag on the directory, which is where it belongs.
 This closes the "web host not smoke-run" unknown recorded earlier in this
 document. No code changed for this amendment.
 
+## Amendment — U6 game harness safety policy covered (`2026-07-26T22:40:50Z`)
+
+`HarnessSafetyPolicy` decides whether the harness may touch a running game and
+had no tests. Added `tools/tests/WotBTreader.GameHarness.Tests` (a new tree,
+mirroring `tools/src`) with 26 cases that pin every denial path by its stable
+code, plus the two permit paths.
+
+The safety-critical case is explicit: `OnlineBattle` is denied, and
+`Ambiguous`, `Unknown`, `NotRunning`, `LaunchPending`, and
+`OfflineReplayStopped` are denied identically, so only a positively verified
+offline replay passes. Also covered: process identity by path, version, and
+hash; the refusal to accept truncated hashes even when both sides match;
+background windows; unknown or unequal integrity levels; evidence from an
+unapproved source; stale *and* future-dated evidence; evidence belonging to
+another process or an uncorrelated launch; and the arming rules for identity,
+expiry, not-yet-valid windows, and the two-minute maximum lifetime.
+
+Also extended `scripts/scan-repository.ps1` to include `tools/tests` in the
+hidden-source probe, so the new tree is covered by the BLK-0012 guard.
+
+Validation: `scripts/validate.ps1` exits zero; 161 tests pass, 2 opt-in skips;
+repository scan clean.
+
 ## Recommended next steps
 
 1. Author the dashboard query/endpoint services and re-register them in the
