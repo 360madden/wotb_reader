@@ -1,0 +1,23 @@
+---
+description: Session scope, token budget, model routing, git ownership
+alwaysApply: true
+---
+
+# Session budget
+
+- Do the asked task only. No drive-by refactors or extra markdown.
+- Prefer links/retrieval over inlining long docs. Do not open `.cursor/reference/*` unless needed.
+- Small commits that survive usage limits. Validate before milestone commits (`scripts/validate.ps1`).
+- Lead agent stages/commits; custom subagents must not stage/commit unless the user explicitly asks that agent to.
+- Push only when the user asked; never force-push.
+
+## Delegation (conserve expensive reasoning)
+
+- Explore / many file searches → built-in Explore (fast).
+- Mechanical implement against existing API/UI/tests/docs → `implementer-glue`.
+- After a unit → `verifier` (fast) for validate/test summary.
+- Replay/binary/private-replay ambiguity → `decoder-auditor` (Opus high).
+- Loopback, rendezvous, hub/mutation, harness online-denial, privacy → `security-auditor` (Fable xhigh, readonly).
+- Parent stays on Opus/Fable only while deciding hard design; do not burn it on glue loops.
+
+See `.cursor/reference/model-routing.md` when unsure.

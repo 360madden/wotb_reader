@@ -1,77 +1,41 @@
-# WotB Treader Repository Guidelines
+# WotB Treader — agent entry
 
-## Project status
+Windows-first .NET 10 modular monolith for **offline** WoTB replay telemetry.
+No runtime AI, cloud, Python, Node.js, Rust, Electron, or containers.
 
-WotB Treader is a Windows-first .NET 10 modular monolith for evidence-backed
-World of Tanks Blitz offline replay telemetry. The alpha is deliberately local:
-it has no runtime AI, cloud, Python, Node.js, Rust, Electron, or container
-dependency.
+Cursor layout and asset index: [`.cursor/README.md`](.cursor/README.md).
+Do **not** load `.cursor/reference/*` unless the task needs that catalog.
 
-## Working agreements
+## Hard constraints (always)
 
-- Keep changes focused on the requested task.
-- Preserve existing user changes and avoid destructive Git operations.
-- Prefer small, reviewable commits with clear messages.
-- Add or update tests when behavior changes.
-- Keep secrets out of the repository; document required variables in `.env.example`.
-- Update `README.md` when setup, build, test, or run instructions change.
-- Commit locally on `main` as `Codex Agent <codex@local.invalid>`; never push
-  unless the user explicitly changes that instruction.
-- The lead agent owns shared contracts, solution configuration, migrations,
-  integration, documentation, validation, staging, and commits. Subagents own
-  only their assigned projects and must not stage or commit.
-- Before a subagent changes a shared contract, it must report the proposed
-  change to the lead. Handoffs list changed files, contracts, tests, commands,
-  assumptions, unknowns, and integration risks.
+- Offline / positively verified offline sessions only. Never automate online matches.
+- Never infer bot status from a name; use `unknown` without evidence.
+- Never log raw replay bytes, tokens, full paths, player names, account IDs, chat, screenshots.
+- Never modify/redistribute the WotB install or game-derived assets.
+- `Core` has no project refs; `Application` → `Core` only; overlay is loopback web client (no parser/storage refs).
+- Evidence-first decode: unknown stays unknown; reprocess = new immutable decode run.
+- Pickle = data only; never execute opcodes / import Python.
+- Focused diffs; no destructive git; no secrets in repo.
+- Commits as `Codex Agent <codex@local.invalid>` unless user says otherwise.
+- Push only when the user asks; never force-push.
+- Lead stages/commits; subagents must not. Propose shared-contract changes before editing them.
+- Milestone: format/analyzers/build/tests. Handoff: `scripts/validate.ps1`.
+- CI: synthetic fixtures only; private-game tests opt-in local.
+- Blockers: append `docs/operations/blocker-log.md` (immutable UTC). Handoffs: append under `docs/operations/handoffs/`.
 
-## Architecture boundaries
+## Route by task
 
-- `Core` is pure domain code and has no project dependencies.
-- `Application` contains orchestration and ports and references only `Core`.
-- Source and storage adapters reference `Application` and `Core`.
-- `Bootstrap` is the composition root shared by executable hosts.
-- Hosts reference `Bootstrap`; the WPF overlay is a loopback web client and
-  must not reference parser or storage projects.
-- Replay decoding is evidence-first. Unknown values stay unknown, unknown
-  binary records retain byte-range/hash provenance, and reprocessing creates a
-  new immutable decode run.
+| Task | Load |
+|------|------|
+| Cursor harness / model routing | `.cursor/README.md`, `.cursor/reference/model-routing.md` |
+| Architecture / project refs | rule `architecture-boundaries` (auto on `src/**/*.cs`) |
+| Replay / binary / harness tools | rule `binary-parser`; agent `decoder-auditor` |
+| Loopback / mutation / privacy audit | agent `security-auditor` (readonly) |
+| Validate / commit / handoff | skills `validate`, `handoff-amend`, `commit-unit` |
+| UI / DTO / smoke / docs glue | agent `implementer-glue` (fast) |
+| Prove work after a unit | agent `verifier` (fast) |
+| Human setup | `README.md` |
 
-Architecture dependency tests must be updated when project boundaries change.
+## Model stance (one line)
 
-## Safety and privacy
-
-- Only offline replay files and positively verified offline replay sessions are
-  in scope. Never automate an online match.
-- Game input is disabled by default, explicitly armed, allowlisted, bounded,
-  audited, and denied unless process identity, foreground window, integrity
-  level, and offline-replay log state pass.
-- Never modify or redistribute the WotB installation or game-derived assets.
-- Private replays, raw captures, screenshots, databases, logs, identifiers,
-  diagnostic bundles, and installed tool binaries remain ignored.
-- Do not infer bot status from a name. Use `unknown` without explicit evidence.
-- Never log raw replay bytes, tokens, full paths, player names, account IDs,
-  chat, or screenshots.
-
-## Binary and parser rules
-
-- Every parser has explicit limits for input size, entry count, decompression,
-  allocations, recursion, field length, packet count, resynchronization,
-  cancellation, and timeouts.
-- Parse pickle as data only. Never execute pickle opcodes or import Python.
-- Comments explain binary evidence, security limits, compatibility behavior,
-  concurrency invariants, and Windows interop hazards; avoid narrative comments.
-- Public extension points require XML documentation.
-
-## Durable blocker records
-
-Record every major blocker in `docs/operations/blocker-log.md` with an immutable
-UTC timestamp, impact, evidence, cause, resolution, why that resolution was
-chosen, validation, and prevention/follow-up. Append corrections rather than
-silently rewriting history.
-
-## Validation
-
-Before a milestone commit, run its applicable formatter, analyzer, build, and
-tests. Before handoff, run `scripts/validate.ps1` and report every check that
-could not be run. CI uses only synthetic or explicitly sanitized fixtures;
-private-game tests are opt-in and local.
+Opus/Fable high|xhigh for decoder/security/hard contracts only; Grok/Composer/fast for glue, explore, verify. Details: `.cursor/reference/model-routing.md`.

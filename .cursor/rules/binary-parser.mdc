@@ -1,0 +1,25 @@
+---
+description: Replay/binary parser limits and pickle safety
+globs: src/WotBTreader.Replays/**/*.cs,src/WotBTreader.CaptureLogs/**/*.cs,tools/**/*.cs
+alwaysApply: false
+---
+
+# Binary and parser rules
+
+Every parser needs explicit limits for:
+
+- input size, entry count, decompression, allocations
+- recursion, field length, packet count
+- resynchronization, cancellation, timeouts
+
+## Pickle
+
+- Parse as **data only**.
+- Never execute pickle opcodes.
+- Never import or shell out to Python.
+
+## Comments and API
+
+- Comments: binary evidence, security limits, compatibility, concurrency, Win32 hazards.
+- Avoid narrative/story comments.
+- Public extension points require XML docs.

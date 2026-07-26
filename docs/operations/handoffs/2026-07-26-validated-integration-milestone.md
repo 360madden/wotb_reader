@@ -439,3 +439,7 @@ Hub negotiate still requires capability + antiforgery under
 Plan: `docs/superpowers/plans/2026-07-26-dashboard-read-ui.md`.
 
 Validation: `scripts/validate.ps1` exits zero; 188 tests pass, 2 opt-in skips.
+
+## Amendment — U10 token-lean Cursor harness (`2026-07-26T23:51:27Z`)
+
+Installed a progressive-disclosure Cursor control plane without changing product code: thin `AGENTS.md` router, two always-on rules (safety + session budget), glob rules for architecture/binary, four focused subagents with pinned models (Grok glue, Composer verifier, Opus decoder, Fable security), three on-demand skills (validate / handoff / commit), `.cursor/reference` catalogs, and `.cursorignore` for build noise. Goal is lower default tokens and correct model routing.

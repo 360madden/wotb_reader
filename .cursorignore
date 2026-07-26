@@ -1,0 +1,9 @@
+# Keep the index lean. Tracked source stays searchable; build noise does not.
+**/bin/
+**/obj/
+**/.vs/
+**/TestResults/
+**/coverage/
+**/*.user
+**/*.suo
+**/node_modules/
