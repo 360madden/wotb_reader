@@ -16,8 +16,7 @@ namespace WotBTreader.Overlay;
 public partial class MainWindow : System.Windows.Window, IDisposable
 {
     private const string GameWindowTitle = "World of Tanks Blitz";
-    private static readonly string GameExePath =
-        @"C:\Games\World_of_Tanks_Blitz\wotblitz.exe";
+    private const string GameExecutableName = "wotblitz.exe";
     private static readonly string GameReplaysFolder = System.IO.Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "wotblitz", "DAVAProject", "replays");
@@ -189,11 +188,12 @@ public partial class MainWindow : System.Windows.Window, IDisposable
                 System.IO.File.Copy(replayPath, target, overwrite: true);
             }
 
-            if (!System.IO.File.Exists(GameExePath)) return false;
+            string? gamePath = FindGameExecutablePath();
+            if (gamePath is null) return false;
 
             Process.Start(new ProcessStartInfo
             {
-                FileName = GameExePath,
+                FileName = gamePath,
                 Arguments = $"\"{target}\"",
                 UseShellExecute = true,
             });
@@ -232,5 +232,67 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         }
 
         return newest;
+    }
+
+    // ── Game executable path discovery ───────────────────────
+
+    /// <summary>
+    /// Finds wotblitz.exe using environment variable, default install roots,
+    /// and a hardcoded fallback. Does NOT depend on GameIntegration to keep
+    /// the Overlay isolated from parser/storage adapters.
+    /// </summary>
+    private static string? FindGameExecutablePath()
+    {
+        // 1. Environment variable override.
+        string? envPath = Environment.GetEnvironmentVariable("WOTB_GAME_PATH");
+        if (!string.IsNullOrWhiteSpace(envPath) && System.IO.File.Exists(envPath))
+        {
+            return envPath;
+        }
+
+        // 2. Default discovery roots (mirrors GameInstallationDiscovery logic).
+        foreach (string root in GetGameDiscoveryRoots())
+        {
+            string candidate = System.IO.Path.Combine(root, GameExecutableName);
+            if (System.IO.File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        // 3. Hardcoded fallback.
+        string fallback = @"C:\Games\World_of_Tanks_Blitz\wotblitz.exe";
+        return System.IO.File.Exists(fallback) ? fallback : null;
+    }
+
+    private static string[] GetGameDiscoveryRoots()
+    {
+        System.Collections.Generic.List<string> roots = [];
+
+        if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(
+                System.Runtime.InteropServices.OSPlatform.Windows))
+        {
+            string systemDrive = System.IO.Path.GetPathRoot(
+                Environment.GetFolderPath(Environment.SpecialFolder.Windows)) ?? @"C:\";
+            roots.Add(System.IO.Path.Combine(systemDrive, "Games", "World_of_Tanks_Blitz"));
+
+            string? programFilesX86 = Environment.GetFolderPath(
+                Environment.SpecialFolder.ProgramFilesX86);
+            if (!string.IsNullOrWhiteSpace(programFilesX86))
+            {
+                roots.Add(System.IO.Path.Combine(
+                    programFilesX86, "Steam", "steamapps", "common", "World of Tanks Blitz"));
+            }
+
+            string? programFiles = Environment.GetFolderPath(
+                Environment.SpecialFolder.ProgramFiles);
+            if (!string.IsNullOrWhiteSpace(programFiles))
+            {
+                roots.Add(System.IO.Path.Combine(
+                    programFiles, "Steam", "steamapps", "common", "World of Tanks Blitz"));
+            }
+        }
+
+        return [.. roots];
     }
 }

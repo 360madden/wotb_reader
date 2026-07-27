@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using Microsoft.Extensions.Logging;
+using WotBTreader.Application.Capture;
 using WotBTreader.Application.Diagnostics;
 using WotBTreader.Application.Replay;
 using WotBTreader.Application.Results;
@@ -43,6 +44,7 @@ public sealed class CliCommandRouter
     private readonly IDecodeRunRepository _decodeRuns;
     private readonly ISessionQueryRepository _sessions;
     private readonly IComparisonRunRepository _comparisons;
+    private readonly ITelemetryComparator _comparator;
     private readonly ILogger<CliCommandRouter> _logger;
 
     /// <summary>Creates a command router with all application ports resolved by DI.</summary>
@@ -52,6 +54,7 @@ public sealed class CliCommandRouter
         IDecodeRunRepository decodeRuns,
         ISessionQueryRepository sessions,
         IComparisonRunRepository comparisons,
+        ITelemetryComparator comparator,
         ILogger<CliCommandRouter> logger)
     {
         _doctor = doctor;
@@ -59,6 +62,7 @@ public sealed class CliCommandRouter
         _decodeRuns = decodeRuns;
         _sessions = sessions;
         _comparisons = comparisons;
+        _comparator = comparator;
         _logger = logger;
     }
 
@@ -235,7 +239,8 @@ public sealed class CliCommandRouter
 
     /// <summary>
     /// Dispatches comparison sub-commands. Supported: <c>list</c> (paged list
-    /// of comparison runs), <c>inspect</c> (full result for one run).
+    /// of comparison runs), <c>inspect</c> (full result for one run),
+    /// <c>create</c> (compare two battle sessions).
     /// </summary>
     private async ValueTask<CliExecution> CompareAsync(
         CliInvocation invocation,
@@ -246,7 +251,7 @@ public sealed class CliCommandRouter
         {
             return Invalid(
                 "cli.compare.subcommand_required",
-                "Usage: compare list | compare inspect <comparison-run-id>.",
+                "Usage: compare list | compare inspect <comparison-run-id> | compare create <left-session-id> <right-session-id>.",
                 correlationId);
         }
 
@@ -255,9 +260,10 @@ public sealed class CliCommandRouter
         {
             "list" => await CompareListAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "inspect" => await CompareInspectAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
+            "create" => await CompareCreateAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             _ => Invalid(
                 "cli.compare.unknown_subcommand",
-                $"Unknown compare subcommand '{subCommand}'. Available: list, inspect.",
+                $"Unknown compare subcommand '{subCommand}'. Available: list, inspect, create.",
                 correlationId),
         };
     }
@@ -302,6 +308,134 @@ public sealed class CliCommandRouter
             .GetAsync(new ComparisonRunId(value), cancellationToken)
             .ConfigureAwait(false);
         return FromResult(result, correlationId, "Comparison run loaded.");
+    }
+
+    /// <summary>
+    /// Compares the telemetry events of two decoded battle sessions and
+    /// persists the result as a new comparison run. Returns the new
+    /// comparison run ID and summary on success.
+    /// </summary>
+    private async ValueTask<CliExecution> CompareCreateAsync(
+        CliInvocation invocation,
+        Guid correlationId,
+        CancellationToken cancellationToken)
+    {
+        if (invocation.Positionals.Count != 3 ||
+            !Guid.TryParse(invocation.Positionals[1], out Guid leftGuid) ||
+            !Guid.TryParse(invocation.Positionals[2], out Guid rightGuid))
+        {
+            return Invalid(
+                "cli.compare.create.two_ids_required",
+                "compare create requires two battle-session GUIDs (left and right).",
+                correlationId);
+        }
+
+        BattleSessionId leftSessionId = new(leftGuid);
+        BattleSessionId rightSessionId = new(rightGuid);
+
+        OperationResult<ReplayDecodeProjection> leftResult = await _sessions
+            .GetProjectionAsync(leftSessionId, cancellationToken)
+            .ConfigureAwait(false);
+        if (!leftResult.IsSuccess || leftResult.Value is null)
+        {
+            return FromResult(leftResult, correlationId, "Failed to load left session.");
+        }
+
+        OperationResult<ReplayDecodeProjection> rightResult = await _sessions
+            .GetProjectionAsync(rightSessionId, cancellationToken)
+            .ConfigureAwait(false);
+        if (!rightResult.IsSuccess || rightResult.Value is null)
+        {
+            return FromResult(rightResult, correlationId, "Failed to load right session.");
+        }
+
+        ReplayDecodeProjection leftProjection = leftResult.Value;
+        ReplayDecodeProjection rightProjection = rightResult.Value;
+
+        SourceArtifactId leftArtifactId = leftProjection.DecodeRun.SourceArtifactId;
+        SourceArtifactId rightArtifactId = rightProjection.DecodeRun.SourceArtifactId;
+
+        IReadOnlyList<TelemetryEvent> leftEvents = ConvertToTelemetryEvents(
+            leftProjection.Events,
+            leftProjection.DecodeRun.DecoderId,
+            leftArtifactId);
+        IReadOnlyList<TelemetryEvent> rightEvents = ConvertToTelemetryEvents(
+            rightProjection.Events,
+            rightProjection.DecodeRun.DecoderId,
+            rightArtifactId);
+
+        OperationResult<TelemetryComparison> comparisonResult = await _comparator.CompareAsync(
+            leftArtifactId,
+            leftEvents,
+            rightArtifactId,
+            rightEvents,
+            ComparisonOptions.Default,
+            cancellationToken).ConfigureAwait(false);
+
+        if (!comparisonResult.IsSuccess || comparisonResult.Value is null)
+        {
+            return FromResult(comparisonResult, correlationId, "Comparison failed.");
+        }
+
+        OperationResult<TelemetryComparison> saved = await _comparisons
+            .AddAsync(comparisonResult.Value, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!saved.IsSuccess || saved.Value is null)
+        {
+            return FromResult(saved, correlationId, "Comparison created but could not be persisted.");
+        }
+
+        var data = new
+        {
+            comparisonRunId = saved.Value.Run.Id.ToString(),
+            saved.Value.Run.ComparatorId,
+            saved.Value.Run.ComparatorVersion,
+            leftSessionId = leftGuid.ToString("D"),
+            rightSessionId = rightGuid.ToString("D"),
+            summary = saved.Value.Summary,
+        };
+
+        return Success(
+            data,
+            $"Created comparison run {saved.Value.Run.Id}.",
+            correlationId);
+    }
+
+    /// <summary>
+    /// Converts <see cref="CanonicalEvent"/> records decoded from a replay
+    /// into <see cref="TelemetryEvent"/> records that the comparator can
+    /// process. The <paramref name="decoderId"/> and
+    /// <paramref name="sourceArtifactId"/> preserve provenance chain.
+    /// </summary>
+    private static TelemetryEvent[] ConvertToTelemetryEvents(
+        IReadOnlyList<CanonicalEvent> canonicalEvents,
+        string decoderId,
+        SourceArtifactId sourceArtifactId)
+    {
+        TelemetryProvenance provenance = new(
+            TelemetrySourceKind.Replay,
+            decoderId,
+            sourceArtifactId,
+            null,
+            null);
+
+        TelemetryEvent[] result = new TelemetryEvent[canonicalEvents.Count];
+        for (int i = 0; i < canonicalEvents.Count; i++)
+        {
+            CanonicalEvent ce = canonicalEvents[i];
+            result[i] = new TelemetryEvent(
+                ce.Sequence,
+                null, // SourceTimeUtc — not available in canonical replay events
+                ce.ReplayTime,
+                ce.Kind.ToString(),
+                ce.ParticipantId?.ToString(),
+                ce.EntityId,
+                ce.ValuesJson,
+                provenance);
+        }
+
+        return result;
     }
 
     /// <summary>
