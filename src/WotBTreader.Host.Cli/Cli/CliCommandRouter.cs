@@ -1,3 +1,6 @@
+using System.Collections.Concurrent;
+using System.Globalization;
+using Microsoft.Extensions.Logging;
 using WotBTreader.Application.Diagnostics;
 using WotBTreader.Application.Replay;
 using WotBTreader.Application.Results;
@@ -26,19 +29,22 @@ public sealed class CliCommandRouter
     private readonly IDecodeRunRepository _decodeRuns;
     private readonly ISessionQueryRepository _sessions;
     private readonly IComparisonRunRepository _comparisons;
+    private readonly ILogger<CliCommandRouter> _logger;
 
     public CliCommandRouter(
         IDoctorService doctor,
         IReplayIngestionService ingestion,
         IDecodeRunRepository decodeRuns,
         ISessionQueryRepository sessions,
-        IComparisonRunRepository comparisons)
+        IComparisonRunRepository comparisons,
+        ILogger<CliCommandRouter> logger)
     {
         _doctor = doctor;
         _ingestion = ingestion;
         _decodeRuns = decodeRuns;
         _sessions = sessions;
         _comparisons = comparisons;
+        _logger = logger;
     }
 
     public async ValueTask<CliExecution> ExecuteAsync(
@@ -56,7 +62,8 @@ public sealed class CliCommandRouter
             "sessions" => await SessionsAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "compare" => await CompareAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "export" => await ExportAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
-            "watch" or "serve" => Unsupported(invocation.Command, correlationId),
+            "watch" => await WatchAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
+            "serve" => Unsupported(invocation.Command, correlationId),
             _ => Invalid(
                 "cli.command.unknown",
                 $"Unknown command '{invocation.Command}'. Available commands: {string.Join(", ", CommandNames)}.",
@@ -363,6 +370,264 @@ public sealed class CliCommandRouter
             $"Exported {data.Count} position(s).",
             correlationId,
             result.Warnings);
+    }
+
+    private async ValueTask<CliExecution> WatchAsync(
+        CliInvocation invocation,
+        Guid correlationId,
+        CancellationToken cancellationToken)
+    {
+        if (invocation.Positionals.Count != 1)
+        {
+            return Invalid(
+                "cli.watch.directory_required",
+                "watch requires exactly one directory path.",
+                correlationId);
+        }
+
+        string directory = Path.GetFullPath(invocation.Positionals[0]);
+        if (!Directory.Exists(directory))
+        {
+            return Invalid(
+                "cli.watch.directory_missing",
+                $"Directory '{directory}' does not exist.",
+                correlationId);
+        }
+
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            _logger.LogInformation("Watching {Directory} for new .wotbreplay files…", directory);
+        }
+
+        int importedCount = 0;
+        int errorCount = 0;
+        DateTimeOffset startedAt = DateTimeOffset.UtcNow;
+        ConcurrentDictionary<string, bool> processed = new(StringComparer.OrdinalIgnoreCase);
+
+        using FileSystemWatcher watcher = new(directory, "*.wotbreplay")
+        {
+            IncludeSubdirectories = false,
+            NotifyFilter = NotifyFilters.FileName | NotifyFilters.CreationTime,
+            EnableRaisingEvents = true,
+        };
+
+        TaskCompletionSource<bool> fileDetected = new();
+        void OnCreated(object _, FileSystemEventArgs e)
+        {
+            fileDetected.TrySetResult(true);
+        }
+
+        void OnError(object _, ErrorEventArgs e)
+        {
+            if (_logger.IsEnabled(LogLevel.Warning))
+            {
+                _logger.LogWarning(
+                    new EventId(4200, "WatchError"),
+                    "File system watcher error: {ExceptionType}.",
+                    e.GetException().GetType().Name);
+            }
+
+            fileDetected.TrySetResult(true);
+        }
+
+        watcher.Created += OnCreated;
+        watcher.Error += OnError;
+
+        // Enumerate files that already exist in the directory (idempotent).
+        try
+        {
+            foreach (string existing in Directory.EnumerateFiles(
+                         directory, "*.wotbreplay", SearchOption.TopDirectoryOnly))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                string normalized = Path.GetFullPath(existing);
+                if (!processed.TryAdd(normalized, true))
+                {
+                    continue;
+                }
+
+                bool ok = await ImportFileAsync(normalized, cancellationToken).ConfigureAwait(false);
+                if (ok)
+                {
+                    importedCount++;
+                    fileDetected.TrySetResult(true);
+                }
+                else
+                {
+                    errorCount++;
+                }
+            }
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException)
+        {
+            if (_logger.IsEnabled(LogLevel.Warning))
+            {
+                _logger.LogWarning(
+                    new EventId(4203, "InitialEnumerationError"),
+                    "Could not enumerate existing files: {ExceptionType}.",
+                    exception.GetType().Name);
+            }
+        }
+
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                using CancellationTokenSource linked =
+                    CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                Task completed = await Task.WhenAny(
+                        fileDetected.Task,
+                        Task.Delay(Timeout.Infinite, linked.Token))
+                    .ConfigureAwait(false);
+
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                // Drain the completion source.
+                fileDetected = new TaskCompletionSource<bool>();
+
+                // Scan for new files.
+                try
+                {
+                    foreach (string candidate in Directory.EnumerateFiles(
+                                 directory, "*.wotbreplay", SearchOption.TopDirectoryOnly))
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        string normalized = Path.GetFullPath(candidate);
+                        if (!processed.TryAdd(normalized, true))
+                        {
+                            continue;
+                        }
+
+                        bool ok = await ImportFileAsync(normalized, cancellationToken)
+                            .ConfigureAwait(false);
+                        if (ok)
+                        {
+                            importedCount++;
+                        }
+                        else
+                        {
+                            errorCount++;
+                        }
+                    }
+                }
+                catch (DirectoryNotFoundException)
+                {
+                    return Failure(
+                        CliExitCode.InternalFailure,
+                        "cli.watch.directory_removed",
+                        $"Directory '{directory}' was removed while watching.",
+                        data: null,
+                        correlationId);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            watcher.Created -= OnCreated;
+            watcher.Error -= OnError;
+        }
+
+        TimeSpan elapsed = DateTimeOffset.UtcNow - startedAt;
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            string elapsedString = elapsed.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture);
+            _logger.LogInformation(
+                "Watched {Directory} for {Elapsed}. Imported {ImportedCount}, {ErrorCount} error(s).",
+                directory,
+                elapsedString,
+                importedCount,
+                errorCount);
+        }
+
+        return Success(
+            new
+            {
+                directory,
+                elapsed = elapsed.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture),
+                importedCount,
+                errorCount,
+            },
+            $"Imported {importedCount} replay(s) with {errorCount} error(s) in {elapsed.ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture)}.",
+            correlationId);
+    }
+
+    private async ValueTask<bool> ImportFileAsync(
+        string path,
+        CancellationToken cancellationToken)
+    {
+        // Wait for the file to stabilise (the writer may still be flushing).
+        await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
+
+        string fileName = Path.GetFileName(path);
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            _logger.LogInformation("Importing {FileName}…", fileName);
+        }
+
+        try
+        {
+            OperationResult<ReplayIngestionOutcome> result = await _ingestion.ImportAsync(
+                new ReplayIngestionRequest(
+                    path,
+                    "application/vnd.wotblitz.replay",
+                    ".wotbreplay",
+                    MaximumArtifactBytes: 128 * 1024 * 1024,
+                    DecoderLimits.Default),
+                cancellationToken).ConfigureAwait(false);
+
+            if (result.IsSuccess)
+            {
+                if (_logger.IsEnabled(LogLevel.Information))
+                {
+                    ReplayIngestionOutcome outcome = result.Value!;
+                    _logger.LogInformation(
+                        "Imported {FileName} → artifact {ArtifactId}, decode run {DecodeRunId}.",
+                        fileName,
+                        outcome.Artifact.Id,
+                        outcome.DecodeRun.DecodeRun.Id);
+                }
+            }
+            else
+            {
+                if (_logger.IsEnabled(LogLevel.Warning))
+                {
+                    ApplicationError? error = result.Error;
+                    _logger.LogWarning(
+                        new EventId(4201, "ImportFailed"),
+                        "Failed to import {FileName}: {ErrorCode} — {ErrorMessage}.",
+                        fileName,
+                        error?.Code,
+                        error?.Message);
+                }
+            }
+
+            return result.IsSuccess;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            if (_logger.IsEnabled(LogLevel.Warning))
+            {
+                _logger.LogWarning(
+                    new EventId(4202, "ImportException"),
+                    "Exception importing {FileName}: {ExceptionType} — {Message}.",
+                    fileName,
+                    exception.GetType().Name,
+                    exception.Message);
+            }
+
+            return false;
+        }
     }
 
     private static bool TryGetInteger(

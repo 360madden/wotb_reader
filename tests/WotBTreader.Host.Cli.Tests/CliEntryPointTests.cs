@@ -98,7 +98,7 @@ public sealed class CliEntryPointTests
         StringWriter error = new();
 
         int exitCode = await CliEntryPoint.RunAsync(
-            ["watch", "--json", "--data-root", root.Path],
+            ["serve", "--json", "--data-root", root.Path],
             output,
             error,
             TestContext.CancellationToken);

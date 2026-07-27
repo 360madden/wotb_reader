@@ -68,14 +68,16 @@ The web host is a separate executable. Decided not to merge into CLI:
 - The CLI discovers it automatically via the rendezvous record
 - **Status:** Designed out — not needed for alpha.
 
-### 🟢 P4 — `watch` CLI command
+### 🟢 P4 — `watch` CLI command ✅
 
-Watch for new replays in a directory and auto-import them. This requires
-filesystem watching, which `GameIntegration` already provides for game logs.
-
-- `watch <directory>` — monitor directory for new .wotbreplay files
-- Auto-import each new file with progress reporting
-- **Effort:** ~3 hours. Infrastructure partially exists.
+Implemented 2026-07-27:
+- `watch <directory>` — monitors directory for new .wotbreplay files
+- Uses FileSystemWatcher for low-latency Created event hints
+- Directory enumeration as source of truth (matches BlitzReplayLogMonitor pattern)
+- 2s stability delay before importing, idempotent via ConcurrentDictionary
+- Progress reported via ILogger, summary on cancellation (Ctrl+C)
+- Handles directory removal, IO errors, and graceful shutdown
+- **Done:** 15/15 CLI tests pass.
 
 ### 🔵 P5 — Comparison runs dashboard UI ✅
 
