@@ -186,6 +186,17 @@ entries rather than silently erasing prior evidence.
   ignored-source recurrence discovered during the same run. UI/overlay smoke
   tests and the guarded game scenario remain pending because the dashboard and
   overlay surfaces are not yet implemented.
+- Resolution amendment (`2026-07-27T00:00:00Z`): the overlay and dashboard
+  surfaces noted as pending in the previous amendment are now fully
+  implemented. The overlay (WPF, `net10.0-windows`) provides: session list
+  with map/participant/position metadata, team-colored position scatter plot
+  with auto-refresh, SignalR push-based session list updates via
+  `TelemetryStreamService`, and an embedded Blazor dashboard tab via WebView2.
+  The dashboard (`net10.0`, Blazor Server) provides: sessions table, session
+  detail with participants and position counts, diagnostics doctor report, and
+  an overlay status page. Both surfaces are unit-tested (38 overlay tests,
+  54 web host tests) but have not been smoke-run together against a live host.
+  See `docs/operations/handoffs/2026-07-27-signalr-webview2-completion.md`.
 
 ## BLK-0012 — `diagnostics/` and `dist/` ignore patterns hid tracked sources
 
