@@ -10,6 +10,9 @@
         Background="Transparent"
         Topmost="True"
         Width="1200" Height="700"
+        AllowDrop="True"
+        DragEnter="Window_DragEnter"
+        Drop="Window_Drop"
         MouseLeftButtonDown="Window_MouseLeftButtonDown"
         PreviewKeyDown="Window_PreviewKeyDown">
     <Grid>
@@ -23,6 +26,7 @@
                 BorderBrush="#44FFFFFF" BorderThickness="1" Opacity="0.85">
             <Grid>
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
@@ -52,16 +56,25 @@
                             Background="#44FFFFFF" Foreground="#AAFFAA" BorderThickness="0"
                             Padding="0" Cursor="Hand" Margin="2,0,0,0"
                             ToolTip="Cycle playback speed (0.5x / 1x / 2x / 4x / 8x)"/>
-                    <Button Content="🚀 Launch" Command="{Binding LaunchGameCommand}"
-                            Background="#33AAFF" Foreground="White" BorderThickness="0"
+                    <Button Content="📂 Pick &amp; Launch" Click="QuickLaunch_Click"
+                            Background="#44FF44" Foreground="#111" BorderThickness="0"
                             Padding="8,3" Cursor="Hand" Margin="6,0,0,0"
-                            ToolTip="Launch wotblitz.exe to play the selected replay"/>
-                    <Button Content="↻ Refresh" Command="{Binding RefreshCommand}"
+                            FontWeight="Bold" FontSize="11"
+                            ToolTip="Pick a .wotbreplay file — auto-starts host, imports, and launches the game"/>
+                    <Button Content="🚀 Re-launch" Command="{Binding LaunchGameCommand}"
+                            Background="#33AAFF" Foreground="White" BorderThickness="0"
+                            Padding="8,3" Cursor="Hand" Margin="4,0,0,0"
+                            FontSize="11"
+                            ToolTip="Re-launch wotblitz.exe with the selected session's replay"/>
+                    <Button Content="↻" Command="{Binding RefreshCommand}"
+                            Width="28" Height="22"
                             Background="#44FFFFFF" Foreground="White" BorderThickness="0"
-                            Padding="8,3" Margin="4,0,0,0" Cursor="Hand"/>
-                    <Button Content="🌐 Dashboard" Click="OpenDashboardInBrowser"
+                            Padding="0" Cursor="Hand" Margin="2,0,0,0"
+                            ToolTip="Refresh sessions"/>
+                    <Button Content="🌐" Click="OpenDashboardInBrowser"
+                            Width="28" Height="22"
                             Background="#44FFFFFF" Foreground="White" BorderThickness="0"
-                            Padding="8,3" Margin="4,0,0,0" Cursor="Hand"
+                            Padding="0" Cursor="Hand" Margin="2,0,0,0"
                             ToolTip="Open the full dashboard in a browser"/>
                     <Button Content="👁" Click="ToggleSidebarOpacity"
                             Background="#44FFFFFF" Foreground="#CCCCCC" BorderThickness="0"
@@ -76,12 +89,16 @@
                 </StackPanel>
                 <TextBlock Grid.Row="1" Text="{Binding Status}"
                            Foreground="#AAFFFFFF" FontSize="11" Margin="0,0,0,4"/>
-                <TextBox Grid.Row="2" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                <TextBlock x:Name="GamePathInfo" Grid.Row="2"
+                           Foreground="#66FFFFFF" FontSize="9" Margin="0,0,0,2"
+                           TextTrimming="CharacterEllipsis"
+                           ToolTip="Discovered game path and replays folder.\nSet WOTB_GAME_PATH env var to override."/>
+                <TextBox Grid.Row="3" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                          Background="#22FFFFFF" Foreground="White" BorderThickness="0"
                          FontSize="11" Padding="4,2" Margin="0,0,0,2"
                          MaxLines="1"
                          ToolTip="Filter sessions by map name"/>
-                <ListBox x:Name="SessionsListBox" Grid.Row="3" ItemsSource="{Binding FilteredSessions}"
+                <ListBox x:Name="SessionsListBox" Grid.Row="4" ItemsSource="{Binding FilteredSessions}"
                          SelectedItem="{Binding SelectedSession, Mode=TwoWay}"
                          Background="Transparent" BorderThickness="0"
                          Foreground="White" Height="160" MaxHeight="160">
@@ -100,7 +117,7 @@
                     </ListBox.ItemTemplate>
                 </ListBox>
                 <!-- Timeline scrubber -->
-                <Grid x:Name="TimelineGrid" Grid.Row="4" Margin="0,2,0,2"
+                <Grid x:Name="TimelineGrid" Grid.Row="5" Margin="0,2,0,2"
                       Visibility="{Binding SelectedSession, Converter={StaticResource NullToCollapsed}}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="36"/>
@@ -118,7 +135,7 @@
                             Height="20" Cursor="Hand"/>
                 </Grid>
                 <!-- Session detail panel -->
-                <Grid x:Name="DetailGrid" Grid.Row="5" Margin="0,4,0,0"
+                <Grid x:Name="DetailGrid" Grid.Row="6" Margin="0,4,0,0"
                       Visibility="{Binding SelectedSession, Converter={StaticResource NullToCollapsed}}">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -207,7 +224,7 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </Grid>
-                <Button x:Name="CloseButton" Grid.Row="6" Content="✕ Close" Click="CloseWindow"
+                <Button x:Name="CloseButton" Grid.Row="7" Content="✕ Close" Click="CloseWindow"
                         Background="#33FF4444" Foreground="White" BorderThickness="0"
                         Padding="8,3" Margin="0,4,0,0" Cursor="Hand"/>
             </Grid>

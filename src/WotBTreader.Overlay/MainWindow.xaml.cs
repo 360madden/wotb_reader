@@ -1,6 +1,8 @@
 using System.Diagnostics;
+using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Windows.Threading;
+using Microsoft.Win32;
 using WotBTreader.Overlay.Services;
 using WotBTreader.Overlay.ViewModels;
 
@@ -27,6 +29,8 @@ public partial class MainWindow : System.Windows.Window, IDisposable
     private readonly DispatcherTimer _windowTrackTimer;
     private readonly DispatcherTimer _playbackTimer;
     private bool _disposed;
+    private bool _isQuickLaunching;
+    private Process? _webHostProcess;
     private string _lastDashboardUri = "http://127.0.0.1:9182";
 
     public MainWindow()
@@ -72,6 +76,22 @@ public partial class MainWindow : System.Windows.Window, IDisposable
     private async void OnLoaded(object sender, System.Windows.RoutedEventArgs e)
     {
         _ = _viewModel.RefreshSessionsAsync();
+        PopulateGamePathInfo();
+    }
+
+    private void PopulateGamePathInfo()
+    {
+        string? gamePath = FindGameExecutablePath();
+        string gameText = gamePath is not null
+            ? $"🎮 {System.IO.Path.GetDirectoryName(gamePath)}"
+            : "🎮 wotblitz.exe not found — set WOTB_GAME_PATH";
+
+        string replaysText = System.IO.Directory.Exists(GameReplaysFolder)
+            ? $"📁 {GameReplaysFolder}"
+            : "📁 replays folder not found";
+
+        GamePathInfo.Text = $"{gameText}  |  {replaysText}";
+        GamePathInfo.ToolTip = $"Game: {(gamePath ?? "not found")}\nReplays: {GameReplaysFolder}\n\nSet WOTB_GAME_PATH env var to override game location.\nDrag .wotbreplay files onto this window to quick-launch.";
     }
 
     private void OnClosed(object? sender, EventArgs e)
@@ -209,6 +229,378 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         }
     }
 
+    // ── One-click launcher ──────────────────────────────────
+
+    private async void QuickLaunch_Click(object sender, System.Windows.RoutedEventArgs e)
+    {
+        if (_isQuickLaunching)
+        {
+            _viewModel.Status = "Already launching — drop ignored";
+            return;
+        }
+
+        _isQuickLaunching = true;
+        try
+        {
+            await QuickLaunchCoreAsync();
+        }
+        finally
+        {
+            _isQuickLaunching = false;
+        }
+    }
+
+    private async Task QuickLaunchCoreAsync()
+    {
+        // Default the dialog to the game replays folder if it exists.
+        string initialDir = System.IO.Directory.Exists(GameReplaysFolder)
+            ? GameReplaysFolder
+            : Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+
+        OpenFileDialog dialog = new()
+        {
+            Title = "Pick a WoT Blitz replay",
+            Filter = "WoT Blitz Replay (*.wotbreplay)|*.wotbreplay|All Files (*.*)|*.*",
+            DefaultExt = ".wotbreplay",
+            InitialDirectory = initialDir,
+        };
+
+        if (dialog.ShowDialog() != true) return;
+        string replayPath = dialog.FileName;
+
+        await QuickLaunchWithPathAsync(replayPath);
+    }
+
+    private async Task QuickLaunchWithPathAsync(string replayPath)
+    {
+        if (!System.IO.File.Exists(replayPath))
+        {
+            _viewModel.Status = "Replay file no longer exists";
+            return;
+        }
+
+        string replayFileName = System.IO.Path.GetFileName(replayPath);
+        _viewModel.Status = $"⚙ Launching {replayFileName}…";
+
+        try
+        {
+            // ── 1. Resolve paths ─────────────────────────────
+            string? repoRoot = ResolveRepoRoot();
+            string? dataRoot = ResolveDataRoot(repoRoot);
+            if (dataRoot is null)
+            {
+                _viewModel.Status = "❌ Cannot determine data root — set WOTBTREADER_DATA_ROOT";
+                return;
+            }
+
+            // ── 2. Start web host if needed ──────────────────
+            if (!await IsWebHostRunningAsync())
+            {
+                _viewModel.Status = "🔧 Starting web host…";
+                if (!TryStartWebHost(repoRoot, dataRoot))
+                {
+                    _viewModel.Status = "❌ Host not built — run build.cmd then serve.cmd first";
+                    return;
+                }
+
+                _viewModel.Status = "⏳ Waiting for host…";
+                if (!await WaitForWebHostAsync(TimeSpan.FromSeconds(25)))
+                {
+                    _viewModel.Status = "❌ Web host did not start — check the host console window";
+                    return;
+                }
+            }
+
+            // ── 3. Refresh sessions so overlay connects ───────
+            _viewModel.Status = "🔗 Connecting to host…";
+            await _viewModel.RefreshSessionsAsync();
+            if (string.IsNullOrEmpty(_viewModel.BaseUri))
+            {
+                _viewModel.Status = "❌ Could not connect to web host — is serve running?";
+                return;
+            }
+
+            // ── 4. Import replay via CLI ─────────────────────
+            _viewModel.Status = "📥 Importing replay…";
+            (bool imported, string importMessage) = await ImportReplayViaCliAsync(repoRoot, dataRoot, replayPath);
+            if (!imported)
+            {
+                _viewModel.Status = $"❌ {importMessage}";
+                return;
+            }
+
+            // ── 5. Refresh sessions to see the new one ───────
+            _viewModel.Status = "🔄 Refreshing sessions…";
+            await _viewModel.RefreshSessionsAsync();
+
+            // ── 6. Copy to game folder and launch ────────────
+            _viewModel.Status = "🚀 Launching game…";
+            string? gamePath = FindGameExecutablePath();
+            if (gamePath is null)
+            {
+                _viewModel.Status = "❌ wotblitz.exe not found — set WOTB_GAME_PATH env var";
+                return;
+            }
+
+            if (!LaunchGameWithReplayPath(replayPath))
+            {
+                _viewModel.Status = "❌ Failed to launch game";
+                return;
+            }
+
+            _viewModel.Status = $"✅ {replayFileName} — tracking game window";
+        }
+        catch (Exception ex)
+        {
+            _viewModel.Status = $"❌ Launch failed: {ex.GetType().Name}";
+        }
+    }
+
+    private static string? ResolveRepoRoot()
+    {
+        // Overlay exe is at src/WotBTreader.Overlay/bin/Release/net10.0-windows/
+        // Repo root is 5 directories up.
+        string exeDir = System.IO.Path.GetDirectoryName(
+            Environment.ProcessPath ?? typeof(MainWindow).Assembly.Location)
+            ?? string.Empty;
+
+        for (int i = 0; i < 5 && !string.IsNullOrEmpty(exeDir); i++)
+        {
+            exeDir = System.IO.Path.GetDirectoryName(exeDir) ?? string.Empty;
+        }
+
+        return string.IsNullOrEmpty(exeDir) ? null : exeDir;
+    }
+
+    private static string? ResolveDataRoot(string? repoRoot)
+    {
+        string? customRoot = Environment.GetEnvironmentVariable("WOTBTREADER_DATA_ROOT");
+        if (!string.IsNullOrWhiteSpace(customRoot))
+        {
+            return System.IO.Path.GetFullPath(customRoot);
+        }
+
+        if (!string.IsNullOrWhiteSpace(repoRoot))
+        {
+            return System.IO.Path.Combine(repoRoot, ".data");
+        }
+
+        return null;
+    }
+
+    private static async ValueTask<bool> IsWebHostRunningAsync()
+    {
+        try
+        {
+            using HttpClient client = new() { Timeout = TimeSpan.FromSeconds(2) };
+            HttpResponseMessage response = await client.GetAsync(
+                "http://127.0.0.1:9182/api/v1/sessions",
+                HttpCompletionOption.ResponseHeadersRead);
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private bool TryStartWebHost(string? repoRoot, string dataRoot)
+    {
+        if (string.IsNullOrWhiteSpace(repoRoot))
+        {
+            return false;
+        }
+
+        string publishDir = System.IO.Path.Combine(repoRoot, ".build", "publish");
+        string hostPath = System.IO.Path.Combine(publishDir, "WotBTreader.Host.Web.exe");
+
+        if (!System.IO.File.Exists(hostPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            _webHostProcess?.Dispose();
+            _webHostProcess = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = hostPath,
+                    WorkingDirectory = publishDir,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                },
+                EnableRaisingEvents = true,
+            };
+
+            _webHostProcess.StartInfo.Environment["Web__Port"] = "9182";
+            _webHostProcess.StartInfo.Environment["Paths__ApplicationDataRoot"] = dataRoot;
+            _webHostProcess.Start();
+            return true;
+        }
+        catch (Exception ex) when (
+            ex is System.ComponentModel.Win32Exception
+            or InvalidOperationException
+            or System.IO.IOException)
+        {
+            _webHostProcess?.Dispose();
+            _webHostProcess = null;
+            return false;
+        }
+    }
+
+    private static async ValueTask<bool> WaitForWebHostAsync(TimeSpan timeout)
+    {
+        Stopwatch sw = Stopwatch.StartNew();
+        using HttpClient client = new() { Timeout = TimeSpan.FromSeconds(2) };
+
+        while (sw.Elapsed < timeout)
+        {
+            try
+            {
+                HttpResponseMessage response = await client.GetAsync(
+                    "http://127.0.0.1:9182/api/v1/sessions",
+                    HttpCompletionOption.ResponseHeadersRead);
+                if (response.IsSuccessStatusCode || (int)response.StatusCode >= 400)
+                {
+                    return true; // Host is accepting connections.
+                }
+            }
+            catch
+            {
+                // Not ready yet.
+            }
+
+            await Task.Delay(500);
+        }
+
+        return false;
+    }
+
+    private static async ValueTask<(bool Success, string Message)> ImportReplayViaCliAsync(
+        string? repoRoot,
+        string dataRoot,
+        string replayPath)
+    {
+        if (string.IsNullOrWhiteSpace(repoRoot))
+        {
+            return (false, "Cannot determine repo root");
+        }
+
+        string cliPath = System.IO.Path.Combine(
+            repoRoot, "src", "WotBTreader.Host.Cli", "bin", "Release",
+            "net10.0", "WotBTreader.Host.Cli.exe");
+
+        if (!System.IO.File.Exists(cliPath))
+        {
+            return (false, "CLI not built — run build.cmd first");
+        }
+
+        try
+        {
+            using Process process = new()
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = cliPath,
+                    Arguments = $"import \"{replayPath}\" --json --data-root \"{dataRoot}\"",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                },
+            };
+
+            process.Start();
+            string stdout = await process.StandardOutput.ReadToEndAsync();
+            await process.WaitForExitAsync();
+
+            if (process.ExitCode == 0)
+            {
+                return (true, string.Empty);
+            }
+
+            // Try to extract a user-safe error from the JSON envelope.
+            string errorMessage = ExtractCliErrorMessage(stdout) ?? "Import failed";
+            return (false, errorMessage);
+        }
+        catch (Exception ex) when (
+            ex is System.ComponentModel.Win32Exception
+            or InvalidOperationException
+            or System.IO.IOException)
+        {
+            return (false, ex.GetType().Name);
+        }
+    }
+
+    private static string? ExtractCliErrorMessage(string json)
+    {
+        try
+        {
+            using System.Text.Json.JsonDocument doc = System.Text.Json.JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("errors", out System.Text.Json.JsonElement errors)
+                && errors.GetArrayLength() > 0)
+            {
+                System.Text.Json.JsonElement first = errors[0];
+                if (first.TryGetProperty("message", out System.Text.Json.JsonElement message))
+                {
+                    return message.GetString();
+                }
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // Not valid JSON — just return null.
+        }
+
+        return null;
+    }
+
+    private bool LaunchGameWithReplayPath(string replayPath)
+    {
+        try
+        {
+            System.IO.Directory.CreateDirectory(GameReplaysFolder);
+            string target = System.IO.Path.Combine(
+                GameReplaysFolder,
+                System.IO.Path.GetFileName(replayPath));
+
+            if (!string.Equals(
+                System.IO.Path.GetFullPath(replayPath),
+                System.IO.Path.GetFullPath(target),
+                StringComparison.OrdinalIgnoreCase))
+            {
+                System.IO.File.Copy(replayPath, target, overwrite: true);
+            }
+            else
+            {
+                target = replayPath;
+            }
+
+            string? gamePath = FindGameExecutablePath();
+            if (gamePath is null) return false;
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = gamePath,
+                Arguments = $"\"{target}\"",
+                UseShellExecute = true,
+            });
+
+            _windowTrackTimer.Start();
+            return true;
+        }
+        catch (Exception ex) when (
+            ex is System.IO.IOException or UnauthorizedAccessException
+            or InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
     // ── Button handlers ──────────────────────────────────────
 
     private void CloseWindow(object sender, System.Windows.RoutedEventArgs e)
@@ -240,6 +632,66 @@ public partial class MainWindow : System.Windows.Window, IDisposable
     {
         if (e.ButtonState == System.Windows.Input.MouseButtonState.Pressed)
             DragMove();
+    }
+
+    // ── Drag-and-drop file import ───────────────────────────
+
+    private void Window_DragEnter(object sender, System.Windows.DragEventArgs e)
+    {
+        if (e.Data.GetDataPresent(System.Windows.DataFormats.FileDrop))
+        {
+            e.Effects = System.Windows.DragDropEffects.Copy;
+        }
+        else
+        {
+            e.Effects = System.Windows.DragDropEffects.None;
+        }
+
+        e.Handled = true;
+    }
+
+    private async void Window_Drop(object sender, System.Windows.DragEventArgs e)
+    {
+        if (e.Data.GetData(System.Windows.DataFormats.FileDrop) is not string[] files || files.Length == 0)
+        {
+            return;
+        }
+
+        // Take the first .wotbreplay file dropped.
+        string? replayFile = null;
+        foreach (string file in files)
+        {
+            if (file.EndsWith(".wotbreplay", StringComparison.OrdinalIgnoreCase))
+            {
+                replayFile = file;
+                break;
+            }
+
+            // Also accept any file if it's the only one dropped.
+            if (files.Length == 1)
+            {
+                replayFile = file;
+                break;
+            }
+        }
+
+        if (replayFile is null || !System.IO.File.Exists(replayFile)) return;
+
+        if (_isQuickLaunching)
+        {
+            _viewModel.Status = "Already launching — drop ignored";
+            return;
+        }
+
+        _isQuickLaunching = true;
+        try
+        {
+            await QuickLaunchWithPathAsync(replayFile);
+        }
+        finally
+        {
+            _isQuickLaunching = false;
+        }
     }
 
     // ── Game window tracking (P/Invoke) ──────────────────────
@@ -289,43 +741,8 @@ public partial class MainWindow : System.Windows.Window, IDisposable
     {
         if (session is null) return false;
 
-        try
-        {
-            string? replayPath = FindReplayFile();
-            if (replayPath is null) return false;
-
-            System.IO.Directory.CreateDirectory(GameReplaysFolder);
-            string target = System.IO.Path.Combine(
-                GameReplaysFolder,
-                System.IO.Path.GetFileName(replayPath));
-
-            if (!string.Equals(
-                System.IO.Path.GetFullPath(replayPath),
-                System.IO.Path.GetFullPath(target),
-                StringComparison.OrdinalIgnoreCase))
-            {
-                System.IO.File.Copy(replayPath, target, overwrite: true);
-            }
-
-            string? gamePath = FindGameExecutablePath();
-            if (gamePath is null) return false;
-
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = gamePath,
-                Arguments = $"\"{target}\"",
-                UseShellExecute = true,
-            });
-
-            _windowTrackTimer.Start();
-            return true;
-        }
-        catch (Exception ex) when (
-            ex is System.IO.IOException or UnauthorizedAccessException
-            or InvalidOperationException)
-        {
-            return false;
-        }
+        string? replayPath = FindReplayFile();
+        return replayPath is not null && LaunchGameWithReplayPath(replayPath);
     }
 
     private static string? FindReplayFile()

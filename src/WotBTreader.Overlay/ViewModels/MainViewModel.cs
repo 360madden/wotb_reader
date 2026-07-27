@@ -116,7 +116,7 @@ public class MainViewModel : INotifyPropertyChanged
     public string Status
     {
         get => _status;
-        private set
+        internal set
         {
             _status = value;
             OnPropertyChanged();
@@ -162,7 +162,7 @@ public class MainViewModel : INotifyPropertyChanged
     /// <summary>Refreshes the session list from the web host.</summary>
     public ICommand RefreshCommand { get; }
 
-    /// <summary>Launches wotblitz.exe with the currently selected replay.</summary>
+    /// <summary>Launches wotblitz.exe with the currently selected replay (re-launch).</summary>
     public ICommand LaunchGameCommand { get; }
 
     /// <summary>Toggle play/pause for the replay timeline scrubber.</summary>
