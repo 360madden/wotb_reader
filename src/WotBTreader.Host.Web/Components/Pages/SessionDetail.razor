@@ -59,6 +59,22 @@ else
         </ul>
     }
 
+    @* ── Battle stats ── *@
+    @if (_detail.Events.Count > 0)
+    {
+        <h2>Battle Stats</h2>
+        <div class="row mb-3">
+            <div class="col-auto me-4">
+                <span class="badge bg-primary fs-6">🔵 @_dmgTeam1.ToString("N0") dmg taken</span>
+                <span class="badge bg-primary ms-2">@_killsTeam1 kills</span>
+            </div>
+            <div class="col-auto">
+                <span class="badge bg-danger fs-6">🔴 @_dmgTeam2.ToString("N0") dmg taken</span>
+                <span class="badge bg-danger ms-2">@_killsTeam2 kills</span>
+            </div>
+        </div>
+    }
+
     <h2>Participants</h2>
     @if (_detail.Participants.Count == 0)
     {
@@ -90,6 +106,43 @@ else
             </tbody>
         </table>
     }
+
+    @* ── Events table ── *@
+    @if (_detail.Events.Count > 0)
+    {
+        <h2>Events</h2>
+        <div class="mb-2">
+            <label class="form-label me-2">Filter:</label>
+            <select class="form-select form-select-sm d-inline-block w-auto" @bind="_eventKindFilter">
+                <option value="">All kinds</option>
+                <option value="Damage">Damage</option>
+                <option value="Destroyed">Destroyed</option>
+                <option value="BattleEnded">Battle Ended</option>
+                <option value="ParticipantObserved">Participant Observed</option>
+            </select>
+        </div>
+        <table class="table table-sm table-striped">
+            <thead>
+                <tr>
+                    <th scope="col" style="width:80px">Time</th>
+                    <th scope="col">Kind</th>
+                    <th scope="col">Participant</th>
+                    <th scope="col">Summary</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (EventResponse evt in FilteredEvents())
+                {
+                    <tr>
+                        <td>@evt.ReplayTime.ToString(@"mm\:ss")</td>
+                        <td>@evt.Kind</td>
+                        <td>@ParticipantName(evt.ParticipantId)</td>
+                        <td>@evt.Summary</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
 }
 
 @code {
@@ -99,15 +152,19 @@ else
     private SessionDetailResponse? _detail;
     private bool _loading = true;
     private string? _error;
+    private string _eventKindFilter = "";
+    private int _dmgTeam1, _dmgTeam2, _killsTeam1, _killsTeam2;
 
     protected override async Task OnParametersSetAsync()
     {
         _loading = true;
         _error = null;
         _detail = null;
+        _eventKindFilter = "";
         try
         {
             _detail = await ReadClient.GetSessionAsync(BattleSessionId, CancellationToken.None);
+            ComputeStats();
         }
         catch (Exception exception)
         {
@@ -116,6 +173,69 @@ else
         finally
         {
             _loading = false;
+        }
+    }
+
+    private int? TeamOf(string? participantId)
+    {
+        if (participantId is null || _detail is null) return null;
+        foreach (ParticipantResponse p in _detail.Participants)
+        {
+            if (p.ParticipantId == participantId)
+                return p.TeamNumber;
+        }
+        return null;
+    }
+
+    private string ParticipantName(string? participantId)
+    {
+        if (participantId is null || _detail is null) return "—";
+        foreach (ParticipantResponse p in _detail.Participants)
+        {
+            if (p.ParticipantId == participantId)
+                return p.PlayerName ?? p.TankName ?? p.ParticipantId;
+        }
+        return participantId;
+    }
+
+    private static int ParseDamage(string summary)
+    {
+        int colon = summary.IndexOf(':');
+        int hp = summary.LastIndexOf(" HP", StringComparison.Ordinal);
+        if (colon < 0 || hp <= colon) return 0;
+        string num = summary.AsSpan(colon + 1, hp - colon - 1).Trim().ToString();
+        return int.TryParse(num, out int result) ? result : 0;
+    }
+
+    private void ComputeStats()
+    {
+        _dmgTeam1 = _dmgTeam2 = _killsTeam1 = _killsTeam2 = 0;
+        if (_detail is null) return;
+        foreach (EventResponse evt in _detail.Events)
+        {
+            if (evt.Kind == "Destroyed")
+            {
+                int? team = TeamOf(evt.ParticipantId);
+                if (team == 1) _killsTeam1++;
+                else if (team == 2) _killsTeam2++;
+            }
+            else if (evt.Kind == "Damage")
+            {
+                int dmg = ParseDamage(evt.Summary);
+                int? team = TeamOf(evt.ParticipantId);
+                if (team == 1) _dmgTeam1 += dmg;
+                else if (team == 2) _dmgTeam2 += dmg;
+            }
+        }
+    }
+
+    private IEnumerable<EventResponse> FilteredEvents()
+    {
+        if (_detail is null) yield break;
+        foreach (EventResponse evt in _detail.Events)
+        {
+            if (string.IsNullOrEmpty(_eventKindFilter) || evt.Kind == _eventKindFilter)
+                yield return evt;
         }
     }
 }
