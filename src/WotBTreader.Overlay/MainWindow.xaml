@@ -153,7 +153,8 @@
         <views:PositionPlot PointsSource="{Binding Points}" IsHitTestVisible="False"
                             WorldMinX="{Binding WorldMinX}" WorldMaxX="{Binding WorldMaxX}"
                             WorldMinZ="{Binding WorldMinZ}" WorldMaxZ="{Binding WorldMaxZ}"
-                            MapName="{Binding MapName}"/>
+                            MapName="{Binding MapName}"
+                            MinimapImage="{Binding MinimapImageSource}"/>
 
         <!-- ═══ Sidebar panel — gradient, shadowed, rounded ═══ -->
         <Border x:Name="SidebarBorder" HorizontalAlignment="Right" VerticalAlignment="Top"
@@ -478,12 +479,44 @@
                                                    FontFamily="Consolas"
                                                    Text="{Binding ReplayTime, StringFormat={}{0:mm\\:ss}}"
                                                    VerticalAlignment="Center"/>
-                                        <TextBlock FontSize="9" Foreground="#CCFFFFFF"
+                                        <!-- Event icon + color-coded summary -->
+                                        <TextBlock x:Name="EventIcon" FontSize="9" Width="14"
+                                                   VerticalAlignment="Center" Margin="2,0,2,0"
+                                                   Foreground="#66FFFFFF"/>
+                                        <TextBlock x:Name="EventSummary" FontSize="9"
                                                    VerticalAlignment="Center"
                                                    Text="{Binding Summary}"
                                                    TextTrimming="CharacterEllipsis"/>
                                     </StackPanel>
                                 </Border>
+                                <DataTemplate.Triggers>
+                                    <!-- Damage: red -->
+                                    <DataTrigger Binding="{Binding Kind}" Value="Damage">
+                                        <Setter TargetName="EventIcon" Property="Text" Value="💥"/>
+                                        <Setter TargetName="EventSummary" Property="Foreground" Value="#FF6644"/>
+                                    </DataTrigger>
+                                    <!-- Destroyed: orange-red, semi-bold -->
+                                    <DataTrigger Binding="{Binding Kind}" Value="Destroyed">
+                                        <Setter TargetName="EventIcon" Property="Text" Value="💀"/>
+                                        <Setter TargetName="EventSummary" Property="Foreground" Value="#FF8866"/>
+                                        <Setter TargetName="EventSummary" Property="FontWeight" Value="SemiBold"/>
+                                    </DataTrigger>
+                                    <!-- BattleStarted: green -->
+                                    <DataTrigger Binding="{Binding Kind}" Value="BattleStarted">
+                                        <Setter TargetName="EventIcon" Property="Text" Value="🚩"/>
+                                        <Setter TargetName="EventSummary" Property="Foreground" Value="#66DD88"/>
+                                    </DataTrigger>
+                                    <!-- BattleEnded: gray -->
+                                    <DataTrigger Binding="{Binding Kind}" Value="BattleEnded">
+                                        <Setter TargetName="EventIcon" Property="Text" Value="🏁"/>
+                                        <Setter TargetName="EventSummary" Property="Foreground" Value="#889999"/>
+                                    </DataTrigger>
+                                    <!-- ParticipantObserved: blue -->
+                                    <DataTrigger Binding="{Binding Kind}" Value="ParticipantObserved">
+                                        <Setter TargetName="EventIcon" Property="Text" Value="👤"/>
+                                        <Setter TargetName="EventSummary" Property="Foreground" Value="#66AAFF"/>
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>

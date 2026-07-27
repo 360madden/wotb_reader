@@ -14,6 +14,7 @@ internal static class WebSurfaceServiceCollectionExtensions
             configuration.GetSection(RendezvousOptions.SectionName));
         services.AddHostedService<RendezvousPublisher>();
         services.AddScoped<IDashboardReadClient, DashboardReadClient>();
+        services.AddSingleton<MinimapTextureService>();
         return services;
     }
 }

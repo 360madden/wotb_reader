@@ -60,6 +60,13 @@ public sealed partial class PositionPlot : UserControl
             typeof(PositionPlot),
             new PropertyMetadata(null, OnVisualChanged));
 
+    public static readonly DependencyProperty MinimapImageProperty =
+        DependencyProperty.Register(
+            nameof(MinimapImage),
+            typeof(ImageSource),
+            typeof(PositionPlot),
+            new PropertyMetadata(null, OnVisualChanged));
+
     public PositionPlot()
     {
         InitializeComponent();
@@ -100,6 +107,16 @@ public sealed partial class PositionPlot : UserControl
     {
         get => (string?)GetValue(MapNameProperty);
         set => SetValue(MapNameProperty, value);
+    }
+
+    /// <summary>
+    /// The minimap texture image loaded from the web host for the current map.
+    /// Rendered as background behind position dots when available.
+    /// </summary>
+    public ImageSource? MinimapImage
+    {
+        get => (ImageSource?)GetValue(MinimapImageProperty);
+        set => SetValue(MinimapImageProperty, value);
     }
 
     private static void OnVisualChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
@@ -217,6 +234,8 @@ public sealed partial class PositionPlot : UserControl
     /// <summary>
     /// Draws a subtle reference grid and map label on the background canvas,
     /// giving spatial context behind position dots without requiring game textures.
+    /// When a minimap image is available, it is rendered as the background instead
+    /// of the panel fill.
     /// </summary>
     private void DrawBackground()
     {
@@ -225,22 +244,73 @@ public sealed partial class PositionPlot : UserControl
         BackgroundCanvas.Children.Clear();
         if (w <= 0 || h <= 0) return;
 
-        // Subtle panel fill to delineate the plot area from the transparent overlay.
-        Rectangle bg = new()
+        double plotW = w - (2 * PlotPadding);
+        double plotH = h - (2 * PlotPadding);
+
+        // ── Minimap image background ──
+        ImageSource? minimap = MinimapImage;
+        if (minimap is not null)
         {
-            Width = w,
-            Height = h,
-            Fill = new SolidColorBrush(Color.FromArgb(12, 255, 255, 255)),
-            RadiusX = 4,
-            RadiusY = 4,
-        };
-        BackgroundCanvas.Children.Add(bg);
+            // Scale the minimap to fill the plot area, preserving aspect ratio.
+            double imgW = minimap.Width;
+            double imgH = minimap.Height;
+            if (imgW <= 0 || imgH <= 0)
+            {
+                imgW = 512;
+                imgH = 512;
+            }
+
+            double scale = Math.Min(plotW / imgW, plotH / imgH);
+            double renderW = imgW * scale;
+            double renderH = imgH * scale;
+
+            // Center within the plot area.
+            double offsetX = PlotPadding + (plotW - renderW) / 2;
+            double offsetY = PlotPadding + (plotH - renderH) / 2;
+
+            Image img = new()
+            {
+                Source = minimap,
+                Width = renderW,
+                Height = renderH,
+                Opacity = 0.45,
+                Stretch = Stretch.Fill,
+            };
+            Canvas.SetLeft(img, offsetX);
+            Canvas.SetTop(img, offsetY);
+            BackgroundCanvas.Children.Add(img);
+
+            // Subtle border around the minimap.
+            Rectangle border = new()
+            {
+                Width = renderW,
+                Height = renderH,
+                Stroke = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
+                StrokeThickness = 1,
+                RadiusX = 4,
+                RadiusY = 4,
+            };
+            Canvas.SetLeft(border, offsetX);
+            Canvas.SetTop(border, offsetY);
+            BackgroundCanvas.Children.Add(border);
+        }
+        else
+        {
+            // Subtle panel fill when no minimap is available.
+            Rectangle bg = new()
+            {
+                Width = w,
+                Height = h,
+                Fill = new SolidColorBrush(Color.FromArgb(12, 255, 255, 255)),
+                RadiusX = 4,
+                RadiusY = 4,
+            };
+            BackgroundCanvas.Children.Add(bg);
+        }
 
         // Grid lines — light dashed lines for spatial reference.
         Color gridColor = Color.FromArgb(14, 255, 255, 255);
-        double usableW = w - (2 * PlotPadding);
-        double usableH = h - (2 * PlotPadding);
-        double gridSpacing = Math.Max(40, Math.Min(usableW, usableH) / 12);
+        double gridSpacing = Math.Max(40, Math.Min(plotW, plotH) / 12);
 
         for (double x = PlotPadding + gridSpacing; x < w - PlotPadding; x += gridSpacing)
         {

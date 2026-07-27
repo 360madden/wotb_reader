@@ -68,6 +68,27 @@ public sealed class TreaderApiClient : IDisposable
         return JsonSerializer.Deserialize<IReadOnlyList<MapBoundaryResponse>>(json, SerializerOptions) ?? [];
     }
 
+    /// <summary>
+    /// Fetches the minimap texture PNG for the given map ID.
+    /// Returns the raw PNG bytes, or null if unavailable.
+    /// </summary>
+    public async Task<byte[]?> GetMinimapPngAsync(string mapId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(mapId))
+            return null;
+
+        try
+        {
+            return await _httpClient.GetByteArrayAsync(
+                $"api/v1/maps/{Uri.EscapeDataString(mapId)}/minimap",
+                cancellationToken);
+        }
+        catch (HttpRequestException)
+        {
+            return null;
+        }
+    }
+
     public void Dispose()
     {
         _httpClient.Dispose();

@@ -4,6 +4,7 @@ using WotBTreader.Application.Storage;
 using WotBTreader.Core;
 using WotBTreader.Host.Web.Contracts;
 using WotBTreader.Host.Web.Infrastructure;
+using WotBTreader.Host.Web.Services;
 
 namespace WotBTreader.Host.Web.Endpoints;
 
@@ -32,6 +33,7 @@ internal static class ReadApiEndpoints
         group.MapGet("/sessions", ListSessionsAsync);
         group.MapGet("/sessions/{battleSessionId:guid}", GetSessionAsync);
         group.MapGet("/maps/boundaries", GetMapBoundariesAsync);
+        group.MapGet("/maps/{mapId}/minimap", GetMinimapAsync);
         group.MapGet("/decode-runs/{decodeRunId:guid}", GetDecodeRunAsync);
         return builder;
     }
@@ -121,6 +123,29 @@ internal static class ReadApiEndpoints
             .GetMapBoundariesAsync(cancellationToken)
             .ConfigureAwait(false);
         return Results.Ok(boundaries.Select(MapBoundaryResponse.From));
+    }
+
+    internal static async Task<IResult> GetMinimapAsync(
+        MinimapTextureService minimapService,
+        string mapId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(minimapService);
+        if (string.IsNullOrWhiteSpace(mapId))
+        {
+            return Results.BadRequest("A map identifier is required.");
+        }
+
+        byte[]? pngBytes = await minimapService
+            .GetMinimapPngAsync(mapId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (pngBytes is null)
+        {
+            return Results.NotFound($"No minimap texture is available for map '{mapId}'.");
+        }
+
+        return Results.File(pngBytes, "image/png");
     }
 
     internal static async Task<IResult> GetDecodeRunAsync(

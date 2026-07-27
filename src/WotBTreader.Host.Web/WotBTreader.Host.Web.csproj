@@ -10,6 +10,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="SkiaSharp" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\WotBTreader.Application\WotBTreader.Application.csproj" />
     <ProjectReference Include="..\WotBTreader.Bootstrap\WotBTreader.Bootstrap.csproj" />
     <ProjectReference Include="..\WotBTreader.Core\WotBTreader.Core.csproj" />

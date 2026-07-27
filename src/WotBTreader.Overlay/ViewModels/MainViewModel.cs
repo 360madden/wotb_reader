@@ -3,6 +3,8 @@ using System.ComponentModel;
 using System.Net.Http;
 using System.Text.Json;
 using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using WotBTreader.Overlay.Contracts;
 using WotBTreader.Overlay.Discovery;
 using WotBTreader.Overlay.Services;
@@ -53,6 +55,8 @@ public class MainViewModel : INotifyPropertyChanged
     private int _killsTeam1;
     private int _killsTeam2;
     private string? _mapName;
+    private ImageSource? _minimapImageSource;
+    private readonly Dictionary<string, ImageSource> _minimapCache = new(StringComparer.OrdinalIgnoreCase);
     private string _searchText = string.Empty;
 
     public MainViewModel()
@@ -303,6 +307,16 @@ public class MainViewModel : INotifyPropertyChanged
     {
         get => _mapName;
         private set { _mapName = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>
+    /// The minimap texture image for the currently selected session's map,
+    /// loaded from the web host's minimap endpoint. Null while loading or unavailable.
+    /// </summary>
+    public ImageSource? MinimapImageSource
+    {
+        get => _minimapImageSource;
+        private set { _minimapImageSource = value; OnPropertyChanged(); }
     }
 
     /// <summary>Current scrubber position in the replay timeline.</summary>
@@ -605,6 +619,9 @@ public class MainViewModel : INotifyPropertyChanged
 
             ApplyMapBoundaries(selected);
 
+            // Load minimap texture for this map.
+            _ = LoadMinimapAsync(detail.Session?.MapId);
+
             if (detail.PositionsTruncated)
             {
                 Status = $"showing latest 5000 of {detail.TotalPositionCount} positions";
@@ -614,6 +631,63 @@ public class MainViewModel : INotifyPropertyChanged
         {
             Status = "Host unreachable";
             ClearSessionState();
+        }
+    }
+
+    private async Task LoadMinimapAsync(string? mapId)
+    {
+        if (string.IsNullOrWhiteSpace(mapId))
+        {
+            MinimapImageSource = null;
+            return;
+        }
+
+        // Check cache first.
+        lock (_minimapCache)
+        {
+            if (_minimapCache.TryGetValue(mapId, out ImageSource? cached))
+            {
+                MinimapImageSource = cached;
+                return;
+            }
+        }
+
+        TreaderApiClient? client = _client;
+        if (client is null)
+        {
+            MinimapImageSource = null;
+            return;
+        }
+
+        try
+        {
+            byte[]? pngBytes = await client.GetMinimapPngAsync(mapId);
+            if (pngBytes is not null && pngBytes.Length > 0)
+            {
+                BitmapImage bitmap = new();
+                bitmap.BeginInit();
+                bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                bitmap.StreamSource = new System.IO.MemoryStream(pngBytes);
+                bitmap.EndInit();
+                bitmap.Freeze();
+
+                lock (_minimapCache)
+                {
+                    _minimapCache[mapId] = bitmap;
+                }
+
+                MinimapImageSource = bitmap;
+            }
+            else
+            {
+                MinimapImageSource = null;
+            }
+        }
+        catch (Exception ex) when (
+            ex is HttpRequestException or TaskCanceledException
+            or System.IO.IOException or NotSupportedException)
+        {
+            MinimapImageSource = null;
         }
     }
 
