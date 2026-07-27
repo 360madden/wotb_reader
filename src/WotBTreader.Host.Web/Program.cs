@@ -10,7 +10,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Binding is deliberately configured in code so an inherited ASPNETCORE_URLS value
 // cannot accidentally expose replay data on a LAN interface.
-var configuredPort = builder.Configuration.GetValue<int?>("Web:Port") ?? 0;
+var configuredPort = builder.Configuration.GetValue<int?>("Web:Port") ?? 9182;
 if (configuredPort is < 0 or > 65535)
 {
     throw new InvalidOperationException("Web:Port must be between 0 and 65535.");

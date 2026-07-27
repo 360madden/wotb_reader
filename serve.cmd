@@ -31,5 +31,6 @@ echo.
 
 set Web__Port=%WEB_PORT%
 set Paths__ApplicationDataRoot=%DATA_ROOT%
-"%PUBLISH_DIR%\WotBTreader.Host.Web.exe"
+cd /d "%PUBLISH_DIR%"
+WotBTreader.Host.Web.exe
 exit /b %ERRORLEVEL%
