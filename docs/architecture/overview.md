@@ -1,8 +1,8 @@
 # Architecture overview
 
-Status: accepted for alpha
+Status: accepted for alpha — all surfaces implemented
 
-Last updated: 2026-07-26
+Last updated: 2026-07-27
 
 WotB Treader is a Windows-first .NET 10 modular monolith. It separates evidence
 acquisition from interpretation so a newer decoder can reprocess the same

@@ -455,3 +455,32 @@ paths, names, hashes, or content were recorded.
 
 Validation: locked restore and Release build of the Replay Inspector with zero
 warnings; `scripts/scan-repository.ps1` clean after both record edits.
+
+## Amendment — U12 overlay completed, dashboard live, SignalR flowing, codebase audited (`2026-07-27T00:00:00Z`)
+
+The "Honest gaps" section is now stale. All three gaps are closed:
+
+- **The dashboard is implemented** (U8+U9+follow-on): Blazor pages for sessions
+  list, session detail, diagnostics doctor report, and overlay status.
+  `IDashboardReadClient` / `DashboardReadClient` map storage ports into wire
+  DTOs consumed by both the HTTP API and the Blazor render tree.
+- **The overlay is fully built** (5 commits, `83b3a04` → `6b622d4`): WPF with
+  MVVM architecture, rendezvous discovery, session list + position scatter
+  plot, SignalR push-based session refresh, WebView2-embedded Blazor
+  dashboard, contract compliance tests, and a concurrency bug fix.
+- **SignalR negotiate path is exempted** (`5879184`):
+  `MutationProtectionMiddleware` skips `/api/v1/stream` so the overlay's
+  `TelemetryStreamService` can negotiate without capability + antiforgery.
+  Loopback-only trust remains enforced by `LoopbackOnlyMiddleware`.
+- **Full codebase bug hunt** completed (`6b622d4`): scanned 355 tracked files
+  across 6 bug categories. Found zero `.Result` deadlocks, zero empty catch
+  blocks, zero `Task.Run` antipatterns. Found and fixed one cross-thread
+  UI mutation bug in `OnStreamSessionListChanged`.
+
+Suites: 12 test projects, 231 tests (188→231), 2 opt-in skips.
+`scripts/validate.ps1` exits zero: build 0/0 errors/warnings.
+
+See `docs/operations/handoffs/2026-07-27-signalr-webview2-completion.md` for
+full SignalR + WebView2 details and
+`docs/operations/handoffs/2026-07-27-bug-hunt-and-docs.md` for the bug hunt
+and documentation pass.

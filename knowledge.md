@@ -1,13 +1,13 @@
 # Project knowledge
 
-WotB Treader is a **Windows-first offline replay telemetry reader** for World of Tanks Blitz. It parses replay evidence, stores versioned telemetry projections, and presents a local Blazor dashboard + optional WPF/WebView2 minimap overlay.
+WotB Treader is a **Windows-first offline replay telemetry reader** for World of Tanks Blitz. It parses replay evidence, stores versioned telemetry projections, and presents a local Blazor dashboard + WPF/WebView2 overlay with SignalR push-based updates.
 
-- **Stack:** .NET 10 (C#), WPF, ASP.NET Core Blazor Web App, SQLite
+- **Stack:** .NET 10 (C#), WPF, ASP.NET Core Blazor Web App, SQLite, SignalR
 - **No:** Python, Node.js, Rust, Electron, containers, cloud services, runtime AI, dynamic decoder DLLs
 
 ## Quickstart
 
-**Requirements:** Windows 10/11, .NET SDK 10.0.302, Edge WebView2 Runtime (for overlay)
+**Requirements:** Windows 10/11, .NET SDK 10.0.302, Edge WebView2 Runtime (for overlay dashboard tab)
 
 ```powershell
 dotnet restore WotBTreader.sln --locked-mode
@@ -28,6 +28,7 @@ dotnet test tests/WotBTreader.Core.Tests -c Release --filter "FullyQualifiedName
 ```
 
 - Tests are MSTest 4 on Microsoft.Testing.Platform. Some installed-game tests skip by default (local opt-in).
+- 12 test projects, 231 tests, 2 opt-in skips (as of 2026-07-27).
 
 ## Architecture
 
@@ -41,7 +42,13 @@ Core (no project refs)
       └── Bootstrap (composition root; all DI registration)
            ├── Host.Cli (net10.0 console)
            ├── Host.Web (net10.0 Blazor Web App, loopback-only)
-           └── Overlay → (net10.0-windows WPF/WebView2, loopback web client; NO parser/storage refs)
+           └── Overlay → (net10.0-windows WPF, loopback web client; NO parser/storage refs)
+                ├── Discovery/RendezvousLocator  (finds host via rendezvous file)
+                ├── Services/TreaderApiClient     (read API HTTP client)
+                ├── Services/TelemetryStreamService (SignalR push client, auto-reconnect)
+                ├── ViewModels/MainViewModel      (session list, position detail, BaseUri)
+                ├── Views/PositionPlot             (canvas scatter plot, team-colored)
+                └── MainWindow                     (TabControl: Position Plot + WebView2 Dashboard)
 ```
 
 **Key rules:**
@@ -60,6 +67,7 @@ Core (no project refs)
 - **Game automation:** developer-only, offline-replay-only, denied by default, fully audited.
 - **Commits:** author as `Codex Agent <codex@local.invalid>` unless user says otherwise. Never force-push. Push only when asked.
 - **Blockers:** append `docs/operations/blocker-log.md` (immutable UTC).
+- **Handoffs:** append under `docs/operations/handoffs/` per format in the handoff README. Correct with amendments, never rewrite.
 
 ## Gotchas
 
@@ -67,3 +75,5 @@ Core (no project refs)
 - In `validate.ps1`, route every native command through `Invoke-CheckedNative`; `$ErrorActionPreference='Stop'` does NOT catch non-zero exit codes.
 - `NuGetAuditMode=all` fails restore on vulnerable transitive packages. Fix with a central version pin — never suppress.
 - `scan-repository.ps1` checks for secrets (API keys, private keys, connection strings, absolute replay paths) and ignored files in source trees.
+- SignalR callbacks run on non-UI threads without a `SynchronizationContext`. Any ObservableCollection mutations from SignalR callbacks must be marshalled via `SynchronizationContext.Post`.
+- WebView2 requires the Evergreen runtime. The overlay falls back gracefully with a user-visible message if it's missing.

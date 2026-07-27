@@ -118,6 +118,32 @@ supporting both sync responses (`Task.FromResult`) and blocking
   which is untested.
 - The overlay references `Microsoft.Web.WebView2` but does not embed the
   Blazor dashboard.
+
+## Amendment — SignalR + WebView2 completed, DTO drift fixed, cross-thread bug fixed (`2026-07-27T00:00:00Z`)
+
+All three items in "What was NOT touched" and all four "Recommended next steps"
+are now resolved:
+
+- **SignalR streaming** (`5879184`): `TelemetryStreamService` connects to the
+  web host's `TelemetryHub`, consumes server-streaming `SubscribeAsync`, and
+  fires `SessionListChanged` events. `MutationProtectionMiddleware` exempts
+  `/api/v1/stream` so negotiate/connect bypass capability + antiforgery (still
+  guarded by `LoopbackOnlyMiddleware`).
+- **WebView2 dashboard** (`b799daa`): `MainWindow` now has a `TabControl` with
+  "Position Plot" (original view) and "Dashboard" (embedded Blazor UI).
+  WebView2 initialises asynchronously with graceful fallback if the runtime is
+  missing.
+- **DTO drift fixed** (`6a3a928`): `ContractComplianceTests` deserialises
+  identical JSON fixtures with both `Host.Web.Contracts.*` and
+  `Overlay.Contracts.*` types and asserts field-by-field equivalence.
+- **Cross-thread bug fixed** (`6b622d4`): `OnStreamSessionListChanged` fires on
+  a SignalR callback thread without a `SynchronizationContext`. The fix
+  captures `SynchronizationContext.Current` at construction and uses `Post` to
+  marshal `RefreshSessionsAsync` to the UI thread.
+- **BLK-0007 updated** (`9554071`): second resolution amendment documents both
+  overlay and dashboard surfaces as fully implemented.
+
+Overlay test count: 29 → 41. Full suite: 231 tests. Build: 0 errors, 0 warnings.
 - The `TreaderApiClient` reads the capability token from the rendezvous record
   but never sends it — only GET endpoints are called, which the mutation
   middleware lets through without auth.
