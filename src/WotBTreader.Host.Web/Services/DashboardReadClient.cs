@@ -13,7 +13,8 @@ namespace WotBTreader.Host.Web.Services;
 /// </summary>
 internal sealed class DashboardReadClient(
     ISessionQueryRepository sessions,
-    IDoctorService doctor) : IDashboardReadClient
+    IDoctorService doctor,
+    IComparisonRunRepository comparisons) : IDashboardReadClient
 {
     public async Task<SessionPageResponse> ListSessionsAsync(
         int offset,
@@ -72,6 +73,34 @@ internal sealed class DashboardReadClient(
 
     public async Task<DoctorReport> GetDoctorAsync(CancellationToken cancellationToken) =>
         await doctor.RunAsync(cancellationToken).ConfigureAwait(false);
+
+    public async Task<IReadOnlyList<ComparisonRun>> ListComparisonsAsync(
+        int offset,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        if (offset < 0 || limit < 1 || limit > 200)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(limit),
+                "offset must be >= 0 and limit must be between 1 and 200.");
+        }
+
+        return await comparisons
+            .ListAsync(offset, limit, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<TelemetryComparison?> GetComparisonAsync(
+        Guid comparisonRunId,
+        CancellationToken cancellationToken)
+    {
+        OperationResult<TelemetryComparison> result = await comparisons
+            .GetAsync(new ComparisonRunId(comparisonRunId), cancellationToken)
+            .ConfigureAwait(false);
+
+        return result.IsSuccess ? result.Value : null;
+    }
 
     private static SessionSummaryResponse ToSummary(DecodeRunSummary summary) =>
         new(

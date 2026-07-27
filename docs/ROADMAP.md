@@ -77,15 +77,16 @@ filesystem watching, which `GameIntegration` already provides for game logs.
 - Auto-import each new file with progress reporting
 - **Effort:** ~3 hours. Infrastructure partially exists.
 
-### 🔵 P5 — Comparison runs dashboard UI
+### 🔵 P5 — Comparison runs dashboard UI ✅
 
-The Blazor dashboard has no comparison runs page. The storage layer supports
-comparisons, and once the `compare` CLI command exists, the dashboard should
-display comparison results.
-
-- Add `/comparisons` page to the Blazor dashboard
-- Show comparison runs table with left/right artifacts and delta summaries
-- **Effort:** ~2 hours. Blazor patterns established.
+Blazor page at `/comparisons` implemented 2026-07-27:
+- Lists comparison runs with ID, comparator, created date, and View button
+- Detail view shows left/right artifacts, summary table (Exact/Tolerant/
+  Mismatch/Missing/Extra/Uncomparable with color coding), and items table
+- Error/loading/empty states handled
+- Added to IDashboardReadClient and DashboardReadClient
+- NavMenu updated with Comparisons link
+- **Done:** 54/54 web tests pass.
 
 ### 🔵 P6 — Push to remote ✅
 
@@ -95,5 +96,7 @@ Sensitive content scan: zero findings across all diffs.
 ## Action plan (this session)
 
 1. ✅ Create this roadmap document
-2. 🔜 Implement P1: `compare` CLI command (highest-value remaining feature)
-3. Validate, code review, commit
+2. ✅ Implement P1: `compare` CLI command
+3. ✅ Implement P2: `export` CLI command
+4. ✅ Implement P5: Comparisons dashboard page
+5. ✅ Validate, code review, commit, push

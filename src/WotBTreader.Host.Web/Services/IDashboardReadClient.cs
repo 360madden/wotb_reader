@@ -1,4 +1,4 @@
-using WotBTreader.Application.Diagnostics;
+using WotBTreader.Core;
 using WotBTreader.Host.Web.Contracts;
 
 namespace WotBTreader.Host.Web.Services;
@@ -18,5 +18,14 @@ public interface IDashboardReadClient
         Guid battleSessionId,
         CancellationToken cancellationToken);
 
-    Task<DoctorReport> GetDoctorAsync(CancellationToken cancellationToken);
+    Task<WotBTreader.Application.Diagnostics.DoctorReport> GetDoctorAsync(CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<ComparisonRun>> ListComparisonsAsync(
+        int offset,
+        int limit,
+        CancellationToken cancellationToken);
+
+    Task<TelemetryComparison?> GetComparisonAsync(
+        Guid comparisonRunId,
+        CancellationToken cancellationToken);
 }

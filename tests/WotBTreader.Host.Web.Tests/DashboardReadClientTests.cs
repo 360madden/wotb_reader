@@ -88,9 +88,12 @@ public sealed class DashboardReadClientTests
 
     private static DashboardReadClient CreateClient(
         FakeSessions sessions,
-        FakeDoctor? doctor = null) =>
-        new(sessions, doctor ?? new FakeDoctor(
-            new DoctorReport("1", DateTimeOffset.UnixEpoch, [])));
+        FakeDoctor? doctor = null,
+        FakeComparisons? comparisons = null) =>
+        new(sessions,
+            doctor ?? new FakeDoctor(
+                new DoctorReport("1", DateTimeOffset.UnixEpoch, [])),
+            comparisons ?? new FakeComparisons());
 
     private static EvidenceReference Evidence() =>
         new(SourceArtifactId.New(), "data.wotreplay", 0, 1, new ContentHash(new string('a', 64)));
@@ -168,5 +171,29 @@ public sealed class DashboardReadClientTests
     {
         public ValueTask<DoctorReport> RunAsync(CancellationToken cancellationToken) =>
             ValueTask.FromResult(report);
+    }
+
+    private sealed class FakeComparisons(
+        IReadOnlyList<ComparisonRun> runs = null!,
+        TelemetryComparison? comparison = null) : IComparisonRunRepository
+    {
+        public ValueTask<IReadOnlyList<ComparisonRun>> ListAsync(
+            int offset,
+            int limit,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult<IReadOnlyList<ComparisonRun>>(runs ?? []);
+
+        public ValueTask<OperationResult<TelemetryComparison>> AddAsync(
+            TelemetryComparison comparison,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult(OperationResult.Success(comparison));
+
+        public ValueTask<OperationResult<TelemetryComparison>> GetAsync(
+            ComparisonRunId comparisonRunId,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult(comparison is null
+                ? OperationResult.Failure<TelemetryComparison>(
+                    new ApplicationError("storage.not_found", "missing"))
+                : OperationResult.Success(comparison));
     }
 }

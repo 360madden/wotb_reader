@@ -1,0 +1,167 @@
+@page "/comparisons"
+@using WotBTreader.Application.Storage
+@using WotBTreader.Core
+@using WotBTreader.Host.Web.Services
+@inject IDashboardReadClient ReadClient
+
+<PageTitle>Comparisons</PageTitle>
+
+<h1>Comparisons</h1>
+
+@if (_error is not null)
+{
+    <p class="text-danger" role="alert">@_error</p>
+}
+else if (_loading)
+{
+    <p>Loading comparisons…</p>
+}
+else if (_runs.Count == 0)
+{
+    <p>No comparison runs yet. Use <code>compare list</code> in the CLI after creating comparisons.</p>
+}
+else
+{
+    <table class="table table-sm table-striped">
+        <thead>
+            <tr>
+                <th scope="col">ID</th>
+                <th scope="col">Comparator</th>
+                <th scope="col">Created</th>
+                <th scope="col"></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (ComparisonRun run in _runs)
+            {
+                <tr>
+                    <td class="text-monospace small">@run.Id.Value.ToString("D")[..8]…</td>
+                    <td>@run.ComparatorId @run.ComparatorVersion</td>
+                    <td>@run.CreatedAtUtc.ToString("g")</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary"
+                                @onclick="() => SelectAsync(run.Id.Value)">
+                            View
+                        </button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@if (_selected is not null)
+{
+    <h2 class="mt-4">Comparison Detail</h2>
+    <dl class="row">
+        <dt class="col-sm-3">Run ID</dt>
+        <dd class="col-sm-9">@_selected.Run.Id.Value</dd>
+        <dt class="col-sm-3">Left artifact</dt>
+        <dd class="col-sm-9">@_selected.Run.LeftSourceArtifactId.Value</dd>
+        <dt class="col-sm-3">Right artifact</dt>
+        <dd class="col-sm-9">@_selected.Run.RightSourceArtifactId.Value</dd>
+        <dt class="col-sm-3">Comparator</dt>
+        <dd class="col-sm-9">@_selected.Run.ComparatorId @_selected.Run.ComparatorVersion</dd>
+        <dt class="col-sm-3">Timestamp window</dt>
+        <dd class="col-sm-9">@_selected.Run.TimestampWindow.TotalMilliseconds.ToString("F0") ms</dd>
+        <dt class="col-sm-3">Created</dt>
+        <dd class="col-sm-9">@_selected.Run.CreatedAtUtc.ToString("u")</dd>
+    </dl>
+
+    <h3>Summary</h3>
+    <table class="table table-sm w-auto">
+        <thead>
+            <tr>
+                <th scope="col">Exact</th>
+                <th scope="col">Tolerant</th>
+                <th scope="col">Mismatch</th>
+                <th scope="col">Missing</th>
+                <th scope="col">Extra</th>
+                <th scope="col">Uncomparable</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="text-success">@_selected.Summary.Exact</td>
+                <td class="text-info">@_selected.Summary.Tolerant</td>
+                <td class="text-danger">@_selected.Summary.Mismatch</td>
+                <td class="text-warning">@_selected.Summary.Missing</td>
+                <td class="text-warning">@_selected.Summary.Extra</td>
+                <td class="text-muted">@_selected.Summary.Uncomparable</td>
+            </tr>
+        </tbody>
+    </table>
+
+    @if (_selected.Items.Count > 0)
+    {
+        <h3>Items (@_selected.Items.Count total)</h3>
+        <table class="table table-sm table-striped">
+            <thead>
+                <tr>
+                    <th scope="col">#</th>
+                    <th scope="col">Classification</th>
+                    <th scope="col">Event Type</th>
+                    <th scope="col">Participant</th>
+                    <th scope="col">Field</th>
+                    <th scope="col">Left</th>
+                    <th scope="col">Right</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (ComparisonItem item in _selected.Items.Take(100))
+                {
+                    <tr>
+                        <td>@item.Sequence</td>
+                        <td>@item.Classification</td>
+                        <td>@item.EventType</td>
+                        <td>@(item.ParticipantIdentity ?? "—")</td>
+                        <td>@(item.Field ?? "—")</td>
+                        <td>@(item.LeftValue ?? "—")</td>
+                        <td>@(item.RightValue ?? "—")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (_selected.Items.Count > 100)
+        {
+            <p class="text-muted">Showing first 100 of @_selected.Items.Count items.</p>
+        }
+    }
+}
+
+@code {
+    private List<ComparisonRun> _runs = [];
+    private TelemetryComparison? _selected;
+    private bool _loading = true;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _runs = [.. await ReadClient.ListComparisonsAsync(0, 200, CancellationToken.None)];
+        }
+        catch (Exception exception)
+        {
+            _error = $"Could not load comparisons ({exception.GetType().Name}).";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SelectAsync(Guid comparisonRunId)
+    {
+        _error = null;
+        try
+        {
+            _selected = await ReadClient.GetComparisonAsync(comparisonRunId, CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            _error = $"Could not load comparison detail ({exception.GetType().Name}).";
+            _selected = null;
+        }
+    }
+}
