@@ -29,6 +29,7 @@ public class MainViewModel : INotifyPropertyChanged
     private SessionRow? _selectedSession;
     private string _status = string.Empty;
     private bool _isRefreshingSessions;
+    private readonly SynchronizationContext? _syncContext;
 
     public MainViewModel()
         : this(new RendezvousLocator(), static baseUri => new TreaderApiClient(baseUri), null)
@@ -43,6 +44,7 @@ public class MainViewModel : INotifyPropertyChanged
         _locator = locator ?? throw new ArgumentNullException(nameof(locator));
         _apiClientFactory = apiClientFactory ?? throw new ArgumentNullException(nameof(apiClientFactory));
         _streamService = streamService;
+        _syncContext = SynchronizationContext.Current;
         RefreshCommand = new RelayCommand(_ => _ = RefreshSessionsAsync());
 
         if (_streamService is not null)
@@ -242,6 +244,16 @@ public class MainViewModel : INotifyPropertyChanged
 
     private void OnStreamSessionListChanged(object? sender, EventArgs e)
     {
-        _ = RefreshSessionsAsync();
+        // SignalR callbacks run on non-UI threads without a
+        // SynchronizationContext. ObservableCollection mutations must
+        // happen on the WPF dispatcher thread, so marshal the refresh.
+        if (_syncContext is not null)
+        {
+            _syncContext.Post(static state => _ = ((MainViewModel)state!).RefreshSessionsAsync(), this);
+        }
+        else
+        {
+            _ = RefreshSessionsAsync();
+        }
     }
 }
