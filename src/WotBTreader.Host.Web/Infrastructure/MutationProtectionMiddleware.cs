@@ -13,7 +13,12 @@ internal sealed class MutationProtectionMiddleware(RequestDelegate next)
         LocalMutationSecurity security,
         IAntiforgery antiforgery)
     {
+        // The SignalR hub is deliberately exempted so the overlay can connect
+        // without negotiating capability + antiforgery on every transport
+        // upgrade. The loopback-only trust boundary is enforced separately by
+        // LoopbackOnlyMiddleware.
         if (!context.Request.Path.StartsWithSegments("/api/v1") ||
+            context.Request.Path.StartsWithSegments("/api/v1/stream") ||
             HttpMethods.IsGet(context.Request.Method) ||
             HttpMethods.IsHead(context.Request.Method) ||
             HttpMethods.IsOptions(context.Request.Method))

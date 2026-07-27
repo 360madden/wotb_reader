@@ -363,6 +363,99 @@ public sealed class MainViewModelTests
             "SelectedSession setter cascade during refresh.");
     }
 
+    [TestMethod]
+    public async Task StreamService_SessionListChanged_TriggersRefresh()
+    {
+        string sessionsJson = """
+            {
+              "offset": 0,
+              "limit": 200,
+              "count": 1,
+              "items": [
+                {
+                  "decodeRun": {
+                    "decodeRunId": "0f8fad5b-d9cb-469f-a165-70867728950e",
+                    "sourceArtifactId": "aa10bb20-cc30-dd40-ee50-ff60aa70bb80",
+                    "decoderId": "wotb-replay",
+                    "decoderVersion": "1.2.3",
+                    "schemaVersion": "1.0",
+                    "status": "succeeded",
+                    "capabilities": [],
+                    "startedAtUtc": "2026-07-26T10:00:00+00:00",
+                    "completedAtUtc": null,
+                    "failureCode": null,
+                    "failureSummary": null
+                  },
+                  "session": {
+                    "battleSessionId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                    "gameVersion": "11.4.0",
+                    "arenaIdentity": "arena-1",
+                    "mapId": "maps/test",
+                    "mapName": "Stream Map",
+                    "battleTimeUtc": "2026-07-26T09:55:00+00:00",
+                    "duration": "0:05:00",
+                    "viewpointParticipantId": "p1"
+                  },
+                  "participantCount": 14,
+                  "positionCount": 500,
+                  "eventCount": 10,
+                  "rawRecordCount": 100
+                }
+              ]
+            }
+            """;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((_, _) => Task.FromResult(JsonResponse(sessionsJson)));
+        MockTelemetryStreamService streamService = new();
+        MainViewModel viewModel = CreateViewModel(handler, streamService);
+
+        // Initial refresh populates sessions and connects the stream.
+        await viewModel.RefreshSessionsAsync();
+        Assert.AreEqual(1, viewModel.Sessions.Count);
+        Assert.AreEqual(1, streamService.ConnectCallCount);
+
+        // Simulate a stream event arriving.
+        streamService.RaiseSessionListChanged();
+
+        // The stream event fires a fire-and-forget refresh. Wait for it.
+        await WaitForConditionAsync(
+            () => viewModel.Status is not ("" or "Host unreachable") && viewModel.Sessions.Count > 0,
+            TimeSpan.FromSeconds(2));
+
+        Assert.AreEqual(1, viewModel.Sessions.Count);
+    }
+
+    [TestMethod]
+    public async Task StreamService_ConnectAsync_CalledWithCorrectBaseUri()
+    {
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((_, _) => Task.FromResult(JsonResponse(
+            """{"offset":0,"limit":200,"count":0,"items":[]}""")));
+        MockTelemetryStreamService streamService = new();
+        MainViewModel viewModel = CreateViewModel(handler, streamService);
+
+        await viewModel.RefreshSessionsAsync();
+
+        Assert.AreEqual(1, streamService.ConnectCallCount);
+        Assert.IsNotNull(streamService.LastConnectedUri);
+        Assert.AreEqual("http://127.0.0.1:8123/", streamService.LastConnectedUri!.ToString());
+    }
+
+    [TestMethod]
+    public async Task StreamService_NullStreamService_NoCrashOnRefresh()
+    {
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((_, _) => Task.FromResult(JsonResponse(
+            """{"offset":0,"limit":200,"count":0,"items":[]}""")));
+        MainViewModel viewModel = CreateViewModel(handler, streamService: null);
+
+        // Must not throw.
+        await viewModel.RefreshSessionsAsync();
+
+        Assert.AreEqual("0 session(s)", viewModel.Status);
+        Assert.AreEqual(0, viewModel.Sessions.Count);
+    }
+
     private static async Task WaitForConditionAsync(
         Func<bool> condition,
         TimeSpan timeout)
@@ -403,13 +496,13 @@ public sealed class MainViewModelTests
         File.WriteAllText(_rendezvousPath, json);
     }
 
-    private MainViewModel CreateViewModel(FakeHttpMessageHandler? handler = null)
+    private MainViewModel CreateViewModel(FakeHttpMessageHandler? handler = null, MockTelemetryStreamService? streamService = null)
     {
         RendezvousLocator locator = new(new FakeTimeProvider(Now), _rendezvousPath);
         Func<Uri, TreaderApiClient> factory = handler is not null
             ? baseUri => new TreaderApiClient(baseUri, handler)
             : FailFactory;
-        return new MainViewModel(locator, factory);
+        return new MainViewModel(locator, factory, streamService);
     }
 
     private static TreaderApiClient FailFactory(Uri baseUri) =>
@@ -418,6 +511,29 @@ public sealed class MainViewModelTests
     private sealed class FakeTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => utcNow;
+    }
+
+    private sealed class MockTelemetryStreamService : ITelemetryStreamService
+    {
+        public int ConnectCallCount { get; private set; }
+        public Uri? LastConnectedUri { get; private set; }
+        public event EventHandler? SessionListChanged;
+
+        public Task ConnectAsync(Uri baseUri, CancellationToken cancellationToken = default)
+        {
+            ConnectCallCount++;
+            LastConnectedUri = baseUri;
+            return Task.CompletedTask;
+        }
+
+        public void RaiseSessionListChanged()
+        {
+            SessionListChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        public void Dispose()
+        {
+        }
     }
 
     private sealed class FakeHttpMessageHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handler)

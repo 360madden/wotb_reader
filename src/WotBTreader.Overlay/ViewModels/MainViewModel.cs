@@ -21,6 +21,7 @@ public class MainViewModel : INotifyPropertyChanged
 
     private readonly RendezvousLocator _locator;
     private readonly Func<Uri, TreaderApiClient> _apiClientFactory;
+    private readonly ITelemetryStreamService? _streamService;
 
     private TreaderApiClient? _client;
     private Uri? _clientBaseUri;
@@ -30,15 +31,24 @@ public class MainViewModel : INotifyPropertyChanged
     private bool _isRefreshingSessions;
 
     public MainViewModel()
-        : this(new RendezvousLocator(), static baseUri => new TreaderApiClient(baseUri))
+        : this(new RendezvousLocator(), static baseUri => new TreaderApiClient(baseUri), null)
     {
     }
 
-    public MainViewModel(RendezvousLocator locator, Func<Uri, TreaderApiClient> apiClientFactory)
+    public MainViewModel(
+        RendezvousLocator locator,
+        Func<Uri, TreaderApiClient> apiClientFactory,
+        ITelemetryStreamService? streamService = null)
     {
         _locator = locator ?? throw new ArgumentNullException(nameof(locator));
         _apiClientFactory = apiClientFactory ?? throw new ArgumentNullException(nameof(apiClientFactory));
+        _streamService = streamService;
         RefreshCommand = new RelayCommand(_ => _ = RefreshSessionsAsync());
+
+        if (_streamService is not null)
+        {
+            _streamService.SessionListChanged += OnStreamSessionListChanged;
+        }
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -93,6 +103,13 @@ public class MainViewModel : INotifyPropertyChanged
         finally
         {
             _isRefreshingSessions = false;
+        }
+
+        // After a successful refresh, connect the stream service so future
+        // session list changes arrive via push instead of polling.
+        if (_clientBaseUri is not null && _streamService is not null)
+        {
+            _ = _streamService.ConnectAsync(_clientBaseUri, CancellationToken.None);
         }
     }
 
@@ -210,5 +227,10 @@ public class MainViewModel : INotifyPropertyChanged
         _clientBaseUri = baseUri;
         oldClient?.Dispose();
         return _client;
+    }
+
+    private void OnStreamSessionListChanged(object? sender, EventArgs e)
+    {
+        _ = RefreshSessionsAsync();
     }
 }
