@@ -26,10 +26,11 @@ else
         <thead>
             <tr>
                 <th scope="col">Map</th>
+                <th scope="col">Date</th>
                 <th scope="col">Game version</th>
                 <th scope="col">Status</th>
-                <th scope="col">Participants</th>
-                <th scope="col">Positions</th>
+                <th scope="col">P</th>
+                <th scope="col">Pos</th>
                 <th scope="col"></th>
             </tr>
         </thead>
@@ -39,8 +40,9 @@ else
                 string? sessionId = item.Session?.BattleSessionId;
                 <tr>
                     <td>@(item.Session?.MapName ?? "unknown")</td>
+                    <td class="text-nowrap">@(item.Session?.BattleTimeUtc is { } dt ? dt.ToString("yyyy-MM-dd") : "—")</td>
                     <td>@(item.Session?.GameVersion ?? item.DecodeRun.SchemaVersion)</td>
-                    <td>@item.DecodeRun.Status</td>
+                    <td><span class="badge @StatusBadgeClass(item.DecodeRun.Status)">@item.DecodeRun.Status</span></td>
                     <td>@item.ParticipantCount</td>
                     <td>@item.PositionCount</td>
                     <td>
@@ -62,6 +64,14 @@ else
 @code {
     private SessionPageResponse? _page;
     private string? _error;
+
+    private static string StatusBadgeClass(string? status) => status switch
+    {
+        "Succeeded" => "bg-success",
+        "Failed" => "bg-danger",
+        "Partial" => "bg-warning text-dark",
+        _ => "bg-secondary",
+    };
 
     protected override async Task OnInitializedAsync()
     {

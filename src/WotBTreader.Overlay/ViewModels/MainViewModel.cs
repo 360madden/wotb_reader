@@ -86,8 +86,10 @@ public class MainViewModel : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
+    /// <summary>All sessions from the current web host. This is the unfiltered source; bind to <see cref="FilteredSessions"/> for the displayed list.</summary>
     public ObservableCollection<SessionRow> Sessions { get; } = new();
 
+    /// <summary>Plot points derived from the current time-filtered position data.</summary>
     public ObservableCollection<PlotPoint> Points { get; } = new();
 
     /// <summary>
@@ -131,6 +133,10 @@ public class MainViewModel : INotifyPropertyChanged
         get => _clientBaseUri?.ToString() ?? string.Empty;
     }
 
+    /// <summary>
+    /// The currently selected session row. Setting this triggers an async
+    /// detail load via <see cref="RefreshSelectedAsync"/>.
+    /// </summary>
     public SessionRow? SelectedSession
     {
         get => _selectedSession;
@@ -153,6 +159,7 @@ public class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>Refreshes the session list from the web host.</summary>
     public ICommand RefreshCommand { get; }
 
     /// <summary>Launches wotblitz.exe with the currently selected replay.</summary>
@@ -170,24 +177,28 @@ public class MainViewModel : INotifyPropertyChanged
     /// <summary>Cycle through playback speeds: 0.5x, 1x, 2x, 4x, 8x.</summary>
     public ICommand CycleSpeedCommand { get; }
 
+    /// <summary>Minimum world X coordinate for the current map boundary projection.</summary>
     public double WorldMinX
     {
         get => _worldMinX;
         private set { _worldMinX = value; OnPropertyChanged(); }
     }
 
+    /// <summary>Maximum world X coordinate for the current map boundary projection.</summary>
     public double WorldMaxX
     {
         get => _worldMaxX;
         private set { _worldMaxX = value; OnPropertyChanged(); }
     }
 
+    /// <summary>Minimum world Z coordinate for the current map boundary projection.</summary>
     public double WorldMinZ
     {
         get => _worldMinZ;
         private set { _worldMinZ = value; OnPropertyChanged(); }
     }
 
+    /// <summary>Maximum world Z coordinate for the current map boundary projection.</summary>
     public double WorldMaxZ
     {
         get => _worldMaxZ;

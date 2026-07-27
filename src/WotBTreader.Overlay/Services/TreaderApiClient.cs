@@ -14,6 +14,12 @@ public sealed class TreaderApiClient : IDisposable
 
     private readonly HttpClient _httpClient;
 
+    /// <summary>
+    /// Creates a read-only client for the loopback API.
+    /// </summary>
+    /// <param name="baseUri">Must be an http(s) loopback address (localhost, 127.0.0.1, or [::1]).</param>
+    /// <param name="handler">Optional HttpMessageHandler for test injection.</param>
+    /// <exception cref="ArgumentException">Thrown when baseUri is not a loopback web URI.</exception>
     public TreaderApiClient(Uri baseUri, HttpMessageHandler? handler = null)
     {
         if (!IsLoopbackWebUri(baseUri))
@@ -26,6 +32,11 @@ public sealed class TreaderApiClient : IDisposable
             : new HttpClient { BaseAddress = baseUri };
     }
 
+    /// <summary>Fetches a paginated list of session summaries.</summary>
+    /// <param name="offset">Zero-based page offset.</param>
+    /// <param name="limit">Maximum items to return (1–200).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The page response, or null if deserialization fails.</returns>
     public async Task<SessionPageResponse?> GetSessionsAsync(int offset, int limit, CancellationToken cancellationToken = default)
     {
         string json = await _httpClient.GetStringAsync(
@@ -34,6 +45,10 @@ public sealed class TreaderApiClient : IDisposable
         return JsonSerializer.Deserialize<SessionPageResponse>(json, SerializerOptions);
     }
 
+    /// <summary>Fetches the full detail projection for a single battle session.</summary>
+    /// <param name="battleSessionId">The session to load.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The detail response, or null if deserialization fails or the session is not found.</returns>
     public async Task<SessionDetailResponse?> GetSessionDetailAsync(Guid battleSessionId, CancellationToken cancellationToken = default)
     {
         string json = await _httpClient.GetStringAsync(
@@ -42,6 +57,9 @@ public sealed class TreaderApiClient : IDisposable
         return JsonSerializer.Deserialize<SessionDetailResponse>(json, SerializerOptions);
     }
 
+    /// <summary>Fetches the complete map boundary catalogue for minimap projection.</summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>List of map boundaries; empty list on failure.</returns>
     public async Task<IReadOnlyList<MapBoundaryResponse>> GetMapBoundariesAsync(CancellationToken cancellationToken = default)
     {
         string json = await _httpClient.GetStringAsync(
