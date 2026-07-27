@@ -535,10 +535,7 @@ public class MainViewModel : INotifyPropertyChanged
         TreaderApiClient? client = _client;
         if (selected is null || client is null)
         {
-            Participants = [];
-            EventCount = 0;
-            Events = [];
-            MapName = null;
+            ClearSessionState();
             return;
         }
 
@@ -547,10 +544,7 @@ public class MainViewModel : INotifyPropertyChanged
             SessionDetailResponse? detail = await client.GetSessionDetailAsync(selected.BattleSessionId, cancellationToken);
             if (detail is null)
             {
-                Participants = [];
-                EventCount = 0;
-                Events = [];
-                MapName = null;
+                ClearSessionState();
                 return;
             }
 
@@ -585,11 +579,25 @@ public class MainViewModel : INotifyPropertyChanged
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or ObjectDisposedException)
         {
             Status = "Host unreachable";
-            Participants = [];
-            EventCount = 0;
-            Events = [];
-            MapName = null;
+            ClearSessionState();
         }
+    }
+
+    /// <summary>
+    /// Clears all session-derived state so stale data never lingers on screen
+    /// after session deselection, null detail responses, or API errors.
+    /// </summary>
+    private void ClearSessionState()
+    {
+        _allPositions = [];
+        Points.Clear();
+        Participants = [];
+        EventCount = 0;
+        Events = [];
+        MapName = null;
+        Duration = TimeSpan.Zero;
+        _currentTime = TimeSpan.Zero;
+        IsPlaying = false;
     }
 
     protected void OnPropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string? name = null)
