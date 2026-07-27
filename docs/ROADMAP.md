@@ -24,18 +24,23 @@ All alpha surfaces are implemented and validated:
 
 ## Remaining items (priority order)
 
-### 🔴 P0 — Smoke test ✅ (partial)
+### 🔴 P0 — Smoke test ✅
 
-Web host smoke test completed 2026-07-27:
-- ✅ Web host starts on port 9182, sessions API returns valid JSON
-- ✅ Doctor API returns all checks passing
-- ✅ Rendezvous file published with correct baseUri
-- ✅ Overlay launches without crash (exit code 0 in headless env)
-- ⚠️ Full visual verification (position dots, WebView2 dashboard,
-  SignalR push) requires a display session
+Full visual smoke test completed 2026-07-27 using `dotnet publish` output:
+- ✅ Web host starts on port 9182, all API endpoints pass
+- ✅ Sessions page: shows "No decoded sessions yet" cleanly
+- ✅ Comparisons page: shows "No comparison runs yet" cleanly
+- ✅ Diagnostics page: all 5 doctor checks pass with green status
+- ✅ Navigation: Sessions, Overlay, Comparisons, Diagnostics all work
+- ✅ Static assets: blazor.web.js, app.css, Bootstrap, auto-generated CSS all serve 200
+- ✅ Browser console: zero errors
+- ✅ Overlay launches and discovers host via rendezvous
+- 🔧 Fix: added `<Content Update="wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" />`
+  to csproj so wwwroot is available when running from build output
+- 🔧 Note: full Blazor interactive features require `dotnet publish` (not just build)
+  to generate _framework/blazor.web.js and scoped CSS bundles
 
-**Evidence:** host log shows migration + startup, all API endpoints
-return correct schemas, overlay process exits clean.
+**Evidence:** host log + browser agent report + API responses all captured.
 
 ### 🟡 P1 — `compare` CLI command ✅
 
