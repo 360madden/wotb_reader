@@ -51,6 +51,21 @@ Full visual smoke test completed 2026-07-27 using `dotnet publish` output:
 
 **Evidence:** host log + browser agent report + API responses all captured.
 
+### 🔴 P0-b — End-to-end replay import → dashboard → overlay ✅
+
+Full end-to-end test completed 2026-07-27:
+- ✅ Synthetic replay created via `SyntheticReplayFactory` (990 bytes, 2 participants)
+- ✅ CLI import: artifact `019fa367`, decode run `Succeeded`, 2 participants, 2 positions, 5 events
+- ✅ CLI sessions: 1 session listed with correct counts
+- ✅ Web host API: `GET /api/v1/sessions` returns 1 item with correct metadata
+- ✅ Dashboard: session appears on home page ("synthetic-map", 2 participants, 2 positions)
+- ✅ Session detail page: metadata, participants, positions all render
+- ✅ Comparisons page: empty state still correct
+- ✅ Browser console: zero errors across all pages
+- ✅ Overlay: launches cleanly, discovers host via rendezvous
+- 🔧 Bash backslash caveat: use forward slashes (`C:/tmp/...`) when passing Windows
+  paths from bash shells — backslashes get eaten as escape characters
+
 ### 🟡 P1 — `compare` CLI command ✅
 
 The storage layer fully supports comparison runs (`SqliteComparisonRunRepository`),
