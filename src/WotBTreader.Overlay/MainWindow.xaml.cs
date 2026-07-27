@@ -68,6 +68,8 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         _windowTrackTimer.Stop();
         _playbackTimer.Stop();
         _streamService.Dispose();
+        _webHostProcess?.Dispose();
+        _webHostProcess = null;
         GC.SuppressFinalize(this);
     }
 
@@ -91,7 +93,8 @@ public partial class MainWindow : System.Windows.Window, IDisposable
             : "📁 replays folder not found";
 
         GamePathInfo.Text = $"{gameText}  |  {replaysText}";
-        GamePathInfo.ToolTip = $"Game: {(gamePath ?? "not found")}\nReplays: {GameReplaysFolder}\n\nSet WOTB_GAME_PATH env var to override game location.\nDrag .wotbreplay files onto this window to quick-launch.";
+        string newline = Environment.NewLine;
+        GamePathInfo.ToolTip = $"Game: {(gamePath ?? "not found")}{newline}Replays: {GameReplaysFolder}{newline}{newline}Set WOTB_GAME_PATH env var to override game location.{newline}Drag .wotbreplay files onto this window to quick-launch.";
     }
 
     private void OnClosed(object? sender, EventArgs e)
@@ -740,6 +743,11 @@ public partial class MainWindow : System.Windows.Window, IDisposable
     private bool LaunchGameWithSelectedReplay(SessionRow? session)
     {
         if (session is null) return false;
+        if (_isQuickLaunching)
+        {
+            _viewModel.Status = "Already launching — please wait";
+            return false;
+        }
 
         string? replayPath = FindReplayFile();
         return replayPath is not null && LaunchGameWithReplayPath(replayPath);
