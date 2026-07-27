@@ -80,7 +80,7 @@ dotnet test tests/WotBTreader.Core.Tests -c Release --filter "FullyQualifiedName
 ```
 
 - Tests are MSTest 4 on Microsoft.Testing.Platform. Some installed-game tests skip by default (local opt-in).
-- 12 test projects, 243 tests, 2 opt-in skips (as of 2026-07-27).
+- 12 test projects, 253 tests, 2 opt-in skips (as of 2026-07-27).
 
 ### Keyboard shortcuts
 

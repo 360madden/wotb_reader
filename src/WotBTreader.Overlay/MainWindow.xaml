@@ -27,6 +27,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
@@ -75,7 +76,12 @@
                 </StackPanel>
                 <TextBlock Grid.Row="1" Text="{Binding Status}"
                            Foreground="#AAFFFFFF" FontSize="11" Margin="0,0,0,4"/>
-                <ListBox x:Name="SessionsListBox" Grid.Row="2" ItemsSource="{Binding Sessions}"
+                <TextBox Grid.Row="2" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                         Background="#22FFFFFF" Foreground="White" BorderThickness="0"
+                         FontSize="11" Padding="4,2" Margin="0,0,0,2"
+                         MaxLines="1"
+                         ToolTip="Filter sessions by map name"/>
+                <ListBox x:Name="SessionsListBox" Grid.Row="3" ItemsSource="{Binding FilteredSessions}"
                          SelectedItem="{Binding SelectedSession, Mode=TwoWay}"
                          Background="Transparent" BorderThickness="0"
                          Foreground="White" Height="160" MaxHeight="160">
@@ -94,7 +100,7 @@
                     </ListBox.ItemTemplate>
                 </ListBox>
                 <!-- Timeline scrubber -->
-                <Grid x:Name="TimelineGrid" Grid.Row="3" Margin="0,2,0,2"
+                <Grid x:Name="TimelineGrid" Grid.Row="4" Margin="0,2,0,2"
                       Visibility="{Binding SelectedSession, Converter={StaticResource NullToCollapsed}}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="36"/>
@@ -112,7 +118,7 @@
                             Height="20" Cursor="Hand"/>
                 </Grid>
                 <!-- Session detail panel -->
-                <Grid x:Name="DetailGrid" Grid.Row="4" Margin="0,4,0,0"
+                <Grid x:Name="DetailGrid" Grid.Row="5" Margin="0,4,0,0"
                       Visibility="{Binding SelectedSession, Converter={StaticResource NullToCollapsed}}">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -201,7 +207,7 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </Grid>
-                <Button x:Name="CloseButton" Grid.Row="5" Content="✕ Close" Click="CloseWindow"
+                <Button x:Name="CloseButton" Grid.Row="6" Content="✕ Close" Click="CloseWindow"
                         Background="#33FF4444" Foreground="White" BorderThickness="0"
                         Padding="8,3" Margin="0,4,0,0" Cursor="Hand"/>
             </Grid>

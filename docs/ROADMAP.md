@@ -18,9 +18,11 @@ All alpha surfaces are implemented and validated:
 | Architecture enforcement | ✅ | 3 |
 | Composition root validation | ✅ | 10 |
 | Codebase bug hunt (src + tests + tools) | ✅ | 1 fix |
+| Performance optimization (DrawingVisual renderer, zero-GC) | ✅ | — |
+| Session search/filter (overlay sidebar) | ✅ | — |
 | Documentation (architecture, handoffs, BLK log, knowledge.md) | ✅ | — |
 
-**Total:** 243 tests, 2 opt-in skips. Build: 0 errors, 0 warnings. Scan: clean.
+**Total:** 253 tests, 2 opt-in skips. Build: 0 errors, 0 warnings. Scan: clean.
 
 *(Count includes GameHarness.Tests: 26 tests for the developer replay harness tooling.)*
 
@@ -54,6 +56,8 @@ implemented in the autonomous session (2026-07-27):
 | Sidebar opacity toggle (cycles 0.85→0.50→0.20) | ✅ |
 | Keyboard shortcuts (Space/←→/1-5/Esc) | ✅ |
 | Collapsible sidebar (shrink to controls-only strip) | ✅ |
+| DrawingVisual renderer (zero-GC position plot, frozen brushes/pens) | ✅ |
+| Session search/filter (case-insensitive map name filter in sidebar) | ✅ |
 
 ### Comment coverage
 

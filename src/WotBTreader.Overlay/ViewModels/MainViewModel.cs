@@ -53,6 +53,7 @@ public class MainViewModel : INotifyPropertyChanged
     private int _killsTeam1;
     private int _killsTeam2;
     private string? _mapName;
+    private string _searchText = string.Empty;
 
     public MainViewModel()
         : this(new RendezvousLocator(), static baseUri => new TreaderApiClient(baseUri), null, null)
@@ -88,6 +89,27 @@ public class MainViewModel : INotifyPropertyChanged
     public ObservableCollection<SessionRow> Sessions { get; } = new();
 
     public ObservableCollection<PlotPoint> Points { get; } = new();
+
+    /// <summary>
+    /// Filtered view of <see cref="Sessions"/>, updated when
+    /// <see cref="SearchText"/> changes. Bound by the session ListBox.
+    /// </summary>
+    public ObservableCollection<SessionRow> FilteredSessions { get; } = new();
+
+    /// <summary>
+    /// Case-insensitive search text for filtering the session list.
+    /// Matches against map label. Empty string shows all sessions.
+    /// </summary>
+    public string SearchText
+    {
+        get => _searchText;
+        set
+        {
+            _searchText = value ?? string.Empty;
+            OnPropertyChanged();
+            ApplySearchFilter();
+        }
+    }
 
     public string Status
     {
@@ -514,6 +536,7 @@ public class MainViewModel : INotifyPropertyChanged
                 }
             }
 
+            ApplySearchFilter();
             Status = $"{Sessions.Count} session(s)";
 
             // Fetch map boundaries lazily on first successful session refresh.
@@ -681,6 +704,57 @@ public class MainViewModel : INotifyPropertyChanged
         else
         {
             WorldMinX = WorldMaxX = WorldMinZ = WorldMaxZ = 0;
+        }
+    }
+
+    /// <summary>
+    /// Filters <see cref="Sessions"/> into <see cref="FilteredSessions"/>
+    /// based on <see cref="SearchText"/>. When the filter excludes the
+    /// currently selected session, selection is cleared to avoid stale state.
+    /// </summary>
+    private void ApplySearchFilter()
+    {
+        string filter = _searchText.Trim();
+        FilteredSessions.Clear();
+
+        if (filter.Length == 0)
+        {
+            foreach (SessionRow session in Sessions)
+            {
+                FilteredSessions.Add(session);
+            }
+        }
+        else
+        {
+            foreach (SessionRow session in Sessions)
+            {
+                if (session.MapLabel.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                {
+                    FilteredSessions.Add(session);
+                }
+            }
+        }
+
+        // If the currently selected session is no longer visible, deselect it
+        // so the detail panel and position plot don't show stale data.
+        if (_selectedSession is not null)
+        {
+            bool stillVisible = false;
+            foreach (SessionRow row in FilteredSessions)
+            {
+                if (row.BattleSessionId == _selectedSession.BattleSessionId)
+                {
+                    stillVisible = true;
+                    break;
+                }
+            }
+
+            if (!stillVisible)
+            {
+                _selectedSession = null;
+                OnPropertyChanged(nameof(SelectedSession));
+                ClearSessionState();
+            }
         }
     }
 }
