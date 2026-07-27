@@ -37,9 +37,10 @@ if not "%~1"=="" goto import_files
 
 REM ── No arguments: interactive file picker ───────────────────
 
-REM Pick the scan directory: REPLAYS_DIR env var, then Documents, then current dir
+REM Pick the scan directory: REPLAYS_DIR env var, then Blitz replay folder, then Documents
 set SCAN_DIR=%REPLAYS_DIR%
-if "%SCAN_DIR%"=="" set SCAN_DIR=%USERPROFILE%\Documents
+if "%SCAN_DIR%"=="" set SCAN_DIR=%LOCALAPPDATA%\wotblitz\DAVAProject\replays
+if not exist "!SCAN_DIR!\" set SCAN_DIR=%USERPROFILE%\Documents
 
 echo.
 echo === Scanning for .wotbreplay files in: !SCAN_DIR! ===
@@ -56,8 +57,9 @@ for %%f in ("!SCAN_DIR!\*.wotbreplay") do (
 if !N! EQU 0 (
     echo No .wotbreplay files found.
     echo.
+    echo The Blitz replay folder was not found. Check your game installation.
     echo Set REPLAYS_DIR to your replays folder if they're elsewhere:
-    echo     set REPLAYS_DIR=C:\Games\WoTB\replays
+    echo     set REPLAYS_DIR=C:\other\folder
     echo.
     pause
     exit /b 1
@@ -142,8 +144,10 @@ set FAILED=0
 :loop
 if "%~1"=="" goto done
 echo.
+setlocal disabledelayedexpansion
 echo === Importing: %~nx1 ===
 "%CLI%" import "%~1" --json --data-root "%~dp0.data"
+endlocal
 if !ERRORLEVEL! neq 0 (
     set /a FAILED+=1
 ) else (

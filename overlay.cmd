@@ -17,5 +17,8 @@ if not exist "%OVERLAY%" (
     exit /b 1
 )
 
+REM Pass the data root so the overlay finds the web host's rendezvous record
+set WOTBTREADER_DATA_ROOT=%~dp0.data
+
 start "" "%OVERLAY%"
 exit /b %ERRORLEVEL%

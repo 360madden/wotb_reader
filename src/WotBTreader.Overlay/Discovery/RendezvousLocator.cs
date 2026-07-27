@@ -29,7 +29,21 @@ public sealed class RendezvousLocator
     public RendezvousLocator(TimeProvider? timeProvider = null, string? rendezvousPath = null)
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _rendezvousPath = rendezvousPath ?? Path.Combine(
+        _rendezvousPath = rendezvousPath ?? ResolveDefaultPath();
+    }
+
+    private static string ResolveDefaultPath()
+    {
+        // The overlay defaults to the same data root that serve.cmd uses.
+        // When serve.cmd sets WOTBTREADER_DATA_ROOT, the overlay discovers
+        // the web host without needing to hard-code a path.
+        string? customRoot = Environment.GetEnvironmentVariable("WOTBTREADER_DATA_ROOT");
+        if (!string.IsNullOrWhiteSpace(customRoot))
+        {
+            return Path.Combine(customRoot, "rendezvous", "web.json");
+        }
+
+        return Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "WotBTreader",
             "rendezvous",

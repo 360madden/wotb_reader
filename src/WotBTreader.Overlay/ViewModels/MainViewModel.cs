@@ -23,6 +23,8 @@ public class MainViewModel : INotifyPropertyChanged
     private readonly Func<Uri, TreaderApiClient> _apiClientFactory;
     private readonly ITelemetryStreamService? _streamService;
 
+    private readonly Func<SessionRow?, bool>? _launchGame;
+
     private TreaderApiClient? _client;
     private Uri? _clientBaseUri;
     private CancellationTokenSource? _detailLoadCts;
@@ -32,20 +34,23 @@ public class MainViewModel : INotifyPropertyChanged
     private readonly SynchronizationContext? _syncContext;
 
     public MainViewModel()
-        : this(new RendezvousLocator(), static baseUri => new TreaderApiClient(baseUri), null)
+        : this(new RendezvousLocator(), static baseUri => new TreaderApiClient(baseUri), null, null)
     {
     }
 
     public MainViewModel(
         RendezvousLocator locator,
         Func<Uri, TreaderApiClient> apiClientFactory,
-        ITelemetryStreamService? streamService = null)
+        ITelemetryStreamService? streamService = null,
+        Func<SessionRow?, bool>? launchGame = null)
     {
         _locator = locator ?? throw new ArgumentNullException(nameof(locator));
         _apiClientFactory = apiClientFactory ?? throw new ArgumentNullException(nameof(apiClientFactory));
         _streamService = streamService;
+        _launchGame = launchGame;
         _syncContext = SynchronizationContext.Current;
         RefreshCommand = new RelayCommand(_ => _ = RefreshSessionsAsync());
+        LaunchGameCommand = new RelayCommand(_ => LaunchSelectedReplay());
 
         if (_streamService is not null)
         {
@@ -102,6 +107,9 @@ public class MainViewModel : INotifyPropertyChanged
     }
 
     public ICommand RefreshCommand { get; }
+
+    /// <summary>Launches wotblitz.exe with the currently selected replay.</summary>
+    public ICommand LaunchGameCommand { get; }
 
     public async Task RefreshSessionsAsync(CancellationToken cancellationToken = default)
     {
@@ -221,6 +229,12 @@ public class MainViewModel : INotifyPropertyChanged
     protected void OnPropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string? name = null)
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    }
+
+    private void LaunchSelectedReplay()
+    {
+        bool launched = _launchGame?.Invoke(SelectedSession) ?? false;
+        Status = launched ? "Game launched" : "Launch failed — check game installation";
     }
 
     private TreaderApiClient GetOrCreateClient(Uri baseUri)
