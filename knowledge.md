@@ -9,11 +9,27 @@ WotB Treader is a **Windows-first offline replay telemetry reader** for World of
 
 **Requirements:** Windows 10/11, .NET SDK 10.0.302, Edge WebView2 Runtime (for overlay dashboard tab)
 
-```powershell
-dotnet restore WotBTreader.sln --locked-mode
-dotnet build WotBTreader.sln -c Release --no-restore
-dotnet test WotBTreader.sln -c Release --no-build
-```
+**Convenience wrappers (repo root .cmd files, run from any directory):**
+
+| Wrapper | What it does |
+|---------|-------------|
+| `build` | Build the solution (Release) |
+| `validate` | Full gate: restore → format → build → test → audit → scan |
+| `test` | Run all tests (skip build) |
+| `serve` | Publish + start web host at http://127.0.0.1:9182 |
+| `overlay` | Launch the WPF overlay (needs web host running) |
+| `import <file>` | Import a .wotbreplay file |
+| `watch <dir>` | Watch directory and auto-import new replays |
+| `sessions` | List decoded battle sessions (JSON) |
+| `doctor` | Run environment health checks (JSON) |
+| `compare list` | List comparison runs |
+| `compare inspect <id>` | Inspect one comparison run |
+| `export sessions <id>` | Export session events as JSON |
+| `export positions <id>` | Export position samples as JSON |
+| `treader <cmd> [args]` | General CLI passthrough for any command |
+
+All CLI wrappers store data under `.data\` in the repo root (gitignored).
+Publish output goes to `.build\publish\` (also gitignored).
 
 **Full gate (run before milestone commits):**
 ```powershell
@@ -28,7 +44,7 @@ dotnet test tests/WotBTreader.Core.Tests -c Release --filter "FullyQualifiedName
 ```
 
 - Tests are MSTest 4 on Microsoft.Testing.Platform. Some installed-game tests skip by default (local opt-in).
-- 12 test projects, 231 tests, 2 opt-in skips (as of 2026-07-27).
+- 12 test projects, 233 tests, 2 opt-in skips (as of 2026-07-27).
 
 ## Architecture
 

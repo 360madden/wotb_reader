@@ -74,6 +74,10 @@ tools/external/cache/
 !src/**/wwwroot/lib/
 !src/**/wwwroot/lib/**
 
+# Local runtime data and build cache (used by convenience wrappers)
+.data/
+.build/
+
 # Local rendezvous and machine-specific settings
 *.rendezvous.json
 appsettings.Local.json
