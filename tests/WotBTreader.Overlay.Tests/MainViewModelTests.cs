@@ -517,6 +517,92 @@ public sealed class MainViewModelTests
     }
 
     [TestMethod]
+    public void PlaybackSpeed_DefaultsToFour()
+    {
+        MainViewModel viewModel = CreateViewModel();
+
+        Assert.AreEqual(4.0, viewModel.PlaybackSpeed);
+        Assert.AreEqual("4×", viewModel.SpeedLabel);
+    }
+
+    [TestMethod]
+    public void SpeedLabel_FormatsAllSpeedsCorrectly()
+    {
+        MainViewModel viewModel = CreateViewModel();
+
+        // Cycle through all speeds and verify each label.
+        viewModel.CycleSpeedCommand.Execute(null); // 4→8
+        Assert.AreEqual(8.0, viewModel.PlaybackSpeed);
+        Assert.AreEqual("8×", viewModel.SpeedLabel);
+
+        viewModel.CycleSpeedCommand.Execute(null); // 8→0.5
+        Assert.AreEqual(0.5, viewModel.PlaybackSpeed);
+        Assert.AreEqual("0.5×", viewModel.SpeedLabel);
+
+        viewModel.CycleSpeedCommand.Execute(null); // 0.5→1
+        Assert.AreEqual(1.0, viewModel.PlaybackSpeed);
+        Assert.AreEqual("1×", viewModel.SpeedLabel);
+
+        viewModel.CycleSpeedCommand.Execute(null); // 1→2
+        Assert.AreEqual(2.0, viewModel.PlaybackSpeed);
+        Assert.AreEqual("2×", viewModel.SpeedLabel);
+
+        viewModel.CycleSpeedCommand.Execute(null); // 2→4
+        Assert.AreEqual(4.0, viewModel.PlaybackSpeed);
+        Assert.AreEqual("4×", viewModel.SpeedLabel);
+    }
+
+    [TestMethod]
+    public void JumpToStart_SetsCurrentTimeToZero()
+    {
+        MainViewModel viewModel = CreateViewModel();
+
+        // Set to a non-zero time first, then jump to start.
+        viewModel.CurrentTime = TimeSpan.FromSeconds(30);
+        Assert.AreEqual(30.0, viewModel.CurrentTimeSeconds);
+
+        viewModel.JumpToStartCommand.Execute(null);
+        Assert.AreEqual(TimeSpan.Zero, viewModel.CurrentTime);
+        Assert.AreEqual(0.0, viewModel.CurrentTimeSeconds);
+    }
+
+    [TestMethod]
+    public void CurrentTimeSeconds_TwoWayBinding_RoundTrips()
+    {
+        MainViewModel viewModel = CreateViewModel();
+
+        viewModel.CurrentTimeSeconds = 45.5;
+        Assert.AreEqual(TimeSpan.FromSeconds(45.5), viewModel.CurrentTime);
+        Assert.AreEqual(45.5, viewModel.CurrentTimeSeconds);
+
+        viewModel.CurrentTime = TimeSpan.FromSeconds(120);
+        Assert.AreEqual(120.0, viewModel.CurrentTimeSeconds);
+    }
+
+    [TestMethod]
+    public void JumpToEnd_ZeroDuration_IsNoOp()
+    {
+        MainViewModel viewModel = CreateViewModel();
+
+        viewModel.CurrentTime = TimeSpan.FromSeconds(10);
+        viewModel.JumpToEndCommand.Execute(null);
+
+        // Duration is zero, so JumpToEnd should be a no-op.
+        Assert.AreEqual(TimeSpan.FromSeconds(10), viewModel.CurrentTime);
+    }
+
+    [TestMethod]
+    public void TogglePlayPause_ZeroDuration_IsNoOp()
+    {
+        MainViewModel viewModel = CreateViewModel();
+
+        viewModel.PlayPauseCommand.Execute(null);
+
+        // Duration is zero, so IsPlaying stays false.
+        Assert.IsFalse(viewModel.IsPlaying);
+    }
+
+    [TestMethod]
     public async Task StreamService_NullStreamService_NoCrashOnRefresh()
     {
         WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
