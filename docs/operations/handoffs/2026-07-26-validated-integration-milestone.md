@@ -347,8 +347,8 @@ be deliberately exempted.
 2. ~~Author the dashboard read API.~~ Done; see U8 below.
 3. ~~Build the UI pages against that API~~ (read UI done; hub/mutation
    interaction still deferred — see U9).
-4. Run the opt-in private replay compatibility pass and record the outcome in
-   the replay decoder blocker record.
+4. ~~Run the opt-in private replay compatibility pass and record the outcome in
+   the replay decoder blocker record.~~ Done; see U11 below.
 5. Implement the overlay last, against the loopback contract only.
 
 ## Amendment — U7 decode path proven end to end (`2026-07-26T22:55:26Z`)
@@ -443,3 +443,15 @@ Validation: `scripts/validate.ps1` exits zero; 188 tests pass, 2 opt-in skips.
 ## Amendment — U10 token-lean Cursor harness (`2026-07-26T23:51:27Z`)
 
 Installed a progressive-disclosure Cursor control plane without changing product code: thin `AGENTS.md` router, two always-on rules (safety + session budget), glob rules for architecture/binary, four focused subagents with pinned models (Grok glue, Composer verifier, Opus decoder, Fable security), three on-demand skills (validate / handoff / commit), `.cursor/reference` catalogs, and `.cursorignore` for build noise. Goal is lower default tokens and correct model routing.
+
+## Amendment — U11 private replay compatibility pass (`2026-07-27T00:54Z`)
+
+Closes recommended step 4. The repeat compatibility pass over the opt-in
+private replay directory succeeded on the complete original ten-replay set:
+every file decoded with exit code zero, no warnings, 14 participants each,
+and position counts exactly reproducing the documented 15,409 to 36,605
+bounds. Evidence is appended to the replay decoder blocker record; no private
+paths, names, hashes, or content were recorded.
+
+Validation: locked restore and Release build of the Replay Inspector with zero
+warnings; `scripts/scan-repository.ps1` clean after both record edits.

@@ -111,3 +111,17 @@ The following verification is required when BLK-0007 is lifted:
 4. solution formatting verification; and
 5. a repeat compatibility pass over the opt-in private replay directory.
 
+## Compatibility pass repeat — 2026-07-27
+
+Satisfies pending verification item 5, executed `2026-07-27T00:54Z` with
+decoder `wotb-11.18-strict` (`0.1.0`) through the Release-built Replay
+Inspector after a locked restore (build reported zero warnings).
+
+- All ten private `11.18` replays in the opt-in local directory decoded
+  successfully with exit code zero and no warnings.
+- Every replay yielded 14 participants and real position timelines; observed
+  position counts ranged from 15,409 to 36,605, exactly reproducing the bounds
+  documented above.
+- The inspector ran without `--include-sensitive`; no replay path, file name,
+  hash, player name, account ID, or raw content was recorded.
+
