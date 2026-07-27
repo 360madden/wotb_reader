@@ -47,6 +47,7 @@ public class MainViewModel : INotifyPropertyChanged
     private TimeSpan _currentTime;
     private TimeSpan _duration;
     private bool _isPlaying;
+    private double _playbackSpeed = 4.0;
 
     public MainViewModel()
         : this(new RendezvousLocator(), static baseUri => new TreaderApiClient(baseUri), null, null)
@@ -67,6 +68,9 @@ public class MainViewModel : INotifyPropertyChanged
         RefreshCommand = new RelayCommand(_ => _ = RefreshSessionsAsync());
         LaunchGameCommand = new RelayCommand(_ => LaunchSelectedReplay());
         PlayPauseCommand = new RelayCommand(_ => TogglePlayPause());
+        JumpToStartCommand = new RelayCommand(_ => JumpToStart());
+        JumpToEndCommand = new RelayCommand(_ => JumpToEnd());
+        CycleSpeedCommand = new RelayCommand(_ => CycleSpeed());
 
         if (_streamService is not null)
         {
@@ -129,6 +133,15 @@ public class MainViewModel : INotifyPropertyChanged
 
     /// <summary>Toggle play/pause for the replay timeline scrubber.</summary>
     public ICommand PlayPauseCommand { get; }
+
+    /// <summary>Jump scrubber to the beginning of the timeline.</summary>
+    public ICommand JumpToStartCommand { get; }
+
+    /// <summary>Jump scrubber to the end of the timeline.</summary>
+    public ICommand JumpToEndCommand { get; }
+
+    /// <summary>Cycle through playback speeds: 0.5x, 1x, 2x, 4x, 8x.</summary>
+    public ICommand CycleSpeedCommand { get; }
 
     public double WorldMinX
     {
@@ -203,6 +216,21 @@ public class MainViewModel : INotifyPropertyChanged
         private set { _duration = value; OnPropertyChanged(); }
     }
 
+    /// <summary>Current playback speed multiplier.</summary>
+    public double PlaybackSpeed
+    {
+        get => _playbackSpeed;
+        private set
+        {
+            _playbackSpeed = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(SpeedLabel));
+        }
+    }
+
+    /// <summary>Human-readable speed label for the cycle button.</summary>
+    public string SpeedLabel => $"{_playbackSpeed:0.#}×";
+
     /// <summary>Current scrubber position in the replay timeline.</summary>
     public TimeSpan CurrentTime
     {
@@ -251,11 +279,11 @@ public class MainViewModel : INotifyPropertyChanged
     public void AdvancePlayback()
     {
         if (!_isPlaying || _duration <= TimeSpan.Zero) return;
-        TimeSpan next = _currentTime + TimeSpan.FromMilliseconds(200);
+        double msPerTick = 50.0 * _playbackSpeed;
+        TimeSpan next = _currentTime + TimeSpan.FromMilliseconds(msPerTick);
         if (next >= _duration)
         {
-            CurrentTime = _duration;
-            IsPlaying = false;
+            CurrentTime = TimeSpan.Zero;
         }
         else
         {
@@ -271,6 +299,29 @@ public class MainViewModel : INotifyPropertyChanged
         {
             CurrentTime = TimeSpan.Zero;
         }
+    }
+
+    private void JumpToStart()
+    {
+        CurrentTime = TimeSpan.Zero;
+    }
+
+    private void JumpToEnd()
+    {
+        if (_duration > TimeSpan.Zero)
+            CurrentTime = _duration;
+    }
+
+    private void CycleSpeed()
+    {
+        PlaybackSpeed = _playbackSpeed switch
+        {
+            0.5 => 1.0,
+            1.0 => 2.0,
+            2.0 => 4.0,
+            4.0 => 8.0,
+            _ => 0.5,
+        };
     }
 
     private void ApplyTimeFilter()

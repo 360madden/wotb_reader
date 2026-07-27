@@ -97,9 +97,15 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         if (e.PropertyName == nameof(MainViewModel.IsPlaying))
         {
             if (_viewModel.IsPlaying)
+            {
+                PlayButton.Content = "⏸";
                 _playbackTimer.Start();
+            }
             else
+            {
+                PlayButton.Content = "▶";
                 _playbackTimer.Stop();
+            }
         }
     }
 

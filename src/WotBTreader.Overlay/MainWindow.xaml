@@ -29,21 +29,36 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,6">
-                    <Button Content="▶" Command="{Binding PlayPauseCommand}"
-                            Width="28" Height="22"
+                    <Button Content="⏮" Command="{Binding JumpToStartCommand}"
+                            Width="22" Height="22" FontSize="10"
+                            Background="#44FFFFFF" Foreground="White" BorderThickness="0"
+                            Padding="0" Cursor="Hand"
+                            ToolTip="Jump to start"/>
+                    <Button x:Name="PlayButton" Content="▶" Command="{Binding PlayPauseCommand}"
+                            Width="24" Height="22"
                             Background="#33AAFF" Foreground="White" BorderThickness="0"
-                            Padding="0" Cursor="Hand" FontSize="12"
+                            Padding="0" Cursor="Hand" FontSize="12" Margin="2,0,0,0"
                             ToolTip="Play / Pause replay timeline"/>
+                    <Button Content="⏭" Command="{Binding JumpToEndCommand}"
+                            Width="22" Height="22" FontSize="10"
+                            Background="#44FFFFFF" Foreground="White" BorderThickness="0"
+                            Padding="0" Cursor="Hand" Margin="2,0,0,0"
+                            ToolTip="Jump to end"/>
+                    <Button Content="{Binding SpeedLabel}" Command="{Binding CycleSpeedCommand}"
+                            Width="28" Height="22" FontSize="9"
+                            Background="#44FFFFFF" Foreground="#AAFFAA" BorderThickness="0"
+                            Padding="0" Cursor="Hand" Margin="2,0,0,0"
+                            ToolTip="Cycle playback speed (0.5x / 1x / 2x / 4x / 8x)"/>
                     <Button Content="🚀 Launch" Command="{Binding LaunchGameCommand}"
                             Background="#33AAFF" Foreground="White" BorderThickness="0"
-                            Padding="8,3" Cursor="Hand" Margin="4,0,0,0"
+                            Padding="8,3" Cursor="Hand" Margin="6,0,0,0"
                             ToolTip="Launch wotblitz.exe to play the selected replay"/>
                     <Button Content="↻ Refresh" Command="{Binding RefreshCommand}"
                             Background="#44FFFFFF" Foreground="White" BorderThickness="0"
-                            Padding="8,3" Margin="6,0,0,0" Cursor="Hand"/>
+                            Padding="8,3" Margin="4,0,0,0" Cursor="Hand"/>
                     <Button Content="🌐 Dashboard" Click="OpenDashboardInBrowser"
                             Background="#44FFFFFF" Foreground="White" BorderThickness="0"
-                            Padding="8,3" Margin="6,0,0,0" Cursor="Hand"
+                            Padding="8,3" Margin="4,0,0,0" Cursor="Hand"
                             ToolTip="Open the full dashboard in a browser"/>
                 </StackPanel>
                 <TextBlock Grid.Row="1" Text="{Binding Status}"
