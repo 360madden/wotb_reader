@@ -24,17 +24,18 @@ All alpha surfaces are implemented and validated:
 
 ## Remaining items (priority order)
 
-### 🔴 P0 — Smoke test
+### 🔴 P0 — Smoke test ✅ (partial)
 
-The overlay has never been tested against a live web host. All 41 overlay tests
-are unit-level with fake HTTP handlers and mock stream services. A real-process
-smoke run would validate the entire loopback contract end to end.
+Web host smoke test completed 2026-07-27:
+- ✅ Web host starts on port 9182, sessions API returns valid JSON
+- ✅ Doctor API returns all checks passing
+- ✅ Rendezvous file published with correct baseUri
+- ✅ Overlay launches without crash (exit code 0 in headless env)
+- ⚠️ Full visual verification (position dots, WebView2 dashboard,
+  SignalR push) requires a display session
 
-- Start web host → launch overlay → verify rendezvous discovery
-- Verify session list loads, position plot renders with dots
-- Switch to Dashboard tab, verify Blazor UI renders
-- Trigger a session change, verify SignalR push updates arrive
-- **Requires:** live web host process + Edge WebView2 runtime
+**Evidence:** host log shows migration + startup, all API endpoints
+return correct schemas, overlay process exits clean.
 
 ### 🟡 P1 — `compare` CLI command ✅
 
@@ -86,13 +87,10 @@ display comparison results.
 - Show comparison runs table with left/right artifacts and delta summaries
 - **Effort:** ~2 hours. Blazor patterns established.
 
-### 🔵 P6 — Push to remote
+### 🔵 P6 — Push to remote ✅
 
-The branch is 14 commits ahead of `origin/main` with no pushes.
-
-- Review all commits for sensitive content
-- Push to remote
-- **Requires:** user authorization
+All 17 commits pushed to `origin/main` (https://github.com/360madden/wotb_reader).
+Sensitive content scan: zero findings across all diffs.
 
 ## Action plan (this session)
 
