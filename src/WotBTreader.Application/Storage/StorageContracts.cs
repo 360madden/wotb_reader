@@ -83,6 +83,11 @@ public interface IStorageInitializer
 /// <summary>Persists immutable comparison runs and their classified items.</summary>
 public interface IComparisonRunRepository
 {
+    ValueTask<IReadOnlyList<ComparisonRun>> ListAsync(
+        int offset,
+        int limit,
+        CancellationToken cancellationToken);
+
     ValueTask<OperationResult<TelemetryComparison>> AddAsync(
         TelemetryComparison comparison,
         CancellationToken cancellationToken);

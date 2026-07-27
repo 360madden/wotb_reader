@@ -98,7 +98,7 @@ public sealed class CliEntryPointTests
         StringWriter error = new();
 
         int exitCode = await CliEntryPoint.RunAsync(
-            ["export", "--json", "--data-root", root.Path],
+            ["watch", "--json", "--data-root", root.Path],
             output,
             error,
             TestContext.CancellationToken);
@@ -106,6 +106,25 @@ public sealed class CliEntryPointTests
         Assert.AreEqual((int)CliExitCode.UnsupportedCapability, exitCode);
         using JsonDocument document = JsonDocument.Parse(output.ToString());
         Assert.IsFalse(document.RootElement.GetProperty("success").GetBoolean());
+    }
+
+    [TestMethod]
+    public async Task CompareListOnFreshDataRootReturnsEmptyList()
+    {
+        using TemporaryDataRoot root = new();
+        StringWriter output = new();
+        StringWriter error = new();
+
+        int exitCode = await CliEntryPoint.RunAsync(
+            ["compare", "list", "--json", "--data-root", root.Path],
+            output,
+            error,
+            TestContext.CancellationToken);
+
+        Assert.AreEqual((int)CliExitCode.Success, exitCode, error.ToString());
+        using JsonDocument document = JsonDocument.Parse(output.ToString());
+        Assert.IsTrue(document.RootElement.GetProperty("success").GetBoolean());
+        Assert.IsEmpty(document.RootElement.GetProperty("data").EnumerateArray().ToArray());
     }
 
     [TestMethod]

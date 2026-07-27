@@ -39,24 +39,24 @@ smoke run would validate the entire loopback contract end to end.
 ### 🟡 P1 — `compare` CLI command ✅
 
 The storage layer fully supports comparison runs (`SqliteComparisonRunRepository`),
-but the CLI returned `UnsupportedCapability` for `compare`. Now implemented.
+but the CLI returned `UnsupportedCapability` for `compare`. Now fully implemented.
 
 - ~~Wire `IComparisonRunRepository` into the CLI command router~~ ✅
-- `compare list` — list existing comparison runs (needs `ListAsync` on repository)
+- ~~`compare list` — list existing comparison runs~~ ✅ (with `ListAsync` on repo)
 - `compare create <leftId> <rightId>` — create a new comparison (needs `TelemetryComparator` wiring)
 - ~~`compare inspect <comparisonId>` — show comparison details~~ ✅
-- **Done:** `compare inspect <id>` queries comparison runs + items + summary.
-  `compare` with no args shows usage. 14/14 CLI tests pass.
+- **Done:** `compare list` paginates, `compare inspect <id>` queries full comparison.
+  15/15 CLI tests pass.
 
-### 🟡 P2 — `export` CLI command
+### 🟡 P2 — `export` CLI command ✅
 
 NDJSON telemetry export is implemented (`NdjsonTelemetryWriter`), but the CLI
-has no `export` command. This would let users export decoded telemetry as
-machine-readable NDJSON.
+had no `export` command. Now implemented.
 
-- `export sessions <sessionId>` — export session events as NDJSON
-- `export positions <sessionId>` — export position samples as NDJSON
-- **Effort:** ~1 hour. Writer infrastructure exists.
+- ~~`export sessions <battleSessionId>` — export events as structured JSON~~ ✅
+- ~~`export positions <battleSessionId>` — export positions as structured JSON~~ ✅
+- **Done:** Calls `GetProjectionAsync`, returns events/positions in envelope.
+  15/15 CLI tests pass.
 
 ### 🟢 P3 — `serve` CLI command
 

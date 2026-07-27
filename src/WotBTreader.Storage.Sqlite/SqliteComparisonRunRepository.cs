@@ -14,6 +14,49 @@ internal sealed class SqliteComparisonRunRepository : IComparisonRunRepository
         _context = context;
     }
 
+    public async ValueTask<IReadOnlyList<ComparisonRun>> ListAsync(
+        int offset,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(offset);
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(limit, 200);
+
+        await using SqliteConnection connection =
+            await _context.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT id, left_source_artifact_id, right_source_artifact_id,
+                   comparator_id, comparator_version, schema_version,
+                   timestamp_window_ticks, created_at_utc
+            FROM comparison_runs
+            ORDER BY created_at_utc DESC
+            LIMIT $limit OFFSET $offset;
+            """;
+        command.Parameters.AddWithValue("$limit", limit);
+        command.Parameters.AddWithValue("$offset", offset);
+
+        List<ComparisonRun> runs = [];
+        await using SqliteDataReader reader =
+            await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            runs.Add(new ComparisonRun(
+                new ComparisonRunId(Guid.Parse(reader.GetString(0))),
+                new SourceArtifactId(Guid.Parse(reader.GetString(1))),
+                new SourceArtifactId(Guid.Parse(reader.GetString(2))),
+                reader.GetString(3),
+                reader.GetString(4),
+                reader.GetString(5),
+                TimeSpan.FromTicks(reader.GetInt64(6)),
+                SqliteValueConversions.ReadUtc(reader, 7)));
+        }
+
+        return runs;
+    }
+
     public async ValueTask<OperationResult<TelemetryComparison>> AddAsync(
         TelemetryComparison comparison,
         CancellationToken cancellationToken)

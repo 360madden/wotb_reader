@@ -55,7 +55,8 @@ public sealed class CliCommandRouter
             "reprocess" => await ReprocessAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "sessions" => await SessionsAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "compare" => await CompareAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
-            "export" or "watch" or "serve" => Unsupported(invocation.Command, correlationId),
+            "export" => await ExportAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
+            "watch" or "serve" => Unsupported(invocation.Command, correlationId),
             _ => Invalid(
                 "cli.command.unknown",
                 $"Unknown command '{invocation.Command}'. Available commands: {string.Join(", ", CommandNames)}.",
@@ -197,19 +198,40 @@ public sealed class CliCommandRouter
         {
             return Invalid(
                 "cli.compare.subcommand_required",
-                "Usage: compare inspect <comparison-run-id>. Available subcommands: inspect.",
+                "Usage: compare list | compare inspect <comparison-run-id>.",
                 correlationId);
         }
 
         string subCommand = invocation.Positionals[0];
         return subCommand switch
         {
+            "list" => await CompareListAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "inspect" => await CompareInspectAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             _ => Invalid(
                 "cli.compare.unknown_subcommand",
-                $"Unknown compare subcommand '{subCommand}'. Available subcommands: inspect.",
+                $"Unknown compare subcommand '{subCommand}'. Available: list, inspect.",
                 correlationId),
         };
+    }
+
+    private async ValueTask<CliExecution> CompareListAsync(
+        CliInvocation invocation,
+        Guid correlationId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetInteger(invocation.Options, "offset", defaultValue: 0, minimum: 0, maximum: int.MaxValue, out int offset) ||
+            !TryGetInteger(invocation.Options, "limit", defaultValue: 50, minimum: 1, maximum: 200, out int limit))
+        {
+            return Invalid(
+                "cli.compare.list.range",
+                "compare list --offset must be non-negative and --limit must be between 1 and 200.",
+                correlationId);
+        }
+
+        IReadOnlyList<ComparisonRun> runs = await _comparisons
+            .ListAsync(offset, limit, cancellationToken)
+            .ConfigureAwait(false);
+        return Success(runs, $"Loaded {runs.Count} comparison run(s).", correlationId);
     }
 
     private async ValueTask<CliExecution> CompareInspectAsync(
@@ -230,6 +252,117 @@ public sealed class CliCommandRouter
             .GetAsync(new ComparisonRunId(value), cancellationToken)
             .ConfigureAwait(false);
         return FromResult(result, correlationId, "Comparison run loaded.");
+    }
+
+    private async ValueTask<CliExecution> ExportAsync(
+        CliInvocation invocation,
+        Guid correlationId,
+        CancellationToken cancellationToken)
+    {
+        if (invocation.Positionals.Count == 0)
+        {
+            return Invalid(
+                "cli.export.subcommand_required",
+                "Usage: export sessions <battle-session-id> | export positions <battle-session-id>.",
+                correlationId);
+        }
+
+        string subCommand = invocation.Positionals[0];
+        return subCommand switch
+        {
+            "sessions" => await ExportSessionsAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
+            "positions" => await ExportPositionsAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
+            _ => Invalid(
+                "cli.export.unknown_subcommand",
+                $"Unknown export subcommand '{subCommand}'. Available: sessions, positions.",
+                correlationId),
+        };
+    }
+
+    private async ValueTask<CliExecution> ExportSessionsAsync(
+        CliInvocation invocation,
+        Guid correlationId,
+        CancellationToken cancellationToken)
+    {
+        if (invocation.Positionals.Count != 2 ||
+            !Guid.TryParse(invocation.Positionals[1], out Guid value))
+        {
+            return Invalid(
+                "cli.export.sessions.id_required",
+                "export sessions requires one battle-session GUID.",
+                correlationId);
+        }
+
+        OperationResult<ReplayDecodeProjection> result = await _sessions
+            .GetProjectionAsync(new BattleSessionId(value), cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!result.IsSuccess || result.Value is null)
+        {
+            return FromResult(result, correlationId, "Export failed.");
+        }
+
+        var data = result.Value.Events
+            .Select(static e => new
+            {
+                sequence = e.Sequence,
+                kind = e.Kind,
+                replayTimeMs = e.ReplayTime.TotalMilliseconds,
+                participantId = e.ParticipantId,
+                entityId = e.EntityId,
+                values = e.ValuesJson,
+            })
+            .ToList();
+
+        return Success(
+            new { sessionId = value.ToString("D"), count = data.Count, events = data },
+            $"Exported {data.Count} event(s).",
+            correlationId,
+            result.Warnings);
+    }
+
+    private async ValueTask<CliExecution> ExportPositionsAsync(
+        CliInvocation invocation,
+        Guid correlationId,
+        CancellationToken cancellationToken)
+    {
+        if (invocation.Positionals.Count != 2 ||
+            !Guid.TryParse(invocation.Positionals[1], out Guid value))
+        {
+            return Invalid(
+                "cli.export.positions.id_required",
+                "export positions requires one battle-session GUID.",
+                correlationId);
+        }
+
+        OperationResult<ReplayDecodeProjection> result = await _sessions
+            .GetProjectionAsync(new BattleSessionId(value), cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!result.IsSuccess || result.Value is null)
+        {
+            return FromResult(result, correlationId, "Export failed.");
+        }
+
+        var data = result.Value.Positions
+            .Select(static p => new
+            {
+                sequence = p.Sequence,
+                replayTimeMs = p.ReplayTime.TotalMilliseconds,
+                participantId = p.ParticipantId,
+                entityId = p.EntityId,
+                rawX = p.RawX,
+                rawY = p.RawY,
+                rawZ = p.RawZ,
+                coordinateSpace = p.RawCoordinateSpace,
+            })
+            .ToList();
+
+        return Success(
+            new { sessionId = value.ToString("D"), count = data.Count, positions = data },
+            $"Exported {data.Count} position(s).",
+            correlationId,
+            result.Warnings);
     }
 
     private static bool TryGetInteger(
