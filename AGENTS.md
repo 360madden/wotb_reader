@@ -6,6 +6,20 @@ No runtime AI, cloud, Python, Node.js, Rust, Electron, or containers.
 Cursor layout and asset index: [`.cursor/README.md`](.cursor/README.md).
 Do **not** load `.cursor/reference/*` unless the task needs that catalog.
 
+## Commands (exact)
+
+- SDK pinned by `global.json` to 10.0.302. Package versions are central in `Directory.Packages.props` with committed lock files; restore is always `--locked-mode`.
+- Full gate, required before milestone commits: `scripts/validate.ps1` — locked restore → `dotnet format --verify-no-changes` → Release build → all tests → `scripts/scan-repository.ps1` (secret + ignore-policy scan). Add `-AuditPackages` for the transitive vulnerability audit.
+- Single test project: `dotnet test tests/WotBTreader.Core.Tests -c Release`. Focused filter: add `--filter "FullyQualifiedName~SomeTest"`. Tests are MSTest 4 on Microsoft.Testing.Platform; a few installed-game tests are local opt-in and skip by default.
+- Warnings are errors (`TreatWarningsAsErrors`), and `NuGetAuditMode=all` fails restore on vulnerable transitive packages — fix with a central pin, never suppress (BLK-0002).
+
+## Architecture (enforced by `tests/WotBTreader.Architecture.Tests`)
+
+- `Core`: no project refs. `Application` → `Core` only. Adapters (`Replays`, `CaptureLogs`, `GameIntegration`, `Storage.Sqlite`) → `Application`+`Core`, never each other. `Bootstrap` is the composition root; hosts reference `Bootstrap`. `Overlay` (WPF/WebView2) is a loopback web client — no parser/storage refs.
+- Only `Overlay` and `tools/GameHarness` target `net10.0-windows`; keep everything else on portable `net10.0` (BLK-0003).
+- Any new DI port must be added to the published-port list in `CompositionRootTests`, or the solution can compile and unit-test green yet no host starts (BLK-0013).
+- Diagram, evidence lifecycle, and loopback trust boundary: `docs/architecture/overview.md`.
+
 ## Hard constraints (always)
 
 - Offline / positively verified offline sessions only. Never automate online matches.
@@ -23,6 +37,12 @@ Do **not** load `.cursor/reference/*` unless the task needs that catalog.
 - CI: synthetic fixtures only; private-game tests opt-in local.
 - Blockers: append `docs/operations/blocker-log.md` (immutable UTC). Handoffs: append under `docs/operations/handoffs/`.
 
+## Repo gotchas (each has bitten before)
+
+- `.gitignore` unanchored patterns (`*.sqlite`, `diagnostics/`, `dist/`) match **case-insensitively on Windows** and have hidden real source folders (BLK-0005, BLK-0012). `scan-repository.ps1` fails validation if any ignored file exists under `src`, `tests`, `tools/src`, `scripts`, or `docs` — add explicit `!` unignore rules when creating paths that collide with runtime-data patterns.
+- In `validate.ps1`, route every native command through `Invoke-CheckedNative`; `$ErrorActionPreference='Stop'` does not catch non-zero exit codes, and the script once returned success after failed phases (BLK-0006).
+- Fixtures: synthetic only in CI. Private replays, captures, DBs, and screenshots stay in ignored paths and are never committed; the full sanitization process is `docs/testing/fixture-policy.md`.
+
 ## Route by task
 
 | Task | Load |
@@ -35,6 +55,12 @@ Do **not** load `.cursor/reference/*` unless the task needs that catalog.
 | UI / DTO / smoke / docs glue | agent `implementer-glue` (fast) |
 | Prove work after a unit | agent `verifier` (fast) |
 | Human setup | `README.md` |
+
+## Delegation (OpenCode sessions)
+
+- Use `explore` subagents for multi-file search/read rounds and `general` subagents for mechanical units against frozen contracts (UI/DTO/tests/docs). Subagents must not stage, commit, or push.
+- Keep on the lead model: replay/binary/decoder decisions, loopback/mutation/privacy review, and shared-contract changes.
+- The Cursor role briefs in `.cursor/agents/*.md` (decoder-auditor, security-auditor, implementer-glue, verifier) are worth pasting into delegation prompts for hard tasks; attach `.cursor/rules/binary-parser.mdc` or `.cursor/rules/safety-privacy.mdc` as task rules.
 
 ## Model stance (one line)
 
