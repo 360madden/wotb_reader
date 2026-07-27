@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\WotBTreader.Overlay\WotBTreader.Overlay.csproj" />
+    <ProjectReference Include="..\..\src\WotBTreader.Host.Web\WotBTreader.Host.Web.csproj" />
   </ItemGroup>
 
 </Project>
