@@ -101,7 +101,7 @@ public sealed class MainViewModelTests
             }
             """;
         WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
-        FakeHttpMessageHandler handler = new((_, _) => JsonResponse(sessionsJson));
+        FakeHttpMessageHandler handler = new((_, _) => Task.FromResult(JsonResponse(sessionsJson)));
         MainViewModel viewModel = CreateViewModel(handler);
 
         await viewModel.RefreshSessionsAsync();
@@ -118,7 +118,7 @@ public sealed class MainViewModelTests
     public async Task RefreshSessionsAsync_ApiReturnsNull_PreservesExistingState()
     {
         WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
-        FakeHttpMessageHandler handler = new((_, _) => JsonResponse("null"));
+        FakeHttpMessageHandler handler = new((_, _) => Task.FromResult(JsonResponse("null")));
         MainViewModel viewModel = CreateViewModel(handler);
 
         await viewModel.RefreshSessionsAsync();
@@ -168,7 +168,7 @@ public sealed class MainViewModelTests
             }
             """;
         WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
-        FakeHttpMessageHandler handler = new((_, _) => JsonResponse(json));
+        FakeHttpMessageHandler handler = new((_, _) => Task.FromResult(JsonResponse(json)));
         MainViewModel viewModel = CreateViewModel(handler);
 
         await viewModel.RefreshSessionsAsync();
@@ -182,7 +182,7 @@ public sealed class MainViewModelTests
     {
         WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
         FakeHttpMessageHandler handler = new((_, _) =>
-            throw new HttpRequestException("Connection refused"));
+            Task.FromException<HttpResponseMessage>(new HttpRequestException("Connection refused")));
         MainViewModel viewModel = CreateViewModel(handler);
 
         await viewModel.RefreshSessionsAsync();
@@ -261,10 +261,10 @@ public sealed class MainViewModelTests
             string path = request.RequestUri!.AbsolutePath;
             if (path.Contains(BattleSessionId.ToString("D"), StringComparison.Ordinal))
             {
-                return JsonResponse(detailJson);
+                return Task.FromResult(JsonResponse(detailJson));
             }
 
-            return JsonResponse("""{"offset":0,"limit":200,"count":1,"items":[]}""");
+            return Task.FromResult(JsonResponse("""{"offset":0,"limit":200,"count":1,"items":[]}"""));
         });
         MainViewModel viewModel = CreateViewModel(handler);
 
@@ -289,7 +289,7 @@ public sealed class MainViewModelTests
     public async Task SelectSession_NullDetail_NoPointsLoaded()
     {
         WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
-        FakeHttpMessageHandler handler = new((_, _) => JsonResponse("null"));
+        FakeHttpMessageHandler handler = new((_, _) => Task.FromResult(JsonResponse("null")));
         MainViewModel viewModel = CreateViewModel(handler);
 
         // Populate client via refresh
@@ -318,6 +318,49 @@ public sealed class MainViewModelTests
             BattleSessionId, "Test", Now, 1, 1);
 
         Assert.AreEqual(0, viewModel.Points.Count);
+    }
+
+    [TestMethod]
+    public async Task RefreshSessionsAsync_SelectedSessionGuard_PreventsCascade()
+    {
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+
+        // Block the HTTP handler so the refresh stays in-flight long enough
+        // to observe the _isRefreshingSessions guard.
+        TaskCompletionSource<HttpResponseMessage> blockTcs = new();
+        int detailRequestCount = 0;
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            if (request.RequestUri!.AbsolutePath.Contains("/sessions/", StringComparison.Ordinal))
+            {
+                Interlocked.Increment(ref detailRequestCount);
+            }
+
+            return blockTcs.Task;
+        });
+        MainViewModel viewModel = CreateViewModel(handler);
+
+        // Start a refresh — it blocks inside RefreshSessionsCoreAsync on the HTTP call.
+        Task refreshTask = viewModel.RefreshSessionsAsync();
+
+        // Give the refresh a moment to enter the core method and set the flag.
+        await Task.Delay(100);
+
+        // Simulate what WPF binding does when Sessions.Clear() fires: it sets
+        // SelectedSession to null. The _isRefreshingSessions guard must
+        // suppress the resulting detail load.
+        viewModel.SelectedSession = new SessionRow(
+            BattleSessionId, "Cascade Test", Now, 1, 1);
+
+        // Unblock and await the refresh.
+        blockTcs.SetResult(JsonResponse(
+            """{"offset":0,"limit":200,"count":0,"items":[]}"""));
+        await refreshTask;
+
+        Assert.AreEqual(
+            0, detailRequestCount,
+            "The _isRefreshingSessions guard must suppress the " +
+            "SelectedSession setter cascade during refresh.");
     }
 
     private static async Task WaitForConditionAsync(
@@ -377,12 +420,12 @@ public sealed class MainViewModelTests
         public override DateTimeOffset GetUtcNow() => utcNow;
     }
 
-    private sealed class FakeHttpMessageHandler(Func<HttpRequestMessage, CancellationToken, HttpResponseMessage> handler)
+    private sealed class FakeHttpMessageHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handler)
         : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken) =>
-            Task.FromResult(handler(request, cancellationToken));
+            handler(request, cancellationToken);
     }
 }
