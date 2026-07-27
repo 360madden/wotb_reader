@@ -106,6 +106,7 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
                     <TextBlock Grid.Row="0" FontSize="11" Foreground="#AAFFFFFF" Margin="0,0,0,3">
@@ -140,7 +141,31 @@
                     <TextBlock Grid.Row="2" FontSize="10" Foreground="#88FFFFFF" Margin="0,3,0,0">
                         <Run Text="📊 Events: "/><Run Text="{Binding EventCount}"/>
                     </TextBlock>
-                    <ItemsControl Grid.Row="3" ItemsSource="{Binding Events}" MaxHeight="100" Margin="0,3,0,0">
+                    <!-- Battle stats bar -->
+                    <Grid Grid.Row="3" Margin="0,3,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="4"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock FontSize="9" Foreground="DodgerBlue">
+                                <Run Text="🔵 "/><Run Text="{Binding DamageTeam1, StringFormat='{}{0:N0}'}"/><Run Text=" dmg taken"/>
+                            </TextBlock>
+                            <TextBlock FontSize="9" Foreground="DodgerBlue">
+                                <Run Text="{Binding KillsTeam1, StringFormat='{}{0}'}"/><Run Text=" kills"/>
+                            </TextBlock>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <TextBlock FontSize="9" Foreground="OrangeRed">
+                                <Run Text="🔴 "/><Run Text="{Binding DamageTeam2, StringFormat='{}{0:N0}'}"/><Run Text=" dmg taken"/>
+                            </TextBlock>
+                            <TextBlock FontSize="9" Foreground="OrangeRed">
+                                <Run Text="{Binding KillsTeam2, StringFormat='{}{0}'}"/><Run Text=" kills"/>
+                            </TextBlock>
+                        </StackPanel>
+                    </Grid>
+                    <ItemsControl Grid.Row="4" ItemsSource="{Binding Events}" MaxHeight="80" Margin="0,3,0,0">
                         <ItemsControl.Template>
                             <ControlTemplate>
                                 <ScrollViewer VerticalScrollBarVisibility="Auto">

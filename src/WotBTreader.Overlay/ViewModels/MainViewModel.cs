@@ -48,6 +48,10 @@ public class MainViewModel : INotifyPropertyChanged
     private TimeSpan _duration;
     private bool _isPlaying;
     private double _playbackSpeed = 4.0;
+    private int _damageTeam1;
+    private int _damageTeam2;
+    private int _killsTeam1;
+    private int _killsTeam2;
 
     public MainViewModel()
         : this(new RendezvousLocator(), static baseUri => new TreaderApiClient(baseUri), null, null)
@@ -206,6 +210,7 @@ public class MainViewModel : INotifyPropertyChanged
         {
             _events = value;
             OnPropertyChanged();
+            ComputeStats();
         }
     }
 
@@ -230,6 +235,34 @@ public class MainViewModel : INotifyPropertyChanged
 
     /// <summary>Human-readable speed label for the cycle button.</summary>
     public string SpeedLabel => $"{_playbackSpeed:0.#}×";
+
+    /// <summary>Total damage received by team 1.</summary>
+    public int DamageTeam1
+    {
+        get => _damageTeam1;
+        private set { _damageTeam1 = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>Total damage received by team 2.</summary>
+    public int DamageTeam2
+    {
+        get => _damageTeam2;
+        private set { _damageTeam2 = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>Vehicles destroyed on team 1.</summary>
+    public int KillsTeam1
+    {
+        get => _killsTeam1;
+        private set { _killsTeam1 = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>Vehicles destroyed on team 2.</summary>
+    public int KillsTeam2
+    {
+        get => _killsTeam2;
+        private set { _killsTeam2 = value; OnPropertyChanged(); }
+    }
 
     /// <summary>Current scrubber position in the replay timeline.</summary>
     public TimeSpan CurrentTime
@@ -322,6 +355,46 @@ public class MainViewModel : INotifyPropertyChanged
             4.0 => 8.0,
             _ => 0.5,
         };
+    }
+
+    private void ComputeStats()
+    {
+        int dmg1 = 0, dmg2 = 0, kills1 = 0, kills2 = 0;
+        foreach (EventResponse evt in _events)
+        {
+            if (evt.Kind == "Destroyed")
+            {
+                if (evt.ParticipantId is string pid && _teamByParticipantId.TryGetValue(pid, out int team))
+                {
+                    if (team == 1) kills1++;
+                    else if (team == 2) kills2++;
+                }
+            }
+            else if (evt.Kind == "Damage" && evt.ParticipantId is string dmgPid)
+            {
+                int dmg = ParseDamageFromSummary(evt.Summary);
+                if (dmg > 0 && _teamByParticipantId.TryGetValue(dmgPid, out int team))
+                {
+                    if (team == 1) dmg1 += dmg;
+                    else if (team == 2) dmg2 += dmg;
+                }
+            }
+        }
+
+        DamageTeam1 = dmg1;
+        DamageTeam2 = dmg2;
+        KillsTeam1 = kills1;
+        KillsTeam2 = kills2;
+    }
+
+    private static int ParseDamageFromSummary(string summary)
+    {
+        // Summary format: "Damage: N HP"
+        int colon = summary.IndexOf(':');
+        int hp = summary.LastIndexOf(" HP", StringComparison.Ordinal);
+        if (colon < 0 || hp <= colon) return 0;
+        string num = summary.AsSpan(colon + 1, hp - colon - 1).Trim().ToString();
+        return int.TryParse(num, out int result) ? result : 0;
     }
 
     private void ApplyTimeFilter()
