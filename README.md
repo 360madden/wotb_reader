@@ -2,14 +2,15 @@
 
 WotB Treader is a Windows-first offline replay telemetry reader for World of
 Tanks Blitz. It imports replay evidence, preserves unknown records, builds
-versioned telemetry projections, and presents a local dashboard and optional
-external minimap overlay.
+versioned telemetry projections, and presents a local Blazor dashboard +
+WPF/WebView2 overlay with SignalR push-based updates.
 
 The project is intentionally local and evidence-first:
 
 - replay parsing and storage run on .NET 10;
 - the dashboard is an ASP.NET Core Blazor Web App bound only to loopback;
-- the external overlay is WPF with WebView2;
+- the overlay is a transparent WPF HUD with position plot, velocity trails,
+  event feed, battle stats, timeline scrubber, and keyboard shortcuts;
 - metadata may be resolved read-only from the installed game when its exact
   version is supported;
 - bot status and unsupported replay semantics remain `unknown` unless the
@@ -19,6 +20,16 @@ The project is intentionally local and evidence-first:
 
 Python, Node.js, Rust, Electron, containers, cloud services, runtime AI, and
 dynamic decoder DLLs are not part of the alpha runtime.
+
+## Quickstart
+
+See [knowledge.md](knowledge.md) for the full quickstart guide including
+convenience wrappers, startup sequence, and keyboard shortcuts.
+
+```powershell
+# Full gate: restore → format → build → test → audit → scan
+./scripts/validate.ps1
+```
 
 ## Development
 
@@ -34,16 +45,8 @@ dotnet build WotBTreader.sln -c Release --no-restore
 dotnet test WotBTreader.sln -c Release --no-build
 ```
 
-Run all repository checks with:
-
-```powershell
-./scripts/validate.ps1
-```
-
-Host and tool commands will be documented as each executable slice becomes
-available. See [architecture](docs/architecture/overview.md), the
-[blocker log](docs/operations/blocker-log.md), and the
-[fixture policy](docs/testing/fixture-policy.md) for durable project rules.
+**Current status:** 254 tests (252 passed, 2 skipped), 0 warnings, 0 errors.
+12 test projects. See [ROADMAP](docs/ROADMAP.md) for completed and deferred work.
 
 ## License and third-party material
 

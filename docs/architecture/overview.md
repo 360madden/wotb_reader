@@ -105,15 +105,37 @@ overlay window. Design options:
 
 Positions are decoded in `CoordinateSpace.ReplayRaw` — raw engine units from
 the replay file. The `PlotTransform` maps these to canvas coordinates via
-min/max fitting across all points, not against known map boundaries.
+min/max fitting across all points, falling back to known map boundaries.
 
-Map boundary data (`WorldMinX`/`MaxX`/`MinZ`/`MaxZ`) is **null** in the
-installed-game metadata — the community computes these by observing extreme
-positions across thousands of replays. See `docs/architecture/overview.md`
-for the coordinate space documentation.
+Map boundary data (`WorldMinX`/`MaxX`/`MinZ`/`MaxZ`) is fetched from the
+`/api/v1/maps/boundaries` endpoint and applied via `MainViewModel.ApplyMapBoundaries()`.
+When boundaries are available for a map, positions are normalised against the
+full map extent for stable minimap projection regardless of which area of the
+map a particular battle covered.
 
-A future `MinimapProjector` (mentioned in BLK log but never implemented) would
-normalize positions against known map boundaries for accurate minimap overlay.
+The community computes boundaries by observing extreme positions across
+thousands of replays. When boundaries are unavailable, `PlotTransform` falls
+back to per-session min/max fitting.
+
+### Overlay analysis features (all implemented)
+
+Beyond position plotting, the overlay sidebar provides a full replay analysis
+cockpit:
+
+| Feature | Implementation |
+|---------|---------------|
+| Position scatter plot | `FastPlotRenderer` — DrawingVisual-based, zero-GC rendering with frozen brushes/pens |
+| Velocity trails | Fading polylines per participant, opacity 0.12→0.85 oldest-to-newest |
+| Minimap reference grid | Dashed grid lines + map name label on `BackgroundCanvas` |
+| Event feed | Chronological event list with damage summaries; click to scrub timeline |
+| Battle stats | Damage taken + kills per team, computed from Destroyed/Damage events |
+| Time-slider scrubber | Play/pause, cumulative position playback, loop mode |
+| Playback speed | Cycle 0.5×/1×/2×/4×/8×; keyboard shortcuts 1-5 |
+| Session search/filter | Case-insensitive map name filter in the sidebar |
+| Collapsible sidebar | Shrink to controls-only strip via « button |
+| Sidebar opacity | Cycle 85%→50%→20% transparency via 👁 button |
+| Keyboard shortcuts | Space=play/pause, ←→=scrub ±5s, 1-5=speed, Esc=close |
+| Game window tracking | P/Invoke FindWindowW/SetWindowPos; overlay follows WoT Blitz window |
 
 ### What the overlay is NOT
 

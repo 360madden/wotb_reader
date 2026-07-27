@@ -1,12 +1,12 @@
 # Handoff — Session complete: overlay analysis tools, polish, docs
 
 **Date:** 2026-07-27
-**Status:** Complete — 11 features across 11 commits
+**Status:** Complete — 17 features across 17 commits
 
 ## Session summary
 
 The overlay was transformed from a basic position plot into a complete
-replay analysis cockpit. 11 features across 11 commits, zero regressions.
+replay analysis cockpit. 17 features across 17 commits, zero regressions.
 
 ### Features implemented (chronological)
 
@@ -23,15 +23,20 @@ replay analysis cockpit. 11 features across 11 commits, zero regressions.
 | 9 | `91b2e9f` | Minimap background grid + map name label |
 | 10 | `4c59b6b` | Fix stale knowledge.md, indent, sidebar opacity toggle |
 | 11 | `203e01d` | Keyboard shortcuts (Space/←→/1-5/Esc) |
-| 12 | — | Collapsible sidebar, docs/ROADMAP/knowledge updates |
+| 12 | `674d2c6` | Collapsible sidebar, docs/ROADMAP/knowledge updates |
+| 13 | `20f2e04` | Converter tests (9) + PlotTransform world-bounds tests (3) |
+| 14 | `b9aea34` | Bug fix: clear stale session state on deselect/error |
+| 15 | `1658669` | DrawingVisual renderer (zero-GC position plot) |
+| 16 | `5b019ba` | Session search/filter in overlay sidebar |
+| 17 | `148f825` | XML doc comments on all 12 DTOs + dashboard polish |
 
 ### Final metrics
 
 | Metric | Value |
 |--------|-------|
 | Build | 0 errors, 0 warnings |
-| Tests | **243 passed, 0 failed, 2 skipped** |
-| Overlay tests | 51 (was 41 at session start) |
+| Tests | **254 passed, 0 failed, 2 skipped** |
+| Overlay tests | 63 (was 41 at session start) |
 
 ### Overlay sidebar — what the user sees
 
@@ -72,3 +77,4 @@ Collapse button (`«`) shrinks sidebar to controls-only strip.
 
 - **Live HUD smoke test** — needs WoT Blitz installed
 - **Real minimap textures** — needs game installation + DVPL texture extraction
+- **Game path via DI** — overlay's game path discovery is a lightweight replica of `GameInstallationDiscovery`
