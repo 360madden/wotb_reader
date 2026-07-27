@@ -98,12 +98,30 @@ public sealed class CliEntryPointTests
         StringWriter error = new();
 
         int exitCode = await CliEntryPoint.RunAsync(
-            ["compare", "--json", "--data-root", root.Path],
+            ["export", "--json", "--data-root", root.Path],
             output,
             error,
             TestContext.CancellationToken);
 
         Assert.AreEqual((int)CliExitCode.UnsupportedCapability, exitCode);
+        using JsonDocument document = JsonDocument.Parse(output.ToString());
+        Assert.IsFalse(document.RootElement.GetProperty("success").GetBoolean());
+    }
+
+    [TestMethod]
+    public async Task CompareInspectWithUnknownIdReturnsNotFound()
+    {
+        using TemporaryDataRoot root = new();
+        StringWriter output = new();
+        StringWriter error = new();
+
+        int exitCode = await CliEntryPoint.RunAsync(
+            ["compare", "inspect", Guid.NewGuid().ToString("D"), "--json", "--data-root", root.Path],
+            output,
+            error,
+            TestContext.CancellationToken);
+
+        Assert.AreEqual((int)CliExitCode.InvalidInput, exitCode, error.ToString());
         using JsonDocument document = JsonDocument.Parse(output.ToString());
         Assert.IsFalse(document.RootElement.GetProperty("success").GetBoolean());
     }

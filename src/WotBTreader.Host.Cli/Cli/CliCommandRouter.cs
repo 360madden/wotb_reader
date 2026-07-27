@@ -25,17 +25,20 @@ public sealed class CliCommandRouter
     private readonly IReplayIngestionService _ingestion;
     private readonly IDecodeRunRepository _decodeRuns;
     private readonly ISessionQueryRepository _sessions;
+    private readonly IComparisonRunRepository _comparisons;
 
     public CliCommandRouter(
         IDoctorService doctor,
         IReplayIngestionService ingestion,
         IDecodeRunRepository decodeRuns,
-        ISessionQueryRepository sessions)
+        ISessionQueryRepository sessions,
+        IComparisonRunRepository comparisons)
     {
         _doctor = doctor;
         _ingestion = ingestion;
         _decodeRuns = decodeRuns;
         _sessions = sessions;
+        _comparisons = comparisons;
     }
 
     public async ValueTask<CliExecution> ExecuteAsync(
@@ -51,7 +54,8 @@ public sealed class CliCommandRouter
             "inspect" => await InspectAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "reprocess" => await ReprocessAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "sessions" => await SessionsAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
-            "compare" or "export" or "watch" or "serve" => Unsupported(invocation.Command, correlationId),
+            "compare" => await CompareAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
+            "export" or "watch" or "serve" => Unsupported(invocation.Command, correlationId),
             _ => Invalid(
                 "cli.command.unknown",
                 $"Unknown command '{invocation.Command}'. Available commands: {string.Join(", ", CommandNames)}.",
@@ -182,6 +186,50 @@ public sealed class CliCommandRouter
             .ListAsync(offset, limit, cancellationToken)
             .ConfigureAwait(false);
         return Success(sessions, $"Loaded {sessions.Count} session(s).", correlationId);
+    }
+
+    private async ValueTask<CliExecution> CompareAsync(
+        CliInvocation invocation,
+        Guid correlationId,
+        CancellationToken cancellationToken)
+    {
+        if (invocation.Positionals.Count == 0)
+        {
+            return Invalid(
+                "cli.compare.subcommand_required",
+                "Usage: compare inspect <comparison-run-id>. Available subcommands: inspect.",
+                correlationId);
+        }
+
+        string subCommand = invocation.Positionals[0];
+        return subCommand switch
+        {
+            "inspect" => await CompareInspectAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
+            _ => Invalid(
+                "cli.compare.unknown_subcommand",
+                $"Unknown compare subcommand '{subCommand}'. Available subcommands: inspect.",
+                correlationId),
+        };
+    }
+
+    private async ValueTask<CliExecution> CompareInspectAsync(
+        CliInvocation invocation,
+        Guid correlationId,
+        CancellationToken cancellationToken)
+    {
+        if (invocation.Positionals.Count != 2 ||
+            !Guid.TryParse(invocation.Positionals[1], out Guid value))
+        {
+            return Invalid(
+                "cli.compare.inspect.id_required",
+                "compare inspect requires one comparison-run GUID.",
+                correlationId);
+        }
+
+        OperationResult<TelemetryComparison> result = await _comparisons
+            .GetAsync(new ComparisonRunId(value), cancellationToken)
+            .ConfigureAwait(false);
+        return FromResult(result, correlationId, "Comparison run loaded.");
     }
 
     private static bool TryGetInteger(
