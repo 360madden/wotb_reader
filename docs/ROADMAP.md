@@ -60,12 +60,12 @@ had no `export` command. Now implemented.
 
 ### 🟢 P3 — `serve` CLI command
 
-The web host is a separate executable. A `serve` command in the CLI would let
-users start the web host from the same binary.
-
-- Launch the web host from the CLI process
-- Share the same data root and configuration
-- **Effort:** ~2 hours. Host already exists as separate project.
+The web host is a separate executable. Decided not to merge into CLI:
+- The CLI does not reference Host.Web (would create coupling)
+- The rendezvous pattern was designed for independent processes
+- Launch the web host as a separate process: `WotBTreader.Host.Web.exe`
+- The CLI discovers it automatically via the rendezvous record
+- **Status:** Designed out — not needed for alpha.
 
 ### 🟢 P4 — `watch` CLI command
 
