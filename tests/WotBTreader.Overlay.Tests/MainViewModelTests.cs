@@ -447,6 +447,76 @@ public sealed class MainViewModelTests
     }
 
     [TestMethod]
+    public async Task SelectSession_WithDamageEvents_ComputesTeamStats()
+    {
+        string detailJson = """
+            {
+              "decodeRun": {
+                "decodeRunId": "6b1c9e52-3d4a-4f7b-9c0d-1e2f3a4b5c6d",
+                "sourceArtifactId": "aa10bb20-cc30-dd40-ee50-ff60aa70bb80",
+                "decoderId": "wotb-replay",
+                "decoderVersion": "1.2.3",
+                "schemaVersion": "1.0",
+                "status": "succeeded",
+                "capabilities": [],
+                "startedAtUtc": "2026-07-26T10:00:00+00:00",
+                "completedAtUtc": null,
+                "failureCode": null,
+                "failureSummary": null
+              },
+              "session": {
+                "battleSessionId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                "gameVersion": null,
+                "arenaIdentity": null,
+                "mapId": null,
+                "mapName": null,
+                "battleTimeUtc": "2026-07-26T09:55:00+00:00",
+                "duration": "0:05:00",
+                "viewpointParticipantId": null
+              },
+              "participants": [
+                { "participantId": "p1", "entityId": 100, "teamNumber": 1, "playerName": "Alpha", "clanTag": null, "tankId": null, "tankName": null, "tankClass": null, "botStatus": "unknown", "botStatusConfidence": null },
+                { "participantId": "p2", "entityId": 200, "teamNumber": 2, "playerName": "Bravo", "clanTag": null, "tankId": null, "tankName": null, "tankClass": null, "botStatus": "unknown", "botStatusConfidence": null }
+              ],
+              "positions": [],
+              "positionsTruncated": false,
+              "totalPositionCount": 0,
+              "eventCount": 4,
+              "rawRecordCount": 0,
+              "warnings": [],
+              "events": [
+                { "kind": "Damage", "replayTime": "0:00:10", "participantId": "p1", "summary": "Damage: 300 HP" },
+                { "kind": "Damage", "replayTime": "0:00:20", "participantId": "p1", "summary": "Damage: 150 HP" },
+                { "kind": "Damage", "replayTime": "0:00:30", "participantId": "p2", "summary": "Damage: 500 HP" },
+                { "kind": "Destroyed", "replayTime": "0:01:00", "participantId": "p2", "summary": "Destroyed" }
+              ]
+            }
+            """;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            string path = request.RequestUri!.AbsolutePath;
+            if (path.Contains(BattleSessionId.ToString("D"), StringComparison.Ordinal))
+                return Task.FromResult(JsonResponse(detailJson));
+            return Task.FromResult(JsonResponse("""{"offset":0,"limit":200,"count":1,"items":[]}"""));
+        });
+        MainViewModel viewModel = CreateViewModel(handler);
+
+        await viewModel.RefreshSessionsAsync();
+        viewModel.SelectedSession = new SessionRow(BattleSessionId, "Stats Test", null, Now, 2, 0);
+
+        await WaitForConditionAsync(() => viewModel.Events.Count > 0, TimeSpan.FromSeconds(2));
+
+        Assert.AreEqual(4, viewModel.Events.Count);
+        Assert.AreEqual(450, viewModel.DamageTeam1, "Team 1 received 300+150=450 damage");
+        Assert.AreEqual(500, viewModel.DamageTeam2, "Team 2 received 500 damage");
+        Assert.AreEqual(0, viewModel.KillsTeam1);
+        Assert.AreEqual(1, viewModel.KillsTeam2, "Team 2 had 1 destroyed");
+        Assert.AreEqual(4.0, viewModel.PlaybackSpeed);
+        Assert.AreEqual("4×", viewModel.SpeedLabel);
+    }
+
+    [TestMethod]
     public async Task StreamService_NullStreamService_NoCrashOnRefresh()
     {
         WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));

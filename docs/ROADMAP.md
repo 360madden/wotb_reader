@@ -1,6 +1,6 @@
 # Project Completion Roadmap
 
-Last updated: 2026-07-27
+Last updated: 2026-07-27 (autonomous session)
 
 ## Completed ✅
 
@@ -13,8 +13,8 @@ All alpha surfaces are implemented and validated:
 | CaptureLogs (NDJSON telemetry, replay clocks) | ✅ | 9 |
 | GameIntegration (install discovery, DVPL, log monitoring) | ✅ | 25 |
 | CLI (doctor, import, inspect, reprocess, sessions) | ✅ | 13 |
-| Web host (loopback Blazor, read API, SignalR hub, rendezvous) | ✅ | 54 |
-| Overlay (WPF: session list, position plot, SignalR push, WebView2 dashboard) | ✅ | 41 |
+| Web host (loopback Blazor, read API with events, battle stats on session detail, SignalR hub, rendezvous) | ✅ | 54 |
+| Overlay (WPF: session list, position plot, velocity trails, event feed, battle stats, time slider, playback controls, SignalR push, WebView2 dashboard) | ✅ | 41 |
 | Architecture enforcement | ✅ | 3 |
 | Composition root validation | ✅ | 10 |
 | Codebase bug hunt (src + tests + tools) | ✅ | 1 fix |
@@ -24,8 +24,10 @@ All alpha surfaces are implemented and validated:
 
 *(Count includes GameHarness.Tests: 26 tests for the developer replay harness tooling.)*
 
-All eight original roadmap items are complete. Two additional features were
-implemented in the HUD-finalization session (2026-07-27):
+All eight original roadmap items are complete. Six additional features were
+implemented in the autonomous session (2026-07-27):
+
+### Session 1 — HUD finalization
 
 | Feature | Status |
 |---------|--------|
@@ -33,7 +35,21 @@ implemented in the HUD-finalization session (2026-07-27):
 | Game window tracking (P/Invoke FindWindowW/GetWindowRect/SetWindowPos) | ✅ |
 | Game launching from HUD (find replay + launch wotblitz.exe) | ✅ |
 | Game path auto-discovery (env var → default roots → fallback) | ✅ |
+| Minimap projection with map boundary computation | ✅ |
 | `compare create` CLI (wire TelemetryComparator) | ✅ |
+
+### Session 2 — Autonomous (overlay analysis tools + web dashboard parity)
+
+| Feature | Status |
+|---------|--------|
+| Velocity trails (fading polylines per participant on position plot) | ✅ |
+| Session detail panel (participants, event count in overlay sidebar) | ✅ |
+| Event feed (chronological event list with human-readable summaries) | ✅ |
+| EventResponse DTO (API + overlay contracts, damage parsing, kind filtering) | ✅ |
+| Time-slider scrubber (cumulative position playback, play/pause) | ✅ |
+| Playback controls (speed cycle 0.5–8×, ⏮⏭ jump, loop mode) | ✅ |
+| Battle stats in overlay (damage taken + kills per team) | ✅ |
+| Battle stats + events table on web dashboard session detail page | ✅ |
 
 ### Comment coverage
 
@@ -114,13 +130,16 @@ The web host is a separate executable. Decided not to merge into CLI:
 
 - **Live HUD smoke test**: Verify transparent window, session list, position
   dots, and Launch button against a real WoT Blitz installation.
-- **Minimap projection**: `MinimapProjector` for map-boundary-aware position
-  rendering (not just canvas-fit). Map boundaries are null in installed-game
-  metadata — must be computed from position extremes.
+- **Minimap background images**: Serve map texture .png files from the web API
+  using the existing DVPL reader, add `/api/v1/maps/{id}/texture` endpoint,
+  and render the image on the overlay canvas behind the position dots.
 - **Game path via DI**: The overlay's game path discovery is a lightweight
-  replica of `GameInstallationDiscovery` to avoid an architecture-breaking
-  dependency. A future refactor could extract discovery into a shared
-  portable utility.
+  replica of `GameInstallationDiscovery`. A future refactor could extract
+  discovery into a shared portable utility.
+- **Test coverage for new overlay features**: The autonomous session added
+  6 significant features across overlay and web dashboard. The existing 233
+  tests exercise the core paths; time-slider, stats, and event feed would
+  benefit from dedicated unit tests.
 
 ### 🟢 P4 — `watch` CLI command ✅
 
