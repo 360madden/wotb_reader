@@ -316,6 +316,31 @@ public class MainViewModel : INotifyPropertyChanged
         CurrentTime = time;
     }
 
+    /// <summary>
+    /// Scrubs the timeline by a relative offset, clamping to [0, Duration].
+    /// Used by keyboard shortcuts (Left/Right arrow keys).
+    /// </summary>
+    public void ScrubRelative(TimeSpan offset)
+    {
+        if (_duration <= TimeSpan.Zero) return;
+        TimeSpan target = _currentTime + offset;
+        if (target < TimeSpan.Zero) target = TimeSpan.Zero;
+        if (target > _duration) target = _duration;
+        CurrentTime = target;
+    }
+
+    /// <summary>
+    /// Sets playback speed directly. Used by keyboard shortcuts (1-5 keys).
+    /// Only accepts the five defined speed levels.
+    /// </summary>
+    public void SetPlaybackSpeed(double speed)
+    {
+        if (speed is 0.5 or 1.0 or 2.0 or 4.0 or 8.0)
+        {
+            PlaybackSpeed = speed;
+        }
+    }
+
     /// <summary>Advance the scrubber by one tick during playback.</summary>
     public void AdvancePlayback()
     {

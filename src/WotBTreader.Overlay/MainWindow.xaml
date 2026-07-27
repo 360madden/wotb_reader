@@ -10,7 +10,8 @@
         Background="Transparent"
         Topmost="True"
         Width="1200" Height="700"
-        MouseLeftButtonDown="Window_MouseLeftButtonDown">
+        MouseLeftButtonDown="Window_MouseLeftButtonDown"
+        PreviewKeyDown="Window_PreviewKeyDown">
     <Grid>
         <views:PositionPlot PointsSource="{Binding Points}" IsHitTestVisible="False"
                             WorldMinX="{Binding WorldMinX}" WorldMaxX="{Binding WorldMaxX}"

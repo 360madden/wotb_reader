@@ -114,6 +114,51 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         _viewModel.AdvancePlayback();
     }
 
+    // ── Keyboard shortcuts ──────────────────────────────────
+
+    private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case System.Windows.Input.Key.Space:
+                _viewModel.PlayPauseCommand.Execute(null);
+                e.Handled = true;
+                break;
+            case System.Windows.Input.Key.Left:
+                _viewModel.ScrubRelative(TimeSpan.FromSeconds(-5));
+                e.Handled = true;
+                break;
+            case System.Windows.Input.Key.Right:
+                _viewModel.ScrubRelative(TimeSpan.FromSeconds(5));
+                e.Handled = true;
+                break;
+            case System.Windows.Input.Key.D1:
+                _viewModel.SetPlaybackSpeed(0.5);
+                e.Handled = true;
+                break;
+            case System.Windows.Input.Key.D2:
+                _viewModel.SetPlaybackSpeed(1.0);
+                e.Handled = true;
+                break;
+            case System.Windows.Input.Key.D3:
+                _viewModel.SetPlaybackSpeed(2.0);
+                e.Handled = true;
+                break;
+            case System.Windows.Input.Key.D4:
+                _viewModel.SetPlaybackSpeed(4.0);
+                e.Handled = true;
+                break;
+            case System.Windows.Input.Key.D5:
+                _viewModel.SetPlaybackSpeed(8.0);
+                e.Handled = true;
+                break;
+            case System.Windows.Input.Key.Escape:
+                Close();
+                e.Handled = true;
+                break;
+        }
+    }
+
     // ── Sidebar transparency toggle ─────────────────────────
 
     private void ToggleSidebarOpacity(object sender, System.Windows.RoutedEventArgs e)

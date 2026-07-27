@@ -604,6 +604,46 @@ public sealed class MainViewModelTests
     }
 
     [TestMethod]
+    public void ScrubRelative_ZeroDuration_IsNoOp()
+    {
+        MainViewModel viewModel = CreateViewModel();
+
+        // No session loaded, duration is zero — should be no-op.
+        viewModel.ScrubRelative(TimeSpan.FromSeconds(5));
+        Assert.AreEqual(TimeSpan.Zero, viewModel.CurrentTime);
+    }
+
+    [TestMethod]
+    public void SetPlaybackSpeed_AcceptsDefinedSpeeds()
+    {
+        MainViewModel viewModel = CreateViewModel();
+
+        viewModel.SetPlaybackSpeed(8.0);
+        Assert.AreEqual(8.0, viewModel.PlaybackSpeed);
+        Assert.AreEqual("8×", viewModel.SpeedLabel);
+
+        viewModel.SetPlaybackSpeed(0.5);
+        Assert.AreEqual(0.5, viewModel.PlaybackSpeed);
+        Assert.AreEqual("0.5×", viewModel.SpeedLabel);
+
+        viewModel.SetPlaybackSpeed(2.0);
+        Assert.AreEqual(2.0, viewModel.PlaybackSpeed);
+        Assert.AreEqual("2×", viewModel.SpeedLabel);
+    }
+
+    [TestMethod]
+    public void SetPlaybackSpeed_RejectsUndefinedSpeeds()
+    {
+        MainViewModel viewModel = CreateViewModel();
+
+        viewModel.SetPlaybackSpeed(3.0);
+        Assert.AreEqual(4.0, viewModel.PlaybackSpeed, "Should stay at default 4.0");
+
+        viewModel.SetPlaybackSpeed(7.0);
+        Assert.AreEqual(4.0, viewModel.PlaybackSpeed, "Should stay at default 4.0");
+    }
+
+    [TestMethod]
     public async Task StreamService_NullStreamService_NoCrashOnRefresh()
     {
         WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
