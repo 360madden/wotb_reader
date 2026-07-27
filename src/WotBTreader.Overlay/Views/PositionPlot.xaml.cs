@@ -266,7 +266,10 @@ public sealed partial class PositionPlot : UserControl
         {
             Line line = new()
             {
-                X1 = x, Y1 = 0, X2 = x, Y2 = h,
+                X1 = x,
+                Y1 = 0,
+                X2 = x,
+                Y2 = h,
                 Stroke = new SolidColorBrush(gridColor),
                 StrokeThickness = 0.5,
                 StrokeDashArray = new DoubleCollection { 4, 8 },
@@ -278,7 +281,10 @@ public sealed partial class PositionPlot : UserControl
         {
             Line line = new()
             {
-                X1 = 0, Y1 = y, X2 = w, Y2 = y,
+                X1 = 0,
+                Y1 = y,
+                X2 = w,
+                Y2 = y,
                 Stroke = new SolidColorBrush(gridColor),
                 StrokeThickness = 0.5,
                 StrokeDashArray = new DoubleCollection { 4, 8 },
