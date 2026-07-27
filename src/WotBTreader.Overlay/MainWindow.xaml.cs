@@ -159,6 +159,29 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         }
     }
 
+    // ── Sidebar collapse toggle ─────────────────────────────
+
+    private bool _sidebarExpanded = true;
+
+    private void ToggleSidebarCollapse(object sender, System.Windows.RoutedEventArgs e)
+    {
+        _sidebarExpanded = !_sidebarExpanded;
+
+        System.Windows.Visibility visibility = _sidebarExpanded
+            ? System.Windows.Visibility.Visible
+            : System.Windows.Visibility.Collapsed;
+
+        SessionsListBox.Visibility = visibility;
+        TimelineGrid.Visibility = visibility;
+        DetailGrid.Visibility = visibility;
+        CloseButton.Visibility = visibility;
+
+        CollapseButton.Content = _sidebarExpanded ? "«" : "»";
+        CollapseButton.ToolTip = _sidebarExpanded
+            ? "Collapse sidebar"
+            : "Expand sidebar";
+    }
+
     // ── Sidebar transparency toggle ─────────────────────────
 
     private void ToggleSidebarOpacity(object sender, System.Windows.RoutedEventArgs e)

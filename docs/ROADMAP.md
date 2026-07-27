@@ -14,13 +14,13 @@ All alpha surfaces are implemented and validated:
 | GameIntegration (install discovery, DVPL, log monitoring) | ✅ | 25 |
 | CLI (doctor, import, inspect, reprocess, sessions) | ✅ | 13 |
 | Web host (loopback Blazor, read API with events, battle stats on session detail, SignalR hub, rendezvous) | ✅ | 54 |
-| Overlay (WPF: session list, position plot, velocity trails, event feed, battle stats, time slider, playback controls, SignalR push, WebView2 dashboard) | ✅ | 41 |
+| Overlay (WPF: session list, position plot, velocity trails, event feed, battle stats, time slider, playback controls, keyboard shortcuts, minimap grid, collapsible sidebar, SignalR push, WebView2 dashboard) | ✅ | 51 |
 | Architecture enforcement | ✅ | 3 |
 | Composition root validation | ✅ | 10 |
 | Codebase bug hunt (src + tests + tools) | ✅ | 1 fix |
 | Documentation (architecture, handoffs, BLK log, knowledge.md) | ✅ | — |
 
-**Total:** 233 tests, 2 opt-in skips. Build: 0 errors, 0 warnings. Scan: clean.
+**Total:** 243 tests, 2 opt-in skips. Build: 0 errors, 0 warnings. Scan: clean.
 
 *(Count includes GameHarness.Tests: 26 tests for the developer replay harness tooling.)*
 
@@ -50,6 +50,10 @@ implemented in the autonomous session (2026-07-27):
 | Playback controls (speed cycle 0.5–8×, ⏮⏭ jump, loop mode) | ✅ |
 | Battle stats in overlay (damage taken + kills per team) | ✅ |
 | Battle stats + events table on web dashboard session detail page | ✅ |
+| Minimap background grid (dashed reference lines + map name label) | ✅ |
+| Sidebar opacity toggle (cycles 0.85→0.50→0.20) | ✅ |
+| Keyboard shortcuts (Space/←→/1-5/Esc) | ✅ |
+| Collapsible sidebar (shrink to controls-only strip) | ✅ |
 
 ### Comment coverage
 
@@ -129,17 +133,14 @@ The web host is a separate executable. Decided not to merge into CLI:
 ## Deferred / future work
 
 - **Live HUD smoke test**: Verify transparent window, session list, position
-  dots, and Launch button against a real WoT Blitz installation.
-- **Minimap background images**: Serve map texture .png files from the web API
+  dots, velocity trails, time slider, keyboard shortcuts, and Launch button
+  against a real WoT Blitz installation.
+- **Real minimap textures**: Serve map texture .png files from the web API
   using the existing DVPL reader, add `/api/v1/maps/{id}/texture` endpoint,
   and render the image on the overlay canvas behind the position dots.
 - **Game path via DI**: The overlay's game path discovery is a lightweight
   replica of `GameInstallationDiscovery`. A future refactor could extract
   discovery into a shared portable utility.
-- **Test coverage for new overlay features**: The autonomous session added
-  6 significant features across overlay and web dashboard. The existing 233
-  tests exercise the core paths; time-slider, stats, and event feed would
-  benefit from dedicated unit tests.
 
 ### 🟢 P4 — `watch` CLI command ✅
 
