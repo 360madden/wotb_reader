@@ -64,9 +64,21 @@ The overlay must track the game window position via P/Invoke
 the game window's size and location. This ensures the position plot overlays
 the game's minimap area correctly.
 
+### Game launch mechanism (NOT YET IMPLEMENTED)
+
+Dragging a `.wotbreplay` file onto `wotblitz.exe` (or passing it as a
+command-line argument) launches the game directly into replay playback.
+The overlay can trigger this by calling:
+
+```csharp
+Process.Start(@"C:\Games\World_of_Tanks_Blitz\wotblitz.exe", replayPath);
+```
+
+The exact game path should be discovered via `GameInstallationDiscovery`
+rather than hardcoded.
+
 ### What the overlay is NOT
 
-- It is NOT a game launcher. It does not start `wotblitz.exe`.
 - It is NOT a generic session viewer. The web dashboard at `http://127.0.0.1:9182`
   serves that purpose for deep inspection.
 - It is NOT a replacement for the game's built-in replay viewer. It augments it.
