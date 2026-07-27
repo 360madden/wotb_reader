@@ -20,7 +20,9 @@ All alpha surfaces are implemented and validated:
 | Codebase bug hunt (src + tests + tools) | ✅ | 1 fix |
 | Documentation (architecture, handoffs, BLK log, knowledge.md) | ✅ | — |
 
-**Total:** 231 tests, 2 opt-in skips. Build: 0 errors, 0 warnings. Scan: clean.
+**Total:** 233 tests, 2 opt-in skips. Build: 0 errors, 0 warnings. Scan: clean.
+
+*(Count includes GameHarness.Tests: 26 tests for the developer replay harness tooling.)*
 
 ### Comment coverage
 

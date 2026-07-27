@@ -1,7 +1,11 @@
 # Handoff: Drag-and-drop fix, Blitz replay folder, rendezvous path, HUD groundwork
 
 **Date:** 2026-07-27
-**Status:** In progress — HUD rework started but reverted
+**Status:** Complete — all items resolved in subsequent session
+
+**Amendment (2026-07-27):** The HUD redesign listed below as "reverted" was
+successfully implemented in commit `e5f7b7f`. See
+`docs/operations/handoffs/2026-07-27-hud-implementation.md` for details.
 
 ## Completed changes
 
@@ -22,9 +26,13 @@ Added optional `Func<SessionRow?, bool>? launchGame` delegate parameter and `Lau
 
 ## What still needs to be done
 
-- **HUD redesign**: MainWindow needs to become transparent, borderless, topmost. The reverted code in git history has P/Invoke for `FindWindow`/`GetWindowRect`/`SetWindowPos` and a `LaunchGameWithSelectedReplay` method. Needs nullability fixes and a proper `FindReplaySource` that actually matches session to replay file.
-- **Game launching**: The `GameLauncherService` pattern should be a separate injectable service. Hardcoded game paths (`C:\Games\World_of_Tanks_Blitz\wotblitz.exe`) should use `GameIntegration.GameInstallationDiscovery` instead.
-- **Dashboard tab**: The original dashboard WebView2 tab needs to be preserved in the HUD redesign.
+- **Game path discovery**: The game path is hardcoded to
+  `C:\Games\World_of_Tanks_Blitz\wotblitz.exe`. Use
+  `GameIntegration.GameInstallationDiscovery` to auto-discover the install
+  path. See `docs/architecture/overview.md` for the FUTURE note.
+- **compare create**: `TelemetryComparator` needs wiring through the CLI.
+  The `TelemetryEvent` vs `CanonicalEvent` type mismatch makes this
+  non-trivial. See `docs/ROADMAP.md` deferred item.
 
 ## Test status
 

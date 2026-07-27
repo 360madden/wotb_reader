@@ -48,41 +48,38 @@ unspotted enemy movements, flanking routes, and positioning mistakes that the
 game's replay viewer intentionally hides. This is the product's core value
 proposition.
 
-### Required window properties (NOT YET IMPLEMENTED)
+### Window properties (implemented ✅)
+
+The `MainWindow.xaml` now uses:
 
 - `WindowStyle="None"` — no title bar or chrome
 - `AllowsTransparency="True"` — transparent background outside the HUD panel
 - `Background="Transparent"` — see-through to the game underneath
 - `Topmost="True"` — stays above the game window
-- Draggable via mouse-down (no title bar to grab)
+- `MouseLeftButtonDown` → `DragMove()` — draggable without a title bar
 
-### Current state
+A floating semi-transparent dark panel (`#CC111111`) on the right side contains
+Launch, Refresh, Dashboard, Close buttons, and a session list. The
+`PositionPlot` canvas spans the full window behind the panel.
 
-The overlay is currently implemented as a standard opaque WPF window with a
-toolbar and TabControl. The transparency and game-window positioning are
-**not yet implemented**. The `MainWindow.xaml.cs` class comment describes the
-intended transparent shell, but the XAML and code-behind have not been updated
-to match.
+### Game window tracking (implemented ✅)
 
-### Game window integration (NOT YET IMPLEMENTED)
+P/Invoke `FindWindowW`/`GetWindowRect`/`SetWindowPos` with a 500ms
+`DispatcherTimer` (`_windowTrackTimer`). When the "World of Tanks Blitz"
+game window is found, the overlay repositions itself to match its bounds.
+The timer starts when the Launch button triggers game playback.
 
-The overlay must track the game window position via P/Invoke
-(`FindWindow`, `GetWindowRect`, `SetWindowPos`) and reposition itself to match
-the game window's size and location. This ensures the position plot overlays
-the game's minimap area correctly.
+### Game launch mechanism (implemented ✅)
 
-### Game launch mechanism (NOT YET IMPLEMENTED)
+The Launch button calls `LaunchGameWithSelectedReplay`:
+1. Finds the most recently modified `.wotbreplay` in the Blitz replay folder
+   (`%LOCALAPPDATA%\wotblitz\DAVAProject\replays\`)
+2. Copies it to the replay folder (if not already there)
+3. Launches `wotblitz.exe` with the replay file as a command-line argument
+4. Starts the window tracking timer
 
-Dragging a `.wotbreplay` file onto `wotblitz.exe` (or passing it as a
-command-line argument) launches the game directly into replay playback.
-The overlay can trigger this by calling:
-
-```csharp
-Process.Start(@"C:\Games\World_of_Tanks_Blitz\wotblitz.exe", replayPath);
-```
-
-The exact game path should be discovered via `GameInstallationDiscovery`
-rather than hardcoded.
+The game path is currently hardcoded to `C:\Games\World_of_Tanks_Blitz\wotblitz.exe`.
+**FUTURE:** Use `GameInstallationDiscovery` to auto-discover the install path.
 
 ### Known architectural constraint: WebView2 + transparency
 
