@@ -72,6 +72,14 @@ public interface ISessionQueryRepository
     ValueTask<OperationResult<ReplayDecodeProjection>> GetProjectionAsync(
         BattleSessionId battleSessionId,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Returns map boundaries computed from all position samples across every
+    /// imported replay, grouped by map ID. An empty list means no position data
+    /// has been imported yet.
+    /// </summary>
+    ValueTask<IReadOnlyList<MapBoundary>> GetMapBoundariesAsync(
+        CancellationToken cancellationToken);
 }
 
 /// <summary>Initializes and migrates application storage before dependent services start.</summary>

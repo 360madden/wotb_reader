@@ -287,6 +287,40 @@ internal sealed class SqliteSessionQueryRepository : ISessionQueryRepository
         return values;
     }
 
+    public async ValueTask<IReadOnlyList<MapBoundary>> GetMapBoundariesAsync(
+        CancellationToken cancellationToken)
+    {
+        await using SqliteConnection connection =
+            await _context.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT bs.map_id,
+                   MIN(ps.raw_x) as min_x, MAX(ps.raw_x) as max_x,
+                   MIN(ps.raw_z) as min_z, MAX(ps.raw_z) as max_z
+            FROM position_samples ps
+            JOIN battle_sessions bs ON ps.battle_session_id = bs.id
+            WHERE bs.map_id IS NOT NULL
+            GROUP BY bs.map_id
+            ORDER BY bs.map_id;
+            """;
+
+        List<MapBoundary> boundaries = [];
+        await using SqliteDataReader reader =
+            await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            boundaries.Add(new MapBoundary(
+                reader.GetString(0),
+                reader.GetDouble(1),
+                reader.GetDouble(2),
+                reader.GetDouble(3),
+                reader.GetDouble(4)));
+        }
+
+        return boundaries;
+    }
+
     private static async ValueTask<IReadOnlyList<string>> ReadWarningsAsync(
         SqliteConnection connection,
         DecodeRunId decodeRunId,

@@ -164,3 +164,23 @@ public sealed record SessionPageResponse(
     int Limit,
     int Count,
     IReadOnlyList<SessionSummaryResponse> Items);
+
+/// <summary>Computed map boundary from all observed position samples.</summary>
+public sealed record MapBoundaryResponse(
+    string MapId,
+    double MinX,
+    double MaxX,
+    double MinZ,
+    double MaxZ)
+{
+    public static MapBoundaryResponse From(MapBoundary boundary)
+    {
+        ArgumentNullException.ThrowIfNull(boundary);
+        return new MapBoundaryResponse(
+            boundary.MapId,
+            boundary.MinX,
+            boundary.MaxX,
+            boundary.MinZ,
+            boundary.MaxZ);
+    }
+}

@@ -1,4 +1,4 @@
-﻿<Window x:Class="WotBTreader.Overlay.MainWindow"
+<Window x:Class="WotBTreader.Overlay.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -12,7 +12,9 @@
         Width="1200" Height="700"
         MouseLeftButtonDown="Window_MouseLeftButtonDown">
     <Grid>
-        <views:PositionPlot PointsSource="{Binding Points}" IsHitTestVisible="False"/>
+        <views:PositionPlot PointsSource="{Binding Points}" IsHitTestVisible="False"
+                            WorldMinX="{Binding WorldMinX}" WorldMaxX="{Binding WorldMaxX}"
+                            WorldMinZ="{Binding WorldMinZ}" WorldMaxZ="{Binding WorldMaxZ}"/>
         <Border HorizontalAlignment="Right" VerticalAlignment="Top"
                 Width="340" Margin="12" Padding="8"
                 Background="#CC111111" CornerRadius="6"

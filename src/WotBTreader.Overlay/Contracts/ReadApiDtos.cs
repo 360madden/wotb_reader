@@ -139,3 +139,16 @@ public sealed record SessionDetailResponse
 
     public IReadOnlyList<string> Warnings { get; init; } = [];
 }
+
+public sealed record MapBoundaryResponse
+{
+    public string MapId { get; init; } = string.Empty;
+
+    public double MinX { get; init; }
+
+    public double MaxX { get; init; }
+
+    public double MinZ { get; init; }
+
+    public double MaxZ { get; init; }
+}

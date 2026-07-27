@@ -4,6 +4,7 @@ namespace WotBTreader.Overlay.ViewModels;
 public sealed record SessionRow(
     Guid BattleSessionId,
     string MapLabel,
+    string? MapId,
     DateTimeOffset BattleTimeUtc,
     int ParticipantCount,
     int PositionCount);

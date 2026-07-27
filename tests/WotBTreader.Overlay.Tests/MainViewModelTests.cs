@@ -272,7 +272,7 @@ public sealed class MainViewModelTests
         await viewModel.RefreshSessionsAsync();
 
         viewModel.SelectedSession = new SessionRow(
-            BattleSessionId, "Test Map", Now, 1, 2);
+            BattleSessionId, "Test Map", null, Now, 1, 2);
 
         // Poll until the fire-and-forget detail load completes.
         await WaitForConditionAsync(() => viewModel.Points.Count > 0, TimeSpan.FromSeconds(2));
@@ -296,7 +296,7 @@ public sealed class MainViewModelTests
         await viewModel.RefreshSessionsAsync();
 
         viewModel.SelectedSession = new SessionRow(
-            BattleSessionId, "Test", Now, 1, 1);
+            BattleSessionId, "Test", null, Now, 1, 1);
 
         // The detail load fires asynchronously, but returns null immediately.
         // Wait for it to settle, then verify no points were loaded.
@@ -315,7 +315,7 @@ public sealed class MainViewModelTests
 
         // Must not throw even though _client is null and SelectedSession is set.
         viewModel.SelectedSession = new SessionRow(
-            BattleSessionId, "Test", Now, 1, 1);
+            BattleSessionId, "Test", null, Now, 1, 1);
 
         Assert.AreEqual(0, viewModel.Points.Count);
     }
@@ -350,7 +350,7 @@ public sealed class MainViewModelTests
         // SelectedSession to null. The _isRefreshingSessions guard must
         // suppress the resulting detail load.
         viewModel.SelectedSession = new SessionRow(
-            BattleSessionId, "Cascade Test", Now, 1, 1);
+            BattleSessionId, "Cascade Test", null, Now, 1, 1);
 
         // Unblock and await the refresh.
         blockTcs.SetResult(JsonResponse(

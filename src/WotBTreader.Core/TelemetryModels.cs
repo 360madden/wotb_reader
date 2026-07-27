@@ -178,3 +178,16 @@ public sealed record ReplayDecodeProjection(
     IReadOnlyList<CanonicalEvent> Events,
     IReadOnlyList<RawRecord> RawRecords,
     IReadOnlyList<string> Warnings);
+
+/// <summary>
+/// Computed map boundary from all observed position samples across every
+/// imported replay. Used to normalise position plots so they overlay the
+/// game's minimap accurately regardless of which area of the map a
+/// particular battle covered.
+/// </summary>
+public sealed record MapBoundary(
+    string MapId,
+    double MinX,
+    double MaxX,
+    double MinZ,
+    double MaxZ);

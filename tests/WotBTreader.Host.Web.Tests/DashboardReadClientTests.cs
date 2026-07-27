@@ -165,6 +165,10 @@ public sealed class DashboardReadClientTests
                 ? OperationResult.Failure<ReplayDecodeProjection>(
                     new ApplicationError("storage.not_found", "missing"))
                 : OperationResult.Success(projection));
+
+        public ValueTask<IReadOnlyList<MapBoundary>> GetMapBoundariesAsync(
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult<IReadOnlyList<MapBoundary>>([]);
     }
 
     private sealed class FakeDoctor(DoctorReport report) : IDoctorService

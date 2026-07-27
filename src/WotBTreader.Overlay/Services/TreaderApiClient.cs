@@ -42,6 +42,14 @@ public sealed class TreaderApiClient : IDisposable
         return JsonSerializer.Deserialize<SessionDetailResponse>(json, SerializerOptions);
     }
 
+    public async Task<IReadOnlyList<MapBoundaryResponse>> GetMapBoundariesAsync(CancellationToken cancellationToken = default)
+    {
+        string json = await _httpClient.GetStringAsync(
+            "api/v1/maps/boundaries",
+            cancellationToken);
+        return JsonSerializer.Deserialize<IReadOnlyList<MapBoundaryResponse>>(json, SerializerOptions) ?? [];
+    }
+
     public void Dispose()
     {
         _httpClient.Dispose();

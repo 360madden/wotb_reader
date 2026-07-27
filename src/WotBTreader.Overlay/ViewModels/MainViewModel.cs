@@ -33,6 +33,13 @@ public class MainViewModel : INotifyPropertyChanged
     private bool _isRefreshingSessions;
     private readonly SynchronizationContext? _syncContext;
 
+    private Dictionary<string, MapBoundaryResponse> _mapBoundaries = new(StringComparer.OrdinalIgnoreCase);
+    private bool _boundariesFetched;
+    private double _worldMinX;
+    private double _worldMaxX;
+    private double _worldMinZ;
+    private double _worldMaxZ;
+
     public MainViewModel()
         : this(new RendezvousLocator(), static baseUri => new TreaderApiClient(baseUri), null, null)
     {
@@ -111,6 +118,30 @@ public class MainViewModel : INotifyPropertyChanged
     /// <summary>Launches wotblitz.exe with the currently selected replay.</summary>
     public ICommand LaunchGameCommand { get; }
 
+    public double WorldMinX
+    {
+        get => _worldMinX;
+        private set { _worldMinX = value; OnPropertyChanged(); }
+    }
+
+    public double WorldMaxX
+    {
+        get => _worldMaxX;
+        private set { _worldMaxX = value; OnPropertyChanged(); }
+    }
+
+    public double WorldMinZ
+    {
+        get => _worldMinZ;
+        private set { _worldMinZ = value; OnPropertyChanged(); }
+    }
+
+    public double WorldMaxZ
+    {
+        get => _worldMaxZ;
+        private set { _worldMaxZ = value; OnPropertyChanged(); }
+    }
+
     public async Task RefreshSessionsAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -160,6 +191,7 @@ public class MainViewModel : INotifyPropertyChanged
                     Sessions.Add(new SessionRow(
                         Guid.Parse(summary.Session.BattleSessionId),
                         summary.Session.MapName ?? summary.Session.MapId ?? "unknown",
+                        summary.Session.MapId,
                         summary.Session.BattleTimeUtc,
                         summary.ParticipantCount,
                         summary.PositionCount));
@@ -167,6 +199,13 @@ public class MainViewModel : INotifyPropertyChanged
             }
 
             Status = $"{Sessions.Count} session(s)";
+
+            // Fetch map boundaries lazily on first successful session refresh.
+            if (!_boundariesFetched)
+            {
+                _boundariesFetched = true;
+                _ = FetchMapBoundariesAsync(client);
+            }
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or ObjectDisposedException)
         {
@@ -214,6 +253,8 @@ public class MainViewModel : INotifyPropertyChanged
 
                 Points.Add(new PlotPoint(sample.RawX, sample.RawZ, teamNumber));
             }
+
+            ApplyMapBoundaries(selected);
 
             if (detail.PositionsTruncated)
             {
@@ -268,6 +309,45 @@ public class MainViewModel : INotifyPropertyChanged
         else
         {
             _ = RefreshSessionsAsync();
+        }
+    }
+
+    private async Task FetchMapBoundariesAsync(TreaderApiClient client)
+    {
+        try
+        {
+            IReadOnlyList<MapBoundaryResponse> boundaries = await client
+                .GetMapBoundariesAsync();
+            _mapBoundaries = new Dictionary<string, MapBoundaryResponse>(
+                StringComparer.OrdinalIgnoreCase);
+            foreach (MapBoundaryResponse b in boundaries)
+            {
+                _mapBoundaries[b.MapId] = b;
+            }
+
+            ApplyMapBoundaries(SelectedSession);
+        }
+        catch (Exception ex) when (
+            ex is HttpRequestException or TaskCanceledException
+            or JsonException or ObjectDisposedException)
+        {
+            // Boundaries are optional — plotting falls back to per-session extents.
+        }
+    }
+
+    private void ApplyMapBoundaries(SessionRow? session)
+    {
+        if (session?.MapId is not null
+            && _mapBoundaries.TryGetValue(session.MapId, out MapBoundaryResponse? b))
+        {
+            WorldMinX = b.MinX;
+            WorldMaxX = b.MaxX;
+            WorldMinZ = b.MinZ;
+            WorldMaxZ = b.MaxZ;
+        }
+        else
+        {
+            WorldMinX = WorldMaxX = WorldMinZ = WorldMaxZ = 0;
         }
     }
 }

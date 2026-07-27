@@ -287,6 +287,10 @@ public sealed class ReadApiEndpointsTests
             return ValueTask.FromResult(page);
         }
 
+        public ValueTask<IReadOnlyList<MapBoundary>> GetMapBoundariesAsync(
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult<IReadOnlyList<MapBoundary>>([]);
+
         public ValueTask<OperationResult<ReplayDecodeProjection>> GetProjectionAsync(
             BattleSessionId battleSessionId,
             CancellationToken cancellationToken) =>

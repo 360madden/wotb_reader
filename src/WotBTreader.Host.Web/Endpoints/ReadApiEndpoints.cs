@@ -28,6 +28,7 @@ internal static class ReadApiEndpoints
         group.MapGet("/doctor", GetDoctorAsync);
         group.MapGet("/sessions", ListSessionsAsync);
         group.MapGet("/sessions/{battleSessionId:guid}", GetSessionAsync);
+        group.MapGet("/maps/boundaries", GetMapBoundariesAsync);
         group.MapGet("/decode-runs/{decodeRunId:guid}", GetDecodeRunAsync);
         return builder;
     }
@@ -102,6 +103,17 @@ internal static class ReadApiEndpoints
             projection.Events.Count,
             projection.RawRecords.Count,
             projection.Warnings));
+    }
+
+    internal static async Task<IResult> GetMapBoundariesAsync(
+        ISessionQueryRepository sessions,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(sessions);
+        IReadOnlyList<MapBoundary> boundaries = await sessions
+            .GetMapBoundariesAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return Results.Ok(boundaries.Select(MapBoundaryResponse.From));
     }
 
     internal static async Task<IResult> GetDecodeRunAsync(
