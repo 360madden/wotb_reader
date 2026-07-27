@@ -15,7 +15,7 @@ Do **not** load `.cursor/reference/*` unless the task needs that catalog.
 
 ## Architecture (enforced by `tests/WotBTreader.Architecture.Tests`)
 
-- `Core`: no project refs. `Application` → `Core` only. Adapters (`Replays`, `CaptureLogs`, `GameIntegration`, `Storage.Sqlite`) → `Application`+`Core`, never each other. `Bootstrap` is the composition root; hosts reference `Bootstrap`. `Overlay` (WPF/WebView2) is a loopback web client — no parser/storage refs.
+- `Core`: no project refs. `Application` → `Core` only. Adapters (`Replays`, `CaptureLogs`, `GameIntegration`, `Storage.Sqlite`) → `Application`+`Core`, never each other. `Bootstrap` is the composition root; hosts reference `Bootstrap`. `Overlay` (WPF/WebView2) is a loopback web client — no parser/storage refs. **The overlay is designed to be a transparent, borderless, topmost HUD that sits on top of the WoT Blitz game during replay playback. It is NOT a generic session viewer. See `docs/architecture/overview.md` for the full design spec.**
 - Only `Overlay` and `tools/GameHarness` target `net10.0-windows`; keep everything else on portable `net10.0` (BLK-0003).
 - Any new DI port must be added to the published-port list in `CompositionRootTests`, or the solution can compile and unit-test green yet no host starts (BLK-0013).
 - Diagram, evidence lifecycle, and loopback trust boundary: `docs/architecture/overview.md`.

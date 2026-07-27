@@ -2,6 +2,12 @@
 
 WotB Treader is a **Windows-first offline replay telemetry reader** for World of Tanks Blitz. It parses replay evidence, stores versioned telemetry projections, and presents a local Blazor dashboard + WPF/WebView2 overlay with SignalR push-based updates.
 
+The overlay is a **transparent heads-up display (HUD)** designed to sit on top
+of the WoT Blitz game while it plays back a pre-recorded replay. It shows
+decoded position plots and telemetry that the game's built-in viewer does not
+expose. See `docs/architecture/overview.md#overlay--hud-design-intent` for the
+full design specification.
+
 - **Stack:** .NET 10 (C#), WPF, ASP.NET Core Blazor Web App, SQLite, SignalR
 - **No:** Python, Node.js, Rust, Electron, containers, cloud services, runtime AI, dynamic decoder DLLs
 
@@ -88,13 +94,14 @@ Core (no project refs)
       └── Bootstrap (composition root; all DI registration)
            ├── Host.Cli (net10.0 console)
            ├── Host.Web (net10.0 Blazor Web App, loopback-only)
-           └── Overlay → (net10.0-windows WPF, loopback web client; NO parser/storage refs)
+           ├── Overlay → (net10.0-windows WPF, transparent HUD; NO parser/storage refs)
                 ├── Discovery/RendezvousLocator  (finds host via rendezvous file)
                 ├── Services/TreaderApiClient     (read API HTTP client)
                 ├── Services/TelemetryStreamService (SignalR push client, auto-reconnect)
                 ├── ViewModels/MainViewModel      (session list, position detail, BaseUri)
                 ├── Views/PositionPlot             (canvas scatter plot, team-colored)
-                └── MainWindow                     (TabControl: Position Plot + WebView2 Dashboard)
+                └── MainWindow                     (INTENDED: transparent borderless topmost HUD over game)
+                                                  (CURRENT: standard WPF window with TabControl)
 ```
 
 **Key rules:**

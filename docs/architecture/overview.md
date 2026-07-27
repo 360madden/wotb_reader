@@ -28,6 +28,49 @@ The arrow denotes a dependency. `Core` has none. The overlay is intentionally
 outside parser and storage internals and consumes only the loopback web
 contract.
 
+## Overlay / HUD design intent
+
+The overlay is a **transparent, borderless, always-on-top WPF window** designed
+to sit on top of the WoT Blitz game while the game plays back a pre-recorded
+replay. The overlay shows decoded telemetry — position scatter plots coloured by
+team, session metadata, and the embedded Blazor dashboard — that the game's
+built-in replay viewer does not expose.
+
+This is the core purpose of the overlay. It is not a generic session browser or
+a replacement for the web dashboard. It is a heads-up display (HUD) that
+**augments the game's replay playback** with data decoded offline from the
+`.wotbreplay` file.
+
+### Required window properties (NOT YET IMPLEMENTED)
+
+- `WindowStyle="None"` — no title bar or chrome
+- `AllowsTransparency="True"` — transparent background outside the HUD panel
+- `Background="Transparent"` — see-through to the game underneath
+- `Topmost="True"` — stays above the game window
+- Draggable via mouse-down (no title bar to grab)
+
+### Current state
+
+The overlay is currently implemented as a standard opaque WPF window with a
+toolbar and TabControl. The transparency and game-window positioning are
+**not yet implemented**. The `MainWindow.xaml.cs` class comment describes the
+intended transparent shell, but the XAML and code-behind have not been updated
+to match.
+
+### Game window integration (NOT YET IMPLEMENTED)
+
+The overlay must track the game window position via P/Invoke
+(`FindWindow`, `GetWindowRect`, `SetWindowPos`) and reposition itself to match
+the game window's size and location. This ensures the position plot overlays
+the game's minimap area correctly.
+
+### What the overlay is NOT
+
+- It is NOT a game launcher. It does not start `wotblitz.exe`.
+- It is NOT a generic session viewer. The web dashboard at `http://127.0.0.1:9182`
+  serves that purpose for deep inspection.
+- It is NOT a replacement for the game's built-in replay viewer. It augments it.
+
 ## Evidence lifecycle
 
 1. An input is probed with bounded reads.

@@ -5,13 +5,25 @@ using WotBTreader.Overlay.ViewModels;
 namespace WotBTreader.Overlay;
 
 /// <summary>
-/// Transparent shell that hosts the loopback overlay surface.
-/// Lists battle sessions from the local read API, plots position samples for the
-/// selected session, and refreshes the selected session every 2 seconds.
-/// A SignalR stream connection provides push-based session list updates;
-/// the timer is a fallback.
-/// A WebView2 tab embeds the Blazor dashboard for session diagnostics and
-/// comparison runs without a separate browser.
+/// <para><b>Design intent (NOT YET IMPLEMENTED):</b> This window is intended to
+/// be a <b>transparent, borderless, always-on-top heads-up display (HUD)</b>
+/// that sits on top of the WoT Blitz game while it plays back a pre-recorded
+/// replay. The position plot renders team-coloured dots over the game's
+/// minimap area, and a compact semi-transparent panel shows session metadata
+/// and controls. The game window is tracked via P/Invoke so the overlay stays
+/// perfectly aligned during playback.</para>
+///
+/// <para><b>Current state:</b> The window is a standard opaque WPF window with
+/// a toolbar and TabControl (Position Plot + WebView2 Dashboard). The
+/// transparency, borderless styling, and game-window tracking have not yet
+/// been implemented. See <c>docs/architecture/overview.md</c> for the full
+/// HUD design specification.</para>
+///
+/// <para>Lists battle sessions from the local read API, plots position samples
+/// for the selected session (stride-sampled to 2000 dots, team-coloured), and
+/// refreshes every 2 seconds. A SignalR stream provides push-based session
+/// list updates; the timer is a fallback. A WebView2 tab embeds the Blazor
+/// dashboard for session diagnostics.</para>
 /// </summary>
 public partial class MainWindow : System.Windows.Window, IDisposable
 {
