@@ -124,6 +124,37 @@ Blazor page at `/comparisons` implemented 2026-07-27:
 All 17 commits pushed to `origin/main` (https://github.com/360madden/wotb_reader).
 Sensitive content scan: zero findings across all diffs.
 
+### 🔵 P7 — Convenience .cmd wrappers ✅
+
+12 `.cmd` wrappers in repo root, all runnable from any directory:
+- Build: `build`, `validate`, `test`
+- Runtime: `serve`, `overlay`, `everything` (one-shot launch)
+- CLI: `import`, `watch`, `sessions`, `doctor`, `compare`, `export`, `treader`
+- Bug fixes: serve.cmd restore check, treader.cmd --data-root order
+- **Done:** scan clean, all 371 files pass.
+
+### 🔵 P8 — Startup sequence documentation ✅
+
+- `knowledge.md`: new Startup Sequence section with 1-2-3 flow diagram
+- `everything.cmd`: launches serve + overlay in separate windows
+- Wrapper headers updated with sequence hints
+- **Done:** committed `7641676`.
+
+### 🔵 P9 — Everything.cmd smoke test ✅
+
+Full visual smoke test completed 2026-07-27:
+- ✅ Synthetic replay imported into `.data/` (990 bytes, 2 participants, 2 positions)
+- ✅ Web host started on port 9182 (storage migration v3, rendezvous published)
+- ✅ API returns 1 session: "synthetic-map", 2 participants, 2 positions, 5 events
+- ✅ Session detail: participants (pilot-a/TAG/team-1, unit-b/team-2), positions (2 samples with coords)
+- ✅ All pages return 200: home, /comparisons, /diagnostics
+- ✅ Overlay launches and is responding (PID 35084, Responding=True)
+- 🔧 Note: `%~dp0` does not expand in bash — use absolute Windows paths with forward slashes
+- 🔧 Note: database is `treader.db` (not `.sqlite`) — the earlier glob missed it
+- 🔧 Note: `/api/v1/comparisons` returns 404 (expected — comparisons are Blazor SSR via IDashboardReadClient, not exposed on the read API)
+
+**Evidence:** API responses, HTTP status codes, process table all captured.
+
 ## Action plan (this session)
 
 1. ✅ Create this roadmap document
