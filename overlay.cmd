@@ -1,8 +1,11 @@
 @echo off
 REM ============================================================
-REM  overlay.cmd — Launch the WotB Treader overlay window.
+REM  overlay.cmd — Launch the WotB Treader HUD overlay window.
 REM  The overlay discovers the web host automatically via
 REM  the rendezvous file, so serve.cmd must already be running.
+REM
+REM  STARTUP SEQUENCE: 1) import replays  2) serve  3) overlay
+REM  Or just run everything.cmd to launch it all at once.
 REM
 REM  Run from any directory; paths are relative to this script.
 REM ============================================================

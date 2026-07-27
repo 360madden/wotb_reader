@@ -4,6 +4,9 @@ REM  serve.cmd — Publish and start the web host on loopback.
 REM  The dashboard is at http://127.0.0.1:9182
 REM  Press Ctrl+C to stop.
 REM
+REM  STARTUP SEQUENCE: import replays first, then serve, then overlay.
+REM  Keep this window running — the overlay needs it.
+REM
 REM  Data is stored under .data\ in the repo root.
 REM  Publish output goes to .build\publish\ (separate from data).
 REM  Run from any directory; paths are relative to this script.

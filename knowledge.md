@@ -17,6 +17,7 @@ WotB Treader is a **Windows-first offline replay telemetry reader** for World of
 | `validate` | Full gate: restore → format → build → test → audit → scan |
 | `test` | Run all tests (skip build) |
 | `serve` | Publish + start web host at http://127.0.0.1:9182 |
+| `everything` | One-shot: launch serve then overlay (the full HUD experience) |
 | `overlay` | Launch the WPF overlay (needs web host running) |
 | `import <file>` | Import a .wotbreplay file |
 | `watch <dir>` | Watch directory and auto-import new replays |
@@ -30,6 +31,35 @@ WotB Treader is a **Windows-first offline replay telemetry reader** for World of
 
 All CLI wrappers store data under `.data\` in the repo root (gitignored).
 Publish output goes to `.build\publish\` (also gitignored).
+
+### Startup Sequence
+
+The overlay (HUD) is a loopback web client — it has no data of its own.
+It discovers the web host via a rendezvous file. The correct order is:
+
+```
+┌─────────────────────────────────────────────────────┐
+│  1. import  a .wotbreplay  (one-time per replay)   │
+│     or watch a folder to auto-import new replays    │
+│                         ↓                           │
+│  2. serve   start the web host (keep it running)   │
+│                         ↓                           │
+│  3. overlay  launch the HUD                        │
+│     (or open http://127.0.0.1:9182 in a browser)   │
+└─────────────────────────────────────────────────────┘
+```
+
+- **Step 1** decodes replays into a SQLite database under `.data\`.
+- **Step 2** serves that database via REST + Blazor + SignalR at `127.0.0.1:9182`
+  and writes a rendezvous file so the overlay can auto-discover it.
+- **Step 3** launches the WPF overlay which finds the host, loads the session
+  list, and plots position data.
+
+You can re-run step 1 later (import more replays) while the host is running —
+the overlay refreshes to show new sessions.
+
+**One-command launch:** `everything.cmd` starts both `serve` and `overlay`
+in separate windows with a short wait for the host to be ready.
 
 **Full gate (run before milestone commits):**
 ```powershell
