@@ -46,7 +46,17 @@
                 </Grid>
             </TabItem>
             <TabItem Header="Dashboard">
-                <wpf:WebView2 x:Name="DashboardView"/>
+                <Grid>
+                    <TextBlock x:Name="DashboardFallback"
+                               Text="WebView2 runtime not available. Install Microsoft Edge WebView2 to use the embedded dashboard."
+                               TextWrapping="Wrap"
+                               VerticalAlignment="Center"
+                               HorizontalAlignment="Center"
+                               Margin="40"
+                               FontSize="14"
+                               Foreground="Gray"/>
+                    <wpf:WebView2 x:Name="DashboardView" Visibility="Collapsed"/>
+                </Grid>
             </TabItem>
         </TabControl>
     </Grid>

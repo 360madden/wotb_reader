@@ -5,7 +5,26 @@
 <h1>Overlay</h1>
 
 <p>
-    The external minimap overlay is not implemented yet. It will connect to the
-    loopback read API and stream only after the hub/mutation trust boundary is
-    resolved.
+    The WotB Treader overlay is a companion WPF application that discovers this
+    web host via its local rendezvous record. It lists battle sessions, plots
+    position samples on a canvas, and embeds this dashboard in a WebView2 tab.
+</p>
+
+<h2>Features</h2>
+<ul>
+    <li>Session list with map name, time, participant count, and position samples</li>
+    <li>Team-colored position scatter plot with auto-refresh every 2 seconds</li>
+    <li>Embedded dashboard (this page) for session diagnostics and details</li>
+    <li>SignalR push-based session list updates (2-second timer as fallback)</li>
+</ul>
+
+<h2>Launching</h2>
+<p>
+    Start the web host first, then launch <code>WotBTreader.Overlay.exe</code>.
+    The overlay automatically discovers the host and begins listing sessions.
+</p>
+
+<p>
+    If the overlay shows <em>Waiting for host…</em>, ensure the web host is
+    running and the rendezvous record has not expired.
 </p>

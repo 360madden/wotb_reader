@@ -76,6 +76,8 @@ public partial class MainWindow : System.Windows.Window, IDisposable
             await DashboardView.EnsureCoreWebView2Async(env);
 
             _webViewInitialized = true;
+            DashboardView.Visibility = System.Windows.Visibility.Visible;
+            DashboardFallback.Visibility = System.Windows.Visibility.Collapsed;
 
             // If BaseUri was set before WebView2 finished initialising, navigate now.
             string currentBaseUri = _viewModel.BaseUri;
@@ -87,7 +89,10 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         catch (Exception)
         {
             // WebView2 may fail to initialise on systems without the Evergreen
-            // runtime. The Position Plot tab remains fully functional.
+            // runtime. Keep the fallback message visible and the Position Plot
+            // tab remains fully functional.
+            DashboardView.Visibility = System.Windows.Visibility.Collapsed;
+            DashboardFallback.Visibility = System.Windows.Visibility.Visible;
         }
     }
 
