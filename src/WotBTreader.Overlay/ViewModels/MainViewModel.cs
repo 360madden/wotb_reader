@@ -510,11 +510,11 @@ public class MainViewModel : INotifyPropertyChanged
         TreaderApiClient? client = _client;
         if (selected is null || client is null)
         {
-        Participants = [];
-        EventCount = 0;
-        Events = [];
-        MapName = null;
-        return;
+            Participants = [];
+            EventCount = 0;
+            Events = [];
+            MapName = null;
+            return;
         }
 
         try
@@ -522,12 +522,12 @@ public class MainViewModel : INotifyPropertyChanged
             SessionDetailResponse? detail = await client.GetSessionDetailAsync(selected.BattleSessionId, cancellationToken);
             if (detail is null)
             {
-        Participants = [];
-        EventCount = 0;
-        Events = [];
-        MapName = null;
-        return;
-        }
+                Participants = [];
+                EventCount = 0;
+                Events = [];
+                MapName = null;
+                return;
+            }
 
             _teamByParticipantId = new Dictionary<string, int>(StringComparer.Ordinal);
             foreach (ParticipantResponse participant in detail.Participants)

@@ -114,6 +114,24 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         _viewModel.AdvancePlayback();
     }
 
+    // ── Sidebar transparency toggle ─────────────────────────
+
+    private void ToggleSidebarOpacity(object sender, System.Windows.RoutedEventArgs e)
+    {
+        // Cycle: 0.85 → 0.50 → 0.20 → 0.85
+        SidebarBorder.Opacity = SidebarBorder.Opacity switch
+        {
+            >= 0.84 => 0.50,
+            >= 0.49 => 0.20,
+            _ => 0.85,
+        };
+
+        if (sender is System.Windows.Controls.Button btn)
+        {
+            btn.ToolTip = $"Sidebar: {SidebarBorder.Opacity * 100:F0}%";
+        }
+    }
+
     private void EventItem_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         if (sender is System.Windows.FrameworkElement element &&

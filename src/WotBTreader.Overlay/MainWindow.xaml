@@ -16,10 +16,10 @@
                             WorldMinX="{Binding WorldMinX}" WorldMaxX="{Binding WorldMaxX}"
                             WorldMinZ="{Binding WorldMinZ}" WorldMaxZ="{Binding WorldMaxZ}"
                             MapName="{Binding MapName}"/>
-        <Border HorizontalAlignment="Right" VerticalAlignment="Top"
+        <Border x:Name="SidebarBorder" HorizontalAlignment="Right" VerticalAlignment="Top"
                 Width="340" Margin="12" Padding="8"
                 Background="#CC111111" CornerRadius="6"
-                BorderBrush="#44FFFFFF" BorderThickness="1">
+                BorderBrush="#44FFFFFF" BorderThickness="1" Opacity="0.85">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -61,6 +61,11 @@
                             Background="#44FFFFFF" Foreground="White" BorderThickness="0"
                             Padding="8,3" Margin="4,0,0,0" Cursor="Hand"
                             ToolTip="Open the full dashboard in a browser"/>
+                    <Button Content="👁" Click="ToggleSidebarOpacity"
+                            Background="#44FFFFFF" Foreground="#CCCCCC" BorderThickness="0"
+                            Width="22" Height="22" FontSize="11" Padding="0"
+                            Cursor="Hand" Margin="4,0,0,0"
+                            ToolTip="Toggle sidebar transparency"/>
                 </StackPanel>
                 <TextBlock Grid.Row="1" Text="{Binding Status}"
                            Foreground="#AAFFFFFF" FontSize="11" Margin="0,0,0,4"/>
