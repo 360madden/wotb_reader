@@ -121,10 +121,12 @@ public sealed partial class PositionPlot : UserControl
 
     private void Redraw()
     {
-        PlotCanvas.Children.Clear();
+        PlotRenderer.LinesToDraw.Clear();
+        PlotRenderer.DotsToDraw.Clear();
 
         if (PointsSource is null || ActualWidth <= 0 || ActualHeight <= 0)
         {
+            PlotRenderer.InvalidateVisual();
             return;
         }
 
@@ -184,55 +186,32 @@ public sealed partial class PositionPlot : UserControl
             int totalSegments = coords.Count - 1;
             if (totalSegments <= 0) continue;
 
-            Color teamColor = teamNumber switch
-            {
-                1 => Colors.DodgerBlue,
-                2 => Colors.OrangeRed,
-                _ => Colors.Gray,
-            };
-
             // Cap trail segments to keep element count bounded.
             int segmentCount = Math.Min(totalSegments, maxTrailSegments);
             int skip = totalSegments > maxTrailSegments ? totalSegments / maxTrailSegments : 1;
             int drawn = 0;
             for (int i = 0; i < totalSegments && drawn < segmentCount; i += skip)
             {
-                // Fade from 0.18 (oldest) to 0.85 (newest)
+                // Fade from ~0.12 (oldest) to ~0.85 (newest)
                 double t = totalSegments == 1 ? 1.0 : (double)i / totalSegments;
-                byte alpha = (byte)(30 + (int)(t * 187));
+                double opacity = (30.0 / 255.0) + (t * (187.0 / 255.0));
                 drawn++;
 
-                Line line = new()
-                {
-                    X1 = coords[i].X,
-                    Y1 = coords[i].Y,
-                    X2 = coords[i + 1].X,
-                    Y2 = coords[i + 1].Y,
-                    Stroke = new SolidColorBrush(Color.FromArgb(alpha, teamColor.R, teamColor.G, teamColor.B)),
-                    StrokeThickness = 1.2,
-                };
-                PlotCanvas.Children.Add(line);
+                PlotRenderer.LinesToDraw.Add(new RenderLine(
+                    new Point(coords[i].X, coords[i].Y),
+                    new Point(coords[i + 1].X, coords[i + 1].Y),
+                    teamNumber,
+                    opacity));
             }
         }
 
         // ── Draw position dots on top of trails ──
         foreach ((double x, double y, int teamNumber) in fitted)
         {
-            Ellipse dot = new()
-            {
-                Width = 3,
-                Height = 3,
-                Fill = teamNumber switch
-                {
-                    1 => Brushes.DodgerBlue,
-                    2 => Brushes.OrangeRed,
-                    _ => Brushes.Gray,
-                },
-            };
-            Canvas.SetLeft(dot, x);
-            Canvas.SetTop(dot, y);
-            PlotCanvas.Children.Add(dot);
+            PlotRenderer.DotsToDraw.Add(new RenderDot(new Point(x, y), teamNumber));
         }
+
+        PlotRenderer.InvalidateVisual();
     }
 
     /// <summary>
@@ -243,6 +222,7 @@ public sealed partial class PositionPlot : UserControl
     {
         double w = ActualWidth;
         double h = ActualHeight;
+        BackgroundCanvas.Children.Clear();
         if (w <= 0 || h <= 0) return;
 
         // Subtle panel fill to delineate the plot area from the transparent overlay.
