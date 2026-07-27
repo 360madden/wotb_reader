@@ -3,61 +3,64 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:wpf="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         xmlns:views="clr-namespace:WotBTreader.Overlay.Views"
         mc:Ignorable="d"
-        Title="WotB Treader Overlay" Width="1200" Height="700">
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        Width="1200" Height="700"
+        MouseLeftButtonDown="Window_MouseLeftButtonDown">
     <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-        </Grid.RowDefinitions>
-        <ToolBar Grid.Row="0">
-            <Button Content="Refresh" Command="{Binding RefreshCommand}"/>
-            <TextBlock Text="{Binding Status}" VerticalAlignment="Center" Margin="8,0,0,0"/>
-        </ToolBar>
-        <TabControl Grid.Row="1" Margin="4">
-            <TabItem Header="Position Plot">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="280"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <ListBox Grid.Column="0"
-                             ItemsSource="{Binding Sessions}"
-                             SelectedItem="{Binding SelectedSession, Mode=TwoWay}">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Margin="4,2">
-                                    <TextBlock Text="{Binding MapLabel}" FontWeight="Bold"/>
-                                    <TextBlock FontSize="11" Foreground="Gray">
-                                        <Run Text="{Binding BattleTimeUtc}"/>
-                                        <Run Text=" • "/>
-                                        <Run Text="{Binding ParticipantCount}"/>
-                                        <Run Text=" players • "/>
-                                        <Run Text="{Binding PositionCount}"/>
-                                        <Run Text=" samples"/>
-                                    </TextBlock>
-                                </StackPanel>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                    <views:PositionPlot Grid.Column="1" PointsSource="{Binding Points}"/>
-                </Grid>
-            </TabItem>
-            <TabItem Header="Dashboard">
-                <Grid>
-                    <TextBlock x:Name="DashboardFallback"
-                               Text="WebView2 runtime not available. Install Microsoft Edge WebView2 to use the embedded dashboard."
-                               TextWrapping="Wrap"
-                               VerticalAlignment="Center"
-                               HorizontalAlignment="Center"
-                               Margin="40"
-                               FontSize="14"
-                               Foreground="Gray"/>
-                    <wpf:WebView2 x:Name="DashboardView" Visibility="Collapsed"/>
-                </Grid>
-            </TabItem>
-        </TabControl>
+        <views:PositionPlot PointsSource="{Binding Points}" IsHitTestVisible="False"/>
+        <Border HorizontalAlignment="Right" VerticalAlignment="Top"
+                Width="340" Margin="12" Padding="8"
+                Background="#CC111111" CornerRadius="6"
+                BorderBrush="#44FFFFFF" BorderThickness="1">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,6">
+                    <Button Content="🚀 Launch" Command="{Binding LaunchGameCommand}"
+                            Background="#33AAFF" Foreground="White" BorderThickness="0"
+                            Padding="8,3" Cursor="Hand"
+                            ToolTip="Launch wotblitz.exe to play the selected replay"/>
+                    <Button Content="↻ Refresh" Command="{Binding RefreshCommand}"
+                            Background="#44FFFFFF" Foreground="White" BorderThickness="0"
+                            Padding="8,3" Margin="6,0,0,0" Cursor="Hand"/>
+                    <Button Content="🌐 Dashboard" Click="OpenDashboardInBrowser"
+                            Background="#44FFFFFF" Foreground="White" BorderThickness="0"
+                            Padding="8,3" Margin="6,0,0,0" Cursor="Hand"
+                            ToolTip="Open the full dashboard in a browser"/>
+                </StackPanel>
+                <TextBlock Grid.Row="1" Text="{Binding Status}"
+                           Foreground="#AAFFFFFF" FontSize="11" Margin="0,0,0,4"/>
+                <ListBox Grid.Row="2" ItemsSource="{Binding Sessions}"
+                         SelectedItem="{Binding SelectedSession, Mode=TwoWay}"
+                         Background="Transparent" BorderThickness="0"
+                         Foreground="White" Height="350" MaxHeight="350">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="2,3">
+                                <TextBlock Text="{Binding MapLabel}" FontWeight="Bold"
+                                           FontSize="12" Foreground="White"/>
+                                <TextBlock FontSize="10" Foreground="#AAFFFFFF">
+                                    <Run Text="{Binding BattleTimeUtc}"/><Run Text=" • "/>
+                                    <Run Text="{Binding ParticipantCount}"/><Run Text="p • "/>
+                                    <Run Text="{Binding PositionCount}"/><Run Text=" pos"/>
+                                </TextBlock>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <Button Grid.Row="3" Content="✕ Close" Click="CloseWindow"
+                        Background="#33FF4444" Foreground="White" BorderThickness="0"
+                        Padding="8,3" Margin="0,4,0,0" Cursor="Hand"/>
+            </Grid>
+        </Border>
     </Grid>
 </Window>
