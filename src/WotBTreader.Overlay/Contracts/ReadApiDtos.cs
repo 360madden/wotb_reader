@@ -138,6 +138,20 @@ public sealed record SessionDetailResponse
     public int RawRecordCount { get; init; }
 
     public IReadOnlyList<string> Warnings { get; init; } = [];
+
+    public IReadOnlyList<EventResponse> Events { get; init; } = [];
+}
+
+/// <summary>One canonical event from a battle session.</summary>
+public sealed record EventResponse
+{
+    public string Kind { get; init; } = string.Empty;
+
+    public TimeSpan ReplayTime { get; init; }
+
+    public string? ParticipantId { get; init; }
+
+    public string Summary { get; init; } = string.Empty;
 }
 
 public sealed record MapBoundaryResponse

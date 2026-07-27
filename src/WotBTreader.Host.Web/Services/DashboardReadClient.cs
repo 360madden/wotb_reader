@@ -68,7 +68,11 @@ internal sealed class DashboardReadClient(
             projection.Positions.Count,
             projection.Events.Count,
             projection.RawRecords.Count,
-            projection.Warnings);
+            projection.Warnings,
+            [.. projection.Events
+                .Where(e => e.Kind != CanonicalEventKind.Position)
+                .Take(ReadApiEndpoints.MaximumEvents)
+                .Select(EventResponse.From)]);
     }
 
     public async Task<DoctorReport> GetDoctorAsync(CancellationToken cancellationToken) =>

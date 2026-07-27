@@ -66,6 +66,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
                     <TextBlock Grid.Row="0" FontSize="11" Foreground="#AAFFFFFF" Margin="0,0,0,3">
@@ -100,6 +101,27 @@
                     <TextBlock Grid.Row="2" FontSize="10" Foreground="#88FFFFFF" Margin="0,3,0,0">
                         <Run Text="📊 Events: "/><Run Text="{Binding EventCount}"/>
                     </TextBlock>
+                    <ItemsControl Grid.Row="3" ItemsSource="{Binding Events}" MaxHeight="100" Margin="0,3,0,0">
+                        <ItemsControl.Template>
+                            <ControlTemplate>
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <ItemsPresenter/>
+                                </ScrollViewer>
+                            </ControlTemplate>
+                        </ItemsControl.Template>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" Margin="0,1">
+                                    <TextBlock FontSize="9" Foreground="#88FFFFFF" Width="48">
+                                        <Run Text="{Binding ReplayTime, StringFormat={}{0:mm\\:ss}}"/>
+                                    </TextBlock>
+                                    <TextBlock FontSize="9" Foreground="#CCFFFFFF">
+                                        <Run Text="{Binding Summary}"/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                 </Grid>
                 <Button Grid.Row="4" Content="✕ Close" Click="CloseWindow"
                         Background="#33FF4444" Foreground="White" BorderThickness="0"

@@ -20,6 +20,9 @@ internal static class ReadApiEndpoints
     /// <summary>Caps one response; a long battle produces far more samples.</summary>
     internal const int MaximumPositionSamples = 5_000;
 
+    /// <summary>Caps one response; a long battle produces far more events than useful in a feed.</summary>
+    internal const int MaximumEvents = 2_000;
+
     public static IEndpointRouteBuilder MapReadApi(this IEndpointRouteBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -102,7 +105,11 @@ internal static class ReadApiEndpoints
             projection.Positions.Count,
             projection.Events.Count,
             projection.RawRecords.Count,
-            projection.Warnings));
+            projection.Warnings,
+            [.. projection.Events
+                .Where(e => e.Kind != CanonicalEventKind.Position)
+                .Take(MaximumEvents)
+                .Select(EventResponse.From)]));
     }
 
     internal static async Task<IResult> GetMapBoundariesAsync(

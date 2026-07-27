@@ -40,6 +40,7 @@ public class MainViewModel : INotifyPropertyChanged
     private double _worldMinZ;
     private double _worldMaxZ;
     private IReadOnlyList<ParticipantResponse> _participants = [];
+    private IReadOnlyList<EventResponse> _events = [];
     private int _eventCount;
 
     public MainViewModel()
@@ -172,6 +173,20 @@ public class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>
+    /// Canonical events from the most recently loaded session detail.
+    /// Empty when no session is selected.
+    /// </summary>
+    public IReadOnlyList<EventResponse> Events
+    {
+        get => _events;
+        private set
+        {
+            _events = value;
+            OnPropertyChanged();
+        }
+    }
+
     public async Task RefreshSessionsAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -251,6 +266,7 @@ public class MainViewModel : INotifyPropertyChanged
         {
             Participants = [];
             EventCount = 0;
+            Events = [];
             return;
         }
 
@@ -259,10 +275,11 @@ public class MainViewModel : INotifyPropertyChanged
             SessionDetailResponse? detail = await client.GetSessionDetailAsync(selected.BattleSessionId, cancellationToken);
             if (detail is null)
             {
-                Participants = [];
-                EventCount = 0;
-                return;
-            }
+            Participants = [];
+            EventCount = 0;
+            Events = [];
+            return;
+        }
 
             Dictionary<string, int> teamByParticipantId = new(StringComparer.Ordinal);
             foreach (ParticipantResponse participant in detail.Participants)
@@ -290,6 +307,7 @@ public class MainViewModel : INotifyPropertyChanged
 
             Participants = detail.Participants;
             EventCount = detail.EventCount;
+            Events = detail.Events;
 
             ApplyMapBoundaries(selected);
 
@@ -303,6 +321,7 @@ public class MainViewModel : INotifyPropertyChanged
             Status = "Host unreachable";
             Participants = [];
             EventCount = 0;
+            Events = [];
         }
     }
 

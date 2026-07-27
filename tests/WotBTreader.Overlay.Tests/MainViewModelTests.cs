@@ -287,6 +287,7 @@ public sealed class MainViewModelTests
         Assert.AreEqual(1, viewModel.Participants.Count);
         Assert.AreEqual("Alpha", viewModel.Participants[0].PlayerName);
         Assert.AreEqual(0, viewModel.EventCount);
+        Assert.AreEqual(0, viewModel.Events.Count);
     }
 
     [TestMethod]

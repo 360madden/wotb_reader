@@ -144,6 +144,72 @@ public sealed record PositionSampleResponse(
 }
 
 /// <summary>
+/// One canonical event from a battle session, with a human-readable summary
+/// computed from the structured values payload.
+/// </summary>
+public sealed record EventResponse(
+    string Kind,
+    TimeSpan ReplayTime,
+    string? ParticipantId,
+    string Summary)
+{
+    public static EventResponse From(CanonicalEvent canonicalEvent)
+    {
+        ArgumentNullException.ThrowIfNull(canonicalEvent);
+        string summary = FormatSummary(canonicalEvent.Kind, canonicalEvent.ValuesJson);
+        return new EventResponse(
+            canonicalEvent.Kind.ToString(),
+            canonicalEvent.ReplayTime,
+            canonicalEvent.ParticipantId?.Value.ToString("D"),
+            summary);
+    }
+
+    private static string FormatSummary(CanonicalEventKind kind, string valuesJson)
+    {
+        if (kind == CanonicalEventKind.BattleEnded)
+        {
+            return "Battle ended";
+        }
+
+        if (kind == CanonicalEventKind.ParticipantObserved)
+        {
+            return "Joined battle";
+        }
+
+        if (kind == CanonicalEventKind.Position)
+        {
+            return "Position update";
+        }
+
+        if (kind == CanonicalEventKind.Damage)
+        {
+            try
+            {
+                using System.Text.Json.JsonDocument doc =
+                    System.Text.Json.JsonDocument.Parse(valuesJson);
+                if (doc.RootElement.TryGetProperty("damage", out System.Text.Json.JsonElement dmg))
+                {
+                    return $"Damage: {dmg.GetInt32()} HP";
+                }
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                // Fall through to generic summary.
+            }
+
+            return "Damage dealt";
+        }
+
+        if (kind == CanonicalEventKind.Destroyed)
+        {
+            return "Destroyed";
+        }
+
+        return kind.ToString();
+    }
+}
+
+/// <summary>
 /// A session projection. Position samples are bounded because one battle can
 /// produce far more samples than a single response should carry;
 /// <paramref name="PositionsTruncated"/> tells the client the series is partial.
@@ -157,7 +223,8 @@ public sealed record SessionDetailResponse(
     int TotalPositionCount,
     int EventCount,
     int RawRecordCount,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings,
+    IReadOnlyList<EventResponse> Events);
 
 public sealed record SessionPageResponse(
     int Offset,
