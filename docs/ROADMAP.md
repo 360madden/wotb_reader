@@ -24,6 +24,17 @@ All alpha surfaces are implemented and validated:
 
 *(Count includes GameHarness.Tests: 26 tests for the developer replay harness tooling.)*
 
+All eight original roadmap items are complete. Two additional features were
+implemented in the HUD-finalization session (2026-07-27):
+
+| Feature | Status |
+|---------|--------|
+| Transparent HUD window (borderless, topmost, drag-to-move) | ✅ |
+| Game window tracking (P/Invoke FindWindowW/GetWindowRect/SetWindowPos) | ✅ |
+| Game launching from HUD (find replay + launch wotblitz.exe) | ✅ |
+| Game path auto-discovery (env var → default roots → fallback) | ✅ |
+| `compare create` CLI (wire TelemetryComparator) | ✅ |
+
 ### Comment coverage
 
 XML doc comments added to all public and key internal types:
@@ -98,6 +109,18 @@ The web host is a separate executable. Decided not to merge into CLI:
 - Launch the web host as a separate process: `WotBTreader.Host.Web.exe`
 - The CLI discovers it automatically via the rendezvous record
 - **Status:** Designed out — not needed for alpha.
+
+## Deferred / future work
+
+- **Live HUD smoke test**: Verify transparent window, session list, position
+  dots, and Launch button against a real WoT Blitz installation.
+- **Minimap projection**: `MinimapProjector` for map-boundary-aware position
+  rendering (not just canvas-fit). Map boundaries are null in installed-game
+  metadata — must be computed from position extremes.
+- **Game path via DI**: The overlay's game path discovery is a lightweight
+  replica of `GameInstallationDiscovery` to avoid an architecture-breaking
+  dependency. A future refactor could extract discovery into a shared
+  portable utility.
 
 ### 🟢 P4 — `watch` CLI command ✅
 
