@@ -9,6 +9,20 @@ using WotBTreader.Core;
 
 namespace WotBTreader.Host.Cli.Cli;
 
+/// <summary>
+/// Dispatches one CLI command to the appropriate handler. Every command
+/// handler validates positional arguments, calls the relevant application
+/// port, and returns a <see cref="CliExecution"/> with a machine-readable
+/// JSON envelope and a human-readable message.
+/// </summary>
+/// <remarks>
+/// <para>Output routing (stdout vs stderr) is decided by
+/// <see cref="CliEntryPoint"/>, not by this class. Handlers only produce
+/// the <see cref="CliExecution"/>; they never write to streams directly.</para>
+/// <para>Progress for long-running commands (e.g. <c>watch</c>) is reported
+/// through <see cref="ILogger{CliCommandRouter}"/>, which is configured to
+/// emit to stderr so it never corrupts the stdout envelope.</para>
+/// </remarks>
 public sealed class CliCommandRouter
 {
     private static readonly string[] CommandNames =
@@ -31,6 +45,7 @@ public sealed class CliCommandRouter
     private readonly IComparisonRunRepository _comparisons;
     private readonly ILogger<CliCommandRouter> _logger;
 
+    /// <summary>Creates a command router with all application ports resolved by DI.</summary>
     public CliCommandRouter(
         IDoctorService doctor,
         IReplayIngestionService ingestion,
@@ -47,6 +62,12 @@ public sealed class CliCommandRouter
         _logger = logger;
     }
 
+    /// <summary>
+    /// Dispatches the parsed invocation to the matching command handler.
+    /// Unknown commands return <see cref="CliExitCode.InvalidArguments"/>;
+    /// reserved-but-unavailable commands return
+    /// <see cref="CliExitCode.UnsupportedCapability"/>.
+    /// </summary>
     public async ValueTask<CliExecution> ExecuteAsync(
         CliInvocation invocation,
         Guid correlationId,
@@ -71,6 +92,7 @@ public sealed class CliCommandRouter
         };
     }
 
+    /// <summary>Runs non-mutating health checks and returns the report.</summary>
     private async ValueTask<CliExecution> DoctorAsync(
         CliInvocation invocation,
         Guid correlationId,
@@ -94,6 +116,11 @@ public sealed class CliCommandRouter
                 correlationId);
     }
 
+    /// <summary>
+    /// Imports one <c>.wotbreplay</c> file into content-addressed storage
+    /// and decodes it. The same file imported twice produces two distinct
+    /// decode runs sharing one artifact (evidence-first reprocessing rule).
+    /// </summary>
     private async ValueTask<CliExecution> ImportAsync(
         CliInvocation invocation,
         Guid correlationId,
@@ -131,6 +158,7 @@ public sealed class CliCommandRouter
                 : $"Imported artifact {result.Value.Artifact.Id}; decode run {result.Value.DecodeRun.DecodeRun.Id}.");
     }
 
+    /// <summary>Looks up one decode run by its GUID and returns the summary.</summary>
     private async ValueTask<CliExecution> InspectAsync(
         CliInvocation invocation,
         Guid correlationId,
@@ -151,6 +179,11 @@ public sealed class CliCommandRouter
         return FromResult(result, correlationId, "Decode run loaded.");
     }
 
+    /// <summary>
+    /// Re-decodes a source artifact that was previously imported, creating
+    /// a new decode run. Useful after a decoder update to reprocess old
+    /// replays with the latest logic.
+    /// </summary>
     private async ValueTask<CliExecution> ReprocessAsync(
         CliInvocation invocation,
         Guid correlationId,
@@ -171,6 +204,10 @@ public sealed class CliCommandRouter
         return FromResult(result, correlationId, "Replay reprocessing completed.");
     }
 
+    /// <summary>
+    /// Lists decoded battle sessions with offset/limit paging (default 50,
+    /// max 200). Use <c>--offset</c> and <c>--limit</c> options.
+    /// </summary>
     private async ValueTask<CliExecution> SessionsAsync(
         CliInvocation invocation,
         Guid correlationId,
@@ -196,6 +233,10 @@ public sealed class CliCommandRouter
         return Success(sessions, $"Loaded {sessions.Count} session(s).", correlationId);
     }
 
+    /// <summary>
+    /// Dispatches comparison sub-commands. Supported: <c>list</c> (paged list
+    /// of comparison runs), <c>inspect</c> (full result for one run).
+    /// </summary>
     private async ValueTask<CliExecution> CompareAsync(
         CliInvocation invocation,
         Guid correlationId,
@@ -221,6 +262,7 @@ public sealed class CliCommandRouter
         };
     }
 
+    /// <summary>Lists comparison runs with paging (default 50, max 200).</summary>
     private async ValueTask<CliExecution> CompareListAsync(
         CliInvocation invocation,
         Guid correlationId,
@@ -241,6 +283,7 @@ public sealed class CliCommandRouter
         return Success(runs, $"Loaded {runs.Count} comparison run(s).", correlationId);
     }
 
+    /// <summary>Returns the full comparison result (metadata, summary, items) for one run.</summary>
     private async ValueTask<CliExecution> CompareInspectAsync(
         CliInvocation invocation,
         Guid correlationId,
@@ -261,6 +304,10 @@ public sealed class CliCommandRouter
         return FromResult(result, correlationId, "Comparison run loaded.");
     }
 
+    /// <summary>
+    /// Dispatches export sub-commands. Supported: <c>sessions</c> (events as
+    /// structured JSON), <c>positions</c> (position samples as structured JSON).
+    /// </summary>
     private async ValueTask<CliExecution> ExportAsync(
         CliInvocation invocation,
         Guid correlationId,
@@ -286,6 +333,10 @@ public sealed class CliCommandRouter
         };
     }
 
+    /// <summary>
+    /// Exports all decoded events for a battle session as structured JSON
+    /// with sequence, kind, replay time, participant/entity IDs, and values.
+    /// </summary>
     private async ValueTask<CliExecution> ExportSessionsAsync(
         CliInvocation invocation,
         Guid correlationId,
@@ -328,6 +379,11 @@ public sealed class CliCommandRouter
             result.Warnings);
     }
 
+    /// <summary>
+    /// Exports all position samples for a battle session as structured JSON
+    /// with sequence, replay time, participant/entity IDs, raw coordinates,
+    /// and coordinate space.
+    /// </summary>
     private async ValueTask<CliExecution> ExportPositionsAsync(
         CliInvocation invocation,
         Guid correlationId,
@@ -372,6 +428,19 @@ public sealed class CliCommandRouter
             result.Warnings);
     }
 
+    /// <summary>
+    /// Monitors a directory for new <c>.wotbreplay</c> files and auto-imports
+    /// each one. Uses <see cref="FileSystemWatcher"/> as a low-latency hint
+    /// and periodic directory enumeration as source of truth, matching the
+    /// pattern used by <c>BlitzReplayLogMonitor</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>Existing files in the directory are imported on startup
+    /// (idempotent). Each new file gets a 2-second stability delay before
+    /// import to allow the writer to finish flushing.</para>
+    /// <para>Press Ctrl+C to stop watching. The command returns a summary
+    /// with the directory, elapsed time, and import/error counts.</para>
+    /// </remarks>
     private async ValueTask<CliExecution> WatchAsync(
         CliInvocation invocation,
         Guid correlationId,
@@ -558,6 +627,12 @@ public sealed class CliCommandRouter
             correlationId);
     }
 
+    /// <summary>
+    /// Imports one replay file after a 2-second stability delay. Returns
+    /// <see langword="true"/> on success, <see langword="false"/> on failure
+    /// (the caller is responsible for counting). Does not throw on import
+    /// failures — those are logged and counted as errors.
+    /// </summary>
     private async ValueTask<bool> ImportFileAsync(
         string path,
         CancellationToken cancellationToken)
@@ -630,6 +705,12 @@ public sealed class CliCommandRouter
         }
     }
 
+    /// <summary>
+    /// Parses an integer option with bounds checking. Returns
+    /// <see langword="false"/> when the value is present but unparseable
+    /// or out of range; the caller is responsible for producing the
+    /// appropriate error envelope.
+    /// </summary>
     private static bool TryGetInteger(
         IReadOnlyDictionary<string, string?> options,
         string key,
@@ -647,6 +728,11 @@ public sealed class CliCommandRouter
         return int.TryParse(raw, out result) && result >= minimum && result <= maximum;
     }
 
+    /// <summary>
+    /// Maps a successful or failed <see cref="OperationResult{T}"/> into a
+    /// <see cref="CliExecution"/>. Failures are routed through
+    /// <see cref="MapExitCode"/> for stable exit-code classification.
+    /// </summary>
     private static CliExecution FromResult<T>(
         OperationResult<T> result,
         Guid correlationId,
@@ -669,6 +755,7 @@ public sealed class CliCommandRouter
             result.Warnings);
     }
 
+    /// <summary>Builds a successful CLI execution envelope.</summary>
     private static CliExecution Success(
         object? data,
         string message,
@@ -685,6 +772,7 @@ public sealed class CliCommandRouter
                 Errors: []),
             message);
 
+    /// <summary>Builds a failure envelope for argument-validation errors.</summary>
     private static CliExecution Invalid(
         string code,
         string message,
@@ -692,6 +780,10 @@ public sealed class CliCommandRouter
         CliExitCode exitCode = CliExitCode.InvalidArguments) =>
         Failure(exitCode, code, message, data: null, correlationId);
 
+    /// <summary>
+    /// Builds a failure envelope for commands that are reserved but not
+    /// yet implemented in this milestone.
+    /// </summary>
     private static CliExecution Unsupported(string command, Guid correlationId) =>
         Failure(
             CliExitCode.UnsupportedCapability,
@@ -700,6 +792,7 @@ public sealed class CliCommandRouter
             data: null,
             correlationId);
 
+    /// <summary>Builds a general failure CLI execution envelope.</summary>
     private static CliExecution Failure(
         CliExitCode exitCode,
         string code,
@@ -719,6 +812,11 @@ public sealed class CliCommandRouter
                 [new CliError(code, message, retryable)]),
             message);
 
+    /// <summary>
+    /// Maps stable application error codes to CLI exit codes by keyword
+    /// matching, so the envelope stays deterministic even when a new
+    /// error code is added.
+    /// </summary>
     private static CliExitCode MapExitCode(string errorCode)
     {
         if (errorCode.Contains("cancelled", StringComparison.Ordinal))

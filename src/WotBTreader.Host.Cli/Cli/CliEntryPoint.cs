@@ -16,6 +16,18 @@ namespace WotBTreader.Host.Cli.Cli;
 /// </summary>
 public static class CliEntryPoint
 {
+    /// <summary>
+    /// Parses arguments, builds a fully composed host (running storage migrations
+    /// at startup), dispatches the command through <see cref="CliCommandRouter"/>,
+    /// and writes the machine-readable envelope to the appropriate output stream.
+    /// </summary>
+    /// <remarks>
+    /// JSON envelopes always go to <paramref name="standardOutput"/> so a failed
+    /// command stays pipeable. Human-readable error text goes to
+    /// <paramref name="standardError"/>. The catch-all handler surfaces only the
+    /// exception type name, never its message, because exception text routinely
+    /// embeds local paths.
+    /// </remarks>
     public static async Task<int> RunAsync(
         IReadOnlyList<string> arguments,
         TextWriter standardOutput,

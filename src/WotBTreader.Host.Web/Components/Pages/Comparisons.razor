@@ -1,3 +1,6 @@
+@* Lists comparison runs from storage and shows detail for the selected run.
+   Reads comparison runs on initialisation, then loads the full result
+   (summary + items) when the user clicks View on a specific run. *@
 @page "/comparisons"
 @using WotBTreader.Application.Storage
 @using WotBTreader.Core
@@ -135,6 +138,7 @@ else
     private bool _loading = true;
     private string? _error;
 
+    /// <summary>Loads the first page of comparison runs on page initialisation.</summary>
     protected override async Task OnInitializedAsync()
     {
         try
@@ -151,6 +155,7 @@ else
         }
     }
 
+    /// <summary>Loads the full comparison result (summary + items) for a selected run.</summary>
     private async Task SelectAsync(Guid comparisonRunId)
     {
         _error = null;

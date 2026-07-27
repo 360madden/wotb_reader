@@ -22,6 +22,15 @@ All alpha surfaces are implemented and validated:
 
 **Total:** 231 tests, 2 opt-in skips. Build: 0 errors, 0 warnings. Scan: clean.
 
+### Comment coverage
+
+XML doc comments added to all public and key internal types:
+- `ComparisonModels.cs` — all 8 record types and 3 enums now have `<summary>`
+- `CliCommandRouter.cs` — class + all 18 methods documented
+- `IDashboardReadClient.cs` — all 5 methods have summaries
+- `CliEntryPoint.cs` — `RunAsync` has detailed summary + remarks
+- `Comparisons.razor` — page-level comment + method summaries
+
 ## Remaining items (priority order)
 
 ### 🔴 P0 — Smoke test ✅
