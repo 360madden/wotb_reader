@@ -39,6 +39,8 @@ public class MainViewModel : INotifyPropertyChanged
     private double _worldMaxX;
     private double _worldMinZ;
     private double _worldMaxZ;
+    private IReadOnlyList<ParticipantResponse> _participants = [];
+    private int _eventCount;
 
     public MainViewModel()
         : this(new RendezvousLocator(), static baseUri => new TreaderApiClient(baseUri), null, null)
@@ -142,6 +144,34 @@ public class MainViewModel : INotifyPropertyChanged
         private set { _worldMaxZ = value; OnPropertyChanged(); }
     }
 
+    /// <summary>
+    /// Participants from the most recently loaded session detail.
+    /// Empty when no session is selected.
+    /// </summary>
+    public IReadOnlyList<ParticipantResponse> Participants
+    {
+        get => _participants;
+        private set
+        {
+            _participants = value;
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>
+    /// Event count from the most recently loaded session detail.
+    /// Zero when no session is selected.
+    /// </summary>
+    public int EventCount
+    {
+        get => _eventCount;
+        private set
+        {
+            _eventCount = value;
+            OnPropertyChanged();
+        }
+    }
+
     public async Task RefreshSessionsAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -219,6 +249,8 @@ public class MainViewModel : INotifyPropertyChanged
         TreaderApiClient? client = _client;
         if (selected is null || client is null)
         {
+            Participants = [];
+            EventCount = 0;
             return;
         }
 
@@ -227,6 +259,8 @@ public class MainViewModel : INotifyPropertyChanged
             SessionDetailResponse? detail = await client.GetSessionDetailAsync(selected.BattleSessionId, cancellationToken);
             if (detail is null)
             {
+                Participants = [];
+                EventCount = 0;
                 return;
             }
 
@@ -251,8 +285,11 @@ public class MainViewModel : INotifyPropertyChanged
                     teamByParticipantId.TryGetValue(sample.ParticipantId, out teamNumber);
                 }
 
-                Points.Add(new PlotPoint(sample.RawX, sample.RawZ, teamNumber));
+                Points.Add(new PlotPoint(sample.RawX, sample.RawZ, teamNumber, sample.ParticipantId));
             }
+
+            Participants = detail.Participants;
+            EventCount = detail.EventCount;
 
             ApplyMapBoundaries(selected);
 
@@ -264,6 +301,8 @@ public class MainViewModel : INotifyPropertyChanged
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or ObjectDisposedException)
         {
             Status = "Host unreachable";
+            Participants = [];
+            EventCount = 0;
         }
     }
 

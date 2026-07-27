@@ -138,6 +138,64 @@ public sealed partial class PositionPlot : UserControl
                 hasBounds ? wMinZ : null,
                 hasBounds ? wMaxZ : null);
 
+        // ── Draw velocity trails (fading lines per participant) ──
+        // Group all fitted coordinates by participant, preserving insertion order.
+        // This connects every position of a single tank chronologically, even when
+        // positions from other tanks are interleaved in the data stream — each
+        // participant's trail is an independent path through time.
+        const int maxTrailSegments = 100;
+        Dictionary<string, (List<(double X, double Y)> Coords, int TeamNumber)> groups = new();
+        for (int i = 0; i < points.Count; i++)
+        {
+            if (points[i].ParticipantId is string pid)
+            {
+                if (!groups.TryGetValue(pid, out var group))
+                {
+                    group = (new List<(double X, double Y)>(), points[i].TeamNumber);
+                    groups[pid] = group;
+                }
+
+                group.Coords.Add((fitted[i].X, fitted[i].Y));
+            }
+        }
+
+        foreach (var (_, (coords, teamNumber)) in groups)
+        {
+            int totalSegments = coords.Count - 1;
+            if (totalSegments <= 0) continue;
+
+            Color teamColor = teamNumber switch
+            {
+                1 => Colors.DodgerBlue,
+                2 => Colors.OrangeRed,
+                _ => Colors.Gray,
+            };
+
+            // Cap trail segments to keep element count bounded.
+            int segmentCount = Math.Min(totalSegments, maxTrailSegments);
+            int skip = totalSegments > maxTrailSegments ? totalSegments / maxTrailSegments : 1;
+            int drawn = 0;
+            for (int i = 0; i < totalSegments && drawn < segmentCount; i += skip)
+            {
+                // Fade from 0.18 (oldest) to 0.85 (newest)
+                double t = totalSegments == 1 ? 1.0 : (double)i / totalSegments;
+                byte alpha = (byte)(30 + (int)(t * 187));
+                drawn++;
+
+                Line line = new()
+                {
+                    X1 = coords[i].X,
+                    Y1 = coords[i].Y,
+                    X2 = coords[i + 1].X,
+                    Y2 = coords[i + 1].Y,
+                    Stroke = new SolidColorBrush(Color.FromArgb(alpha, teamColor.R, teamColor.G, teamColor.B)),
+                    StrokeThickness = 1.2,
+                };
+                PlotCanvas.Children.Add(line);
+            }
+        }
+
+        // ── Draw position dots on top of trails ──
         foreach ((double x, double y, int teamNumber) in fitted)
         {
             Ellipse dot = new()

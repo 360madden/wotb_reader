@@ -23,6 +23,7 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
@@ -44,7 +45,7 @@
                 <ListBox Grid.Row="2" ItemsSource="{Binding Sessions}"
                          SelectedItem="{Binding SelectedSession, Mode=TwoWay}"
                          Background="Transparent" BorderThickness="0"
-                         Foreground="White" Height="350" MaxHeight="350">
+                         Foreground="White" Height="200" MaxHeight="200">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <StackPanel Margin="2,3">
@@ -59,7 +60,48 @@
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
-                <Button Grid.Row="3" Content="✕ Close" Click="CloseWindow"
+                <!-- Session detail panel -->
+                <Grid Grid.Row="3" Margin="0,4,0,0"
+                      Visibility="{Binding SelectedSession, Converter={StaticResource NullToCollapsed}}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" FontSize="11" Foreground="#AAFFFFFF" Margin="0,0,0,3">
+                        <Run Text="👥 Participants ("/><Run Text="{Binding Participants.Count}"/><Run Text=")"/>
+                    </TextBlock>
+                    <ItemsControl Grid.Row="1" ItemsSource="{Binding Participants}" MaxHeight="120">
+                        <ItemsControl.Template>
+                            <ControlTemplate>
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <ItemsPresenter/>
+                                </ScrollViewer>
+                            </ControlTemplate>
+                        </ItemsControl.Template>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" Margin="0,2">
+                                    <Ellipse Width="7" Height="7" Margin="0,0,4,0">
+                                        <Ellipse.Fill>
+                                            <SolidColorBrush Color="{Binding TeamNumber, Converter={StaticResource TeamToColor}}"/>
+                                        </Ellipse.Fill>
+                                    </Ellipse>
+                                    <TextBlock FontSize="10" Foreground="White">
+                                        <Run Text="{Binding PlayerName, TargetNullValue='—'}"/>
+                                    </TextBlock>
+                                    <TextBlock FontSize="9" Foreground="#88FFFFFF" Margin="4,0,0,0">
+                                        <Run Text="{Binding TankName, TargetNullValue=''}"/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Grid.Row="2" FontSize="10" Foreground="#88FFFFFF" Margin="0,3,0,0">
+                        <Run Text="📊 Events: "/><Run Text="{Binding EventCount}"/>
+                    </TextBlock>
+                </Grid>
+                <Button Grid.Row="4" Content="✕ Close" Click="CloseWindow"
                         Background="#33FF4444" Foreground="White" BorderThickness="0"
                         Padding="8,3" Margin="0,4,0,0" Cursor="Hand"/>
             </Grid>

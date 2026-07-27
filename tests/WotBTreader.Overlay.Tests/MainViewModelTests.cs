@@ -281,8 +281,12 @@ public sealed class MainViewModelTests
         Assert.AreEqual(10.0, viewModel.Points[0].X);
         Assert.AreEqual(20.0, viewModel.Points[0].Y);
         Assert.AreEqual(1, viewModel.Points[0].TeamNumber);
+        Assert.AreEqual("p1", viewModel.Points[0].ParticipantId);
         Assert.AreEqual(15.0, viewModel.Points[1].X);
         Assert.AreEqual(25.0, viewModel.Points[1].Y);
+        Assert.AreEqual(1, viewModel.Participants.Count);
+        Assert.AreEqual("Alpha", viewModel.Participants[0].PlayerName);
+        Assert.AreEqual(0, viewModel.EventCount);
     }
 
     [TestMethod]
