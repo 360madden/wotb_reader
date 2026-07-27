@@ -24,13 +24,19 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,6">
+                    <Button Content="▶" Command="{Binding PlayPauseCommand}"
+                            Width="28" Height="22"
+                            Background="#33AAFF" Foreground="White" BorderThickness="0"
+                            Padding="0" Cursor="Hand" FontSize="12"
+                            ToolTip="Play / Pause replay timeline"/>
                     <Button Content="🚀 Launch" Command="{Binding LaunchGameCommand}"
                             Background="#33AAFF" Foreground="White" BorderThickness="0"
-                            Padding="8,3" Cursor="Hand"
+                            Padding="8,3" Cursor="Hand" Margin="4,0,0,0"
                             ToolTip="Launch wotblitz.exe to play the selected replay"/>
                     <Button Content="↻ Refresh" Command="{Binding RefreshCommand}"
                             Background="#44FFFFFF" Foreground="White" BorderThickness="0"
@@ -45,7 +51,7 @@
                 <ListBox Grid.Row="2" ItemsSource="{Binding Sessions}"
                          SelectedItem="{Binding SelectedSession, Mode=TwoWay}"
                          Background="Transparent" BorderThickness="0"
-                         Foreground="White" Height="200" MaxHeight="200">
+                         Foreground="White" Height="160" MaxHeight="160">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <StackPanel Margin="2,3">
@@ -60,8 +66,26 @@
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
+                <!-- Timeline scrubber -->
+                <Grid Grid.Row="3" Margin="0,2,0,2"
+                      Visibility="{Binding SelectedSession, Converter={StaticResource NullToCollapsed}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="36"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" FontSize="9" Foreground="#AAFFFFFF"
+                               VerticalAlignment="Center" HorizontalAlignment="Center">
+                        <Run Text="{Binding CurrentTime, StringFormat={}{0:mm\\:ss}}"/>
+                    </TextBlock>
+                    <Slider Grid.Column="1" Minimum="0"
+                            Maximum="{Binding Duration.TotalSeconds}"
+                            Value="{Binding CurrentTimeSeconds}"
+                            IsSnapToTickEnabled="True" TickFrequency="1"
+                            Background="#33FFFFFF" Foreground="#33AAFF"
+                            Height="20" Cursor="Hand"/>
+                </Grid>
                 <!-- Session detail panel -->
-                <Grid Grid.Row="3" Margin="0,4,0,0"
+                <Grid Grid.Row="4" Margin="0,4,0,0"
                       Visibility="{Binding SelectedSession, Converter={StaticResource NullToCollapsed}}">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -111,7 +135,9 @@
                         </ItemsControl.Template>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <StackPanel Orientation="Horizontal" Margin="0,1">
+                                <StackPanel Orientation="Horizontal" Margin="0,1"
+                                            Cursor="Hand"
+                                            MouseLeftButtonDown="EventItem_Click">
                                     <TextBlock FontSize="9" Foreground="#88FFFFFF" Width="48">
                                         <Run Text="{Binding ReplayTime, StringFormat={}{0:mm\\:ss}}"/>
                                     </TextBlock>
@@ -123,7 +149,7 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </Grid>
-                <Button Grid.Row="4" Content="✕ Close" Click="CloseWindow"
+                <Button Grid.Row="5" Content="✕ Close" Click="CloseWindow"
                         Background="#33FF4444" Foreground="White" BorderThickness="0"
                         Padding="8,3" Margin="0,4,0,0" Cursor="Hand"/>
             </Grid>

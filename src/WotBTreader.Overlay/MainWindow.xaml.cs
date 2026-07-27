@@ -25,6 +25,7 @@ public partial class MainWindow : System.Windows.Window, IDisposable
     private readonly TelemetryStreamService _streamService;
     private readonly DispatcherTimer _refreshTimer;
     private readonly DispatcherTimer _windowTrackTimer;
+    private readonly DispatcherTimer _playbackTimer;
     private bool _disposed;
     private string _lastDashboardUri = "http://127.0.0.1:9182";
 
@@ -49,6 +50,9 @@ public partial class MainWindow : System.Windows.Window, IDisposable
 
         _windowTrackTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         _windowTrackTimer.Tick += OnTrackGameWindow;
+
+        _playbackTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
+        _playbackTimer.Tick += OnPlaybackTick;
     }
 
     public void Dispose()
@@ -58,6 +62,7 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
         _refreshTimer.Stop();
         _windowTrackTimer.Stop();
+        _playbackTimer.Stop();
         _streamService.Dispose();
         GC.SuppressFinalize(this);
     }
@@ -87,6 +92,28 @@ public partial class MainWindow : System.Windows.Window, IDisposable
             !string.IsNullOrEmpty(_viewModel.BaseUri))
         {
             _lastDashboardUri = _viewModel.BaseUri;
+        }
+
+        if (e.PropertyName == nameof(MainViewModel.IsPlaying))
+        {
+            if (_viewModel.IsPlaying)
+                _playbackTimer.Start();
+            else
+                _playbackTimer.Stop();
+        }
+    }
+
+    private void OnPlaybackTick(object? sender, EventArgs e)
+    {
+        _viewModel.AdvancePlayback();
+    }
+
+    private void EventItem_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (sender is System.Windows.FrameworkElement element &&
+            element.DataContext is Contracts.EventResponse eventItem)
+        {
+            _viewModel.ScrubToEventTime(eventItem.ReplayTime);
         }
     }
 

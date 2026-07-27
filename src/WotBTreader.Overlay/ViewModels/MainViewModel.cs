@@ -41,7 +41,12 @@ public class MainViewModel : INotifyPropertyChanged
     private double _worldMaxZ;
     private IReadOnlyList<ParticipantResponse> _participants = [];
     private IReadOnlyList<EventResponse> _events = [];
+    private IReadOnlyList<PositionSampleResponse> _allPositions = [];
+    private Dictionary<string, int> _teamByParticipantId = new(StringComparer.Ordinal);
     private int _eventCount;
+    private TimeSpan _currentTime;
+    private TimeSpan _duration;
+    private bool _isPlaying;
 
     public MainViewModel()
         : this(new RendezvousLocator(), static baseUri => new TreaderApiClient(baseUri), null, null)
@@ -61,6 +66,7 @@ public class MainViewModel : INotifyPropertyChanged
         _syncContext = SynchronizationContext.Current;
         RefreshCommand = new RelayCommand(_ => _ = RefreshSessionsAsync());
         LaunchGameCommand = new RelayCommand(_ => LaunchSelectedReplay());
+        PlayPauseCommand = new RelayCommand(_ => TogglePlayPause());
 
         if (_streamService is not null)
         {
@@ -120,6 +126,9 @@ public class MainViewModel : INotifyPropertyChanged
 
     /// <summary>Launches wotblitz.exe with the currently selected replay.</summary>
     public ICommand LaunchGameCommand { get; }
+
+    /// <summary>Toggle play/pause for the replay timeline scrubber.</summary>
+    public ICommand PlayPauseCommand { get; }
 
     public double WorldMinX
     {
@@ -184,6 +193,111 @@ public class MainViewModel : INotifyPropertyChanged
         {
             _events = value;
             OnPropertyChanged();
+        }
+    }
+
+    /// <summary>Total battle duration from the loaded session.</summary>
+    public TimeSpan Duration
+    {
+        get => _duration;
+        private set { _duration = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>Current scrubber position in the replay timeline.</summary>
+    public TimeSpan CurrentTime
+    {
+        get => _currentTime;
+        set
+        {
+            if (value == _currentTime) return;
+            _currentTime = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(CurrentTimeSeconds));
+            ApplyTimeFilter();
+        }
+    }
+
+    /// <summary>
+    /// Slider-friendly double wrapper for <see cref="CurrentTime"/>.
+    /// Two-way bindable; the slider reads and writes this property.
+    /// </summary>
+    public double CurrentTimeSeconds
+    {
+        get => _currentTime.TotalSeconds;
+        set => CurrentTime = TimeSpan.FromSeconds(value);
+    }
+
+    /// <summary>Whether the timeline is auto-advancing.</summary>
+    public bool IsPlaying
+    {
+        get => _isPlaying;
+        private set
+        {
+            _isPlaying = value;
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>
+    /// Jumps the scrubber to a specific event's replay time.
+    /// Called from the UI when an event row is clicked.
+    /// </summary>
+    public void ScrubToEventTime(TimeSpan time)
+    {
+        CurrentTime = time;
+    }
+
+    /// <summary>Advance the scrubber by one tick during playback.</summary>
+    public void AdvancePlayback()
+    {
+        if (!_isPlaying || _duration <= TimeSpan.Zero) return;
+        TimeSpan next = _currentTime + TimeSpan.FromMilliseconds(200);
+        if (next >= _duration)
+        {
+            CurrentTime = _duration;
+            IsPlaying = false;
+        }
+        else
+        {
+            CurrentTime = next;
+        }
+    }
+
+    private void TogglePlayPause()
+    {
+        if (_duration <= TimeSpan.Zero) return;
+        IsPlaying = !_isPlaying;
+        if (_isPlaying && _currentTime >= _duration)
+        {
+            CurrentTime = TimeSpan.Zero;
+        }
+    }
+
+    private void ApplyTimeFilter()
+    {
+        if (_allPositions.Count == 0)
+        {
+            Points.Clear();
+            return;
+        }
+
+        // When the scrubber is at or past the end (or duration is unknown),
+        // show all positions without a time filter.
+        bool showAll = _duration <= TimeSpan.Zero || _currentTime >= _duration;
+
+        List<PositionSampleResponse> source = showAll
+            ? new List<PositionSampleResponse>(_allPositions)
+            : _allPositions.Where(p => p.ReplayTime <= _currentTime).ToList();
+
+        int stride = Math.Max(1, source.Count / MaxPlottedPoints);
+        Points.Clear();
+        for (int i = 0; i < source.Count; i += stride)
+        {
+            PositionSampleResponse sample = source[i];
+            int teamNumber = 0;
+            if (sample.ParticipantId is not null)
+                _teamByParticipantId.TryGetValue(sample.ParticipantId, out teamNumber);
+            Points.Add(new PlotPoint(sample.RawX, sample.RawZ, teamNumber, sample.ParticipantId));
         }
     }
 
@@ -281,33 +395,25 @@ public class MainViewModel : INotifyPropertyChanged
             return;
         }
 
-            Dictionary<string, int> teamByParticipantId = new(StringComparer.Ordinal);
+            _teamByParticipantId = new Dictionary<string, int>(StringComparer.Ordinal);
             foreach (ParticipantResponse participant in detail.Participants)
             {
                 if (participant.TeamNumber is int team)
                 {
-                    teamByParticipantId[participant.ParticipantId] = team;
+                    _teamByParticipantId[participant.ParticipantId] = team;
                 }
             }
 
-            IReadOnlyList<PositionSampleResponse> positions = detail.Positions;
-            int stride = Math.Max(1, positions.Count / MaxPlottedPoints);
-            Points.Clear();
-            for (int i = 0; i < positions.Count; i += stride)
-            {
-                PositionSampleResponse sample = positions[i];
-                int teamNumber = 0;
-                if (sample.ParticipantId is not null)
-                {
-                    teamByParticipantId.TryGetValue(sample.ParticipantId, out teamNumber);
-                }
-
-                Points.Add(new PlotPoint(sample.RawX, sample.RawZ, teamNumber, sample.ParticipantId));
-            }
+            _allPositions = detail.Positions;
+            Duration = detail.Session?.Duration ?? TimeSpan.Zero;
+            _currentTime = _duration;
+            IsPlaying = false;
 
             Participants = detail.Participants;
             EventCount = detail.EventCount;
             Events = detail.Events;
+
+            ApplyTimeFilter();
 
             ApplyMapBoundaries(selected);
 
