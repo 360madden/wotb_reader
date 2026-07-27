@@ -514,6 +514,7 @@ public sealed class MainViewModelTests
         Assert.AreEqual(1, viewModel.KillsTeam2, "Team 2 had 1 destroyed");
         Assert.AreEqual(4.0, viewModel.PlaybackSpeed);
         Assert.AreEqual("4×", viewModel.SpeedLabel);
+        Assert.IsNull(viewModel.MapName, "Map name should be null when session has no map name");
     }
 
     [TestMethod]

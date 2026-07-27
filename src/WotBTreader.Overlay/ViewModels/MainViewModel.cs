@@ -52,6 +52,7 @@ public class MainViewModel : INotifyPropertyChanged
     private int _damageTeam2;
     private int _killsTeam1;
     private int _killsTeam2;
+    private string? _mapName;
 
     public MainViewModel()
         : this(new RendezvousLocator(), static baseUri => new TreaderApiClient(baseUri), null, null)
@@ -262,6 +263,13 @@ public class MainViewModel : INotifyPropertyChanged
     {
         get => _killsTeam2;
         private set { _killsTeam2 = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>The map name for the currently selected session, shown on the minimap background.</summary>
+    public string? MapName
+    {
+        get => _mapName;
+        private set { _mapName = value; OnPropertyChanged(); }
     }
 
     /// <summary>Current scrubber position in the replay timeline.</summary>
@@ -502,10 +510,11 @@ public class MainViewModel : INotifyPropertyChanged
         TreaderApiClient? client = _client;
         if (selected is null || client is null)
         {
-            Participants = [];
-            EventCount = 0;
-            Events = [];
-            return;
+        Participants = [];
+        EventCount = 0;
+        Events = [];
+        MapName = null;
+        return;
         }
 
         try
@@ -513,10 +522,11 @@ public class MainViewModel : INotifyPropertyChanged
             SessionDetailResponse? detail = await client.GetSessionDetailAsync(selected.BattleSessionId, cancellationToken);
             if (detail is null)
             {
-            Participants = [];
-            EventCount = 0;
-            Events = [];
-            return;
+        Participants = [];
+        EventCount = 0;
+        Events = [];
+        MapName = null;
+        return;
         }
 
             _teamByParticipantId = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -532,6 +542,7 @@ public class MainViewModel : INotifyPropertyChanged
             Duration = detail.Session?.Duration ?? TimeSpan.Zero;
             _currentTime = _duration;
             IsPlaying = false;
+            MapName = detail.Session?.MapName;
 
             Participants = detail.Participants;
             EventCount = detail.EventCount;
@@ -552,6 +563,7 @@ public class MainViewModel : INotifyPropertyChanged
             Participants = [];
             EventCount = 0;
             Events = [];
+            MapName = null;
         }
     }
 

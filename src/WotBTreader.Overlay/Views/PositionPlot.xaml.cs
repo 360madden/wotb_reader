@@ -53,6 +53,13 @@ public sealed partial class PositionPlot : UserControl
             typeof(PositionPlot),
             new PropertyMetadata(double.NaN, OnVisualChanged));
 
+    public static readonly DependencyProperty MapNameProperty =
+        DependencyProperty.Register(
+            nameof(MapName),
+            typeof(string),
+            typeof(PositionPlot),
+            new PropertyMetadata(null, OnVisualChanged));
+
     public PositionPlot()
     {
         InitializeComponent();
@@ -89,13 +96,26 @@ public sealed partial class PositionPlot : UserControl
         set => SetValue(WorldMaxZProperty, value);
     }
 
+    public string? MapName
+    {
+        get => (string?)GetValue(MapNameProperty);
+        set => SetValue(MapNameProperty, value);
+    }
+
     private static void OnVisualChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
-        ((PositionPlot)d).Redraw();
+        PositionPlot plot = (PositionPlot)d;
+        if (e.Property == MapNameProperty)
+        {
+            plot.DrawBackground();
+        }
+
+        plot.Redraw();
     }
 
     private void OnSizeChanged(object sender, SizeChangedEventArgs e)
     {
+        DrawBackground();
         Redraw();
     }
 
@@ -212,6 +232,75 @@ public sealed partial class PositionPlot : UserControl
             Canvas.SetLeft(dot, x);
             Canvas.SetTop(dot, y);
             PlotCanvas.Children.Add(dot);
+        }
+    }
+
+    /// <summary>
+    /// Draws a subtle reference grid and map label on the background canvas,
+    /// giving spatial context behind position dots without requiring game textures.
+    /// </summary>
+    private void DrawBackground()
+    {
+        double w = ActualWidth;
+        double h = ActualHeight;
+        if (w <= 0 || h <= 0) return;
+
+        // Subtle panel fill to delineate the plot area from the transparent overlay.
+        Rectangle bg = new()
+        {
+            Width = w,
+            Height = h,
+            Fill = new SolidColorBrush(Color.FromArgb(12, 255, 255, 255)),
+            RadiusX = 4,
+            RadiusY = 4,
+        };
+        BackgroundCanvas.Children.Add(bg);
+
+        // Grid lines — light dashed lines for spatial reference.
+        Color gridColor = Color.FromArgb(14, 255, 255, 255);
+        double usableW = w - (2 * PlotPadding);
+        double usableH = h - (2 * PlotPadding);
+        double gridSpacing = Math.Max(40, Math.Min(usableW, usableH) / 12);
+
+        for (double x = PlotPadding + gridSpacing; x < w - PlotPadding; x += gridSpacing)
+        {
+            Line line = new()
+            {
+                X1 = x, Y1 = 0, X2 = x, Y2 = h,
+                Stroke = new SolidColorBrush(gridColor),
+                StrokeThickness = 0.5,
+                StrokeDashArray = new DoubleCollection { 4, 8 },
+            };
+            BackgroundCanvas.Children.Add(line);
+        }
+
+        for (double y = PlotPadding + gridSpacing; y < h - PlotPadding; y += gridSpacing)
+        {
+            Line line = new()
+            {
+                X1 = 0, Y1 = y, X2 = w, Y2 = y,
+                Stroke = new SolidColorBrush(gridColor),
+                StrokeThickness = 0.5,
+                StrokeDashArray = new DoubleCollection { 4, 8 },
+            };
+            BackgroundCanvas.Children.Add(line);
+        }
+
+        // Map name label in top-left corner.
+        string? mapName = MapName;
+        if (!string.IsNullOrWhiteSpace(mapName))
+        {
+            TextBlock label = new()
+            {
+                Text = mapName,
+                FontSize = 10,
+                Foreground = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)),
+                FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(12, 8, 0, 0),
+            };
+            Canvas.SetLeft(label, 0);
+            Canvas.SetTop(label, 0);
+            BackgroundCanvas.Children.Add(label);
         }
     }
 }

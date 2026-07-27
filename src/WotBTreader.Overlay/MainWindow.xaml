@@ -14,7 +14,8 @@
     <Grid>
         <views:PositionPlot PointsSource="{Binding Points}" IsHitTestVisible="False"
                             WorldMinX="{Binding WorldMinX}" WorldMaxX="{Binding WorldMaxX}"
-                            WorldMinZ="{Binding WorldMinZ}" WorldMaxZ="{Binding WorldMaxZ}"/>
+                            WorldMinZ="{Binding WorldMinZ}" WorldMaxZ="{Binding WorldMaxZ}"
+                            MapName="{Binding MapName}"/>
         <Border HorizontalAlignment="Right" VerticalAlignment="Top"
                 Width="340" Margin="12" Padding="8"
                 Background="#CC111111" CornerRadius="6"
