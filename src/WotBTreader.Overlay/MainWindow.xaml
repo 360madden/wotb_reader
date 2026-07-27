@@ -3,9 +3,10 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:wpf="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         xmlns:views="clr-namespace:WotBTreader.Overlay.Views"
         mc:Ignorable="d"
-        Title="WotB Treader Overlay" Width="1000" Height="600">
+        Title="WotB Treader Overlay" Width="1200" Height="700">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -15,31 +16,38 @@
             <Button Content="Refresh" Command="{Binding RefreshCommand}"/>
             <TextBlock Text="{Binding Status}" VerticalAlignment="Center" Margin="8,0,0,0"/>
         </ToolBar>
-        <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="280"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-            <ListBox Grid.Column="0"
-                     ItemsSource="{Binding Sessions}"
-                     SelectedItem="{Binding SelectedSession, Mode=TwoWay}">
-                <ListBox.ItemTemplate>
-                    <DataTemplate>
-                        <StackPanel Margin="4,2">
-                            <TextBlock Text="{Binding MapLabel}" FontWeight="Bold"/>
-                            <TextBlock FontSize="11" Foreground="Gray">
-                                <Run Text="{Binding BattleTimeUtc}"/>
-                                <Run Text=" • "/>
-                                <Run Text="{Binding ParticipantCount}"/>
-                                <Run Text=" players • "/>
-                                <Run Text="{Binding PositionCount}"/>
-                                <Run Text=" samples"/>
-                            </TextBlock>
-                        </StackPanel>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
-            <views:PositionPlot Grid.Column="1" PointsSource="{Binding Points}"/>
-        </Grid>
+        <TabControl Grid.Row="1" Margin="4">
+            <TabItem Header="Position Plot">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="280"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <ListBox Grid.Column="0"
+                             ItemsSource="{Binding Sessions}"
+                             SelectedItem="{Binding SelectedSession, Mode=TwoWay}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="4,2">
+                                    <TextBlock Text="{Binding MapLabel}" FontWeight="Bold"/>
+                                    <TextBlock FontSize="11" Foreground="Gray">
+                                        <Run Text="{Binding BattleTimeUtc}"/>
+                                        <Run Text=" • "/>
+                                        <Run Text="{Binding ParticipantCount}"/>
+                                        <Run Text=" players • "/>
+                                        <Run Text="{Binding PositionCount}"/>
+                                        <Run Text=" samples"/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <views:PositionPlot Grid.Column="1" PointsSource="{Binding Points}"/>
+                </Grid>
+            </TabItem>
+            <TabItem Header="Dashboard">
+                <wpf:WebView2 x:Name="DashboardView"/>
+            </TabItem>
+        </TabControl>
     </Grid>
 </Window>

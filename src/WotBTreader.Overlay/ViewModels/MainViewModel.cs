@@ -67,6 +67,16 @@ public class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>
+    /// The loopback base URI of the web host, set once the rendezvous record
+    /// is discovered and validated. Empty string until the first successful
+    /// refresh. Bound by the WebView2 dashboard to navigate to the host.
+    /// </summary>
+    public string BaseUri
+    {
+        get => _clientBaseUri?.ToString() ?? string.Empty;
+    }
+
     public SessionRow? SelectedSession
     {
         get => _selectedSession;
@@ -225,6 +235,7 @@ public class MainViewModel : INotifyPropertyChanged
         TreaderApiClient? oldClient = _client;
         _client = _apiClientFactory(baseUri);
         _clientBaseUri = baseUri;
+        OnPropertyChanged(nameof(BaseUri));
         oldClient?.Dispose();
         return _client;
     }
