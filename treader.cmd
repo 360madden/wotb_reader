@@ -25,5 +25,5 @@ if not exist "%CLI%" (
     exit /b 1
 )
 
-"%CLI%" %* --data-root "%~dp0.data"
+"%CLI%" --data-root "%~dp0.data" %*
 exit /b %ERRORLEVEL%
