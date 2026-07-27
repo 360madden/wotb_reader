@@ -81,6 +81,13 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         PopulateGamePathInfo();
     }
 
+    private void SearchText_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+        SearchPlaceholder.Visibility = string.IsNullOrEmpty(_viewModel.SearchText)
+            ? System.Windows.Visibility.Visible
+            : System.Windows.Visibility.Collapsed;
+    }
+
     private void PopulateGamePathInfo()
     {
         string? gamePath = FindGameExecutablePath();

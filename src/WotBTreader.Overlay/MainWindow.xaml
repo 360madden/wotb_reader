@@ -14,16 +14,161 @@
         DragEnter="Window_DragEnter"
         Drop="Window_Drop"
         MouseLeftButtonDown="Window_MouseLeftButtonDown"
-        PreviewKeyDown="Window_PreviewKeyDown">
+        PreviewKeyDown="Window_PreviewKeyDown"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType">
+    <Window.Resources>
+
+        <!-- ═══ Button style — translucent, rounded, with hover/pressed states ═══ -->
+        <Style x:Key="ToolbarButton" TargetType="Button">
+            <Setter Property="Width" Value="26"/>
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="#CCFFFFFF"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="#33FFFFFF" CornerRadius="4"
+                                BorderThickness="0" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#55FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#22FFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ═══ Primary action button — bold colored ═══ -->
+        <Style x:Key="PrimaryButton" TargetType="Button">
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="10,0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="#00CC66" CornerRadius="5"
+                                BorderThickness="0">
+                            <Border.Effect>
+                                <DropShadowEffect Color="#000000" BlurRadius="6" ShadowDepth="1" Opacity="0.3"/>
+                            </Border.Effect>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}" TextBlock.Foreground="White"
+                                              TextBlock.FontWeight="SemiBold"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#00EE77"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#00AA55"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ═══ Secondary action button ═══ -->
+        <Style x:Key="SecondaryButton" TargetType="Button">
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="10,0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="#2255AA" CornerRadius="5"
+                                BorderThickness="0">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#3366CC"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#1144AA"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ═══ ListBox item hover/selection style ═══ -->
+        <Style x:Key="SessionListBoxItem" TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="4,3"/>
+            <Setter Property="Margin" Value="0,1"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="border" Background="{TemplateBinding Background}"
+                                CornerRadius="4" Padding="{TemplateBinding Padding}"
+                                BorderThickness="0">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#22FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#33446688"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="#3366AA"/>
+                                <Setter TargetName="border" Property="BorderThickness" Value="0,0,0,0"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ═══ ScrollBar for dark theme ═══ -->
+        <Style TargetType="ScrollBar">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Width" Value="5"/>
+        </Style>
+
+    </Window.Resources>
+
     <Grid>
+        <!-- ═══ Position plot fills the entire window ═══ -->
         <views:PositionPlot PointsSource="{Binding Points}" IsHitTestVisible="False"
                             WorldMinX="{Binding WorldMinX}" WorldMaxX="{Binding WorldMaxX}"
                             WorldMinZ="{Binding WorldMinZ}" WorldMaxZ="{Binding WorldMaxZ}"
                             MapName="{Binding MapName}"/>
+
+        <!-- ═══ Sidebar panel — gradient, shadowed, rounded ═══ -->
         <Border x:Name="SidebarBorder" HorizontalAlignment="Right" VerticalAlignment="Top"
-                Width="340" Margin="12" Padding="8"
-                Background="#CC111111" CornerRadius="6"
-                BorderBrush="#44FFFFFF" BorderThickness="1" Opacity="0.85">
+                Width="350" Margin="14" Padding="10" CornerRadius="8"
+                BorderBrush="#55FFFFFF" BorderThickness="1" Opacity="0.92"
+                UseLayoutRounding="True">
+            <Border.Effect>
+                <DropShadowEffect Color="#000000" BlurRadius="20" ShadowDepth="3" Opacity="0.5"/>
+            </Border.Effect>
+            <Border.Background>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                    <GradientStop Color="#DD1A1A24" Offset="0"/>
+                    <GradientStop Color="#DD0D0D14" Offset="1"/>
+                </LinearGradientBrush>
+            </Border.Background>
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -35,107 +180,168 @@
                     <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
-                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,6">
-                    <Button Content="⏮" Command="{Binding JumpToStartCommand}"
-                            Width="22" Height="22" FontSize="10"
-                            Background="#44FFFFFF" Foreground="White" BorderThickness="0"
-                            Padding="0" Cursor="Hand"
-                            ToolTip="Jump to start"/>
-                    <Button x:Name="PlayButton" Content="▶" Command="{Binding PlayPauseCommand}"
-                            Width="24" Height="22"
-                            Background="#33AAFF" Foreground="White" BorderThickness="0"
-                            Padding="0" Cursor="Hand" FontSize="12" Margin="2,0,0,0"
-                            ToolTip="Play / Pause replay timeline"/>
-                    <Button Content="⏭" Command="{Binding JumpToEndCommand}"
-                            Width="22" Height="22" FontSize="10"
-                            Background="#44FFFFFF" Foreground="White" BorderThickness="0"
-                            Padding="0" Cursor="Hand" Margin="2,0,0,0"
-                            ToolTip="Jump to end"/>
-                    <Button Content="{Binding SpeedLabel}" Command="{Binding CycleSpeedCommand}"
-                            Width="28" Height="22" FontSize="9"
-                            Background="#44FFFFFF" Foreground="#AAFFAA" BorderThickness="0"
-                            Padding="0" Cursor="Hand" Margin="2,0,0,0"
-                            ToolTip="Cycle playback speed (0.5x / 1x / 2x / 4x / 8x)"/>
-                    <Button Content="📂 Pick &amp; Launch" Click="QuickLaunch_Click"
-                            Background="#44FF44" Foreground="#111" BorderThickness="0"
-                            Padding="8,3" Cursor="Hand" Margin="6,0,0,0"
-                            FontWeight="Bold" FontSize="11"
-                            ToolTip="Pick a .wotbreplay file — auto-starts host, imports, and launches the game"/>
-                    <Button Content="🚀 Re-launch" Command="{Binding LaunchGameCommand}"
-                            Background="#33AAFF" Foreground="White" BorderThickness="0"
-                            Padding="8,3" Cursor="Hand" Margin="4,0,0,0"
-                            FontSize="11"
-                            ToolTip="Re-launch wotblitz.exe with the selected session's replay"/>
-                    <Button Content="↻" Command="{Binding RefreshCommand}"
-                            Width="28" Height="22"
-                            Background="#44FFFFFF" Foreground="White" BorderThickness="0"
-                            Padding="0" Cursor="Hand" Margin="2,0,0,0"
-                            ToolTip="Refresh sessions"/>
-                    <Button Content="🌐" Click="OpenDashboardInBrowser"
-                            Width="28" Height="22"
-                            Background="#44FFFFFF" Foreground="White" BorderThickness="0"
-                            Padding="0" Cursor="Hand" Margin="2,0,0,0"
-                            ToolTip="Open the full dashboard in a browser"/>
-                    <Button Content="👁" Click="ToggleSidebarOpacity"
-                            Background="#44FFFFFF" Foreground="#CCCCCC" BorderThickness="0"
-                            Width="22" Height="22" FontSize="11" Padding="0"
-                            Cursor="Hand" Margin="6,0,0,0"
-                            ToolTip="Toggle sidebar transparency"/>
-                    <Button x:Name="CollapseButton" Content="«" Click="ToggleSidebarCollapse"
-                            Background="#44FFFFFF" Foreground="#CCCCCC" BorderThickness="0"
-                            Width="22" Height="22" FontSize="11" Padding="0"
-                            Cursor="Hand" Margin="2,0,0,0"
-                            ToolTip="Collapse / expand sidebar"/>
-                </StackPanel>
+
+                <!-- ═══ Row 0: Toolbar ═══ -->
+                <Border Grid.Row="0" Margin="0,0,0,8" Padding="0,0,0,6"
+                        BorderBrush="#22FFFFFF" BorderThickness="0,0,0,1">
+                    <StackPanel Orientation="Horizontal">
+                        <!-- Transport controls -->
+                        <Button Content="⏮" ToolTip="Jump to start (Home)" Style="{StaticResource ToolbarButton}"
+                                Command="{Binding JumpToStartCommand}" Width="24" Height="24" FontSize="10"/>
+                        <Button x:Name="PlayButton" Content="▶" ToolTip="Play / Pause (Space)" Style="{StaticResource ToolbarButton}"
+                                Command="{Binding PlayPauseCommand}" Width="28" Height="24" FontSize="12"
+                                Foreground="#33AAFF" Margin="2,0,0,0"/>
+                        <Button Content="⏭" ToolTip="Jump to end (End)" Style="{StaticResource ToolbarButton}"
+                                Command="{Binding JumpToEndCommand}" Width="24" Height="24" FontSize="10"
+                                Margin="2,0,0,0"/>
+                        <Button Content="{Binding SpeedLabel}" ToolTip="Cycle speed (1-5)" Style="{StaticResource ToolbarButton}"
+                                Command="{Binding CycleSpeedCommand}" Width="30" Height="24" FontSize="9"
+                                Foreground="#AAFFAA" Margin="2,0,0,0"/>
+
+                        <!-- Primary action: Pick &amp; Launch -->
+                        <Button Content="📂  Pick &amp; Launch" ToolTip="Pick a .wotbreplay — auto-starts host, imports, and launches the game"
+                                Style="{StaticResource PrimaryButton}" Click="QuickLaunch_Click"
+                                Margin="8,0,0,0" Padding="12,0"/>
+                        <Button Content="🚀  Re-launch" ToolTip="Re-launch wotblitz.exe with the selected replay"
+                                Style="{StaticResource SecondaryButton}" Command="{Binding LaunchGameCommand}"
+                                Margin="4,0,0,0" Padding="12,0"/>
+
+                        <!-- Utility icons -->
+                        <Button Content="↻" ToolTip="Refresh sessions" Style="{StaticResource ToolbarButton}"
+                                Command="{Binding RefreshCommand}" Width="24" Height="24" Margin="6,0,0,0"/>
+                        <Button Content="🌐" ToolTip="Open dashboard in browser" Style="{StaticResource ToolbarButton}"
+                                Click="OpenDashboardInBrowser" Width="24" Height="24" Margin="2,0,0,0"/>
+                        <Button Content="👁" ToolTip="Toggle sidebar opacity" Style="{StaticResource ToolbarButton}"
+                                Click="ToggleSidebarOpacity" Width="24" Height="24" Margin="6,0,0,0"
+                                Foreground="#999"/>
+                        <Button x:Name="CollapseButton" Content="«" ToolTip="Collapse sidebar (\\)"
+                                Style="{StaticResource ToolbarButton}" Click="ToggleSidebarCollapse"
+                                Width="24" Height="24" Margin="2,0,0,0" Foreground="#999"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- ═══ Row 1: Status ═══ -->
                 <TextBlock Grid.Row="1" Text="{Binding Status}"
-                           Foreground="#AAFFFFFF" FontSize="11" Margin="0,0,0,4"/>
+                           Foreground="#BBFFFFFF" FontSize="11" Margin="0,0,0,6"
+                           TextTrimming="CharacterEllipsis"/>
+
+                <!-- ═══ Row 2: Game path info ═══ -->
                 <TextBlock x:Name="GamePathInfo" Grid.Row="2"
-                           Foreground="#66FFFFFF" FontSize="9" Margin="0,0,0,2"
+                           Foreground="#55FFFFFF" FontSize="8" Margin="0,0,0,6"
                            TextTrimming="CharacterEllipsis"
-                           ToolTip="Discovered game path and replays folder.\nSet WOTB_GAME_PATH env var to override."/>
-                <TextBox Grid.Row="3" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                         Background="#22FFFFFF" Foreground="White" BorderThickness="0"
-                         FontSize="11" Padding="4,2" Margin="0,0,0,2"
-                         MaxLines="1"
-                         ToolTip="Filter sessions by map name"/>
-                <ListBox x:Name="SessionsListBox" Grid.Row="4" ItemsSource="{Binding FilteredSessions}"
+                           ToolTip="Discovered game path and replays folder."/>
+
+                <!-- ═══ Row 3: Search ═══ -->
+                <Border Grid.Row="3" Margin="0,0,0,4" Background="#1AFFFFFF"
+                        CornerRadius="4" BorderBrush="#22FFFFFF" BorderThickness="1">
+                    <Grid>
+                        <TextBlock Text="🔍  Filter maps…" IsHitTestVisible="False"
+                                   Foreground="#44FFFFFF" FontSize="11" VerticalAlignment="Center"
+                                   Margin="8,0" Visibility="Visible" x:Name="SearchPlaceholder"/>
+                        <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                 Background="Transparent" Foreground="White" BorderThickness="0"
+                                 FontSize="11" Padding="8,4" MaxLines="1"
+                                 ToolTip="Filter sessions by map name"
+                                 TextChanged="SearchText_TextChanged"/>
+                    </Grid>
+                </Border>
+
+                <!-- ═══ Row 4: Session list ═══ -->
+                <ListBox x:Name="SessionsListBox" Grid.Row="4"
+                         ItemsSource="{Binding FilteredSessions}"
                          SelectedItem="{Binding SelectedSession, Mode=TwoWay}"
                          Background="Transparent" BorderThickness="0"
-                         Foreground="White" Height="160" MaxHeight="160">
+                         Foreground="White" Height="150" MaxHeight="150"
+                         ItemContainerStyle="{StaticResource SessionListBoxItem}">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <StackPanel Margin="2,3">
-                                <TextBlock Text="{Binding MapLabel}" FontWeight="Bold"
-                                           FontSize="12" Foreground="White"/>
-                                <TextBlock FontSize="10" Foreground="#AAFFFFFF">
-                                    <Run Text="{Binding BattleTimeUtc}"/><Run Text=" • "/>
-                                    <Run Text="{Binding ParticipantCount}"/><Run Text="p • "/>
-                                    <Run Text="{Binding PositionCount}"/><Run Text=" pos"/>
-                                </TextBlock>
+                            <StackPanel>
+                                <TextBlock Text="{Binding MapLabel}" FontWeight="SemiBold"
+                                           FontSize="12" Foreground="White"
+                                           TextTrimming="CharacterEllipsis"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,1,0,0">
+                                    <TextBlock FontSize="9" Foreground="#88FFFFFF"
+                                               Text="{Binding BattleTimeUtc, StringFormat={}{0:MMM dd  HH:mm}}"/>
+                                    <TextBlock FontSize="9" Foreground="#66FFFFFF" Margin="6,0,0,0">
+                                        <Run Text="{Binding ParticipantCount}"/><Run Text="p"/>
+                                    </TextBlock>
+                                    <TextBlock FontSize="9" Foreground="#66FFFFFF" Margin="6,0,0,0">
+                                        <Run Text="{Binding PositionCount, StringFormat={}{0:N0}}"/>
+                                        <Run Text=" pos"/>
+                                    </TextBlock>
+                                </StackPanel>
                             </StackPanel>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
-                <!-- Timeline scrubber -->
-                <Grid x:Name="TimelineGrid" Grid.Row="5" Margin="0,2,0,2"
-                      Visibility="{Binding SelectedSession, Converter={StaticResource NullToCollapsed}}">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="36"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" FontSize="9" Foreground="#AAFFFFFF"
-                               VerticalAlignment="Center" HorizontalAlignment="Center">
-                        <Run Text="{Binding CurrentTime, StringFormat={}{0:mm\\:ss}}"/>
-                    </TextBlock>
-                    <Slider Grid.Column="1" Minimum="0"
-                            Maximum="{Binding Duration.TotalSeconds}"
-                            Value="{Binding CurrentTimeSeconds}"
-                            IsSnapToTickEnabled="True" TickFrequency="1"
-                            Background="#33FFFFFF" Foreground="#33AAFF"
-                            Height="20" Cursor="Hand"/>
-                </Grid>
-                <!-- Session detail panel -->
-                <Grid x:Name="DetailGrid" Grid.Row="6" Margin="0,4,0,0"
+
+                <!-- ═══ Row 5: Timeline scrubber ═══ -->
+                <Border x:Name="TimelineGrid" Grid.Row="5" Margin="0,4,0,4" Padding="4,3"
+                        Background="#14FFFFFF" CornerRadius="4"
+                        Visibility="{Binding SelectedSession, Converter={StaticResource NullToCollapsed}}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="40"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" FontSize="10" Foreground="#AAFFFFFF"
+                                   VerticalAlignment="Center" HorizontalAlignment="Left"
+                                   FontFamily="Consolas">
+                            <Run Text="{Binding CurrentTime, StringFormat={}{0:mm\\:ss}}"/>
+                        </TextBlock>
+                        <TextBlock Grid.Column="1" FontSize="10" Foreground="#55FFFFFF"
+                                   VerticalAlignment="Center" HorizontalAlignment="Right"
+                                   FontFamily="Consolas" Margin="0,0,6,0">
+                            <Run Text="{Binding Duration, StringFormat={}{0:mm\\:ss}}"/>
+                        </TextBlock>
+                        <Slider Grid.Column="2" Minimum="0"
+                                Maximum="{Binding Duration.TotalSeconds}"
+                                Value="{Binding CurrentTimeSeconds}"
+                                IsSnapToTickEnabled="True" TickFrequency="1"
+                                Height="18" Cursor="Hand"
+                                VerticalAlignment="Center">
+                            <Slider.Template>
+                                <ControlTemplate TargetType="Slider">
+                                    <Grid>
+                                        <Track x:Name="PART_Track" Height="4">
+                                            <Track.DecreaseRepeatButton>
+                                                <RepeatButton Command="Slider.DecreaseLarge">
+                                                    <RepeatButton.Template>
+                                                        <ControlTemplate>
+                                                            <Rectangle Fill="#33AAFF" RadiusX="2" RadiusY="2"/>
+                                                        </ControlTemplate>
+                                                    </RepeatButton.Template>
+                                                </RepeatButton>
+                                            </Track.DecreaseRepeatButton>
+                                            <Track.Thumb>
+                                                <Thumb Width="10" Height="16" Cursor="Hand">
+                                                    <Thumb.Template>
+                                                        <ControlTemplate>
+                                                            <Rectangle Fill="#66CCFF" RadiusX="3" RadiusY="3"/>
+                                                        </ControlTemplate>
+                                                    </Thumb.Template>
+                                                </Thumb>
+                                            </Track.Thumb>
+                                            <Track.IncreaseRepeatButton>
+                                                <RepeatButton Command="Slider.IncreaseLarge">
+                                                    <RepeatButton.Template>
+                                                        <ControlTemplate>
+                                                            <Rectangle Fill="#22FFFFFF" RadiusX="2" RadiusY="2"/>
+                                                        </ControlTemplate>
+                                                    </RepeatButton.Template>
+                                                </RepeatButton>
+                                            </Track.IncreaseRepeatButton>
+                                        </Track>
+                                    </Grid>
+                                </ControlTemplate>
+                            </Slider.Template>
+                        </Slider>
+                    </Grid>
+                </Border>
+
+                <!-- ═══ Row 6: Session detail panel ═══ -->
+                <Grid x:Name="DetailGrid" Grid.Row="6" Margin="0,2,0,0"
                       Visibility="{Binding SelectedSession, Converter={StaticResource NullToCollapsed}}">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -144,10 +350,19 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0" FontSize="11" Foreground="#AAFFFFFF" Margin="0,0,0,3">
-                        <Run Text="👥 Participants ("/><Run Text="{Binding Participants.Count}"/><Run Text=")"/>
-                    </TextBlock>
-                    <ItemsControl Grid.Row="1" ItemsSource="{Binding Participants}" MaxHeight="120">
+
+                    <!-- ── Participants header ── -->
+                    <Border Grid.Row="0" Margin="0,0,0,4" Padding="0,0,0,4"
+                            BorderBrush="#22FFFFFF" BorderThickness="0,0,0,1">
+                        <TextBlock FontSize="11" Foreground="#BBFFFFFF">
+                            <Run Text="👥  Participants ("/>
+                            <Run Text="{Binding Participants.Count}" Foreground="#88CCFF"/>
+                            <Run Text=")"/>
+                        </TextBlock>
+                    </Border>
+
+                    <!-- ── Participants list ── -->
+                    <ItemsControl Grid.Row="1" ItemsSource="{Binding Participants}" MaxHeight="110">
                         <ItemsControl.Template>
                             <ControlTemplate>
                                 <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -157,50 +372,86 @@
                         </ItemsControl.Template>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <StackPanel Orientation="Horizontal" Margin="0,2">
-                                    <Ellipse Width="7" Height="7" Margin="0,0,4,0">
-                                        <Ellipse.Fill>
-                                            <SolidColorBrush Color="{Binding TeamNumber, Converter={StaticResource TeamToColor}}"/>
-                                        </Ellipse.Fill>
-                                    </Ellipse>
-                                    <TextBlock FontSize="10" Foreground="White">
-                                        <Run Text="{Binding PlayerName, TargetNullValue='—'}"/>
-                                    </TextBlock>
-                                    <TextBlock FontSize="9" Foreground="#88FFFFFF" Margin="4,0,0,0">
-                                        <Run Text="{Binding TankName, TargetNullValue=''}"/>
-                                    </TextBlock>
-                                </StackPanel>
+                                <Border Margin="0,1" Padding="3,2" CornerRadius="3"
+                                        Background="Transparent">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Style.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Background" Value="#15FFFFFF"/>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Ellipse Width="8" Height="8" Margin="0,0,6,0"
+                                                 VerticalAlignment="Center">
+                                            <Ellipse.Fill>
+                                                <SolidColorBrush Color="{Binding TeamNumber, Converter={StaticResource TeamToColor}}"/>
+                                            </Ellipse.Fill>
+                                        </Ellipse>
+                                        <TextBlock FontSize="10" Foreground="White"
+                                                   VerticalAlignment="Center" MinWidth="70"
+                                                   Text="{Binding PlayerName, TargetNullValue='—'}"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock FontSize="9" Foreground="#77FFFFFF"
+                                                   VerticalAlignment="Center" Margin="4,0,0,0"
+                                                   Text="{Binding TankName, TargetNullValue=''}"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+                                </Border>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                    <TextBlock Grid.Row="2" FontSize="10" Foreground="#88FFFFFF" Margin="0,3,0,0">
-                        <Run Text="📊 Events: "/><Run Text="{Binding EventCount}"/>
+
+                    <!-- ── Event count ── -->
+                    <TextBlock Grid.Row="2" FontSize="10" Foreground="#88FFFFFF" Margin="0,4,0,0">
+                        <Run Text="📊  Events: "/>
+                        <Run Text="{Binding EventCount}" Foreground="#88CCFF"/>
                     </TextBlock>
-                    <!-- Battle stats bar -->
-                    <Grid Grid.Row="3" Margin="0,3,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="4"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0">
-                            <TextBlock FontSize="9" Foreground="DodgerBlue">
-                                <Run Text="🔵 "/><Run Text="{Binding DamageTeam1, StringFormat='{}{0:N0}'}"/><Run Text=" dmg taken"/>
-                            </TextBlock>
-                            <TextBlock FontSize="9" Foreground="DodgerBlue">
-                                <Run Text="{Binding KillsTeam1, StringFormat='{}{0}'}"/><Run Text=" kills"/>
-                            </TextBlock>
-                        </StackPanel>
-                        <StackPanel Grid.Column="2">
-                            <TextBlock FontSize="9" Foreground="OrangeRed">
-                                <Run Text="🔴 "/><Run Text="{Binding DamageTeam2, StringFormat='{}{0:N0}'}"/><Run Text=" dmg taken"/>
-                            </TextBlock>
-                            <TextBlock FontSize="9" Foreground="OrangeRed">
-                                <Run Text="{Binding KillsTeam2, StringFormat='{}{0}'}"/><Run Text=" kills"/>
-                            </TextBlock>
-                        </StackPanel>
-                    </Grid>
-                    <ItemsControl Grid.Row="4" ItemsSource="{Binding Events}" MaxHeight="80" Margin="0,3,0,0">
+
+                    <!-- ── Battle stats bar ── -->
+                    <Border Grid.Row="3" Margin="0,4,0,0" Padding="4,3"
+                            Background="#10FFFFFF" CornerRadius="4">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock FontSize="9" Foreground="#55AAFF" FontWeight="SemiBold">
+                                    <Run Text="🔵  TEAM 1"/>
+                                </TextBlock>
+                                <TextBlock FontSize="10" Foreground="#88CCFF" Margin="0,1,0,0">
+                                    <Run Text="{Binding DamageTeam1, StringFormat={}{0:N0}}"/>
+                                    <Run Text=" dmg" Foreground="#66FFFFFF" FontSize="9"/>
+                                </TextBlock>
+                                <TextBlock FontSize="10" Foreground="#88CCFF">
+                                    <Run Text="{Binding KillsTeam1, StringFormat={}{0}}"/>
+                                    <Run Text=" kills" Foreground="#66FFFFFF" FontSize="9"/>
+                                </TextBlock>
+                            </StackPanel>
+                            <Border Grid.Column="1" Width="1" Margin="6,2"
+                                    Background="#22FFFFFF" VerticalAlignment="Stretch"/>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock FontSize="9" Foreground="#FF6644" FontWeight="SemiBold">
+                                    <Run Text="🔴  TEAM 2"/>
+                                </TextBlock>
+                                <TextBlock FontSize="10" Foreground="#FF8866" Margin="0,1,0,0">
+                                    <Run Text="{Binding DamageTeam2, StringFormat={}{0:N0}}"/>
+                                    <Run Text=" dmg" Foreground="#66FFFFFF" FontSize="9"/>
+                                </TextBlock>
+                                <TextBlock FontSize="10" Foreground="#FF8866">
+                                    <Run Text="{Binding KillsTeam2, StringFormat={}{0}}"/>
+                                    <Run Text=" kills" Foreground="#66FFFFFF" FontSize="9"/>
+                                </TextBlock>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- ── Event feed ── -->
+                    <ItemsControl Grid.Row="4" ItemsSource="{Binding Events}" MaxHeight="72" Margin="0,3,0,0">
                         <ItemsControl.Template>
                             <ControlTemplate>
                                 <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -210,23 +461,57 @@
                         </ItemsControl.Template>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <StackPanel Orientation="Horizontal" Margin="0,1"
-                                            Cursor="Hand"
-                                            MouseLeftButtonDown="EventItem_Click">
-                                    <TextBlock FontSize="9" Foreground="#88FFFFFF" Width="48">
-                                        <Run Text="{Binding ReplayTime, StringFormat={}{0:mm\\:ss}}"/>
-                                    </TextBlock>
-                                    <TextBlock FontSize="9" Foreground="#CCFFFFFF">
-                                        <Run Text="{Binding Summary}"/>
-                                    </TextBlock>
-                                </StackPanel>
+                                <Border Margin="0,1" Padding="3,2" CornerRadius="3"
+                                        Cursor="Hand" MouseLeftButtonDown="EventItem_Click"
+                                        Background="Transparent">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Style.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Background" Value="#18FFFFFF"/>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock FontSize="9" Foreground="#66FFFFFF" Width="44"
+                                                   FontFamily="Consolas"
+                                                   Text="{Binding ReplayTime, StringFormat={}{0:mm\\:ss}}"
+                                                   VerticalAlignment="Center"/>
+                                        <TextBlock FontSize="9" Foreground="#CCFFFFFF"
+                                                   VerticalAlignment="Center"
+                                                   Text="{Binding Summary}"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+                                </Border>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </Grid>
-                <Button x:Name="CloseButton" Grid.Row="7" Content="✕ Close" Click="CloseWindow"
-                        Background="#33FF4444" Foreground="White" BorderThickness="0"
-                        Padding="8,3" Margin="0,4,0,0" Cursor="Hand"/>
+
+                <!-- ═══ Row 7: Close button ═══ -->
+                <Button x:Name="CloseButton" Grid.Row="7" Content="✕  Close"
+                        Click="CloseWindow"
+                        Height="28" FontSize="11" FontWeight="SemiBold"
+                        Cursor="Hand" Margin="0,6,0,0">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="border" Background="#33CC4444" CornerRadius="5"
+                                    BorderThickness="0">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  TextBlock.Foreground="#FF8888" TextBlock.FontWeight="SemiBold"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="border" Property="Background" Value="#55CC4444"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="border" Property="Background" Value="#22CC4444"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
             </Grid>
         </Border>
     </Grid>
