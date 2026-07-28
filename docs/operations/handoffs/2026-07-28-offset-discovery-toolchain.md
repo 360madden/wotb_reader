@@ -228,3 +228,8 @@ standalone export and denied shell/write policy; the repository scan passed for
 429 tracked files. A real reviewer smoke remains the post-commit check because
 the adapter intentionally refuses to run while any required policy file differs
 from committed `HEAD`.
+
+Post-commit verification: the real subscription-backed `security-auditor`
+invocation completed through the adapter and returned the requested
+`CURSOR_REVIEWER_OK` sentinel. The temporary export was cleaned up by the
+adapter.

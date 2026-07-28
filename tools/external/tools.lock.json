@@ -100,7 +100,7 @@
         "launcher_sha256_matches": true,
         "subscription_login_present": true,
         "api_key_required": false,
-        "credential_values_read_or_logged": false,
+        "authentication_tokens_read_or_logged": false,
         "model_list_succeeded": true,
         "opus_model": "claude-opus-5-thinking-max",
         "opus_smoke_succeeded": true,

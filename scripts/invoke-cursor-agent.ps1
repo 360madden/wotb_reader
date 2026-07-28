@@ -20,6 +20,18 @@ if ($null -eq $cursorAgent) {
     throw 'cursor-agent is not installed or is not available on PATH.'
 }
 
+$expectedCursorAgentVersion = '2026.07.23-e383d2b'
+$versionOutput = & $cursorAgent.Source --version
+$versionSucceeded = $?
+if (-not $versionSucceeded) {
+    throw 'cursor-agent --version failed.'
+}
+
+$actualCursorAgentVersion = ($versionOutput | Select-Object -First 1).Trim()
+if ($actualCursorAgentVersion -ne $expectedCursorAgentVersion) {
+    throw "Cursor Agent version $actualCursorAgentVersion is not registered. Expected $expectedCursorAgentVersion."
+}
+
 $roleConfiguration = @{
     'decoder-auditor' = @{
         Model = 'claude-opus-5-thinking-max'
@@ -76,7 +88,7 @@ if (-not $DryRun) {
 
     & git -C $repositoryRoot diff --quiet HEAD -- @requiredCommittedFiles
     if ($LASTEXITCODE -eq 1) {
-        throw 'Cursor policy files must be committed before isolated CLI use because the clean worktree is created from HEAD.'
+        throw 'Cursor policy files must be committed before isolated CLI use because the tracked-source export is created from HEAD.'
     }
 
     if ($LASTEXITCODE -ne 0) {
