@@ -719,6 +719,40 @@ public class MainViewModel : INotifyPropertyChanged
         Status = launched ? "Game launched" : "Launch failed — check game installation";
     }
 
+    /// <summary>
+    /// Requests the web host to launch a replay through the installed game.
+    /// Delegates to the host's /api/v1/game/launch endpoint so the overlay
+    /// never calls Process.Start directly.
+    /// </summary>
+    public async Task<bool> LaunchGameViaHostAsync(string replayPath, CancellationToken cancellationToken = default)
+    {
+        TreaderApiClient? client = _client;
+        if (client is null)
+        {
+            Status = "No host connection — cannot launch game.";
+            return false;
+        }
+
+        try
+        {
+            GameLaunchResponse? result = await client.LaunchGameAsync(replayPath, cancellationToken);
+            if (result?.Success == true)
+            {
+                Status = "Game launched";
+                return true;
+            }
+
+            Status = result?.Message ?? "Launch failed.";
+            return false;
+        }
+        catch (Exception ex) when (
+            ex is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            Status = $"Launch failed: {ex.GetType().Name}";
+            return false;
+        }
+    }
+
     private TreaderApiClient GetOrCreateClient(Uri baseUri)
     {
         if (_client is not null && _clientBaseUri == baseUri)

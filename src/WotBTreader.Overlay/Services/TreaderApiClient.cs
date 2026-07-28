@@ -89,6 +89,30 @@ public sealed class TreaderApiClient : IDisposable
         }
     }
 
+    /// <summary>Gets the current game and replay lifecycle state from the host.</summary>
+    public async Task<GameStateResponse?> GetGameStateAsync(CancellationToken cancellationToken = default)
+    {
+        string json = await _httpClient.GetStringAsync(
+            "api/v1/game/state",
+            cancellationToken);
+        return JsonSerializer.Deserialize<GameStateResponse>(json, SerializerOptions);
+    }
+
+    /// <summary>Requests the host to launch a replay through the installed game.</summary>
+    public async Task<GameLaunchResponse?> LaunchGameAsync(string replayPath, CancellationToken cancellationToken = default)
+    {
+        using StringContent content = new(
+            JsonSerializer.Serialize(new { replayPath }, SerializerOptions),
+            System.Text.Encoding.UTF8,
+            "application/json");
+        HttpResponseMessage response = await _httpClient.PostAsync(
+            "api/v1/game/launch",
+            content,
+            cancellationToken);
+        string json = await response.Content.ReadAsStringAsync(cancellationToken);
+        return JsonSerializer.Deserialize<GameLaunchResponse>(json, SerializerOptions);
+    }
+
     public void Dispose()
     {
         _httpClient.Dispose();

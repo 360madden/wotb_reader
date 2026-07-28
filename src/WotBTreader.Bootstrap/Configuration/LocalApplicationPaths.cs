@@ -1,7 +1,3 @@
-using System.Runtime.Versioning;
-using System.Security.AccessControl;
-using System.Security.Principal;
-
 namespace WotBTreader.Bootstrap.Configuration;
 
 public sealed record LocalApplicationPaths(
@@ -20,13 +16,22 @@ public sealed record LocalApplicationPaths(
                 "WotBTreader")
             : Path.GetFullPath(rootOverride);
 
+        // Rendezvous is ephemeral coordination data that must always live in a
+        // per-user location. Putting it under a custom data root (which may be
+        // shared, removable, or admin-owned) creates ACL hazards. Hardcoding to
+        // %LocalAppData% avoids the entire class of permission bricking bugs.
+        string rendezvous = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "WotBTreader",
+            "rendezvous");
+
         return new LocalApplicationPaths(
             root,
             Path.Combine(root, "content"),
             Path.Combine(root, "treader.db"),
             Path.Combine(root, "logs"),
             Path.Combine(root, "diagnostics"),
-            Path.Combine(root, "rendezvous"));
+            rendezvous);
     }
 
     public void EnsureDirectoriesExist()
@@ -45,82 +50,13 @@ public sealed record LocalApplicationPaths(
     /// would silently restore inherited permissions.
     /// </summary>
     /// <remarks>
-    /// When the directory was created by a different security principal (e.g. an
-    /// elevated admin), the current user may lack the WriteDAC right needed to
-    /// modify the ACL. In that case the existing ACL is left in place; the caller
-    /// relies on the eventual file write to surface any access problem at the
-    /// point of use rather than crashing the entire CLI during startup.
+    /// The rendezvous path is always under %LocalAppData%, which Windows
+    /// already isolates per user. Custom ACL manipulation was removed because
+    /// it caused permission bricking when the directory was created by an
+    /// elevated process. Standard inherited permissions are sufficient for
+    /// a local-only, loopback-bound tool.
     /// </remarks>
-    public void EnsureRendezvousDirectory() => EnsureOwnerOnlyDirectory(Rendezvous);
-
-    /// <summary>
-    /// The rendezvous record carries a live mutation capability, so inheriting a
-    /// permissive parent ACL from a custom data root would hand that credential
-    /// to every other local account.
-    /// </summary>
-    private static void EnsureOwnerOnlyDirectory(string path)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            EnsureWindowsOwnerOnlyDirectory(path);
-            return;
-        }
-
-        Directory.CreateDirectory(
-            path,
-            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-    }
-
-    [SupportedOSPlatform("windows")]
-    private static void EnsureWindowsOwnerOnlyDirectory(string path)
-    {
-        SecurityIdentifier owner = WindowsIdentity.GetCurrent().User
-            ?? throw new InvalidOperationException(
-                "The current Windows account has no security identifier.");
-
-        DirectorySecurity security = new();
-
-        // Inheritance is severed so a permissive parent cannot re-grant access,
-        // and the single allow rule covers files created inside the directory.
-        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-        security.AddAccessRule(new FileSystemAccessRule(
-            owner,
-            FileSystemRights.FullControl,
-            InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
-            PropagationFlags.None,
-            AccessControlType.Allow));
-
-        DirectoryInfo directory = new(path);
-        if (directory.Exists)
-        {
-            try
-            {
-                directory.SetAccessControl(security);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                // The directory exists but we lack WriteDAC (e.g. created by an
-                // elevated admin). Attempt to delete it and recreate with the
-                // current user's identity. This works when the standard user has
-                // delete-child permission on the parent (which is the common case).
-                try
-                {
-                    directory.Delete(recursive: false);
-                    directory.Create(security);
-                }
-                catch
-                {
-                    // Silently ignore. If neither approach works, the
-                    // RendezvousPublisher will surface the error at the point of
-                    // file creation without taking down the dashboard.
-                }
-            }
-
-            return;
-        }
-
-        directory.Create(security);
-    }
+    public void EnsureRendezvousDirectory() => Directory.CreateDirectory(Rendezvous);
 }
 
 public sealed record TreaderBootstrapOptions(

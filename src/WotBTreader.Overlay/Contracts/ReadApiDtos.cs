@@ -244,3 +244,18 @@ public sealed record MapBoundaryResponse
     /// <summary>Maximum Z coordinate of the playable area.</summary>
     public double MaxZ { get; init; }
 }
+
+/// <summary>Game and replay lifecycle state from the web host.</summary>
+public sealed record GameStateResponse
+{
+    public bool GameRunning { get; init; }
+    public string ReplayState { get; init; } = "Unknown";
+    public DateTimeOffset? ReplayStateObservedAtUtc { get; init; }
+}
+
+/// <summary>Response from a game launch request.</summary>
+public sealed record GameLaunchResponse
+{
+    public bool Success { get; init; }
+    public string Message { get; init; } = string.Empty;
+}

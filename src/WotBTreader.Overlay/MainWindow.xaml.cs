@@ -394,18 +394,12 @@ public partial class MainWindow : System.Windows.Window, IDisposable
             _viewModel.Status = "🔄 Refreshing sessions…";
             await _viewModel.RefreshSessionsAsync();
 
-            // ── 6. Copy to game folder and launch ────────────
+            // ── 6. Launch via host API ──────────────────────
             _viewModel.Status = "🚀 Launching game…";
-            string? gamePath = FindGameExecutablePath();
-            if (gamePath is null)
-            {
-                _viewModel.Status = "❌ wotblitz.exe not found — set WOTB_GAME_PATH env var";
-                return;
-            }
 
-            if (!LaunchGameWithReplayPath(replayPath))
+            bool launched = await _viewModel.LaunchGameViaHostAsync(replayPath);
+            if (!launched)
             {
-                _viewModel.Status = "❌ Failed to launch game";
                 return;
             }
 
@@ -627,67 +621,30 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         return null;
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:MarkMembersAsStatic", Justification = "Instance method for consistency with calling pattern.")]
-    private bool LaunchGameWithReplayPath(string replayPath)
+    private async Task LaunchGameWithSelectedReplayAsync(SessionRow? session)
     {
-        try
+        if (session is null) return;
+        if (_isQuickLaunching)
         {
-            System.IO.Directory.CreateDirectory(GameReplaysFolder);
-            string target = System.IO.Path.Combine(
-                GameReplaysFolder,
-                System.IO.Path.GetFileName(replayPath));
-
-            if (!string.Equals(
-                System.IO.Path.GetFullPath(replayPath),
-                System.IO.Path.GetFullPath(target),
-                StringComparison.OrdinalIgnoreCase))
-            {
-                System.IO.File.Copy(replayPath, target, overwrite: true);
-            }
-
-            // Launch via file association — wotblitz.exe does not accept replay
-            // paths as command-line arguments. Using Process.Start on the
-            // .wotbreplay file itself triggers the Windows file association,
-            // which launches the game with the replay visible in its UI.
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = target,
-                UseShellExecute = true,
-            });
-
-            return true;
+            _viewModel.Status = "Already launching — please wait";
+            return;
         }
-        catch (Exception ex) when (
-            ex is System.IO.IOException or UnauthorizedAccessException
-            or InvalidOperationException
-            or System.ComponentModel.Win32Exception)
+
+        string? replayPath = FindReplayFile();
+        if (replayPath is null)
         {
-            // Win32Exception covers "No application is associated" when
-            // file association is missing. In that case, try launching
-            // the game directly as a fallback.
-            if (ex is System.ComponentModel.Win32Exception)
-            {
-                string? gamePath = FindGameExecutablePath();
-                if (gamePath is not null)
-                {
-                    try
-                    {
-                        Process.Start(new ProcessStartInfo
-                        {
-                            FileName = gamePath,
-                            UseShellExecute = true,
-                        });
-                        return true;
-                    }
-                    catch
-                    {
-                        // Both approaches failed.
-                    }
-                }
-            }
-
-            return false;
+            _viewModel.Status = "No replay found in game folder";
+            return;
         }
+
+        await _viewModel.LaunchGameViaHostAsync(replayPath);
+    }
+
+    private bool LaunchGameWithSelectedReplay(SessionRow? session)
+    {
+        if (session is null) return false;
+        _ = LaunchGameWithSelectedReplayAsync(session);
+        return true;
     }
 
     // ── Button handlers ──────────────────────────────────────
@@ -826,20 +783,7 @@ public partial class MainWindow : System.Windows.Window, IDisposable
             HWND_TOPMOST, rect.Left, rect.Top, w, h, SWP_NOACTIVATE);
     }
 
-    // ── Game launching ──────────────────────────────────────
-
-    private bool LaunchGameWithSelectedReplay(SessionRow? session)
-    {
-        if (session is null) return false;
-        if (_isQuickLaunching)
-        {
-            _viewModel.Status = "Already launching — please wait";
-            return false;
-        }
-
-        string? replayPath = FindReplayFile();
-        return replayPath is not null && LaunchGameWithReplayPath(replayPath);
-    }
+    // ── Replay file discovery ───────────────────────────────
 
     private static string? FindReplayFile()
     {

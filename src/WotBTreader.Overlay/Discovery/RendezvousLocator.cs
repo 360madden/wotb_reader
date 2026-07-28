@@ -34,15 +34,9 @@ public sealed class RendezvousLocator
 
     private static string ResolveDefaultPath()
     {
-        // The overlay defaults to the same data root that serve.cmd uses.
-        // When serve.cmd sets WOTBTREADER_DATA_ROOT, the overlay discovers
-        // the web host without needing to hard-code a path.
-        string? customRoot = Environment.GetEnvironmentVariable("WOTBTREADER_DATA_ROOT");
-        if (!string.IsNullOrWhiteSpace(customRoot))
-        {
-            return Path.Combine(customRoot, "rendezvous", "web.json");
-        }
-
+        // Rendezvous is always under %LocalAppData% so the overlay and web host
+        // agree on the path regardless of custom data roots. This avoids ACL
+        // hazards when the custom root is shared, removable, or admin-owned.
         return Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "WotBTreader",
