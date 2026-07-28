@@ -76,6 +76,18 @@ Do **not** load `.cursor/reference/*` unless the task needs that catalog.
 - Use `explore` subagents for multi-file search/read rounds and `general` subagents for mechanical units against frozen contracts (UI/DTO/tests/docs). Subagents must not stage, commit, or push.
 - Codex project agents live in `.codex/agents/*.toml`; use built-in `explorer` for broad read-heavy searches and the four named agents above for specialist work.
 - Codex concurrency is capped at three spawned threads in `.codex/config.toml`. Prefer read-heavy parallel work; keep overlapping write units sequential.
+- OpenCode project agents live in `.opencode/agents/*.md`. Prefer
+  `deepseek-glue` for one bounded mechanical implementation unit and
+  `free-reviewer` for a bounded read-only second opinion when variable
+  free-model latency is acceptable.
+- `opencode.json` pins this repository's default OpenCode model to DeepSeek V4
+  Flash so an earlier session choice cannot silently select the random free
+  router.
+- `deepseek-glue` uses OpenCode Go's DeepSeek V4 Flash at its reliable default
+  reasoning setting. Request `max` manually only for a hard second opinion;
+  do not make it the routine default.
+- `free-reviewer` is pinned to an explicit OpenRouter free model instead of
+  the variable `openrouter/free` route.
 - Keep on the lead model: replay/binary/decoder decisions, loopback/mutation/privacy review, and shared-contract changes.
 - The Cursor role briefs in `.cursor/agents/*.md` (decoder-auditor, security-auditor, implementer-glue, verifier) are worth pasting into delegation prompts for hard tasks; attach `.cursor/rules/binary-parser.mdc` or `.cursor/rules/safety-privacy.mdc` as task rules.
 

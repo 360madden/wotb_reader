@@ -80,6 +80,40 @@
       "registered_at_utc": "2026-07-28T00:00:00Z"
     },
     {
+      "name": "OpenCode",
+      "version": "1.18.5",
+      "sha256": "c48772b9ff4bacc516d9cca94ba3c42f50d4956ef2e700a6329bcd323335ea34",
+      "purpose": "Secondary local coding-agent CLI for bounded repository exploration, mechanical implementation, and read-only review",
+      "source_url": "https://github.com/anomalyco/opencode",
+      "releases_url": "https://github.com/anomalyco/opencode/releases",
+      "installed_path": "C:\\Users\\mrkoo\\AppData\\Roaming\\npm\\node_modules\\opencode-ai",
+      "launcher": "bin\\opencode.exe",
+      "workflow_phase": "development-agent",
+      "installation_status": "verified-local",
+      "verification": {
+        "verified_at_utc": "2026-07-28T22:14:50Z",
+        "cli_version_matches": true,
+        "sha256_matches_local_binary": true,
+        "authenticode_status": "Valid",
+        "powershell_command_succeeded": true,
+        "opencode_go_credential_present": true,
+        "openrouter_credential_present": true,
+        "credential_values_read_or_logged": false,
+        "deepseek_v4_flash_smoke_succeeded": true,
+        "openrouter_free_smoke_succeeded": true,
+        "project_agents_resolved": true
+      },
+      "secondary_install": {
+        "manager": "WinGet",
+        "version": "1.18.4",
+        "sha256": "59b66e1983b2665b498f234a17bf92e78e0e9e3f8c77406edf8dcf3e6239ee5c",
+        "authenticode_status": "Valid"
+      },
+      "spdx_license": "MIT",
+      "platforms": ["win64"],
+      "registered_at_utc": "2026-07-28T22:14:50Z"
+    },
+    {
       "name": "AITools",
       "version": "1.0",
       "sha256": "pending-verification",
