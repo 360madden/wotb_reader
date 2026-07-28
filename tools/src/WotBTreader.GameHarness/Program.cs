@@ -90,7 +90,7 @@ static async Task<int> RunScanAsync(string[] args)
         var state = MemoryOffsetScanner.LoadState();
         if (state is { CandidateCount: > 0 })
         {
-            previous = [..state.TopCandidates];
+            previous = [.. state.TopCandidates];
             Console.WriteLine($"Narrowing from {previous.Count} previous candidates...");
         }
         else

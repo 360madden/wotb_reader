@@ -1,4 +1,76 @@
 {
   "schemaVersion": 1,
-  "tools": []
+  "tools": [
+    {
+      "name": "Cheat Engine",
+      "version": "7.7",
+      "binary_version": "7.7.0.10621",
+      "sha256": "9727076da50924e4a097b49a02155e4b34759269c3017ff31375364b8826eb4d",
+      "purpose": "Real-time memory value scanning, pointer scanning, structure dissection, and disassembly for dynamic WoT Blitz offset discovery",
+      "source_url": "https://github.com/cheat-engine/cheat-engine",
+      "releases_url": "https://github.com/cheat-engine/cheat-engine/releases",
+      "installed_path": "C:\\Program Files\\Cheat Engine",
+      "launcher": "cheatengine-x86_64.exe",
+      "workflow_phase": "dynamic-analysis",
+      "spdx_license": "GPL-3.0-only",
+      "platforms": ["win32", "win64"],
+      "binaries": [
+        { "name": "cheatengine-x86_64.exe", "arch": "x86_64", "description": "Standard 64-bit build" },
+        { "name": "cheatengine-i386.exe", "arch": "i386", "description": "32-bit build" },
+        { "name": "cheatengine-x86_64-SSE4-AVX2.exe", "arch": "x86_64", "description": "64-bit with AVX2 optimizations" }
+      ],
+      "build_requirements": {
+        "build_system": "Lazarus 2.2.2 + FPC 3.2.2",
+        "project_file": "Cheat Engine/cheatengine.lpi",
+        "notes": "Prebuilt 7.7 already installed at C:\\Program Files\\Cheat Engine. Source at c:\\work\\tools\\cheat-engine-master is version 7.5."
+      },
+      "registered_at_utc": "2026-07-28T00:00:00Z"
+    },
+    {
+      "name": "Ghidra",
+      "version": "12.1.2",
+      "release_name": "PUBLIC",
+      "sha256": "b62e81a0390618466c019c60d8c2f796ced2509c4c1aea4a37644a77272cf99d",
+      "purpose": "Static reverse engineering of wotblitz.exe to identify global variables, reconstruct struct layouts, and script automated offset pattern discovery",
+      "source_url": "https://github.com/NationalSecurityAgency/ghidra",
+      "releases_url": "https://github.com/NationalSecurityAgency/ghidra/releases",
+      "installed_path": "C:\\work\\tools\\ghidra_12.1.2_PUBLIC",
+      "launcher": "ghidraRun.bat",
+      "workflow_phase": "static-analysis",
+      "spdx_license": "Apache-2.0",
+      "platforms": ["cross-platform (Windows, Linux, macOS)"],
+      "java_requirements": {
+        "minimum_version": "21",
+        "installed_jdk": {
+          "version": "21.0.11",
+          "path": "C:\\Program Files\\Eclipse Adoptium\\jdk-21.0.11.10-hotspot",
+          "winget_package": "EclipseAdoptium.Temurin.21.JDK"
+        },
+        "notes": "Set JAVA_HOME to the installed JDK path before launching. Ghidra source repo (c:\\work\\tools\\ghidra-master) is version 12.2 DEV and requires JDK 25 to build."
+      },
+      "build_requirements": {
+        "build_system": "Gradle 9.1+",
+        "java_min": "25",
+        "gradle_commands": [
+          "gradle -I gradle/support/fetchDependencies.gradle",
+          "gradle buildGhidra"
+        ],
+        "notes": "Prebuilt release used instead of building from source. Source at c:\\work\\tools\\ghidra-master."
+      },
+      "registered_at_utc": "2026-07-28T00:00:00Z"
+    },
+    {
+      "name": "AITools",
+      "version": "1.0",
+      "sha256": "pending-verification",
+      "purpose": "AI-assisted byte pattern scanning within Cheat Engine — uses learned patterns to identify candidate memory regions containing game state values",
+      "source_url": "https://github.com/ (unnamed AITools-main repository)",
+      "workflow_phase": "dynamic-analysis",
+      "spdx_license": "LicenseRef-proprietary",
+      "license_notes": "Cheat Engine Lua plugin with permissive usage terms; license not formally declared",
+      "platforms": ["cheat-engine-plugin"],
+      "install_instructions": "Copy tools/aitools.lua to Cheat Engine Extensions/ folder",
+      "registered_at_utc": "2026-07-28T00:00:00Z"
+    }
+  ]
 }
