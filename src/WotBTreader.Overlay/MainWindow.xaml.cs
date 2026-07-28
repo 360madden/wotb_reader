@@ -59,6 +59,38 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         _playbackTimer.Tick += OnPlaybackTick;
     }
 
+    /// <summary>The MainViewModel, exposed for the embedded HTTP API.</summary>
+    internal ViewModels.MainViewModel ViewModel => _viewModel;
+
+    /// <summary>
+    /// True when the game window has been found and the overlay is tracking it.
+    /// Set by the window-track timer callback.
+    /// </summary>
+    internal bool IsTrackingGameWindow { get; private set; }
+
+    /// <summary>
+    /// Public entry point for the overlay HTTP API to trigger a quick-launch
+    /// by replay path. Delegates to the private implementation.
+    /// </summary>
+    internal async Task QuickLaunchWithPathViaApiAsync(string replayPath)
+    {
+        if (_isQuickLaunching)
+        {
+            _viewModel.Status = "Already launching — request ignored";
+            return;
+        }
+
+        _isQuickLaunching = true;
+        try
+        {
+            await QuickLaunchWithPathAsync(replayPath);
+        }
+        finally
+        {
+            _isQuickLaunching = false;
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
@@ -733,6 +765,7 @@ public partial class MainWindow : System.Windows.Window, IDisposable
     private void OnTrackGameWindow(object? sender, EventArgs e)
     {
         IntPtr hwnd = FindWindowW(null, GameWindowTitle);
+        IsTrackingGameWindow = hwnd != IntPtr.Zero;
         if (hwnd == IntPtr.Zero) return;
         if (!GetWindowRect(hwnd, out RECT rect)) return;
 
