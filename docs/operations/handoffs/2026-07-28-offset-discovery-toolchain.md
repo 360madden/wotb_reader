@@ -212,3 +212,19 @@ Operational boundary: Windows Cursor sandboxing is unavailable, so the adapter
 must not be bypassed with current-worktree, force/yolo, automatic MCP approval,
 or cloud-handoff modes. Private replay, database, capture, screenshot, token,
 account, and memory-offset data remain out of scope.
+
+## Amendment — Cursor CLI isolation correction (`2026-07-28T22:42:00Z`)
+
+Supersedes the preceding amendment's clean-Git-worktree description. The
+adapter now exports committed `HEAD` with `git archive` into a temporary
+standalone directory that contains no `.git` link, denies every shell and write
+tool in project policy, runs the reviewer against that export, and removes the
+export afterward. It also rejects prompts containing absolute Windows paths,
+replay filenames, API-key patterns, or private-key headers.
+
+Verification: Cursor help confirmed the selected workspace, mode, model, and
+sandbox switches; PowerShell parsing passed; both role dry runs reported the
+standalone export and denied shell/write policy; the repository scan passed for
+429 tracked files. A real reviewer smoke remains the post-commit check because
+the adapter intentionally refuses to run while any required policy file differs
+from committed `HEAD`.

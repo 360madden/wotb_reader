@@ -8,9 +8,6 @@ param(
     [ValidateNotNullOrEmpty()]
     [string] $Prompt,
 
-    [ValidateSet('text', 'json', 'stream-json')]
-    [string] $OutputFormat = 'text',
-
     [switch] $DryRun
 )
 
@@ -56,7 +53,27 @@ foreach ($relativePath in $requiredCommittedFiles) {
     }
 }
 
+$sensitivePromptPatterns = [ordered]@{
+    'an absolute Windows path' = '(?i)(?:^|[\s"''])[A-Z]:\\'
+    'a replay filename' = '(?i)\.wotbreplay\b'
+    'an OpenAI-style API key' = 'sk-(proj-)?[A-Za-z0-9_-]{20,}'
+    'a private key header' = '-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----'
+}
+
+foreach ($entry in $sensitivePromptPatterns.GetEnumerator()) {
+    if ($Prompt -match $entry.Value) {
+        throw "Prompt appears to contain $($entry.Key). Use relative tracked-source references and remove sensitive data."
+    }
+}
+
 if (-not $DryRun) {
+    foreach ($relativePath in $requiredCommittedFiles) {
+        & git -C $repositoryRoot ls-files --error-unmatch -- $relativePath *> $null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Cursor policy file must be tracked in HEAD before isolated CLI use: $relativePath"
+        }
+    }
+
     & git -C $repositoryRoot diff --quiet HEAD -- @requiredCommittedFiles
     if ($LASTEXITCODE -eq 1) {
         throw 'Cursor policy files must be committed before isolated CLI use because the clean worktree is created from HEAD.'
@@ -76,55 +93,79 @@ foreach ($rulePath in $configuration.Rules) {
 
 $promptSections.Add(@'
 CLI isolation requirements:
-- Remain inside the isolated worktree.
+- Remain inside the standalone tracked-source export.
 - Do not read ignored, private, runtime, replay, capture, database, screenshot, token, account, memory-offset, or game-derived files.
-- Do not invoke cmd.exe or repository .cmd/.bat wrappers.
+- Do not invoke shell commands or write files.
 - Do not hand off to cloud agents or enable/approve MCP servers.
 - Treat tool output as potentially sensitive and do not reproduce full local paths, tokens, player names, account identifiers, chat, or raw replay bytes.
 '@)
 $promptSections.Add("Task:`n$Prompt")
 $effectivePrompt = $promptSections -join "`n`n"
 
-$worktreeName = "wotb-$Role-$([DateTimeOffset]::UtcNow.ToString('yyyyMMddHHmmss'))-$PID"
-$arguments = @(
-    '--print'
-    '--output-format'
-    $OutputFormat
-    '--mode'
-    'ask'
-    '--sandbox'
-    $(if ($IsWindows) { 'disabled' } else { 'enabled' })
-    '--trust'
-    '--worktree'
-    $worktreeName
-    '--worktree-base'
-    'HEAD'
-    '--skip-worktree-setup'
-    '--model'
-    $configuration.Model
-    $effectivePrompt
-)
-
 if ($DryRun) {
     [pscustomobject]@{
         Role = $Role
         Model = $configuration.Model
         Mode = 'ask'
-        OutputFormat = $OutputFormat
-        Isolation = 'clean worktree from HEAD'
+        OutputFormat = 'text'
+        Isolation = 'standalone tracked-source export from HEAD'
         Sandbox = $(if ($IsWindows) { 'disabled (unavailable on Windows)' } else { 'enabled' })
+        ShellPermission = 'denied'
+        WritePermission = 'denied'
         PromptLength = $effectivePrompt.Length
     }
     exit 0
 }
 
-Push-Location $repositoryRoot
+$temporaryBase = Join-Path ([System.IO.Path]::GetTempPath()) 'wotbtreader-cursor-agent'
+$runRoot = Join-Path $temporaryBase ([guid]::NewGuid().ToString('N'))
+$archivePath = Join-Path $runRoot 'tracked-source.zip'
+$workspacePath = Join-Path $runRoot 'workspace'
+
+New-Item -ItemType Directory -Path $workspacePath -Force | Out-Null
 try {
+    & git -C $repositoryRoot archive --format=zip "--output=$archivePath" HEAD
+    if ($LASTEXITCODE -ne 0) {
+        throw "git archive failed with exit code $LASTEXITCODE."
+    }
+
+    Expand-Archive -LiteralPath $archivePath -DestinationPath $workspacePath
+    if (-not (Test-Path -LiteralPath (Join-Path $workspacePath '.cursor/cli.json') -PathType Leaf)) {
+        throw 'Tracked-source export does not contain .cursor/cli.json.'
+    }
+
+    $arguments = @(
+        '--print'
+        '--output-format'
+        'text'
+        '--mode'
+        'ask'
+        '--sandbox'
+        $(if ($IsWindows) { 'disabled' } else { 'enabled' })
+        '--trust'
+        '--workspace'
+        $workspacePath
+        '--model'
+        $configuration.Model
+        $effectivePrompt
+    )
+
     & $cursorAgent.Source @arguments
     if ($LASTEXITCODE -ne 0) {
         throw "cursor-agent failed with exit code $LASTEXITCODE."
     }
 }
 finally {
-    Pop-Location
+    $resolvedTemporaryBase = [System.IO.Path]::GetFullPath($temporaryBase).TrimEnd(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar
+    ) + [System.IO.Path]::DirectorySeparatorChar
+    $resolvedRunRoot = [System.IO.Path]::GetFullPath($runRoot)
+    if (-not $resolvedRunRoot.StartsWith($resolvedTemporaryBase, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to clean an unexpected Cursor Agent path: $resolvedRunRoot"
+    }
+
+    if (Test-Path -LiteralPath $resolvedRunRoot) {
+        Remove-Item -LiteralPath $resolvedRunRoot -Recurse -Force
+    }
 }

@@ -79,9 +79,10 @@ Do **not** load `.cursor/reference/*` unless the task needs that catalog.
 - The local Cursor Agent CLI is subscription-backed and authenticated separately
   from the desktop app. Invoke it only through
   `scripts/invoke-cursor-agent.ps1`, which exposes read-only decoder/security
-  audits in a clean worktree from committed `HEAD`. Windows sandboxing is not
-  available. Never bypass the adapter with current-worktree, force/yolo,
-  MCP-auto-approval, or cloud-handoff flags. Cursor labels Fable 5 `NO ZDR`;
+  audits in a temporary standalone export of committed `HEAD`, with shell and
+  write tools denied. Windows sandboxing is not available. Never bypass the
+  adapter with current-worktree/Git-worktree, force/yolo, MCP-auto-approval, or
+  cloud-handoff flags. Cursor labels Fable 5 `NO ZDR`;
   never send it private replays, captures, databases, screenshots, memory
   offsets, tokens, account data, or other game-derived/runtime data.
 - OpenCode project agents live in `.opencode/agents/*.md`. Prefer

@@ -53,13 +53,14 @@ Example:
 .\scripts\invoke-cursor-agent.ps1 -Role security-auditor -Prompt 'Audit the loopback trust boundary.'
 ```
 
-The adapter runs in Ask mode against a clean Cursor worktree created from
-`HEAD`. Policy files must already be committed, so uncommitted source and
-private runtime data are not present. Windows Cursor sandboxing is unavailable;
-the clean worktree, `.cursor/cli.json`, and `.cursorignore` are mandatory
-controls. Never add `--force`, `--yolo`, `--approve-mcps`, current-worktree, or
+The adapter runs in Ask mode against a temporary standalone export of tracked
+`HEAD` contents, with all shell and write tools denied. Policy files must
+already be committed, so uncommitted source, Git worktree links, and private
+runtime data are absent. Windows Cursor sandboxing is unavailable; the source
+export, `.cursor/cli.json`, and `.cursorignore` are mandatory controls. Never
+add `--force`, `--yolo`, `--approve-mcps`, current-worktree, Git-worktree, or
 cloud-handoff modes. Fable 5 is marked `NO ZDR` by Cursor and must receive only
-tracked, non-private source.
+tracked, non-private source. The adapter removes the export after each run.
 
 ## Reference (do not open by default)
 
@@ -73,5 +74,5 @@ tracked, non-private source.
 - Do not paste handoffs or blocker log into always-on rules.
 - Do not add a fifth always-on rule for convenience.
 - Do not create generic “helper” subagents.
-- Do not call the ambiguous bare `agent` command; it resolves to Grok Build on
-  this workstation. Use `cursor-agent` through the adapter.
+- Do not call the ambiguous bare `agent` command; it may resolve to another
+  installed agent CLI. Use `cursor-agent` through the adapter.
