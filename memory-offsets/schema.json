@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "WoT Blitz Memory Offset Table",
+  "description": "Discovered memory offsets for reading replay state from the game process.",
+  "type": "object",
+  "required": ["schemaVersion", "gameVersion", "offsets"],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "description": "Schema version number (currently 1)."
+    },
+    "gameVersion": {
+      "type": "string",
+      "description": "WoT Blitz version string (e.g. 11.8.0.7)."
+    },
+    "executableSha256": {
+      "type": "string",
+      "description": "SHA-256 of wotblitz.exe, for exact binary matching."
+    },
+    "discoveredAtUtc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when offsets were last updated."
+    },
+    "offsets": {
+      "type": "object",
+      "required": [
+        "replayTime", "playerHP",
+        "playerPositionX", "playerPositionY", "playerPositionZ",
+        "playerYaw", "cameraPitch", "aliveTankCount"
+      ],
+      "properties": {
+        "replayTime": {
+          "type": "integer",
+          "description": "Base-relative offset for replay timeline (double, seconds). 0 = unknown."
+        },
+        "playerHP": {
+          "type": "integer",
+          "description": "Base-relative offset for player HP (int32). 0 = unknown."
+        },
+        "playerPositionX": {
+          "type": "integer",
+          "description": "Base-relative offset for player position X (float, world units). 0 = unknown."
+        },
+        "playerPositionY": {
+          "type": "integer",
+          "description": "Base-relative offset for player position Y / height (float). 0 = unknown."
+        },
+        "playerPositionZ": {
+          "type": "integer",
+          "description": "Base-relative offset for player position Z (float, world units). 0 = unknown."
+        },
+        "playerYaw": {
+          "type": "integer",
+          "description": "Base-relative offset for player yaw (float, radians). 0 = unknown."
+        },
+        "cameraPitch": {
+          "type": "integer",
+          "description": "Base-relative offset for camera pitch (float, radians). 0 = unknown."
+        },
+        "aliveTankCount": {
+          "type": "integer",
+          "description": "Base-relative offset for alive tank count (int32). 0 = unknown."
+        }
+      },
+      "additionalProperties": false
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["none", "low", "medium", "high"],
+      "description": "How confident we are in these offsets."
+    },
+    "notes": {
+      "type": "string",
+      "description": "Free-form notes about discovery process, quirks, or caveats."
+    }
+  },
+  "additionalProperties": false
+}

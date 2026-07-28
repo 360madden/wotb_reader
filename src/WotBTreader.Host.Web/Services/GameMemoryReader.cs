@@ -1,11 +1,8 @@
+using System.Text.Json;
 using WotBTreader.Host.Web.Infrastructure;
 
 namespace WotBTreader.Host.Web.Services;
 
-/// <summary>
-/// Snapshot of replay state read from the WoT Blitz game process memory.
-/// All values are zero/default when the offset is unknown or the read failed.
-/// </summary>
 public sealed record GameMemorySnapshot
 {
     public DateTimeOffset CapturedAtUtc { get; init; }
@@ -23,11 +20,10 @@ public sealed record GameMemorySnapshot
 }
 
 /// <summary>
-/// Reads WoT Blitz replay state from the running game process memory using
-/// ReadProcessMemory. Offsets are version-specific and must be discovered per
-/// game build. Unknown offsets return default values without throwing.
+/// Reads WoT Blitz replay state from the running game process memory.
+/// Offsets are loaded from JSON files in the memory-offsets/ directory.
+/// Unknown offsets return default values without throwing.
 /// All reads are read-only; this class never writes to the game process.
-///
 /// Offsets are relative to the game's base module address (assumed &lt; 2 GB).
 /// </summary>
 public sealed class GameMemoryReader : IDisposable
@@ -43,11 +39,8 @@ public sealed class GameMemoryReader : IDisposable
         long CameraPitch,
         long AliveTankCount);
 
-    // Placeholder — all offsets at 0. Must be discovered per game version.
-    private static readonly OffsetTable[] KnownOffsets =
-    [
-        new("11.8.0.7", 0, 0, 0, 0, 0, 0, 0, 0),
-    ];
+    // Hardcoded fallback — loaded offsets from disk take precedence.
+    private static readonly OffsetTable[] KnownOffsets = LoadOffsetsFromDisk();
 
     private readonly TimeProvider _timeProvider;
     private SafeProcessHandle? _processHandle;
@@ -64,10 +57,8 @@ public sealed class GameMemoryReader : IDisposable
     public bool IsAttached =>
         _processHandle is { IsClosed: false, IsInvalid: false };
 
-    /// <summary>Process ID last attached to, or 0 if not attached.</summary>
     public int AttachedProcessId { get; private set; }
 
-    /// <summary>Attempts to attach to the specified game process.</summary>
     public bool Attach(int processId, string executableVersion)
     {
         Detach();
@@ -109,10 +100,6 @@ public sealed class GameMemoryReader : IDisposable
         return true;
     }
 
-    /// <summary>
-    /// Reads a snapshot of replay state from the game process memory.
-    /// Returns default values for any offsets that are unknown or inaccessible.
-    /// </summary>
     public GameMemorySnapshot Poll()
     {
         if (!IsAttached || _activeTable is null)
@@ -189,6 +176,71 @@ public sealed class GameMemoryReader : IDisposable
         bool ok = NativeMethods.ReadProcessMemory(
             _processHandle, IntPtr.Add(_baseAddress, (int)offset), buffer, 8, out uint read);
         return ok && read == 8 ? BitConverter.ToDouble(buffer) : 0.0;
+    }
+
+    // ── Offset loading from disk ─────────────────────────────
+
+    private static OffsetTable[] LoadOffsetsFromDisk()
+    {
+        string dir = FindOffsetsDirectory();
+        if (!Directory.Exists(dir))
+            return [new("11.8.0.7", 0, 0, 0, 0, 0, 0, 0, 0)];
+
+        var tables = new List<OffsetTable>();
+        foreach (string file in Directory.EnumerateFiles(dir, "*.json"))
+        {
+            string name = Path.GetFileName(file);
+            if (name.Equals("schema.json", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("scanner-state.json", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            try
+            {
+                using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(file));
+                JsonElement root = doc.RootElement;
+
+                string version = root.GetProperty("gameVersion").GetString() ?? "unknown";
+                JsonElement o = root.GetProperty("offsets");
+
+                tables.Add(new OffsetTable(
+                    version,
+                    o.GetProperty("replayTime").GetInt64(),
+                    o.GetProperty("playerHP").GetInt64(),
+                    o.GetProperty("playerPositionX").GetInt64(),
+                    o.GetProperty("playerPositionY").GetInt64(),
+                    o.GetProperty("playerPositionZ").GetInt64(),
+                    o.GetProperty("playerYaw").GetInt64(),
+                    o.GetProperty("cameraPitch").GetInt64(),
+                    o.GetProperty("aliveTankCount").GetInt64()));
+            }
+            catch
+            {
+                // Skip malformed files
+            }
+        }
+
+        return tables.Count > 0
+            ? tables.ToArray()
+            : [new("11.8.0.7", 0, 0, 0, 0, 0, 0, 0, 0)];
+    }
+
+    private static string FindOffsetsDirectory()
+    {
+        // Walk up from the current directory looking for memory-offsets/
+        string? current = AppContext.BaseDirectory;
+        for (int i = 0; i < 6; i++)
+        {
+            string candidate = Path.Combine(current, "memory-offsets");
+            if (Directory.Exists(candidate))
+                return candidate;
+
+            string? parent = Path.GetDirectoryName(current);
+            if (parent is null || parent == current)
+                break;
+            current = parent;
+        }
+
+        return Path.Combine(AppContext.BaseDirectory, "memory-offsets");
     }
 
     private void Detach()

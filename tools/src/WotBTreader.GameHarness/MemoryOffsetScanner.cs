@@ -17,6 +17,29 @@ public sealed class MemoryOffsetScanner : IDisposable
     private const int ScanBufferSize = 64 * 1024; // 64 KB read chunks
     private const string StateFileName = "scanner-state.json";
 
+    /// <summary>
+    /// Resolves the default memory-offsets directory relative to the repo root.
+    /// Walks up from the current directory looking for memory-offsets/.
+    /// </summary>
+    public static string GetOffsetsDirectory()
+    {
+        string? current = Environment.CurrentDirectory;
+        for (int i = 0; i < 6; i++)
+        {
+            string candidate = Path.Combine(current, "memory-offsets");
+            if (Directory.Exists(candidate))
+                return candidate;
+
+            string? parent = Path.GetDirectoryName(current);
+            if (parent is null || parent == current)
+                break;
+            current = parent;
+        }
+
+        // Fallback: use current directory
+        return Path.Combine(Environment.CurrentDirectory, "memory-offsets");
+    }
+
     private SafeProcessHandle? _processHandle;
     private IntPtr _baseAddress;
     private int _processId;
@@ -228,7 +251,8 @@ public sealed class MemoryOffsetScanner : IDisposable
 
     public void SaveState(string? dir = null)
     {
-        dir ??= Environment.CurrentDirectory;
+        dir ??= GetOffsetsDirectory();
+        Directory.CreateDirectory(dir);
         string path = Path.Combine(dir, StateFileName);
         var state = new ScannerState
         {
@@ -243,7 +267,7 @@ public sealed class MemoryOffsetScanner : IDisposable
 
     public static ScannerState? LoadState(string? dir = null)
     {
-        dir ??= Environment.CurrentDirectory;
+        dir ??= GetOffsetsDirectory();
         string path = Path.Combine(dir, StateFileName);
         if (!File.Exists(path)) return null;
         return JsonSerializer.Deserialize<ScannerState>(

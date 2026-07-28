@@ -78,6 +78,9 @@ tools/external/cache/
 .data/
 .build/
 
+# Scanner runtime state (generated, not committed)
+memory-offsets/scanner-state.json
+
 # Local rendezvous and machine-specific settings
 *.rendezvous.json
 appsettings.Local.json
