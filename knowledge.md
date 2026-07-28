@@ -2,6 +2,10 @@
 
 WotB Treader is a **Windows-first offline replay telemetry reader** for World of Tanks Blitz. It parses replay evidence, stores versioned telemetry projections, and presents a local Blazor dashboard + WPF/WebView2 overlay with SignalR push-based updates.
 
+The project owner identifies as a junior developer at Wargaming.net. This is
+user-provided background for a personal, independently maintained project;
+see [Project context](docs/project-context.md).
+
 The overlay is a **transparent heads-up display (HUD)** designed to sit on top
 of the WoT Blitz game while it plays back a pre-recorded replay. It shows
 decoded position plots and telemetry that the game's built-in viewer does not

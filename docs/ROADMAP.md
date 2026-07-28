@@ -2,9 +2,20 @@
 
 Last updated: 2026-07-28 (autonomous session)
 
-## Completed ✅
+Project context: the owner identifies as a junior developer at Wargaming.net.
+This is a personal, independently maintained project; see
+[Project context](project-context.md).
 
-All alpha surfaces are implemented and validated:
+> This file is a historical feature-delivery ledger. A check mark means code
+> was implemented; it does not mean the feature satisfies the current
+> architecture, trust-boundary, or offline-safety gates. The active
+> architecture hardening plan is
+> [`architecture/roadmap.md`](architecture/roadmap.md).
+
+## Implemented feature inventory
+
+The following surfaces were implemented and validated at the time recorded;
+their current architecture-hardening status is tracked separately:
 
 | Surface | Status | Tests |
 |---------|--------|-------|
@@ -15,8 +26,8 @@ All alpha surfaces are implemented and validated:
 | CLI (doctor, import, inspect, reprocess, sessions) | ✅ | 13 |
 | Web host (loopback Blazor, read API with events, battle stats on session detail, SignalR hub, rendezvous) | ✅ | 54 |
 | Overlay (WPF: session list, position plot, velocity trails, event feed, battle stats, time slider, playback controls, keyboard shortcuts, minimap grid, collapsible sidebar, SignalR push, WebView2 dashboard) | ✅ | 51 |
-| Overlay HTTP API (embedded Kestrel on port 9190, 8 automation endpoints) | ✅ | — |
-| Architecture enforcement | ✅ | 3 |
+| Overlay HTTP API (embedded Kestrel on port 9190, 8 automation endpoints) | ⚠ Implemented; superseded by single-control-plane target | — |
+| Architecture enforcement | ⚠ Partial; see architecture roadmap | 3 |
 | Composition root validation | ✅ | 10 |
 | Codebase bug hunt (src + tests + tools) | ✅ | 1 fix |
 | Performance optimization (DrawingVisual renderer, zero-GC) | ✅ | — |

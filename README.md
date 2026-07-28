@@ -5,6 +5,10 @@ Tanks Blitz. It imports replay evidence, preserves unknown records, builds
 versioned telemetry projections, and presents a local Blazor dashboard +
 WPF/WebView2 overlay with SignalR push-based updates.
 
+The project owner identifies as a junior developer at Wargaming.net. This is
+a personal, independently maintained project; see
+[Project context](docs/project-context.md).
+
 The project is intentionally local and evidence-first:
 
 - replay parsing and storage run on .NET 10;

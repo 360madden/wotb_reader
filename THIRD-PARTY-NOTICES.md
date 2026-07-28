@@ -1,7 +1,10 @@
 # Third-party notices
 
-WotB Treader is an independent project and is not affiliated with, endorsed
-by, or sponsored by Wargaming Group Limited.
+The project owner identifies as a junior developer at Wargaming.net. WotB
+Treader is a personal, independently maintained project; that employment does
+not by itself make this repository an official Wargaming product or establish
+endorsement or sponsorship by Wargaming Group Limited. See
+[Project context](docs/project-context.md).
 
 World of Tanks Blitz, its names, resources, replay contents, and related marks
 belong to their respective owners. The project reads a user's local files and

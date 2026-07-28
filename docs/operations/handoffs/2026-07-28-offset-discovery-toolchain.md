@@ -130,3 +130,18 @@ repository scan passed for 412 tracked files.
 
 Deferred: the existing offset-discovery blockers above and the `Host.Web`
 `net10.0-windows` architecture-rule drift remain unresolved.
+
+## Amendment — Ghidra installation verified (`2026-07-28T21:29:43Z`)
+
+Verified the extracted Ghidra 12.1.2 PUBLIC installation against the registered
+archive SHA-256 and application metadata. Machine-level `JAVA_HOME` resolves to
+the registered Temurin JDK 21.0.11 installation. Both GUI and headless launchers
+are present.
+
+The headless launcher completed a disposable import of a benign 64-bit Windows
+PE with exit code 0, initialized the per-user Ghidra settings/cache, and removed
+the temporary project. Ghidra is locally installed and operational.
+
+Deferred: successful startup does not resolve the separate timeout encountered
+while analyzing the full 71 MB game binary, and `FindOffsets.py` still has the
+known Jython compatibility issues listed above.

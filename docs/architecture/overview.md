@@ -1,8 +1,17 @@
 # Architecture overview
 
-Status: accepted for alpha — all surfaces implemented
+Status: accepted alpha target — implementation hardening in progress
 
 Last updated: 2026-07-28
+
+The project owner identifies as a junior developer at Wargaming.net. This is
+a personal, independently maintained project; see
+[Project context](../project-context.md).
+
+Implementation and hardening sequence:
+[`roadmap.md`](roadmap.md). The roadmap records known deltas between this
+accepted design and the current code; its milestone exit criteria govern when a
+surface is considered architecture-complete.
 
 WotB Treader is a Windows-first .NET 10 modular monolith. It separates evidence
 acquisition from interpretation so a newer decoder can reprocess the same
@@ -10,18 +19,18 @@ immutable source without overwriting prior results.
 
 ```mermaid
 flowchart LR
-    Core["Core\nimmutable domain"] --> App["Application\norchestration and ports"]
-    App --> Replay["Replays\nbounded decoder"]
-    App --> Capture["CaptureLogs\nNDJSON and clocks"]
-    App --> Game["GameIntegration\nread-only metadata and guarded control"]
-    App --> Storage["Storage.Sqlite\nmanaged artifacts and projections"]
-    Replay --> Boot["Bootstrap\ncomposition"]
-    Capture --> Boot
-    Game --> Boot
-    Storage --> Boot
-    Boot --> Cli["CLI"]
-    Boot --> Web["Loopback Blazor host"]
-    Web --> Overlay["WPF WebView2 overlay"]
+    App["Application\norchestration and ports"] --> Core["Core\nimmutable domain"]
+    Replay["Replays\nbounded decoder"] --> App
+    Capture["CaptureLogs\nNDJSON and clocks"] --> App
+    Game["GameIntegration\nread-only metadata and guarded control"] --> App
+    Storage["Storage.Sqlite\nmanaged artifacts and projections"] --> App
+    Boot["Bootstrap\ncomposition"] --> Replay
+    Boot --> Capture
+    Boot --> Game
+    Boot --> Storage
+    Cli["CLI"] --> Boot
+    Web["Loopback Blazor host"] --> Boot
+    Overlay["WPF WebView2 overlay"] --> Web
 ```
 
 The arrow denotes a dependency. `Core` has none. The overlay is intentionally
@@ -168,9 +177,9 @@ cockpit:
 
 ## Evidence lifecycle
 
-1. An input is probed with bounded reads.
-2. The complete input is copied atomically into a SHA-256 content-addressed
+1. The complete input is copied atomically into a SHA-256 content-addressed
    store under the user's local application data.
+2. The managed immutable copy is probed with bounded reads.
 3. SQLite records the immutable source artifact and creates a new decode run.
 4. A version-selected decoder records raw ranges, canonical events, capability
    claims, warnings, and unresolved semantics in one transaction.

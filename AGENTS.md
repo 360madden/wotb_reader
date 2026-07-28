@@ -3,6 +3,14 @@
 Windows-first .NET 10 modular monolith for **offline** WoTB replay telemetry.
 No runtime AI, cloud, Python, Node.js, Rust, Electron, or containers.
 
+## Project owner context
+
+- The project owner identifies as a junior developer at Wargaming.net.
+- This is user-provided background for agents working in the repository. The
+  repository remains a personal project unless official status is documented
+  separately.
+- Canonical wording: [`docs/project-context.md`](docs/project-context.md).
+
 Cursor layout and asset index: [`.cursor/README.md`](.cursor/README.md).
 Do **not** load `.cursor/reference/*` unless the task needs that catalog.
 
@@ -23,6 +31,11 @@ Do **not** load `.cursor/reference/*` unless the task needs that catalog.
 ## Hard constraints (always)
 
 - Offline / positively verified offline sessions only. Never automate online matches.
+- Cheat Engine 7.7 is an approved local diagnostic tool for dynamic memory
+  analysis, offset discovery, and other repository tasks where it is a
+  practical fit, but only during positively verified offline replay sessions.
+  Never attach it during an online match, and never commit scan files, memory
+  dumps, pointer maps, or game-derived data.
 - Never infer bot status from a name; use `unknown` without evidence.
 - Never log raw replay bytes, tokens, full paths, player names, account IDs, chat, screenshots.
 - Never modify/redistribute the WotB install or game-derived assets.

@@ -12,6 +12,15 @@
       "installed_path": "C:\\Program Files\\Cheat Engine",
       "launcher": "cheatengine-x86_64.exe",
       "workflow_phase": "dynamic-analysis",
+      "approval_status": "approved-local",
+      "approved_scope": "Dynamic memory analysis, offset discovery, and other practical repository tasks during positively verified offline replay sessions only",
+      "verification": {
+        "verified_at_utc": "2026-07-28T21:26:54Z",
+        "launcher_present": true,
+        "binary_version_matches": true,
+        "sha256_matches": true,
+        "authenticode_status": "Valid"
+      },
       "spdx_license": "GPL-3.0-only",
       "platforms": ["win32", "win64"],
       "binaries": [
@@ -37,6 +46,17 @@
       "installed_path": "C:\\work\\tools\\ghidra_12.1.2_PUBLIC",
       "launcher": "ghidraRun.bat",
       "workflow_phase": "static-analysis",
+      "installation_status": "verified-local",
+      "verification": {
+        "verified_at_utc": "2026-07-28T21:29:43Z",
+        "archive_sha256_matches": true,
+        "application_version_matches": true,
+        "gui_launcher_present": true,
+        "headless_launcher_present": true,
+        "java_version": "21.0.11",
+        "headless_pe_import_succeeded": true,
+        "smoke_project_deleted": true
+      },
       "spdx_license": "Apache-2.0",
       "platforms": ["cross-platform (Windows, Linux, macOS)"],
       "java_requirements": {
