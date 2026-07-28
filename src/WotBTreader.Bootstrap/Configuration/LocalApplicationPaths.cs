@@ -99,10 +99,21 @@ public sealed record LocalApplicationPaths(
             }
             catch (UnauthorizedAccessException)
             {
-                // Silently ignore. If the directory was created by an elevated
-                // admin, the standard user lacks WriteDAC rights. It is better
-                // to fail when actually writing the token file later than to
-                // crash the entire CLI during startup.
+                // The directory exists but we lack WriteDAC (e.g. created by an
+                // elevated admin). Attempt to delete it and recreate with the
+                // current user's identity. This works when the standard user has
+                // delete-child permission on the parent (which is the common case).
+                try
+                {
+                    directory.Delete(recursive: false);
+                    directory.Create(security);
+                }
+                catch
+                {
+                    // Silently ignore. If neither approach works, the
+                    // RendezvousPublisher will surface the error at the point of
+                    // file creation without taking down the dashboard.
+                }
             }
 
             return;
