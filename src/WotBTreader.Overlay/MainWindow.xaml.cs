@@ -54,6 +54,7 @@ public partial class MainWindow : System.Windows.Window, IDisposable
 
         _windowTrackTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         _windowTrackTimer.Tick += OnTrackGameWindow;
+        _windowTrackTimer.Start();
 
         _playbackTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
         _playbackTimer.Tick += OnPlaybackTick;
@@ -626,6 +627,7 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         return null;
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:MarkMembersAsStatic", Justification = "Instance method for consistency with calling pattern.")]
     private bool LaunchGameWithReplayPath(string replayPath)
     {
         try
@@ -657,7 +659,6 @@ public partial class MainWindow : System.Windows.Window, IDisposable
                 UseShellExecute = true,
             });
 
-            _windowTrackTimer.Start();
             return true;
         }
         catch (Exception ex) when (
