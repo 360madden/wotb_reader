@@ -88,6 +88,17 @@ Do **not** load `.cursor/reference/*` unless the task needs that catalog.
   do not make it the routine default.
 - `free-reviewer` is pinned to an explicit OpenRouter free model instead of
   the variable `openrouter/free` route.
+- Grok Build project agents live in `.grok/agents/*.md` and use the owner's
+  grok.com subscription login, not an API key. Use `grok-glue` for one bounded
+  mechanical unit and `grok-reviewer` for a dependable read-only second
+  opinion, including every non-trivial `.cmd` or `.bat` review.
+- Invoke Grok agents headlessly with `--no-subagents --disable-web-search
+  --no-memory`. Do not run `grok-glue` concurrently with another writer on the
+  same worktree. For `grok-reviewer`, also pass `--permission-mode dontAsk
+  --allow Read --allow Grep --deny Edit --deny "Bash(*)"`. For `grok-glue`,
+  use `--permission-mode dontAsk` with explicit allows for `Read`, `Grep`,
+  `Edit`, `Bash(dotnet *)`, `Bash(git status *)`, and `Bash(git diff *)`;
+  leave every other shell command denied.
 - Keep on the lead model: replay/binary/decoder decisions, loopback/mutation/privacy review, and shared-contract changes.
 - The Cursor role briefs in `.cursor/agents/*.md` (decoder-auditor, security-auditor, implementer-glue, verifier) are worth pasting into delegation prompts for hard tasks; attach `.cursor/rules/binary-parser.mdc` or `.cursor/rules/safety-privacy.mdc` as task rules.
 

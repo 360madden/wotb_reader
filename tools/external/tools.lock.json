@@ -114,6 +114,38 @@
       "registered_at_utc": "2026-07-28T22:14:50Z"
     },
     {
+      "name": "Grok Build",
+      "version": "0.2.112",
+      "revision": "9bbd559437",
+      "channel": "stable",
+      "sha256": "2469bd182af212c7fcb84f2981999e4e8a6a7a2e4172bad3ae7f787a1f11407c",
+      "purpose": "Subscription-backed secondary coding-agent CLI for bounded mechanical implementation and dependable read-only review",
+      "source_url": "https://github.com/xai-org/grok-build",
+      "releases_url": "https://x.ai/build/changelog",
+      "installed_path": "C:\\Users\\mrkoo\\.grok",
+      "launcher": "bin\\grok.exe",
+      "workflow_phase": "development-agent",
+      "installation_status": "verified-local",
+      "authentication": "grok.com subscription OAuth; no repository or API key",
+      "verification": {
+        "verified_at_utc": "2026-07-28T22:20:40Z",
+        "cli_version_matches": true,
+        "sha256_matches_local_binary": true,
+        "authenticode_status": "Valid",
+        "subscription_login_present": true,
+        "api_key_required": false,
+        "default_model": "grok-4.5",
+        "headless_inference_succeeded": true,
+        "project_agents_resolved": true,
+        "grok_glue_smoke_succeeded": true,
+        "grok_reviewer_smoke_succeeded": true,
+        "credential_values_read_or_logged": false
+      },
+      "spdx_license": "Apache-2.0",
+      "platforms": ["win64"],
+      "registered_at_utc": "2026-07-28T22:20:40Z"
+    },
+    {
       "name": "AITools",
       "version": "1.0",
       "sha256": "pending-verification",
