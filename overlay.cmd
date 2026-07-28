@@ -1,4 +1,5 @@
 @echo off
+setlocal
 REM ============================================================
 REM  overlay.cmd — Launch the WotB Treader HUD overlay window.
 REM  The overlay discovers the web host automatically via

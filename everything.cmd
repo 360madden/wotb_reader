@@ -1,4 +1,5 @@
 @echo off
+setlocal
 REM ============================================================
 REM  everything.cmd — One-command launch of the full stack.
 REM
@@ -25,7 +26,7 @@ if "%~1"=="" (
 REM ── Step 2: Start the web host in a new window ──────────────
 echo.
 echo === Starting web host on port %WEB_PORT% ===
-start "WotB Treader - Web Host" cmd /c "set WEB_PORT=%WEB_PORT% && cd /d %~dp0 && call serve.cmd"
+start "WotB Treader - Web Host" cmd /c "set WEB_PORT=%WEB_PORT% && call serve.cmd"
 
 REM Give the host a few seconds to publish and start listening
 echo Waiting ~10s for host to publish and start...
@@ -34,7 +35,7 @@ ping -n 11 127.0.0.1 >nul 2>&1
 REM ── Step 3: Launch the overlay in a new window ──────────────
 echo.
 echo === Launching HUD overlay ===
-start "WotB Treader - HUD" cmd /c "cd /d %~dp0 && call overlay.cmd"
+start "WotB Treader - HUD" cmd /c "call overlay.cmd"
 
 echo.
 echo === Both windows launched ===

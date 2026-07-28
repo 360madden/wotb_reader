@@ -1,4 +1,5 @@
 @echo off
+setlocal
 REM ============================================================
 REM  watch.cmd — Watch a directory for new .wotbreplay files
 REM  and auto-import them. Press Ctrl+C to stop.

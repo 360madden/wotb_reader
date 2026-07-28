@@ -42,6 +42,8 @@ Do **not** load `.cursor/reference/*` unless the task needs that catalog.
 - `.gitignore` unanchored patterns (`*.sqlite`, `diagnostics/`, `dist/`) match **case-insensitively on Windows** and have hidden real source folders (BLK-0005, BLK-0012). `scan-repository.ps1` fails validation if any ignored file exists under `src`, `tests`, `tools/src`, `scripts`, or `docs` — add explicit `!` unignore rules when creating paths that collide with runtime-data patterns.
 - In `validate.ps1`, route every native command through `Invoke-CheckedNative`; `$ErrorActionPreference='Stop'` does not catch non-zero exit codes, and the script once returned success after failed phases (BLK-0006).
 - Fixtures: synthetic only in CI. Private replays, captures, DBs, and screenshots stay in ignored paths and are never committed; the full sanitization process is `docs/testing/fixture-policy.md`.
+- **cmd.exe wrapper scripts** have well-known failure modes (delayed expansion + `!` in filenames, unquoted `%~dp0` in nested `cmd /c`, whitespace input → arithmetic crash, env var leaking). Full catalogue and review checklist in `docs/operations/cmd-wrapper-gotchas.md`. Any non-trivial cmd/batch review **must** be routed through a thinker agent with the actual file contents — do not rely on manual reading.
+- **Basher timeouts waste time on every session.** Never use the default 30s timeout for .NET commands. Minimums: build → 300s, full test suite → 300s, single test project → 120s, publish → 180s. Never run interactive `.cmd` wrappers through basher (import, everything, serve) — they expect TTY or spawn windows. Use direct `dotnet build` / `dotnet test` / `dotnet publish` instead. Always verify prerequisites (CLI built, packages restored) before running dependents.
 
 ## Route by task
 

@@ -1,5 +1,5 @@
 @echo off
-setlocal enabledelayedexpansion
+setlocal disabledelayedexpansion
 REM ============================================================
 REM  import.cmd — Import one or more .wotbreplay files into storage.
 REM
@@ -34,25 +34,28 @@ if not exist "%CLI%" (
 
 REM ── If arguments were passed, import them directly ──────────
 if not "%~1"=="" goto import_files
-
 REM ── No arguments: interactive file picker ───────────────────
 
 REM Pick the scan directory: REPLAYS_DIR env var, then Blitz replay folder, then Documents
 set SCAN_DIR=%REPLAYS_DIR%
 if "%SCAN_DIR%"=="" set SCAN_DIR=%LOCALAPPDATA%\wotblitz\DAVAProject\replays
-if not exist "!SCAN_DIR!\" set SCAN_DIR=%USERPROFILE%\Documents
+if not exist "%SCAN_DIR%\" set SCAN_DIR=%USERPROFILE%\Documents
 
 echo.
-echo === Scanning for .wotbreplay files in: !SCAN_DIR! ===
+echo === Scanning for .wotbreplay files in: %SCAN_DIR% ===
 echo.
 
-REM Count and list files
+REM Count and list files — keep delayed expansion OFF to protect ! in filenames.
+REM Use call for runtime variable expansion inside the for loop.
 set N=0
-for %%f in ("!SCAN_DIR!\*.wotbreplay") do (
-    set /a N+=1
-    set "FILE_!N!=%%f"
-    echo     [!N!]  %%~nxf   (%%~zf bytes, %%~tf^)
+for %%f in ("%SCAN_DIR%\*.wotbreplay") do (
+    call set /a N+=1
+    call set "FILE_%%N%%=%%f"
+    call echo     [%%N%%]  %%~nxf   (%%~zf bytes, %%~tf^)
 )
+
+REM Enable delayed expansion for the rest of the interactive section
+setlocal enabledelayedexpansion
 
 if !N! EQU 0 (
     echo No .wotbreplay files found.
@@ -71,6 +74,9 @@ echo     [q]  Quit
 echo.
 set CHOICE=
 set /p CHOICE="Pick a number (or a/q): "
+
+REM Strip whitespace from input to prevent arithmetic crash
+set "CHOICE=!CHOICE: =!"
 
 if "!CHOICE!"=="" (
     echo Please enter a number.
@@ -144,11 +150,9 @@ set FAILED=0
 :loop
 if "%~1"=="" goto done
 echo.
-setlocal disabledelayedexpansion
 echo === Importing: %~nx1 ===
 "%CLI%" import "%~1" --json --data-root "%~dp0.data"
-endlocal
-if !ERRORLEVEL! neq 0 (
+if %ERRORLEVEL% neq 0 (
     set /a FAILED+=1
 ) else (
     set /a COUNT+=1
@@ -158,6 +162,6 @@ goto loop
 
 :done
 echo.
-echo === Done: !COUNT! imported, !FAILED! failed ===
+echo === Done: %COUNT% imported, %FAILED% failed ===
 pause
-exit /b !FAILED!
+exit /b %FAILED%
