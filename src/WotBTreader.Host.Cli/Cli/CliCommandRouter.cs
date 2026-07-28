@@ -823,7 +823,8 @@ public sealed class CliCommandRouter
         {
             throw;
         }
-        catch (Exception exception)
+        catch (Exception exception) when (
+            exception is not OutOfMemoryException and not StackOverflowException)
         {
             if (_logger.IsEnabled(LogLevel.Warning))
             {
