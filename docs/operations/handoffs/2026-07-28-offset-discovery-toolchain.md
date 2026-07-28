@@ -115,3 +115,18 @@ The existing `memory-offsets/11.8.0.7.json` is stale — a fresh `11.18.0.7.json
    dotnet run --project tools/src/WotBTreader.GameHarness -- scan int32 1500
    ```
 5. **Cross-verify with Cheat Engine:** Launch CE, attach to `wotblitz.exe` replay, value-scan for HP
+
+## Amendment — Codex project agents (`2026-07-28T21:22:08Z`)
+
+Added project-scoped Codex agents for decoder auditing, security auditing,
+frozen-contract glue implementation, and verification under `.codex/agents/`.
+Added `.codex/config.toml` with a three-subagent concurrency cap and updated
+`AGENTS.md` with Codex routing while preserving the Cursor roles.
+
+Validation: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\validate.ps1`
+passed — locked restore, format verification, Release build with 0
+warnings/errors, 281 tests passed, 2 local opt-in tests skipped, and the
+repository scan passed for 412 tracked files.
+
+Deferred: the existing offset-discovery blockers above and the `Host.Web`
+`net10.0-windows` architecture-rule drift remain unresolved.

@@ -51,16 +51,18 @@ Do **not** load `.cursor/reference/*` unless the task needs that catalog.
 |------|------|
 | Cursor harness / model routing | `.cursor/README.md`, `.cursor/reference/model-routing.md` |
 | Architecture / project refs | rule `architecture-boundaries` (auto on `src/**/*.cs`) |
-| Replay / binary / harness tools | rule `binary-parser`; agent `decoder-auditor` |
-| Loopback / mutation / privacy audit | agent `security-auditor` (readonly) |
+| Replay / binary / harness tools | rule `binary-parser`; agent `decoder-auditor` / Codex `decoder_auditor` |
+| Loopback / mutation / privacy audit | agent `security-auditor` / Codex `security_auditor` (readonly) |
 | Validate / commit / handoff | skills `validate`, `handoff-amend`, `commit-unit` |
-| UI / DTO / smoke / docs glue | agent `implementer-glue` (fast) |
-| Prove work after a unit | agent `verifier` (fast) |
+| UI / DTO / smoke / docs glue | agent `implementer-glue` / Codex `implementer_glue` (fast) |
+| Prove work after a unit | agent `verifier` / Codex `verifier` (fast) |
 | Human setup | `README.md` |
 
-## Delegation (OpenCode sessions)
+## Delegation (Cursor and Codex)
 
 - Use `explore` subagents for multi-file search/read rounds and `general` subagents for mechanical units against frozen contracts (UI/DTO/tests/docs). Subagents must not stage, commit, or push.
+- Codex project agents live in `.codex/agents/*.toml`; use built-in `explorer` for broad read-heavy searches and the four named agents above for specialist work.
+- Codex concurrency is capped at three spawned threads in `.codex/config.toml`. Prefer read-heavy parallel work; keep overlapping write units sequential.
 - Keep on the lead model: replay/binary/decoder decisions, loopback/mutation/privacy review, and shared-contract changes.
 - The Cursor role briefs in `.cursor/agents/*.md` (decoder-auditor, security-auditor, implementer-glue, verifier) are worth pasting into delegation prompts for hard tasks; attach `.cursor/rules/binary-parser.mdc` or `.cursor/rules/safety-privacy.mdc` as task rules.
 
