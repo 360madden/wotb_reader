@@ -169,3 +169,46 @@ repository scan passed.
 Deferred M0 work: hard-deny or centrally gate direct GameHarness `scan` and
 `probe`, contain the overlay mutation listener, restore verified owner-only
 rendezvous storage, and append the outstanding blocker-log amendments.
+
+## Amendment — M0 baseline completed (`2026-07-28T22:39:00Z`)
+
+Closed the remaining architecture-roadmap M0 criteria. GameHarness `scan` and
+`probe` now deny before PID parsing, enumeration, or attachment. The overlay no
+longer starts its legacy port 9190 Kestrel listener. Rendezvous storage is
+protected and positively verified as current-user-only before a capability can
+be published, including a regression test that begins with a permissive
+inherited ACL. The private `.data.bak/` tree remains untouched and is now
+explicitly ignored as local runtime data.
+
+Reconciled the accepted overview with the single Host.Web control plane,
+GameIntegration ownership, portable contract boundary, and client-only HUD
+target. Appended immutable blocker records for the BLK-0003 TFM regression,
+BLK-0014 ACL regression/recovery, and BLK-0015 unverified attachment paths.
+
+Validation: focused GameHarness, Overlay, and Bootstrap suites passed 28/28,
+92/92, and 11/11. `scripts/validate.ps1` passed locked restore, format
+verification, Release build with 0 warnings/errors, 287 tests passed, 2 local
+opt-in tests skipped, and the repository scan passed for 425 tracked files.
+
+Deferred: M1 restores the portable TFMs, mechanically enforces the complete
+project/TFM graph, and introduces the shared no-dependency `ApiContracts`
+assembly. M2 owns the centralized offline-session authorization lease before
+any product or harness memory integration can return.
+
+## Amendment — Cursor CLI reviewer routing (`2026-07-28T22:40:32Z`)
+
+Registered the subscription-backed Cursor Agent CLI as a verified local tool
+and added a repository adapter for isolated, read-only `decoder-auditor` and
+`security-auditor` reviews. The adapter pins the verified Opus/Fable model
+slugs, uses Ask mode and a clean worktree from committed `HEAD`, and denies
+private/runtime/game-derived data plus destructive shell commands.
+
+Verification: the installed CLI reported `2026.07.23-e383d2b`; the registered
+runtime and launcher SHA-256 values matched; the project policy schema was
+corrected to include an explicit empty allowlist; PowerShell parsing and the
+adapter dry run passed; the repository scan passed for 429 tracked files.
+
+Operational boundary: Windows Cursor sandboxing is unavailable, so the adapter
+must not be bypassed with current-worktree, force/yolo, automatic MCP approval,
+or cloud-handoff modes. Private replay, database, capture, screenshot, token,
+account, and memory-offset data remain out of scope.

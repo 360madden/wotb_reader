@@ -18,19 +18,19 @@
 **/launchSettings.Local.json
 
 # Private/runtime/game-derived data must never enter model context.
-.data/
-.data.bak/
-captures/
-diagnostics/
-imports/
-private-fixtures/
-replay-cache/
-screenshots/
-telemetry/
-memory-offsets/
-tools/external/installed/
-tools/external/downloads/
-tools/external/cache/
+/.data/
+/.data.bak/
+/captures/
+/diagnostics/
+/imports/
+/private-fixtures/
+/replay-cache/
+/screenshots/
+/telemetry/
+/memory-offsets/
+/tools/external/installed/
+/tools/external/downloads/
+/tools/external/cache/
 **/*.wotbreplay
 **/*.db
 **/*.db-shm

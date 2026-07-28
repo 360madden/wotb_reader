@@ -36,6 +36,31 @@ Inspired by Cursor docs (rules / skills / subagents) and progressive-disclosure 
 
 Built-in Explore/Bash/Browser already handle noisy search/shell — prefer them over inventing duplicates.
 
+## Local Cursor Agent CLI
+
+The subscription-backed CLI adapter is
+`scripts/invoke-cursor-agent.ps1`. It intentionally exposes only the two
+read-only hard-review roles:
+
+| Role | Verified model |
+|------|----------------|
+| `decoder-auditor` | `claude-opus-5-thinking-max` |
+| `security-auditor` | `claude-fable-5-thinking-xhigh` |
+
+Example:
+
+```powershell
+.\scripts\invoke-cursor-agent.ps1 -Role security-auditor -Prompt 'Audit the loopback trust boundary.'
+```
+
+The adapter runs in Ask mode against a clean Cursor worktree created from
+`HEAD`. Policy files must already be committed, so uncommitted source and
+private runtime data are not present. Windows Cursor sandboxing is unavailable;
+the clean worktree, `.cursor/cli.json`, and `.cursorignore` are mandatory
+controls. Never add `--force`, `--yolo`, `--approve-mcps`, current-worktree, or
+cloud-handoff modes. Fable 5 is marked `NO ZDR` by Cursor and must receive only
+tracked, non-private source.
+
 ## Reference (do not open by default)
 
 | File | When to open |
@@ -48,3 +73,5 @@ Built-in Explore/Bash/Browser already handle noisy search/shell — prefer them 
 - Do not paste handoffs or blocker log into always-on rules.
 - Do not add a fifth always-on rule for convenience.
 - Do not create generic “helper” subagents.
+- Do not call the ambiguous bare `agent` command; it resolves to Grok Build on
+  this workstation. Use `cursor-agent` through the adapter.

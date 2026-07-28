@@ -17,6 +17,21 @@ Pinned IDs match Cursor’s current selectable slugs. If a slug is unavailable, 
 | Broad codebase search | built-in Explore | fastest search model |
 | Mid complexity shared design (optional) | `claude-sonnet-5-thinking-high` | when Opus is overkill |
 
+## Local CLI routing
+
+Use `scripts/invoke-cursor-agent.ps1` only for read-only decoder and security
+audits. The verified account slugs are:
+
+| CLI role | Model slug | Data boundary |
+|----------|------------|---------------|
+| `decoder-auditor` | `claude-opus-5-thinking-max` | tracked source in a clean worktree; no replay files |
+| `security-auditor` | `claude-fable-5-thinking-xhigh` | tracked source in a clean worktree; `NO ZDR`, so no private data |
+
+Cursor Agent CLI sandboxing is unavailable on Windows. The adapter compensates
+with Ask mode, a clean worktree based on `HEAD`, project deny rules, and no
+write/force/MCP/cloud-handoff switches. Do not invoke the CLI directly for
+repository work.
+
 ## Rules of thumb
 
 1. One expensive hard question per session when possible.

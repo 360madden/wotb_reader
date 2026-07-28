@@ -62,7 +62,7 @@ Do **not** load `.cursor/reference/*` unless the task needs that catalog.
 
 | Task | Load |
 |------|------|
-| Cursor harness / model routing | `.cursor/README.md`, `.cursor/reference/model-routing.md` |
+| Cursor harness / model routing | `.cursor/README.md`, `.cursor/reference/model-routing.md`; local read-only CLI adapter: `scripts/invoke-cursor-agent.ps1` |
 | Architecture / project refs | rule `architecture-boundaries` (auto on `src/**/*.cs`) |
 | Replay / binary / harness tools | rule `binary-parser`; agent `decoder-auditor` / Codex `decoder_auditor` |
 | Loopback / mutation / privacy audit | agent `security-auditor` / Codex `security_auditor` (readonly) |
@@ -76,6 +76,14 @@ Do **not** load `.cursor/reference/*` unless the task needs that catalog.
 - Use `explore` subagents for multi-file search/read rounds and `general` subagents for mechanical units against frozen contracts (UI/DTO/tests/docs). Subagents must not stage, commit, or push.
 - Codex project agents live in `.codex/agents/*.toml`; use built-in `explorer` for broad read-heavy searches and the four named agents above for specialist work.
 - Codex concurrency is capped at three spawned threads in `.codex/config.toml`. Prefer read-heavy parallel work; keep overlapping write units sequential.
+- The local Cursor Agent CLI is subscription-backed and authenticated separately
+  from the desktop app. Invoke it only through
+  `scripts/invoke-cursor-agent.ps1`, which exposes read-only decoder/security
+  audits in a clean worktree from committed `HEAD`. Windows sandboxing is not
+  available. Never bypass the adapter with current-worktree, force/yolo,
+  MCP-auto-approval, or cloud-handoff flags. Cursor labels Fable 5 `NO ZDR`;
+  never send it private replays, captures, databases, screenshots, memory
+  offsets, tokens, account data, or other game-derived/runtime data.
 - OpenCode project agents live in `.opencode/agents/*.md`. Prefer
   `deepseek-glue` for one bounded mechanical implementation unit and
   `free-reviewer` for a bounded read-only second opinion when variable
