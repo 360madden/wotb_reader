@@ -1,13 +1,16 @@
 @echo off
 setlocal
 REM ============================================================
-REM  everything.cmd — One-command launch of the full stack.
+REM  everything.cmd — Start the web host and HUD overlay.
 REM
-REM  Starts the web host in one window, waits for it to be ready,
-REM  then launches the HUD overlay in another window.
+REM  Launches the two background services the overlay needs:
+REM  1. Web host (serve) — REST API + Blazor dashboard + SignalR
+REM  2. HUD overlay — transparent position plot over the game
 REM
-REM  STARTUP SEQUENCE: This automates steps 2 and 3.
-REM  Import replays first with import.cmd or watch.cmd (step 1).
+REM  To actually play a replay, use the overlay's "Pick & Launch"
+REM  button or drag a .wotbreplay file onto the overlay window.
+REM  Those actions handle import, host startup, AND game launching
+REM  for the specific replay you choose — not a random one.
 REM
 REM  Usage:   everything.cmd
 REM           everything.cmd 4000    (custom port)
@@ -41,6 +44,9 @@ echo.
 echo === Both windows launched ===
 echo     Web host: http://127.0.0.1:%WEB_PORT%
 echo     HUD:      overlay window (position plot + dashboard)
+echo.
+echo To play a replay, click "Pick ^& Launch" in the overlay
+echo or drag a .wotbreplay file onto the overlay window.
 echo.
 echo Close the web host window (Ctrl+C) to stop, or close this window.
 echo.
