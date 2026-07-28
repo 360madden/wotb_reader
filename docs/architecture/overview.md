@@ -18,24 +18,52 @@ acquisition from interpretation so a newer decoder can reprocess the same
 immutable source without overwriting prior results.
 
 ```mermaid
-flowchart LR
-    App["Application\norchestration and ports"] --> Core["Core\nimmutable domain"]
-    Replay["Replays\nbounded decoder"] --> App
-    Capture["CaptureLogs\nNDJSON and clocks"] --> App
-    Game["GameIntegration\nread-only metadata and guarded control"] --> App
-    Storage["Storage.Sqlite\nmanaged artifacts and projections"] --> App
-    Boot["Bootstrap\ncomposition"] --> Replay
+flowchart TD
+    Core["Core\nportable immutable domain"]
+    App["Application\nuse cases and ports"]
+    Replay["Replays\nbounded decoder adapter"]
+    Capture["CaptureLogs\ntelemetry adapter"]
+    Game["GameIntegration\noffline gate and guarded Win32 adapter"]
+    Storage["Storage.Sqlite\nartifact and projection adapter"]
+    Boot["Bootstrap\ncomposition root"]
+    Contracts["ApiContracts\nportable wire DTOs"]
+    Cli["Host.Cli"]
+    Web["Host.Web\nsingle loopback control plane"]
+    Overlay["Overlay\ntransparent client-only HUD"]
+    Harness["GameHarness\ndeveloper tool"]
+
+    App --> Core
+    Replay --> App
+    Replay --> Core
+    Capture --> App
+    Capture --> Core
+    Game --> App
+    Game --> Core
+    Storage --> App
+    Storage --> Core
+    Boot --> Replay
     Boot --> Capture
     Boot --> Game
     Boot --> Storage
-    Cli["CLI"] --> Boot
-    Web["Loopback Blazor host"] --> Boot
-    Overlay["WPF WebView2 overlay"] --> Web
+    Cli --> Boot
+    Web --> Boot
+    Web --> Contracts
+    Overlay --> Contracts
+    Overlay -. "HTTP + authenticated SignalR" .-> Web
+    Harness --> Boot
 ```
 
-The arrow denotes a dependency. `Core` has none. The overlay is intentionally
-outside parser and storage internals and consumes only the loopback web
-contract.
+The arrow denotes a compile-time dependency; the dotted arrow is a versioned
+loopback protocol. `Core` has none. `Bootstrap` is the only composition root.
+`GameIntegration` owns game discovery, log monitoring, replay launching,
+offline verification, and guarded Win32 access. The overlay is outside parser,
+storage, application, domain, host, and adapter internals and consumes only the
+portable wire contract.
+
+Only `Overlay`, `GameHarness`, and their test projects may target
+`net10.0-windows`; every other project targets portable `net10.0`. Milestone 1
+of the roadmap closes the remaining target-framework and contract-project
+implementation deltas.
 
 ## Overlay / HUD design intent
 
@@ -45,27 +73,18 @@ replay. The overlay shows decoded telemetry — position scatter plots coloured 
 team, session metadata, and the embedded Blazor dashboard — that the game's
 built-in replay viewer does not expose.
 
-### Embedded HTTP API (Kestrel on port 9190)
+### Single local control plane
 
-The overlay embeds a Kestrel HTTP server on `127.0.0.1:9190` with 8 automation
-endpoints under `/api/v1`. This makes the opaque WPF HUD fully scriptable from
-`curl`, PowerShell, or any local tooling — query status, control playback, launch
-replays, and select sessions without touching the UI.
+`Host.Web` is the only HTTP control plane. The legacy overlay Kestrel listener
+on port 9190 is disabled and is removed completely in Milestone 3. Retained
+legacy endpoint handler code is unreachable during the M0-to-M3 transition and
+must not be treated as a supported surface.
 
-All write endpoints (`POST`) enforce `IPAddress.IsLoopback` checks. The API is
-minimal by design: no capability tokens or antiforgery, since the overlay holds
-no replay data — only viewport/playback state.
-
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/api/v1/status` | GET | Connected state, session count, playback position, game window tracking |
-| `/api/v1/sessions/refresh` | POST | Trigger session list refresh from web host |
-| `/api/v1/launch` | POST | Launch game with a replay file path |
-| `/api/v1/playback/play` | POST | Start/resume playback (idempotent) |
-| `/api/v1/playback/pause` | POST | Pause playback (idempotent) |
-| `/api/v1/playback/seek` | POST | Seek to a specific time in seconds |
-| `/api/v1/playback/speed` | POST | Set playback speed (0.5×, 1×, 2×, 4×, 8×) |
-| `/api/v1/sessions/select` | POST | Select a session by ID |
+Browser mutations use same-origin validation, antiforgery, and a short-lived
+capability. Native overlay and CLI mutations use the owner-only rendezvous
+capability without ambient cookies or browser antiforgery. Both profiles are
+enforced by one Host.Web mutation component. Loopback source IP alone is never
+authorization.
 
 ### Why this matters: the game's minimap lies
 
@@ -100,19 +119,17 @@ P/Invoke `FindWindowW`/`GetWindowRect`/`SetWindowPos` with a 500ms
 game window is found, the overlay repositions itself to match its bounds.
 The timer starts when the Launch button triggers game playback.
 
-### Game launch mechanism (implemented ✅)
+### Game launch mechanism
 
-The Launch button calls `LaunchGameWithSelectedReplay`:
-1. Finds the most recently modified `.wotbreplay` in the Blitz replay folder
-   (`%LOCALAPPDATA%\wotblitz\DAVAProject\replays\`)
-2. Copies it to the replay folder (if not already there)
-3. Launches `wotblitz.exe` with the replay file as a command-line argument
-4. Starts the window tracking timer
+The overlay has no game-launch authority. It requests a launch through the
+authenticated Host.Web control plane. The accepted target resolves a managed
+artifact or session identifier server-side, stages without overwriting user
+files, and launches only through the positively verified game executable.
+`GameIntegration` owns the discovery and launch implementation behind
+application ports. Caller-supplied full paths, hardcoded installation paths,
+and unverified shell-handler fallbacks are not part of the target.
 
-The game path is currently hardcoded to `C:\Games\World_of_Tanks_Blitz\wotblitz.exe`.
-**FUTURE:** Use `GameInstallationDiscovery` to auto-discover the install path.
-
-### Known architectural constraint: WebView2 + transparency
+### Transitional implementation delta: WebView2 + transparency
 
 **`AllowsTransparency="True"` is incompatible with WebView2.** When a WPF window
 enables layered-window transparency, WPF switches to GDI-based compositing
@@ -120,17 +137,11 @@ enables layered-window transparency, WPF switches to GDI-based compositing
 for rendering, which the layered-window compositor cannot composite correctly —
 the WebView content disappears, flickers, or fails to receive input.
 
-This means the embedded Blazor dashboard **cannot coexist** with a transparent
-overlay window. Design options:
-
-1. **Two windows**: A transparent HUD window for the position plot + a separate
-   opaque window for the dashboard (or use the browser).
-2. **No WebView2 in the HUD**: Remove the dashboard tab from the transparent
-   overlay. Users open `http://127.0.0.1:9182` in a browser for deep inspection.
-3. **Binary transparency via `TransparencyKey`**: Use a chroma-key colour
-   (e.g. magenta) as the transparent colour instead of alpha blending. This
-   avoids `AllowsTransparency` and keeps WebView2 working, but limits
-   transparency to on/off (no semi-transparent HUD panel).
+This means the embedded Blazor dashboard **cannot coexist** reliably with a
+transparent overlay window. Milestone 5 removes WebView2 from the HUD path and
+opens deep inspection in the system browser (or, if later accepted, a separate
+opaque process/window). WebView2 in the current HUD is a tracked implementation
+delta, not part of the accepted alpha target.
 
 ### Coordinate space and map boundaries
 

@@ -1,3 +1,7 @@
+using System.Runtime.Versioning;
+using System.Security.AccessControl;
+using System.Security.Principal;
+
 namespace WotBTreader.Bootstrap.Configuration;
 
 public sealed record LocalApplicationPaths(
@@ -50,13 +54,110 @@ public sealed record LocalApplicationPaths(
     /// would silently restore inherited permissions.
     /// </summary>
     /// <remarks>
-    /// The rendezvous path is always under %LocalAppData%, which Windows
-    /// already isolates per user. Custom ACL manipulation was removed because
-    /// it caused permission bricking when the directory was created by an
-    /// elevated process. Standard inherited permissions are sufficient for
-    /// a local-only, loopback-bound tool.
+    /// The capability must not be published when the directory cannot be
+    /// positively verified as owner-only. Permission failures therefore
+    /// propagate to the publisher instead of falling back to inherited access.
     /// </remarks>
-    public void EnsureRendezvousDirectory() => Directory.CreateDirectory(Rendezvous);
+    public void EnsureRendezvousDirectory() => EnsureOwnerOnlyDirectory(Rendezvous);
+
+    private static void EnsureOwnerOnlyDirectory(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            EnsureWindowsOwnerOnlyDirectory(path);
+            return;
+        }
+
+        const UnixFileMode ownerOnly =
+            UnixFileMode.UserRead |
+            UnixFileMode.UserWrite |
+            UnixFileMode.UserExecute;
+        Directory.CreateDirectory(path, ownerOnly);
+        File.SetUnixFileMode(path, ownerOnly);
+
+        UnixFileMode actual = File.GetUnixFileMode(path);
+        if (actual != ownerOnly)
+        {
+            throw new UnauthorizedAccessException(
+                "The rendezvous directory could not be verified as owner-only.");
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void EnsureWindowsOwnerOnlyDirectory(string path)
+    {
+        SecurityIdentifier owner = WindowsIdentity.GetCurrent().User
+            ?? throw new InvalidOperationException(
+                "The current Windows account has no security identifier.");
+
+        var security = new DirectorySecurity();
+        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        security.AddAccessRule(new FileSystemAccessRule(
+            owner,
+            FileSystemRights.FullControl,
+            InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+            PropagationFlags.None,
+            AccessControlType.Allow));
+
+        var directory = new DirectoryInfo(path);
+        if (directory.Exists)
+        {
+            if ((directory.Attributes & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new UnauthorizedAccessException(
+                    "The rendezvous directory must not be a reparse point.");
+            }
+
+            directory.SetAccessControl(security);
+        }
+        else
+        {
+            directory.Create(security);
+        }
+
+        VerifyWindowsOwnerOnlyDirectory(directory, owner);
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void VerifyWindowsOwnerOnlyDirectory(
+        DirectoryInfo directory,
+        SecurityIdentifier expectedOwner)
+    {
+        directory.Refresh();
+        if (!directory.Exists ||
+            (directory.Attributes & FileAttributes.ReparsePoint) != 0)
+        {
+            throw new UnauthorizedAccessException(
+                "The rendezvous directory identity could not be verified.");
+        }
+
+        DirectorySecurity actual = directory.GetAccessControl(
+            AccessControlSections.Access | AccessControlSections.Owner);
+        if (!actual.AreAccessRulesProtected ||
+            !expectedOwner.Equals(actual.GetOwner(typeof(SecurityIdentifier))))
+        {
+            throw new UnauthorizedAccessException(
+                "The rendezvous directory owner or inheritance boundary is unsafe.");
+        }
+
+        AuthorizationRuleCollection rules = actual.GetAccessRules(
+            includeExplicit: true,
+            includeInherited: true,
+            targetType: typeof(SecurityIdentifier));
+        if (rules.Count != 1 ||
+            rules[0] is not FileSystemAccessRule rule ||
+            rule.IsInherited ||
+            rule.AccessControlType != AccessControlType.Allow ||
+            !expectedOwner.Equals(rule.IdentityReference) ||
+            (rule.FileSystemRights & FileSystemRights.FullControl) !=
+                FileSystemRights.FullControl ||
+            rule.InheritanceFlags !=
+                (InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit))
+        {
+            throw new UnauthorizedAccessException(
+                "The rendezvous directory access rules are not owner-only.");
+        }
+    }
 }
 
 public sealed record TreaderBootstrapOptions(

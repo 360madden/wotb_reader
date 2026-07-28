@@ -76,6 +76,7 @@ tools/external/cache/
 
 # Local runtime data and build cache (used by convenience wrappers)
 .data/
+/.data.bak/
 .build/
 
 # Scanner runtime state (generated, not committed)

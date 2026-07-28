@@ -306,3 +306,53 @@ entries rather than silently erasing prior evidence.
   be created inside a directory secured by this helper. Security properties
   asserted in architecture documents need a test that fails when the property
   regresses.
+
+## Amendment — BLK-0003 target-framework regression (`2026-07-28T22:37:54Z`)
+
+- Status: reopened; assigned to architecture roadmap Milestone 1.
+- Regression: `Host.Web`, `Host.Web.Tests`, and `GameIntegration.Tests` were
+  changed to `net10.0-windows` after BLK-0003 was marked resolved. The
+  architecture suite did not inspect project target frameworks, so the full
+  validation gate could remain green.
+- Containment: Host.Web process-memory access was disabled in M0. The portable
+  TFM restoration and an all-project TFM allowlist test are explicit M1 exit
+  criteria; the blocker is not considered resolved again until both pass.
+- Prevention: release evidence must come from project-file architecture tests,
+  not only from the fact that the solution compiles on a Windows machine.
+
+## Amendment — BLK-0014 ACL regression and recovery (`2026-07-28T22:37:54Z`)
+
+- Status: implementation restored; focused validation passed, full gate pending
+  at the time of this amendment.
+- Regression: the protected owner-only ACL helper and its test were removed in
+  favor of inherited `%LocalAppData%` permissions while the rendezvous record
+  still carried a mutation capability. That contradicted the original
+  resolution and the accepted local trust boundary.
+- Recovery: rendezvous creation now severs inheritance, grants only the current
+  user full control, rejects reparse points, and verifies the owner and complete
+  access-rule set before publication. Non-Windows creation enforces and verifies
+  mode `0700`. Failure is explicit; no capability is written into an
+  unverified directory.
+- Evidence: the Bootstrap regression test starts with a permissive inherited
+  ACL and proves the resulting directory is protected, current-user-owned, and
+  contains exactly one explicit allow rule.
+
+## BLK-0015 — Unverified process-memory attachment bypassed offline evidence
+
+- First observed: `2026-07-28T22:00:00Z`
+- Status: contained in Milestone 0; centralized authorization remains M2 work.
+- Impact: Host.Web attached after finding a game window, while GameHarness
+  `scan --pid` and `probe` called a raw memory scanner without replay evidence.
+  Either path could request a memory-capable handle before positively verifying
+  playback of a pre-recorded replay.
+- Evidence: Host.Web called its memory reader from window discovery; the
+  GameHarness CLI parsed or discovered a PID and called
+  `MemoryOffsetScanner.Attach` directly.
+- Containment: Host.Web attachment is fail-closed and contains no
+  process-memory P/Invoke. GameHarness `scan` and `probe` now return stable
+  `UnsupportedCapability` results before argument parsing, process enumeration,
+  or attachment. Black-box tests exercise both commands.
+- Follow-up: M2 must introduce the evidence-backed offline-session state
+  machine and a non-forgeable, short-lived authorized observation bound to PID,
+  executable identity, version/hash, launch correlation, source, and freshness.
+  Raw PID or caller-constructed authorization records are not acceptable.
