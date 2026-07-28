@@ -11,4 +11,8 @@
     <ProjectReference Include="..\..\..\src\WotBTreader.GameIntegration\WotBTreader.GameIntegration.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" />
+  </ItemGroup>
+
 </Project>

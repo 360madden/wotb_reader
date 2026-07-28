@@ -46,3 +46,44 @@ public sealed record GameLaunchResponse
     /// <summary>Human-readable status message.</summary>
     public string Message { get; init; } = string.Empty;
 }
+
+/// <summary>
+/// Snapshot of replay memory read from the running game process.
+/// Returned by GET /api/v1/game/memory. All fields are 0/default when
+/// offsets are unknown or the process is not accessible.
+/// </summary>
+public sealed record GameMemoryResponse
+{
+    /// <summary>UTC timestamp when this snapshot was captured.</summary>
+    public DateTimeOffset CapturedAtUtc { get; init; }
+
+    /// <summary>Whether the game process was accessible for memory reading.</summary>
+    public bool ProcessAccessible { get; init; }
+
+    /// <summary>Current replay playback time in seconds.</summary>
+    public double ReplayTimeSeconds { get; init; }
+
+    /// <summary>HP of the viewpoint player tank.</summary>
+    public int PlayerHP { get; init; }
+
+    /// <summary>World-space X position of the player tank.</summary>
+    public float PlayerPositionX { get; init; }
+
+    /// <summary>World-space Y position (height) of the player tank.</summary>
+    public float PlayerPositionY { get; init; }
+
+    /// <summary>World-space Z position of the player tank.</summary>
+    public float PlayerPositionZ { get; init; }
+
+    /// <summary>Camera yaw in radians.</summary>
+    public float PlayerYaw { get; init; }
+
+    /// <summary>Camera pitch in radians.</summary>
+    public float CameraPitch { get; init; }
+
+    /// <summary>Number of tanks alive in the battle.</summary>
+    public int AliveTankCount { get; init; }
+
+    /// <summary>Whether any memory offsets were validated in this session.</summary>
+    public bool AnyOffsetsValidated { get; init; }
+}

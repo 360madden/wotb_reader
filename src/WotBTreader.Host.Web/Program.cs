@@ -46,6 +46,7 @@ builder.Services.AddAntiforgery(options =>
     options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
 });
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddSingleton<GameMemoryReader>();
 builder.Services.AddSingleton<GameStateService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<GameStateService>());
 builder.Services.AddWebSurface(builder.Configuration);

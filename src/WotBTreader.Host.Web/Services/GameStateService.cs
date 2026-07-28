@@ -1,32 +1,41 @@
 using System.Diagnostics;
 using WotBTreader.GameIntegration.Logs;
 using WotBTreader.Host.Web.Contracts;
+using WotBTreader.Host.Web.Infrastructure;
 
 namespace WotBTreader.Host.Web.Services;
 
 /// <summary>
 /// Background service that monitors native Blitz replay lifecycle logs and
-/// exposes the current game and replay state through a thread-safe snapshot.
+/// periodically probes the game process via Win32. Exposes the current game
+/// and replay state through a thread-safe snapshot.
 /// Registered as a singleton so API endpoints can query the latest state.
 /// </summary>
 public sealed class GameStateService : BackgroundService
 {
-    private const string GameWindowTitle = "World of Tanks Blitz";
+    private const string GameWindowClass = "SDL_app";
     private const string GameExecutableName = "wotblitz.exe";
+    private static readonly TimeSpan ProbeInterval = TimeSpan.FromSeconds(2);
 
     private readonly IBlitzReplayLogMonitor _logMonitor;
+    private readonly GameMemoryReader _memoryReader;
     private readonly ILogger<GameStateService> _logger;
 
     private readonly Lock _gate = new();
     private bool _gameRunning;
     private bool _replayActive;
+    private int _processId;
+    private long _windowHandle;
     private DateTimeOffset? _lastStateObservedAtUtc;
+    private string? _lastLogWatermark;
 
     public GameStateService(
         IBlitzReplayLogMonitor logMonitor,
+        GameMemoryReader memoryReader,
         ILogger<GameStateService> logger)
     {
         _logMonitor = logMonitor ?? throw new ArgumentNullException(nameof(logMonitor));
+        _memoryReader = memoryReader ?? throw new ArgumentNullException(nameof(memoryReader));
         _logger = logger;
     }
 
@@ -41,8 +50,11 @@ public sealed class GameStateService : BackgroundService
             return new GameStateResponse
             {
                 GameRunning = _gameRunning,
+                ProcessId = _gameRunning ? _processId : null,
+                WindowHandle = _gameRunning ? _windowHandle : null,
                 ReplayState = _replayActive ? "OfflineReplayActive" : "NotRunning",
                 ReplayStateObservedAtUtc = _lastStateObservedAtUtc,
+                LogWatermark = _lastLogWatermark,
             };
         }
     }
@@ -159,14 +171,45 @@ public sealed class GameStateService : BackgroundService
         }
     }
 
+    /// <summary>
+    /// Returns the latest memory snapshot from the game process.
+    /// Returns a default snapshot if not attached.
+    /// </summary>
+    public GameMemoryResponse GetMemory()
+    {
+        GameMemorySnapshot raw = _memoryReader.Poll();
+        return new GameMemoryResponse
+        {
+            CapturedAtUtc = raw.CapturedAtUtc,
+            ProcessAccessible = raw.ProcessAccessible,
+            ReplayTimeSeconds = raw.ReplayTimeSeconds,
+            PlayerHP = raw.PlayerHP,
+            PlayerPositionX = raw.PlayerPositionX,
+            PlayerPositionY = raw.PlayerPositionY,
+            PlayerPositionZ = raw.PlayerPositionZ,
+            PlayerYaw = raw.PlayerYaw,
+            CameraPitch = raw.CameraPitch,
+            AliveTankCount = raw.AliveTankCount,
+            AnyOffsetsValidated = raw.AnyOffsetsValidated,
+        };
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        // Run log monitoring and process probing concurrently
+        Task logTask = MonitorLogsAsync(stoppingToken);
+        Task probeTask = ProbeProcessAsync(stoppingToken);
+        await Task.WhenAll(logTask, probeTask);
+    }
+
+    private async Task MonitorLogsAsync(CancellationToken stoppingToken)
     {
         try
         {
             await foreach (ReplayLogEvent logEvent in _logMonitor.WatchAsync(stoppingToken)
                                .ConfigureAwait(false))
             {
-                UpdateState(logEvent);
+                UpdateStateFromLog(logEvent);
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -177,33 +220,100 @@ public sealed class GameStateService : BackgroundService
         {
             _logger.LogWarning(
                 new EventId(4300, "GameStateServiceError"),
-                "Game state monitoring stopped: {ExceptionType} — {Message}.",
+                "Log monitoring stopped: {ExceptionType} — {Message}.",
                 ex.GetType().Name,
                 ex.Message);
         }
     }
 
-    private void UpdateState(ReplayLogEvent logEvent)
+    private async Task ProbeProcessAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                ProbeProcess();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                if (_logger.IsEnabled(LogLevel.Debug))
+                {
+                    _logger.LogDebug(
+                        "Process probe failed: {ExceptionType} — {Message}.",
+                        ex.GetType().Name, ex.Message);
+                }
+            }
+
+            await Task.Delay(ProbeInterval, stoppingToken).ConfigureAwait(false);
+        }
+    }
+
+    private void ProbeProcess()
+    {
+        // Find game window via SDL class name
+        IntPtr hWnd = NativeMethods.FindWindowW(GameWindowClass, lpWindowName: null);
+        if (hWnd == IntPtr.Zero)
+        {
+            lock (_gate)
+            {
+                _gameRunning = false;
+                _processId = 0;
+                _windowHandle = 0;
+            }
+            return;
+        }
+
+        uint pid;
+        _ = NativeMethods.GetWindowThreadProcessId(hWnd, out pid);
+        if (pid == 0)
+        {
+            return;
+        }
+
+        // Get version info
+        string? version = null;
+        try
+        {
+            using Process? process = Process.GetProcessById((int)pid);
+            if (process?.MainModule?.FileVersionInfo?.FileVersion is { } v)
+            {
+                version = v;
+            }
+        }
+        catch
+        {
+            // Process may have exited or access denied — keep last version
+        }
+
+        lock (_gate)
+        {
+            _gameRunning = true;
+            _processId = (int)pid;
+            _windowHandle = (long)hWnd;
+        }
+
+        // Re-attach memory reader if PID changed (process restart)
+        if (!_memoryReader.IsAttached || _memoryReader.AttachedProcessId != (int)pid)
+        {
+            _memoryReader.Attach((int)pid, version ?? "unknown");
+        }
+    }
+
+    private void UpdateStateFromLog(ReplayLogEvent logEvent)
     {
         lock (_gate)
         {
             _lastStateObservedAtUtc = logEvent.ObservedAtUtc;
+            _lastLogWatermark = logEvent.OpaqueSourceId.Value;
 
             switch (logEvent.Kind)
             {
                 case ReplayLogMarkerKind.OfflineReplayStarted:
-                    _gameRunning = true;
                     _replayActive = true;
                     break;
 
                 case ReplayLogMarkerKind.OfflineReplayStopped:
                     _replayActive = false;
-                    _gameRunning = false;
-                    break;
-
-                case ReplayLogMarkerKind.ReplayRecordingStarted:
-                case ReplayLogMarkerKind.ReplayRecordingStopped:
-                    _gameRunning = true;
                     break;
             }
         }
