@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:WotBTreader.Overlay"
              xmlns:converters="clr-namespace:WotBTreader.Overlay.Converters"
-             StartupUri="MainWindow.xaml">
+             >
     <Application.Resources>
         <converters:NullToCollapsedConverter x:Key="NullToCollapsed"/>
         <converters:TeamToColorConverter x:Key="TeamToColor"/>
