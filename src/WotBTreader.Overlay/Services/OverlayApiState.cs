@@ -19,6 +19,12 @@ public sealed class OverlayApiState
     private Action<Action>? _dispatch;
     private readonly Lock _gate = new();
 
+    /// <summary>
+    /// Thread-safe flag set by MainWindow's window-tracking timer.
+    /// Read from any thread; written only from the UI thread.
+    /// </summary>
+    internal volatile bool IsTrackingGameWindow;
+
     private OverlayApiState()
     {
     }
@@ -176,17 +182,11 @@ public sealed class OverlayApiState
 
     /// <summary>
     /// Returns true if the WoT Blitz game window is currently visible on screen.
-    /// Safe to call from any thread. Delegates to the MainWindow's existing
-    /// P/Invoke-based tracking to avoid a duplicate native import.
+    /// Thread-safe: reads a volatile flag set by MainWindow's P/Invoke timer.
     /// </summary>
     private static bool IsGameWindowVisible()
     {
-        if (System.Windows.Application.Current?.MainWindow is MainWindow window)
-        {
-            return window.IsTrackingGameWindow;
-        }
-
-        return false;
+        return Instance.IsTrackingGameWindow;
     }
 
     private void PostToUi(Action action)

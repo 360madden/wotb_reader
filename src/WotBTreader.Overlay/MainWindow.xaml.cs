@@ -644,18 +644,14 @@ public partial class MainWindow : System.Windows.Window, IDisposable
             {
                 System.IO.File.Copy(replayPath, target, overwrite: true);
             }
-            else
-            {
-                target = replayPath;
-            }
 
-            string? gamePath = FindGameExecutablePath();
-            if (gamePath is null) return false;
-
+            // Launch via file association — wotblitz.exe does not accept replay
+            // paths as command-line arguments. Using Process.Start on the
+            // .wotbreplay file itself triggers the Windows file association,
+            // which launches the game with the replay visible in its UI.
             Process.Start(new ProcessStartInfo
             {
-                FileName = gamePath,
-                Arguments = $"\"{target}\"",
+                FileName = target,
                 UseShellExecute = true,
             });
 
@@ -663,8 +659,33 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         }
         catch (Exception ex) when (
             ex is System.IO.IOException or UnauthorizedAccessException
-            or InvalidOperationException)
+            or InvalidOperationException
+            or System.ComponentModel.Win32Exception)
         {
+            // Win32Exception covers "No application is associated" when
+            // file association is missing. In that case, try launching
+            // the game directly as a fallback.
+            if (ex is System.ComponentModel.Win32Exception)
+            {
+                string? gamePath = FindGameExecutablePath();
+                if (gamePath is not null)
+                {
+                    try
+                    {
+                        Process.Start(new ProcessStartInfo
+                        {
+                            FileName = gamePath,
+                            UseShellExecute = true,
+                        });
+                        return true;
+                    }
+                    catch
+                    {
+                        // Both approaches failed.
+                    }
+                }
+            }
+
             return false;
         }
     }
@@ -792,6 +813,7 @@ public partial class MainWindow : System.Windows.Window, IDisposable
     {
         IntPtr hwnd = FindWindowW(null, GameWindowTitle);
         IsTrackingGameWindow = hwnd != IntPtr.Zero;
+        OverlayApiState.Instance.IsTrackingGameWindow = IsTrackingGameWindow;
         if (hwnd == IntPtr.Zero) return;
         if (!GetWindowRect(hwnd, out RECT rect)) return;
 

@@ -264,10 +264,10 @@
                                     <TextBlock FontSize="9" Foreground="#88FFFFFF"
                                                Text="{Binding BattleTimeUtc, StringFormat={}{0:MMM dd  HH:mm}}"/>
                                     <TextBlock FontSize="9" Foreground="#66FFFFFF" Margin="6,0,0,0">
-                                        <Run Text="{Binding ParticipantCount}"/><Run Text="p"/>
+                                        <Run Text="{Binding ParticipantCount, Mode=OneWay}"/><Run Text="p"/>
                                     </TextBlock>
                                     <TextBlock FontSize="9" Foreground="#66FFFFFF" Margin="6,0,0,0">
-                                        <Run Text="{Binding PositionCount, StringFormat={}{0:N0}}"/>
+                                        <Run Text="{Binding PositionCount, Mode=OneWay, StringFormat={}{0:N0}}"/>
                                         <Run Text=" pos"/>
                                     </TextBlock>
                                 </StackPanel>
@@ -289,15 +289,15 @@
                         <TextBlock Grid.Column="0" FontSize="10" Foreground="#AAFFFFFF"
                                    VerticalAlignment="Center" HorizontalAlignment="Left"
                                    FontFamily="Consolas">
-                            <Run Text="{Binding CurrentTime, StringFormat={}{0:mm\\:ss}}"/>
+                            <Run Text="{Binding CurrentTime, Mode=OneWay, StringFormat={}{0:mm\\:ss}}"/>
                         </TextBlock>
                         <TextBlock Grid.Column="1" FontSize="10" Foreground="#55FFFFFF"
                                    VerticalAlignment="Center" HorizontalAlignment="Right"
                                    FontFamily="Consolas" Margin="0,0,6,0">
-                            <Run Text="{Binding Duration, StringFormat={}{0:mm\\:ss}}"/>
+                            <Run Text="{Binding Duration, Mode=OneWay, StringFormat={}{0:mm\\:ss}}"/>
                         </TextBlock>
                         <Slider Grid.Column="2" Minimum="0"
-                                Maximum="{Binding Duration.TotalSeconds}"
+                                Maximum="{Binding Duration.TotalSeconds, Mode=OneWay}"
                                 Value="{Binding CurrentTimeSeconds}"
                                 IsSnapToTickEnabled="True" TickFrequency="1"
                                 Height="18" Cursor="Hand"
@@ -357,7 +357,7 @@
                             BorderBrush="#22FFFFFF" BorderThickness="0,0,0,1">
                         <TextBlock FontSize="11" Foreground="#BBFFFFFF">
                             <Run Text="👥  Participants ("/>
-                            <Run Text="{Binding Participants.Count}" Foreground="#88CCFF"/>
+                            <Run Text="{Binding Participants.Count, Mode=OneWay}" Foreground="#88CCFF"/>
                             <Run Text=")"/>
                         </TextBlock>
                     </Border>
@@ -408,7 +408,7 @@
                     <!-- ── Event count ── -->
                     <TextBlock Grid.Row="2" FontSize="10" Foreground="#88FFFFFF" Margin="0,4,0,0">
                         <Run Text="📊  Events: "/>
-                        <Run Text="{Binding EventCount}" Foreground="#88CCFF"/>
+                        <Run Text="{Binding EventCount, Mode=OneWay}" Foreground="#88CCFF"/>
                     </TextBlock>
 
                     <!-- ── Battle stats bar ── -->
@@ -425,11 +425,11 @@
                                     <Run Text="🔵  TEAM 1"/>
                                 </TextBlock>
                                 <TextBlock FontSize="10" Foreground="#88CCFF" Margin="0,1,0,0">
-                                    <Run Text="{Binding DamageTeam1, StringFormat={}{0:N0}}"/>
+                                    <Run Text="{Binding DamageTeam1, Mode=OneWay, StringFormat={}{0:N0}}"/>
                                     <Run Text=" dmg" Foreground="#66FFFFFF" FontSize="9"/>
                                 </TextBlock>
                                 <TextBlock FontSize="10" Foreground="#88CCFF">
-                                    <Run Text="{Binding KillsTeam1, StringFormat={}{0}}"/>
+                                    <Run Text="{Binding KillsTeam1, Mode=OneWay, StringFormat={}{0}}"/>
                                     <Run Text=" kills" Foreground="#66FFFFFF" FontSize="9"/>
                                 </TextBlock>
                             </StackPanel>
@@ -440,11 +440,11 @@
                                     <Run Text="🔴  TEAM 2"/>
                                 </TextBlock>
                                 <TextBlock FontSize="10" Foreground="#FF8866" Margin="0,1,0,0">
-                                    <Run Text="{Binding DamageTeam2, StringFormat={}{0:N0}}"/>
+                                    <Run Text="{Binding DamageTeam2, Mode=OneWay, StringFormat={}{0:N0}}"/>
                                     <Run Text=" dmg" Foreground="#66FFFFFF" FontSize="9"/>
                                 </TextBlock>
                                 <TextBlock FontSize="10" Foreground="#FF8866">
-                                    <Run Text="{Binding KillsTeam2, StringFormat={}{0}}"/>
+                                    <Run Text="{Binding KillsTeam2, Mode=OneWay, StringFormat={}{0}}"/>
                                     <Run Text=" kills" Foreground="#66FFFFFF" FontSize="9"/>
                                 </TextBlock>
                             </StackPanel>
