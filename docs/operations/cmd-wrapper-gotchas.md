@@ -126,6 +126,23 @@ When creating or modifying any `.cmd` file, verify:
 - [ ] External tool dependencies (`pwsh`, `node`, etc.) are checked with a fallback or clear error
 - [ ] `start` commands use the empty-title trick: `start "" "exe path"` to avoid the first quoted arg being consumed as a window title
 
+## Related: rendezvous ACL crash (2026-07-28)
+
+The `UnauthorizedAccessException` that appeared during `import.cmd` smoke-testing
+was NOT a wrapper bug. It was a C# bug in `LocalApplicationPaths.EnsureWindowsOwnerOnlyDirectory`:
+
+- **Cause:** `directory.SetAccessControl(security)` throws `UnauthorizedAccessException`
+  when the current user lacks `WriteDAC` rights on the rendezvous directory.
+  This happens when an elevated admin creates the directory first.
+- **Impact:** The entire CLI crashes during startup (`BuildHost` → `EnsureDirectoriesExist`)
+  before any command executes. Even `--help` would fail.
+- **Fix:** Wrapped `SetAccessControl` in try-catch for `UnauthorizedAccessException`.
+  Silently accept existing ACLs; if the user truly can't write to the directory,
+  the failure surfaces at the point of use (writing the rendezvous token) rather
+  than globally during bootstrapping.
+- **Lesson:** When a wrapper appears broken because the CLI crashes, the root cause
+  may be in C# startup code, not the wrapper. Trace the full execution path.
+
 ## Process lesson (2026-07-28)
 
 These bugs survived multiple prior bug sweeps because they were reviewed through

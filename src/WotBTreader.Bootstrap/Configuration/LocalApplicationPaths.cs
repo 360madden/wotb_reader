@@ -44,6 +44,13 @@ public sealed record LocalApplicationPaths(
     /// use this instead of <see cref="Directory.CreateDirectory(string)"/>, which
     /// would silently restore inherited permissions.
     /// </summary>
+    /// <remarks>
+    /// When the directory was created by a different security principal (e.g. an
+    /// elevated admin), the current user may lack the WriteDAC right needed to
+    /// modify the ACL. In that case the existing ACL is left in place; the caller
+    /// relies on the eventual file write to surface any access problem at the
+    /// point of use rather than crashing the entire CLI during startup.
+    /// </remarks>
     public void EnsureRendezvousDirectory() => EnsureOwnerOnlyDirectory(Rendezvous);
 
     /// <summary>
@@ -86,7 +93,18 @@ public sealed record LocalApplicationPaths(
         DirectoryInfo directory = new(path);
         if (directory.Exists)
         {
-            directory.SetAccessControl(security);
+            try
+            {
+                directory.SetAccessControl(security);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // Silently ignore. If the directory was created by an elevated
+                // admin, the standard user lacks WriteDAC rights. It is better
+                // to fail when actually writing the token file later than to
+                // crash the entire CLI during startup.
+            }
+
             return;
         }
 
