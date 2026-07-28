@@ -145,3 +145,27 @@ the temporary project. Ghidra is locally installed and operational.
 Deferred: successful startup does not resolve the separate timeout encountered
 while analyzing the full 71 MB game binary, and `FindOffsets.py` still has the
 known Jython compatibility issues listed above.
+
+## Amendment — M0 Host.Web memory containment (`2026-07-28T22:30:50Z`)
+
+Closed the first architecture-roadmap M0 slice. `Host.Web` no longer attempts
+memory attachment when it finds an SDL window, and its assembly no longer
+contains process-memory handles, `OpenProcess`, `ReadProcessMemory`,
+`EnumProcessModules`, or VM-read access constants. Replay launching,
+window/PID observation, log-derived replay state, and the memory response shape
+remain available; memory polling fails closed as process-inaccessible until
+the Milestone 2 offline-verification lease exists.
+
+Added two focused attachment-denial tests. Also removed the recurring
+method-parallel race in `OverlayApiStateTests` by giving every test an
+independent state instance; the complete Overlay suite then passed three
+consecutive runs.
+
+Validation: focused Host.Web tests passed 2/2; the Overlay suite passed 91/91
+three consecutive times; `scripts/validate.ps1` passed with a Release build at
+0 warnings/errors, 283 tests passed, 2 local opt-in tests skipped, and the
+repository scan passed.
+
+Deferred M0 work: hard-deny or centrally gate direct GameHarness `scan` and
+`probe`, contain the overlay mutation listener, restore verified owner-only
+rendezvous storage, and append the outstanding blocker-log amendments.

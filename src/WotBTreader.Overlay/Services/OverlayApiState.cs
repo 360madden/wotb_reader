@@ -25,7 +25,7 @@ public sealed class OverlayApiState
     /// </summary>
     internal volatile bool IsTrackingGameWindow;
 
-    private OverlayApiState()
+    internal OverlayApiState()
     {
     }
 

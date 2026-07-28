@@ -270,32 +270,11 @@ public sealed class GameStateService : BackgroundService
             return;
         }
 
-        // Get version info
-        string? version = null;
-        try
-        {
-            using Process? process = Process.GetProcessById((int)pid);
-            if (process?.MainModule?.FileVersionInfo?.FileVersion is { } v)
-            {
-                version = v;
-            }
-        }
-        catch
-        {
-            // Process may have exited or access denied — keep last version
-        }
-
         lock (_gate)
         {
             _gameRunning = true;
             _processId = (int)pid;
             _windowHandle = (long)hWnd;
-        }
-
-        // Re-attach memory reader if PID changed (process restart)
-        if (!_memoryReader.IsAttached || _memoryReader.AttachedProcessId != (int)pid)
-        {
-            _memoryReader.Attach((int)pid, version ?? "unknown");
         }
     }
 
