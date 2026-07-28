@@ -100,8 +100,13 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         _windowTrackTimer.Stop();
         _playbackTimer.Stop();
         _streamService.Dispose();
-        _webHostProcess?.Dispose();
-        _webHostProcess = null;
+        if (_webHostProcess is not null)
+        {
+            _webHostProcess.Exited -= OnWebHostExited;
+            _webHostProcess.Dispose();
+            _webHostProcess = null;
+        }
+
         GC.SuppressFinalize(this);
     }
 
@@ -109,7 +114,15 @@ public partial class MainWindow : System.Windows.Window, IDisposable
 
     private async void OnLoaded(object sender, System.Windows.RoutedEventArgs e)
     {
-        _ = _viewModel.RefreshSessionsAsync();
+        try
+        {
+            await _viewModel.RefreshSessionsAsync();
+        }
+        catch (Exception ex)
+        {
+            _viewModel.Status = $"Startup error: {ex.GetType().Name}";
+        }
+
         PopulateGamePathInfo();
     }
 
@@ -169,6 +182,11 @@ public partial class MainWindow : System.Windows.Window, IDisposable
                 _playbackTimer.Stop();
             }
         }
+    }
+
+    private void OnWebHostExited(object? sender, EventArgs e)
+    {
+        _viewModel.Status = "Web host stopped unexpectedly";
     }
 
     private void OnPlaybackTick(object? sender, EventArgs e)
@@ -400,18 +418,22 @@ public partial class MainWindow : System.Windows.Window, IDisposable
 
     private static string? ResolveRepoRoot()
     {
-        // Overlay exe is at src/WotBTreader.Overlay/bin/Release/net10.0-windows/
-        // Repo root is 5 directories up.
-        string exeDir = System.IO.Path.GetDirectoryName(
-            Environment.ProcessPath ?? typeof(MainWindow).Assembly.Location)
-            ?? string.Empty;
+        // Walk up from the exe directory until we find WotBTreader.sln,
+        // the reliable marker file at the repository root.
+        string? current = System.IO.Path.GetDirectoryName(
+            Environment.ProcessPath ?? typeof(MainWindow).Assembly.Location);
 
-        for (int i = 0; i < 5 && !string.IsNullOrEmpty(exeDir); i++)
+        for (int i = 0; i < 10 && !string.IsNullOrEmpty(current); i++)
         {
-            exeDir = System.IO.Path.GetDirectoryName(exeDir) ?? string.Empty;
+            if (System.IO.File.Exists(System.IO.Path.Combine(current, "WotBTreader.sln")))
+            {
+                return current;
+            }
+
+            current = System.IO.Path.GetDirectoryName(current);
         }
 
-        return string.IsNullOrEmpty(exeDir) ? null : exeDir;
+        return null;
     }
 
     private static string? ResolveDataRoot(string? repoRoot)
@@ -430,13 +452,13 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         return null;
     }
 
-    private static async ValueTask<bool> IsWebHostRunningAsync()
+    private async ValueTask<bool> IsWebHostRunningAsync()
     {
         try
         {
             using HttpClient client = new() { Timeout = TimeSpan.FromSeconds(2) };
             HttpResponseMessage response = await client.GetAsync(
-                "http://127.0.0.1:9182/api/v1/sessions",
+                $"{_lastDashboardUri}/api/v1/sessions",
                 HttpCompletionOption.ResponseHeadersRead);
             return response.IsSuccessStatusCode;
         }
@@ -463,7 +485,12 @@ public partial class MainWindow : System.Windows.Window, IDisposable
 
         try
         {
-            _webHostProcess?.Dispose();
+            if (_webHostProcess is not null)
+            {
+                _webHostProcess.Exited -= OnWebHostExited;
+                _webHostProcess.Dispose();
+            }
+
             _webHostProcess = new Process
             {
                 StartInfo = new ProcessStartInfo
@@ -471,12 +498,12 @@ public partial class MainWindow : System.Windows.Window, IDisposable
                     FileName = hostPath,
                     WorkingDirectory = publishDir,
                     UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
                     CreateNoWindow = true,
                 },
                 EnableRaisingEvents = true,
             };
+
+            _webHostProcess.Exited += OnWebHostExited;
 
             _webHostProcess.StartInfo.Environment["Web__Port"] = "9182";
             _webHostProcess.StartInfo.Environment["Paths__ApplicationDataRoot"] = dataRoot;
@@ -494,7 +521,7 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         }
     }
 
-    private static async ValueTask<bool> WaitForWebHostAsync(TimeSpan timeout)
+    private async ValueTask<bool> WaitForWebHostAsync(TimeSpan timeout)
     {
         Stopwatch sw = Stopwatch.StartNew();
         using HttpClient client = new() { Timeout = TimeSpan.FromSeconds(2) };
@@ -504,7 +531,7 @@ public partial class MainWindow : System.Windows.Window, IDisposable
             try
             {
                 HttpResponseMessage response = await client.GetAsync(
-                    "http://127.0.0.1:9182/api/v1/sessions",
+                    $"{_lastDashboardUri}/api/v1/sessions",
                     HttpCompletionOption.ResponseHeadersRead);
                 if (response.IsSuccessStatusCode || (int)response.StatusCode >= 400)
                 {
@@ -533,8 +560,7 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         }
 
         string cliPath = System.IO.Path.Combine(
-            repoRoot, "src", "WotBTreader.Host.Cli", "bin", "Release",
-            "net10.0", "WotBTreader.Host.Cli.exe");
+            repoRoot, ".build", "publish", "WotBTreader.Host.Cli.exe");
 
         if (!System.IO.File.Exists(cliPath))
         {
@@ -551,7 +577,6 @@ public partial class MainWindow : System.Windows.Window, IDisposable
                     Arguments = $"import \"{replayPath}\" --json --data-root \"{dataRoot}\"",
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
-                    RedirectStandardError = true,
                     CreateNoWindow = true,
                 },
             };

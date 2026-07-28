@@ -119,8 +119,10 @@ internal sealed class MinimapTextureService : IDisposable
             using SKData pngData = bitmap.Encode(SKEncodedImageFormat.Png, 90);
             return pngData.ToArray();
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            System.Diagnostics.Debug.WriteLine(
+                $"[MinimapTexture] Decode failed for {folder}: {ex.GetType().Name}");
             return null;
         }
     }

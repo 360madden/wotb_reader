@@ -19,17 +19,26 @@ public partial class App : System.Windows.Application
         base.OnStartup(e);
 
         OverlayApiState.Instance.Register(
-            ((MainWindow)MainWindow).ViewModel);
+            ((MainWindow)MainWindow).ViewModel,
+            action => Dispatcher.BeginInvoke(action));
 
         StartOverlayApi();
     }
 
     protected override async void OnExit(System.Windows.ExitEventArgs e)
     {
-        if (_webApp is not null)
+        try
         {
-            await _webApp.StopAsync();
-            await _webApp.DisposeAsync();
+            if (_webApp is not null)
+            {
+                await _webApp.StopAsync();
+                await _webApp.DisposeAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                $"[OverlayApi] Kestrel shutdown failed: {ex.Message}");
         }
 
         base.OnExit(e);

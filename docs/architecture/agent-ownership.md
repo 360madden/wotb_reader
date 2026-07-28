@@ -1,6 +1,6 @@
 # Agent ownership map
 
-Last updated: 2026-07-26
+Last updated: 2026-07-28
 
 The lead owns the solution, root build files, `Core`, shared `Application`
 contracts, SQL migration ordering, `Bootstrap`, integration, documentation,

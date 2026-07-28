@@ -45,7 +45,7 @@ dotnet build WotBTreader.sln -c Release --no-restore
 dotnet test WotBTreader.sln -c Release --no-build
 ```
 
-**Current status:** 254 tests (252 passed, 2 skipped), 0 warnings, 0 errors.
+**Current status:** 269 tests (267 passed, 2 skipped), 0 warnings, 0 errors.
 12 test projects. See [ROADMAP](docs/ROADMAP.md) for completed and deferred work.
 
 ## License and third-party material

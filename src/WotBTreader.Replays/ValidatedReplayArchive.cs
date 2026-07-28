@@ -51,9 +51,9 @@ internal static class ReplayArchiveReader
                 "The replay source length does not match its immutable artifact metadata.");
         }
 
-        string actualHash = Convert.ToHexString(SHA256.HashData(archiveBytes)).ToLowerInvariant();
+        byte[] actualHash = SHA256.HashData(archiveBytes);
         if (!CryptographicOperations.FixedTimeEquals(
-                Convert.FromHexString(actualHash),
+                actualHash,
                 Convert.FromHexString(input.Artifact.Sha256.Value)))
         {
             throw new ReplayFormatException(

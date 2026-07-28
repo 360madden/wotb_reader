@@ -9,6 +9,7 @@ expose. See `docs/architecture/overview.md#overlay--hud-design-intent` for the
 full design specification.
 
 - **Stack:** .NET 10 (C#), WPF, ASP.NET Core Blazor Web App, SQLite, SignalR
+- The overlay embeds Kestrel for a local HTTP automation API on port 9190.
 - **No:** Python, Node.js, Rust, Electron, containers, cloud services, runtime AI, dynamic decoder DLLs
 
 ## Quickstart
@@ -80,7 +81,7 @@ dotnet test tests/WotBTreader.Core.Tests -c Release --filter "FullyQualifiedName
 ```
 
 - Tests are MSTest 4 on Microsoft.Testing.Platform. Some installed-game tests skip by default (local opt-in).
-- 12 test projects, 253 tests, 2 opt-in skips (as of 2026-07-27).
+- 12 test projects, 269 tests, 2 opt-in skips (as of 2026-07-28).
 
 ### Keyboard shortcuts
 
@@ -107,13 +108,17 @@ Core (no project refs)
       ├── Storage.Sqlite → Application + Core (SQLite storage)
       └── Bootstrap (composition root; all DI registration)
            ├── Host.Cli (net10.0 console)
-           ├── Host.Web (net10.0 Blazor Web App, loopback-only)      ├── Overlay → (net10.0-windows WPF, transparent HUD; NO parser/storage refs)
-           ├── Discovery/RendezvousLocator  (finds host via rendezvous file)
-           ├── Services/TreaderApiClient     (read API HTTP client)
-           ├── Services/TelemetryStreamService (SignalR push client, auto-reconnect)
-           ├── ViewModels/MainViewModel      (session list, positions, events, stats, playback)
-           ├── Views/PositionPlot             (canvas scatter plot with velocity trails + minimap grid)
-           └── MainWindow                     (transparent borderless topmost HUD, P/Invoke game window tracking)
+           ├── Host.Web (net10.0 Blazor Web App, loopback-only, port 9182)
+           └── Overlay → (net10.0-windows WPF, transparent HUD; NO parser/storage refs)
+               ├── Discovery/RendezvousLocator  (finds host via rendezvous file)
+               ├── Services/TreaderApiClient     (read API HTTP client)
+               ├── Services/TelemetryStreamService (SignalR push client, auto-reconnect)
+               ├── Services/OverlayApiState       (thread-safe bridge for embedded Kestrel API)
+               ├── Endpoints/OverlayApiEndpoints  (8 automation endpoints on port 9190)
+               ├── Contracts/OverlayApiDtos       (status, launch, playback, session DTOs)
+               ├── ViewModels/MainViewModel      (session list, positions, events, stats, playback)
+               ├── Views/PositionPlot             (canvas scatter plot with velocity trails + minimap grid)
+               └── MainWindow                     (transparent borderless topmost HUD, P/Invoke game window tracking)
 ```
 
 **Key rules:**

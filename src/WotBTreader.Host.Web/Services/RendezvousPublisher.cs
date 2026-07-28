@@ -57,7 +57,11 @@ internal sealed class RendezvousPublisher(
             {
                 break;
             }
-            catch (Exception exception)
+            catch (Exception exception) when (
+                exception is IOException
+                or UnauthorizedAccessException
+                or JsonException
+                or InvalidOperationException)
             {
                 // The rendezvous record is a discoverability aid. Failure must not
                 // take down a dashboard that is already safely bound to loopback.
@@ -99,17 +103,18 @@ internal sealed class RendezvousPublisher(
                 logger.LogInformation(RemovedEvent, "Removed the local web rendezvous record.");
             }
         }
+        catch (DirectoryNotFoundException)
+        {
+            // The rendezvous directory was removed between the File.Exists
+            // check and the FileStream open — benign race during shutdown.
+        }
+        catch (FileNotFoundException)
+        {
+            // The file was deleted between the File.Exists check and open.
+        }
         catch (IOException)
         {
             // A stale record expires quickly and is rejected by every client.
-        }
-        catch (UnauthorizedAccessException)
-        {
-            // Best effort during shutdown; never expand permissions to remove it.
-        }
-        catch (JsonException)
-        {
-            // Do not delete a file whose ownership cannot be proven.
         }
     }
 

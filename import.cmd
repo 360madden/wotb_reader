@@ -152,7 +152,7 @@ if "%~1"=="" goto done
 echo.
 echo === Importing: %~nx1 ===
 "%CLI%" import "%~1" --json --data-root "%~dp0.data"
-if %ERRORLEVEL% neq 0 (
+if errorlevel 1 (
     set /a FAILED+=1
 ) else (
     set /a COUNT+=1

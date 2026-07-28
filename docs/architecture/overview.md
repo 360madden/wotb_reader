@@ -2,7 +2,7 @@
 
 Status: accepted for alpha — all surfaces implemented
 
-Last updated: 2026-07-27
+Last updated: 2026-07-28
 
 WotB Treader is a Windows-first .NET 10 modular monolith. It separates evidence
 acquisition from interpretation so a newer decoder can reprocess the same
@@ -35,6 +35,28 @@ to sit on top of the WoT Blitz game while the game plays back a pre-recorded
 replay. The overlay shows decoded telemetry — position scatter plots coloured by
 team, session metadata, and the embedded Blazor dashboard — that the game's
 built-in replay viewer does not expose.
+
+### Embedded HTTP API (Kestrel on port 9190)
+
+The overlay embeds a Kestrel HTTP server on `127.0.0.1:9190` with 8 automation
+endpoints under `/api/v1`. This makes the opaque WPF HUD fully scriptable from
+`curl`, PowerShell, or any local tooling — query status, control playback, launch
+replays, and select sessions without touching the UI.
+
+All write endpoints (`POST`) enforce `IPAddress.IsLoopback` checks. The API is
+minimal by design: no capability tokens or antiforgery, since the overlay holds
+no replay data — only viewport/playback state.
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/status` | GET | Connected state, session count, playback position, game window tracking |
+| `/api/v1/sessions/refresh` | POST | Trigger session list refresh from web host |
+| `/api/v1/launch` | POST | Launch game with a replay file path |
+| `/api/v1/playback/play` | POST | Start/resume playback (idempotent) |
+| `/api/v1/playback/pause` | POST | Pause playback (idempotent) |
+| `/api/v1/playback/seek` | POST | Seek to a specific time in seconds |
+| `/api/v1/playback/speed` | POST | Set playback speed (0.5×, 1×, 2×, 4×, 8×) |
+| `/api/v1/sessions/select` | POST | Select a session by ID |
 
 ### Why this matters: the game's minimap lies
 

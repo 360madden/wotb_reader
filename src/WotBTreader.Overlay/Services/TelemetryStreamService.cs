@@ -51,7 +51,14 @@ internal sealed class TelemetryStreamService : ITelemetryStreamService
         // Tear down any previous connection outside the lock so SignalR
         // callbacks that acquire _gate (e.g. OnConnectionClosed) don't
         // deadlock with the disposal.
-        _ = DisposeConnectionAsync();
+        _ = DisposeConnectionAsync().ContinueWith(static t =>
+        {
+            if (t.IsFaulted && t.Exception is not null)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[TelemetryStream] Previous connection disposal failed: {t.Exception.InnerException?.Message}");
+            }
+        }, TaskContinuationOptions.OnlyOnFaulted);
 
         Uri hubUri = new(baseUri, "/api/v1/stream");
         HubConnection connection = new HubConnectionBuilder()
@@ -86,8 +93,14 @@ internal sealed class TelemetryStreamService : ITelemetryStreamService
         }
 
         CancelStream();
-        _ = DisposeConnectionAsync();
-        GC.SuppressFinalize(this);
+        _ = DisposeConnectionAsync().ContinueWith(static t =>
+        {
+            if (t.IsFaulted && t.Exception is not null)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[TelemetryStream] Dispose connection failed: {t.Exception.InnerException?.Message}");
+            }
+        }, TaskContinuationOptions.OnlyOnFaulted);
     }
 
     private void CancelStream()
@@ -157,7 +170,14 @@ internal sealed class TelemetryStreamService : ITelemetryStreamService
             CancelStream();
             CancellationTokenSource streamCts = new();
             _streamCts = streamCts;
-            _ = ConsumeStreamAsync(_connection, streamCts.Token);
+            _ = ConsumeStreamAsync(_connection, streamCts.Token).ContinueWith(static t =>
+            {
+                if (t.IsFaulted && t.Exception is not null)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[TelemetryStream] Reconnected stream failed: {t.Exception.InnerException?.Message}");
+                }
+            }, TaskContinuationOptions.OnlyOnFaulted);
         }
 
         return Task.CompletedTask;

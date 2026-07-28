@@ -1,6 +1,6 @@
 # Project Completion Roadmap
 
-Last updated: 2026-07-27 (autonomous session)
+Last updated: 2026-07-28 (autonomous session)
 
 ## Completed ✅
 
@@ -15,6 +15,7 @@ All alpha surfaces are implemented and validated:
 | CLI (doctor, import, inspect, reprocess, sessions) | ✅ | 13 |
 | Web host (loopback Blazor, read API with events, battle stats on session detail, SignalR hub, rendezvous) | ✅ | 54 |
 | Overlay (WPF: session list, position plot, velocity trails, event feed, battle stats, time slider, playback controls, keyboard shortcuts, minimap grid, collapsible sidebar, SignalR push, WebView2 dashboard) | ✅ | 51 |
+| Overlay HTTP API (embedded Kestrel on port 9190, 8 automation endpoints) | ✅ | — |
 | Architecture enforcement | ✅ | 3 |
 | Composition root validation | ✅ | 10 |
 | Codebase bug hunt (src + tests + tools) | ✅ | 1 fix |
@@ -22,12 +23,12 @@ All alpha surfaces are implemented and validated:
 | Session search/filter (overlay sidebar) | ✅ | — |
 | Documentation (architecture, handoffs, BLK log, knowledge.md) | ✅ | — |
 
-**Total:** 253 tests, 2 opt-in skips. Build: 0 errors, 0 warnings. Scan: clean.
+**Total:** 269 tests, 0 failed, 2 skipped across all 12 projects. Build: 0 errors, 0 warnings. Scan: clean.
 
 *(Count includes GameHarness.Tests: 26 tests for the developer replay harness tooling.)*
 
-All eight original roadmap items are complete. Six additional features were
-implemented in the autonomous session (2026-07-27):
+All eight original roadmap items are complete. Seven additional features were
+implemented across autonomous sessions (2026-07-27 through 2026-07-28):
 
 ### Session 1 — HUD finalization
 
@@ -58,6 +59,20 @@ implemented in the autonomous session (2026-07-27):
 | Collapsible sidebar (shrink to controls-only strip) | ✅ |
 | DrawingVisual renderer (zero-GC position plot, frozen brushes/pens) | ✅ |
 | Session search/filter (case-insensitive map name filter in sidebar) | ✅ |
+
+### Session 3 — Overlay HTTP automation API (2026-07-28)
+
+| Feature | Status |
+|---------|--------|
+| Embedded Kestrel HTTP API on port 9190 (FrameworkReference, zero new packages) | ✅ |
+| OverlayApiState thread-safe singleton (SynchronizationContext marshaling) | ✅ |
+| GET /api/v1/status (connected, sessions, playback, game window) | ✅ |
+| POST /api/v1/sessions/refresh | ✅ |
+| POST /api/v1/launch (replay path → QuickLaunchWithPathAsync) | ✅ |
+| POST /api/v1/playback/{play,pause,seek,speed} | ✅ |
+| POST /api/v1/sessions/select | ✅ |
+| Loopback-only security (IPAddress.IsLoopback on all write endpoints) | ✅ |
+| OverlayApiEndpointsTests (16 tests) + OverlayApiStateTests (12 tests) | ✅ |
 
 ### Comment coverage
 

@@ -5,7 +5,7 @@ namespace WotBTreader.Overlay.Services;
 /// <summary>
 /// Shared state bridge between the WPF UI thread and the overlay's embedded HTTP API.
 /// Endpoints read/write ViewModel state through this singleton, which marshals
-/// all mutations to the WPF dispatcher thread via <see cref="SynchronizationContext.Post"/>.
+/// all mutations to the WPF dispatcher thread via an injectable dispatch delegate.
 /// </summary>
 public sealed class OverlayApiState
 {
@@ -16,24 +16,32 @@ public sealed class OverlayApiState
     public static OverlayApiState Instance { get; } = new();
 
     private MainViewModel? _viewModel;
-    private readonly SynchronizationContext? _syncContext;
+    private Action<Action>? _dispatch;
     private readonly Lock _gate = new();
 
     private OverlayApiState()
     {
-        _syncContext = SynchronizationContext.Current;
     }
 
     /// <summary>
     /// Registers the MainViewModel so endpoints can query and control it.
     /// Must be called from the WPF UI thread before HTTP requests arrive.
     /// </summary>
-    public void Register(MainViewModel viewModel)
+    /// <param name="viewModel">The MainViewModel to register.</param>
+    /// <param name="dispatch">
+    /// Optional delegate that marshals an action to the WPF UI thread.
+    /// When omitted, actions execute synchronously (test-friendly default).
+    /// In production, pass <c>action => Dispatcher.BeginInvoke(action)</c>.
+    /// </param>
+    public void Register(
+        MainViewModel viewModel,
+        Action<Action>? dispatch = null)
     {
         ArgumentNullException.ThrowIfNull(viewModel);
         lock (_gate)
         {
             _viewModel = viewModel;
+            _dispatch = dispatch;
         }
     }
 
@@ -183,9 +191,15 @@ public sealed class OverlayApiState
 
     private void PostToUi(Action action)
     {
-        if (_syncContext is not null)
+        // Read outside the lock: reference reads are atomic and a stale
+        // value (null vs dispatcher) is harmless — the action just runs
+        // synchronously. Volatile.Read ensures the freshest possible value
+        // without a full memory barrier.
+        Action<Action>? dispatch = Volatile.Read(ref _dispatch);
+
+        if (dispatch is not null)
         {
-            _syncContext.Post(static state => ((Action)state!)() , action);
+            dispatch(action);
         }
         else
         {

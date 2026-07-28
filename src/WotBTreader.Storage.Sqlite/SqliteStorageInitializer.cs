@@ -125,7 +125,7 @@ internal sealed class SqliteStorageInitializer : IStorageInitializer
             StorageLog.MigrationIoFailed(_logger, exception.HResult);
             return OperationResult.Failure<int>(StorageErrors.Unavailable());
         }
-        catch (Exception exception)
+        catch (InvalidDataException exception)
         {
             TreaderDiagnostics.MigrationFailures.Add(1);
             StorageLog.MigrationUnexpected(_logger, exception.HResult);
