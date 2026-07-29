@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Windows.Threading;
 using Microsoft.Win32;
+using WotBTreader.ApiContracts;
 using WotBTreader.Overlay.Services;
 using WotBTreader.Overlay.ViewModels;
 
@@ -284,7 +285,7 @@ public partial class MainWindow : System.Windows.Window, IDisposable
     private void EventItem_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         if (sender is System.Windows.FrameworkElement element &&
-            element.DataContext is Contracts.EventResponse eventItem)
+            element.DataContext is EventResponse eventItem)
         {
             _viewModel.ScrubToEventTime(eventItem.ReplayTime);
         }

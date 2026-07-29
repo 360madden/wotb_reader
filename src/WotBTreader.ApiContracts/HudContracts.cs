@@ -1,8 +1,9 @@
-namespace WotBTreader.Overlay.Contracts;
+namespace WotBTreader.ApiContracts;
 
-/// <summary>DTOs for the overlay's embedded HTTP automation API. Wire format is camelCase JSON.</summary>
-
-/// <summary>Read-only status snapshot of the overlay's current state.</summary>
+/// <summary>
+/// Capability-neutral wire shapes retained for the bounded HUD command/status
+/// protocol. The overlay does not host a control plane.
+/// </summary>
 public sealed record OverlayStatusResponse
 {
     /// <summary>Whether the overlay has connected to a web host.</summary>

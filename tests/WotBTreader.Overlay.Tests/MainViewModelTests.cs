@@ -178,6 +178,176 @@ public sealed class MainViewModelTests
     }
 
     [TestMethod]
+    public async Task RefreshSessionsAsync_MissingSession_SkipsUnidentifiedRow()
+    {
+        const string json = """
+            {
+              "offset": 0,
+              "limit": 200,
+              "count": 1,
+              "items": [
+                {
+                  "decodeRun": {},
+                  "session": null,
+                  "participantCount": 0,
+                  "positionCount": 0,
+                  "eventCount": 0,
+                  "rawRecordCount": 0
+                }
+              ]
+            }
+            """;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((_, _) => Task.FromResult(JsonResponse(json)));
+        MainViewModel viewModel = CreateViewModel(handler);
+
+        await viewModel.RefreshSessionsAsync();
+
+        Assert.AreEqual(0, viewModel.Sessions.Count);
+        Assert.AreEqual("0 session(s)", viewModel.Status);
+    }
+
+    [TestMethod]
+    public async Task RefreshSessionsAsync_SelectedSessionDisappears_ClearsReplayState()
+    {
+        string sessionsJson = $$"""
+            {
+              "offset": 0,
+              "limit": 200,
+              "count": 1,
+              "items": [
+                {
+                  "decodeRun": {},
+                  "session": {
+                    "battleSessionId": "{{BattleSessionId:D}}",
+                    "gameVersion": "11.18.0.7",
+                    "mapName": "Synthetic Ridge"
+                  },
+                  "participantCount": 1,
+                  "positionCount": 1,
+                  "eventCount": 0,
+                  "rawRecordCount": 1
+                }
+              ]
+            }
+            """;
+        const string missingSessionJson = """
+            {
+              "offset": 0,
+              "limit": 200,
+              "count": 1,
+              "items": [
+                {
+                  "decodeRun": {},
+                  "session": null,
+                  "participantCount": 0,
+                  "positionCount": 0,
+                  "eventCount": 0,
+                  "rawRecordCount": 0
+                }
+              ]
+            }
+            """;
+        string detailJson = $$"""
+            {
+              "decodeRun": {},
+              "session": {
+                "battleSessionId": "{{BattleSessionId:D}}",
+                "gameVersion": "11.18.0.7",
+                "mapName": "Synthetic Ridge",
+                "duration": "0:00:10"
+              },
+              "participants": [
+                {
+                  "participantId": "participant-1",
+                  "teamNumber": 1,
+                  "botStatus": "unknown"
+                }
+              ],
+              "positions": [
+                {
+                  "participantId": "participant-1",
+                  "sequence": 1,
+                  "replayTime": "0:00:01",
+                  "rawX": 10,
+                  "rawY": 0,
+                  "rawZ": 20,
+                  "rawCoordinateSpace": "replay-world"
+                }
+              ],
+              "positionsTruncated": false,
+              "totalPositionCount": 1,
+              "eventCount": 0,
+              "rawRecordCount": 1
+            }
+            """;
+        bool sessionDisappeared = false;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            if (request.RequestUri!.AbsolutePath.Contains(
+                BattleSessionId.ToString("D"),
+                StringComparison.Ordinal))
+            {
+                return Task.FromResult(JsonResponse(detailJson));
+            }
+
+            return Task.FromResult(JsonResponse(
+                sessionDisappeared ? missingSessionJson : sessionsJson));
+        });
+        MainViewModel viewModel = CreateViewModel(handler);
+
+        await viewModel.RefreshSessionsAsync();
+        viewModel.SelectedSession = viewModel.Sessions[0];
+        await WaitForConditionAsync(() => viewModel.Points.Count == 1, TimeSpan.FromSeconds(2));
+
+        sessionDisappeared = true;
+        await viewModel.RefreshSessionsAsync();
+
+        Assert.AreEqual(0, viewModel.Sessions.Count);
+        Assert.IsNull(viewModel.SelectedSession);
+        Assert.AreEqual(0, viewModel.Points.Count);
+        Assert.AreEqual(0, viewModel.Participants.Count);
+        Assert.IsNull(viewModel.MapName);
+        Assert.AreEqual(TimeSpan.Zero, viewModel.Duration);
+    }
+
+    [TestMethod]
+    public async Task RefreshSessionsAsync_MissingBattleTime_PreservesUnknownTimestamp()
+    {
+        string json = $$"""
+            {
+              "offset": 0,
+              "limit": 200,
+              "count": 1,
+              "items": [
+                {
+                  "decodeRun": {},
+                  "session": {
+                    "battleSessionId": "{{BattleSessionId:D}}",
+                    "gameVersion": "11.18.0.7",
+                    "battleTimeUtc": null,
+                    "duration": null
+                  },
+                  "participantCount": 0,
+                  "positionCount": 0,
+                  "eventCount": 0,
+                  "rawRecordCount": 0
+                }
+              ]
+            }
+            """;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((_, _) => Task.FromResult(JsonResponse(json)));
+        MainViewModel viewModel = CreateViewModel(handler);
+
+        await viewModel.RefreshSessionsAsync();
+
+        Assert.AreEqual(1, viewModel.Sessions.Count);
+        Assert.IsNull(viewModel.Sessions[0].BattleTimeUtc);
+    }
+
+    [TestMethod]
     public async Task RefreshSessionsAsync_HttpError_SetsErrorStatus()
     {
         WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
@@ -366,6 +536,144 @@ public sealed class MainViewModelTests
             0, detailRequestCount,
             "The _isRefreshingSessions guard must suppress the " +
             "SelectedSession setter cascade during refresh.");
+    }
+
+    [TestMethod]
+    public async Task RefreshSessionsAsync_SelectionChangesToRetainedSession_LoadsNewDetailOnce()
+    {
+        Guid secondSessionId = new("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        string firstPageJson = $$"""
+            {
+              "offset": 0,
+              "limit": 200,
+              "count": 1,
+              "items": [
+                {
+                  "decodeRun": {},
+                  "session": {
+                    "battleSessionId": "{{BattleSessionId:D}}",
+                    "gameVersion": "11.18.0.7",
+                    "mapName": "Session A"
+                  }
+                }
+              ]
+            }
+            """;
+        string refreshedPageJson = $$"""
+            {
+              "offset": 0,
+              "limit": 200,
+              "count": 2,
+              "items": [
+                {
+                  "decodeRun": {},
+                  "session": {
+                    "battleSessionId": "{{BattleSessionId:D}}",
+                    "gameVersion": "11.18.0.7",
+                    "mapName": "Session A"
+                  }
+                },
+                {
+                  "decodeRun": {},
+                  "session": {
+                    "battleSessionId": "{{secondSessionId:D}}",
+                    "gameVersion": "11.18.0.7",
+                    "mapName": "Session B"
+                  }
+                }
+              ]
+            }
+            """;
+        string firstDetailJson = $$"""
+            {
+              "decodeRun": {},
+              "session": {
+                "battleSessionId": "{{BattleSessionId:D}}",
+                "gameVersion": "11.18.0.7",
+                "mapName": "Session A"
+              },
+              "positions": [
+                {
+                  "sequence": 1,
+                  "replayTime": "0:00:01",
+                  "rawX": 1,
+                  "rawY": 0,
+                  "rawZ": 1,
+                  "rawCoordinateSpace": "replay-world"
+                }
+              ]
+            }
+            """;
+        string secondDetailJson = $$"""
+            {
+              "decodeRun": {},
+              "session": {
+                "battleSessionId": "{{secondSessionId:D}}",
+                "gameVersion": "11.18.0.7",
+                "mapName": "Session B"
+              },
+              "positions": [
+                {
+                  "sequence": 1,
+                  "replayTime": "0:00:01",
+                  "rawX": 2,
+                  "rawY": 0,
+                  "rawZ": 2,
+                  "rawCoordinateSpace": "replay-world"
+                }
+              ]
+            }
+            """;
+        TaskCompletionSource<HttpResponseMessage> blockedRefresh = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource<bool> refreshStarted = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        int listRequestCount = 0;
+        int secondDetailRequestCount = 0;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            string path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/sessions", StringComparison.Ordinal))
+            {
+                if (Interlocked.Increment(ref listRequestCount) == 1)
+                {
+                    return Task.FromResult(JsonResponse(firstPageJson));
+                }
+
+                refreshStarted.TrySetResult(true);
+                return blockedRefresh.Task;
+            }
+
+            if (path.Contains(secondSessionId.ToString("D"), StringComparison.Ordinal))
+            {
+                Interlocked.Increment(ref secondDetailRequestCount);
+                return Task.FromResult(JsonResponse(secondDetailJson));
+            }
+
+            return Task.FromResult(JsonResponse(firstDetailJson));
+        });
+        MainViewModel viewModel = CreateViewModel(handler);
+
+        await viewModel.RefreshSessionsAsync();
+        viewModel.SelectedSession = viewModel.Sessions[0];
+        await WaitForConditionAsync(
+            () => viewModel.MapName == "Session A" && viewModel.Points.Count == 1,
+            TimeSpan.FromSeconds(2));
+
+        Task refreshTask = viewModel.RefreshSessionsAsync();
+        await refreshStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        viewModel.SelectedSession = new SessionRow(
+            secondSessionId, "Session B", null, null, 0, 1);
+        blockedRefresh.SetResult(JsonResponse(refreshedPageJson));
+        await refreshTask;
+        await WaitForConditionAsync(
+            () => viewModel.MapName == "Session B" && viewModel.Points.Count == 1,
+            TimeSpan.FromSeconds(2));
+
+        Assert.AreEqual(secondSessionId, viewModel.SelectedSession?.BattleSessionId);
+        Assert.AreEqual(2.0, viewModel.Points[0].X);
+        Assert.AreEqual(1, secondDetailRequestCount);
     }
 
     [TestMethod]

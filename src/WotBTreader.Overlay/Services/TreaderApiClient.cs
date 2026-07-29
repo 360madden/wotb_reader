@@ -1,6 +1,6 @@
 using System.Net.Http;
 using System.Text.Json;
-using WotBTreader.Overlay.Contracts;
+using WotBTreader.ApiContracts;
 
 namespace WotBTreader.Overlay.Services;
 
@@ -102,7 +102,7 @@ public sealed class TreaderApiClient : IDisposable
     public async Task<GameLaunchResponse?> LaunchGameAsync(string replayPath, CancellationToken cancellationToken = default)
     {
         using StringContent content = new(
-            JsonSerializer.Serialize(new { replayPath }, SerializerOptions),
+            JsonSerializer.Serialize(new GameLaunchRequest { ReplayPath = replayPath }, SerializerOptions),
             System.Text.Encoding.UTF8,
             "application/json");
         HttpResponseMessage response = await _httpClient.PostAsync(

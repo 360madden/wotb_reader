@@ -1,5 +1,5 @@
 using System.Text.Json;
-using WotBTreader.Overlay.Contracts;
+using WotBTreader.ApiContracts;
 
 namespace WotBTreader.Overlay.Tests;
 
@@ -139,7 +139,8 @@ public sealed class ReadApiDtoTests
         Assert.AreEqual("source-truncated", decodeRun.FailureCode);
         Assert.AreEqual("synthetic failure summary", decodeRun.FailureSummary);
 
-        BattleSessionResponse session = summary.Session;
+        BattleSessionResponse session = summary.Session
+            ?? throw new AssertFailedException("Synthetic summary should contain a session.");
         Assert.AreEqual("3fa85f64-5717-4562-b3fc-2c963f66afa6", session.BattleSessionId);
         Assert.AreEqual("11.4.0.1234", session.GameVersion);
         Assert.AreEqual("arena-4711", session.ArenaIdentity);
@@ -171,7 +172,8 @@ public sealed class ReadApiDtoTests
         Assert.IsNull(decodeRun.FailureCode);
         Assert.IsNull(decodeRun.FailureSummary);
 
-        BattleSessionResponse session = detail.Session;
+        BattleSessionResponse session = detail.Session
+            ?? throw new AssertFailedException("Synthetic detail should contain a session.");
         Assert.AreEqual("5d2b7c9a-1e3f-4a5b-8c6d-7e8f9a0b1c2d", session.BattleSessionId);
         Assert.IsNull(session.GameVersion);
         Assert.AreEqual("arena-9001", session.ArenaIdentity);

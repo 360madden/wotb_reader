@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using WotBTreader.Overlay.Endpoints;
+using Contracts = WotBTreader.ApiContracts;
 
 namespace WotBTreader.Overlay.Tests;
 

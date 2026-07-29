@@ -1,4 +1,4 @@
-using WotBTreader.Host.Web.Contracts;
+using WotBTreader.ApiContracts;
 using WotBTreader.Host.Web.Services;
 
 namespace WotBTreader.Host.Web.Endpoints;

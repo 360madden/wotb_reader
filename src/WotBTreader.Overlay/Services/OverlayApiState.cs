@@ -1,3 +1,4 @@
+using WotBTreader.ApiContracts;
 using WotBTreader.Overlay.ViewModels;
 
 namespace WotBTreader.Overlay.Services;
@@ -54,17 +55,17 @@ public sealed class OverlayApiState
     /// <summary>
     /// Builds a read-only status snapshot. Safe to call from any thread.
     /// </summary>
-    public Contracts.OverlayStatusResponse GetStatus()
+    public OverlayStatusResponse GetStatus()
     {
         MainViewModel? vm;
         lock (_gate) { vm = _viewModel; }
 
         if (vm is null)
         {
-            return new Contracts.OverlayStatusResponse { Status = "overlay not ready" };
+            return new OverlayStatusResponse { Status = "overlay not ready" };
         }
 
-        return new Contracts.OverlayStatusResponse
+        return new OverlayStatusResponse
         {
             Connected = !string.IsNullOrEmpty(vm.BaseUri),
             BaseUri = string.IsNullOrEmpty(vm.BaseUri) ? null : vm.BaseUri,

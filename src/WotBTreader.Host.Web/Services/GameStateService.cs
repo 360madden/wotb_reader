@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using WotBTreader.GameIntegration.Logs;
-using WotBTreader.Host.Web.Contracts;
+using WotBTreader.ApiContracts;
 using WotBTreader.Host.Web.Infrastructure;
 
 namespace WotBTreader.Host.Web.Services;

@@ -5,6 +5,6 @@ public sealed record SessionRow(
     Guid BattleSessionId,
     string MapLabel,
     string? MapId,
-    DateTimeOffset BattleTimeUtc,
+    DateTimeOffset? BattleTimeUtc,
     int ParticipantCount,
     int PositionCount);

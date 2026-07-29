@@ -2,7 +2,7 @@ using System.Net;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
-using WotBTreader.Overlay.Contracts;
+using WotBTreader.ApiContracts;
 using WotBTreader.Overlay.Services;
 
 namespace WotBTreader.Overlay.Endpoints;

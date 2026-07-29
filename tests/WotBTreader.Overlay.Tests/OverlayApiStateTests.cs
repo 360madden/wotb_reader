@@ -1,5 +1,6 @@
 using WotBTreader.Overlay.Services;
 using WotBTreader.Overlay.ViewModels;
+using Contracts = WotBTreader.ApiContracts;
 
 namespace WotBTreader.Overlay.Tests;
 

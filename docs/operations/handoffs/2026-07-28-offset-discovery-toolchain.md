@@ -329,3 +329,48 @@ the corrected nullability requires, and retire `ContractComplianceTests` along
 with the `Overlay.Tests` to `Host.Web` reference. Until then the overlay keeps
 its own duplicate DTOs and that stopgap test compares them against the published
 contracts.
+
+## Amendment — M1 ApiContracts, client half (`2026-07-29T14:09:48Z`)
+
+Completed the bounded client-half migration. All game and dormant HUD
+command/status wire shapes now live in dependency-free `ApiContracts`, and
+`Overlay` directly references that assembly. Removed the duplicate Overlay
+read/HUD DTOs, the Host.Web game DTOs, `Overlay.Tests` → `Host.Web`, and
+`ContractComplianceTests`. The overlay now skips missing or invalid session
+rows and preserves a nullable battle timestamp.
+
+Validation: focused Overlay, Host.Web, and architecture suites passed 88/88,
+56/56, and 11/11. `powershell -NoProfile -ExecutionPolicy Bypass -File
+scripts\validate.ps1` passed — locked restore, format verification, Release
+build with 0 warnings/errors, 291 tests passed, 2 local opt-in tests skipped,
+and the repository scan passed for 435 tracked files.
+
+Deferred: retire the three tool-to-adapter edges and implement M2 offline-session
+authorization.
+
+## Amendment — M1 selected-session reconciliation correction (`2026-07-29T14:16:05Z`)
+
+An independent security audit found that a refresh could leave replay-derived
+HUD state visible after its selected session disappeared through a null or
+invalid row. `ReconcileSelectedSession` now retains selection only while its
+ID remains in the refreshed rows; otherwise it cancels the detail load, clears
+the selection, and clears positions, participants, map, and duration. A
+two-refresh regression test covers the removal path.
+
+Validation: `powershell -NoProfile -ExecutionPolicy Bypass -File
+scripts\validate.ps1` passed — locked restore, format verification, Release
+build with 0 warnings/errors, Overlay 89/89, 292 tests passed, 2 local opt-in
+tests skipped, and the repository scan passed for 435 tracked files.
+
+## Amendment — M1 retained-selection refresh correction (`2026-07-29T14:19:47Z`)
+
+Refresh now snapshots the selected ID. After reconciliation deasserts its
+refresh state, it performs exactly one deferred detail load when a different,
+retained ID was selected while the request was pending. The blocked A-to-B
+regression asserts B data is shown and exactly one request is made. Security
+re-audit found no remaining concrete issue.
+
+Validation: `powershell -NoProfile -ExecutionPolicy Bypass -File
+scripts\validate.ps1` passed — locked restore, format verification, Release
+build with 0 warnings/errors, Overlay 90/90, 293 tests passed, 2 local opt-in
+tests skipped, and the repository scan passed for 435 tracked files.

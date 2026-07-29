@@ -1,4 +1,4 @@
-namespace WotBTreader.Host.Web.Contracts;
+namespace WotBTreader.ApiContracts;
 
 /// <summary>
 /// Read-only snapshot of the game process and replay lifecycle state.
@@ -27,7 +27,7 @@ public sealed record GameStateResponse
 
 /// <summary>
 /// Request to launch a replay through the installed game.
-/// POST /api/v1/game/launch
+/// POST /api/v1/game/launch.
 /// </summary>
 public sealed record GameLaunchRequest
 {
@@ -35,9 +35,7 @@ public sealed record GameLaunchRequest
     public string ReplayPath { get; init; } = string.Empty;
 }
 
-/// <summary>
-/// Result of a game launch attempt.
-/// </summary>
+/// <summary>Result of a game launch attempt.</summary>
 public sealed record GameLaunchResponse
 {
     /// <summary>True if the game was launched successfully.</summary>

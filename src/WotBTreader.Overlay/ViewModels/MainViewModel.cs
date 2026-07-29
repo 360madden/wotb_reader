@@ -5,7 +5,7 @@ using System.Text.Json;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using WotBTreader.Overlay.Contracts;
+using WotBTreader.ApiContracts;
 using WotBTreader.Overlay.Discovery;
 using WotBTreader.Overlay.Services;
 
@@ -154,12 +154,7 @@ public class MainViewModel : INotifyPropertyChanged
                 return;
             }
 
-            CancellationTokenSource? previous = _detailLoadCts;
-            CancellationTokenSource current = new();
-            _detailLoadCts = current;
-            previous?.Cancel();
-            previous?.Dispose();
-            _ = RefreshSelectedAsync(current.Token);
+            StartSelectedSessionRefresh();
         }
     }
 
@@ -509,6 +504,7 @@ public class MainViewModel : INotifyPropertyChanged
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        Guid? selectionAtRefreshStart = _selectedSession?.BattleSessionId;
         _isRefreshingSessions = true;
         try
         {
@@ -517,6 +513,12 @@ public class MainViewModel : INotifyPropertyChanged
         finally
         {
             _isRefreshingSessions = false;
+        }
+
+        Guid? selectionAfterRefresh = _selectedSession?.BattleSessionId;
+        if (selectionAfterRefresh.HasValue && selectionAfterRefresh != selectionAtRefreshStart)
+        {
+            StartSelectedSessionRefresh();
         }
 
         // After a successful refresh, connect the stream service so future
@@ -546,21 +548,29 @@ public class MainViewModel : INotifyPropertyChanged
             TreaderApiClient client = GetOrCreateClient(new Uri(rendezvous.Record.BaseUri, UriKind.Absolute));
             SessionPageResponse? page = await client.GetSessionsAsync(0, PageLimit, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
+            Guid? selectedSessionId = _selectedSession?.BattleSessionId;
             Sessions.Clear();
             if (page is not null)
             {
                 foreach (SessionSummaryResponse summary in page.Items)
                 {
+                    BattleSessionResponse? session = summary.Session;
+                    if (session is null || !Guid.TryParse(session.BattleSessionId, out Guid battleSessionId))
+                    {
+                        continue;
+                    }
+
                     Sessions.Add(new SessionRow(
-                        Guid.Parse(summary.Session.BattleSessionId),
-                        summary.Session.MapName ?? summary.Session.MapId ?? "unknown",
-                        summary.Session.MapId,
-                        summary.Session.BattleTimeUtc,
+                        battleSessionId,
+                        session.MapName ?? session.MapId ?? "unknown",
+                        session.MapId,
+                        session.BattleTimeUtc,
                         summary.ParticipantCount,
                         summary.PositionCount));
                 }
             }
 
+            ReconcileSelectedSession(selectedSessionId);
             ApplySearchFilter();
             Status = $"{Sessions.Count} session(s)";
 
@@ -575,6 +585,40 @@ public class MainViewModel : INotifyPropertyChanged
         {
             Status = "Host unreachable";
         }
+    }
+
+    private void StartSelectedSessionRefresh()
+    {
+        CancellationTokenSource? previous = _detailLoadCts;
+        CancellationTokenSource current = new();
+        _detailLoadCts = current;
+        previous?.Cancel();
+        previous?.Dispose();
+        _ = RefreshSelectedAsync(current.Token);
+    }
+
+    private void ReconcileSelectedSession(Guid? previousSessionId)
+    {
+        if (previousSessionId is not Guid sessionId)
+        {
+            return;
+        }
+
+        SessionRow? retainedSession = Sessions.FirstOrDefault(
+            row => row.BattleSessionId == sessionId);
+        _selectedSession = retainedSession;
+        OnPropertyChanged(nameof(SelectedSession));
+
+        if (retainedSession is not null)
+        {
+            return;
+        }
+
+        CancellationTokenSource? detailLoad = _detailLoadCts;
+        _detailLoadCts = null;
+        detailLoad?.Cancel();
+        detailLoad?.Dispose();
+        ClearSessionState();
     }
 
     public async Task RefreshSelectedAsync(CancellationToken cancellationToken = default)
