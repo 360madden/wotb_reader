@@ -4,9 +4,11 @@ using WotBTreader.Overlay.Contracts;
 namespace WotBTreader.Overlay.Tests;
 
 /// <summary>
-/// Proves the overlay DTOs and the web host DTOs agree on the JSON wire format
-/// by deserializing the same fixture with both type sets and asserting key
-/// fields match. This catches DTO drift before it reaches a live host.
+/// Proves the overlay DTOs and the published wire contracts agree on the JSON
+/// format by deserializing the same fixture with both type sets and asserting
+/// key fields match. This is a stopgap: once the overlay consumes
+/// <c>WotBTreader.ApiContracts</c> directly, agreement is a compile-time
+/// property and these fixtures no longer prove anything.
 /// </summary>
 [TestClass]
 public sealed class ContractComplianceTests
@@ -120,8 +122,8 @@ public sealed class ContractComplianceTests
     [TestMethod]
     public void HostAndOverlay_SessionPage_AgreeOnAllFields()
     {
-        Host.Web.Contracts.SessionPageResponse hostPage =
-            JsonSerializer.Deserialize<Host.Web.Contracts.SessionPageResponse>(
+        ApiContracts.SessionPageResponse hostPage =
+            JsonSerializer.Deserialize<ApiContracts.SessionPageResponse>(
                 SessionPageJson, JsonOptions)!;
         SessionPageResponse overlayPage =
             JsonSerializer.Deserialize<SessionPageResponse>(SessionPageJson, JsonOptions)!;
@@ -144,8 +146,8 @@ public sealed class ContractComplianceTests
     [TestMethod]
     public void HostAndOverlay_DecodeRun_AgreeOnAllFields()
     {
-        Host.Web.Contracts.DecodeRunResponse hostRun =
-            JsonSerializer.Deserialize<Host.Web.Contracts.SessionPageResponse>(
+        ApiContracts.DecodeRunResponse hostRun =
+            JsonSerializer.Deserialize<ApiContracts.SessionPageResponse>(
                 SessionPageJson, JsonOptions)!.Items[0].DecodeRun;
         DecodeRunResponse overlayRun =
             JsonSerializer.Deserialize<SessionPageResponse>(
@@ -169,8 +171,8 @@ public sealed class ContractComplianceTests
     [TestMethod]
     public void HostAndOverlay_BattleSession_AgreeOnAllFields()
     {
-        Host.Web.Contracts.BattleSessionResponse? hostSession =
-            JsonSerializer.Deserialize<Host.Web.Contracts.SessionPageResponse>(
+        ApiContracts.BattleSessionResponse? hostSession =
+            JsonSerializer.Deserialize<ApiContracts.SessionPageResponse>(
                 SessionPageJson, JsonOptions)!.Items[0].Session;
         BattleSessionResponse? overlaySession =
             JsonSerializer.Deserialize<SessionPageResponse>(
@@ -193,8 +195,8 @@ public sealed class ContractComplianceTests
     [TestMethod]
     public void HostAndOverlay_Participant_AgreeOnAllFields()
     {
-        Host.Web.Contracts.ParticipantResponse hostP =
-            JsonSerializer.Deserialize<Host.Web.Contracts.SessionDetailResponse>(
+        ApiContracts.ParticipantResponse hostP =
+            JsonSerializer.Deserialize<ApiContracts.SessionDetailResponse>(
                 SessionDetailJson, JsonOptions)!.Participants[0];
         ParticipantResponse overlayP =
             JsonSerializer.Deserialize<SessionDetailResponse>(
@@ -215,8 +217,8 @@ public sealed class ContractComplianceTests
     [TestMethod]
     public void HostAndOverlay_PositionSample_AgreeOnAllFields()
     {
-        Host.Web.Contracts.PositionSampleResponse hostPos =
-            JsonSerializer.Deserialize<Host.Web.Contracts.SessionDetailResponse>(
+        ApiContracts.PositionSampleResponse hostPos =
+            JsonSerializer.Deserialize<ApiContracts.SessionDetailResponse>(
                 SessionDetailJson, JsonOptions)!.Positions[0];
         PositionSampleResponse overlayPos =
             JsonSerializer.Deserialize<SessionDetailResponse>(
@@ -238,8 +240,8 @@ public sealed class ContractComplianceTests
     [TestMethod]
     public void HostAndOverlay_SessionDetail_AgreeOnEnvelopeFields()
     {
-        Host.Web.Contracts.SessionDetailResponse hostDetail =
-            JsonSerializer.Deserialize<Host.Web.Contracts.SessionDetailResponse>(
+        ApiContracts.SessionDetailResponse hostDetail =
+            JsonSerializer.Deserialize<ApiContracts.SessionDetailResponse>(
                 SessionDetailJson, JsonOptions)!;
         SessionDetailResponse overlayDetail =
             JsonSerializer.Deserialize<SessionDetailResponse>(

@@ -1,5 +1,5 @@
+using WotBTreader.ApiContracts;
 using WotBTreader.Core;
-using WotBTreader.Host.Web.Contracts;
 
 namespace WotBTreader.Host.Web.Services;
 

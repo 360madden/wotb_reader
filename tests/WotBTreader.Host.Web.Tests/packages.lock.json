@@ -231,6 +231,9 @@
           "SQLitePCLRaw.core": "2.1.11"
         }
       },
+      "wotbtreader.apicontracts": {
+        "type": "Project"
+      },
       "wotbtreader.application": {
         "type": "Project",
         "dependencies": {
@@ -273,6 +276,7 @@
         "type": "Project",
         "dependencies": {
           "SkiaSharp": "[3.116.1, )",
+          "WotBTreader.ApiContracts": "[1.0.0, )",
           "WotBTreader.Application": "[1.0.0, )",
           "WotBTreader.Bootstrap": "[1.0.0, )",
           "WotBTreader.Core": "[1.0.0, )"

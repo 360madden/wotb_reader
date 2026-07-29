@@ -194,6 +194,12 @@ public sealed class ProjectReferenceTests
             return true;
         }
 
+        if (string.Equals(projectName, ApiContractsName, StringComparison.Ordinal))
+        {
+            allowedReferences = NoReferences;
+            return true;
+        }
+
         if (string.Equals(projectName, BootstrapName, StringComparison.Ordinal))
         {
             allowedReferences = BootstrapAllowedReferences;

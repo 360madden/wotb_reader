@@ -1,8 +1,8 @@
+using WotBTreader.ApiContracts;
 using WotBTreader.Application.Diagnostics;
 using WotBTreader.Application.Results;
 using WotBTreader.Application.Storage;
 using WotBTreader.Core;
-using WotBTreader.Host.Web.Contracts;
 using WotBTreader.Host.Web.Endpoints;
 using WotBTreader.Host.Web.Services;
 

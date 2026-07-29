@@ -1,3 +1,4 @@
+using WotBTreader.ApiContracts;
 using WotBTreader.Application.Diagnostics;
 using WotBTreader.Application.Results;
 using WotBTreader.Application.Storage;
@@ -71,11 +72,13 @@ internal static class ReadApiEndpoints
             .ListAsync(resolvedOffset, resolvedLimit, cancellationToken)
             .ConfigureAwait(false);
 
-        return Results.Ok(new SessionPageResponse(
-            resolvedOffset,
-            resolvedLimit,
-            page.Count,
-            [.. page.Select(ToSummary)]));
+        return Results.Ok(new SessionPageResponse
+        {
+            Offset = resolvedOffset,
+            Limit = resolvedLimit,
+            Count = page.Count,
+            Items = [.. page.Select(ReadContractMapping.ToResponse)],
+        });
     }
 
     internal static async Task<IResult> GetSessionAsync(
@@ -98,20 +101,30 @@ internal static class ReadApiEndpoints
         ReplayDecodeProjection projection = result.Value;
         bool truncated = projection.Positions.Count > MaximumPositionSamples;
 
-        return Results.Ok(new SessionDetailResponse(
-            DecodeRunResponse.From(projection.DecodeRun),
-            projection.Session is null ? null : BattleSessionResponse.From(projection.Session),
-            [.. projection.Participants.Select(ParticipantResponse.From)],
-            [.. projection.Positions.Take(MaximumPositionSamples).Select(PositionSampleResponse.From)],
-            truncated,
-            projection.Positions.Count,
-            projection.Events.Count,
-            projection.RawRecords.Count,
-            projection.Warnings,
-            [.. projection.Events
-                .Where(e => e.Kind != CanonicalEventKind.Position)
-                .Take(MaximumEvents)
-                .Select(EventResponse.From)]));
+        return Results.Ok(new SessionDetailResponse
+        {
+            DecodeRun = projection.DecodeRun.ToResponse(),
+            Session = projection.Session?.ToResponse(),
+            Participants = [.. projection.Participants.Select(ReadContractMapping.ToResponse)],
+            Positions =
+            [
+                .. projection.Positions
+                    .Take(MaximumPositionSamples)
+                    .Select(ReadContractMapping.ToResponse),
+            ],
+            PositionsTruncated = truncated,
+            TotalPositionCount = projection.Positions.Count,
+            EventCount = projection.Events.Count,
+            RawRecordCount = projection.RawRecords.Count,
+            Warnings = projection.Warnings,
+            Events =
+            [
+                .. projection.Events
+                    .Where(e => e.Kind != CanonicalEventKind.Position)
+                    .Take(MaximumEvents)
+                    .Select(ReadContractMapping.ToResponse),
+            ],
+        });
     }
 
     internal static async Task<IResult> GetMapBoundariesAsync(
@@ -122,7 +135,7 @@ internal static class ReadApiEndpoints
         IReadOnlyList<MapBoundary> boundaries = await sessions
             .GetMapBoundariesAsync(cancellationToken)
             .ConfigureAwait(false);
-        return Results.Ok(boundaries.Select(MapBoundaryResponse.From));
+        return Results.Ok(boundaries.Select(ReadContractMapping.ToResponse));
     }
 
     internal static async Task<IResult> GetMinimapAsync(
@@ -161,18 +174,9 @@ internal static class ReadApiEndpoints
             .ConfigureAwait(false);
 
         return result.IsSuccess && result.Value is not null
-            ? Results.Ok(ToSummary(result.Value))
+            ? Results.Ok(result.Value.ToResponse())
             : FromError(context, result.Error);
     }
-
-    private static SessionSummaryResponse ToSummary(DecodeRunSummary summary) =>
-        new(
-            DecodeRunResponse.From(summary.DecodeRun),
-            summary.Session is null ? null : BattleSessionResponse.From(summary.Session),
-            summary.ParticipantCount,
-            summary.PositionCount,
-            summary.EventCount,
-            summary.RawRecordCount);
 
     private static IResult FromError(HttpContext context, ApplicationError? error)
     {

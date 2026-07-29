@@ -293,3 +293,39 @@ project, moving the duplicated host/overlay wire shapes into it, and retiring
 the three tool-to-adapter edges. Test projects are deliberately out of the
 graph's scope; `Overlay.Tests` still references `Host.Web`. M2 continues to gate
 all product memory integration and offset promotion.
+
+## Amendment — M1 ApiContracts, server half (`2026-07-29T01:44:05Z`)
+
+Added `src/WotBTreader.ApiContracts`, a portable `net10.0` assembly with no
+project references and no package references — its generated lock file is an
+empty `net10.0` dependency set. It now owns the nine read-API wire shapes.
+`Host.Web` references it, and the `From(domain)` factories that used to live on
+the DTOs became `ReadContractMapping` extensions in the host, because the
+contracts assembly cannot see `Core`. That also removed the `ToSummary`
+duplication that existed in both `ReadApiEndpoints` and `DashboardReadClient`.
+
+Recorded drift found while comparing the two copies, since it explains the
+shapes chosen. The overlay's duplicate declared `battleTimeUtc` and `duration`
+non-nullable while the host sends null, and declared `session` non-nullable on
+both the summary and detail envelopes. A probe against the real types confirmed
+the overlay type throws `JsonException` on a null `battleTimeUtc` and silently
+lands null in its non-nullable `session`, while the host type round-trips both.
+The overlay copy also omitted `vehicleCompactDescriptor` entirely and carried
+only three of the six `GameStateResponse` fields. The published contract follows
+the host, which is what is actually on the wire. `ContractComplianceTests` did
+not catch any of this: its fixtures populate every nullable field and it never
+asserts the missing member.
+
+Validation: `powershell -NoProfile -ExecutionPolicy Bypass -File
+scripts\validate.ps1` passed — locked restore, format verification, Release
+build with 0 warnings/errors, 295 tests passed, 2 local opt-in tests skipped,
+and the repository scan passed for 432 tracked files. The unclassified new
+project was reported by `ProjectReferenceTests` before it was added to the
+graph, which is the intended behaviour.
+
+Deferred to the client half: migrate `Overlay` onto `ApiContracts`, move the
+game/launch/memory and overlay-command shapes across, add the HUD null handling
+the corrected nullability requires, and retire `ContractComplianceTests` along
+with the `Overlay.Tests` to `Host.Web` reference. Until then the overlay keeps
+its own duplicate DTOs and that stopgap test compares them against the published
+contracts.

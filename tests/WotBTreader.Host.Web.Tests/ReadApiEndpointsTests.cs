@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using WotBTreader.ApiContracts;
 using WotBTreader.Application.Results;
 using WotBTreader.Application.Storage;
 using WotBTreader.Core;
@@ -135,7 +136,7 @@ public sealed class ReadApiEndpointsTests
     {
         Participant participant = ParticipantFixture() with { AccountId = 987654321 };
 
-        ParticipantResponse response = ParticipantResponse.From(participant);
+        ParticipantResponse response = participant.ToResponse();
 
         Assert.AreEqual("pilot", response.PlayerName);
         Assert.IsFalse(
@@ -152,7 +153,7 @@ public sealed class ReadApiEndpointsTests
             BotStatusConfidence = EvidenceConfidence.Unknown,
         };
 
-        ParticipantResponse response = ParticipantResponse.From(participant);
+        ParticipantResponse response = participant.ToResponse();
 
         Assert.AreEqual("Unknown", response.BotStatus);
         Assert.AreEqual("Unknown", response.BotStatusConfidence);
@@ -166,7 +167,7 @@ public sealed class ReadApiEndpointsTests
             Capabilities = ReplayCapability.Metadata | ReplayCapability.Positions,
         };
 
-        DecodeRunResponse response = DecodeRunResponse.From(run);
+        DecodeRunResponse response = run.ToResponse();
 
         Assert.HasCount(2, response.Capabilities);
         Assert.Contains("Metadata", response.Capabilities);
@@ -176,7 +177,7 @@ public sealed class ReadApiEndpointsTests
     [TestMethod]
     public void IdentifiersAreRenderedAsPlainStrings()
     {
-        DecodeRunResponse response = DecodeRunResponse.From(DecodeRunFixture());
+        DecodeRunResponse response = DecodeRunFixture().ToResponse();
 
         Assert.IsTrue(
             Guid.TryParse(response.DecodeRunId, out _),

@@ -102,6 +102,9 @@
           "SQLitePCLRaw.core": "2.1.11"
         }
       },
+      "wotbtreader.apicontracts": {
+        "type": "Project"
+      },
       "wotbtreader.application": {
         "type": "Project",
         "dependencies": {

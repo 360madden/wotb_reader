@@ -63,6 +63,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WotBTreader.TestSupport", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WotBTreader.Overlay.Tests", "tests\WotBTreader.Overlay.Tests\WotBTreader.Overlay.Tests.csproj", "{6F72BD52-45BB-4680-9BCC-C49D71871A2C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WotBTreader.ApiContracts", "src\WotBTreader.ApiContracts\WotBTreader.ApiContracts.csproj", "{E25151C8-493F-49FA-AEBB-AB3A3D144908}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -385,6 +387,18 @@ Global
 		{6F72BD52-45BB-4680-9BCC-C49D71871A2C}.Release|x64.Build.0 = Release|Any CPU
 		{6F72BD52-45BB-4680-9BCC-C49D71871A2C}.Release|x86.ActiveCfg = Release|Any CPU
 		{6F72BD52-45BB-4680-9BCC-C49D71871A2C}.Release|x86.Build.0 = Release|Any CPU
+		{E25151C8-493F-49FA-AEBB-AB3A3D144908}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E25151C8-493F-49FA-AEBB-AB3A3D144908}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E25151C8-493F-49FA-AEBB-AB3A3D144908}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{E25151C8-493F-49FA-AEBB-AB3A3D144908}.Debug|x64.Build.0 = Debug|Any CPU
+		{E25151C8-493F-49FA-AEBB-AB3A3D144908}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{E25151C8-493F-49FA-AEBB-AB3A3D144908}.Debug|x86.Build.0 = Debug|Any CPU
+		{E25151C8-493F-49FA-AEBB-AB3A3D144908}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E25151C8-493F-49FA-AEBB-AB3A3D144908}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E25151C8-493F-49FA-AEBB-AB3A3D144908}.Release|x64.ActiveCfg = Release|Any CPU
+		{E25151C8-493F-49FA-AEBB-AB3A3D144908}.Release|x64.Build.0 = Release|Any CPU
+		{E25151C8-493F-49FA-AEBB-AB3A3D144908}.Release|x86.ActiveCfg = Release|Any CPU
+		{E25151C8-493F-49FA-AEBB-AB3A3D144908}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -417,5 +431,6 @@ Global
 		{35A520B1-0937-450D-9859-BAEC456DDB52} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
 		{5AF97586-87B2-4733-A20A-D661B861399C} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{6F72BD52-45BB-4680-9BCC-C49D71871A2C} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{E25151C8-493F-49FA-AEBB-AB3A3D144908} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

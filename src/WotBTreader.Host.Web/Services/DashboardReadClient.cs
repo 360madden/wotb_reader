@@ -1,3 +1,4 @@
+using WotBTreader.ApiContracts;
 using WotBTreader.Application.Diagnostics;
 using WotBTreader.Application.Results;
 using WotBTreader.Application.Storage;
@@ -34,11 +35,13 @@ internal sealed class DashboardReadClient(
             .ListAsync(offset, limit, cancellationToken)
             .ConfigureAwait(false);
 
-        return new SessionPageResponse(
-            offset,
-            limit,
-            page.Count,
-            [.. page.Select(ToSummary)]);
+        return new SessionPageResponse
+        {
+            Offset = offset,
+            Limit = limit,
+            Count = page.Count,
+            Items = [.. page.Select(ReadContractMapping.ToResponse)],
+        };
     }
 
     public async Task<SessionDetailResponse?> GetSessionAsync(
@@ -57,22 +60,30 @@ internal sealed class DashboardReadClient(
         ReplayDecodeProjection projection = result.Value;
         bool truncated = projection.Positions.Count > ReadApiEndpoints.MaximumPositionSamples;
 
-        return new SessionDetailResponse(
-            DecodeRunResponse.From(projection.DecodeRun),
-            projection.Session is null ? null : BattleSessionResponse.From(projection.Session),
-            [.. projection.Participants.Select(ParticipantResponse.From)],
-            [.. projection.Positions
-                .Take(ReadApiEndpoints.MaximumPositionSamples)
-                .Select(PositionSampleResponse.From)],
-            truncated,
-            projection.Positions.Count,
-            projection.Events.Count,
-            projection.RawRecords.Count,
-            projection.Warnings,
-            [.. projection.Events
-                .Where(e => e.Kind != CanonicalEventKind.Position)
-                .Take(ReadApiEndpoints.MaximumEvents)
-                .Select(EventResponse.From)]);
+        return new SessionDetailResponse
+        {
+            DecodeRun = projection.DecodeRun.ToResponse(),
+            Session = projection.Session?.ToResponse(),
+            Participants = [.. projection.Participants.Select(ReadContractMapping.ToResponse)],
+            Positions =
+            [
+                .. projection.Positions
+                    .Take(ReadApiEndpoints.MaximumPositionSamples)
+                    .Select(ReadContractMapping.ToResponse),
+            ],
+            PositionsTruncated = truncated,
+            TotalPositionCount = projection.Positions.Count,
+            EventCount = projection.Events.Count,
+            RawRecordCount = projection.RawRecords.Count,
+            Warnings = projection.Warnings,
+            Events =
+            [
+                .. projection.Events
+                    .Where(e => e.Kind != CanonicalEventKind.Position)
+                    .Take(ReadApiEndpoints.MaximumEvents)
+                    .Select(ReadContractMapping.ToResponse),
+            ],
+        };
     }
 
     public async Task<DoctorReport> GetDoctorAsync(CancellationToken cancellationToken) =>
@@ -105,13 +116,4 @@ internal sealed class DashboardReadClient(
 
         return result.IsSuccess ? result.Value : null;
     }
-
-    private static SessionSummaryResponse ToSummary(DecodeRunSummary summary) =>
-        new(
-            DecodeRunResponse.From(summary.DecodeRun),
-            summary.Session is null ? null : BattleSessionResponse.From(summary.Session),
-            summary.ParticipantCount,
-            summary.PositionCount,
-            summary.EventCount,
-            summary.RawRecordCount);
 }
