@@ -1,6 +1,6 @@
 # Project Completion Roadmap
 
-Last updated: 2026-07-28 (autonomous session)
+Last updated: 2026-07-29
 
 Project context: the owner identifies as a junior developer at Wargaming.net.
 This is a personal, independently maintained project; see
@@ -15,28 +15,30 @@ This is a personal, independently maintained project; see
 ## Implemented feature inventory
 
 The following surfaces were implemented and validated at the time recorded;
-their current architecture-hardening status is tracked separately:
+their current architecture-hardening status is tracked separately. Test counts
+are current as of 2026-07-29.
 
 | Surface | Status | Tests |
 |---------|--------|-------|
 | Replay parsing (WotbReplayDecoder, ProtobufWireReader, pickle) | ✅ | 18 |
 | Storage (SQLite: artifacts, decode runs, comparisons, migrations) | ✅ | 17 |
 | CaptureLogs (NDJSON telemetry, replay clocks) | ✅ | 9 |
-| GameIntegration (install discovery, DVPL, log monitoring) | ✅ | 25 |
-| CLI (doctor, import, inspect, reprocess, sessions) | ✅ | 13 |
-| Web host (loopback Blazor, read API with events, battle stats on session detail, SignalR hub, rendezvous) | ✅ | 54 |
-| Overlay (WPF: session list, position plot, velocity trails, event feed, battle stats, time slider, playback controls, keyboard shortcuts, minimap grid, collapsible sidebar, SignalR push, WebView2 dashboard) | ✅ | 51 |
-| Overlay HTTP API (embedded Kestrel on port 9190, 8 automation endpoints) | ⚠ Implemented; superseded by single-control-plane target | — |
-| Architecture enforcement | ⚠ Partial; see architecture roadmap | 3 |
-| Composition root validation | ✅ | 10 |
+| GameIntegration (install discovery, DVPL, log monitoring, offline session gate) | ✅ | 118 |
+| CLI (doctor, import, inspect, reprocess, sessions, compare, export, watch) | ✅ | 15 |
+| Web host (loopback Blazor, read API with events, battle stats on session detail, SignalR hub, rendezvous) | ✅ | 61 |
+| Overlay (WPF: session list, position plot, velocity trails, event feed, battle stats, time slider, playback controls, keyboard shortcuts, minimap grid, collapsible sidebar, SignalR push, WebView2 dashboard) | ✅ | 91 |
+| Overlay HTTP API (embedded Kestrel on port 9190, 8 automation endpoints) | ❌ Removed — listener no longer starts; dead handler code awaits M3 deletion | — |
+| Shared wire contracts (`ApiContracts`, zero project/package refs) | ✅ | — |
+| Architecture enforcement (reference graph, TFM allowlist, native-access boundary) | ✅ | 14 |
+| Composition root validation | ✅ | 13 |
+| Developer harness tooling (GameHarness; `scan`/`probe` hard-denied) | ✅ | 28 |
 | Codebase bug hunt (src + tests + tools) | ✅ | 1 fix |
 | Performance optimization (DrawingVisual renderer, zero-GC) | ✅ | — |
 | Session search/filter (overlay sidebar) | ✅ | — |
 | Documentation (architecture, handoffs, BLK log, knowledge.md) | ✅ | — |
 
-**Total:** 269 tests, 0 failed, 2 skipped across all 12 projects. Build: 0 errors, 0 warnings. Scan: clean.
-
-*(Count includes GameHarness.Tests: 26 tests for the developer replay harness tooling.)*
+**Total:** 397 tests — 395 passed, 0 failed, 2 skipped (local opt-in) across all 12
+test projects. Build: 0 errors, 0 warnings. Scan: clean.
 
 All eight original roadmap items are complete. Seven additional features were
 implemented across autonomous sessions (2026-07-27 through 2026-07-28):
@@ -71,7 +73,15 @@ implemented across autonomous sessions (2026-07-27 through 2026-07-28):
 | DrawingVisual renderer (zero-GC position plot, frozen brushes/pens) | ✅ |
 | Session search/filter (case-insensitive map name filter in sidebar) | ✅ |
 
-### Session 3 — Overlay HTTP automation API (2026-07-28)
+### Session 3 — Overlay HTTP automation API (2026-07-28) — ❌ superseded
+
+> [!WARNING]
+> This entire surface was **removed** during Milestone 0. The overlay no longer starts
+> a listener and nothing binds port 9190; a second local mutation server duplicated
+> control-plane policy. `Host.Web` is the single control plane. The table below is
+> retained only as delivery history. `Endpoints/OverlayApiEndpoints.cs` and
+> `Services/OverlayApiState.cs` still compile as unreachable dead code and are deleted
+> in Milestone 3 — do not extend them.
 
 | Feature | Status |
 |---------|--------|
@@ -136,9 +146,9 @@ but the CLI returned `UnsupportedCapability` for `compare`. Now fully implemente
 
 - ~~Wire `IComparisonRunRepository` into the CLI command router~~ ✅
 - ~~`compare list` — list existing comparison runs~~ ✅ (with `ListAsync` on repo)
-- `compare create <leftId> <rightId>` — create a new comparison (needs `TelemetryComparator` wiring)
+- ~~`compare create <leftId> <rightId>` — create a new comparison~~ ✅ (`CompareCreateAsync`)
 - ~~`compare inspect <comparisonId>` — show comparison details~~ ✅
-- **Done:** `compare list` paginates, `compare inspect <id>` queries full comparison.
+- **Done:** all three subcommands (`list`, `create`, `inspect`) are implemented.
   15/15 CLI tests pass.
 
 ### 🟡 P2 — `export` CLI command ✅
@@ -201,7 +211,7 @@ Sensitive content scan: zero findings across all diffs.
 
 ### 🔵 P7 — Convenience .cmd wrappers ✅
 
-12 `.cmd` wrappers in repo root, all runnable from any directory:
+13 `.cmd` wrappers in repo root, all runnable from any directory:
 - Build: `build`, `validate`, `test`
 - Runtime: `serve`, `overlay`, `everything` (one-shot launch)
 - CLI: `import`, `watch`, `sessions`, `doctor`, `compare`, `export`, `treader`

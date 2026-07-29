@@ -61,9 +61,10 @@ storage, application, domain, host, and adapter internals and consumes only the
 portable wire contract.
 
 Only `Overlay`, `GameHarness`, and their test projects may target
-`net10.0-windows`; every other project targets portable `net10.0`. Milestone 1
-of the roadmap closes the remaining target-framework and contract-project
-implementation deltas.
+`net10.0-windows`; every other project targets portable `net10.0`. Milestone 1 is
+complete: the target-framework allowlist, the production reference graph, and the
+no-dependency `ApiContracts` project are all in place and mechanically enforced by
+`WotBTreader.Architecture.Tests`.
 
 ## Overlay / HUD design intent
 
@@ -75,10 +76,11 @@ built-in replay viewer does not expose.
 
 ### Single local control plane
 
-`Host.Web` is the only HTTP control plane. The legacy overlay Kestrel listener
-on port 9190 is disabled and is removed completely in Milestone 3. Retained
-legacy endpoint handler code is unreachable during the M0-to-M3 transition and
-must not be treated as a supported surface.
+`Host.Web` is the only HTTP control plane. The legacy overlay Kestrel listener on
+port 9190 no longer starts — it was removed in Milestone 0 and
+`OverlayControlPlaneContainmentTests` keeps it removed. Nothing binds that port. The
+retained endpoint handler and state classes are unreachable dead code awaiting
+deletion in Milestone 3; they must not be treated as a supported surface or extended.
 
 Browser mutations use same-origin validation, antiforgery, and a short-lived
 capability. Native overlay and CLI mutations use the owner-only rendezvous
@@ -117,7 +119,9 @@ Launch, Refresh, Dashboard, Close buttons, and a session list. The
 P/Invoke `FindWindowW`/`GetWindowRect`/`SetWindowPos` with a 500ms
 `DispatcherTimer` (`_windowTrackTimer`). When the "World of Tanks Blitz"
 game window is found, the overlay repositions itself to match its bounds.
-The timer starts when the Launch button triggers game playback.
+The timer starts in the `MainWindow` constructor and runs for the window's
+lifetime, so tracking works regardless of how the game was started; it stops on
+dispose. Tracking is window-geometry only and opens no process handle.
 
 ### Game launch mechanism
 

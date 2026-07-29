@@ -13,7 +13,9 @@ expose. See `docs/architecture/overview.md#overlay--hud-design-intent` for the
 full design specification.
 
 - **Stack:** .NET 10 (C#), WPF, ASP.NET Core Blazor Web App, SQLite, SignalR
-- The overlay embeds Kestrel for a local HTTP automation API on port 9190.
+- The overlay is a loopback client only. It hosts no HTTP control plane; the legacy
+  embedded Kestrel listener on port 9190 was removed and `OverlayControlPlaneContainmentTests`
+  keeps it removed.
 - **No:** Python, Node.js, Rust, Electron, containers, cloud services, runtime AI, dynamic decoder DLLs
 
 ## Quickstart
@@ -36,6 +38,7 @@ full design specification.
 | `doctor` | Run environment health checks (JSON) |
 | `compare list` | List comparison runs |
 | `compare inspect <id>` | Inspect one comparison run |
+| `compare create <leftId> <rightId>` | Create a comparison run from two decode runs |
 | `export sessions <id>` | Export session events as JSON |
 | `export positions <id>` | Export position samples as JSON |
 | `treader <cmd> [args]` | General CLI passthrough for any command |
@@ -85,7 +88,7 @@ dotnet test tests/WotBTreader.Core.Tests -c Release --filter "FullyQualifiedName
 ```
 
 - Tests are MSTest 4 on Microsoft.Testing.Platform. Some installed-game tests skip by default (local opt-in).
-- 12 test projects, 269 tests, 2 opt-in skips (as of 2026-07-28).
+- 12 test projects, 397 tests: 395 passed, 2 opt-in skips (as of 2026-07-29).
 
 ### Keyboard shortcuts
 
@@ -108,29 +111,47 @@ Core (no project refs)
  └── Application → Core only
       ├── Replays → Application + Core      (replay parsing: .wotbreplay, pickle, protobuf)
       ├── CaptureLogs → Application + Core  (telemetry capture log reading)
-      ├── GameIntegration → Application + Core (installed-game discovery, DVPL reading)
+      ├── GameIntegration → Application + Core (installed-game discovery, DVPL reading,
+      │                                         offline session gate, guarded Win32)
       ├── Storage.Sqlite → Application + Core (SQLite storage)
       └── Bootstrap (composition root; all DI registration)
            ├── Host.Cli (net10.0 console)
            ├── Host.Web (net10.0 Blazor Web App, loopback-only, port 9182)
-           └── Overlay → (net10.0-windows WPF, transparent HUD; NO parser/storage refs)
-               ├── Discovery/RendezvousLocator  (finds host via rendezvous file)
-               ├── Services/TreaderApiClient     (read API HTTP client)
-               ├── Services/TelemetryStreamService (SignalR push client, auto-reconnect)
-               ├── Services/OverlayApiState       (thread-safe bridge for embedded Kestrel API)
-               ├── Endpoints/OverlayApiEndpoints  (8 automation endpoints on port 9190)
-               ├── Contracts/OverlayApiDtos       (status, launch, playback, session DTOs)
-               ├── ViewModels/MainViewModel      (session list, positions, events, stats, playback)
-               ├── Views/PositionPlot             (canvas scatter plot with velocity trails + minimap grid)
-               └── MainWindow                     (transparent borderless topmost HUD, P/Invoke game window tracking)
+           └── (tools) GameHarness / ReplayInspector / ReplaySanitizer
+                       resolve product ports through Bootstrap only
+
+ApiContracts (net10.0; NO project refs, NO package refs — empty lock file)
+ ├── ReadContracts.cs   (session/participant/position/event/comparison read shapes)
+ ├── GameContracts.cs   (game status, launch, memory-observation shapes)
+ └── HudContracts.cs    (HUD command/status shapes)
+      ├── referenced by Host.Web  (serializes them on the wire)
+      └── referenced by Overlay   (its ONLY project reference)
+
+Overlay (net10.0-windows WPF, transparent HUD; loopback client only)
+ ├── Discovery/RendezvousLocator     (finds host via owner-only rendezvous file)
+ ├── Services/TreaderApiClient       (read API HTTP client)
+ ├── Services/TelemetryStreamService (SignalR push client, auto-reconnect)
+ ├── ViewModels/MainViewModel        (session list, positions, events, stats, playback)
+ ├── Views/PositionPlot              (canvas scatter plot, velocity trails, minimap grid)
+ └── MainWindow                      (transparent borderless topmost HUD, P/Invoke window tracking)
 ```
+
+**Dormant code in `Overlay`:** `Endpoints/OverlayApiEndpoints.cs` and
+`Services/OverlayApiState.cs` still compile but are unreachable — nothing binds port
+9190 and no listener starts. Milestone 3 deletes them. Do not extend either file.
 
 **Key rules:**
 - Adapters (Replays, CaptureLogs, GameIntegration, Storage.Sqlite) never reference each other
+- `Overlay` references only `ApiContracts` — never a host, adapter, `Application`, or `Core`
+- `ApiContracts` is serialization-only: no domain behavior, no project refs, no package refs
+- Hosts and tools compose exclusively through `Bootstrap`; tools do not build their own adapters
 - Only `Overlay` and `tools/GameHarness` target `net10.0-windows`; everything else is portable `net10.0`
 - New DI ports must be added to `CompositionRootTests` published-port list or no host starts
 - Warnings are errors (`TreatWarningsAsErrors`), NuGet audit mode is `all` — fix with central pins, never suppress
 - Package versions are centrally managed in `Directory.Packages.props` with committed lock files
+
+`WotBTreader.Architecture.Tests` (14 tests) enforces the reference graph, the TFM
+allowlist, and the native-access boundary. Breaking any rule above fails the build.
 
 ## Conventions
 

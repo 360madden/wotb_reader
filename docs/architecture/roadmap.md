@@ -1,8 +1,28 @@
 # Architecture roadmap
 
-Status: proposed execution plan for the accepted alpha architecture and ADRs
+Status: active execution plan for the accepted alpha architecture and ADRs
 
-Last updated: 2026-07-28
+Last updated: 2026-07-29
+
+## Milestone status
+
+| Milestone | Status |
+|---|---|
+| M0 — Contain regressions and establish a baseline | ✅ Complete |
+| M1 — Recover and enforce dependency boundaries | ✅ Complete |
+| M2 — Centralize game-process access and enforce offline state | 🟡 In progress |
+| M3 — Establish one authenticated local control plane | ⬜ Not started |
+| M4 — Make offset acquisition an evidence subsystem | ⬜ Not started |
+| M5 — Restore the overlay to a focused HUD | ⬜ Not started |
+| M6 — Clarify process lifecycle and local operability | ⬜ Not started |
+| M7 — Make architecture a release gate | ⬜ Not started |
+
+M2 has landed its fail-closed session boundary, query-only process identity observer,
+atomic lifecycle evidence feed, trusted executable identity, managed-launch preparation
+barrier, replay artifact staging lease, and pinned trusted executable lease. Each is
+deliberately disconnected from the coordinator, the Application ports, and DI, and no
+`PROCESS_VM_READ` handle opens anywhere. Remaining M2 work is the audited process
+creation/correlation unit and the guarded VM-read factory.
 
 The project owner identifies as a junior developer at Wargaming.net. This is
 a personal, independently maintained project; see
@@ -93,23 +113,34 @@ independently.
 
 ## Current architecture delta
 
-| Gap | Current evidence | Consequence |
+This table is the gap inventory that produced the milestones below. It is reconciled
+against the code as milestones close; a ✅ row is retained as history so a later
+regression is recognizable rather than rediscovered.
+
+### Closed
+
+| Gap | Closed by | Current evidence |
 |---|---|---|
-| Windows targeting leaked into the web host | `WotBTreader.Host.Web.csproj` targets `net10.0-windows` | Reopens BLK-0003 and makes a presentation host own platform coupling |
-| Structural tests are incomplete | Architecture tests inspect assembly references but not project TFMs, host references, tools, or overlay references | A full validation run can pass while a hard boundary is broken |
-| The accepted overview reverses dependency arrows | Its diagram points from dependencies toward consumers while saying arrows mean “depends on” | Readers and agents can implement the right layers in the wrong direction |
-| Win32 ownership is duplicated | `Host.Web` and `GameHarness` contain separate native methods and memory readers | Behavior, safety gates, offsets, and handle management can drift |
-| Process attachment is not gated by verified replay state | `GameStateService` attaches its memory reader when the game window is found | An unverified or live game process can be inspected before offline evidence exists |
-| Harness scan/probe bypasses its safety policy | The scanner accepts an arbitrary PID and attaches directly without the harness arming/evidence checks | A developer command can inspect an unverified process despite the fail-closed harness design |
-| Native-client mutation authentication is unfinished | The overlay posts to `Host.Web`, but its client sends neither the rendezvous capability nor antiforgery material | Replay launch cannot satisfy the host mutation policy consistently |
-| The overlay hosts a second mutation server | Port 9190 accepts state-changing requests with loopback checks only | Duplicates control-plane policy and exposes a local browser-to-loopback mutation surface |
-| SignalR is exempt from capability validation | `/api/v1/stream` bypasses mutation protection | Future bidirectional commands would inherit an under-specified trust boundary |
-| HUD and dashboard responsibilities overlap | Transparent WPF, WebView2, an embedded server, host-process launching, and HUD behavior coexist | Transparency, lifecycle, security, and testing remain unnecessarily coupled |
-| Wire contracts are duplicated incompletely | Host and overlay maintain separate game/read DTO shapes | A server change can compile while silently breaking the HUD |
-| Post-commit publication is treated like decode failure | A publisher exception occurs after the immutable decode transaction commits | The caller can see failure even though the run is already successful |
-| Content-store install and metadata commit are separate | A managed source object can be installed before its SQLite row fails | Unreferenced content needs an explicit reconciliation policy |
-| Rendezvous ACL guarantees have regressed | The current path helper relies on inherited per-user directory permissions while the rendezvous record contains a capability | Elevated or inherited ACL surprises can expose or brick discovery state |
-| Architecture documentation describes superseded behavior | The overview still contains direct game-launch and overlay-server assumptions | New work can faithfully implement an obsolete design |
+| Windows targeting leaked into the web host | M1 | `Host.Web`, `Host.Web.Tests`, and `GameIntegration.Tests` target portable `net10.0`; `TargetFrameworkTests` parses every project file and fails on any unapproved Windows target |
+| Structural tests are incomplete | M1 | `ProjectReferenceTests`, `TargetFrameworkTests`, and `NativeAccessBoundaryTests` share `ProjectCatalog` and enforce the full production graph; an unclassified project is itself a violation |
+| The accepted overview reverses dependency arrows | M0 | Both the overview and this roadmap use `App --> Core`, consistent with “depends on” |
+| Win32 ownership is duplicated | M2 | No `DllImport` or `LibraryImport` remains in `Host.Web` or `GameHarness`; guarded native access lives only in `GameIntegration` |
+| Process attachment is not gated by verified replay state | M0, M2 | `GameStateService` no longer exists. Memory observation resolves through a capability-neutral Application port and returns `Unknown`; no `PROCESS_VM_READ` handle opens anywhere |
+| Harness scan/probe bypasses its safety policy | M0 | `GameHarness` denies `scan` and `probe` before any PID parsing, enumeration, or attachment; its raw-PID reader, scanner, and native declarations were deleted |
+| The overlay hosts a second mutation server | M0 | The port 9190 Kestrel listener no longer starts; `OverlayControlPlaneContainmentTests` enforces this. `Endpoints/OverlayApiEndpoints.cs` remains as unreachable dead code for M3 to delete |
+| Wire contracts are duplicated incompletely | M1 | `ApiContracts` is the single serialization-only assembly with zero project and package references; the duplicate Overlay and Host.Web DTOs and `ContractComplianceTests` were removed |
+| Rendezvous ACL guarantees have regressed | M0 | Rendezvous storage is protected and positively verified as current-user-only before a capability is published, with a regression test starting from a permissive inherited ACL (BLK-0014) |
+
+### Open
+
+| Gap | Owning milestone | Current evidence | Consequence |
+|---|---|---|---|
+| Native-client mutation authentication is unfinished | M3 | The overlay posts to `Host.Web`, but `TreaderApiClient` sends neither the rendezvous capability nor antiforgery material | Replay launch cannot satisfy the host mutation policy consistently |
+| SignalR is exempt from capability validation | M3 | `MutationProtectionMiddleware` still exempts `/api/v1/stream` | Future bidirectional commands would inherit an under-specified trust boundary |
+| HUD and dashboard responsibilities overlap | M5 | Transparent WPF, WebView2, overlay-initiated host startup, and dead endpoint code still coexist | Transparency, lifecycle, security, and testing remain unnecessarily coupled |
+| Post-commit publication is treated like decode failure | M4 | `ReplayIngestionService` awaits publication after the immutable decode transaction commits, with no isolated delivery failure handling | The caller can see failure even though the run is already successful |
+| Content-store install and metadata commit are separate | M4 | A managed source object can be installed before its SQLite row fails | Unreferenced content needs an explicit reconciliation policy |
+| Architecture documentation describes superseded behavior | ongoing | Reconciled on 2026-07-29 across the README, `knowledge.md`, the overview, and this roadmap; re-checked after each milestone | New work can faithfully implement an obsolete design |
 
 ## Target dependency model
 
@@ -164,6 +195,9 @@ not construct alternate product adapters.
 
 ## Milestone 0 — Contain regressions and establish a baseline
 
+**Status: ✅ Complete.** Every exit criterion below passed and `scripts/validate.ps1`
+was green. Blocker records BLK-0003, BLK-0014, and BLK-0015 were appended.
+
 ### Work
 
 - Disable automatic game-process attachment until the offline gate in
@@ -209,6 +243,11 @@ projects, scans, dumps, tables, screenshots, or private game data.
 
 ## Milestone 1 — Recover and enforce dependency boundaries
 
+**Status: ✅ Complete.** Portable TFMs restored, the production reference graph is
+mechanically enforced, `ApiContracts` owns every shared wire shape, and the three
+tool-to-adapter edges plus the `ToolAdapterDebt` exemption mechanism were retired.
+Test projects remain deliberately outside the graph's scope.
+
 ### Work
 
 - Restore `Host.Web` and its tests to portable `net10.0`.
@@ -236,6 +275,21 @@ projects, scans, dumps, tables, screenshots, or private game data.
 - Full validation passes with zero warnings.
 
 ## Milestone 2 — Centralize game-process access and enforce offline state
+
+**Status: 🟡 In progress.** Landed so far, each as an internal component deliberately
+disconnected from the coordinator, the Application ports, and DI: the fail-closed
+session boundary and its three capability-neutral ports, the query-only process
+identity observer, the atomic lifecycle evidence feed, the trusted executable identity
+provider and shared fingerprint reader, the managed-launch preparation barrier, the
+managed replay artifact staging lease, and the pinned trusted executable launch lease.
+`Host.Web` and `GameHarness` native access is fully removed.
+
+Remaining: an audited suspended-process creation unit that verifies child identity
+before resume, atomic registration of correlation plus artifact lease plus process
+identity plus lifecycle baseline, migration of `GameHarness` commands onto the same
+ports, and only then a guarded exact-version-and-hash VM-read factory with immediate
+handle disposal and between-chunk revalidation. **VM-read stays disabled until all of
+that, and its disposal tests, are complete.**
 
 ### Work
 
@@ -284,7 +338,9 @@ projects, scans, dumps, tables, screenshots, or private game data.
 ### Work
 
 - Make `Host.Web` the only HTTP control plane.
-- Remove the overlay’s embedded Kestrel server and port 9190.
+- Delete the overlay’s dead `OverlayApiEndpoints` and `OverlayApiState` code. The
+  port 9190 listener itself was already removed in Milestone 0; only the unreachable
+  handler classes remain.
 - Route overlay automation commands through `Host.Web`; deliver HUD commands to
   the connected overlay through an authenticated, bounded SignalR contract.
 - Separate browser and native-client mutation policy:
