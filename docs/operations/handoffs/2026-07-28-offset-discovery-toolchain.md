@@ -442,3 +442,42 @@ exact-version-and-hash VM-read factory with immediate handle disposal and
 between-chunk revalidation; and migrate GameHarness commands onto those same
 ports before re-enabling them. Memory access remains disabled until those
 invariants and disposal tests are complete.
+
+## Amendment — M2 query-only process observer (`2026-07-29T16:21:12Z`)
+
+Added a disconnected, internal Windows process-identity observer in
+GameIntegration. It enumerates bounded eligible top-level `SDL_app` windows,
+fails closed on ambiguity or incomplete enumeration, and opens a process only
+with exact `PROCESS_QUERY_LIMITED_INFORMATION` (`0x1000`). It binds PID to the
+creation `FILETIME`, queries the image path from that handle, pins the
+executable without write/delete sharing, resolves its final path and stable
+file identity, and computes SHA-256 from that same file handle. It rechecks
+process liveness and the complete window class/top-level/visibility/ownership/
+client-area predicate before returning an internal observation, then disposes
+all process and file handles.
+
+The observer is registered internally but remains deliberately disconnected
+from `GameSessionCoordinator`, replay logs, launch correlation, and every
+Application port. It cannot create authorization or open a memory-capable
+handle. Architecture coverage now rejects VM-read/write/operation APIs and
+symbolic access rights anywhere in GameIntegration. Synthetic tests prove exact
+`0x1000` access, unsupported/absent/ambiguous/incomplete states, query failure,
+PID/owner races, process exit, cancellation before and after open, and session
+disposal.
+
+A security audit found two fail-closed gaps in the first implementation:
+candidate-cap overflow could appear unique, and final validation rechecked only
+PID ownership. Enumeration now carries an explicit completeness result, and
+the same full eligibility predicate runs both before and after identity
+collection. Re-audit found no remaining issue.
+
+`scripts/validate.ps1` passed locked restore, format verification, Release
+build with 0 warnings/errors, 335 tests passed, 2 local opt-in tests skipped,
+and the repository scan passed for 431 tracked files.
+
+Deferred: canonicalize the trusted installed-game identity through the same
+file-handle mechanism; replace the transient replay-log monitor with a
+long-lived singleton feed that exposes atomic per-source generation/cursor
+baselines plus explicit health/gap events; only then correlate the observer,
+managed launch, replay UI, and lifecycle evidence in the coordinator. VM-read
+remains disabled.

@@ -16,6 +16,15 @@ public sealed class NativeAccessBoundaryTests
         "VirtualQueryEx(",
         "class GameMemoryReader",
     ];
+    private static readonly string[] ForbiddenGameIntegrationMemoryTerms =
+    [
+        "PROCESS_VM_READ",
+        "PROCESS_VM_WRITE",
+        "PROCESS_VM_OPERATION",
+        "PROCESS_ALL_ACCESS",
+        "ReadProcessMemory(",
+        "WriteProcessMemory(",
+    ];
 
     [TestMethod]
     public void HostWeb_HasNoNativeInteropOrDirectMemoryReader()
@@ -46,6 +55,23 @@ public sealed class NativeAccessBoundaryTests
             0,
             violations,
             $"GameHarness native-access violations: {string.Join("; ", violations)}");
+    }
+
+    [TestMethod]
+    public void GameIntegration_HasNoMemoryCapableNativeAccess()
+    {
+        string sourceRoot = Path.Combine(
+            ProjectCatalog.RepositoryRoot(),
+            "src",
+            "WotBTreader.GameIntegration");
+        string[] violations = FindForbiddenSourceTerms(
+            sourceRoot,
+            ForbiddenGameIntegrationMemoryTerms);
+
+        Assert.HasCount(
+            0,
+            violations,
+            $"GameIntegration memory-access violations: {string.Join("; ", violations)}");
     }
 
     [TestMethod]
@@ -97,9 +123,14 @@ public sealed class NativeAccessBoundaryTests
     }
 
     private static string[] FindForbiddenSourceTerms(string sourceRoot) =>
+        FindForbiddenSourceTerms(sourceRoot, ForbiddenHostSourceTerms);
+
+    private static string[] FindForbiddenSourceTerms(
+        string sourceRoot,
+        IReadOnlyList<string> forbiddenTerms) =>
     [
         .. Directory.EnumerateFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
-            .SelectMany(path => ForbiddenHostSourceTerms
+            .SelectMany(path => forbiddenTerms
                 .Where(term => File.ReadAllText(path).Contains(term, StringComparison.Ordinal))
                 .Select(term =>
                     $"{Path.GetRelativePath(sourceRoot, path)} contains {term}.")),

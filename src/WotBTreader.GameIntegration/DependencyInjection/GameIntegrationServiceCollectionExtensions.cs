@@ -33,6 +33,8 @@ public static class GameIntegrationServiceCollectionExtensions
 
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<GameSessionCoordinator>();
+        services.TryAddSingleton<IGameProcessQueryPlatform, WindowsGameProcessQueryPlatform>();
+        services.TryAddSingleton<IGameProcessIdentityObserver, GameProcessIdentityObserver>();
         services.TryAddSingleton<IGameSessionState>(
             sp => sp.GetRequiredService<GameSessionCoordinator>());
         services.TryAddSingleton<IGameReplayLauncher>(

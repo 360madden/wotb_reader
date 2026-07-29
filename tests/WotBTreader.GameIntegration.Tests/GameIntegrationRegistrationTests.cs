@@ -4,6 +4,7 @@ using WotBTreader.GameIntegration.DependencyInjection;
 using WotBTreader.GameIntegration.Discovery;
 using WotBTreader.GameIntegration.Dvpl;
 using WotBTreader.GameIntegration.Logs;
+using WotBTreader.GameIntegration.Session;
 
 namespace WotBTreader.GameIntegration.Tests;
 
@@ -36,6 +37,8 @@ public sealed class GameIntegrationRegistrationTests
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IGameSessionState)));
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IGameReplayLauncher)));
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IGameMemoryObserver)));
+        Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IGameProcessIdentityObserver)));
+        Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IGameProcessQueryPlatform)));
     }
 
 }
