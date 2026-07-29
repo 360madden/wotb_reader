@@ -85,6 +85,14 @@ internal interface IBlitzReplayLifecycleFeed
     ValueTask<LifecycleFeedBaseline> CaptureBaselineAsync(
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Reconciles all configured sources through their current ends before
+    /// capturing a baseline. This is the preparation barrier for a future
+    /// managed launch; it does not authorize a session.
+    /// </summary>
+    ValueTask<LifecycleFeedBaseline> CaptureReconciledBaselineAsync(
+        CancellationToken cancellationToken);
+
     ValueTask<LifecycleFeedReadResult> ReadAfterAsync(
         long afterSequence,
         CancellationToken cancellationToken);

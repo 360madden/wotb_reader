@@ -565,3 +565,47 @@ sequence/health-epoch baseline before any process start, without preselecting a
 log source. Later correlation must compare the retained file identity plus
 canonical path/version/SHA-256 against a fresh process observation. VM-read
 remains disabled.
+
+## Amendment — M2 managed-launch preparation (`2026-07-29T17:51:59Z`)
+
+Added a disconnected internal managed-launch preparer in GameIntegration. Each
+call freshly re-fingerprints the trusted executable, creates an adapter-owned
+32-byte cryptographic correlation encoded as 43-character unpadded base64url,
+and captures a healthy lifecycle baseline without selecting a log source. The
+result retains the complete trusted executable and file identity plus the
+global lifecycle sequence, health epoch, and all source cursors. Its safe
+`ToString()` exposes neither the correlation nor executable paths.
+
+Preparation now ends with a producer-side reconciliation barrier instead of a
+journal snapshot. Barrier generations ensure a request is completed only by a
+pass that began after that request; markers already written are committed
+before the returned sequence. A successful barrier also marks carried partial
+lines historical, so a pre-baseline line completed afterward cannot appear as
+fresh live evidence. Enumeration, read, watcher, revision, producer, and
+shutdown failures remain fail-closed. Disposal marks the producer as stopping
+under the same lock used to complete barriers, preventing a healthy result from
+escaping after shutdown begins.
+
+The preparer and correlation generator are internal singletons. They remain
+deliberately disconnected from `GameSessionCoordinator`, process start,
+Application ports, Bootstrap, overlay/UI, harness routing, and all memory
+authority. This preparation is immutable input only; it grants no session
+authorization and performs no launch.
+
+Security review found and prompted fixes for the stale queued-marker snapshot
+race, cross-baseline partial lines, correlation shape and synthesized-string
+exposure, and disposal overlapping an in-flight barrier. Final re-audit found
+no Critical, High, or Medium issue. Independent verification confirmed 101
+GameIntegration tests and 14 architecture tests passed and found no
+coordinator, public-port, overlay, Bootstrap, or memory wiring.
+
+Validation: `scripts/validate.ps1` passed locked restore, format verification,
+Release build with 0 warnings/errors, 380 tests passed, 2 local opt-in tests
+skipped, and the repository scan passed for 443 tracked files.
+
+Deferred: the next unit must hand this preparation directly into an immutable
+artifact/process-start boundary, then correlate only fresh contiguous
+post-baseline lifecycle evidence with the exact observed process identity and
+trusted replay UI. Any history gap, gap/fault/reset discontinuity, unhealthy
+current feed, identity mismatch, or cancellation must revoke the attempt.
+VM-read remains disabled.

@@ -36,6 +36,8 @@ public static class GameIntegrationServiceCollectionExtensions
         services.TryAddSingleton<GameSessionCoordinator>();
         services.TryAddSingleton<IWindowsExecutableFingerprintReader, WindowsExecutableFingerprintReader>();
         services.TryAddSingleton<ITrustedGameIdentityProvider, TrustedGameIdentityProvider>();
+        services.TryAddSingleton<ILaunchCorrelationGenerator, LaunchCorrelationGenerator>();
+        services.TryAddSingleton<IManagedLaunchPreparer, ManagedLaunchPreparer>();
         services.TryAddSingleton<IGameProcessQueryPlatform, WindowsGameProcessQueryPlatform>();
         services.TryAddSingleton<IGameProcessIdentityObserver, GameProcessIdentityObserver>();
         services.TryAddSingleton<IGameSessionState>(

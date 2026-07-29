@@ -42,6 +42,102 @@ public sealed class BlitzReplayLifecycleFeedTests
     }
 
     [TestMethod]
+    public async Task CaptureReconciledBaselineAsync_IncludesMarkerAlreadyWritten()
+    {
+        await using TestFeed fixture = await TestFeed.CreateAsync("initial\n");
+        LifecycleFeedBaseline before =
+            await fixture.Feed.CaptureBaselineAsync(CancellationToken.None);
+        await File.AppendAllTextAsync(
+            fixture.LogPath,
+            "[2026-07-26T20:00:00Z] START_REPLAY_LOCAL synthetic\n");
+
+        LifecycleFeedBaseline reconciled =
+            await fixture.Feed.CaptureReconciledBaselineAsync(CancellationToken.None);
+        LifecycleFeedReadResult events =
+            await fixture.Feed.ReadAfterAsync(before.Sequence, CancellationToken.None);
+
+        LifecycleFeedEvent marker = events.Events.Single(feedEvent =>
+            feedEvent.Kind == LifecycleFeedEventKind.Marker);
+        Assert.IsLessThanOrEqualTo(reconciled.Sequence, marker.Sequence);
+        Assert.AreEqual(LifecycleFeedHealth.Healthy, reconciled.Health);
+        Assert.AreEqual(
+            new FileInfo(fixture.LogPath).Length,
+            reconciled.Sources.Single().LastByteOffset);
+    }
+
+    [TestMethod]
+    public async Task CaptureReconciledBaselineAsync_PartialLineCompletedLaterStaysHistorical()
+    {
+        await using TestFeed fixture = await TestFeed.CreateAsync("initial\n");
+        _ = await fixture.Feed.CaptureBaselineAsync(CancellationToken.None);
+        await File.AppendAllTextAsync(
+            fixture.LogPath,
+            "[2026-07-26T20:00:00Z] START_REPLAY_LOCAL synthetic");
+        LifecycleFeedBaseline baseline =
+            await fixture.Feed.CaptureReconciledBaselineAsync(CancellationToken.None);
+
+        await File.AppendAllTextAsync(fixture.LogPath, "\n");
+        LifecycleFeedReadResult events = await fixture.WaitForAsync(
+            baseline.Sequence,
+            static feedEvents => feedEvents.Any(feedEvent =>
+                feedEvent.Kind == LifecycleFeedEventKind.Marker));
+
+        Assert.AreEqual(
+            LifecycleMarkerProvenance.Historical,
+            events.Events.Single(feedEvent =>
+                feedEvent.Kind == LifecycleFeedEventKind.Marker).Provenance);
+    }
+
+    [TestMethod]
+    public async Task CaptureReconciledBaselineAsync_DisposalDuringBarrierCannotReturnHealthy()
+    {
+        using TemporaryDirectory directory = new();
+        string logDirectory = directory.CreateDirectory("DAVAProject");
+        string logPath = Path.Combine(logDirectory, "blitz-logs_test.txt");
+        await File.WriteAllTextAsync(logPath, "initial\n");
+        GameIntegrationOptions options = new()
+        {
+            UserDataRoots = [directory.Path],
+            UseDefaultDiscoveryRoots = false,
+            LogReconciliationInterval = TimeSpan.FromMinutes(5),
+        };
+        using var parser = new BlockingParser();
+        var feed = new BlitzReplayLifecycleFeed(
+            options,
+            parser,
+            TimeProvider.System,
+            NullLogger<BlitzReplayLifecycleFeed>.Instance);
+        Task? disposal = null;
+        try
+        {
+            _ = await feed.CaptureBaselineAsync(CancellationToken.None);
+            await File.AppendAllTextAsync(logPath, "block\n");
+            Task<LifecycleFeedBaseline> barrier =
+                feed.CaptureReconciledBaselineAsync(CancellationToken.None).AsTask();
+            Assert.IsTrue(parser.Entered.Wait(TimeSpan.FromSeconds(8)));
+
+            disposal = feed.DisposeAsync().AsTask();
+            parser.Release.Set();
+
+            await Assert.ThrowsExactlyAsync<ObjectDisposedException>(
+                async () => await barrier);
+            await disposal;
+        }
+        finally
+        {
+            parser.Release.Set();
+            if (disposal is null)
+            {
+                await feed.DisposeAsync();
+            }
+            else
+            {
+                await disposal;
+            }
+        }
+    }
+
+    [TestMethod]
     public async Task ReadAfterAsync_NewPrepopulatedSourceIsHistorical()
     {
         await using TestFeed fixture = await TestFeed.CreateAsync("initial\n");
@@ -325,6 +421,36 @@ public sealed class BlitzReplayLifecycleFeedTests
             }
 
             throw new InvalidOperationException("Synthetic parser fault.");
+        }
+    }
+
+    private sealed class BlockingParser : IBlitzReplayLifecycleParser, IDisposable
+    {
+        public ManualResetEventSlim Entered { get; } = new();
+
+        public ManualResetEventSlim Release { get; } = new();
+
+        public bool TryParse(string line, out ParsedReplayLogMarker? marker)
+        {
+            marker = null;
+            if (line != "block")
+            {
+                return false;
+            }
+
+            Entered.Set();
+            if (!Release.Wait(TimeSpan.FromSeconds(8)))
+            {
+                throw new TimeoutException("Synthetic parser release timed out.");
+            }
+
+            return false;
+        }
+
+        public void Dispose()
+        {
+            Entered.Dispose();
+            Release.Dispose();
         }
     }
 }

@@ -22,7 +22,13 @@ internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsy
     private readonly LifecycleEventJournal _journal;
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly object _startGate = new();
+    private readonly Lock _barrierGate = new();
+    private readonly List<BarrierRequest> _barriers = [];
     private readonly CancellationTokenSource _stop = new();
+    private ChannelWriter<bool>? _wakeupWriter;
+    private long _barrierGeneration;
+    private bool _stopping;
+    private bool _producerStopped;
     private Task? _producer;
 
     public BlitzReplayLifecycleFeed(
@@ -47,6 +53,38 @@ internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsy
         EnsureStarted();
         await _ready.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         return _journal.CaptureBaseline();
+    }
+
+    public async ValueTask<LifecycleFeedBaseline> CaptureReconciledBaselineAsync(
+        CancellationToken cancellationToken)
+    {
+        EnsureStarted();
+        await _ready.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        TaskCompletionSource<LifecycleFeedBaseline> completion =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        ChannelWriter<bool>? wakeupWriter;
+        lock (_barrierGate)
+        {
+            ObjectDisposedException.ThrowIf(_stopping, this);
+
+            if (_producerStopped)
+            {
+                LifecycleFeedBaseline stoppedBaseline = _journal.CaptureBaseline();
+                ObjectDisposedException.ThrowIf(
+                    stoppedBaseline.Health == LifecycleFeedHealth.Healthy,
+                    this);
+                return stoppedBaseline;
+            }
+
+            long generation = checked(++_barrierGeneration);
+            _barriers.Add(new BarrierRequest(generation, completion));
+            wakeupWriter = _wakeupWriter;
+        }
+
+        _ = wakeupWriter?.TryWrite(true);
+        return await completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<LifecycleFeedReadResult> ReadAfterAsync(
@@ -81,6 +119,11 @@ internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsy
 
         try
         {
+            lock (_barrierGate)
+            {
+                _wakeupWriter = wakeups.Writer;
+            }
+
             _ = await ReconcileAsync(
                 states,
                 _journal.CaptureBaseline(),
@@ -110,10 +153,22 @@ internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsy
                     break;
                 }
 
-                _ = await ReconcileAsync(
+                long barrierCutoff = CaptureBarrierCutoff();
+                bool reconciled = await ReconcileAsync(
                     states,
                     _journal.CaptureBaseline(),
                     LifecycleFeedReason.ReconciliationCompleted).ConfigureAwait(false);
+                if (reconciled && barrierCutoff > 0)
+                {
+                    foreach (TailState state in states.Values)
+                    {
+                        state.MarkPendingAsHistorical();
+                    }
+                }
+
+                CompleteBarriersThrough(
+                    barrierCutoff,
+                    _journal.CaptureBaseline());
             }
         }
         catch (Exception exception)
@@ -129,17 +184,90 @@ internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsy
         }
         finally
         {
+            wakeups.Writer.TryComplete();
             foreach (FileSystemWatcher watcher in watchers)
             {
                 watcher.Dispose();
             }
 
+            CompleteAllBarriersAndStop(_journal.CaptureBaseline());
             _ready.TrySetResult();
+        }
+    }
+
+    private long CaptureBarrierCutoff()
+    {
+        lock (_barrierGate)
+        {
+            return _barrierGeneration;
+        }
+    }
+
+    private void CompleteBarriersThrough(
+        long barrierCutoff,
+        LifecycleFeedBaseline baseline)
+    {
+        if (barrierCutoff == 0)
+        {
+            return;
+        }
+
+        List<TaskCompletionSource<LifecycleFeedBaseline>> completions = [];
+        lock (_barrierGate)
+        {
+            if (_stopping)
+            {
+                return;
+            }
+
+            for (int index = _barriers.Count - 1; index >= 0; index--)
+            {
+                if (_barriers[index].Generation <= barrierCutoff)
+                {
+                    completions.Add(_barriers[index].Completion);
+                    _barriers.RemoveAt(index);
+                }
+            }
+
+            foreach (TaskCompletionSource<LifecycleFeedBaseline> completion in completions)
+            {
+                completion.TrySetResult(baseline);
+            }
+        }
+    }
+
+    private void CompleteAllBarriersAndStop(LifecycleFeedBaseline baseline)
+    {
+        List<TaskCompletionSource<LifecycleFeedBaseline>> completions;
+        lock (_barrierGate)
+        {
+            _producerStopped = true;
+            _wakeupWriter = null;
+            completions = [.. _barriers.Select(static request => request.Completion)];
+            _barriers.Clear();
+        }
+
+        foreach (TaskCompletionSource<LifecycleFeedBaseline> completion in completions)
+        {
+            if (baseline.Health == LifecycleFeedHealth.Healthy)
+            {
+                completion.TrySetException(
+                    new ObjectDisposedException(nameof(BlitzReplayLifecycleFeed)));
+            }
+            else
+            {
+                completion.TrySetResult(baseline);
+            }
         }
     }
 
     public async ValueTask DisposeAsync()
     {
+        lock (_barrierGate)
+        {
+            _stopping = true;
+        }
+
         _stop.Cancel();
         Task? producer;
         lock (_startGate)
@@ -654,6 +782,14 @@ internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsy
             SkipFirstPartialLine = false;
         }
 
+        public void MarkPendingAsHistorical()
+        {
+            if (PendingBytes.Length > 0)
+            {
+                PendingProvenance = LifecycleMarkerProvenance.Historical;
+            }
+        }
+
         public TailState Clone()
         {
             return new TailState(SourceId)
@@ -672,6 +808,10 @@ internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsy
             };
         }
     }
+
+    private sealed record BarrierRequest(
+        long Generation,
+        TaskCompletionSource<LifecycleFeedBaseline> Completion);
 
     private readonly record struct FileIdentity(uint VolumeSerial, uint IndexHigh, uint IndexLow)
     {

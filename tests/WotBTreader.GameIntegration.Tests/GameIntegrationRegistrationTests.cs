@@ -42,6 +42,8 @@ public sealed class GameIntegrationRegistrationTests
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IGameProcessQueryPlatform)));
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IWindowsExecutableFingerprintReader)));
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(ITrustedGameIdentityProvider)));
+        Assert.IsTrue(services.Any(item => item.ServiceType == typeof(ILaunchCorrelationGenerator)));
+        Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IManagedLaunchPreparer)));
         Assert.AreEqual(
             ServiceLifetime.Singleton,
             services.Single(item =>
@@ -50,6 +52,14 @@ public sealed class GameIntegrationRegistrationTests
             ServiceLifetime.Singleton,
             services.Single(item =>
                 item.ServiceType == typeof(ITrustedGameIdentityProvider)).Lifetime);
+        Assert.AreEqual(
+            ServiceLifetime.Singleton,
+            services.Single(item =>
+                item.ServiceType == typeof(ILaunchCorrelationGenerator)).Lifetime);
+        Assert.AreEqual(
+            ServiceLifetime.Singleton,
+            services.Single(item =>
+                item.ServiceType == typeof(IManagedLaunchPreparer)).Lifetime);
     }
 
 }
