@@ -530,3 +530,38 @@ Deferred: bind the canonical installed-game identity to the query observer,
 then correlate a managed-launch baseline, exact process identity, replay UI,
 and post-baseline lifecycle marker in the coordinator. Do not enable VM-read
 until that correlation and its revocation/disposal tests are complete.
+
+## Amendment — M2 trusted executable identity (`2026-07-29T17:18:42Z`)
+
+Added a disconnected internal trusted-game identity provider and one shared
+Windows executable fingerprint reader. The reader opens the selected file once
+with read-only access and `FileShare.Read`, denying new write/delete sharing
+while it is inspected. It derives the final canonical path and volume/file
+index, reads the pinned version resource, hashes SHA-256 through that same
+handle, then revalidates final path and file identity before returning.
+
+Both installed-game trust preparation and the query-only process platform now
+use the same fingerprint implementation. The provider starts from deterministic
+installation discovery but replaces discovery-supplied path, version, and hash
+with the fresh pinned fingerprint, preserves resource/DLC roots, and retains
+the stable file identity only inside GameIntegration. It remains disconnected
+from the coordinator, launch, lifecycle feed, Application ports, logging, and
+memory authority.
+
+A real copied-PE regression caught and fixed an initially synchronous handle
+being wrapped as an asynchronous stream; the handle now opens with asynchronous
+and sequential-scan options. Tests cover real Windows final-path/file-ID/hash
+collection, missing-version failure, cancellation and handle release, provider
+projection/failure/cancellation, singleton registration, and process-platform
+reuse. Security audit found no High or Medium issue, and independent verification
+confirmed no coordinator/lifecycle/memory references.
+
+Validation: `scripts/validate.ps1` passed locked restore, format verification,
+Release build with 0 warnings/errors, 367 tests passed, 2 local opt-in tests
+skipped, and the repository scan passed.
+
+Deferred: managed-launch preparation must capture a healthy lifecycle
+sequence/health-epoch baseline before any process start, without preselecting a
+log source. Later correlation must compare the retained file identity plus
+canonical path/version/SHA-256 against a fresh process observation. VM-read
+remains disabled.

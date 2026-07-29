@@ -40,6 +40,16 @@ public sealed class GameIntegrationRegistrationTests
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IGameMemoryObserver)));
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IGameProcessIdentityObserver)));
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IGameProcessQueryPlatform)));
+        Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IWindowsExecutableFingerprintReader)));
+        Assert.IsTrue(services.Any(item => item.ServiceType == typeof(ITrustedGameIdentityProvider)));
+        Assert.AreEqual(
+            ServiceLifetime.Singleton,
+            services.Single(item =>
+                item.ServiceType == typeof(IWindowsExecutableFingerprintReader)).Lifetime);
+        Assert.AreEqual(
+            ServiceLifetime.Singleton,
+            services.Single(item =>
+                item.ServiceType == typeof(ITrustedGameIdentityProvider)).Lifetime);
     }
 
 }

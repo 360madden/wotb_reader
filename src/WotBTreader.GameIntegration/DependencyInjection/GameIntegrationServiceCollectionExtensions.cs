@@ -34,6 +34,8 @@ public static class GameIntegrationServiceCollectionExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IBlitzReplayLifecycleFeed, BlitzReplayLifecycleFeed>();
         services.TryAddSingleton<GameSessionCoordinator>();
+        services.TryAddSingleton<IWindowsExecutableFingerprintReader, WindowsExecutableFingerprintReader>();
+        services.TryAddSingleton<ITrustedGameIdentityProvider, TrustedGameIdentityProvider>();
         services.TryAddSingleton<IGameProcessQueryPlatform, WindowsGameProcessQueryPlatform>();
         services.TryAddSingleton<IGameProcessIdentityObserver, GameProcessIdentityObserver>();
         services.TryAddSingleton<IGameSessionState>(
