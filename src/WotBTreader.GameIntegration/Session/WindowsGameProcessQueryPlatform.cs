@@ -274,6 +274,8 @@ internal readonly struct NativeFileInformation
     private readonly uint _fileIndexHigh;
     private readonly uint _fileIndexLow;
 
+    public FileAttributes FileAttributes => (FileAttributes)_fileAttributes;
+
     public ulong FileIndex => ((ulong)_fileIndexHigh << 32) | _fileIndexLow;
 }
 

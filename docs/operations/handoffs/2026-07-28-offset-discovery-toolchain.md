@@ -609,3 +609,45 @@ post-baseline lifecycle evidence with the exact observed process identity and
 trusted replay UI. Any history gap, gap/fault/reset discontinuity, unhealthy
 current feed, identity mismatch, or cancellation must revoke the attempt.
 VM-read remains disabled.
+
+## Amendment — M2 managed replay artifact staging lease (`2026-07-29T18:33:23Z`)
+
+Added a disconnected internal managed replay artifact stager in
+GameIntegration. It accepts only a managed `SourceArtifactId`, the exact
+WoT Blitz replay media type and `.wotbreplay` extension, a positive bounded
+length, and content whose copied length and SHA-256 still match repository
+metadata. Random create-new names prevent overwrite, and failures expose stable
+path-free error codes.
+
+Bootstrap places the staging root under the application data root. On Windows,
+the staging platform rejects reparse ancestry, applies and verifies a protected
+owner-only ACL, and pins the directory against rename. Each artifact is created
+with an explicit protected owner-only security descriptor, then verified by
+handle. Sealing closes the writer and reopens the same file identity read-only;
+the stager rechecks its final length and hash through that pinned handle.
+`FileShare.Read` permits a later game process to read the artifact while
+blocking mutation, deletion, replacement, and staging-root rename for the
+lease lifetime.
+
+Lease disposal attempts identity-checked delete-by-handle and releases every
+file and directory resource even after an earlier cleanup failure. Cancellation
+propagates without leaving a partial file. Security review prompted fixes for
+directory pinning, explicit file ACLs, handle-level ACL verification, the
+writer-to-reader identity transition, final post-seal hashing, and resilient
+cleanup. A final security re-audit found no Critical, High, or Medium issue.
+A separate read-only external-model review reinforced the pinned-directory
+boundary. Independent verification confirmed 113 GameIntegration tests
+passed with 2 local opt-in tests skipped, plus 13 Bootstrap and 14 architecture
+tests, and found no process start, coordinator, public launcher execution,
+overlay, harness, or memory wiring.
+
+Validation: `scripts/validate.ps1` passed locked restore, format verification,
+Release build with 0 warnings/errors, 392 tests passed, 2 local opt-in tests
+skipped, and the repository scan passed.
+
+Deferred: reacquire and pin the exact trusted executable identity, then add a
+suspended native process-creation lease whose child identity is verified before
+any resume. Only a later unit may atomically register the prepared correlation,
+artifact lease, process identity, and lifecycle baseline before resuming the
+child. The public launcher and coordinator remain fail-closed, and VM-read
+remains disabled.

@@ -18,6 +18,7 @@ public sealed class GameIntegrationOptions
     private const int MaximumLogLineCharacters = 256 * 1024;
     private const int MaximumTrackedLogFiles = 128;
     private const int MaximumLogEventChannelCapacity = 65_536;
+    private const long MaximumReplayLaunchBytes = 2L * 1024 * 1024 * 1024;
 
     /// <summary>Gets explicit game installation roots to probe before optional defaults.</summary>
     public IReadOnlyList<string> GameInstallRoots { get; init; } = [];
@@ -65,6 +66,15 @@ public sealed class GameIntegrationOptions
     /// <summary>Gets the bounded lifecycle event channel capacity.</summary>
     public int LogEventChannelCapacity { get; init; } = 256;
 
+    /// <summary>
+    /// Gets the private directory used for collision-safe managed replay launch
+    /// copies. A null value keeps replay staging unavailable.
+    /// </summary>
+    public string? ReplayLaunchStagingRoot { get; init; }
+
+    /// <summary>Gets the maximum size of one replay copied for a managed launch.</summary>
+    public long MaxReplayLaunchBytes { get; init; } = 512L * 1024 * 1024;
+
     internal void Validate()
     {
         if (MaxDvplStoredBytes <= 0 ||
@@ -75,7 +85,8 @@ public sealed class GameIntegrationOptions
             MaxLogReadBytesPerPass <= 0 ||
             MaxLogLineCharacters <= 0 ||
             MaxTrackedLogFiles <= 0 ||
-            LogEventChannelCapacity <= 0)
+            LogEventChannelCapacity <= 0 ||
+            MaxReplayLaunchBytes <= 0)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(GameIntegrationOptions),
@@ -90,7 +101,8 @@ public sealed class GameIntegrationOptions
             MaxLogReadBytesPerPass > MaximumLogReadBytesPerPass ||
             MaxLogLineCharacters > MaximumLogLineCharacters ||
             MaxTrackedLogFiles > MaximumTrackedLogFiles ||
-            LogEventChannelCapacity > MaximumLogEventChannelCapacity)
+            LogEventChannelCapacity > MaximumLogEventChannelCapacity ||
+            MaxReplayLaunchBytes > MaximumReplayLaunchBytes)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(GameIntegrationOptions));
@@ -120,6 +132,15 @@ public sealed class GameIntegrationOptions
             throw new ArgumentOutOfRangeException(
                 nameof(GameIntegrationOptions),
                 "Too many discovery roots were configured.");
+        }
+
+        if (ReplayLaunchStagingRoot is { Length: > 32_768 } ||
+            ReplayLaunchStagingRoot is not null &&
+            string.IsNullOrWhiteSpace(ReplayLaunchStagingRoot))
+        {
+            throw new ArgumentException(
+                "The replay launch staging root is invalid.",
+                nameof(GameIntegrationOptions));
         }
     }
 }

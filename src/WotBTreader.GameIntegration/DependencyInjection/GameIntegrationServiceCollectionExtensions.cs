@@ -38,6 +38,9 @@ public static class GameIntegrationServiceCollectionExtensions
         services.TryAddSingleton<ITrustedGameIdentityProvider, TrustedGameIdentityProvider>();
         services.TryAddSingleton<ILaunchCorrelationGenerator, LaunchCorrelationGenerator>();
         services.TryAddSingleton<IManagedLaunchPreparer, ManagedLaunchPreparer>();
+        services.TryAddSingleton<IReplayLaunchStageNameGenerator, ReplayLaunchStageNameGenerator>();
+        services.TryAddSingleton<IReplayLaunchStagingPlatform, WindowsReplayLaunchStagingPlatform>();
+        services.TryAddSingleton<IManagedReplayArtifactStager, ManagedReplayArtifactStager>();
         services.TryAddSingleton<IGameProcessQueryPlatform, WindowsGameProcessQueryPlatform>();
         services.TryAddSingleton<IGameProcessIdentityObserver, GameProcessIdentityObserver>();
         services.TryAddSingleton<IGameSessionState>(

@@ -48,7 +48,7 @@ public static class FoundationServiceCollectionExtensions
         });
         services.AddReplayDecoding();
         services.AddCaptureLogs();
-        services.AddGameIntegration(CreateGameIntegrationOptions(options));
+        services.AddGameIntegration(CreateGameIntegrationOptions(options, paths));
 
         services.AddSingleton<IDoctorService, DoctorService>();
         services.AddSingleton<IDiagnosticBundleService, DiagnosticBundleService>();
@@ -57,7 +57,8 @@ public static class FoundationServiceCollectionExtensions
     }
 
     private static GameIntegrationOptions CreateGameIntegrationOptions(
-        TreaderBootstrapOptions options) =>
+        TreaderBootstrapOptions options,
+        LocalApplicationPaths paths) =>
         new()
         {
             GameInstallRoots = string.IsNullOrWhiteSpace(options.GameRoot)
@@ -66,6 +67,7 @@ public static class FoundationServiceCollectionExtensions
             UserDataRoots = string.IsNullOrWhiteSpace(options.GameUserDataRoot)
                 ? []
                 : [options.GameUserDataRoot],
+            ReplayLaunchStagingRoot = Path.Combine(paths.Root, "launch"),
         };
 
     /// <summary>

@@ -44,6 +44,9 @@ public sealed class GameIntegrationRegistrationTests
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(ITrustedGameIdentityProvider)));
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(ILaunchCorrelationGenerator)));
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IManagedLaunchPreparer)));
+        Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IReplayLaunchStageNameGenerator)));
+        Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IReplayLaunchStagingPlatform)));
+        Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IManagedReplayArtifactStager)));
         Assert.AreEqual(
             ServiceLifetime.Singleton,
             services.Single(item =>
@@ -60,6 +63,18 @@ public sealed class GameIntegrationRegistrationTests
             ServiceLifetime.Singleton,
             services.Single(item =>
                 item.ServiceType == typeof(IManagedLaunchPreparer)).Lifetime);
+        Assert.AreEqual(
+            ServiceLifetime.Singleton,
+            services.Single(item =>
+                item.ServiceType == typeof(IReplayLaunchStageNameGenerator)).Lifetime);
+        Assert.AreEqual(
+            ServiceLifetime.Singleton,
+            services.Single(item =>
+                item.ServiceType == typeof(IReplayLaunchStagingPlatform)).Lifetime);
+        Assert.AreEqual(
+            ServiceLifetime.Singleton,
+            services.Single(item =>
+                item.ServiceType == typeof(IManagedReplayArtifactStager)).Lifetime);
     }
 
 }
