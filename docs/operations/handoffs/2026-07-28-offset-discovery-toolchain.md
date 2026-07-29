@@ -233,3 +233,63 @@ Post-commit verification: the real subscription-backed `security-auditor`
 invocation completed through the adapter and returned the requested
 `CURSOR_REVIEWER_OK` sentinel. The temporary export was cleaned up by the
 adapter.
+
+## Amendment — M1 portable TFMs restored (`2026-07-29T00:17:18Z`)
+
+Closed the BLK-0003 target-framework regression deferred by the M0 amendments.
+`Host.Web`, `Host.Web.Tests`, and `GameIntegration.Tests` are back on portable
+`net10.0`, and their `packages.lock.json` target keys were regenerated to match
+so locked-mode restore succeeds on a clean clone. The `net10.0-windows` move in
+`55f2755` was justified as required for Win32 P/Invoke; that is not the case,
+and `DllImport` compiles on the portable target with zero warnings.
+
+`TargetFrameworkTests` now parses every project file under `src`, `tests`,
+`tools/src`, and `tools/tests` and fails when any project outside the
+`Overlay`/`GameHarness` allowlist declares a Windows target, declares
+`TargetFrameworks`, or declares anything other than exactly one
+`TargetFramework`.
+
+Validation: `powershell -NoProfile -ExecutionPolicy Bypass -File
+scripts\validate.ps1` passed — locked restore, format verification, Release
+build with 0 warnings/errors, 289 tests passed, 2 local opt-in tests skipped,
+and the repository scan passed for 429 tracked files. Commits `94e349b` and
+`47d3945` are pushed to `origin/main`.
+
+Deferred: the rest of M1 — expanding the dependency tests to `Bootstrap`, both
+hosts, `Overlay`, and `tools/src`; introducing the no-dependency `ApiContracts`
+project and moving the duplicated host/overlay wire shapes into it; and
+codifying the `Bootstrap`-only composition rule. M2 still gates all product
+memory integration and offset promotion.
+
+## Amendment — M1 reference graph enforced (`2026-07-29T00:21:47Z`)
+
+Supersedes the preceding amendment's deferral of the dependency-test expansion.
+`ProjectReferenceTests` now parses every production project under `src` and
+`tools/src` and enforces the roadmap graph: `Core` references nothing,
+`Application` references only `Core`, adapters reference only `Application` and
+`Core`, `Bootstrap` may reference the adapters, hosts are limited to
+`ApiContracts`/`Application`/`Bootstrap`/`Core`, and `Overlay` is limited to
+`ApiContracts`. An unclassified production project is itself a violation, so a
+new project cannot join the solution without an explicit boundary decision.
+`ProjectCatalog` now holds the shared project-file discovery used by both
+architecture tests.
+
+Recorded as tracked debt rather than silently allowed: `GameHarness` references
+`GameIntegration`, and `ReplayInspector`/`ReplaySanitizer` reference `Replays`,
+instead of resolving product ports through `Bootstrap`. `ToolAdapterDebt`
+enumerates exactly those three edges, no tool may add another, and a companion
+test fails when an exemption becomes stale, so the list can only shrink.
+
+Validation: `powershell -NoProfile -ExecutionPolicy Bypass -File
+scripts\validate.ps1` passed — locked restore, format verification, Release
+build with 0 warnings/errors, 295 tests passed, 2 local opt-in tests skipped,
+and the repository scan passed for 430 tracked files. Coverage of `tools/src`
+was confirmed by temporarily clearing the `GameHarness` exemption and observing
+`ProductionProjects_FollowTheApprovedReferenceGraph` fail with the exact
+offending edge before restoring it.
+
+Deferred: the remaining M1 work — introducing the no-dependency `ApiContracts`
+project, moving the duplicated host/overlay wire shapes into it, and retiring
+the three tool-to-adapter edges. Test projects are deliberately out of the
+graph's scope; `Overlay.Tests` still references `Host.Web`. M2 continues to gate
+all product memory integration and offset promotion.
