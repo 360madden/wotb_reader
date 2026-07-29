@@ -6,23 +6,20 @@ namespace WotBTreader.ApiContracts;
 /// </summary>
 public sealed record GameStateResponse
 {
-    /// <summary>Whether wotblitz.exe is currently running.</summary>
-    public bool GameRunning { get; init; }
+    /// <summary>Whether a game process is currently present.</summary>
+    public bool GamePresent { get; init; }
 
-    /// <summary>Process ID of the running game, or null if not running.</summary>
-    public int? ProcessId { get; init; }
+    /// <summary>Current evidence-backed verification state.</summary>
+    public string VerificationState { get; init; } = "Unknown";
 
-    /// <summary>Window handle of the game window, or null if not found.</summary>
-    public long? WindowHandle { get; init; }
+    /// <summary>UTC timestamp when this state was observed.</summary>
+    public DateTimeOffset ObservedAtUtc { get; init; }
 
-    /// <summary>Current replay lifecycle state (e.g. NotRunning, OfflineReplayActive).</summary>
-    public string ReplayState { get; init; } = "Unknown";
+    /// <summary>UTC expiry of positive evidence, when applicable.</summary>
+    public DateTimeOffset? EvidenceExpiresAtUtc { get; init; }
 
-    /// <summary>UTC timestamp when the replay state was last observed.</summary>
-    public DateTimeOffset? ReplayStateObservedAtUtc { get; init; }
-
-    /// <summary>Log watermark at the time of observation, for correlation.</summary>
-    public string? LogWatermark { get; init; }
+    /// <summary>Stable, path-free reason code for the current state.</summary>
+    public string ReasonCode { get; init; } = "session.unknown";
 }
 
 /// <summary>
@@ -31,8 +28,8 @@ public sealed record GameStateResponse
 /// </summary>
 public sealed record GameLaunchRequest
 {
-    /// <summary>Full path to the .wotbreplay file.</summary>
-    public string ReplayPath { get; init; } = string.Empty;
+    /// <summary>Identifier of a replay artifact managed by the application.</summary>
+    public string SourceArtifactId { get; init; } = string.Empty;
 }
 
 /// <summary>Result of a game launch attempt.</summary>
@@ -41,47 +38,44 @@ public sealed record GameLaunchResponse
     /// <summary>True if the game was launched successfully.</summary>
     public bool Success { get; init; }
 
-    /// <summary>Human-readable status message.</summary>
+    /// <summary>Stable, path-free launch status code.</summary>
     public string Message { get; init; } = string.Empty;
 }
 
 /// <summary>
 /// Snapshot of replay memory read from the running game process.
-/// Returned by GET /api/v1/game/memory. All fields are 0/default when
-/// offsets are unknown or the process is not accessible.
+/// Returned by GET /api/v1/game/memory. Telemetry fields are null when
+/// unsupported or unknown so legitimate zero values remain distinguishable.
 /// </summary>
 public sealed record GameMemoryResponse
 {
     /// <summary>UTC timestamp when this snapshot was captured.</summary>
     public DateTimeOffset CapturedAtUtc { get; init; }
 
-    /// <summary>Whether the game process was accessible for memory reading.</summary>
-    public bool ProcessAccessible { get; init; }
+    /// <summary>Unknown, Unsupported, or Available.</summary>
+    public string Availability { get; init; } = "Unknown";
 
     /// <summary>Current replay playback time in seconds.</summary>
-    public double ReplayTimeSeconds { get; init; }
+    public double? ReplayTimeSeconds { get; init; }
 
     /// <summary>HP of the viewpoint player tank.</summary>
-    public int PlayerHP { get; init; }
+    public int? PlayerHP { get; init; }
 
     /// <summary>World-space X position of the player tank.</summary>
-    public float PlayerPositionX { get; init; }
+    public float? PlayerPositionX { get; init; }
 
     /// <summary>World-space Y position (height) of the player tank.</summary>
-    public float PlayerPositionY { get; init; }
+    public float? PlayerPositionY { get; init; }
 
     /// <summary>World-space Z position of the player tank.</summary>
-    public float PlayerPositionZ { get; init; }
+    public float? PlayerPositionZ { get; init; }
 
     /// <summary>Camera yaw in radians.</summary>
-    public float PlayerYaw { get; init; }
+    public float? PlayerYaw { get; init; }
 
     /// <summary>Camera pitch in radians.</summary>
-    public float CameraPitch { get; init; }
+    public float? CameraPitch { get; init; }
 
     /// <summary>Number of tanks alive in the battle.</summary>
-    public int AliveTankCount { get; init; }
-
-    /// <summary>Whether any memory offsets were validated in this session.</summary>
-    public bool AnyOffsetsValidated { get; init; }
+    public int? AliveTankCount { get; init; }
 }

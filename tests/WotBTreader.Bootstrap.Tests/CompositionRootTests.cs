@@ -40,6 +40,9 @@ public sealed class CompositionRootTests
         typeof(IReplayClockSource),
         typeof(ITelemetryCaptureWriter),
         typeof(IInstalledGameMetadataProvider),
+        typeof(IGameSessionState),
+        typeof(IGameReplayLauncher),
+        typeof(IGameMemoryObserver),
     ];
 
     [TestMethod]
@@ -67,6 +70,20 @@ public sealed class CompositionRootTests
                 scope.ServiceProvider.GetRequiredService(port),
                 $"{port.Name} could not be resolved from the composition root.");
         }
+    }
+
+    [TestMethod]
+    public void FoundationUsesOneGameSessionCoordinator()
+    {
+        using TemporaryRoot root = new();
+        using ServiceProvider provider = BuildProvider(root);
+
+        IGameSessionState state = provider.GetRequiredService<IGameSessionState>();
+        IGameReplayLauncher launcher = provider.GetRequiredService<IGameReplayLauncher>();
+        IGameMemoryObserver observer = provider.GetRequiredService<IGameMemoryObserver>();
+
+        Assert.IsTrue(ReferenceEquals(state, launcher));
+        Assert.IsTrue(ReferenceEquals(state, observer));
     }
 
     [TestMethod]

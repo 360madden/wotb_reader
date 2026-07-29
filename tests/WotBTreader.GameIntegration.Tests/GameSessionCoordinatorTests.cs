@@ -1,0 +1,381 @@
+using WotBTreader.Application.Game;
+using WotBTreader.Core;
+using WotBTreader.GameIntegration.Session;
+
+namespace WotBTreader.GameIntegration.Tests;
+
+[TestClass]
+public sealed class GameSessionCoordinatorTests
+{
+    private static readonly DateTimeOffset StartTime =
+        new(2026, 7, 29, 12, 0, 0, TimeSpan.Zero);
+    private const string LaunchCorrelation = "adapter-generated-correlation";
+
+    [TestMethod]
+    public async Task InitialState_IsUnknown()
+    {
+        var (coordinator, _) = CreateCoordinator();
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+
+        Assert.AreEqual(GameSessionVerificationState.Unknown, snapshot.State);
+        Assert.IsFalse(snapshot.GamePresent);
+    }
+
+    [TestMethod]
+    public async Task CompleteFreshBoundEvidence_VerifiesOfflineReplay()
+    {
+        var (coordinator, _) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+
+        coordinator.ApplyEvidence(CreateValidEvidence());
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(
+            GameSessionVerificationState.OfflineReplayVerified,
+            snapshot.State);
+        Assert.AreEqual(StartTime.AddSeconds(15), snapshot.EvidenceExpiresAtUtc);
+    }
+
+    [TestMethod]
+    public async Task CallerCannotSupplyMissingManagedLaunchCorrelation()
+    {
+        var (coordinator, _) = CreateCoordinator();
+
+        coordinator.ApplyEvidence(CreateValidEvidence());
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+    }
+
+    [TestMethod]
+    public async Task IncompleteEvidence_IsUnverified()
+    {
+        var (coordinator, _) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+
+        coordinator.ApplyEvidence(new GameSessionEvidence(
+            GamePresent: true,
+            MonitorHealthy: true,
+            ReplayUiConfirmed: true,
+            Process: CreateValidProcess(),
+            Lifecycle: null));
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(
+            GameSessionVerificationState.GamePresentUnverified,
+            snapshot.State);
+    }
+
+    [TestMethod]
+    public async Task HistoricalEvidence_IsStale()
+    {
+        var (coordinator, _) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+        ReplayLifecycleEvidence staleLifecycle =
+            CreateValidLifecycle() with { ObservedAtUtc = StartTime.AddSeconds(-16) };
+
+        coordinator.ApplyEvidence(
+            CreateValidEvidence() with { Lifecycle = staleLifecycle });
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.EvidenceStale, snapshot.State);
+    }
+
+    [TestMethod]
+    public async Task StopEvidence_RevokesVerifiedState()
+    {
+        var (coordinator, _) = CreateVerifiedCoordinator();
+
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Lifecycle = CreateValidLifecycle() with
+            {
+                State = ReplayLifecycleState.OfflineReplayStopped,
+                SourceSequence = 12,
+            },
+        });
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+    }
+
+    [TestMethod]
+    public async Task OnlineBattleEvidence_RevokesVerifiedState()
+    {
+        var (coordinator, _) = CreateVerifiedCoordinator();
+
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Lifecycle = CreateValidLifecycle() with
+            {
+                State = ReplayLifecycleState.OnlineBattle,
+                SourceSequence = 12,
+            },
+        });
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+    }
+
+    [TestMethod]
+    public async Task MonitorFailure_RevokesVerifiedState()
+    {
+        var (coordinator, _) = CreateVerifiedCoordinator();
+
+        coordinator.ReportMonitorFailure();
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+        Assert.AreEqual("evidence.monitor_unhealthy", snapshot.ReasonCode);
+    }
+
+    [TestMethod]
+    public async Task ProcessExit_RevokesVerifiedState()
+    {
+        var (coordinator, _) = CreateVerifiedCoordinator();
+
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess() with { IsAlive = false },
+            Lifecycle = CreateValidLifecycle() with { SourceSequence = 12 },
+        });
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+    }
+
+    [TestMethod]
+    public async Task SamePidWithDifferentStartIdentity_IsDenied()
+    {
+        var (coordinator, _) = CreateVerifiedCoordinator();
+
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess() with { ProcessStartIdentity = 43 },
+            Lifecycle = CreateValidLifecycle() with { SourceSequence = 12 },
+        });
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+        Assert.AreEqual("process.identity_changed", snapshot.ReasonCode);
+    }
+
+    [TestMethod]
+    public async Task ExactVersionAndHashMismatch_IsDenied()
+    {
+        var (coordinator, _) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess() with
+            {
+                ObservedProductVersion = "11.18.0.8",
+                ObservedExecutableSha256 = new ContentHash(new string('b', 64)),
+            },
+        });
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+        Assert.AreEqual("process.identity_mismatch", snapshot.ReasonCode);
+    }
+
+    [TestMethod]
+    public async Task LifecycleBoundToAnotherProcess_IsUnverified()
+    {
+        var (coordinator, _) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Lifecycle = CreateValidLifecycle() with { ProcessStartIdentity = 43 },
+        });
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(
+            GameSessionVerificationState.GamePresentUnverified,
+            snapshot.State);
+    }
+
+    [TestMethod]
+    public async Task MarkerAtLaunchBaseline_IsDenied()
+    {
+        var (coordinator, _) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Lifecycle = CreateValidLifecycle() with { SourceSequence = 10 },
+        });
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+        Assert.AreEqual("evidence.cursor_invalid", snapshot.ReasonCode);
+    }
+
+    [TestMethod]
+    public async Task ReusedOrRegressedCursor_IsDenied()
+    {
+        var (coordinator, _) = CreateVerifiedCoordinator();
+
+        coordinator.ApplyEvidence(CreateValidEvidence());
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+        Assert.AreEqual("evidence.cursor_invalid", snapshot.ReasonCode);
+    }
+
+    [TestMethod]
+    public async Task AuthorizationExpiry_IsObservedWithoutNewEvidence()
+    {
+        var (coordinator, timeProvider) = CreateVerifiedCoordinator();
+        timeProvider.Advance(TimeSpan.FromSeconds(16));
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+
+        Assert.AreEqual(GameSessionVerificationState.EvidenceStale, snapshot.State);
+        Assert.AreEqual("evidence.expired", snapshot.ReasonCode);
+    }
+
+    [TestMethod]
+    public async Task MemoryObservation_RemainsUnknownWhenVerified()
+    {
+        var (coordinator, _) = CreateVerifiedCoordinator();
+
+        GameMemoryObservation observation =
+            await coordinator.ObserveAsync(CancellationToken.None);
+
+        Assert.AreEqual(
+            GameMemoryObservationAvailability.Unknown,
+            observation.Availability);
+        Assert.IsNull(observation.ReplayTimeSeconds);
+        Assert.IsNull(observation.PlayerHitPoints);
+    }
+
+    [TestMethod]
+    public async Task Launch_RemainsFailClosed()
+    {
+        var (coordinator, _) = CreateCoordinator();
+
+        var result = await coordinator.LaunchAsync(
+            new GameReplayLaunchRequest(SourceArtifactId.New()),
+            CancellationToken.None);
+
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual("game.launch.unavailable", result.Error?.Code);
+    }
+
+    [TestMethod]
+    public async Task ObservationCancellation_IsHonoredBeforeReturningData()
+    {
+        var (coordinator, _) = CreateVerifiedCoordinator();
+        using CancellationTokenSource cancellation = new();
+        cancellation.Cancel();
+
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(
+            async () => await coordinator.ObserveAsync(cancellation.Token));
+    }
+
+    [TestMethod]
+    public async Task AbsentEvidence_ClearsPresence()
+    {
+        var (coordinator, _) = CreateVerifiedCoordinator();
+
+        coordinator.ApplyEvidence(new GameSessionEvidence(
+            GamePresent: false,
+            MonitorHealthy: false,
+            ReplayUiConfirmed: false,
+            Process: null,
+            Lifecycle: null));
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.GameAbsent, snapshot.State);
+        Assert.IsFalse(snapshot.GamePresent);
+    }
+
+    private static (GameSessionCoordinator Coordinator, ManualTimeProvider TimeProvider)
+        CreateCoordinator()
+    {
+        var timeProvider = new ManualTimeProvider(StartTime);
+        return (new GameSessionCoordinator(timeProvider), timeProvider);
+    }
+
+    private static (GameSessionCoordinator Coordinator, ManualTimeProvider TimeProvider)
+        CreateVerifiedCoordinator()
+    {
+        var pair = CreateCoordinator();
+        pair.Coordinator.RecordManagedLaunch(CreateManagedLaunch());
+        pair.Coordinator.ApplyEvidence(CreateValidEvidence());
+        return pair;
+    }
+
+    private static GameSessionEvidence CreateValidEvidence() =>
+        new(
+            GamePresent: true,
+            MonitorHealthy: true,
+            ReplayUiConfirmed: true,
+            CreateValidProcess(),
+            CreateValidLifecycle());
+
+    private static GameProcessEvidence CreateValidProcess() =>
+        new(
+            ProcessId: 1234,
+            ProcessStartIdentity: 42,
+            IsAlive: true,
+            ObservedCanonicalExecutablePath: @"C:\Games\wotblitz.exe",
+            ObservedProductVersion: "11.18.0.7",
+            ObservedExecutableSha256: new ContentHash(new string('a', 64)),
+            WindowHandle: 99,
+            WindowOwnerProcessId: 1234);
+
+    private static ReplayLifecycleEvidence CreateValidLifecycle() =>
+        new(
+            ReplayLifecycleState.OfflineReplayStarted,
+            StartTime,
+            ReplayEvidenceSource.BlitzNativeLog,
+            SourceIdentity: "synthetic-log-identity",
+            SourceGeneration: 1,
+            SourceSequence: 11,
+            ProcessId: 1234,
+            ProcessStartIdentity: 42,
+            LaunchCorrelation);
+
+    private static ManagedGameLaunchContext CreateManagedLaunch() =>
+        new(
+            LaunchCorrelation,
+            new InstalledGameIdentity(
+                ExecutablePath: @"C:\Games\wotblitz.exe",
+                ProductVersion: "11.18.0.7",
+                ExecutableSha256: new ContentHash(new string('a', 64)),
+                ResourceRoot: @"C:\Games",
+                DlcRoots: []),
+            LifecycleSourceIdentity: "synthetic-log-identity",
+            SourceGeneration: 1,
+            SourceSequenceBaseline: 10);
+
+    private sealed class ManualTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        private DateTimeOffset _utcNow = utcNow;
+
+        public override DateTimeOffset GetUtcNow() => _utcNow;
+
+        public void Advance(TimeSpan duration) => _utcNow += duration;
+    }
+}

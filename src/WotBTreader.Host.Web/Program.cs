@@ -5,7 +5,6 @@ using WotBTreader.Host.Web.Components;
 using WotBTreader.Host.Web.Endpoints;
 using WotBTreader.Host.Web.Hubs;
 using WotBTreader.Host.Web.Infrastructure;
-using WotBTreader.Host.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -46,9 +45,6 @@ builder.Services.AddAntiforgery(options =>
     options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
 });
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddSingleton<GameMemoryReader>();
-builder.Services.AddSingleton<GameStateService>();
-builder.Services.AddHostedService(sp => sp.GetRequiredService<GameStateService>());
 builder.Services.AddWebSurface(builder.Configuration);
 
 var app = builder.Build();

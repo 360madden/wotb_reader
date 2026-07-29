@@ -17,7 +17,7 @@ internal static class ProjectCatalog
 
     public static ProjectFile[] Discover()
     {
-        string repositoryRoot = FindRepositoryRoot(AppContext.BaseDirectory);
+        string repositoryRoot = RepositoryRoot();
 
         return [.. ProjectDirectories
             .SelectMany(directory => Directory.EnumerateFiles(
@@ -38,6 +38,9 @@ internal static class ProjectCatalog
             .Where(static include => !string.IsNullOrWhiteSpace(include))
             .Select(static include => Path.GetFileNameWithoutExtension(include!.Replace('\\', '/')))
             .Order(StringComparer.Ordinal)];
+
+    public static string RepositoryRoot() =>
+        FindRepositoryRoot(AppContext.BaseDirectory);
 
     private static string FindRepositoryRoot(string startDirectory)
     {

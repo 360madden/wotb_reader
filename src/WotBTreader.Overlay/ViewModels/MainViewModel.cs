@@ -566,7 +566,8 @@ public class MainViewModel : INotifyPropertyChanged
                         session.MapId,
                         session.BattleTimeUtc,
                         summary.ParticipantCount,
-                        summary.PositionCount));
+                        summary.PositionCount,
+                        summary.DecodeRun.SourceArtifactId));
                 }
             }
 
@@ -768,8 +769,14 @@ public class MainViewModel : INotifyPropertyChanged
     /// Delegates to the host's /api/v1/game/launch endpoint so the overlay
     /// never calls Process.Start directly.
     /// </summary>
-    public async Task<bool> LaunchGameViaHostAsync(string replayPath, CancellationToken cancellationToken = default)
+    public async Task<bool> LaunchGameViaHostAsync(string sourceArtifactId, CancellationToken cancellationToken = default)
     {
+        if (!Guid.TryParse(sourceArtifactId, out Guid parsedArtifactId) || parsedArtifactId == Guid.Empty)
+        {
+            Status = "Launch failed — managed artifact ID is invalid";
+            return false;
+        }
+
         TreaderApiClient? client = _client;
         if (client is null)
         {
@@ -779,7 +786,7 @@ public class MainViewModel : INotifyPropertyChanged
 
         try
         {
-            GameLaunchResponse? result = await client.LaunchGameAsync(replayPath, cancellationToken);
+            GameLaunchResponse? result = await client.LaunchGameAsync(parsedArtifactId.ToString("D"), cancellationToken);
             if (result?.Success == true)
             {
                 Status = "Game launched";

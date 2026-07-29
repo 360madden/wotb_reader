@@ -7,4 +7,5 @@ public sealed record SessionRow(
     string? MapId,
     DateTimeOffset? BattleTimeUtc,
     int ParticipantCount,
-    int PositionCount);
+    int PositionCount,
+    string SourceArtifactId = "");

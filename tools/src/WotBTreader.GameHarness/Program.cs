@@ -37,7 +37,7 @@ return exitCode;
 
 static int ShowState()
 {
-    var state = MemoryOffsetScanner.LoadState();
+    ScannerState? state = ScannerStateStore.Load();
     if (state is null)
     {
         Console.WriteLine("No scanner state found.");

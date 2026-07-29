@@ -395,16 +395,10 @@ public partial class MainWindow : System.Windows.Window, IDisposable
             _viewModel.Status = "🔄 Refreshing sessions…";
             await _viewModel.RefreshSessionsAsync();
 
-            // ── 6. Launch via host API ──────────────────────
-            _viewModel.Status = "🚀 Launching game…";
-
-            bool launched = await _viewModel.LaunchGameViaHostAsync(replayPath);
-            if (!launched)
-            {
-                return;
-            }
-
-            _viewModel.Status = $"✅ {replayFileName} — tracking game window";
+            // Import currently reports no managed artifact identifier. Do not
+            // reuse the local path as launch authority; only an artifact ID
+            // returned by the host may reach the launch endpoint.
+            _viewModel.Status = "Replay imported — select it from the session list to launch";
         }
         catch (Exception ex)
         {
@@ -631,14 +625,13 @@ public partial class MainWindow : System.Windows.Window, IDisposable
             return;
         }
 
-        string? replayPath = FindReplayFile();
-        if (replayPath is null)
+        if (string.IsNullOrWhiteSpace(session.SourceArtifactId))
         {
-            _viewModel.Status = "No replay found in game folder";
+            _viewModel.Status = "Selected replay has no managed artifact ID";
             return;
         }
 
-        await _viewModel.LaunchGameViaHostAsync(replayPath);
+        await _viewModel.LaunchGameViaHostAsync(session.SourceArtifactId);
     }
 
     private bool LaunchGameWithSelectedReplay(SessionRow? session)
@@ -782,33 +775,6 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         _ = SetWindowPos(
             new System.Windows.Interop.WindowInteropHelper(this).Handle,
             HWND_TOPMOST, rect.Left, rect.Top, w, h, SWP_NOACTIVATE);
-    }
-
-    // ── Replay file discovery ───────────────────────────────
-
-    private static string? FindReplayFile()
-    {
-        if (!System.IO.Directory.Exists(GameReplaysFolder)) return null;
-
-        string[] files = System.IO.Directory.GetFiles(
-            GameReplaysFolder, "*.wotbreplay",
-            System.IO.SearchOption.TopDirectoryOnly);
-
-        if (files.Length == 0) return null;
-
-        string newest = files[0];
-        DateTime newestTime = System.IO.File.GetLastWriteTimeUtc(newest);
-        for (int i = 1; i < files.Length; i++)
-        {
-            DateTime t = System.IO.File.GetLastWriteTimeUtc(files[i]);
-            if (t > newestTime)
-            {
-                newestTime = t;
-                newest = files[i];
-            }
-        }
-
-        return newest;
     }
 
     // ── Game executable path discovery ───────────────────────

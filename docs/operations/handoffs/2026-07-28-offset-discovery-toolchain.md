@@ -395,3 +395,50 @@ opt-in tests skipped, and the repository scan passed for 433 tracked files.
 
 M1 is complete. Next: M2 centralized positive offline-session authorization
 before any product or harness memory authority.
+
+## Amendment — M2 fail-closed session boundary (`2026-07-29T16:04:04Z`)
+
+Completed the first M2 slice without enabling process-memory access.
+`Application` now publishes capability-neutral ports for game-session state,
+managed replay launch, and ephemeral memory observation. Their contracts expose
+no PID, HWND, executable path, native handle, offset, attachment operation, or
+authorization token. `Bootstrap` publishes all three ports and proves they
+resolve through one GameIntegration coordinator.
+
+GameIntegration now owns an internal evidence state machine and private
+authorized-observation generation. Positive synthetic verification requires a
+coordinator-owned managed-launch context, independently trusted installed-game
+identity, exact observed path/version/SHA-256, PID plus process-start identity,
+owned window, healthy monitor, confirmed replay UI, exact
+`BlitzNativeLog` provenance, a marker bound to the same process and launch
+correlation, and a source cursor strictly after the launch baseline. Stop or
+online evidence, monitor failure, process exit, PID reuse, identity mismatch,
+cursor regression, and expiry revoke or deny. Memory observation remains
+`Unknown`, and managed launch remains unavailable, so this slice opens no
+process handle.
+
+Removed Host.Web's native declarations, process probing, direct memory reader,
+path-based replay staging, shell association launch, and hosted game-state
+service. Its endpoints now consume only the Application ports, return
+capability-neutral DTOs, and accept managed source-artifact IDs. The Overlay
+passes the selected session's source-artifact ID; quick-import launch fails
+closed until import returns an ID. Removed GameHarness's dormant raw-PID memory
+reader, scanner, and native declarations while retaining hard-denied
+`scan`/`probe` and a bounded read-only scanner-state viewer.
+
+Architecture tests now reject native interop/direct memory readers in Host.Web
+and GameHarness and reject authority-bearing public session contracts. A
+security audit found and prompted fixes for initially unbound lifecycle/process
+evidence and self-vouching expected identity. Focused GameIntegration,
+Host.Web, Overlay, GameHarness, architecture, and composition tests passed.
+`scripts/validate.ps1` passed locked restore, format verification, Release
+build with 0 warnings/errors, 323 tests passed, 2 local opt-in tests skipped,
+and the repository scan passed for 432 tracked files.
+
+Deferred M2 work: implement the real query-only process/window identity source
+and lifecycle reconciliation inside GameIntegration; generate managed-launch
+correlation from a verified artifact/executable path; add a guarded,
+exact-version-and-hash VM-read factory with immediate handle disposal and
+between-chunk revalidation; and migrate GameHarness commands onto those same
+ports before re-enabling them. Memory access remains disabled until those
+invariants and disposal tests are complete.

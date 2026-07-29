@@ -1,5 +1,7 @@
 using WotBTreader.ApiContracts;
-using WotBTreader.Host.Web.Services;
+using WotBTreader.Application.Game;
+using WotBTreader.Application.Results;
+using WotBTreader.Core;
 
 namespace WotBTreader.Host.Web.Endpoints;
 
@@ -14,34 +16,91 @@ internal static class GameApiEndpoints
         ArgumentNullException.ThrowIfNull(builder);
 
         RouteGroupBuilder group = builder.MapGroup("/api/v1/game");
-        group.MapGet("/state", GetGameState);
-        group.MapGet("/memory", GetGameMemory);
-        group.MapPost("/launch", LaunchGame);
+        group.MapGet("/state", GetGameStateAsync);
+        group.MapGet("/memory", GetGameMemoryAsync);
+        group.MapPost("/launch", LaunchGameAsync);
         return builder;
     }
 
-    internal static IResult GetGameState(GameStateService gameState)
+    internal static async Task<IResult> GetGameStateAsync(
+        IGameSessionState gameSessionState,
+        CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(gameState);
-        GameStateResponse state = gameState.GetState();
-        return Results.Ok(state);
+        ArgumentNullException.ThrowIfNull(gameSessionState);
+
+        GameSessionSnapshot snapshot = await gameSessionState
+            .GetSnapshotAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return Results.Ok(new GameStateResponse
+        {
+            GamePresent = snapshot.GamePresent,
+            VerificationState = snapshot.State.ToString(),
+            ObservedAtUtc = snapshot.ObservedAtUtc,
+            EvidenceExpiresAtUtc = snapshot.EvidenceExpiresAtUtc,
+            ReasonCode = snapshot.ReasonCode,
+        });
     }
 
-    internal static IResult GetGameMemory(GameStateService gameState)
+    internal static async Task<IResult> GetGameMemoryAsync(
+        IGameMemoryObserver gameMemoryObserver,
+        CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(gameState);
-        GameMemoryResponse memory = gameState.GetMemory();
-        return Results.Ok(memory);
+        ArgumentNullException.ThrowIfNull(gameMemoryObserver);
+
+        GameMemoryObservation observation = await gameMemoryObserver
+            .ObserveAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return Results.Ok(new GameMemoryResponse
+        {
+            CapturedAtUtc = observation.CapturedAtUtc,
+            Availability = observation.Availability.ToString(),
+            ReplayTimeSeconds = observation.ReplayTimeSeconds,
+            PlayerHP = observation.PlayerHitPoints,
+            PlayerPositionX = observation.PlayerPositionX,
+            PlayerPositionY = observation.PlayerPositionY,
+            PlayerPositionZ = observation.PlayerPositionZ,
+            PlayerYaw = observation.PlayerYaw,
+            CameraPitch = observation.CameraPitch,
+            AliveTankCount = observation.AliveTankCount,
+        });
     }
 
-    internal static IResult LaunchGame(GameStateService gameState, GameLaunchRequest request)
+    internal static async Task<IResult> LaunchGameAsync(
+        IGameReplayLauncher gameReplayLauncher,
+        GameLaunchRequest request,
+        CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(gameState);
+        ArgumentNullException.ThrowIfNull(gameReplayLauncher);
         ArgumentNullException.ThrowIfNull(request);
 
-        GameLaunchResponse result = gameState.LaunchReplay(request.ReplayPath);
-        return result.Success
-            ? Results.Ok(result)
-            : Results.BadRequest(result);
+        if (!Guid.TryParse(request.SourceArtifactId, out Guid sourceArtifactId) || sourceArtifactId == Guid.Empty)
+        {
+            return Results.BadRequest(new GameLaunchResponse
+            {
+                Success = false,
+                Message = "launch.source_artifact.invalid",
+            });
+        }
+
+        OperationResult<GameReplayLaunchOutcome> result = await gameReplayLauncher
+            .LaunchAsync(new GameReplayLaunchRequest(new SourceArtifactId(sourceArtifactId)), cancellationToken)
+            .ConfigureAwait(false);
+
+        return result.IsSuccess
+            ? Results.Ok(new GameLaunchResponse
+            {
+                Success = true,
+                Message = "launch.accepted",
+            })
+            : Results.BadRequest(new GameLaunchResponse
+            {
+                Success = false,
+                Message = ErrorCode(result.Error),
+            });
     }
+
+    private static string ErrorCode(ApplicationError? error) =>
+        string.IsNullOrWhiteSpace(error?.Code) ? "launch.failed" : error.Code;
 }

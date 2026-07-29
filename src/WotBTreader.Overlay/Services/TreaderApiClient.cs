@@ -98,11 +98,11 @@ public sealed class TreaderApiClient : IDisposable
         return JsonSerializer.Deserialize<GameStateResponse>(json, SerializerOptions);
     }
 
-    /// <summary>Requests the host to launch a replay through the installed game.</summary>
-    public async Task<GameLaunchResponse?> LaunchGameAsync(string replayPath, CancellationToken cancellationToken = default)
+    /// <summary>Requests the host to launch a managed replay artifact through the installed game.</summary>
+    public async Task<GameLaunchResponse?> LaunchGameAsync(string sourceArtifactId, CancellationToken cancellationToken = default)
     {
         using StringContent content = new(
-            JsonSerializer.Serialize(new GameLaunchRequest { ReplayPath = replayPath }, SerializerOptions),
+            JsonSerializer.Serialize(new GameLaunchRequest { SourceArtifactId = sourceArtifactId }, SerializerOptions),
             System.Text.Encoding.UTF8,
             "application/json");
         HttpResponseMessage response = await _httpClient.PostAsync(

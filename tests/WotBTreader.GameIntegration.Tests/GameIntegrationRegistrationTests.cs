@@ -24,4 +24,18 @@ public sealed class GameIntegrationRegistrationTests
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IBlitzReplayLifecycleParser)));
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IBlitzReplayLogMonitor)));
     }
+
+    [TestMethod]
+    public void AddGameIntegration_RegistersSessionInterfaces()
+    {
+        IServiceCollection services = new ServiceCollection();
+
+        services.AddGameIntegration(
+            new GameIntegrationOptions { UseDefaultDiscoveryRoots = false });
+
+        Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IGameSessionState)));
+        Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IGameReplayLauncher)));
+        Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IGameMemoryObserver)));
+    }
+
 }

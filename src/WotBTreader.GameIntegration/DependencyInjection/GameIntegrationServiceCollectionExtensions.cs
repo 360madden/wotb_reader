@@ -5,6 +5,7 @@ using WotBTreader.GameIntegration.Discovery;
 using WotBTreader.GameIntegration.Dvpl;
 using WotBTreader.GameIntegration.Logs;
 using WotBTreader.GameIntegration.Metadata;
+using WotBTreader.GameIntegration.Session;
 
 namespace WotBTreader.GameIntegration.DependencyInjection;
 
@@ -29,6 +30,16 @@ public static class GameIntegrationServiceCollectionExtensions
         services.TryAddSingleton<IInstalledGameMetadataProvider, InstalledGameMetadataProvider>();
         services.TryAddSingleton<IBlitzReplayLifecycleParser, BlitzReplayLifecycleParser>();
         services.TryAddTransient<IBlitzReplayLogMonitor, BlitzReplayLogMonitor>();
+
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<GameSessionCoordinator>();
+        services.TryAddSingleton<IGameSessionState>(
+            sp => sp.GetRequiredService<GameSessionCoordinator>());
+        services.TryAddSingleton<IGameReplayLauncher>(
+            sp => sp.GetRequiredService<GameSessionCoordinator>());
+        services.TryAddSingleton<IGameMemoryObserver>(
+            sp => sp.GetRequiredService<GameSessionCoordinator>());
+
         return services;
     }
 }

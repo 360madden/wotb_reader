@@ -111,6 +111,7 @@ public sealed class MainViewModelTests
         Assert.AreEqual(BattleSessionId, viewModel.Sessions[0].BattleSessionId);
         Assert.AreEqual(14, viewModel.Sessions[0].ParticipantCount);
         Assert.AreEqual(500, viewModel.Sessions[0].PositionCount);
+        Assert.AreEqual("aa10bb20-cc30-dd40-ee50-ff60aa70bb80", viewModel.Sessions[0].SourceArtifactId);
         Assert.AreEqual("1 session(s)", viewModel.Status);
     }
 
