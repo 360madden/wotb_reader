@@ -34,15 +34,6 @@ public sealed class ProjectReferenceTests
     private static readonly string[] OverlayAllowedReferences = [ApiContractsName];
     private static readonly string[] ToolAllowedReferences = [ApiContractsName, ApplicationName, BootstrapName, CoreName];
 
-    // Developer tools still construct adapters directly instead of resolving product
-    // ports through Bootstrap. Roadmap M1/M2 shrink this list; nothing may be added.
-    private static readonly Dictionary<string, string[]> ToolAdapterDebt = new(StringComparer.Ordinal)
-    {
-        ["WotBTreader.GameHarness"] = ["WotBTreader.GameIntegration"],
-        ["WotBTreader.ReplayInspector"] = ["WotBTreader.Replays"],
-        ["WotBTreader.ReplaySanitizer"] = ["WotBTreader.Replays"],
-    };
-
     [TestMethod]
     public void ProductionProjects_FollowTheApprovedReferenceGraph()
     {
@@ -124,38 +115,6 @@ public sealed class ProjectReferenceTests
             "WotBTreader.Invented is not classified in the approved reference graph.");
     }
 
-    [TestMethod]
-    public void ToolAdapterDebt_ListsOnlyReferencesThatStillExist()
-    {
-        ProjectFile[] projects = ProjectCatalog.Discover();
-        List<string> stale = [];
-
-        foreach ((string toolName, string[] debtReferences) in ToolAdapterDebt)
-        {
-            ProjectFile? tool = projects.SingleOrDefault(
-                project => string.Equals(project.Name, toolName, StringComparison.Ordinal));
-            if (tool is null)
-            {
-                stale.Add($"{toolName} no longer exists; remove its exemption.");
-                continue;
-            }
-
-            string[] actualReferences = ProjectCatalog.ProjectReferences(tool);
-            foreach (string debtReference in debtReferences)
-            {
-                if (!actualReferences.Contains(debtReference, StringComparer.Ordinal))
-                {
-                    stale.Add($"{toolName} no longer references {debtReference}; remove its exemption.");
-                }
-            }
-        }
-
-        Assert.HasCount(
-            0,
-            stale,
-            $"Stale tool exemptions: {string.Join("; ", stale)}");
-    }
-
     private static string[] AnalyzeProjects(IEnumerable<ProjectFile> projects)
     {
         List<string> violations = [];
@@ -226,9 +185,7 @@ public sealed class ProjectReferenceTests
 
         if (ToolNames.Contains(projectName, StringComparer.Ordinal))
         {
-            allowedReferences = ToolAdapterDebt.TryGetValue(projectName, out string[]? debtReferences)
-                ? [.. ToolAllowedReferences, .. debtReferences]
-                : ToolAllowedReferences;
+            allowedReferences = ToolAllowedReferences;
             return true;
         }
 

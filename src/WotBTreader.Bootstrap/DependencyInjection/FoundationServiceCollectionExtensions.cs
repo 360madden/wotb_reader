@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using WotBTreader.Application.DependencyInjection;
 using WotBTreader.Application.Diagnostics;
+using WotBTreader.Application.Replay;
 using WotBTreader.Bootstrap.Configuration;
 using WotBTreader.Bootstrap.Diagnostics;
 using WotBTreader.Bootstrap.Startup;
@@ -65,4 +67,20 @@ public static class FoundationServiceCollectionExtensions
                 ? []
                 : [options.GameUserDataRoot],
         };
+
+    /// <summary>
+    /// Narrow composition for tooling that only needs replay probe and decoding.
+    /// Registers <see cref="ReplayDecoderRegistry"/> and calls
+    /// <see cref="ReplayDecodingServiceCollectionExtensions.AddReplayDecoding"/>.
+    /// No filesystem side effects, no logging, no storage, no full application
+    /// stack.
+    /// </summary>
+    public static IServiceCollection AddWotBTreaderReplayTooling(
+        this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        services.TryAddSingleton<ReplayDecoderRegistry>();
+        services.AddReplayDecoding();
+        return services;
+    }
 }

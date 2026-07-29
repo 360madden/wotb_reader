@@ -374,3 +374,24 @@ Validation: `powershell -NoProfile -ExecutionPolicy Bypass -File
 scripts\validate.ps1` passed — locked restore, format verification, Release
 build with 0 warnings/errors, Overlay 90/90, 293 tests passed, 2 local opt-in
 tests skipped, and the repository scan passed for 435 tracked files.
+
+## Amendment — M1 tool-boundary completion (`2026-07-29T14:54:17Z`)
+
+Completed M1. Removed ReplaySanitizer's stale `Replays` edge. The narrow
+`Bootstrap.AddWotBTreaderReplayTooling` registers only the replay decoder
+registry, probe, and decoders, without foundation filesystem, storage, or game
+side effects; ReplayInspector now resolves `IReplayProbe` and the
+registry-selected `IReplayDecoder` through Bootstrap. Deleted dormant,
+unreachable GameHarness `Win32Platform` and its `GameIntegration` and SkiaSharp
+dependencies; `UnavailableGameHarnessPlatform` and hard-denied `scan`/`probe`
+remain. Removed every `ToolAdapterDebt` exemption and its mechanism: tools are
+now limited to `ApiContracts`/`Application`/`Bootstrap`/`Core`.
+
+Independent decoder and security audits found no issues; verifier locked
+restore and focused checks passed. `powershell -NoProfile -ExecutionPolicy
+Bypass -File scripts\validate.ps1` passed — locked restore, format
+verification, Release build with 0 warnings/errors, 293 tests passed, 2 local
+opt-in tests skipped, and the repository scan passed for 433 tracked files.
+
+M1 is complete. Next: M2 centralized positive offline-session authorization
+before any product or harness memory authority.

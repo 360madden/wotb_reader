@@ -1,10 +1,11 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.DependencyInjection;
 using WotBTreader.Application.Replay;
 using WotBTreader.Application.Results;
+using WotBTreader.Bootstrap.DependencyInjection;
 using WotBTreader.Core;
-using WotBTreader.Replays;
 
 return await ReplayInspector.RunAsync(args).ConfigureAwait(false);
 
@@ -78,6 +79,8 @@ internal static class ReplayInspector
             return InvalidInputExitCode;
         }
 
+        using ServiceProvider provider = BuildServiceProvider();
+
         try
         {
             SourceArtifact artifact = await CreateArtifactAsync(replayPath).ConfigureAwait(false);
@@ -94,7 +97,8 @@ internal static class ReplayInspector
                             Share = FileShare.Read,
                         })));
             DecoderLimits limits = DecoderLimits.Default;
-            WotbReplayProbe probe = new();
+
+            IReplayProbe probe = provider.GetRequiredService<IReplayProbe>();
             OperationResult<ReplayProbeResult> probeResult = await probe.ProbeAsync(
                 input,
                 limits,
@@ -109,8 +113,9 @@ internal static class ReplayInspector
                 return InvalidInputExitCode;
             }
 
-            WotbReplayDecoder decoder = new();
-            if (!decoder.CanDecode(probeResult.Value))
+            ReplayDecoderRegistry registry = provider.GetRequiredService<ReplayDecoderRegistry>();
+            OperationResult<IReplayDecoder> decoderResult = registry.Select(probeResult.Value);
+            if (!decoderResult.IsSuccess || decoderResult.Value is null)
             {
                 WriteEnvelope(
                     success: false,
@@ -120,12 +125,11 @@ internal static class ReplayInspector
                         probeResult.Value.FormatVersion,
                     },
                     probeResult.Warnings,
-                    new ApplicationError(
-                        "replay.unsupported_version",
-                        "The replay version is not supported by the strict decoder."));
+                    decoderResult.Error);
                 return UnsupportedExitCode;
             }
 
+            IReplayDecoder decoder = decoderResult.Value;
             ReplayDecodeRequest request = new(
                 input,
                 DecodeRunId.New(),
@@ -221,6 +225,17 @@ internal static class ReplayInspector
                     "The inspector failed without exposing sensitive internals."));
             return InternalFailureExitCode;
         }
+    }
+
+    private static ServiceProvider BuildServiceProvider()
+    {
+        ServiceCollection services = new();
+        services.AddWotBTreaderReplayTooling();
+        return services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateOnBuild = true,
+            ValidateScopes = true,
+        });
     }
 
     private static async ValueTask<SourceArtifact> CreateArtifactAsync(string path)

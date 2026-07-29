@@ -84,6 +84,38 @@ public sealed class CompositionRootTests
     }
 
     [TestMethod]
+    public void ReplayToolingComposition_ValidatesOnBuildAndResolvesToolingPorts()
+    {
+        ServiceCollection services = new();
+        services.AddWotBTreaderReplayTooling();
+        using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateOnBuild = true,
+            ValidateScopes = true,
+        });
+
+        // Prove IReplayProbe resolves — the adapter is wired via AddReplayDecoding.
+        Assert.IsNotNull(provider.GetRequiredService<IReplayProbe>());
+
+        ReplayDecoderRegistry registry = provider.GetRequiredService<ReplayDecoderRegistry>();
+        IReplayDecoder[] decoders = [.. provider.GetServices<IReplayDecoder>()];
+        Assert.IsNotEmpty(decoders);
+
+        var supportedProbe = new ReplayProbeResult(
+            IsReplay: true,
+            GameVersion: "11.18.0.7",
+            FormatVersion: "1",
+            ArchiveEntries: [],
+            ObservableCapabilities: default,
+            Warnings: []);
+        var selection = registry.Select(supportedProbe);
+
+        Assert.IsTrue(selection.IsSuccess);
+        Assert.IsNotNull(selection.Value);
+        Assert.AreEqual(decoders[0].Descriptor.Id, selection.Value.Descriptor.Id);
+    }
+
+    [TestMethod]
     public void FoundationUsesTheConfiguredApplicationDataRoot()
     {
         using TemporaryRoot root = new();

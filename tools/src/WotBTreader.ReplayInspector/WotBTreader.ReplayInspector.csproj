@@ -7,8 +7,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\WotBTreader.Application\WotBTreader.Application.csproj" />
+    <ProjectReference Include="..\..\..\src\WotBTreader.Bootstrap\WotBTreader.Bootstrap.csproj" />
     <ProjectReference Include="..\..\..\src\WotBTreader.Core\WotBTreader.Core.csproj" />
-    <ProjectReference Include="..\..\..\src\WotBTreader.Replays\WotBTreader.Replays.csproj" />
   </ItemGroup>
 
 </Project>
