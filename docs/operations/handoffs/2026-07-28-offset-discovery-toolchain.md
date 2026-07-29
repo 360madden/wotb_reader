@@ -651,3 +651,38 @@ any resume. Only a later unit may atomically register the prepared correlation,
 artifact lease, process identity, and lifecycle baseline before resuming the
 child. The public launcher and coordinator remain fail-closed, and VM-read
 remains disabled.
+
+## Amendment — M2 pinned trusted executable lease (`2026-07-29T18:46:57Z`)
+
+Added a disconnected internal Windows launch lease that reacquires the exact
+trusted executable immediately before later process creation. Acquisition
+accepts only `TrustedGameExecutableIdentity`; callers cannot supply a new path,
+hash, version, or file identity.
+
+The lease first pins the executable's canonical containing directory without
+delete sharing, then opens the executable read-only with `FileShare.Read`.
+Handle-derived final paths, reparse state, volume/file index, product version,
+and SHA-256 are checked against the prepared trusted identity. SHA-256 is read
+through the retained executable handle with `RandomAccess`, and both file
+identity and final path are revalidated after hashing. The retained handles
+block executable write/delete/replacement plus containing- and
+ancestor-directory rename until idempotent disposal, while ordinary reads
+remain available. The game installation and its ACLs are never modified.
+
+Failures use one stable retryable path-free error, cancellation propagates, and
+all partial handles are released in `finally`. Security re-audit found no
+Critical, High, or Medium issue. Independent verification confirmed 116
+GameIntegration tests passed with 2 local opt-in tests skipped and 14
+architecture tests passed. Containment checks found no process creation, DI,
+coordinator, public launcher, overlay, harness, or memory wiring.
+
+Validation: `scripts/validate.ps1` passed locked restore, format verification,
+Release build with 0 warnings/errors, 395 tests passed, 2 local opt-in tests
+skipped, and the repository scan passed.
+
+Deferred: a separate audited unit may consume this lease and the staged replay
+lease to call explicit-application-name `CreateProcessW` with
+`CREATE_SUSPENDED`, verify the child identity, and terminate on any mismatch.
+Atomic correlation/lifecycle registration and thread resume remain later
+units. The public launcher and coordinator remain fail-closed, and VM-read
+remains disabled.
