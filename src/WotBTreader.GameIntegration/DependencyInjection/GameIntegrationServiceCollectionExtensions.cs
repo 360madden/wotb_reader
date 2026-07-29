@@ -32,6 +32,7 @@ public static class GameIntegrationServiceCollectionExtensions
         services.TryAddTransient<IBlitzReplayLogMonitor, BlitzReplayLogMonitor>();
 
         services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IBlitzReplayLifecycleFeed, BlitzReplayLifecycleFeed>();
         services.TryAddSingleton<GameSessionCoordinator>();
         services.TryAddSingleton<IGameProcessQueryPlatform, WindowsGameProcessQueryPlatform>();
         services.TryAddSingleton<IGameProcessIdentityObserver, GameProcessIdentityObserver>();

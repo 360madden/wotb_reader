@@ -24,6 +24,7 @@ public sealed class GameIntegrationRegistrationTests
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IInstalledGameMetadataProvider)));
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IBlitzReplayLifecycleParser)));
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IBlitzReplayLogMonitor)));
+        Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IBlitzReplayLifecycleFeed)));
     }
 
     [TestMethod]

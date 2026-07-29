@@ -481,3 +481,52 @@ long-lived singleton feed that exposes atomic per-source generation/cursor
 baselines plus explicit health/gap events; only then correlate the observer,
 managed launch, replay UI, and lifecycle evidence in the coordinator. VM-read
 remains disabled.
+
+## Amendment — M2 atomic lifecycle evidence feed (`2026-07-29T17:06:29Z`)
+
+Added a disconnected, internal, process-lifetime lifecycle feed in
+GameIntegration. Initial reconciliation completes before readiness, existing
+and recovery bytes are historical, and new/reset file incarnations retain that
+provenance through partial lines. The singleton publishes only allowlisted
+marker metadata; it exposes no raw native-log text, file name, full path,
+player/account data, or runtime authorization capability.
+
+The feed now owns an atomic bounded journal with a global sequence, explicit
+health epochs, per-source generations and cursors, lifetime tombstones, closed
+reason codes, and explicit gap/fault/reset events. Reconciliation reads cloned
+tail state and stages markers, resets, and EOF cursors. A batch commits only if
+every source succeeds and the journal sequence still matches the pass-start
+revision; a concurrent watcher failure rejects the entire batch. Retention
+eviction returns an explicit history gap rather than partial evidence.
+
+Each Windows log incarnation is bound to volume/file identity from the same
+held read handle. Continuity is hashed across the bounded configured evidence
+window (expanded to cover a longer pending line) and revalidated before and
+after reading. Truncation, deletion/reappearance, replacement, and same-file
+rewrite advance the generation; enumeration overflow, watcher failure,
+identity/read failure, and unexpected producer failure degrade the feed.
+
+Security and decoder audits found and prompted fixes for initially healthy
+uninitialized state, duplicate/generation-jumping markers, forgotten
+tombstones, live pre-existing incarnation bytes, non-atomic multi-source
+publication, truncate/regrow continuity, watcher-gap races, stale recovery
+boundaries, partial-line provenance, and throwing-clock partial commits. Final
+re-audit found no remaining High or Medium issue. Synthetic coverage includes
+historical/live provenance, pending lines, atomic producer failure, revision
+races, retention gaps, health epochs, cursor/tombstone monotonicity,
+truncation, deletion/reappearance, incomplete enumeration, and prefix rewrites
+that preserve the former 256-byte boundary.
+
+The feed is registered internally but remains deliberately disconnected from
+`GameSessionCoordinator`, managed launch correlation, replay UI evidence,
+process identity, every Application port, and all memory authority. VM-read
+remains disabled.
+
+Validation: `scripts/validate.ps1` passed locked restore, format verification,
+Release build with 0 warnings/errors, 360 tests passed, 2 local opt-in tests
+skipped, and the repository scan passed.
+
+Deferred: bind the canonical installed-game identity to the query observer,
+then correlate a managed-launch baseline, exact process identity, replay UI,
+and post-baseline lifecycle marker in the coordinator. Do not enable VM-read
+until that correlation and its revocation/disposal tests are complete.
