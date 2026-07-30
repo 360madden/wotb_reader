@@ -1009,7 +1009,7 @@ public sealed class MainViewModelTests
 
     private MainViewModel CreateViewModel(FakeHttpMessageHandler? handler = null, MockTelemetryStreamService? streamService = null)
     {
-        RendezvousLocator locator = new(new FakeTimeProvider(Now), _rendezvousPath);
+        RendezvousLocator locator = new(new FakeTimeProvider(Now), _rendezvousPath, isProcessAlive: _ => true);
         Func<Uri, string?, TreaderApiClient> factory = handler is not null
             ? (baseUri, capability) => new TreaderApiClient(baseUri, handler, capability)
             : FailFactory;

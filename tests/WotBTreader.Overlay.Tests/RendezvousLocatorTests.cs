@@ -125,7 +125,7 @@ public sealed class RendezvousLocatorTests
         AssertReasonContainsNoSecrets(result);
     }
 
-    private RendezvousLocator CreateLocator() => new(new FakeTimeProvider(Now), _rendezvousPath);
+    private RendezvousLocator CreateLocator() => new(new FakeTimeProvider(Now), _rendezvousPath, isProcessAlive: _ => true);
 
     private void WriteRecord(string schemaVersion, string baseUri, DateTimeOffset issuedAtUtc, DateTimeOffset expiresAtUtc)
     {

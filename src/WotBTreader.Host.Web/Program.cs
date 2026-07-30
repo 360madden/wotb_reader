@@ -63,4 +63,13 @@ app.MapHub<TelemetryHub>("/api/v1/stream");
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
-await app.RunAsync();
+try
+{
+    await app.RunAsync();
+}
+catch (IOException) when (app.Environment.IsProduction())
+{
+    Console.Error.WriteLine(
+        $"Port {configuredPort} is already in use. Stop the other instance first.");
+    Environment.Exit(1);
+}

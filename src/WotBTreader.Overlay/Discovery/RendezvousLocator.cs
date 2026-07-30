@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 
@@ -25,11 +26,16 @@ public sealed class RendezvousLocator
 
     private readonly TimeProvider _timeProvider;
     private readonly string _rendezvousPath;
+    private readonly Func<int, bool> _isProcessAlive;
 
-    public RendezvousLocator(TimeProvider? timeProvider = null, string? rendezvousPath = null)
+    public RendezvousLocator(
+        TimeProvider? timeProvider = null,
+        string? rendezvousPath = null,
+        Func<int, bool>? isProcessAlive = null)
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
         _rendezvousPath = rendezvousPath ?? ResolveDefaultPath();
+        _isProcessAlive = isProcessAlive ?? DefaultIsProcessAlive;
     }
 
     private static string ResolveDefaultPath()
@@ -82,7 +88,27 @@ public sealed class RendezvousLocator
             return new RendezvousResult(RendezvousStatus.Stale, null, "record expired");
         }
 
+        // Verify the publishing process is still alive. A PID from a dead host
+        // means the record is stale regardless of expiry time.
+        if (!_isProcessAlive(record.ProcessId))
+        {
+            return new RendezvousResult(RendezvousStatus.Stale, null, "host process exited");
+        }
+
         return new RendezvousResult(RendezvousStatus.Found, record, string.Empty);
+    }
+
+    private static bool DefaultIsProcessAlive(int processId)
+    {
+        try
+        {
+            using Process? process = Process.GetProcessById(processId);
+            return process is not null && !process.HasExited;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool IsLoopbackUri(string baseUri)

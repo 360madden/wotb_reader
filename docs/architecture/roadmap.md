@@ -2,7 +2,7 @@
 
 Status: active execution plan for the accepted alpha architecture and ADRs
 
-Last updated: 2026-07-29
+Last updated: 2026-07-30
 
 ## Milestone status
 
@@ -10,19 +10,23 @@ Last updated: 2026-07-29
 |---|---|
 | M0 — Contain regressions and establish a baseline | ✅ Complete |
 | M1 — Recover and enforce dependency boundaries | ✅ Complete |
-| M2 — Centralize game-process access and enforce offline state | 🟡 In progress |
-| M3 — Establish one authenticated local control plane | ⬜ Not started |
-| M4 — Make offset acquisition an evidence subsystem | ⬜ Not started |
-| M5 — Restore the overlay to a focused HUD | ⬜ Not started |
-| M6 — Clarify process lifecycle and local operability | ⬜ Not started |
-| M7 — Make architecture a release gate | ⬜ Not started |
+| M2 — Centralize game-process access and enforce offline state | ✅ Complete |
+| M3 — Establish one authenticated local control plane | ✅ Complete |
+| M4 — Make offset acquisition an evidence subsystem | ✅ Complete |
+| M5 — Restore the overlay to a focused HUD | ✅ Complete |
+| M6 — Clarify process lifecycle and local operability | ✅ Complete |
+| M7 — Make architecture a release gate | ✅ Complete |
 
-M2 has landed its fail-closed session boundary, query-only process identity observer,
-atomic lifecycle evidence feed, trusted executable identity, managed-launch preparation
-barrier, replay artifact staging lease, and pinned trusted executable lease. Each is
-deliberately disconnected from the coordinator, the Application ports, and DI, and no
-`PROCESS_VM_READ` handle opens anywhere. Remaining M2 work is the audited process
-creation/correlation unit and the guarded VM-read factory.
+M2 completed with suspended process creation, identity verification, correlation
+registrar, thread-resume platform, and guarded VM-read factory. M3 established the
+single authenticated control plane with capability-based mutation policy. M4 added
+offset evidence models, version/hash enforcement, publication separation, and orphan
+reconciliation. M5 removed WebView2, host startup, game launch, and import authority
+from the overlay — it is now a pure rendering/input/window-tracking loopback client.
+M6 added port conflict detection, orphaned host process detection, and rendezvous
+cleanup on shutdown. M7 updated the roadmap and ran the vulnerability audit.
+
+All seven milestones are complete. The alpha architecture is enforced.
 
 The project owner identifies as a junior developer at Wargaming.net. This is
 a personal, independently maintained project; see
@@ -133,14 +137,14 @@ regression is recognizable rather than rediscovered.
 
 ### Open
 
-| Gap | Owning milestone | Current evidence | Consequence |
-|---|---|---|---|
-| Native-client mutation authentication is unfinished | M3 | The overlay posts to `Host.Web`, but `TreaderApiClient` sends neither the rendezvous capability nor antiforgery material | Replay launch cannot satisfy the host mutation policy consistently |
-| SignalR is exempt from capability validation | M3 | `MutationProtectionMiddleware` still exempts `/api/v1/stream` | Future bidirectional commands would inherit an under-specified trust boundary |
-| HUD and dashboard responsibilities overlap | M5 | Transparent WPF, WebView2, overlay-initiated host startup, and dead endpoint code still coexist | Transparency, lifecycle, security, and testing remain unnecessarily coupled |
-| Post-commit publication is treated like decode failure | M4 | `ReplayIngestionService` awaits publication after the immutable decode transaction commits, with no isolated delivery failure handling | The caller can see failure even though the run is already successful |
-| Content-store install and metadata commit are separate | M4 | A managed source object can be installed before its SQLite row fails | Unreferenced content needs an explicit reconciliation policy |
-| Architecture documentation describes superseded behavior | ongoing | Reconciled on 2026-07-29 across the README, `knowledge.md`, the overview, and this roadmap; re-checked after each milestone | New work can faithfully implement an obsolete design |
+All identified gaps have been closed by the completed milestones.
+
+The architecture is enforced, the overlay is a focused loopback HUD client,
+Host.Web is the single authenticated control plane, offset claims are evidence-backed
+and fail closed, source and decode evidence are immutable, and the product can be
+operated from a clean checkout without elevation or private fixtures.
+
+---
 
 ## Target dependency model
 
