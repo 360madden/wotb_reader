@@ -3,12 +3,24 @@ using WotBTreader.Core;
 
 namespace WotBTreader.Application.Storage;
 
+/// <summary>
+/// Parameters for importing a source artifact into the content-addressed store.
+/// </summary>
+/// <param name="CandidatePath">File system path to the source file to import.</param>
+/// <param name="MediaType">MIME type or application-specific media type identifier.</param>
+/// <param name="StoredExtension">File extension to use in the content store.</param>
+/// <param name="MaximumBytes">Maximum allowed file size in bytes.</param>
 public sealed record SourceImportRequest(
     string CandidatePath,
     string MediaType,
     string StoredExtension,
     long MaximumBytes);
 
+/// <summary>
+/// Result of a source artifact import operation.
+/// </summary>
+/// <param name="Artifact">The imported (or pre-existing) artifact record.</param>
+/// <param name="AlreadyExisted">True if the content was already in storage (deduplicated).</param>
 public sealed record SourceImportOutcome(
     SourceArtifact Artifact,
     bool AlreadyExisted);
@@ -21,17 +33,26 @@ public sealed record DecodeRunSummary(
     int EventCount,
     int RawRecordCount);
 
-/// <summary>Owns atomic, content-addressed copies of immutable source artifacts.</summary>
+/// <summary>
+/// Owns atomic, content-addressed copies of immutable source artifacts.
+/// Every artifact is stored by its SHA-256 hash and never modified after import.
+/// </summary>
 public interface ISourceArtifactStore
 {
+    /// <summary>
+    /// Imports a candidate file into the content-addressed store.
+    /// Returns the existing artifact if the content hash already exists (deduplication).
+    /// </summary>
     ValueTask<OperationResult<SourceImportOutcome>> ImportAsync(
         SourceImportRequest request,
         CancellationToken cancellationToken);
 
+    /// <summary>Opens a read-only stream for the artifact content.</summary>
     ValueTask<OperationResult<Stream>> OpenReadAsync(
         SourceArtifactId artifactId,
         CancellationToken cancellationToken);
 
+    /// <summary>Retrieves the artifact metadata record by ID.</summary>
     ValueTask<OperationResult<SourceArtifact>> GetAsync(
         SourceArtifactId artifactId,
         CancellationToken cancellationToken);

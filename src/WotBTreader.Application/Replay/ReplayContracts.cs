@@ -3,6 +3,22 @@ using WotBTreader.Core;
 
 namespace WotBTreader.Application.Replay;
 
+/// <summary>
+/// Security and resource limits applied to every decoder invocation.
+/// Prevents decompression bombs, archive bombs, runaway decoding, and
+/// excessive unknown-field accumulation.
+/// </summary>
+/// <param name="MaximumArchiveBytes">Maximum total compressed archive size.</param>
+/// <param name="MaximumArchiveEntries">Maximum number of entries in the archive.</param>
+/// <param name="MaximumEntryBytes">Maximum size of a single archive entry.</param>
+/// <param name="MaximumExpandedBytes">Maximum total decompressed size across all entries.</param>
+/// <param name="MaximumCompressionRatio">Maximum allowed compression ratio (expanded/compressed).</param>
+/// <param name="MaximumPacketCount">Maximum decoded packets before truncation.</param>
+/// <param name="MaximumPacketBytes">Maximum bytes per individual packet.</param>
+/// <param name="MaximumUnknownFields">Maximum unrecognised protobuf fields before abort.</param>
+/// <param name="MaximumNestingDepth">Maximum protobuf/pickle nesting depth.</param>
+/// <param name="MaximumResynchronizationBytes">Maximum bytes to scan for resynchronization.</param>
+/// <param name="MaximumDecodeDuration">Maximum wall-clock time for a single decode.</param>
 public sealed record DecoderLimits(
     long MaximumArchiveBytes,
     int MaximumArchiveEntries,
@@ -16,6 +32,7 @@ public sealed record DecoderLimits(
     int MaximumResynchronizationBytes,
     TimeSpan MaximumDecodeDuration)
 {
+    /// <summary>Sensible defaults for production use on typical replay files.</summary>
     public static DecoderLimits Default { get; } = new(
         MaximumArchiveBytes: 128 * 1024 * 1024,
         MaximumArchiveEntries: 32,

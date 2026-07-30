@@ -32,6 +32,41 @@ else if (_page.Items.Count == 0)
 }
 else
 {
+    @* ── Metrics cards row ── *@
+    <div class="row g-2 mb-3">
+        <div class="col-auto">
+            <div class="card-dashboard text-center" style="min-width:100px">
+                <div style="font-size:0.7rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.04em">Sessions</div>
+                <div style="font-size:1.6rem;font-weight:600;color:var(--accent-blue)">@_page.Items.Count</div>
+            </div>
+        </div>
+        <div class="col-auto">
+            <div class="card-dashboard text-center" style="min-width:100px">
+                <div style="font-size:0.7rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.04em">Participants</div>
+                <div style="font-size:1.6rem;font-weight:600;color:var(--accent-green)">@_totalParticipants.ToString("N0")</div>
+            </div>
+        </div>
+        <div class="col-auto">
+            <div class="card-dashboard text-center" style="min-width:100px">
+                <div style="font-size:0.7rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.04em">Positions</div>
+                <div style="font-size:1.6rem;font-weight:600;color:var(--accent-orange)">@_totalPositions.ToString("N0")</div>
+            </div>
+        </div>
+        <div class="col-auto">
+            <div class="card-dashboard text-center" style="min-width:100px">
+                <div style="font-size:0.7rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.04em">Events</div>
+                <div style="font-size:1.6rem;font-weight:600;color:var(--accent-purple)">@_totalEvents.ToString("N0")</div>
+            </div>
+        </div>
+    </div>
+
+    @* ── Search filter ── *@
+    <div class="mb-3">
+        <input type="text" class="form-control form-control-sm" style="max-width:320px"
+               placeholder="🔍  Filter by map name…"
+               @bind="_searchFilter" @bind:event="oninput" />
+    </div>
+
     <div class="card-dashboard">
     <table class="table table-sm table-striped">
         <thead>
@@ -46,7 +81,7 @@ else
             </tr>
         </thead>
         <tbody>
-            @foreach (SessionSummaryResponse item in _page.Items)
+            @foreach (SessionSummaryResponse item in FilteredItems())
             {
                 string? sessionId = item.Session?.BattleSessionId;
                 <tr>
@@ -70,12 +105,20 @@ else
             }
         </tbody>
     </table>
+    @if (FilteredCount() < _page.Items.Count)
+    {
+        <div class="text-muted small mt-1">Showing @FilteredCount() of @_page.Items.Count sessions</div>
+    }
     </div>
 }
 
 @code {
     private SessionPageResponse? _page;
     private string? _error;
+    private string _searchFilter = string.Empty;
+    private int _totalParticipants;
+    private int _totalPositions;
+    private int _totalEvents;
 
     private static string StatusBadgeClass(string? status) => status switch
     {
@@ -85,6 +128,23 @@ else
         _ => "bg-secondary",
     };
 
+    private IEnumerable<SessionSummaryResponse> FilteredItems()
+    {
+        if (_page is null) yield break;
+        string filter = _searchFilter.Trim();
+        foreach (SessionSummaryResponse item in _page.Items)
+        {
+            if (filter.Length == 0 ||
+                (item.Session?.MapName ?? "").Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                (item.Session?.MapId ?? "").Contains(filter, StringComparison.OrdinalIgnoreCase))
+            {
+                yield return item;
+            }
+        }
+    }
+
+    private int FilteredCount() => FilteredItems().Count();
+
     protected override async Task OnInitializedAsync()
     {
         try
@@ -93,6 +153,11 @@ else
                 0,
                 ReadApiEndpoints.DefaultPageSize,
                 CancellationToken.None);
+
+            // Compute summary stats
+            _totalParticipants = _page.Items.Sum(i => i.ParticipantCount);
+            _totalPositions = _page.Items.Sum(i => i.PositionCount);
+            _totalEvents = _page.Items.Sum(i => i.EventCount);
         }
         catch (Exception exception)
         {

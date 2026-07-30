@@ -28,9 +28,19 @@ public sealed record GameSessionSnapshot(
     DateTimeOffset? EvidenceExpiresAtUtc,
     string ReasonCode);
 
-/// <summary>Reads the current safe game-session state.</summary>
+/// <summary>
+/// Reads the current safe game-session state. This is a read-only surface
+/// that never exposes process handles, authorization details, or offsets.
+/// </summary>
 public interface IGameSessionState
 {
+    /// <summary>
+    /// Returns the current evidence-backed session state snapshot.
+    /// Never throws — returns <see cref="GameSessionVerificationState.Unknown"/>
+    /// when the state cannot be determined.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The current session state snapshot.</returns>
     ValueTask<GameSessionSnapshot> GetSnapshotAsync(
         CancellationToken cancellationToken);
 }
@@ -45,9 +55,19 @@ public sealed record GameReplayLaunchRequest(SourceArtifactId SourceArtifactId);
 /// <summary>Safe result of a managed replay launch request.</summary>
 public sealed record GameReplayLaunchOutcome(DateTimeOffset RequestedAtUtc);
 
-/// <summary>Launches managed replay artifacts through the verified game adapter.</summary>
+/// <summary>
+/// Launches managed replay artifacts through the verified game adapter.
+/// The adapter owns correlation and never accepts caller-supplied paths.
+/// </summary>
 public interface IGameReplayLauncher
 {
+    /// <summary>
+    /// Launches a managed replay artifact through the installed game.
+    /// Returns the launch outcome on success, or an error with a stable code.
+    /// </summary>
+    /// <param name="request">The managed artifact to launch.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Launch outcome on success, or an application error.</returns>
     ValueTask<OperationResult<GameReplayLaunchOutcome>> LaunchAsync(
         GameReplayLaunchRequest request,
         CancellationToken cancellationToken);
@@ -81,11 +101,18 @@ public sealed record GameMemoryObservation(
     int? AliveTankCount);
 
 /// <summary>
-/// Returns safe observations without exposing process identity, handles,
-/// authorization leases, offsets, or attachment operations.
+/// Returns safe memory observations without exposing process identity,
+/// handles, authorization leases, offsets, or attachment operations.
+/// Returns <see cref="GameMemoryObservationAvailability.Unsupported"/>
+/// when the offline-session gate is not satisfied.
 /// </summary>
 public interface IGameMemoryObserver
 {
+    /// <summary>
+    /// Captures a single memory observation snapshot from the verified game process.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A bounded observation with nullable telemetry fields.</returns>
     ValueTask<GameMemoryObservation> ObserveAsync(
         CancellationToken cancellationToken);
 }
