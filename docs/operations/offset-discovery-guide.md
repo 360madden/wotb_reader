@@ -15,19 +15,48 @@ Last updated: 2026-07-30
 
 ## Quickstart — Ghidra headless (Phase 1)
 
-This is the only phase that can be automated. Run from the repo root:
+**This must be run on the desktop** — full auto-analysis of a 71MB binary takes
+45-90 minutes and exceeds remote terminal timeouts. The pipeline is split into
+two steps so you can let the long step finish and run the short step whenever
+ready.
+
+### Step 1 — Import + auto-analyze (long: 45-90 min)
 
 ```cmd
 .build\ghidra-offsets.bat
 ```
 
-**What it does:**
-1. Imports `wotblitz.exe` into a Ghidra project at `C:\work\tools\ghidra-projects\WotBlitz`
-2. Runs full auto-analysis (~10-15 min for 71MB)
-3. Executes `FindOffsets.py` to search for game-state strings and trace cross-references
-4. Outputs `tools\ghidra-scripts\ghidra-offset-candidates.json`
+**What it does:** Imports `wotblitz.exe` into a Ghidra project at
+`C:\work\tools\ghidra-projects\WotBlitz` and runs full auto-analysis.
+Keep the window open until it finishes — it will show "Import + auto-analysis
+complete!" when done. The `-overwrite` flag starts fresh each time; remove it
+from the `.bat` file to resume a partial analysis after an interruption.
 
-**What you get:** Candidate base-relative offsets for `playerHP`, `playerPositionX/Y/Z`, `replayTime`, `playerYaw`, `cameraPitch`, and `aliveTankCount`, ranked by cross-reference count.
+### Step 2 — Run FindOffsets.py (short: 3-5 min)
+
+```cmd
+.build\ghidra-scan.bat
+```
+
+**What it does:** Runs `FindOffsets.py` on the analyzed project. Searches for
+game-state strings (health, position, replayTime, yaw, pitch, alive), traces
+cross-references, and outputs candidate offsets to
+`tools\ghidra-scripts\ghidra-offset-candidates.json`.
+
+**What you get:** Candidate base-relative offsets for `playerHP`,
+`playerPositionX/Y/Z`, `replayTime`, `playerYaw`, `cameraPitch`, and
+`aliveTankCount`, ranked by cross-reference count.
+
+### Why not remote?
+
+Full Ghidra auto-analysis of a 71MB binary consumes 2+ GB RAM and takes 45-90
+minutes. The remote analysis agent has a 20-minute timeout — when the timer
+expires, the parent script is killed but the Java analysis process keeps running
+in the background as a zombie, consuming memory without producing output. Run
+the `.bat` files directly on the desktop where there's no timeout constraint.
+
+If the analysis is interrupted, remove `-overwrite` from the `.bat` file to
+resume from the incomplete project instead of starting over.
 
 ## Desktop manual pipeline
 
