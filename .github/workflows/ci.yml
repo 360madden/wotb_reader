@@ -26,6 +26,8 @@ jobs:
         run: dotnet build WotBTreader.sln -c Release --no-restore
       - name: Test
         run: dotnet test WotBTreader.sln -c Release --no-build --logger "trx;LogFileName=tests.trx"
+      - name: Audit vulnerable packages
+        run: dotnet list WotBTreader.sln package --vulnerable --include-transitive
       - name: Scan tracked repository
         shell: pwsh
         run: ./scripts/scan-repository.ps1
