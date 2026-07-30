@@ -7,10 +7,10 @@ Last updated: 2026-07-30
 | Item | Status |
 |------|--------|
 | Game version installed | 11.19.0.10 (`C:\Games\World_of_Tanks_Blitz\wotblitz.exe`, ~71MB) |
-| Offset file | `memory-offsets/11.8.0.7.json` — placeholder (all zeros, version mismatch) |
+| Offset file | `memory-offsets/11.19.0.10.json` — placeholder (all zeros, version-matched) |
 | Ghidra 12.1.2 | Installed at `C:\work\tools\ghidra_12.1.2_PUBLIC` |
 | Cheat Engine 7 | Installed at `C:\Program Files\Cheat Engine\` |
-| GameHarness scanner | `scan`/`probe` disabled by M2 offline-session gate |
+| GameHarness scanner | `scan`/`probe` now check the offline-session gate via HTTP |
 | Ghidra headless script | `tools/ghidra-scripts/FindOffsets.py` — ready to run |
 
 ## Quickstart — Ghidra headless (Phase 1)
@@ -84,14 +84,30 @@ Once you have candidate offsets:
 }
 ```
 
-## GameHarness M2 gate
+## GameHarness M2 gate — ✅ WIRED
 
-The `scan` and `probe` commands in GameHarness are disabled pending the offline-replay verification gate (M2). They will be re-enabled when the following conditions are met:
+The `scan` and `probe` commands in GameHarness now check the offline-session
+gate via `GET /api/v1/game/state` (read from the rendezvous file). They are no
+longer hard-denied. The full flow is:
 
-1. Process memory reads are gated behind positive evidence (canonical executable path, version, SHA-256, PID with process-start identity, owned window, healthy monitor, confirmed replay UI, fresh lifecycle marker)
-2. The `SuspendedGameProcessLaunch` + `WindowsTrustedExecutableLaunchLease` pipeline is connected (M2 components landed but disconnected)
+1. `POST /api/v1/game/launch` → Coordinator orchestrates the M2 suspended-process
+   pipeline (prepare → executable lease → artifact staging → suspended process →
+   correlation → resume → record context).
+2. Lifecycle evidence arrives via `ApplyEvidence()` → coordinator evaluates →
+   `OfflineReplayVerified`.
+3. GameHarness `scan`/`probe` reads the rendezvous file, calls
+   `GET /api/v1/game/state`, and reports scan availability when the gate is
+   satisfied.
 
-To re-enable, connect the M2 components in `GameSessionCoordinator`:
-- `IGameProcessIdentityObserver` → verify the process identity matches the trusted executable
-- `ILifecycleEventJournal` → confirm a replay UI is visible
-- `WindowsTrustedExecutableLaunchLease` → pin the executable before opening a process handle
+The M2 components (`SuspendedGameProcessLaunch`, `WindowsTrustedExecutableLaunchLease`,
+`ManagedReplayArtifactStager`, `ManagedLaunchPreparer`, `ManagedLaunchCorrelationRegistrar`,
+`ThreadResumePlatform`) are fully wired in `GameSessionCoordinator.LaunchAsync()`
+as of commit `c590e61`.
+
+To launch a replay and reach the verified state:
+```
+1. import a .wotbreplay via CLI
+2. serve (start the web host)
+3. POST /api/v1/game/launch with the source artifact ID
+4. GameHarness scan  (reports "gate satisfied" when OfflineReplayVerified)
+```

@@ -14,5 +14,5 @@
     "aliveTankCount": 0
   },
   "confidence": "none",
-  "notes": "Placeholder — run the GameHarness scanner tool to discover real offsets."
+  "notes": "Placeholder — superseded by 11.19.0.10.json for the currently installed game version. Run the GameHarness scanner tool to discover real offsets."
 }

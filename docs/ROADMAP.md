@@ -37,7 +37,7 @@ are current as of 2026-07-29.
 | Session search/filter (overlay sidebar) | ✅ | — |
 | Documentation (architecture, handoffs, BLK log, knowledge.md) | ✅ | — |
 
-**Total:** 397 tests — 395 passed, 0 failed, 2 skipped (local opt-in) across all 12
+**Total:** 396 tests — 394 passed, 0 failed, 2 skipped (local opt-in) across all 12
 test projects. Build: 0 errors, 0 warnings. Scan: 457 files clean.
 Vulnerability audit: 0 vulnerable packages across all 27 projects.
 

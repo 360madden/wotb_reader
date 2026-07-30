@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "gameVersion": "11.19.0.10",
+  "executableSha256": "1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d",
+  "discoveredAtUtc": null,
+  "offsets": {
+    "replayTime": 0,
+    "playerHP": 0,
+    "playerPositionX": 0,
+    "playerPositionY": 0,
+    "playerPositionZ": 0,
+    "playerYaw": 0,
+    "cameraPitch": 0,
+    "aliveTankCount": 0
+  },
+  "confidence": "none",
+  "notes": "Placeholder for installed version 11.19.0.10. Run the Ghidra headless pipeline (.build/ghidra-offsets.bat) then Cheat Engine dynamic scanning to discover real offsets. The M2 suspended-process gate is now wired — GameHarness scan/probe can verify the offline-session gate via the web host."
+}
