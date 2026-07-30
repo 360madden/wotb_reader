@@ -175,6 +175,29 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(request);
 
+        try
+        {
+            return await LaunchCoreAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            return OperationResult.Failure<GameReplayLaunchOutcome>(
+                new ApplicationError(
+                    "game.launch.unexpected_failure",
+                    $"An unexpected error occurred during launch orchestration: {exception.GetType().Name}",
+                    Retryable: true));
+        }
+    }
+
+    private async ValueTask<OperationResult<GameReplayLaunchOutcome>> LaunchCoreAsync(
+        GameReplayLaunchRequest request,
+        CancellationToken cancellationToken)
+    {
+
         // ── 1. Prepare: identity, correlation, lifecycle baseline ──
         OperationResult<ManagedLaunchPreparation> prepResult =
             await _preparer.PrepareAsync(cancellationToken).ConfigureAwait(false);

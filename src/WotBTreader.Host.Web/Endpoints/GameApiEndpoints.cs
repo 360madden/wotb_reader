@@ -84,21 +84,36 @@ internal static class GameApiEndpoints
             });
         }
 
-        OperationResult<GameReplayLaunchOutcome> result = await gameReplayLauncher
-            .LaunchAsync(new GameReplayLaunchRequest(new SourceArtifactId(sourceArtifactId)), cancellationToken)
-            .ConfigureAwait(false);
+        try
+        {
+            OperationResult<GameReplayLaunchOutcome> result = await gameReplayLauncher
+                .LaunchAsync(new GameReplayLaunchRequest(new SourceArtifactId(sourceArtifactId)), cancellationToken)
+                .ConfigureAwait(false);
 
-        return result.IsSuccess
-            ? Results.Ok(new GameLaunchResponse
-            {
-                Success = true,
-                Message = "launch.accepted",
-            })
-            : Results.BadRequest(new GameLaunchResponse
+            return result.IsSuccess
+                ? Results.Ok(new GameLaunchResponse
+                {
+                    Success = true,
+                    Message = "launch.accepted",
+                })
+                : Results.BadRequest(new GameLaunchResponse
+                {
+                    Success = false,
+                    Message = ErrorCode(result.Error),
+                });
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            return Results.BadRequest(new GameLaunchResponse
             {
                 Success = false,
-                Message = ErrorCode(result.Error),
+                Message = $"launch.failed: {exception.GetType().Name}",
             });
+        }
     }
 
     private static string ErrorCode(ApplicationError? error) =>
