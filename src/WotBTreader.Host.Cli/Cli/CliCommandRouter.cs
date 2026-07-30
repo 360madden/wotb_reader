@@ -722,7 +722,7 @@ public sealed class CliCommandRouter
                     return Failure(
                         CliExitCode.InternalFailure,
                         "cli.watch.directory_removed",
-                        $"Directory '{directory}' was removed while watching.",
+                        "The watched directory was removed while watching.",
                         data: null,
                         correlationId);
                 }

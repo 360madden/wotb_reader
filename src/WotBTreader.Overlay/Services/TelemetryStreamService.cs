@@ -163,11 +163,13 @@ internal sealed class TelemetryStreamService : ITelemetryStreamService
         {
             // Expected on reconnection or disposal.
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             // Network drops, serialisation errors, and hub disconnects are
             // all benign here — the caller polls as a fallback, and
             // AutomaticReconnect will restore the connection separately.
+            System.Diagnostics.Debug.WriteLine(
+                $"[TelemetryStream] Stream consume failed: {ex.GetType().Name}");
         }
     }
 
