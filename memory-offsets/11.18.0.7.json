@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "gameVersion": "11.18.0.7",
+  "executableSha256": "",
+  "discoveredAtUtc": null,
+  "offsets": {
+    "replayTime": 0,
+    "playerHP": 0,
+    "playerPositionX": 0,
+    "playerPositionY": 0,
+    "playerPositionZ": 0,
+    "playerYaw": 0,
+    "cameraPitch": 0,
+    "aliveTankCount": 0
+  },
+  "confidence": "none",
+  "notes": "Placeholder — run the Ghidra + Cheat Engine discovery workflow to populate real offsets for this version."
+}

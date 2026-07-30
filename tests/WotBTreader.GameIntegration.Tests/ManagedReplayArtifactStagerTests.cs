@@ -203,6 +203,7 @@ public sealed class ManagedReplayArtifactStagerTests
         public ValueTask<OperationResult<SourceArtifact>> GetAsync(SourceArtifactId artifactId, CancellationToken cancellationToken) => ValueTask.FromResult(_get);
         public ValueTask<OperationResult<Stream>> OpenReadAsync(SourceArtifactId artifactId, CancellationToken cancellationToken)
         { OpenCalls++; return ValueTask.FromResult(_openError is null ? OperationResult.Success(_stream!) : OperationResult.Failure<Stream>(_openError)); }
+        public ValueTask<IReadOnlyList<string>> ListUnreferencedContentHashesAsync(CancellationToken cancellationToken) => ValueTask.FromResult<IReadOnlyList<string>>([]);
     }
 
     private sealed class Names(params string[] values) : IReplayLaunchStageNameGenerator

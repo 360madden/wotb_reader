@@ -409,6 +409,68 @@ internal sealed class ContentAddressedSourceArtifactStore : ISourceArtifactStore
         File.Delete(temporaryPath);
     }
 
+    public async ValueTask<IReadOnlyList<string>> ListUnreferencedContentHashesAsync(
+        CancellationToken cancellationToken)
+    {
+        // Collect all content-addressed object hashes on disk.
+        HashSet<string> diskHashes = new(StringComparer.OrdinalIgnoreCase);
+        string contentRoot = _context.Paths.ContentRoot;
+        if (!Directory.Exists(contentRoot))
+        {
+            return [];
+        }
+
+        foreach (string subDir in Directory.GetDirectories(contentRoot))
+        {
+            string dirName = Path.GetFileName(subDir);
+            if (dirName.Length != 2)
+            {
+                continue;
+            }
+
+            foreach (string file in Directory.GetFiles(subDir))
+            {
+                string fileName = Path.GetFileName(file);
+                if (fileName.Length == 64) // SHA-256 hex
+                {
+                    diskHashes.Add(fileName);
+                }
+            }
+        }
+
+        if (diskHashes.Count == 0)
+        {
+            return [];
+        }
+
+        // Query all referenced hashes from the database.
+        try
+        {
+            await using SqliteConnection connection =
+                await _context.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using SqliteCommand command = connection.CreateCommand();
+            command.CommandText =
+                """
+                SELECT sha256 FROM source_artifacts
+                WHERE sha256 IS NOT NULL;
+                """;
+            await using SqliteDataReader reader =
+                await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                diskHashes.Remove(reader.GetString(0));
+            }
+        }
+        catch (SqliteException)
+        {
+            // If the database is unavailable, return nothing rather than
+            // incorrectly marking everything as unreferenced.
+            return [];
+        }
+
+        return [.. diskHashes];
+    }
+
     private string GetObjectPath(ContentHash hash) =>
         Path.Combine(_context.Paths.ContentRoot, hash.Value[..2], hash.Value);
 

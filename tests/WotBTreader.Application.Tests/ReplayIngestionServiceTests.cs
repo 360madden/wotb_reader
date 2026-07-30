@@ -64,6 +64,10 @@ public sealed class ReplayIngestionServiceTests
             SourceArtifactId artifactId,
             CancellationToken cancellationToken) =>
             ValueTask.FromResult(OperationResult.Success(artifact));
+
+        public ValueTask<IReadOnlyList<string>> ListUnreferencedContentHashesAsync(
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult<IReadOnlyList<string>>([]);
     }
 
     private sealed class StubProbe : IReplayProbe

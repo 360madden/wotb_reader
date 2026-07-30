@@ -233,13 +233,15 @@ public sealed class ReplayIngestionService : IReplayIngestionService
                     [.. persisted.Warnings]);
             }
 
-            // Publication happens only after CommitAsync reports a successful transaction.
+            // Publication is a separate delivery concern. A publication failure
+            // must not fail or rewrite an already-successful immutable decode run.
+            // Fire-and-forget with best-effort logging; the run is already durable.
             if (projection.Session is not null && projection.Events.Count > 0)
             {
-                await _publisher.PublishCommittedAsync(
+                _ = PublishTelemetryAsync(
                     projection.Session.Id,
                     projection.Events,
-                    cancellationToken).ConfigureAwait(false);
+                    persisted.Value.DecodeRun.Id.Value);
             }
 
             double elapsedMilliseconds = Stopwatch.GetElapsedTime(startedTimestamp).TotalMilliseconds;
@@ -304,6 +306,23 @@ public sealed class ReplayIngestionService : IReplayIngestionService
             }
 
             return opened.Value;
+        }
+    }
+
+    private async Task PublishTelemetryAsync(
+        BattleSessionId sessionId,
+        IReadOnlyList<CanonicalEvent> events,
+        Guid decodeRunId)
+    {
+        try
+        {
+            using CancellationTokenSource cts = new(TimeSpan.FromSeconds(15));
+            await _publisher.PublishCommittedAsync(
+                sessionId, events, cts.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            ReplayIngestionLog.PublicationFailed(_logger, decodeRunId, ex.GetType().Name);
         }
     }
 

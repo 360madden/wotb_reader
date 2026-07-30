@@ -58,4 +58,13 @@ internal static partial class ReplayIngestionLog
         Level = LogLevel.Warning,
         Message = "Decode run {DecodeRunId} ended with code {ErrorCode}.")]
     public static partial void DecodeRunFailed(ILogger logger, Guid decodeRunId, string errorCode);
+
+    [LoggerMessage(
+        EventId = 3003,
+        Level = LogLevel.Warning,
+        Message = "Telemetry publication for decode run {DecodeRunId} failed: {ErrorType}.")]
+    public static partial void PublicationFailed(
+        ILogger logger,
+        Guid decodeRunId,
+        string errorType);
 }

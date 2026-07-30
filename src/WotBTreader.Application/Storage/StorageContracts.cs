@@ -35,6 +35,14 @@ public interface ISourceArtifactStore
     ValueTask<OperationResult<SourceArtifact>> GetAsync(
         SourceArtifactId artifactId,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Identifies content-addressed objects on disk that have no corresponding
+    /// source_artifacts row so a reconciler can safely delete or re-index them.
+    /// Never deletes referenced or recently in-flight content.
+    /// </summary>
+    ValueTask<IReadOnlyList<string>> ListUnreferencedContentHashesAsync(
+        CancellationToken cancellationToken);
 }
 
 /// <summary>Persists decode evidence atomically and never overwrites an existing run.</summary>
