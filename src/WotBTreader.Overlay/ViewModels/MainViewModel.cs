@@ -25,8 +25,6 @@ public class MainViewModel : INotifyPropertyChanged
     private readonly Func<Uri, string?, TreaderApiClient> _apiClientFactory;
     private readonly ITelemetryStreamService? _streamService;
 
-    private readonly Func<SessionRow?, bool>? _launchGame;
-
     private TreaderApiClient? _client;
     private Uri? _clientBaseUri;
     private CancellationTokenSource? _detailLoadCts;
@@ -60,23 +58,20 @@ public class MainViewModel : INotifyPropertyChanged
     private string _searchText = string.Empty;
 
     public MainViewModel()
-        : this(new RendezvousLocator(), static (baseUri, capability) => new TreaderApiClient(baseUri, capability: capability), null, null)
+        : this(new RendezvousLocator(), static (baseUri, capability) => new TreaderApiClient(baseUri, capability: capability), null)
     {
     }
 
     public MainViewModel(
         RendezvousLocator locator,
         Func<Uri, string?, TreaderApiClient> apiClientFactory,
-        ITelemetryStreamService? streamService = null,
-        Func<SessionRow?, bool>? launchGame = null)
+        ITelemetryStreamService? streamService = null)
     {
         _locator = locator ?? throw new ArgumentNullException(nameof(locator));
         _apiClientFactory = apiClientFactory ?? throw new ArgumentNullException(nameof(apiClientFactory));
         _streamService = streamService;
-        _launchGame = launchGame;
         _syncContext = SynchronizationContext.Current;
         RefreshCommand = new RelayCommand(_ => _ = RefreshSessionsAsync());
-        LaunchGameCommand = new RelayCommand(_ => LaunchSelectedReplay());
         PlayPauseCommand = new RelayCommand(_ => TogglePlayPause());
         JumpToStartCommand = new RelayCommand(_ => JumpToStart());
         JumpToEndCommand = new RelayCommand(_ => JumpToEnd());
@@ -160,9 +155,6 @@ public class MainViewModel : INotifyPropertyChanged
 
     /// <summary>Refreshes the session list from the web host.</summary>
     public ICommand RefreshCommand { get; }
-
-    /// <summary>Launches wotblitz.exe with the currently selected replay (re-launch).</summary>
-    public ICommand LaunchGameCommand { get; }
 
     /// <summary>Toggle play/pause for the replay timeline scrubber.</summary>
     public ICommand PlayPauseCommand { get; }
@@ -756,52 +748,6 @@ public class MainViewModel : INotifyPropertyChanged
     protected void OnPropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string? name = null)
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-    }
-
-    private void LaunchSelectedReplay()
-    {
-        bool launched = _launchGame?.Invoke(SelectedSession) ?? false;
-        Status = launched ? "Game launched" : "Launch failed — check game installation";
-    }
-
-    /// <summary>
-    /// Requests the web host to launch a replay through the installed game.
-    /// Delegates to the host's /api/v1/game/launch endpoint so the overlay
-    /// never calls Process.Start directly.
-    /// </summary>
-    public async Task<bool> LaunchGameViaHostAsync(string sourceArtifactId, CancellationToken cancellationToken = default)
-    {
-        if (!Guid.TryParse(sourceArtifactId, out Guid parsedArtifactId) || parsedArtifactId == Guid.Empty)
-        {
-            Status = "Launch failed — managed artifact ID is invalid";
-            return false;
-        }
-
-        TreaderApiClient? client = _client;
-        if (client is null)
-        {
-            Status = "No host connection — cannot launch game.";
-            return false;
-        }
-
-        try
-        {
-            GameLaunchResponse? result = await client.LaunchGameAsync(parsedArtifactId.ToString("D"), cancellationToken);
-            if (result?.Success == true)
-            {
-                Status = "Game launched";
-                return true;
-            }
-
-            Status = result?.Message ?? "Launch failed.";
-            return false;
-        }
-        catch (Exception ex) when (
-            ex is HttpRequestException or TaskCanceledException or JsonException)
-        {
-            Status = $"Launch failed: {ex.GetType().Name}";
-            return false;
-        }
     }
 
     private TreaderApiClient GetOrCreateClient(Uri baseUri)

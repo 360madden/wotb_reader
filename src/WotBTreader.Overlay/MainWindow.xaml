@@ -10,9 +10,6 @@
         Background="Transparent"
         Topmost="True"
         Width="1200" Height="700"
-        AllowDrop="True"
-        DragEnter="Window_DragEnter"
-        Drop="Window_Drop"
         MouseLeftButtonDown="Window_MouseLeftButtonDown"
         PreviewKeyDown="Window_PreviewKeyDown"
         TextOptions.TextFormattingMode="Display"
@@ -41,69 +38,6 @@
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="border" Property="Background" Value="#22FFFFFF"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- ═══ Primary action button — bold colored ═══ -->
-        <Style x:Key="PrimaryButton" TargetType="Button">
-            <Setter Property="Height" Value="26"/>
-            <Setter Property="FontSize" Value="11"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Padding" Value="10,0"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Foreground" Value="#FFFFFF"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="border" Background="#00CC66" CornerRadius="5"
-                                BorderThickness="0">
-                            <Border.Effect>
-                                <DropShadowEffect Color="#000000" BlurRadius="6" ShadowDepth="1" Opacity="0.3"/>
-                            </Border.Effect>
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                              Margin="{TemplateBinding Padding}" TextBlock.Foreground="White"
-                                              TextBlock.FontWeight="SemiBold"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#00EE77"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#00AA55"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- ═══ Secondary action button ═══ -->
-        <Style x:Key="SecondaryButton" TargetType="Button">
-            <Setter Property="Height" Value="26"/>
-            <Setter Property="FontSize" Value="11"/>
-            <Setter Property="Padding" Value="10,0"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Foreground" Value="#FFFFFF"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="border" Background="#2255AA" CornerRadius="5"
-                                BorderThickness="0">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                              Margin="{TemplateBinding Padding}"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#3366CC"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#1144AA"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -199,15 +133,7 @@
                                 Command="{Binding CycleSpeedCommand}" Width="30" Height="24" FontSize="9"
                                 Foreground="#AAFFAA" Margin="2,0,0,0"/>
 
-                        <!-- Primary action: Pick &amp; Launch -->
-                        <Button Content="📂  Pick &amp; Launch" ToolTip="Pick a .wotbreplay — auto-starts host, imports, and launches the game"
-                                Style="{StaticResource PrimaryButton}" Click="QuickLaunch_Click"
-                                Margin="8,0,0,0" Padding="12,0"/>
-                        <Button Content="🚀  Re-launch" ToolTip="Re-launch wotblitz.exe with the selected replay"
-                                Style="{StaticResource SecondaryButton}" Command="{Binding LaunchGameCommand}"
-                                Margin="4,0,0,0" Padding="12,0"/>
-
-                        <!-- Utility icons -->
+                        <!-- Primary action: Refresh -->
                         <Button Content="↻" ToolTip="Refresh sessions" Style="{StaticResource ToolbarButton}"
                                 Command="{Binding RefreshCommand}" Width="24" Height="24" Margin="6,0,0,0"/>
                         <Button Content="🌐" ToolTip="Open dashboard in browser" Style="{StaticResource ToolbarButton}"
@@ -226,14 +152,8 @@
                            Foreground="#BBFFFFFF" FontSize="11" Margin="0,0,0,6"
                            TextTrimming="CharacterEllipsis"/>
 
-                <!-- ═══ Row 2: Game path info ═══ -->
-                <TextBlock x:Name="GamePathInfo" Grid.Row="2"
-                           Foreground="#55FFFFFF" FontSize="8" Margin="0,0,0,6"
-                           TextTrimming="CharacterEllipsis"
-                           ToolTip="Discovered game path and replays folder."/>
-
-                <!-- ═══ Row 3: Search ═══ -->
-                <Border Grid.Row="3" Margin="0,0,0,4" Background="#1AFFFFFF"
+                <!-- ═══ Row 2: Search ═══ -->
+                <Border Grid.Row="2" Margin="0,0,0,4" Background="#1AFFFFFF"
                         CornerRadius="4" BorderBrush="#22FFFFFF" BorderThickness="1">
                     <Grid>
                         <TextBlock Text="🔍  Filter maps…" IsHitTestVisible="False"
@@ -247,8 +167,8 @@
                     </Grid>
                 </Border>
 
-                <!-- ═══ Row 4: Session list ═══ -->
-                <ListBox x:Name="SessionsListBox" Grid.Row="4"
+                <!-- ═══ Row 3: Session list ═══ -->
+                <ListBox x:Name="SessionsListBox" Grid.Row="3"
                          ItemsSource="{Binding FilteredSessions}"
                          SelectedItem="{Binding SelectedSession, Mode=TwoWay}"
                          Background="Transparent" BorderThickness="0"
@@ -276,8 +196,8 @@
                     </ListBox.ItemTemplate>
                 </ListBox>
 
-                <!-- ═══ Row 5: Timeline scrubber ═══ -->
-                <Border x:Name="TimelineGrid" Grid.Row="5" Margin="0,4,0,4" Padding="4,3"
+                <!-- ═══ Row 4: Timeline scrubber ═══ -->
+                <Border x:Name="TimelineGrid" Grid.Row="4" Margin="0,4,0,4" Padding="4,3"
                         Background="#14FFFFFF" CornerRadius="4"
                         Visibility="{Binding SelectedSession, Converter={StaticResource NullToCollapsed}}">
                     <Grid>
@@ -341,8 +261,8 @@
                     </Grid>
                 </Border>
 
-                <!-- ═══ Row 6: Session detail panel ═══ -->
-                <Grid x:Name="DetailGrid" Grid.Row="6" Margin="0,2,0,0"
+                <!-- ═══ Row 5: Session detail panel ═══ -->
+                <Grid x:Name="DetailGrid" Grid.Row="5" Margin="0,2,0,0"
                       Visibility="{Binding SelectedSession, Converter={StaticResource NullToCollapsed}}">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -522,8 +442,8 @@
                     </ItemsControl>
                 </Grid>
 
-                <!-- ═══ Row 7: Close button ═══ -->
-                <Button x:Name="CloseButton" Grid.Row="7" Content="✕  Close"
+                <!-- ═══ Row 6: Close button ═══ -->
+                <Button x:Name="CloseButton" Grid.Row="6" Content="✕  Close"
                         Click="CloseWindow"
                         Height="28" FontSize="11" FontWeight="SemiBold"
                         Cursor="Hand" Margin="0,6,0,0">
