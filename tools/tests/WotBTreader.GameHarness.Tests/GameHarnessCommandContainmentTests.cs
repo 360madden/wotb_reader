@@ -6,8 +6,9 @@ namespace WotBTreader.GameHarness.Tests;
 [TestClass]
 public sealed class GameHarnessCommandContainmentTests
 {
-    private const string DenialSuffix =
-        "is disabled pending the centralized offline-replay verification gate.";
+    private const string NoHostSuffix =
+        ": no web host found. Start the host with 'serve' first, then launch " +
+        "a replay via the dashboard or POST /api/v1/game/launch.";
 
     [TestMethod]
     public async Task ScanIsDeniedBeforeItCanAttachToTheRequestedProcess()
@@ -65,7 +66,7 @@ public sealed class GameHarnessCommandContainmentTests
     private static void AssertDenied(string command, HarnessInvocation result)
     {
         Assert.AreEqual((int)HarnessExitCode.UnsupportedCapability, result.ExitCode);
-        Assert.AreEqual($"{command} {DenialSuffix}", result.StandardError.Trim());
+        Assert.AreEqual($"{command}{NoHostSuffix}", result.StandardError.Trim());
         Assert.IsEmpty(result.StandardOutput);
     }
 

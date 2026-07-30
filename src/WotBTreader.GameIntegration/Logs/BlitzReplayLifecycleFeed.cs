@@ -12,7 +12,7 @@ namespace WotBTreader.GameIntegration.Logs;
 /// Owns one process-lifetime, bounded journal of native-log lifecycle evidence.
 /// File-system notifications are hints only; reconciliation remains authoritative.
 /// </summary>
-internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsyncDisposable
+internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsyncDisposable, IDisposable
 {
     private const string LogPattern = "blitz-logs_*.txt";
 
@@ -281,6 +281,16 @@ internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsy
         }
 
         _stop.Dispose();
+    }
+
+    /// <summary>
+    /// Synchronous disposal for DI container compatibility. Delegates to
+    /// DisposeAsync and blocks — safe because cleanup is local cancellation
+    /// and task awaiting with no risk of deadlock.
+    /// </summary>
+    public void Dispose()
+    {
+        DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 
     private List<FileSystemWatcher> CreateWatchers(ChannelWriter<bool> wakeupWriter)

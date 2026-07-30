@@ -54,18 +54,22 @@ internal sealed record ManagedGameLaunchContext(
     long SourceSequenceBaseline);
 
 /// <summary>
-/// Owns the evidence-backed offline state. Public consumers receive only safe
-/// snapshots and observations; authorization and process identity never leave
-/// this adapter.
+/// Owns the evidence-backed offline state and orchestrates managed replay
+/// launches through the M2 suspended-process pipeline. Public consumers
+/// receive only safe snapshots and observations; authorization and process
+/// identity never leave this adapter.
 /// </summary>
-internal sealed class GameSessionCoordinator(
-    TimeProvider timeProvider)
-    : IGameSessionState, IGameReplayLauncher, IGameMemoryObserver
+internal sealed class GameSessionCoordinator : IGameSessionState,
+    IGameReplayLauncher, IGameMemoryObserver, IAsyncDisposable, IDisposable
 {
     private static readonly TimeSpan EvidenceLifetime = TimeSpan.FromSeconds(15);
     private readonly Lock _gate = new();
-    private readonly TimeProvider _timeProvider =
-        timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+    private readonly TimeProvider _timeProvider;
+    private readonly IManagedLaunchPreparer _preparer;
+    private readonly IManagedReplayArtifactStager _artifactStager;
+    private readonly ISuspendedProcessPlatform _suspendedPlatform;
+    private readonly IManagedLaunchCorrelationRegistrar _correlationRegistrar;
+    private readonly IThreadResumePlatform _threadResumePlatform;
 
     private GameSessionSnapshot _snapshot = new(
         GameSessionVerificationState.Unknown,
@@ -77,6 +81,28 @@ internal sealed class GameSessionCoordinator(
     private ManagedGameLaunchContext? _managedLaunch;
     private EvidenceCursor? _lastCursor;
     private long _authorizationGeneration;
+
+    // Active launch leases owned by the coordinator until the session is revoked.
+    private WindowsTrustedExecutableLaunchLease? _activeExecutableLease;
+    private ManagedReplayArtifactLease? _activeArtifactLease;
+    private SuspendedGameProcessLease? _activeSuspendedLease;
+    private bool _disposed;
+
+    public GameSessionCoordinator(
+        TimeProvider timeProvider,
+        IManagedLaunchPreparer preparer,
+        IManagedReplayArtifactStager artifactStager,
+        ISuspendedProcessPlatform suspendedPlatform,
+        IManagedLaunchCorrelationRegistrar correlationRegistrar,
+        IThreadResumePlatform threadResumePlatform)
+    {
+        _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+        _preparer = preparer ?? throw new ArgumentNullException(nameof(preparer));
+        _artifactStager = artifactStager ?? throw new ArgumentNullException(nameof(artifactStager));
+        _suspendedPlatform = suspendedPlatform ?? throw new ArgumentNullException(nameof(suspendedPlatform));
+        _correlationRegistrar = correlationRegistrar ?? throw new ArgumentNullException(nameof(correlationRegistrar));
+        _threadResumePlatform = threadResumePlatform ?? throw new ArgumentNullException(nameof(threadResumePlatform));
+    }
 
     /// <summary>
     /// Records an adapter-generated launch correlation. Callers outside
@@ -142,19 +168,112 @@ internal sealed class GameSessionCoordinator(
         }
     }
 
-    public ValueTask<OperationResult<GameReplayLaunchOutcome>> LaunchAsync(
+    public async ValueTask<OperationResult<GameReplayLaunchOutcome>> LaunchAsync(
         GameReplayLaunchRequest request,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(request);
 
-        return ValueTask.FromResult(
-            OperationResult.Failure<GameReplayLaunchOutcome>(
-                new ApplicationError(
-                    "game.launch.unavailable",
-                    "Managed replay launch is not available.",
-                    Retryable: false)));
+        // ── 1. Prepare: identity, correlation, lifecycle baseline ──
+        OperationResult<ManagedLaunchPreparation> prepResult =
+            await _preparer.PrepareAsync(cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!prepResult.IsSuccess)
+        {
+            return LaunchFailure(prepResult.Error!);
+        }
+
+        ManagedLaunchPreparation preparation = prepResult.Value!;
+
+        // ── 2. Acquire executable lease ──
+        OperationResult<WindowsTrustedExecutableLaunchLease> exeLeaseResult =
+            await WindowsTrustedExecutableLaunchLease.AcquireAsync(
+                preparation.TrustedIdentity,
+                cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!exeLeaseResult.IsSuccess)
+        {
+            return LaunchFailure(exeLeaseResult.Error!);
+        }
+
+        WindowsTrustedExecutableLaunchLease executableLease = exeLeaseResult.Value!;
+
+        // ── 3. Stage artifact ──
+        OperationResult<ManagedReplayArtifactLease> artifactResult =
+            await _artifactStager.StageAsync(
+                request.SourceArtifactId,
+                cancellationToken).ConfigureAwait(false);
+        if (!artifactResult.IsSuccess)
+        {
+            await executableLease.DisposeAsync().ConfigureAwait(false);
+            return LaunchFailure(artifactResult.Error!);
+        }
+
+        ManagedReplayArtifactLease artifactLease = artifactResult.Value!;
+
+        // ── 4. Create suspended process ──
+        OperationResult<SuspendedGameProcessLease> suspendedResult =
+            await _suspendedPlatform.CreateAsync(
+                executableLease,
+                artifactLease,
+                cancellationToken).ConfigureAwait(false);
+        if (!suspendedResult.IsSuccess)
+        {
+            await artifactLease.DisposeAsync().ConfigureAwait(false);
+            await executableLease.DisposeAsync().ConfigureAwait(false);
+            return LaunchFailure(suspendedResult.Error!);
+        }
+
+        SuspendedGameProcessLease suspendedLease = suspendedResult.Value!;
+
+        // ── 5. Register correlation ──
+        OperationResult<ManagedGameLaunchContext> correlationResult =
+            _correlationRegistrar.Register(preparation, suspendedLease);
+        if (!correlationResult.IsSuccess)
+        {
+            await suspendedLease.DisposeAsync().ConfigureAwait(false);
+            await artifactLease.DisposeAsync().ConfigureAwait(false);
+            await executableLease.DisposeAsync().ConfigureAwait(false);
+            return LaunchFailure(correlationResult.Error!);
+        }
+
+        ManagedGameLaunchContext launchContext = correlationResult.Value!;
+
+        // ── 6. Resume the child thread (must happen BEFORE HandOffLeases
+        //     so that resume failures terminate the suspended child) ──
+        OperationResult<ThreadResumeOutcome> resumeResult =
+            _threadResumePlatform.Resume(suspendedLease.ThreadHandle!);
+        if (!resumeResult.IsSuccess)
+        {
+            // Resume failed; child is still suspended. Disposal terminates it
+            // because HandOffLeases has not been called.
+            await suspendedLease.DisposeAsync().ConfigureAwait(false);
+            await artifactLease.DisposeAsync().ConfigureAwait(false);
+            await executableLease.DisposeAsync().ConfigureAwait(false);
+            return LaunchFailure(resumeResult.Error!);
+        }
+
+        // ── 7. Hand off leases (commits: child survives disposal) ──
+        (WindowsTrustedExecutableLaunchLease handedOffExe,
+            ManagedReplayArtifactLease handedOffArtifact) =
+            suspendedLease.HandOffLeases();
+
+        // ── 8. Record managed launch under lock ──
+        lock (_gate)
+        {
+            DisposeLaunchLeases();
+            RecordManagedLaunch(launchContext);
+
+            // The suspended lease committed via HandOffLeases so disposal
+            // will only close handles without terminating the child process.
+            _activeSuspendedLease = suspendedLease;
+            _activeExecutableLease = handedOffExe;
+            _activeArtifactLease = handedOffArtifact;
+        }
+
+        return OperationResult.Success(
+            new GameReplayLaunchOutcome(_timeProvider.GetUtcNow()));
     }
 
     public ValueTask<GameMemoryObservation> ObserveAsync(
@@ -165,6 +284,23 @@ internal sealed class GameSessionCoordinator(
         lock (_gate)
         {
             ExpireAuthorizationIfNeeded();
+            GameSessionVerificationState currentState = _snapshot.State;
+            if (currentState == GameSessionVerificationState.OfflineReplayVerified
+                && _authorization is not null)
+            {
+                return ValueTask.FromResult(new GameMemoryObservation(
+                    GameMemoryObservationAvailability.Available,
+                    _timeProvider.GetUtcNow(),
+                    ReplayTimeSeconds: null,
+                    PlayerHitPoints: null,
+                    PlayerPositionX: null,
+                    PlayerPositionY: null,
+                    PlayerPositionZ: null,
+                    PlayerYaw: null,
+                    CameraPitch: null,
+                    AliveTankCount: null));
+            }
+
             return ValueTask.FromResult(new GameMemoryObservation(
                 GameMemoryObservationAvailability.Unknown,
                 _timeProvider.GetUtcNow(),
@@ -384,6 +520,31 @@ internal sealed class GameSessionCoordinator(
         Revoke();
         _managedLaunch = null;
         _lastCursor = null;
+        DisposeLaunchLeases();
+    }
+
+    private void DisposeLaunchLeases()
+    {
+        // Disposal order: suspended first (closes handles; HandOffLeases
+        // prevents child termination), then artifact (deletes staging file),
+        // then executable (releases file lock).
+        SuspendedGameProcessLease? suspended = Interlocked.Exchange(ref _activeSuspendedLease, null);
+        if (suspended is not null)
+        {
+            suspended.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+
+        ManagedReplayArtifactLease? artifact = Interlocked.Exchange(ref _activeArtifactLease, null);
+        if (artifact is not null)
+        {
+            artifact.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+
+        WindowsTrustedExecutableLaunchLease? executable = Interlocked.Exchange(ref _activeExecutableLease, null);
+        if (executable is not null)
+        {
+            executable.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
     }
 
     private GameSessionSnapshot CreateSnapshot(
@@ -411,4 +572,49 @@ internal sealed class GameSessionCoordinator(
         string SourceIdentity,
         long SourceGeneration,
         long SourceSequence);
+
+    /// <summary>
+    /// Disposes all active launch leases. After HandOffLeases, the child
+    /// process is not terminated; only handles and staging files are released.
+    /// </summary>
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+        _disposed = true;
+
+        SuspendedGameProcessLease? suspended = Interlocked.Exchange(ref _activeSuspendedLease, null);
+        if (suspended is not null)
+        {
+            await suspended.DisposeAsync().ConfigureAwait(false);
+        }
+
+        ManagedReplayArtifactLease? artifact = Interlocked.Exchange(ref _activeArtifactLease, null);
+        if (artifact is not null)
+        {
+            await artifact.DisposeAsync().ConfigureAwait(false);
+        }
+
+        WindowsTrustedExecutableLaunchLease? executable = Interlocked.Exchange(ref _activeExecutableLease, null);
+        if (executable is not null)
+        {
+            await executable.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Synchronous disposal for DI container compatibility. Delegates to
+    /// DisposeAsync and blocks — safe because lease cleanup is local file
+    /// and handle operations with no risk of deadlock.
+    /// </summary>
+    public void Dispose()
+    {
+        DisposeAsync().AsTask().GetAwaiter().GetResult();
+    }
+
+    private static OperationResult<GameReplayLaunchOutcome> LaunchFailure(
+        ApplicationError error) =>
+        OperationResult.Failure<GameReplayLaunchOutcome>(error);
 }

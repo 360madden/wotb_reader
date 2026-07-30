@@ -1,4 +1,5 @@
 using WotBTreader.Application.Game;
+using WotBTreader.Application.Results;
 using WotBTreader.Core;
 using WotBTreader.GameIntegration.Session;
 
@@ -254,7 +255,7 @@ public sealed class GameSessionCoordinatorTests
     }
 
     [TestMethod]
-    public async Task MemoryObservation_RemainsUnknownWhenVerified()
+    public async Task MemoryObservation_ReturnsAvailableWhenVerified()
     {
         var (coordinator, _) = CreateVerifiedCoordinator();
 
@@ -262,23 +263,24 @@ public sealed class GameSessionCoordinatorTests
             await coordinator.ObserveAsync(CancellationToken.None);
 
         Assert.AreEqual(
-            GameMemoryObservationAvailability.Unknown,
+            GameMemoryObservationAvailability.Available,
             observation.Availability);
         Assert.IsNull(observation.ReplayTimeSeconds);
         Assert.IsNull(observation.PlayerHitPoints);
     }
 
     [TestMethod]
-    public async Task Launch_RemainsFailClosed()
+    public async Task Launch_PropagatesFailureWhenPreparerFails()
     {
-        var (coordinator, _) = CreateCoordinator();
+        var (coordinator, _) = CreateCoordinator(
+            preparer: new FailingPreparer("game.launch.preparer_failed"));
 
         var result = await coordinator.LaunchAsync(
             new GameReplayLaunchRequest(SourceArtifactId.New()),
             CancellationToken.None);
 
         Assert.IsFalse(result.IsSuccess);
-        Assert.AreEqual("game.launch.unavailable", result.Error?.Code);
+        Assert.AreEqual("game.launch.preparer_failed", result.Error?.Code);
     }
 
     [TestMethod]
@@ -311,10 +313,21 @@ public sealed class GameSessionCoordinatorTests
     }
 
     private static (GameSessionCoordinator Coordinator, ManualTimeProvider TimeProvider)
-        CreateCoordinator()
+        CreateCoordinator(
+            IManagedLaunchPreparer? preparer = null,
+            IManagedReplayArtifactStager? artifactStager = null,
+            ISuspendedProcessPlatform? suspendedPlatform = null,
+            IManagedLaunchCorrelationRegistrar? correlationRegistrar = null,
+            IThreadResumePlatform? threadResumePlatform = null)
     {
         var timeProvider = new ManualTimeProvider(StartTime);
-        return (new GameSessionCoordinator(timeProvider), timeProvider);
+        return (new GameSessionCoordinator(
+            timeProvider,
+            preparer ?? new StubPreparer(),
+            artifactStager ?? new StubArtifactStager(),
+            suspendedPlatform ?? new StubSuspendedPlatform(),
+            correlationRegistrar ?? new StubCorrelationRegistrar(),
+            threadResumePlatform ?? new StubThreadResumePlatform()), timeProvider);
     }
 
     private static (GameSessionCoordinator Coordinator, ManualTimeProvider TimeProvider)
@@ -377,5 +390,53 @@ public sealed class GameSessionCoordinatorTests
         public override DateTimeOffset GetUtcNow() => _utcNow;
 
         public void Advance(TimeSpan duration) => _utcNow += duration;
+    }
+
+    // ── M2 stubs for tests that only exercise evidence evaluation ──
+
+    private sealed class StubPreparer : IManagedLaunchPreparer
+    {
+        public ValueTask<OperationResult<ManagedLaunchPreparation>> PrepareAsync(
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException("StubPreparer is not intended for LaunchAsync tests.");
+    }
+
+    private sealed class StubArtifactStager : IManagedReplayArtifactStager
+    {
+        public ValueTask<OperationResult<ManagedReplayArtifactLease>> StageAsync(
+            SourceArtifactId sourceArtifactId,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException("StubArtifactStager is not intended for LaunchAsync tests.");
+    }
+
+    private sealed class StubSuspendedPlatform : ISuspendedProcessPlatform
+    {
+        public ValueTask<OperationResult<SuspendedGameProcessLease>> CreateAsync(
+            WindowsTrustedExecutableLaunchLease executableLease,
+            ManagedReplayArtifactLease artifactLease,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException("StubSuspendedPlatform is not intended for LaunchAsync tests.");
+    }
+
+    private sealed class StubCorrelationRegistrar : IManagedLaunchCorrelationRegistrar
+    {
+        public OperationResult<ManagedGameLaunchContext> Register(
+            ManagedLaunchPreparation preparation,
+            SuspendedGameProcessLease suspendedLease) =>
+            throw new NotSupportedException("StubCorrelationRegistrar is not intended for LaunchAsync tests.");
+    }
+
+    private sealed class StubThreadResumePlatform : IThreadResumePlatform
+    {
+        public OperationResult<ThreadResumeOutcome> Resume(SafeThreadHandle threadHandle) =>
+            throw new NotSupportedException("StubThreadResumePlatform is not intended for LaunchAsync tests.");
+    }
+
+    private sealed class FailingPreparer(string errorCode) : IManagedLaunchPreparer
+    {
+        public ValueTask<OperationResult<ManagedLaunchPreparation>> PrepareAsync(
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult(OperationResult.Failure<ManagedLaunchPreparation>(
+                new ApplicationError(errorCode, "Test failure.", Retryable: false)));
     }
 }
