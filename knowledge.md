@@ -88,7 +88,7 @@ dotnet test tests/WotBTreader.Core.Tests -c Release --filter "FullyQualifiedName
 ```
 
 - Tests are MSTest 4 on Microsoft.Testing.Platform. Some installed-game tests skip by default (local opt-in).
-- 12 test projects, 391 tests: 389 passed, 0 failed, 2 opt-in skips (as of 2026-07-30).
+- 12 test projects, 397 tests: 395 passed, 0 failed, 2 opt-in skips (as of 2026-07-30).
 - All architecture hardening milestones (M0–M7) are complete. The alpha release
   (`v0.1.0-alpha`) passes the full gate with 0 vulnerable packages and 457 scan-clean files.
 

@@ -213,9 +213,9 @@ offline-safety gates.
 ████████████████████████████████████░░░░  ~90%
 ```
 
-All eight original roadmap items plus fifteen follow-on features shipped across the
-2026-07-26 → 2026-07-28 sessions. Remaining: live HUD smoke test against a real
-installation, and real minimap textures. Historical ledger: [`docs/ROADMAP.md`](docs/ROADMAP.md).
+All eight original roadmap items plus fifteen follow-on features and the
+Cheat Engine-like multi-scan engine shipped across the 2026-07-26 → 2026-07-30
+sessions. Remaining: live HUD smoke test against a real installation.
 
 ### Track 2 · Architecture hardening (release gate)
 
@@ -293,13 +293,13 @@ dotnet test    tests/WotBTreader.Core.Tests -c Release --filter "FullyQualifiedN
 
 ### Test matrix
 
-**389 passed · 0 failed · 2 skipped · 391 total · 0 warnings · 0 errors** across 12 test projects.
+**395 passed · 0 failed · 2 skipped · 397 total · 0 warnings · 0 errors** across 12 test projects.
 The two skips are installed-game tests that are local opt-in and never run in CI.
 Test counts current as of 2026-07-30.
 
 | Project | Tests | | Project | Tests |
 |---|--:|:--:|---|--:|
-| `GameIntegration.Tests` | 118 | | `Host.Cli.Tests` | 15 |
+| `GameIntegration.Tests` | 141 | | `Host.Cli.Tests` | 15 |
 | `Overlay.Tests` | 91 | | `Architecture.Tests` | 14 |
 | `Host.Web.Tests` | 61 | | `Bootstrap.Tests` | 13 |
 | `GameHarness.Tests` | 28 | | `CaptureLogs.Tests` | 9 |

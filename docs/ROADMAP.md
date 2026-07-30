@@ -37,8 +37,8 @@ are current as of 2026-07-29.
 | Session search/filter (overlay sidebar) | ✅ | — |
 | Documentation (architecture, handoffs, BLK log, knowledge.md) | ✅ | — |
 
-**Total:** 391 tests — 389 passed, 0 failed, 2 skipped (local opt-in) across all 12
-test projects. Build: 0 errors, 0 warnings. Scan: 464 files clean.
+**Total:** 397 tests — 395 passed, 0 failed, 2 skipped (local opt-in) across all 12
+test projects. Build: 0 errors, 0 warnings. Scan: 468 files clean.
 Vulnerability audit: 0 vulnerable packages across all 27 projects.
 
 All eight original roadmap items are complete. Seven additional features were
@@ -195,12 +195,21 @@ via CLI → published → served → all API endpoints verified → overlay laun
 - **Live HUD smoke test**: Verify transparent window, session list, position
   dots, velocity trails, time slider, keyboard shortcuts, and Launch button
   against a real WoT Blitz installation.
-- **Real minimap textures**: Serve map texture .png files from the web API
-  using the existing DVPL reader, add `/api/v1/maps/{id}/texture` endpoint,
-  and render the image on the overlay canvas behind the position dots.
+- ~~Real minimap textures~~ ✅: `MinimapTextureService` serves minimap PNG textures
+  from the installed game's DVPL-encapsulated WebP files via `GET /api/v1/maps/{mapId}/minimap`.
+  `TreaderApiClient.GetMinimapPngAsync` fetches them on the overlay, `MainViewModel.LoadMinimapAsync`
+  caches and renders them via `PositionPlot.MinimapImage`. SkiaSharp converts WebP→PNG with
+  90-quality encoding. Cache invalidated on game version change. Fully implemented.
 - **Game path via DI**: The overlay's game path discovery is a lightweight
   replica of `GameInstallationDiscovery`. A future refactor could extract
   discovery into a shared portable utility.
+- **Dynamic offset discovery**: Cheat Engine-like multi-scan engine (`MemoryScanEngine`)
+  with snapshot/compare/filter (changed/unchanged/increased/decreased). Neighborhood scanner
+  reads memory windows around known offsets (`MemoryScanDiscoverer.ScanNeighborhood`).
+  `POST /api/v1/game/discover` + snapshot/compare/neighborhood/session endpoints.
+  `GameHarness` CLI: `discover`, `discover-snapshot`, `discover-compare`,
+  `discover-nearby`, `discover-discard`. Only `playerYaw` offset discovered so far;
+  7 fields remain unknown (needs game running with replay).
 
 ### 🟢 P4 — `watch` CLI command ✅
 
