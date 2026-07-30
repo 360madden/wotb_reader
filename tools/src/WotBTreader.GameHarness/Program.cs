@@ -23,6 +23,9 @@ switch (command)
     case "probe":
         exitCode = await ProbeAsync();
         break;
+    case "discover":
+        exitCode = await DiscoverAsync(args);
+        break;
     case "help":
     case "--help":
     case "-h":
@@ -238,6 +241,231 @@ static string? FindOffsetFile()
     return null;
 }
 
+// ── Discover command ────────────────────────────────────────
+
+static async Task<int> DiscoverAsync(string[] args)
+{
+    string? hostUrl = ReadRendezvousUrl();
+    if (hostUrl is null)
+    {
+        Console.Error.WriteLine("discover: no web host found.");
+        return (int)HarnessExitCode.UnsupportedCapability;
+    }
+
+    if (args.Length < 3)
+    {
+        Console.Error.WriteLine("Usage: discover <fieldName> <fieldType> <expectedValue> [tolerance]");
+        Console.Error.WriteLine("  fieldType: Float, Int32, or Double");
+        Console.Error.WriteLine("  expectedValue: the value to search for (e.g. 42.5 or 1200)");
+        Console.Error.WriteLine("  tolerance: optional +/- tolerance for floats (e.g. 1.0)");
+        Console.Error.WriteLine();
+        Console.Error.WriteLine("Examples:");
+        Console.Error.WriteLine("  discover playerPositionX Float 42.5 1.0");
+        Console.Error.WriteLine("  discover playerHP Int32 1200");
+        Console.Error.WriteLine("  discover playerYaw Float 1.57 0.1");
+        return (int)HarnessExitCode.InvalidInput;
+    }
+
+    int gateResult = await CheckGateAsync(hostUrl, "discover");
+    if (gateResult != 0)
+        return gateResult;
+
+    string fieldName = args[1];
+    string? fieldType = NormaliseFieldType(args[2]);
+    if (fieldType is null)
+    {
+        Console.Error.WriteLine($"Invalid fieldType '{args[2]}'. Use Float, Int32, or Double.");
+        return (int)HarnessExitCode.InvalidInput;
+    }
+
+    if (!TryParseExpectedValue(args[3], fieldType, out byte[] expectedValue))
+    {
+        Console.Error.WriteLine($"Cannot parse '{args[3]}' as {fieldType}.");
+        return (int)HarnessExitCode.InvalidInput;
+    }
+
+    byte[]? tolerance = null;
+    if (args.Length >= 5 && fieldType == "Float"
+        && float.TryParse(args[4], out float tol) && tol > 0)
+    {
+        tolerance = BuildFloatTolerance(expectedValue, tol);
+    }
+
+    // Ensure trailing slash.
+    string baseAddress = hostUrl.EndsWith('/') ? hostUrl : hostUrl + "/";
+    using var client = new HttpClient
+    {
+        BaseAddress = new Uri(baseAddress),
+        Timeout = TimeSpan.FromSeconds(30),
+    };
+
+    var payload = new
+    {
+        fieldName,
+        fieldType,
+        expectedValueHex = Convert.ToHexString(expectedValue),
+        toleranceMaskHex = tolerance is not null
+            ? Convert.ToHexString(tolerance) : null,
+        maxCandidates = 200,
+        minRegionSize = 4096L,
+    };
+
+    Console.WriteLine($"\u250c Scanning for {fieldName} ({fieldType})...");
+    Console.WriteLine($"\u2502 Expected: {FormatExpectedValue(expectedValue, fieldType)}");
+    if (tolerance is not null)
+        Console.WriteLine($"\u2502 Tolerance: ±{args[4]} ({fieldType})");
+    Console.WriteLine($"\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
+
+    try
+    {
+        HttpResponseMessage response = await client
+            .PostAsJsonAsync("/api/v1/game/discover", payload)
+            .ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            Console.Error.WriteLine(
+                $"discover: HTTP {(int)response.StatusCode} — {Truncate(body, 200)}");
+            return (int)HarnessExitCode.ConflictOrBusy;
+        }
+
+        using var doc = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+        JsonElement root = doc.RootElement;
+
+        int regions = root.TryGetProperty("regionsScanned", out JsonElement rs)
+            ? rs.GetInt32() : 0;
+        long bytes = root.TryGetProperty("bytesScanned", out JsonElement bs)
+            ? bs.GetInt64() : 0;
+
+        Console.WriteLine($"Scanned {regions} regions ({FormatBytes(bytes)})");
+
+        if (!root.TryGetProperty("candidates", out JsonElement candidates)
+            || candidates.GetArrayLength() == 0)
+        {
+            Console.WriteLine("No candidates found.");
+
+            int total = root.TryGetProperty("totalMatchesBeforeTruncation", out JsonElement tm)
+                ? tm.GetInt32() : 0;
+            if (total > 0)
+                Console.WriteLine($"({total} matches before 200-candidate cap)");
+
+            return 0;
+        }
+
+        Console.WriteLine($"Candidates: {candidates.GetArrayLength()}");
+        Console.WriteLine();
+        Console.WriteLine($"{"Relative Offset",-20} {"Absolute",-20} {"Value",-16}");
+        Console.WriteLine(new string('─', 58));
+
+        int shown = 0;
+        foreach (JsonElement c in candidates.EnumerateArray())
+        {
+            if (shown >= 50)
+            {
+                Console.WriteLine($"... and {candidates.GetArrayLength() - 50} more");
+                break;
+            }
+
+            string relOffset = c.TryGetProperty("relativeOffset", out JsonElement ro)
+                ? ro.GetString() ?? "?" : "?";
+            string absAddr = c.TryGetProperty("absoluteAddress", out JsonElement aa)
+                ? aa.GetString() ?? "?" : "?";
+            string summary = c.TryGetProperty("valueSummary", out JsonElement vs)
+                ? vs.GetString() ?? "?" : "?";
+
+            Console.WriteLine($"{relOffset,-20} {absAddr,-20} {summary,-16}");
+            shown++;
+        }
+
+        return 0;
+    }
+    catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+    {
+        Console.Error.WriteLine(
+            $"discover: could not reach web host at {hostUrl}.");
+        return (int)HarnessExitCode.ConflictOrBusy;
+    }
+}
+
+static string? NormaliseFieldType(string input) => input.ToLowerInvariant() switch
+{
+    "float" => "Float",
+    "int32" => "Int32",
+    "int" => "Int32",
+    "double" => "Double",
+    _ => null,
+};
+
+static bool TryParseExpectedValue(
+    string input, string fieldType, out byte[] value)
+{
+    value = [];
+    return fieldType switch
+    {
+        "Float" => float.TryParse(input, out float f)
+            ? (value = BitConverter.GetBytes(f)) is not null
+            : false,
+        "Int32" => int.TryParse(input, out int i)
+            ? (value = BitConverter.GetBytes(i)) is not null
+            : false,
+        "Double" => double.TryParse(input, out double d)
+            ? (value = BitConverter.GetBytes(d)) is not null
+            : false,
+        _ => false,
+    };
+}
+
+static byte[] BuildFloatTolerance(byte[] expected, float tolerance)
+{
+    // IEEE 754 single-precision float, little-endian:
+    //   byte 0: mantissa bits 0-7   (LSB)
+    //   byte 1: mantissa bits 8-15
+    //   byte 2: mantissa bits 16-22 + exponent LSB
+    //   byte 3: exponent bits 24-30 + sign bit  (MSB)
+    //
+    // Map tolerance to wildcard byte count:
+    //   ±0.01 → 1 wildcard (LSB mantissa only)
+    //   ±0.1  → 2 wildcards
+    //   ±1.0+ → 3 wildcards (allows any value with same sign/exp)
+    int wildcards = tolerance switch
+    {
+        <= 0.01f => 1,
+        <= 0.1f => 2,
+        _ => 3,
+    };
+
+    byte[] mask = new byte[4];
+    // Little-endian: wildcard the least significant bytes first.
+    // The bytes we keep (non-zero mask) are the most significant ones.
+    for (int i = wildcards; i < 4; i++)
+        mask[i] = 0xFF;
+
+    return mask;
+}
+
+static string FormatExpectedValue(byte[] bytes, string fieldType) => fieldType switch
+{
+    "Float" when bytes.Length >= 4 =>
+        $"{BitConverter.ToSingle(bytes, 0):F3}",
+    "Int32" when bytes.Length >= 4 =>
+        $"{BitConverter.ToInt32(bytes, 0)}",
+    "Double" when bytes.Length >= 8 =>
+        $"{BitConverter.ToDouble(bytes, 0):F6}",
+    _ => Convert.ToHexString(bytes),
+};
+
+static string FormatBytes(long bytes) => bytes switch
+{
+    < 1024 => $"{bytes} B",
+    < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
+    _ => $"{bytes / (1024.0 * 1024.0):F1} MB",
+};
+
+static string Truncate(string value, int maxLength) =>
+    value.Length <= maxLength ? value : value[..maxLength] + "...";
+
 static string? ReadRendezvousUrl()
 {
     try
@@ -365,9 +593,17 @@ Commands:
   probe
     Check offline-session gate + show offset field status + raw table
 
-Gate: scan and probe require the web host to have a verified
-      offline replay session (launch one via the dashboard first).
-      When the gate is satisfied, scan/probe also report which
-      memory-offset fields are known vs unknown.
+  discover <fieldName> <fieldType> <value> [tolerance]
+    Scan game process memory for a known value to discover
+    the offset of an unknown memory field. Requires offline-
+    session gate to be satisfied (launch a replay first).
+    fieldType: Float, Int32, Double
+    Examples:
+      discover playerPositionX Float 42.5 1.0
+      discover playerHP Int32 1200
+
+Gate: scan, probe, and discover require the web host to have a
+      verified offline replay session (launch one via the
+      dashboard first).
 ");
 }

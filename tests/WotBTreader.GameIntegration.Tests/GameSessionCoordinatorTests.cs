@@ -332,7 +332,8 @@ public sealed class GameSessionCoordinatorTests
             correlationRegistrar ?? new StubCorrelationRegistrar(),
             threadResumePlatform ?? new StubThreadResumePlatform(),
             memoryReaderFactory ?? new StubMemoryReaderFactory(),
-            offsetTableReader ?? new StubOffsetTableReader()), timeProvider);
+            offsetTableReader ?? new StubOffsetTableReader(),
+            new MemoryScanDiscoverer(timeProvider)), timeProvider);
     }
 
     private static (GameSessionCoordinator Coordinator, ManualTimeProvider TimeProvider)

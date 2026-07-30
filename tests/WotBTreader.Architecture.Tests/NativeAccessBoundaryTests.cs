@@ -63,6 +63,8 @@ public sealed class NativeAccessBoundaryTests
         "Session\\GuardedMemoryReader.cs",
         // NativeMethods hosts ReadProcessMemory for the guarded reader only.
         "Session\\WindowsGameProcessQueryPlatform.cs",
+        // Dynamic offset scanner — uses the same security boundary as the guarded reader.
+        "Session\\MemoryScanDiscoverer.cs",
     ];
 
     [TestMethod]

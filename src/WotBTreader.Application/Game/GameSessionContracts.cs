@@ -89,3 +89,42 @@ public interface IGameMemoryObserver
     ValueTask<GameMemoryObservation> ObserveAsync(
         CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// Request to scan game process memory for a specific value pattern to
+/// discover unknown memory offsets.
+/// </summary>
+public sealed record MemoryScanRequest(
+    string FieldName,
+    string FieldType,
+    byte[] ExpectedValue,
+    byte[]? ToleranceMask,
+    int MaxCandidates,
+    long MinRegionSize);
+
+/// <summary>One candidate address returned by a memory scan.</summary>
+public sealed record MemoryScanCandidate(
+    long AbsoluteAddress,
+    long RelativeOffset,
+    byte[] ObservedValue,
+    string ValueSummary);
+
+/// <summary>Results of a single memory scan pass for offset discovery.</summary>
+public sealed record MemoryScanResult(
+    DateTimeOffset CompletedAtUtc,
+    long BaseAddress,
+    int RegionsScanned,
+    long BytesScanned,
+    IReadOnlyList<MemoryScanCandidate> Candidates,
+    int TotalMatchesBeforeTruncation);
+
+/// <summary>
+/// Scans the verified game process memory for specific value patterns.
+/// Only callable when the offline-session gate is satisfied.
+/// </summary>
+public interface IGameMemoryScanner
+{
+    ValueTask<OperationResult<MemoryScanResult>> ScanAsync(
+        MemoryScanRequest request,
+        CancellationToken cancellationToken);
+}

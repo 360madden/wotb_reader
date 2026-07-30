@@ -47,12 +47,15 @@ public static class GameIntegrationServiceCollectionExtensions
         services.TryAddSingleton<IManagedLaunchCorrelationRegistrar, ManagedLaunchCorrelationRegistrar>();
         services.TryAddSingleton<IThreadResumePlatform, WindowsThreadResumePlatform>();
         services.TryAddSingleton<IGuardedMemoryReaderFactory, GuardedMemoryReaderFactory>();
+        services.TryAddSingleton<MemoryScanDiscoverer>();
 
         services.TryAddSingleton<IGameSessionState>(
             sp => sp.GetRequiredService<GameSessionCoordinator>());
         services.TryAddSingleton<IGameReplayLauncher>(
             sp => sp.GetRequiredService<GameSessionCoordinator>());
         services.TryAddSingleton<IGameMemoryObserver>(
+            sp => sp.GetRequiredService<GameSessionCoordinator>());
+        services.TryAddSingleton<IGameMemoryScanner>(
             sp => sp.GetRequiredService<GameSessionCoordinator>());
 
         return services;

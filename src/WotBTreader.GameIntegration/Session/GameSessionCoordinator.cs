@@ -62,7 +62,7 @@ internal sealed record ManagedGameLaunchContext(
 /// identity never leave this adapter.
 /// </summary>
 internal sealed class GameSessionCoordinator : IGameSessionState,
-    IGameReplayLauncher, IGameMemoryObserver, IAsyncDisposable, IDisposable
+    IGameReplayLauncher, IGameMemoryObserver, IGameMemoryScanner, IAsyncDisposable, IDisposable
 {
     private static readonly TimeSpan EvidenceLifetime = TimeSpan.FromSeconds(15);
     private readonly Lock _gate = new();
@@ -74,6 +74,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     private readonly IThreadResumePlatform _threadResumePlatform;
     private readonly IGuardedMemoryReaderFactory _memoryReaderFactory;
     private readonly IOffsetTableReader _offsetTableReader;
+    private readonly MemoryScanDiscoverer _scanDiscoverer;
 
     private GameSessionSnapshot _snapshot = new(
         GameSessionVerificationState.Unknown,
@@ -100,7 +101,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         IManagedLaunchCorrelationRegistrar correlationRegistrar,
         IThreadResumePlatform threadResumePlatform,
         IGuardedMemoryReaderFactory memoryReaderFactory,
-        IOffsetTableReader offsetTableReader)
+        IOffsetTableReader offsetTableReader,
+        MemoryScanDiscoverer scanDiscoverer)
     {
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _preparer = preparer ?? throw new ArgumentNullException(nameof(preparer));
@@ -110,6 +112,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         _threadResumePlatform = threadResumePlatform ?? throw new ArgumentNullException(nameof(threadResumePlatform));
         _memoryReaderFactory = memoryReaderFactory ?? throw new ArgumentNullException(nameof(memoryReaderFactory));
         _offsetTableReader = offsetTableReader ?? throw new ArgumentNullException(nameof(offsetTableReader));
+        _scanDiscoverer = scanDiscoverer ?? throw new ArgumentNullException(nameof(scanDiscoverer));
     }
 
     /// <summary>
@@ -821,6 +824,43 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     public void Dispose()
     {
         DisposeAsync().AsTask().GetAwaiter().GetResult();
+    }
+
+    public async ValueTask<OperationResult<MemoryScanResult>> ScanAsync(
+        MemoryScanRequest request,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        int processId;
+        long baseAddress;
+        lock (_gate)
+        {
+            ExpireAuthorizationIfNeeded();
+            if (_snapshot.State != GameSessionVerificationState.OfflineReplayVerified
+                || _authorization is null)
+            {
+                return OperationResult.Failure<MemoryScanResult>(
+                    new ApplicationError(
+                        "discover.gate_not_satisfied",
+                        "The offline-session gate is not satisfied. Launch a replay first."));
+            }
+
+            if (_authorization.BaseAddress == nint.Zero)
+            {
+                return OperationResult.Failure<MemoryScanResult>(
+                    new ApplicationError(
+                        "discover.no_base_address",
+                        "The base address of the game process is not available."));
+            }
+
+            processId = _authorization.ProcessId;
+            baseAddress = _authorization.BaseAddress;
+        }
+
+        return await Task.Run(
+            () => _scanDiscoverer.Scan(processId, baseAddress, request),
+            cancellationToken).ConfigureAwait(false);
     }
 
     private static OperationResult<GameReplayLaunchOutcome> LaunchFailure(

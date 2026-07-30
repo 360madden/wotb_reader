@@ -38,6 +38,7 @@ public sealed class GameIntegrationRegistrationTests
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IGameSessionState)));
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IGameReplayLauncher)));
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IGameMemoryObserver)));
+        Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IGameMemoryScanner)));
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IGameProcessIdentityObserver)));
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IGameProcessQueryPlatform)));
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IWindowsExecutableFingerprintReader)));

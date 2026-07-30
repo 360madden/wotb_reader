@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using WotBTreader.ApiContracts;
 using WotBTreader.Application.Game;
 using WotBTreader.Application.Results;
@@ -19,6 +20,7 @@ internal static class GameApiEndpoints
         group.MapGet("/state", GetGameStateAsync);
         group.MapGet("/memory", GetGameMemoryAsync);
         group.MapPost("/launch", LaunchGameAsync);
+        group.MapPost("/discover", DiscoverOffsetsAsync);
         return builder;
     }
 
@@ -115,6 +117,120 @@ internal static class GameApiEndpoints
             });
         }
     }
+
+    internal static async Task<IResult> DiscoverOffsetsAsync(
+        IGameMemoryScanner scanner,
+        OffsetDiscoveryRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(scanner);
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (string.IsNullOrWhiteSpace(request.FieldName))
+        {
+            return Results.BadRequest(new { error = "discover.field_name_required" });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.ExpectedValueHex)
+            || !IsHexString(request.ExpectedValueHex))
+        {
+            return Results.BadRequest(new { error = "discover.invalid_hex" });
+        }
+
+        byte[] expectedValue;
+        try
+        {
+            expectedValue = Convert.FromHexString(request.ExpectedValueHex);
+        }
+        catch
+        {
+            return Results.BadRequest(new { error = "discover.invalid_hex" });
+        }
+
+        if (expectedValue.Length is < 1 or > 8)
+        {
+            return Results.BadRequest(new
+            {
+                error = "discover.invalid_value_length",
+            });
+        }
+
+        byte[]? tolerance = null;
+        if (!string.IsNullOrWhiteSpace(request.ToleranceMaskHex))
+        {
+            if (!IsHexString(request.ToleranceMaskHex))
+            {
+                return Results.BadRequest(new { error = "discover.invalid_tolerance_hex" });
+            }
+
+            tolerance = Convert.FromHexString(request.ToleranceMaskHex);
+            if (tolerance.Length != expectedValue.Length)
+            {
+                return Results.BadRequest(new
+                {
+                    error = "discover.tolerance_length_mismatch",
+                });
+            }
+        }
+
+        string fieldType = request.FieldType switch
+        {
+            "Float" => "Float",
+            "Int32" => "Int32",
+            "Double" => "Double",
+            _ => "Float",
+        };
+
+        MemoryScanRequest scanRequest = new(
+            FieldName: request.FieldName,
+            FieldType: fieldType,
+            ExpectedValue: expectedValue,
+            ToleranceMask: tolerance,
+            MaxCandidates: Math.Clamp(request.MaxCandidates, 1, 10_000),
+            MinRegionSize: Math.Max(request.MinRegionSize, 4096));
+
+        OperationResult<MemoryScanResult> result =
+            await scanner.ScanAsync(scanRequest, cancellationToken).ConfigureAwait(false);
+
+        if (!result.IsSuccess)
+        {
+            return Results.BadRequest(new
+            {
+                error = result.Error?.Code ?? "discover.failed",
+                detail = result.Error?.Message,
+            });
+        }
+
+        MemoryScanResult scanResult = result.Value!;
+
+        List<OffsetDiscoveryCandidate> candidates = [];
+        foreach (MemoryScanCandidate c in scanResult.Candidates)
+        {
+            candidates.Add(new OffsetDiscoveryCandidate
+            {
+                AbsoluteAddress = $"0x{c.AbsoluteAddress:X}",
+                RelativeOffset = $"0x{c.RelativeOffset:X}",
+                RelativeOffsetDecimal = c.RelativeOffset,
+                ObservedValueHex = Convert.ToHexString(c.ObservedValue),
+                ValueSummary = c.ValueSummary,
+            });
+        }
+
+        return Results.Ok(new OffsetDiscoveryResponse
+        {
+            CompletedAtUtc = scanResult.CompletedAtUtc,
+            BaseAddress = $"0x{scanResult.BaseAddress:X}",
+            RegionsScanned = scanResult.RegionsScanned,
+            BytesScanned = scanResult.BytesScanned,
+            TotalMatchesBeforeTruncation = scanResult.TotalMatchesBeforeTruncation,
+            Candidates = candidates,
+        });
+    }
+
+    private static bool IsHexString(string value) =>
+        value.Length > 0
+        && value.Length % 2 == 0
+        && Regex.IsMatch(value, "^[0-9a-fA-F]+$");
 
     private static string ErrorCode(ApplicationError? error) =>
         string.IsNullOrWhiteSpace(error?.Code) ? "launch.failed" : error.Code;

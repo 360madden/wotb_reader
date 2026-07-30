@@ -43,6 +43,7 @@ public sealed class CompositionRootTests
         typeof(IGameSessionState),
         typeof(IGameReplayLauncher),
         typeof(IGameMemoryObserver),
+        typeof(IGameMemoryScanner),
     ];
 
     [TestMethod]
@@ -81,9 +82,11 @@ public sealed class CompositionRootTests
         IGameSessionState state = provider.GetRequiredService<IGameSessionState>();
         IGameReplayLauncher launcher = provider.GetRequiredService<IGameReplayLauncher>();
         IGameMemoryObserver observer = provider.GetRequiredService<IGameMemoryObserver>();
+        IGameMemoryScanner scanner = provider.GetRequiredService<IGameMemoryScanner>();
 
         Assert.IsTrue(ReferenceEquals(state, launcher));
         Assert.IsTrue(ReferenceEquals(state, observer));
+        Assert.IsTrue(ReferenceEquals(state, scanner));
     }
 
     [TestMethod]

@@ -279,6 +279,19 @@ internal readonly struct NativeFileInformation
     public ulong FileIndex => ((ulong)_fileIndexHigh << 32) | _fileIndexLow;
 }
 
+[StructLayout(LayoutKind.Sequential)]
+internal struct MemoryBasicInformation
+{
+    public nint BaseAddress;
+    public nint AllocationBase;
+    public uint AllocationProtect;
+    public ushort PartitionId;
+    public nuint RegionSize;
+    public uint State;
+    public uint Protect;
+    public uint Type;
+}
+
 internal static class NativeMethods
 {
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
@@ -420,6 +433,13 @@ internal static class NativeMethods
 
     [DllImport("kernel32.dll", SetLastError = true)]
     internal static extern bool CloseHandle(IntPtr hObject);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern int VirtualQueryEx(
+        SafeProcessHandle hProcess,
+        nint lpAddress,
+        out MemoryBasicInformation lpBuffer,
+        uint dwLength);
 }
 
 [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
