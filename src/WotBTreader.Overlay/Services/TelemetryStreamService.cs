@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.SignalR.Client;
+using WotBTreader.ApiContracts;
 
 namespace WotBTreader.Overlay.Services;
 
@@ -11,6 +12,9 @@ public interface ITelemetryStreamService : IDisposable
 {
     /// <summary>Raised when new telemetry arrives that may affect the session list.</summary>
     event EventHandler? SessionListChanged;
+
+    /// <summary>Raised when a live memory observation is pushed from the host.</summary>
+    event EventHandler<GameMemoryResponse>? MemoryObservationReceived;
 
     /// <summary>
     /// Opens a connection to the telemetry hub at <c>{baseUri}/api/v1/stream</c>.
@@ -41,6 +45,7 @@ internal sealed class TelemetryStreamService : ITelemetryStreamService
     private bool _disposed;
 
     public event EventHandler? SessionListChanged;
+    public event EventHandler<GameMemoryResponse>? MemoryObservationReceived;
 
     public Task ConnectAsync(Uri baseUri, CancellationToken cancellationToken = default)
     {
@@ -92,6 +97,10 @@ internal sealed class TelemetryStreamService : ITelemetryStreamService
 
         connection.Closed += OnConnectionClosed;
         connection.Reconnected += OnReconnected;
+
+        // Register the memory observation handler before starting so it
+        // receives pushes from the very first poll cycle.
+        connection.On<GameMemoryResponse>("MemoryObservation", OnMemoryObservation);
 
         await connection.StartAsync(cancellationToken);
 
@@ -207,6 +216,11 @@ internal sealed class TelemetryStreamService : ITelemetryStreamService
         }
 
         return Task.CompletedTask;
+    }
+
+    private void OnMemoryObservation(GameMemoryResponse observation)
+    {
+        MemoryObservationReceived?.Invoke(this, observation);
     }
 
     private async Task DisposeConnectionAsync()

@@ -32,6 +32,8 @@ public class MainViewModel : INotifyPropertyChanged
     private string _status = string.Empty;
     private bool _isRefreshingSessions;
     private readonly SynchronizationContext? _syncContext;
+    private CancellationTokenSource? _liveObservationTimeoutCts;
+    private static readonly TimeSpan LiveObservationTimeout = TimeSpan.FromSeconds(2);
 
     private Dictionary<string, MapBoundaryResponse> _mapBoundaries = new(StringComparer.OrdinalIgnoreCase);
     private bool _boundariesFetched;
@@ -56,6 +58,11 @@ public class MainViewModel : INotifyPropertyChanged
     private ImageSource? _minimapImageSource;
     private readonly Dictionary<string, ImageSource> _minimapCache = new(StringComparer.OrdinalIgnoreCase);
     private string _searchText = string.Empty;
+    private double? _livePlayerPositionX;
+    private double? _livePlayerPositionZ;
+    private int? _livePlayerHP;
+    private double? _liveReplayTimeSeconds;
+    private bool _hasLiveMemoryObservation;
 
     public MainViewModel()
         : this(new RendezvousLocator(), static (baseUri, capability) => new TreaderApiClient(baseUri, capability: capability), null)
@@ -80,6 +87,7 @@ public class MainViewModel : INotifyPropertyChanged
         if (_streamService is not null)
         {
             _streamService.SessionListChanged += OnStreamSessionListChanged;
+            _streamService.MemoryObservationReceived += OnMemoryObservationReceived;
         }
     }
 
@@ -101,6 +109,41 @@ public class MainViewModel : INotifyPropertyChanged
     /// Case-insensitive search text for filtering the session list.
     /// Matches against map label. Empty string shows all sessions.
     /// </summary>
+    /// <summary>Live player X position from memory observation. Null when unavailable.</summary>
+    public double? LivePlayerPositionX
+    {
+        get => _livePlayerPositionX;
+        private set { _livePlayerPositionX = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>Live player Z position from memory observation. Null when unavailable.</summary>
+    public double? LivePlayerPositionZ
+    {
+        get => _livePlayerPositionZ;
+        private set { _livePlayerPositionZ = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>Live player HP from memory observation. Null when unavailable.</summary>
+    public int? LivePlayerHP
+    {
+        get => _livePlayerHP;
+        private set { _livePlayerHP = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>Live replay time in seconds from memory observation.</summary>
+    public double? LiveReplayTimeSeconds
+    {
+        get => _liveReplayTimeSeconds;
+        private set { _liveReplayTimeSeconds = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>True when the overlay is receiving live memory observations.</summary>
+    public bool HasLiveMemoryObservation
+    {
+        get => _hasLiveMemoryObservation;
+        private set { _hasLiveMemoryObservation = value; OnPropertyChanged(); }
+    }
+
     public string SearchText
     {
         get => _searchText;
@@ -782,6 +825,76 @@ public class MainViewModel : INotifyPropertyChanged
         {
             _ = RefreshSessionsAsync();
         }
+    }
+
+    private void OnMemoryObservationReceived(object? sender, GameMemoryResponse observation)
+    {
+        // SignalR callbacks run on non-UI threads. Marshal property
+        // mutations to the WPF dispatcher thread.
+        if (_syncContext is not null)
+        {
+            _syncContext.Post(static state =>
+            {
+                var (vm, obs) = ((MainViewModel, GameMemoryResponse))state!;
+                vm.ApplyMemoryObservation(obs);
+            }, (this, observation));
+        }
+        else
+        {
+            ApplyMemoryObservation(observation);
+        }
+    }
+
+    private void ApplyMemoryObservation(GameMemoryResponse observation)
+    {
+        if (observation.Availability != "Available")
+        {
+            return;
+        }
+
+        HasLiveMemoryObservation = true;
+
+        // Reset the liveness timeout: if no observation arrives within
+        // LiveObservationTimeout, HasLiveMemoryObservation flips to false
+        // so the overlay doesn't display stale "live" status.
+        CancelLiveObservationTimeout();
+        CancellationTokenSource timeoutCts = new();
+        _liveObservationTimeoutCts = timeoutCts;
+        _ = Task.Delay(LiveObservationTimeout, timeoutCts.Token)
+            .ContinueWith(static (t, state) =>
+            {
+                if (!t.IsCanceled && t.Exception is null)
+                {
+                    ((MainViewModel)state!).HasLiveMemoryObservation = false;
+                }
+            }, this, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+
+        if (observation.PlayerPositionX.HasValue)
+        {
+            LivePlayerPositionX = observation.PlayerPositionX.Value;
+        }
+
+        if (observation.PlayerPositionZ.HasValue)
+        {
+            LivePlayerPositionZ = observation.PlayerPositionZ.Value;
+        }
+
+        if (observation.PlayerHP.HasValue)
+        {
+            LivePlayerHP = observation.PlayerHP.Value;
+        }
+
+        if (observation.ReplayTimeSeconds.HasValue)
+        {
+            LiveReplayTimeSeconds = observation.ReplayTimeSeconds.Value;
+        }
+    }
+
+    private void CancelLiveObservationTimeout()
+    {
+        CancellationTokenSource? previous = Interlocked.Exchange(ref _liveObservationTimeoutCts, null);
+        previous?.Cancel();
+        previous?.Dispose();
     }
 
     private async Task FetchMapBoundariesAsync(TreaderApiClient client)

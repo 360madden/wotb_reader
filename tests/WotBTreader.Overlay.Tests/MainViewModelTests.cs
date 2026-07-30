@@ -1,6 +1,7 @@
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using WotBTreader.ApiContracts;
 using WotBTreader.Overlay.Discovery;
 using WotBTreader.Overlay.Services;
 using WotBTreader.Overlay.ViewModels;
@@ -1029,6 +1030,7 @@ public sealed class MainViewModelTests
         public int ConnectCallCount { get; private set; }
         public Uri? LastConnectedUri { get; private set; }
         public event EventHandler? SessionListChanged;
+        public event EventHandler<GameMemoryResponse>? MemoryObservationReceived;
 
         public Task ConnectAsync(Uri baseUri, CancellationToken cancellationToken = default)
         {
@@ -1045,6 +1047,11 @@ public sealed class MainViewModelTests
         public void RaiseSessionListChanged()
         {
             SessionListChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        public void RaiseMemoryObservation(GameMemoryResponse observation)
+        {
+            MemoryObservationReceived?.Invoke(this, observation);
         }
 
         public void Dispose()
