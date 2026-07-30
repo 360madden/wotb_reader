@@ -327,6 +327,7 @@ public sealed class SuspendedGameProcessLaunchTests
             var lease = new SuspendedGameProcessLease(
                 pid,
                 DateTime.UtcNow.Ticks,
+                executableLease.CanonicalExecutablePath,
                 dummyProcessHandle,
                 dummyThreadHandle,
                 executableLease,

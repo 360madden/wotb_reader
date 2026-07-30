@@ -31,6 +31,7 @@ internal sealed class SuspendedGameProcessLease : IAsyncDisposable
     internal SuspendedGameProcessLease(
         int processId,
         long creationTimeUtcTicks,
+        string verifiedExecutablePath,
         SafeProcessHandle processHandle,
         SafeThreadHandle threadHandle,
         WindowsTrustedExecutableLaunchLease executableLease,
@@ -38,6 +39,7 @@ internal sealed class SuspendedGameProcessLease : IAsyncDisposable
     {
         ProcessId = processId;
         CreationTimeUtcTicks = creationTimeUtcTicks;
+        VerifiedExecutablePath = verifiedExecutablePath;
         _processHandle = processHandle;
         _threadHandle = threadHandle;
         _executableLease = executableLease;
@@ -46,6 +48,7 @@ internal sealed class SuspendedGameProcessLease : IAsyncDisposable
 
     internal int ProcessId { get; }
     internal long CreationTimeUtcTicks { get; }
+    internal string VerifiedExecutablePath { get; }
 
     internal WindowsTrustedExecutableLaunchLease? ExecutableLease => _executableLease;
     internal ManagedReplayArtifactLease? ArtifactLease => _artifactLease;
@@ -315,6 +318,7 @@ internal sealed class WindowsSuspendedProcessPlatform : ISuspendedProcessPlatfor
             var lease = new SuspendedGameProcessLease(
                 childPid,
                 creationTime,
+                childExePath,
                 reducedProcessHandle!,
                 reducedThreadHandle!,
                 executableLease,
