@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:views="clr-namespace:WotBTreader.Overlay.Views"
+        xmlns:sys="clr-namespace:System;assembly=mscorlib"
         mc:Ignorable="d"
         WindowStyle="None"
         AllowsTransparency="True"
@@ -80,6 +81,9 @@
             <Setter Property="Width" Value="5"/>
         </Style>
 
+        <!-- ═══ Converters ═══ -->
+        <BooleanToVisibilityConverter x:Key="BoolToVisible"/>
+
     </Window.Resources>
 
     <Grid>
@@ -88,7 +92,34 @@
                             WorldMinX="{Binding WorldMinX}" WorldMaxX="{Binding WorldMaxX}"
                             WorldMinZ="{Binding WorldMinZ}" WorldMaxZ="{Binding WorldMaxZ}"
                             MapName="{Binding MapName}"
-                            MinimapImage="{Binding MinimapImageSource}"/>
+                            MinimapImage="{Binding MinimapImageSource}"
+                            LivePlayerX="{Binding LivePlayerPositionX}"
+                            LivePlayerZ="{Binding LivePlayerPositionZ}"
+                            LivePlayerTrail="{Binding LivePlayerTrail}"/>
+
+        <!-- ═══ Live HP overlay — bottom-left corner of the window ═══ -->
+        <Border HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                Margin="16,0,0,16" Padding="10,6" CornerRadius="6"
+                Background="#CC0D0D14" BorderBrush="#44FFFFFF" BorderThickness="1"
+                Visibility="{Binding HasLiveMemoryObservation, Converter={StaticResource BoolToVisible}}"
+                IsHitTestVisible="False">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="❤️" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBlock FontSize="16" FontWeight="Bold" Foreground="#00FF64"
+                           VerticalAlignment="Center" FontFamily="Consolas">
+                    <Run Text="{Binding LivePlayerHP, TargetNullValue='—', StringFormat={}{0}}"/>
+                    <Run Text=" HP" FontSize="11" Foreground="#88FFFFFF" FontWeight="Normal"/>
+                </TextBlock>
+                <Border Width="1" Margin="8,2" Background="#22FFFFFF" VerticalAlignment="Stretch"/>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock FontSize="9" Foreground="#66FFFFFF">
+                        <Run Text="⏱ "/>
+                        <Run Text="{Binding LiveReplayTimeSeconds, StringFormat={}{0:F1}}"/>
+                        <Run Text="s"/>
+                    </TextBlock>
+                </StackPanel>
+            </StackPanel>
+        </Border>
 
         <!-- ═══ Sidebar panel — gradient, shadowed, rounded ═══ -->
         <Border x:Name="SidebarBorder" HorizontalAlignment="Right" VerticalAlignment="Top"

@@ -18,6 +18,14 @@ public sealed partial class PositionPlot : UserControl
     private const double PlotPadding = 8;
     private const int MaxRenderedPoints = 2000;
 
+    // Bounds computed during Redraw(), reused by DrawLivePlayer() to
+    // ensure live rendering uses the same coordinate system as replay points.
+    private double _computedMinX;
+    private double _computedMaxX;
+    private double _computedMinZ;
+    private double _computedMaxZ;
+    private bool _computedHasBounds;
+
     public static readonly DependencyProperty PointsSourceProperty =
         DependencyProperty.Register(
             nameof(PointsSource),
@@ -64,6 +72,27 @@ public sealed partial class PositionPlot : UserControl
         DependencyProperty.Register(
             nameof(MinimapImage),
             typeof(ImageSource),
+            typeof(PositionPlot),
+            new PropertyMetadata(null, OnVisualChanged));
+
+    public static readonly DependencyProperty LivePlayerXProperty =
+        DependencyProperty.Register(
+            nameof(LivePlayerX),
+            typeof(double),
+            typeof(PositionPlot),
+            new PropertyMetadata(double.NaN, OnVisualChanged));
+
+    public static readonly DependencyProperty LivePlayerZProperty =
+        DependencyProperty.Register(
+            nameof(LivePlayerZ),
+            typeof(double),
+            typeof(PositionPlot),
+            new PropertyMetadata(double.NaN, OnVisualChanged));
+
+    public static readonly DependencyProperty LivePlayerTrailProperty =
+        DependencyProperty.Register(
+            nameof(LivePlayerTrail),
+            typeof(IEnumerable),
             typeof(PositionPlot),
             new PropertyMetadata(null, OnVisualChanged));
 
@@ -119,6 +148,27 @@ public sealed partial class PositionPlot : UserControl
         set => SetValue(MinimapImageProperty, value);
     }
 
+    /// <summary>Live player X position from memory observation. NaN when unavailable.</summary>
+    public double LivePlayerX
+    {
+        get => (double)GetValue(LivePlayerXProperty);
+        set => SetValue(LivePlayerXProperty, value);
+    }
+
+    /// <summary>Live player Z position from memory observation. NaN when unavailable.</summary>
+    public double LivePlayerZ
+    {
+        get => (double)GetValue(LivePlayerZProperty);
+        set => SetValue(LivePlayerZProperty, value);
+    }
+
+    /// <summary>Recent live player position trail for velocity rendering.</summary>
+    public IEnumerable? LivePlayerTrail
+    {
+        get => (IEnumerable?)GetValue(LivePlayerTrailProperty);
+        set => SetValue(LivePlayerTrailProperty, value);
+    }
+
     private static void OnVisualChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         PositionPlot plot = (PositionPlot)d;
@@ -165,17 +215,50 @@ public sealed partial class PositionPlot : UserControl
         double wMinZ = WorldMinZ;
         double wMaxZ = WorldMaxZ;
 
-        bool hasBounds = !double.IsNaN(wMinX) && !double.IsNaN(wMaxX)
+        _computedHasBounds = !double.IsNaN(wMinX) && !double.IsNaN(wMaxX)
             && !double.IsNaN(wMinZ) && !double.IsNaN(wMaxZ)
             && wMaxX > wMinX && wMaxZ > wMinZ;
 
         IReadOnlyList<(double X, double Y, int TeamNumber)> fitted =
             PlotTransform.Fit(
                 points, ActualWidth, ActualHeight, PlotPadding,
-                hasBounds ? wMinX : null,
-                hasBounds ? wMaxX : null,
-                hasBounds ? wMinZ : null,
-                hasBounds ? wMaxZ : null);
+                _computedHasBounds ? wMinX : null,
+                _computedHasBounds ? wMaxX : null,
+                _computedHasBounds ? wMinZ : null,
+                _computedHasBounds ? wMaxZ : null);
+
+        // Capture the actual extent used so DrawLivePlayer reuses the same
+        // coordinate system. When world bounds are set, use them directly;
+        // otherwise extract the auto-computed extents from the fitted data.
+        if (_computedHasBounds)
+        {
+            _computedMinX = wMinX;
+            _computedMaxX = wMaxX;
+            _computedMinZ = wMinZ;
+            _computedMaxZ = wMaxZ;
+        }
+        else if (points.Count > 0)
+        {
+            // Replay data provides the extent for live rendering fallback.
+            double rMinX = double.MaxValue, rMaxX = double.MinValue;
+            double rMinZ = double.MaxValue, rMaxZ = double.MinValue;
+            foreach (PlotPoint pt in points)
+            {
+                rMinX = Math.Min(rMinX, pt.X);
+                rMaxX = Math.Max(rMaxX, pt.X);
+                rMinZ = Math.Min(rMinZ, pt.Y);
+                rMaxZ = Math.Max(rMaxZ, pt.Y);
+            }
+
+            _computedMinX = rMinX;
+            _computedMaxX = rMaxX;
+            _computedMinZ = rMinZ;
+            _computedMaxZ = rMaxZ;
+        }
+        else
+        {
+            _computedMinX = _computedMaxX = _computedMinZ = _computedMaxZ = 0;
+        }
 
         // ── Draw velocity trails (fading lines per participant) ──
         // Group all fitted coordinates by participant, preserving insertion order.
@@ -228,7 +311,81 @@ public sealed partial class PositionPlot : UserControl
             PlotRenderer.DotsToDraw.Add(new RenderDot(new Point(x, y), teamNumber));
         }
 
+        // ── Live player rendering (on top of replay positions) ──
+        DrawLivePlayer();
+
         PlotRenderer.InvalidateVisual();
+    }
+
+    /// <summary>
+    /// Renders the live player position dot and velocity trail from
+    /// recent memory observations. Uses the same coordinate system
+    /// as the replay points (computed in <see cref="Redraw"/>).
+    /// </summary>
+    private void DrawLivePlayer()
+    {
+        double liveX = LivePlayerX;
+        double liveZ = LivePlayerZ;
+        if (double.IsNaN(liveX) || double.IsNaN(liveZ))
+        {
+            return;
+        }
+
+        // Only render when we have valid replay or world bounds to
+        // guarantee the live dot appears in the same position as replay dots.
+        double extentX = _computedMaxX - _computedMinX;
+        double extentZ = _computedMaxZ - _computedMinZ;
+        if (extentX <= 0 && extentZ <= 0)
+        {
+            return;
+        }
+
+        double w = ActualWidth;
+        double h = ActualHeight;
+        double usableWidth = w - (2 * PlotPadding);
+        double usableHeight = h - (2 * PlotPadding);
+
+        double ToCanvasX(double worldX) => extentX > 0
+            ? PlotPadding + ((worldX - _computedMinX) / extentX * usableWidth)
+            : w / 2;
+
+        double ToCanvasZ(double worldZ) => extentZ > 0
+            ? PlotPadding + ((worldZ - _computedMinZ) / extentZ * usableHeight)
+            : h / 2;
+
+        int trailTeam = FastPlotRenderer.LivePlayerTeamNumber;
+
+        // ── Live player velocity trail ──
+        if (LivePlayerTrail is IEnumerable trail)
+        {
+            List<(double X, double Z)> trailPoints = new();
+            foreach (object? item in trail)
+            {
+                if (item is PlotPoint pt)
+                {
+                    trailPoints.Add((pt.X, pt.Y));
+                }
+            }
+
+            trailPoints.Add((liveX, liveZ));
+
+            for (int i = 0; i < trailPoints.Count - 1; i++)
+            {
+                double t = trailPoints.Count <= 1
+                    ? 1.0
+                    : (double)i / (trailPoints.Count - 1);
+                double opacity = 0.2 + (t * 0.8);
+
+                Point p1 = new(ToCanvasX(trailPoints[i].X), ToCanvasZ(trailPoints[i].Z));
+                Point p2 = new(ToCanvasX(trailPoints[i + 1].X), ToCanvasZ(trailPoints[i + 1].Z));
+                PlotRenderer.LinesToDraw.Add(
+                    new RenderLine(p1, p2, trailTeam, opacity));
+            }
+        }
+
+        // ── Live player dot (large, bright green with strong glow) ──
+        Point livePoint = new(ToCanvasX(liveX), ToCanvasZ(liveZ));
+        PlotRenderer.DotsToDraw.Add(new RenderDot(livePoint, trailTeam));
     }
 
     /// <summary>

@@ -63,6 +63,8 @@ public class MainViewModel : INotifyPropertyChanged
     private int? _livePlayerHP;
     private double? _liveReplayTimeSeconds;
     private bool _hasLiveMemoryObservation;
+    private double? _livePlayerYaw;
+    private const int MaxLiveTrailPoints = 50;
 
     public MainViewModel()
         : this(new RendezvousLocator(), static (baseUri, capability) => new TreaderApiClient(baseUri, capability: capability), null)
@@ -143,6 +145,19 @@ public class MainViewModel : INotifyPropertyChanged
         get => _hasLiveMemoryObservation;
         private set { _hasLiveMemoryObservation = value; OnPropertyChanged(); }
     }
+
+    /// <summary>Live camera yaw in radians from memory observation.</summary>
+    public double? LivePlayerYaw
+    {
+        get => _livePlayerYaw;
+        private set { _livePlayerYaw = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>
+    /// Recent live player position trail for velocity trail rendering.
+    /// Capped at <see cref="MaxLiveTrailPoints"/> points (FIFO).
+    /// </summary>
+    public ObservableCollection<PlotPoint> LivePlayerTrail { get; } = new();
 
     public string SearchText
     {
@@ -887,6 +902,35 @@ public class MainViewModel : INotifyPropertyChanged
         if (observation.ReplayTimeSeconds.HasValue)
         {
             LiveReplayTimeSeconds = observation.ReplayTimeSeconds.Value;
+        }
+
+        if (observation.PlayerYaw.HasValue)
+        {
+            LivePlayerYaw = observation.PlayerYaw.Value;
+        }
+
+        // Append to the velocity trail when we have both position values.
+        if (observation.PlayerPositionX.HasValue && observation.PlayerPositionZ.HasValue)
+        {
+            // Skip duplicate positions (no movement).
+            PlotPoint? last = LivePlayerTrail.Count > 0
+                ? LivePlayerTrail[^1]
+                : null;
+
+            double x = observation.PlayerPositionX.Value;
+            double z = observation.PlayerPositionZ.Value;
+
+            if (last is null || last.X != x || last.Y != z)
+            {
+                // Team number 9 = live player (matches FastPlotRenderer.LivePlayerTeamNumber).
+                LivePlayerTrail.Add(new PlotPoint(x, z, TeamNumber: 9));
+
+                // Cap the trail length.
+                while (LivePlayerTrail.Count > MaxLiveTrailPoints)
+                {
+                    LivePlayerTrail.RemoveAt(0);
+                }
+            }
         }
     }
 

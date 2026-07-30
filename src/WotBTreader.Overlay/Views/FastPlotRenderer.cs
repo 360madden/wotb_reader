@@ -13,10 +13,12 @@ public sealed class FastPlotRenderer : FrameworkElement
     private static readonly Brush Team1Dot = Freeze(new SolidColorBrush(Color.FromRgb(40, 160, 255)));
     private static readonly Brush Team2Dot = Freeze(new SolidColorBrush(Color.FromRgb(255, 80, 20)));
     private static readonly Brush UnknownDot = Freeze(new SolidColorBrush(Colors.Gray));
+    private static readonly Brush LivePlayerDot = Freeze(new SolidColorBrush(Color.FromRgb(0, 255, 100)));
 
     private static readonly Brush Team1Glow = Freeze(new SolidColorBrush(Color.FromArgb(40, 40, 160, 255)));
     private static readonly Brush Team2Glow = Freeze(new SolidColorBrush(Color.FromArgb(40, 255, 80, 20)));
     private static readonly Brush UnknownGlow = Freeze(new SolidColorBrush(Color.FromArgb(40, 128, 128, 128)));
+    private static readonly Brush LivePlayerGlow = Freeze(new SolidColorBrush(Color.FromArgb(80, 0, 255, 100)));
 
     private static readonly Pen Team1Trail = Freeze(new Pen(
         new SolidColorBrush(Color.FromRgb(40, 160, 255)), 1.0));
@@ -24,6 +26,11 @@ public sealed class FastPlotRenderer : FrameworkElement
         new SolidColorBrush(Color.FromRgb(255, 80, 20)), 1.0));
     private static readonly Pen UnknownTrail = Freeze(new Pen(
         new SolidColorBrush(Colors.Gray), 1.0));
+    private static readonly Pen LivePlayerTrailPen = Freeze(new Pen(
+        new SolidColorBrush(Color.FromRgb(0, 255, 100)), 2.0));
+
+    /// <summary>Team number used for live player rendering (green).</summary>
+    public const int LivePlayerTeamNumber = 9;
 
     /// <summary>Trail segments to draw. Cleared and repopulated each frame.</summary>
     public List<RenderLine> LinesToDraw { get; } = new();
@@ -44,10 +51,13 @@ public sealed class FastPlotRenderer : FrameworkElement
 
         foreach (RenderDot dot in DotsToDraw)
         {
+            bool isLive = dot.TeamNumber == LivePlayerTeamNumber;
             // Halation glow — larger semi-transparent circle behind the dot.
-            drawingContext.DrawEllipse(SelectGlowBrush(dot.TeamNumber), null, dot.Location, 3.5, 3.5);
+            double glowRadius = isLive ? 7.0 : 3.5;
+            drawingContext.DrawEllipse(SelectGlowBrush(dot.TeamNumber), null, dot.Location, glowRadius, glowRadius);
             // Core dot.
-            drawingContext.DrawEllipse(SelectDotBrush(dot.TeamNumber), null, dot.Location, 2.2, 2.2);
+            double dotRadius = isLive ? 4.0 : 2.2;
+            drawingContext.DrawEllipse(SelectDotBrush(dot.TeamNumber), null, dot.Location, dotRadius, dotRadius);
         }
     }
 
@@ -55,6 +65,7 @@ public sealed class FastPlotRenderer : FrameworkElement
     {
         1 => Team1Trail,
         2 => Team2Trail,
+        LivePlayerTeamNumber => LivePlayerTrailPen,
         _ => UnknownTrail,
     };
 
@@ -62,6 +73,7 @@ public sealed class FastPlotRenderer : FrameworkElement
     {
         1 => Team1Glow,
         2 => Team2Glow,
+        LivePlayerTeamNumber => LivePlayerGlow,
         _ => UnknownGlow,
     };
 
@@ -69,6 +81,7 @@ public sealed class FastPlotRenderer : FrameworkElement
     {
         1 => Team1Dot,
         2 => Team2Dot,
+        LivePlayerTeamNumber => LivePlayerDot,
         _ => UnknownDot,
     };
 
