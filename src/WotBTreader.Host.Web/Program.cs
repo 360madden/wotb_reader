@@ -8,9 +8,11 @@ using WotBTreader.Host.Web.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Always resolve ContentRootPath from the assembly location so wwwroot and
-// static assets are found regardless of the process working directory.
-builder.Environment.ContentRootPath = AppContext.BaseDirectory;
+// Always resolve ContentRootPath and WebRootPath from the assembly location
+// so wwwroot and static assets are found regardless of the process working directory.
+var baseDir = AppContext.BaseDirectory;
+builder.Environment.ContentRootPath = baseDir;
+builder.Environment.WebRootPath = Path.Combine(baseDir, "wwwroot");
 
 // Binding is deliberately configured in code so an inherited ASPNETCORE_URLS value
 // cannot accidentally expose replay data on a LAN interface.
