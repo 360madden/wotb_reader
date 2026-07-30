@@ -28,20 +28,20 @@ else
     <table class="table table-sm">
         <thead>
             <tr>
-                <th scope="col">Check</th>
+                <th scope="col" class="th-sortable @SortClass(SortColumn.Check)" @onclick="() => ToggleSort(SortColumn.Check)">Check</th>
                 <th scope="col">Status</th>
                 <th scope="col">Summary</th>
                 <th scope="col">Required</th>
             </tr>
         </thead>
         <tbody>
-            @foreach (DiagnosticCheck check in _report.Checks)
+            @foreach (DiagnosticCheck check in SortedChecks())
             {
                 <tr>
                     <td>@check.Id</td>
-                    <td>@check.Status</td>
+                    <td><span class="badge @StatusBadgeClass(check.Status)">@checkStatusIcon(check.Status) @check.Status</span></td>
                     <td>@check.Summary</td>
-                    <td>@(check.Required ? "yes" : "no")</td>
+                    <td><span class="@checkRequiredClass(check.Required)">@checkRequiredLabel(check.Required)</span></td>
                 </tr>
             }
         </tbody>
@@ -52,6 +52,49 @@ else
 @code {
     private DoctorReport? _report;
     private string? _error;
+
+    private enum SortColumn { Check }
+    private SortColumn _sortColumn = SortColumn.Check;
+    private bool _sortDesc;
+
+    private string SortClass(SortColumn col) =>
+        _sortColumn == col ? (_sortDesc ? "sort-desc" : "sort-asc") : string.Empty;
+
+    private void ToggleSort(SortColumn col)
+    {
+        if (_sortColumn == col) _sortDesc = !_sortDesc;
+        else { _sortColumn = col; _sortDesc = false; }
+    }
+
+    private IEnumerable<DiagnosticCheck> SortedChecks()
+    {
+        if (_report is null) return [];
+        return _sortDesc
+            ? _report.Checks.OrderByDescending(c => c.Id)
+            : _report.Checks.OrderBy(c => c.Id);
+    }
+
+    private static string StatusBadgeClass(string status) => status switch
+    {
+        "Pass" => "bg-success",
+        "Fail" => "bg-danger",
+        "Skip" => "bg-secondary",
+        "Warn" => "bg-warning",
+        _ => "bg-secondary",
+    };
+
+    private static string checkStatusIcon(string status) => status switch
+    {
+        "Pass" => "✓",
+        "Fail" => "✗",
+        "Skip" => "—",
+        "Warn" => "⚠",
+        _ => "?",
+    };
+
+    private static string checkRequiredLabel(bool required) => required ? "required" : "optional";
+
+    private static string checkRequiredClass(bool required) => required ? "text-warning" : "text-muted";
 
     protected override async Task OnInitializedAsync()
     {

@@ -9,7 +9,13 @@
 
 <PageTitle>Comparisons</PageTitle>
 
-<h1>Comparisons</h1>
+<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem">
+    <h1 style="margin-bottom:0">Comparisons</h1>
+    <button class="btn btn-sm btn-outline-secondary" style="font-size:0.8rem;padding:0.2rem 0.6rem"
+            @onclick="RefreshAsync" title="Refresh comparison list">
+        ↻ Refresh
+    </button>
+</div>
 
 @if (_error is not null)
 {
@@ -38,14 +44,14 @@ else
     <table class="table table-sm table-striped">
         <thead>
             <tr>
-                <th scope="col">ID</th>
-                <th scope="col">Comparator</th>
-                <th scope="col">Created</th>
+                <th scope="col" class="th-sortable @SortClass(SortColumn.Id)" @onclick="() => ToggleSort(SortColumn.Id)">ID</th>
+                <th scope="col" class="th-sortable @SortClass(SortColumn.Comparator)" @onclick="() => ToggleSort(SortColumn.Comparator)">Comparator</th>
+                <th scope="col" class="th-sortable @SortClass(SortColumn.Created)" @onclick="() => ToggleSort(SortColumn.Created)">Created</th>
                 <th scope="col"></th>
             </tr>
         </thead>
         <tbody>
-            @foreach (ComparisonRun run in _runs)
+            @foreach (ComparisonRun run in SortedRuns())
             {
                 <tr>
                     <td class="text-monospace small">@run.Id.Value.ToString("D")[..8]…</td>
@@ -149,9 +155,62 @@ else
     private bool _loading = true;
     private string? _error;
 
+    private enum SortColumn { Id, Comparator, Created }
+    private SortColumn _sortColumn = SortColumn.Created;
+    private bool _sortDesc = true;
+
+    private string SortClass(SortColumn col)
+    {
+        if (_sortColumn != col) return string.Empty;
+        return _sortDesc ? "sort-desc" : "sort-asc";
+    }
+
+    private void ToggleSort(SortColumn col)
+    {
+        if (_sortColumn == col)
+            _sortDesc = !_sortDesc;
+        else
+        {
+            _sortColumn = col;
+            _sortDesc = false;
+        }
+    }
+
+    private IEnumerable<ComparisonRun> SortedRuns()
+    {
+        return (_sortColumn, _sortDesc) switch
+        {
+            (SortColumn.Id, false) => _runs.OrderBy(r => r.Id.Value),
+            (SortColumn.Id, true) => _runs.OrderByDescending(r => r.Id.Value),
+            (SortColumn.Comparator, false) => _runs.OrderBy(r => r.ComparatorId),
+            (SortColumn.Comparator, true) => _runs.OrderByDescending(r => r.ComparatorId),
+            (SortColumn.Created, false) => _runs.OrderBy(r => r.CreatedAtUtc),
+            (SortColumn.Created, true) => _runs.OrderByDescending(r => r.CreatedAtUtc),
+            _ => _runs,
+        };
+    }
+
     /// <summary>Loads the first page of comparison runs on page initialisation.</summary>
     protected override async Task OnInitializedAsync()
     {
+        try
+        {
+            _runs = [.. await ReadClient.ListComparisonsAsync(0, 200, CancellationToken.None)];
+        }
+        catch (Exception exception)
+        {
+            _error = $"Could not load comparisons ({exception.GetType().Name}).";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        _loading = true;
+        _error = null;
         try
         {
             _runs = [.. await ReadClient.ListComparisonsAsync(0, 200, CancellationToken.None)];

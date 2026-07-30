@@ -6,7 +6,21 @@
 
 <PageTitle>Sessions</PageTitle>
 
-<h1>Sessions</h1>
+<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem">
+    <h1 style="margin-bottom:0">Sessions</h1>
+    <button class="btn btn-sm btn-outline-secondary" style="font-size:0.8rem;padding:0.2rem 0.6rem"
+            @onclick="RefreshAsync" title="Refresh session list">
+        ↻ Refresh
+    </button>
+    @if (_refreshing)
+    {
+        <span style="font-size:0.8rem;color:var(--text-muted);animation:pulse 1s ease-in-out infinite">⟳</span>
+    }
+</div>
+
+<style>
+    @@keyframes pulse { 0%,100% { opacity:0.4; } 50% { opacity:1; } }
+</style>
 
 @if (_error is not null)
 {
@@ -71,17 +85,17 @@ else
     <table class="table table-sm table-striped">
         <thead>
             <tr>
-                <th scope="col">Map</th>
-                <th scope="col">Date</th>
-                <th scope="col">Game version</th>
-                <th scope="col">Status</th>
-                <th scope="col">P</th>
-                <th scope="col">Pos</th>
+                <th scope="col" class="th-sortable @SortClass(SortColumn.Map)" @onclick="() => ToggleSort(SortColumn.Map)">Map</th>
+                <th scope="col" class="th-sortable @SortClass(SortColumn.Date)" @onclick="() => ToggleSort(SortColumn.Date)">Date</th>
+                <th scope="col" class="th-sortable @SortClass(SortColumn.Version)" @onclick="() => ToggleSort(SortColumn.Version)">Game version</th>
+                <th scope="col" class="th-sortable @SortClass(SortColumn.Status)" @onclick="() => ToggleSort(SortColumn.Status)">Status</th>
+                <th scope="col" class="th-sortable @SortClass(SortColumn.Participants)" @onclick="() => ToggleSort(SortColumn.Participants)">P</th>
+                <th scope="col" class="th-sortable @SortClass(SortColumn.Positions)" @onclick="() => ToggleSort(SortColumn.Positions)">Pos</th>
                 <th scope="col"></th>
             </tr>
         </thead>
         <tbody>
-            @foreach (SessionSummaryResponse item in FilteredItems())
+            @foreach (SessionSummaryResponse item in SortedItems())
             {
                 string? sessionId = item.Session?.BattleSessionId;
                 <tr>
@@ -119,6 +133,75 @@ else
     private int _totalParticipants;
     private int _totalPositions;
     private int _totalEvents;
+    private bool _refreshing;
+
+    private enum SortColumn { Map, Date, Version, Status, Participants, Positions }
+    private SortColumn _sortColumn = SortColumn.Date;
+    private bool _sortDesc = true;
+
+    private string SortClass(SortColumn col)
+    {
+        if (_sortColumn != col) return string.Empty;
+        return _sortDesc ? "sort-desc" : "sort-asc";
+    }
+
+    private void ToggleSort(SortColumn col)
+    {
+        if (_sortColumn == col)
+            _sortDesc = !_sortDesc;
+        else
+        {
+            _sortColumn = col;
+            _sortDesc = false;
+        }
+    }
+
+    private IEnumerable<SessionSummaryResponse> SortedItems()
+    {
+        IEnumerable<SessionSummaryResponse> filtered = FilteredItems();
+        return (_sortColumn, _sortDesc) switch
+        {
+            (SortColumn.Map, false) => filtered.OrderBy(i => i.Session?.MapName ?? ""),
+            (SortColumn.Map, true) => filtered.OrderByDescending(i => i.Session?.MapName ?? ""),
+            (SortColumn.Date, false) => filtered.OrderBy(i => i.Session?.BattleTimeUtc),
+            (SortColumn.Date, true) => filtered.OrderByDescending(i => i.Session?.BattleTimeUtc),
+            (SortColumn.Version, false) => filtered.OrderBy(i => i.Session?.GameVersion ?? ""),
+            (SortColumn.Version, true) => filtered.OrderByDescending(i => i.Session?.GameVersion ?? ""),
+            (SortColumn.Status, false) => filtered.OrderBy(i => i.DecodeRun.Status),
+            (SortColumn.Status, true) => filtered.OrderByDescending(i => i.DecodeRun.Status),
+            (SortColumn.Participants, false) => filtered.OrderBy(i => i.ParticipantCount),
+            (SortColumn.Participants, true) => filtered.OrderByDescending(i => i.ParticipantCount),
+            (SortColumn.Positions, false) => filtered.OrderBy(i => i.PositionCount),
+            (SortColumn.Positions, true) => filtered.OrderByDescending(i => i.PositionCount),
+            _ => filtered,
+        };
+    }
+
+    private int FilteredCount() => FilteredItems().Count();
+
+    private async Task RefreshAsync()
+    {
+        _refreshing = true;
+        _error = null;
+        try
+        {
+            _page = await ReadClient.ListSessionsAsync(
+                0,
+                ReadApiEndpoints.DefaultPageSize,
+                CancellationToken.None);
+            _totalParticipants = _page.Items.Sum(i => i.ParticipantCount);
+            _totalPositions = _page.Items.Sum(i => i.PositionCount);
+            _totalEvents = _page.Items.Sum(i => i.EventCount);
+        }
+        catch (Exception exception)
+        {
+            _error = $"Could not load sessions ({exception.GetType().Name}).";
+        }
+        finally
+        {
+            _refreshing = false;
+        }
+    }
 
     private static string StatusBadgeClass(string? status) => status switch
     {
@@ -142,8 +225,6 @@ else
             }
         }
     }
-
-    private int FilteredCount() => FilteredItems().Count();
 
     protected override async Task OnInitializedAsync()
     {

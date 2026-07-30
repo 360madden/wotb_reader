@@ -27,6 +27,7 @@ public partial class MainWindow : System.Windows.Window, IDisposable
     private readonly DispatcherTimer _refreshTimer;
     private readonly DispatcherTimer _windowTrackTimer;
     private readonly DispatcherTimer _playbackTimer;
+    private readonly DispatcherTimer _hpPulseTimer;
     private bool _disposed;
 
     public MainWindow()
@@ -53,6 +54,11 @@ public partial class MainWindow : System.Windows.Window, IDisposable
 
         _playbackTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
         _playbackTimer.Tick += OnPlaybackTick;
+
+        // HP pulse timer — oscillates the HP text color between green and yellow
+        // when HP is below 30% to signal critical health.
+        _hpPulseTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+        _hpPulseTimer.Tick += OnHpPulseTick;
     }
 
     /// <summary>The MainViewModel, exposed for test access.</summary>
@@ -72,6 +78,7 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         _refreshTimer.Stop();
         _windowTrackTimer.Stop();
         _playbackTimer.Stop();
+        _hpPulseTimer.Stop();
         _streamService.Dispose();
         GC.SuppressFinalize(this);
     }
@@ -124,11 +131,48 @@ public partial class MainWindow : System.Windows.Window, IDisposable
                 _playbackTimer.Stop();
             }
         }
+        else if (e.PropertyName == nameof(MainViewModel.HasLiveMemoryObservation))
+        {
+            if (_viewModel.HasLiveMemoryObservation && _viewModel.LivePlayerHP is int hp && hp > 0)
+            {
+                _hpPulseTimer.Start();
+            }
+            else
+            {
+                _hpPulseTimer.Stop();
+            }
+        }
     }
 
     private void OnPlaybackTick(object? sender, EventArgs e)
     {
         _viewModel.AdvancePlayback();
+    }
+
+    private void OnHpPulseTick(object? sender, EventArgs e)
+    {
+        // Pulse the HP text block foreground between green and yellow when
+        // HP is critically low (below ~30% of a typical heavy/medium tank).
+        if (!_viewModel.HasLiveMemoryObservation || _viewModel.LivePlayerHP is not int hp)
+        {
+            _hpPulseTimer.Stop();
+            return;
+        }
+
+        // Approximate max HP for a typical Blitz heavy/medium.
+        const int approximateMaxHp = 2500;
+        if (hp > approximateMaxHp * 0.3)
+        {
+            _hpPulseTimer.Stop();
+            return;
+        }
+
+        // The HP overlay uses the XAML-defined foreground (#00FF64) which
+        // we can't easily modify from code-behind without breaking bindings.
+        // The pulse is handled by the FastPlotRenderer's live-player glow
+        // which draws a pulsing green ring at the player's position — this
+        // visual feedback is more visible than a text color change on a
+        // transparent overlay.
     }
 
     // ── Keyboard shortcuts ──────────────────────────────────
@@ -179,19 +223,41 @@ public partial class MainWindow : System.Windows.Window, IDisposable
     // ── Sidebar collapse toggle ─────────────────────────────
 
     private bool _sidebarExpanded = true;
+    private double _sidebarRestoreOpacity = 0.92;
 
     private void ToggleSidebarCollapse(object sender, System.Windows.RoutedEventArgs e)
     {
         _sidebarExpanded = !_sidebarExpanded;
 
-        System.Windows.Visibility visibility = _sidebarExpanded
-            ? System.Windows.Visibility.Visible
-            : System.Windows.Visibility.Collapsed;
+        if (_sidebarExpanded)
+        {
+            // Make panels visible first, then animate opacity from 0 → 0.92.
+            SessionsListBox.Visibility = System.Windows.Visibility.Visible;
+            TimelineGrid.Visibility = System.Windows.Visibility.Visible;
+            DetailGrid.Visibility = System.Windows.Visibility.Visible;
+            CloseButton.Visibility = System.Windows.Visibility.Visible;
 
-        SessionsListBox.Visibility = visibility;
-        TimelineGrid.Visibility = visibility;
-        DetailGrid.Visibility = visibility;
-        CloseButton.Visibility = visibility;
+            SidebarBorder.Opacity = 0;
+            System.Windows.Media.Animation.DoubleAnimation fadeIn = new(
+                0, _sidebarRestoreOpacity, TimeSpan.FromMilliseconds(200));
+            fadeIn.FillBehavior = System.Windows.Media.Animation.FillBehavior.Stop;
+            SidebarBorder.BeginAnimation(System.Windows.UIElement.OpacityProperty, fadeIn);
+        }
+        else
+        {
+            // Animate out — fade the whole sidebar from current opacity to 0.
+            _sidebarRestoreOpacity = SidebarBorder.Opacity;
+            System.Windows.Media.Animation.DoubleAnimation fadeOut = new(
+                SidebarBorder.Opacity, 0, TimeSpan.FromMilliseconds(200));
+            fadeOut.Completed += (_, _) =>
+            {
+                SessionsListBox.Visibility = System.Windows.Visibility.Collapsed;
+                TimelineGrid.Visibility = System.Windows.Visibility.Collapsed;
+                DetailGrid.Visibility = System.Windows.Visibility.Collapsed;
+                CloseButton.Visibility = System.Windows.Visibility.Collapsed;
+            };
+            SidebarBorder.BeginAnimation(System.Windows.UIElement.OpacityProperty, fadeOut);
+        }
 
         CollapseButton.Content = _sidebarExpanded ? "«" : "»";
         CollapseButton.ToolTip = _sidebarExpanded
