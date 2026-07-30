@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http.Json;
 using System.Text.Json;
 using WotBTreader.GameHarness;
@@ -98,6 +99,8 @@ static string? ReadRendezvousUrl()
 {
     try
     {
+        // Same path as the Overlay's RendezvousLocator.ResolveDefaultPath()
+        // and the web host's RendezvousPublisher so both processes agree.
         string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         string rendezvousPath = Path.Combine(localAppData, "WotBTreader", "rendezvous", "web.json");
         if (!File.Exists(rendezvousPath))
@@ -107,10 +110,64 @@ static string? ReadRendezvousUrl()
 
         using var doc = JsonDocument.Parse(File.ReadAllText(rendezvousPath));
         JsonElement root = doc.RootElement;
-        string? url = root.TryGetProperty("url", out JsonElement urlElement)
-            ? urlElement.GetString()
+
+        // Schema version guard
+        if (!root.TryGetProperty("schemaVersion", out JsonElement schemaElement)
+            || !string.Equals(schemaElement.GetString(), "1.0", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        // Expiry guard
+        if (root.TryGetProperty("expiresAtUtc", out JsonElement expiresElement))
+        {
+            string? expiresStr = expiresElement.GetString();
+            if (expiresStr is not null
+                && DateTimeOffset.TryParse(expiresStr, out DateTimeOffset expiresAt)
+                && expiresAt <= DateTimeOffset.UtcNow)
+            {
+                return null;
+            }
+        }
+
+        // The rendezvous record uses "baseUri", not "url"
+        string? baseUri = root.TryGetProperty("baseUri", out JsonElement uriElement)
+            ? uriElement.GetString()
             : null;
-        return string.IsNullOrWhiteSpace(url) ? null : url;
+
+        if (string.IsNullOrWhiteSpace(baseUri))
+        {
+            return null;
+        }
+
+        // Loopback-only guard
+        if (!Uri.TryCreate(baseUri, UriKind.Absolute, out Uri? uri)
+            || !(uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+                || uri.Host.Equals("127.0.0.1", StringComparison.Ordinal)
+                || uri.Host.Equals("[::1]", StringComparison.Ordinal)))
+        {
+            return null;
+        }
+
+        // Process-alive guard: reject records from exited hosts
+        if (root.TryGetProperty("processId", out JsonElement pidElement)
+            && pidElement.TryGetInt32(out int processId))
+        {
+            try
+            {
+                using Process? process = Process.GetProcessById(processId);
+                if (process is null || process.HasExited)
+                {
+                    return null;
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        return baseUri;
     }
     catch
     {
