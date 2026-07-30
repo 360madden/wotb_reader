@@ -47,6 +47,7 @@ public sealed class GameIntegrationRegistrationTests
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IReplayLaunchStageNameGenerator)));
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IReplayLaunchStagingPlatform)));
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IManagedReplayArtifactStager)));
+        Assert.IsTrue(services.Any(item => item.ServiceType == typeof(ISuspendedProcessPlatform)));
         Assert.AreEqual(
             ServiceLifetime.Singleton,
             services.Single(item =>
@@ -75,6 +76,9 @@ public sealed class GameIntegrationRegistrationTests
             ServiceLifetime.Singleton,
             services.Single(item =>
                 item.ServiceType == typeof(IManagedReplayArtifactStager)).Lifetime);
+        Assert.AreEqual(
+            ServiceLifetime.Singleton,
+            services.Single(item =>
+                item.ServiceType == typeof(ISuspendedProcessPlatform)).Lifetime);
     }
-
 }

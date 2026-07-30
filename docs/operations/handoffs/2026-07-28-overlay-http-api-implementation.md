@@ -101,3 +101,13 @@ overlay holds no replay data, only viewport/playback state. Keep it minimal.
 2. Smoke-test the overlay API with `curl http://127.0.0.1:9190/api/v1/status`
 3. Consider adding a `POST /api/v1/game/stop` endpoint to close the game
 4. Add E2E integration test with a real WebApplication host (requires `Microsoft.AspNetCore.TestHost` package)
+
+---
+
+## Amendment — superseded by M0 single-control-plane (`2026-07-29T21:00:00Z`)
+
+The embedded Kestrel listener on port 9190 was removed in Milestone 0 (commit `94e349b`/`47d3945`). Host.Web is the single loopback control plane. `OverlayApiEndpoints.cs` and `OverlayApiState.cs` remain as unreachable dead code and are deleted in Milestone 3 — do not extend them.
+
+- Resume step 1 (`.data\rendezvous` admin cleanup) remains live.
+- Resume steps 2–4 are superseded (port 9190 is no longer bound).
+- The overlay now receives automation commands via the authenticated SignalR channel from Host.Web.

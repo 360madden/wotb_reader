@@ -43,6 +43,8 @@ public static class GameIntegrationServiceCollectionExtensions
         services.TryAddSingleton<IManagedReplayArtifactStager, ManagedReplayArtifactStager>();
         services.TryAddSingleton<IGameProcessQueryPlatform, WindowsGameProcessQueryPlatform>();
         services.TryAddSingleton<IGameProcessIdentityObserver, GameProcessIdentityObserver>();
+        services.TryAddSingleton<ISuspendedProcessPlatform, WindowsSuspendedProcessPlatform>();
+
         services.TryAddSingleton<IGameSessionState>(
             sp => sp.GetRequiredService<GameSessionCoordinator>());
         services.TryAddSingleton<IGameReplayLauncher>(

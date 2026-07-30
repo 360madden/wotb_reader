@@ -147,3 +147,9 @@ Host.Web, Host.Cli, and the class libraries do NOT need embedded HTTP — the we
 3. **Implement the overlay HTTP API** — start with `GET /api/v1/status` (read-only, lowest risk). Prove Kestrel starts in the WPF process. Then add `POST /api/v1/launch`. Then playback control.
 
 4. **Add overlay API tests** — once the API exists, `WotBTreader.Overlay.Tests` should cover endpoint behavior with a TestServer.
+
+---
+
+## Amendment — superseded by M0 single-control-plane (`2026-07-29T21:00:00Z`)
+
+This design was implemented in commit `21d9b4d` but the Kestrel listener was removed in Milestone 0 as a duplicate control plane. Host.Web is now the single loopback HTTP+SignalR endpoint. The overlay is a loopback client only. Unresolved item 1 (admin-owned `.data\rendezvous`) remains live; items 2–4 are superseded.

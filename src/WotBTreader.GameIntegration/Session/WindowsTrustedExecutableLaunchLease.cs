@@ -36,6 +36,8 @@ internal sealed class WindowsTrustedExecutableLaunchLease : IAsyncDisposable
 
     internal TrustedGameExecutableIdentity ExecutableIdentity { get; }
 
+    internal SafeFileHandle ExecutableHandle => _executableHandle!;
+
     internal static async ValueTask<OperationResult<WindowsTrustedExecutableLaunchLease>> AcquireAsync(
         TrustedGameExecutableIdentity executableIdentity,
         CancellationToken cancellationToken)

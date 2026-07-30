@@ -354,4 +354,100 @@ internal static class NativeMethods
     internal static extern bool GetFileInformationByHandle(
         SafeFileHandle hFile,
         out NativeFileInformation lpFileInformation);
+
+    // Suspended process creation and verification
+    internal const uint ProcessQueryLimitedInformation = 0x1000;
+    internal const uint ProcessTerminate = 0x0001;
+    internal const uint Synchronize = 0x0010_0000;
+    internal const uint ThreadSuspendResume = 0x0002;
+    internal const uint ThreadQueryLimitedInformation = 0x0040;
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    internal static extern bool CreateProcessW(
+        string lpApplicationName,
+        string lpCommandLine,
+        IntPtr lpProcessAttributes,
+        IntPtr lpThreadAttributes,
+        bool bInheritHandles,
+        int dwCreationFlags,
+        IntPtr lpEnvironment,
+        string? lpCurrentDirectory,
+        ref StartupInfoEx lpStartupInfo,
+        out ProcessInformation lpProcessInformation);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern bool DuplicateHandle(
+        SafeHandle hSourceProcessHandle,
+        SafeHandle hSourceHandle,
+        SafeHandle hTargetProcessHandle,
+        out SafeProcessHandle lpTargetHandle,
+        uint dwDesiredAccess,
+        bool bInheritHandle,
+        uint dwOptions);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern bool DuplicateHandle(
+        SafeHandle hSourceProcessHandle,
+        SafeHandle hSourceHandle,
+        SafeHandle hTargetProcessHandle,
+        out SafeThreadHandle lpTargetHandle,
+        uint dwDesiredAccess,
+        bool bInheritHandle,
+        uint dwOptions);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern SafeHandle GetCurrentProcess();
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern int GetProcessId(SafeProcessHandle hProcess);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern bool TerminateProcess(SafeProcessHandle hProcess, uint uExitCode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern uint WaitForSingleObject(SafeHandle hHandle, uint dwMilliseconds);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern bool CloseHandle(IntPtr hObject);
+}
+
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+internal struct StartupInfoEx
+{
+    internal int cb;
+    internal IntPtr lpReserved;
+    internal IntPtr lpDesktop;
+    internal IntPtr lpTitle;
+    internal int dwX;
+    internal int dwY;
+    internal int dwXSize;
+    internal int dwYSize;
+    internal int dwXCountChars;
+    internal int dwYCountChars;
+    internal int dwFillAttribute;
+    internal int dwFlags;
+    internal short wShowWindow;
+    internal short cbReserved2;
+    internal IntPtr lpReserved2;
+    internal IntPtr lpAttributeList;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct ProcessInformation
+{
+    internal IntPtr hProcess;
+    internal IntPtr hThread;
+    internal int dwProcessId;
+    internal int dwThreadId;
+}
+
+internal sealed class SafeThreadHandle : SafeHandleZeroOrMinusOneIsInvalid
+{
+    internal SafeThreadHandle(IntPtr handle, bool ownsHandle) : base(ownsHandle) => SetHandle(handle);
+
+    protected override bool ReleaseHandle()
+    {
+        NativeMethods.CloseHandle(handle);
+        return true;
+    }
 }
