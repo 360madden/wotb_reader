@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using WotBTreader.Application.Game;
+using WotBTreader.Application.Replay;
 using WotBTreader.Application.Results;
 using WotBTreader.Core;
 
@@ -70,6 +72,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     private readonly ISuspendedProcessPlatform _suspendedPlatform;
     private readonly IManagedLaunchCorrelationRegistrar _correlationRegistrar;
     private readonly IThreadResumePlatform _threadResumePlatform;
+    private readonly IGuardedMemoryReaderFactory _memoryReaderFactory;
+    private readonly IOffsetTableReader _offsetTableReader;
 
     private GameSessionSnapshot _snapshot = new(
         GameSessionVerificationState.Unknown,
@@ -94,7 +98,9 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         IManagedReplayArtifactStager artifactStager,
         ISuspendedProcessPlatform suspendedPlatform,
         IManagedLaunchCorrelationRegistrar correlationRegistrar,
-        IThreadResumePlatform threadResumePlatform)
+        IThreadResumePlatform threadResumePlatform,
+        IGuardedMemoryReaderFactory memoryReaderFactory,
+        IOffsetTableReader offsetTableReader)
     {
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _preparer = preparer ?? throw new ArgumentNullException(nameof(preparer));
@@ -102,6 +108,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         _suspendedPlatform = suspendedPlatform ?? throw new ArgumentNullException(nameof(suspendedPlatform));
         _correlationRegistrar = correlationRegistrar ?? throw new ArgumentNullException(nameof(correlationRegistrar));
         _threadResumePlatform = threadResumePlatform ?? throw new ArgumentNullException(nameof(threadResumePlatform));
+        _memoryReaderFactory = memoryReaderFactory ?? throw new ArgumentNullException(nameof(memoryReaderFactory));
+        _offsetTableReader = offsetTableReader ?? throw new ArgumentNullException(nameof(offsetTableReader));
     }
 
     /// <summary>
@@ -299,44 +307,157 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             new GameReplayLaunchOutcome(_timeProvider.GetUtcNow()));
     }
 
-    public ValueTask<GameMemoryObservation> ObserveAsync(
+    public async ValueTask<GameMemoryObservation> ObserveAsync(
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        // Capture an immutable snapshot of the authorization under the lock,
+        // then release it before performing slow memory reads.
+        AuthorizedObservation? auth;
         lock (_gate)
         {
             ExpireAuthorizationIfNeeded();
-            GameSessionVerificationState currentState = _snapshot.State;
-            if (currentState == GameSessionVerificationState.OfflineReplayVerified
-                && _authorization is not null)
+            if (_snapshot.State != GameSessionVerificationState.OfflineReplayVerified
+                || _authorization is null)
             {
-                return ValueTask.FromResult(new GameMemoryObservation(
-                    GameMemoryObservationAvailability.Available,
-                    _timeProvider.GetUtcNow(),
-                    ReplayTimeSeconds: null,
-                    PlayerHitPoints: null,
-                    PlayerPositionX: null,
-                    PlayerPositionY: null,
-                    PlayerPositionZ: null,
-                    PlayerYaw: null,
-                    CameraPitch: null,
-                    AliveTankCount: null));
+                return UnknownObservation();
             }
 
-            return ValueTask.FromResult(new GameMemoryObservation(
-                GameMemoryObservationAvailability.Unknown,
-                _timeProvider.GetUtcNow(),
-                ReplayTimeSeconds: null,
-                PlayerHitPoints: null,
-                PlayerPositionX: null,
-                PlayerPositionY: null,
-                PlayerPositionZ: null,
-                PlayerYaw: null,
-                CameraPitch: null,
-                AliveTankCount: null));
+            auth = _authorization;
         }
+
+        return await ReadMemoryAsync(auth, cancellationToken).ConfigureAwait(false);
     }
+
+    private async ValueTask<GameMemoryObservation> ReadMemoryAsync(
+        AuthorizedObservation auth,
+        CancellationToken cancellationToken)
+    {
+        // No offset table loaded — authorized but no offsets configured.
+        OffsetTable? table = auth.OffsetTable;
+        if (table is null)
+        {
+            return AvailableObservation();
+        }
+
+        // Collect known fields (non-zero offsets).
+        List<OffsetField> knownFields = [];
+        foreach (OffsetField field in table.Fields)
+        {
+            if (field.Offset != 0)
+            {
+                knownFields.Add(field);
+            }
+        }
+
+        if (knownFields.Count == 0)
+        {
+            return AvailableObservation();
+        }
+
+        // Base address is required to compute absolute addresses.
+        if (auth.BaseAddress == nint.Zero)
+        {
+            return AvailableObservation();
+        }
+
+        // Create the guarded memory reader.
+        AuthorizedMemoryObservation obs = new(
+            auth.ProcessId,
+            auth.ProcessStartIdentity,
+            auth.CanonicalExecutablePath,
+            auth.ProductVersion,
+            auth.ExecutableSha256,
+            auth.ExpiresAtUtc);
+
+        OperationResult<IAuthorizedMemoryReader> readerResult =
+            await _memoryReaderFactory.CreateAsync(obs, cancellationToken)
+                .ConfigureAwait(false);
+        if (!readerResult.IsSuccess)
+        {
+            return AvailableObservation();
+        }
+
+        IAuthorizedMemoryReader reader = readerResult.Value!;
+
+        double? replayTime = null;
+        int? playerHP = null;
+        float? px = null, py = null, pz = null, yaw = null, pitch = null;
+        int? aliveTankCount = null;
+
+        foreach (OffsetField field in knownFields)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            int size = field.FieldType switch
+            {
+                OffsetFieldType.DoubleField => 8,
+                OffsetFieldType.FloatField => 4,
+                OffsetFieldType.Int32Field => 4,
+                _ => 0,
+            };
+            if (size == 0)
+            {
+                continue;
+            }
+
+            nint absoluteAddress = auth.BaseAddress + (nint)field.Offset;
+            OperationResult<byte[]> readResult =
+                await reader.ReadAsync(absoluteAddress, size, cancellationToken)
+                    .ConfigureAwait(false);
+            if (!readResult.IsSuccess)
+            {
+                continue;
+            }
+
+            byte[] bytes = readResult.Value!;
+            switch (field.Name)
+            {
+                case "replayTime":
+                    replayTime = BitConverter.ToDouble(bytes, 0);
+                    break;
+                case "playerHP":
+                    playerHP = BitConverter.ToInt32(bytes, 0);
+                    break;
+                case "playerPositionX":
+                    px = BitConverter.ToSingle(bytes, 0);
+                    break;
+                case "playerPositionY":
+                    py = BitConverter.ToSingle(bytes, 0);
+                    break;
+                case "playerPositionZ":
+                    pz = BitConverter.ToSingle(bytes, 0);
+                    break;
+                case "playerYaw":
+                    yaw = BitConverter.ToSingle(bytes, 0);
+                    break;
+                case "cameraPitch":
+                    pitch = BitConverter.ToSingle(bytes, 0);
+                    break;
+                case "aliveTankCount":
+                    aliveTankCount = BitConverter.ToInt32(bytes, 0);
+                    break;
+            }
+        }
+
+        return new GameMemoryObservation(
+            GameMemoryObservationAvailability.Available,
+            _timeProvider.GetUtcNow(),
+            replayTime, playerHP, px, py, pz, yaw, pitch, aliveTankCount);
+    }
+
+    private GameMemoryObservation UnknownObservation() =>
+        new(
+            GameMemoryObservationAvailability.Unknown,
+            _timeProvider.GetUtcNow(),
+            null, null, null, null, null, null, null, null);
+
+    private GameMemoryObservation AvailableObservation() =>
+        new(
+            GameMemoryObservationAvailability.Available,
+            _timeProvider.GetUtcNow(),
+            null, null, null, null, null, null, null, null);
 
     private void Evaluate(GameSessionEvidence evidence)
     {
@@ -441,6 +562,12 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             lifecycle.SourceIdentity,
             lifecycle.SourceGeneration,
             lifecycle.SourceSequence);
+
+        OffsetTable? offsetTable = LoadOffsetTable(process);
+        nint baseAddress = offsetTable is not null && HasKnownOffsets(offsetTable)
+            ? ResolveBaseAddress(process.ProcessId)
+            : nint.Zero;
+
         _authorization = new AuthorizedObservation(
             ++_authorizationGeneration,
             process.ProcessId,
@@ -448,7 +575,9 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             process.ObservedCanonicalExecutablePath,
             process.ObservedProductVersion,
             process.ObservedExecutableSha256,
-            expiresAtUtc);
+            expiresAtUtc,
+            baseAddress,
+            offsetTable);
         _snapshot = CreateSnapshot(
             GameSessionVerificationState.OfflineReplayVerified,
             gamePresent: true,
@@ -570,6 +699,61 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         }
     }
 
+    private OffsetTable? LoadOffsetTable(GameProcessEvidence process)
+    {
+        if (_managedLaunch is null)
+        {
+            return null;
+        }
+
+        string? sha256 = process.ObservedExecutableSha256.Value;
+        if (string.IsNullOrEmpty(sha256) || sha256.Length != 64)
+        {
+            return null;
+        }
+
+        try
+        {
+            OperationResult<OffsetTable?> result = _offsetTableReader.Load(
+                _managedLaunch.TrustedGameIdentity.ProductVersion,
+                sha256,
+                CancellationToken.None);
+            return result.IsSuccess ? result.Value : null;
+        }
+        catch
+        {
+            // Offset loading failure is non-fatal — ObserveAsync
+            // returns Available with all-nulls when no table is loaded.
+            return null;
+        }
+    }
+
+    private static bool HasKnownOffsets(OffsetTable table)
+    {
+        foreach (OffsetField field in table.Fields)
+        {
+            if (field.Offset != 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static nint ResolveBaseAddress(int processId)
+    {
+        try
+        {
+            using Process process = Process.GetProcessById(processId);
+            return process.MainModule?.BaseAddress ?? nint.Zero;
+        }
+        catch
+        {
+            return nint.Zero;
+        }
+    }
+
     private GameSessionSnapshot CreateSnapshot(
         GameSessionVerificationState state,
         bool gamePresent,
@@ -589,7 +773,9 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         string CanonicalExecutablePath,
         string ProductVersion,
         ContentHash ExecutableSha256,
-        DateTimeOffset ExpiresAtUtc);
+        DateTimeOffset ExpiresAtUtc,
+        nint BaseAddress,
+        OffsetTable? OffsetTable);
 
     private sealed record EvidenceCursor(
         string SourceIdentity,

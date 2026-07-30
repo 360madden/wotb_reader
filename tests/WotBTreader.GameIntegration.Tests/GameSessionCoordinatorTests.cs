@@ -1,4 +1,5 @@
 using WotBTreader.Application.Game;
+using WotBTreader.Application.Replay;
 using WotBTreader.Application.Results;
 using WotBTreader.Core;
 using WotBTreader.GameIntegration.Session;
@@ -318,7 +319,9 @@ public sealed class GameSessionCoordinatorTests
             IManagedReplayArtifactStager? artifactStager = null,
             ISuspendedProcessPlatform? suspendedPlatform = null,
             IManagedLaunchCorrelationRegistrar? correlationRegistrar = null,
-            IThreadResumePlatform? threadResumePlatform = null)
+            IThreadResumePlatform? threadResumePlatform = null,
+            IGuardedMemoryReaderFactory? memoryReaderFactory = null,
+            IOffsetTableReader? offsetTableReader = null)
     {
         var timeProvider = new ManualTimeProvider(StartTime);
         return (new GameSessionCoordinator(
@@ -327,7 +330,9 @@ public sealed class GameSessionCoordinatorTests
             artifactStager ?? new StubArtifactStager(),
             suspendedPlatform ?? new StubSuspendedPlatform(),
             correlationRegistrar ?? new StubCorrelationRegistrar(),
-            threadResumePlatform ?? new StubThreadResumePlatform()), timeProvider);
+            threadResumePlatform ?? new StubThreadResumePlatform(),
+            memoryReaderFactory ?? new StubMemoryReaderFactory(),
+            offsetTableReader ?? new StubOffsetTableReader()), timeProvider);
     }
 
     private static (GameSessionCoordinator Coordinator, ManualTimeProvider TimeProvider)
@@ -438,5 +443,22 @@ public sealed class GameSessionCoordinatorTests
             CancellationToken cancellationToken) =>
             ValueTask.FromResult(OperationResult.Failure<ManagedLaunchPreparation>(
                 new ApplicationError(errorCode, "Test failure.", Retryable: false)));
+    }
+
+    private sealed class StubOffsetTableReader : IOffsetTableReader
+    {
+        public OperationResult<OffsetTable?> Load(
+            string gameVersion,
+            string executableSha256,
+            CancellationToken cancellationToken = default) =>
+            OperationResult.Success<OffsetTable?>(null);
+    }
+
+    private sealed class StubMemoryReaderFactory : IGuardedMemoryReaderFactory
+    {
+        public ValueTask<OperationResult<IAuthorizedMemoryReader>> CreateAsync(
+            AuthorizedMemoryObservation observation,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException("StubMemoryReaderFactory is not intended for evidence evaluation tests.");
     }
 }
