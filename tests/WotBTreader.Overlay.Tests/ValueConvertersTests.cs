@@ -113,4 +113,46 @@ public sealed class ValueConvertersTests
             // Expected.
         }
     }
+
+    [TestMethod]
+    public void TeamToColor_Team0_ReturnsGray()
+    {
+        TeamToColorConverter converter = new();
+
+        object result = converter.Convert(0, typeof(Color), null, CultureInfo.InvariantCulture);
+
+        Assert.AreEqual(Colors.Gray, result);
+    }
+
+    [TestMethod]
+    public void TeamToColor_StringValue_ReturnsGray()
+    {
+        TeamToColorConverter converter = new();
+
+        object result = converter.Convert("hello", typeof(Color), null, CultureInfo.InvariantCulture);
+
+        Assert.AreEqual(Colors.Gray, result);
+    }
+
+    // ── NullToCollapsedConverter additional edge cases ─────────
+
+    [TestMethod]
+    public void NullToCollapsed_IntZero_ReturnsVisible()
+    {
+        NullToCollapsedConverter converter = new();
+
+        object result = converter.Convert(0, typeof(Visibility), null, CultureInfo.InvariantCulture);
+
+        Assert.AreEqual(Visibility.Visible, result);
+    }
+
+    [TestMethod]
+    public void NullToCollapsed_False_ReturnsVisible()
+    {
+        NullToCollapsedConverter converter = new();
+
+        object result = converter.Convert(false, typeof(Visibility), null, CultureInfo.InvariantCulture);
+
+        Assert.AreEqual(Visibility.Visible, result);
+    }
 }

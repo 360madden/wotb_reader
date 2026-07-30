@@ -13,10 +13,16 @@
 }
 else if (_report is null)
 {
-    <p>Running doctor checks…</p>
+    @* Loading skeleton — animated shimmer rows *@
+    <div class="card-dashboard">
+        <div class="skeleton-row"><div class="skeleton-cell"></div><div class="skeleton-cell"></div><div class="skeleton-cell"></div><div class="skeleton-cell"></div></div>
+        <div class="skeleton-row"><div class="skeleton-cell"></div><div class="skeleton-cell"></div><div class="skeleton-cell"></div><div class="skeleton-cell"></div></div>
+        <div class="skeleton-row"><div class="skeleton-cell"></div><div class="skeleton-cell"></div><div class="skeleton-cell"></div><div class="skeleton-cell"></div></div>
+    </div>
 }
 else
 {
+    <div class="card-dashboard">
     <p>Schema @_report.SchemaVersion · generated @_report.GeneratedAtUtc.ToString("u")</p>
 
     <table class="table table-sm">
@@ -40,6 +46,7 @@ else
             }
         </tbody>
     </table>
+    </div>
 }
 
 @code {

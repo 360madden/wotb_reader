@@ -14,14 +14,25 @@
 }
 else if (_page is null)
 {
-    <p>Loading sessions…</p>
+    @* Loading skeleton — animated shimmer rows *@
+    <div class="card-dashboard">
+        <div class="skeleton-row"><div class="skeleton-cell"></div><div class="skeleton-cell"></div><div class="skeleton-cell"></div><div class="skeleton-cell"></div></div>
+        <div class="skeleton-row"><div class="skeleton-cell"></div><div class="skeleton-cell"></div><div class="skeleton-cell"></div><div class="skeleton-cell"></div></div>
+        <div class="skeleton-row"><div class="skeleton-cell"></div><div class="skeleton-cell"></div><div class="skeleton-cell"></div><div class="skeleton-cell"></div></div>
+        <div class="skeleton-row"><div class="skeleton-cell"></div><div class="skeleton-cell"></div><div class="skeleton-cell"></div><div class="skeleton-cell"></div></div>
+    </div>
 }
 else if (_page.Items.Count == 0)
 {
-    <p>No decoded sessions yet. Import a replay with the CLI to populate this list.</p>
+    <div class="empty-state">
+        <div class="empty-state-icon">📂</div>
+        <div class="empty-state-text">No decoded sessions yet</div>
+        <div class="empty-state-hint">Import a replay with the CLI to populate this list.</div>
+    </div>
 }
 else
 {
+    <div class="card-dashboard">
     <table class="table table-sm table-striped">
         <thead>
             <tr>
@@ -59,6 +70,7 @@ else
             }
         </tbody>
     </table>
+    </div>
 }
 
 @code {

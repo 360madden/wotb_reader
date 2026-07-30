@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Windows;
 using System.Windows.Threading;
 using WotBTreader.ApiContracts;
 using WotBTreader.Overlay.Services;
@@ -196,6 +197,32 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         CollapseButton.ToolTip = _sidebarExpanded
             ? "Collapse sidebar"
             : "Expand sidebar";
+    }
+
+    // ── Compact mode toggle ────────────────────────────────
+
+    private bool _compactMode;
+
+    /// <summary>
+    /// Toggles between normal (350px) and compact (260px) sidebar widths,
+    /// reducing font sizes and row density in compact mode.
+    /// </summary>
+    private void ToggleCompactMode(object sender, System.Windows.RoutedEventArgs e)
+    {
+        _compactMode = !_compactMode;
+
+        double newWidth = _compactMode ? 260 : 350;
+        SidebarBorder.Width = newWidth;
+        SidebarBorder.Padding = new Thickness(_compactMode ? 7 : 10);
+
+        // Adjust the session list height and overall margin.
+        SessionsListBox.Height = _compactMode ? 110 : 150;
+        SessionsListBox.MaxHeight = _compactMode ? 110 : 150;
+
+        CompactButton.Content = _compactMode ? "⊞" : "⊟";
+        CompactButton.ToolTip = _compactMode
+            ? "Switch to normal mode"
+            : "Compact mode";
     }
 
     // ── Sidebar transparency toggle ─────────────────────────

@@ -17,14 +17,24 @@
 }
 else if (_loading)
 {
-    <p>Loading comparisons…</p>
+    @* Loading skeleton — animated shimmer rows *@
+    <div class="card-dashboard">
+        <div class="skeleton-row"><div class="skeleton-cell"></div><div class="skeleton-cell"></div><div class="skeleton-cell"></div><div class="skeleton-cell"></div></div>
+        <div class="skeleton-row"><div class="skeleton-cell"></div><div class="skeleton-cell"></div><div class="skeleton-cell"></div><div class="skeleton-cell"></div></div>
+        <div class="skeleton-row"><div class="skeleton-cell"></div><div class="skeleton-cell"></div><div class="skeleton-cell"></div><div class="skeleton-cell"></div></div>
+    </div>
 }
 else if (_runs.Count == 0)
 {
-    <p>No comparison runs yet. Use <code>compare list</code> in the CLI after creating comparisons.</p>
+    <div class="empty-state">
+        <div class="empty-state-icon">🔍</div>
+        <div class="empty-state-text">No comparison runs yet</div>
+        <div class="empty-state-hint">Use <code>compare list</code> in the CLI after creating comparisons.</div>
+    </div>
 }
 else
 {
+    <div class="card-dashboard">
     <table class="table table-sm table-striped">
         <thead>
             <tr>
@@ -51,6 +61,7 @@ else
             }
         </tbody>
     </table>
+    </div>
 }
 
 @if (_selected is not null)

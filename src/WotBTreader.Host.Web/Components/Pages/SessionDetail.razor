@@ -13,15 +13,29 @@
 }
 else if (_loading)
 {
-    <p>Loading session…</p>
+    @* Loading skeleton — animated shimmer blocks *@
+    <div class="card-dashboard">
+        <div class="skeleton" style="width:50%;height:1.5rem;margin-bottom:1rem"></div>
+        <div class="skeleton-row"><div class="skeleton-cell" style="flex:0 0 25%"></div><div class="skeleton-cell" style="flex:0 0 60%"></div></div>
+        <div class="skeleton-row"><div class="skeleton-cell" style="flex:0 0 25%"></div><div class="skeleton-cell" style="flex:0 0 40%"></div></div>
+        <div class="skeleton-row"><div class="skeleton-cell" style="flex:0 0 25%"></div><div class="skeleton-cell" style="flex:0 0 50%"></div></div>
+        <div class="skeleton-row"><div class="skeleton-cell" style="flex:0 0 25%"></div><div class="skeleton-cell" style="flex:0 0 35%"></div></div>
+        <div style="margin-top:1rem"><div class="skeleton" style="width:30%;height:1.2rem;margin-bottom:0.5rem"></div></div>
+        <div class="skeleton-row"><div class="skeleton-cell"></div><div class="skeleton-cell"></div><div class="skeleton-cell"></div><div class="skeleton-cell"></div><div class="skeleton-cell"></div></div>
+        <div class="skeleton-row"><div class="skeleton-cell"></div><div class="skeleton-cell"></div><div class="skeleton-cell"></div><div class="skeleton-cell"></div><div class="skeleton-cell"></div></div>
+    </div>
 }
 else if (_detail is null)
 {
-    <h1>Session not found</h1>
-    <p>No battle session matched that identifier.</p>
+    <div class="empty-state">
+        <div class="empty-state-icon">🔍</div>
+        <div class="empty-state-text">Session not found</div>
+        <div class="empty-state-hint">No battle session matched that identifier.</div>
+    </div>
 }
 else
 {
+    <div class="card-dashboard">
     <h1>@( _detail.Session?.MapName ?? "Session" )</h1>
 
     <dl class="row">
@@ -143,6 +157,7 @@ else
             </tbody>
         </table>
     }
+    </div>
 }
 
 @code {

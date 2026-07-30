@@ -172,6 +172,9 @@
                         <Button Content="👁" ToolTip="Toggle sidebar opacity" Style="{StaticResource ToolbarButton}"
                                 Click="ToggleSidebarOpacity" Width="24" Height="24" Margin="6,0,0,0"
                                 Foreground="#999"/>
+                        <Button x:Name="CompactButton" Content="⊟" ToolTip="Toggle compact mode"
+                                Style="{StaticResource ToolbarButton}" Click="ToggleCompactMode"
+                                Width="24" Height="24" Margin="2,0,0,0" Foreground="#888" FontSize="10"/>
                         <Button x:Name="CollapseButton" Content="«" ToolTip="Collapse sidebar (\\)"
                                 Style="{StaticResource ToolbarButton}" Click="ToggleSidebarCollapse"
                                 Width="24" Height="24" Margin="2,0,0,0" Foreground="#999"/>
