@@ -49,6 +49,8 @@ public sealed class GameIntegrationRegistrationTests
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IManagedReplayArtifactStager)));
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(ISuspendedProcessPlatform)));
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IManagedLaunchCorrelationRegistrar)));
+        Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IThreadResumePlatform)));
+        Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IGuardedMemoryReaderFactory)));
         Assert.AreEqual(
             ServiceLifetime.Singleton,
             services.Single(item =>
@@ -85,5 +87,13 @@ public sealed class GameIntegrationRegistrationTests
             ServiceLifetime.Singleton,
             services.Single(item =>
                 item.ServiceType == typeof(IManagedLaunchCorrelationRegistrar)).Lifetime);
+        Assert.AreEqual(
+            ServiceLifetime.Singleton,
+            services.Single(item =>
+                item.ServiceType == typeof(IThreadResumePlatform)).Lifetime);
+        Assert.AreEqual(
+            ServiceLifetime.Singleton,
+            services.Single(item =>
+                item.ServiceType == typeof(IGuardedMemoryReaderFactory)).Lifetime);
     }
 }

@@ -402,6 +402,17 @@ internal static class NativeMethods
     internal static extern int GetProcessId(SafeProcessHandle hProcess);
 
     [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern uint ResumeThread(SafeThreadHandle hThread);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern bool ReadProcessMemory(
+        SafeProcessHandle hProcess,
+        nint lpBaseAddress,
+        nint lpBuffer,
+        nuint nSize,
+        out nuint lpNumberOfBytesRead);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
     internal static extern bool TerminateProcess(SafeProcessHandle hProcess, uint uExitCode);
 
     [DllImport("kernel32.dll", SetLastError = true)]

@@ -57,6 +57,14 @@ public sealed class NativeAccessBoundaryTests
             $"GameHarness native-access violations: {string.Join("; ", violations)}");
     }
 
+    private static readonly string[] AllowedGameIntegrationMemoryFiles =
+    [
+        // M2 guarded memory reader — the legitimate, revalidated VM-read path.
+        "Session\\GuardedMemoryReader.cs",
+        // NativeMethods hosts ReadProcessMemory for the guarded reader only.
+        "Session\\WindowsGameProcessQueryPlatform.cs",
+    ];
+
     [TestMethod]
     public void GameIntegration_HasNoMemoryCapableNativeAccess()
     {
@@ -66,7 +74,8 @@ public sealed class NativeAccessBoundaryTests
             "WotBTreader.GameIntegration");
         string[] violations = FindForbiddenSourceTerms(
             sourceRoot,
-            ForbiddenGameIntegrationMemoryTerms);
+            ForbiddenGameIntegrationMemoryTerms,
+            AllowedGameIntegrationMemoryFiles);
 
         Assert.HasCount(
             0,
@@ -127,9 +136,13 @@ public sealed class NativeAccessBoundaryTests
 
     private static string[] FindForbiddenSourceTerms(
         string sourceRoot,
-        IReadOnlyList<string> forbiddenTerms) =>
+        IReadOnlyList<string> forbiddenTerms,
+        IReadOnlyList<string>? allowedFiles = null) =>
     [
         .. Directory.EnumerateFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
+            .Where(path => allowedFiles is null
+                || !allowedFiles.Any(allowed =>
+                    path.EndsWith(allowed, StringComparison.OrdinalIgnoreCase)))
             .SelectMany(path => forbiddenTerms
                 .Where(term => File.ReadAllText(path).Contains(term, StringComparison.Ordinal))
                 .Select(term =>
