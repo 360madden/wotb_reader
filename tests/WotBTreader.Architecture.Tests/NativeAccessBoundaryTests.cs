@@ -65,6 +65,8 @@ public sealed class NativeAccessBoundaryTests
         "Session\\WindowsGameProcessQueryPlatform.cs",
         // Dynamic offset scanner — uses the same security boundary as the guarded reader.
         "Session\\MemoryScanDiscoverer.cs",
+        // Multi-scan memory engine — same security boundary, VM-read only.
+        "Session\\MemoryScanEngine.cs",
     ];
 
     [TestMethod]

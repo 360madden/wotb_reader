@@ -75,6 +75,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     private readonly IGuardedMemoryReaderFactory _memoryReaderFactory;
     private readonly IOffsetTableReader _offsetTableReader;
     private readonly MemoryScanDiscoverer _scanDiscoverer;
+    private readonly MemoryScanEngine _scanEngine;
 
     private GameSessionSnapshot _snapshot = new(
         GameSessionVerificationState.Unknown,
@@ -102,7 +103,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         IThreadResumePlatform threadResumePlatform,
         IGuardedMemoryReaderFactory memoryReaderFactory,
         IOffsetTableReader offsetTableReader,
-        MemoryScanDiscoverer scanDiscoverer)
+        MemoryScanDiscoverer scanDiscoverer,
+        MemoryScanEngine scanEngine)
     {
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _preparer = preparer ?? throw new ArgumentNullException(nameof(preparer));
@@ -113,6 +115,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         _memoryReaderFactory = memoryReaderFactory ?? throw new ArgumentNullException(nameof(memoryReaderFactory));
         _offsetTableReader = offsetTableReader ?? throw new ArgumentNullException(nameof(offsetTableReader));
         _scanDiscoverer = scanDiscoverer ?? throw new ArgumentNullException(nameof(scanDiscoverer));
+        _scanEngine = scanEngine ?? throw new ArgumentNullException(nameof(scanEngine));
     }
 
     /// <summary>
@@ -826,40 +829,91 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 
-    public async ValueTask<OperationResult<MemoryScanResult>> ScanAsync(
-        MemoryScanRequest request,
+    public async ValueTask<OperationResult<string>> CreateSnapshotAsync(
+        MemorySnapshotRequest request,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        (int pid, long baseAddr, bool ok) = GetProcessIdentity();
+        if (!ok)
+            return OperationResult.Failure<string>(
+                new ApplicationError("discover.gate_not_satisfied", "Gate not satisfied."));
+        bool isFloat = request.FloatMin.HasValue || request.FloatMax.HasValue;
+        return await Task.Run(
+            () => _scanEngine.CreateSnapshot(pid, baseAddr,
+                new MemoryScanEngine.SnapshotFilter(request.ValueSize, request.MinAddress,
+                    request.MaxAddress, request.FloatMin, request.FloatMax,
+                    request.IntMin, request.IntMax, isFloat)),
+            cancellationToken).ConfigureAwait(false);
+    }
 
-        int processId;
-        long baseAddress;
+    public async ValueTask<OperationResult<MemoryCompareResult>> CompareAsync(
+        string sessionId, string compareMode, int maxCandidates,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        (int pid, long baseAddr, bool ok) = GetProcessIdentity();
+        if (!ok)
+            return OperationResult.Failure<MemoryCompareResult>(
+                new ApplicationError("discover.gate_not_satisfied", "Gate not satisfied."));
+        return await Task.Run(() =>
+        {
+            var result = _scanEngine.Compare(pid, baseAddr, sessionId, compareMode, maxCandidates);
+            return result.IsSuccess
+                ? OperationResult.Success(new MemoryCompareResult(
+                    result.Value!.CompletedAtUtc, result.Value.PreviousCount,
+                    result.Value.ChangedCount, result.Value.UnchangedCount,
+                    result.Value.IncreasedCount, result.Value.DecreasedCount,
+                    result.Value.Candidates))
+                : OperationResult.Failure<MemoryCompareResult>(result.Error!);
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    public void DiscardSession(string sessionId) => _scanEngine.DiscardSession(sessionId);
+
+    public async ValueTask<OperationResult<MemoryScanResult>> ScanNeighborhoodAsync(
+        MemoryNeighborhoodRequest request,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        (int pid, long baseAddr, bool ok) = GetProcessIdentity();
+        if (!ok)
+            return GateCheck<MemoryScanResult>("discover.gate_not_satisfied",
+                "The offline-session gate is not satisfied.");
+        return await Task.Run(
+            () => _scanDiscoverer.ScanNeighborhood(pid, baseAddr, request),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private (int ProcessId, long BaseAddress, bool Ok) GetProcessIdentity()
+    {
         lock (_gate)
         {
             ExpireAuthorizationIfNeeded();
             if (_snapshot.State != GameSessionVerificationState.OfflineReplayVerified
                 || _authorization is null)
-            {
-                return OperationResult.Failure<MemoryScanResult>(
-                    new ApplicationError(
-                        "discover.gate_not_satisfied",
-                        "The offline-session gate is not satisfied. Launch a replay first."));
-            }
-
+                return (0, 0, false);
             if (_authorization.BaseAddress == nint.Zero)
-            {
-                return OperationResult.Failure<MemoryScanResult>(
-                    new ApplicationError(
-                        "discover.no_base_address",
-                        "The base address of the game process is not available."));
-            }
-
-            processId = _authorization.ProcessId;
-            baseAddress = _authorization.BaseAddress;
+                return (0, 0, false);
+            return (_authorization.ProcessId, _authorization.BaseAddress, true);
         }
+    }
 
+    private static OperationResult<T> GateCheck<T>(string errorCode, string message)
+        where T : class =>
+        OperationResult.Failure<T>(new ApplicationError(errorCode, message));
+
+    public async ValueTask<OperationResult<MemoryScanResult>> ScanAsync(
+        MemoryScanRequest request,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        (int pid, long baseAddr, bool ok) = GetProcessIdentity();
+        if (!ok)
+            return GateCheck<MemoryScanResult>("discover.gate_not_satisfied",
+                "The offline-session gate is not satisfied.");
         return await Task.Run(
-            () => _scanDiscoverer.Scan(processId, baseAddress, request),
+            () => _scanDiscoverer.Scan(pid, baseAddr, request),
             cancellationToken).ConfigureAwait(false);
     }
 

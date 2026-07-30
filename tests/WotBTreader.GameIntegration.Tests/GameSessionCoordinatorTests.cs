@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using WotBTreader.Application.Game;
 using WotBTreader.Application.Replay;
 using WotBTreader.Application.Results;
@@ -333,7 +334,8 @@ public sealed class GameSessionCoordinatorTests
             threadResumePlatform ?? new StubThreadResumePlatform(),
             memoryReaderFactory ?? new StubMemoryReaderFactory(),
             offsetTableReader ?? new StubOffsetTableReader(),
-            new MemoryScanDiscoverer(timeProvider)), timeProvider);
+            new MemoryScanDiscoverer(timeProvider, NullLogger<MemoryScanDiscoverer>.Instance),
+            new MemoryScanEngine(timeProvider, NullLogger<MemoryScanEngine>.Instance)), timeProvider);
     }
 
     private static (GameSessionCoordinator Coordinator, ManualTimeProvider TimeProvider)

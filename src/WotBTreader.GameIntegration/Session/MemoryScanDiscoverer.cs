@@ -1,11 +1,14 @@
 using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using Microsoft.Extensions.Logging;
 using Microsoft.Win32.SafeHandles;
 using WotBTreader.Application.Game;
 using WotBTreader.Application.Results;
 
 namespace WotBTreader.GameIntegration.Session;
+
+#pragma warning disable CA1873 // Log arguments are value types, not expensive
 
 /// <summary>
 /// Scans the game process's committed memory regions for specific byte patterns
@@ -30,10 +33,12 @@ internal sealed class MemoryScanDiscoverer
     private const int MaximumCandidatesDefault = 500;
 
     private readonly TimeProvider _timeProvider;
+    private readonly ILogger<MemoryScanDiscoverer> _logger;
 
-    public MemoryScanDiscoverer(TimeProvider timeProvider)
+    public MemoryScanDiscoverer(TimeProvider timeProvider, ILogger<MemoryScanDiscoverer> logger)
     {
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public OperationResult<MemoryScanResult> Scan(
@@ -214,6 +219,135 @@ internal sealed class MemoryScanDiscoverer
     private static OperationResult<MemoryScanResult> Fail(
         string code, string message) =>
         OperationResult.Failure<MemoryScanResult>(new ApplicationError(code, message));
+
+    /// <summary>
+    /// Reads a window of memory around a known reference offset and reports
+    /// every aligned float/int32/double value as a candidate. This is the
+    /// neighborhood scanner — finds struct fields adjacent to a known offset.
+    /// Logs every phase with timestamps.
+    /// </summary>
+    public OperationResult<MemoryScanResult> ScanNeighborhood(
+        int processId,
+        long baseAddress,
+        MemoryNeighborhoodRequest request)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(processId);
+        if (baseAddress == 0)
+            return Fail("discover.neighborhood.invalid_base", "Base address must be non-zero.");
+        if (request.ReferenceOffset <= 0)
+            return Fail("discover.neighborhood.invalid_offset", "Reference offset must be positive.");
+
+        long absRef = baseAddress + request.ReferenceOffset;
+        long start = absRef - request.WindowSize;
+        long end = absRef + request.WindowSize;
+        int totalBytes = unchecked((int)(end - start));
+
+        _logger.LogInformation(
+            "NeighborhoodScan START — pid={ProcessId}, refOffset=0x{RefOffset:X}, " +
+            "window={WindowSize}, range=[0x{Start:X}, 0x{End:X}], types=[float={F},int32={I},double={D}]",
+            processId, request.ReferenceOffset, request.WindowSize, start, end,
+            request.IncludeFloat, request.IncludeInt32, request.IncludeDouble);
+
+        SafeProcessHandle? handle = null;
+        try
+        {
+            handle = OpenScanHandleInner(processId);
+            if (handle is null || handle.IsInvalid)
+                return Fail("discover.neighborhood.open_failed", "Could not open process.");
+
+            byte[] buffer = new byte[totalBytes];
+            GCHandle pinned = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+            try
+            {
+                if (!NativeMethods.ReadProcessMemory(handle, (nint)start,
+                        pinned.AddrOfPinnedObject(), (nuint)totalBytes, out nuint read)
+                    || read == 0)
+                {
+                    return Fail("discover.neighborhood.read_failed",
+                        $"Could not read {totalBytes} bytes at 0x{start:X}.");
+                }
+            }
+            finally { pinned.Free(); }
+
+            List<MemoryScanCandidate> candidates = [];
+
+            // Parse every aligned value
+            for (int offset = 0; offset <= totalBytes - 4; offset += 4)
+            {
+                long absAddr = start + offset;
+                long relOffset = absAddr - baseAddress;
+                int deltaFromRef = offset - request.WindowSize;
+
+                if (request.IncludeFloat)
+                {
+                    float f = BitConverter.ToSingle(buffer, offset);
+                    if (!float.IsNaN(f) && !float.IsInfinity(f)
+                        && PassesRange(f, request.FloatMin, request.FloatMax))
+                    {
+                        candidates.Add(new MemoryScanCandidate(absAddr, relOffset,
+                            buffer[offset..(offset + 4)],
+                            $"{deltaFromRef:+0;-0;0}: float={f.ToString("F3", CultureInfo.InvariantCulture)}"));
+                    }
+                }
+
+                if (request.IncludeInt32)
+                {
+                    int i = BitConverter.ToInt32(buffer, offset);
+                    if (PassesRange(i, request.IntMin, request.IntMax))
+                    {
+                        candidates.Add(new MemoryScanCandidate(absAddr, relOffset,
+                            buffer[offset..(offset + 4)],
+                            $"{deltaFromRef:+0;-0;0}: int32={i}"));
+                    }
+                }
+            }
+
+            if (request.IncludeDouble)
+            {
+                for (int offset = 0; offset <= totalBytes - 8; offset += 8)
+                {
+                    double d = BitConverter.ToDouble(buffer, offset);
+                    if (!double.IsNaN(d) && !double.IsInfinity(d))
+                    {
+                        long absAddr = start + offset;
+                        long relOffset = absAddr - baseAddress;
+                        int deltaFromRef = offset - request.WindowSize;
+                        candidates.Add(new MemoryScanCandidate(absAddr, relOffset,
+                            buffer[offset..(offset + 8)],
+                            $"{deltaFromRef:+0;-0;0}: double={d.ToString("F6", CultureInfo.InvariantCulture)}"));
+                    }
+                }
+            }
+
+            _logger.LogInformation(
+                "NeighborhoodScan DONE — {Count} candidate(s) in {Bytes} bytes",
+                candidates.Count, totalBytes);
+
+            return OperationResult.Success(new MemoryScanResult(
+                _timeProvider.GetUtcNow(), baseAddress, 1, totalBytes, candidates, 0));
+        }
+        catch (Exception ex) when (ex is Win32Exception or IOException
+            or UnauthorizedAccessException or InvalidOperationException)
+        {
+            _logger.LogError(ex, "NeighborhoodScan ERROR");
+            return Fail("discover.neighborhood.error", $"Scan failed: {ex.GetType().Name}");
+        }
+        finally { handle?.Dispose(); }
+    }
+
+    private static SafeProcessHandle? OpenScanHandleInner(int processId)
+    {
+        const uint VmRead = 0x0010;
+        const uint QueryInfo = 0x0400;
+        var h = NativeMethods.OpenProcess(VmRead | QueryInfo, false, checked((uint)processId));
+        return h.IsInvalid ? null : h;
+    }
+
+    private static bool PassesRange(float value, float? min, float? max) =>
+        (!min.HasValue || value >= min.Value) && (!max.HasValue || value <= max.Value);
+
+    private static bool PassesRange(int value, int? min, int? max) =>
+        (!min.HasValue || value >= min.Value) && (!max.HasValue || value <= max.Value);
 
     private readonly record struct MemoryRegion(long BaseAddress, long RegionSize);
 }

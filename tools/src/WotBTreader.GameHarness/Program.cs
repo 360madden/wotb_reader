@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json;
 using WotBTreader.GameHarness;
@@ -25,6 +26,22 @@ switch (command)
         break;
     case "discover":
         exitCode = await DiscoverAsync(args);
+        break;
+    case "discover-snapshot":
+    case "snapshot":
+        exitCode = await SnapshotAsync(args);
+        break;
+    case "discover-compare":
+    case "compare":
+        exitCode = await CompareSnapshotAsync(args);
+        break;
+    case "discover-nearby":
+    case "nearby":
+        exitCode = await NearbyAsync(args);
+        break;
+    case "discover-discard":
+    case "discard":
+        exitCode = await DiscardSessionAsync(args);
         break;
     case "help":
     case "--help":
@@ -466,6 +483,212 @@ static string FormatBytes(long bytes) => bytes switch
 static string Truncate(string value, int maxLength) =>
     value.Length <= maxLength ? value : value[..maxLength] + "...";
 
+// ── Snapshot command ───────────────────────────────────────
+
+static async Task<int> SnapshotAsync(string[] args)
+{
+    string? hostUrl = ReadRendezvousUrl();
+    if (hostUrl is null) return HostNotFound("snapshot");
+    int gateResult = await CheckGateAsync(hostUrl, "snapshot");
+    if (gateResult != 0) return gateResult;
+
+    int valueSize = 4;
+    float? floatMin = null, floatMax = null;
+    int? intMin = null, intMax = null;
+
+    if (args.Length > 1 && int.TryParse(args[1], out int sz))
+        valueSize = Math.Clamp(sz, 2, 8);
+    for (int i = 2; i < args.Length; i++)
+    {
+        if (args[i] == "--float-min" && i + 1 < args.Length
+            && float.TryParse(args[i + 1], out float fmin)) { floatMin = fmin; i++; }
+        else if (args[i] == "--float-max" && i + 1 < args.Length
+            && float.TryParse(args[i + 1], out float fmax)) { floatMax = fmax; i++; }
+        else if (args[i] == "--int-min" && i + 1 < args.Length
+            && int.TryParse(args[i + 1], out int imin)) { intMin = imin; i++; }
+        else if (args[i] == "--int-max" && i + 1 < args.Length
+            && int.TryParse(args[i + 1], out int imax)) { intMax = imax; i++; }
+    }
+
+    string baseAddr = hostUrl.EndsWith('/') ? hostUrl : hostUrl + "/";
+    using var client = new HttpClient { BaseAddress = new Uri(baseAddr), Timeout = TimeSpan.FromMinutes(2) };
+
+    Console.WriteLine($"Creating snapshot (valueSize={valueSize}, float=[{floatMin},{floatMax}], int=[{intMin},{intMax}])...");
+    var response = await client.PostAsJsonAsync("/api/v1/game/discover/snapshot",
+        new { valueSize, floatMin, floatMax, intMin, intMax, minAddress = 0L, maxAddress = 0L }).ConfigureAwait(false);
+    if (!response.IsSuccessStatusCode)
+    {
+        Console.Error.WriteLine($"snapshot: HTTP {(int)response.StatusCode}");
+        return (int)HarnessExitCode.ConflictOrBusy;
+    }
+    var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+    string? sid = json.RootElement.TryGetProperty("sessionId", out JsonElement e) ? e.GetString() : null;
+    Console.WriteLine($"Session: {sid}");
+    return 0;
+}
+
+// ── Compare command ────────────────────────────────────────
+
+static async Task<int> CompareSnapshotAsync(string[] args)
+{
+    string? hostUrl = ReadRendezvousUrl();
+    if (hostUrl is null) return HostNotFound("compare");
+    int gateResult = await CheckGateAsync(hostUrl, "compare");
+    if (gateResult != 0) return gateResult;
+
+    if (args.Length < 2)
+    {
+        Console.Error.WriteLine("Usage: compare <sessionId> [changed|unchanged|increased|decreased]");
+        return (int)HarnessExitCode.InvalidInput;
+    }
+
+    string sessionId = args[1];
+    string mode = args.Length > 2 ? args[2] : "changed";
+
+    string baseAddr = hostUrl.EndsWith('/') ? hostUrl : hostUrl + "/";
+    using var client = new HttpClient { BaseAddress = new Uri(baseAddr), Timeout = TimeSpan.FromMinutes(2) };
+
+    Console.WriteLine($"Comparing session {sessionId} (mode={mode})...");
+    var response = await client.PostAsJsonAsync(
+        $"/api/v1/game/discover/compare/{sessionId}",
+        new { compareMode = mode, maxCandidates = 100 }).ConfigureAwait(false);
+
+    if (!response.IsSuccessStatusCode)
+    {
+        Console.Error.WriteLine($"compare: HTTP {(int)response.StatusCode}");
+        return (int)HarnessExitCode.ConflictOrBusy;
+    }
+
+    var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+    JsonElement root = json.RootElement;
+    Console.WriteLine($"Changed={ReadInt(root, "changedCount")}, " +
+        $"Unchanged={ReadInt(root, "unchangedCount")}, " +
+        $"Increased={ReadInt(root, "increasedCount")}, " +
+        $"Decreased={ReadInt(root, "decreasedCount")}");
+    if (root.TryGetProperty("candidates", out JsonElement cands))
+    {
+        int shown = 0;
+        foreach (var c in cands.EnumerateArray())
+        {
+            if (shown++ >= 20) { Console.WriteLine("... and more"); break; }
+            Console.WriteLine($"  {ReadStr(c, "relativeOffset")} = {ReadStr(c, "valueSummary")}");
+        }
+    }
+    return 0;
+}
+
+// ── Nearby (neighborhood) command ──────────────────────────
+
+static async Task<int> NearbyAsync(string[] args)
+{
+    string? hostUrl = ReadRendezvousUrl();
+    if (hostUrl is null) return HostNotFound("nearby");
+    int gateResult = await CheckGateAsync(hostUrl, "nearby");
+    if (gateResult != 0) return gateResult;
+
+    if (args.Length < 2)
+    {
+        Console.Error.WriteLine("Usage: nearby <refOffset> [--window <bytes>] [--float-min <f>] [--float-max <f>]");
+        Console.Error.WriteLine("Example: nearby 0x0317A810 --window 512");
+        return (int)HarnessExitCode.InvalidInput;
+    }
+
+    long refOffset = ParseHexOrDecimal(args[1]);
+    int window = 512;
+    float? floatMin = null, floatMax = null;
+    int? intMin = null, intMax = null;
+
+    for (int i = 2; i < args.Length; i++)
+    {
+        if (args[i] == "--window" && i + 1 < args.Length
+            && int.TryParse(args[i + 1], out int w)) { window = w; i++; }
+        else if (args[i] == "--float-min" && i + 1 < args.Length
+            && float.TryParse(args[i + 1], out float fmin)) { floatMin = fmin; i++; }
+        else if (args[i] == "--float-max" && i + 1 < args.Length
+            && float.TryParse(args[i + 1], out float fmax)) { floatMax = fmax; i++; }
+        else if (args[i] == "--int-min" && i + 1 < args.Length
+            && int.TryParse(args[i + 1], out int imin)) { intMin = imin; i++; }
+        else if (args[i] == "--int-max" && i + 1 < args.Length
+            && int.TryParse(args[i + 1], out int imax)) { intMax = imax; i++; }
+    }
+
+    string baseAddr = hostUrl.EndsWith('/') ? hostUrl : hostUrl + "/";
+    using var client = new HttpClient { BaseAddress = new Uri(baseAddr), Timeout = TimeSpan.FromSeconds(30) };
+
+    Console.WriteLine($"Neighborhood scan at 0x{refOffset:X} (±{window} bytes)...");
+    var response = await client.PostAsJsonAsync("/api/v1/game/discover/neighborhood",
+        new
+        {
+            referenceOffset = refOffset,
+            windowSize = window,
+            includeFloat = true,
+            includeInt32 = true,
+            includeDouble = false,
+            floatMin,
+            floatMax,
+            intMin,
+            intMax
+        }).ConfigureAwait(false);
+
+    if (!response.IsSuccessStatusCode)
+    {
+        Console.Error.WriteLine($"nearby: HTTP {(int)response.StatusCode}");
+        return (int)HarnessExitCode.ConflictOrBusy;
+    }
+
+    var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+    JsonElement root = json.RootElement;
+    if (root.TryGetProperty("candidates", out JsonElement cands))
+    {
+        Console.WriteLine($"Candidates: {cands.GetArrayLength()}");
+        Console.WriteLine($"{"Delta",-8} {"Relative Offset",-16} {"Value",-30}");
+        Console.WriteLine(new string('-', 56));
+        foreach (var c in cands.EnumerateArray())
+        {
+            string summary = ReadStr(c, "valueSummary");
+            string relOff = ReadStr(c, "relativeOffset");
+            // Extract delta from summary (e.g. "+4: float=0.500")
+            Console.WriteLine($"{summary,-56} {relOff}");
+        }
+    }
+    return 0;
+}
+
+// ── Discard command ────────────────────────────────────────
+
+static async Task<int> DiscardSessionAsync(string[] args)
+{
+    string? hostUrl = ReadRendezvousUrl();
+    if (hostUrl is null) return HostNotFound("discard");
+    if (args.Length < 2)
+    {
+        Console.Error.WriteLine("Usage: discard <sessionId>");
+        return (int)HarnessExitCode.InvalidInput;
+    }
+    string baseAddr = hostUrl.EndsWith('/') ? hostUrl : hostUrl + "/";
+    using var client = new HttpClient { BaseAddress = new Uri(baseAddr) };
+    var response = await client.DeleteAsync($"/api/v1/game/discover/session/{args[1]}").ConfigureAwait(false);
+    Console.WriteLine($"Discarded {args[1]}: HTTP {(int)response.StatusCode}");
+    return 0;
+}
+
+static int HostNotFound(string cmd)
+{
+    Console.Error.WriteLine($"{cmd}: no web host found.");
+    return (int)HarnessExitCode.UnsupportedCapability;
+}
+
+static long ParseHexOrDecimal(string s) =>
+    s.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+        ? long.Parse(s[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture)
+        : long.Parse(s, CultureInfo.InvariantCulture);
+
+static int ReadInt(JsonElement e, string prop) =>
+    e.TryGetProperty(prop, out JsonElement v) && v.TryGetInt32(out int i) ? i : 0;
+
+static string ReadStr(JsonElement e, string prop) =>
+    e.TryGetProperty(prop, out JsonElement v) ? v.GetString() ?? "?" : "?";
+
 static string? ReadRendezvousUrl()
 {
     try
@@ -595,14 +818,26 @@ Commands:
 
   discover <fieldName> <fieldType> <value> [tolerance]
     Scan game process memory for a known value to discover
-    the offset of an unknown memory field. Requires offline-
-    session gate to be satisfied (launch a replay first).
-    fieldType: Float, Int32, Double
-    Examples:
-      discover playerPositionX Float 42.5 1.0
-      discover playerHP Int32 1200
+    the offset of an unknown memory field.
 
-Gate: scan, probe, and discover require the web host to have a
+  discover-snapshot <valueSize> [--float-min <f>] [--float-max <f>]
+    Create a snapshot of all values in committed memory.
+    Example: discover-snapshot 4 --float-min -500 --float-max 500
+
+  discover-compare <sessionId> <mode>
+    Compare current memory against a stored snapshot.
+    Modes: changed, unchanged, increased, decreased
+    Example: discover-compare 000001 changed
+
+  discover-nearby <refOffset> [--window <bytes>]
+    Read memory around a known offset and report all
+    float/int/double values as candidates.
+    Example: discover-nearby 0x0317A810 --window 256
+
+  discover-discard <sessionId>
+    Discard a stored snapshot session.
+
+Gate: all discover commands require the web host to have a
       verified offline replay session (launch one via the
       dashboard first).
 ");

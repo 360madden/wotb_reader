@@ -127,4 +127,56 @@ public interface IGameMemoryScanner
     ValueTask<OperationResult<MemoryScanResult>> ScanAsync(
         MemoryScanRequest request,
         CancellationToken cancellationToken);
+
+    /// <summary>Creates a snapshot of all values matching the filter. Returns a session ID.</summary>
+    ValueTask<OperationResult<string>> CreateSnapshotAsync(
+        MemorySnapshotRequest request,
+        CancellationToken cancellationToken);
+
+    /// <summary>Compares current memory against a stored snapshot.</summary>
+    ValueTask<OperationResult<MemoryCompareResult>> CompareAsync(
+        string sessionId,
+        string compareMode,
+        int maxCandidates,
+        CancellationToken cancellationToken);
+
+    /// <summary>Discards a stored snapshot session.</summary>
+    void DiscardSession(string sessionId);
+
+    /// <summary>Reads a window of memory around a known offset and reports all plausible values.</summary>
+    ValueTask<OperationResult<MemoryScanResult>> ScanNeighborhoodAsync(
+        MemoryNeighborhoodRequest request,
+        CancellationToken cancellationToken);
 }
+
+/// <summary>Request to create a memory snapshot with value filters.</summary>
+public sealed record MemorySnapshotRequest(
+    int ValueSize,
+    float? FloatMin,
+    float? FloatMax,
+    int? IntMin,
+    int? IntMax,
+    long MinAddress,
+    long MaxAddress);
+
+/// <summary>Result of comparing a current scan against a stored snapshot.</summary>
+public sealed record MemoryCompareResult(
+    DateTimeOffset CompletedAtUtc,
+    int PreviousCount,
+    int ChangedCount,
+    int UnchangedCount,
+    int IncreasedCount,
+    int DecreasedCount,
+    IReadOnlyList<MemoryScanCandidate> Candidates);
+
+/// <summary>Request to scan a memory neighborhood around a known offset.</summary>
+public sealed record MemoryNeighborhoodRequest(
+    long ReferenceOffset,
+    int WindowSize,
+    bool IncludeFloat,
+    bool IncludeInt32,
+    bool IncludeDouble,
+    float? FloatMin,
+    float? FloatMax,
+    int? IntMin,
+    int? IntMax);
