@@ -1,6 +1,6 @@
 # Project knowledge
 
-WotB Treader is a **Windows-first offline replay telemetry reader** for World of Tanks Blitz. It parses replay evidence, stores versioned telemetry projections, and presents a local Blazor dashboard + WPF/WebView2 overlay with SignalR push-based updates.
+WotB Treader is a **Windows-first offline replay telemetry reader** for World of Tanks Blitz. It parses replay evidence, stores versioned telemetry projections, and presents a local Blazor dashboard + WPF overlay with SignalR push-based updates.
 
 The project owner identifies as a junior developer at Wargaming.net. This is
 user-provided background for a personal, independently maintained project;
@@ -20,7 +20,7 @@ full design specification.
 
 ## Quickstart
 
-**Requirements:** Windows 10/11, .NET SDK 10.0.302, Edge WebView2 Runtime (for overlay dashboard tab)
+**Requirements:** Windows 10/11, .NET SDK 10.0.302
 
 **Convenience wrappers (repo root .cmd files, run from any directory):**
 
@@ -88,7 +88,9 @@ dotnet test tests/WotBTreader.Core.Tests -c Release --filter "FullyQualifiedName
 ```
 
 - Tests are MSTest 4 on Microsoft.Testing.Platform. Some installed-game tests skip by default (local opt-in).
-- 12 test projects, 397 tests: 395 passed, 2 opt-in skips (as of 2026-07-29).
+- 12 test projects, 397 tests: 395 passed, 0 failed, 2 opt-in skips (as of 2026-07-30).
+- All architecture hardening milestones (M0–M7) are complete. The alpha release
+  (`v0.1.0-alpha`) passes the full gate with 0 vulnerable packages and 457 scan-clean files.
 
 ### Keyboard shortcuts
 
@@ -138,7 +140,8 @@ Overlay (net10.0-windows WPF, transparent HUD; loopback client only)
 
 **Dormant code in `Overlay`:** `Endpoints/OverlayApiEndpoints.cs` and
 `Services/OverlayApiState.cs` still compile but are unreachable — nothing binds port
-9190 and no listener starts. Milestone 3 deletes them. Do not extend either file.
+9190 and no listener starts. Milestone 3 removed the Kestrel listener; the handler
+files remain as dead code. Do not extend either file.
 
 **Key rules:**
 - Adapters (Replays, CaptureLogs, GameIntegration, Storage.Sqlite) never reference each other
@@ -171,6 +174,6 @@ allowlist, and the native-access boundary. Breaking any rule above fails the bui
 - `NuGetAuditMode=all` fails restore on vulnerable transitive packages. Fix with a central version pin — never suppress.
 - `scan-repository.ps1` checks for secrets (API keys, private keys, connection strings, absolute replay paths) and ignored files in source trees.
 - SignalR callbacks run on non-UI threads without a `SynchronizationContext`. Any ObservableCollection mutations from SignalR callbacks must be marshalled via `SynchronizationContext.Post`.
-- WebView2 requires the Evergreen runtime. The overlay falls back gracefully with a user-visible message if it's missing.
+
 - **cmd.exe wrapper scripts** have failure modes that survive casual review — delayed expansion corrupts `!` in filenames, unquoted `%~dp0` breaks on paths with spaces, whitespace input crashes arithmetic checks, and missing `setlocal` leaks env vars. See `docs/operations/cmd-wrapper-gotchas.md` for the full catalogue and review checklist. Always route cmd/batch reviews through a thinker agent.
 - **Basher (terminal agent) timeouts are a recurring waste pattern.** Default 30s timeout is never enough for .NET commands. Use these timeouts: `dotnet build` → 300s, `dotnet test` (full suite) → 300s, `dotnet test` (single project) → 120s, `dotnet publish` → 180s. Never run interactive `.cmd` wrappers through basher — use direct `dotnet` commands. Verify prerequisites (CLI built, packages restored) before running dependent commands.

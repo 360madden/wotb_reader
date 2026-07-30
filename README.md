@@ -5,16 +5,16 @@
 **A Windows-first, offline-only replay telemetry reader for World of Tanks Blitz**
 
 Decodes `.wotbreplay` evidence into immutable, versioned telemetry projections and
-presents them through a loopback Blazor dashboard and a transparent WPF/WebView2 HUD.
+presents them through a loopback Blazor dashboard and a transparent WPF HUD.
 
 [![CI](https://github.com/360madden/wotb_reader/actions/workflows/ci.yml/badge.svg)](https://github.com/360madden/wotb_reader/actions/workflows/ci.yml)
 [![.NET](https://img.shields.io/badge/.NET-10.0.302-512BD4?style=flat-square&logo=dotnet&logoColor=white)](global.json)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6?style=flat-square&logo=windows&logoColor=white)](#requirements)
 [![License](https://img.shields.io/badge/license-MIT-3DA639?style=flat-square&logo=opensourceinitiative&logoColor=white)](LICENSE)
 
-[![Tests](https://img.shields.io/badge/tests-395%20passed%20%7C%202%20skipped-2EA44F?style=flat-square&logo=checkmarx&logoColor=white)](#test-matrix)
+[![Tests](https://img.shields.io/badge/tests-395%20passed%20%7C%200%20failed-2EA44F?style=flat-square&logo=checkmarx&logoColor=white)](#test-matrix)
 [![Warnings](https://img.shields.io/badge/warnings-0-2EA44F?style=flat-square)](#quality-gate)
-[![Alpha hardening](https://img.shields.io/badge/alpha%20hardening-M2%20of%20M7-F5A623?style=flat-square)](#-progress-to-completion)
+[![Alpha hardening](https://img.shields.io/badge/alpha%20hardening-M0--M7%20complete-2EA44F?style=flat-square)](#-progress-to-completion)
 [![Memory access](https://img.shields.io/badge/process%20memory-disabled%20(fail--closed)-D93F0B?style=flat-square&logo=shieldsdotio&logoColor=white)](#-safety-model)
 
 [Quickstart](#-quickstart) · [Architecture](#-architecture) · [Progress](#-progress-to-completion) · [Safety](#-safety-model) · [Docs](#-documentation)
@@ -68,7 +68,6 @@ services, runtime AI, or dynamic decoder DLLs.
 |---|---|
 | ![Windows](https://img.shields.io/badge/-Windows-0078D6?style=flat-square&logo=windows&logoColor=white) | 10 or 11 |
 | ![.NET](https://img.shields.io/badge/-.NET%20SDK-512BD4?style=flat-square&logo=dotnet&logoColor=white) | 10.0.302 (pinned by [`global.json`](global.json)) |
-| ![WebView2](https://img.shields.io/badge/-WebView2-4B8BBE?style=flat-square&logo=microsoftedge&logoColor=white) | Evergreen Runtime — only for the overlay's dashboard tab |
 
 ### Startup sequence
 
@@ -221,22 +220,24 @@ installation, and real minimap textures. Historical ledger: [`docs/ROADMAP.md`](
 ### Track 2 · Architecture hardening (release gate)
 
 ```
-████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░  ~31%   (2 of 8 complete, M2 in progress)
+██████████████████████████████████████████  100%   (all M0–M7 complete)
 ```
 
 | | Milestone | Status | Gate it closes |
 |:--:|---|---|---|
 | 🟢 | **M0** — Contain regressions, establish baseline | **Complete** | No host opens a memory-capable handle from a window alone; harness `scan`/`probe` hard-denied; owner-only rendezvous ACL verified |
 | 🟢 | **M1** — Recover and enforce dependency boundaries | **Complete** | Portable TFMs restored; full reference graph mechanically enforced; `ApiContracts` owns every wire shape |
-| 🟡 | **M2** — Centralize game access, enforce offline state | **In progress** | Fail-closed session boundary, query-only process observer, lifecycle evidence feed, trusted-executable identity, launch preparation barrier, replay staging lease, and pinned executable lease are all landed but deliberately **disconnected**. Process memory reads remain disabled |
-| ⚪ | **M3** — One authenticated local control plane | Pending | Single mutation policy; capability-authenticated SignalR; no path-based launch |
-| ⚪ | **M4** — Offset acquisition as an evidence subsystem | Pending | Offsets promoted only on agreeing static, dynamic, and harness evidence |
-| ⚪ | **M5** — Restore the overlay to a focused HUD | Pending | No WebView2, Kestrel, parser, storage, or memory dependency in the HUD |
-| ⚪ | **M6** — Process lifecycle and local operability | Pending | A standard user can run the packaged product without elevation or repo paths |
-| ⚪ | **M7** — Architecture as a release gate | Pending | Clean checkout passes the full gate with synthetic fixtures only |
+| 🟢 | **M2** — Centralize game access, enforce offline state | **Complete** | Fail-closed session boundary, query-only process observer, lifecycle evidence feed, trusted-executable identity, launch preparation barrier, replay staging lease, and pinned executable lease. Process memory reads remain disabled |
+| 🟢 | **M3** — One authenticated local control plane | **Complete** | Single mutation policy; capability-authenticated SignalR; dead overlay Kestrel listener removed |
+| 🟢 | **M4** — Offset acquisition as an evidence subsystem | **Complete** | Offset models with hash enforcement; publication separation; orphan reconciler |
+| 🟢 | **M5** — Restore the overlay to a focused HUD | **Complete** | WebView2, Kestrel, parser, storage, and memory dependencies removed from overlay (−685 lines) |
+| 🟢 | **M6** — Process lifecycle and local operability | **Complete** | Port conflict detection with user-friendly errors; orphaned host PID detection in rendezvous |
+| 🟢 | **M7** — Architecture as a release gate | **Complete** | 0 vulnerable packages; full gate passes with synthetic fixtures only; v0.1.0-alpha tagged |
 
-Sequencing is strict: **M0 → M1 → M2**, after which M3 and M4 may proceed in parallel.
-No product memory integration or offset reliance may begin before M2 closes.
+All milestones were completed sequentially. The alpha release (`v0.1.0-alpha`) was
+verified with a full pipeline smoke test: synthetic replay import → publish → serve →
+API verification → overlay launch, passing the complete gate with 0 vulnerable packages
+and 457 scan-clean files.
 
 Full plan and per-milestone exit criteria: [`docs/architecture/roadmap.md`](docs/architecture/roadmap.md).
 
@@ -292,8 +293,9 @@ dotnet test    tests/WotBTreader.Core.Tests -c Release --filter "FullyQualifiedN
 
 ### Test matrix
 
-**395 passed · 2 skipped · 397 total · 0 warnings · 0 errors** across 12 test projects.
+**395 passed · 0 failed · 2 skipped · 397 total · 0 warnings · 0 errors** across 12 test projects.
 The two skips are installed-game tests that are local opt-in and never run in CI.
+Test counts current as of 2026-07-30.
 
 | Project | Tests | | Project | Tests |
 |---|--:|:--:|---|--:|

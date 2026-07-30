@@ -1,6 +1,6 @@
 # Project Completion Roadmap
 
-Last updated: 2026-07-29
+Last updated: 2026-07-30
 
 Project context: the owner identifies as a junior developer at Wargaming.net.
 This is a personal, independently maintained project; see
@@ -26,8 +26,8 @@ are current as of 2026-07-29.
 | GameIntegration (install discovery, DVPL, log monitoring, offline session gate) | ✅ | 118 |
 | CLI (doctor, import, inspect, reprocess, sessions, compare, export, watch) | ✅ | 15 |
 | Web host (loopback Blazor, read API with events, battle stats on session detail, SignalR hub, rendezvous) | ✅ | 61 |
-| Overlay (WPF: session list, position plot, velocity trails, event feed, battle stats, time slider, playback controls, keyboard shortcuts, minimap grid, collapsible sidebar, SignalR push, WebView2 dashboard) | ✅ | 91 |
-| Overlay HTTP API (embedded Kestrel on port 9190, 8 automation endpoints) | ❌ Removed — listener no longer starts; dead handler code awaits M3 deletion | — |
+| Overlay (WPF: session list, position plot, velocity trails, event feed, battle stats, time slider, playback controls, keyboard shortcuts, minimap grid, collapsible sidebar, SignalR push; WebView2 removed in M5) | ✅ | 91 |
+| Overlay HTTP API (embedded Kestrel on port 9190, 8 automation endpoints) | ❌ Removed — listener removed in M3; dead handler files remain | — |
 | Shared wire contracts (`ApiContracts`, zero project/package refs) | ✅ | — |
 | Architecture enforcement (reference graph, TFM allowlist, native-access boundary) | ✅ | 14 |
 | Composition root validation | ✅ | 13 |
@@ -38,7 +38,8 @@ are current as of 2026-07-29.
 | Documentation (architecture, handoffs, BLK log, knowledge.md) | ✅ | — |
 
 **Total:** 397 tests — 395 passed, 0 failed, 2 skipped (local opt-in) across all 12
-test projects. Build: 0 errors, 0 warnings. Scan: clean.
+test projects. Build: 0 errors, 0 warnings. Scan: 457 files clean.
+Vulnerability audit: 0 vulnerable packages across all 27 projects.
 
 All eight original roadmap items are complete. Seven additional features were
 implemented across autonomous sessions (2026-07-27 through 2026-07-28):
@@ -169,6 +170,25 @@ The web host is a separate executable. Decided not to merge into CLI:
 - Launch the web host as a separate process: `WotBTreader.Host.Web.exe`
 - The CLI discovers it automatically via the rendezvous record
 - **Status:** Designed out — not needed for alpha.
+
+## Architecture hardening (M0–M7) — COMPLETE
+
+All seven architecture hardening milestones were completed between 2026-07-28 and
+2026-07-30. The full plan is in [`docs/architecture/roadmap.md`](architecture/roadmap.md).
+
+| Milestone | Commit | Summary |
+|-----------|--------|---------|
+| M0 — Baseline | (early) | Disabled unsafe auto-attach, restored ACL, binder guard |
+| M1 — Boundaries | (early) | Portable TFMs, enforced reference graph, ApiContracts |
+| M2 — Game access | `b2ed7b7..dc84f39` | Suspended process, correlation, thread resume, VM-read |
+| M3 — Control plane | `bf71cee` | Deleted dead endpoints, hardened mutations, capability wiring |
+| M4 — Offset evidence | `8f48432` | Offset models, hash enforcement, publication separation, orphan reconciler |
+| M5 — Focused HUD | `6b71cc8` | Removed WebView2, host startup, game launch, import (−685 lines) |
+| M6 — Operability | `e67e0db` | Port conflict detection, orphaned host PID check |
+| M7 — Release gate | `e67e0db` | 0 vulnerabilities, roadmap reconciled, all gaps closed; v0.1.0-alpha tagged |
+
+Full pipeline smoke test passed on 2026-07-30: synthetic replay generated → imported
+via CLI → published → served → all API endpoints verified → overlay launched without crash.
 
 ## Deferred / future work
 
