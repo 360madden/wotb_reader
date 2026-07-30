@@ -37,8 +37,8 @@ are current as of 2026-07-29.
 | Session search/filter (overlay sidebar) | ✅ | — |
 | Documentation (architecture, handoffs, BLK log, knowledge.md) | ✅ | — |
 
-**Total:** 396 tests — 394 passed, 0 failed, 2 skipped (local opt-in) across all 12
-test projects. Build: 0 errors, 0 warnings. Scan: 457 files clean.
+**Total:** 391 tests — 389 passed, 0 failed, 2 skipped (local opt-in) across all 12
+test projects. Build: 0 errors, 0 warnings. Scan: 464 files clean.
 Vulnerability audit: 0 vulnerable packages across all 27 projects.
 
 All eight original roadmap items are complete. Seven additional features were

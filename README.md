@@ -293,7 +293,7 @@ dotnet test    tests/WotBTreader.Core.Tests -c Release --filter "FullyQualifiedN
 
 ### Test matrix
 
-**394 passed · 0 failed · 2 skipped · 396 total · 0 warnings · 0 errors** across 12 test projects.
+**389 passed · 0 failed · 2 skipped · 391 total · 0 warnings · 0 errors** across 12 test projects.
 The two skips are installed-game tests that are local opt-in and never run in CI.
 Test counts current as of 2026-07-30.
 
