@@ -15,13 +15,13 @@ int exitCode;
 switch (command)
 {
     case "scan":
-        exitCode = await CheckGateAndReportAsync("scan");
+        exitCode = await ScanAsync();
         break;
     case "state":
         exitCode = ShowState();
         break;
     case "probe":
-        exitCode = await CheckGateAndReportAsync("probe");
+        exitCode = await ProbeAsync();
         break;
     case "help":
     case "--help":
@@ -36,20 +36,58 @@ switch (command)
 
 return exitCode;
 
-// ── Gate check ──────────────────────────────────────────────
+// ── Scan command ────────────────────────────────────────────
 
-static async Task<int> CheckGateAndReportAsync(string command)
+static async Task<int> ScanAsync()
 {
     string? hostUrl = ReadRendezvousUrl();
     if (hostUrl is null)
     {
-        Console.Error.WriteLine(
-            $"{command}: no web host found. Start the host with 'serve' first, then launch " +
+        Console.Error.WriteLine("scan: no web host found. Start the host with 'serve' first, then launch " +
             "a replay via the dashboard or POST /api/v1/game/launch.");
         return (int)HarnessExitCode.UnsupportedCapability;
     }
 
-    using var client = new HttpClient { BaseAddress = new Uri(hostUrl), Timeout = TimeSpan.FromSeconds(5) };
+    int gateResult = await CheckGateAsync(hostUrl, "scan");
+    if (gateResult != 0)
+    {
+        return gateResult;
+    }
+
+    // Gate is satisfied — show offset field status
+    ShowOffsetFieldStatus();
+    return 0;
+}
+
+// ── Probe command ───────────────────────────────────────────
+
+static async Task<int> ProbeAsync()
+{
+    string? hostUrl = ReadRendezvousUrl();
+    if (hostUrl is null)
+    {
+        Console.Error.WriteLine("probe: no web host found. Start the host with 'serve' first, then launch " +
+            "a replay via the dashboard or POST /api/v1/game/launch.");
+        return (int)HarnessExitCode.UnsupportedCapability;
+    }
+
+    int gateResult = await CheckGateAsync(hostUrl, "probe");
+    if (gateResult != 0)
+    {
+        return gateResult;
+    }
+
+    // Gate is satisfied — show detailed offset table
+    ShowOffsetFieldStatus();
+    ShowOffsetTableDetail();
+    return 0;
+}
+
+static async Task<int> CheckGateAsync(string hostUrl, string command)
+{
+    // Ensure trailing slash so relative URIs compose correctly with BaseAddress.
+    string baseAddress = hostUrl.EndsWith('/') ? hostUrl : hostUrl + "/";
+    using var client = new HttpClient { BaseAddress = new Uri(baseAddress), Timeout = TimeSpan.FromSeconds(5) };
 
     try
     {
@@ -73,9 +111,6 @@ static async Task<int> CheckGateAndReportAsync(string command)
         if (verificationState == "OfflineReplayVerified")
         {
             Console.WriteLine($"{command}: offline-session gate satisfied — memory access permitted.");
-            Console.WriteLine("Offset scanning is available. Use the Ghidra → Cheat Engine pipeline");
-            Console.WriteLine("to discover candidate offsets, then validate with this harness.");
-            Console.WriteLine($"See docs/operations/offset-discovery-guide.md for the full pipeline.");
             return 0;
         }
 
@@ -93,6 +128,114 @@ static async Task<int> CheckGateAndReportAsync(string command)
             $"{command}: could not reach web host at {hostUrl}. Is 'serve' running?");
         return (int)HarnessExitCode.ConflictOrBusy;
     }
+}
+
+// ── Offset field reporting ──────────────────────────────────
+
+static void ShowOffsetFieldStatus()
+{
+    string? offsetPath = FindOffsetFile();
+    if (offsetPath is null)
+    {
+        Console.WriteLine("  No offset file found for the installed game version.");
+        Console.WriteLine("  Run the Ghidra or Cheat Engine pipeline to discover offsets,");
+        Console.WriteLine("  then update memory-offsets/<version>.json.");
+        return;
+    }
+
+    try
+    {
+        using var doc = JsonDocument.Parse(File.ReadAllText(offsetPath));
+        JsonElement root = doc.RootElement;
+        string gameVersion = root.TryGetProperty("gameVersion", out JsonElement gv) ? gv.GetString() ?? "?" : "?";
+        string confidence = root.TryGetProperty("confidence", out JsonElement cf) ? cf.GetString() ?? "none" : "none";
+
+        Console.WriteLine($"  Offset file: memory-offsets/{Path.GetFileName(offsetPath)}");
+        Console.WriteLine($"  Game version: {gameVersion}");
+        Console.WriteLine($"  Confidence:   {confidence}");
+        Console.WriteLine();
+
+        if (!root.TryGetProperty("offsets", out JsonElement offsets))
+        {
+            Console.WriteLine("  No offset fields configured.");
+            return;
+        }
+
+        var fields = new (string name, string type)[]
+        {
+            ("replayTime",      "double"),
+            ("playerHP",         "int32"),
+            ("playerPositionX",  "float"),
+            ("playerPositionY",  "float"),
+            ("playerPositionZ",  "float"),
+            ("playerYaw",        "float"),
+            ("cameraPitch",      "float"),
+            ("aliveTankCount",   "int32"),
+        };
+
+        Console.WriteLine("  Field status:");
+        int knownCount = 0;
+        foreach ((string name, string type) in fields)
+        {
+            long value = offsets.TryGetProperty(name, out JsonElement f) && f.TryGetInt64(out long v) ? v : 0;
+            string status = value == 0 ? "unknown" : $"0x{value:X}";
+            if (value != 0) knownCount++;
+            Console.WriteLine($"    {name,-18} {type,-8} {status}");
+        }
+        Console.WriteLine($"  {knownCount}/{fields.Length} fields have known offsets.");
+    }
+    catch (Exception ex) when (ex is IOException or JsonException)
+    {
+        Console.WriteLine($"  Could not read offset file: {ex.Message}");
+    }
+}
+
+static void ShowOffsetTableDetail()
+{
+    string? offsetPath = FindOffsetFile();
+    if (offsetPath is null)
+    {
+        return;
+    }
+
+    try
+    {
+        string json = File.ReadAllText(offsetPath);
+        // Pretty-print with indentation
+        using var doc = JsonDocument.Parse(json);
+        Console.WriteLine("  Raw offset table:");
+        Console.WriteLine(JsonSerializer.Serialize(doc, new JsonSerializerOptions { WriteIndented = true }));
+    }
+    catch (Exception ex) when (ex is IOException or JsonException)
+    {
+        Console.WriteLine($"  Could not read offset file: {ex.Message}");
+    }
+}
+
+static string? FindOffsetFile()
+{
+    // Search for the offsets directory from the current or parent directories,
+    // then find the newest offset JSON file (heuristic for installed version).
+    string current = Environment.CurrentDirectory;
+    for (int level = 0; level < 6; level++)
+    {
+        string candidate = Path.Combine(current, "memory-offsets");
+        if (Directory.Exists(candidate))
+        {
+            var files = Directory.GetFiles(candidate, "*.json")
+                .Where(f => !f.EndsWith("schema.json", StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .ToArray();
+            return files.FirstOrDefault();
+        }
+
+        string? parent = Path.GetDirectoryName(current);
+        if (parent is null || string.Equals(parent, current, StringComparison.Ordinal))
+            break;
+        current = parent;
+    }
+
+    return null;
 }
 
 static string? ReadRendezvousUrl()
@@ -218,13 +361,13 @@ Commands:
   state
     Show saved scanner state (read-only)
   scan
-    Verify offline-session gate and report scan availability
+    Check offline-session gate + show offset field status
   probe
-    Verify offline-session gate and report probe availability
+    Check offline-session gate + show offset field status + raw table
 
 Gate: scan and probe require the web host to have a verified
       offline replay session (launch one via the dashboard first).
-      The harness checks GET /api/v1/game/state via the
-      rendezvous file to confirm the gate is satisfied.
+      When the gate is satisfied, scan/probe also report which
+      memory-offset fields are known vs unknown.
 ");
 }
