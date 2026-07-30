@@ -1,0 +1,86 @@
+{
+  "program": {
+    "name": "wotblitz.exe",
+    "language": "x86:LE:32:default",
+    "scanned_at_utc": "2026-07-30T13:35:47.333085500Z"
+  },
+  "summary": {
+    "fields_with_strings": 6,
+    "fields_with_xrefs": 2,
+    "fields_with_offset_hints": 2
+  },
+  "candidates": {
+    "playerHP": {
+      "search_term": "hp",
+      "field_type": "int32",
+      "string_matches": 5000,
+      "xref_count": 56,
+      "total_data_refs": 50,
+      "referencing_functions": ["???", "FUN_00446de0"],
+      "top_candidate_offsets": [{"offset": 71258656, "count": 2}, {"offset": 71258680, "count": 2}, {"offset": 71258776, "count": 2}, {"offset": 71258728, "count": 2}, {"offset": 71258752, "count": 2}, {"offset": 66833524, "count": 1}, {"offset": 71765700, "count": 1}, {"offset": 71258660, "count": 1}, {"offset": 71258648, "count": 1}, {"offset": 71258652, "count": 1}]
+    },
+    "playerPositionX": {
+      "search_term": "xpos",
+      "field_type": "float",
+      "string_matches": 3,
+      "xref_count": 0,
+      "total_data_refs": 0,
+      "referencing_functions": [],
+      "top_candidate_offsets": []
+    },
+    "playerPositionY": {
+      "search_term": "ypos",
+      "field_type": "float",
+      "string_matches": 2,
+      "xref_count": 0,
+      "total_data_refs": 0,
+      "referencing_functions": [],
+      "top_candidate_offsets": []
+    },
+    "playerPositionZ": {
+      "search_term": "zpos",
+      "field_type": "float",
+      "string_matches": 1,
+      "xref_count": 0,
+      "total_data_refs": 0,
+      "referencing_functions": [],
+      "top_candidate_offsets": []
+    },
+    "replayTime": {
+      "search_term": "replay_time",
+      "field_type": "double",
+      "string_matches": 0,
+      "xref_count": 0,
+      "total_data_refs": 0,
+      "referencing_functions": [],
+      "top_candidate_offsets": []
+    },
+    "playerYaw": {
+      "search_term": "yaw",
+      "field_type": "float",
+      "string_matches": 67,
+      "xref_count": 5,
+      "total_data_refs": 89,
+      "referencing_functions": ["FUN_007b7030", "FUN_00b18e40", "FUN_007c2ca0", "???"],
+      "top_candidate_offsets": [{"offset": 56085200, "count": 6}, {"offset": 66833524, "count": 4}, {"offset": 56238596, "count": 4}, {"offset": 56238392, "count": 2}, {"offset": 56238408, "count": 2}, {"offset": 56238428, "count": 2}, {"offset": 56238436, "count": 2}, {"offset": 56231128, "count": 2}, {"offset": 56164552, "count": 2}, {"offset": 56164556, "count": 2}]
+    },
+    "cameraPitch": {
+      "search_term": "cameraPitch",
+      "field_type": "float",
+      "string_matches": 1,
+      "xref_count": 0,
+      "total_data_refs": 0,
+      "referencing_functions": [],
+      "top_candidate_offsets": []
+    },
+    "aliveTankCount": {
+      "search_term": "tanksAlive",
+      "field_type": "int32",
+      "string_matches": 0,
+      "xref_count": 0,
+      "total_data_refs": 0,
+      "referencing_functions": [],
+      "top_candidate_offsets": []
+    }
+  }
+}
