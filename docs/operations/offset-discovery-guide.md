@@ -1,0 +1,97 @@
+# Offset Discovery Guide
+
+Last updated: 2026-07-30
+
+## Current state
+
+| Item | Status |
+|------|--------|
+| Game version installed | 11.19.0.10 (`C:\Games\World_of_Tanks_Blitz\wotblitz.exe`, ~71MB) |
+| Offset file | `memory-offsets/11.8.0.7.json` — placeholder (all zeros, version mismatch) |
+| Ghidra 12.1.2 | Installed at `C:\work\tools\ghidra_12.1.2_PUBLIC` |
+| Cheat Engine 7 | Installed at `C:\Program Files\Cheat Engine\` |
+| GameHarness scanner | `scan`/`probe` disabled by M2 offline-session gate |
+| Ghidra headless script | `tools/ghidra-scripts/FindOffsets.py` — ready to run |
+
+## Quickstart — Ghidra headless (Phase 1)
+
+This is the only phase that can be automated. Run from the repo root:
+
+```cmd
+.build\ghidra-offsets.bat
+```
+
+**What it does:**
+1. Imports `wotblitz.exe` into a Ghidra project at `C:\work\tools\ghidra-projects\WotBlitz`
+2. Runs full auto-analysis (~10-15 min for 71MB)
+3. Executes `FindOffsets.py` to search for game-state strings and trace cross-references
+4. Outputs `tools\ghidra-scripts\ghidra-offset-candidates.json`
+
+**What you get:** Candidate base-relative offsets for `playerHP`, `playerPositionX/Y/Z`, `replayTime`, `playerYaw`, `cameraPitch`, and `aliveTankCount`, ranked by cross-reference count.
+
+## Desktop manual pipeline
+
+### Phase 1 — Ghidra GUI (alternative to headless)
+
+1. Launch Ghidra: set `JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot` then run `C:\work\tools\ghidra_12.1.2_PUBLIC\ghidraRun.bat`
+2. File → Import File → select `C:\Games\World_of_Tanks_Blitz\wotblitz.exe`
+3. Run auto-analysis (default options)
+4. Search → Program Text for strings: `health`, `position`, `replayTime`, `yaw`, `pitch`, `alive`
+5. Trace cross-references (Ctrl+Shift+F) to find struct layouts
+6. Note candidate offsets relative to image base
+
+### Phase 2 — Cheat Engine dynamic scanning
+
+1. Start a WoT Blitz replay in the game client
+2. Launch Cheat Engine as Administrator
+3. Attach to `wotblitz.exe` process
+4. **HP scan:** value type `4 Bytes`, scan exact HP value, take damage, scan new value, repeat until 1-3 candidates remain
+5. **Position scan:** value type `Float`, scan X coordinate while moving, narrow to 1-3 candidates (positions are typically contiguous X/Y/Z floats)
+6. **Replay time scan:** value type `Double`, scan elapsed time as replay advances
+7. **Pointer scan:** for each found address, run pointer scan to find static base offsets
+8. **Structure dissection:** right-click address → Dissect data/structures to map surrounding fields
+
+### Phase 3 — Offset validation
+
+Once you have candidate offsets:
+1. Open offset GUI plugin to verify values change as expected
+2. Cross-reference Cheat Engine findings with Ghidra's disassembly view
+3. Test across multiple battles and game restarts
+4. Run the Doctor health check to confirm the game version the offset file applies to
+5. Update `memory-offsets/<version>.json` with discovered offsets
+6. Set `confidence: "high"` only after cross-battle validation
+
+## Offset file format
+
+```json
+{
+  "schemaVersion": 1,
+  "gameVersion": "11.19.0.10",
+  "executableSha256": "<sha256 of wotblitz.exe>",
+  "discoveredAtUtc": "<ISO 8601 timestamp>",
+  "offsets": {
+    "replayTime": 0,
+    "playerHP": 0,
+    "playerPositionX": 0,
+    "playerPositionY": 0,
+    "playerPositionZ": 0,
+    "playerYaw": 0,
+    "cameraPitch": 0,
+    "aliveTankCount": 0
+  },
+  "confidence": "none",
+  "notes": ""
+}
+```
+
+## GameHarness M2 gate
+
+The `scan` and `probe` commands in GameHarness are disabled pending the offline-replay verification gate (M2). They will be re-enabled when the following conditions are met:
+
+1. Process memory reads are gated behind positive evidence (canonical executable path, version, SHA-256, PID with process-start identity, owned window, healthy monitor, confirmed replay UI, fresh lifecycle marker)
+2. The `SuspendedGameProcessLaunch` + `WindowsTrustedExecutableLaunchLease` pipeline is connected (M2 components landed but disconnected)
+
+To re-enable, connect the M2 components in `GameSessionCoordinator`:
+- `IGameProcessIdentityObserver` → verify the process identity matches the trusted executable
+- `ILifecycleEventJournal` → confirm a replay UI is visible
+- `WindowsTrustedExecutableLaunchLease` → pin the executable before opening a process handle
