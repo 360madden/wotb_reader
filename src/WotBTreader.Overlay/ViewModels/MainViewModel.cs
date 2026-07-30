@@ -22,7 +22,7 @@ public class MainViewModel : INotifyPropertyChanged
     private const int MaxPlottedPoints = 2000;
 
     private readonly RendezvousLocator _locator;
-    private readonly Func<Uri, TreaderApiClient> _apiClientFactory;
+    private readonly Func<Uri, string?, TreaderApiClient> _apiClientFactory;
     private readonly ITelemetryStreamService? _streamService;
 
     private readonly Func<SessionRow?, bool>? _launchGame;
@@ -60,13 +60,13 @@ public class MainViewModel : INotifyPropertyChanged
     private string _searchText = string.Empty;
 
     public MainViewModel()
-        : this(new RendezvousLocator(), static baseUri => new TreaderApiClient(baseUri), null, null)
+        : this(new RendezvousLocator(), static (baseUri, capability) => new TreaderApiClient(baseUri, capability: capability), null, null)
     {
     }
 
     public MainViewModel(
         RendezvousLocator locator,
-        Func<Uri, TreaderApiClient> apiClientFactory,
+        Func<Uri, string?, TreaderApiClient> apiClientFactory,
         ITelemetryStreamService? streamService = null,
         Func<SessionRow?, bool>? launchGame = null)
     {
@@ -525,7 +525,7 @@ public class MainViewModel : INotifyPropertyChanged
         // session list changes arrive via push instead of polling.
         if (_clientBaseUri is not null && _streamService is not null)
         {
-            _ = _streamService.ConnectAsync(_clientBaseUri, CancellationToken.None);
+            _ = _streamService.ConnectAsync(_clientBaseUri, _locator.Locate().Record?.Capability, CancellationToken.None);
         }
     }
 
@@ -816,7 +816,7 @@ public class MainViewModel : INotifyPropertyChanged
         _detailLoadCts?.Cancel();
 
         TreaderApiClient? oldClient = _client;
-        _client = _apiClientFactory(baseUri);
+        _client = _apiClientFactory(baseUri, _locator.Locate().Record?.Capability);
         _clientBaseUri = baseUri;
         OnPropertyChanged(nameof(BaseUri));
         oldClient?.Dispose();

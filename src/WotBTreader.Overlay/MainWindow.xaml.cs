@@ -39,7 +39,7 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         _streamService = new TelemetryStreamService();
         _viewModel = new MainViewModel(
             new Discovery.RendezvousLocator(),
-            static baseUri => new TreaderApiClient(baseUri),
+            static (baseUri, capability) => new TreaderApiClient(baseUri, capability: capability),
             _streamService,
             LaunchGameWithSelectedReplay);
         DataContext = _viewModel;
@@ -61,7 +61,9 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         _playbackTimer.Tick += OnPlaybackTick;
     }
 
-    /// <summary>The MainViewModel, exposed for the embedded HTTP API.</summary>
+    /// <summary>
+    /// The MainViewModel, exposed for test access.
+    /// </summary>
     internal ViewModels.MainViewModel ViewModel => _viewModel;
 
     /// <summary>
@@ -69,29 +71,6 @@ public partial class MainWindow : System.Windows.Window, IDisposable
     /// Set by the window-track timer callback.
     /// </summary>
     internal bool IsTrackingGameWindow { get; private set; }
-
-    /// <summary>
-    /// Public entry point for the overlay HTTP API to trigger a quick-launch
-    /// by replay path. Delegates to the private implementation.
-    /// </summary>
-    internal async Task QuickLaunchWithPathViaApiAsync(string replayPath)
-    {
-        if (_isQuickLaunching)
-        {
-            _viewModel.Status = "Already launching — request ignored";
-            return;
-        }
-
-        _isQuickLaunching = true;
-        try
-        {
-            await QuickLaunchWithPathAsync(replayPath);
-        }
-        finally
-        {
-            _isQuickLaunching = false;
-        }
-    }
 
     public void Dispose()
     {
@@ -764,7 +743,6 @@ public partial class MainWindow : System.Windows.Window, IDisposable
     {
         IntPtr hwnd = FindWindowW(null, GameWindowTitle);
         IsTrackingGameWindow = hwnd != IntPtr.Zero;
-        OverlayApiState.Instance.IsTrackingGameWindow = IsTrackingGameWindow;
         if (hwnd == IntPtr.Zero) return;
         if (!GetWindowRect(hwnd, out RECT rect)) return;
 

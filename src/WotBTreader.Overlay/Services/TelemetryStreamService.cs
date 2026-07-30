@@ -16,7 +16,20 @@ public interface ITelemetryStreamService : IDisposable
     /// Opens a connection to the telemetry hub at <c>{baseUri}/api/v1/stream</c>.
     /// Safe to call multiple times; subsequent calls are no-ops if already connected.
     /// </summary>
+    /// <param name="baseUri">The web host loopback base URI.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     Task ConnectAsync(Uri baseUri, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Opens a connection to the telemetry hub at <c>{baseUri}/api/v1/stream</c>.
+    /// The optional capability token is sent in the negotiation headers to satisfy
+    /// the mutation-protection middleware.
+    /// Safe to call multiple times; subsequent calls are no-ops if already connected.
+    /// </summary>
+    /// <param name="baseUri">The web host loopback base URI.</param>
+    /// <param name="capability">Optional loopback capability token from the rendezvous record.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task ConnectAsync(Uri baseUri, string? capability, CancellationToken cancellationToken = default);
 }
 
 internal sealed class TelemetryStreamService : ITelemetryStreamService
@@ -29,7 +42,12 @@ internal sealed class TelemetryStreamService : ITelemetryStreamService
 
     public event EventHandler? SessionListChanged;
 
-    public async Task ConnectAsync(Uri baseUri, CancellationToken cancellationToken = default)
+    public Task ConnectAsync(Uri baseUri, CancellationToken cancellationToken = default)
+    {
+        return ConnectAsync(baseUri, capability: null, cancellationToken);
+    }
+
+    public async Task ConnectAsync(Uri baseUri, string? capability, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(baseUri);
 
@@ -62,7 +80,13 @@ internal sealed class TelemetryStreamService : ITelemetryStreamService
 
         Uri hubUri = new(baseUri, "/api/v1/stream");
         HubConnection connection = new HubConnectionBuilder()
-            .WithUrl(hubUri)
+            .WithUrl(hubUri, options =>
+            {
+                if (!string.IsNullOrEmpty(capability))
+                {
+                    options.Headers.Add("X-WotBTreader-Capability", capability);
+                }
+            })
             .WithAutomaticReconnect()
             .Build();
 

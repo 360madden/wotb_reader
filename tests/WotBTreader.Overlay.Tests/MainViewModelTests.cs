@@ -1010,13 +1010,13 @@ public sealed class MainViewModelTests
     private MainViewModel CreateViewModel(FakeHttpMessageHandler? handler = null, MockTelemetryStreamService? streamService = null)
     {
         RendezvousLocator locator = new(new FakeTimeProvider(Now), _rendezvousPath);
-        Func<Uri, TreaderApiClient> factory = handler is not null
-            ? baseUri => new TreaderApiClient(baseUri, handler)
+        Func<Uri, string?, TreaderApiClient> factory = handler is not null
+            ? (baseUri, capability) => new TreaderApiClient(baseUri, handler, capability)
             : FailFactory;
         return new MainViewModel(locator, factory, streamService);
     }
 
-    private static TreaderApiClient FailFactory(Uri baseUri) =>
+    private static TreaderApiClient FailFactory(Uri baseUri, string? capability) =>
         throw new InvalidOperationException("The API client factory must not be invoked without a usable rendezvous record.");
 
     private sealed class FakeTimeProvider(DateTimeOffset utcNow) : TimeProvider
@@ -1031,6 +1031,11 @@ public sealed class MainViewModelTests
         public event EventHandler? SessionListChanged;
 
         public Task ConnectAsync(Uri baseUri, CancellationToken cancellationToken = default)
+        {
+            return ConnectAsync(baseUri, capability: null, cancellationToken);
+        }
+
+        public Task ConnectAsync(Uri baseUri, string? capability, CancellationToken cancellationToken = default)
         {
             ConnectCallCount++;
             LastConnectedUri = baseUri;

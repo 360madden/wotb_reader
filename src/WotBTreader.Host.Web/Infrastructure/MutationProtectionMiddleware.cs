@@ -3,22 +3,21 @@ using Microsoft.AspNetCore.Antiforgery;
 namespace WotBTreader.Host.Web.Infrastructure;
 
 /// <summary>
-/// Protects every present and future unsafe API method with both an unguessable
-/// short-lived local capability and ASP.NET antiforgery validation.
+/// Protects every unsafe API method including SignalR connection negotiation.
+/// Native overlay/CLI clients authenticate with the rendezvous capability header.
+/// Browser clients authenticate with a same-origin capability cookie plus antiforgery.
 /// </summary>
 internal sealed class MutationProtectionMiddleware(RequestDelegate next)
 {
+    private const string CapabilityCookieName = "WotBTreader.Capability";
+
     public async Task InvokeAsync(
         HttpContext context,
         LocalMutationSecurity security,
         IAntiforgery antiforgery)
     {
-        // The SignalR hub is deliberately exempted so the overlay can connect
-        // without negotiating capability + antiforgery on every transport
-        // upgrade. The loopback-only trust boundary is enforced separately by
-        // LoopbackOnlyMiddleware.
+        // Only protect mutation routes under /api/v1. GET/HEAD/OPTIONS pass through.
         if (!context.Request.Path.StartsWithSegments("/api/v1") ||
-            context.Request.Path.StartsWithSegments("/api/v1/stream") ||
             HttpMethods.IsGet(context.Request.Method) ||
             HttpMethods.IsHead(context.Request.Method) ||
             HttpMethods.IsOptions(context.Request.Method))
@@ -27,9 +26,19 @@ internal sealed class MutationProtectionMiddleware(RequestDelegate next)
             return;
         }
 
-        if (!security.Validate(
-                context.Request.Headers[
-                    LocalMutationSecurity.CapabilityHeaderName].ToString()))
+        // Native client path: capability header from rendezvous record.
+        string? headerValue = context.Request.Headers[
+            LocalMutationSecurity.CapabilityHeaderName].ToString();
+        if (!string.IsNullOrEmpty(headerValue) && security.Validate(headerValue))
+        {
+            // Native client authenticated — no antiforgery required.
+            await next(context);
+            return;
+        }
+
+        // Browser path: capability cookie + antiforgery.
+        string? cookieValue = context.Request.Cookies[CapabilityCookieName];
+        if (string.IsNullOrEmpty(cookieValue) || !security.Validate(cookieValue))
         {
             await ApiProblemWriter.WriteAsync(
                 context,

@@ -47,6 +47,22 @@ public sealed class TreaderApiClientTests
             "aa10bb20-cc30-dd40-ee50-ff60aa70bb80",
             document.RootElement.GetProperty("sourceArtifactId").GetString());
         Assert.IsFalse(document.RootElement.TryGetProperty("replayPath", out _));
+        Assert.IsFalse(
+            handler.Headers.ContainsKey("X-WotBTreader-Capability"),
+            "Capability header must not be sent when no capability is provided.");
+    }
+
+    [TestMethod]
+    public async Task LaunchGameAsync_WithCapability_SendsCapabilityHeader()
+    {
+        CapturingHandler handler = new();
+        using var client = new TreaderApiClient(
+            new Uri("http://127.0.0.1:8123"), handler, capability: "cap-test-token");
+
+        await client.LaunchGameAsync("aa10bb20-cc30-dd40-ee50-ff60aa70bb80");
+
+        Assert.IsTrue(handler.Headers.TryGetValue("X-WotBTreader-Capability", out string? headerValue));
+        Assert.AreEqual("cap-test-token", headerValue);
     }
 
     private sealed class CapturingHandler : HttpMessageHandler
@@ -57,6 +73,8 @@ public sealed class TreaderApiClientTests
 
         public string Body { get; private set; } = string.Empty;
 
+        public Dictionary<string, string> Headers { get; } = new(StringComparer.OrdinalIgnoreCase);
+
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
@@ -66,6 +84,12 @@ public sealed class TreaderApiClientTests
             Body = request.Content is null
                 ? string.Empty
                 : await request.Content.ReadAsStringAsync(cancellationToken);
+            Headers.Clear();
+            foreach (var header in request.Headers)
+            {
+                Headers[header.Key] = string.Join(", ", header.Value);
+            }
+
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("{\"success\":true,\"message\":\"launch.accepted\"}"),

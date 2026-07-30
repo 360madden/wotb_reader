@@ -5,22 +5,29 @@ using WotBTreader.ApiContracts;
 namespace WotBTreader.Overlay.Services;
 
 /// <summary>
-/// Read-only client for the loopback read API. Sends no auth headers and never
-/// logs or surfaces any capability token.
+/// Loopback API client. GET requests are unauthenticated; POST/PUT/DELETE
+/// requests include the loopback capability header when a token is provided.
+/// Never logs or surfaces any capability token.
 /// </summary>
 public sealed class TreaderApiClient : IDisposable
 {
     private static readonly JsonSerializerOptions SerializerOptions = JsonSerializerOptions.Web;
 
     private readonly HttpClient _httpClient;
+    private readonly string? _capability;
 
     /// <summary>
-    /// Creates a read-only client for the loopback API.
+    /// Creates a client for the loopback API.
     /// </summary>
     /// <param name="baseUri">Must be an http(s) loopback address (localhost, 127.0.0.1, or [::1]).</param>
     /// <param name="handler">Optional HttpMessageHandler for test injection.</param>
+    /// <param name="capability">
+    /// Optional loopback capability token from the rendezvous record.
+    /// When non-null, it is sent as the X-WotBTreader-Capability header on
+    /// mutation requests (POST/PUT/DELETE). Never included on GET requests.
+    /// </param>
     /// <exception cref="ArgumentException">Thrown when baseUri is not a loopback web URI.</exception>
-    public TreaderApiClient(Uri baseUri, HttpMessageHandler? handler = null)
+    public TreaderApiClient(Uri baseUri, HttpMessageHandler? handler = null, string? capability = null)
     {
         if (!IsLoopbackWebUri(baseUri))
         {
@@ -30,6 +37,7 @@ public sealed class TreaderApiClient : IDisposable
         _httpClient = handler is not null
             ? new HttpClient(handler) { BaseAddress = baseUri }
             : new HttpClient { BaseAddress = baseUri };
+        _capability = capability;
     }
 
     /// <summary>Fetches a paginated list of session summaries.</summary>
@@ -101,16 +109,30 @@ public sealed class TreaderApiClient : IDisposable
     /// <summary>Requests the host to launch a managed replay artifact through the installed game.</summary>
     public async Task<GameLaunchResponse?> LaunchGameAsync(string sourceArtifactId, CancellationToken cancellationToken = default)
     {
-        using StringContent content = new(
-            JsonSerializer.Serialize(new GameLaunchRequest { SourceArtifactId = sourceArtifactId }, SerializerOptions),
-            System.Text.Encoding.UTF8,
-            "application/json");
-        HttpResponseMessage response = await _httpClient.PostAsync(
-            "api/v1/game/launch",
-            content,
-            cancellationToken);
+        using HttpRequestMessage request = new(HttpMethod.Post, "api/v1/game/launch")
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(new GameLaunchRequest { SourceArtifactId = sourceArtifactId }, SerializerOptions),
+                System.Text.Encoding.UTF8,
+                "application/json"),
+        };
+        AddCapabilityHeader(request);
+
+        HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken);
         string json = await response.Content.ReadAsStringAsync(cancellationToken);
         return JsonSerializer.Deserialize<GameLaunchResponse>(json, SerializerOptions);
+    }
+
+    private void AddCapabilityHeader(HttpRequestMessage request)
+    {
+        if (_capability is not null
+            && request.Method != HttpMethod.Get
+            && request.Method != HttpMethod.Head
+            && request.Method != HttpMethod.Options)
+        {
+            request.Headers.TryAddWithoutValidation(
+                "X-WotBTreader-Capability", _capability);
+        }
     }
 
     public void Dispose()

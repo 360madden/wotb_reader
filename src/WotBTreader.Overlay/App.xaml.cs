@@ -1,5 +1,3 @@
-using WotBTreader.Overlay.Services;
-
 namespace WotBTreader.Overlay;
 
 /// <summary>
@@ -12,16 +10,8 @@ public partial class App : System.Windows.Application
     {
         base.OnStartup(e);
 
-        // Create the main window explicitly so ViewModel is available before
-        // the window is shown. WPF's StartupUri creates the window AFTER
-        // OnStartup returns, so MainWindow would be null at this point.
         var mainWindow = new MainWindow();
         MainWindow = mainWindow;
-
-        OverlayApiState.Instance.Register(
-            mainWindow.ViewModel,
-            action => Dispatcher.BeginInvoke(action));
-
         mainWindow.Show();
     }
 }
