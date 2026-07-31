@@ -76,7 +76,7 @@ python scripts/python/offset_check.py --check-schema  # + cross-verify the pack 
 - All 8 expected fields present, counts known vs unknown
 - Offset values are plausible (not too small, not > 2GB)
 - No unknown extra fields
-- `confidence` is a valid value (`none`/`low`/`medium`/`high` only)
+- `confidence` is valid summary metadata (`none`/`low`/`medium`/`high` only); it never promotes a field. Per-field `fieldValidation.status` and its required evidence control runtime promotion.
 - `discoveredAtUtc` is present
 
 **`--check-schema` adds:**

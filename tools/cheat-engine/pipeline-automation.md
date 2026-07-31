@@ -1,12 +1,13 @@
 # Discovery Pipeline Automation
 
-Last updated: 2026-07-30
+Last updated: 2026-07-31
 
 ## Goal
 
 Automate the manual x64dbg + Cheat Engine offset discovery workflow into a
-single scripted pipeline that can discover all 8 game-state offsets without
-manual intervention beyond launching the game and replay.
+single evidence pipeline that normalizes candidates conservatively after the
+operator launches an approved offline replay. It does not promise to discover all
+8 fields automatically or promote candidates into runtime support.
 
 ## Current Bottleneck
 
@@ -21,12 +22,12 @@ Right now, finding offsets requires:
 
 This takes 30-60 minutes per session and must be repeated when the game updates.
 
-## Target: One-Command Pipeline
+## Current operator-assisted pipeline
 
 ```powershell
-# With game running a replay:
+# With an approved offline replay running and CE output ready:
 tools\discover-offsets.ps1 -GameVersion 11.19.0.10
-# Output: memory-offsets/11.19.0.10.json fully populated
+# Output: uniquely publishable Candidate evidence; ambiguity remains report-only
 ```
 
 ## Architecture
@@ -35,24 +36,29 @@ tools\discover-offsets.ps1 -GameVersion 11.19.0.10
 ┌──────────────────────────────────────────────────────────┐
 │                    discover-offsets.ps1                   │
 │                                                          │
-│  1. Verify prerequisites (game running, tools installed) │
-│  2. Launch CE plugin: scan known patterns                │
-│  3. CE finds candidate addresses via multiscan           │
-│  4. Export candidates to JSON                            │
-│  5. Analyze struct layout from CE candidate set          │
-│  6. Write memory-offsets/<version>.json                  │
-│  7. Verify via GameHarness health check                  │
+│  1. Operator verifies the approved offline replay gate   │
+│  2. Operator runs CE multiscan and exports JSON          │
+│  3. Normalize and validate candidate shape/ranges        │
+│  4. Publish only one unique candidate per field          │
+│  5. Preserve conflicts and ambiguous results as reports  │
+│  6. Record DynamicScan evidence as Candidate             │
+│  7. Validate the table; never mark fields Verified       │
 └──────────────────────────────────────────────────────────┘
 ```
 
-## Phase 1: CE Lua Automation (Already Possible)
+## Phase 1: CE Lua Automation
 
-The existing `tools/cheat-engine/multiscan.lua` already supports the core
-workflow through its interactive Lua API. To automate it:
+The current `tools/cheat-engine/multiscan.lua` already provides interactive scans
+and the unattended `autoDiscover()` entry point. The operator must establish the
+approved `OfflineReplayVerified` session through the host before attaching CE.
+The script writes the `fieldResults` shape consumed by
+`tools/discover-offsets.ps1`; `saveDiscovered()` remains available for one-field
+interactive scans.
 
-### What we'd change in multiscan.lua
-
-Add an `autoDiscover()` function that:
+The following snippets are retained as **historical design notes**, not as
+instructions to add another implementation. The operator must establish the
+approved offline-replay session first, keep raw CE output untracked, and pass
+results through the conservative normalizer.
 
 ```lua
 function autoDiscover()
@@ -126,8 +132,9 @@ function autoScan(fieldName, valueType, mode, minVal, maxVal, filterMode)
 end
 ```
 
-### Timer-based refinement
+### Future/experimental timer-based refinement
 
+The following is exploratory and is not part of the current publication path.
 The core insight for automation: instead of prompting the user to "change the
 value in-game," we can leverage the replay's natural progression:
 
@@ -151,7 +158,7 @@ sleep(2000)
 nextScan(soChangedValue, ...)     -- typically < 20 candidates
 ```
 
-## Phase 2: x64dbg Automation (More Complex)
+## Phase 2: Future/experimental x64dbg automation
 
 Automating x64dbg is harder because it lacks a native Lua API. Options:
 
@@ -214,116 +221,50 @@ CE → Right-click address → "Find out what writes"
 x64dbg. The information you need (instruction address + register + offset) is
 already available through CE's UI.
 
-## Phase 3: Struct Builder
+## Phase 3: Struct and evidence review
 
-Once CE provides candidate addresses and CE's "what writes" log provides
-struct base + field offsets, a script can automatically build the offset table:
+CE candidate addresses and write traces are inputs to a human review, not an
+automatic table builder. Use x64dbg or Ghidra to identify the relevant module or
+struct context, then record only bounded, redacted evidence summaries. The current
+publication path is:
 
-```powershell
-# discover-offsets.ps1 (Phase 1 draft)
-param(
-  [string]$GameVersion = "11.19.0.10",
-  [string]$CeScript = "tools/cheat-engine/auto-discover.lua"
-)
+1. `tools/discover-offsets.ps1` validates the installed version, executable hash,
+   candidate shape, and existing table.
+2. It publishes only one unique module-relative candidate per field and retains
+   conflicts or ambiguity as report-only results.
+3. It adds `DynamicScan` provenance while leaving the field at `Candidate`.
+4. `tools/report-offset-evidence.ps1` and `scripts/python/offset_check.py` validate
+   the resulting table.
 
-Write-Host "=== WoTB Offset Discovery Pipeline ==="
-Write-Host "Game version: $GameVersion"
-Write-Host ""
-
-# 1. Verify game is running
-if (-not (Get-Process wotblitz -ErrorAction SilentlyContinue)) {
-  Write-Error "wotblitz.exe is not running. Start a replay first."
-  exit 1
-}
-
-# 2. Verify CE is available
-$cePath = "C:\Program Files\Cheat Engine\cheatengine-x86_64.exe"
-if (-not (Test-Path $cePath)) {
-  Write-Error "Cheat Engine not found at $cePath"
-  exit 1
-}
-
-# 3. Launch CE with the auto-discovery script
-Write-Host "Launching Cheat Engine auto-discovery..."
-Start-Process -FilePath $cePath -ArgumentList "-l $CeScript" -Wait
-
-# 4. Read CE output
-$candidatesPath = "tools/cheat-engine/discovered-offsets.json"
-if (-not (Test-Path $candidatesPath)) {
-  Write-Error "CE discovery produced no output"
-  exit 1
-}
-
-$candidates = Get-Content $candidatesPath | ConvertFrom-Json
-Write-Host "CE found $($candidates.candidates.Count) candidates"
-
-# 5. Read CE "what writes" log
-$writesLog = "tools/cheat-engine/writes.txt"
-if (Test-Path $writesLog) {
-  $instructions = Get-Content $writesLog
-  Write-Host "Found $($instructions.Count) write instructions"
-  # Parse instruction format: "movss [ecx+0x34], xmm0"
-  # Extract struct base register and field offset
-  foreach ($line in $instructions) {
-    if ($line -match '\[(\w+)\+0x([0-9a-fA-F]+)\]') {
-      $register = $matches[1]
-      $offset = [Convert]::ToInt32($matches[2], 16)
-      Write-Host "  Struct base: $$register, field offset: 0x$($matches[2])"
-    }
-  }
-}
-
-# 6. Build offset table
-$offsetFile = "memory-offsets/$GameVersion.json"
-$existing = Get-Content $offsetFile | ConvertFrom-Json
-
-# Merge discovered offsets into existing table
-$existing.offsets.playerYaw = $candidates.playerYaw
-$existing.offsets.playerHP = $candidates.playerHP
-$existing.offsets.playerPositionX = $candidates.playerPositionX
-# ... etc
-
-$existing.confidence = "low"
-$existing.notes = "Discovered via automated CE pipeline on $(Get-Date -Format 'yyyy-MM-dd')"
-
-$existing | ConvertTo-Json -Depth 5 | Set-Content $offsetFile
-Write-Host "Wrote $offsetFile with $(($existing.offsets.PSObject.Properties | Where-Object { $_.Value -ne 0 }).Count)/8 offsets"
-```
+Do not launch Cheat Engine from the PowerShell script, overwrite all fields, or
+set global `confidence` to `high` as a substitute for per-field promotion
+requirements.
 
 ## Recommended Implementation Order
 
-### Step 1: Auto-scan Lua (30 min)
-Add `autoDiscover()` function to `tools/cheat-engine/multiscan.lua`
-- Timer-based refinement (no user interaction needed)
-- Saves candidates to JSON automatically
-- **Deliverable:** CE finds candidate addresses while replay plays
+### Step 1: Run the CE scan (operator-led)
+Use `multiscan.lua` during a positively verified offline replay and save its JSON
+output. Keep raw CE output local and untracked.
 
-### Step 2: CE Write Logger (15 min)
-Use CE's built-in "Find out what writes" with file logging
-- Configure CE to log writes to a file
-- Auto-parse the file to extract register + offset info
-- **Deliverable:** Script extracts struct base and field offsets
+### Step 2: Normalize and publish conservatively
+Run `tools/discover-offsets.ps1` after the operator has established the approved
+replay gate. The script validates local process/tool prerequisites, the requested
+and executable versions, the executable hash, candidate ranges, and existing
+evidence before writing. It publishes only unique candidates and records them as
+`Candidate`; it does not independently establish lifecycle evidence.
 
-### Step 3: Offset Builder (15 min)
-Create `tools/discover-offsets.ps1` PowerShell wrapper
-- Orchestrates CE launch → wait → parse → write offset file
-- Merges discovered offsets into versioned JSON
-- **Deliverable:** Single-command pipeline
-
-### Step 4: Validation Hook (15 min)
-After writing offset file, trigger `GameHarness discover` to verify:
-```powershell
-treader discover --game-version 11.19.0.10
-treader discover-snapshot
-treader discover-compare --offset playerYaw
-```
+### Step 3: Report and verify
+Use `tools/report-offset-evidence.ps1` for a read-only summary, then validate with
+`python scripts/python/offset_check.py --check-schema`. Dynamic verification across
+independent launches/replays and promotion approval are separate work; do not use
+`GET /api/v1/game/memory` as proof while the field remains a Candidate.
 
 ## Edge Cases
 
 | Issue | Mitigation |
 |-------|-----------|
 | Game not running | Pre-checks in PowerShell; clear error message |
-| Anti-cheat blocking CE | Recommend running as Administrator; detect by checking ReadProcessMemory access |
+| CE cannot read the process | Stop and re-check the approved offline-replay gate, executable identity, and local Windows permissions; do not bypass the gate |
 | Replay not loaded | Check if game window title contains "Replay" |
 | Zero candidates after 5 rounds | Relax filter to wider range; fall back to manual mode |
 | Struct offsets change between versions | Store per-version; pipeline detects version mismatch |

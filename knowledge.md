@@ -14,9 +14,14 @@ full design specification.
 
 - **Stack:** .NET 10 (C#), WPF, ASP.NET Core Blazor Web App, SQLite, SignalR
 - The overlay is a loopback client only. It hosts no HTTP control plane; the legacy
-  embedded Kestrel listener on port 9190 was removed and `OverlayControlPlaneContainmentTests`
-  keeps it removed.
-- **No:** Python, Node.js, Rust, Electron, containers, cloud services, runtime AI, dynamic decoder DLLs
+  embedded Kestrel listener on port 9190 was removed, and the old endpoint/state files
+  were deleted. `OverlayControlPlaneContainmentTests` keeps the second control plane out.
+- **No runtime dependency on:** Python, Node.js, Rust, Electron, containers, cloud
+  services, runtime AI, or dynamic decoder DLLs. Python remains available only for
+  offline validation and test tooling.
+- **Current offset evidence:** `11.19.0.10` is hash-bound to
+  `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d`;
+  `playerYaw` is a `Candidate`, not runtime-supported, and seven fields remain unknown.
 
 ## Quickstart
 
@@ -88,9 +93,10 @@ dotnet test tests/WotBTreader.Core.Tests -c Release --filter "FullyQualifiedName
 ```
 
 - Tests are MSTest 4 on Microsoft.Testing.Platform. Some installed-game tests skip by default (local opt-in).
-- 12 test projects, 397 tests: 395 passed, 0 failed, 2 opt-in skips (as of 2026-07-30).
+- 12 test projects, 411 tests: 409 passed, 0 failed, 2 opt-in skips (as of 2026-07-31).
 - All architecture hardening milestones (M0–M7) are complete. The alpha release
-  (`v0.1.0-alpha`) passes the full gate with 0 vulnerable packages and 457 scan-clean files.
+  (`v0.1.0-alpha`) passed the full gate; later changes added offset evidence tooling
+  and stricter cancellation/hash validation without promoting candidate offsets.
 
 ### Keyboard shortcuts
 
@@ -138,23 +144,25 @@ Overlay (net10.0-windows WPF, transparent HUD; loopback client only)
  └── MainWindow                      (transparent borderless topmost HUD, P/Invoke window tracking)
 ```
 
-**Dormant code in `Overlay`:** `Endpoints/OverlayApiEndpoints.cs` and
-`Services/OverlayApiState.cs` still compile but are unreachable — nothing binds port
-9190 and no listener starts. Milestone 3 removed the Kestrel listener; the handler
-files remain as dead code. Do not extend either file.
+**Overlay control plane:** the old `Endpoints/OverlayApiEndpoints.cs` and
+`Services/OverlayApiState.cs` implementation was removed. Nothing binds port 9190;
+`Host.Web` is the only control plane. `OverlayControlPlaneContainmentTests` guards
+this boundary.
 
 **Key rules:**
 - Adapters (Replays, CaptureLogs, GameIntegration, Storage.Sqlite) never reference each other
 - `Overlay` references only `ApiContracts` — never a host, adapter, `Application`, or `Core`
 - `ApiContracts` is serialization-only: no domain behavior, no project refs, no package refs
 - Hosts and tools compose exclusively through `Bootstrap`; tools do not build their own adapters
-- Only `Overlay` and `tools/GameHarness` target `net10.0-windows`; everything else is portable `net10.0`
+- Only the `Overlay` and `tools/GameHarness` production surfaces and their tests target `net10.0-windows`; everything else is portable `net10.0`
 - New DI ports must be added to `CompositionRootTests` published-port list or no host starts
 - Warnings are errors (`TreatWarningsAsErrors`), NuGet audit mode is `all` — fix with central pins, never suppress
 - Package versions are centrally managed in `Directory.Packages.props` with committed lock files
 
-`WotBTreader.Architecture.Tests` (14 tests) enforces the reference graph, the TFM
+`WotBTreader.Architecture.Tests` (15 tests) enforces the reference graph, the TFM
 allowlist, and the native-access boundary. Breaking any rule above fails the build.
+The scanner remains behind the offline replay gate; candidate-only offset evidence
+cannot authorize runtime reads.
 
 ## Conventions
 

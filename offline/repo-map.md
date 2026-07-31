@@ -56,9 +56,12 @@ ApiContracts (serialization-only; NO refs, NO packages)
 
 ## tests/
 
-12 MSTest projects, one per module (+ `Architecture.Tests`, `Bootstrap.Tests`,
-`TestSupport` with `SyntheticReplayFactory.cs`). `Architecture.Tests` enforces
-the reference graph, TFM allowlist, and native-access boundary.
+12 MSTest projects, including the module suites, architecture/bootstrap suites,
+and the Windows-only `tools/tests/WotBTreader.GameHarness.Tests`. The shared
+`TestSupport` project supplies synthetic fixtures but is not itself a test suite.
+The current snapshot is 411 tests: 409 passed, 0 failed, and 2 local opt-in skips.
+`Architecture.Tests` enforces the reference graph, TFM allowlist, and native-access
+boundary.
 
 ## tools/
 

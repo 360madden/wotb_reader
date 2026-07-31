@@ -9,7 +9,8 @@
    the existing "blocker" is confirmed dead.
 2. Wargaming announced the **Reforged** update: WoT Blitz migrates from DAVA to
    **Unreal Engine 5**. Announced for 2026-06-17, **postponed indefinitely**; the
-   live client still runs DAVA. See [reforged-ue5.md](reforged-ue5.md).
+   live client still runs DAVA. The Reforged / UE5 risk is tracked separately from
+   this committed research index.
 
 **Consequence:** Studying DAVA source to learn single-instance behavior, command-line
 parsing, or file watching has no viable source. Community reverse engineering
@@ -88,7 +89,7 @@ Entity lists and object states are accessible via static pointers and offsets.
    (file association); no official CLI doc.
 3. **File watching:** No evidence the game watches the replays directory.
 4. **Scene transitions:** Engine will be replaced by UE5 (Reforged) — see
-   [reforged-ue5.md](reforged-ue5.md).
+   the separate Reforged / UE5 risk note.
 
 ## GitHub Repos to Clone/Analyze
 

@@ -40,10 +40,10 @@ memory-offsets/
 
 | Level    | Meaning |
 |----------|---------|
-| `none`   | No offsets discovered (placeholder) |
-| `low`    | Scanner found candidates, unverified |
-| `medium` | Scanner found 1-3 candidates, matches game behavior in one battle |
-| `high`   | Verified across multiple battles and game restarts |
+| `none`   | No offset evidence; placeholder only |
+| `low`    | Preliminary confidence summary; not a promotion decision |
+| `medium` | Multiple observations may support investigation; still not a promotion decision |
+| `high`   | High-level summary only; `fieldValidation.status: "Verified"` and all required evidence still control runtime promotion |
 
 ## External tools
 
@@ -62,7 +62,10 @@ These tools are registered in `tools/external/tools.lock.json` and available at:
 
 ## Offset discovery workflow
 
-Offset discovery follows a **three-phase pipeline**: static analysis → dynamic analysis → automated verification.
+Offset discovery follows a **four-phase pipeline**: static analysis → dynamic analysis →
+struct/layout analysis → automated verification. The current committed 11.19.0.10
+table contains one hash-bound static-analysis candidate (`playerYaw`); candidate
+fields remain discovery-only until promotion evidence is complete.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -84,11 +87,16 @@ Offset discovery follows a **three-phase pipeline**: static analysis → dynamic
 │     • Cross-reference with Ghidra findings                       │
 │     • AITools for AI-assisted pattern matching                   │
 │                                                                  │
-│  3. AUTOMATED VERIFICATION (GameHarness + Treader) → Confirmed   │
+│  3. STRUCT/LAYOUT ANALYSIS (ILSpy + x64dbg) → Field mapping      │
+│     • Trace access instructions and register-held struct bases   │
+│     • Map neighboring HP/position/yaw/pitch fields               │
+│     • Cross-check layout against static candidates               │
+│                                                                  │
+│  4. AUTOMATED VERIFICATION (GameHarness + Treader) → Candidate   │
 │     • Run the built-in scanner to verify candidates              │
-│     • Validate across multiple battles                           │
-│     • Update offset JSON with confidence level                   │
-│     • Commit to memory-offsets/                                  │
+│     • Validate across multiple battles and restarts              │
+│     • Promote only after complete evidence requirements          │
+│     • Commit redacted evidence summaries to memory-offsets/      │
 │                                                                  │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -224,73 +232,111 @@ Once you find a dynamic address for HP or position:
 
 ---
 
-### Phase 3 — Automated Verification with GameHarness
+### Phase 4 — Automated Verification with GameHarness
 
-The built-in `MemoryOffsetScanner` and `GameMemoryReader` in `tools/src/WotBTreader.GameHarness/` provide CLI-driven verification.
+GameHarness exposes the guarded `discover*` commands through the web host. The
+commands first require the `OfflineReplayVerified` session gate; native scanning
+and snapshot comparison are implemented by `GameIntegration`, not by the harness
+itself. These commands produce discovery evidence, not runtime-supported offsets.
 
 #### Quick workflow
 
 ```powershell
-# 1. Start WoT Blitz replay
+# 1. Import and launch a known pre-recorded replay through the managed host path.
+#    Continue only after the host reports OfflineReplayVerified.
 
-# 2. Probe to confirm the game is running
-dotnet run --project tools/src/WotBTreader.GameHarness -- probe
+# 2. Scan for a known value (field type is Float, Int32, or Double)
+dotnet run --project tools/src/WotBTreader.GameHarness -- discover playerHP Int32 1500
 
-# 3. Scan for HP (int32) — use value visible on screen
-dotnet run --project tools/src/WotBTreader.GameHarness -- scan int32 1500
+# 3. Create a filtered snapshot for changed/unchanged comparison
+dotnet run --project tools/src/WotBTreader.GameHarness -- discover-snapshot 4 --int-min 0 --int-max 3000
 
-# 4. After HP changes, narrow the results
-dotnet run --project tools/src/WotBTreader.GameHarness -- scan int32 1200 --narrow
+# 4. Advance the replay, then compare the snapshot
+dotnet run --project tools/src/WotBTreader.GameHarness -- discover-compare 000001 changed
 
-# 5. Repeat until 1-3 candidates remain
-# (these are your base-relative offsets)
+# 5. Inspect fields adjacent to a known candidate
+dotnet run --project tools/src/WotBTreader.GameHarness -- discover-nearby 0x0317A810 --window 256
 
-# 6. Same process for position (float) and replay time (double)
-dotnet run --project tools/src/WotBTreader.GameHarness -- scan float -45.23
-dotnet run --project tools/src/WotBTreader.GameHarness -- scan double 12.5
+# 6. Discard temporary snapshot state when finished
+dotnet run --project tools/src/WotBTreader.GameHarness -- discover-discard 000001
 ```
+
+Use `probe` or `scan` only as read-only gate/status reports. They do not accept
+field values or narrow a scan. Candidate output must be normalized through
+`tools/discover-offsets.ps1`; ambiguous results remain report-only.
 
 #### Cross-phase validation
 
 | Discovery Phase | Tool | Output | Validated By |
 |----------------|------|--------|-------------|
 | Static | Ghidra | Candidate addresses from binary analysis | Cheat Engine dynamic verification |
-| Dynamic | Cheat Engine | Confirmed offsets + pointer chains | GameHarness scanner re-verification |
-| Automated | GameHarness | CLI-scanned candidates | Cross-battle validation with Treader |
+| Dynamic | Cheat Engine | Candidate addresses, pointer chains, and write traces | GameHarness discovery commands |
+| Struct/layout | ILSpy + x64dbg | Field mapping and access instructions | GameHarness and CE |
+| Automated | GameHarness | Gate-checked scan/snapshot/compare candidates | Independent launches, replays, and invariants |
 
 #### Converting to offset JSON
 
-When you have 1-3 confirmed offsets:
+When you have one or more independently corroborated candidate offsets:
 
 1. Open `memory-offsets/<version>.json` (or create a new one for a new game version)
 2. Fill in the discovered offsets
 3. Set appropriate confidence level
 4. Add notes about how the offset was discovered
-5. Run the Treader HUD to validate the offsets produce sensible readings
-6. Set `confidence: "high"` after multiple successful battles
+5. Record provenance and per-field validation in `fieldValidation`.
+6. Promote a field to `Verified` only after the schema's independent-launch,
+   independent-replay, harness, static-analysis, and approval requirements pass.
+   A global `confidence` value does not override a field's status.
 
 ```json
 {
   "schemaVersion": 1,
-  "gameVersion": "11.8.0.7",
-  "executableSha256": "abc123...",
-  "discoveredAtUtc": "2026-07-28T14:30:00Z",
+  "gameVersion": "11.19.0.10",
+  "executableSha256": "<64-hex SHA-256 of the exact executable>",
+  "discoveredAtUtc": "2026-07-31T14:30:00Z",
   "offsets": {
-    "replayTime": 3948572,
-    "playerHP": 123456,
-    "playerPositionX": 234567,
-    "playerPositionY": 234571,
-    "playerPositionZ": 234575,
-    "playerYaw": 789012,
-    "cameraPitch": 789016,
-    "aliveTankCount": 345678
+    "replayTime": 0,
+    "playerHP": 0,
+    "playerPositionX": 0,
+    "playerPositionY": 0,
+    "playerPositionZ": 0,
+    "playerYaw": 51808784,
+    "cameraPitch": 0,
+    "aliveTankCount": 0
   },
-  "confidence": "high",
-  "notes": "Discovered via Cheat Engine pointer scan, verified with Ghidra static analysis. Cross-validated across 3 battles."
+  "fieldValidation": {
+    "playerYaw": {
+      "status": "Candidate",
+      "evidence": [
+        {
+          "provenanceKind": "StaticAnalysis",
+          "sourceTool": "Ghidra",
+          "notes": "Candidate only; dynamic verification is still required."
+        }
+      ],
+      "independentProcessLaunches": 0,
+      "independentReplays": 0,
+      "harnessInvariantsPassed": false,
+      "leadApproved": false,
+      "decoderAuditorApproved": false
+    }
+  },
+  "confidence": "low",
+  "notes": "Candidate evidence is discovery-only. Do not promote from a global confidence value."
 }
 ```
 
 ---
+
+## Current evidence status
+
+| Version | Executable hash | Known offsets | Runtime status |
+|---|---|---:|---|
+| `11.19.0.10` | `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d` | 1/8 | `playerYaw` is Candidate; runtime reads remain unsupported |
+
+The hash identifies the installed executable used for this evidence snapshot; it is
+not proof that the candidate offset is correct. Dynamic verification must use a
+positively verified offline replay and preserve evidence summaries without committing
+raw dumps or scan files.
 
 ## Quick reference — common field types
 
@@ -311,7 +357,7 @@ When you have 1-3 confirmed offsets:
 - **Yaw and Camera Pitch** are typically adjacent floats near the position data
 - **Pointer scan after game restart** — offset chains that survive restart are robust static offsets
 - **Ghidra string references** — strings like `"health"` or `"replayTime"` in the binary often cross-reference to the structs containing those values
-- **Admin rights required** — both Cheat Engine and GameHarness scanner need elevation to read wotblitz.exe memory
+- **Use the approved gate** — Cheat Engine and GameHarness scanning are restricted to positively verified offline replay sessions; elevation depends on the local Windows security context
 
 ## Never commit
 

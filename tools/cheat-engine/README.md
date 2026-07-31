@@ -6,7 +6,7 @@ Scripts for discovering WoT Blitz memory offsets using Cheat Engine.
 
 - [Cheat Engine 7.5+](https://www.cheatengine.org/) installed
 - WoT Blitz running with a replay actively playing
-- Run Cheat Engine as Administrator
+- Use Cheat Engine only during a positively verified offline replay session; elevation may be required by the local Windows security context
 
 ## Scripts
 
@@ -73,5 +73,8 @@ After discovering candidate offsets, update `memory-offsets/<version>.json`:
 }
 ```
 
-Then re-validate by launching a replay through the web host and checking
-`GET /api/v1/game/memory` — telemetry fields should show non-null values.
+Then validate the candidate through the complete offline evidence workflow. A
+candidate-only table is not runtime-supported. Use
+`tools/report-offset-evidence.ps1` and `python scripts/python/offset_check.py
+--check-schema`; the memory API remains unknown/unavailable until exact executable
+identity and per-field promotion evidence are complete.

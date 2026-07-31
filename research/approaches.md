@@ -138,4 +138,5 @@ dir /s /od "%LOCALAPPDATA%\wotblitz\DAVAProject" | findstr wotbreplay
    # Does game react?
    ```
 
-4. Fix `child_exe_mismatch` — byte-count fix is coded, needs live test
+4. Validate the managed launch identity path against an installed game as a local
+   opt-in test; the prior `child_exe_mismatch` handling is implemented and unit-tested

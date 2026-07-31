@@ -2,7 +2,7 @@
 
 Status: active execution plan for the accepted alpha architecture and ADRs
 
-Last updated: 2026-07-30
+Last updated: 2026-07-31
 
 ## Milestone status
 
@@ -87,8 +87,7 @@ healthy and the same PID, executable identity, launch correlation, replay UI,
 and lifecycle state continue to agree; low-level readers receive the lease
 rather than a raw PID.
 
-Before Milestone 2 automates this contract, manual process inspection with
-Cheat Engine or scanner tooling is allowed only after the operator starts a
+Manual process inspection with Cheat Engine or scanner tooling is allowed only after the operator starts a
 known pre-recorded replay, observes a fresh native `START_REPLAY_LOCAL` marker
 within 15 seconds, binds the marker to the selected PID/window and verified
 executable identity, confirms the replay playback UI, and records the
@@ -129,9 +128,9 @@ regression is recognizable rather than rediscovered.
 | Structural tests are incomplete | M1 | `ProjectReferenceTests`, `TargetFrameworkTests`, and `NativeAccessBoundaryTests` share `ProjectCatalog` and enforce the full production graph; an unclassified project is itself a violation |
 | The accepted overview reverses dependency arrows | M0 | Both the overview and this roadmap use `App --> Core`, consistent with “depends on” |
 | Win32 ownership is duplicated | M2 | No `DllImport` or `LibraryImport` remains in `Host.Web` or `GameHarness`; guarded native access lives only in `GameIntegration` |
-| Process attachment is not gated by verified replay state | M0, M2 | `GameStateService` no longer exists. Memory observation resolves through a capability-neutral Application port and returns `Unknown`; no `PROCESS_VM_READ` handle opens anywhere |
-| Harness scan/probe bypasses its safety policy | M0 | `GameHarness` denies `scan` and `probe` before any PID parsing, enumeration, or attachment; its raw-PID reader, scanner, and native declarations were deleted |
-| The overlay hosts a second mutation server | M0 | The port 9190 Kestrel listener no longer starts; `OverlayControlPlaneContainmentTests` enforces this. `Endpoints/OverlayApiEndpoints.cs` remains as unreachable dead code for M3 to delete |
+| Process attachment is not gated by verified replay state | M0, M2 | `GameStateService` no longer exists. Memory observation resolves through a capability-neutral Application port; memory-capable handles are opened only after the complete offline gate and exact identity checks |
+| Harness scan/probe bypasses its safety policy | M0, M2 | `GameHarness` routes `scan`, `probe`, and `discover*` through the web host's `OfflineReplayVerified` gate; native scanning remains owned by `GameIntegration` |
+| The overlay hosts a second mutation server | M0/M3 | The port 9190 Kestrel listener no longer starts; `OverlayControlPlaneContainmentTests` enforces this. The former `OverlayApiEndpoints` and `OverlayApiState` files were deleted |
 | Wire contracts are duplicated incompletely | M1 | `ApiContracts` is the single serialization-only assembly with zero project and package references; the duplicate Overlay and Host.Web DTOs and `ContractComplianceTests` were removed |
 | Rendezvous ACL guarantees have regressed | M0 | Rendezvous storage is protected and positively verified as current-user-only before a capability is published, with a regression test starting from a permissive inherited ACL (BLK-0014) |
 
@@ -280,20 +279,15 @@ Test projects remain deliberately outside the graph's scope.
 
 ## Milestone 2 — Centralize game-process access and enforce offline state
 
-**Status: 🟡 In progress.** Landed so far, each as an internal component deliberately
-disconnected from the coordinator, the Application ports, and DI: the fail-closed
-session boundary and its three capability-neutral ports, the query-only process
-identity observer, the atomic lifecycle evidence feed, the trusted executable identity
-provider and shared fingerprint reader, the managed-launch preparation barrier, the
-managed replay artifact staging lease, and the pinned trusted executable launch lease.
-`Host.Web` and `GameHarness` native access is fully removed.
+**Status: ✅ Complete.** The fail-closed session boundary, query-only process identity
+observer, lifecycle evidence feed, trusted executable identity provider, managed
+launch preparation/staging/lease pipeline, suspended-process identity checks,
+correlation registration, and guarded observation/scanner ports are wired through
+`GameIntegration`. `Host.Web` and `GameHarness` do not own native access.
 
-Remaining: an audited suspended-process creation unit that verifies child identity
-before resume, atomic registration of correlation plus artifact lease plus process
-identity plus lifecycle baseline, migration of `GameHarness` commands onto the same
-ports, and only then a guarded exact-version-and-hash VM-read factory with immediate
-handle disposal and between-chunk revalidation. **VM-read stays disabled until all of
-that, and its disposal tests, are complete.**
+Memory observation and discovery remain denied unless the offline replay gate is
+`OfflineReplayVerified`; exact executable identity and per-field `Verified` offset
+evidence are required for runtime reads. Candidate offset tables are discovery-only.
 
 ### Work
 
@@ -342,9 +336,9 @@ that, and its disposal tests, are complete.**
 ### Work
 
 - Make `Host.Web` the only HTTP control plane.
-- Delete the overlay’s dead `OverlayApiEndpoints` and `OverlayApiState` code. The
-  port 9190 listener itself was already removed in Milestone 0; only the unreachable
-  handler classes remain.
+- Delete the overlay’s former `OverlayApiEndpoints` and `OverlayApiState` code. The
+  port 9190 listener itself was already removed in Milestone 0; the handler/state
+  files were removed during M3.
 - Route overlay automation commands through `Host.Web`; deliver HUD commands to
   the connected overlay through an authenticated, bounded SignalR contract.
 - Separate browser and native-client mutation policy:
@@ -431,11 +425,11 @@ that, and its disposal tests, are complete.**
 
 ### Exit criteria
 
-- `11.18.0.7` offsets are never loaded for another executable hash.
+- Versioned 11.18.0.7 and 11.19.0.10 offsets are never loaded for another executable hash.
 - Zero, stale, candidate-only, or contradictory offsets remain unsupported.
 - Readers expose per-field validation and provenance rather than one global
   “some offset worked” flag.
-- Every promoted `11.18.0.7` field records the required static evidence,
+- Every promoted 11.18.0.7 or 11.19.0.10 field records the required static evidence,
   two independent process launches, two pre-recorded replays, passing
   GameHarness invariants, and lead plus decoder-auditor approval.
 - Synthetic offset-table and reader tests cover malformed data, range limits,
@@ -526,10 +520,11 @@ flowchart LR
     M6 --> M7["M7\nrelease gate"]
 ```
 
-Do not start product memory integration or rely on discovered offsets before
-Milestone 2 closes. Static Ghidra work can proceed independently, and Cheat
-Engine may be used during positively verified pre-recorded replay playback, but
-neither tool may promote data directly into product behavior.
+Do not rely on candidate-only discovered offsets for product memory reads. Static
+Ghidra work can proceed independently, and Cheat Engine may be used during positively
+verified pre-recorded replay playback, but neither tool may promote data directly
+into product behavior. Runtime reads require exact executable identity and complete
+per-field promotion evidence.
 
 The dependency graph above is authoritative: M0, M1, and M2 are sequential;
 M3 and M4 may then proceed in parallel. Early Ghidra script repair and static

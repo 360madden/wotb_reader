@@ -2,8 +2,8 @@
 
 The web host (`WotBTreader.Host.Web`) is the **single control plane**:
 loopback-only, Blazor + REST + SignalR at `127.0.0.1:9182`. The overlay is a
-loopback client only and hosts no listener (nothing binds port 9190; the dead
-`OverlayApiEndpoints` files must not be extended).
+loopback client only and hosts no listener; nothing binds port 9190. The former
+overlay endpoint/state implementation was deleted.
 
 ## Discovery / rendezvous
 

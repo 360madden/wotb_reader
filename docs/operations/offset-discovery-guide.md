@@ -7,12 +7,12 @@ Last updated: 2026-07-31
 | Item | Status |
 |------|--------|
 | Game version installed | 11.19.0.10 (`C:\Games\World_of_Tanks_Blitz\wotblitz.exe`, ~71MB) |
-| Offset file | `memory-offsets/11.19.0.10.json` — only `playerYaw` found; 7 fields unknown |
+| Offset file | `memory-offsets/11.19.0.10.json` — hash-bound; `playerYaw` is Candidate; 7 fields unknown |
 | Ghidra 12.1.2 | Installed at `C:\work\tools\ghidra_12.1.2_PUBLIC` |
 | Cheat Engine 7.7 | Installed at `C:\Program Files\Cheat Engine\` |
 | x64dbg | Installed at `C:\work\tools\x64dbg` — snapshot 2026.05.27 (see Phase 2 below) |
 | ILSpy | **Not yet installed** — see Phase 3 below |
-| GameHarness scanner | `scan`/`probe` check the offline-session gate via HTTP |
+| GameHarness scanner | `scan`/`probe` and `discover*` check the offline-session gate via HTTP |
 | Ghidra headless script | `tools/ghidra-scripts/FindOffsets.java` — ready to run |
 | Cheat Engine Lua scripts | `tools/cheat-engine/discover-offsets.lua`, `multiscan.lua` |
 | Discovery orchestrator | `tools/discover-offsets.ps1` — normalizes CE outputs and publishes unique candidates only |
@@ -295,13 +295,18 @@ Once you have candidate offsets from any combination of tools:
    ```
    memory-offsets/11.19.0.10.json
    ```
-   Set all 8 fields to their discovered offsets. Set `confidence` to `"medium"`
-   (or `"high"` after 3+ battle tests).
+   Set only evidence-backed fields to their discovered offsets. Keep each field
+`Candidate` until the independent-launch, independent-replay, harness, static,
+and approval requirements are complete; never set a field to `Verified` from one
+scan or one battle.
 
-5. **Run the application test:**
+5. **Run the read-only evidence report:**
+   ```powershell
+   .\tools\report-offset-evidence.ps1 -GameVersion 11.19.0.10
    ```
-   Serve → overlay → check that GET /api/v1/game/memory returns non-null values
-   ```
+   A non-`Unknown` API response is not promotion evidence. Runtime reads remain
+   unsupported until the exact executable hash and every per-field promotion
+   requirement are satisfied.
 
 ### Discovery output and publication rules
 
@@ -372,7 +377,7 @@ $shortcut.Save()
 Write-Host "x64dbg installed to C:\work\tools\x64dbg"
 ```
 
-### Install ILSpy (run in PowerShell as Admin):
+### Install ILSpy (run in PowerShell; elevate only if your selected install directory requires it):
 ```powershell
 # Download latest release
 $url = "https://github.com/icsharpcode/ILSpy/releases/latest/download/ILSpy_binaries.zip"
@@ -413,9 +418,9 @@ Write-Host "ILSpy installed to C:\tools\ILSpy"
 
 ## GameHarness M2 gate — ✅ WIRED
 
-The `scan` and `probe` commands in GameHarness now check the offline-session
-gate via `GET /api/v1/game/state` (read from the rendezvous file). They are no
-longer hard-denied. The full flow is:
+The `scan` and `probe` commands in GameHarness check the offline-session gate
+via `GET /api/v1/game/state` (read from the rendezvous file). They are read-only
+status reports; the `discover*` commands perform gated discovery. The full flow is:
 
 1. `POST /api/v1/game/launch` → Coordinator orchestrates the M2 suspended-process
    pipeline (prepare → executable lease → artifact staging → suspended process →
@@ -429,7 +434,7 @@ longer hard-denied. The full flow is:
 The M2 components (`SuspendedGameProcessLaunch`, `WindowsTrustedExecutableLaunchLease`,
 `ManagedReplayArtifactStager`, `ManagedLaunchPreparer`, `ManagedLaunchCorrelationRegistrar`,
 `ThreadResumePlatform`) are fully wired in `GameSessionCoordinator.LaunchAsync()`
-as of commit `c590e61`.
+in the current managed launch implementation.
 
 To launch a replay and reach the verified state:
 ```

@@ -1,11 +1,11 @@
 # WoT Blitz Replay Research Index
 
-## Documents (12 files)
+## Documents (12 committed files)
 
 | File | Topic |
 |------|-------|
 | [complete-reference.md](complete-reference.md) | **Start here** — all findings consolidated: paths, markers, endpoints, versions, blockers, decision matrix |
-| [reforged-ue5.md](reforged-ue5.md) | **STRATEGIC RISK** — DAVA → Unreal Engine 5 migration (announced 2026-06-17, postponed); invalidates DAVA-era format/offset/log assumptions when it ships |
+| Reforged / UE5 migration note | **STRATEGIC RISK** — DAVA → Unreal Engine 5 migration assumptions are tracked separately and may invalidate DAVA-era format/offset/log research when it ships |
 | [findings-summary.md](findings-summary.md) | Executive summary with recommended path forward |
 | [replay-loading-mechanisms.md](replay-loading-mechanisms.md) | How WoT Blitz loads replays — command line args, file association, DAVA engine, in-game browser |
 | [uploaded-replays.md](uploaded-replays.md) | **NEW** — The Uploaded tab mechanism: how external replays get into the in-game browser |
@@ -19,9 +19,10 @@
 
 ## Quick Facts
 
-### Version Gap — IN PROGRESS
+### Version and offset status — current snapshot (2026-07-31)
 - **Game installed:** v11.19.0.10
-- **Decoder:** 11.18 + 11.19 support added in-flight (`wotb-11.x-strict`); `EventStreamReader`/`IsSupportedVersion` accept both
+- **Decoder:** `wotb-11.x-strict` supports normalized 11.18 and 11.19 versions; `EventStreamReader` and `IsSupportedVersion` accept both
+- **Offsets:** executable SHA-256 is recorded; only `playerYaw` is a static-analysis `Candidate`, and seven fields remain unknown
 - **11.19 released July 2026** (per community release trackers: Reddit
   r/WorldOfTanksBlitz, Uptodown changelog) — minor rebalances only; replay
   format/log markers unchanged
@@ -29,13 +30,14 @@
 ### Reforged / UE5 Migration (STRATEGIC RISK)
 - Wargaming is migrating WoT Blitz from DAVA to **Unreal Engine 5** (Reforged)
 - Announced 2026-06-17, **postponed indefinitely**; live client still DAVA
-- See [reforged-ue5.md](reforged-ue5.md) — assumes all DAVA-era research has finite shelf life
+- A separate Reforged / UE5 risk note may be kept locally; all DAVA-era research has finite shelf life
 
 ### Managed Launch Pipeline Status
-- Steps 1-3 (prepare, lease, stage) ✅ Working
-- Step 4 (suspended process) ⚠️ P/Invoke fixed, path comparison fix coded but not tested
-- Steps 5-7 (correlation, resume, handoff) Not reached yet
-- See `child_exe_mismatch` fix in `SuspendedGameProcessLaunch.cs`
+- Preparation, trusted executable lease, replay staging, suspended launch, identity
+  verification, correlation, resume, and handoff are implemented and covered by
+  synthetic/unit tests
+- Installed-game launch and replay-gate validation remain explicit local opt-in work
+- The former `child_exe_mismatch` issue was addressed in the P/Invoke/path handling
 
 ### Live Replay Switching
 - **Uploaded tab:** Replays opened via file association appear in `Profile → Replays → Uploaded`

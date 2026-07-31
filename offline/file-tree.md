@@ -93,6 +93,8 @@ docs/operations/handoffs/2026-07-30-milestone-completion.md
 docs/operations/handoffs/2026-07-30-python-scaffolding-ce-scripts.md
 docs/operations/handoffs/2026-07-31-managed-launch-pinvoke-fixes.md
 docs/operations/handoffs/2026-07-31-offline-discovery-pack.md
+docs/operations/handoffs/2026-07-31-offset-discovery-evidence-report.md
+docs/operations/handoffs/2026-07-31-roadmap-hardening-cancellation.md
 docs/operations/handoffs/README.md
 docs/operations/offset-discovery-guide.md
 docs/project-context.md
@@ -157,6 +159,7 @@ src/WotBTreader.Application/Diagnostics/DiagnosticsContracts.cs
 src/WotBTreader.Application/Diagnostics/TreaderDiagnostics.cs
 src/WotBTreader.Application/Game/GameMetadataContracts.cs
 src/WotBTreader.Application/Game/GameSessionContracts.cs
+src/WotBTreader.Application/Properties/AssemblyInfo.cs
 src/WotBTreader.Application/Replay/OffsetTableReader.cs
 src/WotBTreader.Application/Replay/ReplayContracts.cs
 src/WotBTreader.Application/Replay/ReplayDecoderRegistry.cs
@@ -380,6 +383,7 @@ src/WotBTreader.Storage.Sqlite/WotBTreader.Storage.Sqlite.csproj
 src/WotBTreader.Storage.Sqlite/packages.lock.json
 test.cmd
 tests/WotBTreader.Application.Tests/MSTestSettings.cs
+tests/WotBTreader.Application.Tests/OffsetTableReaderTests.cs
 tests/WotBTreader.Application.Tests/ReplayDecoderRegistryTests.cs
 tests/WotBTreader.Application.Tests/ReplayIngestionServiceTests.cs
 tests/WotBTreader.Application.Tests/SequencedTelemetryEventPublisherTests.cs
@@ -486,11 +490,14 @@ tools/cheat-engine/README.md
 tools/cheat-engine/discover-offsets.lua
 tools/cheat-engine/multiscan.lua
 tools/cheat-engine/pipeline-automation.md
+tools/compute-exe-hash.ps1
+tools/discover-offsets.ps1
 tools/external/README.md
 tools/external/tools.lock.json
 tools/ghidra-scripts/FindOffsets.java
 tools/ghidra-scripts/FindOffsets.py
 tools/ghidra-scripts/ghidra-offset-candidates.json
+tools/report-offset-evidence.ps1
 tools/src/WotBTreader.GameHarness/GameHarnessService.cs
 tools/src/WotBTreader.GameHarness/HarnessAudit.cs
 tools/src/WotBTreader.GameHarness/HarnessExitCode.cs

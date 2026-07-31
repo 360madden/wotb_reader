@@ -151,7 +151,8 @@ restart cycle and optimize for speed.
 
 Wargaming documents that replay playback requires the **exact matching game version**
 (replays are technical scenario logs, not video). v11.18 replays will not play on a
-v11.19 client. Note the Reforged UE5 migration risk: [reforged-ue5.md](reforged-ue5.md).
+v11.19 client. The Reforged / UE5 migration risk is tracked separately from
+this committed research index.
 
 ## Playback Sequence (Observed)
 

@@ -12,7 +12,8 @@ recent 11.x builds (11.19-era). The community tool stack is now Cheat Engine, Fr
 
 **Caveat — Reforged:** DAVA-era offsets are time-limited. Wargaming is migrating to
 Unreal Engine 5 (Reforged, announced 2026-06-17, postponed); when it ships, these
-offsets are invalidated wholesale. See [reforged-ue5.md](reforged-ue5.md).
+offsets are invalidated wholesale. The Reforged / UE5 migration risk is tracked
+separately from this committed research index.
 
 ## Entity List Pointer Chain
 

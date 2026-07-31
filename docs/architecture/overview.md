@@ -1,8 +1,8 @@
 # Architecture overview
 
-Status: accepted alpha target — implementation hardening in progress
+Status: accepted alpha architecture — hardening milestones complete
 
-Last updated: 2026-07-28
+Last updated: 2026-07-31
 
 The project owner identifies as a junior developer at Wargaming.net. This is
 a personal, independently maintained project; see
@@ -60,8 +60,9 @@ offline verification, and guarded Win32 access. The overlay is outside parser,
 storage, application, domain, host, and adapter internals and consumes only the
 portable wire contract.
 
-Only `Overlay`, `GameHarness`, and their test projects may target
-`net10.0-windows`; every other project targets portable `net10.0`. Milestone 1 is
+Only the `Overlay` and `GameHarness` production surfaces and their corresponding
+test projects may target `net10.0-windows`; every other project targets portable
+`net10.0`. Milestone 1 is
 complete: the target-framework allowlist, the production reference graph, and the
 no-dependency `ApiContracts` project are all in place and mechanically enforced by
 `WotBTreader.Architecture.Tests`.
@@ -71,16 +72,17 @@ no-dependency `ApiContracts` project are all in place and mechanically enforced 
 The overlay is a **transparent, borderless, always-on-top WPF window** designed
 to sit on top of the WoT Blitz game while the game plays back a pre-recorded
 replay. The overlay shows decoded telemetry — position scatter plots coloured by
-team, session metadata, and the embedded Blazor dashboard — that the game's
-built-in replay viewer does not expose.
+team, session metadata, and replay controls — that the game's built-in replay
+viewer does not expose. Deep inspection remains in the system browser at the
+loopback dashboard.
 
 ### Single local control plane
 
 `Host.Web` is the only HTTP control plane. The legacy overlay Kestrel listener on
 port 9190 no longer starts — it was removed in Milestone 0 and
-`OverlayControlPlaneContainmentTests` keeps it removed. Nothing binds that port. The
-retained endpoint handler and state classes are unreachable dead code awaiting
-deletion in Milestone 3; they must not be treated as a supported surface or extended.
+`OverlayControlPlaneContainmentTests` keeps it removed. Nothing binds that port, and
+the former endpoint/state implementation has been deleted. The overlay must not grow
+a second control plane; all HTTP and SignalR operations go through `Host.Web`.
 
 Browser mutations use same-origin validation, antiforgery, and a short-lived
 capability. Native overlay and CLI mutations use the owner-only rendezvous
@@ -133,7 +135,7 @@ files, and launches only through the positively verified game executable.
 application ports. Caller-supplied full paths, hardcoded installation paths,
 and unverified shell-handler fallbacks are not part of the target.
 
-### Transitional implementation delta: WebView2 + transparency
+### Historical implementation delta: WebView2 + transparency
 
 **`AllowsTransparency="True"` is incompatible with WebView2.** When a WPF window
 enables layered-window transparency, WPF switches to GDI-based compositing
@@ -141,11 +143,10 @@ enables layered-window transparency, WPF switches to GDI-based compositing
 for rendering, which the layered-window compositor cannot composite correctly —
 the WebView content disappears, flickers, or fails to receive input.
 
-This means the embedded Blazor dashboard **cannot coexist** reliably with a
-transparent overlay window. Milestone 5 removes WebView2 from the HUD path and
-opens deep inspection in the system browser (or, if later accepted, a separate
-opaque process/window). WebView2 in the current HUD is a tracked implementation
-delta, not part of the accepted alpha target.
+This means an embedded Blazor dashboard **cannot coexist** reliably with a
+transparent overlay window. Milestone 5 removed WebView2 from the HUD path; the
+current HUD opens deep inspection in the system browser. WebView2 is historical
+context only and is not a current runtime dependency.
 
 ### Coordinate space and map boundaries
 
@@ -238,9 +239,10 @@ must know:
 
 ## Compatibility boundary
 
-The first strict decoder targets WotB `11.18.0.7`. Other builds may be imported
-and preserved, but their semantics remain unsupported until an explicitly
-registered decoder claims them. There are no dynamic in-process decoder DLLs.
+The strict decoder accepts normalized WotB `11.18.0` and `11.19.0` replay
+versions, including `11.18.0.7` and `11.19.0.10`. Other builds may be imported and
+preserved, but their semantics remain unsupported until an explicitly registered
+decoder claims them. There are no dynamic in-process decoder DLLs.
 A future external decoder can use a versioned, bounded NDJSON protocol.
 
 ## Local trust boundary

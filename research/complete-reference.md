@@ -1,5 +1,12 @@
 # Complete Replay Research Reference
 
+> **Status note (2026-07-31):** This is a research snapshot, not the runtime source
+> of truth. Current implementation status: the strict decoder accepts 11.18 and
+> 11.19 replay versions; the installed `11.19.0.10` executable hash is
+> `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d`; and only
+> `playerYaw` is recorded as a static-analysis `Candidate`. Seven offset fields remain
+> unknown and candidate-only evidence cannot authorize runtime reads.
+
 ## File Paths
 
 ### Game Executable
@@ -43,7 +50,7 @@
 | GET | `/api/v1/game/state` | No | ✅ Working |
 | GET | `/api/v1/game/memory` | No | ✅ (returns Unknown without gate) |
 | POST | `/api/v1/game/start` | Yes | ✅ Working |
-| POST | `/api/v1/game/launch` | Yes | ⚠️ child_exe_mismatch (fix coded) |
+| POST | `/api/v1/game/launch` | Yes | ✅ Managed launch path covered by unit tests; installed-game E2E remains local opt-in |
 | POST | `/api/v1/game/discover` | Yes* | ⚠️ Requires offline gate |
 | POST | `/api/v1/game/discover/snapshot` | Yes* | ⚠️ Requires offline gate |
 | POST | `/api/v1/game/discover/compare/{id}` | Yes* | ⚠️ Requires offline gate |
@@ -57,18 +64,18 @@
 |---------|----------------|--------------|-----------|
 | 11.8.0.7 | Yes | Placeholder | No |
 | 11.18.0.7 | Yes | Placeholder | No |
-| 11.19.0.10 | **In-flight** (11.18+11.19) | Placeholder | **Yes** |
+| 11.19.0.10 | ✅ 11.18/11.19 strict decoder | 1/8 candidate; hash-bound | **Yes** |
 
 ## Current Blockers
 
 | Blocker | Status | Fix |
 |---------|--------|-----|
-| `child_exe_mismatch` | Fix coded, not tested | NormalizeExePath + byte-count detection |
-| v11.19 decoder | In progress | 11.18+11.19 support coded in-flight |
+| `child_exe_mismatch` | Resolved in managed launch path; installed-game validation remains opt-in | NormalizeExePath + byte-count handling and identity tests |
+| v11.19 decoder | Supported | `WotbReplayDecoder` accepts normalized 11.18/11.19 versions |
 | Single-instance behavior | Unknown | Need live test |
 | Uploaded replays mechanism | Understood | Need live test |
 | DAVA Engine source | Confirmed 404 (2026-07) | Use community reverse engineering |
-| **Reforged UE5 migration** | **Announced, postponed** | See [reforged-ue5.md](reforged-ue5.md) — replay/offset/log assumptions may break when it ships |
+| **Reforged UE5 migration** | **Announced, postponed** | DAVA-era replay/offset/log assumptions may break when it ships; keep the risk note outside the committed runtime docs |
 
 ## Community Resources
 
@@ -92,7 +99,7 @@
 | **F: Uploaded tab delivery** | Medium | Fast | Low | Small |
 
 ### Recommended Priority
-1. **Fix pipeline** (C) → Get managed launch working first
-2. **Test A + F** → Re-invoke + Uploaded tab delivery
-3. **Implement E** → Hybrid fast restart as fallback
-4. **Investigate D** → Memory manipulation for true live switching (long-term)
+1. **Validate the managed pipeline locally** (C) with an approved offline replay and the lifecycle gate
+2. **Test A + F** → Re-invoke + Uploaded tab delivery without modifying the install
+3. **Implement E** → Hybrid fast restart as fallback if the tests support it
+4. **Do not pursue D** unless a separately approved, offline-only design justifies the risk

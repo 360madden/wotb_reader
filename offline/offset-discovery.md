@@ -3,7 +3,7 @@
 End-to-end flow for discovering game memory offsets. Canonical detail:
 [`docs/operations/offset-discovery-guide.md`](../docs/operations/offset-discovery-guide.md)
 (4-phase Ghidra/x64dbg/ILSpy/CE pipeline) and
-[`memory-offsets/README.md`](../memory-offsets/README.md) (three-phase workflow).
+[`memory-offsets/README.md`](../memory-offsets/README.md) (four-phase workflow).
 
 ## What offsets are
 
@@ -21,7 +21,8 @@ against `memory-offsets/schema.json`. 8 fields, each with an expected type:
 | `cameraPitch` | float (radians) |
 | `aliveTankCount` | int32 |
 
-`0` = unknown. `confidence`: none/low/medium/high. The offset file is read by
+`0` = unknown. `confidence`: none/low/medium/high is a summary only; per-field
+`fieldValidation.status` and its required evidence control promotion. The offset file is read by
 `Application/Replay/OffsetTableReader.cs` and consumed in
 `GameSessionCoordinator` (which refuses memory reads without a known,
 version-matched offset table — `HasKnownOffsets`).
@@ -83,12 +84,17 @@ Run it like: `dotnet run --project tools/src/WotBTreader.GameHarness -c Release 
 4. Validate: `scripts/python/offset_check.py` checks schema compliance
    (format, sha256, filename↔gameVersion match, plausibility, confidence).
    `memory-offsets/scanner-state.json` is generated runtime state — never commit.
-5. Verify end-to-end: serve → overlay → `GET /api/v1/game/memory` returns
-   non-null values only after the exact executable hash and complete promotion
-   evidence are present.
+5. Verify evidence without promoting it: run
+   `tools/report-offset-evidence.ps1 -GameVersion 11.19.0.10` and
+   `python scripts/python/offset_check.py --check-schema`. Candidate values are
+   not runtime-supported; the memory API remains unknown until exact executable
+   identity and complete per-field promotion evidence are present.
 
-Current state (2026-07-31): game 11.19.0.10, only the static-analysis
-`playerYaw` candidate is recorded; 7 fields remain unknown. Full tool status in
+Current state (2026-07-31): the installed game is 11.19.0.10 and its executable
+hash is recorded as
+`1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d`. Only the
+static-analysis `playerYaw` `Candidate` is recorded; 7 fields remain unknown, and
+candidate evidence is not runtime-supported. Full tool status in
 [`docs/operations/offset-discovery-guide.md`](../docs/operations/offset-discovery-guide.md).
 
 ## Hard rules

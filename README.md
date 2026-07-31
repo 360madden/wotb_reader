@@ -12,10 +12,10 @@ presents them through a loopback Blazor dashboard and a transparent WPF HUD.
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6?style=flat-square&logo=windows&logoColor=white)](#requirements)
 [![License](https://img.shields.io/badge/license-MIT-3DA639?style=flat-square&logo=opensourceinitiative&logoColor=white)](LICENSE)
 
-[![Tests](https://img.shields.io/badge/tests-395%20passed%20%7C%200%20failed-2EA44F?style=flat-square&logo=checkmarx&logoColor=white)](#test-matrix)
+[![Tests](https://img.shields.io/badge/tests-409%20passed%20%7C%200%20failed-2EA44F?style=flat-square&logo=checkmarx&logoColor=white)](#test-matrix)
 [![Warnings](https://img.shields.io/badge/warnings-0-2EA44F?style=flat-square)](#quality-gate)
 [![Alpha hardening](https://img.shields.io/badge/alpha%20hardening-M0--M7%20complete-2EA44F?style=flat-square)](#-progress-to-completion)
-[![Memory access](https://img.shields.io/badge/process%20memory-disabled%20(fail--closed)-D93F0B?style=flat-square&logo=shieldsdotio&logoColor=white)](#-safety-model)
+[![Memory access](https://img.shields.io/badge/process%20memory-fail--closed-D93F0B?style=flat-square&logo=shieldsdotio&logoColor=white)](#-safety-model)
 
 [Quickstart](#-quickstart) · [Architecture](#-architecture) · [Progress](#-progress-to-completion) · [Safety](#-safety-model) · [Docs](#-documentation)
 
@@ -102,7 +102,7 @@ Data lives in `.data\` and publish output in `.build\publish\`; both are gitigno
 
 ### Convenience wrappers
 
-Thirteen `.cmd` wrappers sit in the repository root and run from any directory.
+Fourteen `.cmd` wrappers sit in the repository root and run from any directory.
 
 | Wrapper | Purpose |
 |---|---|
@@ -192,7 +192,7 @@ of them is violated.
 | 🟢 | Adapters never reference one another; they see only `Application` and `Core` |
 | 🟠 | `ApiContracts` has zero project **and** zero package references — its lock file is empty |
 | 🔴 | `Overlay` references only `ApiContracts`; it cannot parse replays, reach storage, or read memory |
-| 🔵 | Only `Overlay` and `tools/GameHarness` may target `net10.0-windows`; everything else stays portable |
+| 🔵 | Only the `Overlay` and `tools/GameHarness` production surfaces and their tests may target `net10.0-windows`; everything else stays portable |
 | ⚫ | No native interop or direct process-memory reader may appear in `Host.Web` or `GameHarness` |
 | 🟡 | Every new DI port must be listed in `CompositionRootTests`, or no host will start |
 
@@ -225,9 +225,9 @@ sessions. Remaining: live HUD smoke test against a real installation.
 
 | | Milestone | Status | Gate it closes |
 |:--:|---|---|---|
-| 🟢 | **M0** — Contain regressions, establish baseline | **Complete** | No host opens a memory-capable handle from a window alone; harness `scan`/`probe` hard-denied; owner-only rendezvous ACL verified |
+| 🟢 | **M0** — Contain regressions, establish baseline | **Complete** | No host opens a memory-capable handle from a window alone; harness scans require the offline gate; owner-only rendezvous ACL verified |
 | 🟢 | **M1** — Recover and enforce dependency boundaries | **Complete** | Portable TFMs restored; full reference graph mechanically enforced; `ApiContracts` owns every wire shape |
-| 🟢 | **M2** — Centralize game access, enforce offline state | **Complete** | Fail-closed session boundary, query-only process observer, lifecycle evidence feed, trusted-executable identity, launch preparation barrier, replay staging lease, and pinned executable lease. Process memory reads remain disabled |
+| 🟢 | **M2** — Centralize game access, enforce offline state | **Complete** | Fail-closed session boundary, query-only process observer, lifecycle evidence feed, trusted-executable identity, launch preparation barrier, replay staging lease, pinned executable lease, and gate-checked scanning. Candidate-only offsets remain unsupported |
 | 🟢 | **M3** — One authenticated local control plane | **Complete** | Single mutation policy; capability-authenticated SignalR; dead overlay Kestrel listener removed |
 | 🟢 | **M4** — Offset acquisition as an evidence subsystem | **Complete** | Offset models with hash enforcement; publication separation; orphan reconciler |
 | 🟢 | **M5** — Restore the overlay to a focused HUD | **Complete** | WebView2, Kestrel, parser, storage, and memory dependencies removed from overlay (−685 lines) |
@@ -236,8 +236,9 @@ sessions. Remaining: live HUD smoke test against a real installation.
 
 All milestones were completed sequentially. The alpha release (`v0.1.0-alpha`) was
 verified with a full pipeline smoke test: synthetic replay import → publish → serve →
-API verification → overlay launch, passing the complete gate with 0 vulnerable packages
-and 457 scan-clean files.
+API verification → overlay launch, passing the complete gate with 0 vulnerable packages.
+The remaining product work is evidence collection for dynamic offsets and a visual HUD
+smoke test against the installed game.
 
 Full plan and per-milestone exit criteria: [`docs/architecture/roadmap.md`](docs/architecture/roadmap.md).
 
@@ -251,7 +252,7 @@ restrictive and **fails closed by default**.
 | | Rule |
 |:--:|---|
 | 🚫 | **Offline only.** Pre-recorded replay playback is offline use. Matchmaking and live battles are never automated, inspected, or touched |
-| 🔴 | **Process memory is currently disabled.** No `PROCESS_VM_READ`, `VM_WRITE`, or `VM_OPERATION` handle opens anywhere in the codebase; this is enforced by architecture tests |
+| 🔴 | **Process memory is fail-closed.** Scanner and observation paths require a positively verified offline replay and exact executable identity; candidate offsets never authorize runtime reads |
 | 🟠 | **Positive evidence required.** Before any future memory access: canonical executable path, version, SHA-256, PID with process-start identity, owned window, healthy monitor, confirmed replay UI, and a fresh lifecycle marker must all agree |
 | ⚪ | **Unknown stays unknown.** Unrecognized records, versions, offsets, and participant kinds are reported as `unknown` — never guessed. Bot status is never inferred from a name |
 | 🔇 | **Never logged.** Raw replay bytes, tokens, full paths, player names, account IDs, chat, and screenshots |
@@ -293,18 +294,18 @@ dotnet test    tests/WotBTreader.Core.Tests -c Release --filter "FullyQualifiedN
 
 ### Test matrix
 
-**395 passed · 0 failed · 2 skipped · 397 total · 0 warnings · 0 errors** across 12 test projects.
+**409 passed · 0 failed · 2 skipped · 411 total · 0 warnings · 0 errors** across 12 test projects.
 The two skips are installed-game tests that are local opt-in and never run in CI.
-Test counts current as of 2026-07-30.
+Test counts current as of 2026-07-31.
 
 | Project | Tests | | Project | Tests |
 |---|--:|:--:|---|--:|
-| `GameIntegration.Tests` | 141 | | `Host.Cli.Tests` | 15 |
-| `Overlay.Tests` | 91 | | `Architecture.Tests` | 14 |
+| `GameIntegration.Tests` | 144 | | `Host.Cli.Tests` | 15 |
+| `Overlay.Tests` | 70 | | `Architecture.Tests` | 15 |
 | `Host.Web.Tests` | 61 | | `Bootstrap.Tests` | 13 |
 | `GameHarness.Tests` | 28 | | `CaptureLogs.Tests` | 9 |
 | `Replays.Tests` | 18 | | `Core.Tests` | 7 |
-| `Storage.Sqlite.Tests` | 17 | | `Application.Tests` | 6 |
+| `Storage.Sqlite.Tests` | 17 | | `Application.Tests` | 14 |
 
 > [!IMPORTANT]
 > CI runs on synthetic fixtures only. Private replays, captures, databases, and

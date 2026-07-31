@@ -63,9 +63,9 @@ This means: to programmatically add a replay to the Uploaded tab, we need to
 ## Version Coupling (official)
 
 Wargaming documents that a replay **only plays on the exact game version that recorded
-it** — replay is a technical scenario log, not a video. Combined with the Reforged
-UE5 migration risk ([reforged-ue5.md](reforged-ue5.md)), the Uploaded-tab flow may
-change when the new client ships.
+it** — replay is a technical scenario log, not a video. Combined with the Reforged / UE5 migration risk, the Uploaded-tab flow may
+change when the new client ships. The risk note is maintained separately from
+this committed research index.
 
 ## Implications for Live Replay Switching
 

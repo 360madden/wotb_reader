@@ -1,6 +1,6 @@
 # Project Completion Roadmap
 
-Last updated: 2026-07-30
+Last updated: 2026-07-31
 
 Project context: the owner identifies as a junior developer at Wargaming.net.
 This is a personal, independently maintained project; see
@@ -15,8 +15,8 @@ This is a personal, independently maintained project; see
 ## Implemented feature inventory
 
 The following surfaces were implemented and validated at the time recorded;
-their current architecture-hardening status is tracked separately. Test counts
-are current as of 2026-07-29.
+their current architecture-hardening status is tracked separately. The inventory below is historical; the current test snapshot is recorded in the
+matrix below and in the root README.
 
 | Surface | Status | Tests |
 |---------|--------|-------|
@@ -27,19 +27,21 @@ are current as of 2026-07-29.
 | CLI (doctor, import, inspect, reprocess, sessions, compare, export, watch) | ✅ | 15 |
 | Web host (loopback Blazor, read API with events, battle stats on session detail, SignalR hub, rendezvous) | ✅ | 61 |
 | Overlay (WPF: session list, position plot, velocity trails, event feed, battle stats, time slider, playback controls, keyboard shortcuts, minimap grid, collapsible sidebar, SignalR push; WebView2 removed in M5) | ✅ | 91 |
-| Overlay HTTP API (embedded Kestrel on port 9190, 8 automation endpoints) | ❌ Removed — listener removed in M3; dead handler files remain | — |
+| Overlay HTTP API (embedded Kestrel on port 9190, 8 automation endpoints) | ❌ Removed — listener and former handler/state files removed in M3 | — |
 | Shared wire contracts (`ApiContracts`, zero project/package refs) | ✅ | — |
-| Architecture enforcement (reference graph, TFM allowlist, native-access boundary) | ✅ | 14 |
+| Architecture enforcement (reference graph, TFM allowlist, native-access boundary) | ✅ | 15 |
 | Composition root validation | ✅ | 13 |
-| Developer harness tooling (GameHarness; `scan`/`probe` hard-denied) | ✅ | 28 |
+| Developer harness tooling (GameHarness; gate-checked `scan`/`probe`/`discover*`) | ✅ | 28 |
 | Codebase bug hunt (src + tests + tools) | ✅ | 1 fix |
 | Performance optimization (DrawingVisual renderer, zero-GC) | ✅ | — |
 | Session search/filter (overlay sidebar) | ✅ | — |
 | Documentation (architecture, handoffs, BLK log, knowledge.md) | ✅ | — |
 
-**Total:** 397 tests — 395 passed, 0 failed, 2 skipped (local opt-in) across all 12
-test projects. Build: 0 errors, 0 warnings. Scan: 468 files clean.
-Vulnerability audit: 0 vulnerable packages across all 27 projects.
+**Current snapshot (2026-07-31):** 411 tests — 409 passed, 0 failed, 2 skipped
+(local opt-in) across 12 test projects. Build: 0 errors, 0 warnings.
+Vulnerability audit: 0 vulnerable packages across all 27 projects. Repository scan
+counts are intentionally not repeated here because the tracked file set changes as
+offline evidence and documentation are added.
 
 All eight original roadmap items are complete. Seven additional features were
 implemented across autonomous sessions (2026-07-27 through 2026-07-28):
@@ -81,8 +83,8 @@ implemented across autonomous sessions (2026-07-27 through 2026-07-28):
 > a listener and nothing binds port 9190; a second local mutation server duplicated
 > control-plane policy. `Host.Web` is the single control plane. The table below is
 > retained only as delivery history. `Endpoints/OverlayApiEndpoints.cs` and
-> `Services/OverlayApiState.cs` still compile as unreachable dead code and are deleted
-> in Milestone 3 — do not extend them.
+> The former `OverlayApiEndpoints.cs` and `OverlayApiState.cs` files were deleted
+> after the listener was removed. `Host.Web` is the only supported control plane.
 
 | Feature | Status |
 |---------|--------|
@@ -206,10 +208,11 @@ via CLI → published → served → all API endpoints verified → overlay laun
 - **Dynamic offset discovery**: Cheat Engine-like multi-scan engine (`MemoryScanEngine`)
   with snapshot/compare/filter (changed/unchanged/increased/decreased). Neighborhood scanner
   reads memory windows around known offsets (`MemoryScanDiscoverer.ScanNeighborhood`).
-  `POST /api/v1/game/discover` + snapshot/compare/neighborhood/session endpoints.
+  `POST /api/v1/game/discover` plus snapshot/compare/neighborhood/session endpoints.
   `GameHarness` CLI: `discover`, `discover-snapshot`, `discover-compare`,
-  `discover-nearby`, `discover-discard`. Only `playerYaw` offset discovered so far;
-  7 fields remain unknown (needs game running with replay).
+  `discover-nearby`, `discover-discard`. The 11.19.0.10 table is hash-bound to the
+  installed executable; only `playerYaw` is a static-analysis `Candidate`, and seven
+  fields remain unknown. Candidate evidence is not runtime-supported.
 
 ### 🟢 P4 — `watch` CLI command ✅
 
@@ -240,7 +243,7 @@ Sensitive content scan: zero findings across all diffs.
 
 ### 🔵 P7 — Convenience .cmd wrappers ✅
 
-13 `.cmd` wrappers in repo root, all runnable from any directory:
+14 `.cmd` wrappers in repo root, all runnable from any directory:
 - Build: `build`, `validate`, `test`
 - Runtime: `serve`, `overlay`, `everything` (one-shot launch)
 - CLI: `import`, `watch`, `sessions`, `doctor`, `compare`, `export`, `treader`
