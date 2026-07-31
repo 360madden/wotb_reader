@@ -13,8 +13,8 @@ Scripts for discovering WoT Blitz memory offsets using Cheat Engine.
 ### `discover-offsets.lua` — Neighborhood Scanner
 
 Auto-attaches to `wotblitz.exe`, reads memory around the known `playerYaw` offset
-(`0x0317A810`), and reports all neighboring float/int32/double values. Saves results
-to `discovered-offsets.json`.
+(`0x0317A810` — Ghidra candidate), and reports all neighboring float/int32/double
+values. Saves results to `discovered-offsets.json`.
 
 **Usage:**
 1. Start WoT Blitz and play a replay
@@ -22,12 +22,11 @@ to `discovered-offsets.json`.
 3. Press Ctrl+Alt+L, paste the script, click Execute
 4. Check `tools/cheat-engine/discovered-offsets.json` for results
 
-### `multiscan.lua` — Interactive Multi-Scan Engine
+### `multiscan.lua` — Interactive + Auto-Discover Multi-Scan Engine
 
-The classic Cheat Engine workflow: scan for unknown values → change value in-game →
-filter to changed/unchanged values → repeat until candidates are isolated.
+The classic Cheat Engine workflow, plus an unattended auto-discover mode.
 
-**Usage:**
+**Interactive mode:**
 1. Load this script in CE (Ctrl+Alt+L → Execute)
 2. In the Lua Engine window, type:
    ```
@@ -38,6 +37,21 @@ filter to changed/unchanged values → repeat until candidates are isolated.
 5. Repeat steps 3-4 until < 10 candidates remain
 6. Type: `showCandidates()` to inspect
 7. Type: `saveDiscovered()` to save to JSON
+
+**Auto-discover mode (unattended):**
+1. Start WoT Blitz with a replay actively playing
+2. Load this script in CE (Ctrl+Alt+L → Execute)
+3. Type: `autoDiscover()`
+4. Wait ~30-60 seconds per field — the script scans with timer-based
+   refinement, using the replay's natural progression (tank movement,
+   time advancement) to narrow candidates without user interaction.
+5. Results auto-saved to `discovered-offsets-multiscan.json`
+
+**Currently active fields in autoDiscover():**
+- `playerYaw` — enabled (float, changed filter)
+- All other fields — deferred (use `scanInteractive()` manually)
+- Enable more fields by editing the `AUTO_FIELDS` table in the script
+  (remove the `if field.fieldName ~= "playerYaw" then goto continue` guard)
 
 **Value types:**
 - `vtSingle` — 4-byte float (positions, camera angles)

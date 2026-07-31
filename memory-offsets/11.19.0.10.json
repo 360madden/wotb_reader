@@ -2,17 +2,34 @@
   "schemaVersion": 1,
   "gameVersion": "11.19.0.10",
   "executableSha256": "",
-  "discoveredAtUtc": null,
+  "discoveredAtUtc": "2026-07-30T13:35:47Z",
   "offsets": {
     "replayTime": 0,
     "playerHP": 0,
     "playerPositionX": 0,
     "playerPositionY": 0,
     "playerPositionZ": 0,
-    "playerYaw": 0,
+    "playerYaw": 51808784,
     "cameraPitch": 0,
     "aliveTankCount": 0
   },
-  "confidence": "none",
-  "notes": "Placeholder for installed version 11.19.0.10 — run the Ghidra + Cheat Engine discovery workflow to populate real offsets."
+  "fieldValidation": {
+    "playerYaw": {
+      "status": "Candidate",
+      "evidence": [
+        {
+          "provenanceKind": "StaticAnalysis",
+          "sourceTool": "Ghidra 12.1.2 — FindOffsets.java",
+          "notes": "67 string matches for 'yaw', 5 unique cross-references, top candidate 0x0317A810 with 6 data refs. Referencing functions: FUN_007b7030, FUN_00b18e40, FUN_007c2ca0. Not yet verified dynamically."
+        }
+      ],
+      "independentProcessLaunches": 0,
+      "independentReplays": 0,
+      "harnessInvariantsPassed": false,
+      "leadApproved": false,
+      "decoderAuditorApproved": false
+    }
+  },
+  "confidence": "low",
+  "notes": "playerYaw candidate (0x0317A810) discovered via Ghidra static analysis (2026-07-30). 7 fields remain unknown. Hash is empty — compute with tools/compute-exe-hash.ps1 and update before runtime use. Verify dynamically with Cheat Engine + x64dbg before promoting to Verified."
 }
