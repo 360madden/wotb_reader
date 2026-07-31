@@ -97,6 +97,35 @@ Validation after the amendment:
 - `python scripts/python/offset_check.py --check-schema` — passed for all three tables;
 - `git diff --check` — passed.
 
-The next live session remains `OD-RECOVERY-001`: establish identity/offline gates,
-then use a controlled position-X/Z or replay-time anchor. Do not repeat the prior yaw
-neighborhood scan until the raw evidence and address kind reconcile.
+At the time of this handoff, the next live session was `OD-RECOVERY-001`: establish
+identity/offline gates, then use a controlled position-X/Z or replay-time anchor. The
+later `OD-RECOVERY-001-BLOCKED` amendment below supersedes that recommendation.
+
+## Amendment — 2026-07-31: OD-RECOVERY-001 blocked before scanning
+
+A live prerequisite check was performed without attaching to or scanning any game
+process. The installed `11.19.0.10` executable identity matched the existing campaign
+hash, but five responsive `wotblitz.exe` processes were present, including both
+replay-argument and vanilla instances. No PID was unambiguous for discovery. The host
+was reachable, but `GET /api/v1/game/state` reported `Unknown` with reason
+`launch.awaiting_evidence`; `GameHarness probe` failed closed with the same state.
+
+Therefore `OD-RECOVERY-001-BLOCKED` is `Blocked`, not `NoSignal`: no CE scan,
+GameHarness memory scan, neighborhood scan, attachment, candidate address, or
+offset-table change occurred. This append-only record supersedes the earlier
+`OD-RECOVERY-001` recommendation and changes the next planned session to
+`OD-RECOVERY-002`; see the matching [`OD-RECOVERY-001-BLOCKED` ledger entry](../offset-discovery-ledger.md).
+
+Next attempt requirements:
+
+1. Start exactly one managed replay through the host and wait for
+   `OfflineReplayVerified`.
+2. Confirm the host's observed process identity corresponds to that replay before
+   selecting a PID or attaching CE.
+3. Capture module base, module size, architecture, and process-start identity.
+4. Only then run the timeboxed position-X/Z experiment; leave yaw quarantined.
+
+Validation after this amendment: `python scripts/python/offline_check.py --check-fresh`,
+`python scripts/python/offset_check.py --check-schema`, `pwsh -NoProfile -File
+tools/discover-offsets.ps1 -SelfTest`, and `git diff --check` all passed. Unrelated
+untracked files remain untouched.

@@ -253,17 +253,18 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-001`
+Session ID: `OD-RECOVERY-002` (the prior `OD-RECOVERY-001` attempt was blocked before scanning)
 
-1. Reconcile the Ghidra export and the table's three conflicting yaw values;
+1. Confirm the host has a fresh managed replay launch and reports `OfflineReplayVerified`; do not reuse the stale process set from `OD-RECOVERY-001`.
+2. Reconcile the Ghidra export and the table's three conflicting yaw values;
    spend no more than 20 minutes.
-2. Quarantine the yaw neighborhood script until the address kind is known.
-3. Establish a verified replay and capture module/process identity.
-4. Run one controlled position-X or position-Z scan for at most 45 minutes.
-5. Save candidate counts and state transitions, not raw dumps.
-6. Trace writes for the best three candidates for at most 30 minutes.
-7. End with one of `CandidateFound`, `Partial`, `NoSignal`, or `Blocked`.
-8. Append the ledger and create a dated handoff before stopping.
+3. Quarantine the yaw neighborhood script until the address kind is known.
+4. Establish a verified replay and capture module/process identity.
+5. Run one controlled position-X or position-Z scan for at most 45 minutes.
+6. Save candidate counts and state transitions, not raw dumps.
+7. Trace writes for the best three candidates for at most 30 minutes.
+8. End with one of `CandidateFound`, `Partial`, `NoSignal`, or `Blocked`.
+9. Append the ledger and create a dated handoff before stopping.
 
 The success criterion for this session is **one correctly classified,
 reproducible candidate**, not all eight fields.

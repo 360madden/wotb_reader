@@ -49,7 +49,7 @@ Every address must be classified before publication:
 | `playerYaw` | **Quarantined / Ambiguous** until decimal, hexadecimal, raw Ghidra, and address-kind evidence reconcile |
 | Trusted next anchor | `playerPositionX`/`playerPositionZ`, then `replayTime` or HP if the replay makes them observable |
 | Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance |
-| Next planned session | `OD-RECOVERY-001` |
+| Next planned session | `OD-RECOVERY-002` (retry only after the host gate is repaired) |
 
 The current yaw conflict is recorded explicitly:
 
@@ -79,7 +79,12 @@ occurred.
 | `OD-2026-07-31-HASH-001` | 2026-07-31 | Bind evidence to the installed executable | executable fingerprint + offset table | `Partial` | Exact SHA-256 metadata is recorded for version `11.19.0.10` | Hash identity does not prove an offset's correctness |
 | `OD-2026-07-31-DOC-001` | 2026-07-31 | Refresh live documentation and handoffs | docs, offline checks, tests | `CandidateFound` for documentation only | Current commands, safety gates, and promotion rules are documented | It did not add dynamic offset evidence |
 | `OD-2026-07-31-YAW-RECONCILE-001` | 2026-07-31 | Reconcile the published `playerYaw` candidate | table, raw Ghidra export, arithmetic checks | `Ambiguous` | The decimal/hex/table/export conflict is proven and must be resolved | No safe yaw anchor exists; do not repeat its neighborhood scan |
-| `OD-RECOVERY-001` | next session | Establish one clean dynamic anchor | CE first; GameHarness/x64dbg as follow-up | `Planned` | See exact protocol below | Must not begin until identity and offline gates pass |
+| `OD-RECOVERY-001` | next session | Establish one clean dynamic anchor | CE first; GameHarness/x64dbg as follow-up | `Planned` | See the protocol below; superseded by `OD-RECOVERY-001-BLOCKED` for the attempted gate check | Must not begin until identity and offline gates pass |
+
+| `OD-RECOVERY-001-BLOCKED` | 2026-07-31 | Execute the Phase 0 gate for `OD-RECOVERY-001` | host state + GameHarness probe | `Blocked` | Multiple game processes were present and the host reported `Unknown` / `launch.awaiting_evidence`; no scan was started | No PID was admissible for discovery; do not attach to the vanilla or smoke-test processes |
+
+`OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
+`OD-RECOVERY-001` row above. It does not represent a failed position scan.
 
 ## Session record template
 
@@ -147,7 +152,7 @@ artifacts:
   committedSummary: none
 ```
 
-## `OD-RECOVERY-001` protocol
+## `OD-RECOVERY-002` protocol (after `OD-RECOVERY-001` blocked)
 
 Timebox: 105 minutes plus a short handoff.
 
@@ -183,6 +188,77 @@ Timebox: 105 minutes plus a short handoff.
 
 End the session with a status, even if it is `NoSignal` or `Blocked`. The next
 session should begin from the recorded pivot, not from the top of this protocol.
+
+## `OD-RECOVERY-001-BLOCKED` result — 2026-07-31
+
+```yaml
+sessionId: OD-RECOVERY-001-BLOCKED
+supersedes: OD-RECOVERY-001
+startedUtc: 2026-07-31T18:30:00Z
+endedUtc: 2026-07-31T18:36:47Z
+status: Blocked
+objective: Establish one clean dynamic anchor for playerPositionX or playerPositionZ
+stopCondition: Stop immediately if the host gate or process identity is not unambiguous
+game:
+  version: 11.19.0.10
+  distribution: installed executable identity matched the campaign record; exact local path omitted
+  executableSha256: matches-existing-11.19.0.10-table
+  architecture: not-measured-for-an-admissible-replay-process
+process:
+  pid: not-published
+  processStartIdentity: multiple responsive wotblitz instances observed; no target selected
+  moduleName: wotblitz.exe observed, but no admissible replay process selected
+  moduleBase: not-admissible
+  moduleSize: not used
+replay:
+  lifecycleState: unknown
+  replayIdentity: not-recorded
+  offlineGate: not-verified
+hypothesis:
+  field: playerPositionX
+  fieldType: Float
+  event: controlled tank movement
+  expectedTransition: changed
+  addressKind: unknown
+method:
+  primaryTool: GameHarness state/probe only
+  secondaryTools: []
+  scanType: none
+  range: none
+  alignment: none
+  filterTransitions: []
+observations:
+  - state: host-query
+    observedValue: verificationState=Unknown; reason=launch.awaiting_evidence
+    candidateCountBefore: 0
+    candidateCountAfter: 0
+    transition: no verified replay evidence
+  - state: process-inventory
+    observedValue: multiple responsive game processes, including replay-argument and vanilla instances
+    candidateCountBefore: 0
+    candidateCountAfter: 0
+    transition: process identity ambiguous
+result:
+  whatWorked:
+    - Installed executable version and SHA-256 matched the existing campaign record.
+    - Host endpoint responded and GameHarness probe failed closed rather than scanning.
+  whatFailed:
+    - Host did not report OfflineReplayVerified; it reported Unknown / launch.awaiting_evidence.
+    - Multiple game instances made PID selection ambiguous; no process was attached.
+  rulesOut:
+    - No offset candidate, runtime value, address, or field behavior was discovered.
+    - The running processes cannot be treated as a verified discovery session.
+  partials:
+    - Image identity remains usable for a future session after the lifecycle gate is repaired.
+  nextPivot: OD-RECOVERY-002 — establish one managed replay launch and verify the gate before any CE or discover* command.
+  repeatWithoutChangedHypothesis: false
+artifacts:
+  rawFiles: local-only
+  committedSummary: this ledger entry
+```
+
+Do not interpret this blocked session as a failed position scan. It produced no
+dynamic evidence and must not change `memory-offsets/11.19.0.10.json`.
 
 ## Evidence promotion checklist
 
