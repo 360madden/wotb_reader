@@ -287,6 +287,29 @@ public sealed class GameSessionCoordinatorTests
     }
 
     [TestMethod]
+    public async Task DiscoveryCancellation_IsHonoredBeforeStartingAnyScan()
+    {
+        var (coordinator, _) = CreateVerifiedCoordinator();
+        using CancellationTokenSource cancellation = new();
+        cancellation.Cancel();
+
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(async () =>
+            await coordinator.CreateSnapshotAsync(
+                new MemorySnapshotRequest(4, -500, 500, null, null, 0, 0),
+                cancellation.Token));
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(async () =>
+            await coordinator.CompareAsync("000001", "changed", 10, cancellation.Token));
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(async () =>
+            await coordinator.ScanAsync(
+                new MemoryScanRequest("yaw", "Float", [0, 0, 0, 0], null, 1, 4096),
+                cancellation.Token));
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(async () =>
+            await coordinator.ScanNeighborhoodAsync(
+                new MemoryNeighborhoodRequest(1, 64, true, true, false, null, null, null, null),
+                cancellation.Token));
+    }
+
+    [TestMethod]
     public async Task ObservationCancellation_IsHonoredBeforeReturningData()
     {
         var (coordinator, _) = CreateVerifiedCoordinator();

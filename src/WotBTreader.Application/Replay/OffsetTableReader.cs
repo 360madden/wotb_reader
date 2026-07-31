@@ -14,8 +14,9 @@ public interface IOffsetTableReader
     /// <summary>
     /// Loads the offset table for the given game version and executable hash.
     /// Returns <c>null</c> when no file exists for this version/hash;
-    /// returns a failed result when a file exists but the hash, schema, or
-    /// required fields are invalid.
+    /// returns a failed result when a file exists but the exact executable
+    /// hash or schema is invalid. Placeholder tables with missing hashes are
+    /// never usable; nonzero candidate offsets remain discovery-only.
     /// </summary>
     OperationResult<OffsetTable?> Load(
         string gameVersion,
@@ -29,6 +30,18 @@ public interface IOffsetTableReader
 /// </summary>
 internal sealed class OffsetTableReader : IOffsetTableReader
 {
+    private static readonly HashSet<string> KnownFieldNames = new(StringComparer.Ordinal)
+    {
+        "replayTime",
+        "playerHP",
+        "playerPositionX",
+        "playerPositionY",
+        "playerPositionZ",
+        "playerYaw",
+        "cameraPitch",
+        "aliveTankCount",
+    };
+
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -49,8 +62,15 @@ internal sealed class OffsetTableReader : IOffsetTableReader
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(gameVersion);
-        ArgumentException.ThrowIfNullOrWhiteSpace(executableSha256);
+        if (!IsSha256(executableSha256))
+        {
+            return OperationResult.Failure<OffsetTable?>(
+                new ApplicationError(
+                    "offset.invalid_observed_hash",
+                    "The observed executable hash is invalid."));
+        }
 
+        cancellationToken.ThrowIfCancellationRequested();
         string filePath = Path.Combine(_offsetsDirectory, $"{gameVersion}.json");
         if (!File.Exists(filePath))
         {
@@ -60,6 +80,7 @@ internal sealed class OffsetTableReader : IOffsetTableReader
         OffsetFileJson? raw;
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             string json = File.ReadAllText(filePath);
             raw = JsonSerializer.Deserialize<OffsetFileJson>(json, SerializerOptions);
         }
@@ -97,9 +118,17 @@ internal sealed class OffsetTableReader : IOffsetTableReader
                     $"Offset file declares version {raw.GameVersion} but was loaded for {gameVersion}."));
         }
 
-        // Executable hash must match when the file declares one.
-        if (!string.IsNullOrWhiteSpace(raw.ExecutableSha256)
-            && !string.Equals(raw.ExecutableSha256, executableSha256, StringComparison.OrdinalIgnoreCase))
+        // An offset claim is never usable without an exact executable hash.
+        // Empty or malformed hashes are placeholders, not supported evidence.
+        if (!IsSha256(raw.ExecutableSha256))
+        {
+            return OperationResult.Failure<OffsetTable?>(
+                new ApplicationError(
+                    "offset.hash_missing",
+                    "The offset table does not contain a valid executable hash."));
+        }
+
+        if (!string.Equals(raw.ExecutableSha256, executableSha256, StringComparison.OrdinalIgnoreCase))
         {
             return OperationResult.Failure<OffsetTable?>(
                 new ApplicationError(
@@ -107,16 +136,51 @@ internal sealed class OffsetTableReader : IOffsetTableReader
                     "The offset table executable hash does not match the observed executable."));
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (raw.FieldValidation?.Keys.Any(key => !KnownFieldNames.Contains(key)) == true)
+        {
+            return OperationResult.Failure<OffsetTable?>(
+                new ApplicationError(
+                    "offset.field_validation_unknown_field",
+                    "The offset table contains validation evidence for an unknown field."));
+        }
+
+        if (raw.Offsets is null
+            || raw.Offsets.ReplayTime is null
+            || raw.Offsets.PlayerHP is null
+            || raw.Offsets.PlayerPositionX is null
+            || raw.Offsets.PlayerPositionY is null
+            || raw.Offsets.PlayerPositionZ is null
+            || raw.Offsets.PlayerYaw is null
+            || raw.Offsets.CameraPitch is null
+            || raw.Offsets.AliveTankCount is null)
+        {
+            return OperationResult.Failure<OffsetTable?>(
+                new ApplicationError(
+                    "offset.required_fields_missing",
+                    "The offset table must contain all required offset fields."));
+        }
+
+        if (raw.DiscoveredAtUtc is not null
+            && !DateTimeOffset.TryParse(raw.DiscoveredAtUtc, out _))
+        {
+            return OperationResult.Failure<OffsetTable?>(
+                new ApplicationError(
+                    "offset.invalid_discovered_at",
+                    "The offset table discovery timestamp is invalid."));
+        }
+
         // Build the domain model with per-field validation.
         List<OffsetField> fields = [];
-        fields.Add(BuildField("replayTime", raw.Offsets?.ReplayTime ?? 0, OffsetFieldType.DoubleField));
-        fields.Add(BuildField("playerHP", raw.Offsets?.PlayerHP ?? 0, OffsetFieldType.Int32Field));
-        fields.Add(BuildField("playerPositionX", raw.Offsets?.PlayerPositionX ?? 0, OffsetFieldType.FloatField));
-        fields.Add(BuildField("playerPositionY", raw.Offsets?.PlayerPositionY ?? 0, OffsetFieldType.FloatField));
-        fields.Add(BuildField("playerPositionZ", raw.Offsets?.PlayerPositionZ ?? 0, OffsetFieldType.FloatField));
-        fields.Add(BuildField("playerYaw", raw.Offsets?.PlayerYaw ?? 0, OffsetFieldType.FloatField));
-        fields.Add(BuildField("cameraPitch", raw.Offsets?.CameraPitch ?? 0, OffsetFieldType.FloatField));
-        fields.Add(BuildField("aliveTankCount", raw.Offsets?.AliveTankCount ?? 0, OffsetFieldType.Int32Field));
+        fields.Add(BuildField("replayTime", raw.Offsets?.ReplayTime ?? 0, OffsetFieldType.DoubleField, raw.FieldValidation));
+        fields.Add(BuildField("playerHP", raw.Offsets?.PlayerHP ?? 0, OffsetFieldType.Int32Field, raw.FieldValidation));
+        fields.Add(BuildField("playerPositionX", raw.Offsets?.PlayerPositionX ?? 0, OffsetFieldType.FloatField, raw.FieldValidation));
+        fields.Add(BuildField("playerPositionY", raw.Offsets?.PlayerPositionY ?? 0, OffsetFieldType.FloatField, raw.FieldValidation));
+        fields.Add(BuildField("playerPositionZ", raw.Offsets?.PlayerPositionZ ?? 0, OffsetFieldType.FloatField, raw.FieldValidation));
+        fields.Add(BuildField("playerYaw", raw.Offsets?.PlayerYaw ?? 0, OffsetFieldType.FloatField, raw.FieldValidation));
+        fields.Add(BuildField("cameraPitch", raw.Offsets?.CameraPitch ?? 0, OffsetFieldType.FloatField, raw.FieldValidation));
+        fields.Add(BuildField("aliveTankCount", raw.Offsets?.AliveTankCount ?? 0, OffsetFieldType.Int32Field, raw.FieldValidation));
 
         OffsetConfidence confidence = raw.Confidence?.ToLowerInvariant() switch
         {
@@ -145,24 +209,66 @@ internal sealed class OffsetTableReader : IOffsetTableReader
         return OperationResult.Success<OffsetTable?>(table);
     }
 
-    private static OffsetField BuildField(string name, long offset, OffsetFieldType fieldType)
+    private static bool IsSha256(string? value) =>
+        value is { Length: ContentHash.Sha256HexLength }
+        && value.All(static character => char.IsAsciiHexDigit(character));
+
+    private static OffsetField BuildField(
+        string name,
+        long offset,
+        OffsetFieldType fieldType,
+        IReadOnlyDictionary<string, OffsetFieldValidationJson>? validations)
     {
+        OffsetFieldValidationJson? validation = null;
+        validations?.TryGetValue(name, out validation);
+        OffsetFieldStatus declaredStatus = ParseStatus(validation?.Status);
+        List<OffsetFieldEvidence> evidence = [];
+        if (validation?.Evidence is not null)
+        {
+            foreach (OffsetFieldEvidenceJson item in validation.Evidence)
+            {
+                if (!Enum.TryParse(item.ProvenanceKind, ignoreCase: true, out OffsetProvenanceKind provenance)
+                    || provenance == OffsetProvenanceKind.Unknown
+                    || string.IsNullOrWhiteSpace(item.SourceTool))
+                {
+                    continue;
+                }
+
+                evidence.Add(new OffsetFieldEvidence(provenance, item.SourceTool, item.Notes));
+            }
+        }
+
+        bool promotionEvidenceComplete =
+            validation is not null
+            && validation.IndependentProcessLaunches >= 2
+            && validation.IndependentReplays >= 2
+            && validation.HarnessInvariantsPassed
+            && validation.LeadApproved
+            && validation.DecoderAuditorApproved
+            && evidence.Any(item => item.ProvenanceKind == OffsetProvenanceKind.StaticAnalysis)
+            && evidence.Any(item => item.ProvenanceKind == OffsetProvenanceKind.GameHarness);
         OffsetFieldStatus status = offset == 0
             ? OffsetFieldStatus.Unknown
-            : OffsetFieldStatus.Candidate;
+            : declaredStatus == OffsetFieldStatus.Verified
+                && promotionEvidenceComplete
+                ? OffsetFieldStatus.Verified
+                : declaredStatus == OffsetFieldStatus.Stale
+                    ? OffsetFieldStatus.Stale
+                    : OffsetFieldStatus.Candidate;
 
-        OffsetConfidence confidence = offset == 0
-            ? OffsetConfidence.None
-            : OffsetConfidence.Low;
+        OffsetConfidence confidence = status == OffsetFieldStatus.Verified
+            ? OffsetConfidence.High
+            : status == OffsetFieldStatus.Unknown
+                ? OffsetConfidence.None
+                : OffsetConfidence.Low;
 
-        return new OffsetField(
-            Name: name,
-            FieldType: fieldType,
-            Offset: offset,
-            Status: status,
-            Confidence: confidence,
-            Evidence: []);
+        return new OffsetField(name, fieldType, offset, status, confidence, evidence);
     }
+
+    private static OffsetFieldStatus ParseStatus(string? value) =>
+        Enum.TryParse(value, ignoreCase: true, out OffsetFieldStatus status)
+            ? status
+            : OffsetFieldStatus.Unknown;
 
     /// <summary>
     /// JSON shape matching <c>memory-offsets/schema.json</c>.
@@ -176,18 +282,37 @@ internal sealed class OffsetTableReader : IOffsetTableReader
         public string? DiscoveredAtUtc { get; set; }
         public string? Confidence { get; set; }
         public string? Notes { get; set; }
+        public Dictionary<string, OffsetFieldValidationJson>? FieldValidation { get; set; }
         public OffsetFieldsJson? Offsets { get; set; }
+    }
+
+    private sealed class OffsetFieldValidationJson
+    {
+        public string? Status { get; set; }
+        public List<OffsetFieldEvidenceJson>? Evidence { get; set; }
+        public int IndependentProcessLaunches { get; set; }
+        public int IndependentReplays { get; set; }
+        public bool HarnessInvariantsPassed { get; set; }
+        public bool LeadApproved { get; set; }
+        public bool DecoderAuditorApproved { get; set; }
+    }
+
+    private sealed class OffsetFieldEvidenceJson
+    {
+        public string? ProvenanceKind { get; set; }
+        public string? SourceTool { get; set; }
+        public string? Notes { get; set; }
     }
 
     private sealed class OffsetFieldsJson
     {
-        public long ReplayTime { get; set; }
-        public long PlayerHP { get; set; }
-        public long PlayerPositionX { get; set; }
-        public long PlayerPositionY { get; set; }
-        public long PlayerPositionZ { get; set; }
-        public long PlayerYaw { get; set; }
-        public long CameraPitch { get; set; }
-        public long AliveTankCount { get; set; }
+        public long? ReplayTime { get; set; }
+        public long? PlayerHP { get; set; }
+        public long? PlayerPositionX { get; set; }
+        public long? PlayerPositionY { get; set; }
+        public long? PlayerPositionZ { get; set; }
+        public long? PlayerYaw { get; set; }
+        public long? CameraPitch { get; set; }
+        public long? AliveTankCount { get; set; }
     }
 }

@@ -18,9 +18,9 @@
       "description": "SHA-256 of wotblitz.exe, for exact binary matching."
     },
     "discoveredAtUtc": {
-      "type": "string",
+      "type": ["string", "null"],
       "format": "date-time",
-      "description": "ISO 8601 timestamp when offsets were last updated."
+      "description": "ISO 8601 timestamp when offsets were last updated; null for an unpopulated placeholder."
     },
     "offsets": {
       "type": "object",
@@ -64,6 +64,90 @@
         }
       },
       "additionalProperties": false
+    },
+    "fieldValidation": {
+      "type": "object",
+      "description": "Per-field promotion status and provenance evidence.",
+      "propertyNames": {
+        "enum": [
+          "replayTime", "playerHP", "playerPositionX", "playerPositionY",
+          "playerPositionZ", "playerYaw", "cameraPitch", "aliveTankCount"
+        ]
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["status", "evidence"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["Unknown", "Candidate", "Verified", "Stale"]
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["provenanceKind", "sourceTool"],
+              "properties": {
+                "provenanceKind": {
+                  "type": "string",
+                  "enum": ["StaticAnalysis", "DynamicScan", "GameHarness", "ManualVerification"]
+                },
+                "sourceTool": { "type": "string", "minLength": 1 },
+                "notes": { "type": ["string", "null"] }
+              },
+              "additionalProperties": false
+            }
+          },
+          "independentProcessLaunches": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "independentReplays": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "harnessInvariantsPassed": { "type": "boolean" },
+          "leadApproved": { "type": "boolean" },
+          "decoderAuditorApproved": { "type": "boolean" }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": { "status": { "const": "Verified" } },
+              "required": ["status"]
+            },
+            "then": {
+              "required": [
+                "independentProcessLaunches",
+                "independentReplays",
+                "harnessInvariantsPassed",
+                "leadApproved",
+                "decoderAuditorApproved"
+              ],
+              "properties": {
+                "evidence": {
+                  "minItems": 2,
+                  "allOf": [
+                    {
+                      "contains": {
+                        "properties": { "provenanceKind": { "const": "StaticAnalysis" } },
+                        "required": ["provenanceKind"]
+                      }
+                    },
+                    {
+                      "contains": {
+                        "properties": { "provenanceKind": { "const": "GameHarness" } },
+                        "required": ["provenanceKind"]
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ],
+        "additionalProperties": false
+      }
     },
     "confidence": {
       "type": "string",

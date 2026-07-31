@@ -44,8 +44,10 @@ internal sealed class MemoryScanDiscoverer
     public OperationResult<MemoryScanResult> Scan(
         int processId,
         long baseAddress,
-        MemoryScanRequest request)
+        MemoryScanRequest request,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(processId);
         if (baseAddress == 0)
             return Fail("discover.invalid_base", "The main module base address must be non-zero.");
@@ -66,7 +68,8 @@ internal sealed class MemoryScanDiscoverer
             if (handle is null || handle.IsInvalid)
                 return Fail("discover.open_failed", "Could not open game process for scanning.");
 
-            List<MemoryRegion> regions = EnumerateScanRegions(handle, request.MinRegionSize);
+            List<MemoryRegion> regions = EnumerateScanRegions(
+                handle, request.MinRegionSize, cancellationToken);
             if (regions.Count == 0)
                 return Success(baseAddress, 0, 0, [], 0);
 
@@ -77,6 +80,7 @@ internal sealed class MemoryScanDiscoverer
 
             foreach (MemoryRegion region in regions)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (candidates.Count >= maxCandidates) break;
 
                 long remaining = region.RegionSize;
@@ -84,6 +88,7 @@ internal sealed class MemoryScanDiscoverer
 
                 while (remaining > 0 && candidates.Count < maxCandidates)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     int chunkSize = remaining >= ReadChunkSize ? ReadChunkSize : (int)remaining;
                     int bytesToRead = chunkSize + valueLen;
 
@@ -108,6 +113,11 @@ internal sealed class MemoryScanDiscoverer
 
                         for (int i = 0; i < matchEnd && candidates.Count < maxCandidates; i++)
                         {
+                            if ((i & 1023) == 0)
+                            {
+                                cancellationToken.ThrowIfCancellationRequested();
+                            }
+
                             if (!Matches(readBuffer, i, request.ExpectedValue, tolerance))
                                 continue;
 
@@ -155,13 +165,17 @@ internal sealed class MemoryScanDiscoverer
         return h.IsInvalid ? null : h;
     }
 
-    private static List<MemoryRegion> EnumerateScanRegions(SafeProcessHandle handle, long minSize)
+    private static List<MemoryRegion> EnumerateScanRegions(
+        SafeProcessHandle handle,
+        long minSize,
+        CancellationToken cancellationToken)
     {
         List<MemoryRegion> regions = [];
         long address = 0;
 
         while (true)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             int result = NativeMethods.VirtualQueryEx(handle, (nint)address,
                 out MemoryBasicInformation mbi,
                 (uint)Marshal.SizeOf<MemoryBasicInformation>());
@@ -229,8 +243,10 @@ internal sealed class MemoryScanDiscoverer
     public OperationResult<MemoryScanResult> ScanNeighborhood(
         int processId,
         long baseAddress,
-        MemoryNeighborhoodRequest request)
+        MemoryNeighborhoodRequest request,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(processId);
         if (baseAddress == 0)
             return Fail("discover.neighborhood.invalid_base", "Base address must be non-zero.");
@@ -255,6 +271,7 @@ internal sealed class MemoryScanDiscoverer
             if (handle is null || handle.IsInvalid)
                 return Fail("discover.neighborhood.open_failed", "Could not open process.");
 
+            cancellationToken.ThrowIfCancellationRequested();
             byte[] buffer = new byte[totalBytes];
             GCHandle pinned = GCHandle.Alloc(buffer, GCHandleType.Pinned);
             try
@@ -274,6 +291,10 @@ internal sealed class MemoryScanDiscoverer
             // Parse every aligned value
             for (int offset = 0; offset <= totalBytes - 4; offset += 4)
             {
+                if ((offset & 4095) == 0)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
                 long absAddr = start + offset;
                 long relOffset = absAddr - baseAddress;
                 int deltaFromRef = offset - request.WindowSize;
@@ -306,6 +327,10 @@ internal sealed class MemoryScanDiscoverer
             {
                 for (int offset = 0; offset <= totalBytes - 8; offset += 8)
                 {
+                    if ((offset & 4095) == 0)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                    }
                     double d = BitConverter.ToDouble(buffer, offset);
                     if (!double.IsNaN(d) && !double.IsInfinity(d))
                     {

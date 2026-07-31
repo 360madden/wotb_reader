@@ -286,9 +286,16 @@ def validate_offset_file(log_path: Path, path: Path, schema: dict) -> list[str]:
     if not gv:
         issues.append(f"{rel}: missing gameVersion")
 
-    # SHA256
+    # SHA256: an all-zero confidence-none file is an intentional placeholder.
+    # Placeholders stay runtime-unsupported; populated evidence must carry an
+    # exact executable hash.
+    confidence = data.get("confidence", "")
+    is_placeholder = confidence == "none" and all(
+        data.get("offsets", {}).get(field, 0) == 0 for field in FIELD_NAMES)
     sha = data.get("executableSha256", "")
-    if not sha:
+    if is_placeholder and sha == "":
+        pass
+    elif not sha:
         issues.append(f"{rel}: missing executableSha256")
     elif not is_hex(sha):
         issues.append(f"{rel}: executableSha256 is not a 64-char hex string")
@@ -335,9 +342,12 @@ def validate_offset_file(log_path: Path, path: Path, schema: dict) -> list[str]:
     if conf not in CONFIDENCE_VALUES:
         issues.append(f"{rel}: unknown confidence '{conf}'")
 
-    # discoveredAtUtc
+    # discoveredAtUtc: placeholders intentionally use null; promoted or
+    # candidate evidence must record when it was discovered.
     disc = data.get("discoveredAtUtc", "")
-    if not disc:
+    if is_placeholder and disc is None:
+        pass
+    elif not disc:
         issues.append(f"{rel}: missing discoveredAtUtc")
 
     return issues

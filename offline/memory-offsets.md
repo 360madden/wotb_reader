@@ -22,6 +22,17 @@ Canonical detail: [`memory-offsets/README.md`](../memory-offsets/README.md)
   "gameVersion": "11.19.0.10",
   "executableSha256": "<sha256 of wotblitz.exe>",
   "discoveredAtUtc": "2026-07-30T…Z",
+  "fieldValidation": {
+    "playerYaw": {
+      "status": "Candidate",
+      "evidence": [],
+      "independentProcessLaunches": 0,
+      "independentReplays": 0,
+      "harnessInvariantsPassed": false,
+      "leadApproved": false,
+      "decoderAuditorApproved": false
+    }
+  },
   "offsets": { "replayTime": 0, "playerHP": 0, "playerPositionX": 0,
                "playerPositionY": 0, "playerPositionZ": 0, "playerYaw": 0,
                "cameraPitch": 0, "aliveTankCount": 0 },
@@ -31,7 +42,12 @@ Canonical detail: [`memory-offsets/README.md`](../memory-offsets/README.md)
 ```
 
 Required: `schemaVersion`, `gameVersion`, `offsets` (all 8 fields,
-`additionalProperties: false`). `0` = unknown.
+`additionalProperties: false`). `executableSha256` is required for candidate
+or promoted evidence. An intentional placeholder has `confidence: "none"`, an
+empty hash, `discoveredAtUtc: null`, and all eight offsets set to `0`;
+placeholders are never runtime-supported. `fieldValidation` is optional; when
+present, its keys are the eight known fields and each entry records promotion
+evidence. `0` = unknown.
 
 | Field | Type | Semantics |
 |-------|------|-----------|
@@ -62,11 +78,17 @@ with a specific code when anything is off:
 | Unreadable / bad JSON | `offset.read_failed` / `offset.empty_file` |
 | `schemaVersion` ≠ 1 | `offset.unsupported_schema` |
 | `gameVersion` ≠ file name | `offset.version_mismatch` |
+| Declared `executableSha256` missing or malformed | `offset.hash_missing` |
+| Observed executable hash missing or malformed | `offset.invalid_observed_hash` |
 | Declared `executableSha256` ≠ observed exe hash | `offset.hash_mismatch` |
 
-Per-field: `OffsetField(Offset == 0 ? Unknown : Candidate)`, confidence
-`None`/`Low`; the file-level `confidence` field maps to the table's overall
-`OffsetConfidence`. Domain model: [`src/WotBTreader.Core/OffsetModels.cs`](../src/WotBTreader.Core/OffsetModels.cs)
+Per-field: `OffsetField(Offset == 0 ? Unknown : Candidate)` unless a
+`Verified` declaration also contains at least two independent process launches,
+two independent replays, passing GameHarness invariants, lead approval, decoder
+auditor approval, and both static-analysis and GameHarness provenance. Only then
+is the field `Verified`; runtime reads reject candidate fields. The file-level
+`confidence` field maps to the table's overall `OffsetConfidence`. Domain model:
+[`src/WotBTreader.Core/OffsetModels.cs`](../src/WotBTreader.Core/OffsetModels.cs)
 (`OffsetField`, `OffsetTable`, `OffsetFieldStatus`, `OffsetProvenanceKind`).
 
 The directory is resolved by `Application` DI
@@ -76,15 +98,16 @@ The directory is resolved by `Application` DI
 ## Runtime gating (`GameSessionCoordinator`)
 
 - `LoadOffsetTable(process)` requires an exact version + executable-hash match.
-- `HasKnownOffsets(table)` is false while all fields are `0` — the coordinator
-  then **refuses memory reads** (`GET /api/v1/game/memory` returns
-  `Unavailable`).
+- `HasKnownOffsets(table)` is true only for fields promoted to `Verified` with
+  complete evidence; placeholders and candidate-only tables are discovery-only.
+  Otherwise the coordinator **refuses memory reads** (`GET /api/v1/game/memory`
+  returns `Unavailable`).
 - Live observation pushes only happen after the `OfflineReplayVerified` gate.
 
 ## Validation tooling
 
 - `scripts/python/offset_check.py` — schema compliance: `schemaVersion` = 1,
-  sha256 format, filename↔`gameVersion`, all 8 fields present, offset
+  placeholder-aware sha256/date rules, filename↔`gameVersion`, all 8 fields present, offset
   plausibility (not too small / > 2 GB), no extra fields, valid confidence,
   `discoveredAtUtc` present. Run with `--check-schema` to also cross-verify
   this page's documented contract against `schema.json` and the validator's

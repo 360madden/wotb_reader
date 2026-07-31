@@ -58,7 +58,7 @@ public sealed class ReplayDecoderTests
     public async Task UnsupportedVersionIsReportedWithoutGuessing()
     {
         ReplayInput input = SyntheticReplayFactory.CreateInput(
-            SyntheticReplayFactory.CreateReplay(version: "11.19.0"));
+            SyntheticReplayFactory.CreateReplay(version: "11.20.0"));
         WotbReplayProbe probe = new();
         var probeResult = await probe.ProbeAsync(
             input,

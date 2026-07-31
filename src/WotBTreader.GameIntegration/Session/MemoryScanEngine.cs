@@ -68,8 +68,12 @@ internal sealed class MemoryScanEngine
         IReadOnlyList<MemoryScanCandidate> Candidates);
 
     public OperationResult<string> CreateSnapshot(
-        int processId, long baseAddress, SnapshotFilter filter)
+        int processId,
+        long baseAddress,
+        SnapshotFilter filter,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         string sessionId = Interlocked.Increment(ref _sessionCounter)
             .ToString("D6", CultureInfo.InvariantCulture);
         DateTimeOffset start = _timeProvider.GetUtcNow();
@@ -86,7 +90,8 @@ internal sealed class MemoryScanEngine
 
         try
         {
-            var regions = EnumerateRegions(handle, filter.MinAddress, filter.MaxAddress);
+            var regions = EnumerateRegions(
+                handle, filter.MinAddress, filter.MaxAddress, cancellationToken);
             _logger.LogInformation("[{Sid}] Enumerated {Count} region(s)", sessionId, regions.Count);
 
             var addresses = new Dictionary<long, byte[]>();
@@ -95,11 +100,13 @@ internal sealed class MemoryScanEngine
 
             foreach (var region in regions)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 long remaining = region.Size;
                 long addr = region.Base;
 
                 while (remaining > 0)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     int toRead = remaining >= ReadChunkSize ? ReadChunkSize : (int)remaining;
                     var pinned = System.Runtime.InteropServices.GCHandle.Alloc(
                         chunk, System.Runtime.InteropServices.GCHandleType.Pinned);
@@ -114,6 +121,11 @@ internal sealed class MemoryScanEngine
 
                         for (int i = 0; i <= scanned - filter.ValueSize; i += filter.ValueSize)
                         {
+                            if ((i & 1023) == 0)
+                            {
+                                cancellationToken.ThrowIfCancellationRequested();
+                            }
+
                             long absAddr = addr + i;
                             if (!PassesFilter(chunk, i, filter)) continue;
                             byte[] value = new byte[filter.ValueSize];
@@ -138,6 +150,10 @@ internal sealed class MemoryScanEngine
                 sessionId, addresses.Count, bytesScanned, elapsed);
             return OperationResult.Success(sessionId);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError("[{Sid}] Snapshot ERROR: {Msg}", sessionId, ex.Message);
@@ -147,9 +163,14 @@ internal sealed class MemoryScanEngine
     }
 
     public OperationResult<CompareResult> Compare(
-        int processId, long baseAddress, string sessionId,
-        string compareMode, int maxCandidates)
+        int processId,
+        long baseAddress,
+        string sessionId,
+        string compareMode,
+        int maxCandidates,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         Snapshot previous;
         lock (_lock)
         {
@@ -169,7 +190,8 @@ internal sealed class MemoryScanEngine
 
         try
         {
-            var regions = EnumerateRegions(handle, previous.Filter.MinAddress, previous.Filter.MaxAddress);
+            var regions = EnumerateRegions(
+                handle, previous.Filter.MinAddress, previous.Filter.MaxAddress, cancellationToken);
             var filter = previous.Filter;
             var candidates = new List<MemoryScanCandidate>();
             int changed = 0, unchanged = 0, increased = 0, decreased = 0;
@@ -177,12 +199,14 @@ internal sealed class MemoryScanEngine
 
             foreach (var region in regions)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (candidates.Count >= maxCandidates) break;
                 long remaining = region.Size;
                 long addr = region.Base;
 
                 while (remaining > 0 && candidates.Count < maxCandidates)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     int toRead = remaining >= ReadChunkSize ? ReadChunkSize : (int)remaining;
                     var pinned = System.Runtime.InteropServices.GCHandle.Alloc(
                         chunk, System.Runtime.InteropServices.GCHandleType.Pinned);
@@ -195,6 +219,11 @@ internal sealed class MemoryScanEngine
                         int scanned = (int)read;
                         for (int i = 0; i <= scanned - filter.ValueSize; i += filter.ValueSize)
                         {
+                            if ((i & 1023) == 0)
+                            {
+                                cancellationToken.ThrowIfCancellationRequested();
+                            }
+
                             long absAddr = addr + i;
                             if (!previous.AllAddresses.TryGetValue(absAddr, out byte[]? oldValue))
                                 continue;
@@ -253,6 +282,10 @@ internal sealed class MemoryScanEngine
                 endTime, previous.AllAddresses.Count, 0, changed, unchanged,
                 increased, decreased, candidates));
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError("[{Sid}] Compare ERROR: {Msg}", sessionId, ex.Message);
@@ -284,13 +317,16 @@ internal sealed class MemoryScanEngine
 
     private static List<(long Base, long Size)> EnumerateRegions(
         Microsoft.Win32.SafeHandles.SafeProcessHandle handle,
-        long minAddr, long maxAddr)
+        long minAddr,
+        long maxAddr,
+        CancellationToken cancellationToken)
     {
         var regions = new List<(long, long)>();
         long address = minAddr > 0 ? minAddr : 0;
 
         while (true)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (NativeMethods.VirtualQueryEx(handle, (nint)address,
                     out MemoryBasicInformation mbi,
                     (uint)System.Runtime.InteropServices.Marshal.SizeOf<MemoryBasicInformation>()) == 0)

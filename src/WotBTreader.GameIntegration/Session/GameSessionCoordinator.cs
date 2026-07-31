@@ -754,9 +754,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
 
     private static bool HasKnownOffsets(OffsetTable table)
     {
+        // Candidate offsets are discovery hypotheses only. Runtime reads require
+        // an explicitly verified field; a valid table hash alone is insufficient.
         foreach (OffsetField field in table.Fields)
         {
-            if (field.Offset != 0)
+            if (field.Offset != 0 && field.Status == OffsetFieldStatus.Verified)
             {
                 return true;
             }
@@ -865,10 +867,14 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 new ApplicationError("discover.gate_not_satisfied", "Gate not satisfied."));
         bool isFloat = request.FloatMin.HasValue || request.FloatMax.HasValue;
         return await Task.Run(
-            () => _scanEngine.CreateSnapshot(pid, baseAddr,
-                new MemoryScanEngine.SnapshotFilter(request.ValueSize, request.MinAddress,
-                    request.MaxAddress, request.FloatMin, request.FloatMax,
-                    request.IntMin, request.IntMax, isFloat)),
+            () => _scanEngine.CreateSnapshot(
+                pid,
+                baseAddr,
+                new MemoryScanEngine.SnapshotFilter(
+                    request.ValueSize, request.MinAddress, request.MaxAddress,
+                    request.FloatMin, request.FloatMax,
+                    request.IntMin, request.IntMax, isFloat),
+                cancellationToken),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -883,7 +889,13 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 new ApplicationError("discover.gate_not_satisfied", "Gate not satisfied."));
         return await Task.Run(() =>
         {
-            var result = _scanEngine.Compare(pid, baseAddr, sessionId, compareMode, maxCandidates);
+            var result = _scanEngine.Compare(
+                pid,
+                baseAddr,
+                sessionId,
+                compareMode,
+                maxCandidates,
+                cancellationToken);
             return result.IsSuccess
                 ? OperationResult.Success(new MemoryCompareResult(
                     result.Value!.CompletedAtUtc, result.Value.PreviousCount,
@@ -906,7 +918,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             return GateCheck<MemoryScanResult>("discover.gate_not_satisfied",
                 "The offline-session gate is not satisfied.");
         return await Task.Run(
-            () => _scanDiscoverer.ScanNeighborhood(pid, baseAddr, request),
+            () => _scanDiscoverer.ScanNeighborhood(pid, baseAddr, request, cancellationToken),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -938,7 +950,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             return GateCheck<MemoryScanResult>("discover.gate_not_satisfied",
                 "The offline-session gate is not satisfied.");
         return await Task.Run(
-            () => _scanDiscoverer.Scan(pid, baseAddr, request),
+            () => _scanDiscoverer.Scan(pid, baseAddr, request, cancellationToken),
             cancellationToken).ConfigureAwait(false);
     }
 
