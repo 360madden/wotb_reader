@@ -1,44 +1,34 @@
 <#
 .SYNOPSIS
-    Automated offset discovery pipeline for WoT Blitz.
-    Orchestrates Cheat Engine scanning, result parsing, and offset file updates.
+    Normalize Cheat Engine discovery output and update offset evidence safely.
 
 .DESCRIPTION
-    The full pipeline:
-    1. Verify prerequisites (game running, tools available)
-    2. Launch Cheat Engine with the auto-discover Lua script
-    3. Wait for CE to produce candidate JSON output
-    4. Parse the CE results
-    5. Compute SHA-256 of the game executable
-    6. Update memory-offsets/<version>.json with discovered offsets
-    7. Optionally validate via the GameHarness web API
+    Checks offline-replay prerequisites, waits for a human-run Cheat Engine
+    session to produce discovered-offsets-multiscan.json, accepts both the
+    autoDiscover() fieldResults shape and the legacy saveDiscovered() shape,
+    computes the executable hash, and merges only uniquely valid candidates.
+
+    A candidate never becomes Verified here. Existing nonzero offsets are never
+    replaced by a different candidate; conflicting results remain report-only.
 
 .PARAMETER GameVersion
-    Target game version (e.g. "11.19.0.10"). Auto-detected if omitted.
+    Target game version, for example 11.19.0.10. Auto-detected when omitted.
 
 .PARAMETER CeExePath
-    Path to Cheat Engine executable. Auto-detected from known locations.
+    Cheat Engine executable path. Auto-detected when omitted.
 
 .PARAMETER LuaScript
-    Path to the Cheat Engine Lua script. Defaults to multiscan.lua.
+    Lua script path. Defaults to tools/cheat-engine/multiscan.lua.
 
 .PARAMETER SkipValidation
-    If set, skips the GameHarness validation step.
+    Skip the optional Python offset validator.
 
 .PARAMETER DryRun
-    If set, checks prerequisites and prints the plan without executing.
+    Check prerequisites only.
 
-.EXAMPLE
-    .\tools\discover-offsets.ps1
-    # Full automatic pipeline with version auto-detection.
-
-.EXAMPLE
-    .\tools\discover-offsets.ps1 -DryRun
-    # Check prerequisites only.
-
-.EXAMPLE
-    .\tools\discover-offsets.ps1 -GameVersion 11.19.0.10 -SkipValidation
-    # Discover offsets, skip the GameHarness API validation.
+.PARAMETER SelfTest
+    Run synthetic, offline-only checks for normalization, conflict handling,
+    evidence de-duplication, and existing-table validation.
 #>
 
 [CmdletBinding()]
@@ -47,326 +37,636 @@ param(
     [string]$CeExePath,
     [string]$LuaScript,
     [switch]$SkipValidation,
-    [switch]$DryRun
+    [switch]$DryRun,
+    [switch]$SelfTest
 )
 
 $ErrorActionPreference = 'Stop'
 $RepoRoot = (Get-Item $PSScriptRoot).Parent.FullName
-
-# ── Path discovery ──────────────────────────────────────────────────────────
+$KnownOffsetFields = @(
+    'replayTime', 'playerHP', 'playerPositionX', 'playerPositionY',
+    'playerPositionZ', 'playerYaw', 'cameraPitch', 'aliveTankCount'
+)
 
 function Get-CheatEnginePath {
     $candidates = @(
-        "C:\Program Files\Cheat Engine 7.7\cheatengine-x86_64.exe",
-        "C:\Program Files\Cheat Engine 7.5\cheatengine-x86_64.exe",
-        "C:\Program Files\Cheat Engine\cheatengine-x86_64.exe",
-        "C:\Program Files (x86)\Cheat Engine 7.7\cheatengine-x86_64.exe",
-        "C:\Program Files (x86)\Cheat Engine 7.5\cheatengine-x86_64.exe"
+        'C:\Program Files\Cheat Engine 7.7\cheatengine-x86_64.exe',
+        'C:\Program Files\Cheat Engine 7.5\cheatengine-x86_64.exe',
+        'C:\Program Files\Cheat Engine\cheatengine-x86_64.exe',
+        'C:\Program Files (x86)\Cheat Engine 7.7\cheatengine-x86_64.exe',
+        'C:\Program Files (x86)\Cheat Engine 7.5\cheatengine-x86_64.exe'
     )
 
     foreach ($candidate in $candidates) {
-        if (Test-Path $candidate) { return $candidate }
+        if (Test-Path $candidate -PathType Leaf) { return $candidate }
     }
 
-    # Search PATH
     $fromPath = Get-Command cheatengine-x86_64.exe -ErrorAction SilentlyContinue
-    if ($fromPath) { return $fromPath.Source }
-
+    if ($null -ne $fromPath) { return $fromPath.Source }
     return $null
 }
 
-function Get-GameExePath {
+function Get-GameExe {
     $candidates = @(
-        "C:\Games\World_of_Tanks_Blitz\wotblitz.exe",
-        "C:\Program Files\World_of_Tanks_Blitz\wotblitz.exe",
-        (Join-Path $env:LOCALAPPDATA "World_of_Tanks_Blitz\wotblitz.exe")
+        'C:\Games\World_of_Tanks_Blitz\wotblitz.exe',
+        'C:\Program Files\World_of_Tanks_Blitz\wotblitz.exe',
+        'C:\Program Files (x86)\World_of_Tanks_Blitz\wotblitz.exe',
+        'C:\Program Files (x86)\Steam\steamapps\common\World of Tanks Blitz\wotblitz.exe',
+        (Join-Path $env:LOCALAPPDATA 'World_of_Tanks_Blitz\wotblitz.exe')
     )
 
     foreach ($candidate in $candidates) {
-        if (Test-Path $candidate) {
-            return @{ Path = $candidate; Version = (Get-Item $candidate).VersionInfo.ProductVersion }
+        if (Test-Path $candidate -PathType Leaf) {
+            $item = Get-Item $candidate
+            return [pscustomobject]@{
+                Path = $candidate
+                Version = $item.VersionInfo.ProductVersion
+            }
         }
     }
     return $null
 }
 
-# ── Prerequisites check ─────────────────────────────────────────────────────
+function Get-DiscoveryBatches {
+    param([object]$Data)
+
+    $batches = @()
+    if ($null -ne $Data.fieldResults) {
+        foreach ($property in $Data.fieldResults.PSObject.Properties) {
+            $result = $property.Value
+            $candidates = if ($null -ne $result.candidates) { @($result.candidates) } else { @() }
+            $reported = if ($null -ne $result.totalCandidates) {
+                [int]$result.totalCandidates
+            } else { $candidates.Count }
+            $batches += [pscustomobject]@{
+                FieldName = $property.Name
+                Candidates = $candidates
+                ReportedCandidateCount = $reported
+            }
+        }
+    } elseif ($null -ne $Data.candidates -and
+        -not [string]::IsNullOrWhiteSpace([string]$Data.fieldName)) {
+        $candidates = @($Data.candidates)
+        $reported = if ($null -ne $Data.totalCandidates) {
+            [int]$Data.totalCandidates
+        } else { $candidates.Count }
+        $batches += [pscustomobject]@{
+            FieldName = [string]$Data.fieldName
+            Candidates = $candidates
+            ReportedCandidateCount = $reported
+        }
+    }
+
+    return $batches
+}
+
+function Convert-CandidateOffset {
+    param([object]$Candidate)
+
+    if ($null -ne $Candidate.PSObject.Properties['relativeOffsetDecimal'] -and
+        $null -ne $Candidate.relativeOffsetDecimal) {
+        $value = $Candidate.relativeOffsetDecimal
+        $numericTypes = @(
+            [byte], [sbyte], [uint16], [int16], [uint32], [int],
+            [uint64], [long], [single], [double], [decimal]
+        )
+        if ($value -isnot [string] -and $value -isnot [bool] -and
+            $value -isnot [array] -and $numericTypes -contains $value.GetType()) {
+            try { $decimal = [decimal]$value } catch { $decimal = $null }
+            if ($null -ne $decimal -and $decimal -eq [decimal]::Truncate($decimal) -and
+                $decimal -gt 0 -and $decimal -le 0x7FFFFFFF) {
+                return [long]$decimal
+            }
+        }
+    }
+
+    $relativeProperty = $Candidate.PSObject.Properties['relativeOffset']
+    if ($null -eq $relativeProperty -or $relativeProperty.Value -isnot [string]) {
+        return $null
+    }
+    $raw = [string]$relativeProperty.Value
+    if ($raw -match '^0x([0-9a-fA-F]+)$') {
+        try {
+            $offset = [Convert]::ToInt64($matches[1], 16)
+            if ($offset -gt 0 -and $offset -le 0x7FFFFFFF) { return $offset }
+        } catch { return $null }
+    }
+    return $null
+}
+
+function Get-NormalizedCandidates {
+    param([object]$Batch)
+
+    $normalized = @()
+    foreach ($candidate in @($Batch.Candidates)) {
+        $offset = Convert-CandidateOffset $candidate
+        if ($null -ne $offset -and $offset -gt 0 -and $offset -le 0x7FFFFFFF) {
+            $normalized += [pscustomobject]@{
+                FieldName = $Batch.FieldName
+                Offset = $offset
+                CandidateCount = @($Batch.Candidates).Count
+                ReportedCandidateCount = $Batch.ReportedCandidateCount
+            }
+        }
+    }
+    return $normalized
+}
+
+function Assert-RequestedGameVersion {
+    param(
+        [string]$RequestedVersion,
+        [string]$DetectedVersion
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($RequestedVersion) -and
+        $RequestedVersion -cne $DetectedVersion) {
+        throw "Requested game version '$RequestedVersion' does not match installed executable version '$DetectedVersion'."
+    }
+}
+
+function Ensure-ValidationEntry {
+    param(
+        [object]$Table,
+        [string]$FieldName
+    )
+
+    $validationProperty = $Table.fieldValidation.PSObject.Properties[$FieldName]
+    if ($null -eq $validationProperty) {
+        $Table.fieldValidation | Add-Member -NotePropertyName $FieldName -NotePropertyValue ([pscustomobject]@{
+            status = 'Candidate'
+            evidence = @()
+            independentProcessLaunches = 0
+            independentReplays = 0
+            harnessInvariantsPassed = $false
+            leadApproved = $false
+            decoderAuditorApproved = $false
+        }) -Force
+    }
+    return $Table.fieldValidation.$FieldName
+}
+
+function Publish-DynamicCandidate {
+    param(
+        [object]$Table,
+        [string]$FieldName,
+        [long]$Offset,
+        [string]$Notes
+    )
+
+    if ($FieldName -notin $KnownOffsetFields) { return 'unknown-field' }
+    $offsetProperty = $Table.offsets.PSObject.Properties[$FieldName]
+    if ($null -eq $offsetProperty) { return 'unknown-field' }
+
+    $currentOffset = [long]$offsetProperty.Value
+    if ($currentOffset -ne 0 -and $currentOffset -ne $Offset) {
+        return 'conflict'
+    }
+
+    if ($currentOffset -eq 0) {
+        $Table.offsets.$FieldName = $Offset
+    }
+
+    if (-not ($Table.PSObject.Properties['fieldValidation']) -or
+        $null -eq $Table.fieldValidation) {
+        $Table | Add-Member -NotePropertyName 'fieldValidation' -NotePropertyValue ([pscustomobject]@{}) -Force
+    }
+
+    $validation = Ensure-ValidationEntry $Table $FieldName
+    if ($null -eq $validation.evidence) { $validation.evidence = @() }
+
+    $signature = "DynamicScan|0x$($Offset.ToString('X'))"
+    $duplicate = @($validation.evidence | Where-Object {
+        $_.provenanceKind -eq 'DynamicScan' -and $_.notes -like "*$signature*"
+    }).Count -gt 0
+    $evidenceAdded = $false
+    if (-not $duplicate) {
+        $validation.evidence = @($validation.evidence) + @([pscustomobject]@{
+            provenanceKind = 'DynamicScan'
+            sourceTool = 'Cheat Engine 7.7 — multiscan.lua'
+            notes = "$signature; $Notes"
+        })
+        $evidenceAdded = $true
+    }
+
+    # Discovery must not downgrade an existing declaration.
+    if ([string]$validation.status -notin @('Verified', 'Stale')) {
+        $validation.status = 'Candidate'
+    }
+
+    if ($currentOffset -eq $Offset -and -not $evidenceAdded) { return 'unchanged' }
+    return 'changed'
+}
+
+function Convert-ExistingOffset {
+    param(
+        [object]$Value,
+        [string]$FieldName,
+        [string]$Path
+    )
+
+    $numericTypes = @(
+        [byte], [sbyte], [uint16], [int16], [uint32], [int],
+        [uint64], [long], [single], [double], [decimal]
+    )
+    if ($null -eq $Value -or $Value -is [string] -or $Value -is [bool] -or
+        $Value -is [array] -or $numericTypes -notcontains $Value.GetType()) {
+        throw "Offset file has a non-numeric offset for '$FieldName': $Path"
+    }
+
+    try { $decimal = [decimal]$Value } catch {
+        throw "Offset file has an invalid offset for '$FieldName': $Path"
+    }
+    if ($decimal -ne [decimal]::Truncate($decimal) -or
+        $decimal -lt 0 -or $decimal -gt 0x7FFFFFFF) {
+        throw "Offset file has an out-of-range or non-integral offset for '$FieldName': $Path"
+    }
+    return [long]$decimal
+}
+
+function Assert-ExistingOffsetTable {
+    param(
+        [object]$Table,
+        [string]$ExpectedVersion,
+        [string]$ExpectedHash,
+        [string]$Path
+    )
+
+    if ($null -eq $Table -or $Table -is [array] -or $Table -is [string]) {
+        throw "Offset file root must be a JSON object: $Path"
+    }
+    $schemaVersionProperty = $Table.PSObject.Properties['schemaVersion']
+    if ($null -eq $schemaVersionProperty -or
+        $schemaVersionProperty.Value -is [string] -or $schemaVersionProperty.Value -is [bool] -or
+        $schemaVersionProperty.Value -is [array] -or
+        $schemaVersionProperty.Value -isnot [byte] -and $schemaVersionProperty.Value -isnot [int16] -and
+        $schemaVersionProperty.Value -isnot [int32] -and $schemaVersionProperty.Value -isnot [int64] -and
+        $schemaVersionProperty.Value -isnot [uint16] -and $schemaVersionProperty.Value -isnot [uint32] -and
+        $schemaVersionProperty.Value -isnot [uint64] -or [decimal]$schemaVersionProperty.Value -ne 1) {
+        throw "Offset file has unsupported schemaVersion: $Path"
+    }
+    if ($null -eq $Table.PSObject.Properties['gameVersion'] -or
+        [string]$Table.gameVersion -cne $ExpectedVersion) {
+        throw "Offset file version '$($Table.gameVersion)' does not match requested version '$ExpectedVersion': $Path"
+    }
+
+    $hashProperty = $Table.PSObject.Properties['executableSha256']
+    if ($null -ne $hashProperty -and $null -ne $hashProperty.Value -and
+        $hashProperty.Value -isnot [string]) {
+        throw "Offset file executableSha256 must be a string: $Path"
+    }
+    $existingHash = if ($null -eq $hashProperty -or $null -eq $hashProperty.Value) {
+        ''
+    } else { [string]$hashProperty.Value }
+    if ($existingHash -and ($existingHash -notmatch '^[0-9a-fA-F]{64}$' -or
+        $existingHash -ine $ExpectedHash)) {
+        throw "Offset file executableSha256 does not match the local executable: $Path"
+    }
+
+    if ($null -eq $Table.offsets -or $Table.offsets -is [array] -or
+        $Table.offsets -is [string]) {
+        throw "Offset file has no valid offsets object: $Path"
+    }
+    foreach ($field in $KnownOffsetFields) {
+        $property = $Table.offsets.PSObject.Properties[$field]
+        if ($null -eq $property) {
+            throw "Offset file is missing required field '$field': $Path"
+        }
+        Convert-ExistingOffset $property.Value $field $Path | Out-Null
+    }
+
+    $validationProperty = $Table.PSObject.Properties['fieldValidation']
+    if ($null -eq $validationProperty) {
+        $Table | Add-Member -NotePropertyName 'fieldValidation' -NotePropertyValue ([pscustomobject]@{}) -Force
+        return
+    }
+    $validationObject = $validationProperty.Value
+    if ($null -eq $validationObject -or $validationObject -is [array] -or
+        $validationObject -is [string]) {
+        throw "Offset file fieldValidation must be an object: $Path"
+    }
+    foreach ($property in $validationObject.PSObject.Properties) {
+        if ($property.Name -notin $KnownOffsetFields) {
+            throw "Offset file has unknown fieldValidation entry '$($property.Name)': $Path"
+        }
+        $entry = $property.Value
+        if ($null -eq $entry -or $entry -is [array] -or $entry -is [string]) {
+            throw "Offset file has malformed validation entry '$($property.Name)': $Path"
+        }
+        $statusProperty = $entry.PSObject.Properties['status']
+        $evidenceProperty = $entry.PSObject.Properties['evidence']
+        $status = if ($null -ne $statusProperty) { [string]$statusProperty.Value } else { '' }
+        if ($status -notin @('Unknown', 'Candidate', 'Verified', 'Stale') -or
+            $null -eq $evidenceProperty -or $evidenceProperty.Value -isnot [array]) {
+            throw "Offset file has malformed validation entry '$($property.Name)': $Path"
+        }
+
+        $fieldOffset = Convert-ExistingOffset $Table.offsets.PSObject.Properties[$property.Name].Value $property.Name $Path
+        $counterNames = @('independentProcessLaunches', 'independentReplays')
+        foreach ($counterName in $counterNames) {
+            $counterProperty = $entry.PSObject.Properties[$counterName]
+            if ($null -ne $counterProperty -and
+                ($counterProperty.Value -is [string] -or $counterProperty.Value -is [bool] -or
+                 $counterProperty.Value -is [array] -or $counterProperty.Value -isnot [int] -and
+                 $counterProperty.Value -isnot [long] -and $counterProperty.Value -isnot [int32] -and
+                 $counterProperty.Value -isnot [int64] -or [int64]$counterProperty.Value -lt 0)) {
+                throw "Offset file has an invalid $counterName value for '$($property.Name)': $Path"
+            }
+        }
+        foreach ($booleanName in @('harnessInvariantsPassed', 'leadApproved', 'decoderAuditorApproved')) {
+            $booleanProperty = $entry.PSObject.Properties[$booleanName]
+            if ($null -ne $booleanProperty -and $booleanProperty.Value -isnot [bool]) {
+                throw "Offset file has an invalid $booleanName value for '$($property.Name)': $Path"
+            }
+        }
+
+        foreach ($evidence in @($evidenceProperty.Value)) {
+            if ($null -eq $evidence -or $evidence -is [array] -or $evidence -is [string] -or
+                $evidence.provenanceKind -notin @('StaticAnalysis', 'DynamicScan', 'GameHarness', 'ManualVerification') -or
+                [string]::IsNullOrWhiteSpace([string]$evidence.sourceTool)) {
+                throw "Offset file has malformed evidence for '$($property.Name)': $Path"
+            }
+        }
+        if ($status -eq 'Verified') {
+            $required = @('independentProcessLaunches', 'independentReplays',
+                'harnessInvariantsPassed', 'leadApproved', 'decoderAuditorApproved')
+            foreach ($requiredName in $required) {
+                if ($null -eq $entry.PSObject.Properties[$requiredName]) {
+                    throw "Verified entry is missing '$requiredName' for '$($property.Name)': $Path"
+                }
+            }
+            $hasStatic = @($evidenceProperty.Value | Where-Object { $_.provenanceKind -eq 'StaticAnalysis' }).Count -gt 0
+            $hasHarness = @($evidenceProperty.Value | Where-Object { $_.provenanceKind -eq 'GameHarness' }).Count -gt 0
+            if ($fieldOffset -eq 0 -or [int64]$entry.independentProcessLaunches -lt 2 -or
+                [int64]$entry.independentReplays -lt 2 -or -not [bool]$entry.harnessInvariantsPassed -or
+                -not [bool]$entry.leadApproved -or -not [bool]$entry.decoderAuditorApproved -or
+                -not $hasStatic -or -not $hasHarness) {
+                throw "Verified entry does not contain complete evidence for '$($property.Name)': $Path"
+            }
+        }
+    }
+}
+
+function New-OffsetTable {
+    param(
+        [string]$Version,
+        [string]$Hash
+    )
+
+    return [pscustomobject]@{
+        schemaVersion = 1
+        gameVersion = $Version
+        executableSha256 = $Hash
+        discoveredAtUtc = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+        offsets = [pscustomobject]@{
+            replayTime = 0
+            playerHP = 0
+            playerPositionX = 0
+            playerPositionY = 0
+            playerPositionZ = 0
+            playerYaw = 0
+            cameraPitch = 0
+            aliveTankCount = 0
+        }
+        fieldValidation = [pscustomobject]@{}
+        confidence = 'none'
+        notes = 'Generated by the offset discovery pipeline; candidates require independent verification before promotion.'
+    }
+}
+
+function Assert-SelfTest {
+    param([bool]$Condition, [string]$Message)
+    if (-not $Condition) { throw "Self-test failed: $Message" }
+}
+
+function Invoke-DiscoverySelfTest {
+    $auto = [pscustomobject]@{
+        fieldResults = [pscustomobject]@{
+            playerYaw = [pscustomobject]@{
+                candidates = @([pscustomobject]@{ relativeOffset = '0x1000' })
+                totalCandidates = 1
+            }
+            playerHP = [pscustomobject]@{
+                candidates = @(
+                    [pscustomobject]@{ relativeOffsetDecimal = 8192 }
+                    [pscustomobject]@{ relativeOffset = '0x3000' }
+                )
+                totalCandidates = 2
+            }
+        }
+    }
+    $autoBatches = @(Get-DiscoveryBatches $auto)
+    Assert-SelfTest ($autoBatches.Count -eq 2) 'autoDiscover fieldResults shape'
+    Assert-SelfTest ($autoBatches[0].FieldName -eq 'playerYaw') 'autoDiscover field name'
+    $ambiguousNormalized = @(Get-NormalizedCandidates $autoBatches[1])
+    Assert-SelfTest ($ambiguousNormalized.Count -eq 2) 'ambiguous normalization retains both valid candidates'
+
+    $legacy = [pscustomobject]@{
+        fieldName = 'cameraPitch'
+        candidates = @([pscustomobject]@{ relativeOffsetDecimal = $null; relativeOffset = '0x4000' })
+    }
+    $legacyBatches = @(Get-DiscoveryBatches $legacy)
+    Assert-SelfTest ($legacyBatches.Count -eq 1 -and $legacyBatches[0].FieldName -eq 'cameraPitch') 'legacy shape'
+
+    $table = New-OffsetTable '11.19.0.10' ('a' * 64)
+    $first = Publish-DynamicCandidate $table 'playerYaw' 0x5000 'synthetic'
+    $second = Publish-DynamicCandidate $table 'playerYaw' 0x5000 'synthetic repeat'
+    Assert-SelfTest ($first -eq 'changed' -and $second -eq 'unchanged') 'same-offset publication'
+    Assert-SelfTest (@($table.fieldValidation.playerYaw.evidence).Count -eq 1) 'DynamicScan evidence de-duplication'
+
+    $table.offsets.playerHP = 0x6000
+    $table.fieldValidation | Add-Member -NotePropertyName 'playerHP' -NotePropertyValue ([pscustomobject]@{
+        status = 'Verified'; evidence = @([pscustomobject]@{
+            provenanceKind = 'GameHarness'; sourceTool = 'synthetic'
+        })
+    }) -Force
+    $conflictBefore = $table | ConvertTo-Json -Depth 8
+    $conflict = Publish-DynamicCandidate $table 'playerHP' 0x7000 'synthetic conflict'
+    $conflictAfter = $table | ConvertTo-Json -Depth 8
+    Assert-SelfTest ($conflict -eq 'conflict' -and $conflictBefore -eq $conflictAfter -and
+        $table.offsets.playerHP -eq 0x6000 -and
+        $table.fieldValidation.playerHP.status -eq 'Verified') 'Verified conflict preservation'
+
+    $ambiguousTable = New-OffsetTable '11.19.0.10' ('a' * 64)
+    $ambiguousTable.discoveredAtUtc = '2026-07-31T00:00:00Z'
+    $ambiguousBefore = $ambiguousTable | ConvertTo-Json -Depth 8
+    $ambiguousPublished = 0
+    if ($ambiguousNormalized.Count -eq 1) {
+        $ambiguousPublished++
+        [void](Publish-DynamicCandidate $ambiguousTable 'playerHP' $ambiguousNormalized[0].Offset 'unexpected synthetic publication')
+    }
+    if ($ambiguousPublished -gt 0) {
+        $ambiguousTable.discoveredAtUtc = '2026-07-31T00:00:01Z'
+    }
+    $ambiguousAfter = $ambiguousTable | ConvertTo-Json -Depth 8
+    Assert-SelfTest ($ambiguousNormalized.Count -ne 1 -and $ambiguousPublished -eq 0 -and
+        $ambiguousBefore -eq $ambiguousAfter -and $ambiguousTable.offsets.playerHP -eq 0) 'ambiguous candidates are not publishable'
+
+    $legacyCandidate = @(Get-NormalizedCandidates $legacyBatches[0])
+    $legacyTable = New-OffsetTable '11.19.0.10' ('a' * 64)
+    $legacyResult = Publish-DynamicCandidate $legacyTable 'cameraPitch' $legacyCandidate[0].Offset 'legacy synthetic'
+    Assert-SelfTest ($legacyResult -eq 'changed' -and $legacyTable.offsets.cameraPitch -eq 0x4000) 'legacy candidate publication'
+
+    $mismatch = New-OffsetTable '11.18.0.7' ('a' * 64)
+    $mismatchFailed = $false
+    try { Assert-ExistingOffsetTable $mismatch '11.19.0.10' ('a' * 64) 'synthetic-version.json' } catch { $mismatchFailed = $true }
+    Assert-SelfTest $mismatchFailed 'table version mismatch fails closed'
+    $requestedMismatchFailed = $false
+    try { Assert-RequestedGameVersion '11.18.0.7' '11.19.0.10' } catch { $requestedMismatchFailed = $true }
+    Assert-SelfTest $requestedMismatchFailed 'requested executable version mismatch fails closed'
+
+    $malformed = New-OffsetTable '11.19.0.10' ('a' * 64)
+    $malformed.offsets.playerHP = '8192'
+    $malformedFailed = $false
+    try { Assert-ExistingOffsetTable $malformed '11.19.0.10' ('a' * 64) 'synthetic-malformed.json' } catch { $malformedFailed = $true }
+    Assert-SelfTest $malformedFailed 'string offset fails closed'
+
+    $hashMismatch = New-OffsetTable '11.19.0.10' ('b' * 64)
+    $hashMismatchFailed = $false
+    try { Assert-ExistingOffsetTable $hashMismatch '11.19.0.10' ('a' * 64) 'synthetic-hash.json' } catch { $hashMismatchFailed = $true }
+    Assert-SelfTest $hashMismatchFailed 'executable hash mismatch fails closed'
+    $upperHash = New-OffsetTable '11.19.0.10' ('A' * 64)
+    Assert-ExistingOffsetTable $upperHash '11.19.0.10' ('a' * 64) 'synthetic-uppercase-hash.json'
+
+    $negative = New-OffsetTable '11.19.0.10' ('a' * 64)
+    $negative.offsets.playerHP = -1
+    $negativeFailed = $false
+    try { Assert-ExistingOffsetTable $negative '11.19.0.10' ('a' * 64) 'synthetic-negative.json' } catch { $negativeFailed = $true }
+    Assert-SelfTest $negativeFailed 'negative offset fails closed'
+
+    $badValidation = New-OffsetTable '11.19.0.10' ('a' * 64)
+    $badValidation | Add-Member -NotePropertyName 'fieldValidation' -NotePropertyValue 'not-an-object' -Force
+    $badValidationFailed = $false
+    try { Assert-ExistingOffsetTable $badValidation '11.19.0.10' ('a' * 64) 'synthetic-validation.json' } catch { $badValidationFailed = $true }
+    Assert-SelfTest $badValidationFailed 'malformed fieldValidation fails closed'
+    Write-Host '[PASS] discovery self-tests: CE shapes, ambiguity, conflicts, deduplication, hash/version checks, and table validation' -ForegroundColor Green
+}
 
 function Test-Prerequisites {
-    Write-Host "=== Prerequisites Check ===" -ForegroundColor Cyan
-
-    # 1. Game running
     $gameProcess = Get-Process wotblitz -ErrorAction SilentlyContinue
-    if (-not $gameProcess) {
-        Write-Host "[FAIL] wotblitz.exe is not running. Start the game with a replay first." -ForegroundColor Red
+    if ($null -eq $gameProcess) {
+        Write-Host '[FAIL] wotblitz.exe is not running. Start an offline replay first.' -ForegroundColor Red
         return $false
     }
-    Write-Host "[PASS] wotblitz.exe is running (PID: $($gameProcess.Id))" -ForegroundColor Green
+    Write-Host "[PASS] wotblitz.exe PID $($gameProcess.Id)" -ForegroundColor Green
 
-    # 2. Cheat Engine
-    if (-not $CeExePath) {
-        $CeExePath = Get-CheatEnginePath
-    }
-    if (-not $CeExePath -or -not (Test-Path $CeExePath)) {
-        Write-Host "[FAIL] Cheat Engine not found. Install CE 7.5+ or provide -CeExePath." -ForegroundColor Red
+    if ([string]::IsNullOrWhiteSpace($CeExePath) -or -not (Test-Path $CeExePath -PathType Leaf)) {
+        Write-Host '[FAIL] Cheat Engine 7.5+ was not found.' -ForegroundColor Red
         return $false
     }
     Write-Host "[PASS] Cheat Engine: $CeExePath" -ForegroundColor Green
 
-    # 3. Game executable
-    $gameExe = Get-GameExePath
-    if (-not $gameExe) {
-        Write-Host "[FAIL] Game executable not found at known paths." -ForegroundColor Red
+    $game = Get-GameExe
+    if ($null -eq $game) {
+        Write-Host '[FAIL] wotblitz.exe was not found at a known install path.' -ForegroundColor Red
         return $false
     }
-    Write-Host "[PASS] Game exe: $($gameExe.Path) (v$($gameExe.Version))" -ForegroundColor Green
+    Write-Host "[PASS] Game executable: $($game.Path) (v$($game.Version))" -ForegroundColor Green
 
-    # 4. Lua script
-    if (-not $LuaScript) {
-        $LuaScript = Join-Path $RepoRoot "tools\cheat-engine\multiscan.lua"
-    }
-    if (-not (Test-Path $LuaScript)) {
+    if (-not (Test-Path $LuaScript -PathType Leaf)) {
         Write-Host "[FAIL] Lua script not found: $LuaScript" -ForegroundColor Red
         return $false
     }
     Write-Host "[PASS] Lua script: $LuaScript" -ForegroundColor Green
-
-    # 5. Offset file
-    $version = if ($GameVersion) { $GameVersion } else { $gameExe.Version }
-    $offsetFile = Join-Path $RepoRoot "memory-offsets\$version.json"
-    if (Test-Path $offsetFile) {
-        Write-Host "[PASS] Offset file exists: $offsetFile" -ForegroundColor Green
-    }
-    else {
-        Write-Host "[WARN] Offset file not found: $offsetFile (will be created)" -ForegroundColor Yellow
-    }
-
     return $true
 }
 
-# ── Main ────────────────────────────────────────────────────────────────────
-
-Write-Host @"
-╔══════════════════════════════════════════════════════╗
-║   WoT Blitz — Automated Offset Discovery Pipeline    ║
-╚══════════════════════════════════════════════════════╝
-"@ -ForegroundColor Cyan
-Write-Host ""
-
-if (-not (Test-Prerequisites)) {
-    Write-Host ""
-    Write-Error "Prerequisites not met. Fix the issues above and retry."
-    exit 1
+Write-Host '=== WoT Blitz Offset Discovery Pipeline ===' -ForegroundColor Cyan
+if ($SelfTest) {
+    Invoke-DiscoverySelfTest
+    exit 0
 }
-
+if ([string]::IsNullOrWhiteSpace($CeExePath)) { $CeExePath = Get-CheatEnginePath }
+if ([string]::IsNullOrWhiteSpace($LuaScript)) { $LuaScript = Join-Path $RepoRoot 'tools\cheat-engine\multiscan.lua' }
+if (-not (Test-Prerequisites)) { exit 1 }
 if ($DryRun) {
-    Write-Host ""
-    Write-Host "Dry run complete. All prerequisites met." -ForegroundColor Green
-    Write-Host "Run without -DryRun to execute the discovery pipeline."
+    Write-Host 'Dry run complete; no discovery files were read or modified.' -ForegroundColor Green
     exit 0
 }
 
-# ── Phase 1: Cheat Engine Scan ──────────────────────────────────────────────
-
-$gameExe = Get-GameExePath
-$version = if ($GameVersion) { $GameVersion } else { $gameExe.Version }
+$game = Get-GameExe
+$detectedVersion = [string]$game.Version
+Assert-RequestedGameVersion $GameVersion $detectedVersion
+$version = if ([string]::IsNullOrWhiteSpace($GameVersion)) { $detectedVersion } else { $GameVersion }
 $offsetFile = Join-Path $RepoRoot "memory-offsets\$version.json"
-$ceOutputFile = Join-Path $RepoRoot "tools\cheat-engine\discovered-offsets-multiscan.json"
+$outputFile = Join-Path $RepoRoot 'tools\cheat-engine\discovered-offsets-multiscan.json'
 
-Write-Host ""
-Write-Host "=== Phase 1: Cheat Engine Auto-Discovery ===" -ForegroundColor Cyan
-Write-Host "Target version: $version"
-Write-Host "Lua script    : $LuaScript"
-Write-Host "CE output     : $ceOutputFile"
-Write-Host ""
+Write-Host ''
+Write-Host 'ACTION REQUIRED:' -ForegroundColor Yellow
+Write-Host '  1. Attach Cheat Engine to wotblitz.exe during an offline replay.'
+Write-Host '  2. Load multiscan.lua and run autoDiscover().'
+Write-Host "  3. Wait for $outputFile to be written."
+Write-Host '  4. Do not run saveDiscovered() afterward; it is the legacy shape.'
+Read-Host 'Press ENTER after the CE report exists'
 
-# NOTE: Cheat Engine's auto-launch from command line with Lua script execution
-# requires the user to have CE configured to auto-load scripts, or we need to
-# use CE's command-line interface. CE does NOT support fully headless Lua
-# execution from CLI. The user must:
-
-Write-Host "ACTION REQUIRED:" -ForegroundColor Yellow
-Write-Host "  1. Cheat Engine should already be attached to wotblitz.exe"
-Write-Host "  2. In CE, press Ctrl+Alt+L to open the Lua Engine"
-Write-Host "  3. Paste and execute the multiscan.lua script"
-Write-Host "  4. Run: autoDiscover()" -ForegroundColor White
-Write-Host "  5. Wait for completion, then run: saveDiscovered()"
-Write-Host "  6. The output will be at: $ceOutputFile"
-Write-Host ""
-Write-Host "Press ENTER after CE has completed and the output file exists..." -ForegroundColor Yellow
-Read-Host
-
-if (-not (Test-Path $ceOutputFile)) {
-    Write-Error "CE output file not found: $ceOutputFile"
-    Write-Host "Did you run saveDiscovered() in Cheat Engine?" -ForegroundColor Yellow
-    exit 1
+if (-not (Test-Path $outputFile -PathType Leaf)) {
+    throw "Cheat Engine output not found: $outputFile"
 }
 
-# ── Phase 2: Parse CE output ────────────────────────────────────────────────
-
-Write-Host ""
-Write-Host "=== Phase 2: Parse CE Results ===" -ForegroundColor Cyan
-
-try {
-    $ceData = Get-Content $ceOutputFile -Raw | ConvertFrom-Json
-    Write-Host "Field: $($ceData.fieldName)"
-    Write-Host "Candidates: $($ceData.totalCandidates)"
-    Write-Host "Module base: $($ceData.moduleBase)"
+$data = Get-Content $outputFile -Raw | ConvertFrom-Json
+$batches = @(Get-DiscoveryBatches $data)
+if ($batches.Count -eq 0) {
+    throw 'CE output has neither fieldResults nor legacy fieldName/candidates data.'
 }
-catch {
-    Write-Error "Failed to parse CE output: $_"
-    exit 1
+$normalized = @()
+foreach ($batch in $batches) {
+    $valid = @(Get-NormalizedCandidates $batch)
+    $normalized += $valid
+    $state = if ($valid.Count -eq 1) { 'unique candidate' } else { 'report-only' }
+    Write-Host "  $($batch.FieldName): $(@($batch.Candidates).Count) raw, $($valid.Count) valid, $state"
 }
 
-# ── Phase 3: Compute executable hash ────────────────────────────────────────
-
-Write-Host ""
-Write-Host "=== Phase 3: Compute Executable Hash ===" -ForegroundColor Cyan
-
-$hash = (Get-FileHash -Path $gameExe.Path -Algorithm SHA256).Hash.ToLowerInvariant()
-Write-Host "SHA-256: $hash" -ForegroundColor Yellow
-
-# ── Phase 4: Update offset file ─────────────────────────────────────────────
-
-Write-Host ""
-Write-Host "=== Phase 4: Update Offset File ===" -ForegroundColor Cyan
-
-if (-not (Test-Path $offsetFile)) {
-    # Create a new offset file from template
-    $template = @{
-        schemaVersion    = 1
-        gameVersion      = $version
-        executableSha256 = $hash
-        discoveredAtUtc  = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-        offsets          = @{
-            replayTime      = 0
-            playerHP        = 0
-            playerPositionX = 0
-            playerPositionY = 0
-            playerPositionZ = 0
-            playerYaw       = 0
-            cameraPitch     = 0
-            aliveTankCount  = 0
-        }
-        fieldValidation  = @{}
-        confidence       = "low"
-        notes            = "Discovered via automated CE pipeline on $(Get-Date -Format 'yyyy-MM-dd'). Verify with x64dbg before promoting to medium/high."
+$hash = (Get-FileHash -Path $game.Path -Algorithm SHA256).Hash.ToLowerInvariant()
+$offsetFileExisted = Test-Path $offsetFile -PathType Leaf
+$table = if ($offsetFileExisted) {
+    try {
+        Get-Content $offsetFile -Raw | ConvertFrom-Json
+    } catch {
+        throw "Offset file is not valid JSON: $offsetFile"
     }
-
-    # Add discovered candidates from CE
-    if ($ceData.candidates -and $ceData.candidates.Count -gt 0) {
-        $fieldName = $ceData.fieldName
-        $ceOffset = 0
-        if ($ceData.candidates[0].relativeOffset -match "0x([0-9a-fA-F]+)") {
-            $ceOffset = [Convert]::ToInt64($matches[1], 16)
-        }
-        $template.offsets.$fieldName = $ceOffset
-
-        $fieldValidation = @{
-            status                     = "Candidate"
-            evidence                   = @(
-                @{
-                    provenanceKind = "DynamicScan"
-                    sourceTool     = "Cheat Engine 7.7 — multiscan.lua autoDiscover()"
-                    notes          = "Discovered via timer-based multi-scan refinement on $(Get-Date -Format 'yyyy-MM-dd'). $($ceData.totalCandidates) candidates narrowed from initial scan."
-                }
-            )
-            independentProcessLaunches = 0
-            independentReplays        = 0
-            harnessInvariantsPassed   = $false
-            leadApproved              = $false
-            decoderAuditorApproved    = $false
-        }
-        $template.fieldValidation[$fieldName] = $fieldValidation
-
-        Write-Host "Discovered $fieldName offset: 0x$($ceOffset.ToString('X'))" -ForegroundColor Green
-    }
-
-    $template | ConvertTo-Json -Depth 5 | Set-Content $offsetFile -Encoding UTF8
-    Write-Host "Created: $offsetFile" -ForegroundColor Green
+} else {
+    New-OffsetTable $version $hash
 }
-else {
-    # Merge into existing offset file
-    $existing = Get-Content $offsetFile -Raw | ConvertFrom-Json
-    $existing.executableSha256 = $hash
-    $existing.discoveredAtUtc = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTH:mm:ssZ")
-
-    if ($ceData.candidates -and $ceData.candidates.Count -gt 0) {
-        $fieldName = $ceData.fieldName
-        $ceOffset = 0
-        if ($ceData.candidates[0].relativeOffset -match "0x([0-9a-fA-F]+)") {
-            $ceOffset = [Convert]::ToInt64($matches[1], 16)
-        }
-        $existing.offsets.$fieldName = $ceOffset
-
-        if (-not $existing.fieldValidation) {
-            $existing | Add-Member -NotePropertyName "fieldValidation" -NotePropertyValue @{} -Force -PassThru | Out-Null
-        }
-
-        $fv = @{
-            status                     = "Candidate"
-            evidence                   = @(
-                @{
-                    provenanceKind = "DynamicScan"
-                    sourceTool     = "Cheat Engine 7.7 — multiscan.lua autoDiscover()"
-                    notes          = "Discovered via automated CE pipeline on $(Get-Date -Format 'yyyy-MM-dd'). $($ceData.totalCandidates) candidates narrowed."
-                }
-            )
-            independentProcessLaunches = 0
-            independentReplays        = 0
-            harnessInvariantsPassed   = $false
-            leadApproved              = $false
-            decoderAuditorApproved    = $false
-        }
-        $existing.fieldValidation = $existing.fieldValidation | Add-Member -NotePropertyName $fieldName -NotePropertyValue $fv -Force -PassThru
-    }
-
-    $existing.confidence = "low"
-    $existing | ConvertTo-Json -Depth 6 | Set-Content $offsetFile -Encoding UTF8
-    Write-Host "Updated: $offsetFile" -ForegroundColor Green
+if ($offsetFileExisted) {
+    Assert-ExistingOffsetTable $table $version $hash $offsetFile
 }
 
-# ── Phase 5: Validate (optional) ────────────────────────────────────────────
+$published = 0
+$conflicts = 0
+foreach ($batch in $batches) {
+    $valid = @($normalized | Where-Object { $_.FieldName -eq $batch.FieldName })
+    if ($valid.Count -ne 1) { continue }
+
+    $candidate = $valid[0]
+    $result = Publish-DynamicCandidate $table $batch.FieldName $candidate.Offset "Unique candidate from $($valid.Count) valid candidate(s); independent process/replay verification remains required."
+    switch ($result) {
+        'changed' { $published++ }
+        'unchanged' { }
+        'conflict' {
+            $conflicts++
+            Write-Host "  $($batch.FieldName): conflict; existing offset retained" -ForegroundColor Yellow
+        }
+        'unknown-field' {
+            Write-Host "  $($batch.FieldName): unknown contract field; ignored" -ForegroundColor Yellow
+        }
+    }
+}
+
+if ($published -gt 0) {
+    $table.executableSha256 = $hash
+    $table.discoveredAtUtc = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    if ([string]$table.confidence -eq 'none') { $table.confidence = 'low' }
+    $table | ConvertTo-Json -Depth 8 | Set-Content $offsetFile -Encoding UTF8
+    Write-Host "Updated ${offsetFile}: $published uniquely publishable, $conflicts conflicting." -ForegroundColor Green
+} else {
+    Write-Host "Report-only: no offset evidence changed; $conflicts conflicting." -ForegroundColor Yellow
+}
 
 if (-not $SkipValidation) {
-    Write-Host ""
-    Write-Host "=== Phase 5: Validate ===" -ForegroundColor Cyan
-
-    # Run the Python offset checker if available
-    $checkerScript = Join-Path $RepoRoot "scripts\python\offset_check.py"
-    if (Test-Path $checkerScript) {
-        $pythonCmd = Get-Command python -ErrorAction SilentlyContinue
-        if (-not $pythonCmd) { $pythonCmd = Get-Command python3 -ErrorAction SilentlyContinue }
-        if ($pythonCmd) {
-            Write-Host "Running offset schema validator..."
-            & $pythonCmd.Source $checkerScript 2>&1 | ForEach-Object { Write-Host "  $_" }
-        }
-        else {
-            Write-Host "[WARN] Python not found — skipping schema validation" -ForegroundColor Yellow
-        }
+    $checker = Join-Path $RepoRoot 'scripts\python\offset_check.py'
+    $python = Get-Command python -ErrorAction SilentlyContinue
+    if ($null -ne $python -and (Test-Path $checker -PathType Leaf)) {
+        & $python.Source $checker
+    } else {
+        Write-Host '[WARN] Python validator unavailable; skipped.' -ForegroundColor Yellow
     }
-
-    # Write post-discovery instructions
-    Write-Host ""
-    Write-Host "=== Next Steps ===" -ForegroundColor Cyan
-    Write-Host "1. Verify offsets dynamically:" -ForegroundColor White
-    Write-Host "   - Open Cheat Engine, attach to wotblitz.exe"
-    Write-Host "   - Add each discovered offset as a manual address"
-    Write-Host "   - Watch values change during replay playback"
-    Write-Host ""
-    Write-Host "2. Cross-battle validation:"
-    Write-Host "   - Restart the game with a different replay"
-    Write-Host "   - Re-verify all offsets are still valid"
-    Write-Host ""
-    Write-Host "3. Promote to Verified:"
-    Write-Host "   - After 2+ process launches and 2+ replays confirm offsets"
-    Write-Host "   - Use x64dbg to confirm struct base register"
-    Write-Host "   - Update fieldValidation status to 'Verified'"
-    Write-Host ""
-    Write-Host "4. Test via web host:"
-    Write-Host "   - serve.cmd + overlay.cmd"
-    Write-Host "   - Check GET /api/v1/game/memory returns non-null values"
 }
-
-Write-Host ""
-Write-Host "Pipeline complete." -ForegroundColor Green

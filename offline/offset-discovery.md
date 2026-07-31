@@ -74,14 +74,21 @@ Run it like: `dotnet run --project tools/src/WotBTreader.GameHarness -c Release 
 2. Update `memory-offsets/<gameVersion>.json` — all 8 fields, set
    `confidence`, `executableSha256` (SHA-256 of wotblitz.exe for exact
    matching), `discoveredAtUtc`, `notes`.
-3. Validate: `scripts/python/offset_check.py` checks schema compliance
+3. Normalize and publish conservatively with `tools/discover-offsets.ps1`.
+   It accepts both `autoDiscover()` (`fieldResults`) and legacy
+   `saveDiscovered()` (`fieldName` + `candidates`) output. Only exactly one
+   valid candidate for a known field is written, always as `Candidate`; ambiguous
+   results remain report-only. Use `tools/report-offset-evidence.ps1` for a
+   read-only status summary.
+4. Validate: `scripts/python/offset_check.py` checks schema compliance
    (format, sha256, filename↔gameVersion match, plausibility, confidence).
    `memory-offsets/scanner-state.json` is generated runtime state — never commit.
-4. Verify end-to-end: serve → overlay → `GET /api/v1/game/memory` returns
-   non-null values.
+5. Verify end-to-end: serve → overlay → `GET /api/v1/game/memory` returns
+   non-null values only after the exact executable hash and complete promotion
+   evidence are present.
 
-Current state (2026-07-30): game 11.19.0.10, only `playerYaw` discovered;
-7 fields unknown. Full tool status in
+Current state (2026-07-31): game 11.19.0.10, only the static-analysis
+`playerYaw` candidate is recorded; 7 fields remain unknown. Full tool status in
 [`docs/operations/offset-discovery-guide.md`](../docs/operations/offset-discovery-guide.md).
 
 ## Hard rules

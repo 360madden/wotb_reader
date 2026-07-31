@@ -1,6 +1,6 @@
 # Offset Discovery Guide
 
-Last updated: 2026-07-30
+Last updated: 2026-07-31
 
 ## Current state
 
@@ -15,6 +15,8 @@ Last updated: 2026-07-30
 | GameHarness scanner | `scan`/`probe` check the offline-session gate via HTTP |
 | Ghidra headless script | `tools/ghidra-scripts/FindOffsets.java` — ready to run |
 | Cheat Engine Lua scripts | `tools/cheat-engine/discover-offsets.lua`, `multiscan.lua` |
+| Discovery orchestrator | `tools/discover-offsets.ps1` — normalizes CE outputs and publishes unique candidates only |
+| Evidence report | `tools/report-offset-evidence.ps1` — read-only Candidate/Verified/Unknown summary |
 | System Informer | **Not yet installed** — see installation below |
 
 ## Tool Installation Guide
@@ -300,6 +302,35 @@ Once you have candidate offsets from any combination of tools:
    ```
    Serve → overlay → check that GET /api/v1/game/memory returns non-null values
    ```
+
+### Discovery output and publication rules
+
+`multiscan.lua` has two output shapes:
+
+- `autoDiscover()` writes `fieldResults`, containing one result object per
+  scanned field.
+- `saveDiscovered()` writes the older single-field `fieldName` + `candidates`
+  shape for interactive scans.
+
+`tools/discover-offsets.ps1` accepts both shapes. It rejects invalid or unknown
+fields and writes a field into the versioned offset table only when exactly one
+valid module-relative candidate remains. Multiple candidates are report-only;
+they never overwrite existing evidence. Published values remain `Candidate`,
+never `Verified`, and receive `DynamicScan` provenance. The executable hash is
+updated only from the local binary and is still required before runtime reads.
+
+Use the read-only status report at any time:
+
+```powershell
+.\tools\report-offset-evidence.ps1
+.\tools\report-offset-evidence.ps1 -GameVersion 11.19.0.10
+```
+
+The report does not modify offset tables, scanner state, or CE output. A field
+is runtime-promotable only after the reader's complete evidence requirements are
+met: exact executable hash, two independent process launches, two independent
+replays, passing harness invariants, lead approval, decoder-auditor approval,
+and both static-analysis and GameHarness provenance.
 
 ## Preferred Approach for Maximum Efficiency
 
