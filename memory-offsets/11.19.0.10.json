@@ -2,25 +2,25 @@
   "schemaVersion": 1,
   "gameVersion": "11.19.0.10",
   "executableSha256": "1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d",
-  "discoveredAtUtc": "2026-07-31T16:14:08Z",
+  "discoveredAtUtc": "2026-07-31T18:30:00Z",
   "offsets": {
     "replayTime": 0,
     "playerHP": 0,
     "playerPositionX": 0,
     "playerPositionY": 0,
     "playerPositionZ": 0,
-    "playerYaw": 51808784,
+    "playerYaw": 0,
     "cameraPitch": 0,
     "aliveTankCount": 0
   },
   "fieldValidation": {
     "playerYaw": {
-      "status": "Candidate",
+      "status": "Stale",
       "evidence": [
         {
           "provenanceKind": "StaticAnalysis",
           "sourceTool": "Ghidra 12.1.2 — FindOffsets.java",
-          "notes": "67 string matches for 'yaw', 5 unique cross-references, top candidate 0x0317A810 with 6 data refs. Referencing functions: FUN_007b7030, FUN_00b18e40, FUN_007c2ca0. Not yet verified dynamically."
+          "notes": "Historical hypothesis quarantined after reconciliation: prior table decimal 51808784 = 0x03168A10; prior notes claimed 0x0317A810 = 51882000; raw export top candidate was 56085200 = 0x0357CAD0. No dynamic verification or address-kind proof."
         }
       ],
       "independentProcessLaunches": 0,
@@ -30,6 +30,6 @@
       "decoderAuditorApproved": false
     }
   },
-  "confidence": "low",
-  "notes": "playerYaw candidate (0x0317A810) discovered via Ghidra static analysis (2026-07-30). Exact SHA-256 captured from the installed 11.19.0.10 executable on 2026-07-31. 7 fields remain unknown. Verify dynamically with Cheat Engine + x64dbg before promoting to Verified."
+  "confidence": "none",
+  "notes": "No usable offsets are currently published for 11.19.0.10. The prior playerYaw hypothesis is retained as Stale evidence only; resolve the decimal/hex/address-kind conflict before any yaw scan. Seven other fields remain unknown."
 }

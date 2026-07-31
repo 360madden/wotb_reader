@@ -1,9 +1,13 @@
 # Offset discovery walkthrough
 
 End-to-end flow for discovering game memory offsets. Canonical detail:
+[`docs/operations/offset-discovery-workflow.md`](../docs/operations/offset-discovery-workflow.md)
+(timeboxed operating workflow),
+[`docs/operations/offset-discovery-ledger.md`](../docs/operations/offset-discovery-ledger.md)
+(append-only experiment tracking),
 [`docs/operations/offset-discovery-guide.md`](../docs/operations/offset-discovery-guide.md)
-(4-phase Ghidra/x64dbg/ILSpy/CE pipeline) and
-[`memory-offsets/README.md`](../memory-offsets/README.md) (four-phase workflow).
+(detailed tool reference), and
+[`memory-offsets/README.md`](../memory-offsets/README.md) (evidence format).
 
 ## What offsets are
 
@@ -65,8 +69,10 @@ All commands discover the host via the rendezvous file and check the gate:
 | `discover-nearby <refOffset> [--window <bytes>]` | Neighborhood scan around a known offset |
 | `discover-discard <sessionId>` | Discard a snapshot session |
 
-Run it like: `dotnet run --project tools/src/WotBTreader.GameHarness -c Release -- discover playerYaw Float 1.57 0.1`
-(from a directory with a `memory-offsets/` folder for the offset-status commands).
+Run it like: `dotnet run --project tools/src/WotBTreader.GameHarness -c Release -- discover playerPositionX Float 42.5 1.0`
+(from a directory with a `memory-offsets/` folder for the offset-status commands). Use a
+controlled movement transition and record the session before treating any result as a
+candidate.
 
 ## Evidence publication
 
@@ -78,9 +84,10 @@ Run it like: `dotnet run --project tools/src/WotBTreader.GameHarness -c Release 
 3. Normalize and publish conservatively with `tools/discover-offsets.ps1`.
    It accepts both `autoDiscover()` (`fieldResults`) and legacy
    `saveDiscovered()` (`fieldName` + `candidates`) output. Only exactly one
-   valid candidate for a known field is written, always as `Candidate`; ambiguous
-   results remain report-only. Use `tools/report-offset-evidence.ps1` for a
-   read-only status summary.
+   candidate with consistent decimal/hex forms, exact module identity, and a
+   module-relative address is written, always as `Candidate`; ambiguous, heap-only,
+   stale, or legacy-unclassified results remain report-only. Use
+   `tools/report-offset-evidence.ps1` for a read-only status summary.
 4. Validate: `scripts/python/offset_check.py` checks schema compliance
    (format, sha256, filename↔gameVersion match, plausibility, confidence).
    `memory-offsets/scanner-state.json` is generated runtime state — never commit.
@@ -92,9 +99,9 @@ Run it like: `dotnet run --project tools/src/WotBTreader.GameHarness -c Release 
 
 Current state (2026-07-31): the installed game is 11.19.0.10 and its executable
 hash is recorded as
-`1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d`. Only the
-static-analysis `playerYaw` `Candidate` is recorded; 7 fields remain unknown, and
-candidate evidence is not runtime-supported. Full tool status in
+`1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d`. The prior
+static-analysis `playerYaw` hypothesis is now `Stale` with a published value of
+`0`; 7 fields remain unknown and no field is runtime-supported. Full tool status in
 [`docs/operations/offset-discovery-guide.md`](../docs/operations/offset-discovery-guide.md).
 
 ## Hard rules

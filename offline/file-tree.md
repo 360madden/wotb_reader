@@ -91,12 +91,15 @@ docs/operations/handoffs/2026-07-29-suspended-process-creation.md
 docs/operations/handoffs/2026-07-30-dynamic-offset-scanner.md
 docs/operations/handoffs/2026-07-30-milestone-completion.md
 docs/operations/handoffs/2026-07-30-python-scaffolding-ce-scripts.md
+docs/operations/handoffs/2026-07-31-documentation-refresh.md
 docs/operations/handoffs/2026-07-31-managed-launch-pinvoke-fixes.md
 docs/operations/handoffs/2026-07-31-offline-discovery-pack.md
 docs/operations/handoffs/2026-07-31-offset-discovery-evidence-report.md
 docs/operations/handoffs/2026-07-31-roadmap-hardening-cancellation.md
 docs/operations/handoffs/README.md
 docs/operations/offset-discovery-guide.md
+docs/operations/offset-discovery-ledger.md
+docs/operations/offset-discovery-workflow.md
 docs/project-context.md
 docs/superpowers/plans/2026-07-26-dashboard-read-ui.md
 docs/testing/fixture-policy.md

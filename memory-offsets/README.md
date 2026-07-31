@@ -62,10 +62,17 @@ These tools are registered in `tools/external/tools.lock.json` and available at:
 
 ## Offset discovery workflow
 
-Offset discovery follows a **four-phase pipeline**: static analysis → dynamic analysis →
-struct/layout analysis → automated verification. The current committed 11.19.0.10
-table contains one hash-bound static-analysis candidate (`playerYaw`); candidate
-fields remain discovery-only until promotion evidence is complete.
+The operational workflow and experiment ledger live in
+[`docs/operations/offset-discovery-workflow.md`](../docs/operations/offset-discovery-workflow.md)
+and [`docs/operations/offset-discovery-ledger.md`](../docs/operations/offset-discovery-ledger.md).
+Use them to timebox discovery, classify address kinds, preserve failures, and avoid
+repeating unresolved hypotheses.
+
+Offset discovery follows the timeboxed workflow in the canonical documents:
+identity/offline gate → static triage → controlled dynamic anchor → native access
+tracing → repeatability → conservative publication. The current 11.19.0.10 table
+contains one hash-bound but quarantined `playerYaw` hypothesis; seven fields remain
+unknown and no field is runtime-supported.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -87,16 +94,17 @@ fields remain discovery-only until promotion evidence is complete.
 │     • Cross-reference with Ghidra findings                       │
 │     • AITools for AI-assisted pattern matching                   │
 │                                                                  │
-│  3. STRUCT/LAYOUT ANALYSIS (ILSpy + x64dbg) → Field mapping      │
+│  3. NATIVE LAYOUT ANALYSIS (CE + x64dbg)  → Field mapping        │
 │     • Trace access instructions and register-held struct bases   │
 │     • Map neighboring HP/position/yaw/pitch fields               │
-│     • Cross-check layout against static candidates               │
+│     • Optional managed-artifact check only if artifacts exist     │
+│     • Cross-check native layout against static candidates        │
 │                                                                  │
-│  4. AUTOMATED VERIFICATION (GameHarness + Treader) → Candidate   │
+│  4. AUTOMATED VERIFICATION (GameHarness + Treader) → Evidence   │
 │     • Run the built-in scanner to verify candidates              │
 │     • Validate across multiple battles and restarts              │
 │     • Promote only after complete evidence requirements          │
-│     • Commit redacted evidence summaries to memory-offsets/      │
+│     • Commit redacted evidence summaries to the ledger/table    │
 │                                                                  │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -255,7 +263,7 @@ dotnet run --project tools/src/WotBTreader.GameHarness -- discover-snapshot 4 --
 dotnet run --project tools/src/WotBTreader.GameHarness -- discover-compare 000001 changed
 
 # 5. Inspect fields adjacent to a known candidate
-dotnet run --project tools/src/WotBTreader.GameHarness -- discover-nearby 0x0317A810 --window 256
+dotnet run --project tools/src/WotBTreader.GameHarness -- discover-nearby <reconciled-module-rva> --window 256
 
 # 6. Discard temporary snapshot state when finished
 dotnet run --project tools/src/WotBTreader.GameHarness -- discover-discard 000001
@@ -271,7 +279,7 @@ field values or narrow a scan. Candidate output must be normalized through
 |----------------|------|--------|-------------|
 | Static | Ghidra | Candidate addresses from binary analysis | Cheat Engine dynamic verification |
 | Dynamic | Cheat Engine | Candidate addresses, pointer chains, and write traces | GameHarness discovery commands |
-| Struct/layout | ILSpy + x64dbg | Field mapping and access instructions | GameHarness and CE |
+| Native layout | Cheat Engine + x64dbg | Access instructions, object bases, and member displacements | GameHarness and CE |
 | Automated | GameHarness | Gate-checked scan/snapshot/compare candidates | Independent launches, replays, and invariants |
 
 #### Converting to offset JSON
@@ -299,18 +307,18 @@ When you have one or more independently corroborated candidate offsets:
     "playerPositionX": 0,
     "playerPositionY": 0,
     "playerPositionZ": 0,
-    "playerYaw": 51808784,
+    "playerYaw": 0,
     "cameraPitch": 0,
     "aliveTankCount": 0
   },
   "fieldValidation": {
     "playerYaw": {
-      "status": "Candidate",
+      "status": "Stale",
       "evidence": [
         {
           "provenanceKind": "StaticAnalysis",
           "sourceTool": "Ghidra",
-          "notes": "Candidate only; dynamic verification is still required."
+          "notes": "Historical hypothesis retained as Stale evidence only; dynamic verification and address-kind reconciliation are required."
         }
       ],
       "independentProcessLaunches": 0,
@@ -320,8 +328,8 @@ When you have one or more independently corroborated candidate offsets:
       "decoderAuditorApproved": false
     }
   },
-  "confidence": "low",
-  "notes": "Candidate evidence is discovery-only. Do not promote from a global confidence value."
+  "confidence": "none",
+  "notes": "The historical yaw entry is quarantined evidence only. Do not promote from a global confidence value."
 }
 ```
 
@@ -331,12 +339,14 @@ When you have one or more independently corroborated candidate offsets:
 
 | Version | Executable hash | Known offsets | Runtime status |
 |---|---|---:|---|
-| `11.19.0.10` | `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d` | 1/8 | `playerYaw` is Candidate; runtime reads remain unsupported |
+| `11.19.0.10` | `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d` | 0/8 usable | `playerYaw` is quarantined/Stale; runtime reads remain unsupported |
 
 The hash identifies the installed executable used for this evidence snapshot; it is
-not proof that the candidate offset is correct. Dynamic verification must use a
-positively verified offline replay and preserve evidence summaries without committing
-raw dumps or scan files.
+not proof that a candidate offset is correct. The table intentionally preserves the
+quarantined yaw evidence with offset `0` and status `Stale`; the runtime reader maps
+zero-valued fields to `Unknown`, so no stale field can authorize a memory read.
+Dynamic verification must use a positively verified offline replay and preserve
+evidence summaries without committing raw dumps or scan files.
 
 ## Quick reference — common field types
 
@@ -351,12 +361,13 @@ raw dumps or scan files.
 
 ## Tips
 
-- **HP is the easiest starting point** — visible on screen, changes frequently, int32 type narrows quickly
+- **Position X/Z or replay time are the preferred first anchors** when a controlled replay transition is available; HP is a fallback because damage may be infrequent
 - **Positions often form a contiguous float triple** (X, Y, Z at consecutive offsets) — finding one finds all three
 - **Replay time is double precision** — many scanners default to int32/float, ensure you select `Double`
 - **Yaw and Camera Pitch** are typically adjacent floats near the position data
 - **Pointer scan after game restart** — offset chains that survive restart are robust static offsets
-- **Ghidra string references** — strings like `"health"` or `"replayTime"` in the binary often cross-reference to the structs containing those values
+- **Ghidra string references** — strings like `"health"` or `"replayTime"` are triage clues, not proof of a field or module RVA
+- **Managed-artifact tools are conditional** — do not assume Unity, Mono, IL2CPP, or `Assembly-CSharp.dll` in the native DAVA-era client
 - **Use the approved gate** — Cheat Engine and GameHarness scanning are restricted to positively verified offline replay sessions; elevation depends on the local Windows security context
 
 ## Never commit

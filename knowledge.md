@@ -21,7 +21,10 @@ full design specification.
   offline validation and test tooling.
 - **Current offset evidence:** `11.19.0.10` is hash-bound to
   `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d`;
-  `playerYaw` is a `Candidate`, not runtime-supported, and seven fields remain unknown.
+  the `playerYaw` hypothesis is quarantined/Stale because its representations
+  conflict; seven fields remain unknown and no field is runtime-supported.
+- **Discovery workflow:** use [`docs/operations/offset-discovery-workflow.md`](docs/operations/offset-discovery-workflow.md)
+  and append every attempt to [`docs/operations/offset-discovery-ledger.md`](docs/operations/offset-discovery-ledger.md).
 
 ## Quickstart
 

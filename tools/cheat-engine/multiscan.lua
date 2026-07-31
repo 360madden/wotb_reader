@@ -7,6 +7,7 @@
   dynamically-allocated game values.
 
   HOW TO USE (Interactive):
+    0. Confirm the host reports OfflineReplayVerified; this script cannot enforce that gate.
     1. Load this script in CE (Ctrl+Alt+L, then Execute)
     2. Run step 1 to begin: scanInteractive("playerPositionX", vtSingle, -500, 500)
     3. In the WoT Blitz replay, move the camera or let the tank move
@@ -15,10 +16,10 @@
     6. Output results with: showCandidates() and saveDiscovered()
 
   HOW TO USE (Auto-Discover — unattended):
-    1. Start WoT Blitz with a replay
+    1. Confirm the host reports OfflineReplayVerified, then start WoT Blitz with a replay
     2. Load this script in CE (Ctrl+Alt+L, then Execute)
-    3. Run: autoDiscover()
-    4. Wait for completion (~30-60 seconds per field)
+    3. Run: autoDiscover("playerPositionX")
+    4. Wait for completion (~30-60 seconds for the selected field)
     5. Results auto-saved to discovered-offsets-multiscan.json
 
   VALUE TYPES:
@@ -39,6 +40,7 @@ local LOG_ENABLED = true
 local OUTPUT_PATH = "tools/cheat-engine/discovered-offsets-multiscan.json"
 local scanField = nil
 local scanStartTime = nil
+local autoFieldName = "playerPositionX"
 
 local function log(level, msg)
   if LOG_ENABLED then
@@ -64,6 +66,16 @@ local function getBaseAddress()
   for i = 1, #modules do
     if modules[i].Name:lower():find("wotblitz") then
       return modules[i].Address
+    end
+  end
+  return 0
+end
+
+local function getModuleSize(moduleName)
+  local modules = enumModules()
+  for i = 1, #modules do
+    if modules[i].Name:lower() == moduleName:lower() then
+      return modules[i].Size
     end
   end
   return 0
@@ -264,7 +276,9 @@ function saveDiscovered()
     generatedAtUtc = os.date("!%Y-%m-%dT%H:%M:%SZ"),
     fieldName = scanField,
     processId = getOpenedProcessID(),
+    moduleName = "wotblitz.exe",
     moduleBase = string.format("0x%X", baseAddr),
+    moduleSize = getModuleSize("wotblitz.exe"),
     totalCandidates = scan.resultCount or 0,
     candidates = candidates,
     scanMethod = "manual",
@@ -442,7 +456,7 @@ local function autoScanField(field, baseAddr)
   if prevCount == 0 then
     log("WARN", "  No results — field may not be in scanned memory range.")
     scan.destroy()
-    return nil
+    return nil, 0
   end
 
   if prevCount <= 10 then
@@ -486,12 +500,25 @@ local function autoScanField(field, baseAddr)
 
   log("INFO", string.format("  Complete: %d candidate(s) collected", count))
   scan.destroy()
-  return candidates
+  return candidates, prevCount
 end
 
 -- ── Main auto-discover entry point ─────────────────────────────────────
 
-function autoDiscover()
+function autoDiscover(requestedField)
+  requestedField = requestedField or autoFieldName
+  local requestedFieldKnown = false
+  for _, configuredField in ipairs(AUTO_FIELDS) do
+    if configuredField.fieldName == requestedField then
+      requestedFieldKnown = true
+      break
+    end
+  end
+  if not requestedFieldKnown then
+    log("ERROR", "Unknown auto-discovery field: " .. tostring(requestedField))
+    log("ERROR", "Use one of the configured fields, preferably playerPositionX or playerPositionZ.")
+    return nil
+  end
   if not attach() then
     log("ERROR", "Cannot attach to game. Aborting.")
     return nil
@@ -507,11 +534,11 @@ function autoDiscover()
   log("INFO", "AUTO-DISCOVERY START")
   log("INFO", string.format("Module base: 0x%X", baseAddr))
   log("INFO", string.format("Process PID: %d", getOpenedProcessID()))
-  log("INFO", string.format("Fields to scan: %d", #AUTO_FIELDS))
+  log("INFO", "Field to scan: " .. requestedField)
   log("INFO", "========================================")
   log("INFO", "")
   log("INFO", "Make sure a replay is actively playing and the game")
-  log("INFO", "window is visible. The script will scan each field with")
+  log("INFO", "window is visible. The script will scan the selected field with")
   log("INFO", "timer-based refinement — no interaction needed.")
   log("INFO", "")
 
@@ -521,14 +548,12 @@ function autoDiscover()
   local fieldsWithCandidates = 0
 
   for idx, field in ipairs(AUTO_FIELDS) do
-    if field.fieldName ~= "playerYaw" then
-      log("INFO", string.format("[%d/%d] Skipping %s — use scanInteractive() manually",
-        idx, #AUTO_FIELDS, field.fieldName))
+    if field.fieldName ~= requestedField then
       goto continue
     end
 
     log("INFO", string.format("[%d/%d] Scanning %s...", idx, #AUTO_FIELDS, field.fieldName))
-    local candidates = autoScanField(field, baseAddr)
+    local candidates, reportedCandidateCount = autoScanField(field, baseAddr)
     fieldsScanned = fieldsScanned + 1
 
     if candidates and #candidates > 0 then
@@ -536,14 +561,14 @@ function autoDiscover()
       results[field.fieldName] = {
         fieldType = valueTypeName(field.valueType),
         description = field.description,
-        totalCandidates = #candidates,
+        totalCandidates = reportedCandidateCount,
         candidates = candidates,
       }
     else
       results[field.fieldName] = {
         fieldType = valueTypeName(field.valueType),
         description = field.description,
-        totalCandidates = 0,
+        totalCandidates = reportedCandidateCount or 0,
         candidates = {},
       }
     end
@@ -560,7 +585,10 @@ function autoDiscover()
     tool = "cheat-engine-multiscan.lua — autoDiscover()",
     generatedAtUtc = os.date("!%Y-%m-%dT%H:%M:%SZ"),
     processId = getOpenedProcessID(),
+    moduleName = "wotblitz.exe",
     moduleBase = string.format("0x%X", baseAddr),
+    moduleSize = getModuleSize("wotblitz.exe"),
+    requestedField = requestedField,
     fieldsScanned = fieldsScanned,
     fieldsWithCandidates = fieldsWithCandidates,
     elapsedSeconds = math.floor(elapsed * 10) / 10,
@@ -593,5 +621,5 @@ end
 log("INFO", "Multi-scan engine loaded.")
 log("INFO", "Interactive: scanInteractive('playerPositionX', vtSingle, -500, 500)")
 log("INFO", "          then nextScan('changed'), showCandidates(), saveDiscovered()")
-log("INFO", "Auto:       autoDiscover() — unattended timer-based pipeline")
+log("INFO", "Auto:       autoDiscover(\"playerPositionX\") — one-field timer-based pipeline")
 log("INFO", "Cleanup:    cleanup()")

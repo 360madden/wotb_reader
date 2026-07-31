@@ -2,16 +2,21 @@
 
 Last updated: 2026-07-31
 
+> **Operating workflow:** use [`offset-discovery-workflow.md`](offset-discovery-workflow.md)
+> for timeboxes, pivots, address-kind classification, and the next-session protocol.
+> Record every attempt in [`offset-discovery-ledger.md`](offset-discovery-ledger.md),
+> including partials and failures. This guide retains the detailed tool reference.
+
 ## Current state
 
 | Item | Status |
 |------|--------|
 | Game version installed | 11.19.0.10 (`C:\Games\World_of_Tanks_Blitz\wotblitz.exe`, ~71MB) |
-| Offset file | `memory-offsets/11.19.0.10.json` — hash-bound; `playerYaw` is Candidate; 7 fields unknown |
+| Offset file | `memory-offsets/11.19.0.10.json` — hash-bound; `playerYaw` is Stale/quarantined; 7 fields unknown |
 | Ghidra 12.1.2 | Installed at `C:\work\tools\ghidra_12.1.2_PUBLIC` |
 | Cheat Engine 7.7 | Installed at `C:\Program Files\Cheat Engine\` |
 | x64dbg | Installed at `C:\work\tools\x64dbg` — snapshot 2026.05.27 (see Phase 2 below) |
-| ILSpy | **Not yet installed** — see Phase 3 below |
+| Managed-artifact decompiler | **Conditional only** — verify exact installation artifacts before using; see Phase 3 below |
 | GameHarness scanner | `scan`/`probe` and `discover*` check the offline-session gate via HTTP |
 | Ghidra headless script | `tools/ghidra-scripts/FindOffsets.java` — ready to run |
 | Cheat Engine Lua scripts | `tools/cheat-engine/discover-offsets.lua`, `multiscan.lua` |
@@ -69,35 +74,35 @@ Process Hacker project.
 3. Right-click → Properties → Memory tab — you should see memory regions
 4. Right-click → Suspend (then Resume) to test process freezing
 
-### 3. Install ILSpy
+### 3. Optional managed-artifact check
 
-ILSpy decompiles .NET assemblies into readable C#. WoT Blitz (Unity) ships
-`Assembly-CSharp.dll` and other managed DLLs that contain the game's struct
-definitions. This is the fastest way to find field offsets without scanning.
+The current repository treats WoT Blitz as a native DAVA-era client. Do **not**
+assume that Unity, Mono, IL2CPP, `Assembly-CSharp.dll`, or
+`global-metadata.dat` exists. First inspect the exact installation and record
+what is actually present. Only if the client contains relevant managed artifacts
+should an assembly decompiler become a discovery branch.
 
-**Download:** https://github.com/icsharpcode/ILSpy/releases
+ILSpy is therefore **conditional, not a required phase**. If applicable:
 
-**Installation:**
-1. Download the latest release zip (e.g., `ILSpy_binaries_9.0.x.zip`)
-2. Extract to `C:\tools\ILSpy\`
-3. Run `ILSpy.exe`
+1. Verify the artifact belongs to the exact executable/version campaign.
+2. Open it read-only and record the artifact hash.
+3. Search for type/field layout clues, but treat names and inferred offsets as
+   hypotheses until native access behavior confirms them.
+4. If the artifacts are absent or unrelated, close this branch immediately and
+   continue with native Ghidra/CE/x64dbg work.
 
-**Verification:**
-1. Launch ILSpy
-2. File → Open → select `C:\Games\World_of_Tanks_Blitz\wotblitz_Data\Managed\Assembly-CSharp.dll`
-3. Browse the tree — you should see namespaces and classes
-4. Search (Ctrl+F) for "Player" or "Tank" to find relevant classes
+## Full Discovery Pipeline
 
-**Note:** Unity game assemblies are often **obfuscated** (Beebyte, Obfuscator, etc.).
-If class names are gibberish (e.g., `a`, `b`, `aa.bc`), ILSpy is still useful for
-struct layout — the field order and types remain intact even if names are mangled.
-
-## Full Discovery Pipeline (4 Phases)
+The operating workflow is timeboxed and authoritative. This section maps the
+installed tools to its stages; the managed-artifact branch is optional.
 
 ```
-Phase 1: Ghidra (static) → Phase 2: x64dbg (dynamic)
-                              → Phase 3: ILSpy (struct layout)
-                              → Phase 4: Validation
+Phase 0: identity + offline gate
+Phase 1: Ghidra static triage
+Phase 2: CE controlled dynamic anchor
+Phase 3: CE/x64dbg native access + layout tracing
+Phase 4: two launches × two replays + GameHarness evidence
+Phase 5: conservative publication and promotion review
 ```
 
 ### Phase 1 — Ghidra static analysis (string → cross-reference → candidate offset)
@@ -129,7 +134,7 @@ Output goes to `tools\ghidra-scripts\ghidra-offset-candidates.json`.
 **Current results (from 2026-07-30 Ghidra run):**
 | Field | Strings | Xrefs | Top Offset | Status |
 |-------|---------|-------|------------|--------|
-| playerYaw | 67 matches | 5 unique | `0x0317A810` (51,808,784) | ✅ Found |
+| playerYaw | 67 matches | 5 unique | Conflicting representations | ⚠️ Ambiguous; quarantined |
 | playerHP | 5,000 matches | 56 xrefs | Noisy — needs dynamic filter | ❌ Noise |
 | playerPositionX | 3 matches | 0 xrefs | No candidates | ❌ Obfuscated |
 | playerPositionY | 2 matches | 0 xrefs | No candidates | ❌ Obfuscated |
@@ -223,60 +228,40 @@ Example:
   GameAssembly.dll base = 0x10000000  (from x64dbg Modules pane)
   Struct address = 0x10317A44
   playerYaw offset = 0x10317A44 + 0x34 - 0x10000000 = 0x0317A878
-  → Compare with Ghidra candidate: 0x0317A810
-  → If close, it's confirmed. The 0x68 difference may be struct versioning.
+  → Compare with the reconciled candidate record, not the current quarantined yaw values.
+  → A nearby address is not confirmation; classify the address kind first.
 ```
 
-### Phase 3 — ILSpy struct decompilation (fastest for obfuscated-lite binaries)
+### Phase 3 — Native instruction and layout tracing
 
-**Purpose:** If the Unity DLLs are not heavily obfuscated, ILSpy will show you
-the exact struct layout with field names and offsets.
+The current client is treated as native DAVA-era code. Start with Cheat Engine's
+access/write trace, then use x64dbg when the instruction or register context is
+insufficient. Any managed-artifact check is optional corroboration only.
 
 #### Step-by-step:
 
-**1. Open the game's managed assemblies**
+**1. Capture the native access path**
 ```
-ILSpy: File → Open → C:\Games\World_of_Tanks_Blitz\wotblitz_Data\Managed\
-    → Select ALL .dll files (or at least Assembly-CSharp.dll)
-```
-
-**2. Search for player-related types**
-```
-Ctrl+F → "Player" → look for classes containing:
-  - HP / health / hitPoints
-  - position / Position / m_position (Unity Vector3)
-  - yaw / Yaw / m_yaw
-  - pitch / Pitch / m_pitch
-  - isAlive / AliveCount / tankCount
-
-If class names are obfuscated (single letters), look for:
-  - Classes with multiple float fields (likely position = 3 consecutive floats)
-  - Classes with int + float mix (likely player state)
-  - Base classes with names like "MonoBehaviour"
+CE: right-click the best dynamic candidate → "Find out what writes"
+    → record the instruction, register/pointer expression, and process/module identity
 ```
 
-**3. Read the struct layout**
-```csharp
-// Example (conceptual — actual names vary by obfuscation):
-public class PlayerStats : MonoBehaviour
-{
-    public int    maxHp;          // offset +0x10
-    public int    currentHp;      // offset +0x14
-    public Vector3 position;      // offset +0x28 (X: +0x28, Y: +0x2C, Z: +0x30)
-    public float  yaw;            // offset +0x34
-    public float  pitch;          // offset +0x38
-    public float  cameraPitch;    // offset +0x3C
-    public int    aliveTankCount; // offset +0x40 (or in a separate BattleState class)
-    public float  replayTime;     // offset +0x44 (or in a separate Timeline class)
-}
+**2. Classify the address kind**
+```
+Determine whether the evidence is a member displacement, pointer chain,
+or heap-dynamic address. A member displacement such as `[reg+0x34]` is not a
+module RVA.
 ```
 
-**4. Cross-reference with x64dbg**
-```
-Check that [ecx+0x28] reads as a float matching the player's in-game X position.
-Check that [ecx+0x10] reads as an int32 matching the player's HP.
-If they match, the struct offsets are confirmed.
-```
+**3. Inspect neighboring native fields**
+Inspect nearby fields from the same proven object base. Look for the expected
+position triple, HP-like integer, and angle values, then repeat the same member
+displacement or pointer chain after a fresh launch.
+
+**4. Confirm with x64dbg when needed**
+
+Use x64dbg to confirm instruction/register context when CE is insufficient. Do
+not infer a module offset from a nearby address or from a conceptual layout.
 
 ### Phase 4 — Offset validation
 
@@ -318,11 +303,14 @@ scan or one battle.
   shape for interactive scans.
 
 `tools/discover-offsets.ps1` accepts both shapes. It rejects invalid or unknown
-fields and writes a field into the versioned offset table only when exactly one
-valid module-relative candidate remains. Multiple candidates are report-only;
-they never overwrite existing evidence. Published values remain `Candidate`,
-never `Verified`, and receive `DynamicScan` provenance. The executable hash is
-updated only from the local binary and is still required before runtime reads.
+fields and writes a field into the versioned offset table only when raw, reported,
+and normalized candidate counts are all exactly one, decimal/hex forms agree,
+and the candidate is inside the named `wotblitz.exe` module range. Multiple,
+heap-only, stale, legacy-unclassified, or otherwise ambiguous results are
+report-only; they never overwrite existing evidence. Published values remain
+`Candidate`, never `Verified`, and receive `DynamicScan` provenance. The
+executable hash is updated only from the local binary and is still required
+before runtime reads.
 
 Use the read-only status report at any time:
 
@@ -339,25 +327,23 @@ and both static-analysis and GameHarness provenance.
 
 ## Preferred Approach for Maximum Efficiency
 
-Since Ghidra found only `playerYaw` (the other fields are obfuscated in native
-code), the fastest path to all 8 offsets is:
+Since the current static run produced no reconciled runtime anchor, the fastest
+path to all 8 fields is to establish one controlled native dynamic anchor first:
 
 ```
-1. ILSpy → Open Assembly-CSharp.dll → Find the PlayerStats struct
-   ↓ If successful, you get all offsets in 5 minutes
-2. x64dbg → Attach to wotblitz.exe while replay is playing
-   ↓ Confirm the offsets by setting breakpoints on suspected fields
-3. CE → Verify by watching the values change in real-time
-4. Update memory-offsets/11.19.0.10.json
+1. CE → establish one controlled dynamic anchor (position, replay time, or HP)
+   ↓ Capture candidate counts and state transitions
+2. CE → trace accesses/writes for the best candidates
+   ↓ Identify a member displacement or pointer-chain root
+3. x64dbg → confirm instruction/register context when CE is insufficient
+   ↓ Reconstruct neighboring fields from the same object
+4. Repeat across two launches and two replays before publication
 ```
 
-If ILSpy shows obfuscated names, fall back to:
-```
-1. CE → Find any one value (yaw or HP using known value scan)
-2. x64dbg → "Find out what writes to this address" → get struct base
-3. x64dbg Dump → Scroll through struct to discover neighboring fields
-4. Map all offsets → verify in CE
-```
+If the native path produces only heap-dynamic addresses, use x64dbg or a
+pointer scan to find a stable root. If no stable root appears within the
+session timebox, record the result as a partial and pivot to another field;
+do not publish a heap address as a module-relative offset.
 
 ## One-time Setup Commands
 
@@ -377,21 +363,12 @@ $shortcut.Save()
 Write-Host "x64dbg installed to C:\work\tools\x64dbg"
 ```
 
-### Install ILSpy (run in PowerShell; elevate only if your selected install directory requires it):
-```powershell
-# Download latest release
-$url = "https://github.com/icsharpcode/ILSpy/releases/latest/download/ILSpy_binaries.zip"
-$out = "$env:TEMP\ILSpy.zip"
-Invoke-WebRequest -Uri $url -OutFile $out
-# Extract
-Expand-Archive -Path $out -DestinationPath "C:\tools\ILSpy" -Force
-# Create desktop shortcut
-$wshell = New-Object -ComObject WScript.Shell
-$shortcut = $wshell.CreateShortcut("$env:USERPROFILE\Desktop\ILSpy.lnk")
-$shortcut.TargetPath = "C:\tools\ILSpy\ILSpy.exe"
-$shortcut.Save()
-Write-Host "ILSpy installed to C:\tools\ILSpy"
-```
+### Optional managed-artifact tool
+
+Do not install or use a managed-assembly decompiler unless Phase 0 confirms that
+this exact WoT Blitz installation contains relevant managed artifacts. If that
+branch is confirmed, record the artifact hash and use a locally approved,
+read-only decompiler; otherwise skip it and continue with native tooling.
 
 ## Offset file format
 

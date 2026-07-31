@@ -13,13 +13,15 @@
     - WoT Blitz running with a replay actively playing
     - Cheat Engine 7.5+ attached to wotblitz.exe
 
-  Known offset: playerYaw = 0x0317A810 (module-relative)
-  Module base address is resolved at runtime (ASLR-aware).
+  The previous playerYaw reference is quarantined because its decimal/hex
+  representations and raw Ghidra export disagree. This script intentionally
+  has no enabled reference window until the evidence ledger reconciles the
+  candidate and address kind. Use multiscan.lua for a fresh dynamic anchor.
 --]============================================================================]
 
-local KNOWN_OFFSETS = {
-  playerYaw = 0x0317A810,  -- Confirmed by Ghidra static analysis (2026-07-30)
-}
+-- Intentionally empty while the historical playerYaw candidate is ambiguous.
+-- Do not add a reference here without a ledger session and reconciled evidence.
+local KNOWN_OFFSETS = {}
 
 local WINDOW_SIZE = 1024  -- Bytes around each known offset to scan
 local OUTPUT_PATH = "tools/cheat-engine/discovered-offsets.json"
@@ -299,6 +301,12 @@ local function main()
   end
 
   log_info(string.format("Module base: 0x%X", baseAddress))
+  if next(KNOWN_OFFSETS) == nil then
+    log_warn("No trusted reference offsets enabled; neighborhood scan is quarantined.")
+    log_warn("Use multiscan.lua for a fresh dynamic anchor and record the session ledger.")
+    return
+  end
+
   log_info("Starting neighborhood scan...")
 
   local results, scanCount = discoverNeighborhood(baseAddress)

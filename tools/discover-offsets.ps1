@@ -6,10 +6,11 @@
     Checks offline-replay prerequisites, waits for a human-run Cheat Engine
     session to produce discovered-offsets-multiscan.json, accepts both the
     autoDiscover() fieldResults shape and the legacy saveDiscovered() shape,
-    computes the executable hash, and merges only uniquely valid candidates.
+    computes the executable hash, and merges only uniquely valid module-relative candidates with complete module identity.
 
     A candidate never becomes Verified here. Existing nonzero offsets are never
-    replaced by a different candidate; conflicting results remain report-only.
+    replaced by a different candidate; stale/quarantined fields and conflicting
+    or unclassified results remain report-only.
 
 .PARAMETER GameVersion
     Target game version, for example 11.19.0.10. Auto-detected when omitted.
@@ -102,6 +103,9 @@ function Get-DiscoveryBatches {
                 FieldName = $property.Name
                 Candidates = $candidates
                 ReportedCandidateCount = $reported
+                ModuleName = [string]$Data.moduleName
+                ModuleBase = [string]$Data.moduleBase
+                ModuleSize = $Data.moduleSize
             }
         }
     } elseif ($null -ne $Data.candidates -and
@@ -114,6 +118,9 @@ function Get-DiscoveryBatches {
             FieldName = [string]$Data.fieldName
             Candidates = $candidates
             ReportedCandidateCount = $reported
+            ModuleName = [string]$Data.moduleName
+            ModuleBase = [string]$Data.moduleBase
+            ModuleSize = $Data.moduleSize
         }
     }
 
@@ -123,35 +130,74 @@ function Get-DiscoveryBatches {
 function Convert-CandidateOffset {
     param([object]$Candidate)
 
-    if ($null -ne $Candidate.PSObject.Properties['relativeOffsetDecimal'] -and
-        $null -ne $Candidate.relativeOffsetDecimal) {
-        $value = $Candidate.relativeOffsetDecimal
+    $decimalOffset = $null
+    $decimalProperty = $Candidate.PSObject.Properties['relativeOffsetDecimal']
+    if ($null -ne $decimalProperty -and $null -ne $decimalProperty.Value) {
+        $value = $decimalProperty.Value
         $numericTypes = @(
             [byte], [sbyte], [uint16], [int16], [uint32], [int],
             [uint64], [long], [single], [double], [decimal]
         )
-        if ($value -isnot [string] -and $value -isnot [bool] -and
-            $value -isnot [array] -and $numericTypes -contains $value.GetType()) {
-            try { $decimal = [decimal]$value } catch { $decimal = $null }
-            if ($null -ne $decimal -and $decimal -eq [decimal]::Truncate($decimal) -and
-                $decimal -gt 0 -and $decimal -le 0x7FFFFFFF) {
-                return [long]$decimal
-            }
+        if ($value -is [string] -or $value -is [bool] -or $value -is [array] -or
+            $numericTypes -notcontains $value.GetType()) {
+            return $null
         }
+        try { $decimal = [decimal]$value } catch { return $null }
+        if ($decimal -ne [decimal]::Truncate($decimal) -or
+            $decimal -le 0 -or $decimal -gt 0x7FFFFFFF) {
+            return $null
+        }
+        $decimalOffset = [long]$decimal
     }
 
+    $hexOffset = $null
     $relativeProperty = $Candidate.PSObject.Properties['relativeOffset']
-    if ($null -eq $relativeProperty -or $relativeProperty.Value -isnot [string]) {
-        return $null
-    }
-    $raw = [string]$relativeProperty.Value
-    if ($raw -match '^0x([0-9a-fA-F]+)$') {
+    if ($null -ne $relativeProperty -and $null -ne $relativeProperty.Value) {
+        if ($relativeProperty.Value -isnot [string] -or
+            [string]$relativeProperty.Value -notmatch '^0x([0-9a-fA-F]+)$') {
+            return $null
+        }
         try {
             $offset = [Convert]::ToInt64($matches[1], 16)
-            if ($offset -gt 0 -and $offset -le 0x7FFFFFFF) { return $offset }
+            if ($offset -le 0 -or $offset -gt 0x7FFFFFFF) { return $null }
+            $hexOffset = $offset
         } catch { return $null }
     }
-    return $null
+
+    # CE output may contain both forms. Never silently prefer one: a mismatch
+    # means the candidate record is internally inconsistent and is rejected.
+    if ($null -ne $decimalOffset -and $null -ne $hexOffset -and
+        $decimalOffset -ne $hexOffset) {
+        return $null
+    }
+    if ($null -ne $decimalOffset) { return $decimalOffset }
+    return $hexOffset
+}
+
+function Convert-HexAddress {
+    param([object]$Value)
+
+    if ($null -eq $Value -or $Value -isnot [string] -or
+        [string]$Value -notmatch '^0x([0-9a-fA-F]+)$') { return $null }
+    try { return [Convert]::ToInt64($matches[1], 16) } catch { return $null }
+}
+
+function Test-ModuleRelativeCandidate {
+    param(
+        [object]$Candidate,
+        [object]$Batch
+    )
+
+    if ([string]$Batch.ModuleName -ine 'wotblitz.exe') { return $false }
+    $base = Convert-HexAddress $Batch.ModuleBase
+    $absolute = Convert-HexAddress $Candidate.absoluteAddress
+    $size = 0L
+    try { $size = [long]$Batch.ModuleSize } catch { return $false }
+    if ($null -eq $base -or $null -eq $absolute -or $size -le 0) { return $false }
+    if ($absolute -lt $base -or $absolute -ge ($base + $size)) { return $false }
+
+    $normalized = Convert-CandidateOffset $Candidate
+    return $null -ne $normalized -and ($absolute - $base) -eq $normalized
 }
 
 function Get-NormalizedCandidates {
@@ -164,6 +210,7 @@ function Get-NormalizedCandidates {
             $normalized += [pscustomobject]@{
                 FieldName = $Batch.FieldName
                 Offset = $offset
+                AddressKind = if (Test-ModuleRelativeCandidate $candidate $Batch) { 'module-rva' } else { 'heap-dynamic-or-unclassified' }
                 CandidateCount = @($Batch.Candidates).Count
                 ReportedCandidateCount = $Batch.ReportedCandidateCount
             }
@@ -216,6 +263,13 @@ function Publish-DynamicCandidate {
     if ($FieldName -notin $KnownOffsetFields) { return 'unknown-field' }
     $offsetProperty = $Table.offsets.PSObject.Properties[$FieldName]
     if ($null -eq $offsetProperty) { return 'unknown-field' }
+
+    $existingValidation = if ($null -ne $Table.fieldValidation) {
+        $Table.fieldValidation.PSObject.Properties[$FieldName]
+    } else { $null }
+    if ($null -ne $existingValidation -and [string]$existingValidation.Value.status -eq 'Stale') {
+        return 'stale'
+    }
 
     $currentOffset = [long]$offsetProperty.Value
     if ($currentOffset -ne 0 -and $currentOffset -ne $Offset) {
@@ -440,15 +494,21 @@ function Assert-SelfTest {
 
 function Invoke-DiscoverySelfTest {
     $auto = [pscustomobject]@{
+        moduleName = 'wotblitz.exe'
+        moduleBase = '0x10000000'
+        moduleSize = 0x1000000
         fieldResults = [pscustomobject]@{
             playerYaw = [pscustomobject]@{
-                candidates = @([pscustomobject]@{ relativeOffset = '0x1000' })
+                candidates = @([pscustomobject]@{
+                    absoluteAddress = '0x10001000'
+                    relativeOffset = '0x1000'
+                })
                 totalCandidates = 1
             }
             playerHP = [pscustomobject]@{
                 candidates = @(
-                    [pscustomobject]@{ relativeOffsetDecimal = 8192 }
-                    [pscustomobject]@{ relativeOffset = '0x3000' }
+                    [pscustomobject]@{ absoluteAddress = '0x10002000'; relativeOffsetDecimal = 8192 }
+                    [pscustomobject]@{ absoluteAddress = '0x10003000'; relativeOffset = '0x3000' }
                 )
                 totalCandidates = 2
             }
@@ -459,6 +519,7 @@ function Invoke-DiscoverySelfTest {
     Assert-SelfTest ($autoBatches[0].FieldName -eq 'playerYaw') 'autoDiscover field name'
     $ambiguousNormalized = @(Get-NormalizedCandidates $autoBatches[1])
     Assert-SelfTest ($ambiguousNormalized.Count -eq 2) 'ambiguous normalization retains both valid candidates'
+    Assert-SelfTest (@($ambiguousNormalized | Where-Object { $_.AddressKind -eq 'module-rva' }).Count -eq 2) 'module identity classification'
 
     $legacy = [pscustomobject]@{
         fieldName = 'cameraPitch'
@@ -466,6 +527,17 @@ function Invoke-DiscoverySelfTest {
     }
     $legacyBatches = @(Get-DiscoveryBatches $legacy)
     Assert-SelfTest ($legacyBatches.Count -eq 1 -and $legacyBatches[0].FieldName -eq 'cameraPitch') 'legacy shape'
+
+    $consistent = [pscustomobject]@{
+        relativeOffsetDecimal = 16384
+        relativeOffset = '0x4000'
+    }
+    Assert-SelfTest ((Convert-CandidateOffset $consistent) -eq 0x4000) 'decimal/hex agreement'
+    $inconsistent = [pscustomobject]@{
+        relativeOffsetDecimal = 16385
+        relativeOffset = '0x4000'
+    }
+    Assert-SelfTest ($null -eq (Convert-CandidateOffset $inconsistent)) 'decimal/hex mismatch rejection'
 
     $table = New-OffsetTable '11.19.0.10' ('a' * 64)
     $first = Publish-DynamicCandidate $table 'playerYaw' 0x5000 'synthetic'
@@ -504,7 +576,22 @@ function Invoke-DiscoverySelfTest {
     $legacyCandidate = @(Get-NormalizedCandidates $legacyBatches[0])
     $legacyTable = New-OffsetTable '11.19.0.10' ('a' * 64)
     $legacyResult = Publish-DynamicCandidate $legacyTable 'cameraPitch' $legacyCandidate[0].Offset 'legacy synthetic'
-    Assert-SelfTest ($legacyResult -eq 'changed' -and $legacyTable.offsets.cameraPitch -eq 0x4000) 'legacy candidate publication'
+    Assert-SelfTest ($legacyResult -eq 'changed' -and $legacyTable.offsets.cameraPitch -eq 0x4000) 'legacy candidate normalization'
+
+    $staleTable = New-OffsetTable '11.19.0.10' ('a' * 64)
+    $staleTable.fieldValidation | Add-Member -NotePropertyName 'playerYaw' -NotePropertyValue ([pscustomobject]@{
+        status = 'Stale'; evidence = @()
+    }) -Force
+    $staleResult = Publish-DynamicCandidate $staleTable 'playerYaw' 0x5000 'stale synthetic'
+    Assert-SelfTest ($staleResult -eq 'stale' -and $staleTable.offsets.playerYaw -eq 0) 'stale candidate remains quarantined'
+
+    $legacyModuleRejected = $false
+    try {
+        if (-not (Test-ModuleRelativeCandidate $legacyBatches[0].Candidates[0] $legacyBatches[0])) {
+            $legacyModuleRejected = $true
+        }
+    } catch { $legacyModuleRejected = $true }
+    Assert-SelfTest $legacyModuleRejected 'legacy output without module identity is report-only'
 
     $mismatch = New-OffsetTable '11.18.0.7' ('a' * 64)
     $mismatchFailed = $false
@@ -593,7 +680,7 @@ $outputFile = Join-Path $RepoRoot 'tools\cheat-engine\discovered-offsets-multisc
 Write-Host ''
 Write-Host 'ACTION REQUIRED:' -ForegroundColor Yellow
 Write-Host '  1. Attach Cheat Engine to wotblitz.exe during an offline replay.'
-Write-Host '  2. Load multiscan.lua and run autoDiscover().'
+Write-Host '  2. Load multiscan.lua and run autoDiscover("playerPositionX") (or another explicitly selected field).'
 Write-Host "  3. Wait for $outputFile to be written."
 Write-Host '  4. Do not run saveDiscovered() afterward; it is the legacy shape.'
 Read-Host 'Press ENTER after the CE report exists'
@@ -611,7 +698,7 @@ $normalized = @()
 foreach ($batch in $batches) {
     $valid = @(Get-NormalizedCandidates $batch)
     $normalized += $valid
-    $state = if ($valid.Count -eq 1) { 'unique candidate' } else { 'report-only' }
+    $state = if ($valid.Count -eq 1 -and @($batch.Candidates).Count -eq 1 -and $batch.ReportedCandidateCount -eq 1 -and $valid[0].AddressKind -eq 'module-rva') { 'unique module candidate' } else { 'report-only' }
     Write-Host "  $($batch.FieldName): $(@($batch.Candidates).Count) raw, $($valid.Count) valid, $state"
 }
 
@@ -634,7 +721,10 @@ $published = 0
 $conflicts = 0
 foreach ($batch in $batches) {
     $valid = @($normalized | Where-Object { $_.FieldName -eq $batch.FieldName })
-    if ($valid.Count -ne 1) { continue }
+    if ($valid.Count -ne 1 -or @($batch.Candidates).Count -ne 1 -or
+        $batch.ReportedCandidateCount -ne 1 -or $valid[0].AddressKind -ne 'module-rva') {
+        continue
+    }
 
     $candidate = $valid[0]
     $result = Publish-DynamicCandidate $table $batch.FieldName $candidate.Offset "Unique candidate from $($valid.Count) valid candidate(s); independent process/replay verification remains required."
@@ -644,6 +734,10 @@ foreach ($batch in $batches) {
         'conflict' {
             $conflicts++
             Write-Host "  $($batch.FieldName): conflict; existing offset retained" -ForegroundColor Yellow
+        }
+        'stale' {
+            $conflicts++
+            Write-Host "  $($batch.FieldName): stale/quarantined evidence retained; explicit reconciliation required" -ForegroundColor Yellow
         }
         'unknown-field' {
             Write-Host "  $($batch.FieldName): unknown contract field; ignored" -ForegroundColor Yellow
