@@ -1,6 +1,8 @@
 # Session handoff — 2026-07-31: Documentation refresh
 
-**Status:** documentation refresh complete; handoff ready for commit
+**Status:** historical documentation-refresh handoff; current status is the
+`OD-RECOVERY-002-BLOCKED` amendment below, with `OD-RECOVERY-003` authoritative
+for the next session.
 
 ## Repository state
 
@@ -103,6 +105,10 @@ later `OD-RECOVERY-001-BLOCKED` amendment below supersedes that recommendation.
 
 ## Amendment — 2026-07-31: OD-RECOVERY-001 blocked before scanning
 
+This amendment is historical and is superseded by the later
+`OD-RECOVERY-002-BLOCKED` amendment below; the current next session is
+`OD-RECOVERY-003`.
+
 A live prerequisite check was performed without attaching to or scanning any game
 process. The installed `11.19.0.10` executable identity matched the existing campaign
 hash, but five responsive `wotblitz.exe` processes were present, including both
@@ -124,6 +130,38 @@ Next attempt requirements:
    selecting a PID or attaching CE.
 3. Capture module base, module size, architecture, and process-start identity.
 4. Only then run the timeboxed position-X/Z experiment; leave yaw quarantined.
+
+Validation after this amendment: `python scripts/python/offline_check.py --check-fresh`,
+`python scripts/python/offset_check.py --check-schema`, `pwsh -NoProfile -File
+tools/discover-offsets.ps1 -SelfTest`, and `git diff --check` all passed. Unrelated
+untracked files remain untouched.
+
+## Amendment — 2026-07-31: OD-RECOVERY-002 blocked after managed-launch timeout
+
+The next managed-launch attempt supplied a valid imported replay artifact through
+the loopback host. Artifact staging completed, but the launch request timed out
+before a correlated process/lifecycle result appeared. No new process was
+attributed to that request, no process was attached or terminated, and no memory
+or Cheat Engine scan ran. A follow-up read-only inventory found four responsive
+`wotblitz.exe` processes; their mixed parentage and the absence of host lifecycle
+evidence did not make any one of them admissible.
+
+The host remained reachable at `GET /api/v1/game/state` and returned
+`verificationState=Unknown` with `reasonCode=launch.awaiting_evidence`. Individual
+PID queries confirmed that the four task-list entries were real processes; the
+initial name-filter query was not used as evidence because it returned no rows.
+The prior PID checked during the interrupted attempt was absent. No additional
+staging or diagnostic artifact was found in the specific repository data paths
+inspected during this follow-up; this does not erase the staging evidence from
+the launch attempt.
+
+Therefore `OD-RECOVERY-002-BLOCKED` is `Blocked`, not `NoSignal` or `Partial`:
+there is no dynamic field evidence, candidate address, address-kind evidence, or
+offset-table change. This amendment supersedes the earlier `OD-RECOVERY-002`
+protocol and sets `OD-RECOVERY-003` as the next session. The next session must
+diagnose the managed-launch timeout and lifecycle-correlation boundary before any
+relaunch, termination, attachment, or scan. See the matching
+[`OD-RECOVERY-002-BLOCKED` ledger entry](../offset-discovery-ledger.md).
 
 Validation after this amendment: `python scripts/python/offline_check.py --check-fresh`,
 `python scripts/python/offset_check.py --check-schema`, `pwsh -NoProfile -File

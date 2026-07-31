@@ -253,18 +253,30 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-002` (the prior `OD-RECOVERY-001` attempt was blocked before scanning)
+Session ID: `OD-RECOVERY-003`. `OD-RECOVERY-001` was blocked before scanning,
+and `OD-RECOVERY-002` was blocked after staging because its managed launch timed
+out without correlated lifecycle evidence.
 
-1. Confirm the host has a fresh managed replay launch and reports `OfflineReplayVerified`; do not reuse the stale process set from `OD-RECOVERY-001`.
-2. Reconcile the Ghidra export and the table's three conflicting yaw values;
-   spend no more than 20 minutes.
-3. Quarantine the yaw neighborhood script until the address kind is known.
-4. Establish a verified replay and capture module/process identity.
-5. Run one controlled position-X or position-Z scan for at most 45 minutes.
-6. Save candidate counts and state transitions, not raw dumps.
-7. Trace writes for the best three candidates for at most 30 minutes.
-8. End with one of `CandidateFound`, `Partial`, `NoSignal`, or `Blocked`.
+1. Do not relaunch, terminate, attach to, or scan the existing game processes.
+2. Inspect the managed-launch timeout path and lifecycle-correlation diagnostics;
+   compare the request timeout with executable lease, suspended process creation,
+   resume, and lifecycle-monitor boundaries.
+3. Confirm the host remains reachable and reports `Unknown` /
+   `launch.awaiting_evidence`; this is a diagnostic precondition, not discovery
+   evidence.
+4. Only after the hang is explained and the process set is safely isolated,
+   start exactly one managed replay and wait for `OfflineReplayVerified`.
+5. Capture module base, module size, architecture, process-start identity, and
+   replay lifecycle state before any scanner or CE attachment.
+6. Reconcile the Ghidra export and the table's three conflicting yaw values for
+   no more than 20 minutes; leave yaw quarantined if the address kind remains
+   unresolved.
+7. Run one controlled position-X or position-Z scan for at most 45 minutes,
+   saving candidate counts and state transitions rather than raw dumps.
+8. Trace writes for the best three candidates for at most 30 minutes, then end
+   with `CandidateFound`, `Partial`, `NoSignal`, or `Blocked`.
 9. Append the ledger and create a dated handoff before stopping.
 
-The success criterion for this session is **one correctly classified,
-reproducible candidate**, not all eight fields.
+The success criterion for this session remains **one correctly classified,
+reproducible candidate**, not all eight fields. A launch timeout is a blocker,
+not a signal to reuse an ambiguous process or repeat the same launch blindly.

@@ -49,7 +49,7 @@ Every address must be classified before publication:
 | `playerYaw` | **Quarantined / Ambiguous** until decimal, hexadecimal, raw Ghidra, and address-kind evidence reconcile |
 | Trusted next anchor | `playerPositionX`/`playerPositionZ`, then `replayTime` or HP if the replay makes them observable |
 | Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance |
-| Next planned session | `OD-RECOVERY-002` (retry only after the host gate is repaired) |
+| Next planned session | `OD-RECOVERY-003` (only after the managed-launch hang is diagnosed and the host gate is repaired) |
 
 The current yaw conflict is recorded explicitly:
 
@@ -80,8 +80,9 @@ occurred.
 | `OD-2026-07-31-DOC-001` | 2026-07-31 | Refresh live documentation and handoffs | docs, offline checks, tests | `CandidateFound` for documentation only | Current commands, safety gates, and promotion rules are documented | It did not add dynamic offset evidence |
 | `OD-2026-07-31-YAW-RECONCILE-001` | 2026-07-31 | Reconcile the published `playerYaw` candidate | table, raw Ghidra export, arithmetic checks | `Ambiguous` | The decimal/hex/table/export conflict is proven and must be resolved | No safe yaw anchor exists; do not repeat its neighborhood scan |
 | `OD-RECOVERY-001` | next session | Establish one clean dynamic anchor | CE first; GameHarness/x64dbg as follow-up | `Planned` | See the protocol below; superseded by `OD-RECOVERY-001-BLOCKED` for the attempted gate check | Must not begin until identity and offline gates pass |
-
 | `OD-RECOVERY-001-BLOCKED` | 2026-07-31 | Execute the Phase 0 gate for `OD-RECOVERY-001` | host state + GameHarness probe | `Blocked` | Multiple game processes were present and the host reported `Unknown` / `launch.awaiting_evidence`; no scan was started | No PID was admissible for discovery; do not attach to the vanilla or smoke-test processes |
+| `OD-RECOVERY-002` | 2026-07-31 | Establish one managed replay after the prior gate block | managed launch, host state, read-only process inventory | `Superseded` | The planned launch protocol was attempted and produced a blocked result before scanning | Superseded by `OD-RECOVERY-002-BLOCKED`; do not treat it as a discovery result |
+| `OD-RECOVERY-002-BLOCKED` | 2026-07-31 | Establish one managed replay after the prior gate block | managed launch, host state, read-only process inventory | `Blocked` | Replay staging completed, but the launch timed out without correlated lifecycle evidence; host remained `Unknown` / `launch.awaiting_evidence` | No existing process is admissible; do not repeat the launch until the timeout/correlation path is diagnosed |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -152,7 +153,11 @@ artifacts:
   committedSummary: none
 ```
 
-## `OD-RECOVERY-002` protocol (after `OD-RECOVERY-001` blocked)
+## Historical `OD-RECOVERY-002` protocol (superseded)
+
+This protocol is retained as append-only history. It is superseded by the
+`OD-RECOVERY-002-BLOCKED` result below and the current `OD-RECOVERY-003`
+protocol in `offset-discovery-workflow.md`.
 
 Timebox: 105 minutes plus a short handoff.
 
@@ -259,6 +264,68 @@ artifacts:
 
 Do not interpret this blocked session as a failed position scan. It produced no
 dynamic evidence and must not change `memory-offsets/11.19.0.10.json`.
+
+## `OD-RECOVERY-002-BLOCKED` result — 2026-07-31
+
+```yaml
+sessionId: OD-RECOVERY-002-BLOCKED
+supersedes: OD-RECOVERY-002
+status: Blocked
+observedAtUtc: 2026-07-31T18:44:59Z # host-state query after the timed-out request
+observedTimeoutSeconds: 60
+timebox: 60 seconds for the managed-launch request; no discovery time was authorized after timeout
+objective: Establish one managed replay and pass the OfflineReplayVerified gate before dynamic discovery
+stopCondition: Stop after launch staging or launch timeout if no correlated verified process evidence appears
+launchAttempt:
+  request: managed replay launch through the loopback host
+  artifactSelection: valid imported source artifact was supplied; private identifier omitted
+  staging: succeeded before the launch attempt timed out
+  processCreation: no process was attributable to the managed launch
+  hostState: verificationState=Unknown; reason=launch.awaiting_evidence
+process:
+  inventory: four responsive wotblitz.exe processes observed during the follow-up read-only check
+  identity: no process was admissible because the host supplied no correlated offline evidence
+  pid: not-published
+replay:
+  lifecycleState: unknown
+  offlineGate: not-verified
+method:
+  primaryTool: host state and process inventory only
+  scanType: none
+observations:
+  - state: managed-launch
+    observedValue: launch request timed out after staging; no verified launch outcome
+    transition: launch path did not reach OfflineReplayVerified
+  - state: host-query
+    observedValue: verificationState=Unknown; reason=launch.awaiting_evidence
+    transition: gate remained closed
+  - state: process-inventory
+    observedValue: four responsive game processes remained, with mixed parentage; exact command lines withheld
+    transition: process identity remained ambiguous
+result:
+  whatWorked:
+    - Replay artifact staging completed before the timeout.
+    - Read-only PID checks confirmed four currently running game processes without attaching or scanning.
+    - Host remained reachable and continued to fail closed.
+  whatFailed:
+    - Managed launch did not produce correlated lifecycle evidence within the request timeout.
+    - The current process set cannot be attributed to that launch attempt.
+  rulesOut:
+    - No dynamic field value, candidate address, offset, or address-kind evidence was produced.
+    - Existing game processes must not be reused as the managed replay target.
+  partials:
+    - Staging and executable identity are prerequisites worth preserving, but neither proves a running replay.
+  nextPivot: OD-RECOVERY-003 — diagnose the launch hang and lifecycle-correlation path without relaunching or terminating existing processes.
+  repeatWithoutChangedHypothesis: false
+artifacts:
+  rawFiles: local-only
+  committedSummary: this ledger entry
+```
+
+`OD-RECOVERY-002-BLOCKED` is an append-only blocked result. It does not represent
+a failed position scan and must not change `memory-offsets/11.19.0.10.json`.
+Do not attempt another managed launch, attach to an existing process, or terminate
+one until the launch timeout and lifecycle-correlation path have been diagnosed.
 
 ## Evidence promotion checklist
 
