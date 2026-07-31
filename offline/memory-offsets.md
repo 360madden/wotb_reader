@@ -86,7 +86,11 @@ The directory is resolved by `Application` DI
 - `scripts/python/offset_check.py` — schema compliance: `schemaVersion` = 1,
   sha256 format, filename↔`gameVersion`, all 8 fields present, offset
   plausibility (not too small / > 2 GB), no extra fields, valid confidence,
-  `discoveredAtUtc` present. Output: `.build/offset-check-<timestamp>.log`.
+  `discoveredAtUtc` present. Run with `--check-schema` to also cross-verify
+  this page's documented contract against `schema.json` and the validator's
+  own constants (CROSS-CHECK issues) plus each version file's keys and
+  confidence value (DOC-CHECK issues). Output:
+  `.build/offset-check-<timestamp>.log`.
 
 ## Hard rules
 

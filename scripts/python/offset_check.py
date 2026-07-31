@@ -4,14 +4,21 @@
 Checks every offset file against the schema, verifies SHA256 hash formatting,
 reports offset coverage (known vs unknown), and flags suspicious values.
 
-Usage:
+Modes:
   python scripts/python/offset_check.py
+      Standard validation of memory-offsets/*.json against schema.json.
+
+  python scripts/python/offset_check.py --check-schema
+      Also cross-verify the documented schema in offline/memory-offsets.md
+      against schema.json, the version files, and this validator's own
+      constants — closing the loop between the pack and the real evidence.
 
 Output: timestamped log to .build/offset-check-<datetime>.log
 Exit code: 0 on all valid, 1 on any issues found.
 """
 
 import json
+import re
 import sys
 import os
 from datetime import datetime, timezone
@@ -22,6 +29,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 OFFSET_DIR = REPO_ROOT / "memory-offsets"
 LOG_DIR = REPO_ROOT / ".build"
 SCHEMA_PATH = OFFSET_DIR / "schema.json"
+DOC_PACK_PATH = REPO_ROOT / "offline" / "memory-offsets.md"
+
+# The only confidence values the schema, the pack doc, and OffsetConfidence
+# (Core/OffsetModels.cs) agree on. Never add "verified" here — it is not a
+# file-level confidence level anywhere in the contract.
+CONFIDENCE_VALUES = ("none", "low", "medium", "high")
 
 FIELD_DEFS = [
     ("replayTime", "double", "Replay playback time in seconds"),
@@ -33,6 +46,8 @@ FIELD_DEFS = [
     ("cameraPitch", "float", "Camera pitch in radians"),
     ("aliveTankCount", "int32", "Number of tanks alive"),
 ]
+
+FIELD_NAMES = {name for name, _type, _desc in FIELD_DEFS}
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -54,14 +69,203 @@ def is_hex(s: str, length: int = 64) -> bool:
     return len(s) == length and all(c in "0123456789abcdefABCDEF" for c in s)
 
 
-# ── Validation ───────────────────────────────────────────────────────────────
+# ── Schema meta-file validation ──────────────────────────────────────────────
 
 def validate_schema(log_path: Path, schema: dict) -> list[str]:
+    """Validate schema.json itself (it is a draft 2020-12 meta-schema, not a
+    version file — it has no `schemaVersion` property of its own)."""
     issues: list[str] = []
-    if schema.get("schemaVersion") != 1:
-        issues.append("schemaVersion is not 1")
+
+    if not str(schema.get("$schema", "")).startswith("https://json-schema.org/draft/2020-12"):
+        issues.append("schema.json $schema is not draft 2020-12")
+
+    if schema.get("type") != "object":
+        issues.append("schema.json type is not 'object'")
+
+    required = set(schema.get("required", []))
+    if required != {"schemaVersion", "gameVersion", "offsets"}:
+        issues.append(
+            f"schema.json required={sorted(required)}, expected "
+            "[gameVersion, offsets, schemaVersion]")
+
+    offsets = schema.get("properties", {}).get("offsets", {})
+    schema_fields = set(offsets.get("properties", {}).keys())
+    if schema_fields != FIELD_NAMES:
+        issues.append(
+            f"schema.json offsets.properties={sorted(schema_fields)}, expected "
+            f"{sorted(FIELD_NAMES)}")
+
+    offsets_required = set(offsets.get("required", []))
+    if offsets_required and offsets_required != FIELD_NAMES:
+        issues.append(
+            f"schema.json offsets.required={sorted(offsets_required)}, expected "
+            f"{sorted(FIELD_NAMES)}")
+
+    if offsets.get("additionalProperties") is not False:
+        issues.append("schema.json offsets.additionalProperties is not false")
+
+    confidence_enum = set(schema.get("properties", {}).get("confidence", {}).get("enum", []))
+    if confidence_enum and confidence_enum != set(CONFIDENCE_VALUES):
+        issues.append(
+            f"schema.json confidence.enum={sorted(confidence_enum)}, expected "
+            f"{sorted(CONFIDENCE_VALUES)}")
+
     return issues
 
+
+# ── Pack documentation cross-verification (--check-schema) ──────────────────
+
+def extract_documented_schema(doc_path: Path) -> dict[str, set[str]]:
+    """Parse offline/memory-offsets.md for the documented schema contract.
+
+    Returns {offset_fields, confidence, required} as sets of strings, derived
+    from the example JSON block(s), the confidence-levels table, and the
+    "Required:" prose line.
+    """
+    text = doc_path.read_text(encoding="utf-8")
+
+    offset_fields: set[str] = set()
+    confidence_levels: set[str] = set()
+    required_fields: set[str] = set()
+
+    # Example JSON block(s) — authoritative for the 8 field names.
+    for block in re.findall(r"```json\s*\n(.*?)```", text, re.DOTALL):
+        try:
+            data = json.loads(block)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(data, dict):
+            continue
+        offsets = data.get("offsets")
+        if isinstance(offsets, dict):
+            offset_fields |= set(offsets.keys())
+        for key in ("schemaVersion", "gameVersion", "offsets"):
+            if key in data:
+                required_fields.add(key)
+        if isinstance(data.get("confidence"), str):
+            confidence_levels.add(data["confidence"])
+
+    # Confidence-levels table (| `none` | Placeholder, ... |).
+    table_section = re.search(r"## Confidence levels\s*\n(.*?)(?=\n## |\Z)", text, re.DOTALL)
+    if table_section:
+        for line in table_section.group(1).splitlines():
+            row = re.match(r"\|\s*`([^`]+)`\s*\|", line)
+            if row:
+                confidence_levels.add(row.group(1).strip())
+
+    # "Required: `schemaVersion`, `gameVersion`, `offsets` (all 8 fields,
+    # `additionalProperties: false`)." — the prose may wrap across lines and
+    # the parenthetical also contains a backtick token, so only match plain
+    # identifier tokens (no colons/spaces) and keep searching line by line.
+    for line in text.splitlines():
+        if line.strip().startswith("Required:"):
+            required_fields |= set(
+                re.findall(r"`([A-Za-z][A-Za-z0-9]*)`", line))
+
+    return {
+        "offset_fields": offset_fields,
+        "confidence": confidence_levels,
+        "required": required_fields,
+    }
+
+
+def check_documented_schema(log_path: Path, doc: dict[str, set[str]]) -> list[str]:
+    """Cross-verify the parsed pack-doc contract against schema.json and this
+    validator's own constants. Returns issues (empty = consistent)."""
+    issues: list[str] = []
+
+    if not doc["offset_fields"]:
+        issues.append("could not extract offset field names from offline/memory-offsets.md")
+
+    try:
+        schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        issues.append(f"schema.json is invalid JSON — {e}")
+        return issues
+
+    schema_offsets = schema.get("properties", {}).get("offsets", {})
+    schema_fields = set(schema_offsets.get("properties", {}).keys())
+    schema_required = set(schema.get("required", []))
+    schema_conf = set(schema.get("properties", {}).get("confidence", {}).get("enum", []))
+
+    # doc <-> schema.json
+    if doc["offset_fields"] and schema_fields and doc["offset_fields"] != schema_fields:
+        issues.append(
+            "field drift: pack doc=" + ",".join(sorted(doc["offset_fields"]))
+            + " schema.json=" + ",".join(sorted(schema_fields)))
+    if doc["required"] and schema_required and doc["required"] != schema_required:
+        issues.append(
+            "required drift: pack doc=" + ",".join(sorted(doc["required"]))
+            + " schema.json=" + ",".join(sorted(schema_required)))
+    if doc["confidence"] and schema_conf and doc["confidence"] != schema_conf:
+        issues.append(
+            "confidence drift: pack doc=" + ",".join(sorted(doc["confidence"]))
+            + " schema.json=" + ",".join(sorted(schema_conf)))
+
+    # doc <-> validator constants
+    if doc["offset_fields"] and FIELD_NAMES != doc["offset_fields"]:
+        issues.append(
+            "FIELD_DEFS drift vs pack doc: validator=" + ",".join(sorted(FIELD_NAMES))
+            + " doc=" + ",".join(sorted(doc["offset_fields"])))
+    if doc["confidence"] and set(CONFIDENCE_VALUES) != doc["confidence"]:
+        issues.append(
+            "CONFIDENCE_VALUES drift vs pack doc: validator="
+            + ",".join(sorted(CONFIDENCE_VALUES))
+            + " doc=" + ",".join(sorted(doc["confidence"])))
+
+    # schema.json <-> validator constants
+    if schema_fields and FIELD_NAMES != schema_fields:
+        issues.append(
+            "FIELD_DEFS drift vs schema.json: validator=" + ",".join(sorted(FIELD_NAMES))
+            + " schema=" + ",".join(sorted(schema_fields)))
+    if schema_conf and set(CONFIDENCE_VALUES) != schema_conf:
+        issues.append(
+            "CONFIDENCE_VALUES drift vs schema.json: validator="
+            + ",".join(sorted(CONFIDENCE_VALUES))
+            + " schema=" + ",".join(sorted(schema_conf)))
+
+    if not issues:
+        write_log(log_path,
+                  "  Cross-check: pack doc <-> schema.json <-> validator constants — consistent.")
+    return issues
+
+
+def validate_against_documented_schema(
+    log_path: Path, path: Path, doc: dict[str, set[str]]) -> list[str]:
+    """Verify one version file against the pack's documented schema. Returns
+    issues (empty = conforms to the documentation)."""
+    issues: list[str] = []
+    rel = path.relative_to(REPO_ROOT)
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        return [f"{rel}: invalid JSON — {e}"]
+
+    offsets = data.get("offsets", {})
+    doc_fields = doc["offset_fields"]
+    if doc_fields:
+        missing = doc_fields - set(offsets.keys())
+        extra = set(offsets.keys()) - doc_fields
+        if missing:
+            issues.append(
+                f"{rel}: documented fields missing from offsets: "
+                + ", ".join(sorted(missing)))
+        if extra:
+            issues.append(
+                f"{rel}: undocumented extra offset fields: "
+                + ", ".join(sorted(extra)))
+
+    conf = data.get("confidence")
+    if doc["confidence"] and conf not in doc["confidence"]:
+        issues.append(
+            f"{rel}: confidence '{conf}' not in documented levels "
+            + ", ".join(sorted(doc["confidence"])))
+
+    return issues
+
+
+# ── Validation ───────────────────────────────────────────────────────────────
 
 def validate_offset_file(log_path: Path, path: Path, schema: dict) -> list[str]:
     issues: list[str] = []
@@ -128,7 +332,7 @@ def validate_offset_file(log_path: Path, path: Path, schema: dict) -> list[str]:
 
     # Confidence
     conf = data.get("confidence", "")
-    if conf not in ("none", "low", "medium", "high", "verified"):
+    if conf not in CONFIDENCE_VALUES:
         issues.append(f"{rel}: unknown confidence '{conf}'")
 
     # discoveredAtUtc
@@ -142,13 +346,15 @@ def validate_offset_file(log_path: Path, path: Path, schema: dict) -> list[str]:
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 def main() -> int:
+    check_schema_mode = "--check-schema" in sys.argv[1:]
+
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     log_path = LOG_DIR / f"offset-check-{timestamp}.log"
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
     write_log(log_path, "=" * 60)
     write_log(log_path, "WotB Treader — Offset File Validator")
-    write_log(log_path, f"Started: {now_iso()}")
+    write_log(log_path, f"Started: {now_iso()}" + (" (--check-schema mode)" if check_schema_mode else ""))
     write_log(log_path, "=" * 60)
 
     if not OFFSET_DIR.exists():
@@ -185,12 +391,36 @@ def main() -> int:
     write_log(log_path, "")
 
     all_issues: list[str] = []
+
+    # --check-schema: pack doc <-> schema.json <-> validator constants.
+    # Parse the doc once up front; without it the cross-checks are skipped.
+    doc_contract: dict[str, set[str]] = {}
+    if check_schema_mode:
+        write_log(log_path, "Cross-verifying documented schema (offline/memory-offsets.md):")
+        if not DOC_PACK_PATH.is_file():
+            missing = f"documentation not found: {DOC_PACK_PATH.relative_to(REPO_ROOT)}"
+            all_issues.append(missing)
+            write_log(log_path, f"  CROSS-CHECK ISSUE: {missing}")
+        else:
+            doc_contract = extract_documented_schema(DOC_PACK_PATH)
+            cross_issues = check_documented_schema(log_path, doc_contract)
+            all_issues.extend(cross_issues)
+            for issue in cross_issues:
+                write_log(log_path, f"  CROSS-CHECK ISSUE: {issue}")
+        write_log(log_path, "")
+
     for path in offset_files:
         issues = validate_offset_file(log_path, path, schema)
         all_issues.extend(issues)
         if issues:
             for issue in issues:
                 write_log(log_path, f"  ISSUE: {issue}")
+
+        if check_schema_mode and doc_contract.get("offset_fields"):
+            doc_issues = validate_against_documented_schema(log_path, path, doc_contract)
+            all_issues.extend(doc_issues)
+            for issue in doc_issues:
+                write_log(log_path, f"  DOC-CHECK ISSUE: {issue}")
 
     write_log(log_path, "")
     if all_issues:

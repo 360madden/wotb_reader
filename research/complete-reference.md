@@ -57,27 +57,28 @@
 |---------|----------------|--------------|-----------|
 | 11.8.0.7 | Yes | Placeholder | No |
 | 11.18.0.7 | Yes | Placeholder | No |
-| 11.19.0.10 | **No** | Placeholder | **Yes** |
+| 11.19.0.10 | **In-flight** (11.18+11.19) | Placeholder | **Yes** |
 
 ## Current Blockers
 
 | Blocker | Status | Fix |
 |---------|--------|-----|
 | `child_exe_mismatch` | Fix coded, not tested | NormalizeExePath + byte-count detection |
-| v11.19 decoder | Not started | Need to add decoder support |
+| v11.19 decoder | In progress | 11.18+11.19 support coded in-flight |
 | Single-instance behavior | Unknown | Need live test |
 | Uploaded replays mechanism | Understood | Need live test |
-| DAVA Engine source | Not accessible (404) | Use community reverse engineering |
+| DAVA Engine source | Confirmed 404 (2026-07) | Use community reverse engineering |
+| **Reforged UE5 migration** | **Announced, postponed** | See [reforged-ue5.md](reforged-ue5.md) — replay/offset/log assumptions may break when it ships |
 
 ## Community Resources
 
 | Resource | URL |
 |----------|-----|
 | UnknownCheats DAVA thread | `unknowncheats.me/forum/other-mmorpg-and-strategy/689828` |
-| wotbreplay-parser (Rust) | `github.com/eigenein/wotbreplay-parser` |
-| blitz-tools (Python) | `github.com/Jylpah/blitz-tools` |
+| wotbreplay-parser (Rust) | `github.com/eigenein/wotbreplay-parser` (active) |
+| blitz-replays (Python) | `github.com/Jylpah/blitz-replays` — **successor** to blitz-tools (unmaintained) |
 | SteamDB WoT Blitz | `steamdb.info/app/444200/` |
-| WOTInspector Replays | Web-based replay viewer |
+| WOTInspector Replays | Web-based replay viewer (`replays.wotinspector.com`) |
 
 ## Decision Matrix: Live Replay Switching Approaches
 

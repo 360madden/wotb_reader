@@ -17,6 +17,7 @@ detail lives in the module's own files. Full tree: `src/`, `tests/`, `tools/`,
 | `global.json` | SDK pinned to 10.0.302 |
 | `.gitignore` | Runtime-data patterns (`*.sqlite`, `dist/`, …) — case-insensitive on Windows |
 | `memory-offsets/` | Versioned offset evidence (`11.18.0.7.json`, …) + `schema.json` |
+| `research/` | Deep-dive research notes on the game's replay loading, IPC, memory layout, community tools (`research/README.md` is the index) |
 | `docs/` | Canonical documentation (architecture, decisions, formats, operations, testing) |
 | `scripts/` | `validate.ps1` (full gate), `scan-repository.ps1` (secrets/ignore scan), `ghidra-scan.py`, `invoke-cursor-agent.ps1`, `python/` smoke tooling |
 | `tmpwotb-e2e/` | Local E2E logs (runtime data) |

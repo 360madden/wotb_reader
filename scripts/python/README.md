@@ -39,21 +39,25 @@ python scripts/python/e2e_smoke.py
 
 ### `offline_check.py` — Offline Discovery Pack Link Checker
 
-Validates every internal markdown link in `offline/*.md` resolves to an
+Validates every internal markdown link in `offline/*.md` (and
+`research/README.md`, the pack's canonical research index) resolves to an
 existing file. External URLs and fragment-only anchors are skipped.
 
 ```powershell
-python scripts/python/offline_check.py
+python scripts/python/offline_check.py              # link check only
+python scripts/python/offline_check.py --refresh    # regenerate offline/file-tree.md, then link check
+python scripts/python/offline_check.py --check-fresh  # fail if file-tree.md is stale, then link check
 ```
 
 **What it checks:**
-- All `[text](target)` links in every `offline/*.md` file
+- All `[text](target)` links in every `offline/*.md` file (+ `research/README.md`)
 - Relative paths resolved against the pack (and repo root via `../`)
 - Broken links reported with file, line, and target
+- `--check-fresh`: the committed `file-tree.md` body matches `git ls-files | sort`
 
 **Output:** `.build/offline-check-<datetime>.log`
 
-**Exit code:** 0 = all links resolve, 1 = one or more broken.
+**Exit code:** 0 = all checks pass, 1 = broken links or a stale file-tree snapshot.
 
 ### `offset_check.py` — Offset File Validator
 
@@ -61,7 +65,8 @@ Validates all `memory-offsets/*.json` files for schema compliance, SHA256
 formatting, offset coverage, and plausibility.
 
 ```powershell
-python scripts/python/offset_check.py
+python scripts/python/offset_check.py                 # standard validation
+python scripts/python/offset_check.py --check-schema  # + cross-verify the pack doc
 ```
 
 **What it checks:**
@@ -71,8 +76,18 @@ python scripts/python/offset_check.py
 - All 8 expected fields present, counts known vs unknown
 - Offset values are plausible (not too small, not > 2GB)
 - No unknown extra fields
-- `confidence` is a valid value
+- `confidence` is a valid value (`none`/`low`/`medium`/`high` only)
 - `discoveredAtUtc` is present
+
+**`--check-schema` adds:**
+- Parses the documented contract from `offline/memory-offsets.md` (offset field
+  names from the example JSON, confidence levels from the table, required
+  top-level fields from the prose)
+- Cross-verifies pack doc ↔ `memory-offsets/schema.json` ↔ this validator's own
+  constants — any drift (e.g. a field added in one place but not the other)
+  is reported as a `CROSS-CHECK ISSUE`
+- Verifies each version file's offsets keys and confidence value against the
+  documented contract (`DOC-CHECK ISSUE` on missing/extra fields)
 
 **Output:** `.build/offset-check-<datetime>.log`
 

@@ -3,6 +3,7 @@ using WotBTreader.Application.Game;
 using WotBTreader.Application.Replay;
 using WotBTreader.Application.Results;
 using WotBTreader.Core;
+using WotBTreader.GameIntegration.Logs;
 using WotBTreader.GameIntegration.Session;
 
 namespace WotBTreader.GameIntegration.Tests;
@@ -322,7 +323,8 @@ public sealed class GameSessionCoordinatorTests
             IManagedLaunchCorrelationRegistrar? correlationRegistrar = null,
             IThreadResumePlatform? threadResumePlatform = null,
             IGuardedMemoryReaderFactory? memoryReaderFactory = null,
-            IOffsetTableReader? offsetTableReader = null)
+            IOffsetTableReader? offsetTableReader = null,
+            IBlitzReplayLifecycleFeed? lifecycleFeed = null)
     {
         var timeProvider = new ManualTimeProvider(StartTime);
         return (new GameSessionCoordinator(
@@ -335,7 +337,8 @@ public sealed class GameSessionCoordinatorTests
             memoryReaderFactory ?? new StubMemoryReaderFactory(),
             offsetTableReader ?? new StubOffsetTableReader(),
             new MemoryScanDiscoverer(timeProvider, NullLogger<MemoryScanDiscoverer>.Instance),
-            new MemoryScanEngine(timeProvider, NullLogger<MemoryScanEngine>.Instance)), timeProvider);
+            new MemoryScanEngine(timeProvider, NullLogger<MemoryScanEngine>.Instance),
+            lifecycleFeed ?? new StubLifecycleFeed()), timeProvider);
     }
 
     private static (GameSessionCoordinator Coordinator, ManualTimeProvider TimeProvider)
@@ -463,5 +466,24 @@ public sealed class GameSessionCoordinatorTests
             AuthorizedMemoryObservation observation,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException("StubMemoryReaderFactory is not intended for evidence evaluation tests.");
+    }
+
+    private sealed class StubLifecycleFeed : IBlitzReplayLifecycleFeed
+    {
+        public ValueTask<LifecycleFeedBaseline> CaptureBaselineAsync(
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult(new LifecycleFeedBaseline(
+                0, 0, LifecycleFeedHealth.Healthy, []));
+
+        public ValueTask<LifecycleFeedBaseline> CaptureReconciledBaselineAsync(
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult(new LifecycleFeedBaseline(
+                0, 0, LifecycleFeedHealth.Healthy, []));
+
+        public ValueTask<LifecycleFeedReadResult> ReadAfterAsync(
+            long afterSequence,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult(new LifecycleFeedReadResult(
+                afterSequence, afterSequence, false, []));
     }
 }

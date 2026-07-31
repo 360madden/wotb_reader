@@ -23,7 +23,7 @@ namespace WotBTreader.Replays;
 /// </remarks>
 public sealed class WotbReplayDecoder : IReplayDecoder
 {
-    public const string DecoderId = "wotb-11.18-strict";
+    public const string DecoderId = "wotb-11.x-strict";
     private const string DecoderVersion = "0.1.0";
     private const string SchemaVersion = "1";
 
@@ -42,6 +42,8 @@ public sealed class WotbReplayDecoder : IReplayDecoder
         {
             "11.18.0",
             "11.18.0.7",
+            "11.19.0",
+            "11.19.0.10",
         });
 
     public bool CanDecode(ReplayProbeResult probe) =>
@@ -93,7 +95,7 @@ public sealed class WotbReplayDecoder : IReplayDecoder
                 return OperationResult.Failure<ReplayDecodeProjection>(
                     new ApplicationError(
                         "replay.unsupported_version",
-                        "The strict decoder supports only WotB 11.18 replay evidence."));
+                        "The strict decoder supports only WotB 11.18/11.19 replay evidence."));
             }
 
             BattleResultsData battleResults = BattleResultsReader.Read(
@@ -433,9 +435,12 @@ public sealed class WotbReplayDecoder : IReplayDecoder
         }
     }
 
-    internal static bool IsSupportedVersion(string version) =>
-        string.Equals(NormalizeVersion(version), "11.18.0", StringComparison.Ordinal) ||
-        string.Equals(version, "11.18.0.7", StringComparison.Ordinal);
+    internal static bool IsSupportedVersion(string version)
+    {
+        string normalized = NormalizeVersion(version);
+        return string.Equals(normalized, "11.18.0", StringComparison.Ordinal) ||
+               string.Equals(normalized, "11.19.0", StringComparison.Ordinal);
+    }
 
     internal static string NormalizeVersion(string version)
     {

@@ -34,7 +34,7 @@ public sealed class GameIntegrationOptions
 
     /// <summary>Gets exact executable product versions accepted by the metadata decoder.</summary>
     public IReadOnlySet<string> SupportedProductVersions { get; init; } =
-        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "11.18.0.7" };
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "11.18.0.7", "11.19.0.10" };
 
     /// <summary>Gets the maximum stored DVPL payload size.</summary>
     public int MaxDvplStoredBytes { get; init; } = 32 * 1024 * 1024;

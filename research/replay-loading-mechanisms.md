@@ -47,8 +47,10 @@ These are monitored by `BlitzReplayLogMonitor` which watches `DAVAProject/` for
 
 ### Windows Registry
 
-`.wotbreplay` files are associated with `wotblitz.exe` in the Windows Registry.
-Double-clicking a replay in File Explorer launches:
+`.wotbreplay` files are associated with `wotblitz.exe` in the Windows Registry
+(registered at install; Wargaming support documents replay playback and sharing:
+`na.wargaming.net/support/en/products/wotb/article/16386/`). Double-clicking a
+replay in File Explorer launches:
 ```
 wotblitz.exe "C:\...\replay.wotbreplay"
 ```
@@ -144,6 +146,12 @@ already running and observe whether a new process appears.
 **Conclusion:** No tank game supports true hot-swapping. All require a context
 switch between replays. The pragmatic approach for WoT Blitz is to accept the
 restart cycle and optimize for speed.
+
+## Version Coupling (official)
+
+Wargaming documents that replay playback requires the **exact matching game version**
+(replays are technical scenario logs, not video). v11.18 replays will not play on a
+v11.19 client. Note the Reforged UE5 migration risk: [reforged-ue5.md](reforged-ue5.md).
 
 ## Playback Sequence (Observed)
 

@@ -165,3 +165,72 @@ likely an intentional debugging aid — if richer launch errors are wanted,
 deliver detail via a separate field (e.g. `detail`), never by concatenating
 into `Message`. Also `memory-offsets/11.19.0.10.json` and the `research/`
 folder remain part of that other uncommitted work; untouched here.
+
+---
+
+## Amendment 2 (2026-07-31, same session) — file-tree refresh self-gating
+
+### What changed
+
+The pack was committed at HEAD `ef7ad42` (with the managed-launch fix commit),
+making the pre-commit `file-tree.md` snapshot stale by construction (27
+committed files missing: the pack itself, `offline_check.py`, `research/`,
+`GameProcessLauncher.cs`, the new handoffs). Two rounds addressed this:
+
+**Round 1 — snapshot + research routing (reviewer-approved):**
+
+- `offline/file-tree.md` regenerated from `git ls-files | sort` (504 files,
+  byte-identical to the live tree, verified programmatically). Header note
+  updated: uncommitted work absent by design; regenerate in the same change
+  that adds/renames/removes files.
+- `offline/repo-map.md`, `offline/entry-points.md`, `offline/README.md` now
+  route the committed `research/` folder (12 deep-research docs) via
+  `research/README.md`.
+- `research/README.md` count drift fixed: header claimed 9 files but the table
+  had 10 rows and 12 actual docs; now "11 files" with the missing
+  `memory-offsets-unknowncheats.md` row added.
+- `offline_check.py` extended to also link-check `research/README.md` (the
+  pack's canonical research index); per-file log lines now use repo-relative
+  paths so the two READMEs aren't ambiguous in the log.
+- `AGENTS.md` route-by-task gains a "Game internals research" row.
+
+**Round 2 — staleness now fails the gate (reviewer-approved):**
+
+- `offline_check.py` gains `--refresh` (regenerate `file-tree.md` from
+  `git ls-files`, then link check; idempotent) and `--check-fresh` (exit 1
+  with an actionable message if the committed snapshot is stale, then link
+  check). The `FILE_TREE_HEADER` constant lives in the script; the file's
+  header was regenerated to match.
+- `scripts/validate.ps1` and `.github/workflows/ci.yml` now run
+  `offline_check.py --check-fresh`, so a stale snapshot fails the build — the
+  stale-by-design failure mode is eliminated, not just documented.
+- Docs updated: `offline/README.md`, `scripts/python/README.md`, `AGENTS.md`.
+
+### Validation
+
+- `--check-fresh` on the current tree: exit 0 ("up to date")
+- `--refresh` twice in a row: second run reports "already up to date" (idempotent)
+- Negative test — injected a `FAKE/STALE/ENTRY` line into `file-tree.md` body:
+  `--check-fresh` exited 1 with missing/extra counts + fix instruction;
+  restored file passes again
+- Link check: 12 files, 67 links, 0 broken, exit 0
+- `validate.ps1` PowerShell AST: syntax OK
+- Reviewer: three passes (checker modes, gate wiring + docs, cosmetic log
+  path fix) — all approved, zero outstanding items
+
+### Unresolved / integration notes
+
+- Working tree still carries other in-flight modifications (Replays decoder
+  files, `GameIntegrationOptions.cs`, Host.Web tests) not part of this change
+  set — left untouched.
+- `research/README.md` links are now gated (checked by `offline_check.py`),
+  but its non-index docs are not scanned for internal links — acceptable:
+  the index is the curated surface.
+
+### Recommended next steps
+
+1. **Commit this refresh as one unit**: file-tree regeneration + research
+   routing + checker `--refresh`/`--check-fresh` modes + validate.ps1/ci.yml
+   flag + the four doc updates.
+2. Optionally add a pre-commit hook that runs `--check-fresh` (gate + CI
+   coverage already exists).

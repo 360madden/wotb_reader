@@ -46,6 +46,7 @@ safe to open; none of it is private or runtime data.
 2. [`docs/operations/offset-discovery-guide.md`](../docs/operations/offset-discovery-guide.md)
 3. [`memory-offsets/`](../memory-offsets/) — evidence JSON + `schema.json`
 4. `tools/cheat-engine/`, `tools/ghidra-scripts/` — approved offline tooling
+5. [`../research/README.md`](../research/README.md) — game internals research (replay loading, IPC, memory analysis)
 
 ## Add a DI port or service
 

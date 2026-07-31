@@ -20,8 +20,10 @@ commands, replay format, offset discovery, data flow, memory-offset evidence,
 file-tree snapshot). Load `offline/README.md` to re-orient fast without scanning
 the tree; it links to canonical docs instead of duplicating them. Keep it in
 sync whenever the layout, API surface, or commands change — and run
-`python scripts/python/offline_check.py` after editing the pack (wired into
-`scripts/validate.ps1` and CI).
+`python scripts/python/offline_check.py --refresh` after editing the pack — the
+gate (`scripts/validate.ps1`) and CI run `offline_check.py --check-fresh`, which
+fails if `offline/file-tree.md` is stale, so regenerate it in the same change
+that adds, renames, or removes files.
 
 ## Commands (exact)
 
@@ -75,6 +77,7 @@ sync whenever the layout, API surface, or commands change — and run
 | Replay format / decode internals | `offline/replay-format.md` |
 | Telemetry data flow (decode → UI / comparison) | `offline/data-flow.md` |
 | Offset / memory evidence | `offline/memory-offsets.md`, `offline/offset-discovery.md` |
+| Game internals research (replay loading, IPC, memory) | `research/README.md` (index) |
 | Architecture / project refs | rule `architecture-boundaries` (auto on `src/**/*.cs`) |
 | Replay / binary / harness tools | rule `binary-parser`; agent `decoder-auditor` / Codex `decoder_auditor` |
 | Loopback / mutation / privacy audit | agent `security-auditor` / Codex `security_auditor` (readonly) |

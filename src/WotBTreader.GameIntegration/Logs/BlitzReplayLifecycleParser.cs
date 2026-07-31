@@ -12,6 +12,7 @@ public sealed class BlitzReplayLifecycleParser : IBlitzReplayLifecycleParser
     [
         ("START_REPLAY_LOCAL", ReplayLogMarkerKind.OfflineReplayStarted),
         ("STOP_REPLAY_LOCAL", ReplayLogMarkerKind.OfflineReplayStopped),
+        ("Start replay event", ReplayLogMarkerKind.OfflineReplayStarted),
         ("ReplayRecorder::StartRecording", ReplayLogMarkerKind.ReplayRecordingStarted),
         ("ReplayRecorder::StopRecording", ReplayLogMarkerKind.ReplayRecordingStopped),
     ];

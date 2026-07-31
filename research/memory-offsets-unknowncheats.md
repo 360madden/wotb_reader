@@ -3,6 +3,17 @@
 Source: [UnknownCheats thread #689828](https://unknowncheats.me/forum/other-mmorpg-and-strategy/689828)
 and related community discussions.
 
+## Status (verified 2026-07-31)
+
+The entity-list pointer chain below is **still current** in community releases for
+recent 11.x builds (11.19-era). The community tool stack is now Cheat Engine, Frida
+(`ws2_32.dll` hooks for encrypted traffic), `pymem` (Python), and Ghidra/IDA — see
+[community-tools.md](community-tools.md).
+
+**Caveat — Reforged:** DAVA-era offsets are time-limited. Wargaming is migrating to
+Unreal Engine 5 (Reforged, announced 2026-06-17, postponed); when it ships, these
+offsets are invalidated wholesale. See [reforged-ue5.md](reforged-ue5.md).
+
 ## Entity List Pointer Chain
 
 ```
@@ -62,6 +73,13 @@ struct VehicleGameLogic {
 | Spread | VehicleDescr | +0xD0 (float, visual only) |
 | Team | Vehicle | +0xB0 |
 
+## Reload Timers (2026 verification)
+
+Recent open-source ESP tables extract per-tank reload cooldowns directly from the
+vehicle descriptor structs (`VehicleGameLogic → VehicleDescr +0xA8`), letting external
+overlays render live reload status. Position/turret/team offsets above remain the
+canonical community set for 11.x.
+
 ## Other Structures
 
 ### GameCamera
@@ -108,6 +126,15 @@ struct TankVisual {
 1. **#711725** — [Release] Tanks Blitz (Lesta) ESP Player's: external ESP, 2D/3D boxes, reload timers, distance counters
 2. **#702797** — Parsing encrypted requests via ws2_32.dll hook, Frida memory scanning, XMPP/chat structures
 3. **#606655** — Finding player list during battle, dynamic pointer reallocation, filtering by tank structures
+
+## Community Technique Notes (verified 2026-07)
+
+- **Tundra/foliage removal done externally** by patching D3D render parameters or
+  memory flags — no DLL injection needed (avoids integrity checks). Consistent with
+  this project's external-only tooling policy.
+- **Reload timers** are read from `VehicleDescr` sub-structs by community ESP tools.
+- **Position/rotation data** at `VehicleGameLogic → Vehicle → +0x68/0x6C/0x70` is
+  confirmed by multiple independent community releases for 11.x.
 
 ## Application to Our Pipeline
 

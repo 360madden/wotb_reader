@@ -1,17 +1,14 @@
 # Physical file tree snapshot
 
-Auto-generated from `git ls-files` (the committed tree). Refresh whenever the
-layout changes by re-running:
-
-```bash
-git ls-files | sort > offline/file-tree.md.tmp
-# then splice the "## Files" section below from the .tmp body
-```
+Auto-generated from `git ls-files` (the committed tree) by
+`scripts/python/offline_check.py --refresh`. Regenerate whenever the layout
+changes — the gate (`scripts/validate.ps1` and CI) fails if this snapshot is
+stale.
 
 This snapshot is the committed source of truth for path resolution. Note: two
 stray `%~dp0.data/...` entries are committed (a past cmd-wrapper quoting bug) —
-do not create new paths like that. Files that are not yet committed (e.g. the
-offline/ pack before its first commit) are absent here until the next refresh.
+do not create new paths like that. Uncommitted work is absent here by design;
+regenerate this file in the same change that adds, renames, or removes files.
 
 ## Files
 
@@ -94,6 +91,8 @@ docs/operations/handoffs/2026-07-29-suspended-process-creation.md
 docs/operations/handoffs/2026-07-30-dynamic-offset-scanner.md
 docs/operations/handoffs/2026-07-30-milestone-completion.md
 docs/operations/handoffs/2026-07-30-python-scaffolding-ce-scripts.md
+docs/operations/handoffs/2026-07-31-managed-launch-pinvoke-fixes.md
+docs/operations/handoffs/2026-07-31-offline-discovery-pack.md
 docs/operations/handoffs/README.md
 docs/operations/offset-discovery-guide.md
 docs/project-context.md
@@ -110,12 +109,36 @@ memory-offsets/11.19.0.10.json
 memory-offsets/11.8.0.7.json
 memory-offsets/README.md
 memory-offsets/schema.json
+offline/README.md
+offline/api-surface.md
+offline/commands.md
+offline/data-flow.md
+offline/entry-points.md
+offline/file-tree.md
+offline/glossary.md
+offline/memory-offsets.md
+offline/offset-discovery.md
+offline/replay-format.md
+offline/repo-map.md
 opencode.json
 overlay.cmd
+research/README.md
+research/approaches.md
+research/community-tools.md
+research/complete-reference.md
+research/dava-engine.md
+research/findings-summary.md
+research/ipc-mechanisms.md
+research/lifecycle-monitor.md
+research/memory-analysis.md
+research/memory-offsets-unknowncheats.md
+research/replay-loading-mechanisms.md
+research/uploaded-replays.md
 scripts/ghidra-scan.py
 scripts/invoke-cursor-agent.ps1
 scripts/python/README.md
 scripts/python/e2e_smoke.py
+scripts/python/offline_check.py
 scripts/python/offset_check.py
 scripts/scan-repository.ps1
 scripts/validate.ps1
@@ -189,6 +212,7 @@ src/WotBTreader.GameIntegration/Metadata/MetadataResourceParser.cs
 src/WotBTreader.GameIntegration/Metadata/ResourceOverlay.cs
 src/WotBTreader.GameIntegration/Properties/AssemblyInfo.cs
 src/WotBTreader.GameIntegration/Session/GameProcessIdentityObserver.cs
+src/WotBTreader.GameIntegration/Session/GameProcessLauncher.cs
 src/WotBTreader.GameIntegration/Session/GameSessionCoordinator.cs
 src/WotBTreader.GameIntegration/Session/GuardedMemoryReader.cs
 src/WotBTreader.GameIntegration/Session/ManagedLaunchCorrelationRegistrar.cs
@@ -493,5 +517,4 @@ tools/tests/WotBTreader.GameHarness.Tests/packages.lock.json
 treader.cmd
 validate.cmd
 watch.cmd
-
 ```

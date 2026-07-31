@@ -27,7 +27,15 @@
 
 5. **Version coupling is strict.** Replays can only be played on the exact game
    version they were recorded on. v11.18 replays won't work on v11.19 game.
-   The codebase's decoder only supports v11.18.
+   The decoder now accepts both 11.18 and 11.19 (in-flight work).
+
+6. **STRATEGIC RISK — Reforged UE5 migration.** Wargaming is moving WoT Blitz from
+   DAVA to Unreal Engine 5 (announced 2026-06-17, postponed indefinitely). The live
+   client is still DAVA, but the replay format, memory offsets, log markers, and
+   `DAVAProject` paths may all change when Reforged ships. See
+   [reforged-ue5.md](reforged-ue5.md). Prioritize pipeline work that survives the
+   migration (process launch, file association, log watching) over DAVA-internal
+   research.
 
 ### What We Don't Know (Needs Testing)
 

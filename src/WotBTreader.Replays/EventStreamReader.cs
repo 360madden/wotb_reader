@@ -54,11 +54,12 @@ internal static class EventStreamReader
         return new EventStreamHeader(clientHash, clientVersion, offset);
     }
 
-    public static bool IsCompatibleStreamVersion(string version) =>
-        string.Equals(
-            WotbReplayDecoder.NormalizeVersion(version),
-            "11.18.0",
-            StringComparison.Ordinal);
+    public static bool IsCompatibleStreamVersion(string version)
+    {
+        string normalized = WotbReplayDecoder.NormalizeVersion(version);
+        return string.Equals(normalized, "11.18.0", StringComparison.Ordinal) ||
+               string.Equals(normalized, "11.19.0", StringComparison.Ordinal);
+    }
 
     public static EventStreamScan Scan(
         ReadOnlyMemory<byte> data,

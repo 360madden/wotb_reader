@@ -22,6 +22,7 @@ every file small and high-signal.
 | [`data-flow.md`](data-flow.md) | Deep dive: telemetry from decode → SQLite → read API/SignalR → overlay & comparison |
 | [`memory-offsets.md`](memory-offsets.md) | Deep dive: offset evidence schema, reader validation, runtime gating |
 | [`file-tree.md`](file-tree.md) | Physical snapshot of all committed files (`git ls-files`) for path resolution |
+| [`../research/README.md`](../research/README.md) | Game reverse-engineering research index (replay loading, IPC, memory, community tools) |
 
 ## Suggested reading order
 
@@ -29,19 +30,22 @@ every file small and high-signal.
 2. This folder — `repo-map.md` → `entry-points.md` → `api-surface.md`
 3. Deep dives only when needed: [`docs/architecture/overview.md`](../docs/architecture/overview.md),
    [`docs/architecture/roadmap.md`](../docs/architecture/roadmap.md),
-   [`docs/operations/offset-discovery-guide.md`](../docs/operations/offset-discovery-guide.md)
+   [`docs/operations/offset-discovery-guide.md`](../docs/operations/offset-discovery-guide.md),
+   [`../research/README.md`](../research/README.md) (game internals research)
 
 ## Validation
 
 ```powershell
-python scripts/python/offline_check.py
+python scripts/python/offline_check.py             # link check only
+python scripts/python/offline_check.py --refresh   # regenerate file-tree.md, then link check
+python scripts/python/offline_check.py --check-fresh  # fail if file-tree.md is stale, then link check
 ```
 
-Checks that every internal link in `offline/*.md` resolves (external URLs and
-fragment anchors are skipped). Exit 0 = all links resolve. Run it after any
-edits to this pack, and before committing changes that touch these files.
-`file-tree.md` is generated from `git ls-files`; re-run the snippet in its
-header when the layout changes.
+Checks that every internal link in `offline/*.md` (and `research/README.md`)
+resolves; external URLs and fragment anchors are skipped. Exit 0 = all checks
+pass. The gate (`scripts/validate.ps1`) and CI run with `--check-fresh`, so a
+stale `file-tree.md` fails the build — run `--refresh` in the same change that
+adds, renames, or removes files, then commit the regenerated snapshot.
 
 ## Maintenance rules
 

@@ -6,6 +6,13 @@ The "Uploaded" tab in WoT Blitz's replay browser (`Profile → Replays → Uploa
 shows replays that were **opened via the operating system's file handler**. This is
 the key mechanism for delivering replays to a running game.
 
+**Verified 2026-07-31:** Wargaming's support docs describe exactly this flow — open a
+replay file and it becomes available in the in-game Replays browser
+(`na.wargaming.net/support/en/products/wotb/article/16386/`). PCGamingWiki's WoT
+Blitz page confirms the Windows data locations (`pcgamingwiki.com/wiki/World_of_Tanks_Blitz`).
+The `.wotbreplay` extension is registered during install and handled as a positional
+argv to `wotblitz.exe`.
+
 ## How It Works
 
 1. User double-clicks a `.wotbreplay` file in File Explorer (or it's opened programmatically)
@@ -52,6 +59,13 @@ This means: to programmatically add a replay to the Uploaded tab, we need to
 ```
 ~/Library/Containers/net.wargaming.wotblitz.macos/Data/Documents/DAVAProject/replays/
 ```
+
+## Version Coupling (official)
+
+Wargaming documents that a replay **only plays on the exact game version that recorded
+it** — replay is a technical scenario log, not a video. Combined with the Reforged
+UE5 migration risk ([reforged-ue5.md](reforged-ue5.md)), the Uploaded-tab flow may
+change when the new client ships.
 
 ## Implications for Live Replay Switching
 

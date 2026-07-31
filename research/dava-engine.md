@@ -1,10 +1,33 @@
 # DAVA Engine — Open Source Analysis
 
+## Status Update (2026-07-31): SUPERSEDED BY REFORGED
+
+**The DAVA open-source angle is closed, and the engine itself is being retired.**
+
+1. `github.com/DavaFramework` and `github.com/DavaFramework/dava.engine` **return
+   404** (verified 2026-07-31). The engine source is not publicly accessible —
+   the existing "blocker" is confirmed dead.
+2. Wargaming announced the **Reforged** update: WoT Blitz migrates from DAVA to
+   **Unreal Engine 5**. Announced for 2026-06-17, **postponed indefinitely**; the
+   live client still runs DAVA. See [reforged-ue5.md](reforged-ue5.md).
+
+**Consequence:** Studying DAVA source to learn single-instance behavior, command-line
+parsing, or file watching has no viable source. Community reverse engineering
+(UnknownCheats threads) is the only path — and its findings are time-limited to the
+DAVA era.
+
+---
+
+## Legacy Content (retained for context — DAVA-specific)
+
 ## Discovery
 
 The DAVA Engine (DavaFramework) is **partially open source on GitHub**:
 - Organization: `https://github.com/DavaFramework`
 - The engine that powers WoT Blitz has public source code available
+
+> ⚠️ **2026-07-31:** The above organization and repo are **404** (verified).
+> The links below are retained only as a record of the earlier (unverified) claim.
 
 This is significant because we can study:
 - How the engine handles command-line arguments
@@ -54,22 +77,21 @@ GameScene
 
 Entity lists and object states are accessible via static pointers and offsets.
 
-## What We Can Learn
+## What We Can Learn (2026-07-31 revision)
 
-1. **Single-instance behavior:** If the `Application` class implements a named mutex,
-   we can find it in the open source and understand how the game detects existing instances.
+> ⚠️ **Superseded:** the original items below were written assuming the DAVA source
+> was readable. The source is **404** and the engine is being retired (Reforged/UE5),
+> so the old claims no longer hold. Current answers:
 
-2. **Command-line parsing:** The engine's argument parsing reveals what flags and
-   file arguments are supported — including replay paths.
-
-3. **File watching:** If the engine has built-in file watching, we can determine
-   which directories are monitored and whether dropping replays triggers auto-load.
-
-4. **Scene transitions:** Understanding how scene loading works helps optimize
-   the restart cycle (Approach E).
+1. **Single-instance behavior:** Unknown; only a live test on `wotblitz.exe` answers it.
+2. **Command-line parsing:** Confirmed pattern is positional replay path as argv[1]
+   (file association); no official CLI doc.
+3. **File watching:** No evidence the game watches the replays directory.
+4. **Scene transitions:** Engine will be replaced by UE5 (Reforged) — see
+   [reforged-ue5.md](reforged-ue5.md).
 
 ## GitHub Repos to Clone/Analyze
 
-- `github.com/DavaFramework/DavaEngine` (or similar)
+- `github.com/DavaFramework/DavaEngine` (or similar) — **404 as of 2026-07-31**
 - Look for: `Application.cpp`, `FileSystem.cpp`, `SceneManager.cpp`
 - Search for: "mutex", "single instance", "argv", "replay", "scene transition"

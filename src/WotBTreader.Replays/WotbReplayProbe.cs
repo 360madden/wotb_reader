@@ -36,12 +36,12 @@ public sealed class WotbReplayProbe : IReplayProbe
             List<string> warnings = [];
             if (!WotbReplayDecoder.IsSupportedVersion(metadata.Version))
             {
-                warnings.Add("The replay game version is not supported by the strict 11.18 decoder.");
+                warnings.Add("The replay game version is not supported by the strict 11.18/11.19 decoder.");
             }
 
             if (!EventStreamReader.IsCompatibleStreamVersion(streamHeader.ClientVersion))
             {
-                warnings.Add("The event stream client version is not compatible with the strict 11.18 decoder.");
+                warnings.Add("The event stream client version is not compatible with the strict 11.18/11.19 decoder.");
             }
 
             if (!string.Equals(
@@ -60,7 +60,7 @@ public sealed class WotbReplayProbe : IReplayProbe
             ReplayProbeResult result = new(
                 IsReplay: true,
                 GameVersion: metadata.Version,
-                FormatVersion: "wotbreplay.zip/11.18",
+                FormatVersion: $"wotbreplay.zip/{WotbReplayDecoder.NormalizeVersion(metadata.Version)}",
                 ArchiveEntries: archive.Entries.Keys.Order(StringComparer.Ordinal).ToArray(),
                 ObservableCapabilities: capabilities,
                 Warnings: warnings);

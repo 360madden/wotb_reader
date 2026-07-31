@@ -3,6 +3,7 @@ using WotBTreader.Application.Game;
 using WotBTreader.Application.Replay;
 using WotBTreader.Application.Results;
 using WotBTreader.Core;
+using WotBTreader.GameIntegration.Logs;
 
 namespace WotBTreader.GameIntegration.Session;
 
@@ -75,6 +76,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     private readonly IGuardedMemoryReaderFactory _memoryReaderFactory;
     private readonly IOffsetTableReader _offsetTableReader;
     private readonly MemoryScanDiscoverer _scanDiscoverer;
+    private readonly IBlitzReplayLifecycleFeed _lifecycleFeed;
     private readonly MemoryScanEngine _scanEngine;
 
     private GameSessionSnapshot _snapshot = new(
@@ -92,6 +94,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     private WindowsTrustedExecutableLaunchLease? _activeExecutableLease;
     private ManagedReplayArtifactLease? _activeArtifactLease;
     private SuspendedGameProcessLease? _activeSuspendedLease;
+    private CancellationTokenSource? _activeMonitoringCts;
     private bool _disposed;
 
     public GameSessionCoordinator(
@@ -104,7 +107,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         IGuardedMemoryReaderFactory memoryReaderFactory,
         IOffsetTableReader offsetTableReader,
         MemoryScanDiscoverer scanDiscoverer,
-        MemoryScanEngine scanEngine)
+        MemoryScanEngine scanEngine,
+        IBlitzReplayLifecycleFeed lifecycleFeed)
     {
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _preparer = preparer ?? throw new ArgumentNullException(nameof(preparer));
@@ -116,6 +120,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         _offsetTableReader = offsetTableReader ?? throw new ArgumentNullException(nameof(offsetTableReader));
         _scanDiscoverer = scanDiscoverer ?? throw new ArgumentNullException(nameof(scanDiscoverer));
         _scanEngine = scanEngine ?? throw new ArgumentNullException(nameof(scanEngine));
+        _lifecycleFeed = lifecycleFeed ?? throw new ArgumentNullException(nameof(lifecycleFeed));
     }
 
     /// <summary>
@@ -300,17 +305,24 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             suspendedLease.HandOffLeases();
 
         // ── 8. Record managed launch under lock ──
+        int childPid = suspendedLease.ProcessId;
+        CancellationToken monitoringToken;
         lock (_gate)
         {
             DisposeLaunchLeases();
             RecordManagedLaunch(launchContext);
 
-            // The suspended lease committed via HandOffLeases so disposal
-            // will only close handles without terminating the child process.
             _activeSuspendedLease = suspendedLease;
             _activeExecutableLease = handedOffExe;
             _activeArtifactLease = handedOffArtifact;
+
+            _activeMonitoringCts?.Cancel();
+            _activeMonitoringCts?.Dispose();
+            _activeMonitoringCts = new CancellationTokenSource();
+            monitoringToken = _activeMonitoringCts.Token;
         }
+
+        StartMonitoringLifecycle(launchContext, childPid, monitoringToken);
 
         return OperationResult.Success(
             new GameReplayLaunchOutcome(_timeProvider.GetUtcNow()));
@@ -679,6 +691,9 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     private void RevokeSession()
     {
         Revoke();
+        _activeMonitoringCts?.Cancel();
+        _activeMonitoringCts?.Dispose();
+        _activeMonitoringCts = null;
         _managedLaunch = null;
         _lastCursor = null;
         DisposeLaunchLeases();
@@ -803,6 +818,13 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         }
         _disposed = true;
 
+        lock (_gate)
+        {
+            _activeMonitoringCts?.Cancel();
+            _activeMonitoringCts?.Dispose();
+            _activeMonitoringCts = null;
+        }
+
         SuspendedGameProcessLease? suspended = Interlocked.Exchange(ref _activeSuspendedLease, null);
         if (suspended is not null)
         {
@@ -918,6 +940,88 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         return await Task.Run(
             () => _scanDiscoverer.Scan(pid, baseAddr, request),
             cancellationToken).ConfigureAwait(false);
+    }
+
+    private void StartMonitoringLifecycle(
+        ManagedGameLaunchContext launch,
+        int processId,
+        CancellationToken token)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                long currentSequence = launch.SourceSequenceBaseline;
+                while (!token.IsCancellationRequested)
+                {
+                    LifecycleFeedReadResult result = await _lifecycleFeed
+                        .ReadAfterAsync(currentSequence, token)
+                        .ConfigureAwait(false);
+                    currentSequence = result.LatestSequence;
+
+                    foreach (LifecycleFeedEvent ev in result.Events)
+                    {
+                        if (ev.MarkerKind == ReplayLogMarkerKind.OfflineReplayStarted
+                            && ev.Cursor is not null)
+                        {
+                            long startIdentity;
+                            try
+                            {
+                                using Process p = Process.GetProcessById(processId);
+                                startIdentity = p.StartTime.ToFileTimeUtc();
+                            }
+                            catch
+                            {
+                                // Process exited — stop monitoring.
+                                return;
+                            }
+
+                            var processEvidence = new GameProcessEvidence(
+                                processId,
+                                startIdentity,
+                                IsAlive: true,
+                                launch.TrustedGameIdentity.ExecutablePath,
+                                launch.TrustedGameIdentity.ProductVersion,
+                                launch.TrustedGameIdentity.ExecutableSha256,
+                                WindowHandle: 1,
+                                WindowOwnerProcessId: processId);
+
+                            var lifecycleEvidence = new ReplayLifecycleEvidence(
+                                ReplayLifecycleState.OfflineReplayStarted,
+                                ev.ObservedAtUtc,
+                                ReplayEvidenceSource.BlitzNativeLog,
+                                ev.Cursor.SourceId.Value,
+                                ev.Cursor.Generation,
+                                ev.Sequence,
+                                processId,
+                                startIdentity,
+                                launch.LaunchCorrelation);
+
+                            ApplyEvidence(new GameSessionEvidence(
+                                GamePresent: true,
+                                MonitorHealthy: true,
+                                ReplayUiConfirmed: true,
+                                processEvidence,
+                                lifecycleEvidence));
+                        }
+                        else if (ev.MarkerKind == ReplayLogMarkerKind.OfflineReplayStopped)
+                        {
+                            return;
+                        }
+                    }
+
+                    await Task.Delay(500, token).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected on revocation or disposal.
+            }
+            catch
+            {
+                // Process exit or feed failure — stop silently.
+            }
+        }, CancellationToken.None);
     }
 
     private static OperationResult<GameReplayLaunchOutcome> LaunchFailure(

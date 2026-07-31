@@ -34,9 +34,9 @@ jobs:
       - name: Scan tracked repository
         shell: pwsh
         run: ./scripts/scan-repository.ps1
-      - name: Check offline discovery pack links
+      - name: Check offline discovery pack (links + file-tree freshness)
         shell: pwsh
-        run: python scripts/python/offline_check.py
+        run: python scripts/python/offline_check.py --check-fresh
       - name: Validate tool registry JSON
         shell: pwsh
         run: python -c "import json,sys; json.load(open('tools/external/tools.lock.json', encoding='utf-8'))"

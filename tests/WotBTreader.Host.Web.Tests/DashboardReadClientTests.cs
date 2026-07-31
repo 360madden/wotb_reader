@@ -102,7 +102,7 @@ public sealed class DashboardReadClientTests
         new(
             DecodeRunId.New(),
             SourceArtifactId.New(),
-            "wotb-11.18-strict",
+            "wotb-11.x-strict",
             "0.1.0",
             "1",
             DecodeRunStatus.Succeeded,
