@@ -29,13 +29,16 @@
   state, field status, offsets, provenance, and evidence counts.
 - Updated `docs/operations/offset-discovery-guide.md` with the output contracts,
   conservative publication rule, report command, and runtime-promotion gate.
+- Captured the exact SHA-256 for the installed `11.19.0.10` executable and
+  recorded it in `memory-offsets/11.19.0.10.json`; no offset value was changed.
 
 ## Evidence state
 
-`memory-offsets/11.19.0.10.json` still contains only the existing static-analysis
-candidate for `playerYaw` (`0x0317A810`). Its executable hash remains empty until
-computed from the installed binary. No live-game result was fabricated or
-promoted during this session.
+`memory-offsets/11.19.0.10.json` contains only the existing static-analysis
+candidate for `playerYaw` (`0x0317A810`). The installed executable reports
+version `11.19.0.10` and SHA-256
+`1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d`.
+No live-game result was fabricated or promoted during this session.
 
 ## Validation
 
@@ -53,9 +56,8 @@ promoted during this session.
   and 7 unknown fields; malformed offsets are reported as `Invalid` instead of
   terminating the report, and malformed files cause a nonzero exit without
   modifying the table.
-- Offset validator: `python scripts/python/offset_check.py --check-schema`; the
-  only current issue is the intentionally empty executable hash in the
-  11.19.0.10 table.
+- Offset validator: `python scripts/python/offset_check.py --check-schema` passes
+  with no issues after the executable hash was recorded.
 - Release build: `dotnet build WotBTreader.sln -c Release --no-restore` — 0
   warnings, 0 errors.
 - Focused tests: Application — 14 passed; GameIntegration — 142 passed, 2
@@ -78,16 +80,17 @@ promoted during this session.
   function; CE does not provide a supported headless workflow in this repository.
 - A unique candidate can still be a false positive; cross-process, cross-replay,
   x64dbg/static corroboration, and GameHarness invariants are mandatory.
-- The offset validator intentionally reports a failure until a real executable
-  SHA-256 is recorded; do not bypass this gate for convenience.
+- The offset table is hash-bound to the locally installed binary; re-run the
+  hash tool after any game update and do not reuse this evidence for another
+  executable.
 
 ## Recommended next steps
 
 1. Run `autoDiscover()` during an approved offline replay and preserve its JSON
    report outside tracked source paths.
 2. Use `report-offset-evidence.ps1` before and after each evidence session.
-3. Cross-check any unique candidate with x64dbg and GameHarness across two process
-   launches and two independent replays.
+3. Cross-check the `playerYaw` candidate with x64dbg and GameHarness across two
+   process launches and two independent replays.
 4. Update the versioned offset table only with evidence-backed Candidate data;
    promote to Verified only when every reader requirement is satisfied.
 5. Revisit the other seven fields only after the playerYaw workflow is proven.

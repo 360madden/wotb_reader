@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "gameVersion": "11.19.0.10",
-  "executableSha256": "",
-  "discoveredAtUtc": "2026-07-30T13:35:47Z",
+  "executableSha256": "1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d",
+  "discoveredAtUtc": "2026-07-31T16:14:08Z",
   "offsets": {
     "replayTime": 0,
     "playerHP": 0,
@@ -31,5 +31,5 @@
     }
   },
   "confidence": "low",
-  "notes": "playerYaw candidate (0x0317A810) discovered via Ghidra static analysis (2026-07-30). 7 fields remain unknown. Hash is empty — compute with tools/compute-exe-hash.ps1 and update before runtime use. Verify dynamically with Cheat Engine + x64dbg before promoting to Verified."
+  "notes": "playerYaw candidate (0x0317A810) discovered via Ghidra static analysis (2026-07-30). Exact SHA-256 captured from the installed 11.19.0.10 executable on 2026-07-31. 7 fields remain unknown. Verify dynamically with Cheat Engine + x64dbg before promoting to Verified."
 }
