@@ -20,6 +20,7 @@ internal static class GameApiEndpoints
         group.MapGet("/state", GetGameStateAsync);
         group.MapGet("/memory", GetGameMemoryAsync);
         group.MapPost("/launch", LaunchGameAsync);
+        group.MapPost("/start", StartGameAsync);
         group.MapPost("/discover", DiscoverOffsetsAsync);
         group.MapPost("/discover/snapshot", CreateSnapshotAsync);
         group.MapPost("/discover/compare/{sessionId}", CompareSnapshotAsync);
@@ -71,6 +72,20 @@ internal static class GameApiEndpoints
             CameraPitch = observation.CameraPitch,
             AliveTankCount = observation.AliveTankCount,
         });
+    }
+
+    internal static async Task<IResult> StartGameAsync(
+        IGameProcessLauncher gameProcessLauncher,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(gameProcessLauncher);
+
+        OperationResult<GameProcessLaunchOutcome> result =
+            await gameProcessLauncher.LaunchAsync(cancellationToken).ConfigureAwait(false);
+
+        return result.IsSuccess
+            ? Results.Ok(new { pid = result.Value!.ProcessId, launchedAtUtc = result.Value.LaunchedAtUtc })
+            : Results.BadRequest(new { error = result.Error?.Code ?? "start.failed" });
     }
 
     internal static async Task<IResult> LaunchGameAsync(
@@ -333,6 +348,8 @@ internal static class GameApiEndpoints
         });
     }
 
+    // Stable error code only. ApplicationError messages may contain absolute
+    // paths or machine details and must never reach the wire (privacy rule).
     private static string ErrorCode(ApplicationError? error) =>
         string.IsNullOrWhiteSpace(error?.Code) ? "launch.failed" : error.Code;
 }

@@ -14,6 +14,15 @@ No runtime AI, cloud, Python, Node.js, Rust, Electron, or containers.
 Cursor layout and asset index: [`.cursor/README.md`](.cursor/README.md).
 Do **not** load `.cursor/reference/*` unless the task needs that catalog.
 
+Offline discovery: a focused, self-contained repo index lives in
+[`offline/`](offline/README.md) (repo map, entry points, API surface, glossary,
+commands, replay format, offset discovery, data flow, memory-offset evidence,
+file-tree snapshot). Load `offline/README.md` to re-orient fast without scanning
+the tree; it links to canonical docs instead of duplicating them. Keep it in
+sync whenever the layout, API surface, or commands change — and run
+`python scripts/python/offline_check.py` after editing the pack (wired into
+`scripts/validate.ps1` and CI).
+
 ## Commands (exact)
 
 - SDK pinned by `global.json` to 10.0.302. Package versions are central in `Directory.Packages.props` with committed lock files; restore is always `--locked-mode`.
@@ -63,6 +72,9 @@ Do **not** load `.cursor/reference/*` unless the task needs that catalog.
 | Task | Load |
 |------|------|
 | Cursor harness / model routing | `.cursor/README.md`, `.cursor/reference/model-routing.md`; local read-only CLI adapter: `scripts/invoke-cursor-agent.ps1` |
+| Replay format / decode internals | `offline/replay-format.md` |
+| Telemetry data flow (decode → UI / comparison) | `offline/data-flow.md` |
+| Offset / memory evidence | `offline/memory-offsets.md`, `offline/offset-discovery.md` |
 | Architecture / project refs | rule `architecture-boundaries` (auto on `src/**/*.cs`) |
 | Replay / binary / harness tools | rule `binary-parser`; agent `decoder-auditor` / Codex `decoder_auditor` |
 | Loopback / mutation / privacy audit | agent `security-auditor` / Codex `security_auditor` (readonly) |

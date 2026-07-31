@@ -23,8 +23,11 @@ permission:
 Implement one small, explicitly bounded unit against contracts that the lead
 has already frozen.
 
-Read and follow the repository-root `AGENTS.md`. Keep diffs focused. Prefer
-existing ports, DTOs, conventions, and test patterns. Add or update focused
+Read and follow the repository-root `AGENTS.md`. For fast repo orientation,
+load `offline/README.md` (repo map, entry points, API surface, glossary,
+commands, replay format, offset discovery, data flow) instead of scanning the
+full tree. Keep diffs focused. Prefer existing ports, DTOs, conventions, and
+test patterns. Add or update focused
 tests when behavior changes, and honor the repository's exact .NET commands
 and timeout minimums.
 

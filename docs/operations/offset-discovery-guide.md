@@ -10,7 +10,7 @@ Last updated: 2026-07-30
 | Offset file | `memory-offsets/11.19.0.10.json` — only `playerYaw` found; 7 fields unknown |
 | Ghidra 12.1.2 | Installed at `C:\work\tools\ghidra_12.1.2_PUBLIC` |
 | Cheat Engine 7.7 | Installed at `C:\Program Files\Cheat Engine\` |
-| x64dbg | **Not yet installed** — see Phase 2 below |
+| x64dbg | Installed at `C:\work\tools\x64dbg` — snapshot 2026.05.27 (see Phase 2 below) |
 | ILSpy | **Not yet installed** — see Phase 3 below |
 | GameHarness scanner | `scan`/`probe` check the offline-session gate via HTTP |
 | Ghidra headless script | `tools/ghidra-scripts/FindOffsets.java` — ready to run |
@@ -27,9 +27,9 @@ game values.
 
 **Download:** https://github.com/x64dbg/x64dbg/releases
 
-**Installation:**
-1. Download the latest release zip (e.g., `snapshot_2025-xx-xx_xx-xx.zip`)
-2. Extract to `C:\tools\x64dbg\` (or any path without spaces)
+**Installation (done 2026-07-31):**
+1. Download the latest release zip (e.g., `snapshot_2026-05-27_12-11.zip`)
+2. Extract to `C:\work\tools\x64dbg\` (or any path without spaces)
 3. Run `release\x64\x64dbg.exe` (for 64-bit)
 4. No installer needed — portable executable
 
@@ -325,20 +325,20 @@ If ILSpy shows obfuscated names, fall back to:
 
 ## One-time Setup Commands
 
-### Install x64dbg (run in PowerShell as Admin):
+### Install x64dbg (run in PowerShell; no admin needed for `C:\work\tools`):
 ```powershell
 # Download latest snapshot
-$url = "https://github.com/x64dbg/x64dbg/releases/latest/download/snapshot.zip"
+$url = "https://github.com/x64dbg/x64dbg/releases/download/2026.05.27/snapshot_2026-05-27_12-11.zip"
 $out = "$env:TEMP\x64dbg.zip"
 Invoke-WebRequest -Uri $url -OutFile $out
 # Extract
-Expand-Archive -Path $out -DestinationPath "C:\tools\x64dbg" -Force
+Expand-Archive -Path $out -DestinationPath "C:\work\tools\x64dbg" -Force
 # Create desktop shortcut
 $wshell = New-Object -ComObject WScript.Shell
 $shortcut = $wshell.CreateShortcut("$env:USERPROFILE\Desktop\x64dbg.lnk")
-$shortcut.TargetPath = "C:\tools\x64dbg\release\x64\x64dbg.exe"
+$shortcut.TargetPath = "C:\work\tools\x64dbg\release\x64\x64dbg.exe"
 $shortcut.Save()
-Write-Host "x64dbg installed to C:\tools\x64dbg"
+Write-Host "x64dbg installed to C:\work\tools\x64dbg"
 ```
 
 ### Install ILSpy (run in PowerShell as Admin):

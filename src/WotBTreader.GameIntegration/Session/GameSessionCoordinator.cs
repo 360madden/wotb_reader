@@ -199,10 +199,13 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         }
         catch (Exception exception)
         {
+            string detail = exception.InnerException is not null
+                ? $"{exception.GetType().Name}: {exception.Message} | Inner: {exception.InnerException.GetType().Name}: {exception.InnerException.Message}"
+                : $"{exception.GetType().Name}: {exception.Message}";
             return OperationResult.Failure<GameReplayLaunchOutcome>(
                 new ApplicationError(
                     "game.launch.unexpected_failure",
-                    $"An unexpected error occurred during launch orchestration: {exception.GetType().Name}",
+                    detail,
                     Retryable: true));
         }
     }

@@ -332,7 +332,7 @@ internal static class NativeMethods
         [MarshalAs(UnmanagedType.Bool)] bool bInheritHandle,
         uint dwProcessId);
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool QueryFullProcessImageNameW(
         SafeProcessHandle hProcess,
@@ -390,26 +390,16 @@ internal static class NativeMethods
 
     [DllImport("kernel32.dll", SetLastError = true)]
     internal static extern bool DuplicateHandle(
-        SafeHandle hSourceProcessHandle,
-        SafeHandle hSourceHandle,
-        SafeHandle hTargetProcessHandle,
-        out SafeProcessHandle lpTargetHandle,
+        IntPtr hSourceProcessHandle,
+        IntPtr hSourceHandle,
+        IntPtr hTargetProcessHandle,
+        out IntPtr lpTargetHandle,
         uint dwDesiredAccess,
         bool bInheritHandle,
         uint dwOptions);
 
     [DllImport("kernel32.dll", SetLastError = true)]
-    internal static extern bool DuplicateHandle(
-        SafeHandle hSourceProcessHandle,
-        SafeHandle hSourceHandle,
-        SafeHandle hTargetProcessHandle,
-        out SafeThreadHandle lpTargetHandle,
-        uint dwDesiredAccess,
-        bool bInheritHandle,
-        uint dwOptions);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    internal static extern SafeHandle GetCurrentProcess();
+    internal static extern IntPtr GetCurrentProcess();
 
     [DllImport("kernel32.dll", SetLastError = true)]
     internal static extern int GetProcessId(SafeProcessHandle hProcess);

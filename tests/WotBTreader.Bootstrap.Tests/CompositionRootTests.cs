@@ -44,6 +44,7 @@ public sealed class CompositionRootTests
         typeof(IGameReplayLauncher),
         typeof(IGameMemoryObserver),
         typeof(IGameMemoryScanner),
+        typeof(IGameProcessLauncher),
     ];
 
     [TestMethod]

@@ -18,6 +18,9 @@ jobs:
           global-json-file: global.json
           cache: true
           cache-dependency-path: "**/packages.lock.json"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
       - name: Restore locked dependencies
         run: dotnet restore WotBTreader.sln --locked-mode
       - name: Verify formatting
@@ -31,3 +34,9 @@ jobs:
       - name: Scan tracked repository
         shell: pwsh
         run: ./scripts/scan-repository.ps1
+      - name: Check offline discovery pack links
+        shell: pwsh
+        run: python scripts/python/offline_check.py
+      - name: Validate tool registry JSON
+        shell: pwsh
+        run: python -c "import json,sys; json.load(open('tools/external/tools.lock.json', encoding='utf-8'))"

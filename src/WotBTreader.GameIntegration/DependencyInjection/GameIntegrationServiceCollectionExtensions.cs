@@ -58,6 +58,7 @@ public static class GameIntegrationServiceCollectionExtensions
             sp => sp.GetRequiredService<GameSessionCoordinator>());
         services.TryAddSingleton<IGameMemoryScanner>(
             sp => sp.GetRequiredService<GameSessionCoordinator>());
+        services.TryAddSingleton<IGameProcessLauncher, GameProcessLauncher>();
 
         return services;
     }

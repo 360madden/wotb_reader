@@ -18,6 +18,10 @@ switch (command)
     case "scan":
         exitCode = await ScanAsync();
         break;
+    case "start":
+    case "start-game":
+        exitCode = await StartGameAsync();
+        break;
     case "state":
         exitCode = ShowState();
         break;
@@ -55,6 +59,44 @@ switch (command)
 }
 
 return exitCode;
+
+// ── Scan command ────────────────────────────────────────────
+
+static async Task<int> StartGameAsync()
+{
+    string? hostUrl = ReadRendezvousUrl();
+    if (hostUrl is null)
+    {
+        Console.Error.WriteLine("start: no web host found. Start the host with 'serve' first.");
+        return (int)HarnessExitCode.UnsupportedCapability;
+    }
+
+    string baseAddress = hostUrl.EndsWith('/') ? hostUrl : hostUrl + "/";
+    using var client = new HttpClient { BaseAddress = new Uri(baseAddress), Timeout = TimeSpan.FromSeconds(10) };
+
+    try
+    {
+        Console.WriteLine("Starting game launcher...");
+        HttpResponseMessage response = await client.PostAsync("/api/v1/game/start", null).ConfigureAwait(false);
+        string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+        if (response.IsSuccessStatusCode)
+        {
+            using var doc = JsonDocument.Parse(body);
+            int pid = doc.RootElement.TryGetProperty("pid", out JsonElement p) && p.TryGetInt32(out int id) ? id : 0;
+            Console.WriteLine($"Game launched (PID {pid}).");
+            return 0;
+        }
+
+        Console.Error.WriteLine($"start: HTTP {(int)response.StatusCode} — {Truncate(body, 200)}");
+        return (int)HarnessExitCode.ConflictOrBusy;
+    }
+    catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+    {
+        Console.Error.WriteLine($"start: could not reach web host at {hostUrl}.");
+        return (int)HarnessExitCode.ConflictOrBusy;
+    }
+}
 
 // ── Scan command ────────────────────────────────────────────
 
@@ -695,8 +737,16 @@ static string? ReadRendezvousUrl()
     {
         // Same path as the Overlay's RendezvousLocator.ResolveDefaultPath()
         // and the web host's RendezvousPublisher so both processes agree.
-        string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        string rendezvousPath = Path.Combine(localAppData, "WotBTreader", "rendezvous", "web.json");
+        // WOTB_TREADER_RENDEZVOUS_PATH overrides it for hermetic black-box
+        // tests so a stray local host never leaks into them.
+        string? overridePath = Environment.GetEnvironmentVariable("WOTB_TREADER_RENDEZVOUS_PATH");
+        string rendezvousPath = string.IsNullOrWhiteSpace(overridePath)
+            ? Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "WotBTreader",
+                "rendezvous",
+                "web.json")
+            : overridePath;
         if (!File.Exists(rendezvousPath))
         {
             return null;
@@ -809,6 +859,8 @@ static void PrintHelp()
 WotBTreader GameHarness — offline replay harness
 
 Commands:
+  start, start-game
+    Launch the installed WoT Blitz executable (no replay required).
   state
     Show saved scanner state (read-only)
   scan

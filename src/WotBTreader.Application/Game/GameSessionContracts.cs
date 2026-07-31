@@ -207,3 +207,23 @@ public sealed record MemoryNeighborhoodRequest(
     float? FloatMax,
     int? IntMin,
     int? IntMax);
+
+/// <summary>Safe result of a plain game process launch (no replay).</summary>
+public sealed record GameProcessLaunchOutcome(
+    int ProcessId,
+    DateTimeOffset LaunchedAtUtc);
+
+/// <summary>
+/// Launches the installed game process without a replay.
+/// Used for offset discovery and smoke testing where the game
+/// needs to be running but no replay is required.
+/// </summary>
+public interface IGameProcessLauncher
+{
+    /// <summary>
+    /// Starts the installed game executable as a new process.
+    /// Returns the launched process ID on success, or an error.
+    /// </summary>
+    ValueTask<OperationResult<GameProcessLaunchOutcome>> LaunchAsync(
+        CancellationToken cancellationToken);
+}

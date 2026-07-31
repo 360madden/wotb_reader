@@ -44,6 +44,16 @@ public sealed class GameHarnessCommandContainmentTests
             RedirectStandardError = true,
         };
 
+        // Point the harness at a rendezvous path that cannot exist, so these
+        // black-box tests are hermetic: a stray local host with a valid
+        // rendezvous record must never change the expected exit code.
+        string hermeticRendezvous = Path.Combine(
+            Path.GetTempPath(),
+            "wotbtreader-tests",
+            Guid.NewGuid().ToString("N"),
+            "web.json");
+        startInfo.Environment["WOTB_TREADER_RENDEZVOUS_PATH"] = hermeticRendezvous;
+
         foreach (string argument in arguments)
         {
             startInfo.ArgumentList.Add(argument);

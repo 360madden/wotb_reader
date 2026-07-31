@@ -1,18 +1,18 @@
 {
   "schemaVersion": 1,
   "gameVersion": "11.19.0.10",
-  "executableSha256": "1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d",
-  "discoveredAtUtc": "2026-07-30T13:35:47Z",
+  "executableSha256": "",
+  "discoveredAtUtc": null,
   "offsets": {
     "replayTime": 0,
     "playerHP": 0,
     "playerPositionX": 0,
     "playerPositionY": 0,
     "playerPositionZ": 0,
-    "playerYaw": 51808784,
+    "playerYaw": 0,
     "cameraPitch": 0,
     "aliveTankCount": 0
   },
-  "confidence": "low",
-  "notes": "Ghidra static analysis (FindOffsets.java) on 2026-07-30. playerYaw (0x0317A810) is the sole candidate — 6 data references from 5 unique xrefs against 67 'yaw' string matches. playerHP was discarded (2 refs against 5000 'hp' matches = noise). xpos/ypos/zpos strings found (3/2/1 matches) but zero cross-references. replayTime, cameraPitch, aliveTankCount had zero or one match — likely obfuscated. All values need Cheat Engine dynamic validation. Module-relative offsets assume 0x00400000 PE image base; ASLR handled at runtime via MainModule.BaseAddress."
+  "confidence": "none",
+  "notes": "Placeholder for installed version 11.19.0.10 — run the Ghidra + Cheat Engine discovery workflow to populate real offsets."
 }

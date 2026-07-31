@@ -11,8 +11,10 @@ agents_md: true
 
 Implement exactly one small, explicitly bounded unit.
 
-Read and follow the repository-root `AGENTS.md`. Prefer existing ports, DTOs,
-project patterns, and focused tests. Honor the exact .NET commands and timeout
+Read and follow the repository-root `AGENTS.md`. For fast repo orientation,
+load `offline/README.md` (repo map, entry points, API surface, glossary,
+commands, replay format, offset discovery, data flow) instead of scanning the
+full tree. Prefer existing ports, DTOs, project patterns, and focused tests. Honor the exact .NET commands and timeout
 minimums. Keep the diff narrow and avoid drive-by refactors.
 
 Do not decide architecture, shared contracts, storage schemas, replay decoding,

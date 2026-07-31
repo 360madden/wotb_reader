@@ -144,6 +144,21 @@ internal sealed class WindowsSuspendedProcessPlatform : ISuspendedProcessPlatfor
     private const int StartfUseShowWindow = 0x0000_0001;
     private const int SwHide = 0;
 
+    private static string NormalizeExePath(string path)
+    {
+        string cleaned = path.StartsWith(@"\\?\", StringComparison.OrdinalIgnoreCase)
+            ? path[4..]
+            : path;
+        try
+        {
+            return Path.GetFullPath(cleaned);
+        }
+        catch
+        {
+            return cleaned;
+        }
+    }
+
     public async ValueTask<OperationResult<SuspendedGameProcessLease>> CreateAsync(
         WindowsTrustedExecutableLaunchLease executableLease,
         ManagedReplayArtifactLease artifactLease,
@@ -214,11 +229,13 @@ internal sealed class WindowsSuspendedProcessPlatform : ISuspendedProcessPlatfor
             threadHandle = new SafeThreadHandle(processInfo.hThread, ownsHandle: true);
 
             // Reduce handle rights immediately - drop from all-access to least privilege
+            IntPtr currentProcess = NativeMethods.GetCurrentProcess();
+            IntPtr outHandle;
             if (!NativeMethods.DuplicateHandle(
-                    NativeMethods.GetCurrentProcess(),
-                    processHandle,
-                    NativeMethods.GetCurrentProcess(),
-                    out reducedProcessHandle,
+                    currentProcess,
+                    processHandle.DangerousGetHandle(),
+                    currentProcess,
+                    out outHandle,
                     NativeMethods.ProcessQueryLimitedInformation | NativeMethods.ProcessTerminate | NativeMethods.Synchronize,
                     false,
                     0))
@@ -227,14 +244,15 @@ internal sealed class WindowsSuspendedProcessPlatform : ISuspendedProcessPlatfor
                     "game.launch.handle_reduction_failed",
                     "Failed to reduce process handle rights.");
             }
+            reducedProcessHandle = new SafeProcessHandle(outHandle, ownsHandle: true);
             processHandle.Dispose();
             processHandle = null;
 
             if (!NativeMethods.DuplicateHandle(
-                    NativeMethods.GetCurrentProcess(),
-                    threadHandle,
-                    NativeMethods.GetCurrentProcess(),
-                    out reducedThreadHandle,
+                    currentProcess,
+                    threadHandle.DangerousGetHandle(),
+                    currentProcess,
+                    out outHandle,
                     NativeMethods.ThreadSuspendResume | NativeMethods.ThreadQueryLimitedInformation,
                     false,
                     0))
@@ -243,6 +261,7 @@ internal sealed class WindowsSuspendedProcessPlatform : ISuspendedProcessPlatfor
                     "game.launch.handle_reduction_failed",
                     "Failed to reduce thread handle rights.");
             }
+            reducedThreadHandle = new SafeThreadHandle(outHandle, ownsHandle: true);
             threadHandle.Dispose();
             threadHandle = null;
 
@@ -288,16 +307,18 @@ internal sealed class WindowsSuspendedProcessPlatform : ISuspendedProcessPlatfor
             }
 
             string childExePath = new(pathBuffer, 0, checked((int)pathLength));
+            string normalizedChild = NormalizeExePath(childExePath);
+            string normalizedLease = NormalizeExePath(executableLease.CanonicalExecutablePath);
             if (!string.Equals(
-                    childExePath,
-                    executableLease.CanonicalExecutablePath,
+                    normalizedChild,
+                    normalizedLease,
                     StringComparison.OrdinalIgnoreCase))
             {
                 NativeMethods.TerminateProcess(reducedProcessHandle, 1);
                 _ = NativeMethods.WaitForSingleObject(reducedProcessHandle, 5000);
                 return SuspendedGameProcessLease.Failure(
                     "game.launch.child_exe_mismatch",
-                    "Child executable path does not match trusted executable.");
+                    $"Child executable path does not match trusted executable. Child: '{normalizedChild}' | Lease: '{normalizedLease}'.");
             }
 
             // Revalidate executable file identity via the lease's pinned handle

@@ -37,6 +37,24 @@ python scripts/python/e2e_smoke.py
 
 **Exit code:** 0 = all pass, 1 = any failure.
 
+### `offline_check.py` — Offline Discovery Pack Link Checker
+
+Validates every internal markdown link in `offline/*.md` resolves to an
+existing file. External URLs and fragment-only anchors are skipped.
+
+```powershell
+python scripts/python/offline_check.py
+```
+
+**What it checks:**
+- All `[text](target)` links in every `offline/*.md` file
+- Relative paths resolved against the pack (and repo root via `../`)
+- Broken links reported with file, line, and target
+
+**Output:** `.build/offline-check-<datetime>.log`
+
+**Exit code:** 0 = all links resolve, 1 = one or more broken.
+
 ### `offset_check.py` — Offset File Validator
 
 Validates all `memory-offsets/*.json` files for schema compliance, SHA256

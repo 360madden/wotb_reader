@@ -9,6 +9,7 @@ do_not_load: Ordinary feature work when AGENTS.md route table already answers.
 |------|------|
 | Human setup | `README.md` |
 | Agent entry | `AGENTS.md` |
+| Offline discovery pack | `offline/README.md` (repo map, entry points, API surface, glossary, commands, replay format, offset discovery) |
 | Cursor index | `.cursor/README.md` |
 | Validate | `scripts/validate.ps1` |
 | Blockers | `docs/operations/blocker-log.md` |

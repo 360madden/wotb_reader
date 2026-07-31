@@ -41,3 +41,9 @@ if ($AuditPackages) {
 }
 
 & (Join-Path $PSScriptRoot 'scan-repository.ps1')
+
+Invoke-CheckedNative python @(
+    (Join-Path $PSScriptRoot 'python\offline_check.py')
+) 'Offline pack link check'
+
+Invoke-CheckedNative python @('-c', 'import json,sys; json.load(open("tools/external/tools.lock.json", encoding="utf-8"))', '--') 'Tool registry JSON validity'

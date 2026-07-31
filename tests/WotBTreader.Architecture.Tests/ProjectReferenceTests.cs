@@ -84,6 +84,22 @@ public sealed class ProjectReferenceTests
     }
 
     [TestMethod]
+    public void OverlayProject_ReferencesOnlyApiContracts()
+    {
+        // The Overlay is a loopback web client and must stay isolated from
+        // every host, adapter, Application, and Core type. This pins the
+        // actual csproj, not just the allowed-reference table.
+        ProjectFile? overlay = ProjectCatalog.Discover().FirstOrDefault(
+            static project => project.Name == OverlayName);
+        Assert.IsNotNull(overlay, "WotBTreader.Overlay.csproj must be discovered.");
+
+        CollectionAssert.AreEqual(
+            new[] { ApiContractsName },
+            ProjectCatalog.ProjectReferences(overlay),
+            "WotBTreader.Overlay must reference exactly one project: ApiContracts.");
+    }
+
+    [TestMethod]
     public void AnalyzeProjects_HostReferencingAdapter_IsReported()
     {
         ProjectFile[] projects =
