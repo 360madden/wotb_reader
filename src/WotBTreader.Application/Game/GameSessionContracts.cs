@@ -117,9 +117,32 @@ public interface IGameMemoryObserver
         CancellationToken cancellationToken);
 }
 
+/// <summary>Primitive representation used by typed scans and next-scan comparisons.</summary>
+public enum MemoryValueKind
+{
+    Bytes,
+    Int32Value,
+    UInt32Value,
+    Int64Value,
+    UInt64Value,
+    FloatValue,
+    DoubleValue,
+}
+
+/// <summary>Controls which virtual-memory mappings are eligible for discovery.</summary>
+[Flags]
+public enum MemoryRegionSelection
+{
+    None = 0,
+    Private = 1,
+    Mapped = 2,
+    Image = 4,
+    Default = Private | Mapped,
+}
+
 /// <summary>
-/// Request to scan game process memory for a specific value pattern to
-/// discover unknown memory offsets.
+/// Request to scan the verified game process memory for a typed value or an
+/// AOB-style byte pattern. Non-zero tolerance-mask bytes are wildcards.
 /// </summary>
 public sealed record MemoryScanRequest(
     string FieldName,
@@ -127,14 +150,43 @@ public sealed record MemoryScanRequest(
     byte[] ExpectedValue,
     byte[]? ToleranceMask,
     int MaxCandidates,
-    long MinRegionSize);
+    long MinRegionSize,
+    int Alignment = 1,
+    MemoryRegionSelection RegionSelection = MemoryRegionSelection.Default,
+    bool IncludeWorkingSetClassification = false,
+    MemoryValueKind ValueKind = MemoryValueKind.Bytes);
 
-/// <summary>One candidate address returned by a memory scan.</summary>
+/// <summary>One bounded, single-root pointer-chain resolution request.</summary>
+public sealed record MemoryPointerChainRequest(
+    long RootRelativeOffset,
+    IReadOnlyList<long> PointerOffsets,
+    int MaxDepth = 4);
+
+/// <summary>A resolved pointer-chain candidate. It is evidence only, never a runtime offset.</summary>
+public sealed record MemoryPointerChainCandidate(
+    long RootAddress,
+    long FinalAddress,
+    IReadOnlyList<long> TraversedAddresses,
+    string AddressKind);
+
+/// <summary>Result of a bounded, single-root pointer-chain exploration.</summary>
+public sealed record MemoryPointerChainResult(
+    DateTimeOffset CompletedAtUtc,
+    IReadOnlyList<MemoryPointerChainCandidate> Candidates,
+    int RejectedChains);
+
+/// <summary>
+/// One candidate address returned by a memory scan. BaseDisplacement is an
+/// arithmetic displacement from the supplied scan base; it is not a module RVA
+/// unless ownership by the main image has been independently proven.
+/// </summary>
 public sealed record MemoryScanCandidate(
     long AbsoluteAddress,
-    long RelativeOffset,
+    long BaseDisplacement,
     byte[] ObservedValue,
-    string ValueSummary);
+    string ValueSummary,
+    string AddressKind = "absolute",
+    bool IsCopyOnWrite = false);
 
 /// <summary>Results of a single memory scan pass for offset discovery.</summary>
 public sealed record MemoryScanResult(
@@ -143,7 +195,13 @@ public sealed record MemoryScanResult(
     int RegionsScanned,
     long BytesScanned,
     IReadOnlyList<MemoryScanCandidate> Candidates,
-    int TotalMatchesBeforeTruncation);
+    int TotalMatchesBeforeTruncation,
+    string TargetArchitecture = "unknown",
+    string ModuleName = "unknown",
+    long ModuleSize = 0,
+    int Alignment = 1,
+    bool Truncated = false,
+    string ScanKind = "value");
 
 /// <summary>
 /// Scans the verified game process memory for specific value patterns.
@@ -153,6 +211,16 @@ public interface IGameMemoryScanner
 {
     ValueTask<OperationResult<MemoryScanResult>> ScanAsync(
         MemoryScanRequest request,
+        CancellationToken cancellationToken);
+
+    /// <summary>Scans an AOB/wildcard pattern using the same guarded region pipeline.</summary>
+    ValueTask<OperationResult<MemoryScanResult>> ScanPatternAsync(
+        MemoryScanRequest request,
+        CancellationToken cancellationToken);
+
+    /// <summary>Resolves a short, bounded pointer chain for evidence collection.</summary>
+    ValueTask<OperationResult<MemoryPointerChainResult>> ResolvePointerChainAsync(
+        MemoryPointerChainRequest request,
         CancellationToken cancellationToken);
 
     /// <summary>Creates a snapshot of all values matching the filter. Returns a session ID.</summary>
@@ -165,7 +233,8 @@ public interface IGameMemoryScanner
         string sessionId,
         string compareMode,
         int maxCandidates,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        bool advanceBaseline = false);
 
     /// <summary>Discards a stored snapshot session.</summary>
     void DiscardSession(string sessionId);
@@ -184,17 +253,32 @@ public sealed record MemorySnapshotRequest(
     int? IntMin,
     int? IntMax,
     long MinAddress,
-    long MaxAddress);
+    long MaxAddress,
+    MemoryValueKind ValueKind = MemoryValueKind.Int32Value,
+    int Alignment = 1,
+    MemoryRegionSelection RegionSelection = MemoryRegionSelection.Default,
+    long? LongMin = null,
+    long? LongMax = null,
+    ulong? UIntMin = null,
+    ulong? UIntMax = null);
 
-/// <summary>Result of comparing a current scan against a stored snapshot.</summary>
+/// <summary>
+/// Result of comparing a current scan against a stored snapshot. RetainedCount
+/// reports prior candidates whose chunks could not be reread during a rolling
+/// comparison; they are not included in the changed/unchanged counters.
+/// </summary>
 public sealed record MemoryCompareResult(
     DateTimeOffset CompletedAtUtc,
     int PreviousCount,
+    int CurrentCount,
     int ChangedCount,
     int UnchangedCount,
     int IncreasedCount,
     int DecreasedCount,
-    IReadOnlyList<MemoryScanCandidate> Candidates);
+    IReadOnlyList<MemoryScanCandidate> Candidates,
+    bool Truncated = false,
+    bool ComparedAgainstRollingBaseline = false,
+    int RetainedCount = 0);
 
 /// <summary>Request to scan a memory neighborhood around a known offset.</summary>
 public sealed record MemoryNeighborhoodRequest(
@@ -206,7 +290,8 @@ public sealed record MemoryNeighborhoodRequest(
     float? FloatMin,
     float? FloatMax,
     int? IntMin,
-    int? IntMax);
+    int? IntMax,
+    bool IncludeWorkingSetClassification = false);
 
 /// <summary>Safe result of a plain game process launch (no replay).</summary>
 public sealed record GameProcessLaunchOutcome(

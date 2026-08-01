@@ -4,6 +4,7 @@ using WotBTreader.Application.Replay;
 using WotBTreader.Application.Results;
 using WotBTreader.Core;
 using WotBTreader.GameIntegration.Logs;
+using WotBTreader.UltimateScanner;
 
 namespace WotBTreader.GameIntegration.Session;
 
@@ -78,6 +79,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     private readonly MemoryScanDiscoverer _scanDiscoverer;
     private readonly IBlitzReplayLifecycleFeed _lifecycleFeed;
     private readonly MemoryScanEngine _scanEngine;
+    private readonly CancellationTokenSource _lifetimeCts = new();
 
     private GameSessionSnapshot _snapshot = new(
         GameSessionVerificationState.Unknown,
@@ -95,6 +97,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     private ManagedReplayArtifactLease? _activeArtifactLease;
     private SuspendedGameProcessLease? _activeSuspendedLease;
     private CancellationTokenSource? _activeMonitoringCts;
+    private CancellationTokenSource? _authorizationCts;
     private bool _disposed;
 
     public GameSessionCoordinator(
@@ -129,6 +132,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     /// </summary>
     internal void RecordManagedLaunch(ManagedGameLaunchContext launch)
     {
+        ObjectDisposedException.ThrowIf(_disposed, typeof(GameSessionCoordinator));
+
         ArgumentNullException.ThrowIfNull(launch);
         ArgumentException.ThrowIfNullOrWhiteSpace(launch.LaunchCorrelation);
         ArgumentException.ThrowIfNullOrWhiteSpace(launch.LifecycleSourceIdentity);
@@ -141,6 +146,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
 
         lock (_gate)
         {
+            ObjectDisposedException.ThrowIf(_disposed, typeof(GameSessionCoordinator));
             Revoke();
             _managedLaunch = launch;
             _lastCursor = null;
@@ -163,6 +169,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
 
         lock (_gate)
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             Evaluate(evidence);
         }
     }
@@ -193,10 +204,17 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     {
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(request);
+        if (_disposed)
+        {
+            return OperationResult.Failure<GameReplayLaunchOutcome>(
+                new ApplicationError("game.session_disposed", "The game session coordinator is disposed.", Retryable: false));
+        }
 
+        using CancellationTokenSource launchCts =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetimeCts.Token);
         try
         {
-            return await LaunchCoreAsync(request, cancellationToken).ConfigureAwait(false);
+            return await LaunchCoreAsync(request, launchCts.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -230,102 +248,177 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         }
 
         ManagedLaunchPreparation preparation = prepResult.Value!;
-
-        // ── 2. Acquire executable lease ──
-        OperationResult<WindowsTrustedExecutableLaunchLease> exeLeaseResult =
-            await WindowsTrustedExecutableLaunchLease.AcquireAsync(
-                preparation.TrustedIdentity,
-                cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
-        if (!exeLeaseResult.IsSuccess)
+
+        WindowsTrustedExecutableLaunchLease? executableLease = null;
+        ManagedReplayArtifactLease? artifactLease = null;
+        SuspendedGameProcessLease? suspendedLease = null;
+        WindowsTrustedExecutableLaunchLease? handedOffExe = null;
+        ManagedReplayArtifactLease? handedOffArtifact = null;
+        DetachedLaunchLeases replacedLeases = default;
+        bool replacedLeasesDetached = false;
+
+        try
         {
-            return LaunchFailure(exeLeaseResult.Error!);
+            // ── 2. Acquire executable lease ──
+            OperationResult<WindowsTrustedExecutableLaunchLease> exeLeaseResult =
+                await WindowsTrustedExecutableLaunchLease.AcquireAsync(
+                    preparation.TrustedIdentity,
+                    cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!exeLeaseResult.IsSuccess)
+            {
+                return LaunchFailure(exeLeaseResult.Error!);
+            }
+
+            executableLease = exeLeaseResult.Value!;
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // ── 3. Stage artifact ──
+            OperationResult<ManagedReplayArtifactLease> artifactResult =
+                await _artifactStager.StageAsync(
+                    request.SourceArtifactId,
+                    cancellationToken).ConfigureAwait(false);
+            if (!artifactResult.IsSuccess)
+            {
+                await executableLease.DisposeAsync().ConfigureAwait(false);
+                return LaunchFailure(artifactResult.Error!);
+            }
+
+            artifactLease = artifactResult.Value!;
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // ── 4. Create suspended process ──
+            OperationResult<SuspendedGameProcessLease> suspendedResult =
+                await _suspendedPlatform.CreateAsync(
+                    executableLease,
+                    artifactLease,
+                    cancellationToken).ConfigureAwait(false);
+            if (!suspendedResult.IsSuccess)
+            {
+                await artifactLease.DisposeAsync().ConfigureAwait(false);
+                await executableLease.DisposeAsync().ConfigureAwait(false);
+                return LaunchFailure(suspendedResult.Error!);
+            }
+
+            suspendedLease = suspendedResult.Value!;
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // ── 5. Register correlation ──
+            OperationResult<ManagedGameLaunchContext> correlationResult =
+                _correlationRegistrar.Register(preparation, suspendedLease);
+            if (!correlationResult.IsSuccess)
+            {
+                await suspendedLease.DisposeAsync().ConfigureAwait(false);
+                await artifactLease.DisposeAsync().ConfigureAwait(false);
+                await executableLease.DisposeAsync().ConfigureAwait(false);
+                return LaunchFailure(correlationResult.Error!);
+            }
+
+            ManagedGameLaunchContext launchContext = correlationResult.Value!;
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // ── 6. Resume the child thread (must happen BEFORE HandOffLeases
+            //     so that resume failures terminate the suspended child) ──
+            OperationResult<ThreadResumeOutcome> resumeResult =
+                _threadResumePlatform.Resume(suspendedLease.ThreadHandle!);
+            if (!resumeResult.IsSuccess)
+            {
+                // Resume failed; child is still suspended. Disposal terminates it
+                // because HandOffLeases has not been called.
+                await suspendedLease.DisposeAsync().ConfigureAwait(false);
+                await artifactLease.DisposeAsync().ConfigureAwait(false);
+                await executableLease.DisposeAsync().ConfigureAwait(false);
+                return LaunchFailure(resumeResult.Error!);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // ── 7–8. Atomically commit the handoff under the coordinator lock.
+            // If disposal/cancellation wins this linearization point, the
+            // suspended lease has not been handed off and finally will terminate
+            // the child. Once committed, disposal may release handles but the
+            // child remains a valid launched process.
+            int childPid = suspendedLease.ProcessId;
+            CancellationToken monitoringToken;
+            bool disposedDuringLaunch;
+            lock (_gate)
+            {
+                disposedDuringLaunch = _disposed || cancellationToken.IsCancellationRequested;
+                if (!disposedDuringLaunch)
+                {
+                    // Validate and record the new generation before handing off
+                    // ownership. If this throws, the child is still owned by the
+                    // local suspended lease and finally terminates it.
+                    RecordManagedLaunch(launchContext);
+                    (handedOffExe, handedOffArtifact) = suspendedLease.HandOffLeases();
+                    replacedLeases = DetachLaunchLeasesLocked();
+                    replacedLeasesDetached = true;
+
+                    _activeSuspendedLease = suspendedLease;
+                    _activeExecutableLease = handedOffExe;
+                    _activeArtifactLease = handedOffArtifact;
+
+                    _activeMonitoringCts?.Cancel();
+                    _activeMonitoringCts?.Dispose();
+                    _activeMonitoringCts = new CancellationTokenSource();
+                    monitoringToken = _activeMonitoringCts.Token;
+                }
+                else
+                {
+                    monitoringToken = default;
+                }
+            }
+
+            if (disposedDuringLaunch)
+            {
+                return OperationResult.Failure<GameReplayLaunchOutcome>(
+                    new ApplicationError("game.session_disposed", "The game session coordinator was disposed during launch.", Retryable: false));
+            }
+
+            suspendedLease = null;
+            executableLease = null;
+            artifactLease = null;
+            handedOffExe = null;
+            handedOffArtifact = null;
+
+            StartMonitoringLifecycle(launchContext, childPid, monitoringToken);
+
+            return OperationResult.Success(
+                new GameReplayLaunchOutcome(_timeProvider.GetUtcNow()));
         }
-
-        WindowsTrustedExecutableLaunchLease executableLease = exeLeaseResult.Value!;
-
-        // ── 3. Stage artifact ──
-        OperationResult<ManagedReplayArtifactLease> artifactResult =
-            await _artifactStager.StageAsync(
-                request.SourceArtifactId,
-                cancellationToken).ConfigureAwait(false);
-        if (!artifactResult.IsSuccess)
+        finally
         {
-            await executableLease.DisposeAsync().ConfigureAwait(false);
-            return LaunchFailure(artifactResult.Error!);
+            if (suspendedLease is not null)
+            {
+                await suspendedLease.DisposeAsync().ConfigureAwait(false);
+            }
+
+            if (handedOffArtifact is not null)
+            {
+                await handedOffArtifact.DisposeAsync().ConfigureAwait(false);
+            }
+
+            if (handedOffExe is not null)
+            {
+                await handedOffExe.DisposeAsync().ConfigureAwait(false);
+            }
+
+            if (artifactLease is not null)
+            {
+                await artifactLease.DisposeAsync().ConfigureAwait(false);
+            }
+
+            if (executableLease is not null)
+            {
+                await executableLease.DisposeAsync().ConfigureAwait(false);
+            }
+
+            if (replacedLeasesDetached)
+            {
+                await DisposeDetachedLaunchLeasesAsync(replacedLeases).ConfigureAwait(false);
+            }
         }
-
-        ManagedReplayArtifactLease artifactLease = artifactResult.Value!;
-
-        // ── 4. Create suspended process ──
-        OperationResult<SuspendedGameProcessLease> suspendedResult =
-            await _suspendedPlatform.CreateAsync(
-                executableLease,
-                artifactLease,
-                cancellationToken).ConfigureAwait(false);
-        if (!suspendedResult.IsSuccess)
-        {
-            await artifactLease.DisposeAsync().ConfigureAwait(false);
-            await executableLease.DisposeAsync().ConfigureAwait(false);
-            return LaunchFailure(suspendedResult.Error!);
-        }
-
-        SuspendedGameProcessLease suspendedLease = suspendedResult.Value!;
-
-        // ── 5. Register correlation ──
-        OperationResult<ManagedGameLaunchContext> correlationResult =
-            _correlationRegistrar.Register(preparation, suspendedLease);
-        if (!correlationResult.IsSuccess)
-        {
-            await suspendedLease.DisposeAsync().ConfigureAwait(false);
-            await artifactLease.DisposeAsync().ConfigureAwait(false);
-            await executableLease.DisposeAsync().ConfigureAwait(false);
-            return LaunchFailure(correlationResult.Error!);
-        }
-
-        ManagedGameLaunchContext launchContext = correlationResult.Value!;
-
-        // ── 6. Resume the child thread (must happen BEFORE HandOffLeases
-        //     so that resume failures terminate the suspended child) ──
-        OperationResult<ThreadResumeOutcome> resumeResult =
-            _threadResumePlatform.Resume(suspendedLease.ThreadHandle!);
-        if (!resumeResult.IsSuccess)
-        {
-            // Resume failed; child is still suspended. Disposal terminates it
-            // because HandOffLeases has not been called.
-            await suspendedLease.DisposeAsync().ConfigureAwait(false);
-            await artifactLease.DisposeAsync().ConfigureAwait(false);
-            await executableLease.DisposeAsync().ConfigureAwait(false);
-            return LaunchFailure(resumeResult.Error!);
-        }
-
-        // ── 7. Hand off leases (commits: child survives disposal) ──
-        (WindowsTrustedExecutableLaunchLease handedOffExe,
-            ManagedReplayArtifactLease handedOffArtifact) =
-            suspendedLease.HandOffLeases();
-
-        // ── 8. Record managed launch under lock ──
-        int childPid = suspendedLease.ProcessId;
-        CancellationToken monitoringToken;
-        lock (_gate)
-        {
-            DisposeLaunchLeases();
-            RecordManagedLaunch(launchContext);
-
-            _activeSuspendedLease = suspendedLease;
-            _activeExecutableLease = handedOffExe;
-            _activeArtifactLease = handedOffArtifact;
-
-            _activeMonitoringCts?.Cancel();
-            _activeMonitoringCts?.Dispose();
-            _activeMonitoringCts = new CancellationTokenSource();
-            monitoringToken = _activeMonitoringCts.Token;
-        }
-
-        StartMonitoringLifecycle(launchContext, childPid, monitoringToken);
-
-        return OperationResult.Success(
-            new GameReplayLaunchOutcome(_timeProvider.GetUtcNow()));
     }
 
     public async ValueTask<GameMemoryObservation> ObserveAsync(
@@ -589,6 +682,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             ? ResolveBaseAddress(process.ProcessId)
             : nint.Zero;
 
+        if (_authorization is null)
+        {
+            _authorizationCts = new CancellationTokenSource();
+        }
+
         _authorization = new AuthorizedObservation(
             ++_authorizationGeneration,
             process.ProcessId,
@@ -686,7 +784,16 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             reasonCode);
     }
 
-    private void Revoke() => _authorization = null;
+    private void Revoke()
+    {
+        _authorization = null;
+        _authorizationCts?.Cancel();
+        // Do not dispose this CTS here. Scan setup creates its linked source
+        // under _gate; retaining the canceled source avoids a dispose/register
+        // race for a scan that has just crossed the authorization gate.
+        _authorizationCts = null;
+        _scanEngine.DiscardAllSessions();
+    }
 
     private void RevokeSession()
     {
@@ -696,30 +803,56 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         _activeMonitoringCts = null;
         _managedLaunch = null;
         _lastCursor = null;
-        DisposeLaunchLeases();
+
+        DetachedLaunchLeases leases = DetachLaunchLeasesLocked();
+        QueueDetachedLaunchLeaseDisposal(leases);
     }
 
-    private void DisposeLaunchLeases()
+    private DetachedLaunchLeases DetachLaunchLeasesLocked() =>
+        new(
+            Interlocked.Exchange(ref _activeSuspendedLease, null),
+            Interlocked.Exchange(ref _activeArtifactLease, null),
+            Interlocked.Exchange(ref _activeExecutableLease, null));
+
+    private static void QueueDetachedLaunchLeaseDisposal(DetachedLaunchLeases leases)
+    {
+        if (leases.IsEmpty)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await DisposeDetachedLaunchLeasesAsync(leases).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Lease disposal is best effort here; the owning state transition
+                // must not synchronously block while holding _gate.
+            }
+        });
+    }
+
+    private static async ValueTask DisposeDetachedLaunchLeasesAsync(DetachedLaunchLeases leases)
     {
         // Disposal order: suspended first (closes handles; HandOffLeases
         // prevents child termination), then artifact (deletes staging file),
         // then executable (releases file lock).
-        SuspendedGameProcessLease? suspended = Interlocked.Exchange(ref _activeSuspendedLease, null);
-        if (suspended is not null)
+        if (leases.Suspended is not null)
         {
-            suspended.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            await leases.Suspended.DisposeAsync().ConfigureAwait(false);
         }
 
-        ManagedReplayArtifactLease? artifact = Interlocked.Exchange(ref _activeArtifactLease, null);
-        if (artifact is not null)
+        if (leases.Artifact is not null)
         {
-            artifact.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            await leases.Artifact.DisposeAsync().ConfigureAwait(false);
         }
 
-        WindowsTrustedExecutableLaunchLease? executable = Interlocked.Exchange(ref _activeExecutableLease, null);
-        if (executable is not null)
+        if (leases.Executable is not null)
         {
-            executable.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            await leases.Executable.DisposeAsync().ConfigureAwait(false);
         }
     }
 
@@ -808,6 +941,14 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         long SourceGeneration,
         long SourceSequence);
 
+    private readonly record struct DetachedLaunchLeases(
+        SuspendedGameProcessLease? Suspended,
+        ManagedReplayArtifactLease? Artifact,
+        WindowsTrustedExecutableLaunchLease? Executable)
+    {
+        internal bool IsEmpty => Suspended is null && Artifact is null && Executable is null;
+    }
+
     /// <summary>
     /// Disposes all active launch leases. After HandOffLeases, the child
     /// process is not terminated; only handles and staging files are released.
@@ -818,10 +959,19 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         {
             return;
         }
-        _disposed = true;
-
         lock (_gate)
         {
+            if (_disposed)
+            {
+                return;
+            }
+
+            // Linearize disposal with launch commit and evidence application.
+            // A launch cannot observe a live coordinator and then install leases
+            // after this transition.
+            _disposed = true;
+            _lifetimeCts.Cancel();
+            Revoke();
             _activeMonitoringCts?.Cancel();
             _activeMonitoringCts?.Dispose();
             _activeMonitoringCts = null;
@@ -844,6 +994,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         {
             await executable.DisposeAsync().ConfigureAwait(false);
         }
+
+        // Do not dispose the lifetime CTS here: LaunchAsync may have passed its
+        // initial disposed check and still be creating a linked token source.
+        // It is bounded to this coordinator and cancellation remains the important
+        // lifetime operation.
     }
 
     /// <summary>
@@ -860,50 +1015,95 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         MemorySnapshotRequest request,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
-        (int pid, long baseAddr, bool ok) = GetProcessIdentity();
+        (AuthorizedMemoryObservation? observation, long baseAddr, CancellationToken authorizationToken, bool ok) = GetScanAuthorization();
         if (!ok)
             return OperationResult.Failure<string>(
                 new ApplicationError("discover.gate_not_satisfied", "Gate not satisfied."));
-        bool isFloat = request.FloatMin.HasValue || request.FloatMax.HasValue;
-        return await Task.Run(
-            () => _scanEngine.CreateSnapshot(
-                pid,
-                baseAddr,
-                new MemoryScanEngine.SnapshotFilter(
-                    request.ValueSize, request.MinAddress, request.MaxAddress,
-                    request.FloatMin, request.FloatMax,
-                    request.IntMin, request.IntMax, isFloat),
-                cancellationToken),
-            cancellationToken).ConfigureAwait(false);
+
+        using CancellationTokenSource scanCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, authorizationToken);
+        try
+        {
+            return await Task.Run(
+                () => _scanEngine.CreateSnapshot(
+                    observation!,
+                    baseAddr,
+                    new MemoryScanEngine.SnapshotFilter(
+                        request.ValueSize,
+                        request.MinAddress,
+                        request.MaxAddress,
+                        request.FloatMin,
+                        request.FloatMax,
+                        request.IntMin,
+                        request.IntMax,
+                        request.LongMin,
+                        request.LongMax,
+                        request.UIntMin,
+                        request.UIntMax,
+                        request.ValueKind,
+                        request.Alignment,
+                        request.RegionSelection),
+                    scanCancellation.Token),
+                scanCancellation.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return GateCheck<string>("discover.gate_not_satisfied",
+                "The offline-session gate is no longer satisfied.");
+        }
     }
 
     public async ValueTask<OperationResult<MemoryCompareResult>> CompareAsync(
-        string sessionId, string compareMode, int maxCandidates,
-        CancellationToken cancellationToken)
+        string sessionId,
+        string compareMode,
+        int maxCandidates,
+        CancellationToken cancellationToken,
+        bool advanceBaseline = false)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         cancellationToken.ThrowIfCancellationRequested();
-        (int pid, long baseAddr, bool ok) = GetProcessIdentity();
+        (AuthorizedMemoryObservation? observation, long baseAddr, CancellationToken authorizationToken, bool ok) = GetScanAuthorization();
         if (!ok)
             return OperationResult.Failure<MemoryCompareResult>(
                 new ApplicationError("discover.gate_not_satisfied", "Gate not satisfied."));
-        return await Task.Run(() =>
+
+        using CancellationTokenSource scanCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, authorizationToken);
+        try
         {
-            var result = _scanEngine.Compare(
-                pid,
-                baseAddr,
-                sessionId,
-                compareMode,
-                maxCandidates,
-                cancellationToken);
-            return result.IsSuccess
-                ? OperationResult.Success(new MemoryCompareResult(
-                    result.Value!.CompletedAtUtc, result.Value.PreviousCount,
-                    result.Value.ChangedCount, result.Value.UnchangedCount,
-                    result.Value.IncreasedCount, result.Value.DecreasedCount,
-                    result.Value.Candidates))
-                : OperationResult.Failure<MemoryCompareResult>(result.Error!);
-        }, cancellationToken).ConfigureAwait(false);
+            return await Task.Run(() =>
+            {
+                OperationResult<MemoryScanEngine.CompareResult> result = _scanEngine.Compare(
+                    observation!,
+                    baseAddr,
+                    sessionId,
+                    compareMode ?? "changed",
+                    maxCandidates,
+                    advanceBaseline,
+                    scanCancellation.Token);
+                return result.IsSuccess
+                    ? OperationResult.Success(new MemoryCompareResult(
+                        result.Value!.CompletedAtUtc,
+                        result.Value.PreviousCount,
+                        result.Value.CurrentCount,
+                        result.Value.ChangedCount,
+                        result.Value.UnchangedCount,
+                        result.Value.IncreasedCount,
+                        result.Value.DecreasedCount,
+                        result.Value.Candidates,
+                        result.Value.Truncated,
+                        result.Value.ComparedAgainstRollingBaseline,
+                        result.Value.RetainedCount))
+                    : OperationResult.Failure<MemoryCompareResult>(result.Error!);
+            }, scanCancellation.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return GateCheck<MemoryCompareResult>("discover.gate_not_satisfied",
+                "The offline-session gate is no longer satisfied.");
+        }
     }
 
     public void DiscardSession(string sessionId) => _scanEngine.DiscardSession(sessionId);
@@ -912,47 +1112,150 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         MemoryNeighborhoodRequest request,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
-        (int pid, long baseAddr, bool ok) = GetProcessIdentity();
+        (AuthorizedMemoryObservation? observation, long baseAddr, CancellationToken authorizationToken, bool ok) = GetScanAuthorization();
         if (!ok)
             return GateCheck<MemoryScanResult>("discover.gate_not_satisfied",
                 "The offline-session gate is not satisfied.");
-        return await Task.Run(
-            () => _scanDiscoverer.ScanNeighborhood(pid, baseAddr, request, cancellationToken),
-            cancellationToken).ConfigureAwait(false);
-    }
-
-    private (int ProcessId, long BaseAddress, bool Ok) GetProcessIdentity()
-    {
-        lock (_gate)
+        using CancellationTokenSource scanCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, authorizationToken);
+        try
         {
-            ExpireAuthorizationIfNeeded();
-            if (_snapshot.State != GameSessionVerificationState.OfflineReplayVerified
-                || _authorization is null)
-                return (0, 0, false);
-            if (_authorization.BaseAddress == nint.Zero)
-                return (0, 0, false);
-            return (_authorization.ProcessId, _authorization.BaseAddress, true);
+            return await Task.Run(
+                () => _scanDiscoverer.ScanNeighborhood(observation!, baseAddr, request, scanCancellation.Token),
+                scanCancellation.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return GateCheck<MemoryScanResult>("discover.gate_not_satisfied",
+                "The offline-session gate is no longer satisfied.");
         }
     }
-
-    private static OperationResult<T> GateCheck<T>(string errorCode, string message)
-        where T : class =>
-        OperationResult.Failure<T>(new ApplicationError(errorCode, message));
 
     public async ValueTask<OperationResult<MemoryScanResult>> ScanAsync(
         MemoryScanRequest request,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
-        (int pid, long baseAddr, bool ok) = GetProcessIdentity();
+        (AuthorizedMemoryObservation? observation, long baseAddr, CancellationToken authorizationToken, bool ok) = GetScanAuthorization();
         if (!ok)
             return GateCheck<MemoryScanResult>("discover.gate_not_satisfied",
                 "The offline-session gate is not satisfied.");
-        return await Task.Run(
-            () => _scanDiscoverer.Scan(pid, baseAddr, request, cancellationToken),
-            cancellationToken).ConfigureAwait(false);
+        MemoryScanRequest typedRequest = request with
+        {
+            ValueKind = ResolveValueKind(request.FieldType),
+        };
+        using CancellationTokenSource scanCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, authorizationToken);
+        try
+        {
+            return await Task.Run(
+                () => _scanDiscoverer.Scan(observation!, baseAddr, typedRequest, scanCancellation.Token),
+                scanCancellation.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return GateCheck<MemoryScanResult>("discover.gate_not_satisfied",
+                "The offline-session gate is no longer satisfied.");
+        }
     }
+
+    public async ValueTask<OperationResult<MemoryScanResult>> ScanPatternAsync(
+        MemoryScanRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        (AuthorizedMemoryObservation? observation, long baseAddr, CancellationToken authorizationToken, bool ok) = GetScanAuthorization();
+        if (!ok)
+            return GateCheck<MemoryScanResult>("discover.gate_not_satisfied",
+                "The offline-session gate is not satisfied.");
+        using CancellationTokenSource scanCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, authorizationToken);
+        try
+        {
+            return await Task.Run(
+                () => _scanDiscoverer.Scan(observation!, baseAddr, request, scanCancellation.Token, "aob"),
+                scanCancellation.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return GateCheck<MemoryScanResult>("discover.gate_not_satisfied",
+                "The offline-session gate is no longer satisfied.");
+        }
+    }
+
+    public async ValueTask<OperationResult<MemoryPointerChainResult>> ResolvePointerChainAsync(
+        MemoryPointerChainRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        (AuthorizedMemoryObservation? observation, long baseAddr, CancellationToken authorizationToken, bool ok) = GetScanAuthorization();
+        if (!ok)
+            return GateCheck<MemoryPointerChainResult>("discover.gate_not_satisfied",
+                "The offline-session gate is not satisfied.");
+        using CancellationTokenSource scanCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, authorizationToken);
+        try
+        {
+            return await Task.Run(
+                () => _scanDiscoverer.ResolvePointerChain(observation!, baseAddr, request, scanCancellation.Token),
+                scanCancellation.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return GateCheck<MemoryPointerChainResult>("discover.gate_not_satisfied",
+                "The offline-session gate is no longer satisfied.");
+        }
+    }
+
+    private (AuthorizedMemoryObservation? Observation, long BaseAddress, CancellationToken AuthorizationToken, bool Ok)
+        GetScanAuthorization()
+    {
+        lock (_gate)
+        {
+            ExpireAuthorizationIfNeeded();
+            if (_snapshot.State != GameSessionVerificationState.OfflineReplayVerified
+                || _authorization is null
+                || _authorization.BaseAddress == nint.Zero
+                || _authorizationCts is null)
+            {
+                return (null, 0, default, false);
+            }
+
+            AuthorizedObservation auth = _authorization;
+            return (
+                new AuthorizedMemoryObservation(
+                    auth.ProcessId,
+                    auth.ProcessStartIdentity,
+                    auth.CanonicalExecutablePath,
+                    auth.ProductVersion,
+                    auth.ExecutableSha256,
+                    auth.ExpiresAtUtc),
+                auth.BaseAddress.ToInt64(),
+                _authorizationCts.Token,
+                true);
+        }
+    }
+
+    private static MemoryValueKind ResolveValueKind(string fieldType) =>
+        fieldType switch
+        {
+            "Float" => MemoryValueKind.FloatValue,
+            "Double" => MemoryValueKind.DoubleValue,
+            "Int32" => MemoryValueKind.Int32Value,
+            "UInt32" => MemoryValueKind.UInt32Value,
+            "Int64" => MemoryValueKind.Int64Value,
+            "UInt64" => MemoryValueKind.UInt64Value,
+            _ => MemoryValueKind.Bytes,
+        };
+
+    private static OperationResult<T> GateCheck<T>(string errorCode, string message)
+        where T : class =>
+        OperationResult.Failure<T>(new ApplicationError(errorCode, message));
 
     private void StartMonitoringLifecycle(
         ManagedGameLaunchContext launch,

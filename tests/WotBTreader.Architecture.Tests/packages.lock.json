@@ -208,7 +208,8 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.10, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.10, )",
           "WotBTreader.Application": "[1.0.0, )",
-          "WotBTreader.Core": "[1.0.0, )"
+          "WotBTreader.Core": "[1.0.0, )",
+          "WotBTreader.UltimateScanner": "[1.0.0, )"
         }
       },
       "wotbtreader.replays": {
@@ -224,6 +225,14 @@
         "dependencies": {
           "Microsoft.Data.Sqlite": "[10.0.10, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.10, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.10, )",
+          "WotBTreader.Application": "[1.0.0, )",
+          "WotBTreader.Core": "[1.0.0, )"
+        }
+      },
+      "wotbtreader.ultimatescanner": {
+        "type": "Project",
+        "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.10, )",
           "WotBTreader.Application": "[1.0.0, )",
           "WotBTreader.Core": "[1.0.0, )"

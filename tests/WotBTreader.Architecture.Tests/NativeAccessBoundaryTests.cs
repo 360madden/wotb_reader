@@ -59,14 +59,10 @@ public sealed class NativeAccessBoundaryTests
 
     private static readonly string[] AllowedGameIntegrationMemoryFiles =
     [
-        // M2 guarded memory reader — the legitimate, revalidated VM-read path.
-        "Session\\GuardedMemoryReader.cs",
-        // NativeMethods hosts ReadProcessMemory for the guarded reader only.
-        "Session\\WindowsGameProcessQueryPlatform.cs",
-        // Dynamic offset scanner — uses the same security boundary as the guarded reader.
-        "Session\\MemoryScanDiscoverer.cs",
-        // Multi-scan memory engine — same security boundary, VM-read only.
-        "Session\\MemoryScanEngine.cs",
+        // The M2 guarded reader and dynamic offset scanners moved to the
+        // standalone ultimate-scanner module (see UltimateScanner test below).
+        // WindowsGameProcessQueryPlatform no longer hosts VM-read P/Invokes;
+        // its NativeMethods now covers launch/query/file interop only.
     ];
 
     [TestMethod]
@@ -86,6 +82,33 @@ public sealed class NativeAccessBoundaryTests
             violations,
             $"GameIntegration memory-access violations: {string.Join("; ", violations)}");
     }
+
+    [TestMethod]
+    public void UltimateScanner_HasOnlySanctionedMemoryAccess()
+    {
+        string sourceRoot = Path.Combine(
+            ProjectCatalog.RepositoryRoot(),
+            "ultimate-scanner");
+        string[] violations = FindForbiddenSourceTerms(
+            sourceRoot,
+            ForbiddenGameIntegrationMemoryTerms,
+            AllowedUltimateScannerMemoryFiles);
+
+        Assert.HasCount(
+            0,
+            violations,
+            $"UltimateScanner memory-access violations: {string.Join("; ", violations)}");
+    }
+
+    private static readonly string[] AllowedUltimateScannerMemoryFiles =
+    [
+        // The scanner module is the sanctioned VM-read surface: interop plus
+        // the guarded reader, pattern scanner, and multi-scan engine.
+        "GuardedMemoryReader.cs",
+        "NativeMethods.cs",
+        "MemoryScanDiscoverer.cs",
+        "MemoryScanEngine.cs",
+    ];
 
     [TestMethod]
     public void GameSessionContracts_ExposeNoAuthorizationOrProcessPrimitives()

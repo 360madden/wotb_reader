@@ -5,6 +5,7 @@ using WotBTreader.GameIntegration.Discovery;
 using WotBTreader.GameIntegration.Dvpl;
 using WotBTreader.GameIntegration.Logs;
 using WotBTreader.GameIntegration.Session;
+using WotBTreader.UltimateScanner;
 
 namespace WotBTreader.GameIntegration.Tests;
 

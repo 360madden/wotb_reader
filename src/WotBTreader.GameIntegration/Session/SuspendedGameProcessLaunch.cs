@@ -368,6 +368,23 @@ internal sealed class WindowsSuspendedProcessPlatform : ISuspendedProcessPlatfor
         }
         finally
         {
+            // CreateProcessW succeeds before the lease is constructed. If
+            // cancellation or verification fails in that window, closing the
+            // handles alone would orphan the still-suspended child process.
+            SafeProcessHandle? orphanHandle = reducedProcessHandle ?? processHandle;
+            if (orphanHandle is not null && !orphanHandle.IsInvalid)
+            {
+                try
+                {
+                    NativeMethods.TerminateProcess(orphanHandle, 1);
+                    _ = NativeMethods.WaitForSingleObject(orphanHandle, 5000);
+                }
+                catch
+                {
+                    // Best effort; the handle is still closed below.
+                }
+            }
+
             reducedProcessHandle?.Dispose();
             reducedThreadHandle?.Dispose();
             processHandle?.Dispose();

@@ -31,6 +31,14 @@ switch (command)
     case "discover":
         exitCode = await DiscoverAsync(args);
         break;
+    case "discover-pattern":
+    case "pattern":
+        exitCode = await DiscoverPatternAsync(args);
+        break;
+    case "discover-pointer-chain":
+    case "pointer-chain":
+        exitCode = await DiscoverPointerChainAsync(args);
+        break;
     case "discover-snapshot":
     case "snapshot":
         exitCode = await SnapshotAsync(args);
@@ -427,7 +435,7 @@ static async Task<int> DiscoverAsync(string[] args)
                 break;
             }
 
-            string relOffset = c.TryGetProperty("relativeOffset", out JsonElement ro)
+            string relOffset = c.TryGetProperty("baseDisplacement", out JsonElement ro)
                 ? ro.GetString() ?? "?" : "?";
             string absAddr = c.TryGetProperty("absoluteAddress", out JsonElement aa)
                 ? aa.GetString() ?? "?" : "?";
@@ -525,6 +533,188 @@ static string FormatBytes(long bytes) => bytes switch
 static string Truncate(string value, int maxLength) =>
     value.Length <= maxLength ? value : value[..maxLength] + "...";
 
+// ── Pattern command ────────────────────────────────────────
+
+static async Task<int> DiscoverPatternAsync(string[] args)
+{
+    string? hostUrl = ReadRendezvousUrl();
+    if (hostUrl is null) return HostNotFound("discover-pattern");
+    if (args.Length < 3)
+    {
+        Console.Error.WriteLine("Usage: discover-pattern <fieldName> <patternHex> [toleranceMaskHex] [--alignment <1|2|4|8>]");
+        Console.Error.WriteLine("  Non-zero tolerance-mask bytes are wildcards; use a hex mask such as 00FF00.");
+        return (int)HarnessExitCode.InvalidInput;
+    }
+
+    int gateResult = await CheckGateAsync(hostUrl, "discover-pattern");
+    if (gateResult != 0) return gateResult;
+
+    string fieldName = args[1];
+    string patternHex = args[2];
+    string? maskHex = args.Length > 3 && !args[3].StartsWith("--", StringComparison.Ordinal)
+        ? args[3] : null;
+    int alignment = 1;
+    for (int i = 3; i < args.Length; i++)
+    {
+        if (args[i] == "--alignment" && i + 1 < args.Length
+            && int.TryParse(args[++i], out int parsed))
+        {
+            alignment = parsed;
+        }
+    }
+
+    if (!TryParseHex(patternHex, out byte[] pattern)
+        || pattern.Length is < 1 or > 64
+        || (maskHex is not null && (!TryParseHex(maskHex, out byte[] mask)
+            || mask.Length != pattern.Length)))
+    {
+        Console.Error.WriteLine("discover-pattern: pattern and mask must be even-length hexadecimal strings of equal length (1–64 bytes).");
+        return (int)HarnessExitCode.InvalidInput;
+    }
+
+    string baseAddress = hostUrl.EndsWith('/') ? hostUrl : hostUrl + "/";
+    using var client = new HttpClient { BaseAddress = new Uri(baseAddress), Timeout = TimeSpan.FromMinutes(2) };
+    var payload = new
+    {
+        fieldName,
+        expectedValueHex = Convert.ToHexString(pattern),
+        toleranceMaskHex = maskHex,
+        maxCandidates = 200,
+        minRegionSize = 4096L,
+        alignment,
+    };
+
+    Console.WriteLine($"Scanning AOB pattern {patternHex}...");
+    try
+    {
+        HttpResponseMessage response = await client.PostAsJsonAsync(
+            "/api/v1/game/discover/pattern", payload).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            Console.Error.WriteLine($"discover-pattern: HTTP {(int)response.StatusCode} — {Truncate(await response.Content.ReadAsStringAsync().ConfigureAwait(false), 200)}");
+            return (int)HarnessExitCode.ConflictOrBusy;
+        }
+
+        using JsonDocument document = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+        PrintScanSummary(document.RootElement);
+        return 0;
+    }
+    catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+    {
+        Console.Error.WriteLine($"discover-pattern: could not reach web host at {hostUrl}.");
+        return (int)HarnessExitCode.ConflictOrBusy;
+    }
+}
+
+// ── Pointer-chain command ──────────────────────────────────
+
+static async Task<int> DiscoverPointerChainAsync(string[] args)
+{
+    string? hostUrl = ReadRendezvousUrl();
+    if (hostUrl is null) return HostNotFound("discover-pointer-chain");
+    if (args.Length < 3)
+    {
+        Console.Error.WriteLine("Usage: discover-pointer-chain <rootOffset> <offset1,offset2,...>");
+        Console.Error.WriteLine("Example: discover-pointer-chain 0x0317A810 0x20,0x18,0x34");
+        return (int)HarnessExitCode.InvalidInput;
+    }
+
+    int gateResult = await CheckGateAsync(hostUrl, "discover-pointer-chain");
+    if (gateResult != 0) return gateResult;
+
+    if (!TryParseAddress(args[1], out long rootOffset))
+    {
+        Console.Error.WriteLine("discover-pointer-chain: invalid root offset.");
+        return (int)HarnessExitCode.InvalidInput;
+    }
+
+    string[] parts = args[2].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    if (parts.Length is < 1 or > 4 || !parts.All(part => TryParseAddress(part, out _)))
+    {
+        Console.Error.WriteLine("discover-pointer-chain: provide 1–4 comma-separated decimal or hexadecimal offsets.");
+        return (int)HarnessExitCode.InvalidInput;
+    }
+
+    List<long> offsets = parts.Select(ParseAddress).ToList();
+    string baseAddress = hostUrl.EndsWith('/') ? hostUrl : hostUrl + "/";
+    using var client = new HttpClient { BaseAddress = new Uri(baseAddress), Timeout = TimeSpan.FromSeconds(30) };
+    try
+    {
+        HttpResponseMessage response = await client.PostAsJsonAsync(
+            "/api/v1/game/discover/pointer-chain",
+            new { rootRelativeOffset = rootOffset, pointerOffsets = offsets, maxDepth = 4 })
+            .ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            Console.Error.WriteLine($"discover-pointer-chain: HTTP {(int)response.StatusCode}");
+            return (int)HarnessExitCode.ConflictOrBusy;
+        }
+
+        using JsonDocument document = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+        JsonElement root = document.RootElement;
+        Console.WriteLine($"Candidates: {(root.TryGetProperty("candidates", out JsonElement candidates) ? candidates.GetArrayLength() : 0)}");
+        if (root.TryGetProperty("candidates", out candidates))
+        {
+            foreach (JsonElement candidate in candidates.EnumerateArray())
+            {
+                Console.WriteLine($"  {ReadStr(candidate, "rootAddress")} → {ReadStr(candidate, "finalAddress")}");
+            }
+        }
+        return 0;
+    }
+    catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+    {
+        Console.Error.WriteLine($"discover-pointer-chain: could not reach web host at {hostUrl}.");
+        return (int)HarnessExitCode.ConflictOrBusy;
+    }
+}
+
+static bool TryParseHex(string text, out byte[] bytes)
+{
+    try
+    {
+        bytes = Convert.FromHexString(text);
+        return true;
+    }
+    catch (FormatException)
+    {
+        bytes = [];
+        return false;
+    }
+}
+
+static bool TryParseAddress(string text, out long value)
+{
+    try
+    {
+        value = ParseAddress(text);
+        return true;
+    }
+    catch (Exception exception) when (exception is FormatException or OverflowException)
+    {
+        value = 0;
+        return false;
+    }
+}
+
+static long ParseAddress(string text) =>
+    text.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+        ? long.Parse(text[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture)
+        : long.Parse(text, NumberStyles.Integer, CultureInfo.InvariantCulture);
+
+static void PrintScanSummary(JsonElement root)
+{
+    int regions = root.TryGetProperty("regionsScanned", out JsonElement regionElement)
+        ? regionElement.GetInt32() : 0;
+    long bytes = root.TryGetProperty("bytesScanned", out JsonElement bytesElement)
+        ? bytesElement.GetInt64() : 0;
+    int candidates = root.TryGetProperty("candidates", out JsonElement candidatesElement)
+        ? candidatesElement.GetArrayLength() : 0;
+    Console.WriteLine($"Scanned {regions} regions ({FormatBytes(bytes)}); candidates: {candidates}");
+}
+
 // ── Snapshot command ───────────────────────────────────────
 
 static async Task<int> SnapshotAsync(string[] args)
@@ -613,7 +803,7 @@ static async Task<int> CompareSnapshotAsync(string[] args)
         foreach (var c in cands.EnumerateArray())
         {
             if (shown++ >= 20) { Console.WriteLine("... and more"); break; }
-            Console.WriteLine($"  {ReadStr(c, "relativeOffset")} = {ReadStr(c, "valueSummary")}");
+            Console.WriteLine($"  {ReadStr(c, "baseDisplacement")} = {ReadStr(c, "valueSummary")}");
         }
     }
     return 0;
@@ -688,7 +878,7 @@ static async Task<int> NearbyAsync(string[] args)
         foreach (var c in cands.EnumerateArray())
         {
             string summary = ReadStr(c, "valueSummary");
-            string relOff = ReadStr(c, "relativeOffset");
+            string relOff = ReadStr(c, "baseDisplacement");
             // Extract delta from summary (e.g. "+4: float=0.500")
             Console.WriteLine($"{summary,-56} {relOff}");
         }
@@ -720,10 +910,7 @@ static int HostNotFound(string cmd)
     return (int)HarnessExitCode.UnsupportedCapability;
 }
 
-static long ParseHexOrDecimal(string s) =>
-    s.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
-        ? long.Parse(s[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture)
-        : long.Parse(s, CultureInfo.InvariantCulture);
+static long ParseHexOrDecimal(string s) => ParseAddress(s);
 
 static int ReadInt(JsonElement e, string prop) =>
     e.TryGetProperty(prop, out JsonElement v) && v.TryGetInt32(out int i) ? i : 0;
@@ -871,6 +1058,14 @@ Commands:
   discover <fieldName> <fieldType> <value> [tolerance]
     Scan game process memory for a known value to discover
     the offset of an unknown memory field.
+
+  discover-pattern <fieldName> <patternHex> [toleranceMaskHex]
+    Scan an AOB/wildcard byte pattern. Non-zero mask bytes are wildcards.
+    Example: discover-pattern playerStruct 488B90 00FF00 --alignment 8
+
+  discover-pointer-chain <rootOffset> <offset1,offset2,...>
+    Resolve a bounded pointer chain (maximum four dereferences).
+    Example: discover-pointer-chain 0x0317A810 0x20,0x18,0x34
 
   discover-snapshot <valueSize> [--float-min <f>] [--float-max <f>]
     Create a snapshot of all values in committed memory.

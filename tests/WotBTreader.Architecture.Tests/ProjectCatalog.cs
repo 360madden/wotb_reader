@@ -8,12 +8,13 @@ internal sealed record ProjectFile(string RelativePath, string Contents)
 
     public bool IsProduction =>
         RelativePath.StartsWith("src/", StringComparison.Ordinal) ||
-        RelativePath.StartsWith("tools/src/", StringComparison.Ordinal);
+        RelativePath.StartsWith("tools/src/", StringComparison.Ordinal) ||
+        RelativePath.StartsWith("ultimate-scanner/", StringComparison.Ordinal);
 }
 
 internal static class ProjectCatalog
 {
-    private static readonly string[] ProjectDirectories = ["src", "tests", "tools/src", "tools/tests"];
+    private static readonly string[] ProjectDirectories = ["src", "tests", "tools/src", "tools/tests", "ultimate-scanner"];
 
     public static ProjectFile[] Discover()
     {

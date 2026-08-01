@@ -13,6 +13,7 @@
   <ItemGroup>
     <ProjectReference Include="..\WotBTreader.Application\WotBTreader.Application.csproj" />
     <ProjectReference Include="..\WotBTreader.Core\WotBTreader.Core.csproj" />
+    <ProjectReference Include="..\..\ultimate-scanner\WotBTreader.UltimateScanner.csproj" />
   </ItemGroup>
 
 </Project>

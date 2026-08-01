@@ -5,6 +5,7 @@ using WotBTreader.Application.Results;
 using WotBTreader.Core;
 using WotBTreader.GameIntegration.Logs;
 using WotBTreader.GameIntegration.Session;
+using WotBTreader.UltimateScanner;
 
 namespace WotBTreader.GameIntegration.Tests;
 

@@ -6,6 +6,7 @@ using WotBTreader.GameIntegration.Dvpl;
 using WotBTreader.GameIntegration.Logs;
 using WotBTreader.GameIntegration.Metadata;
 using WotBTreader.GameIntegration.Session;
+using WotBTreader.UltimateScanner;
 
 namespace WotBTreader.GameIntegration.DependencyInjection;
 

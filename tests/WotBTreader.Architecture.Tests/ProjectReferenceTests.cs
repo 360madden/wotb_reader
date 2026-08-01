@@ -8,6 +8,8 @@ public sealed class ProjectReferenceTests
     private const string BootstrapName = "WotBTreader.Bootstrap";
     private const string ApiContractsName = "WotBTreader.ApiContracts";
     private const string OverlayName = "WotBTreader.Overlay";
+    private const string GameIntegrationName = "WotBTreader.GameIntegration";
+    private const string UltimateScannerName = "WotBTreader.UltimateScanner";
 
     private static readonly string[] AdapterNames =
     [
@@ -15,6 +17,11 @@ public sealed class ProjectReferenceTests
         "WotBTreader.GameIntegration",
         "WotBTreader.Replays",
         "WotBTreader.Storage.Sqlite",
+    ];
+
+    private static readonly string[] ScannerFoundationNames =
+    [
+        "WotBTreader.UltimateScanner",
     ];
 
     private static readonly string[] HostNames = ["WotBTreader.Host.Cli", "WotBTreader.Host.Web"];
@@ -29,6 +36,11 @@ public sealed class ProjectReferenceTests
     private static readonly string[] NoReferences = [];
     private static readonly string[] CoreOnly = [CoreName];
     private static readonly string[] AdapterAllowedReferences = [ApplicationName, CoreName];
+    // The scanner module is a GameIntegration implementation detail: only the
+    // GameIntegration adapter may reference it (knowledge.md architecture tree).
+    private static readonly string[] GameIntegrationAllowedReferences =
+        [ApplicationName, CoreName, UltimateScannerName];
+    private static readonly string[] ScannerFoundationAllowedReferences = [ApplicationName, CoreName];
     private static readonly string[] BootstrapAllowedReferences = [ApplicationName, CoreName, .. AdapterNames];
     private static readonly string[] HostAllowedReferences = [ApiContractsName, ApplicationName, BootstrapName, CoreName];
     private static readonly string[] OverlayAllowedReferences = [ApiContractsName];
@@ -64,6 +76,24 @@ public sealed class ProjectReferenceTests
         CollectionAssert.Contains(
             violations,
             "WotBTreader.Replays must not reference WotBTreader.Storage.Sqlite.");
+    }
+
+    [TestMethod]
+    public void AnalyzeProjects_NonGameIntegrationAdapterReferencingUltimateScanner_IsReported()
+    {
+        // knowledge.md: the scanner module is referenced ONLY by GameIntegration.
+        ProjectFile[] projects =
+        [
+            new(
+                "src/WotBTreader.CaptureLogs/WotBTreader.CaptureLogs.csproj",
+                Project("..\\..\\ultimate-scanner\\WotBTreader.UltimateScanner.csproj")),
+        ];
+
+        string[] violations = AnalyzeProjects(projects);
+
+        CollectionAssert.Contains(
+            violations,
+            "WotBTreader.CaptureLogs must not reference WotBTreader.UltimateScanner.");
     }
 
     [TestMethod]
@@ -187,9 +217,21 @@ public sealed class ProjectReferenceTests
             return true;
         }
 
+        if (string.Equals(projectName, GameIntegrationName, StringComparison.Ordinal))
+        {
+            allowedReferences = GameIntegrationAllowedReferences;
+            return true;
+        }
+
         if (AdapterNames.Contains(projectName, StringComparer.Ordinal))
         {
             allowedReferences = AdapterAllowedReferences;
+            return true;
+        }
+
+        if (ScannerFoundationNames.Contains(projectName, StringComparer.Ordinal))
+        {
+            allowedReferences = ScannerFoundationAllowedReferences;
             return true;
         }
 
