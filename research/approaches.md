@@ -29,7 +29,7 @@ POST /api/v1/game/switch-replay { sourceArtifactId: "..." }
 
 **To test:** Run while game is at main menu:
 ```cmd
-wotblitz.exe "C:\Users\mrkoo\AppData\Local\wotblitz\DAVAProject\replays\20260729_1235__....wotbreplay"
+wotblitz.exe "%LOCALAPPDATA%\wotblitz\DAVAProject\replays\replay.wotbreplay"
 ```
 
 ## Approach B: Drop-Directory + File Watcher
@@ -121,7 +121,7 @@ dir /s /od "%LOCALAPPDATA%\wotblitz\DAVAProject" | findstr wotbreplay
 1. Find Uploaded replay storage:
    ```cmd
    # Open a replay, then check for new files
-   wotblitz.exe "C:\Users\mrkoo\AppData\Local\wotblitz\DAVAProject\replays\20260729_1235__....wotbreplay"
+   wotblitz.exe "%LOCALAPPDATA%\wotblitz\DAVAProject\replays\replay.wotbreplay"
    ```
 
 2. Check if `wotblitz.exe` is single-instance:
