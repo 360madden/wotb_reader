@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using WotBTreader.Application.Game;
 using WotBTreader.Application.Replay;
@@ -19,6 +20,13 @@ internal enum ReplayEvidenceSource
 {
     Unknown,
     BlitzNativeLog,
+}
+
+internal enum ObservedProcessOutcome
+{
+    Observed,
+    Exited,
+    Incomplete,
 }
 
 internal sealed record GameProcessEvidence(
@@ -68,6 +76,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     private static readonly TimeSpan EvidenceLifetime = TimeSpan.FromSeconds(15);
     private readonly Lock _gate = new();
     private readonly TimeProvider _timeProvider;
+    private readonly GameIntegrationOptions _options;
     private readonly IManagedLaunchPreparer _preparer;
     private readonly IManagedReplayArtifactStager _artifactStager;
     private readonly ISuspendedProcessPlatform _suspendedPlatform;
@@ -78,6 +87,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     private readonly MemoryScanDiscoverer _scanDiscoverer;
     private readonly IBlitzReplayLifecycleFeed _lifecycleFeed;
     private readonly MemoryScanEngine _scanEngine;
+    private readonly IGameProcessIdentityObserver _processObserver;
 
     private GameSessionSnapshot _snapshot = new(
         GameSessionVerificationState.Unknown,
@@ -87,6 +97,13 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         "session.initial");
     private AuthorizedObservation? _authorization;
     private ManagedGameLaunchContext? _managedLaunch;
+    // Intentionally sticky across session types and terminal states: set on
+    // every managed launch and never cleared by RevokeSession, so the owning
+    // launch of a failed/denied session stays attributable from the wire.
+    // State + ReasonCode always disambiguate the current session.
+    private string? _lastLaunchCorrelation;
+    private DateTimeOffset _evidenceDeadlineUtc = DateTimeOffset.MinValue;
+    private bool _evidenceDeadlineApplied;
     private EvidenceCursor? _lastCursor;
     private long _authorizationGeneration;
 
@@ -99,6 +116,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
 
     public GameSessionCoordinator(
         TimeProvider timeProvider,
+        GameIntegrationOptions options,
         IManagedLaunchPreparer preparer,
         IManagedReplayArtifactStager artifactStager,
         ISuspendedProcessPlatform suspendedPlatform,
@@ -108,9 +126,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         IOffsetTableReader offsetTableReader,
         MemoryScanDiscoverer scanDiscoverer,
         MemoryScanEngine scanEngine,
-        IBlitzReplayLifecycleFeed lifecycleFeed)
+        IBlitzReplayLifecycleFeed lifecycleFeed,
+        IGameProcessIdentityObserver processObserver)
     {
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+        _options = options ?? throw new ArgumentNullException(nameof(options));
         _preparer = preparer ?? throw new ArgumentNullException(nameof(preparer));
         _artifactStager = artifactStager ?? throw new ArgumentNullException(nameof(artifactStager));
         _suspendedPlatform = suspendedPlatform ?? throw new ArgumentNullException(nameof(suspendedPlatform));
@@ -121,6 +141,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         _scanDiscoverer = scanDiscoverer ?? throw new ArgumentNullException(nameof(scanDiscoverer));
         _scanEngine = scanEngine ?? throw new ArgumentNullException(nameof(scanEngine));
         _lifecycleFeed = lifecycleFeed ?? throw new ArgumentNullException(nameof(lifecycleFeed));
+        _processObserver = processObserver ?? throw new ArgumentNullException(nameof(processObserver));
     }
 
     /// <summary>
@@ -143,6 +164,12 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         {
             Revoke();
             _managedLaunch = launch;
+            // Survives RevokeSession so the owning launch of a failed or
+            // denied session can still be attributed from the wire.
+            _lastLaunchCorrelation = launch.LaunchCorrelation;
+            _evidenceDeadlineUtc =
+                _timeProvider.GetUtcNow() + _options.EvidenceDeadline;
+            _evidenceDeadlineApplied = false;
             _lastCursor = null;
             _snapshot = CreateSnapshot(
                 GameSessionVerificationState.Unknown,
@@ -150,6 +177,36 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 expiresAtUtc: null,
                 "launch.awaiting_evidence");
         }
+    }
+
+    /// <summary>
+    /// Applies the bounded evidence deadline for the most recent managed launch.
+    /// If no qualifying offline-replay evidence arrived before the deadline
+    /// elapsed, the session transitions to a terminal
+    /// <c>launch.no_evidence</c> state and the monitor stops polling. Safe to
+    /// call repeatedly and when no launch is active.
+    /// </summary>
+    internal bool ApplyEvidenceDeadline()
+    {
+        lock (_gate)
+        {
+            return ApplyEvidenceDeadlineCore();
+        }
+    }
+
+    // Assumes _gate is held by the caller (mirrors Evaluate/Deny).
+    private bool ApplyEvidenceDeadlineCore()
+    {
+        if (_managedLaunch is null
+            || _snapshot.State == GameSessionVerificationState.OfflineReplayVerified
+            || _timeProvider.GetUtcNow() <= _evidenceDeadlineUtc)
+        {
+            return false;
+        }
+
+        _evidenceDeadlineApplied = true;
+        Deny("launch.no_evidence");
+        return true;
     }
 
     /// <summary>
@@ -163,6 +220,13 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
 
         lock (_gate)
         {
+            if (_evidenceDeadlineApplied)
+            {
+                // Terminal launch.no_evidence — late evidence must not
+                // resurrect the session.
+                return;
+            }
+
             Evaluate(evidence);
         }
     }
@@ -175,6 +239,25 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         }
     }
 
+    /// <summary>
+    /// Records a terminal denial when the launched child exited after writing
+    /// the OfflineReplayStarted marker: the game logged the marker but no
+    /// eligible game window is observable. No-op when no launch is active or
+    /// the evidence deadline already closed the session.
+    /// </summary>
+    internal void ReportProcessExitedAfterLaunch()
+    {
+        lock (_gate)
+        {
+            if (_managedLaunch is null || _evidenceDeadlineApplied)
+            {
+                return;
+            }
+
+            Deny("process.exited_after_launch");
+        }
+    }
+
     public ValueTask<GameSessionSnapshot> GetSnapshotAsync(
         CancellationToken cancellationToken)
     {
@@ -183,6 +266,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         lock (_gate)
         {
             ExpireAuthorizationIfNeeded();
+            ApplyEvidenceDeadlineCore();
             return ValueTask.FromResult(_snapshot);
         }
     }
@@ -604,6 +688,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             gamePresent: true,
             expiresAtUtc,
             "session.offline_replay_verified");
+
+        // Verification satisfies the deadline — once reached, the bounded
+        // window is no longer applicable. A later evidence-expiry must surface
+        // as evidence.stale, never launch.no_evidence.
+        _evidenceDeadlineUtc = DateTimeOffset.MaxValue;
     }
 
     private bool IsCursorValid(ReplayLifecycleEvidence lifecycle)
@@ -695,6 +784,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         _activeMonitoringCts?.Dispose();
         _activeMonitoringCts = null;
         _managedLaunch = null;
+        _evidenceDeadlineUtc = DateTimeOffset.MinValue;
         _lastCursor = null;
         DisposeLaunchLeases();
     }
@@ -790,7 +880,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             gamePresent,
             _timeProvider.GetUtcNow(),
             expiresAtUtc,
-            reasonCode);
+            reasonCode,
+            LaunchCorrelation: _lastLaunchCorrelation);
 
     private sealed record AuthorizedObservation(
         long Generation,
@@ -804,6 +895,12 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         OffsetTable? OffsetTable);
 
     private sealed record EvidenceCursor(
+        string SourceIdentity,
+        long SourceGeneration,
+        long SourceSequence);
+
+    private sealed record PendingOfflineReplayMarker(
+        DateTimeOffset ObservedAtUtc,
         string SourceIdentity,
         long SourceGeneration,
         long SourceSequence);
@@ -954,6 +1051,83 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Maps a process observation onto evidence for the launched child. Only
+    /// an observed window owned by the launched child yields evidence — the
+    /// child's process, start identity, window, path, version, and hash are
+    /// taken from the real observation, never fabricated. A different game
+    /// instance owning the eligible window, an unsupported platform, an
+    /// ambiguous enumeration, or a failed query are all incomplete: the
+    /// monitor keeps polling until the evidence deadline bounds the launch.
+    /// </summary>
+    internal static ObservedProcessOutcome BuildObservedProcessEvidence(
+        GameProcessObservationResult observation,
+        int launchedProcessId,
+        out GameProcessEvidence? evidence)
+    {
+        evidence = null;
+
+        switch (observation.Status)
+        {
+            case GameProcessObservationStatus.Available
+                when observation.Identity is { } identity:
+                if (identity.ProcessId != launchedProcessId)
+                {
+                    // A different game instance owns the eligible window.
+                    return ObservedProcessOutcome.Incomplete;
+                }
+
+                evidence = new GameProcessEvidence(
+                    identity.ProcessId,
+                    identity.ProcessStartIdentity,
+                    IsAlive: true,
+                    identity.CanonicalExecutablePath,
+                    identity.ProductVersion,
+                    identity.ExecutableSha256,
+                    identity.WindowHandle,
+                    WindowOwnerProcessId: identity.ProcessId);
+                return ObservedProcessOutcome.Observed;
+
+            case GameProcessObservationStatus.Absent:
+                // No eligible game window exists. Window enumeration requires a
+                // visible SDL_app window, and the child launches hidden, so
+                // this cannot by itself prove the child exited. The caller
+                // disambiguates with a liveness check; here it maps to Exited
+                // as the candidate outcome.
+                return ObservedProcessOutcome.Exited;
+
+            default:
+                // Unsupported, Ambiguous, or QueryFailed — cannot build
+                // evidence.
+                return ObservedProcessOutcome.Incomplete;
+        }
+    }
+
+    /// <summary>
+    /// Confirms whether the launched child is still running. Window
+    /// enumeration alone cannot distinguish an exited child from one whose
+    /// window is hidden or not yet visible (the child launches hidden), so a
+    /// terminal <c>process.exited_after_launch</c> is only justified when the
+    /// process is confirmed gone.
+    /// </summary>
+    internal static bool IsChildProcessAlive(int processId)
+    {
+        try
+        {
+            using Process process = Process.GetProcessById(processId);
+            return !process.HasExited;
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException
+                or InvalidOperationException
+                or Win32Exception)
+        {
+            // Not running, exited between query and check, or inaccessible —
+            // treat as gone; the caller decides whether that is terminal.
+            return false;
+        }
+    }
+
     private void StartMonitoringLifecycle(
         ManagedGameLaunchContext launch,
         int processId,
@@ -964,8 +1138,15 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             try
             {
                 long currentSequence = launch.SourceSequenceBaseline;
+                PendingOfflineReplayMarker? pendingMarker = null;
                 while (!token.IsCancellationRequested)
                 {
+                    if (ApplyEvidenceDeadline())
+                    {
+                        // Terminal launch.no_evidence — stop polling.
+                        return;
+                    }
+
                     LifecycleFeedReadResult result = await _lifecycleFeed
                         .ReadAfterAsync(currentSequence, token)
                         .ConfigureAwait(false);
@@ -976,50 +1157,65 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                         if (ev.MarkerKind == ReplayLogMarkerKind.OfflineReplayStarted
                             && ev.Cursor is not null)
                         {
-                            long startIdentity;
-                            try
-                            {
-                                using Process p = Process.GetProcessById(processId);
-                                startIdentity = p.StartTime.ToFileTimeUtc();
-                            }
-                            catch
-                            {
-                                // Process exited — stop monitoring.
-                                return;
-                            }
-
-                            var processEvidence = new GameProcessEvidence(
-                                processId,
-                                startIdentity,
-                                IsAlive: true,
-                                launch.TrustedGameIdentity.ExecutablePath,
-                                launch.TrustedGameIdentity.ProductVersion,
-                                launch.TrustedGameIdentity.ExecutableSha256,
-                                WindowHandle: 1,
-                                WindowOwnerProcessId: processId);
-
-                            var lifecycleEvidence = new ReplayLifecycleEvidence(
-                                ReplayLifecycleState.OfflineReplayStarted,
+                            // Remember the marker so evidence can be applied
+                            // once a matching observed window is present. The
+                            // window may appear a moment after the marker
+                            // (the child launches hidden), so observation is
+                            // retried every iteration rather than only here.
+                            pendingMarker = new PendingOfflineReplayMarker(
                                 ev.ObservedAtUtc,
-                                ReplayEvidenceSource.BlitzNativeLog,
                                 ev.Cursor.SourceId.Value,
                                 ev.Cursor.Generation,
-                                ev.Sequence,
-                                processId,
-                                startIdentity,
-                                launch.LaunchCorrelation);
-
-                            ApplyEvidence(new GameSessionEvidence(
-                                GamePresent: true,
-                                MonitorHealthy: true,
-                                ReplayUiConfirmed: true,
-                                processEvidence,
-                                lifecycleEvidence));
+                                ev.Sequence);
                         }
                         else if (ev.MarkerKind == ReplayLogMarkerKind.OfflineReplayStopped)
                         {
                             return;
                         }
+                    }
+
+                    // Observe the launched child on every iteration. A
+                    // confirmed-exited child is terminal; an alive child whose
+                    // window is hidden or not yet visible keeps polling so a
+                    // marker can still verify once the window appears.
+                    GameProcessObservationResult observation =
+                        await _processObserver.ObserveAsync(token)
+                            .ConfigureAwait(false);
+                    ObservedProcessOutcome outcome =
+                        BuildObservedProcessEvidence(
+                            observation,
+                            processId,
+                            out GameProcessEvidence? processEvidence);
+
+                    if (outcome == ObservedProcessOutcome.Exited
+                        && !IsChildProcessAlive(processId))
+                    {
+                        ReportProcessExitedAfterLaunch();
+                        return;
+                    }
+
+                    if (outcome == ObservedProcessOutcome.Observed
+                        && pendingMarker is not null
+                        && processEvidence is not null)
+                    {
+                        var lifecycleEvidence = new ReplayLifecycleEvidence(
+                            ReplayLifecycleState.OfflineReplayStarted,
+                            pendingMarker.ObservedAtUtc,
+                            ReplayEvidenceSource.BlitzNativeLog,
+                            pendingMarker.SourceIdentity,
+                            pendingMarker.SourceGeneration,
+                            pendingMarker.SourceSequence,
+                            processEvidence.ProcessId,
+                            processEvidence.ProcessStartIdentity,
+                            launch.LaunchCorrelation);
+
+                        ApplyEvidence(new GameSessionEvidence(
+                            GamePresent: true,
+                            MonitorHealthy: true,
+                            ReplayUiConfirmed: true,
+                            processEvidence,
+                            lifecycleEvidence));
+                        pendingMarker = null;
                     }
 
                     await Task.Delay(500, token).ConfigureAwait(false);

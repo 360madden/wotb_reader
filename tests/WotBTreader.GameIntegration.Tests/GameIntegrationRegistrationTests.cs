@@ -28,6 +28,19 @@ public sealed class GameIntegrationRegistrationTests
     }
 
     [TestMethod]
+    public void AddGameIntegration_RejectsOutOfRangeEvidenceDeadline()
+    {
+        IServiceCollection services = new ServiceCollection();
+
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() =>
+            services.AddGameIntegration(
+                new GameIntegrationOptions { EvidenceDeadline = TimeSpan.FromSeconds(4) }));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() =>
+            services.AddGameIntegration(
+                new GameIntegrationOptions { EvidenceDeadline = TimeSpan.FromMinutes(11) }));
+    }
+
+    [TestMethod]
     public void AddGameIntegration_RegistersSessionInterfaces()
     {
         IServiceCollection services = new ServiceCollection();

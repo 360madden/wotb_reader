@@ -321,6 +321,99 @@ public sealed class GameSessionCoordinatorTests
     }
 
     [TestMethod]
+    public async Task EvidenceDeadline_ElapsedWithoutVerification_IsTerminalNoEvidence()
+    {
+        var (coordinator, timeProvider) = CreateCoordinator(
+            options: new GameIntegrationOptions { EvidenceDeadline = TimeSpan.FromSeconds(30) });
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+        timeProvider.Advance(TimeSpan.FromSeconds(31));
+
+        // A plain state poll applies the deadline lazily, so the terminal
+        // transition is observable even if the background monitor never ran.
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+        Assert.AreEqual("launch.no_evidence", snapshot.ReasonCode);
+    }
+
+    [TestMethod]
+    public async Task EvidenceDeadline_NotYetElapsed_DoesNotTransition()
+    {
+        var (coordinator, timeProvider) = CreateCoordinator(
+            options: new GameIntegrationOptions { EvidenceDeadline = TimeSpan.FromSeconds(30) });
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+        timeProvider.Advance(TimeSpan.FromSeconds(10));
+
+        bool applied = coordinator.ApplyEvidenceDeadline();
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.IsFalse(applied);
+        Assert.AreEqual(GameSessionVerificationState.Unknown, snapshot.State);
+        Assert.AreEqual("launch.awaiting_evidence", snapshot.ReasonCode);
+    }
+
+    [TestMethod]
+    public async Task EvidenceDeadline_VerificationWithinWindow_IsVerified()
+    {
+        var (coordinator, timeProvider) = CreateCoordinator(
+            options: new GameIntegrationOptions { EvidenceDeadline = TimeSpan.FromSeconds(30) });
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+
+        // Evidence arrives inside the 30 s window (within the 15 s evidence
+        // lifetime), so the launch verifies and the deadline never fires.
+        coordinator.ApplyEvidence(CreateValidEvidence());
+
+        bool applied = coordinator.ApplyEvidenceDeadline();
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.IsFalse(applied);
+        Assert.AreEqual(
+            GameSessionVerificationState.OfflineReplayVerified,
+            snapshot.State);
+    }
+
+    [TestMethod]
+    public async Task EvidenceDeadline_DisarmedAfterVerification_ExpirySurfacesAsStaleNotNoEvidence()
+    {
+        var (coordinator, timeProvider) = CreateCoordinator(
+            options: new GameIntegrationOptions { EvidenceDeadline = TimeSpan.FromSeconds(30) });
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+        coordinator.ApplyEvidence(CreateValidEvidence());
+
+        // Verified inside the window, then the would-be deadline elapses and the
+        // 15 s authorization lifetime also elapses. The expiry must surface as
+        // evidence.stale / evidence.expired — never launch.no_evidence.
+        timeProvider.Advance(TimeSpan.FromSeconds(31));
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.EvidenceStale, snapshot.State);
+        Assert.AreEqual("evidence.expired", snapshot.ReasonCode);
+    }
+
+    [TestMethod]
+    public async Task EvidenceDeadline_TerminalStateRejectsLateEvidence()
+    {
+        var (coordinator, timeProvider) = CreateCoordinator(
+            options: new GameIntegrationOptions { EvidenceDeadline = TimeSpan.FromSeconds(30) });
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+        timeProvider.Advance(TimeSpan.FromSeconds(31));
+
+        // The monitor loop applies the deadline explicitly and stops polling.
+        Assert.IsTrue(coordinator.ApplyEvidenceDeadline());
+
+        // Late evidence must not resurrect a terminal no_evidence session.
+        coordinator.ApplyEvidence(CreateValidEvidence());
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+        Assert.AreEqual("launch.no_evidence", snapshot.ReasonCode);
+    }
+
+    [TestMethod]
     public async Task AbsentEvidence_ClearsPresence()
     {
         var (coordinator, _) = CreateVerifiedCoordinator();
@@ -338,8 +431,269 @@ public sealed class GameSessionCoordinatorTests
         Assert.IsFalse(snapshot.GamePresent);
     }
 
+    // ── Launch correlation exposure (diagnosis fix #3) ──
+
+    [TestMethod]
+    public async Task LaunchCorrelation_IsNullBeforeAnyLaunch()
+    {
+        var (coordinator, _) = CreateCoordinator();
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+
+        Assert.IsNull(snapshot.LaunchCorrelation);
+    }
+
+    [TestMethod]
+    public async Task LaunchCorrelation_IsExposedAfterManagedLaunch()
+    {
+        var (coordinator, _) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+
+        Assert.AreEqual(LaunchCorrelation, snapshot.LaunchCorrelation);
+    }
+
+    [TestMethod]
+    public async Task LaunchCorrelation_PersistsThroughTerminalEvidenceDeadline()
+    {
+        var (coordinator, timeProvider) = CreateCoordinator(
+            options: new GameIntegrationOptions { EvidenceDeadline = TimeSpan.FromSeconds(30) });
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+        timeProvider.Advance(TimeSpan.FromSeconds(31));
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+
+        Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+        Assert.AreEqual("launch.no_evidence", snapshot.ReasonCode);
+        // The correlation survives the terminal state so the owning launch
+        // of a failed session can still be attributed.
+        Assert.AreEqual(LaunchCorrelation, snapshot.LaunchCorrelation);
+    }
+
+    [TestMethod]
+    public async Task LaunchCorrelation_PersistsThroughProcessExitTerminal()
+    {
+        var (coordinator, _) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+
+        coordinator.ReportProcessExitedAfterLaunch();
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual("process.exited_after_launch", snapshot.ReasonCode);
+        Assert.AreEqual(LaunchCorrelation, snapshot.LaunchCorrelation);
+    }
+
+    [TestMethod]
+    public async Task LaunchCorrelation_IsReplacedByNextLaunch()
+    {
+        var (coordinator, _) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+
+        const string secondCorrelation = "second-correlation";
+        coordinator.RecordManagedLaunch(CreateManagedLaunch() with
+        {
+            LaunchCorrelation = secondCorrelation,
+        });
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(secondCorrelation, snapshot.LaunchCorrelation);
+    }
+
+    // ── Process observer integration (diagnosis fix #1) ──
+
+    [TestMethod]
+    public async Task ObservedProcessExitedAfterLaunch_IsDeniedTerminal()
+    {
+        var (coordinator, _) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+
+        coordinator.ReportProcessExitedAfterLaunch();
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+        Assert.AreEqual("process.exited_after_launch", snapshot.ReasonCode);
+    }
+
+    [TestMethod]
+    public async Task ObservedProcessExitedWithoutLaunch_IsNoOp()
+    {
+        var (coordinator, _) = CreateCoordinator();
+
+        coordinator.ReportProcessExitedAfterLaunch();
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.Unknown, snapshot.State);
+    }
+
+    [TestMethod]
+    public async Task ObservedProcessExitedAfterDeadline_IsNoOp()
+    {
+        var (coordinator, timeProvider) = CreateCoordinator(
+            options: new GameIntegrationOptions { EvidenceDeadline = TimeSpan.FromSeconds(30) });
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+        timeProvider.Advance(TimeSpan.FromSeconds(31));
+        Assert.IsTrue(coordinator.ApplyEvidenceDeadline());
+
+        coordinator.ReportProcessExitedAfterLaunch();
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual("launch.no_evidence", snapshot.ReasonCode);
+    }
+
+    [TestMethod]
+    public void ObservedProcessEvidence_AvailableMatchingChild_BuildsEvidenceFromObservation()
+    {
+        var (coordinator, _) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+
+        GameProcessObservationResult observation = new(
+            GameProcessObservationStatus.Available,
+            CreateObservedIdentity());
+
+        ObservedProcessOutcome outcome = GameSessionCoordinator.BuildObservedProcessEvidence(
+            observation,
+            launchedProcessId: 1234,
+            out GameProcessEvidence? evidence);
+
+        Assert.AreEqual(ObservedProcessOutcome.Observed, outcome);
+        Assert.IsNotNull(evidence);
+        Assert.AreEqual(1234, evidence!.ProcessId);
+        Assert.AreEqual(42, evidence.ProcessStartIdentity);
+        Assert.IsTrue(evidence.IsAlive);
+        Assert.AreEqual(99, evidence.WindowHandle);
+        Assert.AreEqual(1234, evidence.WindowOwnerProcessId);
+        Assert.AreEqual(@"C:\Games\wotblitz.exe", evidence.ObservedCanonicalExecutablePath);
+        Assert.AreEqual("11.18.0.7", evidence.ObservedProductVersion);
+        Assert.AreEqual(new ContentHash(new string('a', 64)), evidence.ObservedExecutableSha256);
+    }
+
+    [TestMethod]
+    public void ObservedProcessEvidence_AvailableOtherInstance_IsIncomplete()
+    {
+        var (coordinator, _) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+
+        GameProcessObservationResult observation = new(
+            GameProcessObservationStatus.Available,
+            CreateObservedIdentity() with { ProcessId = 9999 });
+
+        ObservedProcessOutcome outcome = GameSessionCoordinator.BuildObservedProcessEvidence(
+            observation,
+            launchedProcessId: 1234,
+            out GameProcessEvidence? evidence);
+
+        Assert.AreEqual(ObservedProcessOutcome.Incomplete, outcome);
+        Assert.IsNull(evidence);
+    }
+
+    [TestMethod]
+    public void ObservedProcessEvidence_Absent_IsExited()
+    {
+        var (coordinator, _) = CreateCoordinator();
+
+        ObservedProcessOutcome outcome = GameSessionCoordinator.BuildObservedProcessEvidence(
+            new GameProcessObservationResult(GameProcessObservationStatus.Absent, null),
+            launchedProcessId: 1234,
+            out GameProcessEvidence? evidence);
+
+        Assert.AreEqual(ObservedProcessOutcome.Exited, outcome);
+        Assert.IsNull(evidence);
+    }
+
+    [TestMethod]
+    public void ObservedProcessEvidence_Ambiguous_IsIncomplete()
+    {
+        var (coordinator, _) = CreateCoordinator();
+
+        ObservedProcessOutcome outcome = GameSessionCoordinator.BuildObservedProcessEvidence(
+            new GameProcessObservationResult(GameProcessObservationStatus.Ambiguous, null),
+            launchedProcessId: 1234,
+            out GameProcessEvidence? evidence);
+
+        Assert.AreEqual(ObservedProcessOutcome.Incomplete, outcome);
+        Assert.IsNull(evidence);
+    }
+
+    [TestMethod]
+    public void ObservedProcessEvidence_QueryFailed_IsIncomplete()
+    {
+        var (coordinator, _) = CreateCoordinator();
+
+        ObservedProcessOutcome outcome = GameSessionCoordinator.BuildObservedProcessEvidence(
+            new GameProcessObservationResult(GameProcessObservationStatus.QueryFailed, null),
+            launchedProcessId: 1234,
+            out GameProcessEvidence? evidence);
+
+        Assert.AreEqual(ObservedProcessOutcome.Incomplete, outcome);
+        Assert.IsNull(evidence);
+    }
+
+    [TestMethod]
+    public void ObservedProcessEvidence_Unsupported_IsIncomplete()
+    {
+        var (coordinator, _) = CreateCoordinator();
+
+        ObservedProcessOutcome outcome = GameSessionCoordinator.BuildObservedProcessEvidence(
+            new GameProcessObservationResult(GameProcessObservationStatus.Unsupported, null),
+            launchedProcessId: 1234,
+            out GameProcessEvidence? evidence);
+
+        Assert.AreEqual(ObservedProcessOutcome.Incomplete, outcome);
+        Assert.IsNull(evidence);
+    }
+
+    [TestMethod]
+    public async Task ObservedProcessEvidence_VerifiesOfflineReplay()
+    {
+        var (coordinator, _) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+
+        GameProcessObservationResult observation = new(
+            GameProcessObservationStatus.Available,
+            CreateObservedIdentity());
+        GameSessionCoordinator.BuildObservedProcessEvidence(
+            observation,
+            launchedProcessId: 1234,
+            out GameProcessEvidence? processEvidence);
+
+        coordinator.ApplyEvidence(new GameSessionEvidence(
+            GamePresent: true,
+            MonitorHealthy: true,
+            ReplayUiConfirmed: true,
+            processEvidence,
+            CreateValidLifecycle()));
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(
+            GameSessionVerificationState.OfflineReplayVerified,
+            snapshot.State);
+    }
+
+    [TestMethod]
+    public void ChildProcessAlive_ForRunningProcess_IsTrue()
+    {
+        Assert.IsTrue(GameSessionCoordinator.IsChildProcessAlive(Environment.ProcessId));
+    }
+
+    [TestMethod]
+    public void ChildProcessAlive_ForUnknownProcessId_IsFalse()
+    {
+        Assert.IsFalse(GameSessionCoordinator.IsChildProcessAlive(int.MaxValue));
+    }
+
     private static (GameSessionCoordinator Coordinator, ManualTimeProvider TimeProvider)
         CreateCoordinator(
+            GameIntegrationOptions? options = null,
             IManagedLaunchPreparer? preparer = null,
             IManagedReplayArtifactStager? artifactStager = null,
             ISuspendedProcessPlatform? suspendedPlatform = null,
@@ -347,11 +701,13 @@ public sealed class GameSessionCoordinatorTests
             IThreadResumePlatform? threadResumePlatform = null,
             IGuardedMemoryReaderFactory? memoryReaderFactory = null,
             IOffsetTableReader? offsetTableReader = null,
-            IBlitzReplayLifecycleFeed? lifecycleFeed = null)
+            IBlitzReplayLifecycleFeed? lifecycleFeed = null,
+            IGameProcessIdentityObserver? processObserver = null)
     {
         var timeProvider = new ManualTimeProvider(StartTime);
         return (new GameSessionCoordinator(
             timeProvider,
+            options ?? new GameIntegrationOptions { EvidenceDeadline = TimeSpan.FromMinutes(10) },
             preparer ?? new StubPreparer(),
             artifactStager ?? new StubArtifactStager(),
             suspendedPlatform ?? new StubSuspendedPlatform(),
@@ -361,7 +717,8 @@ public sealed class GameSessionCoordinatorTests
             offsetTableReader ?? new StubOffsetTableReader(),
             new MemoryScanDiscoverer(timeProvider, NullLogger<MemoryScanDiscoverer>.Instance),
             new MemoryScanEngine(timeProvider, NullLogger<MemoryScanEngine>.Instance),
-            lifecycleFeed ?? new StubLifecycleFeed()), timeProvider);
+            lifecycleFeed ?? new StubLifecycleFeed(),
+            processObserver ?? new StubProcessObserver()), timeProvider);
     }
 
     private static (GameSessionCoordinator Coordinator, ManualTimeProvider TimeProvider)
@@ -416,6 +773,16 @@ public sealed class GameSessionCoordinatorTests
             LifecycleSourceIdentity: "synthetic-log-identity",
             SourceGeneration: 1,
             SourceSequenceBaseline: 10);
+
+    private static ObservedGameProcessIdentity CreateObservedIdentity() =>
+        new(
+            ProcessId: 1234,
+            ProcessStartIdentity: 42,
+            WindowHandle: 99,
+            CanonicalExecutablePath: @"C:\Games\wotblitz.exe",
+            FileIdentity: new ExecutableFileIdentity(7, 11),
+            ProductVersion: "11.18.0.7",
+            ExecutableSha256: new ContentHash(new string('a', 64)));
 
     private sealed class ManualTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
@@ -508,5 +875,15 @@ public sealed class GameSessionCoordinatorTests
             CancellationToken cancellationToken) =>
             ValueTask.FromResult(new LifecycleFeedReadResult(
                 afterSequence, afterSequence, false, []));
+    }
+
+    private sealed class StubProcessObserver : IGameProcessIdentityObserver
+    {
+        public GameProcessObservationResult Result { get; init; } =
+            new(GameProcessObservationStatus.Unsupported, Identity: null);
+
+        public ValueTask<GameProcessObservationResult> ObserveAsync(
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult(Result);
     }
 }

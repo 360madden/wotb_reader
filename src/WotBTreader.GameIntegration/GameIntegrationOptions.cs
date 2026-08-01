@@ -19,6 +19,8 @@ public sealed class GameIntegrationOptions
     private const int MaximumTrackedLogFiles = 128;
     private const int MaximumLogEventChannelCapacity = 65_536;
     private const long MaximumReplayLaunchBytes = 2L * 1024 * 1024 * 1024;
+    private static readonly TimeSpan MinimumEvidenceDeadline = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan MaximumEvidenceDeadline = TimeSpan.FromMinutes(10);
 
     /// <summary>Gets explicit game installation roots to probe before optional defaults.</summary>
     public IReadOnlyList<string> GameInstallRoots { get; init; } = [];
@@ -75,6 +77,15 @@ public sealed class GameIntegrationOptions
     /// <summary>Gets the maximum size of one replay copied for a managed launch.</summary>
     public long MaxReplayLaunchBytes { get; init; } = 512L * 1024 * 1024;
 
+    /// <summary>
+    /// Gets the bounded window after a managed launch is accepted during which
+    /// offline-replay evidence must arrive. When the window elapses without
+    /// <see cref="WotBTreader.Application.Game.GameSessionVerificationState.OfflineReplayVerified"/>
+    /// being reached, the session transitions to a terminal
+    /// <c>launch.no_evidence</c> state and the monitor stops polling.
+    /// </summary>
+    public TimeSpan EvidenceDeadline { get; init; } = TimeSpan.FromSeconds(60);
+
     internal void Validate()
     {
         if (MaxDvplStoredBytes <= 0 ||
@@ -114,6 +125,14 @@ public sealed class GameIntegrationOptions
             throw new ArgumentOutOfRangeException(
                 nameof(GameIntegrationOptions),
                 "The log reconciliation interval must be between 250 ms and 5 minutes.");
+        }
+
+        if (EvidenceDeadline < MinimumEvidenceDeadline ||
+            EvidenceDeadline > MaximumEvidenceDeadline)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(GameIntegrationOptions),
+                "The managed launch evidence deadline must be between 5 seconds and 10 minutes.");
         }
 
         if (SupportedProductVersions.Count == 0 ||
