@@ -186,6 +186,46 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         }
     }
 
+    private void ReportMonitorFailure(
+        ManagedGameLaunchContext launch,
+        CancellationToken monitorToken)
+    {
+        lock (_gate)
+        {
+            if (!IsCurrentMonitorLocked(launch, monitorToken))
+            {
+                return;
+            }
+
+            Deny("evidence.monitor_unhealthy");
+        }
+    }
+
+    private void ApplyMonitorEvidence(
+        ManagedGameLaunchContext launch,
+        GameSessionEvidence evidence,
+        CancellationToken monitorToken)
+    {
+        lock (_gate)
+        {
+            if (!IsCurrentMonitorLocked(launch, monitorToken))
+            {
+                return;
+            }
+
+            Evaluate(evidence);
+        }
+    }
+
+    private bool IsCurrentMonitorLocked(
+        ManagedGameLaunchContext launch,
+        CancellationToken monitorToken) =>
+        !_disposed
+        && !monitorToken.IsCancellationRequested
+        && ReferenceEquals(_managedLaunch, launch)
+        && _activeMonitoringCts is not null
+        && _activeMonitoringCts.Token == monitorToken;
+
     public ValueTask<GameSessionSnapshot> GetSnapshotAsync(
         CancellationToken cancellationToken)
     {
@@ -459,7 +499,9 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         List<OffsetField> knownFields = [];
         foreach (OffsetField field in table.Fields)
         {
-            if (field.Offset != 0)
+            // Discovery candidates must never authorize telemetry reads. Only
+            // explicitly verified fields may cross the runtime observation path.
+            if (field.Offset != 0 && field.Status == OffsetFieldStatus.Verified)
             {
                 knownFields.Add(field);
             }
@@ -678,9 +720,10 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             lifecycle.SourceSequence);
 
         OffsetTable? offsetTable = LoadOffsetTable(process);
-        nint baseAddress = offsetTable is not null && HasKnownOffsets(offsetTable)
-            ? ResolveBaseAddress(process.ProcessId)
-            : nint.Zero;
+        // The scanner needs the trusted executable module base to report
+        // displacements, but it does not need a verified telemetry offset.
+        // Keep base discovery independent from runtime field promotion.
+        nint baseAddress = ResolveBaseAddress(process.ProcessId);
 
         if (_authorization is null)
         {
@@ -883,21 +926,6 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             // returns Available with all-nulls when no table is loaded.
             return null;
         }
-    }
-
-    private static bool HasKnownOffsets(OffsetTable table)
-    {
-        // Candidate offsets are discovery hypotheses only. Runtime reads require
-        // an explicitly verified field; a valid table hash alone is insufficient.
-        foreach (OffsetField field in table.Fields)
-        {
-            if (field.Offset != 0 && field.Status == OffsetFieldStatus.Verified)
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static nint ResolveBaseAddress(int processId)
@@ -1272,6 +1300,12 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     LifecycleFeedReadResult result = await _lifecycleFeed
                         .ReadAfterAsync(currentSequence, token)
                         .ConfigureAwait(false);
+                    if (result.HistoryGap || result.Health != LifecycleFeedHealth.Healthy)
+                    {
+                        ReportMonitorFailure(launch, token);
+                        return;
+                    }
+
                     currentSequence = result.LatestSequence;
 
                     foreach (LifecycleFeedEvent ev in result.Events)
@@ -1287,7 +1321,12 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                             }
                             catch
                             {
-                                // Process exited — stop monitoring.
+                                // Process exited — revoke any active scanner
+                                // authorization instead of waiting for expiry.
+                                if (!token.IsCancellationRequested)
+                                {
+                                    ReportMonitorFailure(launch, token);
+                                }
                                 return;
                             }
 
@@ -1312,15 +1351,26 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                                 startIdentity,
                                 launch.LaunchCorrelation);
 
-                            ApplyEvidence(new GameSessionEvidence(
-                                GamePresent: true,
-                                MonitorHealthy: true,
-                                ReplayUiConfirmed: true,
-                                processEvidence,
-                                lifecycleEvidence));
+                            ApplyMonitorEvidence(
+                                launch,
+                                new GameSessionEvidence(
+                                    GamePresent: true,
+                                    MonitorHealthy: true,
+                                    ReplayUiConfirmed: true,
+                                    processEvidence,
+                                    lifecycleEvidence),
+                                token);
                         }
                         else if (ev.MarkerKind == ReplayLogMarkerKind.OfflineReplayStopped)
                         {
+                            // A replay stop is a terminal lifecycle event, not
+                            // a transient monitor condition. Revoke immediately
+                            // so no scan can continue during the evidence grace
+                            // period after playback has ended.
+                            if (!token.IsCancellationRequested)
+                            {
+                                ReportMonitorFailure(launch, token);
+                            }
                             return;
                         }
                     }
@@ -1334,7 +1384,13 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             }
             catch
             {
-                // Process exit or feed failure — stop silently.
+                // An unexpected feed failure invalidates the evidence that
+                // authorized memory reads. Expected revocation/disposal is
+                // represented by cancellation and must not re-enter the revoke path.
+                if (!token.IsCancellationRequested)
+                {
+                    ReportMonitorFailure(launch, token);
+                }
             }
         }, CancellationToken.None);
     }

@@ -94,6 +94,8 @@ internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsy
         EnsureStarted();
         await _ready.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
+        // ReadAfter captures events and health under the journal lock, so a
+        // degradation cannot race between the event snapshot and health check.
         return _journal.ReadAfter(afterSequence);
     }
 

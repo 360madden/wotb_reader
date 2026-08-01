@@ -146,7 +146,11 @@ internal sealed class MemoryScanEngine
             return Error<string>("discover.identity_mismatch", "The authorized process identity or architecture is invalid.");
         }
 
-        List<MemoryRegion> regions = EnumerateRegions(lease.Handle, filter, cancellationToken);
+        List<MemoryRegion> regions = EnumerateRegions(
+            lease.Handle,
+            baseAddress,
+            filter,
+            cancellationToken);
         List<SnapshotChunk> chunks = [];
         long candidateCount = 0;
         long storedBytes = 0;
@@ -286,6 +290,15 @@ internal sealed class MemoryScanEngine
                 "The module base address is outside the supported user address space.");
         }
 
+        string normalizedCompareMode = compareMode?.Trim().ToLowerInvariant() ?? string.Empty;
+        if (normalizedCompareMode is not ("changed" or "unchanged" or "increased" or "decreased")
+            || maxCandidates is < 1 or > 10_000)
+        {
+            return Error<CompareResult>(
+                "discover.invalid_options",
+                "Compare mode must be changed, unchanged, increased, or decreased, and maxCandidates must be between 1 and 10000.");
+        }
+
         DateTimeOffset startedAt = _timeProvider.GetUtcNow();
         _logger.LogInformation(
             "Memory snapshot comparison started: sessionId={SessionId}, baseAddress=0x{BaseAddress:X}, compareMode={CompareMode}, maxCandidates={MaxCandidates}, advanceBaseline={AdvanceBaseline}, processId={ProcessId}, executablePath={ExecutablePath}, executableSha256={ExecutableSha256}",
@@ -344,10 +357,7 @@ internal sealed class MemoryScanEngine
             return Error<CompareResult>("discover.identity_mismatch", "The authorized process identity or architecture is invalid.");
         }
 
-        int cap = Math.Clamp(maxCandidates, 1, 10_000);
-        string normalizedCompareMode = string.IsNullOrWhiteSpace(compareMode)
-            ? "changed"
-            : compareMode.Trim().ToLowerInvariant();
+        int cap = maxCandidates;
         int changed = 0, unchanged = 0, increased = 0, decreased = 0, currentCount = 0;
         int retainedCandidateCount = 0;
         int readFailureCount = 0;
@@ -557,6 +567,8 @@ internal sealed class MemoryScanEngine
                 or MemoryValueKind.UInt32Value)
                 && filter.ValueSize != 4)
             || (filter.ValueKind is MemoryValueKind.DoubleValue && filter.ValueSize != 8)
+            || (filter.FloatMin.HasValue && !float.IsFinite(filter.FloatMin.Value))
+            || (filter.FloatMax.HasValue && !float.IsFinite(filter.FloatMax.Value))
             || (filter.FloatMin.HasValue && filter.FloatMax.HasValue && filter.FloatMin.Value > filter.FloatMax.Value)
             || (filter.IntMin.HasValue && filter.IntMax.HasValue && filter.IntMin.Value > filter.IntMax.Value)
             || (filter.LongMin.HasValue && filter.LongMax.HasValue && filter.LongMin.Value > filter.LongMax.Value)
@@ -573,6 +585,7 @@ internal sealed class MemoryScanEngine
 
     private static List<MemoryRegion> EnumerateRegions(
         SafeProcessHandle handle,
+        long moduleBaseAddress,
         SnapshotFilter filter,
         CancellationToken cancellationToken)
     {
@@ -597,6 +610,7 @@ internal sealed class MemoryScanEngine
                 baseAddress,
                 Math.Max(MinimumUserAddress, filter.MinAddress));
             long max = filter.MaxAddress > 0 ? Math.Min(boundedEnd, filter.MaxAddress) : boundedEnd;
+            min = AlignAddressUp(min, moduleBaseAddress, filter.Alignment);
             if (committed && readable && selected && max > min)
                 regions.Add(new MemoryRegion(min, max - min));
             if (end <= baseAddress
@@ -681,6 +695,30 @@ internal sealed class MemoryScanEngine
                 .Take(5));
 
     internal static bool IsAligned(long value, int alignment) => alignment <= 1 || value % alignment == 0;
+
+    internal static long AlignAddressUp(long address, long origin, int alignment)
+    {
+        if (alignment <= 1)
+        {
+            return address;
+        }
+
+        long remainder = (address - origin) % alignment;
+        if (remainder < 0)
+        {
+            remainder += alignment;
+        }
+
+        if (remainder == 0)
+        {
+            return address;
+        }
+
+        long increment = alignment - remainder;
+        return address > long.MaxValue - increment
+            ? long.MaxValue
+            : address + increment;
+    }
 
     internal static bool IsSupportedUserAddress(long address) =>
         address is >= MinimumUserAddress and <= MaximumUserAddress;

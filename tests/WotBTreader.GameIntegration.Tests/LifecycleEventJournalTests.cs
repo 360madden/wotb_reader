@@ -33,6 +33,7 @@ public sealed class LifecycleEventJournalTests
         LifecycleFeedBaseline baseline = journal.CaptureBaseline();
         LifecycleFeedReadResult events = journal.ReadAfter(0);
         Assert.AreEqual(LifecycleFeedHealth.Healthy, baseline.Health);
+        Assert.AreEqual(LifecycleFeedHealth.Healthy, events.Health);
         Assert.AreEqual(1L, baseline.HealthEpoch);
         Assert.AreEqual(20L, baseline.Sources.Single().LastByteOffset);
         Assert.HasCount(2, events.Events);
@@ -159,7 +160,9 @@ public sealed class LifecycleEventJournalTests
         journal.RecordGap(LifecycleFeedReason.WatcherOverflow);
 
         LifecycleFeedBaseline degraded = journal.CaptureBaseline();
+        LifecycleFeedReadResult degradedRead = journal.ReadAfter(degraded.Sequence);
         Assert.AreEqual(LifecycleFeedHealth.Degraded, degraded.Health);
+        Assert.AreEqual(LifecycleFeedHealth.Degraded, degradedRead.Health);
         Commit(journal,
             [],
             [],

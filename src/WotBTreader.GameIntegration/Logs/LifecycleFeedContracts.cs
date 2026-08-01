@@ -78,7 +78,14 @@ internal sealed record LifecycleFeedReadResult(
     long RequestedAfterSequence,
     long LatestSequence,
     bool HistoryGap,
-    IReadOnlyList<LifecycleFeedEvent> Events);
+    IReadOnlyList<LifecycleFeedEvent> Events)
+{
+    /// <summary>
+    /// Health captured with the read. A degraded feed cannot continue to
+    /// authorize memory discovery even when it has no new events.
+    /// </summary>
+    public LifecycleFeedHealth Health { get; init; } = LifecycleFeedHealth.Healthy;
+}
 
 internal interface IBlitzReplayLifecycleFeed
 {

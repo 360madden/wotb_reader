@@ -312,6 +312,137 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task DiscoverRejectsInvalidAlignmentInsteadOfNormalizingIt()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.DiscoverOffsetsAsync(
+            scanner,
+            new OffsetDiscoveryRequest
+            {
+                FieldName = "position",
+                FieldType = "Float",
+                ExpectedValueHex = "0000C842",
+                Alignment = 3,
+            },
+            TestContext.CancellationToken);
+
+        JsonElement response = BadRequestAnonymous(result);
+        Assert.AreEqual("discover.invalid_options", response.GetProperty("error").GetString());
+        Assert.IsNull(scanner.LastScanRequest);
+    }
+
+    [TestMethod]
+    public async Task DiscoverRejectsTooSmallRegionFilterInsteadOfScanningEverything()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.DiscoverOffsetsAsync(
+            scanner,
+            new OffsetDiscoveryRequest
+            {
+                FieldName = "position",
+                FieldType = "Float",
+                ExpectedValueHex = "0000C842",
+                MinRegionSize = 0,
+            },
+            TestContext.CancellationToken);
+
+        JsonElement response = BadRequestAnonymous(result);
+        Assert.AreEqual("discover.invalid_options", response.GetProperty("error").GetString());
+        Assert.IsNull(scanner.LastScanRequest);
+    }
+
+    [TestMethod]
+    public async Task CompareRejectsUnknownModeInsteadOfFallingBackToChanged()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.CompareSnapshotAsync(
+            scanner,
+            "000001",
+            new CompareRequestApi { CompareMode = "not-a-mode" },
+            TestContext.CancellationToken);
+
+        JsonElement response = BadRequestAnonymous(result);
+        Assert.AreEqual("discover.invalid_compare_mode", response.GetProperty("error").GetString());
+    }
+
+    [TestMethod]
+    public async Task SnapshotRejectsInvertedAddressAndFloatRanges()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.CreateSnapshotAsync(
+            scanner,
+            new SnapshotRequestApi
+            {
+                ValueKind = "Float",
+                ValueSize = 4,
+                MinAddress = 0x2000,
+                MaxAddress = 0x1000,
+                FloatMin = 10,
+                FloatMax = 1,
+            },
+            TestContext.CancellationToken);
+
+        JsonElement response = BadRequestAnonymous(result);
+        Assert.AreEqual("discover.invalid_options", response.GetProperty("error").GetString());
+    }
+
+    [TestMethod]
+    public async Task SnapshotRejectsNonFiniteFloatBounds()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.CreateSnapshotAsync(
+            scanner,
+            new SnapshotRequestApi
+            {
+                ValueKind = "Float",
+                ValueSize = 4,
+                FloatMin = float.NaN,
+            },
+            TestContext.CancellationToken);
+
+        JsonElement response = BadRequestAnonymous(result);
+        Assert.AreEqual("discover.invalid_options", response.GetProperty("error").GetString());
+    }
+
+    [TestMethod]
+    public async Task NeighborhoodRejectsInvalidTypedRanges()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.DiscoverNeighborhoodAsync(
+            scanner,
+            new NeighborhoodRequestApi
+            {
+                ReferenceOffset = 0x100,
+                FloatMin = 10,
+                FloatMax = 1,
+            },
+            TestContext.CancellationToken);
+
+        JsonElement response = BadRequestAnonymous(result);
+        Assert.AreEqual("discover.invalid_options", response.GetProperty("error").GetString());
+    }
+
+    [TestMethod]
+    public async Task NeighborhoodRejectsOutOfRangeWindowInsteadOfClampingIt()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.DiscoverNeighborhoodAsync(
+            scanner,
+            new NeighborhoodRequestApi { ReferenceOffset = 0x100, WindowSize = 16 },
+            TestContext.CancellationToken);
+
+        JsonElement response = BadRequestAnonymous(result);
+        Assert.AreEqual("discover.invalid_window_size", response.GetProperty("error").GetString());
+    }
+
+    [TestMethod]
     public async Task CompareMapsRollingBaselineRetentionSeparately()
     {
         var scanner = new FakeGameMemoryScanner

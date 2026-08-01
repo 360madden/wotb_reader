@@ -240,14 +240,21 @@ internal static class GameApiEndpoints
             return Results.BadRequest(new { error = "discover.tolerance_conflict" });
         }
 
+        if (request.MaxCandidates is < 1 or > 10_000
+            || request.MinRegionSize < 4096
+            || request.Alignment is not (1 or 2 or 4 or 8))
+        {
+            return Results.BadRequest(new { error = "discover.invalid_options" });
+        }
+
         MemoryScanRequest scanRequest = new(
             FieldName: request.FieldName,
             FieldType: fieldType,
             ExpectedValue: expectedValue,
             ToleranceMask: tolerance,
-            MaxCandidates: Math.Clamp(request.MaxCandidates, 1, 10_000),
-            MinRegionSize: Math.Max(request.MinRegionSize, 4096),
-            Alignment: request.Alignment is 1 or 2 or 4 or 8 ? request.Alignment : 1,
+            MaxCandidates: request.MaxCandidates,
+            MinRegionSize: request.MinRegionSize,
+            Alignment: request.Alignment,
             RegionSelection: request.IncludeImageRegions
                 ? MemoryRegionSelection.Default | MemoryRegionSelection.Image
                 : MemoryRegionSelection.Default,
@@ -319,14 +326,21 @@ internal static class GameApiEndpoints
             return Results.BadRequest(new { error = "discover.pattern_length_invalid" });
         }
 
+        if (request.MaxCandidates is < 1 or > 10_000
+            || request.MinRegionSize < 4096
+            || request.Alignment is not (1 or 2 or 4 or 8))
+        {
+            return Results.BadRequest(new { error = "discover.invalid_options" });
+        }
+
         MemoryScanRequest scanRequest = new(
             request.FieldName,
             "Bytes",
             expected,
             tolerance,
-            Math.Clamp(request.MaxCandidates, 1, 10_000),
-            Math.Max(request.MinRegionSize, 1),
-            request.Alignment is 1 or 2 or 4 or 8 ? request.Alignment : 1,
+            request.MaxCandidates,
+            request.MinRegionSize,
+            request.Alignment,
             request.IncludeImageRegions
                 ? MemoryRegionSelection.Default | MemoryRegionSelection.Image
                 : MemoryRegionSelection.Default,
@@ -439,9 +453,31 @@ internal static class GameApiEndpoints
         {
             return Results.BadRequest(new { error = "discover.invalid_value_kind" });
         }
+        bool widthMatchesKind = kind.Value switch
+        {
+            MemoryValueKind.FloatValue or MemoryValueKind.Int32Value or MemoryValueKind.UInt32Value
+                => request.ValueSize == 4,
+            MemoryValueKind.DoubleValue or MemoryValueKind.Int64Value or MemoryValueKind.UInt64Value
+                => request.ValueSize == 8,
+            MemoryValueKind.Bytes => true,
+            _ => false,
+        };
+        if (request.ValueSize is not (1 or 2 or 4 or 8)
+            || !widthMatchesKind
+            || request.Alignment is not (1 or 2 or 4 or 8)
+            || request.MinAddress < 0
+            || request.MaxAddress < 0
+            || (request.MaxAddress > 0 && request.MinAddress > request.MaxAddress)
+            || (request.FloatMin.HasValue && !float.IsFinite(request.FloatMin.Value))
+            || (request.FloatMax.HasValue && !float.IsFinite(request.FloatMax.Value))
+            || (request.FloatMin.HasValue && request.FloatMax.HasValue
+                && request.FloatMin.Value > request.FloatMax.Value))
+        {
+            return Results.BadRequest(new { error = "discover.invalid_options" });
+        }
 
         var snapReq = new MemorySnapshotRequest(
-            ValueSize: Math.Clamp(request.ValueSize, 1, 8),
+            ValueSize: request.ValueSize,
             FloatMin: request.FloatMin,
             FloatMax: request.FloatMax,
             IntMin: request.IntMin,
@@ -449,7 +485,7 @@ internal static class GameApiEndpoints
             MinAddress: request.MinAddress,
             MaxAddress: request.MaxAddress,
             ValueKind: kind.Value,
-            Alignment: request.Alignment is 1 or 2 or 4 or 8 ? request.Alignment : 1,
+            Alignment: request.Alignment,
             RegionSelection: request.IncludeImageRegions
                 ? MemoryRegionSelection.Default | MemoryRegionSelection.Image
                 : MemoryRegionSelection.Default,
@@ -473,13 +509,13 @@ internal static class GameApiEndpoints
         ArgumentNullException.ThrowIfNull(request);
         if (string.IsNullOrWhiteSpace(sessionId))
             return Results.BadRequest(new { error = "discover.session_id_required" });
-        string mode = request.CompareMode switch
-        {
-            "changed" or "unchanged" or "increased" or "decreased" => request.CompareMode,
-            _ => "changed",
-        };
+        if (request.CompareMode is not ("changed" or "unchanged" or "increased" or "decreased"))
+            return Results.BadRequest(new { error = "discover.invalid_compare_mode" });
+        if (request.MaxCandidates is < 1 or > 500)
+            return Results.BadRequest(new { error = "discover.invalid_options" });
+
         var result = await scanner.CompareAsync(
-            sessionId, mode, Math.Clamp(request.MaxCandidates, 1, 500),
+            sessionId, request.CompareMode, request.MaxCandidates,
             cancellationToken,
             request.RollingBaseline).ConfigureAwait(false);
         if (!result.IsSuccess)
@@ -532,9 +568,22 @@ internal static class GameApiEndpoints
         ArgumentNullException.ThrowIfNull(request);
         if (request.ReferenceOffset < 0)
             return Results.BadRequest(new { error = "discover.reference_offset_required" });
+        if (request.WindowSize is < 64 or > 4096)
+        {
+            return Results.BadRequest(new { error = "discover.invalid_window_size" });
+        }
+        if ((request.FloatMin.HasValue && !float.IsFinite(request.FloatMin.Value))
+            || (request.FloatMax.HasValue && !float.IsFinite(request.FloatMax.Value))
+            || (request.FloatMin.HasValue && request.FloatMax.HasValue
+                && request.FloatMin.Value > request.FloatMax.Value)
+            || (request.IntMin.HasValue && request.IntMax.HasValue
+                && request.IntMin.Value > request.IntMax.Value))
+        {
+            return Results.BadRequest(new { error = "discover.invalid_options" });
+        }
         var req = new MemoryNeighborhoodRequest(
             request.ReferenceOffset,
-            Math.Clamp(request.WindowSize, 64, 4096),
+            request.WindowSize,
             request.IncludeFloat, request.IncludeInt32, request.IncludeDouble,
             request.FloatMin, request.FloatMax, request.IntMin, request.IntMax,
             request.IncludeWorkingSetClassification);
@@ -590,7 +639,6 @@ internal sealed record SnapshotRequestApi
     public string ValueKind { get; init; } = "Int32";
     public int Alignment { get; init; } = 1;
     public bool IncludeImageRegions { get; init; }
-    public bool RollingBaseline { get; init; }
 }
 
 internal sealed record CompareRequestApi

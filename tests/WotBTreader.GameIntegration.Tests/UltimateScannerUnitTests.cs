@@ -85,6 +85,58 @@ public sealed class UltimateScannerUnitTests
     }
 
     [TestMethod]
+    public void CompareRejectsUnknownModeBeforeOpeningProcess()
+    {
+        var engine = new MemoryScanEngine(
+            TimeProvider.System,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<MemoryScanEngine>.Instance);
+        var observation = new AuthorizedMemoryObservation(
+            1,
+            1,
+            "C:\\game.exe",
+            "test",
+            new ContentHash(new string('a', 64)),
+            DateTimeOffset.UtcNow.AddMinutes(1));
+
+        OperationResult<MemoryScanEngine.CompareResult> result = engine.Compare(
+            observation,
+            0x140000000,
+            "000001",
+            "not-a-mode",
+            10,
+            false);
+
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual("discover.invalid_options", result.Error?.Code);
+    }
+
+    [TestMethod]
+    public void CompareRejectsOutOfRangeCandidateCapBeforeOpeningProcess()
+    {
+        var engine = new MemoryScanEngine(
+            TimeProvider.System,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<MemoryScanEngine>.Instance);
+        var observation = new AuthorizedMemoryObservation(
+            1,
+            1,
+            "C:\\game.exe",
+            "test",
+            new ContentHash(new string('a', 64)),
+            DateTimeOffset.UtcNow.AddMinutes(1));
+
+        OperationResult<MemoryScanEngine.CompareResult> result = engine.Compare(
+            observation,
+            0x140000000,
+            "000001",
+            "changed",
+            0,
+            false);
+
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual("discover.invalid_options", result.Error?.Code);
+    }
+
+    [TestMethod]
     public void SnapshotFilterRejectsInvertedTypedRanges()
     {
         var filter = new MemoryScanEngine.SnapshotFilter(
@@ -310,6 +362,27 @@ public sealed class UltimateScannerUnitTests
 
         Assert.IsFalse(result.IsSuccess);
         Assert.AreEqual("discover.neighborhood.invalid_range", result.Error?.Code);
+    }
+
+    [TestMethod]
+    [DataRow(0x140000001L, 0x140000000L, 4, 0x140000004L)]
+    [DataRow(0x140000004L, 0x140000000L, 4, 0x140000004L)]
+    [DataRow(0x140000005L, 0x140000003L, 8, 0x14000000BL)]
+    public void SnapshotStartAlignsUpFromAnUnalignedMinimum(
+        long address,
+        long origin,
+        int alignment,
+        long expected)
+    {
+        Assert.AreEqual(expected, MemoryScanEngine.AlignAddressUp(address, origin, alignment));
+    }
+
+    [TestMethod]
+    public void SnapshotStartAlignmentHandlesNegativeDisplacement()
+    {
+        Assert.AreEqual(
+            0x10004L,
+            MemoryScanEngine.AlignAddressUp(0x10001, 0x10004, 4));
     }
 
     [TestMethod]

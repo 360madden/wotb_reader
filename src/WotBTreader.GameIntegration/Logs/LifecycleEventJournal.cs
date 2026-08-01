@@ -190,7 +190,10 @@ internal sealed class LifecycleEventJournal(int capacity, TimeProvider timeProvi
             ArgumentOutOfRangeException.ThrowIfGreaterThan(after, _sequence);
             long earliest = _events.Count == 0 ? _sequence + 1 : _events.Peek().Sequence;
             bool gap = after < earliest - 1;
-            return new(after, _sequence, gap, gap ? [] : [.. _events.Where(x => x.Sequence > after)]);
+            return new(after, _sequence, gap, gap ? [] : [.. _events.Where(x => x.Sequence > after)])
+            {
+                Health = _health,
+            };
         }
     }
 

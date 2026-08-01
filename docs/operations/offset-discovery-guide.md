@@ -410,7 +410,9 @@ HTTP surfaces:
 - `POST /api/v1/game/discover/pattern` — hex pattern plus optional hex wildcard mask;
 - `POST /api/v1/game/discover/pointer-chain` — one root and at most four offsets;
 - existing snapshot/compare/neighborhood endpoints expose alignment, region,
-  rolling-baseline, truncation, address-kind, and architecture metadata. Scan
+  rolling-baseline, truncation, address-kind, and architecture metadata. Snapshot
+  ranges align upward from an unaligned minimum relative to the trusted module
+  base, so a narrow range does not skip valid aligned values. Scan
   candidates expose `baseDisplacement`; it is not a main-module RVA unless
   image ownership is independently proven. The former `relativeOffset` and
   `relativeOffsetDecimal` JSON names remain compatibility aliases.
@@ -420,7 +422,12 @@ The GameHarness routes these as `discover-pattern` and
 uses even-length hexadecimal strings; `00FF00` is a mask example. A non-zero
 mask byte is a wildcard. The scanner never writes process memory, never treats
 candidate evidence as a verified runtime offset, and does not scrub or publish
-private game-derived dumps. Rolling comparisons expose `RetainedCount` separately
+private game-derived dumps. Scanner discovery resolves the trusted executable
+module base independently of the offset table; verified offsets are still
+required before the separate runtime telemetry observer reads fields. API
+alignment, range, candidate-cap, window-size, and comparison-mode options are
+rejected when invalid rather than silently normalized. A lifecycle-feed gap or
+producer failure immediately revokes scanner authorization. Monitor callbacks are bound to the active managed-launch generation, so a canceled monitor from an older launch cannot revoke or overwrite a replacement session. Rolling comparisons expose `RetainedCount` separately
 when an unreadable prior chunk is carried forward; it is not included in the
 changed/unchanged counters or returned candidate list.
 
