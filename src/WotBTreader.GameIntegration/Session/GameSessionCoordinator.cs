@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using WotBTreader.Application.Game;
 using WotBTreader.Application.Replay;
 using WotBTreader.Application.Results;
@@ -69,6 +70,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     private static readonly TimeSpan EvidenceLifetime = TimeSpan.FromSeconds(15);
     private readonly Lock _gate = new();
     private readonly TimeProvider _timeProvider;
+    private readonly GameIntegrationOptions _options;
+    private readonly ILogger<GameSessionCoordinator> _logger;
     private readonly IManagedLaunchPreparer _preparer;
     private readonly IManagedReplayArtifactStager _artifactStager;
     private readonly ISuspendedProcessPlatform _suspendedPlatform;
@@ -97,11 +100,14 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     private ManagedReplayArtifactLease? _activeArtifactLease;
     private SuspendedGameProcessLease? _activeSuspendedLease;
     private CancellationTokenSource? _activeMonitoringCts;
+    private Task? _activeMonitoringTask;
     private CancellationTokenSource? _authorizationCts;
     private bool _disposed;
 
     public GameSessionCoordinator(
         TimeProvider timeProvider,
+        GameIntegrationOptions options,
+        ILogger<GameSessionCoordinator> logger,
         IManagedLaunchPreparer preparer,
         IManagedReplayArtifactStager artifactStager,
         ISuspendedProcessPlatform suspendedPlatform,
@@ -114,6 +120,9 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         IBlitzReplayLifecycleFeed lifecycleFeed)
     {
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+        _options = options ?? throw new ArgumentNullException(nameof(options));
+        _options.Validate();
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _preparer = preparer ?? throw new ArgumentNullException(nameof(preparer));
         _artifactStager = artifactStager ?? throw new ArgumentNullException(nameof(artifactStager));
         _suspendedPlatform = suspendedPlatform ?? throw new ArgumentNullException(nameof(suspendedPlatform));
@@ -278,16 +287,27 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         CancellationToken cancellationToken)
     {
 
+        LogLaunchStage("prepare", "started");
         // ── 1. Prepare: identity, correlation, lifecycle baseline ──
-        OperationResult<ManagedLaunchPreparation> prepResult =
-            await _preparer.PrepareAsync(cancellationToken).ConfigureAwait(false);
+        OperationResult<ManagedLaunchPreparation> prepResult;
+        try
+        {
+            prepResult = await _preparer.PrepareAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            LogLaunchStage("prepare", "threw", exception.GetType().Name);
+            throw;
+        }
         cancellationToken.ThrowIfCancellationRequested();
         if (!prepResult.IsSuccess)
         {
+            LogLaunchStage("prepare", "failed", prepResult.Error?.Code);
             return LaunchFailure(prepResult.Error!);
         }
 
         ManagedLaunchPreparation preparation = prepResult.Value!;
+        LogLaunchStage("prepare", "completed");
         cancellationToken.ThrowIfCancellationRequested();
 
         WindowsTrustedExecutableLaunchLease? executableLease = null;
@@ -297,9 +317,15 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         ManagedReplayArtifactLease? handedOffArtifact = null;
         DetachedLaunchLeases replacedLeases = default;
         bool replacedLeasesDetached = false;
+        bool previousLaunchWasVerified = false;
+        CancellationTokenSource? previousMonitoringCts = null;
+        CancellationTokenSource? monitoringCts = null;
+        string currentStage = "prepare";
 
         try
         {
+            currentStage = "executable_lease";
+            LogLaunchStage("executable_lease", "started");
             // ── 2. Acquire executable lease ──
             OperationResult<WindowsTrustedExecutableLaunchLease> exeLeaseResult =
                 await WindowsTrustedExecutableLaunchLease.AcquireAsync(
@@ -308,12 +334,16 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             cancellationToken.ThrowIfCancellationRequested();
             if (!exeLeaseResult.IsSuccess)
             {
+                LogLaunchStage("executable_lease", "failed", exeLeaseResult.Error?.Code);
                 return LaunchFailure(exeLeaseResult.Error!);
             }
 
             executableLease = exeLeaseResult.Value!;
+            LogLaunchStage("executable_lease", "completed");
             cancellationToken.ThrowIfCancellationRequested();
 
+            currentStage = "artifact_staging";
+            LogLaunchStage("artifact_staging", "started");
             // ── 3. Stage artifact ──
             OperationResult<ManagedReplayArtifactLease> artifactResult =
                 await _artifactStager.StageAsync(
@@ -321,13 +351,17 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     cancellationToken).ConfigureAwait(false);
             if (!artifactResult.IsSuccess)
             {
+                LogLaunchStage("artifact_staging", "failed", artifactResult.Error?.Code);
                 await executableLease.DisposeAsync().ConfigureAwait(false);
                 return LaunchFailure(artifactResult.Error!);
             }
 
             artifactLease = artifactResult.Value!;
+            LogLaunchStage("artifact_staging", "completed");
             cancellationToken.ThrowIfCancellationRequested();
 
+            currentStage = "suspended_process";
+            LogLaunchStage("suspended_process", "started");
             // ── 4. Create suspended process ──
             OperationResult<SuspendedGameProcessLease> suspendedResult =
                 await _suspendedPlatform.CreateAsync(
@@ -336,19 +370,24 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     cancellationToken).ConfigureAwait(false);
             if (!suspendedResult.IsSuccess)
             {
+                LogLaunchStage("suspended_process", "failed", suspendedResult.Error?.Code);
                 await artifactLease.DisposeAsync().ConfigureAwait(false);
                 await executableLease.DisposeAsync().ConfigureAwait(false);
                 return LaunchFailure(suspendedResult.Error!);
             }
 
             suspendedLease = suspendedResult.Value!;
+            LogLaunchStage("suspended_process", "completed");
             cancellationToken.ThrowIfCancellationRequested();
 
+            currentStage = "correlation";
+            LogLaunchStage("correlation", "started");
             // ── 5. Register correlation ──
             OperationResult<ManagedGameLaunchContext> correlationResult =
                 _correlationRegistrar.Register(preparation, suspendedLease);
             if (!correlationResult.IsSuccess)
             {
+                LogLaunchStage("correlation", "failed", correlationResult.Error?.Code);
                 await suspendedLease.DisposeAsync().ConfigureAwait(false);
                 await artifactLease.DisposeAsync().ConfigureAwait(false);
                 await executableLease.DisposeAsync().ConfigureAwait(false);
@@ -356,14 +395,18 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             }
 
             ManagedGameLaunchContext launchContext = correlationResult.Value!;
+            LogLaunchStage("correlation", "completed");
             cancellationToken.ThrowIfCancellationRequested();
 
+            currentStage = "resume";
+            LogLaunchStage("resume", "started");
             // ── 6. Resume the child thread (must happen BEFORE HandOffLeases
             //     so that resume failures terminate the suspended child) ──
             OperationResult<ThreadResumeOutcome> resumeResult =
                 _threadResumePlatform.Resume(suspendedLease.ThreadHandle!);
             if (!resumeResult.IsSuccess)
             {
+                LogLaunchStage("resume", "failed", resumeResult.Error?.Code);
                 // Resume failed; child is still suspended. Disposal terminates it
                 // because HandOffLeases has not been called.
                 await suspendedLease.DisposeAsync().ConfigureAwait(false);
@@ -372,6 +415,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 return LaunchFailure(resumeResult.Error!);
             }
 
+            LogLaunchStage("resume", "completed");
             cancellationToken.ThrowIfCancellationRequested();
 
             // ── 7–8. Atomically commit the handoff under the coordinator lock.
@@ -381,16 +425,30 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             // child remains a valid launched process.
             int childPid = suspendedLease.ProcessId;
             CancellationToken monitoringToken;
+            Task? monitoringTask = null;
             bool disposedDuringLaunch;
             lock (_gate)
             {
                 disposedDuringLaunch = _disposed || cancellationToken.IsCancellationRequested;
                 if (!disposedDuringLaunch)
                 {
+                    // Capture the prior state before RecordManagedLaunch replaces
+                    // it with awaiting_evidence. A verified prior launch remains
+                    // alive by design; an unverified prior launch must be terminated
+                    // before its handed-off lease is detached.
+                    previousLaunchWasVerified =
+                        _snapshot.State == GameSessionVerificationState.OfflineReplayVerified;
+
                     // Validate and record the new generation before handing off
                     // ownership. If this throws, the child is still owned by the
                     // local suspended lease and finally terminates it.
                     RecordManagedLaunch(launchContext);
+                    if (!previousLaunchWasVerified)
+                    {
+                        _activeSuspendedLease?.TryTerminateAfterHandOff();
+                    }
+
+                    previousMonitoringCts = _activeMonitoringCts;
                     (handedOffExe, handedOffArtifact) = suspendedLease.HandOffLeases();
                     replacedLeases = DetachLaunchLeasesLocked();
                     replacedLeasesDetached = true;
@@ -399,16 +457,27 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     _activeExecutableLease = handedOffExe;
                     _activeArtifactLease = handedOffArtifact;
 
-                    _activeMonitoringCts?.Cancel();
-                    _activeMonitoringCts?.Dispose();
-                    _activeMonitoringCts = new CancellationTokenSource();
-                    monitoringToken = _activeMonitoringCts.Token;
+                    monitoringCts = new CancellationTokenSource();
+                    _activeMonitoringCts = monitoringCts;
+                    monitoringToken = monitoringCts.Token;
+                    // Register the monitor before releasing the same
+                    // linearization lock that publishes the new launch. This
+                    // prevents revocation from detaching the launch in the gap
+                    // between lease publication and monitor registration.
+                    monitoringTask = StartMonitoringLifecycle(
+                        launchContext,
+                        childPid,
+                        monitoringCts,
+                        monitoringToken);
+                    _activeMonitoringTask = monitoringTask;
                 }
                 else
                 {
                     monitoringToken = default;
                 }
             }
+
+            QueueMonitorStop(previousMonitoringCts);
 
             if (disposedDuringLaunch)
             {
@@ -422,10 +491,15 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             handedOffExe = null;
             handedOffArtifact = null;
 
-            StartMonitoringLifecycle(launchContext, childPid, monitoringToken);
+            LogLaunchStage("handoff", "completed");
 
             return OperationResult.Success(
                 new GameReplayLaunchOutcome(_timeProvider.GetUtcNow()));
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            LogLaunchStage(currentStage, "threw", exception.GetType().Name);
+            throw;
         }
         finally
         {
@@ -841,13 +915,25 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     private void RevokeSession()
     {
         Revoke();
-        _activeMonitoringCts?.Cancel();
-        _activeMonitoringCts?.Dispose();
+
+        CancellationTokenSource? monitoringCts = _activeMonitoringCts;
+        Task? monitoringTask = _activeMonitoringTask;
         _activeMonitoringCts = null;
+        _activeMonitoringTask = null;
         _managedLaunch = null;
         _lastCursor = null;
 
+        // A handed-off launch is intentionally kept alive only after it has
+        // verified as an offline replay. Any unverified launch is fail-closed:
+        // request termination before detaching the lease, then dispose it after
+        // releasing the coordinator lock.
+        if (_snapshot.State != GameSessionVerificationState.OfflineReplayVerified)
+        {
+            _activeSuspendedLease?.TryTerminateAfterHandOff();
+        }
+
         DetachedLaunchLeases leases = DetachLaunchLeasesLocked();
+        QueueMonitorStop(monitoringCts);
         QueueDetachedLaunchLeaseDisposal(leases);
     }
 
@@ -856,6 +942,49 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             Interlocked.Exchange(ref _activeSuspendedLease, null),
             Interlocked.Exchange(ref _activeArtifactLease, null),
             Interlocked.Exchange(ref _activeExecutableLease, null));
+
+    private static void QueueMonitorStop(CancellationTokenSource? monitoringCts)
+    {
+        if (monitoringCts is null)
+        {
+            return;
+        }
+
+        // Always perform cancellation asynchronously. RevokeSession and
+        // replacement can call this while holding _gate; synchronous CTS
+        // callbacks must not re-enter that lock. The monitor task owns its CTS
+        // disposal in its finally block, so repeated stop requests are safe.
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                monitoringCts.Cancel();
+            }
+            catch
+            {
+                // Monitor shutdown is best effort; state is already invalidated.
+            }
+        });
+    }
+
+    private static async ValueTask StopMonitoringAsync(
+        CancellationTokenSource? monitoringCts,
+        Task? monitoringTask)
+    {
+        try
+        {
+            monitoringCts?.Cancel();
+            if (monitoringTask is not null
+                && Task.CurrentId != monitoringTask.Id)
+            {
+                await monitoringTask.ConfigureAwait(false);
+            }
+        }
+        catch
+        {
+            // Monitor shutdown is best effort; state is already invalidated.
+        }
+    }
 
     private static void QueueDetachedLaunchLeaseDisposal(DetachedLaunchLeases leases)
     {
@@ -880,8 +1009,9 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
 
     private static async ValueTask DisposeDetachedLaunchLeasesAsync(DetachedLaunchLeases leases)
     {
-        // Disposal order: suspended first (closes handles; HandOffLeases
-        // prevents child termination), then artifact (deletes staging file),
+        // Disposal order: suspended first (closes handles; verified handoffs
+        // leave the child alive, while an earlier termination request makes an
+        // unverified handoff terminate), then artifact (deletes staging file),
         // then executable (releases file lock).
         if (leases.Suspended is not null)
         {
@@ -978,8 +1108,9 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     }
 
     /// <summary>
-    /// Disposes all active launch leases. After HandOffLeases, the child
-    /// process is not terminated; only handles and staging files are released.
+    /// Disposes all active launch leases. Verified handed-off children remain
+    /// alive; unverified handed-off children are termination-requested before
+    /// detachment and retried during lease disposal.
     /// </summary>
     public async ValueTask DisposeAsync()
     {
@@ -987,6 +1118,10 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         {
             return;
         }
+
+        CancellationTokenSource? monitoringCts;
+        Task? monitoringTask;
+        DetachedLaunchLeases leases;
         lock (_gate)
         {
             if (_disposed)
@@ -998,30 +1133,25 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             // A launch cannot observe a live coordinator and then install leases
             // after this transition.
             _disposed = true;
-            _lifetimeCts.Cancel();
-            Revoke();
-            _activeMonitoringCts?.Cancel();
-            _activeMonitoringCts?.Dispose();
+            monitoringCts = _activeMonitoringCts;
+            monitoringTask = _activeMonitoringTask;
             _activeMonitoringCts = null;
+            _activeMonitoringTask = null;
+            Revoke();
+
+            // A handed-off child is retained only after correlated offline replay
+            // evidence. Dispose must terminate any unverified child before its
+            // identity-bound lease is detached.
+            if (_snapshot.State != GameSessionVerificationState.OfflineReplayVerified)
+            {
+                _activeSuspendedLease?.TryTerminateAfterHandOff();
+            }
+            leases = DetachLaunchLeasesLocked();
         }
 
-        SuspendedGameProcessLease? suspended = Interlocked.Exchange(ref _activeSuspendedLease, null);
-        if (suspended is not null)
-        {
-            await suspended.DisposeAsync().ConfigureAwait(false);
-        }
-
-        ManagedReplayArtifactLease? artifact = Interlocked.Exchange(ref _activeArtifactLease, null);
-        if (artifact is not null)
-        {
-            await artifact.DisposeAsync().ConfigureAwait(false);
-        }
-
-        WindowsTrustedExecutableLaunchLease? executable = Interlocked.Exchange(ref _activeExecutableLease, null);
-        if (executable is not null)
-        {
-            await executable.DisposeAsync().ConfigureAwait(false);
-        }
+        _lifetimeCts.Cancel();
+        await StopMonitoringAsync(monitoringCts, monitoringTask).ConfigureAwait(false);
+        await DisposeDetachedLaunchLeasesAsync(leases).ConfigureAwait(false);
 
         // Do not dispose the lifetime CTS here: LaunchAsync may have passed its
         // initial disposed check and still be creating a linked token source.
@@ -1285,21 +1415,45 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         where T : class =>
         OperationResult.Failure<T>(new ApplicationError(errorCode, message));
 
-    private void StartMonitoringLifecycle(
+    private Task StartMonitoringLifecycle(
         ManagedGameLaunchContext launch,
         int processId,
+        CancellationTokenSource monitoringCts,
         CancellationToken token)
     {
-        _ = Task.Run(async () =>
+        return Task.Run(async () =>
         {
+            CancellationTokenSource? evidenceTimeoutCts = null;
+            ITimer? evidenceTimeoutTimer = null;
+            bool correlatedEvidenceObserved = false;
             try
             {
+                evidenceTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+                evidenceTimeoutTimer = _timeProvider.CreateTimer(
+                    static state => CancelEvidenceTimeout((CancellationTokenSource)state!),
+                    evidenceTimeoutCts,
+                    _options.LifecycleEvidenceTimeout,
+                    Timeout.InfiniteTimeSpan);
+
                 long currentSequence = launch.SourceSequenceBaseline;
                 while (!token.IsCancellationRequested)
                 {
+                    CancellationToken readToken = correlatedEvidenceObserved
+                        ? token
+                        : evidenceTimeoutCts.Token;
                     LifecycleFeedReadResult result = await _lifecycleFeed
-                        .ReadAfterAsync(currentSequence, token)
+                        .ReadAfterAsync(currentSequence, readToken)
+                        .AsTask()
+                        .WaitAsync(readToken)
                         .ConfigureAwait(false);
+                    if (!correlatedEvidenceObserved
+                        && evidenceTimeoutCts!.IsCancellationRequested
+                        && !token.IsCancellationRequested)
+                    {
+                        HandleLifecycleEvidenceTimeout(launch, processId, token);
+                        return;
+                    }
+
                     if (result.HistoryGap || result.Health != LifecycleFeedHealth.Healthy)
                     {
                         ReportMonitorFailure(launch, token);
@@ -1360,6 +1514,20 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                                     processEvidence,
                                     lifecycleEvidence),
                                 token);
+
+                            lock (_gate)
+                            {
+                                correlatedEvidenceObserved =
+                                    IsCurrentMonitorLocked(launch, token)
+                                    && _snapshot.State == GameSessionVerificationState.OfflineReplayVerified;
+                            }
+                            if (correlatedEvidenceObserved)
+                            {
+                                evidenceTimeoutTimer?.Change(
+                                    Timeout.InfiniteTimeSpan,
+                                    Timeout.InfiniteTimeSpan);
+                                LogLaunchStage("lifecycle_evidence", "verified");
+                            }
                         }
                         else if (ev.MarkerKind == ReplayLogMarkerKind.OfflineReplayStopped)
                         {
@@ -1375,12 +1543,28 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                         }
                     }
 
-                    await Task.Delay(500, token).ConfigureAwait(false);
+                    await Task.Delay(
+                        TimeSpan.FromMilliseconds(500),
+                        _timeProvider,
+                        correlatedEvidenceObserved ? token : evidenceTimeoutCts.Token)
+                        .ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException)
+                when (!token.IsCancellationRequested
+                    && !correlatedEvidenceObserved
+                    && evidenceTimeoutCts?.IsCancellationRequested == true)
             {
-                // Expected on revocation or disposal.
+                HandleLifecycleEvidenceTimeout(launch, processId, token);
+            }
+            catch (ObjectDisposedException)
+            {
+                // A concurrent revoke/dispose can win before the monitor task
+                // starts. The launch is already invalidated in that case.
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected on revocation, disposal, or a caller cancellation.
             }
             catch
             {
@@ -1392,7 +1576,94 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     ReportMonitorFailure(launch, token);
                 }
             }
+            finally
+            {
+                evidenceTimeoutTimer?.Dispose();
+                evidenceTimeoutCts?.Dispose();
+                monitoringCts.Dispose();
+            }
         }, CancellationToken.None);
+    }
+
+    private static void CancelEvidenceTimeout(CancellationTokenSource timeoutSource)
+    {
+        try
+        {
+            timeoutSource.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Coordinator revocation may dispose the timeout source while the
+            // provider is dispatching its callback. The launch is already stale.
+        }
+        catch (Exception)
+        {
+            // A feed cancellation callback must not fault the provider's timer
+            // dispatch thread. The launch will be invalidated by its monitor.
+        }
+    }
+
+    private void HandleLifecycleEvidenceTimeout(
+        ManagedGameLaunchContext launch,
+        int processId,
+        CancellationToken monitorToken)
+    {
+        lock (_gate)
+        {
+            if (!IsCurrentMonitorLocked(launch, monitorToken)
+                || _snapshot.State == GameSessionVerificationState.OfflineReplayVerified)
+            {
+                return;
+            }
+
+            // Keep the coordinator lock while the lease performs its bounded
+            // termination wait. Replacement launches and revocation cannot
+            // detach/dispose this lease between capture and termination, which
+            // prevents the timed-out child becoming an orphan.
+            SuspendedGameProcessLease? processLease = _activeSuspendedLease is { ProcessId: var activePid }
+                && activePid == processId
+                ? _activeSuspendedLease
+                : null;
+            bool terminated = processLease?.TryTerminateAfterHandOff() == true;
+
+            if (_logger.IsEnabled(LogLevel.Warning))
+            {
+                _logger.LogWarning(
+                    new EventId(3140, "ManagedLaunchLifecycleEvidenceTimeout"),
+                    "Managed replay launch timed out waiting for correlated lifecycle evidence; processId={ProcessId}, processTerminated={ProcessTerminated}, timeoutSeconds={TimeoutSeconds}.",
+                    processId,
+                    terminated,
+                    _options.LifecycleEvidenceTimeout.TotalSeconds);
+            }
+            Deny("launch.lifecycle_evidence_timeout");
+        }
+    }
+
+    private void LogLaunchStage(
+        string stage,
+        string outcome,
+        string? errorCode = null)
+    {
+        if (errorCode is null)
+        {
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation(
+                    new EventId(3135, "ManagedLaunchStage"),
+                    "Managed replay launch stage={Stage}, outcome={Outcome}.",
+                    stage,
+                    outcome);
+            }
+        }
+        else if (_logger.IsEnabled(LogLevel.Warning))
+        {
+            _logger.LogWarning(
+                new EventId(3136, "ManagedLaunchStageFailed"),
+                "Managed replay launch stage={Stage}, outcome={Outcome}, errorCode={ErrorCode}.",
+                stage,
+                outcome,
+                errorCode);
+        }
     }
 
     private static OperationResult<GameReplayLaunchOutcome> LaunchFailure(

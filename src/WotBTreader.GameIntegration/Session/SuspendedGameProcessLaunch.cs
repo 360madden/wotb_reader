@@ -21,12 +21,14 @@ internal interface ISuspendedProcessPlatform
 /// </summary>
 internal sealed class SuspendedGameProcessLease : IAsyncDisposable
 {
+    private readonly Lock _leaseGate = new();
     private SafeProcessHandle? _processHandle;
     private SafeThreadHandle? _threadHandle;
     private WindowsTrustedExecutableLaunchLease? _executableLease;
     private ManagedReplayArtifactLease? _artifactLease;
     private bool _disposed;
     private bool _handedOff;
+    private bool _terminateOnDispose;
 
     internal SuspendedGameProcessLease(
         int processId,
@@ -50,70 +52,169 @@ internal sealed class SuspendedGameProcessLease : IAsyncDisposable
     internal long CreationTimeUtcTicks { get; }
     internal string VerifiedExecutablePath { get; }
 
-    internal WindowsTrustedExecutableLaunchLease? ExecutableLease => _executableLease;
-    internal ManagedReplayArtifactLease? ArtifactLease => _artifactLease;
+    internal WindowsTrustedExecutableLaunchLease? ExecutableLease
+    {
+        get
+        {
+            lock (_leaseGate)
+            {
+                return _executableLease;
+            }
+        }
+    }
 
-    internal SafeProcessHandle? ProcessHandle => _processHandle;
-    internal SafeThreadHandle? ThreadHandle => _threadHandle;
+    internal ManagedReplayArtifactLease? ArtifactLease
+    {
+        get
+        {
+            lock (_leaseGate)
+            {
+                return _artifactLease;
+            }
+        }
+    }
 
-    internal bool HandedOff => _handedOff;
+    internal SafeProcessHandle? ProcessHandle
+    {
+        get
+        {
+            lock (_leaseGate)
+            {
+                return _processHandle;
+            }
+        }
+    }
+
+    internal SafeThreadHandle? ThreadHandle
+    {
+        get
+        {
+            lock (_leaseGate)
+            {
+                return _threadHandle;
+            }
+        }
+    }
+
+    internal bool HandedOff
+    {
+        get
+        {
+            lock (_leaseGate)
+            {
+                return _handedOff;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Terminates the launched child when ownership has already been handed off
+    /// to the session coordinator. This is used only for a failed lifecycle
+    /// verification timeout; ordinary lease disposal intentionally leaves the
+    /// handed-off child alive.
+    /// </summary>
+    internal bool TryTerminateAfterHandOff()
+    {
+        lock (_leaseGate)
+        {
+            if (!_handedOff || _disposed || _processHandle is null || _processHandle.IsInvalid)
+            {
+                return false;
+            }
+
+            // Keep the fail-closed termination request attached to the lease.
+            // If the first native request fails, DisposeAsync retries while the
+            // process handle is still owned instead of silently orphaning it.
+            _terminateOnDispose = true;
+            try
+            {
+                // Request termination while the coordinator owns the lease.
+                // DisposeAsync performs the bounded wait while it still owns the
+                // process handle, without blocking the session-state lock.
+                return NativeMethods.TerminateProcess(_processHandle, 1);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
 
     /// <summary>
     /// Transfers ownership of the leases to the caller (for the resume unit).
-    /// After this call, disposal will not terminate the child process.
+    /// After this call, ordinary disposal leaves the child alive; a prior
+    /// TryTerminateAfterHandOff request still makes disposal terminate it.
     /// </summary>
     internal (WindowsTrustedExecutableLaunchLease Executable, ManagedReplayArtifactLease Artifact) HandOffLeases()
     {
-        if (_handedOff)
+        lock (_leaseGate)
         {
-            throw new InvalidOperationException("Leases already handed off");
+            ObjectDisposedException.ThrowIf(_disposed, typeof(SuspendedGameProcessLease));
+
+            if (_handedOff)
+            {
+                throw new InvalidOperationException("Leases already handed off");
+            }
+            _handedOff = true;
+            var exe = _executableLease!;
+            var artifact = _artifactLease!;
+            _executableLease = null;
+            _artifactLease = null;
+            return (exe, artifact);
         }
-        _handedOff = true;
-        var exe = _executableLease!;
-        var artifact = _artifactLease!;
-        _executableLease = null;
-        _artifactLease = null;
-        return (exe, artifact);
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (_disposed)
+        SafeProcessHandle? processHandle;
+        SafeThreadHandle? threadHandle;
+        WindowsTrustedExecutableLaunchLease? executableLease;
+        ManagedReplayArtifactLease? artifactLease;
+        bool terminateOnDispose;
+        lock (_leaseGate)
         {
-            return;
-        }
-        _disposed = true;
-
-        if (!_handedOff)
-        {
-            TerminateChildProcess();
-        }
-
-        _processHandle?.Dispose();
-        _processHandle = null;
-        _threadHandle?.Dispose();
-        _threadHandle = null;
-
-        if (_executableLease is not null)
-        {
-            await _executableLease.DisposeAsync().ConfigureAwait(false);
+            if (_disposed)
+            {
+                return;
+            }
+            _disposed = true;
+            terminateOnDispose = !_handedOff || _terminateOnDispose;
+            processHandle = _processHandle;
+            _processHandle = null;
+            threadHandle = _threadHandle;
+            _threadHandle = null;
+            executableLease = _executableLease;
             _executableLease = null;
-        }
-        if (_artifactLease is not null)
-        {
-            await _artifactLease.DisposeAsync().ConfigureAwait(false);
+            artifactLease = _artifactLease;
             _artifactLease = null;
+        }
+
+        if (terminateOnDispose)
+        {
+            TerminateChildProcess(processHandle);
+        }
+
+        processHandle?.Dispose();
+        threadHandle?.Dispose();
+
+        if (executableLease is not null)
+        {
+            await executableLease.DisposeAsync().ConfigureAwait(false);
+        }
+        if (artifactLease is not null)
+        {
+            await artifactLease.DisposeAsync().ConfigureAwait(false);
         }
     }
 
-    private void TerminateChildProcess()
+    private static void TerminateChildProcess(SafeProcessHandle? processHandle)
     {
-        if (_processHandle is not null && !_processHandle.IsInvalid)
+        if (processHandle is not null && !processHandle.IsInvalid)
         {
             try
             {
-                NativeMethods.TerminateProcess(_processHandle, 1);
-                _ = NativeMethods.WaitForSingleObject(_processHandle, 5000);
+                NativeMethods.TerminateProcess(processHandle, 1);
+                _ = NativeMethods.WaitForSingleObject(processHandle, 5000);
             }
             catch
             {

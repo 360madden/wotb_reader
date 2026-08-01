@@ -258,14 +258,17 @@ and `OD-RECOVERY-002` was blocked after staging because its managed launch timed
 out without correlated lifecycle evidence.
 
 1. Do not relaunch, terminate, attach to, or scan the existing game processes.
-2. Inspect the managed-launch timeout path and lifecycle-correlation diagnostics;
+2. Inspect the [managed-launch timeout diagnostics](offset-discovery-guide.md#managed-launch-diagnostics);
    compare the request timeout with executable lease, suspended process creation,
-   resume, and lifecycle-monitor boundaries.
+   resume, and lifecycle-monitor boundaries. Capture the structured stage log and
+   determine whether the result was `launch.lifecycle_evidence_timeout`.
 3. Confirm the host remains reachable and reports `Unknown` /
    `launch.awaiting_evidence`; this is a diagnostic precondition, not discovery
    evidence.
 4. Only after the hang is explained and the process set is safely isolated,
-   start exactly one managed replay and wait for `OfflineReplayVerified`.
+   start exactly one managed replay and wait for `OfflineReplayVerified`. An
+   unverified launch is terminated on timeout, replacement, or coordinator
+   disposal; do not reuse it as a scan target.
 5. Capture module base, module size, architecture, process-start identity, and
    replay lifecycle state before any scanner or CE attachment.
 6. Reconcile the Ghidra export and the table's three conflicting yaw values for

@@ -438,6 +438,27 @@ to four dereferences, reject invalid user addresses and cycles, and report
 an offset into `memory-offsets/`; follow the two-launch/two-replay requirements
 below.
 
+## Managed-launch diagnostics
+
+The managed replay launch emits bounded structured stage logs so a failed launch
+can be located without exposing replay bytes or memory contents. Stages are
+`prepare`, `executable_lease`, `artifact_staging`, `suspended_process`,
+`correlation`, `resume`, `handoff`, and `lifecycle_evidence`. Normal transitions
+use event `3135` (`ManagedLaunchStage`); operation-result failures use event
+`3136` (`ManagedLaunchStageFailed`).
+
+After resume, lifecycle correlation is bounded by
+`GameIntegrationOptions.LifecycleEvidenceTimeout`, which defaults to 45 seconds
+and accepts 5 seconds through 5 minutes. Missing correlated evidence fails closed
+with state `Denied` and reason `launch.lifecycle_evidence_timeout`; the active
+handed-off child is terminated when its identity-bound lease is still available.
+Replacement launches and coordinator disposal likewise terminate unverified
+handed-off children, while verified children remain alive. Lease disposal retries
+a termination request before releasing the process handle.
+Event `3140` (`ManagedLaunchLifecycleEvidenceTimeout`) records the process ID,
+timeout, and termination result. A timeout is a launch-gate failure, not a valid
+process-selection signal; do not attach to a process from that attempt.
+
 ## GameHarness M2 gate — ✅ WIRED
 
 The `scan` and `probe` commands in GameHarness check the offline-session gate

@@ -19,6 +19,8 @@ public sealed class GameIntegrationOptions
     private const int MaximumTrackedLogFiles = 128;
     private const int MaximumLogEventChannelCapacity = 65_536;
     private const long MaximumReplayLaunchBytes = 2L * 1024 * 1024 * 1024;
+    private static readonly TimeSpan MinimumLifecycleEvidenceTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan MaximumLifecycleEvidenceTimeout = TimeSpan.FromMinutes(5);
 
     /// <summary>Gets explicit game installation roots to probe before optional defaults.</summary>
     public IReadOnlyList<string> GameInstallRoots { get; init; } = [];
@@ -75,6 +77,12 @@ public sealed class GameIntegrationOptions
     /// <summary>Gets the maximum size of one replay copied for a managed launch.</summary>
     public long MaxReplayLaunchBytes { get; init; } = 512L * 1024 * 1024;
 
+    /// <summary>
+    /// Gets the maximum time allowed for a managed launch to produce correlated
+    /// offline-replay lifecycle evidence after the child is resumed.
+    /// </summary>
+    public TimeSpan LifecycleEvidenceTimeout { get; init; } = TimeSpan.FromSeconds(45);
+
     internal void Validate()
     {
         if (MaxDvplStoredBytes <= 0 ||
@@ -114,6 +122,14 @@ public sealed class GameIntegrationOptions
             throw new ArgumentOutOfRangeException(
                 nameof(GameIntegrationOptions),
                 "The log reconciliation interval must be between 250 ms and 5 minutes.");
+        }
+
+        if (LifecycleEvidenceTimeout < MinimumLifecycleEvidenceTimeout ||
+            LifecycleEvidenceTimeout > MaximumLifecycleEvidenceTimeout)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(GameIntegrationOptions),
+                "The lifecycle evidence timeout must be between 5 seconds and 5 minutes.");
         }
 
         if (SupportedProductVersions.Count == 0 ||

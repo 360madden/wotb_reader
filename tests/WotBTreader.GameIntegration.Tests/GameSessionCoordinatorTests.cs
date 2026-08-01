@@ -353,6 +353,8 @@ public sealed class GameSessionCoordinatorTests
         var timeProvider = new ManualTimeProvider(StartTime);
         return (new GameSessionCoordinator(
             timeProvider,
+            new GameIntegrationOptions(),
+            NullLogger<GameSessionCoordinator>.Instance,
             preparer ?? new StubPreparer(),
             artifactStager ?? new StubArtifactStager(),
             suspendedPlatform ?? new StubSuspendedPlatform(),
