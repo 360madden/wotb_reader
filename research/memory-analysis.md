@@ -108,7 +108,7 @@ These tools can be used to search for replay-related data in the running game:
 
 ```bash
 # Scan for the replay file path in memory
-treader discover replayPath String "C:\...\replays\battle.wotbreplay"
+treader discover replayPath String "<REPLAY_PATH>"
 
 # Take a snapshot before/after replay starts
 treader snapshot 4
