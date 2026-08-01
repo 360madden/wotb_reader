@@ -24,9 +24,9 @@ if ($LASTEXITCODE -eq 0) {
 # Runtime-data ignore patterns match case-insensitively on Windows worktrees,
 # so any ignored file inside a source tree indicates a hidden-source hazard
 # (BLK-0005, BLK-0012). tools/external stays ignored by design.
-$hiddenSources = git -C $repositoryRoot ls-files --others --ignored --exclude-standard -- src tests tools/src tools/tests scripts docs |
+$hiddenSources = git -C $repositoryRoot ls-files --others --ignored --exclude-standard -- src tests tools/src tools/tests scripts docs ultimate-scanner |
     Where-Object {
-        $_ -notmatch '(^|/)(bin|obj|TestResults)/' -and
+        $_ -notmatch '(^|/)(bin|obj|TestResults|__pycache__)/' -and
         $_ -notmatch '(?i)(^|/)(appsettings|launchSettings)\.Local\.json$' -and
         $_ -notmatch '\.user$'
     }
