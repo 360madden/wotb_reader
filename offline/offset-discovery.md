@@ -41,6 +41,8 @@ serve (web host on 127.0.0.1:9182, loopback)
   │     correlation → resume) and lifecycle evidence → OfflineReplayVerified gate
   ├─ GET  /api/v1/game/state        → gate check (OfflineReplayVerified required for scans)
   ├─ POST /api/v1/game/discover                    → single known-value scan
+  ├─ POST /api/v1/game/discover/pattern            → bounded AOB/wildcard scan
+  ├─ POST /api/v1/game/discover/pointer-chain      → bounded pointer-chain evidence
   ├─ POST /api/v1/game/discover/snapshot           → snapshot all committed memory
   ├─ POST /api/v1/game/discover/compare/{sessionId} → compare vs snapshot (changed/unchanged/increased/decreased)
   ├─ POST /api/v1/game/discover/neighborhood       → scan a window around a known offset
@@ -56,7 +58,8 @@ serve (web host on 127.0.0.1:9182, loopback)
 
 ## GameHarness CLI (tools/src/WotBTreader.GameHarness)
 
-All commands discover the host via the rendezvous file and check the gate:
+All commands discover the host and its short-lived capability via the rendezvous
+file, send `X-WotBTreader-Capability` on unsafe requests, and check the gate:
 
 | Command | What it does |
 |---------|--------------|
@@ -64,8 +67,10 @@ All commands discover the host via the rendezvous file and check the gate:
 | `state` | Show saved scanner state (read-only, local `ScannerStateStore`) |
 | `scan` | Gate check + offset field status (X/Y fields known) |
 | `probe` | Gate check + field status + raw offset table |
-| `discover <field> <Float\|Int32\|Double> <value> [tolerance]` | Known-value scan; tolerance → mantissa wildcard mask (0.01→1, 0.1→2, 1.0→3 bytes) |
-| `discover-snapshot [valueSize] [--float-min/--float-max/--int-min/--int-max]` | Snapshot of committed memory; prints session id |
+| `discover <field> <Float\|Int32\|Double> <value> [tolerance]` | Known-value scan with numeric Float tolerance |
+| `discover-pattern <field> <patternHex> [mask]` | Bounded AOB/wildcard scan |
+| `discover-pointer-chain <rootOffset> <offset1,offset2,...>` | Bounded pointer-chain evidence probe |
+| `discover-snapshot 4 [--float-min/--float-max/--int-min/--int-max]` | Int32 snapshot of committed memory; prints session id |
 | `discover-compare <sessionId> [changed\|unchanged\|increased\|decreased]` | Compare current memory vs snapshot |
 | `discover-nearby <refOffset> [--window <bytes>]` | Neighborhood scan around a known offset |
 | `discover-discard <sessionId>` | Discard a snapshot session |

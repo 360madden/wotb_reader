@@ -396,7 +396,20 @@ read-only decompiler; otherwise skip it and continue with native tooling.
 ## UltimateScanner phases 1–4 — implemented, evidence-only
 
 The standalone `ultimate-scanner/` module now provides four bounded capabilities
-behind the coordinator's positively verified offline-replay gate:
+behind the coordinator's positively verified offline-replay gate. The coordinator
+resolves the trusted executable's main-module base immediately before each scan
+(and before verified runtime observation), rather than caching a startup lookup.
+A transient Windows `MainModule` failure therefore denies only that operation and
+can recover on the next request without weakening the replay, PID, start-identity,
+path, version, or SHA-256 checks. The base lookup is performed outside the session
+lock so lifecycle revocation and monitor callbacks are not blocked by Windows
+process-module enumeration. Authorization cancellation is propagated through the
+module lookup and every scanner read. A read authorization gate linearizes
+revocation with each `ReadProcessMemory` admission: an operation admitted before
+revocation may complete, but an operation admitted after revocation is denied and
+does not call Win32. Process identity and region-query calls remain separate
+read-only checks. This boundary does not guarantee that an already-running
+native API call can be interrupted mid-call.
 
 | Phase | Capability | Boundary |
 |---|---|---|
@@ -437,6 +450,81 @@ to four dereferences, reject invalid user addresses and cycles, and report
 `pointer-chain` evidence only. The current results are not sufficient to promote
 an offset into `memory-offsets/`; follow the two-launch/two-replay requirements
 below.
+
+## External scanner access
+
+The Ultimate Scanner is exposed through the single loopback web host and the
+Windows GameHarness CLI. Other local programs should use the HTTP surface when
+they need structured results; use the CLI for operator workflows and shell
+automation. Both surfaces use the same coordinator authorization boundary and
+never open a process handle themselves.
+
+### Connection and authorization
+
+1. Start `serve` and wait for its rendezvous file.
+2. Read `%LOCALAPPDATA%\\WotBTreader\\rendezvous\\web.json` as a local,
+   owner-only capability record. It contains `baseUri`, `capability`,
+   `expiresAtUtc`, and the publishing `processId`.
+3. Restrict the base URI to loopback and reject expired/dead-process records.
+4. Send the capability as `X-WotBTreader-Capability` on every `POST` or
+   `DELETE`. Loopback reachability alone is not authorization.
+5. Launch a managed offline replay and wait for `OfflineReplayVerified`; the
+   coordinator still rechecks process identity and revokes in-flight work when
+   lifecycle evidence becomes stale or invalid.
+
+Read-only state routes do not require the capability header, but scanner routes
+fail closed when the offline-session gate is not satisfied.
+
+### HTTP route matrix
+
+| Method | Route | Purpose |
+|---|---|---|
+| GET | `/api/v1/game/state` | Query the evidence-backed session gate |
+| GET | `/api/v1/game/memory` | Read the safe telemetry observation |
+| POST | `/api/v1/game/discover` | Typed value scan (`Float`, `Int32`, `Double`) |
+| POST | `/api/v1/game/discover/pattern` | Bounded AOB/wildcard scan |
+| POST | `/api/v1/game/discover/pointer-chain` | Bounded pointer-chain evidence probe |
+| POST | `/api/v1/game/discover/snapshot` | Create a bounded snapshot and receive `sessionId` |
+| POST | `/api/v1/game/discover/compare/{sessionId}` | Compare a snapshot (`changed`, `unchanged`, `increased`, `decreased`) |
+| POST | `/api/v1/game/discover/neighborhood` | Scan a bounded window around a reference offset |
+| DELETE | `/api/v1/game/discover/session/{sessionId}` | Discard retained snapshot state |
+
+Example requests from a trusted local client:
+
+```powershell
+$record = Get-Content "$env:LOCALAPPDATA\\WotBTreader\\rendezvous\\web.json" | ConvertFrom-Json
+$headers = @{ 'X-WotBTreader-Capability' = $record.capability }
+Invoke-RestMethod "$($record.baseUri)/api/v1/game/state"
+Invoke-RestMethod "$($record.baseUri)/api/v1/game/discover/pattern" `
+  -Method Post -Headers $headers -ContentType 'application/json' `
+  -Body (@{
+    fieldName = 'signature'; expectedValueHex = '488B90';
+    toleranceMaskHex = '00FF00'; maxCandidates = 200;
+    minRegionSize = 4096; alignment = 1
+  } | ConvertTo-Json)
+```
+
+Responses contain evidence metadata such as `addressKind`, `baseDisplacement`,
+architecture, truncation, and candidate counts. They do not promote offsets into
+the runtime table. A `401` means the capability is missing/expired; a `400`
+with `discover.gate_not_satisfied` means the offline evidence gate is closed.
+
+### GameHarness CLI matrix
+
+```text
+discover <field> <Float|Int32|Double> <value> [tolerance]
+discover-pattern <field> <patternHex> [toleranceMaskHex] [--alignment 1|2|4|8]
+discover-pointer-chain <rootOffset> <offset1,offset2,...>
+discover-snapshot 4 [--float-min <f>] [--float-max <f>] [--int-min <n>] [--int-max <n>]
+discover-compare <sessionId> [changed|unchanged|increased|decreased]
+discover-nearby <refOffset> [--window <64-4096>]
+discover-discard <sessionId>
+```
+
+The CLI validates the rendezvous capability before making requests, sends it on
+all unsafe calls, uses invariant numeric parsing, rejects malformed ranges, and
+returns non-zero exit codes for host, HTTP, timeout, and input failures. It
+prints bounded summaries rather than raw memory dumps.
 
 ## Managed-launch diagnostics
 

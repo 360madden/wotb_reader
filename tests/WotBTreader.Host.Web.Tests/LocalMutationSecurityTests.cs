@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Http;
 using WotBTreader.Host.Web.Infrastructure;
 
 namespace WotBTreader.Host.Web.Tests;
@@ -48,6 +50,64 @@ public sealed class LocalMutationSecurityTests
     }
 
     [TestMethod]
+    public async Task MutationMiddlewareRejectsUnsafeRequestWithoutCapability()
+    {
+        FixedTimeProvider time = new(DateTimeOffset.UnixEpoch);
+        LocalMutationSecurity security = new(time);
+        DefaultHttpContext context = CreateApiContext(HttpMethods.Post);
+        bool nextCalled = false;
+        MutationProtectionMiddleware middleware = new(_ =>
+        {
+            nextCalled = true;
+            return Task.CompletedTask;
+        });
+
+        await middleware.InvokeAsync(context, security, new StubAntiforgery());
+
+        Assert.AreEqual(StatusCodes.Status401Unauthorized, context.Response.StatusCode);
+        Assert.IsFalse(nextCalled);
+    }
+
+    [TestMethod]
+    public async Task MutationMiddlewareAcceptsCurrentCapabilityHeader()
+    {
+        FixedTimeProvider time = new(DateTimeOffset.UnixEpoch);
+        LocalMutationSecurity security = new(time);
+        DefaultHttpContext context = CreateApiContext(HttpMethods.Post);
+        context.Request.Headers[LocalMutationSecurity.CapabilityHeaderName] =
+            security.Snapshot().Token;
+        bool nextCalled = false;
+        MutationProtectionMiddleware middleware = new(_ =>
+        {
+            nextCalled = true;
+            return Task.CompletedTask;
+        });
+
+        await middleware.InvokeAsync(context, security, new StubAntiforgery());
+
+        Assert.AreEqual(StatusCodes.Status200OK, context.Response.StatusCode);
+        Assert.IsTrue(nextCalled);
+    }
+
+    [TestMethod]
+    public async Task MutationMiddlewarePassesReadOnlyRequestsWithoutCapability()
+    {
+        FixedTimeProvider time = new(DateTimeOffset.UnixEpoch);
+        LocalMutationSecurity security = new(time);
+        DefaultHttpContext context = CreateApiContext(HttpMethods.Get);
+        bool nextCalled = false;
+        MutationProtectionMiddleware middleware = new(_ =>
+        {
+            nextCalled = true;
+            return Task.CompletedTask;
+        });
+
+        await middleware.InvokeAsync(context, security, new StubAntiforgery());
+
+        Assert.IsTrue(nextCalled);
+    }
+
+    [TestMethod]
     public void RotationInvalidatesThePreviousToken()
     {
         FixedTimeProvider time = new(DateTimeOffset.UnixEpoch);
@@ -87,6 +147,34 @@ public sealed class LocalMutationSecurityTests
         Assert.IsTrue(
             lease.ExpiresAtUtc - time.GetUtcNow() <= TimeSpan.FromMinutes(5),
             "A local capability must remain short-lived.");
+    }
+
+    private static DefaultHttpContext CreateApiContext(string method)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Method = method;
+        context.Request.Path = "/api/v1/game/discover/snapshot";
+        context.Response.StatusCode = StatusCodes.Status200OK;
+        return context;
+    }
+
+    private sealed class StubAntiforgery : IAntiforgery
+    {
+        public AntiforgeryTokenSet GetTokens(HttpContext httpContext) =>
+            new("request", "cookie", "header", "form");
+
+        public AntiforgeryTokenSet GetAndStoreTokens(HttpContext httpContext) =>
+            GetTokens(httpContext);
+
+        public void SetCookieTokenAndHeader(HttpContext httpContext)
+        {
+        }
+
+        public Task<bool> IsRequestValidAsync(HttpContext httpContext) =>
+            Task.FromResult(true);
+
+        public Task ValidateRequestAsync(HttpContext httpContext) =>
+            Task.CompletedTask;
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider

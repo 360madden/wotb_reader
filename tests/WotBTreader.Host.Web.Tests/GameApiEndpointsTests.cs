@@ -354,6 +354,32 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task SnapshotReturnsThePublicSessionContract()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.CreateSnapshotAsync(
+            scanner,
+            new OffsetSnapshotRequest { ValueKind = "Int32", ValueSize = 4 },
+            TestContext.CancellationToken);
+
+        OffsetSnapshotResponse response = Value<OffsetSnapshotResponse>(result);
+        Assert.AreEqual("test", response.SessionId);
+    }
+
+    [TestMethod]
+    public void DiscardReturnsThePublicContractAndForwardsTheSessionId()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = GameApiEndpoints.DiscardSessionAsync(scanner, "session-1");
+
+        OffsetDiscardResponse response = Value<OffsetDiscardResponse>(result);
+        Assert.AreEqual("session-1", response.Discarded);
+        Assert.AreEqual("session-1", scanner.DiscardedSession);
+    }
+
+    [TestMethod]
     public async Task CompareRejectsUnknownModeInsteadOfFallingBackToChanged()
     {
         var scanner = new FakeGameMemoryScanner();
@@ -361,7 +387,7 @@ public sealed class GameApiEndpointsTests
         IResult result = await GameApiEndpoints.CompareSnapshotAsync(
             scanner,
             "000001",
-            new CompareRequestApi { CompareMode = "not-a-mode" },
+            new OffsetCompareRequest { CompareMode = "not-a-mode" },
             TestContext.CancellationToken);
 
         JsonElement response = BadRequestAnonymous(result);
@@ -375,7 +401,7 @@ public sealed class GameApiEndpointsTests
 
         IResult result = await GameApiEndpoints.CreateSnapshotAsync(
             scanner,
-            new SnapshotRequestApi
+            new OffsetSnapshotRequest
             {
                 ValueKind = "Float",
                 ValueSize = 4,
@@ -397,7 +423,7 @@ public sealed class GameApiEndpointsTests
 
         IResult result = await GameApiEndpoints.CreateSnapshotAsync(
             scanner,
-            new SnapshotRequestApi
+            new OffsetSnapshotRequest
             {
                 ValueKind = "Float",
                 ValueSize = 4,
@@ -416,7 +442,7 @@ public sealed class GameApiEndpointsTests
 
         IResult result = await GameApiEndpoints.DiscoverNeighborhoodAsync(
             scanner,
-            new NeighborhoodRequestApi
+            new OffsetNeighborhoodRequest
             {
                 ReferenceOffset = 0x100,
                 FloatMin = 10,
@@ -435,7 +461,7 @@ public sealed class GameApiEndpointsTests
 
         IResult result = await GameApiEndpoints.DiscoverNeighborhoodAsync(
             scanner,
-            new NeighborhoodRequestApi { ReferenceOffset = 0x100, WindowSize = 16 },
+            new OffsetNeighborhoodRequest { ReferenceOffset = 0x100, WindowSize = 16 },
             TestContext.CancellationToken);
 
         JsonElement response = BadRequestAnonymous(result);
@@ -464,7 +490,7 @@ public sealed class GameApiEndpointsTests
         IResult result = await GameApiEndpoints.CompareSnapshotAsync(
             scanner,
             "000001",
-            new CompareRequestApi { CompareMode = "changed", RollingBaseline = true },
+            new OffsetCompareRequest { CompareMode = "changed", RollingBaseline = true },
             TestContext.CancellationToken);
 
         JsonElement response = OkAnonymous(result);
@@ -559,6 +585,7 @@ public sealed class GameApiEndpointsTests
     {
         public bool PatternCalled { get; private set; }
         public bool PointerChainCalled { get; private set; }
+        public string? DiscardedSession { get; private set; }
         public MemoryScanRequest? LastScanRequest { get; private set; }
         public CancellationToken LastCancellationToken { get; private set; }
         public OperationResult<MemoryCompareResult> CompareResult { get; init; } = OperationResult.Success(
@@ -601,7 +628,7 @@ public sealed class GameApiEndpointsTests
             CancellationToken cancellationToken, bool advanceBaseline = false) =>
             ValueTask.FromResult(CompareResult);
 
-        public void DiscardSession(string sessionId) { }
+        public void DiscardSession(string sessionId) => DiscardedSession = sessionId;
 
         public ValueTask<OperationResult<MemoryScanResult>> ScanNeighborhoodAsync(
             MemoryNeighborhoodRequest request, CancellationToken cancellationToken) =>

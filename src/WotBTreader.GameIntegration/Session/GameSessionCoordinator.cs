@@ -78,6 +78,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     private readonly IManagedLaunchCorrelationRegistrar _correlationRegistrar;
     private readonly IThreadResumePlatform _threadResumePlatform;
     private readonly IGuardedMemoryReaderFactory _memoryReaderFactory;
+    private readonly IGameProcessModuleBaseAddressResolver _moduleBaseAddressResolver;
     private readonly IOffsetTableReader _offsetTableReader;
     private readonly MemoryScanDiscoverer _scanDiscoverer;
     private readonly IBlitzReplayLifecycleFeed _lifecycleFeed;
@@ -114,6 +115,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         IManagedLaunchCorrelationRegistrar correlationRegistrar,
         IThreadResumePlatform threadResumePlatform,
         IGuardedMemoryReaderFactory memoryReaderFactory,
+        IGameProcessModuleBaseAddressResolver moduleBaseAddressResolver,
         IOffsetTableReader offsetTableReader,
         MemoryScanDiscoverer scanDiscoverer,
         MemoryScanEngine scanEngine,
@@ -129,6 +131,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         _correlationRegistrar = correlationRegistrar ?? throw new ArgumentNullException(nameof(correlationRegistrar));
         _threadResumePlatform = threadResumePlatform ?? throw new ArgumentNullException(nameof(threadResumePlatform));
         _memoryReaderFactory = memoryReaderFactory ?? throw new ArgumentNullException(nameof(memoryReaderFactory));
+        _moduleBaseAddressResolver = moduleBaseAddressResolver ?? throw new ArgumentNullException(nameof(moduleBaseAddressResolver));
         _offsetTableReader = offsetTableReader ?? throw new ArgumentNullException(nameof(offsetTableReader));
         _scanDiscoverer = scanDiscoverer ?? throw new ArgumentNullException(nameof(scanDiscoverer));
         _scanEngine = scanEngine ?? throw new ArgumentNullException(nameof(scanEngine));
@@ -541,21 +544,28 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         cancellationToken.ThrowIfCancellationRequested();
 
         // Capture an immutable snapshot of the authorization under the lock,
-        // then release it before performing slow memory reads.
+        // then release it before performing slow memory reads. The linked
+        // authorization token revokes an in-flight observation immediately when
+        // replay evidence stops, expires, or changes identity.
         AuthorizedObservation? auth;
+        CancellationToken authorizationToken;
         lock (_gate)
         {
             ExpireAuthorizationIfNeeded();
             if (_snapshot.State != GameSessionVerificationState.OfflineReplayVerified
-                || _authorization is null)
+                || _authorization is null
+                || _authorizationCts is null)
             {
                 return UnknownObservation();
             }
 
             auth = _authorization;
+            authorizationToken = _authorizationCts.Token;
         }
 
-        return await ReadMemoryAsync(auth, cancellationToken).ConfigureAwait(false);
+        using CancellationTokenSource observationCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, authorizationToken);
+        return await ReadMemoryAsync(auth, observationCancellation.Token).ConfigureAwait(false);
     }
 
     private async ValueTask<GameMemoryObservation> ReadMemoryAsync(
@@ -566,7 +576,9 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         OffsetTable? table = auth.OffsetTable;
         if (table is null)
         {
-            return AvailableObservation();
+            return IsObservationAuthorizationCurrent(auth, cancellationToken)
+                ? AvailableObservation()
+                : UnknownObservation();
         }
 
         // Collect known fields (non-zero offsets).
@@ -583,13 +595,19 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
 
         if (knownFields.Count == 0)
         {
-            return AvailableObservation();
+            return IsObservationAuthorizationCurrent(auth, cancellationToken)
+                ? AvailableObservation()
+                : UnknownObservation();
         }
 
-        // Base address is required to compute absolute addresses.
-        if (auth.BaseAddress == nint.Zero)
+        nint baseAddress = _moduleBaseAddressResolver.Resolve(auth.ProcessId, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (baseAddress == nint.Zero)
         {
-            return AvailableObservation();
+            // Authorization remains valid for a retry, but no memory read was
+            // possible for this observation. Do not report a misleading
+            // "available" result with all fields null.
+            return UnknownObservation();
         }
 
         // Create the guarded memory reader.
@@ -599,14 +617,20 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             auth.CanonicalExecutablePath,
             auth.ProductVersion,
             auth.ExecutableSha256,
-            auth.ExpiresAtUtc);
+            auth.ExpiresAtUtc,
+            auth.ReadGate)
+        {
+            Generation = auth.Generation,
+        };
 
         OperationResult<IAuthorizedMemoryReader> readerResult =
             await _memoryReaderFactory.CreateAsync(obs, cancellationToken)
                 .ConfigureAwait(false);
         if (!readerResult.IsSuccess)
         {
-            return AvailableObservation();
+            return IsObservationAuthorizationCurrent(auth, cancellationToken)
+                ? AvailableObservation()
+                : UnknownObservation();
         }
 
         IAuthorizedMemoryReader reader = readerResult.Value!;
@@ -632,7 +656,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 continue;
             }
 
-            nint absoluteAddress = auth.BaseAddress + (nint)field.Offset;
+            nint absoluteAddress = baseAddress + (nint)field.Offset;
             OperationResult<byte[]> readResult =
                 await reader.ReadAsync(absoluteAddress, size, cancellationToken)
                     .ConfigureAwait(false);
@@ -669,6 +693,14 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     aliveTankCount = BitConverter.ToInt32(bytes, 0);
                     break;
             }
+        }
+
+        // A reader failure may race with lifecycle revocation after the last
+        // field read. Never turn that revoked authorization into an Available
+        // observation merely because the loop has no more fields to process.
+        if (!IsObservationAuthorizationCurrent(auth, cancellationToken))
+        {
+            return UnknownObservation();
         }
 
         return new GameMemoryObservation(
@@ -794,16 +826,15 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             lifecycle.SourceSequence);
 
         OffsetTable? offsetTable = LoadOffsetTable(process);
-        // The scanner needs the trusted executable module base to report
-        // displacements, but it does not need a verified telemetry offset.
-        // Keep base discovery independent from runtime field promotion.
-        nint baseAddress = ResolveBaseAddress(process.ProcessId);
+        // The scanner resolves the trusted module base just before each scan;
+        // this remains independent from runtime offset promotion.
 
         if (_authorization is null)
         {
             _authorizationCts = new CancellationTokenSource();
         }
 
+        AuthorizationReadGate readGate = _authorization?.ReadGate ?? new AuthorizationReadGate();
         _authorization = new AuthorizedObservation(
             ++_authorizationGeneration,
             process.ProcessId,
@@ -812,8 +843,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             process.ObservedProductVersion,
             process.ObservedExecutableSha256,
             expiresAtUtc,
-            baseAddress,
-            offsetTable);
+            offsetTable,
+            readGate);
         _snapshot = CreateSnapshot(
             GameSessionVerificationState.OfflineReplayVerified,
             gamePresent: true,
@@ -903,6 +934,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
 
     private void Revoke()
     {
+        _authorization?.ReadGate.Revoke();
         _authorization = null;
         _authorizationCts?.Cancel();
         // Do not dispose this CTS here. Scan setup creates its linked source
@@ -1058,19 +1090,6 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         }
     }
 
-    private static nint ResolveBaseAddress(int processId)
-    {
-        try
-        {
-            using Process process = Process.GetProcessById(processId);
-            return process.MainModule?.BaseAddress ?? nint.Zero;
-        }
-        catch
-        {
-            return nint.Zero;
-        }
-    }
-
     private GameSessionSnapshot CreateSnapshot(
         GameSessionVerificationState state,
         bool gamePresent,
@@ -1091,8 +1110,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         string ProductVersion,
         ContentHash ExecutableSha256,
         DateTimeOffset ExpiresAtUtc,
-        nint BaseAddress,
-        OffsetTable? OffsetTable);
+        OffsetTable? OffsetTable,
+        AuthorizationReadGate ReadGate);
 
     private sealed record EvidenceCursor(
         string SourceIdentity,
@@ -1175,7 +1194,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     {
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
-        (AuthorizedMemoryObservation? observation, long baseAddr, CancellationToken authorizationToken, bool ok) = GetScanAuthorization();
+        (AuthorizedMemoryObservation? observation, long baseAddr, CancellationToken authorizationToken, bool ok) = GetScanAuthorization(cancellationToken);
         if (!ok)
             return OperationResult.Failure<string>(
                 new ApplicationError("discover.gate_not_satisfied", "Gate not satisfied."));
@@ -1184,7 +1203,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, authorizationToken);
         try
         {
-            return await Task.Run(
+            OperationResult<string> result = await Task.Run(
                 () => _scanEngine.CreateSnapshot(
                     observation!,
                     baseAddr,
@@ -1205,6 +1224,18 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                         request.RegionSelection),
                     scanCancellation.Token),
                 scanCancellation.Token).ConfigureAwait(false);
+            if (!IsScanAuthorizationCurrent(observation!, authorizationToken))
+            {
+                if (result.IsSuccess && result.Value is not null)
+                {
+                    _scanEngine.DiscardSession(result.Value);
+                }
+
+                return GateCheck<string>("discover.gate_not_satisfied",
+                    "The offline-session gate is no longer satisfied.");
+            }
+
+            return result;
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -1222,7 +1253,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         cancellationToken.ThrowIfCancellationRequested();
-        (AuthorizedMemoryObservation? observation, long baseAddr, CancellationToken authorizationToken, bool ok) = GetScanAuthorization();
+        (AuthorizedMemoryObservation? observation, long baseAddr, CancellationToken authorizationToken, bool ok) = GetScanAuthorization(cancellationToken);
         if (!ok)
             return OperationResult.Failure<MemoryCompareResult>(
                 new ApplicationError("discover.gate_not_satisfied", "Gate not satisfied."));
@@ -1231,31 +1262,37 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, authorizationToken);
         try
         {
-            return await Task.Run(() =>
-            {
-                OperationResult<MemoryScanEngine.CompareResult> result = _scanEngine.Compare(
+            OperationResult<MemoryScanEngine.CompareResult> result = await Task.Run(
+                () => _scanEngine.Compare(
                     observation!,
                     baseAddr,
                     sessionId,
                     compareMode ?? "changed",
                     maxCandidates,
                     advanceBaseline,
-                    scanCancellation.Token);
-                return result.IsSuccess
-                    ? OperationResult.Success(new MemoryCompareResult(
-                        result.Value!.CompletedAtUtc,
-                        result.Value.PreviousCount,
-                        result.Value.CurrentCount,
-                        result.Value.ChangedCount,
-                        result.Value.UnchangedCount,
-                        result.Value.IncreasedCount,
-                        result.Value.DecreasedCount,
-                        result.Value.Candidates,
-                        result.Value.Truncated,
-                        result.Value.ComparedAgainstRollingBaseline,
-                        result.Value.RetainedCount))
-                    : OperationResult.Failure<MemoryCompareResult>(result.Error!);
-            }, scanCancellation.Token).ConfigureAwait(false);
+                    scanCancellation.Token),
+                scanCancellation.Token).ConfigureAwait(false);
+            if (!IsScanAuthorizationCurrent(observation!, authorizationToken))
+            {
+                _scanEngine.DiscardSession(sessionId);
+                return GateCheck<MemoryCompareResult>("discover.gate_not_satisfied",
+                    "The offline-session gate is no longer satisfied.");
+            }
+
+            return result.IsSuccess
+                ? OperationResult.Success(new MemoryCompareResult(
+                    result.Value!.CompletedAtUtc,
+                    result.Value.PreviousCount,
+                    result.Value.CurrentCount,
+                    result.Value.ChangedCount,
+                    result.Value.UnchangedCount,
+                    result.Value.IncreasedCount,
+                    result.Value.DecreasedCount,
+                    result.Value.Candidates,
+                    result.Value.Truncated,
+                    result.Value.ComparedAgainstRollingBaseline,
+                    result.Value.RetainedCount))
+                : OperationResult.Failure<MemoryCompareResult>(result.Error!);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -1272,7 +1309,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     {
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
-        (AuthorizedMemoryObservation? observation, long baseAddr, CancellationToken authorizationToken, bool ok) = GetScanAuthorization();
+        (AuthorizedMemoryObservation? observation, long baseAddr, CancellationToken authorizationToken, bool ok) = GetScanAuthorization(cancellationToken);
         if (!ok)
             return GateCheck<MemoryScanResult>("discover.gate_not_satisfied",
                 "The offline-session gate is not satisfied.");
@@ -1280,9 +1317,13 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, authorizationToken);
         try
         {
-            return await Task.Run(
+            OperationResult<MemoryScanResult> result = await Task.Run(
                 () => _scanDiscoverer.ScanNeighborhood(observation!, baseAddr, request, scanCancellation.Token),
                 scanCancellation.Token).ConfigureAwait(false);
+            return IsScanAuthorizationCurrent(observation!, authorizationToken)
+                ? result
+                : GateCheck<MemoryScanResult>("discover.gate_not_satisfied",
+                    "The offline-session gate is no longer satisfied.");
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -1297,7 +1338,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     {
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
-        (AuthorizedMemoryObservation? observation, long baseAddr, CancellationToken authorizationToken, bool ok) = GetScanAuthorization();
+        (AuthorizedMemoryObservation? observation, long baseAddr, CancellationToken authorizationToken, bool ok) = GetScanAuthorization(cancellationToken);
         if (!ok)
             return GateCheck<MemoryScanResult>("discover.gate_not_satisfied",
                 "The offline-session gate is not satisfied.");
@@ -1309,9 +1350,13 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, authorizationToken);
         try
         {
-            return await Task.Run(
+            OperationResult<MemoryScanResult> result = await Task.Run(
                 () => _scanDiscoverer.Scan(observation!, baseAddr, typedRequest, scanCancellation.Token),
                 scanCancellation.Token).ConfigureAwait(false);
+            return IsScanAuthorizationCurrent(observation!, authorizationToken)
+                ? result
+                : GateCheck<MemoryScanResult>("discover.gate_not_satisfied",
+                    "The offline-session gate is no longer satisfied.");
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -1326,7 +1371,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     {
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
-        (AuthorizedMemoryObservation? observation, long baseAddr, CancellationToken authorizationToken, bool ok) = GetScanAuthorization();
+        (AuthorizedMemoryObservation? observation, long baseAddr, CancellationToken authorizationToken, bool ok) = GetScanAuthorization(cancellationToken);
         if (!ok)
             return GateCheck<MemoryScanResult>("discover.gate_not_satisfied",
                 "The offline-session gate is not satisfied.");
@@ -1334,9 +1379,13 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, authorizationToken);
         try
         {
-            return await Task.Run(
+            OperationResult<MemoryScanResult> result = await Task.Run(
                 () => _scanDiscoverer.Scan(observation!, baseAddr, request, scanCancellation.Token, "aob"),
                 scanCancellation.Token).ConfigureAwait(false);
+            return IsScanAuthorizationCurrent(observation!, authorizationToken)
+                ? result
+                : GateCheck<MemoryScanResult>("discover.gate_not_satisfied",
+                    "The offline-session gate is no longer satisfied.");
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -1351,7 +1400,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     {
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
-        (AuthorizedMemoryObservation? observation, long baseAddr, CancellationToken authorizationToken, bool ok) = GetScanAuthorization();
+        (AuthorizedMemoryObservation? observation, long baseAddr, CancellationToken authorizationToken, bool ok) = GetScanAuthorization(cancellationToken);
         if (!ok)
             return GateCheck<MemoryPointerChainResult>("discover.gate_not_satisfied",
                 "The offline-session gate is not satisfied.");
@@ -1359,9 +1408,13 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, authorizationToken);
         try
         {
-            return await Task.Run(
+            OperationResult<MemoryPointerChainResult> result = await Task.Run(
                 () => _scanDiscoverer.ResolvePointerChain(observation!, baseAddr, request, scanCancellation.Token),
                 scanCancellation.Token).ConfigureAwait(false);
+            return IsScanAuthorizationCurrent(observation!, authorizationToken)
+                ? result
+                : GateCheck<MemoryPointerChainResult>("discover.gate_not_satisfied",
+                    "The offline-session gate is no longer satisfied.");
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -1371,31 +1424,84 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     }
 
     private (AuthorizedMemoryObservation? Observation, long BaseAddress, CancellationToken AuthorizationToken, bool Ok)
-        GetScanAuthorization()
+        GetScanAuthorization(CancellationToken cancellationToken)
     {
+        AuthorizedObservation auth;
+        CancellationToken authorizationToken;
         lock (_gate)
         {
             ExpireAuthorizationIfNeeded();
             if (_snapshot.State != GameSessionVerificationState.OfflineReplayVerified
                 || _authorization is null
-                || _authorization.BaseAddress == nint.Zero
                 || _authorizationCts is null)
             {
                 return (null, 0, default, false);
             }
 
-            AuthorizedObservation auth = _authorization;
-            return (
-                new AuthorizedMemoryObservation(
-                    auth.ProcessId,
-                    auth.ProcessStartIdentity,
-                    auth.CanonicalExecutablePath,
-                    auth.ProductVersion,
-                    auth.ExecutableSha256,
-                    auth.ExpiresAtUtc),
-                auth.BaseAddress.ToInt64(),
-                _authorizationCts.Token,
-                true);
+            auth = _authorization;
+            authorizationToken = _authorizationCts.Token;
+        }
+
+        // Do not hold _gate while Windows enumerates the target process module.
+        // A transient zero result fails this request closed; the next request can
+        // retry without blocking lifecycle evidence or revocation.
+        using CancellationTokenSource resolutionCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, authorizationToken);
+        nint baseAddress = _moduleBaseAddressResolver.Resolve(
+            auth.ProcessId,
+            resolutionCancellation.Token);
+        cancellationToken.ThrowIfCancellationRequested();
+        authorizationToken.ThrowIfCancellationRequested();
+        if (baseAddress == nint.Zero)
+        {
+            return (null, 0, default, false);
+        }
+
+        return (
+            new AuthorizedMemoryObservation(
+                auth.ProcessId,
+                auth.ProcessStartIdentity,
+                auth.CanonicalExecutablePath,
+                auth.ProductVersion,
+                auth.ExecutableSha256,
+                auth.ExpiresAtUtc,
+                auth.ReadGate)
+            {
+                Generation = auth.Generation,
+            },
+            baseAddress.ToInt64(),
+            authorizationToken,
+            true);
+    }
+
+    private bool IsScanAuthorizationCurrent(
+        AuthorizedMemoryObservation observation,
+        CancellationToken authorizationToken)
+    {
+        authorizationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            ExpireAuthorizationIfNeeded();
+            authorizationToken.ThrowIfCancellationRequested();
+            return _snapshot.State == GameSessionVerificationState.OfflineReplayVerified
+                && _authorization is not null
+                && _authorization.Generation == observation.Generation
+                && ReferenceEquals(_authorization.ReadGate, observation.ReadGate);
+        }
+    }
+
+    private bool IsObservationAuthorizationCurrent(
+        AuthorizedObservation observation,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            ExpireAuthorizationIfNeeded();
+            cancellationToken.ThrowIfCancellationRequested();
+            return _snapshot.State == GameSessionVerificationState.OfflineReplayVerified
+                && _authorization is not null
+                && ReferenceEquals(_authorization, observation);
         }
     }
 

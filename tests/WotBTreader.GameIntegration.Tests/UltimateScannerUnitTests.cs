@@ -9,6 +9,67 @@ namespace WotBTreader.GameIntegration.Tests;
 public sealed class UltimateScannerUnitTests
 {
     [TestMethod]
+    public void AuthorizationReadGate_RevocationPreventsSubsequentNativeOperation()
+    {
+        var gate = new AuthorizationReadGate();
+        int operationCount = 0;
+
+        Assert.IsTrue(gate.TryExecute(
+            () =>
+            {
+                operationCount++;
+                return true;
+            },
+            CancellationToken.None));
+
+        gate.Revoke();
+
+        Assert.IsFalse(gate.TryExecute(
+            () =>
+            {
+                operationCount++;
+                return true;
+            },
+            CancellationToken.None));
+        Assert.AreEqual(1, operationCount);
+    }
+
+    [TestMethod]
+    public void AuthorizationReadGate_CancellationPreventsNativeOperation()
+    {
+        var gate = new AuthorizationReadGate();
+        using CancellationTokenSource cancellation = new();
+        cancellation.Cancel();
+
+        Assert.ThrowsExactly<OperationCanceledException>(() =>
+            gate.TryExecute(() => true, cancellation.Token));
+    }
+
+    [TestMethod]
+    public async Task AuthorizationReadGate_RevocationWaitsForAdmittedOperationThenDeniesNewReads()
+    {
+        var gate = new AuthorizationReadGate();
+        using ManualResetEventSlim operationEntered = new();
+        using ManualResetEventSlim releaseOperation = new();
+
+        Task<bool> admittedOperation = Task.Run(() => gate.TryExecute(
+            () =>
+            {
+                operationEntered.Set();
+                releaseOperation.Wait();
+                return true;
+            },
+            CancellationToken.None));
+
+        Assert.IsTrue(operationEntered.Wait(TimeSpan.FromSeconds(1)));
+        gate.Revoke();
+
+        releaseOperation.Set();
+        Assert.IsTrue(await admittedOperation);
+        Assert.IsFalse(gate.TryExecute(() => true, CancellationToken.None));
+    }
+
+    [TestMethod]
     public void PatternMatcherTreatsNonZeroMaskBytesAsWildcards()
     {
         Assert.IsTrue(MemoryScanDiscoverer.Matches(
@@ -96,7 +157,8 @@ public sealed class UltimateScannerUnitTests
             "C:\\game.exe",
             "test",
             new ContentHash(new string('a', 64)),
-            DateTimeOffset.UtcNow.AddMinutes(1));
+            DateTimeOffset.UtcNow.AddMinutes(1),
+            new AuthorizationReadGate());
 
         OperationResult<MemoryScanEngine.CompareResult> result = engine.Compare(
             observation,
@@ -122,7 +184,8 @@ public sealed class UltimateScannerUnitTests
             "C:\\game.exe",
             "test",
             new ContentHash(new string('a', 64)),
-            DateTimeOffset.UtcNow.AddMinutes(1));
+            DateTimeOffset.UtcNow.AddMinutes(1),
+            new AuthorizationReadGate());
 
         OperationResult<MemoryScanEngine.CompareResult> result = engine.Compare(
             observation,
@@ -289,7 +352,8 @@ public sealed class UltimateScannerUnitTests
                 "C:\\game.exe",
                 "test",
                 new ContentHash(new string('a', 64)),
-                DateTimeOffset.UtcNow.AddMinutes(1)),
+                DateTimeOffset.UtcNow.AddMinutes(1),
+                new AuthorizationReadGate()),
             0x140000000,
             new MemoryScanEngine.SnapshotFilter(
                 1, 0, 0, null, null, null, null, null, null, null, null,
@@ -352,7 +416,8 @@ public sealed class UltimateScannerUnitTests
             "C:\\game.exe",
             "test",
             new ContentHash(new string('a', 64)),
-            DateTimeOffset.UtcNow.AddMinutes(1));
+            DateTimeOffset.UtcNow.AddMinutes(1),
+            new AuthorizationReadGate());
 
         OperationResult<MemoryScanResult> result = discoverer.ScanNeighborhood(
             observation,

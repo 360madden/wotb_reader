@@ -27,7 +27,52 @@ internal sealed record AuthorizedMemoryObservation(
     string CanonicalExecutablePath,
     string ProductVersion,
     ContentHash ExecutableSha256,
-    DateTimeOffset ExpiresAtUtc);
+    DateTimeOffset ExpiresAtUtc,
+    AuthorizationReadGate ReadGate)
+{
+    /// <summary>Coordinator authorization generation captured when the scan was admitted.</summary>
+    internal long Generation { get; init; }
+}
+
+/// <summary>
+/// Linearizes authorization admission with each native read. A read admitted
+/// before revocation may complete, while reads admitted after revocation are
+/// denied without calling Win32. Revocation never waits for a synchronous native
+/// call already in progress.
+/// </summary>
+internal sealed class AuthorizationReadGate
+{
+    private readonly object _sync = new();
+    private int _revoked;
+
+    internal void Revoke()
+    {
+        Volatile.Write(ref _revoked, 1);
+    }
+
+    internal bool IsRevoked => Volatile.Read(ref _revoked) != 0;
+
+    internal bool TryExecute(
+        Func<bool> operation,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        lock (_sync)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (Volatile.Read(ref _revoked) != 0)
+            {
+                return false;
+            }
+        }
+
+        // Admission is linearized under _sync, but the synchronous native call
+        // runs outside that lock. Revoke can therefore invalidate the session
+        // promptly while an already-admitted read finishes; no operation that
+        // enters after Revoke's linearization point is admitted.
+        return operation();
+    }
+}
 
 /// <summary>One identity-bound, short-lived VM-read capability.</summary>
 internal sealed class AuthorizedProcessLease : IDisposable
@@ -53,8 +98,10 @@ internal sealed class AuthorizedProcessLease : IDisposable
 
     internal static AuthorizedProcessLease? Open(
         AuthorizedMemoryObservation observation,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (!OperatingSystem.IsWindows()
             || observation.ProcessId <= 0
             || observation.ProcessStartIdentity <= 0
@@ -74,15 +121,25 @@ internal sealed class AuthorizedProcessLease : IDisposable
         }
 
         var lease = new AuthorizedProcessLease(observation, timeProvider, handle);
-        if (!lease.RevalidateIdentity()
-            || !lease.TryGetSupportedArchitecture(out string architecture))
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!lease.RevalidateIdentity()
+                || !lease.TryGetSupportedArchitecture(out string architecture))
+            {
+                lease.Dispose();
+                return null;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            lease.Architecture = architecture;
+            return lease;
+        }
+        catch
         {
             lease.Dispose();
-            return null;
+            throw;
         }
-
-        lease.Architecture = architecture;
-        return lease;
     }
 
     internal bool IsValid() =>
@@ -95,29 +152,50 @@ internal sealed class AuthorizedProcessLease : IDisposable
         byte[] buffer,
         int offset,
         int length,
+        CancellationToken cancellationToken,
         out nuint bytesRead)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         bytesRead = 0;
-        if (!IsValid() || offset < 0 || length <= 0 || offset > buffer.Length - length)
+        if (offset < 0 || length <= 0 || offset > buffer.Length - length)
         {
             return false;
         }
 
-        GCHandle pinned = GCHandle.Alloc(buffer, GCHandleType.Pinned);
-        try
+        bool ReadCore(out nuint nativeBytesRead)
         {
-            nint destination = IntPtr.Add(pinned.AddrOfPinnedObject(), offset);
-            return NativeMethods.ReadProcessMemory(
-                Handle,
-                address,
-                destination,
-                (nuint)length,
-                out bytesRead);
+            nativeBytesRead = 0;
+            if (!IsValid())
+            {
+                return false;
+            }
+
+            GCHandle pinned = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                nint destination = IntPtr.Add(pinned.AddrOfPinnedObject(), offset);
+                bool readSucceeded = NativeMethods.ReadProcessMemory(
+                    Handle,
+                    address,
+                    destination,
+                    (nuint)length,
+                    out nativeBytesRead);
+                cancellationToken.ThrowIfCancellationRequested();
+                return readSucceeded;
+            }
+            finally
+            {
+                pinned.Free();
+            }
         }
-        finally
-        {
-            pinned.Free();
-        }
+
+        nuint nativeBytesRead = 0;
+        bool readSucceeded = _observation.ReadGate.TryExecute(
+            () => ReadCore(out nativeBytesRead),
+            cancellationToken);
+        bytesRead = nativeBytesRead;
+        return readSucceeded;
     }
 
     private bool RevalidateIdentity()
@@ -205,7 +283,8 @@ internal sealed class GuardedMemoryReaderFactory(TimeProvider timeProvider)
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(observation);
 
-        if (observation.ProcessId <= 0
+        if (observation.ReadGate is null
+            || observation.ProcessId <= 0
             || observation.ProcessStartIdentity <= 0
             || string.IsNullOrWhiteSpace(observation.CanonicalExecutablePath)
             || string.IsNullOrWhiteSpace(observation.ProductVersion)
@@ -247,7 +326,8 @@ internal sealed class GuardedMemoryReaderFactory(TimeProvider timeProvider)
 
             using AuthorizedProcessLease? lease = AuthorizedProcessLease.Open(
                 observation,
-                timeProvider);
+                timeProvider,
+                cancellationToken);
             if (lease is null)
             {
                 return ValueTask.FromResult(OperationResult.Failure<byte[]>(
@@ -260,7 +340,7 @@ internal sealed class GuardedMemoryReaderFactory(TimeProvider timeProvider)
             byte[] buffer = GC.AllocateUninitializedArray<byte>(length);
             try
             {
-                if (!lease.TryRead(address, buffer, 0, length, out nuint bytesRead)
+                if (!lease.TryRead(address, buffer, 0, length, cancellationToken, out nuint bytesRead)
                     || bytesRead != (nuint)length)
                 {
                     return ValueTask.FromResult(OperationResult.Failure<byte[]>(

@@ -433,7 +433,7 @@ internal static class GameApiEndpoints
 
     internal static async Task<IResult> CreateSnapshotAsync(
         IGameMemoryScanner scanner,
-        SnapshotRequestApi request,
+        OffsetSnapshotRequest request,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(scanner);
@@ -471,7 +471,13 @@ internal static class GameApiEndpoints
             || (request.FloatMin.HasValue && !float.IsFinite(request.FloatMin.Value))
             || (request.FloatMax.HasValue && !float.IsFinite(request.FloatMax.Value))
             || (request.FloatMin.HasValue && request.FloatMax.HasValue
-                && request.FloatMin.Value > request.FloatMax.Value))
+                && request.FloatMin.Value > request.FloatMax.Value)
+            || (request.IntMin.HasValue && request.IntMax.HasValue
+                && request.IntMin.Value > request.IntMax.Value)
+            || (request.LongMin.HasValue && request.LongMax.HasValue
+                && request.LongMin.Value > request.LongMax.Value)
+            || (request.UIntMin.HasValue && request.UIntMax.HasValue
+                && request.UIntMin.Value > request.UIntMax.Value))
         {
             return Results.BadRequest(new { error = "discover.invalid_options" });
         }
@@ -495,14 +501,14 @@ internal static class GameApiEndpoints
             UIntMax: kind is MemoryValueKind.UInt32Value or MemoryValueKind.UInt64Value ? request.UIntMax : null);
         var result = await scanner.CreateSnapshotAsync(snapReq, cancellationToken).ConfigureAwait(false);
         return result.IsSuccess
-            ? Results.Ok(new { sessionId = result.Value })
+            ? Results.Ok(new OffsetSnapshotResponse { SessionId = result.Value ?? string.Empty })
             : Results.BadRequest(new { error = result.Error?.Code });
     }
 
     internal static async Task<IResult> CompareSnapshotAsync(
         IGameMemoryScanner scanner,
         string sessionId,
-        CompareRequestApi request,
+        OffsetCompareRequest request,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(scanner);
@@ -521,19 +527,19 @@ internal static class GameApiEndpoints
         if (!result.IsSuccess)
             return Results.BadRequest(new { error = result.Error?.Code ?? "discover.compare_failed" });
         var r = result.Value!;
-        return Results.Ok(new
+        return Results.Ok(new OffsetCompareResponse
         {
-            r.CompletedAtUtc,
-            r.PreviousCount,
-            r.CurrentCount,
-            r.ChangedCount,
-            r.UnchangedCount,
-            r.IncreasedCount,
-            r.DecreasedCount,
-            r.Truncated,
-            r.ComparedAgainstRollingBaseline,
-            r.RetainedCount,
-            candidates = r.Candidates.Select(c => new OffsetDiscoveryCandidate
+            CompletedAtUtc = r.CompletedAtUtc,
+            PreviousCount = r.PreviousCount,
+            CurrentCount = r.CurrentCount,
+            ChangedCount = r.ChangedCount,
+            UnchangedCount = r.UnchangedCount,
+            IncreasedCount = r.IncreasedCount,
+            DecreasedCount = r.DecreasedCount,
+            Truncated = r.Truncated,
+            ComparedAgainstRollingBaseline = r.ComparedAgainstRollingBaseline,
+            RetainedCount = r.RetainedCount,
+            Candidates = r.Candidates.Select(c => new OffsetDiscoveryCandidate
             {
                 AbsoluteAddress = $"0x{c.AbsoluteAddress:X}",
                 BaseDisplacement = $"0x{c.BaseDisplacement:X}",
@@ -556,12 +562,12 @@ internal static class GameApiEndpoints
         }
 
         scanner.DiscardSession(sessionId);
-        return Results.Ok(new { discarded = sessionId });
+        return Results.Ok(new OffsetDiscardResponse { Discarded = sessionId });
     }
 
     internal static async Task<IResult> DiscoverNeighborhoodAsync(
         IGameMemoryScanner scanner,
-        NeighborhoodRequestApi request,
+        OffsetNeighborhoodRequest request,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(scanner);
@@ -621,43 +627,4 @@ internal static class GameApiEndpoints
     // paths or machine details and must never reach the wire (privacy rule).
     private static string ErrorCode(ApplicationError? error) =>
         string.IsNullOrWhiteSpace(error?.Code) ? "launch.failed" : error.Code;
-}
-
-internal sealed record SnapshotRequestApi
-{
-    public int ValueSize { get; init; } = 4;
-    public float? FloatMin { get; init; }
-    public float? FloatMax { get; init; }
-    public int? IntMin { get; init; }
-    public int? IntMax { get; init; }
-    public long? LongMin { get; init; }
-    public long? LongMax { get; init; }
-    public ulong? UIntMin { get; init; }
-    public ulong? UIntMax { get; init; }
-    public long MinAddress { get; init; }
-    public long MaxAddress { get; init; }
-    public string ValueKind { get; init; } = "Int32";
-    public int Alignment { get; init; } = 1;
-    public bool IncludeImageRegions { get; init; }
-}
-
-internal sealed record CompareRequestApi
-{
-    public string CompareMode { get; init; } = "changed";
-    public int MaxCandidates { get; init; } = 100;
-    public bool RollingBaseline { get; init; }
-}
-
-internal sealed record NeighborhoodRequestApi
-{
-    public long ReferenceOffset { get; init; }
-    public int WindowSize { get; init; } = 512;
-    public bool IncludeFloat { get; init; } = true;
-    public bool IncludeInt32 { get; init; } = true;
-    public bool IncludeDouble { get; init; }
-    public float? FloatMin { get; init; }
-    public float? FloatMax { get; init; }
-    public int? IntMin { get; init; }
-    public int? IntMax { get; init; }
-    public bool IncludeWorkingSetClassification { get; init; }
 }

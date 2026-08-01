@@ -148,3 +148,73 @@ public sealed record PointerChainDiscoveryResponse
     public List<PointerChainDiscoveryCandidate> Candidates { get; init; } = [];
     public int RejectedChains { get; init; }
 }
+
+/// <summary>Request to create a bounded filtered memory snapshot.</summary>
+public sealed record OffsetSnapshotRequest
+{
+    public int ValueSize { get; init; } = 4;
+    public float? FloatMin { get; init; }
+    public float? FloatMax { get; init; }
+    public int? IntMin { get; init; }
+    public int? IntMax { get; init; }
+    public long? LongMin { get; init; }
+    public long? LongMax { get; init; }
+    public ulong? UIntMin { get; init; }
+    public ulong? UIntMax { get; init; }
+    public long MinAddress { get; init; }
+    public long MaxAddress { get; init; }
+    public string ValueKind { get; init; } = "Int32";
+    public int Alignment { get; init; } = 1;
+    public bool IncludeImageRegions { get; init; }
+}
+
+/// <summary>Request to compare a snapshot against current memory.</summary>
+public sealed record OffsetCompareRequest
+{
+    public string CompareMode { get; init; } = "changed";
+    public int MaxCandidates { get; init; } = 100;
+    public bool RollingBaseline { get; init; }
+}
+
+/// <summary>Request to scan a bounded memory window around a reference offset.</summary>
+public sealed record OffsetNeighborhoodRequest
+{
+    public long ReferenceOffset { get; init; }
+    public int WindowSize { get; init; } = 512;
+    public bool IncludeFloat { get; init; } = true;
+    public bool IncludeInt32 { get; init; } = true;
+    public bool IncludeDouble { get; init; }
+    public float? FloatMin { get; init; }
+    public float? FloatMax { get; init; }
+    public int? IntMin { get; init; }
+    public int? IntMax { get; init; }
+    public bool IncludeWorkingSetClassification { get; init; }
+}
+
+/// <summary>Response containing the identifier of a retained snapshot session.</summary>
+public sealed record OffsetSnapshotResponse
+{
+    public string SessionId { get; init; } = string.Empty;
+}
+
+/// <summary>Response from a snapshot comparison.</summary>
+public sealed record OffsetCompareResponse
+{
+    public DateTimeOffset CompletedAtUtc { get; init; }
+    public int PreviousCount { get; init; }
+    public int CurrentCount { get; init; }
+    public int ChangedCount { get; init; }
+    public int UnchangedCount { get; init; }
+    public int IncreasedCount { get; init; }
+    public int DecreasedCount { get; init; }
+    public bool Truncated { get; init; }
+    public bool ComparedAgainstRollingBaseline { get; init; }
+    public int RetainedCount { get; init; }
+    public List<OffsetDiscoveryCandidate> Candidates { get; init; } = [];
+}
+
+/// <summary>Response for a discarded snapshot session.</summary>
+public sealed record OffsetDiscardResponse
+{
+    public string Discarded { get; init; } = string.Empty;
+}

@@ -135,7 +135,7 @@ internal sealed class MemoryScanEngine
             observation.ProductVersion,
             observation.ExecutableSha256.Value);
 
-        using AuthorizedProcessLease? lease = AuthorizedProcessLease.Open(observation, _timeProvider);
+        using AuthorizedProcessLease? lease = AuthorizedProcessLease.Open(observation, _timeProvider, cancellationToken);
         if (lease is null)
         {
             _logger.LogWarning(
@@ -192,7 +192,7 @@ internal sealed class MemoryScanEngine
                 }
 
                 long address = checked(region.BaseAddress + offset);
-                if (!lease.TryRead((nint)address, readBuffer, 0, length, out nuint read)
+                if (!lease.TryRead((nint)address, readBuffer, 0, length, cancellationToken, out nuint read)
                     || read != (nuint)length)
                 {
                     readFailureCount++;
@@ -346,7 +346,7 @@ internal sealed class MemoryScanEngine
                 "The comparison base address does not match the snapshot.");
         }
 
-        using AuthorizedProcessLease? lease = AuthorizedProcessLease.Open(observation, _timeProvider);
+        using AuthorizedProcessLease? lease = AuthorizedProcessLease.Open(observation, _timeProvider, cancellationToken);
         if (lease is null)
         {
             _logger.LogWarning(
@@ -375,7 +375,7 @@ internal sealed class MemoryScanEngine
                     (_timeProvider.GetUtcNow() - startedAt).TotalMilliseconds);
                 cancellationToken.ThrowIfCancellationRequested();
             }
-            if (!lease.TryRead((nint)chunk.BaseAddress, readBuffer, 0, chunk.Length, out nuint read)
+            if (!lease.TryRead((nint)chunk.BaseAddress, readBuffer, 0, chunk.Length, cancellationToken, out nuint read)
                 || read != (nuint)chunk.Length)
             {
                 readFailureCount++;
@@ -541,7 +541,8 @@ internal sealed class MemoryScanEngine
         : "unknown";
 
     private static bool SameIdentity(AuthorizedMemoryObservation left, AuthorizedMemoryObservation right) =>
-        left.ProcessId == right.ProcessId
+        left.Generation == right.Generation
+        && left.ProcessId == right.ProcessId
         && left.ProcessStartIdentity == right.ProcessStartIdentity
         && string.Equals(left.CanonicalExecutablePath, right.CanonicalExecutablePath, StringComparison.OrdinalIgnoreCase)
         && left.ExecutableSha256 == right.ExecutableSha256;

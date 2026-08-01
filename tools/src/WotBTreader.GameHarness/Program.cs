@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using WotBTreader.GameHarness;
@@ -72,7 +73,8 @@ return exitCode;
 
 static async Task<int> StartGameAsync()
 {
-    string? hostUrl = ReadRendezvousUrl();
+    RendezvousConnection? rendezvous = ReadRendezvous();
+    string? hostUrl = rendezvous?.BaseUri;
     if (hostUrl is null)
     {
         Console.Error.WriteLine("start: no web host found. Start the host with 'serve' first.");
@@ -81,11 +83,12 @@ static async Task<int> StartGameAsync()
 
     string baseAddress = hostUrl.EndsWith('/') ? hostUrl : hostUrl + "/";
     using var client = new HttpClient { BaseAddress = new Uri(baseAddress), Timeout = TimeSpan.FromSeconds(10) };
+    AddCapabilityHeader(client, rendezvous!);
 
     try
     {
         Console.WriteLine("Starting game launcher...");
-        HttpResponseMessage response = await client.PostAsync("/api/v1/game/start", null).ConfigureAwait(false);
+        using HttpResponseMessage response = await client.PostAsync("/api/v1/game/start", null).ConfigureAwait(false);
         string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
         if (response.IsSuccessStatusCode)
@@ -110,7 +113,8 @@ static async Task<int> StartGameAsync()
 
 static async Task<int> ScanAsync()
 {
-    string? hostUrl = ReadRendezvousUrl();
+    RendezvousConnection? rendezvous = ReadRendezvous();
+    string? hostUrl = rendezvous?.BaseUri;
     if (hostUrl is null)
     {
         Console.Error.WriteLine("scan: no web host found. Start the host with 'serve' first, then launch " +
@@ -118,7 +122,7 @@ static async Task<int> ScanAsync()
         return (int)HarnessExitCode.UnsupportedCapability;
     }
 
-    int gateResult = await CheckGateAsync(hostUrl, "scan");
+    int gateResult = await CheckGateAsync(hostUrl, "scan", rendezvous!);
     if (gateResult != 0)
     {
         return gateResult;
@@ -133,7 +137,8 @@ static async Task<int> ScanAsync()
 
 static async Task<int> ProbeAsync()
 {
-    string? hostUrl = ReadRendezvousUrl();
+    RendezvousConnection? rendezvous = ReadRendezvous();
+    string? hostUrl = rendezvous?.BaseUri;
     if (hostUrl is null)
     {
         Console.Error.WriteLine("probe: no web host found. Start the host with 'serve' first, then launch " +
@@ -141,7 +146,7 @@ static async Task<int> ProbeAsync()
         return (int)HarnessExitCode.UnsupportedCapability;
     }
 
-    int gateResult = await CheckGateAsync(hostUrl, "probe");
+    int gateResult = await CheckGateAsync(hostUrl, "probe", rendezvous!);
     if (gateResult != 0)
     {
         return gateResult;
@@ -153,15 +158,20 @@ static async Task<int> ProbeAsync()
     return 0;
 }
 
-static async Task<int> CheckGateAsync(string hostUrl, string command)
+static async Task<int> CheckGateAsync(
+    string hostUrl,
+    string command,
+    RendezvousConnection rendezvous)
 {
+    ArgumentNullException.ThrowIfNull(rendezvous);
     // Ensure trailing slash so relative URIs compose correctly with BaseAddress.
     string baseAddress = hostUrl.EndsWith('/') ? hostUrl : hostUrl + "/";
     using var client = new HttpClient { BaseAddress = new Uri(baseAddress), Timeout = TimeSpan.FromSeconds(5) };
+    AddCapabilityHeader(client, rendezvous);
 
     try
     {
-        var stateResponse = await client.GetAsync("/api/v1/game/state").ConfigureAwait(false);
+        using HttpResponseMessage stateResponse = await client.GetAsync("/api/v1/game/state").ConfigureAwait(false);
         if (!stateResponse.IsSuccessStatusCode)
         {
             Console.Error.WriteLine(
@@ -312,7 +322,8 @@ static string? FindOffsetFile()
 
 static async Task<int> DiscoverAsync(string[] args)
 {
-    string? hostUrl = ReadRendezvousUrl();
+    RendezvousConnection? rendezvous = ReadRendezvous();
+    string? hostUrl = rendezvous?.BaseUri;
     if (hostUrl is null)
     {
         Console.Error.WriteLine("discover: no web host found.");
@@ -333,7 +344,7 @@ static async Task<int> DiscoverAsync(string[] args)
         return (int)HarnessExitCode.InvalidInput;
     }
 
-    int gateResult = await CheckGateAsync(hostUrl, "discover");
+    int gateResult = await CheckGateAsync(hostUrl, "discover", rendezvous!);
     if (gateResult != 0)
         return gateResult;
 
@@ -352,6 +363,12 @@ static async Task<int> DiscoverAsync(string[] args)
     }
 
     float? floatTolerance = null;
+    if (args.Length > 5)
+    {
+        Console.Error.WriteLine("discover: too many arguments.");
+        return (int)HarnessExitCode.InvalidInput;
+    }
+
     if (args.Length >= 5)
     {
         if (fieldType != "Float"
@@ -374,6 +391,7 @@ static async Task<int> DiscoverAsync(string[] args)
         BaseAddress = new Uri(baseAddress),
         Timeout = TimeSpan.FromSeconds(30),
     };
+    AddCapabilityHeader(client, rendezvous!);
 
     var payload = new
     {
@@ -393,7 +411,7 @@ static async Task<int> DiscoverAsync(string[] args)
 
     try
     {
-        HttpResponseMessage response = await client
+        using HttpResponseMessage response = await client
             .PostAsJsonAsync("/api/v1/game/discover", payload)
             .ConfigureAwait(false);
 
@@ -522,7 +540,8 @@ static string Truncate(string value, int maxLength) =>
 
 static async Task<int> DiscoverPatternAsync(string[] args)
 {
-    string? hostUrl = ReadRendezvousUrl();
+    RendezvousConnection? rendezvous = ReadRendezvous();
+    string? hostUrl = rendezvous?.BaseUri;
     if (hostUrl is null) return HostNotFound("discover-pattern");
     if (args.Length < 3)
     {
@@ -531,7 +550,7 @@ static async Task<int> DiscoverPatternAsync(string[] args)
         return (int)HarnessExitCode.InvalidInput;
     }
 
-    int gateResult = await CheckGateAsync(hostUrl, "discover-pattern");
+    int gateResult = await CheckGateAsync(hostUrl, "discover-pattern", rendezvous!);
     if (gateResult != 0) return gateResult;
 
     string fieldName = args[1];
@@ -539,12 +558,25 @@ static async Task<int> DiscoverPatternAsync(string[] args)
     string? maskHex = args.Length > 3 && !args[3].StartsWith("--", StringComparison.Ordinal)
         ? args[3] : null;
     int alignment = 1;
-    for (int i = 3; i < args.Length; i++)
+    int optionStart = maskHex is null ? 3 : 4;
+    for (int i = optionStart; i < args.Length; i++)
     {
-        if (args[i] == "--alignment" && i + 1 < args.Length
-            && int.TryParse(args[++i], out int parsed))
+        if (args[i] == "--alignment")
         {
+            if (i + 1 >= args.Length
+                || !int.TryParse(args[++i], NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed)
+                || parsed is not (1 or 2 or 4 or 8))
+            {
+                Console.Error.WriteLine("discover-pattern: --alignment requires one of 1, 2, 4, or 8.");
+                return (int)HarnessExitCode.InvalidInput;
+            }
+
             alignment = parsed;
+        }
+        else
+        {
+            Console.Error.WriteLine($"discover-pattern: unknown option '{args[i]}'.");
+            return (int)HarnessExitCode.InvalidInput;
         }
     }
 
@@ -559,6 +591,7 @@ static async Task<int> DiscoverPatternAsync(string[] args)
 
     string baseAddress = hostUrl.EndsWith('/') ? hostUrl : hostUrl + "/";
     using var client = new HttpClient { BaseAddress = new Uri(baseAddress), Timeout = TimeSpan.FromMinutes(2) };
+    AddCapabilityHeader(client, rendezvous!);
     var payload = new
     {
         fieldName,
@@ -572,7 +605,7 @@ static async Task<int> DiscoverPatternAsync(string[] args)
     Console.WriteLine($"Scanning AOB pattern {patternHex}...");
     try
     {
-        HttpResponseMessage response = await client.PostAsJsonAsync(
+        using HttpResponseMessage response = await client.PostAsJsonAsync(
             "/api/v1/game/discover/pattern", payload).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
@@ -596,7 +629,8 @@ static async Task<int> DiscoverPatternAsync(string[] args)
 
 static async Task<int> DiscoverPointerChainAsync(string[] args)
 {
-    string? hostUrl = ReadRendezvousUrl();
+    RendezvousConnection? rendezvous = ReadRendezvous();
+    string? hostUrl = rendezvous?.BaseUri;
     if (hostUrl is null) return HostNotFound("discover-pointer-chain");
     if (args.Length < 3)
     {
@@ -605,7 +639,7 @@ static async Task<int> DiscoverPointerChainAsync(string[] args)
         return (int)HarnessExitCode.InvalidInput;
     }
 
-    int gateResult = await CheckGateAsync(hostUrl, "discover-pointer-chain");
+    int gateResult = await CheckGateAsync(hostUrl, "discover-pointer-chain", rendezvous!);
     if (gateResult != 0) return gateResult;
 
     if (!TryParseAddress(args[1], out long rootOffset))
@@ -624,9 +658,10 @@ static async Task<int> DiscoverPointerChainAsync(string[] args)
     List<long> offsets = parts.Select(ParseAddress).ToList();
     string baseAddress = hostUrl.EndsWith('/') ? hostUrl : hostUrl + "/";
     using var client = new HttpClient { BaseAddress = new Uri(baseAddress), Timeout = TimeSpan.FromSeconds(30) };
+    AddCapabilityHeader(client, rendezvous!);
     try
     {
-        HttpResponseMessage response = await client.PostAsJsonAsync(
+        using HttpResponseMessage response = await client.PostAsJsonAsync(
             "/api/v1/game/discover/pointer-chain",
             new { rootRelativeOffset = rootOffset, pointerOffsets = offsets, maxDepth = 4 })
             .ConfigureAwait(false);
@@ -704,53 +739,111 @@ static void PrintScanSummary(JsonElement root)
 
 static async Task<int> SnapshotAsync(string[] args)
 {
-    string? hostUrl = ReadRendezvousUrl();
+    RendezvousConnection? rendezvous = ReadRendezvous();
+    string? hostUrl = rendezvous?.BaseUri;
     if (hostUrl is null) return HostNotFound("snapshot");
-    int gateResult = await CheckGateAsync(hostUrl, "snapshot");
+    int gateResult = await CheckGateAsync(hostUrl, "snapshot", rendezvous!);
     if (gateResult != 0) return gateResult;
 
     int valueSize = 4;
     float? floatMin = null, floatMax = null;
     int? intMin = null, intMax = null;
 
-    if (args.Length > 1 && int.TryParse(args[1], out int sz))
-        valueSize = Math.Clamp(sz, 2, 8);
+    if (args.Length > 1)
+    {
+        if (!int.TryParse(args[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsedSize)
+            || parsedSize != 4)
+        {
+            Console.Error.WriteLine("snapshot: valueSize must be 4 for the CLI's default Int32 snapshot.");
+            return (int)HarnessExitCode.InvalidInput;
+        }
+
+        valueSize = parsedSize;
+    }
     for (int i = 2; i < args.Length; i++)
     {
-        if (args[i] == "--float-min" && i + 1 < args.Length
-            && float.TryParse(args[i + 1], out float fmin)) { floatMin = fmin; i++; }
-        else if (args[i] == "--float-max" && i + 1 < args.Length
-            && float.TryParse(args[i + 1], out float fmax)) { floatMax = fmax; i++; }
-        else if (args[i] == "--int-min" && i + 1 < args.Length
-            && int.TryParse(args[i + 1], out int imin)) { intMin = imin; i++; }
-        else if (args[i] == "--int-max" && i + 1 < args.Length
-            && int.TryParse(args[i + 1], out int imax)) { intMax = imax; i++; }
+        if (args[i] is "--float-min" or "--float-max" or "--int-min" or "--int-max")
+        {
+            if (i + 1 >= args.Length)
+            {
+                Console.Error.WriteLine($"snapshot: {args[i]} requires a value.");
+                return (int)HarnessExitCode.InvalidInput;
+            }
+
+            string value = args[++i];
+            bool parsed = args[i - 1] switch
+            {
+                "--float-min" => float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float fmin)
+                    && float.IsFinite(fmin) && (floatMin = fmin) is not null,
+                "--float-max" => float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float fmax)
+                    && float.IsFinite(fmax) && (floatMax = fmax) is not null,
+                "--int-min" => int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int imin)
+                    && (intMin = imin) is not null,
+                "--int-max" => int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int imax)
+                    && (intMax = imax) is not null,
+                _ => false,
+            };
+            if (!parsed)
+            {
+                Console.Error.WriteLine($"snapshot: invalid value for {args[i - 1]}.");
+                return (int)HarnessExitCode.InvalidInput;
+            }
+        }
+        else
+        {
+            Console.Error.WriteLine($"snapshot: unknown option '{args[i]}'.");
+            return (int)HarnessExitCode.InvalidInput;
+        }
     }
 
     string baseAddr = hostUrl.EndsWith('/') ? hostUrl : hostUrl + "/";
     using var client = new HttpClient { BaseAddress = new Uri(baseAddr), Timeout = TimeSpan.FromMinutes(2) };
+    AddCapabilityHeader(client, rendezvous!);
+
+    if ((floatMin.HasValue && floatMax.HasValue && floatMin > floatMax)
+        || (floatMin.HasValue && !float.IsFinite(floatMin.Value))
+        || (floatMax.HasValue && !float.IsFinite(floatMax.Value)))
+    {
+        Console.Error.WriteLine("snapshot: float bounds must be finite and ordered.");
+        return (int)HarnessExitCode.InvalidInput;
+    }
 
     Console.WriteLine($"Creating snapshot (valueSize={valueSize}, float=[{floatMin},{floatMax}], int=[{intMin},{intMax}])...");
-    var response = await client.PostAsJsonAsync("/api/v1/game/discover/snapshot",
-        new { valueSize, floatMin, floatMax, intMin, intMax, minAddress = 0L, maxAddress = 0L }).ConfigureAwait(false);
-    if (!response.IsSuccessStatusCode)
+    try
     {
-        Console.Error.WriteLine($"snapshot: HTTP {(int)response.StatusCode}");
+        using HttpResponseMessage response = await client.PostAsJsonAsync("/api/v1/game/discover/snapshot",
+            new { valueSize, floatMin, floatMax, intMin, intMax, minAddress = 0L, maxAddress = 0L }).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            Console.Error.WriteLine($"snapshot: HTTP {(int)response.StatusCode}");
+            return (int)HarnessExitCode.ConflictOrBusy;
+        }
+        using JsonDocument json = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+        string? sid = json.RootElement.TryGetProperty("sessionId", out JsonElement e) ? e.GetString() : null;
+        if (string.IsNullOrWhiteSpace(sid))
+        {
+            Console.Error.WriteLine("snapshot: host returned no session id.");
+            return (int)HarnessExitCode.InternalFailure;
+        }
+        Console.WriteLine($"Session: {sid}");
+        return 0;
+    }
+    catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+    {
+        Console.Error.WriteLine($"snapshot: could not reach web host at {hostUrl}.");
         return (int)HarnessExitCode.ConflictOrBusy;
     }
-    var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
-    string? sid = json.RootElement.TryGetProperty("sessionId", out JsonElement e) ? e.GetString() : null;
-    Console.WriteLine($"Session: {sid}");
-    return 0;
 }
 
 // ── Compare command ────────────────────────────────────────
 
 static async Task<int> CompareSnapshotAsync(string[] args)
 {
-    string? hostUrl = ReadRendezvousUrl();
+    RendezvousConnection? rendezvous = ReadRendezvous();
+    string? hostUrl = rendezvous?.BaseUri;
     if (hostUrl is null) return HostNotFound("compare");
-    int gateResult = await CheckGateAsync(hostUrl, "compare");
+    int gateResult = await CheckGateAsync(hostUrl, "compare", rendezvous!);
     if (gateResult != 0) return gateResult;
 
     if (args.Length < 2)
@@ -759,15 +852,27 @@ static async Task<int> CompareSnapshotAsync(string[] args)
         return (int)HarnessExitCode.InvalidInput;
     }
 
+    if (args.Length > 3)
+    {
+        Console.Error.WriteLine("compare: too many arguments.");
+        return (int)HarnessExitCode.InvalidInput;
+    }
+
     string sessionId = args[1];
-    string mode = args.Length > 2 ? args[2] : "changed";
+    string mode = args.Length > 2 ? args[2].ToLowerInvariant() : "changed";
+    if (mode is not ("changed" or "unchanged" or "increased" or "decreased"))
+    {
+        Console.Error.WriteLine("compare: mode must be changed, unchanged, increased, or decreased.");
+        return (int)HarnessExitCode.InvalidInput;
+    }
 
     string baseAddr = hostUrl.EndsWith('/') ? hostUrl : hostUrl + "/";
     using var client = new HttpClient { BaseAddress = new Uri(baseAddr), Timeout = TimeSpan.FromMinutes(2) };
+    AddCapabilityHeader(client, rendezvous!);
 
     Console.WriteLine($"Comparing session {sessionId} (mode={mode})...");
-    var response = await client.PostAsJsonAsync(
-        $"/api/v1/game/discover/compare/{sessionId}",
+    using HttpResponseMessage response = await client.PostAsJsonAsync(
+        $"/api/v1/game/discover/compare/{Uri.EscapeDataString(sessionId)}",
         new { compareMode = mode, maxCandidates = 100 }).ConfigureAwait(false);
 
     if (!response.IsSuccessStatusCode)
@@ -776,7 +881,7 @@ static async Task<int> CompareSnapshotAsync(string[] args)
         return (int)HarnessExitCode.ConflictOrBusy;
     }
 
-    var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+    using JsonDocument json = JsonDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
     JsonElement root = json.RootElement;
     Console.WriteLine($"Changed={ReadInt(root, "changedCount")}, " +
         $"Unchanged={ReadInt(root, "unchangedCount")}, " +
@@ -798,9 +903,10 @@ static async Task<int> CompareSnapshotAsync(string[] args)
 
 static async Task<int> NearbyAsync(string[] args)
 {
-    string? hostUrl = ReadRendezvousUrl();
+    RendezvousConnection? rendezvous = ReadRendezvous();
+    string? hostUrl = rendezvous?.BaseUri;
     if (hostUrl is null) return HostNotFound("nearby");
-    int gateResult = await CheckGateAsync(hostUrl, "nearby");
+    int gateResult = await CheckGateAsync(hostUrl, "nearby", rendezvous!);
     if (gateResult != 0) return gateResult;
 
     if (args.Length < 2)
@@ -810,72 +916,120 @@ static async Task<int> NearbyAsync(string[] args)
         return (int)HarnessExitCode.InvalidInput;
     }
 
-    long refOffset = ParseHexOrDecimal(args[1]);
+    if (!TryParseAddress(args[1], out long refOffset) || refOffset < 0)
+    {
+        Console.Error.WriteLine("nearby: refOffset must be a non-negative decimal or hexadecimal address.");
+        return (int)HarnessExitCode.InvalidInput;
+    }
     int window = 512;
     float? floatMin = null, floatMax = null;
     int? intMin = null, intMax = null;
 
     for (int i = 2; i < args.Length; i++)
     {
-        if (args[i] == "--window" && i + 1 < args.Length
-            && int.TryParse(args[i + 1], out int w)) { window = w; i++; }
-        else if (args[i] == "--float-min" && i + 1 < args.Length
-            && float.TryParse(args[i + 1], out float fmin)) { floatMin = fmin; i++; }
-        else if (args[i] == "--float-max" && i + 1 < args.Length
-            && float.TryParse(args[i + 1], out float fmax)) { floatMax = fmax; i++; }
-        else if (args[i] == "--int-min" && i + 1 < args.Length
-            && int.TryParse(args[i + 1], out int imin)) { intMin = imin; i++; }
-        else if (args[i] == "--int-max" && i + 1 < args.Length
-            && int.TryParse(args[i + 1], out int imax)) { intMax = imax; i++; }
+        if (args[i] is "--window" or "--float-min" or "--float-max" or "--int-min" or "--int-max")
+        {
+            if (i + 1 >= args.Length)
+            {
+                Console.Error.WriteLine($"nearby: {args[i]} requires a value.");
+                return (int)HarnessExitCode.InvalidInput;
+            }
+
+            string value = args[++i];
+            bool parsed = args[i - 1] switch
+            {
+                "--window" => int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int w)
+                    && (window = w) >= 0,
+                "--float-min" => float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float fmin)
+                    && float.IsFinite(fmin) && (floatMin = fmin) is not null,
+                "--float-max" => float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float fmax)
+                    && float.IsFinite(fmax) && (floatMax = fmax) is not null,
+                "--int-min" => int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int imin)
+                    && (intMin = imin) is not null,
+                "--int-max" => int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int imax)
+                    && (intMax = imax) is not null,
+                _ => false,
+            };
+            if (!parsed)
+            {
+                Console.Error.WriteLine($"nearby: invalid value for {args[i - 1]}.");
+                return (int)HarnessExitCode.InvalidInput;
+            }
+        }
+        else
+        {
+            Console.Error.WriteLine($"nearby: unknown option '{args[i]}'.");
+            return (int)HarnessExitCode.InvalidInput;
+        }
     }
 
     string baseAddr = hostUrl.EndsWith('/') ? hostUrl : hostUrl + "/";
     using var client = new HttpClient { BaseAddress = new Uri(baseAddr), Timeout = TimeSpan.FromSeconds(30) };
+    AddCapabilityHeader(client, rendezvous!);
+
+    if (window is < 64 or > 4096
+        || (floatMin.HasValue && floatMax.HasValue && floatMin > floatMax)
+        || (floatMin.HasValue && !float.IsFinite(floatMin.Value))
+        || (floatMax.HasValue && !float.IsFinite(floatMax.Value)))
+    {
+        Console.Error.WriteLine("nearby: window must be 64-4096 and float bounds must be finite and ordered.");
+        return (int)HarnessExitCode.InvalidInput;
+    }
 
     Console.WriteLine($"Neighborhood scan at 0x{refOffset:X} (±{window} bytes)...");
-    var response = await client.PostAsJsonAsync("/api/v1/game/discover/neighborhood",
-        new
-        {
-            referenceOffset = refOffset,
-            windowSize = window,
-            includeFloat = true,
-            includeInt32 = true,
-            includeDouble = false,
-            floatMin,
-            floatMax,
-            intMin,
-            intMax
-        }).ConfigureAwait(false);
-
-    if (!response.IsSuccessStatusCode)
+    try
     {
-        Console.Error.WriteLine($"nearby: HTTP {(int)response.StatusCode}");
+        using HttpResponseMessage response = await client.PostAsJsonAsync("/api/v1/game/discover/neighborhood",
+            new
+            {
+                referenceOffset = refOffset,
+                windowSize = window,
+                includeFloat = true,
+                includeInt32 = true,
+                includeDouble = false,
+                floatMin,
+                floatMax,
+                intMin,
+                intMax
+            }).ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            Console.Error.WriteLine($"nearby: HTTP {(int)response.StatusCode}");
+            return (int)HarnessExitCode.ConflictOrBusy;
+        }
+
+        using JsonDocument json = JsonDocument.Parse(
+            await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+        JsonElement root = json.RootElement;
+        if (root.TryGetProperty("candidates", out JsonElement cands))
+        {
+            Console.WriteLine($"Candidates: {cands.GetArrayLength()}");
+            Console.WriteLine($"{"Delta",-8} {"Relative Offset",-16} {"Value",-30}");
+            Console.WriteLine(new string('-', 56));
+            foreach (var c in cands.EnumerateArray())
+            {
+                string summary = ReadStr(c, "valueSummary");
+                string relOff = ReadStr(c, "baseDisplacement");
+                // Extract delta from summary (e.g. "+4: float=0.500")
+                Console.WriteLine($"{summary,-56} {relOff}");
+            }
+        }
+        return 0;
+    }
+    catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+    {
+        Console.Error.WriteLine($"nearby: could not reach web host at {hostUrl}.");
         return (int)HarnessExitCode.ConflictOrBusy;
     }
-
-    var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
-    JsonElement root = json.RootElement;
-    if (root.TryGetProperty("candidates", out JsonElement cands))
-    {
-        Console.WriteLine($"Candidates: {cands.GetArrayLength()}");
-        Console.WriteLine($"{"Delta",-8} {"Relative Offset",-16} {"Value",-30}");
-        Console.WriteLine(new string('-', 56));
-        foreach (var c in cands.EnumerateArray())
-        {
-            string summary = ReadStr(c, "valueSummary");
-            string relOff = ReadStr(c, "baseDisplacement");
-            // Extract delta from summary (e.g. "+4: float=0.500")
-            Console.WriteLine($"{summary,-56} {relOff}");
-        }
-    }
-    return 0;
 }
 
 // ── Discard command ────────────────────────────────────────
 
 static async Task<int> DiscardSessionAsync(string[] args)
 {
-    string? hostUrl = ReadRendezvousUrl();
+    RendezvousConnection? rendezvous = ReadRendezvous();
+    string? hostUrl = rendezvous?.BaseUri;
     if (hostUrl is null) return HostNotFound("discard");
     if (args.Length < 2)
     {
@@ -884,9 +1038,18 @@ static async Task<int> DiscardSessionAsync(string[] args)
     }
     string baseAddr = hostUrl.EndsWith('/') ? hostUrl : hostUrl + "/";
     using var client = new HttpClient { BaseAddress = new Uri(baseAddr) };
-    var response = await client.DeleteAsync($"/api/v1/game/discover/session/{args[1]}").ConfigureAwait(false);
-    Console.WriteLine($"Discarded {args[1]}: HTTP {(int)response.StatusCode}");
-    return 0;
+    AddCapabilityHeader(client, rendezvous!);
+    try
+    {
+        using HttpResponseMessage response = await client.DeleteAsync($"/api/v1/game/discover/session/{Uri.EscapeDataString(args[1])}").ConfigureAwait(false);
+        Console.WriteLine($"Discarded {args[1]}: HTTP {(int)response.StatusCode}");
+        return response.IsSuccessStatusCode ? 0 : (int)HarnessExitCode.ConflictOrBusy;
+    }
+    catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+    {
+        Console.Error.WriteLine($"discard: could not reach web host at {hostUrl}.");
+        return (int)HarnessExitCode.ConflictOrBusy;
+    }
 }
 
 static int HostNotFound(string cmd)
@@ -895,15 +1058,13 @@ static int HostNotFound(string cmd)
     return (int)HarnessExitCode.UnsupportedCapability;
 }
 
-static long ParseHexOrDecimal(string s) => ParseAddress(s);
-
 static int ReadInt(JsonElement e, string prop) =>
     e.TryGetProperty(prop, out JsonElement v) && v.TryGetInt32(out int i) ? i : 0;
 
 static string ReadStr(JsonElement e, string prop) =>
     e.TryGetProperty(prop, out JsonElement v) ? v.GetString() ?? "?" : "?";
 
-static string? ReadRendezvousUrl()
+static RendezvousConnection? ReadRendezvous()
 {
     try
     {
@@ -934,61 +1095,81 @@ static string? ReadRendezvousUrl()
             return null;
         }
 
-        // Expiry guard
-        if (root.TryGetProperty("expiresAtUtc", out JsonElement expiresElement))
+        // Expiry and publisher identity are mandatory. A malformed or missing
+        // value is rejected rather than treated as an unbounded lease.
+        if (!root.TryGetProperty("expiresAtUtc", out JsonElement expiresElement)
+            || expiresElement.ValueKind != JsonValueKind.String
+            || !DateTimeOffset.TryParse(
+                expiresElement.GetString(),
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.RoundtripKind,
+                out DateTimeOffset expiresAt)
+            || expiresAt <= DateTimeOffset.UtcNow)
         {
-            string? expiresStr = expiresElement.GetString();
-            if (expiresStr is not null
-                && DateTimeOffset.TryParse(expiresStr, out DateTimeOffset expiresAt)
-                && expiresAt <= DateTimeOffset.UtcNow)
-            {
-                return null;
-            }
+            return null;
         }
 
-        // The rendezvous record uses "baseUri", not "url"
+        // The rendezvous record uses "baseUri", not "url". The capability
+        // is required for every unsafe API call; loopback alone is not auth.
         string? baseUri = root.TryGetProperty("baseUri", out JsonElement uriElement)
             ? uriElement.GetString()
             : null;
+        string? capability = root.TryGetProperty("capability", out JsonElement capabilityElement)
+            ? capabilityElement.GetString()
+            : null;
 
-        if (string.IsNullOrWhiteSpace(baseUri))
+        if (string.IsNullOrWhiteSpace(baseUri) || string.IsNullOrWhiteSpace(capability))
         {
             return null;
         }
 
         // Loopback-only guard
         if (!Uri.TryCreate(baseUri, UriKind.Absolute, out Uri? uri)
-            || !(uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
-                || uri.Host.Equals("127.0.0.1", StringComparison.Ordinal)
-                || uri.Host.Equals("[::1]", StringComparison.Ordinal)))
+            || uri.Scheme is not ("http" or "https")
+            || uri.Port is < 1 or > 65535
+            || !string.IsNullOrEmpty(uri.UserInfo)
+            || !IPAddress.TryParse(uri.Host.Trim('[', ']'), out IPAddress? address)
+            || !IPAddress.IsLoopback(address))
         {
             return null;
         }
 
-        // Process-alive guard: reject records from exited hosts
-        if (root.TryGetProperty("processId", out JsonElement pidElement)
-            && pidElement.TryGetInt32(out int processId))
+        // Process-alive guard: the publisher identity is mandatory. Reject
+        // missing, malformed, or exited PIDs before sending the capability.
+        if (!root.TryGetProperty("processId", out JsonElement pidElement)
+            || !pidElement.TryGetInt32(out int processId)
+            || processId <= 0)
         {
-            try
-            {
-                using Process? process = Process.GetProcessById(processId);
-                if (process is null || process.HasExited)
-                {
-                    return null;
-                }
-            }
-            catch
+            return null;
+        }
+
+        try
+        {
+            using Process? process = Process.GetProcessById(processId);
+            if (process is null || process.HasExited)
             {
                 return null;
             }
         }
+        catch
+        {
+            return null;
+        }
 
-        return baseUri;
+        return new RendezvousConnection(baseUri, capability);
     }
     catch
     {
         return null;
     }
+}
+
+static void AddCapabilityHeader(HttpClient client, RendezvousConnection rendezvous)
+{
+    ArgumentNullException.ThrowIfNull(client);
+    ArgumentNullException.ThrowIfNull(rendezvous);
+    client.DefaultRequestHeaders.TryAddWithoutValidation(
+        "X-WotBTreader-Capability", rendezvous.Capability);
 }
 
 // ── State command ───────────────────────────────────────────

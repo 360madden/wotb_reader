@@ -84,6 +84,13 @@ Do not scan until all of these are true:
 6. The client architecture has been measured; do not infer it from the store.
 7. The replay is in a known state: loading, playing, paused, or ended.
 8. A single field and a timeboxed hypothesis are selected.
+9. The target module base resolves at the moment of the operation. A transient
+   Windows module-enumeration failure denies that operation only; retry after
+   the process settles rather than selecting another PID or bypassing the gate.
+10. Cancellation and evidence revocation are honored by the module lookup and
+    scanner reads. A read admitted before revocation may finish, while a new
+    read is denied; do not treat cancellation as permission to select another
+    process or bypass identity checks.
 
 If any item is unknown, record `blocked` and fix that item. Do not compensate
 with a longer scan.

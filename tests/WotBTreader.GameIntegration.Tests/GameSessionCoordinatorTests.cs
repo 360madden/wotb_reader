@@ -288,6 +288,47 @@ public sealed class GameSessionCoordinatorTests
     }
 
     [TestMethod]
+    public async Task ScannerRetriesModuleBaseResolutionWithoutRevokingVerifiedEvidence()
+    {
+        var resolver = new SequencedModuleBaseResolver(nint.Zero, (nint)0x10000000);
+        var (coordinator, _) = CreateCoordinator(moduleBaseAddressResolver: resolver);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+        coordinator.ApplyEvidence(CreateValidEvidence());
+
+        OperationResult<MemoryScanResult> first = await coordinator.ScanAsync(
+            new MemoryScanRequest("position", "Float", [0, 0, 0, 0], null, 1, 4096),
+            CancellationToken.None);
+
+        Assert.IsFalse(first.IsSuccess);
+        Assert.AreEqual("discover.gate_not_satisfied", first.Error?.Code);
+        GameSessionSnapshot afterFirst = await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.OfflineReplayVerified, afterFirst.State);
+
+        OperationResult<MemoryScanResult> second = await coordinator.ScanAsync(
+            new MemoryScanRequest("position", "Float", [0, 0, 0, 0], null, 1, 4096),
+            CancellationToken.None);
+
+        Assert.IsFalse(second.IsSuccess);
+        Assert.AreNotEqual("discover.gate_not_satisfied", second.Error?.Code);
+        Assert.AreEqual(2, resolver.CallCount);
+    }
+
+    [TestMethod]
+    public async Task ModuleBaseResolutionCancellation_StopsBeforeStartingAnyScan()
+    {
+        using CancellationTokenSource cancellation = new();
+        var resolver = new CancellingModuleBaseResolver(cancellation);
+        var (coordinator, _) = CreateCoordinator(moduleBaseAddressResolver: resolver);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+        coordinator.ApplyEvidence(CreateValidEvidence());
+
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(async () =>
+            await coordinator.ScanAsync(
+                new MemoryScanRequest("position", "Float", [0, 0, 0, 0], null, 1, 4096),
+                cancellation.Token));
+    }
+
+    [TestMethod]
     public async Task DiscoveryCancellation_IsHonoredBeforeStartingAnyScan()
     {
         var (coordinator, _) = CreateVerifiedCoordinator();
@@ -347,6 +388,7 @@ public sealed class GameSessionCoordinatorTests
             IManagedLaunchCorrelationRegistrar? correlationRegistrar = null,
             IThreadResumePlatform? threadResumePlatform = null,
             IGuardedMemoryReaderFactory? memoryReaderFactory = null,
+            IGameProcessModuleBaseAddressResolver? moduleBaseAddressResolver = null,
             IOffsetTableReader? offsetTableReader = null,
             IBlitzReplayLifecycleFeed? lifecycleFeed = null)
     {
@@ -361,6 +403,7 @@ public sealed class GameSessionCoordinatorTests
             correlationRegistrar ?? new StubCorrelationRegistrar(),
             threadResumePlatform ?? new StubThreadResumePlatform(),
             memoryReaderFactory ?? new StubMemoryReaderFactory(),
+            moduleBaseAddressResolver ?? new FixedModuleBaseResolver((nint)0x10000000),
             offsetTableReader ?? new StubOffsetTableReader(),
             new MemoryScanDiscoverer(timeProvider, NullLogger<MemoryScanDiscoverer>.Instance),
             new MemoryScanEngine(timeProvider, NullLogger<MemoryScanEngine>.Instance),
@@ -475,6 +518,41 @@ public sealed class GameSessionCoordinatorTests
             CancellationToken cancellationToken) =>
             ValueTask.FromResult(OperationResult.Failure<ManagedLaunchPreparation>(
                 new ApplicationError(errorCode, "Test failure.", Retryable: false)));
+    }
+
+    private sealed class FixedModuleBaseResolver(nint baseAddress) : IGameProcessModuleBaseAddressResolver
+    {
+        public nint Resolve(int processId, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return baseAddress;
+        }
+    }
+
+    private sealed class SequencedModuleBaseResolver(params nint[] results) : IGameProcessModuleBaseAddressResolver
+    {
+        private readonly nint[] _results = results;
+        private int _index;
+
+        public int CallCount => _index;
+
+        public nint Resolve(int processId, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            int index = Interlocked.Increment(ref _index) - 1;
+            cancellationToken.ThrowIfCancellationRequested();
+            return _results[Math.Min(index, _results.Length - 1)];
+        }
+    }
+
+    private sealed class CancellingModuleBaseResolver(CancellationTokenSource cancellation)
+        : IGameProcessModuleBaseAddressResolver
+    {
+        public nint Resolve(int processId, CancellationToken cancellationToken)
+        {
+            cancellation.Cancel();
+            return (nint)0x10000000;
+        }
     }
 
     private sealed class StubOffsetTableReader : IOffsetTableReader

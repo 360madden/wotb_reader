@@ -69,7 +69,7 @@ internal sealed class MemoryScanDiscoverer
             observation.ProductVersion,
             observation.ExecutableSha256.Value);
 
-        using AuthorizedProcessLease? lease = AuthorizedProcessLease.Open(observation, _timeProvider);
+        using AuthorizedProcessLease? lease = AuthorizedProcessLease.Open(observation, _timeProvider, cancellationToken);
         if (lease is null)
         {
             _logger.LogWarning(
@@ -114,7 +114,7 @@ internal sealed class MemoryScanDiscoverer
                         buffer.Length,
                         region.Size - regionOffset);
                     long currentAddress = checked(region.BaseAddress + regionOffset);
-                    if (!ReadExact(lease, currentAddress, buffer, requested, out int bytesRead))
+                    if (!ReadExact(lease, currentAddress, buffer, requested, cancellationToken, out int bytesRead))
                     {
                         readFailureCount++;
                         regionOffset += Math.Min(ReadChunkSize, region.Size - regionOffset);
@@ -281,7 +281,7 @@ internal sealed class MemoryScanDiscoverer
 
         int length = checked((int)(end - start));
         byte[] bytes = GC.AllocateUninitializedArray<byte>(length);
-        using AuthorizedProcessLease? lease = AuthorizedProcessLease.Open(observation, _timeProvider);
+        using AuthorizedProcessLease? lease = AuthorizedProcessLease.Open(observation, _timeProvider, cancellationToken);
         if (lease is null)
         {
             _logger.LogWarning(
@@ -426,7 +426,7 @@ internal sealed class MemoryScanDiscoverer
                 Retryable: false));
         }
 
-        using AuthorizedProcessLease? lease = AuthorizedProcessLease.Open(observation, _timeProvider);
+        using AuthorizedProcessLease? lease = AuthorizedProcessLease.Open(observation, _timeProvider, cancellationToken);
         if (lease is null)
         {
             _logger.LogWarning(
@@ -471,7 +471,7 @@ internal sealed class MemoryScanDiscoverer
             }
 
             byte[] pointerBytes = new byte[IntPtr.Size];
-            if (!ReadExact(lease, current, pointerBytes, pointerBytes.Length, out _))
+            if (!ReadExact(lease, current, pointerBytes, pointerBytes.Length, cancellationToken, out _))
             {
                 rejected++;
                 break;
@@ -645,6 +645,7 @@ internal sealed class MemoryScanDiscoverer
         long address,
         byte[] target,
         int length,
+        CancellationToken cancellationToken,
         out int bytesRead)
     {
         bytesRead = 0;
@@ -653,7 +654,7 @@ internal sealed class MemoryScanDiscoverer
             return false;
         }
 
-        if (!lease.TryRead((nint)address, target, 0, length, out nuint read))
+        if (!lease.TryRead((nint)address, target, 0, length, cancellationToken, out nuint read))
         {
             return false;
         }
@@ -697,7 +698,7 @@ internal sealed class MemoryScanDiscoverer
                 Math.Min(ReadChunkSize, target.Length - offset),
                 regionEnd - current);
             byte[] part = GC.AllocateUninitializedArray<byte>(length);
-            if (!lease.TryRead((nint)current, part, 0, length, out nuint read)
+            if (!lease.TryRead((nint)current, part, 0, length, cancellationToken, out nuint read)
                 || read != (nuint)length)
             {
                 return false;
