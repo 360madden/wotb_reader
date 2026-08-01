@@ -22,7 +22,8 @@ public sealed class GameApiEndpointsTests
             GamePresent: true,
             observedAt,
             expiresAt,
-            "session.offline_replay_verified"));
+            "session.offline_replay_verified",
+            LaunchCorrelation: "adapter-correlation-1"));
 
         IResult result = await GameApiEndpoints.GetGameStateAsync(state, TestContext.CancellationToken);
 
@@ -32,7 +33,24 @@ public sealed class GameApiEndpointsTests
         Assert.AreEqual(observedAt, response.ObservedAtUtc);
         Assert.AreEqual(expiresAt, response.EvidenceExpiresAtUtc);
         Assert.AreEqual("session.offline_replay_verified", response.ReasonCode);
+        Assert.AreEqual("adapter-correlation-1", response.LaunchCorrelation);
         Assert.AreEqual(TestContext.CancellationToken, state.LastCancellationToken);
+    }
+
+    [TestMethod]
+    public async Task StateMapsNullLaunchCorrelationWhenNoLaunch()
+    {
+        var state = new FakeGameSessionState(new GameSessionSnapshot(
+            GameSessionVerificationState.Unknown,
+            GamePresent: false,
+            DateTimeOffset.UnixEpoch,
+            EvidenceExpiresAtUtc: null,
+            "session.initial"));
+
+        IResult result = await GameApiEndpoints.GetGameStateAsync(state, TestContext.CancellationToken);
+
+        GameStateResponse response = Value<GameStateResponse>(result);
+        Assert.IsNull(response.LaunchCorrelation);
     }
 
     [TestMethod]

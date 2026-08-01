@@ -26,7 +26,8 @@ public sealed record GameSessionSnapshot(
     bool GamePresent,
     DateTimeOffset ObservedAtUtc,
     DateTimeOffset? EvidenceExpiresAtUtc,
-    string ReasonCode);
+    string ReasonCode,
+    string? LaunchCorrelation = null);
 
 /// <summary>
 /// Reads the current safe game-session state. This is a read-only surface

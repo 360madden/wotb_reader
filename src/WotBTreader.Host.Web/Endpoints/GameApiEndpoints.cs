@@ -46,6 +46,7 @@ internal static class GameApiEndpoints
             ObservedAtUtc = snapshot.ObservedAtUtc,
             EvidenceExpiresAtUtc = snapshot.EvidenceExpiresAtUtc,
             ReasonCode = snapshot.ReasonCode,
+            LaunchCorrelation = snapshot.LaunchCorrelation,
         });
     }
 

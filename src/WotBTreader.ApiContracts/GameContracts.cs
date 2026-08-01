@@ -20,6 +20,14 @@ public sealed record GameStateResponse
 
     /// <summary>Stable, path-free reason code for the current state.</summary>
     public string ReasonCode { get; init; } = "session.unknown";
+
+    /// <summary>
+    /// Adapter-generated launch correlation for the most recent managed
+    /// launch, when one exists. A GUID — never a PID, path, or other
+    /// machine-identifying value. Persists through terminal states so the
+    /// owning launch of a failed/denied session can be attributed.
+    /// </summary>
+    public string? LaunchCorrelation { get; init; }
 }
 
 /// <summary>
