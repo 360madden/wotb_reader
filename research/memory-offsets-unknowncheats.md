@@ -141,6 +141,6 @@ struct TankVisual {
 
 - The entity list base address (`BaseModule + 0x03E91978`) is version-specific but gives us a starting point for v11.19
 - Vehicle position offsets (+0x68, +0x6C, +0x70 via Vehicle pointer) can be used with our `GuardedMemoryReader` 
-- Player name at Vehicle+0x80 could be avoided (privacy concern per project conventions)
+- Player name at Vehicle+0x80 is public Wargaming statistics — no longer a privacy concern per project conventions
 - The `GameScene` structure is a potential target for finding replay state
 - Base address offset likely changes per version — our `memory-offsets/*.json` files will need updating for 11.19

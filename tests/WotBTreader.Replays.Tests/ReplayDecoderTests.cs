@@ -101,7 +101,7 @@ public sealed class ReplayDecoderTests
     }
 
     [TestMethod]
-    public async Task BotStatusIsNeverInferredFromNicknameOrMissingAccount()
+    public async Task AccountlessParticipantRetainsUnknownBotStatus()
     {
         ReplayInput input = SyntheticReplayFactory.CreateInput(
             SyntheticReplayFactory.CreateReplay());

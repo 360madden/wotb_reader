@@ -29,7 +29,7 @@ matrix below and in the root README.
 | Overlay (WPF: session list, position plot, velocity trails, event feed, battle stats, time slider, playback controls, keyboard shortcuts, minimap grid, collapsible sidebar, SignalR push; WebView2 removed in M5) | ✅ | 91 |
 | Overlay HTTP API (embedded Kestrel on port 9190, 8 automation endpoints) | ❌ Removed — listener and former handler/state files removed in M3 | — |
 | Shared wire contracts (`ApiContracts`, zero project/package refs) | ✅ | — |
-| Architecture enforcement (reference graph, TFM allowlist, native-access boundary) | ✅ | 15 |
+| Architecture enforcement (reference graph, TFM allowlist, native-access boundary) | ✅ | 16 |
 | Composition root validation | ✅ | 13 |
 | Developer harness tooling (GameHarness; gate-checked `scan`/`probe`/`discover*`) | ✅ | 28 |
 | Codebase bug hunt (src + tests + tools) | ✅ | 1 fix |
@@ -37,9 +37,9 @@ matrix below and in the root README.
 | Session search/filter (overlay sidebar) | ✅ | — |
 | Documentation (architecture, handoffs, BLK log, knowledge.md) | ✅ | — |
 
-**Current snapshot (2026-07-31):** 411 tests — 409 passed, 0 failed, 2 skipped
+**Current snapshot (2026-08-01):** 412 tests — 410 passed, 0 failed, 2 skipped
 (local opt-in) across 12 test projects. Build: 0 errors, 0 warnings.
-Vulnerability audit: 0 vulnerable packages across all 27 projects. Repository scan
+Vulnerability audit: 0 vulnerable packages across all 28 projects. Repository scan
 counts are intentionally not repeated here because the tracked file set changes as
 offline evidence and documentation are added.
 
@@ -208,9 +208,13 @@ via CLI → published → served → all API endpoints verified → overlay laun
 - **Dynamic offset discovery**: Cheat Engine-like multi-scan engine (`MemoryScanEngine`)
   with snapshot/compare/filter (changed/unchanged/increased/decreased). Neighborhood scanner
   reads memory windows around known offsets (`MemoryScanDiscoverer.ScanNeighborhood`).
-  `POST /api/v1/game/discover` plus snapshot/compare/neighborhood/session endpoints.
-  `GameHarness` CLI: `discover`, `discover-snapshot`, `discover-compare`,
-  `discover-nearby`, `discover-discard`. The 11.19.0.10 table is hash-bound to the
+  The scanner lives in the standalone `ultimate-scanner/` module (`WotBTreader.UltimateScanner`),
+  referenced only by `GameIntegration`, which surfaces it through `IGameMemoryScanner`.
+  `POST /api/v1/game/discover` plus pattern, pointer-chain,
+  snapshot/compare/neighborhood/session endpoints. `GameHarness` CLI:
+  `discover`, `discover-pattern`, `discover-pointer-chain`,
+  `discover-snapshot`, `discover-compare`, `discover-nearby`,
+  `discover-discard`. The 11.19.0.10 table is hash-bound to the
   installed executable; only `playerYaw` is a static-analysis `Candidate`, and seven
   fields remain unknown. Candidate evidence is not runtime-supported.
 

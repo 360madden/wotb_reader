@@ -36,18 +36,6 @@ public sealed class AffiliationResolverTests
         Assert.AreEqual(Affiliation.Unknown, result);
     }
 
-    [TestMethod]
-    public void Participant_NameAlone_DoesNotChangeUnknownBotStatus()
-    {
-        Participant participant = CreateParticipant(teamNumber: 1) with
-        {
-            PlayerName = ":bot-looking-name:",
-            BotStatus = BotStatus.Unknown,
-        };
-
-        Assert.AreEqual(BotStatus.Unknown, participant.BotStatus);
-    }
-
     private static Participant CreateParticipant(int? teamNumber)
     {
         SourceArtifactId artifactId = SourceArtifactId.New();

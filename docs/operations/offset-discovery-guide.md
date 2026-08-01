@@ -393,6 +393,44 @@ read-only decompiler; otherwise skip it and continue with native tooling.
 }
 ```
 
+## UltimateScanner phases 1–4 — implemented, evidence-only
+
+The standalone `ultimate-scanner/` module now provides four bounded capabilities
+behind the coordinator's positively verified offline-replay gate:
+
+| Phase | Capability | Boundary |
+|---|---|---|
+| 1 | identity-bound typed scans, architecture checks, cancellation, candidate caps | x64 read-only process lease; no runtime offset promotion |
+| 2 | 1 MiB chunked scans, reusable read buffers, 512 MiB snapshot cap, expiring sessions | failed reads are skipped or retained explicitly; results remain evidence |
+| 3 | alignment and private/mapped/image region filters, typed snapshot comparisons, bounded neighborhood reads | module name is executable metadata only; `ModuleSize=0` means unavailable; address kinds preserve private/mapped/image mapping |
+| 4 | wildcard AOB scans, optional best-effort working-set classification, bounded pointer chains | COW means private working-set evidence with COW-compatible protection, not proof of a COW event |
+
+HTTP surfaces:
+
+- `POST /api/v1/game/discover/pattern` — hex pattern plus optional hex wildcard mask;
+- `POST /api/v1/game/discover/pointer-chain` — one root and at most four offsets;
+- existing snapshot/compare/neighborhood endpoints expose alignment, region,
+  rolling-baseline, truncation, address-kind, and architecture metadata. Scan
+  candidates expose `baseDisplacement`; it is not a main-module RVA unless
+  image ownership is independently proven. The former `relativeOffset` and
+  `relativeOffsetDecimal` JSON names remain compatibility aliases.
+
+The GameHarness routes these as `discover-pattern` and
+`discover-pointer-chain` (aliases: `pattern`, `pointer-chain`). Pattern input
+uses even-length hexadecimal strings; `00FF00` is a mask example. A non-zero
+mask byte is a wildcard. The scanner never writes process memory, never treats
+candidate evidence as a verified runtime offset, and does not scrub or publish
+private game-derived dumps. Rolling comparisons expose `RetainedCount` separately
+when an unreadable prior chunk is carried forward; it is not included in the
+changed/unchanged counters or returned candidate list.
+
+Pointer-chain semantics are deliberately explicit: each configured offset is
+added to the current address before reading the next pointer; chains are limited
+to four dereferences, reject invalid user addresses and cycles, and report
+`pointer-chain` evidence only. The current results are not sufficient to promote
+an offset into `memory-offsets/`; follow the two-launch/two-replay requirements
+below.
+
 ## GameHarness M2 gate — ✅ WIRED
 
 The `scan` and `probe` commands in GameHarness check the offline-session gate

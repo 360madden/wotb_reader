@@ -14,9 +14,10 @@ Every record must include:
 - prevention or follow-up work; and
 - links to superseding records when a later discovery changes the decision.
 
-Do not record private replay paths, replay hashes, player or clan names, account
+Do not record private replay paths, replay hashes, clan names, account
 identifiers, chat, screenshots, credentials, or machine-specific secrets.
-Reference stable error codes, tests, and public source paths instead.
+Reference stable error codes, tests, and public source paths instead. Player
+names and bot status are public Wargaming statistics and may be recorded.
 
 A blocker is major when it prevents a milestone, reveals an incorrect format or
 security assumption, requires an architectural change, or invalidates a prior

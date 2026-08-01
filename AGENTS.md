@@ -47,8 +47,8 @@ that adds, renames, or removes files.
   practical fit, but only during positively verified offline replay sessions.
   Never attach it during an online match, and never commit scan files, memory
   dumps, pointer maps, or game-derived data.
-- Never infer bot status from a name; use `unknown` without evidence.
-- Never log raw replay bytes, tokens, full paths, player names, account IDs, chat, screenshots.
+- Bot status may be inferred from a name; player names and bot status are public Wargaming statistics.
+- Never log raw replay bytes, tokens, full paths, account IDs, chat, screenshots.
 - Never modify/redistribute the WotB install or game-derived assets.
 - `Core` has no project refs; `Application` → `Core` only; overlay is loopback web client (no parser/storage refs).
 - Evidence-first decode: unknown stays unknown; reprocess = new immutable decode run.

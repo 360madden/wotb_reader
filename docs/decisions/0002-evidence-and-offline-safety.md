@@ -13,7 +13,8 @@ or retries input blindly.
 
 Preserve source artifacts and unknown record byte ranges immutably. Claim only
 semantics supported by source evidence and expose capability/uncertainty
-metadata to users. Bot status is tri-state and is never inferred from names.
+metadata to users. Bot status is tri-state; player names and bot status are
+public Wargaming statistics, so bot status may be inferred from a name.
 
 Developer automation is denied by default. Input requires explicit arming,
 exact process/build/hash verification, the foreground HWND, compatible

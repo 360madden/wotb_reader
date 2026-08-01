@@ -155,7 +155,8 @@ internal sealed class AuthorizedProcessLease : IDisposable
     private bool TryGetSupportedArchitecture(out string architecture)
     {
         architecture = "unknown";
-        if (!NativeMethods.IsWow64Process2(
+        if (!Environment.Is64BitProcess
+            || !NativeMethods.IsWow64Process2(
                 Handle,
                 out ushort processMachine,
                 out ushort nativeMachine))

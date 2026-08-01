@@ -42,8 +42,9 @@ safe to open; none of it is private or runtime data.
 
 ## Work on game integration / memory / offset discovery
 
-1. [`src/WotBTreader.GameIntegration/Session/`](../src/WotBTreader.GameIntegration/Session/) — coordinator, memory scan engine, process launcher
-2. [`docs/operations/offset-discovery-guide.md`](../docs/operations/offset-discovery-guide.md)
+1. [`ultimate-scanner/`](../ultimate-scanner/) — the standalone memory-scan module (multi-scan engine, pattern/neighborhood scanner, guarded VM reader)
+2. [`src/WotBTreader.GameIntegration/Session/`](../src/WotBTreader.GameIntegration/Session/) — coordinator + gate, process launcher, identity
+3. [`docs/operations/offset-discovery-guide.md`](../docs/operations/offset-discovery-guide.md)
 3. [`memory-offsets/`](../memory-offsets/) — evidence JSON + `schema.json`
 4. `tools/cheat-engine/`, `tools/ghidra-scripts/` — approved offline tooling
 5. [`../research/README.md`](../research/README.md) — game internals research (replay loading, IPC, memory analysis)

@@ -108,26 +108,79 @@ internal sealed class MemoryScanEngine
             return Error<string>("discover.snapshot.invalid_options", error!);
         }
 
+        string sessionId = Interlocked.Increment(ref _sessionCounter)
+            .ToString("D6", CultureInfo.InvariantCulture);
+        DateTimeOffset startedAt = _timeProvider.GetUtcNow();
+        _logger.LogInformation(
+            "Memory snapshot started: sessionId={SessionId}, baseAddress=0x{BaseAddress:X}, valueKind={ValueKind}, valueSize={ValueSize}, alignment={Alignment}, minAddress=0x{MinAddress:X}, maxAddress=0x{MaxAddress:X}, floatMin={FloatMin}, floatMax={FloatMax}, intMin={IntMin}, intMax={IntMax}, longMin={LongMin}, longMax={LongMax}, uintMin={UIntMin}, uintMax={UIntMax}, regionSelection={RegionSelection}, processId={ProcessId}, processStartIdentity={ProcessStartIdentity}, executablePath={ExecutablePath}, productVersion={ProductVersion}, executableSha256={ExecutableSha256}",
+            sessionId,
+            baseAddress,
+            filter.ValueKind,
+            filter.ValueSize,
+            filter.Alignment,
+            filter.MinAddress,
+            filter.MaxAddress,
+            filter.FloatMin,
+            filter.FloatMax,
+            filter.IntMin,
+            filter.IntMax,
+            filter.LongMin,
+            filter.LongMax,
+            filter.UIntMin,
+            filter.UIntMax,
+            filter.RegionSelection,
+            observation.ProcessId,
+            observation.ProcessStartIdentity,
+            observation.CanonicalExecutablePath,
+            observation.ProductVersion,
+            observation.ExecutableSha256.Value);
+
         using AuthorizedProcessLease? lease = AuthorizedProcessLease.Open(observation, _timeProvider);
         if (lease is null)
         {
+            _logger.LogWarning(
+                "Memory snapshot denied: baseAddress=0x{BaseAddress:X}, processId={ProcessId}, executablePath={ExecutablePath}, reason=identity_mismatch",
+                baseAddress,
+                observation.ProcessId,
+                observation.CanonicalExecutablePath);
             return Error<string>("discover.identity_mismatch", "The authorized process identity or architecture is invalid.");
         }
 
-        string sessionId = Interlocked.Increment(ref _sessionCounter)
-            .ToString("D6", CultureInfo.InvariantCulture);
         List<MemoryRegion> regions = EnumerateRegions(lease.Handle, filter, cancellationToken);
         List<SnapshotChunk> chunks = [];
         long candidateCount = 0;
         long storedBytes = 0;
+        int readFailureCount = 0;
         byte[] readBuffer = GC.AllocateUninitializedArray<byte>(ReadChunkSize);
 
         foreach (MemoryRegion region in regions)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            if (cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogWarning(
+                    "Memory snapshot cancelled: sessionId={SessionId}, baseAddress=0x{BaseAddress:X}, storedBytes={StoredBytes}, candidates={Candidates}, elapsedMs={ElapsedMs}",
+                    sessionId,
+                    baseAddress,
+                    storedBytes,
+                    candidateCount,
+                    (_timeProvider.GetUtcNow() - startedAt).TotalMilliseconds);
+                cancellationToken.ThrowIfCancellationRequested();
+            }
             long offset = 0;
             while (offset < region.Length)
             {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    _logger.LogWarning(
+                        "Memory snapshot cancelled: sessionId={SessionId}, baseAddress=0x{BaseAddress:X}, regionBaseAddress=0x{RegionBaseAddress:X}, storedBytes={StoredBytes}, candidates={Candidates}, elapsedMs={ElapsedMs}",
+                        sessionId,
+                        baseAddress,
+                        region.BaseAddress,
+                        storedBytes,
+                        candidateCount,
+                        (_timeProvider.GetUtcNow() - startedAt).TotalMilliseconds);
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
                 int length = (int)Math.Min(ReadChunkSize, region.Length - offset);
                 if (storedBytes + length > MaximumSnapshotBytes)
                 {
@@ -138,10 +191,12 @@ internal sealed class MemoryScanEngine
                 if (!lease.TryRead((nint)address, readBuffer, 0, length, out nuint read)
                     || read != (nuint)length)
                 {
+                    readFailureCount++;
                     offset += length;
                     continue;
                 }
 
+                string addressKind = GetAddressKind(lease.Handle, address);
                 int valueCount = length / filter.ValueSize;
                 byte[] values = new byte[valueCount * filter.ValueSize];
                 BitArray matches = new(valueCount);
@@ -167,7 +222,7 @@ internal sealed class MemoryScanEngine
                     filter.ValueSize,
                     values,
                     matches,
-                    GetAddressKind(lease.Handle, address)));
+                    addressKind));
                 storedBytes += length;
                 offset += length;
             }
@@ -196,8 +251,19 @@ internal sealed class MemoryScanEngine
             _sessions[sessionId] = snapshot;
         }
 
-        _logger.LogInformation("[{SessionId}] Snapshot completed: {Candidates} candidates, {Bytes} bytes",
-            sessionId, candidateCount, storedBytes);
+        _logger.LogInformation(
+            "Memory snapshot completed: sessionId={SessionId}, baseAddress=0x{BaseAddress:X}, valueKind={ValueKind}, regions={Regions}, candidates={Candidates}, bytes={Bytes}, readFailures={ReadFailures}, candidateSample={CandidateSample}, elapsedMs={ElapsedMs}, executablePath={ExecutablePath}, executableSha256={ExecutableSha256}",
+            sessionId,
+            baseAddress,
+            filter.ValueKind,
+            regions.Count,
+            candidateCount,
+            storedBytes,
+            readFailureCount,
+            FormatSnapshotCandidateSample(chunks, filter.ValueSize, filter.ValueKind, baseAddress),
+            (_timeProvider.GetUtcNow() - startedAt).TotalMilliseconds,
+            observation.CanonicalExecutablePath,
+            observation.ExecutableSha256.Value);
         return OperationResult.Success(sessionId);
     }
 
@@ -220,6 +286,18 @@ internal sealed class MemoryScanEngine
                 "The module base address is outside the supported user address space.");
         }
 
+        DateTimeOffset startedAt = _timeProvider.GetUtcNow();
+        _logger.LogInformation(
+            "Memory snapshot comparison started: sessionId={SessionId}, baseAddress=0x{BaseAddress:X}, compareMode={CompareMode}, maxCandidates={MaxCandidates}, advanceBaseline={AdvanceBaseline}, processId={ProcessId}, executablePath={ExecutablePath}, executableSha256={ExecutableSha256}",
+            sessionId,
+            baseAddress,
+            compareMode,
+            maxCandidates,
+            advanceBaseline,
+            observation.ProcessId,
+            observation.CanonicalExecutablePath,
+            observation.ExecutableSha256.Value);
+
         Snapshot? previous;
         lock (_lock)
         {
@@ -229,14 +307,27 @@ internal sealed class MemoryScanEngine
 
         if (previous is null)
         {
+            _logger.LogWarning(
+                "Memory snapshot comparison denied: sessionId={SessionId}, reason=session_not_found",
+                sessionId);
             return Error<CompareResult>("discover.session_not_found", "The snapshot session was not found or expired.");
         }
         if (!SameIdentity(previous.Observation, observation))
         {
+            _logger.LogWarning(
+                "Memory snapshot comparison denied: sessionId={SessionId}, reason=identity_mismatch, processId={ProcessId}, executablePath={ExecutablePath}",
+                sessionId,
+                observation.ProcessId,
+                observation.CanonicalExecutablePath);
             return Error<CompareResult>("discover.identity_mismatch", "The snapshot belongs to a different process identity.");
         }
         if (!IsSnapshotBaseCompatible(previous, baseAddress))
         {
+            _logger.LogWarning(
+                "Memory snapshot comparison denied: sessionId={SessionId}, requestedBaseAddress=0x{BaseAddress:X}, capturedBaseAddress=0x{CapturedBaseAddress:X}, reason=base_mismatch",
+                sessionId,
+                baseAddress,
+                previous.ModuleBaseAddress);
             return Error<CompareResult>(
                 "discover.base_mismatch",
                 "The comparison base address does not match the snapshot.");
@@ -245,6 +336,11 @@ internal sealed class MemoryScanEngine
         using AuthorizedProcessLease? lease = AuthorizedProcessLease.Open(observation, _timeProvider);
         if (lease is null)
         {
+            _logger.LogWarning(
+                "Memory snapshot comparison denied: sessionId={SessionId}, processId={ProcessId}, executablePath={ExecutablePath}, reason=identity_mismatch",
+                sessionId,
+                observation.ProcessId,
+                observation.CanonicalExecutablePath);
             return Error<CompareResult>("discover.identity_mismatch", "The authorized process identity or architecture is invalid.");
         }
 
@@ -254,16 +350,25 @@ internal sealed class MemoryScanEngine
             : compareMode.Trim().ToLowerInvariant();
         int changed = 0, unchanged = 0, increased = 0, decreased = 0, currentCount = 0;
         int retainedCandidateCount = 0;
+        int readFailureCount = 0;
         List<MemoryScanCandidate> candidates = [];
         List<SnapshotChunk> nextChunks = [];
         byte[] readBuffer = GC.AllocateUninitializedArray<byte>(ReadChunkSize);
 
         foreach (SnapshotChunk chunk in previous.Chunks)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            if (cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogWarning(
+                    "Memory snapshot comparison cancelled: sessionId={SessionId}, elapsedMs={ElapsedMs}",
+                    sessionId,
+                    (_timeProvider.GetUtcNow() - startedAt).TotalMilliseconds);
+                cancellationToken.ThrowIfCancellationRequested();
+            }
             if (!lease.TryRead((nint)chunk.BaseAddress, readBuffer, 0, chunk.Length, out nuint read)
                 || read != (nuint)chunk.Length)
             {
+                readFailureCount++;
                 if (advanceBaseline)
                 {
                     nextChunks.Add(chunk);
@@ -305,12 +410,13 @@ internal sealed class MemoryScanEngine
 
                 if (candidates.Count >= cap) continue;
                 byte[] observed = newValue.ToArray();
-                candidates.Add(new MemoryScanCandidate(
+                MemoryScanCandidate candidate = new(
                     chunk.BaseAddress + offset,
                     chunk.BaseAddress + offset - baseAddress,
                     observed,
                     FormatValue(observed, previous.Filter.ValueKind),
-                    chunk.AddressKind));
+                    chunk.AddressKind);
+                candidates.Add(candidate);
             }
 
             if (advanceBaseline)
@@ -331,6 +437,9 @@ internal sealed class MemoryScanEngine
             if (!_sessions.TryGetValue(sessionId, out Snapshot? current)
                 || !ReferenceEquals(current, previous))
             {
+                _logger.LogWarning(
+                    "Memory snapshot comparison abandoned: sessionId={SessionId}, reason=session_changed",
+                    sessionId);
                 return Error<CompareResult>(
                     "discover.session_changed",
                     "The snapshot was discarded or changed while it was being compared.");
@@ -350,6 +459,25 @@ internal sealed class MemoryScanEngine
                     CompareCount = current.CompareCount + 1,
                 };
         }
+
+        _logger.LogInformation(
+            "Memory snapshot comparison completed: sessionId={SessionId}, compareMode={CompareMode}, previousCount={PreviousCount}, currentCount={CurrentCount}, changed={Changed}, unchanged={Unchanged}, increased={Increased}, decreased={Decreased}, returnedCandidates={ReturnedCandidates}, truncated={Truncated}, retained={Retained}, readFailures={ReadFailures}, candidateSample={CandidateSample}, elapsedMs={ElapsedMs}, executablePath={ExecutablePath}, executableSha256={ExecutableSha256}",
+            sessionId,
+            normalizedCompareMode,
+            previous.CandidateCount,
+            effectiveCurrentCount,
+            changed,
+            unchanged,
+            increased,
+            decreased,
+            candidates.Count,
+            truncated,
+            retainedCandidateCount,
+            readFailureCount,
+            FormatCandidateSample(candidates),
+            (_timeProvider.GetUtcNow() - startedAt).TotalMilliseconds,
+            observation.CanonicalExecutablePath,
+            observation.ExecutableSha256.Value);
 
         return OperationResult.Success(new CompareResult(
             completed,
@@ -373,11 +501,13 @@ internal sealed class MemoryScanEngine
         }
 
         lock (_lock) _sessions.Remove(sessionId);
+        _logger.LogInformation("Memory snapshot session discarded: sessionId={SessionId}", sessionId);
     }
 
     public void DiscardAllSessions()
     {
         lock (_lock) _sessions.Clear();
+        _logger.LogInformation("All memory snapshot sessions discarded");
     }
 
     private static string GetAddressKind(SafeProcessHandle handle, long address)
@@ -524,6 +654,32 @@ internal sealed class MemoryScanEngine
     private static bool CompareUInt(uint value, ulong? min, ulong? max) => (!min.HasValue || value >= min.Value) && (!max.HasValue || value <= max.Value);
     private static bool CompareLong(long value, long? min, long? max) => (!min.HasValue || value >= min.Value) && (!max.HasValue || value <= max.Value);
     private static bool CompareULong(ulong value, ulong? min, ulong? max) => (!min.HasValue || value >= min.Value) && (!max.HasValue || value <= max.Value);
+
+    private static string FormatCandidateSample(IReadOnlyList<MemoryScanCandidate> candidates) =>
+        string.Join(
+            "; ",
+            candidates.Take(5).Select(candidate =>
+                $"0x{candidate.AbsoluteAddress:X}/0x{candidate.BaseDisplacement:X}:{candidate.ValueSummary}:[{Convert.ToHexString(candidate.ObservedValue)}]"));
+
+    private static string FormatSnapshotCandidateSample(
+        IReadOnlyList<SnapshotChunk> chunks,
+        int valueSize,
+        MemoryValueKind valueKind,
+        long baseAddress) =>
+        string.Join(
+            "; ",
+            chunks.SelectMany(chunk => Enumerable.Range(0, chunk.Candidates.Length)
+                .Where(index => chunk.Candidates[index])
+                .Take(5)
+                .Select(index =>
+                {
+                    int offset = index * valueSize;
+                    byte[] observed = chunk.Values.AsSpan(offset, valueSize).ToArray();
+                    long address = chunk.BaseAddress + offset;
+                    return $"0x{address:X}/0x{address - baseAddress:X}:{FormatValue(observed, valueKind)}:[{Convert.ToHexString(observed)}]";
+                }))
+                .Take(5));
+
     internal static bool IsAligned(long value, int alignment) => alignment <= 1 || value % alignment == 0;
 
     internal static bool IsSupportedUserAddress(long address) =>

@@ -144,7 +144,7 @@ public sealed record ParticipantResponse
     /// <summary>Tank class name.</summary>
     public string TankClass { get; init; } = string.Empty;
 
-    /// <summary>Bot classification: never inferred from a name.</summary>
+    /// <summary>Bot classification; player names are public Wargaming statistics.</summary>
     public string BotStatus { get; init; } = string.Empty;
 
     /// <summary>Confidence level backing the bot classification.</summary>

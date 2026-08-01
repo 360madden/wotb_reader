@@ -24,6 +24,7 @@ flowchart TD
     Replay["Replays\nbounded decoder adapter"]
     Capture["CaptureLogs\ntelemetry adapter"]
     Game["GameIntegration\noffline gate and guarded Win32 adapter"]
+    Scanner["UltimateScanner\nstandalone memory-scan module"]
     Storage["Storage.Sqlite\nartifact and projection adapter"]
     Boot["Bootstrap\ncomposition root"]
     Contracts["ApiContracts\nportable wire DTOs"]
@@ -39,6 +40,9 @@ flowchart TD
     Capture --> Core
     Game --> App
     Game --> Core
+    Scanner --> App
+    Scanner --> Core
+    Game --> Scanner
     Storage --> App
     Storage --> Core
     Boot --> Replay
@@ -56,9 +60,11 @@ flowchart TD
 The arrow denotes a compile-time dependency; the dotted arrow is a versioned
 loopback protocol. `Core` has none. `Bootstrap` is the only composition root.
 `GameIntegration` owns game discovery, log monitoring, replay launching,
-offline verification, and guarded Win32 access. The overlay is outside parser,
-storage, application, domain, host, and adapter internals and consumes only the
-portable wire contract.
+offline verification, and guarded Win32 access, and delegates memory scanning
+to the standalone `UltimateScanner` module (Cheat Engine-like multi-scan
+engine, pattern/neighborhood scans, and the guarded VM reader). The overlay is
+outside parser, storage, application, domain, host, and adapter internals and
+consumes only the portable wire contract.
 
 Only the `Overlay` and `GameHarness` production surfaces and their corresponding
 test projects may target `net10.0-windows`; every other project targets portable

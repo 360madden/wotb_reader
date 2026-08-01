@@ -254,8 +254,8 @@ restrictive and **fails closed by default**.
 | 🚫 | **Offline only.** Pre-recorded replay playback is offline use. Matchmaking and live battles are never automated, inspected, or touched |
 | 🔴 | **Process memory is fail-closed.** Scanner and observation paths require a positively verified offline replay and exact executable identity; candidate offsets never authorize runtime reads |
 | 🟠 | **Positive evidence required.** Before any future memory access: canonical executable path, version, SHA-256, PID with process-start identity, owned window, healthy monitor, confirmed replay UI, and a fresh lifecycle marker must all agree |
-| ⚪ | **Unknown stays unknown.** Unrecognized records, versions, offsets, and participant kinds are reported as `unknown` — never guessed. Bot status is never inferred from a name |
-| 🔇 | **Never logged.** Raw replay bytes, tokens, full paths, player names, account IDs, chat, and screenshots |
+| ⚪ | **Unknown stays unknown.** Unrecognized records, versions, offsets, and participant kinds are reported as `unknown` — never guessed. Bot status may be inferred from a player name (public Wargaming statistics) |
+| 🔇 | **Never logged.** Raw replay bytes, tokens, full paths, account IDs, chat, and screenshots (player names and bot status are public Wargaming statistics, not private) |
 | 📌 | **Immutable evidence.** Source artifacts and decode runs are append-only; reprocessing creates a new run |
 | 🛡️ | **Loopback ≠ authorization.** Unsafe local operations require an explicit owner-only capability, not merely a loopback source address |
 | 🧊 | **The game install is read-only.** WotB files and game-derived assets are never modified or redistributed |

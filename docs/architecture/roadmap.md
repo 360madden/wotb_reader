@@ -105,8 +105,9 @@ independently.
    unknown.
 3. Source artifacts and decode runs are immutable. Reprocessing creates a new
    run.
-4. Raw replay bytes, memory dumps, tokens, full paths, player names, account
-   IDs, chat, and screenshots are never logged.
+4. Raw replay bytes, memory dumps, tokens, full paths, account IDs, chat, and
+   screenshots are never logged. Player names and bot status are public
+   Wargaming statistics, not private.
 5. Only `Overlay`, `GameHarness`, and their test projects may target
    `net10.0-windows`.
 6. Every new application port is registered through `Bootstrap` and added to

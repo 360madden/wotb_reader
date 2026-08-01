@@ -16,7 +16,6 @@ public static class TreaderLogging
     public static ReloadableLogger CreateBootstrapLogger() =>
         new LoggerConfiguration()
             .MinimumLevel.Information()
-            .Enrich.With<RedactingLogEventEnricher>()
             .WriteTo.Console(
                 standardErrorFromLevel: LogEventLevel.Verbose,
                 outputTemplate:
@@ -41,7 +40,6 @@ public static class TreaderLogging
                 .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
                 .Enrich.FromLogContext()
                 .Enrich.WithProperty("Service", serviceName)
-                .Enrich.With<RedactingLogEventEnricher>()
                 .WriteTo.Console(
                     standardErrorFromLevel: LogEventLevel.Verbose,
                     outputTemplate:

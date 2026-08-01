@@ -174,7 +174,9 @@ internal static class ReplayInspector
                     {
                         ordinal = index + 1,
                         accountId = includeSensitive ? participant.AccountId : null,
-                        playerName = includeSensitive ? participant.PlayerName : null,
+                        // Player names are public Wargaming statistics and are
+                        // never gated; account IDs and clan tags stay opt-in.
+                        playerName = participant.PlayerName,
                         clanTag = includeSensitive ? participant.ClanTag : null,
                         participant.EntityId,
                         participant.TeamNumber,

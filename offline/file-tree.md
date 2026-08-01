@@ -178,7 +178,6 @@ src/WotBTreader.Bootstrap/Configuration/LocalApplicationPaths.cs
 src/WotBTreader.Bootstrap/DependencyInjection/FoundationServiceCollectionExtensions.cs
 src/WotBTreader.Bootstrap/Diagnostics/DiagnosticBundleService.cs
 src/WotBTreader.Bootstrap/Diagnostics/DoctorService.cs
-src/WotBTreader.Bootstrap/Logging/RedactingLogEventEnricher.cs
 src/WotBTreader.Bootstrap/Logging/TreaderLogging.cs
 src/WotBTreader.Bootstrap/Startup/StorageInitializationHostedService.cs
 src/WotBTreader.Bootstrap/WotBTreader.Bootstrap.csproj
@@ -220,12 +219,9 @@ src/WotBTreader.GameIntegration/Properties/AssemblyInfo.cs
 src/WotBTreader.GameIntegration/Session/GameProcessIdentityObserver.cs
 src/WotBTreader.GameIntegration/Session/GameProcessLauncher.cs
 src/WotBTreader.GameIntegration/Session/GameSessionCoordinator.cs
-src/WotBTreader.GameIntegration/Session/GuardedMemoryReader.cs
 src/WotBTreader.GameIntegration/Session/ManagedLaunchCorrelationRegistrar.cs
 src/WotBTreader.GameIntegration/Session/ManagedLaunchPreparer.cs
 src/WotBTreader.GameIntegration/Session/ManagedReplayArtifactStager.cs
-src/WotBTreader.GameIntegration/Session/MemoryScanDiscoverer.cs
-src/WotBTreader.GameIntegration/Session/MemoryScanEngine.cs
 src/WotBTreader.GameIntegration/Session/SuspendedGameProcessLaunch.cs
 src/WotBTreader.GameIntegration/Session/ThreadResumeLease.cs
 src/WotBTreader.GameIntegration/Session/TrustedGameIdentityProvider.cs
@@ -404,7 +400,6 @@ tests/WotBTreader.Bootstrap.Tests/CompositionRootTests.cs
 tests/WotBTreader.Bootstrap.Tests/DiagnosticBundleServiceTests.cs
 tests/WotBTreader.Bootstrap.Tests/LocalApplicationPathsTests.cs
 tests/WotBTreader.Bootstrap.Tests/MSTestSettings.cs
-tests/WotBTreader.Bootstrap.Tests/RedactingLogEventEnricherTests.cs
 tests/WotBTreader.Bootstrap.Tests/WotBTreader.Bootstrap.Tests.csproj
 tests/WotBTreader.Bootstrap.Tests/packages.lock.json
 tests/WotBTreader.CaptureLogs.Tests/MSTestSettings.cs
@@ -525,6 +520,13 @@ tools/tests/WotBTreader.GameHarness.Tests/MSTestSettings.cs
 tools/tests/WotBTreader.GameHarness.Tests/WotBTreader.GameHarness.Tests.csproj
 tools/tests/WotBTreader.GameHarness.Tests/packages.lock.json
 treader.cmd
+ultimate-scanner/GuardedMemoryReader.cs
+ultimate-scanner/MemoryScanDiscoverer.cs
+ultimate-scanner/MemoryScanEngine.cs
+ultimate-scanner/NativeMethods.cs
+ultimate-scanner/Properties/AssemblyInfo.cs
+ultimate-scanner/WotBTreader.UltimateScanner.csproj
+ultimate-scanner/packages.lock.json
 validate.cmd
 watch.cmd
 ```

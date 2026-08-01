@@ -14,6 +14,7 @@ Per the repository working agreements, every handoff reports:
 - integration risks; and
 - recommended next steps.
 
-Do not record private replay paths, replay hashes, player or clan names,
-account identifiers, chat, screenshots, credentials, or machine-specific
-secrets.
+Do not record private replay paths, replay hashes, clan names, account
+identifiers, chat, screenshots, credentials, or machine-specific secrets.
+Player names and bot status are public Wargaming statistics and may be
+recorded.

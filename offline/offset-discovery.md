@@ -47,9 +47,10 @@ serve (web host on 127.0.0.1:9182, loopback)
   └─ DELETE /api/v1/game/discover/session/{sessionId} → discard a snapshot session
 ```
 
-- Scanner: `GameIntegration/Session/MemoryScanEngine.cs` (snapshot/compare) +
+- Scanner: `ultimate-scanner/MemoryScanEngine.cs` (snapshot/compare) +
   `MemoryScanDiscoverer.cs` (pattern scans, neighborhood scans), surfaced
-  through `IGameMemoryScanner` on `GameSessionCoordinator`.
+  through `IGameMemoryScanner` on `GameSessionCoordinator` (which stays in
+  `GameIntegration` and delegates into the standalone `UltimateScanner` module).
 - **Safety gate:** every discover command requires an `OfflineReplayVerified`
   session (`GET /api/v1/game/state`); never scan an online match.
 

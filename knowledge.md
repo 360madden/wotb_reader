@@ -96,7 +96,7 @@ dotnet test tests/WotBTreader.Core.Tests -c Release --filter "FullyQualifiedName
 ```
 
 - Tests are MSTest 4 on Microsoft.Testing.Platform. Some installed-game tests skip by default (local opt-in).
-- 12 test projects, 411 tests: 409 passed, 0 failed, 2 opt-in skips (as of 2026-07-31).
+- 12 test projects, 412 tests: 410 passed, 0 failed, 2 opt-in skips (as of 2026-08-01).
 - All architecture hardening milestones (M0–M7) are complete. The alpha release
   (`v0.1.0-alpha`) passed the full gate; later changes added offset evidence tooling
   and stricter cancellation/hash validation without promoting candidate offsets.
@@ -123,7 +123,11 @@ Core (no project refs)
       ├── Replays → Application + Core      (replay parsing: .wotbreplay, pickle, protobuf)
       ├── CaptureLogs → Application + Core  (telemetry capture log reading)
       ├── GameIntegration → Application + Core (installed-game discovery, DVPL reading,
-      │                                         offline session gate, guarded Win32)
+      │                                         offline session gate, guarded Win32, launch)
+      ├── UltimateScanner → Application + Core (standalone Cheat Engine-like memory
+      │                                         scan module: multi-scan snapshot/compare,
+      │                                         pattern/neighborhood scans, guarded VM reads)
+      │                     referenced ONLY by GameIntegration
       ├── Storage.Sqlite → Application + Core (SQLite storage)
       └── Bootstrap (composition root; all DI registration)
            ├── Host.Cli (net10.0 console)
@@ -154,6 +158,7 @@ this boundary.
 
 **Key rules:**
 - Adapters (Replays, CaptureLogs, GameIntegration, Storage.Sqlite) never reference each other
+- `UltimateScanner` is a scanner-only module: it references `Application`/`Core` only, and only `GameIntegration` may reference it
 - `Overlay` references only `ApiContracts` — never a host, adapter, `Application`, or `Core`
 - `ApiContracts` is serialization-only: no domain behavior, no project refs, no package refs
 - Hosts and tools compose exclusively through `Bootstrap`; tools do not build their own adapters
@@ -162,17 +167,18 @@ this boundary.
 - Warnings are errors (`TreatWarningsAsErrors`), NuGet audit mode is `all` — fix with central pins, never suppress
 - Package versions are centrally managed in `Directory.Packages.props` with committed lock files
 
-`WotBTreader.Architecture.Tests` (15 tests) enforces the reference graph, the TFM
-allowlist, and the native-access boundary. Breaking any rule above fails the build.
-The scanner remains behind the offline replay gate; candidate-only offset evidence
-cannot authorize runtime reads.
+`WotBTreader.Architecture.Tests` (16 tests) enforces the reference graph, the TFM
+allowlist, and the native-access boundary — including the `UltimateScanner`
+native-access allowlist (its VM-read interop is the only sanctioned surface).
+Breaking any rule above fails the build. The scanner remains behind the offline
+replay gate; candidate-only offset evidence cannot authorize runtime reads.
 
 ## Conventions
 
 - **Testing:** MSTest 4, synthetic fixtures only in CI. Private replays/captures/DBs stay in gitignored paths.
 - **Evidence-first:** unknown stays unknown. Reprocess = new immutable decode run. Pickle = data only; never execute opcodes.
-- **Privacy:** never log raw replay bytes, tokens, full paths, player names, account IDs, chat, or screenshots.
-- **Bot status:** never infer from name; use `unknown` without evidence.
+- **Privacy:** never log raw replay bytes, tokens, full paths, account IDs, chat, or screenshots. Player names and bot status are public Wargaming statistics, not private.
+- **Bot status:** may be inferred from a player name; `unknown` remains the no-evidence default.
 - **Game automation:** developer-only, offline-replay-only, denied by default, fully audited.
 - **Commits:** author as `Codex Agent <codex@local.invalid>` unless user says otherwise. Never force-push. Push only when asked.
 - **Blockers:** append `docs/operations/blocker-log.md` (immutable UTC).

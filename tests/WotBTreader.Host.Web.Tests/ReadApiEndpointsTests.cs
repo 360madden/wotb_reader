@@ -145,7 +145,7 @@ public sealed class ReadApiEndpointsTests
     }
 
     [TestMethod]
-    public void BotStatusIsPassedThroughWithItsConfidenceAndNeverInferred()
+    public void BotStatusIsPassedThroughWithItsConfidence()
     {
         Participant participant = ParticipantFixture() with
         {

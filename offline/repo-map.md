@@ -8,7 +8,7 @@ detail lives in the module's own files. Full tree: `src/`, `tests/`, `tools/`,
 
 | Path | Purpose |
 |------|---------|
-| `WotBTreader.sln` | Solution; 27 projects |
+| `WotBTreader.sln` | Solution; 28 projects |
 | `knowledge.md` | Agent knowledge: quickstart, architecture, conventions, gotchas |
 | `AGENTS.md` | Agent entry: rules, route-by-task, delegation |
 | `README.md` | Human quickstart |
@@ -30,7 +30,10 @@ Core (no project refs)
       ├── Replays        — .wotbreplay parsing (pickle data-only, protobuf, event stream)
       ├── CaptureLogs    — NDJSON telemetry capture logs, replay clocks, comparison
       ├── GameIntegration — installed-game discovery, DVPL, log monitoring, offline
-      │                    session gate, guarded Win32, memory scan engine, process launch
+      │                    session gate, guarded Win32, process launch
+      ├── UltimateScanner — standalone Cheat Engine-like memory scan module
+      │                    (multi-scan snapshot/compare, pattern scans, neighborhood
+      │                    scans, guarded VM reader); referenced only by GameIntegration
       ├── Storage.Sqlite — SQLite storage (artifacts, decode runs, comparisons)
       └── Bootstrap      — composition root; all DI registration (hosts start via this)
            ├── Host.Cli  — console CLI (import, sessions, compare, export, watch, …)
@@ -47,9 +50,10 @@ ApiContracts (serialization-only; NO refs, NO packages)
 | `Application` | `Replay/ReplayIngestionService.cs`, `Results/OperationResult.cs`, `Storage/StorageContracts.cs`, `Game/GameSessionContracts.cs`, `Capture/CaptureContracts.cs` |
 | `Replays` | `WotbReplayDecoder.cs`, `RestrictedPickleReader.cs`, `ProtobufWireReader.cs`, `EventStreamReader.cs`, `ReplayBinary.cs` |
 | `CaptureLogs` | `Ndjson/NdjsonTelemetrySource.cs`, `Clock/SegmentedReplayClockSource.cs`, `Comparison/TelemetryComparator.cs` |
-| `GameIntegration` | `Discovery/GameInstallationDiscovery.cs`, `Dvpl/DvplReader.cs`, `Logs/BlitzReplayLogMonitor.cs`, `Session/` (coordinator, memory scan, process launch, guarded readers) |
+| `GameIntegration` | `Discovery/GameInstallationDiscovery.cs`, `Dvpl/DvplReader.cs`, `Logs/BlitzReplayLogMonitor.cs`, `Session/` (coordinator, process launch, identity) — delegates scanning to `UltimateScanner` |
+| `UltimateScanner` | `MemoryScanEngine.cs` (multi-scan snapshot/compare), `MemoryScanDiscoverer.cs` (pattern + neighborhood scans), `GuardedMemoryReader.cs` (bounded VM reads), `NativeMethods.cs` (process-memory interop) |
 | `Storage.Sqlite` | (SQLite repos: artifacts, decode runs, comparisons, replay clock segments) |
-| `Bootstrap` | `DependencyInjection/FoundationServiceCollectionExtensions.cs`, `Startup/StorageInitializationHostedService.cs`, `Logging/RedactingLogEventEnricher.cs` |
+| `Bootstrap` | `DependencyInjection/FoundationServiceCollectionExtensions.cs`, `Startup/StorageInitializationHostedService.cs`, `Logging/TreaderLogging.cs` |
 | `Host.Cli` | `Cli/CliCommandRouter.cs`, `Cli/CliEntryPoint.cs` |
 | `Host.Web` | `Endpoints/ReadApiEndpoints.cs`, `Endpoints/GameApiEndpoints.cs`, `Hubs/TelemetryHub.cs`, `Services/DashboardReadClient.cs`, `Services/MinimapTextureService.cs` |
 | `Overlay` | `Views/PositionPlot.xaml`, `ViewModels/MainViewModel.cs`, `Discovery/RendezvousLocator.cs`, `Services/TreaderApiClient.cs`, `Services/TelemetryStreamService.cs` |
@@ -59,7 +63,7 @@ ApiContracts (serialization-only; NO refs, NO packages)
 12 MSTest projects, including the module suites, architecture/bootstrap suites,
 and the Windows-only `tools/tests/WotBTreader.GameHarness.Tests`. The shared
 `TestSupport` project supplies synthetic fixtures but is not itself a test suite.
-The current snapshot is 411 tests: 409 passed, 0 failed, and 2 local opt-in skips.
+The current snapshot is 412 tests: 410 passed, 0 failed, and 2 local opt-in skips.
 `Architecture.Tests` enforces the reference graph, TFM allowlist, and native-access
 boundary.
 
