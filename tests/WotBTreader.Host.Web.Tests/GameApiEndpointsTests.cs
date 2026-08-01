@@ -144,6 +144,97 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task DiscoverPropagatesPreciseFloatToleranceToScanner()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.DiscoverOffsetsAsync(
+            scanner,
+            new OffsetDiscoveryRequest
+            {
+                FieldName = "position",
+                FieldType = "Float",
+                ExpectedValueHex = "0000C842",
+                FloatTolerance = 0.25f,
+            },
+            TestContext.CancellationToken);
+
+        Assert.IsInstanceOfType<Ok<OffsetDiscoveryResponse>>(result);
+        Assert.IsNotNull(scanner.LastScanRequest);
+        Assert.AreEqual(0.25f, scanner.LastScanRequest.FloatTolerance);
+        Assert.IsNull(scanner.LastScanRequest.ToleranceMask);
+        // The coordinator resolves the typed ValueKind from FieldType before
+        // invoking the scanner; the host endpoint preserves that boundary.
+        Assert.AreEqual(MemoryValueKind.Bytes, scanner.LastScanRequest.ValueKind);
+    }
+
+    [TestMethod]
+    [DataRow("Float", "0000")]
+    [DataRow("Int32", "0000")]
+    [DataRow("Double", "0000C842")]
+    public async Task DiscoverRejectsTypedValuesWithAnInvalidWidth(
+        string fieldType,
+        string expectedValueHex)
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.DiscoverOffsetsAsync(
+            scanner,
+            new OffsetDiscoveryRequest
+            {
+                FieldName = "position",
+                FieldType = fieldType,
+                ExpectedValueHex = expectedValueHex,
+            },
+            TestContext.CancellationToken);
+
+        JsonElement response = BadRequestAnonymous(result);
+        Assert.AreEqual("discover.invalid_value_width", response.GetProperty("error").GetString());
+        Assert.IsNull(scanner.LastScanRequest);
+    }
+
+    [TestMethod]
+    public async Task DiscoverRejectsInvalidFloatToleranceBeforeCallingScanner()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.DiscoverOffsetsAsync(
+            scanner,
+            new OffsetDiscoveryRequest
+            {
+                FieldName = "position",
+                FieldType = "Float",
+                ExpectedValueHex = "0000C842",
+                FloatTolerance = -0.25f,
+            },
+            TestContext.CancellationToken);
+
+        JsonElement response = BadRequestAnonymous(result);
+        Assert.AreEqual("discover.invalid_float_tolerance", response.GetProperty("error").GetString());
+        Assert.IsNull(scanner.LastScanRequest);
+    }
+
+    [TestMethod]
+    public async Task PatternRejectsNumericFloatToleranceBeforeCallingScanner()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.DiscoverPatternAsync(
+            scanner,
+            new OffsetDiscoveryRequest
+            {
+                FieldName = "signature",
+                ExpectedValueHex = "488B90",
+                FloatTolerance = 0.1f,
+            },
+            TestContext.CancellationToken);
+
+        JsonElement response = BadRequestAnonymous(result);
+        Assert.AreEqual("discover.float_tolerance_not_supported_for_pattern", response.GetProperty("error").GetString());
+        Assert.IsFalse(scanner.PatternCalled);
+    }
+
+    [TestMethod]
     public async Task PatternRejectsMalformedToleranceBeforeCallingScanner()
     {
         var scanner = new FakeGameMemoryScanner();
@@ -337,6 +428,7 @@ public sealed class GameApiEndpointsTests
     {
         public bool PatternCalled { get; private set; }
         public bool PointerChainCalled { get; private set; }
+        public MemoryScanRequest? LastScanRequest { get; private set; }
         public CancellationToken LastCancellationToken { get; private set; }
         public OperationResult<MemoryCompareResult> CompareResult { get; init; } = OperationResult.Success(
             new MemoryCompareResult(DateTimeOffset.UnixEpoch, 0, 0, 0, 0, 0, 0, [], false, false, 0));
@@ -346,8 +438,12 @@ public sealed class GameApiEndpointsTests
             new MemoryScanResult(DateTimeOffset.UnixEpoch, 0x140000000, 0, 0, [], 0));
 
         public ValueTask<OperationResult<MemoryScanResult>> ScanAsync(
-            MemoryScanRequest request, CancellationToken cancellationToken) =>
-            ValueTask.FromResult(PatternResult);
+            MemoryScanRequest request, CancellationToken cancellationToken)
+        {
+            LastScanRequest = request;
+            LastCancellationToken = cancellationToken;
+            return ValueTask.FromResult(PatternResult);
+        }
 
         public ValueTask<OperationResult<MemoryScanResult>> ScanPatternAsync(
             MemoryScanRequest request, CancellationToken cancellationToken)

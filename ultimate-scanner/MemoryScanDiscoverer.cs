@@ -100,9 +100,12 @@ internal sealed class MemoryScanDiscoverer
                             continue;
                         }
 
-                        if (!Matches(buffer.AsSpan(offset, request.ExpectedValue.Length),
+                        if (!Matches(
+                                buffer.AsSpan(offset, request.ExpectedValue.Length),
                                 request.ExpectedValue,
-                                request.ToleranceMask))
+                                request.ToleranceMask,
+                                request.FloatTolerance,
+                                request.FieldType))
                         {
                             continue;
                         }
@@ -419,10 +422,23 @@ internal sealed class MemoryScanDiscoverer
             return false;
         }
 
+        if (request.FieldType == "Float"
+            && !float.IsFinite(BitConverter.ToSingle(request.ExpectedValue)))
+        {
+            errorCode = "discover.invalid_value";
+            errorMessage = "Float expected values must be finite.";
+            return false;
+        }
+
         if (!Enum.IsDefined(request.ValueKind)
             || request.Alignment is not (1 or 2 or 4 or 8)
             || request.MinRegionSize < 0
-            || request.MaxCandidates < 0)
+            || request.MaxCandidates < 0
+            || (request.FloatTolerance.HasValue
+                && (!float.IsFinite(request.FloatTolerance.Value)
+                    || request.FloatTolerance.Value < 0
+                    || request.FieldType != "Float"
+                    || request.ToleranceMask is not null)))
         {
             errorCode = "discover.invalid_options";
             errorMessage = "Alignment or scan limits are invalid.";
@@ -555,11 +571,38 @@ internal sealed class MemoryScanDiscoverer
 
     internal static bool Matches(ReadOnlySpan<byte> observed, byte[] expected, byte[]? tolerance)
     {
+        return Matches(observed, expected, tolerance, null, null);
+    }
+
+    internal static bool Matches(
+        ReadOnlySpan<byte> observed,
+        byte[] expected,
+        byte[]? tolerance,
+        float? floatTolerance,
+        string? fieldType)
+    {
         ArgumentNullException.ThrowIfNull(expected);
         if (observed.Length < expected.Length
             || (tolerance is not null && tolerance.Length != expected.Length))
         {
             return false;
+        }
+
+        if (floatTolerance.HasValue)
+        {
+            if (fieldType != "Float"
+                || expected.Length != 4
+                || !float.IsFinite(floatTolerance.Value)
+                || floatTolerance.Value < 0)
+            {
+                return false;
+            }
+
+            float expectedValue = BitConverter.ToSingle(expected);
+            float observedValue = BitConverter.ToSingle(observed);
+            return float.IsFinite(expectedValue)
+                && float.IsFinite(observedValue)
+                && MathF.Abs(observedValue - expectedValue) <= floatTolerance.Value;
         }
 
         for (int index = 0; index < expected.Length; index++)

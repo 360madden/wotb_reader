@@ -154,7 +154,8 @@ public sealed record MemoryScanRequest(
     int Alignment = 1,
     MemoryRegionSelection RegionSelection = MemoryRegionSelection.Default,
     bool IncludeWorkingSetClassification = false,
-    MemoryValueKind ValueKind = MemoryValueKind.Bytes);
+    MemoryValueKind ValueKind = MemoryValueKind.Bytes,
+    float? FloatTolerance = null);
 
 /// <summary>One bounded, single-root pointer-chain resolution request.</summary>
 public sealed record MemoryPointerChainRequest(

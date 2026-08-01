@@ -206,6 +206,40 @@ internal static class GameApiEndpoints
             return Results.BadRequest(new { error = "discover.invalid_field_type" });
         }
 
+        int expectedWidth = fieldType switch
+        {
+            "Float" or "Int32" => sizeof(float),
+            "Double" => sizeof(double),
+            _ => 0,
+        };
+        if (expectedValue.Length != expectedWidth)
+        {
+            return Results.BadRequest(new { error = "discover.invalid_value_width" });
+        }
+
+        if (request.FloatTolerance is float floatTolerance
+            && (!float.IsFinite(floatTolerance) || floatTolerance < 0))
+        {
+            return Results.BadRequest(new { error = "discover.invalid_float_tolerance" });
+        }
+
+        if (request.FloatTolerance.HasValue && fieldType != "Float")
+        {
+            return Results.BadRequest(new { error = "discover.float_tolerance_type_mismatch" });
+        }
+
+        if (fieldType == "Float"
+            && !float.IsFinite(BitConverter.ToSingle(expectedValue)))
+        {
+            return Results.BadRequest(
+                new { error = "discover.invalid_float_value" });
+        }
+
+        if (request.FloatTolerance.HasValue && !string.IsNullOrWhiteSpace(request.ToleranceMaskHex))
+        {
+            return Results.BadRequest(new { error = "discover.tolerance_conflict" });
+        }
+
         MemoryScanRequest scanRequest = new(
             FieldName: request.FieldName,
             FieldType: fieldType,
@@ -217,7 +251,8 @@ internal static class GameApiEndpoints
             RegionSelection: request.IncludeImageRegions
                 ? MemoryRegionSelection.Default | MemoryRegionSelection.Image
                 : MemoryRegionSelection.Default,
-            IncludeWorkingSetClassification: request.IncludeWorkingSetClassification);
+            IncludeWorkingSetClassification: request.IncludeWorkingSetClassification,
+            FloatTolerance: request.FloatTolerance);
 
         OperationResult<MemoryScanResult> result =
             await scanner.ScanAsync(scanRequest, cancellationToken).ConfigureAwait(false);
@@ -251,6 +286,11 @@ internal static class GameApiEndpoints
             || !IsHexString(request.ExpectedValueHex))
         {
             return Results.BadRequest(new { error = "discover.invalid_hex" });
+        }
+
+        if (request.FloatTolerance.HasValue)
+        {
+            return Results.BadRequest(new { error = "discover.float_tolerance_not_supported_for_pattern" });
         }
 
         if (!string.IsNullOrWhiteSpace(request.ToleranceMaskHex)

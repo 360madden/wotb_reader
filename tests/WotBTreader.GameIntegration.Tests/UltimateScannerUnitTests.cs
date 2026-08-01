@@ -22,6 +22,69 @@ public sealed class UltimateScannerUnitTests
     }
 
     [TestMethod]
+    public void FloatToleranceMatchesDecodedValuesWithoutWildcardingExponentBytes()
+    {
+        byte[] expected = BitConverter.GetBytes(100.0f);
+        byte[] withinTolerance = BitConverter.GetBytes(100.05f);
+        byte[] outsideTolerance = BitConverter.GetBytes(100.2f);
+
+        Assert.IsTrue(MemoryScanDiscoverer.Matches(
+            withinTolerance, expected, null, 0.1f, "Float"));
+        Assert.IsFalse(MemoryScanDiscoverer.Matches(
+            outsideTolerance, expected, null, 0.1f, "Float"));
+        Assert.IsFalse(MemoryScanDiscoverer.Matches(
+            withinTolerance, expected, null, -0.1f, "Float"));
+    }
+
+    [TestMethod]
+    public void FloatExpectedValueRejectsNaNAndInfinity()
+    {
+        foreach (float value in new[] { float.NaN, float.PositiveInfinity, float.NegativeInfinity })
+        {
+            var request = new MemoryScanRequest(
+                "field",
+                "Float",
+                BitConverter.GetBytes(value),
+                null,
+                10,
+                1,
+                ValueKind: MemoryValueKind.FloatValue);
+
+            bool valid = MemoryScanDiscoverer.ValidateScanRequest(
+                0x140000000,
+                request,
+                out string? errorCode,
+                out _);
+
+            Assert.IsFalse(valid);
+            Assert.AreEqual("discover.invalid_value", errorCode);
+        }
+    }
+
+    [TestMethod]
+    public void FloatToleranceRejectsNonFloatAndMaskConflictRequests()
+    {
+        var request = new MemoryScanRequest(
+            "field",
+            "Int32",
+            [0, 0, 0, 0],
+            [0, 0, 0, 0],
+            10,
+            1,
+            ValueKind: MemoryValueKind.Int32Value,
+            FloatTolerance: 0.1f);
+
+        bool valid = MemoryScanDiscoverer.ValidateScanRequest(
+            0x140000000,
+            request,
+            out string? errorCode,
+            out _);
+
+        Assert.IsFalse(valid);
+        Assert.AreEqual("discover.invalid_options", errorCode);
+    }
+
+    [TestMethod]
     public void SnapshotFilterRejectsInvertedTypedRanges()
     {
         var filter = new MemoryScanEngine.SnapshotFilter(

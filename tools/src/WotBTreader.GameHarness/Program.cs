@@ -319,7 +319,7 @@ static async Task<int> DiscoverAsync(string[] args)
         return (int)HarnessExitCode.UnsupportedCapability;
     }
 
-    if (args.Length < 3)
+    if (args.Length < 4)
     {
         Console.Error.WriteLine("Usage: discover <fieldName> <fieldType> <expectedValue> [tolerance]");
         Console.Error.WriteLine("  fieldType: Float, Int32, or Double");
@@ -351,11 +351,20 @@ static async Task<int> DiscoverAsync(string[] args)
         return (int)HarnessExitCode.InvalidInput;
     }
 
-    byte[]? tolerance = null;
-    if (args.Length >= 5 && fieldType == "Float"
-        && float.TryParse(args[4], out float tol) && tol > 0)
+    float? floatTolerance = null;
+    if (args.Length >= 5)
     {
-        tolerance = BuildFloatTolerance(expectedValue, tol);
+        if (fieldType != "Float"
+            || !float.TryParse(
+                args[4], NumberStyles.Float, CultureInfo.InvariantCulture, out float toleranceValue)
+            || !float.IsFinite(toleranceValue)
+            || toleranceValue < 0)
+        {
+            Console.Error.WriteLine("Tolerance is only supported for finite, non-negative Float values.");
+            return (int)HarnessExitCode.InvalidInput;
+        }
+
+        floatTolerance = toleranceValue;
     }
 
     // Ensure trailing slash.
@@ -371,16 +380,15 @@ static async Task<int> DiscoverAsync(string[] args)
         fieldName,
         fieldType,
         expectedValueHex = Convert.ToHexString(expectedValue),
-        toleranceMaskHex = tolerance is not null
-            ? Convert.ToHexString(tolerance) : null,
+        floatTolerance,
         maxCandidates = 200,
         minRegionSize = 4096L,
     };
 
     Console.WriteLine($"\u250c Scanning for {fieldName} ({fieldType})...");
     Console.WriteLine($"\u2502 Expected: {FormatExpectedValue(expectedValue, fieldType)}");
-    if (tolerance is not null)
-        Console.WriteLine($"\u2502 Tolerance: ±{args[4]} ({fieldType})");
+    if (floatTolerance.HasValue)
+        Console.WriteLine($"\u2502 Tolerance: ±{floatTolerance.Value.ToString(CultureInfo.InvariantCulture)} ({fieldType})");
     Console.WriteLine($"\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500");
 
     try
@@ -471,45 +479,22 @@ static bool TryParseExpectedValue(
     value = [];
     return fieldType switch
     {
-        "Float" => float.TryParse(input, out float f)
+        "Float" => float.TryParse(
+            input, NumberStyles.Float, CultureInfo.InvariantCulture, out float f)
+            && float.IsFinite(f)
             ? (value = BitConverter.GetBytes(f)) is not null
             : false,
-        "Int32" => int.TryParse(input, out int i)
+        "Int32" => int.TryParse(
+            input, NumberStyles.Integer, CultureInfo.InvariantCulture, out int i)
             ? (value = BitConverter.GetBytes(i)) is not null
             : false,
-        "Double" => double.TryParse(input, out double d)
+        "Double" => double.TryParse(
+            input, NumberStyles.Float, CultureInfo.InvariantCulture, out double d)
+            && double.IsFinite(d)
             ? (value = BitConverter.GetBytes(d)) is not null
             : false,
         _ => false,
     };
-}
-
-static byte[] BuildFloatTolerance(byte[] expected, float tolerance)
-{
-    // IEEE 754 single-precision float, little-endian:
-    //   byte 0: mantissa bits 0-7   (LSB)
-    //   byte 1: mantissa bits 8-15
-    //   byte 2: mantissa bits 16-22 + exponent LSB
-    //   byte 3: exponent bits 24-30 + sign bit  (MSB)
-    //
-    // Map tolerance to wildcard byte count:
-    //   ±0.01 → 1 wildcard (LSB mantissa only)
-    //   ±0.1  → 2 wildcards
-    //   ±1.0+ → 3 wildcards (allows any value with same sign/exp)
-    int wildcards = tolerance switch
-    {
-        <= 0.01f => 1,
-        <= 0.1f => 2,
-        _ => 3,
-    };
-
-    byte[] mask = new byte[4];
-    // Little-endian: wildcard the least significant bytes first.
-    // The bytes we keep (non-zero mask) are the most significant ones.
-    for (int i = wildcards; i < 4; i++)
-        mask[i] = 0xFF;
-
-    return mask;
 }
 
 static string FormatExpectedValue(byte[] bytes, string fieldType) => fieldType switch

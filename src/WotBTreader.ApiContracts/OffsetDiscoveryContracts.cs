@@ -26,6 +26,13 @@ public sealed record OffsetDiscoveryRequest
     /// </summary>
     public string? ToleranceMaskHex { get; init; }
 
+    /// <summary>
+    /// Optional numeric tolerance for a Float scan. Unlike a byte mask, this
+    /// compares decoded single-precision values and preserves exponent bits.
+    /// Must be finite and non-negative.
+    /// </summary>
+    public float? FloatTolerance { get; init; }
+
     /// <summary>Maximum number of candidates to return (1–10000, default 500).</summary>
     public int MaxCandidates { get; init; } = 500;
 
