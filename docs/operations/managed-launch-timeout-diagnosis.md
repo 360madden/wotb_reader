@@ -219,6 +219,15 @@ Fixes **4 (single-instance probe) and 5 (log-path verification)** remain open
 and still require a live session. `OD-RECOVERY-003` remains `Planned` in the
 ledger.
 
+## Amendment (2026-08-01) — status update
+
+The header above says "Analysis only — no code changed"; that status line
+refers to the original diagnosis session (no game process was attached or
+scanned during analysis). Since then, proposed fixes **#1 (real process
+observer), #2 (evidence deadline), and #3 (launch correlation)** have been
+implemented, tested, and committed — see the amendments above. `OD-RECOVERY-003`
+remains `Planned` in the ledger.
+
 ## What was NOT done
 
 - No live game process was started, attached, resumed, or scanned.
