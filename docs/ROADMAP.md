@@ -195,16 +195,19 @@ via CLI → published → served → all API endpoints verified → overlay laun
 ## Deferred / future work
 
 - **Live HUD smoke test**: Verify transparent window, session list, position
-  dots, velocity trails, time slider, keyboard shortcuts, and Launch button
-  against a real WoT Blitz installation.
+  dots, velocity trails, time slider, keyboard shortcuts, and game launch
+  (via the web host) against a real WoT Blitz installation.
 - ~~Real minimap textures~~ ✅: `MinimapTextureService` serves minimap PNG textures
   from the installed game's DVPL-encapsulated WebP files via `GET /api/v1/maps/{mapId}/minimap`.
   `TreaderApiClient.GetMinimapPngAsync` fetches them on the overlay, `MainViewModel.LoadMinimapAsync`
   caches and renders them via `PositionPlot.MinimapImage`. SkiaSharp converts WebP→PNG with
   90-quality encoding. Cache invalidated on game version change. Fully implemented.
-- **Game path via DI**: The overlay's game path discovery is a lightweight
-  replica of `GameInstallationDiscovery`. A future refactor could extract
-  discovery into a shared portable utility.
+- ~~**Game path via DI**~~ ✅ Resolved by removal: M5 (`6b71cc8`) deleted the
+  overlay's `FindGameExecutablePath` / `GetGameDiscoveryRoots` / `PopulateGamePathInfo`
+  and all game-launch authority (−685 lines). The overlay is a loopback client
+  that delegates launch to the host (`POST /api/v1/game/launch` via
+  `TreaderApiClient.LaunchGameAsync`); no duplicate discovery remains to extract.
+  `GameInstallationDiscovery` stays the single discovery implementation.
 - **Dynamic offset discovery**: Cheat Engine-like multi-scan engine (`MemoryScanEngine`)
   with snapshot/compare/filter (changed/unchanged/increased/decreased). Neighborhood scanner
   reads memory windows around known offsets (`MemoryScanDiscoverer.ScanNeighborhood`).
