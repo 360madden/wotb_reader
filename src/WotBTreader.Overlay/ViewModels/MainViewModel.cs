@@ -28,6 +28,7 @@ public class MainViewModel : INotifyPropertyChanged
     private TreaderApiClient? _client;
     private Uri? _clientBaseUri;
     private CancellationTokenSource? _detailLoadCts;
+    private long _detailLoadGeneration;
     private SessionRow? _selectedSession;
     private string _status = string.Empty;
     private bool _isRefreshingSessions;
@@ -555,31 +556,38 @@ public class MainViewModel : INotifyPropertyChanged
         cancellationToken.ThrowIfCancellationRequested();
 
         Guid? selectionAtRefreshStart = _selectedSession?.BattleSessionId;
+        TreaderApiClient? clientAtRefreshStart = _client;
         _isRefreshingSessions = true;
+        bool refreshSucceeded;
         try
         {
-            await RefreshSessionsCoreAsync(cancellationToken);
+            refreshSucceeded = await RefreshSessionsCoreAsync(cancellationToken);
         }
         finally
         {
             _isRefreshingSessions = false;
         }
 
+        bool hostChanged = !ReferenceEquals(clientAtRefreshStart, _client);
         Guid? selectionAfterRefresh = _selectedSession?.BattleSessionId;
-        if (selectionAfterRefresh.HasValue && selectionAfterRefresh != selectionAtRefreshStart)
+        if (refreshSucceeded
+            && (hostChanged
+                || (selectionAfterRefresh.HasValue && selectionAfterRefresh != selectionAtRefreshStart)))
         {
             StartSelectedSessionRefresh();
         }
 
         // After a successful refresh, connect the stream service so future
         // session list changes arrive via push instead of polling.
-        if (_clientBaseUri is not null && _streamService is not null)
+        if (refreshSucceeded && _clientBaseUri is not null && _streamService is not null)
         {
-            _ = _streamService.ConnectAsync(_clientBaseUri, _locator.Locate().Record?.Capability, CancellationToken.None);
+            _ = ConnectStreamSafelyAsync(
+                _clientBaseUri,
+                _locator.Locate().Record?.Capability);
         }
     }
 
-    private async Task RefreshSessionsCoreAsync(CancellationToken cancellationToken)
+    private async Task<bool> RefreshSessionsCoreAsync(CancellationToken cancellationToken)
     {
         RendezvousResult rendezvous = _locator.Locate();
         if (rendezvous.Status != RendezvousStatus.Found || rendezvous.Record is null)
@@ -590,7 +598,7 @@ public class MainViewModel : INotifyPropertyChanged
                 RendezvousStatus.Stale => "Host record expired",
                 _ => "Host record invalid",
             };
-            return;
+            return false;
         }
 
         try
@@ -631,21 +639,36 @@ public class MainViewModel : INotifyPropertyChanged
                 _boundariesFetched = true;
                 _ = FetchMapBoundariesAsync(client);
             }
+            return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or ObjectDisposedException)
         {
             Status = "Host unreachable";
+            return false;
         }
     }
 
     private void StartSelectedSessionRefresh()
     {
-        CancellationTokenSource? previous = _detailLoadCts;
-        CancellationTokenSource current = new();
-        _detailLoadCts = current;
+        InvalidateDetailLoad();
+        // Let RefreshSelectedAsync own and dispose the CTS for a real load. When
+        // selection is null, it returns through the no-selection path without
+        // leaving a dead CTS behind.
+        _ = RefreshSelectedAsync();
+    }
+
+    private void InvalidateDetailLoad()
+    {
+        Interlocked.Increment(ref _detailLoadGeneration);
+        CancellationTokenSource? previous = Interlocked.Exchange(
+            ref _detailLoadCts,
+            null);
         previous?.Cancel();
         previous?.Dispose();
-        _ = RefreshSelectedAsync(current.Token);
     }
 
     private void ReconcileSelectedSession(Guid? previousSessionId)
@@ -665,15 +688,13 @@ public class MainViewModel : INotifyPropertyChanged
             return;
         }
 
-        CancellationTokenSource? detailLoad = _detailLoadCts;
-        _detailLoadCts = null;
-        detailLoad?.Cancel();
-        detailLoad?.Dispose();
+        InvalidateDetailLoad();
         ClearSessionState();
     }
 
     public async Task RefreshSelectedAsync(CancellationToken cancellationToken = default)
     {
+        bool callerOwnsCancellation = cancellationToken != CancellationToken.None;
         SessionRow? selected = SelectedSession;
         TreaderApiClient? client = _client;
         if (selected is null || client is null)
@@ -682,9 +703,31 @@ public class MainViewModel : INotifyPropertyChanged
             return;
         }
 
+        CancellationTokenSource? ownedLoadCts = null;
+        if (cancellationToken == CancellationToken.None)
+        {
+            ownedLoadCts = new CancellationTokenSource();
+            CancellationTokenSource? previousLoadCts = Interlocked.Exchange(
+                ref _detailLoadCts,
+                ownedLoadCts);
+            previousLoadCts?.Cancel();
+            previousLoadCts?.Dispose();
+            cancellationToken = ownedLoadCts.Token;
+        }
+
+        long detailLoadGeneration = Interlocked.Increment(ref _detailLoadGeneration);
         try
         {
             SessionDetailResponse? detail = await client.GetSessionDetailAsync(selected.BattleSessionId, cancellationToken);
+            if (!IsCurrentDetailLoad(
+                    selected,
+                    client,
+                    detailLoadGeneration,
+                    cancellationToken))
+            {
+                return;
+            }
+
             if (detail is null)
             {
                 ClearSessionState();
@@ -714,26 +757,108 @@ public class MainViewModel : INotifyPropertyChanged
 
             ApplyMapBoundaries(selected);
 
-            // Load minimap texture for this map.
-            _ = LoadMinimapAsync(detail.Session?.MapId);
+            // Load minimap texture for this map. The same detail-load token
+            // prevents a slower request for the previous selection winning.
+            await LoadMinimapAsync(
+                detail.Session?.MapId,
+                selected,
+                client,
+                detailLoadGeneration,
+                cancellationToken);
+
+            // Minimap loading intentionally handles its own transport errors,
+            // but cancellation can supersede this detail request while it is
+            // awaiting the image. Do not publish status from a stale request.
+            if (!IsCurrentDetailLoad(
+                    selected,
+                    client,
+                    detailLoadGeneration,
+                    CancellationToken.None))
+            {
+                return;
+            }
 
             if (detail.PositionsTruncated)
             {
                 Status = $"showing latest 5000 of {detail.TotalPositionCount} positions";
             }
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or ObjectDisposedException)
+        catch (OperationCanceledException) when (callerOwnsCancellation && cancellationToken.IsCancellationRequested)
         {
-            Status = "Host unreachable";
-            ClearSessionState();
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            // A replaced selection owns the current state; an older request
+            // must not clear it while unwinding cancellation. A transport
+            // timeout is also handled as an unreachable host below.
+            if (!cancellationToken.IsCancellationRequested
+                && IsCurrentDetailLoad(
+                    selected,
+                    client,
+                    detailLoadGeneration,
+                    CancellationToken.None))
+            {
+                Status = "Host unreachable";
+                ClearSessionState();
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or ObjectDisposedException)
+        {
+            if (IsCurrentDetailLoad(
+                    selected,
+                    client,
+                    detailLoadGeneration,
+                    CancellationToken.None))
+            {
+                Status = "Host unreachable";
+                ClearSessionState();
+            }
+        }
+        finally
+        {
+            if (ownedLoadCts is not null
+                && ReferenceEquals(
+                    Interlocked.CompareExchange(
+                        ref _detailLoadCts,
+                        null,
+                        ownedLoadCts),
+                    ownedLoadCts))
+            {
+                ownedLoadCts.Dispose();
+            }
         }
     }
 
-    private async Task LoadMinimapAsync(string? mapId)
+    private bool IsCurrentDetailLoad(
+        SessionRow selected,
+        TreaderApiClient client,
+        long detailLoadGeneration,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Volatile.Read(ref _detailLoadGeneration) == detailLoadGeneration
+            && ReferenceEquals(_client, client)
+            && _selectedSession?.BattleSessionId == selected.BattleSessionId;
+    }
+
+    private async Task LoadMinimapAsync(
+        string? mapId,
+        SessionRow selected,
+        TreaderApiClient client,
+        long detailLoadGeneration,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(mapId))
         {
-            MinimapImageSource = null;
+            if (IsCurrentDetailLoad(
+                    selected,
+                    client,
+                    detailLoadGeneration,
+                    cancellationToken))
+            {
+                MinimapImageSource = null;
+            }
             return;
         }
 
@@ -742,28 +867,39 @@ public class MainViewModel : INotifyPropertyChanged
         {
             if (_minimapCache.TryGetValue(mapId, out ImageSource? cached))
             {
-                MinimapImageSource = cached;
+                if (IsCurrentDetailLoad(
+                    selected,
+                    client,
+                    detailLoadGeneration,
+                    cancellationToken))
+                {
+                    MinimapImageSource = cached;
+                }
                 return;
             }
         }
 
-        TreaderApiClient? client = _client;
-        if (client is null)
-        {
-            MinimapImageSource = null;
-            return;
-        }
-
         try
         {
-            byte[]? pngBytes = await client.GetMinimapPngAsync(mapId);
+            byte[]? pngBytes = await client.GetMinimapPngAsync(mapId, cancellationToken);
+            if (!IsCurrentDetailLoad(
+                    selected,
+                    client,
+                    detailLoadGeneration,
+                    cancellationToken))
+            {
+                return;
+            }
             if (pngBytes is not null && pngBytes.Length > 0)
             {
                 BitmapImage bitmap = new();
                 bitmap.BeginInit();
                 bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                bitmap.StreamSource = new System.IO.MemoryStream(pngBytes);
-                bitmap.EndInit();
+                using (System.IO.MemoryStream stream = new(pngBytes))
+                {
+                    bitmap.StreamSource = stream;
+                    bitmap.EndInit();
+                }
                 bitmap.Freeze();
 
                 lock (_minimapCache)
@@ -771,18 +907,49 @@ public class MainViewModel : INotifyPropertyChanged
                     _minimapCache[mapId] = bitmap;
                 }
 
-                MinimapImageSource = bitmap;
+                if (IsCurrentDetailLoad(
+                    selected,
+                    client,
+                    detailLoadGeneration,
+                    cancellationToken))
+                {
+                    MinimapImageSource = bitmap;
+                }
             }
-            else
+            else if (IsCurrentDetailLoad(
+                    selected,
+                    client,
+                    detailLoadGeneration,
+                    cancellationToken))
+            {
+                MinimapImageSource = null;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Selection changed; preserve the newer selection's state. A
+            // transport timeout clears only the still-current selection.
+            if (!cancellationToken.IsCancellationRequested
+                && IsCurrentDetailLoad(
+                    selected,
+                    client,
+                    detailLoadGeneration,
+                    CancellationToken.None))
             {
                 MinimapImageSource = null;
             }
         }
         catch (Exception ex) when (
-            ex is HttpRequestException or TaskCanceledException
-            or System.IO.IOException or NotSupportedException)
+            ex is HttpRequestException or System.IO.IOException or NotSupportedException)
         {
-            MinimapImageSource = null;
+            if (IsCurrentDetailLoad(
+                    selected,
+                    client,
+                    detailLoadGeneration,
+                    CancellationToken.None))
+            {
+                MinimapImageSource = null;
+            }
         }
     }
 
@@ -801,6 +968,8 @@ public class MainViewModel : INotifyPropertyChanged
         Duration = TimeSpan.Zero;
         _currentTime = TimeSpan.Zero;
         IsPlaying = false;
+        MinimapImageSource = null;
+        ApplyMapBoundaries(null);
     }
 
     protected void OnPropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string? name = null)
@@ -815,16 +984,42 @@ public class MainViewModel : INotifyPropertyChanged
             return _client;
         }
 
-        // Cancel any in-flight detail load before swapping clients so the
-        // old HttpClient is never used after disposal.
-        _detailLoadCts?.Cancel();
+        // Cancel and invalidate any in-flight detail load before swapping
+        // clients so an old HttpClient can never publish into the new host.
+        InvalidateDetailLoad();
+
+        // The old host's detail data must not remain visible while the new
+        // host is being discovered. The selected row can be reconciled after
+        // the new host's session list succeeds.
+        ClearSessionState();
 
         TreaderApiClient? oldClient = _client;
+        _boundariesFetched = false;
+        _mapBoundaries = new Dictionary<string, MapBoundaryResponse>(StringComparer.OrdinalIgnoreCase);
         _client = _apiClientFactory(baseUri, _locator.Locate().Record?.Capability);
         _clientBaseUri = baseUri;
         OnPropertyChanged(nameof(BaseUri));
         oldClient?.Dispose();
         return _client;
+    }
+
+    private async Task ConnectStreamSafelyAsync(Uri baseUri, string? capability)
+    {
+        try
+        {
+            await _streamService!.ConnectAsync(
+                baseUri,
+                capability,
+                CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            // SignalR is an optional push path; polling remains authoritative.
+            // Observe startup failures so they cannot become unobserved task
+            // exceptions or replace the user-safe status with transport detail.
+            System.Diagnostics.Debug.WriteLine(
+                $"[TelemetryStream] Connect failed: {exception.GetType().Name}");
+        }
     }
 
     private void OnStreamSessionListChanged(object? sender, EventArgs e)
@@ -878,11 +1073,41 @@ public class MainViewModel : INotifyPropertyChanged
         _ = Task.Delay(LiveObservationTimeout, timeoutCts.Token)
             .ContinueWith(static (t, state) =>
             {
-                if (!t.IsCanceled && t.Exception is null)
+                if (t.IsCanceled || t.Exception is not null)
                 {
-                    ((MainViewModel)state!).HasLiveMemoryObservation = false;
+                    return;
                 }
-            }, this, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+
+                var (viewModel, timeoutSource) =
+                    ((MainViewModel ViewModel, CancellationTokenSource TimeoutSource))state!;
+                void Expire()
+                {
+                    // A completed timeout can already be queued when the next
+                    // observation arrives. Only the current timeout may clear
+                    // the live indicator.
+                    if (!ReferenceEquals(
+                            Interlocked.CompareExchange(
+                                ref viewModel._liveObservationTimeoutCts,
+                                null,
+                                timeoutSource),
+                            timeoutSource))
+                    {
+                        return;
+                    }
+
+                    timeoutSource.Dispose();
+                    viewModel.HasLiveMemoryObservation = false;
+                }
+
+                if (viewModel._syncContext is SynchronizationContext context)
+                {
+                    context.Post(static state => ((Action)state!).Invoke(), (Action)Expire);
+                }
+                else
+                {
+                    Expire();
+                }
+            }, (this, timeoutCts), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
 
         if (observation.PlayerPositionX.HasValue)
         {
@@ -947,20 +1172,91 @@ public class MainViewModel : INotifyPropertyChanged
         {
             IReadOnlyList<MapBoundaryResponse> boundaries = await client
                 .GetMapBoundariesAsync();
-            _mapBoundaries = new Dictionary<string, MapBoundaryResponse>(
-                StringComparer.OrdinalIgnoreCase);
-            foreach (MapBoundaryResponse b in boundaries)
+
+            // A host switch can complete while this request is in flight. Never
+            // let the old client's catalogue overwrite the current projection.
+            if (!ReferenceEquals(_client, client))
             {
-                _mapBoundaries[b.MapId] = b;
+                return;
             }
 
-            ApplyMapBoundaries(SelectedSession);
+            void Apply()
+            {
+                if (!ReferenceEquals(_client, client))
+                {
+                    return;
+                }
+
+                _mapBoundaries = new Dictionary<string, MapBoundaryResponse>(
+                    StringComparer.OrdinalIgnoreCase);
+                foreach (MapBoundaryResponse b in boundaries)
+                {
+                    _mapBoundaries[b.MapId] = b;
+                }
+
+                ApplyMapBoundaries(SelectedSession);
+            }
+
+            if (_syncContext is SynchronizationContext context
+                && SynchronizationContext.Current != context)
+            {
+                context.Post(static state => ((Action)state!).Invoke(), (Action)Apply);
+            }
+            else
+            {
+                Apply();
+            }
         }
         catch (Exception ex) when (
             ex is HttpRequestException or TaskCanceledException
             or JsonException or ObjectDisposedException)
         {
-            // Boundaries are optional — plotting falls back to per-session extents.
+            // Permit a later refresh to retry an optional catalogue request,
+            // but never let an obsolete host reset the current host's state.
+            if (!ReferenceEquals(_client, client))
+            {
+                return;
+            }
+
+            void MarkRetry()
+            {
+                if (ReferenceEquals(_client, client))
+                {
+                    _boundariesFetched = false;
+                }
+            }
+
+            if (_syncContext is SynchronizationContext context
+                && SynchronizationContext.Current != context)
+            {
+                context.Post(static state => ((Action)state!).Invoke(), (Action)MarkRetry);
+            }
+            else
+            {
+                MarkRetry();
+            }
+        }
+        catch
+        {
+            // This optional fire-and-forget request must never surface an
+            // unobserved task fault or expose machine details to the UI.
+            void MarkRetry()
+            {
+                if (ReferenceEquals(_client, client))
+                {
+                    _boundariesFetched = false;
+                }
+            }
+
+            if (_syncContext is SynchronizationContext context
+                && SynchronizationContext.Current != context)
+            {
+                context.Post(static state => ((Action)state!).Invoke(), (Action)MarkRetry);
+            }
+            else
+            {
+                MarkRetry();
+            }
         }
     }
 
@@ -1026,6 +1322,7 @@ public class MainViewModel : INotifyPropertyChanged
             {
                 _selectedSession = null;
                 OnPropertyChanged(nameof(SelectedSession));
+                InvalidateDetailLoad();
                 ClearSessionState();
             }
         }

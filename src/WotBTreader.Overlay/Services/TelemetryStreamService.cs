@@ -8,7 +8,7 @@ namespace WotBTreader.Overlay.Services;
 /// lifecycle events so the overlay can refresh without polling.
 /// Connection failures are silent — the caller must fall back to polling.
 /// </summary>
-public interface ITelemetryStreamService : IDisposable
+public interface ITelemetryStreamService : IDisposable, IAsyncDisposable
 {
     /// <summary>Raised when new telemetry arrives that may affect the session list.</summary>
     event EventHandler? SessionListChanged;
@@ -39,9 +39,13 @@ public interface ITelemetryStreamService : IDisposable
 internal sealed class TelemetryStreamService : ITelemetryStreamService
 {
     private readonly object _gate = new();
+    private readonly SemaphoreSlim _connectGate = new(1, 1);
     private HubConnection? _connection;
     private Uri? _connectedUri;
     private CancellationTokenSource? _streamCts;
+    private readonly Dictionary<HubConnection, ConnectionHandlers> _connectionHandlers = [];
+    private CancellationTokenSource? _connectOperationCts;
+    private Task? _disposeTask;
     private bool _disposed;
 
     public event EventHandler? SessionListChanged;
@@ -55,92 +59,271 @@ internal sealed class TelemetryStreamService : ITelemetryStreamService
     public async Task ConnectAsync(Uri baseUri, string? capability, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(baseUri);
-
-        lock (_gate)
+        await _connectGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        CancellationTokenSource? connectOperationCts = null;
+        try
         {
-            if (_disposed)
+            HubConnection? previous;
+            lock (_gate)
             {
-                return;
-            }
-
-            if (_connectedUri == baseUri && _connection?.State == HubConnectionState.Connected)
-            {
-                return;
-            }
-
-            _connectedUri = null;
-        }
-
-        // Tear down any previous connection outside the lock so SignalR
-        // callbacks that acquire _gate (e.g. OnConnectionClosed) don't
-        // deadlock with the disposal.
-        _ = DisposeConnectionAsync().ContinueWith(static t =>
-        {
-            if (t.IsFaulted && t.Exception is not null)
-            {
-                System.Diagnostics.Debug.WriteLine(
-                    $"[TelemetryStream] Previous connection disposal failed: {t.Exception.InnerException?.Message}");
-            }
-        }, TaskContinuationOptions.OnlyOnFaulted);
-
-        Uri hubUri = new(baseUri, "/api/v1/stream");
-        HubConnection connection = new HubConnectionBuilder()
-            .WithUrl(hubUri, options =>
-            {
-                if (!string.IsNullOrEmpty(capability))
+                if (_disposed)
                 {
-                    options.Headers.Add("X-WotBTreader-Capability", capability);
+                    return;
                 }
-            })
-            .WithAutomaticReconnect()
-            .Build();
 
-        connection.Closed += OnConnectionClosed;
-        connection.Reconnected += OnReconnected;
+                // Own a cancellation source for the whole connection attempt.
+                // Disposal can cancel negotiation even when the caller supplied
+                // CancellationToken.None, so DisposeAsync cannot wait forever on
+                // a stalled transport handshake.
+                connectOperationCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                _connectOperationCts = connectOperationCts;
+                cancellationToken = connectOperationCts.Token;
 
-        // Register the memory observation handler before starting so it
-        // receives pushes from the very first poll cycle.
-        connection.On<GameMemoryResponse>("MemoryObservation", OnMemoryObservation);
+                if (_connectedUri == baseUri && _connection?.State == HubConnectionState.Connected)
+                {
+                    return;
+                }
 
-        await connection.StartAsync(cancellationToken);
+                _connectedUri = null;
+                previous = _connection;
+                _connection = null;
+            }
 
-        // The hub's SubscribeAsync returns IAsyncEnumerable, making it a
-        // server-streaming method. Use StreamAsync to consume it.
-        CancellationTokenSource streamCts = new();
-        lock (_gate)
-        {
             CancelStream();
-            _streamCts = streamCts;
-            _connection = connection;
-            _connectedUri = baseUri;
-        }
+            await DisposeConnectionAsync(previous).ConfigureAwait(false);
 
-        _ = ConsumeStreamAsync(connection, streamCts.Token);
+            Uri hubUri = new(baseUri, "/api/v1/stream");
+            HubConnection connection = new HubConnectionBuilder()
+                .WithUrl(hubUri, options =>
+                {
+                    if (!string.IsNullOrEmpty(capability))
+                    {
+                        options.Headers.Add("X-WotBTreader-Capability", capability);
+                    }
+                })
+                .WithAutomaticReconnect()
+                .Build();
+
+            // Capture the owning connection in each callback. A callback from
+            // an old connection can arrive after replacement; identity checks
+            // below must not cancel or restart the current stream.
+            Func<Exception?, Task> closedHandler = exception => OnConnectionClosed(connection, exception);
+            Func<string?, Task> reconnectedHandler = connectionId => OnReconnected(connection, connectionId);
+            connection.Closed += closedHandler;
+            connection.Reconnected += reconnectedHandler;
+            connection.On<GameMemoryResponse>("MemoryObservation", OnMemoryObservation);
+
+            bool ownsConnection;
+            lock (_gate)
+            {
+                ownsConnection = !_disposed;
+                if (ownsConnection)
+                {
+                    _connectionHandlers[connection] = new ConnectionHandlers(
+                        closedHandler,
+                        reconnectedHandler);
+                    // Publish the in-flight connection before StartAsync. Dispose
+                    // can therefore close it if teardown wins during negotiation.
+                    _connection = connection;
+                }
+            }
+
+            if (!ownsConnection)
+            {
+                // No dictionary entry exists when disposal won before publish;
+                // detach the local delegates before releasing the connection.
+                connection.Closed -= closedHandler;
+                connection.Reconnected -= reconnectedHandler;
+                await DisposeConnectionAsync(connection).ConfigureAwait(false);
+                return;
+            }
+
+            try
+            {
+                await connection.StartAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                bool disposeHere;
+                lock (_gate)
+                {
+                    disposeHere = !_disposed && ReferenceEquals(_connection, connection);
+                    if (disposeHere)
+                    {
+                        _connection = null;
+                        _connectedUri = null;
+                    }
+                }
+
+                // If Dispose won the race, its serialized cleanup owns the
+                // connection. Otherwise this failed start owns cleanup.
+                if (disposeHere)
+                {
+                    await DisposeConnectionAsync(connection).ConfigureAwait(false);
+                }
+
+                throw;
+            }
+
+            CancellationTokenSource? previousStream;
+            CancellationTokenSource streamCts = new();
+            bool accepted;
+            lock (_gate)
+            {
+                accepted = !_disposed && ReferenceEquals(_connection, connection);
+                if (accepted)
+                {
+                    _connectedUri = baseUri;
+                    previousStream = _streamCts;
+                    _streamCts = streamCts;
+                }
+                else
+                {
+                    previousStream = null;
+                }
+            }
+
+            if (!accepted)
+            {
+                streamCts.Dispose();
+                bool disposeHere;
+                lock (_gate)
+                {
+                    // DisposeCoreAsync owns a connection it clears while the
+                    // start is in flight; do not double-dispose it here.
+                    disposeHere = !_disposed && ReferenceEquals(_connection, connection);
+                    if (disposeHere)
+                    {
+                        _connection = null;
+                        _connectedUri = null;
+                    }
+                }
+
+                if (disposeHere)
+                {
+                    await DisposeConnectionAsync(connection).ConfigureAwait(false);
+                }
+
+                return;
+            }
+
+            previousStream?.Cancel();
+            previousStream?.Dispose();
+            _ = ConsumeStreamAsync(connection, streamCts.Token);
+        }
+        finally
+        {
+            if (connectOperationCts is not null)
+            {
+                lock (_gate)
+                {
+                    if (ReferenceEquals(_connectOperationCts, connectOperationCts))
+                    {
+                        _connectOperationCts = null;
+                    }
+                }
+
+                connectOperationCts.Dispose();
+            }
+
+            _connectGate.Release();
+        }
     }
 
     public void Dispose()
     {
+        GetDisposeTask().GetAwaiter().GetResult();
+    }
+
+    public ValueTask DisposeAsync() => new(GetDisposeTask());
+
+    private Task GetDisposeTask()
+    {
+        TaskCompletionSource<object?>? completion = null;
+        CancellationTokenSource? connectOperationCts;
+        Task task;
+        bool startCleanup = false;
         lock (_gate)
         {
             _disposed = true;
+            connectOperationCts = _connectOperationCts;
+            if (_disposeTask is null)
+            {
+                completion = new TaskCompletionSource<object?>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                _disposeTask = completion.Task;
+                startCleanup = true;
+            }
+
+            task = _disposeTask;
         }
 
-        CancelStream();
-        _ = DisposeConnectionAsync().ContinueWith(static t =>
+        // Cancel outside _gate: cancellation callbacks are allowed to run user
+        // or transport code and must never be able to deadlock lifecycle state.
+        // The connect attempt may finish and dispose its CTS between the lock
+        // release and this call, so treat that race as already-cancelled.
+        try
         {
-            if (t.IsFaulted && t.Exception is not null)
-            {
-                System.Diagnostics.Debug.WriteLine(
-                    $"[TelemetryStream] Dispose connection failed: {t.Exception.InnerException?.Message}");
-            }
-        }, TaskContinuationOptions.OnlyOnFaulted);
+            connectOperationCts?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The connection attempt completed its cleanup concurrently.
+        }
+
+        if (startCleanup)
+        {
+            _ = CompleteDisposeAsync(completion!);
+        }
+
+        return task;
     }
 
-    private void CancelStream()
+    private async Task CompleteDisposeAsync(TaskCompletionSource<object?> completion)
+    {
+        try
+        {
+            await DisposeCoreAsync().ConfigureAwait(false);
+            completion.TrySetResult(null);
+        }
+        catch (Exception exception)
+        {
+            completion.TrySetException(exception);
+        }
+    }
+
+    private async Task DisposeCoreAsync()
+    {
+        await _connectGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            HubConnection? connection;
+            lock (_gate)
+            {
+                _connectedUri = null;
+                connection = _connection;
+                _connection = null;
+            }
+
+            CancelStream();
+            await DisposeConnectionAsync(connection).ConfigureAwait(false);
+        }
+        finally
+        {
+            _connectGate.Release();
+        }
+    }
+
+    private void CancelStream(HubConnection? owner = null)
     {
         CancellationTokenSource? previous;
         lock (_gate)
         {
+            if (owner is not null && !ReferenceEquals(_connection, owner))
+            {
+                return;
+            }
+
             previous = _streamCts;
             _streamCts = null;
         }
@@ -182,39 +365,47 @@ internal sealed class TelemetryStreamService : ITelemetryStreamService
         }
     }
 
-    private Task OnConnectionClosed(Exception? exception)
+    private Task OnConnectionClosed(HubConnection closedConnection, Exception? exception)
     {
         // The connection closed. AutomaticReconnect will attempt to restore
-        // it. Cancel the current stream so OnReconnected can start a new one.
-        CancelStream();
+        // it. An old connection must not cancel the replacement stream.
+        CancelStream(closedConnection);
         return Task.CompletedTask;
     }
 
-    private Task OnReconnected(string? connectionId)
+    private Task OnReconnected(HubConnection reconnectedConnection, string? connectionId)
     {
-        // Start a fresh stream subscription after reconnection.
-        // Must synchronise with CancelStream and Dispose via _gate to
-        // avoid racing on _connection and _streamCts.
+        // Start a fresh stream subscription after reconnection. Never call
+        // CancelStream while holding _gate: CancelStream takes the same lock.
         lock (_gate)
         {
-            if (_disposed || _connection is null)
+            if (_disposed || !ReferenceEquals(_connection, reconnectedConnection))
             {
                 return Task.CompletedTask;
             }
-
-            CancelStream();
-            CancellationTokenSource streamCts = new();
-            _streamCts = streamCts;
-            _ = ConsumeStreamAsync(_connection, streamCts.Token).ContinueWith(static t =>
-            {
-                if (t.IsFaulted && t.Exception is not null)
-                {
-                    System.Diagnostics.Debug.WriteLine(
-                        $"[TelemetryStream] Reconnected stream failed: {t.Exception.InnerException?.Message}");
-                }
-            }, TaskContinuationOptions.OnlyOnFaulted);
         }
 
+        CancelStream(reconnectedConnection);
+        CancellationTokenSource streamCts = new();
+        lock (_gate)
+        {
+            if (_disposed || !ReferenceEquals(_connection, reconnectedConnection))
+            {
+                streamCts.Dispose();
+                return Task.CompletedTask;
+            }
+
+            _streamCts = streamCts;
+        }
+
+        _ = ConsumeStreamAsync(reconnectedConnection, streamCts.Token).ContinueWith(static t =>
+        {
+            if (t.IsFaulted && t.Exception is not null)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[TelemetryStream] Reconnected stream failed: {t.Exception.InnerException?.Message}");
+            }
+        }, TaskContinuationOptions.OnlyOnFaulted);
         return Task.CompletedTask;
     }
 
@@ -223,22 +414,31 @@ internal sealed class TelemetryStreamService : ITelemetryStreamService
         MemoryObservationReceived?.Invoke(this, observation);
     }
 
-    private async Task DisposeConnectionAsync()
+    private async Task DisposeConnectionAsync(HubConnection? previous)
     {
-        HubConnection? previous;
-        lock (_gate)
+        if (previous is null)
         {
-            previous = _connection;
-            _connection = null;
+            return;
         }
 
-        if (previous is not null)
+        ConnectionHandlers? handlers;
+        lock (_gate)
         {
-            previous.Closed -= OnConnectionClosed;
-            previous.Reconnected -= OnReconnected;
-            await previous.DisposeAsync();
+            _connectionHandlers.Remove(previous, out handlers);
         }
+
+        if (handlers is not null)
+        {
+            previous.Closed -= handlers.Closed;
+            previous.Reconnected -= handlers.Reconnected;
+        }
+
+        await previous.DisposeAsync().ConfigureAwait(false);
     }
+
+    private sealed record ConnectionHandlers(
+        Func<Exception?, Task> Closed,
+        Func<string?, Task> Reconnected);
 
     /// <summary>
     /// Minimal shape for deserializing stream items from the hub.

@@ -467,7 +467,7 @@ internal static class GameApiEndpoints
             || request.Alignment is not (1 or 2 or 4 or 8)
             || request.MinAddress < 0
             || request.MaxAddress < 0
-            || (request.MaxAddress > 0 && request.MinAddress > request.MaxAddress)
+            || (request.MaxAddress > 0 && request.MinAddress >= request.MaxAddress)
             || (request.FloatMin.HasValue && !float.IsFinite(request.FloatMin.Value))
             || (request.FloatMax.HasValue && !float.IsFinite(request.FloatMax.Value))
             || (request.FloatMin.HasValue && request.FloatMax.HasValue

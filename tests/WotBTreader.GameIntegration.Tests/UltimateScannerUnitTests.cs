@@ -253,6 +253,29 @@ public sealed class UltimateScannerUnitTests
     }
 
     [TestMethod]
+    public void SnapshotFilterRejectsEqualNonZeroAddressBounds()
+    {
+        var filter = new MemoryScanEngine.SnapshotFilter(
+            ValueSize: 4,
+            MinAddress: 0x140000000,
+            MaxAddress: 0x140000000,
+            FloatMin: null,
+            FloatMax: null,
+            IntMin: null,
+            IntMax: null,
+            LongMin: null,
+            LongMax: null,
+            UIntMin: null,
+            UIntMax: null,
+            ValueKind: MemoryValueKind.Int32Value,
+            Alignment: 4,
+            RegionSelection: MemoryRegionSelection.Default);
+
+        Assert.IsFalse(MemoryScanEngine.ValidateFilter(filter, out string? error));
+        StringAssert.Contains(error, "exclusive");
+    }
+
+    [TestMethod]
     public void SnapshotFilterRejectsUndefinedValueKinds()
     {
         var request = new MemoryScanRequest(

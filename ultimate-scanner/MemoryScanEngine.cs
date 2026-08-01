@@ -560,7 +560,7 @@ internal sealed class MemoryScanEngine
                 && !IsSupportedUserAddress(filter.MinAddress))
             || (filter.MaxAddress != 0
                 && !IsSupportedUserAddress(filter.MaxAddress))
-            || (filter.MaxAddress > 0 && filter.MinAddress > filter.MaxAddress)
+            || (filter.MaxAddress > 0 && filter.MinAddress >= filter.MaxAddress)
             || (filter.ValueKind is MemoryValueKind.Int64Value or MemoryValueKind.UInt64Value
                 && filter.ValueSize != 8)
             || ((filter.ValueKind is MemoryValueKind.FloatValue
@@ -578,7 +578,7 @@ internal sealed class MemoryScanEngine
                 && (filter.UIntMin > uint.MaxValue || filter.UIntMax > uint.MaxValue))
             || filter.RegionSelection == MemoryRegionSelection.None)
         {
-            error = "Value size, alignment, address range, or region selection is invalid.";
+            error = "Value size, alignment, address range, or region selection is invalid. A nonzero maximum address is exclusive and must be greater than the minimum.";
             return false;
         }
         return true;

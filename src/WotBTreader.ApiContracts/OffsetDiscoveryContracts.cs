@@ -124,7 +124,11 @@ public sealed record OffsetDiscoveryResponse
     public string ScanKind { get; init; } = "value";
 }
 
-/// <summary>Request for a bounded, single-root module pointer-chain evidence probe.</summary>
+/// <summary>
+/// Request for a bounded, single-root module pointer-chain evidence probe.
+/// Each configured offset is added to the current address before the pointer
+/// stored at that address is read; the read pointer becomes the next address.
+/// </summary>
 public sealed record PointerChainDiscoveryRequest
 {
     public long RootRelativeOffset { get; init; }
@@ -149,7 +153,15 @@ public sealed record PointerChainDiscoveryResponse
     public int RejectedChains { get; init; }
 }
 
-/// <summary>Request to create a bounded filtered memory snapshot.</summary>
+/// <summary>
+/// Request to create a bounded filtered memory snapshot.
+/// <para>
+/// <see cref="MaxAddress"/> is an exclusive upper bound when nonzero;
+/// zero means no explicit upper bound. Therefore <see cref="MinAddress"/>
+/// and <see cref="MaxAddress"/> must not be equal when a bounded range is
+/// requested.
+/// </para>
+/// </summary>
 public sealed record OffsetSnapshotRequest
 {
     public int ValueSize { get; init; } = 4;
@@ -162,6 +174,7 @@ public sealed record OffsetSnapshotRequest
     public ulong? UIntMin { get; init; }
     public ulong? UIntMax { get; init; }
     public long MinAddress { get; init; }
+    /// <summary>Exclusive upper address; zero means the supported user-space limit.</summary>
     public long MaxAddress { get; init; }
     public string ValueKind { get; init; } = "Int32";
     public int Alignment { get; init; } = 1;

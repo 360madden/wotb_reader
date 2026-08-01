@@ -254,6 +254,7 @@ public sealed record MemorySnapshotRequest(
     int? IntMin,
     int? IntMax,
     long MinAddress,
+    // Exclusive upper address; zero means the supported user-space limit.
     long MaxAddress,
     MemoryValueKind ValueKind = MemoryValueKind.Int32Value,
     int Alignment = 1,

@@ -321,6 +321,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         DetachedLaunchLeases replacedLeases = default;
         bool replacedLeasesDetached = false;
         bool previousLaunchWasVerified = false;
+        bool launchHandoffCommitted = false;
+        ManagedGameLaunchContext? committedLaunchContext = null;
         CancellationTokenSource? previousMonitoringCts = null;
         CancellationTokenSource? monitoringCts = null;
         string currentStage = "prepare";
@@ -356,6 +358,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             {
                 LogLaunchStage("artifact_staging", "failed", artifactResult.Error?.Code);
                 await executableLease.DisposeAsync().ConfigureAwait(false);
+                executableLease = null;
                 return LaunchFailure(artifactResult.Error!);
             }
 
@@ -376,6 +379,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 LogLaunchStage("suspended_process", "failed", suspendedResult.Error?.Code);
                 await artifactLease.DisposeAsync().ConfigureAwait(false);
                 await executableLease.DisposeAsync().ConfigureAwait(false);
+                artifactLease = null;
+                executableLease = null;
                 return LaunchFailure(suspendedResult.Error!);
             }
 
@@ -392,8 +397,12 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             {
                 LogLaunchStage("correlation", "failed", correlationResult.Error?.Code);
                 await suspendedLease.DisposeAsync().ConfigureAwait(false);
-                await artifactLease.DisposeAsync().ConfigureAwait(false);
-                await executableLease.DisposeAsync().ConfigureAwait(false);
+                // SuspendedGameProcessLease owns the input leases until handoff
+                // and disposed them above; clear the aliases so finally cannot
+                // dispose the same leases a second time.
+                suspendedLease = null;
+                artifactLease = null;
+                executableLease = null;
                 return LaunchFailure(correlationResult.Error!);
             }
 
@@ -413,8 +422,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 // Resume failed; child is still suspended. Disposal terminates it
                 // because HandOffLeases has not been called.
                 await suspendedLease.DisposeAsync().ConfigureAwait(false);
-                await artifactLease.DisposeAsync().ConfigureAwait(false);
-                await executableLease.DisposeAsync().ConfigureAwait(false);
+                // SuspendedGameProcessLease still owns the input leases because
+                // handoff has not happened; avoid a second disposal in finally.
+                suspendedLease = null;
+                artifactLease = null;
+                executableLease = null;
                 return LaunchFailure(resumeResult.Error!);
             }
 
@@ -459,6 +471,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     _activeSuspendedLease = suspendedLease;
                     _activeExecutableLease = handedOffExe;
                     _activeArtifactLease = handedOffArtifact;
+                    launchHandoffCommitted = true;
+                    committedLaunchContext = launchContext;
 
                     monitoringCts = new CancellationTokenSource();
                     _activeMonitoringCts = monitoringCts;
@@ -484,6 +498,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
 
             if (disposedDuringLaunch)
             {
+                // The suspended lease still owns both input leases because the
+                // handoff did not occur. Clear aliases before finally disposes
+                // that owner, preventing duplicate cleanup.
+                artifactLease = null;
+                executableLease = null;
                 return OperationResult.Failure<GameReplayLaunchOutcome>(
                     new ApplicationError("game.session_disposed", "The game session coordinator was disposed during launch.", Retryable: false));
             }
@@ -499,9 +518,52 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             return OperationResult.Success(
                 new GameReplayLaunchOutcome(_timeProvider.GetUtcNow()));
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (Exception exception)
         {
             LogLaunchStage(currentStage, "threw", exception.GetType().Name);
+            if (launchHandoffCommitted)
+            {
+                DetachedLaunchLeases failedLaunchLeases;
+                CancellationTokenSource? failedMonitoringCts = null;
+                Task? failedMonitoringTask = null;
+                lock (_gate)
+                {
+                    failedLaunchLeases = ReferenceEquals(_activeSuspendedLease, suspendedLease)
+                        ? DetachLaunchLeasesLocked()
+                        : default;
+                    if (failedLaunchLeases.Suspended is not null)
+                    {
+                        failedLaunchLeases.Suspended.TryTerminateAfterHandOff();
+                    }
+
+                    if (ReferenceEquals(_activeMonitoringCts, monitoringCts))
+                    {
+                        failedMonitoringCts = _activeMonitoringCts;
+                        failedMonitoringTask = _activeMonitoringTask;
+                        _activeMonitoringCts = null;
+                        _activeMonitoringTask = null;
+                    }
+
+                    if (ReferenceEquals(_managedLaunch, committedLaunchContext))
+                    {
+                        _managedLaunch = null;
+                        _lastCursor = null;
+                    }
+                }
+
+                await StopMonitoringAsync(failedMonitoringCts, failedMonitoringTask)
+                    .ConfigureAwait(false);
+                await DisposeDetachedLaunchLeasesAsync(failedLaunchLeases)
+                    .ConfigureAwait(false);
+                // Detachment transferred these objects to the failed-cleanup
+                // path. Clear every local alias before finally runs.
+                suspendedLease = null;
+                artifactLease = null;
+                executableLease = null;
+                handedOffExe = null;
+                handedOffArtifact = null;
+            }
+
             throw;
         }
         finally
@@ -727,7 +789,9 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
 
         if (!evidence.GamePresent)
         {
-            RevokeSession();
+            // Losing process presence is terminal for the managed launch. A
+            // handed-off child must not survive a negative presence signal.
+            RevokeSession(terminateProcess: true);
             _snapshot = CreateSnapshot(
                 GameSessionVerificationState.GameAbsent,
                 gamePresent: false,
@@ -767,7 +831,10 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         if (lifecycle.ObservedAtUtc > now
             || now - lifecycle.ObservedAtUtc > EvidenceLifetime)
         {
-            Revoke();
+            // Stale evidence immediately ends authorization and the managed
+            // launch; retaining an unobserved child would violate fail-closed
+            // lifecycle ownership.
+            RevokeSession(terminateProcess: true);
             _snapshot = CreateSnapshot(
                 GameSessionVerificationState.EvidenceStale,
                 gamePresent: true,
@@ -904,7 +971,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             return;
         }
 
-        Revoke();
+        RevokeSession(terminateProcess: true);
         _snapshot = CreateSnapshot(
             GameSessionVerificationState.EvidenceStale,
             gamePresent: true,
@@ -914,7 +981,19 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
 
     private void SetUnverified(string reasonCode)
     {
-        Revoke();
+        // Incomplete evidence before the first verification is recoverable:
+        // retain the managed launch correlation so a later valid marker can
+        // authorize it. Once a launch was verified, becoming unverified is
+        // terminal and must terminate the handed-off child.
+        if (_snapshot.State == GameSessionVerificationState.OfflineReplayVerified)
+        {
+            RevokeSession(terminateProcess: true);
+        }
+        else
+        {
+            Revoke();
+        }
+
         _snapshot = CreateSnapshot(
             GameSessionVerificationState.GamePresentUnverified,
             gamePresent: true,
@@ -924,7 +1003,10 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
 
     private void Deny(string reasonCode)
     {
-        RevokeSession();
+        // Denial is terminal for the managed launch. Do not infer whether the
+        // previous snapshot was verified: identity changes, stop markers, and
+        // monitor failures must all terminate a handed-off child.
+        RevokeSession(terminateProcess: true);
         _snapshot = CreateSnapshot(
             GameSessionVerificationState.Denied,
             gamePresent: true,
@@ -944,7 +1026,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         _scanEngine.DiscardAllSessions();
     }
 
-    private void RevokeSession()
+    private void RevokeSession(bool terminateProcess = false)
     {
         Revoke();
 
@@ -959,7 +1041,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         // verified as an offline replay. Any unverified launch is fail-closed:
         // request termination before detaching the lease, then dispose it after
         // releasing the coordinator lock.
-        if (_snapshot.State != GameSessionVerificationState.OfflineReplayVerified)
+        if (terminateProcess
+            || _snapshot.State != GameSessionVerificationState.OfflineReplayVerified)
         {
             _activeSuspendedLease?.TryTerminateAfterHandOff();
         }
