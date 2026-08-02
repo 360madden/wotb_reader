@@ -43,9 +43,8 @@
 param(
     [string]$ReplayPath,
     [string]$RepoRoot,
-    # Brief pause after first HWND so splash can pass before the clicker
-    # captures/focuses (early focus churn has destroyed the window mid-splash).
-    [int]$SettleSeconds = 4,
+    # Brief pause after first HWND so splash can pass before the clicker starts.
+    [int]$SettleSeconds = 5,
     [int]$HostWaitSeconds = 60,
     [int]$WindowWaitSeconds = 90,
     [int]$WatchTimeoutSeconds = 120,
@@ -268,8 +267,16 @@ try {
     }
 
     $watchScript = Join-Path $RepoRoot 'scripts\click-watch-offline.ps1'
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $watchScript -TimeoutSeconds $WatchTimeoutSeconds
-    $watchExit = $LASTEXITCODE
+    # Hidden nested host: a normal console `powershell -File` steals focus and the
+    # client logs OnBackground → WindowDestroyed before LoginOnReplayDialog.
+    # Do not call the clicker in-process — it uses `exit` and would tear down us.
+    $watchProc = Start-Process -FilePath powershell.exe -ArgumentList @(
+        '-NoProfile',
+        '-ExecutionPolicy', 'Bypass',
+        '-File', $watchScript,
+        '-TimeoutSeconds', "$WatchTimeoutSeconds"
+    ) -Wait -PassThru -WindowStyle Hidden
+    $watchExit = [int]$watchProc.ExitCode
     Write-Od ("watch_exit=" + $watchExit)
     if ($watchExit -ne 0) {
         exit 4
