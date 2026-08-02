@@ -208,6 +208,8 @@ public sealed class LifecycleEventJournalTests
             [],
             LifecycleFeedReason.ReconciliationCompleted);
 
+        Assert.HasCount(0, journal.CaptureBaseline().Sources);
+
         Assert.ThrowsExactly<InvalidOperationException>(() =>
             Commit(journal,
                 [Marker(source, 1, 20, LifecycleMarkerProvenance.Live)],

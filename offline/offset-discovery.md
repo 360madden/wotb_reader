@@ -53,6 +53,17 @@ serve (web host on 127.0.0.1:9182, loopback)
   `MemoryScanDiscoverer.cs` (pattern scans, neighborhood scans), surfaced
   through `IGameMemoryScanner` on `GameSessionCoordinator` (which stays in
   `GameIntegration` and delegates into the standalone `UltimateScanner` module).
+- The 64-bit scanner host accepts native x64 and WOW64 x86 targets after exact
+  architecture measurement; target address bounds and pointer width are carried
+  by the guarded process lease. Snapshot address filters are revalidated against
+  the measured target bound after the lease opens.
+- A newly enumerated native-log source can authorize only when its file creation
+  time and parsed marker timestamp are both at or after the last completed
+  healthy reconciliation. A healthy zero-source baseline is safe because that
+  completed-time anchor is retained; stale prepopulated files remain historical.
+- Persistent scanner diagnostics contain aggregate counts and non-sensitive
+  identity metadata only, never caller labels, expected bytes, memory addresses,
+  decoded values, or observed process-memory bytes.
 - **Safety gate:** every discover command requires an `OfflineReplayVerified`
   session (`GET /api/v1/game/state`); never scan an online match.
 

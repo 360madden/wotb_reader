@@ -36,10 +36,13 @@ internal sealed record GameProcessEvidence(
 internal sealed record ReplayLifecycleEvidence(
     ReplayLifecycleState State,
     DateTimeOffset ObservedAtUtc,
+    DateTimeOffset? SourceTimestampUtc,
     ReplayEvidenceSource Source,
     string SourceIdentity,
     long SourceGeneration,
     long SourceSequence,
+    long SourceByteOffset,
+    LifecycleMarkerProvenance Provenance,
     int ProcessId,
     long ProcessStartIdentity,
     string LaunchCorrelation);
@@ -51,12 +54,75 @@ internal sealed record GameSessionEvidence(
     GameProcessEvidence? Process,
     ReplayLifecycleEvidence? Lifecycle);
 
-internal sealed record ManagedGameLaunchContext(
-    string LaunchCorrelation,
-    InstalledGameIdentity TrustedGameIdentity,
-    string LifecycleSourceIdentity,
-    long SourceGeneration,
-    long SourceSequenceBaseline);
+internal sealed class ManagedGameLaunchContext
+{
+    private readonly Dictionary<string, LifecycleSourceCursor> _sourceBaselines;
+
+    public ManagedGameLaunchContext(
+        string launchCorrelation,
+        InstalledGameIdentity trustedGameIdentity,
+        int processId,
+        long processStartIdentity,
+        IReadOnlyList<LifecycleSourceCursor> lifecycleSourceBaselines,
+        long sourceSequenceBaseline,
+        DateTimeOffset lifecycleBaselineCapturedAtUtc)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(launchCorrelation);
+        ArgumentNullException.ThrowIfNull(trustedGameIdentity);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(processId);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(processStartIdentity);
+        ArgumentNullException.ThrowIfNull(lifecycleSourceBaselines);
+        ArgumentOutOfRangeException.ThrowIfNegative(sourceSequenceBaseline);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(
+            lifecycleBaselineCapturedAtUtc,
+            DateTimeOffset.MinValue);
+
+        LifecycleSourceCursor[] snapshot = [.. lifecycleSourceBaselines];
+        _sourceBaselines = new Dictionary<string, LifecycleSourceCursor>(
+            snapshot.Length,
+            StringComparer.Ordinal);
+        foreach (LifecycleSourceCursor source in snapshot)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+            ArgumentException.ThrowIfNullOrWhiteSpace(source.SourceId.Value);
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(source.Generation);
+            ArgumentOutOfRangeException.ThrowIfNegative(source.LastByteOffset);
+            if (!_sourceBaselines.TryAdd(source.SourceId.Value, source))
+            {
+                throw new ArgumentException(
+                    "Lifecycle source identities must be unique.",
+                    nameof(lifecycleSourceBaselines));
+            }
+        }
+
+        LaunchCorrelation = launchCorrelation;
+        TrustedGameIdentity = trustedGameIdentity;
+        ProcessId = processId;
+        ProcessStartIdentity = processStartIdentity;
+        LifecycleSourceBaselines = Array.AsReadOnly(snapshot);
+        SourceSequenceBaseline = sourceSequenceBaseline;
+        LifecycleBaselineCapturedAtUtc = lifecycleBaselineCapturedAtUtc;
+    }
+
+    public string LaunchCorrelation { get; }
+
+    public InstalledGameIdentity TrustedGameIdentity { get; }
+
+    public int ProcessId { get; }
+
+    public long ProcessStartIdentity { get; }
+
+    public IReadOnlyList<LifecycleSourceCursor> LifecycleSourceBaselines { get; }
+
+    public long SourceSequenceBaseline { get; }
+
+    public DateTimeOffset LifecycleBaselineCapturedAtUtc { get; }
+
+    public bool TryGetSourceBaseline(
+        string sourceIdentity,
+        out LifecycleSourceCursor? sourceBaseline) =>
+        _sourceBaselines.TryGetValue(sourceIdentity, out sourceBaseline);
+}
 
 /// <summary>
 /// Owns the evidence-backed offline state and orchestrates managed replay
@@ -148,12 +214,12 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
 
         ArgumentNullException.ThrowIfNull(launch);
         ArgumentException.ThrowIfNullOrWhiteSpace(launch.LaunchCorrelation);
-        ArgumentException.ThrowIfNullOrWhiteSpace(launch.LifecycleSourceIdentity);
-        if (launch.SourceGeneration <= 0 || launch.SourceSequenceBaseline < 0)
+        if (launch.SourceSequenceBaseline < 0
+            || launch.LifecycleBaselineCapturedAtUtc <= DateTimeOffset.MinValue)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(launch),
-                "A managed launch requires a positive source generation and non-negative cursor baseline.");
+                "A managed launch requires a timestamped, non-negative cursor baseline.");
         }
 
         lock (_gate)
@@ -438,7 +504,6 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             // suspended lease has not been handed off and finally will terminate
             // the child. Once committed, disposal may release handles but the
             // child remains a valid launched process.
-            int childPid = suspendedLease.ProcessId;
             CancellationToken monitoringToken;
             Task? monitoringTask = null;
             bool disposedDuringLaunch;
@@ -483,7 +548,6 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     // between lease publication and monitor registration.
                     monitoringTask = StartMonitoringLifecycle(
                         launchContext,
-                        childPid,
                         monitoringCts,
                         monitoringToken);
                     _activeMonitoringTask = monitoringTask;
@@ -890,7 +954,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         _lastCursor = new EvidenceCursor(
             lifecycle.SourceIdentity,
             lifecycle.SourceGeneration,
-            lifecycle.SourceSequence);
+            lifecycle.SourceSequence,
+            lifecycle.SourceByteOffset);
 
         OffsetTable? offsetTable = LoadOffsetTable(process);
         // The scanner resolves the trusted module base just before each scan;
@@ -923,33 +988,48 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     {
         if (_managedLaunch is null
             || lifecycle.Source != ReplayEvidenceSource.BlitzNativeLog
-            || !string.Equals(
-                lifecycle.SourceIdentity,
-                _managedLaunch.LifecycleSourceIdentity,
-                StringComparison.Ordinal)
-            || lifecycle.SourceGeneration != _managedLaunch.SourceGeneration
-            || lifecycle.SourceSequence <= _managedLaunch.SourceSequenceBaseline)
+            || lifecycle.Provenance != LifecycleMarkerProvenance.Live
+            || lifecycle.SourceGeneration <= 0
+            || lifecycle.SourceSequence <= _managedLaunch.SourceSequenceBaseline
+            || lifecycle.SourceByteOffset <= 0)
         {
             return false;
         }
 
-        if (_lastCursor is null)
+        if (_lastCursor is not null)
         {
-            return true;
+            return string.Equals(
+                       lifecycle.SourceIdentity,
+                       _lastCursor.SourceIdentity,
+                       StringComparison.Ordinal)
+                   && lifecycle.SourceGeneration == _lastCursor.SourceGeneration
+                   && lifecycle.SourceSequence > _lastCursor.SourceSequence
+                   && lifecycle.SourceByteOffset > _lastCursor.SourceByteOffset;
         }
 
-        return string.Equals(
-                   lifecycle.SourceIdentity,
-                   _lastCursor.SourceIdentity,
-                   StringComparison.Ordinal)
-               && lifecycle.SourceGeneration == _lastCursor.SourceGeneration
-               && lifecycle.SourceSequence > _lastCursor.SourceSequence;
+        if (_managedLaunch.TryGetSourceBaseline(
+                lifecycle.SourceIdentity,
+                out LifecycleSourceCursor? sourceBaseline)
+            && sourceBaseline is not null)
+        {
+            return lifecycle.SourceGeneration == sourceBaseline.Generation
+                && lifecycle.SourceByteOffset > sourceBaseline.LastByteOffset;
+        }
+
+        // A genuinely new log source can appear only after the reconciled
+        // launch baseline. The feed classifies it Live only when the prior
+        // enumeration was complete and healthy; reincarnations use a later
+        // generation and remain historical.
+        return lifecycle.SourceGeneration == 1
+            && lifecycle.SourceTimestampUtc.HasValue
+            && lifecycle.SourceTimestampUtc >= _managedLaunch.LifecycleBaselineCapturedAtUtc
+            && lifecycle.SourceTimestampUtc <= lifecycle.ObservedAtUtc;
     }
 
     private bool IsProcessIdentityValid(GameProcessEvidence process) =>
         _managedLaunch is not null
-        && process.ProcessId > 0
-        && process.ProcessStartIdentity > 0
+        && process.ProcessId == _managedLaunch.ProcessId
+        && process.ProcessStartIdentity == _managedLaunch.ProcessStartIdentity
         && process.WindowHandle != 0
         && process.WindowOwnerProcessId == process.ProcessId
         && string.Equals(
@@ -1199,7 +1279,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     private sealed record EvidenceCursor(
         string SourceIdentity,
         long SourceGeneration,
-        long SourceSequence);
+        long SourceSequence,
+        long SourceByteOffset);
 
     private readonly record struct DetachedLaunchLeases(
         SuspendedGameProcessLease? Suspended,
@@ -1606,7 +1687,6 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
 
     private Task StartMonitoringLifecycle(
         ManagedGameLaunchContext launch,
-        int processId,
         CancellationTokenSource monitoringCts,
         CancellationToken token)
     {
@@ -1639,7 +1719,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                         && evidenceTimeoutCts!.IsCancellationRequested
                         && !token.IsCancellationRequested)
                     {
-                        HandleLifecycleEvidenceTimeout(launch, processId, token);
+                        HandleLifecycleEvidenceTimeout(launch, launch.ProcessId, token);
                         return;
                     }
 
@@ -1656,11 +1736,13 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                         if (ev.MarkerKind == ReplayLogMarkerKind.OfflineReplayStarted
                             && ev.Cursor is not null)
                         {
-                            long startIdentity;
                             try
                             {
-                                using Process p = Process.GetProcessById(processId);
-                                startIdentity = p.StartTime.ToFileTimeUtc();
+                                using Process process = Process.GetProcessById(launch.ProcessId);
+                                if (process.HasExited)
+                                {
+                                    throw new InvalidOperationException("The managed replay process exited.");
+                                }
                             }
                             catch
                             {
@@ -1674,24 +1756,27 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                             }
 
                             var processEvidence = new GameProcessEvidence(
-                                processId,
-                                startIdentity,
+                                launch.ProcessId,
+                                launch.ProcessStartIdentity,
                                 IsAlive: true,
                                 launch.TrustedGameIdentity.ExecutablePath,
                                 launch.TrustedGameIdentity.ProductVersion,
                                 launch.TrustedGameIdentity.ExecutableSha256,
                                 WindowHandle: 1,
-                                WindowOwnerProcessId: processId);
+                                WindowOwnerProcessId: launch.ProcessId);
 
                             var lifecycleEvidence = new ReplayLifecycleEvidence(
                                 ReplayLifecycleState.OfflineReplayStarted,
                                 ev.ObservedAtUtc,
+                                ev.SourceTimestampUtc,
                                 ReplayEvidenceSource.BlitzNativeLog,
                                 ev.Cursor.SourceId.Value,
                                 ev.Cursor.Generation,
                                 ev.Sequence,
-                                processId,
-                                startIdentity,
+                                ev.Cursor.LastByteOffset,
+                                ev.Provenance ?? LifecycleMarkerProvenance.Historical,
+                                launch.ProcessId,
+                                launch.ProcessStartIdentity,
                                 launch.LaunchCorrelation);
 
                             ApplyMonitorEvidence(
@@ -1744,7 +1829,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     && !correlatedEvidenceObserved
                     && evidenceTimeoutCts?.IsCancellationRequested == true)
             {
-                HandleLifecycleEvidenceTimeout(launch, processId, token);
+                HandleLifecycleEvidenceTimeout(launch, launch.ProcessId, token);
             }
             catch (ObjectDisposedException)
             {

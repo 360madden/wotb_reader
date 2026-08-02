@@ -95,6 +95,8 @@ internal sealed class AuthorizedProcessLease : IDisposable
 
     internal SafeProcessHandle Handle { get; }
     internal string Architecture { get; private set; } = "unknown";
+    internal int PointerSize { get; private set; }
+    internal long MaximumUserAddress { get; private set; }
 
     internal static AuthorizedProcessLease? Open(
         AuthorizedMemoryObservation observation,
@@ -125,7 +127,10 @@ internal sealed class AuthorizedProcessLease : IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (!lease.RevalidateIdentity()
-                || !lease.TryGetSupportedArchitecture(out string architecture))
+                || !lease.TryGetSupportedArchitecture(
+                    out string architecture,
+                    out int pointerSize,
+                    out long maximumUserAddress))
             {
                 lease.Dispose();
                 return null;
@@ -133,6 +138,8 @@ internal sealed class AuthorizedProcessLease : IDisposable
 
             cancellationToken.ThrowIfCancellationRequested();
             lease.Architecture = architecture;
+            lease.PointerSize = pointerSize;
+            lease.MaximumUserAddress = maximumUserAddress;
             return lease;
         }
         catch
@@ -230,9 +237,14 @@ internal sealed class AuthorizedProcessLease : IDisposable
             StringComparison.OrdinalIgnoreCase);
     }
 
-    private bool TryGetSupportedArchitecture(out string architecture)
+    private bool TryGetSupportedArchitecture(
+        out string architecture,
+        out int pointerSize,
+        out long maximumUserAddress)
     {
         architecture = "unknown";
+        pointerSize = 0;
+        maximumUserAddress = 0;
         if (!Environment.Is64BitProcess
             || !NativeMethods.IsWow64Process2(
                 Handle,
@@ -242,19 +254,50 @@ internal sealed class AuthorizedProcessLease : IDisposable
             return false;
         }
 
+        return TryResolveTargetArchitecture(
+            processMachine,
+            nativeMachine,
+            out architecture,
+            out pointerSize,
+            out maximumUserAddress);
+    }
+
+    internal static bool TryResolveTargetArchitecture(
+        ushort processMachine,
+        ushort nativeMachine,
+        out string architecture,
+        out int pointerSize,
+        out long maximumUserAddress)
+    {
         const ushort ImageFileMachineUnknown = 0x0000;
         const ushort ImageFileMachineI386 = 0x014C;
         const ushort ImageFileMachineAmd64 = 0x8664;
-        // This project intentionally supports the x64 scanner path only.
-        if (processMachine == ImageFileMachineI386
-            || nativeMachine != ImageFileMachineAmd64
-            || processMachine != ImageFileMachineUnknown)
+        const long X86MaximumUserAddress = uint.MaxValue;
+        const long X64MaximumUserAddress = 0x00007FFF_FFFF_FFFF;
+
+        architecture = "unknown";
+        pointerSize = 0;
+        maximumUserAddress = 0;
+        if (nativeMachine != ImageFileMachineAmd64)
         {
             return false;
         }
 
-        architecture = "x64";
-        return true;
+        switch (processMachine)
+        {
+            case ImageFileMachineI386:
+                architecture = "x86";
+                pointerSize = sizeof(uint);
+                maximumUserAddress = X86MaximumUserAddress;
+                return true;
+            case ImageFileMachineUnknown:
+                architecture = "x64";
+                pointerSize = sizeof(ulong);
+                maximumUserAddress = X64MaximumUserAddress;
+                return true;
+            default:
+                return false;
+        }
     }
 
     public void Dispose()

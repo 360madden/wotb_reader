@@ -14,6 +14,8 @@ public sealed class ManagedLaunchCorrelationRegistrarTests
         "test-correlation-00000000000000000000000000";
     private static readonly ContentHash SourceId =
         new("abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd");
+    private static readonly ContentHash SecondSourceId =
+        new("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef");
 
     private TemporaryDirectory? _tempDir;
 
@@ -36,9 +38,57 @@ public sealed class ManagedLaunchCorrelationRegistrarTests
         Assert.IsNotNull(result.Value);
         Assert.AreEqual(Correlation, result.Value.LaunchCorrelation);
         Assert.AreEqual(VerifiedPath, result.Value.TrustedGameIdentity.ExecutablePath);
-        Assert.AreEqual(SourceId.Value, result.Value.LifecycleSourceIdentity);
-        Assert.AreEqual(3, result.Value.SourceGeneration);
+        Assert.AreEqual(1234, result.Value.ProcessId);
+        Assert.AreEqual(638_000_000_000_000_000, result.Value.ProcessStartIdentity);
+        Assert.HasCount(1, result.Value.LifecycleSourceBaselines);
+        Assert.AreEqual(SourceId, result.Value.LifecycleSourceBaselines[0].SourceId);
+        Assert.AreEqual(3, result.Value.LifecycleSourceBaselines[0].Generation);
+        Assert.AreEqual(100, result.Value.LifecycleSourceBaselines[0].LastByteOffset);
         Assert.AreEqual(42, result.Value.SourceSequenceBaseline);
+
+        await lease.DisposeAsync();
+    }
+
+    [TestMethod]
+    public async Task Register_MultipleSources_PreservesEveryBaselineCursor()
+    {
+        var registrar = new ManagedLaunchCorrelationRegistrar();
+        LifecycleSourceCursor[] sources =
+        [
+            new(SourceId, 3, 100),
+            new(SecondSourceId, 5, 200),
+        ];
+        var preparation = CreatePreparation(sources: sources);
+        var lease = await CreateSuspendedLeaseAsync();
+
+        var result = registrar.Register(preparation, lease);
+
+        Assert.IsTrue(result.IsSuccess, result.Error?.Message);
+        Assert.IsNotNull(result.Value);
+        Assert.HasCount(2, result.Value.LifecycleSourceBaselines);
+        CollectionAssert.AreEqual(sources, result.Value.LifecycleSourceBaselines.ToArray());
+
+        await lease.DisposeAsync();
+    }
+
+    [TestMethod]
+    public async Task Register_DuplicateSource_ReturnsFailure()
+    {
+        var registrar = new ManagedLaunchCorrelationRegistrar();
+        var preparation = CreatePreparation(
+            sources:
+            [
+                new LifecycleSourceCursor(SourceId, 3, 100),
+                new LifecycleSourceCursor(SourceId, 3, 200),
+            ]);
+        var lease = await CreateSuspendedLeaseAsync();
+
+        var result = registrar.Register(preparation, lease);
+
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual(
+            "game.launch.correlation_duplicate_source",
+            result.Error?.Code);
 
         await lease.DisposeAsync();
     }
@@ -150,7 +200,7 @@ public sealed class ManagedLaunchCorrelationRegistrarTests
     }
 
     [TestMethod]
-    public async Task Register_EmptySources_ReturnsFailure()
+    public async Task Register_HealthyEmptySources_PreservesTimestampedBaseline()
     {
         var registrar = new ManagedLaunchCorrelationRegistrar();
         var preparation = CreatePreparation(sources: []);
@@ -158,9 +208,28 @@ public sealed class ManagedLaunchCorrelationRegistrarTests
 
         var result = registrar.Register(preparation, lease);
 
+        Assert.IsTrue(result.IsSuccess, result.Error?.Message);
+        Assert.IsNotNull(result.Value);
+        Assert.IsEmpty(result.Value.LifecycleSourceBaselines);
+        Assert.AreEqual(
+            DateTimeOffset.UnixEpoch,
+            result.Value.LifecycleBaselineCapturedAtUtc);
+
+        await lease.DisposeAsync();
+    }
+
+    [TestMethod]
+    public async Task Register_MissingBaselineTimestamp_ReturnsFailure()
+    {
+        var registrar = new ManagedLaunchCorrelationRegistrar();
+        var preparation = CreatePreparation(capturedAtUtc: DateTimeOffset.MinValue);
+        var lease = await CreateSuspendedLeaseAsync();
+
+        var result = registrar.Register(preparation, lease);
+
         Assert.IsFalse(result.IsSuccess);
         Assert.AreEqual(
-            "game.launch.correlation_no_lifecycle_source",
+            "game.launch.correlation_invalid_baseline_time",
             result.Error?.Code);
 
         await lease.DisposeAsync();
@@ -239,10 +308,14 @@ public sealed class ManagedLaunchCorrelationRegistrarTests
         LifecycleFeedHealth health = LifecycleFeedHealth.Healthy,
         IReadOnlyList<LifecycleSourceCursor>? sources = null,
         long generation = 3,
-        long sequence = 42)
+        long sequence = 42,
+        DateTimeOffset? capturedAtUtc = null)
     {
         sources ??= [new LifecycleSourceCursor(SourceId, generation, 100)];
-        var baseline = new LifecycleFeedBaseline(sequence, 1, health, sources);
+        var baseline = new LifecycleFeedBaseline(sequence, 1, health, sources)
+        {
+            CapturedAtUtc = capturedAtUtc ?? DateTimeOffset.UnixEpoch,
+        };
         return new ManagedLaunchPreparation(
             new TrustedGameExecutableIdentity(
                 new InstalledGameIdentity(

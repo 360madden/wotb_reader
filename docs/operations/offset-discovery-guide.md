@@ -413,7 +413,7 @@ native API call can be interrupted mid-call.
 
 | Phase | Capability | Boundary |
 |---|---|---|
-| 1 | identity-bound typed scans, architecture checks, cancellation, candidate caps | x64 read-only process lease; no runtime offset promotion |
+| 1 | identity-bound typed scans, architecture checks, cancellation, candidate caps | x64-hosted read-only process lease for native x64 or WOW64 x86 targets; no runtime offset promotion |
 | 2 | 1 MiB chunked scans, reusable read buffers, 512 MiB snapshot cap, expiring sessions | failed reads are skipped or retained explicitly; results remain evidence |
 | 3 | alignment and private/mapped/image region filters, typed snapshot comparisons, bounded neighborhood reads | module name is executable metadata only; `ModuleSize=0` means unavailable; address kinds preserve private/mapped/image mapping |
 | 4 | wildcard AOB scans, optional best-effort working-set classification, bounded pointer chains | COW means private working-set evidence with COW-compatible protection, not proof of a COW event |
@@ -535,6 +535,12 @@ can be located without exposing replay bytes or memory contents. Stages are
 use event `3135` (`ManagedLaunchStage`); operation-result failures use event
 `3136` (`ManagedLaunchStageFailed`).
 
+Scanner diagnostics are aggregate-only: operation kind, bounded counts,
+truncation/read-failure status, elapsed time, measured architecture, and
+non-sensitive executable identity metadata. They never persist field labels,
+expected/mask bytes, query values, candidate addresses, decoded values, or
+observed process-memory bytes.
+
 After resume, lifecycle correlation is bounded by
 `GameIntegrationOptions.LifecycleEvidenceTimeout`, which defaults to 45 seconds
 and accepts 5 seconds through 5 minutes. Missing correlated evidence fails closed
@@ -546,6 +552,12 @@ a termination request before releasing the process handle.
 Event `3140` (`ManagedLaunchLifecycleEvidenceTimeout`) records the process ID,
 timeout, and termination result. A timeout is a launch-gate failure, not a valid
 process-selection signal; do not attach to a process from that attempt.
+
+The reconciled launch baseline can legitimately contain zero active native-log
+sources. Its completed UTC time remains an authorization anchor: a newly
+enumerated generation-one source is live only when both its native file creation
+time and parsed marker timestamp are at or after that barrier. Stale
+prepopulated files and markers without timestamps remain historical.
 
 ## GameHarness M2 gate — ✅ WIRED
 

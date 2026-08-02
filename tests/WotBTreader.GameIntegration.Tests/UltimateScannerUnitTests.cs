@@ -1,3 +1,5 @@
+using System.Text;
+using Microsoft.Extensions.Logging;
 using WotBTreader.Application.Game;
 using WotBTreader.Application.Results;
 using WotBTreader.Core;
@@ -8,6 +10,160 @@ namespace WotBTreader.GameIntegration.Tests;
 [TestClass]
 public sealed class UltimateScannerUnitTests
 {
+    [TestMethod]
+    [DataRow((ushort)0x014C, "x86", 4, 0x0000_0000_FFFF_FFFFL)]
+    [DataRow((ushort)0x0000, "x64", 8, 0x0000_7FFF_FFFF_FFFFL)]
+    public void TargetArchitectureResolutionSupportsAmd64AndWow64X86(
+        ushort processMachine,
+        string expectedArchitecture,
+        int expectedPointerSize,
+        long expectedMaximumAddress)
+    {
+        bool supported = AuthorizedProcessLease.TryResolveTargetArchitecture(
+            processMachine,
+            nativeMachine: 0x8664,
+            out string architecture,
+            out int pointerSize,
+            out long maximumAddress);
+
+        Assert.IsTrue(supported);
+        Assert.AreEqual(expectedArchitecture, architecture);
+        Assert.AreEqual(expectedPointerSize, pointerSize);
+        Assert.AreEqual(expectedMaximumAddress, maximumAddress);
+    }
+
+    [TestMethod]
+    public void TargetArchitectureResolutionRejectsUnsupportedMachinePairs()
+    {
+        Assert.IsFalse(AuthorizedProcessLease.TryResolveTargetArchitecture(
+            processMachine: 0xAA64,
+            nativeMachine: 0xAA64,
+            out _,
+            out _,
+            out _));
+        Assert.IsFalse(AuthorizedProcessLease.TryResolveTargetArchitecture(
+            processMachine: 0x8664,
+            nativeMachine: 0x8664,
+            out _,
+            out _,
+            out _));
+    }
+
+    [TestMethod]
+    public void SnapshotTargetRangeRejectsAddressesAboveX86UserSpace()
+    {
+        var filter = new MemoryScanEngine.SnapshotFilter(
+            ValueSize: 4,
+            MinAddress: 0x1_0000_0000,
+            MaxAddress: 0x1_0000_1000,
+            FloatMin: null,
+            FloatMax: null,
+            IntMin: null,
+            IntMax: null,
+            LongMin: null,
+            LongMax: null,
+            UIntMin: null,
+            UIntMax: null,
+            ValueKind: MemoryValueKind.Int32Value,
+            Alignment: 4,
+            RegionSelection: MemoryRegionSelection.Default);
+
+        Assert.IsFalse(MemoryScanEngine.ValidateTargetAddressRange(
+            baseAddress: 0x0040_0000,
+            filter,
+            maximumUserAddress: uint.MaxValue,
+            out string? error));
+        Assert.IsNotNull(error);
+    }
+
+    [TestMethod]
+    public void SnapshotTargetRangeAcceptsExclusiveX86UpperBound()
+    {
+        var filter = new MemoryScanEngine.SnapshotFilter(
+            ValueSize: 4,
+            MinAddress: uint.MaxValue - 3L,
+            MaxAddress: 0x1_0000_0000,
+            FloatMin: null,
+            FloatMax: null,
+            IntMin: null,
+            IntMax: null,
+            LongMin: null,
+            LongMax: null,
+            UIntMin: null,
+            UIntMax: null,
+            ValueKind: MemoryValueKind.Int32Value,
+            Alignment: 4,
+            RegionSelection: MemoryRegionSelection.Default);
+
+        Assert.IsTrue(MemoryScanEngine.ValidateTargetAddressRange(
+            baseAddress: 0x0040_0000,
+            filter,
+            maximumUserAddress: uint.MaxValue,
+            out string? error), error);
+    }
+
+    [TestMethod]
+    public void ScannerDiagnosticsDoNotPersistCallerLabelsOrExpectedBytes()
+    {
+        const string sentinel = "PRIVATE_PLAYER_SENTINEL";
+        byte[] expected = Encoding.UTF8.GetBytes(sentinel);
+        byte[] mask = Enumerable.Repeat((byte)0xA5, expected.Length).ToArray();
+        var logger = new CollectingLogger<MemoryScanDiscoverer>();
+        var discoverer = new MemoryScanDiscoverer(TimeProvider.System, logger);
+        var observation = new AuthorizedMemoryObservation(
+            ProcessId: 0,
+            ProcessStartIdentity: 1,
+            CanonicalExecutablePath: @"C:\missing.exe",
+            ProductVersion: "test",
+            ExecutableSha256: new ContentHash(new string('a', 64)),
+            ExpiresAtUtc: DateTimeOffset.UtcNow.AddMinutes(1),
+            ReadGate: new AuthorizationReadGate());
+        var request = new MemoryScanRequest(
+            sentinel,
+            "Bytes",
+            expected,
+            mask,
+            MaxCandidates: 10,
+            MinRegionSize: 1,
+            Alignment: 1);
+
+        OperationResult<MemoryScanResult> result = discoverer.Scan(
+            observation,
+            baseAddress: 0x0040_0000,
+            request,
+            CancellationToken.None);
+
+        Assert.IsFalse(result.IsSuccess);
+        string diagnostics = string.Join(Environment.NewLine, logger.Messages);
+        Assert.DoesNotContain(sentinel, diagnostics, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            Convert.ToHexString(expected),
+            diagnostics,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            Convert.ToHexString(mask),
+            diagnostics,
+            StringComparison.Ordinal);
+    }
+
+    [TestMethod]
+    public void PointerDecoderUsesTargetPointerWidth()
+    {
+        Assert.AreEqual(
+            0xF123_4567L,
+            MemoryScanDiscoverer.DecodePointer([0x67, 0x45, 0x23, 0xF1], sizeof(uint)));
+        Assert.AreEqual(
+            0x0000_7FFF_1234_5678L,
+            MemoryScanDiscoverer.DecodePointer(
+                [0x78, 0x56, 0x34, 0x12, 0xFF, 0x7F, 0x00, 0x00],
+                sizeof(ulong)));
+        Assert.AreEqual(
+            -1L,
+            MemoryScanDiscoverer.DecodePointer(
+                [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
+                sizeof(ulong)));
+    }
+
     [TestMethod]
     public void AuthorizationReadGate_RevocationPreventsSubsequentNativeOperation()
     {
@@ -463,6 +619,33 @@ public sealed class UltimateScannerUnitTests
         long expected)
     {
         Assert.AreEqual(expected, MemoryScanEngine.AlignAddressUp(address, origin, alignment));
+    }
+
+    private sealed class CollectingLogger<T> : ILogger<T>
+    {
+        public List<string> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Messages.Add(formatter(state, exception));
+
+        private sealed class NullScope : IDisposable
+        {
+            public static NullScope Instance { get; } = new();
+
+            public void Dispose()
+            {
+            }
+        }
     }
 
     [TestMethod]

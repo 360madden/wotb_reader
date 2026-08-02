@@ -5,8 +5,8 @@ namespace WotBTreader.GameIntegration.Session;
 
 /// <summary>
 /// Builds a ManagedGameLaunchContext from the preparation and suspended child
-/// process lease. It verifies the child identity, selects the primary lifecycle
-/// source, and creates the context that the coordinator later uses for evidence
+/// process lease. It verifies the child identity, captures every active lifecycle
+/// source cursor, and creates the context that the coordinator later uses for evidence
 /// correlation. This registrar deliberately does not call RecordManagedLaunch —
 /// the caller owns that composition step.
 /// </summary>
@@ -57,20 +57,29 @@ internal sealed class ManagedLaunchCorrelationRegistrar
             return Failure("game.launch.correlation_unhealthy_lifecycle");
         }
 
-        if (baseline.Sources is not { Count: > 0 })
+        if (baseline.CapturedAtUtc <= DateTimeOffset.MinValue)
         {
-            return Failure("game.launch.correlation_no_lifecycle_source");
+            return Failure("game.launch.correlation_invalid_baseline_time");
         }
 
-        LifecycleSourceCursor primarySource = baseline.Sources[0];
-        if (primarySource.SourceId.Value is not { Length: > 0 })
+        ArgumentNullException.ThrowIfNull(baseline.Sources);
+        HashSet<string> sourceIds = new(StringComparer.Ordinal);
+        foreach (LifecycleSourceCursor source in baseline.Sources)
         {
-            return Failure("game.launch.correlation_invalid_source");
-        }
+            if (source.SourceId.Value is not { Length: > 0 })
+            {
+                return Failure("game.launch.correlation_invalid_source");
+            }
 
-        if (primarySource.Generation <= 0)
-        {
-            return Failure("game.launch.correlation_invalid_generation");
+            if (source.Generation <= 0 || source.LastByteOffset < 0)
+            {
+                return Failure("game.launch.correlation_invalid_generation");
+            }
+
+            if (!sourceIds.Add(source.SourceId.Value))
+            {
+                return Failure("game.launch.correlation_duplicate_source");
+            }
         }
 
         if (baseline.Sequence < 0)
@@ -81,9 +90,11 @@ internal sealed class ManagedLaunchCorrelationRegistrar
         var context = new ManagedGameLaunchContext(
             preparation.LaunchCorrelation,
             preparation.TrustedIdentity.Identity,
-            primarySource.SourceId.Value,
-            primarySource.Generation,
-            baseline.Sequence);
+            suspendedLease.ProcessId,
+            suspendedLease.CreationTimeUtcTicks,
+            baseline.Sources,
+            baseline.Sequence,
+            baseline.CapturedAtUtc);
 
         return OperationResult.Success(context);
     }

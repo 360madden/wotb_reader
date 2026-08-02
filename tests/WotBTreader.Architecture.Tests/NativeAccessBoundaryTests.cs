@@ -100,6 +100,58 @@ public sealed class NativeAccessBoundaryTests
             $"UltimateScanner memory-access violations: {string.Join("; ", violations)}");
     }
 
+    [TestMethod]
+    public void UltimateScanner_DiagnosticsDoNotIncludeFullExecutablePaths()
+    {
+        string sourceRoot = Path.Combine(
+            ProjectCatalog.RepositoryRoot(),
+            "ultimate-scanner");
+        string[] violations =
+        [
+            .. Directory.EnumerateFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
+                .Where(path => File.ReadAllText(path).Contains(
+                    "executablePath={ExecutablePath}",
+                    StringComparison.OrdinalIgnoreCase))
+                .Select(path => Path.GetRelativePath(sourceRoot, path)),
+        ];
+
+        Assert.HasCount(
+            0,
+            violations,
+            $"UltimateScanner full-path diagnostic violations: {string.Join("; ", violations)}");
+    }
+
+    [TestMethod]
+    public void UltimateScanner_DiagnosticsDoNotIncludeMemorySamplesOrAddresses()
+    {
+        string sourceRoot = Path.Combine(
+            ProjectCatalog.RepositoryRoot(),
+            "ultimate-scanner");
+        string[] forbiddenTerms =
+        [
+            "candidateSample",
+            "expectedHex",
+            "toleranceMaskHex",
+            "baseAddress=0x",
+            "regionBaseAddress=0x",
+        ];
+        string[] violations =
+        [
+            .. Directory.EnumerateFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
+                .SelectMany(path => forbiddenTerms
+                    .Where(term => File.ReadAllText(path).Contains(
+                        term,
+                        StringComparison.OrdinalIgnoreCase))
+                    .Select(term =>
+                        $"{Path.GetRelativePath(sourceRoot, path)} contains {term}.")),
+        ];
+
+        Assert.HasCount(
+            0,
+            violations,
+            $"UltimateScanner sensitive diagnostic violations: {string.Join("; ", violations)}");
+    }
+
     private static readonly string[] AllowedUltimateScannerMemoryFiles =
     [
         // The scanner module is the sanctioned VM-read surface: interop plus

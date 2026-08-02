@@ -40,6 +40,7 @@ regenerate this file in the same change that adds, renames, or removes files.
 .cursor/skills/validate/SKILL.md
 .cursorignore
 .editorconfig
+.freebuff/settings.json
 .gitattributes
 .github/dependabot.yml
 .github/workflows/ci.yml
@@ -96,6 +97,10 @@ docs/operations/handoffs/2026-07-31-managed-launch-pinvoke-fixes.md
 docs/operations/handoffs/2026-07-31-offline-discovery-pack.md
 docs/operations/handoffs/2026-07-31-offset-discovery-evidence-report.md
 docs/operations/handoffs/2026-07-31-roadmap-hardening-cancellation.md
+docs/operations/handoffs/2026-08-01-managed-launch-timeout-diagnostics.md
+docs/operations/handoffs/2026-08-01-real-offline-scanner-smoke.md
+docs/operations/handoffs/2026-08-01-scanner-external-access.md
+docs/operations/handoffs/2026-08-01-ultimate-scanner-bug-fix.md
 docs/operations/handoffs/README.md
 docs/operations/offset-discovery-guide.md
 docs/operations/offset-discovery-ledger.md
@@ -137,6 +142,7 @@ research/ipc-mechanisms.md
 research/lifecycle-monitor.md
 research/memory-analysis.md
 research/memory-offsets-unknowncheats.md
+research/reforged-ue5.md
 research/replay-loading-mechanisms.md
 research/uploaded-replays.md
 scripts/ghidra-scan.py
@@ -218,6 +224,7 @@ src/WotBTreader.GameIntegration/Metadata/ResourceOverlay.cs
 src/WotBTreader.GameIntegration/Properties/AssemblyInfo.cs
 src/WotBTreader.GameIntegration/Session/GameProcessIdentityObserver.cs
 src/WotBTreader.GameIntegration/Session/GameProcessLauncher.cs
+src/WotBTreader.GameIntegration/Session/GameProcessModuleBaseAddressResolver.cs
 src/WotBTreader.GameIntegration/Session/GameSessionCoordinator.cs
 src/WotBTreader.GameIntegration/Session/ManagedLaunchCorrelationRegistrar.cs
 src/WotBTreader.GameIntegration/Session/ManagedLaunchPreparer.cs
@@ -418,6 +425,7 @@ tests/WotBTreader.GameIntegration.Tests/BlitzReplayLifecycleParserTests.cs
 tests/WotBTreader.GameIntegration.Tests/BlitzReplayLogMonitorTests.cs
 tests/WotBTreader.GameIntegration.Tests/DvplReaderTests.cs
 tests/WotBTreader.GameIntegration.Tests/GameInstallationDiscoveryTests.cs
+tests/WotBTreader.GameIntegration.Tests/GameIntegrationOptionsTests.cs
 tests/WotBTreader.GameIntegration.Tests/GameIntegrationRegistrationTests.cs
 tests/WotBTreader.GameIntegration.Tests/GameProcessIdentityObserverTests.cs
 tests/WotBTreader.GameIntegration.Tests/GameSessionCoordinatorTests.cs
@@ -431,6 +439,7 @@ tests/WotBTreader.GameIntegration.Tests/OptInInstalledGameTests.cs
 tests/WotBTreader.GameIntegration.Tests/SuspendedGameProcessLaunchTests.cs
 tests/WotBTreader.GameIntegration.Tests/TestInfrastructure.cs
 tests/WotBTreader.GameIntegration.Tests/TrustedGameIdentityProviderTests.cs
+tests/WotBTreader.GameIntegration.Tests/UltimateScannerUnitTests.cs
 tests/WotBTreader.GameIntegration.Tests/WindowsExecutableFingerprintReaderTests.cs
 tests/WotBTreader.GameIntegration.Tests/WindowsReplayLaunchStagingPlatformTests.cs
 tests/WotBTreader.GameIntegration.Tests/WindowsTrustedExecutableLaunchLeaseTests.cs
@@ -504,6 +513,7 @@ tools/src/WotBTreader.GameHarness/HarnessModels.cs
 tools/src/WotBTreader.GameHarness/HarnessSafetyPolicy.cs
 tools/src/WotBTreader.GameHarness/IGameHarnessPlatform.cs
 tools/src/WotBTreader.GameHarness/Program.cs
+tools/src/WotBTreader.GameHarness/RendezvousConnection.cs
 tools/src/WotBTreader.GameHarness/ScannerStateStore.cs
 tools/src/WotBTreader.GameHarness/UnavailableGameHarnessPlatform.cs
 tools/src/WotBTreader.GameHarness/WotBTreader.GameHarness.csproj

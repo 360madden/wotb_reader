@@ -61,7 +61,15 @@ internal sealed record LifecycleFeedBaseline(
     long Sequence,
     long HealthEpoch,
     LifecycleFeedHealth Health,
-    IReadOnlyList<LifecycleSourceCursor> Sources);
+    IReadOnlyList<LifecycleSourceCursor> Sources)
+{
+    /// <summary>
+    /// UTC instant at which the reconciled cursor snapshot was captured.
+    /// New lifecycle sources must be created after this anchor before their
+    /// initial bytes can be considered live launch evidence.
+    /// </summary>
+    public DateTimeOffset CapturedAtUtc { get; init; } = DateTimeOffset.MinValue;
+}
 
 internal sealed record LifecycleFeedEvent(
     long Sequence,

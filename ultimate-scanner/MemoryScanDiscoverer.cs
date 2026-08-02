@@ -51,21 +51,16 @@ internal sealed class MemoryScanDiscoverer
 
         DateTimeOffset startedAt = _timeProvider.GetUtcNow();
         _logger.LogInformation(
-            "Memory scan started: kind={ScanKind}, field={FieldName}, fieldType={FieldType}, baseAddress=0x{BaseAddress:X}, expectedHex={ExpectedHex}, toleranceMaskHex={ToleranceMaskHex}, floatTolerance={FloatTolerance}, alignment={Alignment}, minRegionSize={MinRegionSize}, maxCandidates={MaxCandidates}, regions={RegionSelection}, processId={ProcessId}, processStartIdentity={ProcessStartIdentity}, executablePath={ExecutablePath}, productVersion={ProductVersion}, executableSha256={ExecutableSha256}",
+            "Memory scan started: kind={ScanKind}, fieldType={FieldType}, valueSize={ValueSize}, alignment={Alignment}, minRegionSize={MinRegionSize}, maxCandidates={MaxCandidates}, regions={RegionSelection}, processId={ProcessId}, processStartIdentity={ProcessStartIdentity}, productVersion={ProductVersion}, executableSha256={ExecutableSha256}",
             scanKind,
-            request.FieldName,
             request.FieldType,
-            baseAddress,
-            Convert.ToHexString(request.ExpectedValue),
-            request.ToleranceMask is null ? "none" : Convert.ToHexString(request.ToleranceMask),
-            request.FloatTolerance,
+            request.ExpectedValue.Length,
             request.Alignment,
             request.MinRegionSize,
             request.MaxCandidates,
             request.RegionSelection,
             observation.ProcessId,
             observation.ProcessStartIdentity,
-            observation.CanonicalExecutablePath,
             observation.ProductVersion,
             observation.ExecutableSha256.Value);
 
@@ -73,25 +68,22 @@ internal sealed class MemoryScanDiscoverer
         if (lease is null)
         {
             _logger.LogWarning(
-                "Memory scan denied: kind={ScanKind}, field={FieldName}, processId={ProcessId}, executablePath={ExecutablePath}, reason=identity_mismatch",
+                "Memory scan denied: kind={ScanKind}, processId={ProcessId}, reason=identity_mismatch",
                 scanKind,
-                request.FieldName,
-                observation.ProcessId,
-                observation.CanonicalExecutablePath);
+                observation.ProcessId);
             return Fail("discover.identity_mismatch", "The authorized process identity or architecture is invalid.");
         }
 
         try
         {
             List<MemoryRegion> regions = EnumerateRegions(
-                lease.Handle,
+                lease,
                 request.MinRegionSize,
                 request.RegionSelection,
                 cancellationToken);
             _logger.LogInformation(
-                "Memory scan regions enumerated: kind={ScanKind}, field={FieldName}, regionCount={RegionCount}, architecture={Architecture}",
+                "Memory scan regions enumerated: kind={ScanKind}, regionCount={RegionCount}, architecture={Architecture}",
                 scanKind,
-                request.FieldName,
                 regions.Count,
                 lease.Architecture);
             List<MemoryScanCandidate> candidates = [];
@@ -183,25 +175,22 @@ internal sealed class MemoryScanDiscoverer
                 scanKind,
                 lease.Architecture).Value!;
             _logger.LogInformation(
-                "Memory scan completed: kind={ScanKind}, field={FieldName}, regions={Regions}, bytesScanned={BytesScanned}, totalMatches={TotalMatches}, returnedCandidates={ReturnedCandidates}, truncated={Truncated}, readFailures={ReadFailures}, candidateSample={CandidateSample}, elapsedMs={ElapsedMs}",
+                "Memory scan completed: kind={ScanKind}, regions={Regions}, bytesScanned={BytesScanned}, totalMatches={TotalMatches}, returnedCandidates={ReturnedCandidates}, truncated={Truncated}, readFailures={ReadFailures}, elapsedMs={ElapsedMs}",
                 scanKind,
-                request.FieldName,
                 result.RegionsScanned,
                 result.BytesScanned,
                 result.TotalMatchesBeforeTruncation,
                 result.Candidates.Count,
                 result.Truncated,
                 readFailureCount,
-                FormatCandidateSample(result.Candidates),
                 (_timeProvider.GetUtcNow() - startedAt).TotalMilliseconds);
             return OperationResult.Success(result);
         }
         catch (OperationCanceledException)
         {
             _logger.LogWarning(
-                "Memory scan cancelled: kind={ScanKind}, field={FieldName}, elapsedMs={ElapsedMs}",
+                "Memory scan cancelled: kind={ScanKind}, elapsedMs={ElapsedMs}",
                 scanKind,
-                request.FieldName,
                 (_timeProvider.GetUtcNow() - startedAt).TotalMilliseconds);
             throw;
         }
@@ -210,9 +199,8 @@ internal sealed class MemoryScanDiscoverer
         {
             _logger.LogError(
                 exception,
-                "Memory scan failed: kind={ScanKind}, field={FieldName}, exceptionType={ExceptionType}, elapsedMs={ElapsedMs}",
+                "Memory scan failed: kind={ScanKind}, exceptionType={ExceptionType}, elapsedMs={ElapsedMs}",
                 scanKind,
-                request.FieldName,
                 exception.GetType().Name,
                 (_timeProvider.GetUtcNow() - startedAt).TotalMilliseconds);
             return Fail("discover.scan_error", $"Scan failed: {exception.GetType().Name}");
@@ -230,22 +218,17 @@ internal sealed class MemoryScanDiscoverer
         cancellationToken.ThrowIfCancellationRequested();
         DateTimeOffset startedAt = _timeProvider.GetUtcNow();
         _logger.LogInformation(
-            "Memory neighborhood scan started: baseAddress=0x{BaseAddress:X}, referenceOffset={ReferenceOffset}, windowSize={WindowSize}, includeFloat={IncludeFloat}, includeInt32={IncludeInt32}, includeDouble={IncludeDouble}, processId={ProcessId}, executablePath={ExecutablePath}, executableSha256={ExecutableSha256}",
-            baseAddress,
-            request.ReferenceOffset,
+            "Memory neighborhood scan started: windowSize={WindowSize}, includeFloat={IncludeFloat}, includeInt32={IncludeInt32}, includeDouble={IncludeDouble}, processId={ProcessId}, executableSha256={ExecutableSha256}",
             request.WindowSize,
             request.IncludeFloat,
             request.IncludeInt32,
             request.IncludeDouble,
             observation.ProcessId,
-            observation.CanonicalExecutablePath,
             observation.ExecutableSha256.Value);
         if (!IsSupportedUserAddress(baseAddress) || request.ReferenceOffset < 0)
         {
             _logger.LogWarning(
-                "Memory neighborhood scan denied: baseAddress=0x{BaseAddress:X}, referenceOffset={ReferenceOffset}, reason=invalid_range",
-                baseAddress,
-                request.ReferenceOffset);
+                "Memory neighborhood scan denied: reason=invalid_range");
             return Fail("discover.neighborhood.invalid_range", "The neighborhood range is invalid.");
         }
 
@@ -262,9 +245,7 @@ internal sealed class MemoryScanDiscoverer
         catch (OverflowException)
         {
             _logger.LogWarning(
-                "Memory neighborhood scan denied: baseAddress=0x{BaseAddress:X}, referenceOffset={ReferenceOffset}, reason=range_overflow",
-                baseAddress,
-                request.ReferenceOffset);
+                "Memory neighborhood scan denied: reason=range_overflow");
             return Fail("discover.neighborhood.invalid_range", "The neighborhood range overflowed.");
         }
 
@@ -273,9 +254,7 @@ internal sealed class MemoryScanDiscoverer
             || end - 1 > MaximumUserAddress)
         {
             _logger.LogWarning(
-                "Memory neighborhood scan denied: start=0x{Start:X}, end=0x{End:X}, reason=outside_user_address_space",
-                start,
-                end);
+                "Memory neighborhood scan denied: reason=outside_user_address_space");
             return Fail("discover.neighborhood.invalid_range", "The neighborhood range is outside the supported user address space.");
         }
 
@@ -285,18 +264,22 @@ internal sealed class MemoryScanDiscoverer
         if (lease is null)
         {
             _logger.LogWarning(
-                "Memory neighborhood scan denied: baseAddress=0x{BaseAddress:X}, processId={ProcessId}, executablePath={ExecutablePath}, reason=identity_mismatch",
-                baseAddress,
-                observation.ProcessId,
-                observation.CanonicalExecutablePath);
+                "Memory neighborhood scan denied: processId={ProcessId}, reason=identity_mismatch",
+                observation.ProcessId);
             return Fail("discover.identity_mismatch", "The authorized process identity or architecture is invalid.");
+        }
+
+        if (end - 1 > lease.MaximumUserAddress)
+        {
+            return Fail(
+                "discover.neighborhood.invalid_range",
+                "The neighborhood range is outside the target process address space.");
         }
 
         if (!ReadWindow(lease, start, bytes, cancellationToken))
         {
             _logger.LogWarning(
-                "Memory neighborhood scan read failed: start=0x{Start:X}, length={Length}",
-                start,
+                "Memory neighborhood scan read failed: length={Length}",
                 bytes.Length);
             return Fail("discover.neighborhood.read_failed", "The requested neighborhood is not fully readable.");
         }
@@ -370,11 +353,9 @@ internal sealed class MemoryScanDiscoverer
         }
 
         _logger.LogInformation(
-            "Memory neighborhood scan completed: baseAddress=0x{BaseAddress:X}, bytesRead={BytesRead}, candidates={Candidates}, candidateSample={CandidateSample}, elapsedMs={ElapsedMs}",
-            baseAddress,
+            "Memory neighborhood scan completed: bytesRead={BytesRead}, candidates={Candidates}, elapsedMs={ElapsedMs}",
             bytes.Length,
             candidates.Count,
-            FormatCandidateSample(candidates),
             (_timeProvider.GetUtcNow() - startedAt).TotalMilliseconds);
         return Success(
             observation,
@@ -400,13 +381,10 @@ internal sealed class MemoryScanDiscoverer
         cancellationToken.ThrowIfCancellationRequested();
         DateTimeOffset startedAt = _timeProvider.GetUtcNow();
         _logger.LogInformation(
-            "Memory pointer-chain scan started: baseAddress=0x{BaseAddress:X}, rootRelativeOffset={RootRelativeOffset}, pointerDepth={PointerDepth}, maxDepth={MaxDepth}, processId={ProcessId}, executablePath={ExecutablePath}, executableSha256={ExecutableSha256}",
-            baseAddress,
-            request.RootRelativeOffset,
+            "Memory pointer-chain scan started: pointerDepth={PointerDepth}, maxDepth={MaxDepth}, processId={ProcessId}, executableSha256={ExecutableSha256}",
             request.PointerOffsets?.Count ?? 0,
             request.MaxDepth,
             observation.ProcessId,
-            observation.CanonicalExecutablePath,
             observation.ExecutableSha256.Value);
         if (!IsSupportedUserAddress(baseAddress) || request.RootRelativeOffset < 0
             || request.PointerOffsets is null
@@ -415,9 +393,7 @@ internal sealed class MemoryScanDiscoverer
             || request.PointerOffsets.Count > request.MaxDepth)
         {
             _logger.LogWarning(
-                "Memory pointer-chain scan denied: baseAddress=0x{BaseAddress:X}, rootRelativeOffset={RootRelativeOffset}, pointerDepth={PointerDepth}, maxDepth={MaxDepth}, reason=invalid_request",
-                baseAddress,
-                request.RootRelativeOffset,
+                "Memory pointer-chain scan denied: pointerDepth={PointerDepth}, maxDepth={MaxDepth}, reason=invalid_request",
                 request.PointerOffsets?.Count ?? 0,
                 request.MaxDepth);
             return OperationResult.Failure<MemoryPointerChainResult>(new ApplicationError(
@@ -430,10 +406,8 @@ internal sealed class MemoryScanDiscoverer
         if (lease is null)
         {
             _logger.LogWarning(
-                "Memory pointer-chain scan denied: baseAddress=0x{BaseAddress:X}, processId={ProcessId}, executablePath={ExecutablePath}, reason=identity_mismatch",
-                baseAddress,
-                observation.ProcessId,
-                observation.CanonicalExecutablePath);
+                "Memory pointer-chain scan denied: processId={ProcessId}, reason=identity_mismatch",
+                observation.ProcessId);
             return OperationResult.Failure<MemoryPointerChainResult>(new ApplicationError(
                 "discover.identity_mismatch",
                 "The authorized process identity or architecture is invalid.",
@@ -448,7 +422,7 @@ internal sealed class MemoryScanDiscoverer
                 "discover.pointer_chain.invalid_request", "The pointer root overflowed.", Retryable: false));
         }
 
-        if (rootAddress < MinimumUserAddress || rootAddress > MaximumUserAddress)
+        if (!IsSupportedTargetAddress(lease, rootAddress))
         {
             return OperationResult.Failure<MemoryPointerChainResult>(new ApplicationError(
                 "discover.pointer_chain.invalid_request", "The pointer root is outside the supported user address range.", Retryable: false));
@@ -464,21 +438,21 @@ internal sealed class MemoryScanDiscoverer
             cancellationToken.ThrowIfCancellationRequested();
             try { current = checked(current + request.PointerOffsets[depth]); }
             catch (OverflowException) { rejected++; break; }
-            if (current < MinimumUserAddress || current > MaximumUserAddress)
+            if (!IsSupportedTargetAddress(lease, current))
             {
                 rejected++;
                 break;
             }
 
-            byte[] pointerBytes = new byte[IntPtr.Size];
+            byte[] pointerBytes = new byte[lease.PointerSize];
             if (!ReadExact(lease, current, pointerBytes, pointerBytes.Length, cancellationToken, out _))
             {
                 rejected++;
                 break;
             }
 
-            long next = BitConverter.ToInt64(pointerBytes, 0);
-            if (next < MinimumUserAddress || next > MaximumUserAddress)
+            long next = DecodePointer(pointerBytes, lease.PointerSize);
+            if (!IsSupportedTargetAddress(lease, next))
             {
                 rejected++;
                 break;
@@ -502,11 +476,9 @@ internal sealed class MemoryScanDiscoverer
         }
 
         _logger.LogInformation(
-            "Memory pointer-chain scan completed: baseAddress=0x{BaseAddress:X}, candidates={Candidates}, rejected={Rejected}, candidateSample={CandidateSample}, elapsedMs={ElapsedMs}",
-            baseAddress,
+            "Memory pointer-chain scan completed: candidates={Candidates}, rejected={Rejected}, elapsedMs={ElapsedMs}",
             candidates.Count,
             rejected,
-            FormatPointerCandidateSample(candidates),
             (_timeProvider.GetUtcNow() - startedAt).TotalMilliseconds);
         return OperationResult.Success(new MemoryPointerChainResult(
             _timeProvider.GetUtcNow(),
@@ -597,8 +569,21 @@ internal sealed class MemoryScanDiscoverer
     private static bool IsSupportedUserAddress(long address) =>
         address is >= MinimumUserAddress and <= MaximumUserAddress;
 
+    private static bool IsSupportedTargetAddress(
+        AuthorizedProcessLease lease,
+        long address) =>
+        address is >= MinimumUserAddress && address <= lease.MaximumUserAddress;
+
+    internal static long DecodePointer(ReadOnlySpan<byte> bytes, int pointerSize) =>
+        pointerSize switch
+        {
+            sizeof(uint) when bytes.Length >= sizeof(uint) => BitConverter.ToUInt32(bytes),
+            sizeof(ulong) when bytes.Length >= sizeof(ulong) => unchecked((long)BitConverter.ToUInt64(bytes)),
+            _ => throw new ArgumentOutOfRangeException(nameof(pointerSize)),
+        };
+
     private static List<MemoryRegion> EnumerateRegions(
-        Microsoft.Win32.SafeHandles.SafeProcessHandle handle,
+        AuthorizedProcessLease lease,
         long minSize,
         MemoryRegionSelection selection,
         CancellationToken cancellationToken)
@@ -609,7 +594,7 @@ internal sealed class MemoryScanDiscoverer
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            nuint result = NativeMethods.VirtualQueryEx(handle, (nint)address, out MemoryBasicInformation mbi, mbiSize);
+            nuint result = NativeMethods.VirtualQueryEx(lease.Handle, (nint)address, out MemoryBasicInformation mbi, mbiSize);
             if (result == 0 || mbi.RegionSize == 0) break;
 
             bool committed = (mbi.State & MemCommit) != 0;
@@ -622,14 +607,14 @@ internal sealed class MemoryScanDiscoverer
             long baseAddress = mbi.BaseAddress.ToInt64();
             long regionEnd = checked(baseAddress + size);
             long boundedStart = Math.Max(baseAddress, MinimumUserAddress);
-            long boundedEnd = Math.Min(regionEnd, MaximumUserAddress + 1);
+            long boundedEnd = Math.Min(regionEnd, lease.MaximumUserAddress + 1);
             long boundedSize = boundedEnd - boundedStart;
             if (committed && readable && typeSelected && boundedSize >= minSize)
             {
                 regions.Add(new MemoryRegion(boundedStart, boundedSize, mbi.Type, mbi.Protect));
             }
 
-            if (regionEnd <= baseAddress || regionEnd >= MaximumUserAddress + 1)
+            if (regionEnd <= baseAddress || regionEnd >= lease.MaximumUserAddress + 1)
             {
                 break;
             }
@@ -806,18 +791,6 @@ internal sealed class MemoryScanDiscoverer
 
     private static bool InRange(int value, int? min, int? max) =>
         (!min.HasValue || value >= min.Value) && (!max.HasValue || value <= max.Value);
-
-    private static string FormatCandidateSample(IReadOnlyList<MemoryScanCandidate> candidates) =>
-        string.Join(
-            "; ",
-            candidates.Take(5).Select(candidate =>
-                $"0x{candidate.AbsoluteAddress:X}/0x{candidate.BaseDisplacement:X}:{candidate.ValueSummary}:[{Convert.ToHexString(candidate.ObservedValue)}]"));
-
-    private static string FormatPointerCandidateSample(IReadOnlyList<MemoryPointerChainCandidate> candidates) =>
-        string.Join(
-            "; ",
-            candidates.Take(5).Select(candidate =>
-                $"0x{candidate.RootAddress:X}->0x{candidate.FinalAddress:X}:[{string.Join(",", candidate.TraversedAddresses.Select(address => $"0x{address:X}"))}]"));
 
     private OperationResult<MemoryScanResult> Success(
         AuthorizedMemoryObservation observation,

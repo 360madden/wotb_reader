@@ -138,7 +138,7 @@ public sealed class BlitzReplayLifecycleFeedTests
     }
 
     [TestMethod]
-    public async Task ReadAfterAsync_NewPrepopulatedSourceIsHistorical()
+    public async Task ReadAfterAsync_PrepopulatedNewSourceWithStaleMarkerIsHistorical()
     {
         await using TestFeed fixture = await TestFeed.CreateAsync("initial\n");
         LifecycleFeedBaseline baseline = await fixture.Feed.CaptureBaselineAsync(CancellationToken.None);
@@ -151,6 +151,27 @@ public sealed class BlitzReplayLifecycleFeedTests
         Assert.AreEqual(
             LifecycleMarkerProvenance.Historical,
             events.Events.Single(item => item.Kind == LifecycleFeedEventKind.Marker).Provenance);
+    }
+
+    [TestMethod]
+    public async Task ReadAfterAsync_NewlyCreatedSourceWithPostBaselineMarkerIsLive()
+    {
+        await using TestFeed fixture = await TestFeed.CreateAsync("initial\n");
+        LifecycleFeedBaseline baseline = await fixture.Feed.CaptureBaselineAsync(CancellationToken.None);
+        await Task.Delay(TimeSpan.FromMilliseconds(50));
+        string second = Path.Combine(Path.GetDirectoryName(fixture.LogPath)!, "blitz-logs_second.txt");
+        string timestamp = DateTimeOffset.UtcNow.ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+        await File.WriteAllTextAsync(second, $"[{timestamp}] START_REPLAY_LOCAL synthetic\n");
+
+        LifecycleFeedReadResult events = await fixture.WaitForAsync(
+            baseline.Sequence,
+            static items => items.Any(item => item.Kind == LifecycleFeedEventKind.Marker));
+        LifecycleFeedEvent marker = events.Events.Single(item => item.Kind == LifecycleFeedEventKind.Marker);
+        Assert.AreEqual(LifecycleMarkerProvenance.Live, marker.Provenance);
+        Assert.IsNotNull(marker.SourceTimestampUtc);
+        Assert.IsGreaterThanOrEqualTo(
+            baseline.CapturedAtUtc,
+            marker.SourceTimestampUtc.Value);
     }
 
     [TestMethod]

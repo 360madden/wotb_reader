@@ -381,14 +381,22 @@ internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsy
         bool isConsistent = true;
         foreach (string path in currentFiles)
         {
+            bool isNewSource = false;
             if (!next.TryGetValue(path, out TailState? state))
             {
                 state = CreateState(path);
                 next.Add(path, state);
+                isNewSource = true;
             }
             try
             {
-                await ReadPathAsync(path, state, provenance, drafts).ConfigureAwait(false);
+                await ReadPathAsync(
+                    path,
+                    state,
+                    provenance,
+                    isNewSource,
+                    startingBaseline.CapturedAtUtc,
+                    drafts).ConfigureAwait(false);
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
@@ -418,7 +426,13 @@ internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsy
         return true;
     }
 
-    private async Task ReadPathAsync(string path, TailState state, LifecycleMarkerProvenance provenance, List<LifecycleFeedDraft> drafts)
+    private async Task ReadPathAsync(
+        string path,
+        TailState state,
+        LifecycleMarkerProvenance provenance,
+        bool isNewSource,
+        DateTimeOffset baselineCapturedAtUtc,
+        List<LifecycleFeedDraft> drafts)
     {
         await using FileStream stream = new(
             path,
@@ -480,9 +494,26 @@ internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsy
             state.IsMissing = false;
         }
 
-        LifecycleMarkerProvenance effectiveProvenance = incarnationSnapshot
+        DateTimeOffset? creationTimeUtc = identity?.CreationTimeUtc
+            ?? TryGetCreationTimeUtc(path);
+
+        // Initial bytes from a newly enumerated source are live only when the
+        // file itself was created after the healthy reconciliation barrier.
+        // ParseLine additionally requires each marker's native timestamp to be
+        // at or after the same barrier. Reappearance, replacement, truncation,
+        // rewrite, missing timestamps, and stale copied logs remain historical.
+        bool isPostBaselineNewSource =
+            isNewSource
+            && provenance == LifecycleMarkerProvenance.Live
+            && baselineCapturedAtUtc > DateTimeOffset.MinValue
+            && creationTimeUtc >= baselineCapturedAtUtc;
+        LifecycleMarkerProvenance effectiveProvenance =
+            incarnationSnapshot && !isPostBaselineNewSource
             ? LifecycleMarkerProvenance.Historical
             : provenance;
+        DateTimeOffset? liveNotBeforeUtc = isPostBaselineNewSource
+            ? baselineCapturedAtUtc
+            : null;
         long target = length;
         while (state.Offset < target)
         {
@@ -492,7 +523,13 @@ internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsy
             await stream.ReadExactlyAsync(bytes).ConfigureAwait(false);
             long chunkOffset = state.Offset;
             state.Offset += bytes.Length;
-            ProcessBytes(bytes, chunkOffset, state, effectiveProvenance, drafts);
+            ProcessBytes(
+                bytes,
+                chunkOffset,
+                state,
+                effectiveProvenance,
+                liveNotBeforeUtc,
+                drafts);
         }
 
         if (stream.Length < state.Offset)
@@ -540,11 +577,13 @@ internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsy
         long chunkOffset,
         TailState state,
         LifecycleMarkerProvenance provenance,
+        DateTimeOffset? liveNotBeforeUtc,
         List<LifecycleFeedDraft> drafts)
     {
         byte[] combined = new byte[state.PendingBytes.Length + bytes.Length];
         bool hasPendingBytes = state.PendingBytes.Length > 0;
         LifecycleMarkerProvenance pendingProvenance = state.PendingProvenance;
+        DateTimeOffset? pendingLiveNotBeforeUtc = state.PendingLiveNotBeforeUtc;
         state.PendingBytes.CopyTo(combined, 0);
         bytes.CopyTo(combined, state.PendingBytes.Length);
         long combinedOffset = state.PendingBytes.Length == 0 ? chunkOffset : state.PendingOffset;
@@ -574,11 +613,18 @@ internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsy
                         : hasPendingBytes && lineStart == 0
                         ? pendingProvenance
                         : provenance;
+                DateTimeOffset? lineLiveNotBeforeUtc =
+                    lineProvenance == LifecycleMarkerProvenance.Historical
+                        ? null
+                        : hasPendingBytes && lineStart == 0
+                        ? pendingLiveNotBeforeUtc
+                        : liveNotBeforeUtc;
                 ParseLine(
                     combined.AsSpan(lineStart, lineLength),
                     checked(combinedOffset + index + 1),
                     state,
                     lineProvenance,
+                    lineLiveNotBeforeUtc,
                     drafts);
             }
 
@@ -603,6 +649,12 @@ internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsy
                     : hasPendingBytes && lineStart == 0
                     ? pendingProvenance
                     : provenance;
+            state.PendingLiveNotBeforeUtc =
+                state.PendingProvenance == LifecycleMarkerProvenance.Historical
+                    ? null
+                    : hasPendingBytes && lineStart == 0
+                    ? pendingLiveNotBeforeUtc
+                    : liveNotBeforeUtc;
         }
     }
 
@@ -611,6 +663,7 @@ internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsy
         long cursorOffset,
         TailState state,
         LifecycleMarkerProvenance provenance,
+        DateTimeOffset? liveNotBeforeUtc,
         List<LifecycleFeedDraft> drafts)
     {
         if (bytes.Length > checked(_options.MaxLogLineCharacters * 4))
@@ -621,7 +674,29 @@ internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsy
         string line = Encoding.UTF8.GetString(bytes);
         if (_parser.TryParse(line, out ParsedReplayLogMarker? marker) && marker is not null)
         {
-            drafts.Add(new LifecycleFeedDraft(LifecycleFeedEventKind.Marker, state.SourceId, state.Generation, cursorOffset, marker.Kind, marker.SourceTimestampUtc, provenance, LifecycleFeedReason.Marker));
+            LifecycleMarkerProvenance markerProvenance =
+                provenance == LifecycleMarkerProvenance.Live
+                && liveNotBeforeUtc.HasValue
+                && (marker.SourceTimestampUtc is null
+                    || marker.SourceTimestampUtc < liveNotBeforeUtc)
+                    ? LifecycleMarkerProvenance.Historical
+                    : provenance;
+            drafts.Add(new LifecycleFeedDraft(LifecycleFeedEventKind.Marker, state.SourceId, state.Generation, cursorOffset, marker.Kind, marker.SourceTimestampUtc, markerProvenance, LifecycleFeedReason.Marker));
+        }
+    }
+
+    private static DateTimeOffset? TryGetCreationTimeUtc(string path)
+    {
+        try
+        {
+            DateTime creationTimeUtc = File.GetCreationTimeUtc(path);
+            return creationTimeUtc == DateTime.MinValue
+                ? null
+                : new DateTimeOffset(creationTimeUtc);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return null;
         }
     }
 
@@ -756,6 +831,7 @@ internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsy
         public long PendingOffset { get; set; }
         public LifecycleMarkerProvenance PendingProvenance { get; set; } =
             LifecycleMarkerProvenance.Historical;
+        public DateTimeOffset? PendingLiveNotBeforeUtc { get; set; }
         public bool SkipFirstPartialLine { get; set; }
         public LifecycleSourceCursor? Cursor => IsInitialized
             ? new LifecycleSourceCursor(SourceId, Generation, Offset)
@@ -780,6 +856,7 @@ internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsy
             PendingBytes = [];
             PendingOffset = offset;
             PendingProvenance = LifecycleMarkerProvenance.Historical;
+            PendingLiveNotBeforeUtc = null;
             SkipFirstPartialLine = offset > 0;
         }
 
@@ -789,6 +866,7 @@ internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsy
             PendingBytes = [];
             PendingOffset = Offset;
             PendingProvenance = LifecycleMarkerProvenance.Historical;
+            PendingLiveNotBeforeUtc = null;
             BoundaryFingerprint = null;
             BoundaryLength = 0;
             SkipFirstPartialLine = false;
@@ -799,6 +877,7 @@ internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsy
             if (PendingBytes.Length > 0)
             {
                 PendingProvenance = LifecycleMarkerProvenance.Historical;
+                PendingLiveNotBeforeUtc = null;
             }
         }
 
@@ -816,6 +895,7 @@ internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsy
                 PendingBytes = [.. PendingBytes],
                 PendingOffset = PendingOffset,
                 PendingProvenance = PendingProvenance,
+                PendingLiveNotBeforeUtc = PendingLiveNotBeforeUtc,
                 SkipFirstPartialLine = SkipFirstPartialLine,
             };
         }
@@ -825,7 +905,11 @@ internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsy
         long Generation,
         TaskCompletionSource<LifecycleFeedBaseline> Completion);
 
-    private readonly record struct FileIdentity(uint VolumeSerial, uint IndexHigh, uint IndexLow)
+    private readonly record struct FileIdentity(
+        uint VolumeSerial,
+        uint IndexHigh,
+        uint IndexLow,
+        DateTimeOffset CreationTimeUtc)
     {
         public static FileIdentity? TryGet(SafeFileHandle handle)
         {
@@ -834,7 +918,20 @@ internal sealed class BlitzReplayLifecycleFeed : IBlitzReplayLifecycleFeed, IAsy
                 return null;
             }
 
-            return new FileIdentity(information.VolumeSerialNumber, information.FileIndexHigh, information.FileIndexLow);
+            long creationTime = ((long)information.CreationTime.dwHighDateTime << 32)
+                | (uint)information.CreationTime.dwLowDateTime;
+            try
+            {
+                return new FileIdentity(
+                    information.VolumeSerialNumber,
+                    information.FileIndexHigh,
+                    information.FileIndexLow,
+                    new DateTimeOffset(DateTime.FromFileTimeUtc(creationTime)));
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                return null;
+            }
         }
     }
 

@@ -173,7 +173,7 @@ public sealed class GameSessionCoordinatorTests
         GameSessionSnapshot snapshot =
             await coordinator.GetSnapshotAsync(CancellationToken.None);
         Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
-        Assert.AreEqual("process.identity_changed", snapshot.ReasonCode);
+        Assert.AreEqual("process.identity_mismatch", snapshot.ReasonCode);
     }
 
     [TestMethod]
@@ -216,6 +216,33 @@ public sealed class GameSessionCoordinatorTests
     }
 
     [TestMethod]
+    public async Task FirstEvidenceForDifferentSuspendedIdentity_IsDenied()
+    {
+        var (coordinator, _) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess() with
+            {
+                ProcessId = 4321,
+                ProcessStartIdentity = 43,
+                WindowOwnerProcessId = 4321,
+            },
+            Lifecycle = CreateValidLifecycle() with
+            {
+                ProcessId = 4321,
+                ProcessStartIdentity = 43,
+            },
+        });
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+        Assert.AreEqual("process.identity_mismatch", snapshot.ReasonCode);
+    }
+
+    [TestMethod]
     public async Task MarkerAtLaunchBaseline_IsDenied()
     {
         var (coordinator, _) = CreateCoordinator();
@@ -224,6 +251,160 @@ public sealed class GameSessionCoordinatorTests
         coordinator.ApplyEvidence(CreateValidEvidence() with
         {
             Lifecycle = CreateValidLifecycle() with { SourceSequence = 10 },
+        });
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+        Assert.AreEqual("evidence.cursor_invalid", snapshot.ReasonCode);
+    }
+
+    [TestMethod]
+    public async Task MarkerFromSecondBaselineSource_IsVerified()
+    {
+        var (coordinator, _) = CreateCoordinator();
+        ContentHash secondSource = Hash('b');
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+        [
+            new LifecycleSourceCursor(Hash('a'), 1, 100),
+            new LifecycleSourceCursor(secondSource, 2, 200),
+        ]));
+
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Lifecycle = CreateValidLifecycle() with
+            {
+                SourceIdentity = secondSource.Value,
+                SourceGeneration = 2,
+                SourceByteOffset = 201,
+            },
+        });
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.OfflineReplayVerified, snapshot.State);
+    }
+
+    [TestMethod]
+    public async Task MarkerFromNewLiveGenerationOneSource_IsVerified()
+    {
+        var (coordinator, _) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Lifecycle = CreateValidLifecycle() with
+            {
+                SourceIdentity = Hash('b').Value,
+                SourceGeneration = 1,
+                SourceByteOffset = 50,
+                Provenance = LifecycleMarkerProvenance.Live,
+            },
+        });
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.OfflineReplayVerified, snapshot.State);
+    }
+
+    [TestMethod]
+    public async Task MarkerFromNewSourceAfterHealthyEmptyBaseline_IsVerified()
+    {
+        var (coordinator, _) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch([]));
+
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Lifecycle = CreateValidLifecycle() with
+            {
+                SourceIdentity = Hash('b').Value,
+                SourceGeneration = 1,
+                SourceByteOffset = 50,
+            },
+        });
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.OfflineReplayVerified, snapshot.State);
+    }
+
+    [TestMethod]
+    public async Task MarkerFromNewSourceWithStaleTimestamp_IsDenied()
+    {
+        var (coordinator, _) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch([]));
+
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Lifecycle = CreateValidLifecycle() with
+            {
+                SourceIdentity = Hash('b').Value,
+                SourceGeneration = 1,
+                SourceByteOffset = 50,
+                SourceTimestampUtc = StartTime.AddMinutes(-2),
+            },
+        });
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+        Assert.AreEqual("evidence.cursor_invalid", snapshot.ReasonCode);
+    }
+
+    [TestMethod]
+    public async Task MarkerFromNewHistoricalSource_IsDenied()
+    {
+        var (coordinator, _) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Lifecycle = CreateValidLifecycle() with
+            {
+                SourceIdentity = Hash('b').Value,
+                SourceGeneration = 1,
+                SourceByteOffset = 50,
+                Provenance = LifecycleMarkerProvenance.Historical,
+            },
+        });
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+        Assert.AreEqual("evidence.cursor_invalid", snapshot.ReasonCode);
+    }
+
+    [TestMethod]
+    public async Task MarkerFromNewAdvancedGenerationSource_IsDenied()
+    {
+        var (coordinator, _) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Lifecycle = CreateValidLifecycle() with
+            {
+                SourceIdentity = Hash('b').Value,
+                SourceGeneration = 2,
+                SourceByteOffset = 50,
+            },
+        });
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+        Assert.AreEqual("evidence.cursor_invalid", snapshot.ReasonCode);
+    }
+
+    [TestMethod]
+    public async Task MarkerAtSourceByteBaseline_IsDenied()
+    {
+        var (coordinator, _) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Lifecycle = CreateValidLifecycle() with { SourceByteOffset = 100 },
         });
 
         GameSessionSnapshot snapshot =
@@ -442,15 +623,19 @@ public sealed class GameSessionCoordinatorTests
         new(
             ReplayLifecycleState.OfflineReplayStarted,
             StartTime,
+            SourceTimestampUtc: StartTime,
             ReplayEvidenceSource.BlitzNativeLog,
-            SourceIdentity: "synthetic-log-identity",
+            SourceIdentity: Hash('a').Value,
             SourceGeneration: 1,
             SourceSequence: 11,
+            SourceByteOffset: 101,
+            Provenance: LifecycleMarkerProvenance.Live,
             ProcessId: 1234,
             ProcessStartIdentity: 42,
             LaunchCorrelation);
 
-    private static ManagedGameLaunchContext CreateManagedLaunch() =>
+    private static ManagedGameLaunchContext CreateManagedLaunch(
+        IReadOnlyList<LifecycleSourceCursor>? sourceBaselines = null) =>
         new(
             LaunchCorrelation,
             new InstalledGameIdentity(
@@ -459,9 +644,13 @@ public sealed class GameSessionCoordinatorTests
                 ExecutableSha256: new ContentHash(new string('a', 64)),
                 ResourceRoot: @"C:\Games",
                 DlcRoots: []),
-            LifecycleSourceIdentity: "synthetic-log-identity",
-            SourceGeneration: 1,
-            SourceSequenceBaseline: 10);
+            processId: 1234,
+            processStartIdentity: 42,
+            sourceBaselines ?? [new LifecycleSourceCursor(Hash('a'), 1, 100)],
+            sourceSequenceBaseline: 10,
+            lifecycleBaselineCapturedAtUtc: StartTime.AddMinutes(-1));
+
+    private static ContentHash Hash(char value) => new(new string(value, 64));
 
     private sealed class ManualTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
@@ -577,12 +766,18 @@ public sealed class GameSessionCoordinatorTests
         public ValueTask<LifecycleFeedBaseline> CaptureBaselineAsync(
             CancellationToken cancellationToken) =>
             ValueTask.FromResult(new LifecycleFeedBaseline(
-                0, 0, LifecycleFeedHealth.Healthy, []));
+                0, 0, LifecycleFeedHealth.Healthy, [])
+            {
+                CapturedAtUtc = StartTime,
+            });
 
         public ValueTask<LifecycleFeedBaseline> CaptureReconciledBaselineAsync(
             CancellationToken cancellationToken) =>
             ValueTask.FromResult(new LifecycleFeedBaseline(
-                0, 0, LifecycleFeedHealth.Healthy, []));
+                0, 0, LifecycleFeedHealth.Healthy, [])
+            {
+                CapturedAtUtc = StartTime,
+            });
 
         public ValueTask<LifecycleFeedReadResult> ReadAfterAsync(
             long afterSequence,

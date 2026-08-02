@@ -356,3 +356,96 @@ entries rather than silently erasing prior evidence.
   machine and a non-forgeable, short-lived authorized observation bound to PID,
   executable identity, version/hash, launch correlation, source, and freshness.
   Raw PID or caller-constructed authorization records are not acceptable.
+
+## BLK-0016 — Managed replay correlation pinned an arbitrary lifecycle source
+
+- First observed: `2026-08-02T01:21:51Z`
+- Status: resolved and validated
+- Impact: a managed offline replay launched successfully, but the positive
+  lifecycle marker could be written to a newly created native log while launch
+  correlation was pinned to one arbitrary pre-launch source. The session then
+  failed closed with `evidence.cursor_invalid`, so no scanner authorization was
+  issued.
+- Evidence: the lifecycle baseline contained multiple active native-log
+  sources, and the post-launch replay marker appeared in a new source. The
+  registrar retained only the first sorted source, while the journal also kept
+  deleted-source tombstones in launch baselines.
+- Cause: the launch context modeled one source cursor even though the feed
+  reconciles a set of independently rotating native logs. The first repair
+  treated every generation-one source first observed after a healthy pass as
+  live, but observation time alone could also bless stale prepopulated bytes.
+- Resolution: capture only active source cursors, retain the entire defensive
+  baseline set in the managed launch context, and record the completion time of
+  each successful reconciliation. Initial bytes in a first-seen source are live
+  only when the file creation time and parsed native marker timestamp are both
+  at or after that barrier. The coordinator independently rechecks the marker
+  timestamp, source generation, journal sequence, and byte-offset monotonicity.
+  A healthy baseline may contain zero active sources because its completed-time
+  anchor still makes a later generation-one source positively correlatable.
+- Validation: focused lifecycle/coordinator tests cover multiple sources,
+  tombstone exclusion, stale prepopulated new sources, time-correlated live new
+  sources, healthy empty baselines, historical markers, advanced generations,
+  and baseline byte offsets. A private replay then reached
+  `OfflineReplayVerified` through the managed launch API.
+- Prevention/follow-up: lifecycle authorization must remain set-based and
+  provenance-aware; never select one baseline source as representative of a
+  rotating native-log directory.
+
+## BLK-0017 — Guarded scanner rejected the installed WOW64 x86 client
+
+- First observed: `2026-08-02T01:43:00Z`
+- Status: resolved and validated
+- Impact: the managed replay reached `OfflineReplayVerified`, but every scanner
+  operation returned `discover.identity_mismatch` before a memory read. The
+  installed client is a WOW64 x86 process, while the guarded scanner accepted
+  only native x64 targets.
+- Evidence: a path-free native probe during a positively verified offline
+  replay proved that process opening, creation-time query, and executable-path
+  equality all succeeded. `IsWow64Process2` reported an x86 process on an AMD64
+  host, isolating the rejection to the architecture allowlist.
+- Cause: `AuthorizedProcessLease` treated `IMAGE_FILE_MACHINE_I386` as an
+  identity failure and pointer-chain traversal used the host `IntPtr.Size`
+  instead of the target pointer width.
+- Resolution: accept native x64 and WOW64 x86 targets from a 64-bit host,
+  retain target architecture, pointer width, and maximum address on the
+  guarded lease, bound region enumeration to the target address space, and
+  decode pointer chains using four or eight bytes according to the target.
+  Snapshot base/minimum/maximum ranges are validated against that measured
+  target bound after the identity lease opens, including room for one complete
+  value, so an x86 request above 4 GiB fails instead of returning an empty
+  successful snapshot.
+- Validation: architecture and pointer-decoding regression tests pass. The
+  real offline smoke reported target architecture `x86`, completed a bounded
+  neighborhood read, created and compared a bounded snapshot, and discarded
+  the retained session.
+- Prevention/follow-up: architecture failures should remain fail closed, but
+  supported target machines and pointer widths must be tested independently of
+  the host process architecture.
+
+## BLK-0018 — Scanner diagnostics emitted sensitive identity and memory data
+
+- First observed: `2026-08-02T01:35:00Z`
+- Status: resolved and validated
+- Impact: scanner diagnostics included canonical executable paths, caller
+  labels and expected/mask bytes, and completion samples containing absolute
+  addresses, decoded values, and observed process-memory bytes. Any matched
+  player name, account identifier, chat fragment, or other private runtime data
+  could therefore persist in logs.
+- Evidence: structured log templates in both scanner engines contained
+  `ExecutablePath`, `ExpectedHex`, `ToleranceMaskHex`, and `CandidateSample`
+  fields populated from authorization, request, and scan-result objects.
+- Cause: identity data needed for fail-closed revalidation was reused as
+  diagnostic context without applying the path-redaction boundary.
+- Resolution: remove full paths, caller labels, expected bytes, masks, query
+  values/ranges, memory addresses, and candidate samples from persistent
+  scanner logs. Diagnostics retain only operation kind, bounded counts,
+  truncation/read-failure status, elapsed time, measured architecture, and
+  non-sensitive identity metadata. Internal identity comparison and returned
+  loopback results remain unchanged.
+- Validation: a logger-capture regression test proves sentinel labels and byte
+  sequences never enter rendered diagnostics. Architecture source guards reject
+  full-path, raw-input, candidate-sample, and formatted-address log templates;
+  the full validation suite passes.
+- Prevention/follow-up: authorization, request/result, and diagnostic fields
+  are separate concerns. Any new scanner log must remain path-free and must not
+  serialize caller-controlled labels or process-memory content.

@@ -13,13 +13,23 @@ internal sealed class LifecycleEventJournal(int capacity, TimeProvider timeProvi
     private readonly HashSet<ContentHash> _active = [];
     private long _sequence;
     private long _epoch;
+    private DateTimeOffset _reconciledAtUtc = DateTimeOffset.MinValue;
     private LifecycleFeedHealth _health = LifecycleFeedHealth.Uninitialized;
 
     public LifecycleFeedBaseline CaptureBaseline()
     {
         lock (_gate)
         {
-            return new(_sequence, _epoch, _health, [.. _sources.Values.OrderBy(static x => x.SourceId.Value, StringComparer.Ordinal)]);
+            return new(
+                _sequence,
+                _epoch,
+                _health,
+                [.. _sources.Values
+                    .Where(cursor => _active.Contains(cursor.SourceId))
+                    .OrderBy(static cursor => cursor.SourceId.Value, StringComparer.Ordinal)])
+            {
+                CapturedAtUtc = _reconciledAtUtc,
+            };
         }
     }
 
@@ -113,6 +123,8 @@ internal sealed class LifecycleEventJournal(int capacity, TimeProvider timeProvi
                     completionReason));
             }
 
+            DateTimeOffset reconciledAtUtc = _time.GetUtcNow();
+
             _sources.Clear();
             foreach ((ContentHash id, LifecycleSourceCursor cursor) in sources)
             {
@@ -123,6 +135,7 @@ internal sealed class LifecycleEventJournal(int capacity, TimeProvider timeProvi
             _active.UnionWith(active);
             _sequence = nextSequence;
             _epoch = nextEpoch;
+            _reconciledAtUtc = reconciledAtUtc;
             if (needsEpoch)
             {
                 _health = LifecycleFeedHealth.Healthy;
