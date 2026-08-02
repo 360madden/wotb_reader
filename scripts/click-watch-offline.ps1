@@ -34,19 +34,19 @@ param(
     # Visual ready gate: sync-dim state machine (see sync-ready-gate spec).
     [int]$AppearTimeoutSeconds = 25,
     [int]$ReadyTimeoutSeconds = 35,
-    # Used only on the grace path (sync never observed). After SeenSyncing,
-    # one ready sample is enough — Extra hold caused Error 126.
-    [int]$StableSamples = 2,
-    [int]$SampleIntervalMs = 300,
+    # After SeenSyncing: 1 sample. Grace path: also 1 — dialog dies ~Error 126 fast.
+    [int]$StableSamples = 1,
+    [int]$SampleIntervalMs = 250,
     [int]$ReadyHoldSeconds = 0,
     [int]$SyncMaxLuminance = 40,
     [int]$SyncMaxOrange = 400,
     [int]$ReadyMinOrange = 2000,
     [int]$ReadyMinLuminance = 45,
-    # Bright-idle fallback if sync never dims. Keep short — Error 126.
-    [int]$SyncGraceSeconds = 6,
-    # Hard ceiling from first dialog sighting to click (game dialog lifetime).
-    [int]$MaxDialogLifetimeSeconds = 22
+    # Bright without sync: click after this many seconds (sync often starts ~3–5s;
+    # waiting longer hits Error 126 Failed to replay).
+    [int]$SyncGraceSeconds = 2,
+    # Hard ceiling from first dialog sighting to click.
+    [int]$MaxDialogLifetimeSeconds = 18
 )
 
 Set-StrictMode -Version Latest
@@ -382,13 +382,18 @@ try {
                 break
             }
 
-            # Dim is the owner signal for sync. Low orange alone is NOT sync —
-            # splash/profile transitions can have low orange at high luminance and
-            # must not arm SeenSyncing (that caused a Profile-page false click).
-            $looksSyncing = ($dialogMeanL -lt $SyncMaxLuminance)
+            # Owner sync: dim dialog (~31 L) with collapsed-but-nonzero orange (~60–80).
+            # Blank frames (L≈0) and bright low-orange splash must NOT arm SeenSyncing.
+            $looksSyncing = (
+                $dialogMeanL -gt 18 -and
+                $dialogMeanL -lt $SyncMaxLuminance -and
+                $orangePx -ge 30 -and
+                $orangePx -lt $SyncMaxOrange
+            )
             if ($looksSyncing) {
                 $seenSyncing = $true
                 $firstBrightAt = $null
+                Write-Host ("watch_offline: syncing_observed dialogMeanL={0} orangePx={1}" -f $dialogMeanL, $orangePx)
             }
             elseif ($orangePx -ge $ReadyMinOrange -and $dialogMeanL -ge $ReadyMinLuminance) {
                 if (-not $firstBrightAt) {
