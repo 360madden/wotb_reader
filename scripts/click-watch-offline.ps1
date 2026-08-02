@@ -68,14 +68,14 @@ function Quit-WatchOffline([int]$Code) {
     exit $Code
 }
 
-if (-not ('WatchOfflineVision' -as [type])) {
+if (-not ('WatchOfflineVisionV2' -as [type])) {
 Add-Type @"
 using System;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 
-public static class WatchOfflineVision {
+public static class WatchOfflineVisionV2 {
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
@@ -97,7 +97,8 @@ public static class WatchOfflineVision {
     uint fgThread = fg != IntPtr.Zero ? GetWindowThreadProcessId(fg, out unused) : 0;
     if (fgThread != 0) AttachThreadInput(current, fgThread, true);
     if (target != 0) AttachThreadInput(current, target, true);
-    ShowWindow(hWnd, 9);
+    // No ShowWindow here — SW_RESTORE during LoginOnReplay has correlated with
+    // OnBackground / window_lost in live OD pulses.
     SetForegroundWindow(hWnd);
     if (target != 0) AttachThreadInput(current, target, false);
     if (fgThread != 0) AttachThreadInput(current, fgThread, false);
@@ -148,11 +149,16 @@ public static class WatchOfflineVision {
     if (w < 64 || h < 64) return null;
     var bmp = new Bitmap(w, h, PixelFormat.Format32bppArgb);
     using (var g = Graphics.FromImage(bmp)) {
-      IntPtr hdc = g.GetHdc();
-      bool ok = PrintWindow(hWnd, hdc, PW_RENDERFULLCONTENT);
-      g.ReleaseHdc(hdc);
-      if (!ok) {
+      // Prefer screen capture so bitmap pixels share the same coordinate space
+      // as SetCursorPos / GetWindowRect (PrintWindow can disagree under DPI).
+      try {
         g.CopyFromScreen(r.Left, r.Top, 0, 0, new Size(w, h), CopyPixelOperation.SourceCopy);
+      }
+      catch {
+        IntPtr hdc = g.GetHdc();
+        bool ok = PrintWindow(hWnd, hdc, PW_RENDERFULLCONTENT);
+        g.ReleaseHdc(hdc);
+        if (!ok) return null;
       }
     }
     return bmp;
@@ -300,12 +306,12 @@ function Get-GameWindow {
 }
 
 function Get-WindowAnalysis([IntPtr]$Hwnd, [string]$SavePath) {
-    $rect = New-Object WatchOfflineVision+RECT
-    $bmp = [WatchOfflineVision]::CaptureBitmap($Hwnd, [ref]$rect)
+    $rect = New-Object WatchOfflineVisionV2+RECT
+    $bmp = [WatchOfflineVisionV2]::CaptureBitmap($Hwnd, [ref]$rect)
     if (-not $bmp) { return $null }
     try {
-        $dialog = [WatchOfflineVision]::AnalyzeDialog($bmp)
-        if ($SavePath) { [void][WatchOfflineVision]::SaveBitmap($bmp, $SavePath) }
+        $dialog = [WatchOfflineVisionV2]::AnalyzeDialog($bmp)
+        if ($SavePath) { [void][WatchOfflineVisionV2]::SaveBitmap($bmp, $SavePath) }
         return [pscustomobject]@{
             Rect               = $rect
             Blob               = $dialog.Blob
@@ -349,7 +355,7 @@ function Test-ReadySample(
 }
 
 try {
-    [void][WatchOfflineVision]::EnsureDpiAware()
+    [void][WatchOfflineVisionV2]::EnsureDpiAware()
     try {
         $null = Get-Rendezvous
     }
@@ -380,8 +386,8 @@ try {
         Quit-WatchOffline 6
     }
 
-    [void][WatchOfflineVision]::ShowWindow($game.MainWindowHandle, 9)
-    [void][WatchOfflineVision]::SetForegroundWindow($game.MainWindowHandle)
+    [void][WatchOfflineVisionV2]::ShowWindow($game.MainWindowHandle, 9)
+    [void][WatchOfflineVisionV2]::SetForegroundWindow($game.MainWindowHandle)
     Start-Sleep -Milliseconds 300
 
     # --- Sync-dim ready gate ---
@@ -409,8 +415,8 @@ try {
         $shouldFocus = ($phase -ne 'LookingForDialog') -or `
             (((Get-Date) - $lastFocusAt).TotalSeconds -ge 3)
         if ($shouldFocus) {
-            [void][WatchOfflineVision]::ShowWindow($game.MainWindowHandle, 9)
-            [void][WatchOfflineVision]::SetForegroundWindow($game.MainWindowHandle)
+            [void][WatchOfflineVisionV2]::ShowWindow($game.MainWindowHandle, 9)
+            [void][WatchOfflineVisionV2]::SetForegroundWindow($game.MainWindowHandle)
             $lastFocusAt = Get-Date
         }
 
@@ -524,7 +530,7 @@ try {
         Write-Host 'watch_offline: window_lost_after_hold'
         Quit-WatchOffline 1
     }
-    [WatchOfflineVision]::ForceForeground($game.MainWindowHandle)
+    [WatchOfflineVisionV2]::ForceForeground($game.MainWindowHandle)
     Start-Sleep -Milliseconds 150
     $analysis = Get-WindowAnalysis $game.MainWindowHandle $ScreenshotPath
     if (-not $analysis) {
@@ -576,8 +582,8 @@ try {
             Quit-WatchOffline 1
         }
 
-        [void][WatchOfflineVision]::ShowWindow($game.MainWindowHandle, 9)
-        [void][WatchOfflineVision]::SetForegroundWindow($game.MainWindowHandle)
+        [void][WatchOfflineVisionV2]::ShowWindow($game.MainWindowHandle, 9)
+        [void][WatchOfflineVisionV2]::SetForegroundWindow($game.MainWindowHandle)
         Start-Sleep -Milliseconds 250
 
         $analysis = Get-WindowAnalysis $game.MainWindowHandle $ScreenshotPath
@@ -601,11 +607,11 @@ try {
                 $screenY = $analysis.Rect.Top + $analysis.Blob.CentroidY
                 Write-Host ("watch_offline: click_blob screen={0},{1} client={2},{3}" -f `
                     $screenX, $screenY, $analysis.Blob.CentroidX, $analysis.Blob.CentroidY)
-                [WatchOfflineVision]::ForceForeground($game.MainWindowHandle)
+                [WatchOfflineVisionV2]::ForceForeground($game.MainWindowHandle)
                 Start-Sleep -Milliseconds 100
-                [WatchOfflineVision]::ClickScreen($screenX, $screenY)
+                [WatchOfflineVisionV2]::ClickScreen($screenX, $screenY)
                 Start-Sleep -Milliseconds 250
-                [WatchOfflineVision]::ClickScreen($screenX + 3, $screenY + 2)
+                [WatchOfflineVisionV2]::ClickScreen($screenX + 3, $screenY + 2)
             }
         }
         elseif (-not $sawBlob) {
@@ -691,7 +697,9 @@ try {
     Quit-WatchOffline 3
 }
 catch {
+    if ($_.Exception.Message -match '^WATCH_EXIT:') { throw }
     Write-Host ("watch_offline: error=" + $_.Exception.Message)
     Quit-WatchOffline 4
 }
+
 
