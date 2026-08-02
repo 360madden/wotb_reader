@@ -752,6 +752,7 @@ static async Task<int> SnapshotAsync(string[] args)
     int valueSize = 4;
     float? floatMin = null, floatMax = null;
     int? intMin = null, intMax = null;
+    long maxBytes = 0;
 
     if (args.Length > 1)
     {
@@ -766,7 +767,7 @@ static async Task<int> SnapshotAsync(string[] args)
     }
     for (int i = 2; i < args.Length; i++)
     {
-        if (args[i] is "--float-min" or "--float-max" or "--int-min" or "--int-max")
+        if (args[i] is "--float-min" or "--float-max" or "--int-min" or "--int-max" or "--max-bytes")
         {
             if (i + 1 >= args.Length)
             {
@@ -785,6 +786,9 @@ static async Task<int> SnapshotAsync(string[] args)
                     && (intMin = imin) is not null,
                 "--int-max" => int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int imax)
                     && (intMax = imax) is not null,
+                "--max-bytes" => long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out long bytes)
+                    && bytes >= 0
+                    && (maxBytes = bytes) >= 0,
                 _ => false,
             };
             if (!parsed)
@@ -812,11 +816,11 @@ static async Task<int> SnapshotAsync(string[] args)
         return (int)HarnessExitCode.InvalidInput;
     }
 
-    Console.WriteLine($"Creating snapshot (valueSize={valueSize}, float=[{floatMin},{floatMax}], int=[{intMin},{intMax}])...");
+    Console.WriteLine($"Creating snapshot (valueSize={valueSize}, float=[{floatMin},{floatMax}], int=[{intMin},{intMax}], maxBytes={maxBytes})...");
     try
     {
         using HttpResponseMessage response = await client.PostAsJsonAsync("/api/v1/game/discover/snapshot",
-            new { valueSize, floatMin, floatMax, intMin, intMax, minAddress = 0L, maxAddress = 0L }).ConfigureAwait(false);
+            new { valueSize, floatMin, floatMax, intMin, intMax, minAddress = 0L, maxAddress = 0L, maxBytes }).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             Console.Error.WriteLine($"snapshot: HTTP {(int)response.StatusCode}");
@@ -1268,6 +1272,8 @@ Commands:
   discover-snapshot <valueSize> [--float-min <f>] [--float-max <f>]
     Create a snapshot of all values in committed memory.
     Example: discover-snapshot 4 --float-min -500 --float-max 500
+    --max-bytes <n> sets an explicit retained-byte budget (0 = engine ceiling);
+    bounded campaigns use this instead of address windows.
 
   discover-compare <sessionId> <mode>
     Compare current memory against a stored snapshot.
@@ -1287,6 +1293,7 @@ Commands:
     Options: --comparisons <1-4> --interval-seconds <1-5>
              --span-mib <1-64> --float-min <f> --float-max <f>
              --mode <changed|unchanged|increased|decreased>
+             --max-bytes <n>  (0-512 MiB; 0 = engine ceiling)
     Total configured wait time may not exceed 8 seconds. Candidate addresses,
     values, and scanner session ids are suppressed; the session is discarded.
 

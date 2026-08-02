@@ -467,6 +467,8 @@ internal static class GameApiEndpoints
             || request.Alignment is not (1 or 2 or 4 or 8)
             || request.MinAddress < 0
             || request.MaxAddress < 0
+            || request.MaxBytes < 0
+            || request.MaxBytes > OffsetSnapshotRequest.MaximumSnapshotBytes
             || (request.MaxAddress > 0 && request.MinAddress >= request.MaxAddress)
             || (request.FloatMin.HasValue && !float.IsFinite(request.FloatMin.Value))
             || (request.FloatMax.HasValue && !float.IsFinite(request.FloatMax.Value))
@@ -495,6 +497,7 @@ internal static class GameApiEndpoints
             RegionSelection: request.IncludeImageRegions
                 ? MemoryRegionSelection.Default | MemoryRegionSelection.Image
                 : MemoryRegionSelection.Default,
+            MaxBytes: request.MaxBytes,
             LongMin: kind == MemoryValueKind.Int64Value ? request.LongMin : null,
             LongMax: kind == MemoryValueKind.Int64Value ? request.LongMax : null,
             UIntMin: kind is MemoryValueKind.UInt32Value or MemoryValueKind.UInt64Value ? request.UIntMin : null,

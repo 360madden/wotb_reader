@@ -498,6 +498,96 @@ public sealed class UltimateScannerUnitTests
     }
 
     [TestMethod]
+    public void SnapshotFilterRejectsNegativeByteBudget()
+    {
+        var filter = new MemoryScanEngine.SnapshotFilter(
+            ValueSize: 4,
+            MinAddress: 0,
+            MaxAddress: 0,
+            FloatMin: null,
+            FloatMax: null,
+            IntMin: null,
+            IntMax: null,
+            LongMin: null,
+            LongMax: null,
+            UIntMin: null,
+            UIntMax: null,
+            ValueKind: MemoryValueKind.Int32Value,
+            Alignment: 1,
+            RegionSelection: MemoryRegionSelection.Default,
+            MaxBytes: -1);
+
+        Assert.IsFalse(MemoryScanEngine.ValidateFilter(filter, out string? error));
+        StringAssert.Contains(error, "byte budget");
+    }
+
+    [TestMethod]
+    public void SnapshotFilterRejectsBudgetAboveTheEngineCeiling()
+    {
+        var filter = new MemoryScanEngine.SnapshotFilter(
+            ValueSize: 4,
+            MinAddress: 0,
+            MaxAddress: 0,
+            FloatMin: null,
+            FloatMax: null,
+            IntMin: null,
+            IntMax: null,
+            LongMin: null,
+            LongMax: null,
+            UIntMin: null,
+            UIntMax: null,
+            ValueKind: MemoryValueKind.Int32Value,
+            Alignment: 1,
+            RegionSelection: MemoryRegionSelection.Default,
+            MaxBytes: 512L * 1024 * 1024 + 1);
+
+        Assert.IsFalse(MemoryScanEngine.ValidateFilter(filter, out string? error));
+        StringAssert.Contains(error, "byte budget");
+    }
+
+    [TestMethod]
+    public void SnapshotByteBudgetResolution_ClampsToTheEngineCeiling()
+    {
+        long ceiling = 512L * 1024 * 1024;
+
+        // Zero means the engine ceiling.
+        Assert.AreEqual(ceiling, MemoryScanEngine.ResolveSnapshotByteBudget(0));
+        // An explicit budget is honored as-is.
+        Assert.AreEqual(64L * 1024 * 1024, MemoryScanEngine.ResolveSnapshotByteBudget(64L * 1024 * 1024));
+        // A value above the ceiling is clamped, never widened.
+        Assert.AreEqual(ceiling, MemoryScanEngine.ResolveSnapshotByteBudget(ceiling + 1));
+        // Negative values are rejected before resolution; the helper still
+        // resolves them to the ceiling defensively.
+        Assert.AreEqual(ceiling, MemoryScanEngine.ResolveSnapshotByteBudget(-1));
+    }
+
+    [TestMethod]
+    public void SnapshotFilterAcceptsZeroAndExplicitByteBudgets()
+    {
+        var zeroBudget = new MemoryScanEngine.SnapshotFilter(
+            ValueSize: 4,
+            MinAddress: 0,
+            MaxAddress: 0,
+            FloatMin: null,
+            FloatMax: null,
+            IntMin: null,
+            IntMax: null,
+            LongMin: null,
+            LongMax: null,
+            UIntMin: null,
+            UIntMax: null,
+            ValueKind: MemoryValueKind.Int32Value,
+            Alignment: 1,
+            RegionSelection: MemoryRegionSelection.Default,
+            MaxBytes: 0);
+
+        Assert.IsTrue(MemoryScanEngine.ValidateFilter(zeroBudget, out string? zeroError), zeroError);
+
+        var explicitBudget = zeroBudget with { MaxBytes = 64L * 1024 * 1024 };
+        Assert.IsTrue(MemoryScanEngine.ValidateFilter(explicitBudget, out string? budgetError), budgetError);
+    }
+
+    [TestMethod]
     public void SnapshotFilterSupportsFullUInt64Range()
     {
         var filter = new MemoryScanEngine.SnapshotFilter(

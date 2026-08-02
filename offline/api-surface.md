@@ -30,7 +30,7 @@ overlay endpoint/state implementation was deleted.
 | `/launch` | POST | Launch a replay (`sourceArtifactId`) |
 | `/start` | POST | Launch the installed game process without a replay |
 | `/discover` | POST | Single offset scan (field, expected hex value, tolerance mask) |
-| `/discover/snapshot` | POST | Create a memory snapshot for multi-scan |
+| `/discover/snapshot` | POST | Create a memory snapshot for multi-scan (optional `maxBytes` retained-byte budget; above the 512 MiB engine ceiling is rejected) |
 | `/discover/compare/{sessionId}` | POST | Compare snapshot (changed/unchanged/increased/decreased) |
 | `/discover/session/{sessionId}` | DELETE | Discard a scanner session |
 | `/discover/neighborhood` | POST | Scan a memory window around a known offset |

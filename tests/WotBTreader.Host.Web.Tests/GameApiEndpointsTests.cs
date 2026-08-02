@@ -368,6 +368,67 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task SnapshotForwardsExplicitByteBudgetToTheScanner()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.CreateSnapshotAsync(
+            scanner,
+            new OffsetSnapshotRequest
+            {
+                ValueKind = "Float",
+                ValueSize = 4,
+                MaxBytes = 64L * 1024 * 1024,
+            },
+            TestContext.CancellationToken);
+
+        OffsetSnapshotResponse response = Value<OffsetSnapshotResponse>(result);
+        Assert.AreEqual("test", response.SessionId);
+        Assert.IsNotNull(scanner.LastSnapshotRequest);
+        Assert.AreEqual(64L * 1024 * 1024, scanner.LastSnapshotRequest!.MaxBytes);
+    }
+
+    [TestMethod]
+    public async Task SnapshotRejectsNegativeByteBudget()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.CreateSnapshotAsync(
+            scanner,
+            new OffsetSnapshotRequest
+            {
+                ValueKind = "Int32",
+                ValueSize = 4,
+                MaxBytes = -1,
+            },
+            TestContext.CancellationToken);
+
+        JsonElement response = BadRequestAnonymous(result);
+        Assert.AreEqual("discover.invalid_options", response.GetProperty("error").GetString());
+        Assert.IsNull(scanner.LastSnapshotRequest);
+    }
+
+    [TestMethod]
+    public async Task SnapshotRejectsBudgetAboveTheEngineCeiling()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.CreateSnapshotAsync(
+            scanner,
+            new OffsetSnapshotRequest
+            {
+                ValueKind = "Int32",
+                ValueSize = 4,
+                MaxBytes = OffsetSnapshotRequest.MaximumSnapshotBytes + 1,
+            },
+            TestContext.CancellationToken);
+
+        JsonElement response = BadRequestAnonymous(result);
+        Assert.AreEqual("discover.invalid_options", response.GetProperty("error").GetString());
+        Assert.IsNull(scanner.LastSnapshotRequest);
+    }
+
+    [TestMethod]
     public void DiscardReturnsThePublicContractAndForwardsTheSessionId()
     {
         var scanner = new FakeGameMemoryScanner();
@@ -587,6 +648,7 @@ public sealed class GameApiEndpointsTests
         public bool PointerChainCalled { get; private set; }
         public string? DiscardedSession { get; private set; }
         public MemoryScanRequest? LastScanRequest { get; private set; }
+        public MemorySnapshotRequest? LastSnapshotRequest { get; private set; }
         public CancellationToken LastCancellationToken { get; private set; }
         public OperationResult<MemoryCompareResult> CompareResult { get; init; } = OperationResult.Success(
             new MemoryCompareResult(DateTimeOffset.UnixEpoch, 0, 0, 0, 0, 0, 0, [], false, false, 0));
@@ -620,8 +682,12 @@ public sealed class GameApiEndpointsTests
         }
 
         public ValueTask<OperationResult<string>> CreateSnapshotAsync(
-            MemorySnapshotRequest request, CancellationToken cancellationToken) =>
-            ValueTask.FromResult(OperationResult.Success("test"));
+            MemorySnapshotRequest request, CancellationToken cancellationToken)
+        {
+            LastSnapshotRequest = request;
+            LastCancellationToken = cancellationToken;
+            return ValueTask.FromResult(OperationResult.Success("test"));
+        }
 
         public ValueTask<OperationResult<MemoryCompareResult>> CompareAsync(
             string sessionId, string compareMode, int maxCandidates,

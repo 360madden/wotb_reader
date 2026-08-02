@@ -262,7 +262,11 @@ public sealed record MemorySnapshotRequest(
     long? LongMin = null,
     long? LongMax = null,
     ulong? UIntMin = null,
-    ulong? UIntMax = null);
+    ulong? UIntMax = null,
+    // Explicit retained-byte budget (0 means the engine ceiling of 512 MiB).
+    // Bounded private/mapped campaigns use this instead of address windows so
+    // no process-specific address selection is required.
+    long MaxBytes = 0);
 
 /// <summary>
 /// Result of comparing a current scan against a stored snapshot. RetainedCount

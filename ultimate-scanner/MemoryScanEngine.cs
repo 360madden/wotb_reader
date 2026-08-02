@@ -72,7 +72,8 @@ internal sealed class MemoryScanEngine
         ulong? UIntMax,
         MemoryValueKind ValueKind,
         int Alignment,
-        MemoryRegionSelection RegionSelection);
+        MemoryRegionSelection RegionSelection,
+        long MaxBytes = 0);
 
     internal sealed record CompareResult(
         DateTimeOffset CompletedAtUtc,
@@ -107,6 +108,13 @@ internal sealed class MemoryScanEngine
         {
             return Error<string>("discover.snapshot.invalid_options", error!);
         }
+
+        // A caller may request a tighter retained-byte budget than the fixed
+        // engine ceiling, so an unbounded private/mapped snapshot cannot
+        // silently exceed the operator's privacy-safe limit. The budget check
+        // precedes each whole-chunk read, so retained bytes never pass the
+        // resolved budget (a final chunk may land within one read chunk of it).
+        long snapshotByteBudget = ResolveSnapshotByteBudget(filter.MaxBytes);
 
         string sessionId = Interlocked.Increment(ref _sessionCounter)
             .ToString("D6", CultureInfo.InvariantCulture);
@@ -178,9 +186,9 @@ internal sealed class MemoryScanEngine
                     cancellationToken.ThrowIfCancellationRequested();
                 }
                 int length = (int)Math.Min(ReadChunkSize, region.Length - offset);
-                if (storedBytes + length > MaximumSnapshotBytes)
+                if (storedBytes + length > snapshotByteBudget)
                 {
-                    return Error<string>("discover.snapshot.size_limit", "Snapshot size limit reached; narrow the address or region filters.");
+                    return Error<string>("discover.snapshot.size_limit", "Snapshot size limit reached; narrow the address or region filters or raise the explicit byte budget.");
                 }
 
                 long address = checked(region.BaseAddress + offset);
@@ -528,6 +536,15 @@ internal sealed class MemoryScanEngine
         && string.Equals(left.CanonicalExecutablePath, right.CanonicalExecutablePath, StringComparison.OrdinalIgnoreCase)
         && left.ExecutableSha256 == right.ExecutableSha256;
 
+    /// <summary>
+    /// Resolves the effective retained-byte budget: an explicit positive
+    /// caller budget is honored but never exceeds the fixed engine ceiling;
+    /// zero means the ceiling. Negative values are rejected by
+    /// <see cref="ValidateFilter"/> before this is reached.
+    /// </summary>
+    internal static long ResolveSnapshotByteBudget(long maxBytes) =>
+        maxBytes > 0 ? Math.Min(maxBytes, MaximumSnapshotBytes) : MaximumSnapshotBytes;
+
     internal static bool ValidateFilter(SnapshotFilter filter, out string? error)
     {
         ArgumentNullException.ThrowIfNull(filter);
@@ -557,9 +574,11 @@ internal sealed class MemoryScanEngine
             || (filter.UIntMin.HasValue && filter.UIntMax.HasValue && filter.UIntMin.Value > filter.UIntMax.Value)
             || (filter.ValueKind == MemoryValueKind.UInt32Value
                 && (filter.UIntMin > uint.MaxValue || filter.UIntMax > uint.MaxValue))
-            || filter.RegionSelection == MemoryRegionSelection.None)
+            || filter.RegionSelection == MemoryRegionSelection.None
+            || filter.MaxBytes < 0
+            || filter.MaxBytes > MaximumSnapshotBytes)
         {
-            error = "Value size, alignment, address range, or region selection is invalid. A nonzero maximum address is exclusive and must be greater than the minimum.";
+            error = "Value size, alignment, address range, region selection, or byte budget is invalid. The explicit byte budget must be between 0 and " + MaximumSnapshotBytes + " bytes; a nonzero maximum address is exclusive and must be greater than the minimum.";
             return false;
         }
         return true;

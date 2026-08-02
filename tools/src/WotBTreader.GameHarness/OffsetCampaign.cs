@@ -10,9 +10,14 @@ internal sealed record OffsetCampaignOptions(
     int SpanMiB,
     float FloatMin,
     float FloatMax,
-    string CompareMode)
+    string CompareMode,
+    long MaxBytes = 0)
 {
     private const int MaximumWaitSeconds = 8;
+
+    // Mirrors the scanner engine's 512 MiB retained-byte ceiling; values above
+    // it are rejected so a campaign can never widen the privacy-safe bound.
+    private const long MaximumSnapshotBytes = 512L * 1024 * 1024;
 
     public static bool TryParse(
         string[] arguments,
@@ -27,12 +32,13 @@ internal sealed record OffsetCampaignOptions(
         float floatMin = -500;
         float floatMax = 500;
         string compareMode = "changed";
+        long maxBytes = 0;
 
         for (int index = 1; index < arguments.Length; index++)
         {
             string option = arguments[index];
             if (option is not ("--comparisons" or "--interval-seconds" or "--span-mib"
-                or "--float-min" or "--float-max" or "--mode"))
+                or "--float-min" or "--float-max" or "--mode" or "--max-bytes"))
             {
                 options = null;
                 error = "campaign: unknown option.";
@@ -75,6 +81,11 @@ internal sealed record OffsetCampaignOptions(
                     CultureInfo.InvariantCulture,
                     out floatMax),
                 "--mode" => TryParseMode(value, out compareMode),
+                "--max-bytes" => long.TryParse(
+                    value,
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out maxBytes),
                 _ => false,
             };
 
@@ -90,6 +101,8 @@ internal sealed record OffsetCampaignOptions(
             || intervalSeconds is < 1 or > 5
             || spanMiB is < 1 or > 64
             || comparisons * intervalSeconds > MaximumWaitSeconds
+            || maxBytes < 0
+            || maxBytes > MaximumSnapshotBytes
             || !float.IsFinite(floatMin)
             || !float.IsFinite(floatMax)
             || floatMin > floatMax)
@@ -97,7 +110,8 @@ internal sealed record OffsetCampaignOptions(
             options = null;
             error =
                 "campaign: require 1-4 comparisons, 1-5 second intervals, " +
-                "a 1-64 MiB span, at most 8 total wait seconds, and ordered finite float bounds.";
+                "a 1-64 MiB span, at most 8 total wait seconds, a byte budget " +
+                "between 0 and 512 MiB, and ordered finite float bounds.";
             return false;
         }
 
@@ -107,7 +121,8 @@ internal sealed record OffsetCampaignOptions(
             spanMiB,
             floatMin,
             floatMax,
-            compareMode);
+            compareMode,
+            maxBytes);
         error = null;
         return true;
     }
@@ -161,7 +176,7 @@ internal sealed class OffsetCampaignRunner(
             await _standardOutput.WriteLineAsync(
                 $"Scope: main-module range, up to {options.SpanMiB} MiB; " +
                 $"mode={options.CompareMode}; comparisons={options.Comparisons}; " +
-                $"interval={options.IntervalSeconds}s.").ConfigureAwait(false);
+                $"interval={options.IntervalSeconds}s; maxBytes={options.MaxBytes}.").ConfigureAwait(false);
             await _standardOutput.WriteLineAsync(
                 "Natural replay changes are reconnaissance only; they do not prove a field or offset.")
                 .ConfigureAwait(false);
@@ -180,6 +195,7 @@ internal sealed class OffsetCampaignRunner(
                     valueKind = "Float",
                     alignment = 4,
                     includeImageRegions = true,
+                    maxBytes = options.MaxBytes,
                 },
                 cancellationToken).ConfigureAwait(false);
             if (!snapshotResponse.IsSuccessStatusCode)

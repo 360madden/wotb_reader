@@ -1,6 +1,6 @@
 # WoT Blitz PC offset-discovery workflow
 
-Last updated: 2026-07-31
+Last updated: 2026-08-02
 
 This is the operational playbook for discovering memory evidence from the
 Windows WoT Blitz client during a **positively verified offline replay**. It is
@@ -311,33 +311,37 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-003`. `OD-RECOVERY-001` was blocked before scanning,
-and `OD-RECOVERY-002` was blocked after staging because its managed launch timed
-out without correlated lifecycle evidence.
+Session ID: `OD-RECOVERY-004`. `OD-RECOVERY-001` was blocked before scanning,
+`OD-RECOVERY-002` was blocked after staging, `OD-RECOVERY-003` completed as a
+repeatable aggregate negative result, and `OD-RECOVERY-003-BOUNDED` recorded the
+bounded low-address trial as negative setup evidence. The managed launch path is
+now live-proven (visible exact window, exact-PID enumeration, research lifecycle
+startup timeout).
 
-1. Do not relaunch, terminate, attach to, or scan the existing game processes.
-2. Inspect the [managed-launch timeout diagnostics](offset-discovery-guide.md#managed-launch-diagnostics);
-   compare the request timeout with executable lease, suspended process creation,
-   resume, and lifecycle-monitor boundaries. Capture the structured stage log and
-   determine whether the result was `launch.lifecycle_evidence_timeout`.
-3. Confirm the host remains reachable and reports `Unknown` /
-   `launch.awaiting_evidence`; this is a diagnostic precondition, not discovery
-   evidence.
-4. Only after the hang is explained and the process set is safely isolated,
-   start exactly one managed replay and wait for `OfflineReplayVerified`. An
-   unverified launch is terminated on timeout, replacement, or coordinator
-   disposal; do not reuse it as a scan target.
-5. Capture module base, module size, architecture, process-start identity, and
-   replay lifecycle state before any scanner or CE attachment.
-6. Reconcile the Ghidra export and the table's three conflicting yaw values for
-   no more than 20 minutes; leave yaw quarantined if the address kind remains
-   unresolved.
-7. Run one controlled position-X or position-Z scan for at most 45 minutes,
-   saving candidate counts and state transitions rather than raw dumps.
-8. Trace writes for the best three candidates for at most 30 minutes, then end
-   with `CandidateFound`, `Partial`, `NoSignal`, or `Blocked`.
-9. Append the ledger and create a dated handoff before stopping.
+1. Confirm operator availability before starting the managed replay lease
+   (BLK-0022): the controlled movement transition requires an operator key
+   press in the positively verified offline replay; do not automate game input
+   through another path.
+2. Start from zero game and web-host processes, launch exactly one managed
+   replay, and wait for `OfflineReplayVerified` with the exact visible window
+   and expected executable identity (BLK-0023/BLK-0025 live resolutions).
+3. Use the bounded research lease for the controlled transition: set
+   `Research:OfflineReplayEvidenceLifetimeSeconds` (5–120) and
+   `Research:LifecycleEvidenceTimeoutSeconds` (5–300, production default 45)
+   on the loopback web host.
+4. For the snapshot, prefer the privacy-safe byte budget
+   (`discover-snapshot 4 --float-min <f> --float-max <f> --max-bytes <n>`, or
+   `maxBytes` on the snapshot API) over process-specific address windows; the
+   engine ceiling remains 512 MiB and values above it are rejected.
+5. Capture state A while the replay is paused, have the operator resume briefly
+   and pause again, then compare state B with `changed` and a rolling baseline.
+   Retain aggregate counters only; discard the scanner session.
+6. If a candidate survives, classify its address kind structurally (Phase 3)
+   and repeat across two fresh launches and two independent replays (Phase 4);
+   a second distinct replay is still required (BLK-0019).
+7. Append the ledger and create a dated handoff before stopping.
 
 The success criterion for this session remains **one correctly classified,
-reproducible candidate**, not all eight fields. A launch timeout is a blocker,
-not a signal to reuse an ambiguous process or repeat the same launch blindly.
+reproducible candidate**, not all eight fields. Absence of an operator is a
+blocker, not a signal to treat natural replay progression as a controlled
+transition or to repeat an exhausted approach blindly.

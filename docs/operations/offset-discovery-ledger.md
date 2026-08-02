@@ -1,6 +1,6 @@
 # Offset-discovery ledger
 
-Last updated: 2026-07-31
+Last updated: 2026-08-02
 
 This ledger is the durable index of WoT Blitz PC offset-discovery work. It
 records experiments, partial results, failures, and pivots so future sessions do
@@ -49,7 +49,7 @@ Every address must be classified before publication:
 | `playerYaw` | **Quarantined / Ambiguous** until decimal, hexadecimal, raw Ghidra, and address-kind evidence reconcile |
 | Trusted next anchor | `playerPositionX`/`playerPositionZ`, then `replayTime` or HP if the replay makes them observable |
 | Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance |
-| Next planned session | `OD-RECOVERY-003` (only after the managed-launch hang is diagnosed and the host gate is repaired) |
+| Next planned session | `OD-RECOVERY-004` (controlled movement transition; requires operator availability, BLK-0022, and a privacy-safe bounded region budget) |
 
 The current yaw conflict is recorded explicitly:
 
@@ -83,6 +83,8 @@ occurred.
 | `OD-RECOVERY-001-BLOCKED` | 2026-07-31 | Execute the Phase 0 gate for `OD-RECOVERY-001` | host state + GameHarness probe | `Blocked` | Multiple game processes were present and the host reported `Unknown` / `launch.awaiting_evidence`; no scan was started | No PID was admissible for discovery; do not attach to the vanilla or smoke-test processes |
 | `OD-RECOVERY-002` | 2026-07-31 | Establish one managed replay after the prior gate block | managed launch, host state, read-only process inventory | `Superseded` | The planned launch protocol was attempted and produced a blocked result before scanning | Superseded by `OD-RECOVERY-002-BLOCKED`; do not treat it as a discovery result |
 | `OD-RECOVERY-002-BLOCKED` | 2026-07-31 | Establish one managed replay after the prior gate block | managed launch, host state, read-only process inventory | `Blocked` | Replay staging completed, but the launch timed out without correlated lifecycle evidence; host remained `Unknown` / `launch.awaiting_evidence` | No existing process is admissible; do not repeat the launch until the timeout/correlation path is diagnosed |
+| `OD-RECOVERY-003` | 2026-08-02 | Prove a repeatable privacy-safe aggregate campaign; test whether a bounded main-module Float32 range is a useful natural-change anchor | two managed launches + rolling comparisons | `Partial` | Two fresh launches each reached `OfflineReplayVerified` with an exact singleton process and zero post-trial game/host processes; the aggregate-only campaign is repeatable | No single candidate survived; replay independence not proven (1 distinct payload used) |
+| `OD-RECOVERY-003-BOUNDED` | 2026-08-02 | Determine whether a bounded 0–64 MiB low-address Float32 window contains eligible retained values under the privacy-safe budget ceiling | loopback `discover-snapshot` (bounded window) | `NoSignal` | Zero retained/current/changed aggregates; scanner session discarded; recorded as bounded negative setup evidence for OD-RECOVERY-004 | It did not test a populated slice; the interrupted populated-slice attempt is not scan evidence |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -405,6 +407,55 @@ artifacts:
 field `Candidate` or `Verified`, and it must not change
 `memory-offsets/11.19.0.10.json`. Do not repeat the same main-module natural
 change protocol without a changed scope or controlled transition.
+
+## `OD-RECOVERY-003-BOUNDED` result — 2026-08-02
+
+```yaml
+sessionId: OD-RECOVERY-003-BOUNDED
+supersedes: none (negative setup evidence for OD-RECOVERY-004)
+status: NoSignal
+observedAtUtc: 2026-08-02T09:30:00Z
+timebox: one bounded low-address trial; one interrupted populated-slice attempt
+decision: recorded as bounded negative setup evidence; the interrupted attempt is NOT scan evidence
+objective: Determine whether a bounded 0–64 MiB low-address window contains eligible retained Float32 values under the privacy-safe budget ceiling
+stopCondition: Stop after the bounded window completes or the 512 MiB retained-data ceiling is reached
+method:
+  primaryTool: loopback discover-snapshot with a bounded address window
+  valueKind: Float32
+  addressScope: 0–64 MiB bounded window
+  ceiling: retained readable memory must stay within the 512 MiB ceiling
+observations:
+  - state: bounded-window
+    aggregatePrevious: 0
+    aggregateCurrent: 0
+    aggregateChanged: 0
+    scannerSessionDiscarded: true
+  - state: populated-slice-selection
+    outcome: interrupted before a result could be established; not classified as scan evidence
+result:
+  whatWorked:
+    - The bounded low-address window completed and was discarded without exposing addresses, values, or session identifiers.
+    - It confirmed that an empty low-address slice yields no eligible retained values.
+  whatFailed:
+    - An unbounded readable private/mapped snapshot exceeded the 512 MiB retained-data ceiling, so no aggregate could be produced.
+    - A follow-up attempt to select a populated private/mapped slice internally was interrupted.
+  rulesOut:
+    - No dynamic evidence supports any field; no candidate address, RVA, or address kind was produced.
+  partials:
+    - The negative bounded result is reusable setup evidence for OD-RECOVERY-004.
+    - A privacy-safe scanner-side bounded region budget is required before another live trial; the interrupted attempt must not be cited as a result.
+  nextPivot: OD-RECOVERY-004 — controlled movement transition with operator availability and a bounded region budget (see offset-discovery-workflow.md).
+  repeatWithoutChangedHypothesis: false
+artifacts:
+  rawFiles: none
+  committedSummary: this ledger entry
+```
+
+`OD-RECOVERY-003-BOUNDED` is bounded negative setup evidence only. It does not
+make any field `Candidate` or `Verified` and must not change
+`memory-offsets/11.19.0.10.json`. The interrupted populated-slice selection
+attempt is explicitly **not** scan evidence: it produced no result and must not
+be cited as one.
 
 ## Evidence promotion checklist
 

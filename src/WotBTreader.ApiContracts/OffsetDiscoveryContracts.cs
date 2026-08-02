@@ -164,6 +164,13 @@ public sealed record PointerChainDiscoveryResponse
 /// </summary>
 public sealed record OffsetSnapshotRequest
 {
+    /// <summary>
+    /// Hard retained-byte ceiling for a snapshot, matching the scanner engine.
+    /// Requests above this ceiling are rejected at validation; the budget can
+    /// only ever shrink a scan, never widen it.
+    /// </summary>
+    public const long MaximumSnapshotBytes = 512L * 1024 * 1024;
+
     public int ValueSize { get; init; } = 4;
     public float? FloatMin { get; init; }
     public float? FloatMax { get; init; }
@@ -176,6 +183,13 @@ public sealed record OffsetSnapshotRequest
     public long MinAddress { get; init; }
     /// <summary>Exclusive upper address; zero means the supported user-space limit.</summary>
     public long MaxAddress { get; init; }
+    /// <summary>
+    /// Explicit retained-byte budget for the snapshot. Zero means the engine
+    /// ceiling (512 MiB). Values above the ceiling are rejected. A bounded
+    /// budget lets private/mapped campaigns cap retained readable memory
+    /// without selecting process-specific address windows.
+    /// </summary>
+    public long MaxBytes { get; init; }
     public string ValueKind { get; init; } = "Int32";
     public int Alignment { get; init; } = 1;
     public bool IncludeImageRegions { get; init; }

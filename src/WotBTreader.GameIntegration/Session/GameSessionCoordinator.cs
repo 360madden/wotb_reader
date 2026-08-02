@@ -1434,7 +1434,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                         request.UIntMax,
                         request.ValueKind,
                         request.Alignment,
-                        request.RegionSelection),
+                        request.RegionSelection,
+                        request.MaxBytes),
                     scanCancellation.Token),
                 scanCancellation.Token).ConfigureAwait(false);
             if (!IsScanAuthorizationCurrent(observation!, authorizationToken))

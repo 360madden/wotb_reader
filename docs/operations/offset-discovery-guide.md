@@ -1,6 +1,6 @@
 # Offset Discovery Guide
 
-Last updated: 2026-07-31
+Last updated: 2026-08-02
 
 > **Operating workflow:** use [`offset-discovery-workflow.md`](offset-discovery-workflow.md)
 > for timeboxes, pivots, address-kind classification, and the next-session protocol.
@@ -347,7 +347,8 @@ do not publish a heap address as a module-relative offset.
 
 ## One-time Setup Commands
 
-### Install x64dbg (run in PowerShell; no admin needed for `C:\work\tools`):
+### Install x64dbg (quick PowerShell path; full steps and verification in [§1](#1-install-x64dbg))
+
 ```powershell
 # Download latest snapshot
 $url = "https://github.com/x64dbg/x64dbg/releases/download/2026.05.27/snapshot_2026-05-27_12-11.zip"
@@ -363,12 +364,11 @@ $shortcut.Save()
 Write-Host "x64dbg installed to C:\work\tools\x64dbg"
 ```
 
-### Optional managed-artifact tool
+### Managed-artifact decompiler
 
-Do not install or use a managed-assembly decompiler unless Phase 0 confirms that
-this exact WoT Blitz installation contains relevant managed artifacts. If that
-branch is confirmed, record the artifact hash and use a locally approved,
-read-only decompiler; otherwise skip it and continue with native tooling.
+See [§3 — Optional managed-artifact check](#3-optional-managed-artifact-check): do not
+install or use a managed-assembly decompiler unless Phase 0 confirms this exact
+WoT Blitz installation contains relevant managed artifacts.
 
 ## Offset file format
 
@@ -516,12 +516,14 @@ discover <field> <Float|Int32|Double> <value> [tolerance]
 discover-pattern <field> <patternHex> [toleranceMaskHex] [--alignment 1|2|4|8]
 discover-pointer-chain <rootOffset> <offset1,offset2,...>
 discover-snapshot 4 [--float-min <f>] [--float-max <f>] [--int-min <n>] [--int-max <n>]
+                  [--max-bytes <n>]   # explicit retained-byte budget; 0 = engine ceiling (512 MiB)
 discover-compare <sessionId> [changed|unchanged|increased|decreased]
 discover-nearby <refOffset> [--window <64-4096>]
 discover-discard <sessionId>
 discover-campaign [--comparisons <1-4>] [--interval-seconds <1-5>]
                   [--span-mib <1-64>] [--float-min <f>] [--float-max <f>]
                   [--mode <changed|unchanged|increased|decreased>]
+                  [--max-bytes <0-512 MiB>]   # retained-byte budget; 0 = engine ceiling
 ```
 
 The CLI validates the rendezvous capability before making requests, sends it on

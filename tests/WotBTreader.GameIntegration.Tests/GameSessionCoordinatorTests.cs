@@ -89,22 +89,111 @@ public sealed class GameSessionCoordinatorTests
     [TestMethod]
     public void WindowObservationPolicy_WaitsBeforeVerificationAndFailsAfterLoss()
     {
+        // Before a correlated marker arrives, an absent window is not terminal:
+        // the client may still be materializing its window. Other statuses fail
+        // closed immediately.
         Assert.IsFalse(GameSessionCoordinator.IsWindowObservationTerminalFailure(
             correlatedEvidenceObserved: false,
             GameProcessObservationStatus.Absent,
+            exactWindowObserved: false));
+        Assert.IsFalse(GameSessionCoordinator.IsWindowObservationTerminalFailure(
+            correlatedEvidenceObserved: false,
+            GameProcessObservationStatus.QueryFailed,
             exactWindowObserved: false));
         Assert.IsTrue(GameSessionCoordinator.IsWindowObservationTerminalFailure(
             correlatedEvidenceObserved: false,
             GameProcessObservationStatus.Ambiguous,
             exactWindowObserved: false));
         Assert.IsTrue(GameSessionCoordinator.IsWindowObservationTerminalFailure(
+            correlatedEvidenceObserved: false,
+            GameProcessObservationStatus.Unsupported,
+            exactWindowObserved: false));
+        Assert.IsTrue(GameSessionCoordinator.IsWindowObservationTerminalFailure(
+            correlatedEvidenceObserved: false,
+            GameProcessObservationStatus.Available,
+            exactWindowObserved: false));
+
+        // Once a correlated marker was observed, ANY loss of the exact window
+        // is terminal: absence, ambiguity, query failure, unsupported, or a
+        // different available window all revoke immediately.
+        Assert.IsTrue(GameSessionCoordinator.IsWindowObservationTerminalFailure(
             correlatedEvidenceObserved: true,
             GameProcessObservationStatus.Absent,
             exactWindowObserved: false));
+        Assert.IsTrue(GameSessionCoordinator.IsWindowObservationTerminalFailure(
+            correlatedEvidenceObserved: true,
+            GameProcessObservationStatus.Ambiguous,
+            exactWindowObserved: false));
+        Assert.IsTrue(GameSessionCoordinator.IsWindowObservationTerminalFailure(
+            correlatedEvidenceObserved: true,
+            GameProcessObservationStatus.QueryFailed,
+            exactWindowObserved: false));
+        Assert.IsTrue(GameSessionCoordinator.IsWindowObservationTerminalFailure(
+            correlatedEvidenceObserved: true,
+            GameProcessObservationStatus.Unsupported,
+            exactWindowObserved: false));
+        Assert.IsTrue(GameSessionCoordinator.IsWindowObservationTerminalFailure(
+            correlatedEvidenceObserved: true,
+            GameProcessObservationStatus.Available,
+            exactWindowObserved: false));
+
+        // Holding the exact window is never terminal, before or after
+        // verification.
+        Assert.IsFalse(GameSessionCoordinator.IsWindowObservationTerminalFailure(
+            correlatedEvidenceObserved: false,
+            GameProcessObservationStatus.Available,
+            exactWindowObserved: true));
         Assert.IsFalse(GameSessionCoordinator.IsWindowObservationTerminalFailure(
             correlatedEvidenceObserved: true,
             GameProcessObservationStatus.Available,
             exactWindowObserved: true));
+    }
+
+    [TestMethod]
+    public async Task PostVerificationWindowLoss_RevokesVerifiedState()
+    {
+        var (coordinator, _) = CreateVerifiedCoordinator();
+
+        // The exact window disappears after verification: the observed process
+        // is otherwise identical, but the window handle is gone and the owner
+        // can no longer be proven.
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess() with { WindowHandle = 0 },
+            Lifecycle = CreateValidLifecycle() with
+            {
+                SourceSequence = 12,
+                SourceByteOffset = 102,
+            },
+        });
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+        Assert.AreEqual("process.identity_mismatch", snapshot.ReasonCode);
+    }
+
+    [TestMethod]
+    public async Task PostVerificationWindowOwnerChange_RevokesVerifiedState()
+    {
+        var (coordinator, _) = CreateVerifiedCoordinator();
+
+        // The window is still present but its owner PID no longer matches the
+        // managed process, which can only mean the window was replaced.
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess() with { WindowOwnerProcessId = 9999 },
+            Lifecycle = CreateValidLifecycle() with
+            {
+                SourceSequence = 12,
+                SourceByteOffset = 102,
+            },
+        });
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+        Assert.AreEqual("process.identity_mismatch", snapshot.ReasonCode);
     }
 
     [TestMethod]

@@ -198,6 +198,16 @@ entries rather than silently erasing prior evidence.
   54 web host tests) but have not been smoke-run together against a live host.
   See `docs/operations/handoffs/2026-07-27-signalr-webview2-completion.md`.
 
+## Amendment — Numbering note (`2026-08-02`)
+
+BLK numbers are assigned sequentially, and the union of numbers across this
+log and `blockers/` must stay contiguous (`scripts/python/offline_check.py`
+fails the gate on gaps or repeats). As of this note, BLK-0008–0011 are
+recorded in [`blockers/2026-07-26-replay-decoder.md`](blockers/2026-07-26-replay-decoder.md),
+and [`blockers/2026-07-26-command-execution-gate.md`](blockers/2026-07-26-command-execution-gate.md)
+is a companion deep-dive for BLK-0007. See [`README.md`](README.md) in this
+folder for the full numbering convention and document map.
+
 ## BLK-0012 — `diagnostics/` and `dist/` ignore patterns hid tracked sources
 
 - First observed: `2026-07-26T21:59:25Z`
@@ -577,6 +587,25 @@ entries rather than silently erasing prior evidence.
   materialization, and post-verification window loss. These attempts contain no
   offset evidence and must not be recorded as failed position scans.
 
+- Resolution amendment (`2026-08-02T11:15:00Z`): resolved and live-proven.
+  `WindowsSuspendedProcessPlatform` no longer sets `STARTF_USESHOWWINDOW` with
+  `SW_HIDE`; the coordinator depends on `IGameProcessIdentityObserver` and no
+  longer synthesizes `WindowHandle: 1`. Managed observation passes the exact
+  expected PID; the Windows platform uses `EnumWindows` for that PID and
+  accepts only visible, root, ownerless windows with a non-empty client area,
+  stopping after a second match so ambiguity is reported without scanning the
+  rest of the desktop. Process start identity, canonical executable path,
+  product version, SHA-256, PID, owner PID, and nonzero handle must all match
+  before authorization. Absence or mismatch of the exact window after
+  verification is terminal and revokes authorization immediately. Repeated
+  fresh private-replay launches reached `OfflineReplayVerified` with exactly
+  one visible game window; the offline gate passed with zero online-match
+  actions. The stale `SDL_app` class restriction and the intermediate
+  desktop-enumeration cap that also blocked exact managed launches are recorded
+  separately in BLK-0025. Live regressions cover normal startup flags,
+  zero-window denial, observed-handle propagation, and the exact-PID
+  enumeration policy.
+
 ## BLK-0024 — Offline confirmation exceeded the fixed lifecycle startup wait
 
 - First observed: `2026-08-02T04:57:21Z`
@@ -604,3 +633,56 @@ entries rather than silently erasing prior evidence.
   propagation and document both independent research bounds. A longer startup
   wait must never extend authorization after replay stop, feed failure, window
   loss, identity change, cancellation, or evidence expiry.
+
+- Resolution amendment (`2026-08-02T11:15:00Z`): resolved and live-proven.
+  The web host now accepts the research-only
+  `Research:LifecycleEvidenceTimeoutSeconds` setting. The production default
+  remains 45 seconds; research values from 5 through 300 seconds are validated
+  and propagated independently from the 5–120 second post-verification replay
+  evidence lifetime. A clean visible retry selected **Watch Offline**
+  immediately and, with the explicit 120-second research override, completed
+  the offline confirmation and client load before a fresh correlated native
+  replay-start marker arrived. The loopback gate reached
+  `OfflineReplayVerified` with `session.offline_replay_verified`, and the exact
+  managed child was terminated at evidence expiry or stop as before. The longer
+  startup wait never extended authorization after replay stop, feed failure,
+  window loss, identity change, cancellation, or evidence expiry; focused
+  coordinator tests pin that property. Composition coverage and both research
+  bounds are documented in the operations and offline discovery guidance.
+
+## BLK-0025 — Exact managed launches were blocked by the SDL_app restriction and a capped desktop enumeration
+
+- First observed: `2026-08-02T05:20:00Z` (identified while resolving BLK-0023)
+- Status: resolved and validated
+- Impact: an exact managed replay launch produced a valid visible window and
+  fresh replay-start evidence, but the window observer hard-coded the
+  `SDL_app` window class and the installed client exposed a differently
+  classified valid window. An intermediate exact-PID enumerator additionally
+  capped total desktop enumeration, falsely reporting an incomplete
+  observation on a busy desktop before the exact matching window could be
+  reached. Both defects denied the launch without a scanner operation.
+- Evidence: the installed client showed fresh replay-start evidence and a
+  visible window that did not satisfy the `SDL_app` class restriction; a busy
+  desktop produced `IsComplete=false` from the capped enumerator.
+- Cause: the generic observer reused the historical `SDL_app` class filter for
+  exact managed launches, where the class name is not a reliable identity
+  signal, and the intermediate enumerator applied a total-desktop cap instead
+  of stopping only when ambiguity is proven.
+- Resolution: exact managed launches deliberately do not rely on the
+  `SDL_app` class name; the exact-PID path uses `EnumWindows` for that PID,
+  accepts visible, root, ownerless windows with a non-empty client area, and
+  stops after a second match. Generic, unmanaged observation retains the
+  historical `SDL_app` class filter. `IsComplete` is true when the native
+  enumeration completes or ambiguity is proven, so a busy desktop cannot
+  produce a false incomplete observation.
+- Why: exact ownership by the managed PID, not a class heuristic, is the
+  trust boundary for a correlated launch; class names vary by client and must
+  not gate a positively verified managed replay.
+- Validation: GameIntegration focused suite (206 passed, 2 expected local
+  opt-in skips) after the exact-PID window changes; repeated live visible
+  managed launches reached the exact offline gate. Regression coverage
+  exercises exact-PID enumeration ambiguity and post-verification exact-window
+  loss.
+- Prevention/follow-up: keep the generic class filter only on the unmanaged
+  discovery path; exact managed launches must enumerate by PID and stop at
+  ambiguity, never at a fixed desktop cap.

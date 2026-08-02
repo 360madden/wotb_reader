@@ -81,11 +81,11 @@ file, send `X-WotBTreader-Capability` on unsafe requests, and check the gate:
 | `discover <field> <Float\|Int32\|Double> <value> [tolerance]` | Known-value scan with numeric Float tolerance |
 | `discover-pattern <field> <patternHex> [mask]` | Bounded AOB/wildcard scan |
 | `discover-pointer-chain <rootOffset> <offset1,offset2,...>` | Bounded pointer-chain evidence probe |
-| `discover-snapshot 4 [--float-min/--float-max/--int-min/--int-max]` | Int32 snapshot of committed memory; prints session id |
+| `discover-snapshot 4 [--float-min/--float-max/--int-min/--int-max] [--max-bytes <n>]` | Int32 snapshot of committed memory; prints session id. `--max-bytes` sets an explicit retained-byte budget (0 = engine ceiling of 512 MiB) so bounded campaigns need no address windows |
 | `discover-compare <sessionId> [changed\|unchanged\|increased\|decreased]` | Compare current memory vs snapshot |
 | `discover-nearby <refOffset> [--window <bytes>]` | Neighborhood scan around a known offset |
 | `discover-discard <sessionId>` | Discard a snapshot session |
-| `discover-campaign [--comparisons/--interval-seconds/--span-mib/--float-min/--float-max/--mode]` | Bounded rolling Float32 reconnaissance; prints aggregate counts only and discards its private scanner session |
+| `discover-campaign [--comparisons/--interval-seconds/--span-mib/--float-min/--float-max/--mode/--max-bytes]` | Bounded rolling Float32 reconnaissance; prints aggregate counts only and discards its private scanner session. `--max-bytes` (0–512 MiB) caps retained readable memory without address windows |
 
 Run it like: `dotnet run --project tools/src/WotBTreader.GameHarness -c Release -- discover playerPositionX Float 42.5 1.0`
 (from a directory with a `memory-offsets/` folder for the offset-status commands). Use a
@@ -93,6 +93,10 @@ controlled movement transition and record the session before treating any result
 candidate. `discover-campaign` is reconnaissance only: repeated natural replay
 changes do not identify a field or satisfy the controlled-transition,
 address-classification, two-launch, or two-replay promotion requirements.
+
+Snapshot requests also accept a `maxBytes` field on `POST
+/api/v1/game/discover/snapshot`; values above the 512 MiB engine ceiling are
+rejected at validation and never widen the retained-data bound.
 
 For an operator-controlled Cheat Engine transition, the loopback web host alone
 accepts the explicit `Research:OfflineReplayEvidenceLifetimeSeconds` setting.

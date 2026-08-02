@@ -26,6 +26,35 @@ public sealed class OffsetCampaignTests
     }
 
     [TestMethod]
+    public void ParserAcceptsAnExplicitByteBudget()
+    {
+        bool parsed = OffsetCampaignOptions.TryParse(
+            ["campaign", "--max-bytes", "67108864"],
+            out OffsetCampaignOptions? options,
+            out string? error);
+
+        Assert.IsTrue(parsed, error);
+        Assert.IsNotNull(options);
+        Assert.AreEqual(64L * 1024 * 1024, options.MaxBytes);
+    }
+
+    [TestMethod]
+    public void ParserRejectsNegativeOrOverCeilingByteBudget()
+    {
+        Assert.IsFalse(OffsetCampaignOptions.TryParse(
+            ["campaign", "--max-bytes", "-1"],
+            out _,
+            out string? negativeError));
+        StringAssert.Contains(negativeError, "byte budget");
+
+        Assert.IsFalse(OffsetCampaignOptions.TryParse(
+            ["campaign", "--max-bytes", "536870913"],
+            out _,
+            out string? ceilingError));
+        StringAssert.Contains(ceilingError, "byte budget");
+    }
+
+    [TestMethod]
     public void ParserRejectsAnOverlongOrInvertedCampaign()
     {
         Assert.IsFalse(OffsetCampaignOptions.TryParse(
@@ -75,6 +104,8 @@ public sealed class OffsetCampaignTests
         Assert.IsTrue(handler.Discarded);
         Assert.AreEqual(64L, handler.NeighborhoodBody.GetProperty("referenceOffset").GetInt64());
         Assert.HasCount(2, handler.CompareBodies);
+        Assert.IsTrue(handler.SnapshotBody.TryGetProperty("maxBytes", out JsonElement budget)
+            && budget.GetInt64() == 0);
         Assert.IsTrue(handler.CompareBodies.All(body =>
             body.GetProperty("rollingBaseline").GetBoolean()
             && body.GetProperty("maxCandidates").GetInt32() == 1));
@@ -118,6 +149,37 @@ public sealed class OffsetCampaignTests
             StringComparison.Ordinal));
     }
 
+    [TestMethod]
+    public async Task RunnerForwardsTheConfiguredByteBudget()
+    {
+        var handler = new CampaignHandler();
+        using var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://127.0.0.1:9182/"),
+        };
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        var runner = new OffsetCampaignRunner(
+            client,
+            output,
+            error,
+            (_, _) => Task.CompletedTask);
+
+        int exitCode = await runner.RunAsync(new OffsetCampaignOptions(
+            Comparisons: 1,
+            IntervalSeconds: 1,
+            SpanMiB: 16,
+            FloatMin: -500,
+            FloatMax: 500,
+            CompareMode: "changed",
+            MaxBytes: 32L * 1024 * 1024));
+
+        Assert.AreEqual(0, exitCode, error.ToString());
+        Assert.IsTrue(handler.SnapshotBody.TryGetProperty("maxBytes", out JsonElement budget)
+            && budget.GetInt64() == 32L * 1024 * 1024);
+        Assert.IsTrue(handler.Discarded);
+    }
+
     private sealed class CampaignHandler(bool failComparison = false) : HttpMessageHandler
     {
         public const string SessionId = "PRIVATE-SCANNER-SESSION";
@@ -125,6 +187,8 @@ public sealed class OffsetCampaignTests
         public bool Discarded { get; private set; }
 
         public JsonElement NeighborhoodBody { get; private set; }
+
+        public JsonElement SnapshotBody { get; private set; }
 
         public List<JsonElement> CompareBodies { get; } = [];
 
@@ -157,6 +221,9 @@ public sealed class OffsetCampaignTests
             if (request.Method == HttpMethod.Post
                 && path.EndsWith("/discover/snapshot", StringComparison.Ordinal))
             {
+                using JsonDocument body = JsonDocument.Parse(
+                    await request.Content!.ReadAsStringAsync(cancellationToken));
+                SnapshotBody = body.RootElement.Clone();
                 return Json(HttpStatusCode.OK, new { sessionId = SessionId });
             }
 
