@@ -539,6 +539,15 @@ The configured waits may total at most eight seconds so the workflow leaves
 room inside the coordinator's 15-second authorization lifetime for bounded
 native reads and cleanup.
 
+Interactive controlled-transition work may explicitly start the loopback web
+host with `Research:OfflineReplayEvidenceLifetimeSeconds` set from 5 through
+120 seconds. The default remains 15 seconds. This bounded research lease does
+not delay monitor revocation for replay stop, unhealthy or gapped evidence,
+reported process exit or identity change, cancellation, or expiry. Guarded
+scanner reads also revalidate the exact process identity independently. Follow
+the protocol in `offset-discovery-workflow.md`; never use the longer lease for
+an uncorrelated process or an online session.
+
 Campaign output is aggregate variability reconnaissance. Natural replay
 changes cannot identify `playerPositionX`, prove a member displacement or RVA,
 classify an address, or satisfy the controlled-transition requirement. Record
@@ -571,6 +580,12 @@ a termination request before releasing the process handle.
 Event `3140` (`ManagedLaunchLifecycleEvidenceTimeout`) records the process ID,
 timeout, and termination result. A timeout is a launch-gate failure, not a valid
 process-selection signal; do not attach to a process from that attempt.
+
+After verification, `GameIntegrationOptions.OfflineReplayEvidenceLifetime`
+limits the age of that exact correlated live start marker. It defaults to 15
+seconds and accepts 5 seconds through a hard maximum of two minutes. Only the
+web host's explicit `Research:OfflineReplayEvidenceLifetimeSeconds` setting
+changes it; ordinary CLI and web-host startup retain the default.
 
 The reconciled launch baseline can legitimately contain zero active native-log
 sources. Its completed UTC time remains an authorization anchor: a newly

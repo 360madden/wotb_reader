@@ -94,6 +94,17 @@ candidate. `discover-campaign` is reconnaissance only: repeated natural replay
 changes do not identify a field or satisfy the controlled-transition,
 address-classification, two-launch, or two-replay promotion requirements.
 
+For an operator-controlled Cheat Engine transition, the loopback web host alone
+accepts the explicit `Research:OfflineReplayEvidenceLifetimeSeconds` setting.
+The normal value is 15 seconds; validation accepts 5–120 seconds. This changes
+only the maximum age of correlated replay-start evidence while the lifecycle
+monitor is healthy. Replay stop, feed failure/gap, process exit, identity
+change, cancellation, and expiry still fail closed through monitor revocation,
+reported evidence, or per-read identity revalidation. The guarded input adapter
+is not registered, so the operator—not automation—must perform the replay
+transition. See `docs/operations/offset-discovery-workflow.md` for the full
+abort and privacy protocol.
+
 ## Evidence publication
 
 1. Discover candidate offsets (Ghidra `FindOffsets.py`/`.java`,

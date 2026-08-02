@@ -9,6 +9,7 @@ using WotBTreader.Application.Storage;
 using WotBTreader.Application.Streaming;
 using WotBTreader.Bootstrap.Configuration;
 using WotBTreader.Bootstrap.DependencyInjection;
+using WotBTreader.GameIntegration;
 
 namespace WotBTreader.Bootstrap.Tests;
 
@@ -147,6 +148,22 @@ public sealed class CompositionRootTests
         Assert.AreEqual(Path.GetFullPath(root.Path), paths.Root);
         Assert.IsTrue(Directory.Exists(paths.ContentStore));
         Assert.IsTrue(Directory.Exists(paths.Rendezvous));
+    }
+
+    [TestMethod]
+    public void FoundationPropagatesExplicitOfflineReplayEvidenceLifetime()
+    {
+        using TemporaryRoot root = new();
+        ServiceCollection services = new();
+        services.AddWotBTreaderFoundation(new TreaderBootstrapOptions(
+            ApplicationDataRoot: root.Path,
+            OfflineReplayEvidenceLifetime: TimeSpan.FromMinutes(2)));
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        GameIntegrationOptions options =
+            provider.GetRequiredService<GameIntegrationOptions>();
+
+        Assert.AreEqual(TimeSpan.FromMinutes(2), options.OfflineReplayEvidenceLifetime);
     }
 
     [TestMethod]

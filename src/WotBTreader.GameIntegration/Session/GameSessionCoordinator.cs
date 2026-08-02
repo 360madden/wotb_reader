@@ -133,7 +133,6 @@ internal sealed class ManagedGameLaunchContext
 internal sealed class GameSessionCoordinator : IGameSessionState,
     IGameReplayLauncher, IGameMemoryObserver, IGameMemoryScanner, IAsyncDisposable, IDisposable
 {
-    private static readonly TimeSpan EvidenceLifetime = TimeSpan.FromSeconds(15);
     private readonly Lock _gate = new();
     private readonly TimeProvider _timeProvider;
     private readonly GameIntegrationOptions _options;
@@ -893,7 +892,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         }
 
         if (lifecycle.ObservedAtUtc > now
-            || now - lifecycle.ObservedAtUtc > EvidenceLifetime)
+            || now - lifecycle.ObservedAtUtc > _options.OfflineReplayEvidenceLifetime)
         {
             // Stale evidence immediately ends authorization and the managed
             // launch; retaining an unobserved child would violate fail-closed
@@ -902,7 +901,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             _snapshot = CreateSnapshot(
                 GameSessionVerificationState.EvidenceStale,
                 gamePresent: true,
-                expiresAtUtc: lifecycle.ObservedAtUtc + EvidenceLifetime,
+                expiresAtUtc: lifecycle.ObservedAtUtc + _options.OfflineReplayEvidenceLifetime,
                 "evidence.stale");
             return;
         }
@@ -950,7 +949,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             return;
         }
 
-        DateTimeOffset expiresAtUtc = lifecycle.ObservedAtUtc + EvidenceLifetime;
+        DateTimeOffset expiresAtUtc =
+            lifecycle.ObservedAtUtc + _options.OfflineReplayEvidenceLifetime;
         _lastCursor = new EvidenceCursor(
             lifecycle.SourceIdentity,
             lifecycle.SourceGeneration,

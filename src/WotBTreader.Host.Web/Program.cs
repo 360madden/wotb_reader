@@ -31,7 +31,8 @@ builder.WebHost.ConfigureKestrel(options =>
 builder.Services.AddWotBTreaderFoundation(new TreaderBootstrapOptions(
     builder.Configuration["Paths:ApplicationDataRoot"],
     builder.Configuration["Game:Root"],
-    builder.Configuration["Game:UserDataRoot"]));
+    builder.Configuration["Game:UserDataRoot"],
+    ReadOfflineReplayEvidenceLifetime(builder.Configuration)));
 
 builder.Services
     .AddRazorComponents()
@@ -78,4 +79,11 @@ catch (IOException) when (app.Environment.IsProduction())
     Console.Error.WriteLine(
         $"Port {configuredPort} is already in use. Stop the other instance first.");
     Environment.Exit(1);
+}
+
+static TimeSpan? ReadOfflineReplayEvidenceLifetime(IConfiguration configuration)
+{
+    int? seconds = configuration.GetValue<int?>(
+        "Research:OfflineReplayEvidenceLifetimeSeconds");
+    return seconds.HasValue ? TimeSpan.FromSeconds(seconds.Value) : null;
 }

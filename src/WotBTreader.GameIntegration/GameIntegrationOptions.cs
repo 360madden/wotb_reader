@@ -21,6 +21,8 @@ public sealed class GameIntegrationOptions
     private const long MaximumReplayLaunchBytes = 2L * 1024 * 1024 * 1024;
     private static readonly TimeSpan MinimumLifecycleEvidenceTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan MaximumLifecycleEvidenceTimeout = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan MinimumOfflineReplayEvidenceLifetime = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan MaximumOfflineReplayEvidenceLifetime = TimeSpan.FromMinutes(2);
 
     /// <summary>Gets explicit game installation roots to probe before optional defaults.</summary>
     public IReadOnlyList<string> GameInstallRoots { get; init; } = [];
@@ -83,6 +85,14 @@ public sealed class GameIntegrationOptions
     /// </summary>
     public TimeSpan LifecycleEvidenceTimeout { get; init; } = TimeSpan.FromSeconds(45);
 
+    /// <summary>
+    /// Gets the maximum age of the correlated live replay-start marker while
+    /// the active lifecycle monitor remains healthy. The short default is used
+    /// by normal hosts; longer values are an explicit, bounded local-research
+    /// opt-in and do not delay terminal monitor revocation.
+    /// </summary>
+    public TimeSpan OfflineReplayEvidenceLifetime { get; init; } = TimeSpan.FromSeconds(15);
+
     internal void Validate()
     {
         if (MaxDvplStoredBytes <= 0 ||
@@ -130,6 +140,14 @@ public sealed class GameIntegrationOptions
             throw new ArgumentOutOfRangeException(
                 nameof(GameIntegrationOptions),
                 "The lifecycle evidence timeout must be between 5 seconds and 5 minutes.");
+        }
+
+        if (OfflineReplayEvidenceLifetime < MinimumOfflineReplayEvidenceLifetime ||
+            OfflineReplayEvidenceLifetime > MaximumOfflineReplayEvidenceLifetime)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(GameIntegrationOptions),
+                "The offline replay evidence lifetime must be between 5 seconds and 2 minutes.");
         }
 
         if (SupportedProductVersions.Count == 0 ||

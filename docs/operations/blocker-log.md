@@ -494,3 +494,29 @@ entries rather than silently erasing prior evidence.
 - Prevention/follow-up: callers must distinguish radius-based neighborhood
   windows from exclusive snapshot ranges. Keep a request-shape test at this
   boundary.
+
+## BLK-0021 — Controlled-transition work exceeds the fixed evidence lifetime
+
+- First observed: `2026-08-02T03:23:58Z`
+- Status: open
+- Impact: the coordinator terminates the exact managed replay process 15
+  seconds after its correlated live start marker. That bound is appropriate
+  for automated aggregate reconnaissance but cannot accommodate an operator's
+  bounded interactive Cheat Engine scan and controlled movement transition.
+- Evidence: `GameSessionCoordinator` hard-codes a 15-second evidence lifetime;
+  two OD-RECOVERY-003 launches terminated at that expiry. The repository's
+  controlled-transition workflow requires an observed state A, an operator
+  transition, and an observed state B. The guarded input service is currently
+  unwired scaffolding, so it cannot safely automate the transition instead.
+- Cause: authorization lifetime and the aggregate campaign were designed for
+  short automated reads before the later interactive research protocol was
+  exercised against a real managed launch.
+- Resolution: pending. Add an explicit local research opt-in whose default
+  remains 15 seconds and whose hard maximum is two minutes. Preserve immediate
+  revocation on replay stop, unhealthy or gapped lifecycle evidence, process
+  exit, identity change, cancellation, and expiry. Do not wire or bypass the
+  unavailable guarded-input adapter.
+- Prevention/follow-up: prove default and bound validation, configurable
+  expiry, and every immediate monitor revocation path before using the opt-in
+  in a positively verified offline replay. Never expose it as an implicit
+  production default or use it to authorize an uncorrelated process.

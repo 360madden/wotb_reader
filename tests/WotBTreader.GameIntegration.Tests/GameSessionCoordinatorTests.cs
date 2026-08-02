@@ -440,6 +440,77 @@ public sealed class GameSessionCoordinatorTests
     }
 
     [TestMethod]
+    public async Task ExplicitResearchLifetime_ExtendsExpiryButNotStopRevocation()
+    {
+        var options = new GameIntegrationOptions
+        {
+            OfflineReplayEvidenceLifetime = TimeSpan.FromMinutes(2),
+        };
+        var (coordinator, timeProvider) = CreateVerifiedCoordinator(options);
+        timeProvider.Advance(TimeSpan.FromSeconds(16));
+
+        GameSessionSnapshot active =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.OfflineReplayVerified, active.State);
+        Assert.AreEqual(StartTime.AddMinutes(2), active.EvidenceExpiresAtUtc);
+
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Lifecycle = CreateValidLifecycle() with
+            {
+                State = ReplayLifecycleState.OfflineReplayStopped,
+                ObservedAtUtc = StartTime.AddSeconds(16),
+                SourceSequence = 12,
+                SourceByteOffset = 102,
+            },
+        });
+
+        GameSessionSnapshot denied =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.Denied, denied.State);
+        Assert.AreEqual("evidence.lifecycle_denied", denied.ReasonCode);
+    }
+
+    [TestMethod]
+    public async Task ExplicitResearchLifetime_DoesNotDelayMonitorFailure()
+    {
+        var options = new GameIntegrationOptions
+        {
+            OfflineReplayEvidenceLifetime = TimeSpan.FromMinutes(2),
+        };
+        var (coordinator, timeProvider) = CreateVerifiedCoordinator(options);
+        timeProvider.Advance(TimeSpan.FromSeconds(16));
+
+        coordinator.ReportMonitorFailure();
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+        Assert.AreEqual("evidence.monitor_unhealthy", snapshot.ReasonCode);
+    }
+
+    [TestMethod]
+    public async Task ExplicitResearchLifetime_ExpiresAtHardMaximum()
+    {
+        var options = new GameIntegrationOptions
+        {
+            OfflineReplayEvidenceLifetime = TimeSpan.FromMinutes(2),
+        };
+        var (coordinator, timeProvider) = CreateVerifiedCoordinator(options);
+        timeProvider.Advance(TimeSpan.FromSeconds(119));
+
+        GameSessionSnapshot active =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.OfflineReplayVerified, active.State);
+
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        GameSessionSnapshot expired =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.EvidenceStale, expired.State);
+        Assert.AreEqual("evidence.expired", expired.ReasonCode);
+    }
+
+    [TestMethod]
     public async Task MemoryObservation_ReturnsAvailableWhenVerified()
     {
         var (coordinator, _) = CreateVerifiedCoordinator();
@@ -571,12 +642,13 @@ public sealed class GameSessionCoordinatorTests
             IGuardedMemoryReaderFactory? memoryReaderFactory = null,
             IGameProcessModuleBaseAddressResolver? moduleBaseAddressResolver = null,
             IOffsetTableReader? offsetTableReader = null,
-            IBlitzReplayLifecycleFeed? lifecycleFeed = null)
+            IBlitzReplayLifecycleFeed? lifecycleFeed = null,
+            GameIntegrationOptions? options = null)
     {
         var timeProvider = new ManualTimeProvider(StartTime);
         return (new GameSessionCoordinator(
             timeProvider,
-            new GameIntegrationOptions(),
+            options ?? new GameIntegrationOptions(),
             NullLogger<GameSessionCoordinator>.Instance,
             preparer ?? new StubPreparer(),
             artifactStager ?? new StubArtifactStager(),
@@ -592,9 +664,9 @@ public sealed class GameSessionCoordinatorTests
     }
 
     private static (GameSessionCoordinator Coordinator, ManualTimeProvider TimeProvider)
-        CreateVerifiedCoordinator()
+        CreateVerifiedCoordinator(GameIntegrationOptions? options = null)
     {
-        var pair = CreateCoordinator();
+        var pair = CreateCoordinator(options: options);
         pair.Coordinator.RecordManagedLaunch(CreateManagedLaunch());
         pair.Coordinator.ApplyEvidence(CreateValidEvidence());
         return pair;

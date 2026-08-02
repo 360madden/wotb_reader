@@ -163,4 +163,5 @@ public sealed record LocalApplicationPaths(
 public sealed record TreaderBootstrapOptions(
     string? ApplicationDataRoot = null,
     string? GameRoot = null,
-    string? GameUserDataRoot = null);
+    string? GameUserDataRoot = null,
+    TimeSpan? OfflineReplayEvidenceLifetime = null);

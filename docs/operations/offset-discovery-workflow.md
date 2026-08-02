@@ -147,6 +147,47 @@ Use Cheat Engine's interactive scan for controlled transitions. The timer-based
 transitions do not prove that the observed field is the requested field.
 Interactive scans are preferred when the operator can create a known event.
 
+### Bounded interactive research lease
+
+Normal hosts keep correlated replay-start evidence valid for 15 seconds. A
+controlled transition may opt the loopback web host into a longer local
+research lease, with a hard maximum of two minutes:
+
+```powershell
+$env:Research__OfflineReplayEvidenceLifetimeSeconds = '120'
+dotnet run --project src/WotBTreader.Host.Web -c Release --no-build
+```
+
+Values below 5 seconds or above 120 seconds fail host startup. The setting only
+changes the maximum age of the correlated live replay-start marker. The active
+lifecycle monitor still revokes authorization and terminates the exact managed
+child immediately on replay stop, unhealthy or gapped evidence, cancellation,
+or expiry. Reported process exit and identity changes also revoke immediately;
+each scanner read independently revalidates the exact process identity and
+fails closed if the process disappears or is replaced. Remove the environment
+variable when the research host exits.
+
+For one controlled transition:
+
+1. Start from zero game and web-host processes, then launch exactly one replay
+   through the managed loopback API or dashboard.
+2. Require `OfflineReplayVerified`, the expected executable identity, and one
+   exact game PID before attaching Cheat Engine to that PID.
+3. Keep Cheat Engine read-only: do not edit or freeze values, inject code,
+   enable speedhack, or create dumps, pointer maps, tables, or screenshots for
+   the repository.
+4. Scan readable private/mapped memory for one Float32 hypothesis. Capture
+   state A while the replay is paused, perform one operator-controlled replay
+   movement, then capture state B while paused again.
+5. Abort immediately if the host gate changes. Discard the scanner session,
+   detach Cheat Engine, and confirm the exact game exits at stop or lease
+   expiry. Commit only redacted aggregate counts and structural conclusions;
+   raw addresses and values remain local-only.
+
+The guarded input adapter remains unavailable until a concrete Windows
+implementation is registered. Do not compensate by sending game input through
+another automation path; the operator owns the transition.
+
 **Information-gain rule:** continue only when a transition materially reduces
 the candidate set or increases confidence in the value behavior. After two
 transitions with no useful reduction, change the field, range, or method.
