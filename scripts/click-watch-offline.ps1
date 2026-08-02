@@ -32,16 +32,21 @@ param(
     [int]$MinBlobPixels = 400,
     [int]$DismissMaxPixels = 120,
     # Visual ready gate: sync-dim state machine (see sync-ready-gate spec).
-    [int]$AppearTimeoutSeconds = 45,
-    [int]$ReadyTimeoutSeconds = 90,
-    [int]$StableSamples = 3,
-    [int]$SampleIntervalMs = 500,
-    [int]$ReadyHoldSeconds = 2,
+    [int]$AppearTimeoutSeconds = 25,
+    [int]$ReadyTimeoutSeconds = 35,
+    # Used only on the grace path (sync never observed). After SeenSyncing,
+    # one ready sample is enough — Extra hold caused Error 126.
+    [int]$StableSamples = 2,
+    [int]$SampleIntervalMs = 300,
+    [int]$ReadyHoldSeconds = 0,
     [int]$SyncMaxLuminance = 40,
     [int]$SyncMaxOrange = 400,
     [int]$ReadyMinOrange = 2000,
     [int]$ReadyMinLuminance = 45,
-    [int]$SyncGraceSeconds = 12
+    # Bright-idle fallback if sync never dims. Keep short — Error 126.
+    [int]$SyncGraceSeconds = 6,
+    # Hard ceiling from first dialog sighting to click (game dialog lifetime).
+    [int]$MaxDialogLifetimeSeconds = 22
 )
 
 Set-StrictMode -Version Latest
@@ -277,12 +282,14 @@ function Test-ReadySample(
     [int]$OrangePx,
     [double]$DialogMeanL,
     [bool]$SeenSyncing,
-    [Nullable[datetime]]$FirstDialogAt
+    [Nullable[datetime]]$FirstBrightAt
 ) {
     if ($OrangePx -lt $ReadyMinOrange) { return $false }
     if ($DialogMeanL -lt $ReadyMinLuminance) { return $false }
     if ($SeenSyncing) { return $true }
-    if ($FirstDialogAt -and ((Get-Date) - $FirstDialogAt).TotalSeconds -ge $SyncGraceSeconds) {
+    # Bright but sync not seen yet: only a short grace — do not idle 12s on a
+    # clickable dialog or the client errors out (Failed to replay / 126).
+    if ($FirstBrightAt -and ((Get-Date) - $FirstBrightAt).TotalSeconds -ge $SyncGraceSeconds) {
         return $true
     }
     return $false
@@ -328,10 +335,11 @@ try {
     $appearDeadline = (Get-Date).AddSeconds($AppearTimeoutSeconds)
     $readyDeadline = $null
     $firstDialogAt = $null
+    $firstBrightAt = $null
     $seenSyncing = $false
     $stable = 0
     $readyAnalysis = $null
-    Write-Host ("watch_offline: ready_gate appear={0}s ready={1}s grace={2}s hold={3}s" -f `
+    Write-Host ("watch_offline: ready_gate appear={0}s ready={1}s brightGrace={2}s hold={3}s" -f `
         $AppearTimeoutSeconds, $ReadyTimeoutSeconds, $SyncGraceSeconds, $ReadyHoldSeconds)
 
     while ($true) {
@@ -374,16 +382,29 @@ try {
                 break
             }
 
-            if ($dialogMeanL -lt $SyncMaxLuminance -or $orangePx -lt $SyncMaxOrange) {
+            # Dim is the owner signal for sync. Low orange alone is NOT sync —
+            # splash/profile transitions can have low orange at high luminance and
+            # must not arm SeenSyncing (that caused a Profile-page false click).
+            $looksSyncing = ($dialogMeanL -lt $SyncMaxLuminance)
+            if ($looksSyncing) {
                 $seenSyncing = $true
+                $firstBrightAt = $null
+            }
+            elseif ($orangePx -ge $ReadyMinOrange -and $dialogMeanL -ge $ReadyMinLuminance) {
+                if (-not $firstBrightAt) {
+                    $firstBrightAt = Get-Date
+                    Write-Host 'watch_offline: first_bright_ready_looking'
+                }
             }
 
-            if (Test-ReadySample $orangePx $dialogMeanL $seenSyncing $firstDialogAt) {
+            # After sync clears, click on the first bright+strong frame.
+            $needStable = if ($seenSyncing) { 1 } else { $StableSamples }
+            if (Test-ReadySample $orangePx $dialogMeanL $seenSyncing $firstBrightAt) {
                 $stable++
                 $readyAnalysis = $analysis
                 Write-Host ("watch_offline: phase={0} dialogMeanL={1} orangePx={2} seenSync={3} stable={4}/{5}" -f `
-                    $phase, $dialogMeanL, $orangePx, $seenSyncing, $stable, $StableSamples)
-                if ($stable -ge $StableSamples) {
+                    $phase, $dialogMeanL, $orangePx, $seenSyncing, $stable, $needStable)
+                if ($stable -ge $needStable) {
                     break
                 }
             }
@@ -401,10 +422,16 @@ try {
             }
         }
 
+        if ($firstDialogAt -and ((Get-Date) - $firstDialogAt).TotalSeconds -ge $MaxDialogLifetimeSeconds) {
+            Write-Host ("watch_offline: dialog_lifetime_cap_{0}s (avoid Error 126)" -f $MaxDialogLifetimeSeconds)
+            break
+        }
+
         Start-Sleep -Milliseconds $SampleIntervalMs
     }
 
-    if ($stable -lt $StableSamples -or -not $readyAnalysis) {
+    $needStableFinal = if ($seenSyncing) { 1 } else { $StableSamples }
+    if ($stable -lt $needStableFinal -or -not $readyAnalysis) {
         $vsNow = Get-VerificationState
         if ($vsNow -eq 'OfflineReplayVerified') {
             Write-Host 'watch_offline: already_verified_no_dialog'
@@ -415,10 +442,12 @@ try {
     }
 
     $preCount = [int]$readyAnalysis.Blob.PixelCount
+    # Hold only on grace path; after SeenSyncing click immediately (Error 126).
+    $holdSec = if ($seenSyncing) { 0 } else { $ReadyHoldSeconds }
     Write-Host ("watch_offline: phase=Ready dialogMeanL={0} orangePx={1} seenSync={2} stable={3} hold_{4}s" -f `
-        [Math]::Round([double]$readyAnalysis.DialogMeanLuminance, 1), $preCount, $seenSyncing, $stable, $ReadyHoldSeconds)
-    if ($ReadyHoldSeconds -gt 0) {
-        Start-Sleep -Seconds $ReadyHoldSeconds
+        [Math]::Round([double]$readyAnalysis.DialogMeanLuminance, 1), $preCount, $seenSyncing, $stable, $holdSec)
+    if ($holdSec -gt 0) {
+        Start-Sleep -Seconds $holdSec
     }
 
     # Re-check after hold — dialog may have timed out during hold.
@@ -480,15 +509,21 @@ try {
         Write-Host ("watch_offline: round={0} orange_pixels={1} found={2}" -f $round, $count, $analysis.Blob.Found)
 
         if ($count -ge $MinBlobPixels) {
-            $sawBlob = $true
-            $screenX = $analysis.Rect.Left + $analysis.Blob.CentroidX
-            $screenY = $analysis.Rect.Top + $analysis.Blob.CentroidY
-            Write-Host ("watch_offline: click_blob screen={0},{1} client={2},{3}" -f `
-                $screenX, $screenY, $analysis.Blob.CentroidX, $analysis.Blob.CentroidY)
-            [WatchOfflineVision]::ClickScreen($screenX, $screenY)
-            Start-Sleep -Milliseconds 400
-            # Single confirming click near centroid (small jitter)
-            [WatchOfflineVision]::ClickScreen($screenX + 3, $screenY + 2)
+            $rx = $analysis.Blob.CentroidX / [double][Math]::Max(1, $analysis.Width)
+            $ry = $analysis.Blob.CentroidY / [double][Math]::Max(1, $analysis.Height)
+            if ($rx -lt 0.18 -or $rx -gt 0.48 -or $ry -lt 0.38 -or $ry -gt 0.62) {
+                Write-Host ("watch_offline: skip_click_outside_dialog_band cxRatio={0:N2} cyRatio={1:N2}" -f $rx, $ry)
+            }
+            else {
+                $sawBlob = $true
+                $screenX = $analysis.Rect.Left + $analysis.Blob.CentroidX
+                $screenY = $analysis.Rect.Top + $analysis.Blob.CentroidY
+                Write-Host ("watch_offline: click_blob screen={0},{1} client={2},{3}" -f `
+                    $screenX, $screenY, $analysis.Blob.CentroidX, $analysis.Blob.CentroidY)
+                [WatchOfflineVision]::ClickScreen($screenX, $screenY)
+                Start-Sleep -Milliseconds 400
+                [WatchOfflineVision]::ClickScreen($screenX + 3, $screenY + 2)
+            }
         }
         elseif (-not $sawBlob) {
             Write-Host 'watch_offline: no_blob_this_round'

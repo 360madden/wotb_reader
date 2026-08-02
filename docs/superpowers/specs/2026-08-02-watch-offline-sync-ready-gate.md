@@ -19,9 +19,10 @@ blind settle is too late (dialog error).
 | Ready (bright) | ~59 | ~8287 | Full brightness, no sync text |
 | Syncing (dim) | ~31 | ~63 | Dim + “Synchronizing account…” |
 
-Primary **do-not-click** signal: **dimming** (luminance collapse). Secondary:
-orange blob count collapses while dimmed. White-pixel counts alone are unreliable
-(button labels are also white when ready).
+Primary **do-not-click** signal: **dimming** (dialog mean luminance collapse).
+Do **not** treat “low orange alone” as sync — high-luminance / low-orange frames
+are splash or other UI and armed a false `SeenSyncing` that later clicked Profile
+art. White-pixel counts alone are unreliable (button labels are also white).
 
 ## State machine
 
@@ -38,9 +39,11 @@ LookingForDialog
 **Ready** requires all of:
 1. Orange blob ≥ strong threshold (default 2000 px in dialog ROI).
 2. Dialog-ROI mean luminance ≥ ready floor (default 45).
-3. Either `SeenSyncing` was observed, **or** grace seconds elapsed since first
-   dialog sighting (covers “sync already finished before we looked”).
-4. Conditions stable for N samples (~3 × 500ms), then ReadyHoldSeconds (~2s).
+3. Either `SeenSyncing` was observed, **or** a short **bright grace** (default
+   6s) elapsed since the first bright+strong-orange frame without sync starting.
+4. After `SeenSyncing`, **one** ready sample → click immediately (no hold).
+   Grace path may use 2 samples. Idling on the dialog causes **Error 126**
+   (“Failed to replay”). Hard cap: `MaxDialogLifetimeSeconds` (default 22).
 
 Never click green **LOG IN AND WATCH**.
 
@@ -55,6 +58,7 @@ long settle.
 
 - AppearTimeoutSeconds: wait for first dialog (orange or dim dialog).
 - ReadyTimeoutSeconds: wait for ready after dialog (covers sync duration).
+- MaxDialogLifetimeSeconds: absolute ceiling from first dialog → click (Error 126).
 - Exit 5 if ready never reached; exit 3 if click rounds fail gate dual-check.
 
 ## Non-goals
