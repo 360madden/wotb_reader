@@ -311,26 +311,24 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-006`. `OD-RECOVERY-005` completed as `Partial`: a
-Host.Web-managed child reached `OfflineReplayVerified`, Float32 A≈757k narrowed
-to B `changed≈905` / `unchanged≈756k` after an owner-authorized pause→brief
-resume→pause transition, and the returned candidate sample was **100/100
-`private-mapping`** (survivor set classified `heap-dynamic` pending a stable
-root). The scanner session was discarded. No single address was promoted.
+Session ID: `OD-RECOVERY-007`. `OD-RECOVERY-006` completed as `Partial`:
+Host.Web-managed child verified; Float A≈1.24M → B `changed≈434` (100/100
+`private-mapping`); AOB pointer-byte probes on 8 survivors yielded **1/8 with
+hits**, and those hits were also **`private-mapping` only** — no
+image/module static root. Value discover cannot search 8-byte pointers
+(`discover.invalid_value_width`); use `/discover/pattern`. Sessions discarded.
 
 1. Confirm owner authorization before any foreground window operation
-   (BLK-0022). The guarded GameHarness input adapter remains unregistered;
-   do not invent a bypass without explicit owner auth for that session.
+   (BLK-0022). The guarded GameHarness input adapter remains unregistered.
 2. Start from zero game processes; ensure any live `wotblitz` parent is
    `WotBTreader.Host.Web.exe`, not WGC. Wait for `OfflineReplayVerified`.
 3. Keep the research lease bounds (`Research:OfflineReplayEvidenceLifetimeSeconds`
    5–120, `Research:LifecycleEvidenceTimeoutSeconds` 5–300).
-4. Snapshot with `valueKind=Float` and finite float bounds. Until `MaxBytes`
-   truncates instead of hard-failing, use a privacy-safe bounded window;
-   never commit absolute bases.
-5. Reproduce a tight A→B changed set, then pursue a **pointer-chain or other
-   stable root** into the private-mapping survivors (Phase 3). Prefer
-   privacy-safe aggregate / structural conclusions over raw addresses in repo.
+4. Snapshot with `valueKind=Float` and finite float bounds; bounded windows
+   until `MaxBytes` soft-caps instead of hard-failing.
+5. Reproduce a tight A→B set, then search for **module-image-scoped** static
+   roots (image-only region selection if/when available, or CE/x64dbg under
+   offline rules). Do not treat private→private pointer hits as roots.
 6. Obtain a second distinct replay before any promotion review (BLK-0019).
 7. Append the ledger and a dated handoff before stopping.
 

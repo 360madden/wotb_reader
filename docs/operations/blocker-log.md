@@ -568,6 +568,12 @@ folder for the full numbering convention and document map.
   remains reconnaissance-only. OD-RECOVERY-005 recorded aggregate narrowing and
   a private-mapping kind histogram only — not a promoted offset.
 
+- Resolution amendment (`2026-08-02T19:40:00Z`): the same owner-authorized
+  foreground path was reused for `OD-RECOVERY-006` (Watch Offline click + Space
+  pause/resume) under the standing “keep autonomously / full permissions”
+  instruction. OD-006 added aggregate A→B narrowing and privacy-safe AOB
+  pointer-byte probes; no module-image root and no promoted offset.
+
 ## BLK-0023 — Managed replay launch hid the window and fabricated window evidence
 
 - First observed: `2026-08-02T04:34:31Z`

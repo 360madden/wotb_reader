@@ -49,7 +49,7 @@ Every address must be classified before publication:
 | `playerYaw` | **Quarantined / Ambiguous** until decimal, hexadecimal, raw Ghidra, and address-kind evidence reconcile |
 | Trusted next anchor | `playerPositionX`/`playerPositionZ`, then `replayTime` or HP if the replay makes them observable |
 | Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance |
-| Next planned session | `OD-RECOVERY-006` (pointer-chain / structural root for the private-mapping survivor set from OD-RECOVERY-005; second distinct replay still required before promotion) |
+| Next planned session | `OD-RECOVERY-007` (image/module-scoped static root search for private-mapping survivors; second distinct replay still required before promotion) |
 
 The current yaw conflict is recorded explicitly:
 
@@ -87,6 +87,7 @@ occurred.
 | `OD-RECOVERY-003-BOUNDED` | 2026-08-02 | Determine whether a bounded 0–64 MiB low-address Float32 window contains eligible retained values under the privacy-safe budget ceiling | loopback `discover-snapshot` (bounded window) | `NoSignal` | Zero retained/current/changed aggregates; scanner session discarded; recorded as bounded negative setup evidence for OD-RECOVERY-004 | It did not test a populated slice; the interrupted populated-slice attempt is not scan evidence |
 | `OD-RECOVERY-004` | 2026-08-02 | Controlled movement A→B Float32 narrowing for `playerPositionX`/`playerPositionZ` under a privacy-safe bounded window | managed launch + loopback snapshot/compare (`valueKind=Float`) | `Partial` | Managed Host.Web child reached `OfflineReplayVerified`; state A≈1.23M in-range floats; state B `changed≈26k` / `current≈26k` / `unchanged≈793k`; session discarded | No single address classified; promotion still blocked (BLK-0019); unbounded `--max-bytes` still hard-fails |
 | `OD-RECOVERY-005` | 2026-08-02 | Reproduce A→B Float32 narrowing and classify survivor address kind | managed launch + owner-authorized foreground Watch Offline / pause-resume + loopback Float snapshot/compare | `Partial` | Host.Web child verified; A≈757k → B changed≈905 (unchanged≈756k); returned sample 100/100 `private-mapping` → treat set as `heap-dynamic` pending root; session discarded | No single reproducible candidate; no module-rva/member/pointer-chain root; second replay still required (BLK-0019) |
+| `OD-RECOVERY-006` | 2026-08-02 | Reproduce narrowing and seek a stable root / pointer-chain into private-mapping survivors | managed launch + owner-authorized foreground ops + Float A→B + AOB pattern probe of survivor pointer bytes | `Partial` | First A→B: A≈1.24M → changed≈434 (100/100 private-mapping); pattern probe of 8 survivors: 1/8 had hits, hit kinds all `private-mapping` (no image/module root); second A→B for probes changed≈1175; sessions discarded | No module-rva or pointer-chain root; value discover cannot search 8-byte pointers (use `/discover/pattern`); second replay still required (BLK-0019) |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -582,6 +583,74 @@ artifacts:
 ```
 
 `OD-RECOVERY-005` is aggregate classification evidence only. It does not make any
+field `Candidate` or `Verified` and must not change
+`memory-offsets/11.19.0.10.json`. Absolute addresses, values, and scanner
+session identifiers were discarded and were not committed.
+
+```yaml
+sessionId: OD-RECOVERY-006
+date: 2026-08-02
+observedAtUtc: 2026-08-02T19:35:00Z
+timebox: one managed launch; A→B float compare; bounded AOB pointer-byte probes; cleanup
+decision: survivors remain heap-dynamic / private-mapping; pattern hits (when present) also private-mapping — no image/module static root yet
+objective: Find a stable root or pointer-chain into the OD-RECOVERY-005 private-mapping survivor set for playerPositionX/Z
+stopCondition: Stop after aggregate A→B + privacy-safe pointer-byte pattern probes, or gate loss
+method:
+  primaryTool: loopback Float snapshot/compare + /api/v1/game/discover/pattern
+  valueKind: Float32
+  floatBounds: [-500, 500]
+  addressScope: privacy-safe bounded 64 MiB window
+  maxBytes: 64 MiB per window
+  transition: owner-authorized foreground Watch Offline click; Space pause/resume/pause
+  pointerProbe: AOB of little-endian absolute pointer bytes for up to 8 returned survivors (local-only addresses); includeImageRegions=true
+observations:
+  - state: launch
+    parentProcess: WotBTreader.Host.Web.exe
+    verificationState: OfflineReplayVerified
+  - state: A1
+    aggregatePrevious: 1242451
+  - state: B1
+    aggregatePrevious: 1242451
+    aggregateCurrent: 434
+    aggregateChanged: 434
+    aggregateUnchanged: 996336
+    aggregateIncreased: 198
+    aggregateDecreased: 236
+    truncated: true
+    returnedCandidates: 100
+    addressKindHistogram:
+      private-mapping: 100
+  - state: pointer-pattern
+    probed: 8
+    withHits: 1
+    noHits: 7
+    hitAddressKindHistogram:
+      private-mapping: 4
+    note: first value-discover attempt failed with discover.invalid_value_width (8-byte pointers); pattern endpoint used instead
+  - state: A2B2-for-probes
+    aggregateChanged: 1175
+    returnedCandidates: 20
+    scannerSessionsDiscarded: true
+result:
+  whatWorked:
+    - Reproduced private-mapping A→B narrowing under owner-authorized foreground control (first pass tighter than OD-005: ~434 changed).
+    - Confirmed 8-byte pointer search must use /discover/pattern, not value discover.
+  whatFailed:
+    - No image/module-kind pattern hit for survivor pointer bytes; the only hits were private-mapping→private-mapping.
+    - Pointer-chain verify API still requires a hypothesized module root; none established.
+  rulesOut:
+    - Do not treat same-process private pointer hits as a stable module-rva / pointer-chain root.
+  partials:
+    - Survivor set remains heap-dynamic pending a static root.
+    - Next needs image-scoped or debugger-assisted root finding without committing absolute addresses.
+  nextPivot: OD-RECOVERY-007 — pursue module-image-scoped static roots (or CE/x64dbg structural) for private-mapping survivors; soft-cap MaxBytes remains optional; second distinct replay before promotion (BLK-0019).
+  repeatWithoutChangedHypothesis: false
+artifacts:
+  rawFiles: none
+  committedSummary: this ledger entry
+```
+
+`OD-RECOVERY-006` is aggregate structural evidence only. It does not make any
 field `Candidate` or `Verified` and must not change
 `memory-offsets/11.19.0.10.json`. Absolute addresses, values, and scanner
 session identifiers were discarded and were not committed.
