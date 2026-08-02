@@ -462,8 +462,12 @@ try {
         exit 4
     }
     $preCount = [int]$analysis.Blob.PixelCount
-    Write-Host ("watch_offline: pre_click_orange_pixels={0} found={1} centroid={2},{3}" -f `
-        $preCount, $analysis.Blob.Found, $analysis.Blob.CentroidX, $analysis.Blob.CentroidY)
+    $cx = [int]$analysis.Blob.CentroidX
+    $cy = [int]$analysis.Blob.CentroidY
+    $cw = [int]$analysis.Width
+    $ch = [int]$analysis.Height
+    Write-Host ("watch_offline: pre_click_orange_pixels={0} found={1} centroid={2},{3} meanL={4}" -f `
+        $preCount, $analysis.Blob.Found, $cx, $cy, [Math]::Round([double]$analysis.DialogMeanLuminance, 1))
 
     $beforeState = Get-GameState
     $before = if ($beforeState -and $beforeState.verificationState) {
@@ -478,6 +482,13 @@ try {
 
     if ($preCount -lt $MinBlobPixels -and $before -ne 'OfflineReplayVerified') {
         Write-Host 'watch_offline: FAILED_blob_gone_after_hold (dialog timed out?)'
+        exit 5
+    }
+
+    $cxRatio = if ($cw -gt 0) { $cx / [double]$cw } else { 1.0 }
+    $cyRatio = if ($ch -gt 0) { $cy / [double]$ch } else { 1.0 }
+    if ($cxRatio -lt 0.18 -or $cxRatio -gt 0.48 -or $cyRatio -lt 0.38 -or $cyRatio -gt 0.62) {
+        Write-Host ("watch_offline: FAILED_centroid_outside_dialog_band cxRatio={0:N2} cyRatio={1:N2}" -f $cxRatio, $cyRatio)
         exit 5
     }
 
