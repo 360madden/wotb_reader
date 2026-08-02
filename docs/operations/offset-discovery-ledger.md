@@ -1,6 +1,6 @@
 # Offset-discovery ledger
 
-Last updated: 2026-08-02
+Last updated: 2026-08-02 (OD-RECOVERY-005)
 
 This ledger is the durable index of WoT Blitz PC offset-discovery work. It
 records experiments, partial results, failures, and pivots so future sessions do
@@ -49,7 +49,7 @@ Every address must be classified before publication:
 | `playerYaw` | **Quarantined / Ambiguous** until decimal, hexadecimal, raw Ghidra, and address-kind evidence reconcile |
 | Trusted next anchor | `playerPositionX`/`playerPositionZ`, then `replayTime` or HP if the replay makes them observable |
 | Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance |
-| Next planned session | `OD-RECOVERY-005` (structurally classify survivors from the OD-RECOVERY-004 A→B float narrowing; requires operator availability and explicit state-B ack) |
+| Next planned session | `OD-RECOVERY-006` (pointer-chain / structural root for the private-mapping survivor set from OD-RECOVERY-005; second distinct replay still required before promotion) |
 
 The current yaw conflict is recorded explicitly:
 
@@ -86,6 +86,7 @@ occurred.
 | `OD-RECOVERY-003` | 2026-08-02 | Prove a repeatable privacy-safe aggregate campaign; test whether a bounded main-module Float32 range is a useful natural-change anchor | two managed launches + rolling comparisons | `Partial` | Two fresh launches each reached `OfflineReplayVerified` with an exact singleton process and zero post-trial game/host processes; the aggregate-only campaign is repeatable | No single candidate survived; replay independence not proven (1 distinct payload used) |
 | `OD-RECOVERY-003-BOUNDED` | 2026-08-02 | Determine whether a bounded 0–64 MiB low-address Float32 window contains eligible retained values under the privacy-safe budget ceiling | loopback `discover-snapshot` (bounded window) | `NoSignal` | Zero retained/current/changed aggregates; scanner session discarded; recorded as bounded negative setup evidence for OD-RECOVERY-004 | It did not test a populated slice; the interrupted populated-slice attempt is not scan evidence |
 | `OD-RECOVERY-004` | 2026-08-02 | Controlled movement A→B Float32 narrowing for `playerPositionX`/`playerPositionZ` under a privacy-safe bounded window | managed launch + loopback snapshot/compare (`valueKind=Float`) | `Partial` | Managed Host.Web child reached `OfflineReplayVerified`; state A≈1.23M in-range floats; state B `changed≈26k` / `current≈26k` / `unchanged≈793k`; session discarded | No single address classified; promotion still blocked (BLK-0019); unbounded `--max-bytes` still hard-fails |
+| `OD-RECOVERY-005` | 2026-08-02 | Reproduce A→B Float32 narrowing and classify survivor address kind | managed launch + owner-authorized foreground Watch Offline / pause-resume + loopback Float snapshot/compare | `Partial` | Host.Web child verified; A≈757k → B changed≈905 (unchanged≈756k); returned sample 100/100 `private-mapping` → treat set as `heap-dynamic` pending root; session discarded | No single reproducible candidate; no module-rva/member/pointer-chain root; second replay still required (BLK-0019) |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -519,6 +520,71 @@ artifacts:
 field `Candidate` or `Verified` and must not change
 `memory-offsets/11.19.0.10.json`. Scanner session identifiers and absolute
 window bases were kept local-only and discarded.
+
+## `OD-RECOVERY-005` result — 2026-08-02
+
+```yaml
+sessionId: OD-RECOVERY-005
+supersedes: none
+status: Partial
+observedAtUtc: 2026-08-02T19:14:00Z
+timebox: one managed launch; one owner-authorized A→B float compare with kind histogram
+decision: changed survivors in the returned sample are private-mapping (heap-dynamic pending root); next is pointer-chain / structural root work
+objective: Reproduce OD-RECOVERY-004 A→B Float32 narrowing and classify survivor address kind for playerPositionX/playerPositionZ
+stopCondition: Stop after one A→B changed compare with aggregate counters and address-kind histogram only, or gate loss
+method:
+  primaryTool: loopback discover/snapshot + discover/compare with valueKind=Float
+  valueKind: Float32
+  floatBounds: [-500, 500]
+  addressScope: privacy-safe bounded 64 MiB window (absolute bases local-only; not committed)
+  maxBytes: 64 MiB per window
+  transition: owner-authorized foreground window ops — click Watch Offline region; Space pause (A); Space resume ~2.5s; Space pause (B)
+  note: guarded GameHarness input adapter remains unregistered; direct foreground ops used only under explicit owner authorization for this session
+observations:
+  - state: launch
+    parentProcess: WotBTreader.Host.Web.exe
+    verificationState: OfflineReplayVerified
+    reason: session.offline_replay_verified
+  - state: A
+    aggregatePrevious: 757016
+    note: first nonempty Float window retained as state A
+  - state: B
+    aggregatePrevious: 757016
+    aggregateCurrent: 905
+    aggregateChanged: 905
+    aggregateUnchanged: 756111
+    aggregateIncreased: 495
+    aggregateDecreased: 409
+    truncated: true
+    returnedCandidates: 100
+    addressKindHistogram:
+      private-mapping: 100
+    scannerSessionDiscarded: true
+result:
+  whatWorked:
+    - Host.Web-managed child reached OfflineReplayVerified after owner-authorized Watch Offline click.
+    - Controlled pause→brief resume→pause produced a much tighter changed set (~905) than OD-RECOVERY-004 (~26k).
+    - All 100 returned candidates reported addressKind=private-mapping; classify the survivor set as heap-dynamic until a stable root exists.
+  whatFailed:
+    - No single candidate was isolated; compare truncated at maxCandidates=100.
+    - No module-rva, member-displacement, or pointer-chain root was established.
+    - Unbounded MaxBytes still hard-fails (bounded window still required).
+  rulesOut:
+    - Treating the OD-005 changed set as module-image / main-module natural-change survivors (sample was 100% private-mapping).
+  partials:
+    - Survivor-set address kind is private-mapping / heap-dynamic pending root — reusable for OD-RECOVERY-006.
+    - A→B narrowing reproduced under explicit owner-authorized foreground control.
+  nextPivot: OD-RECOVERY-006 — find a stable root or pointer-chain into the private-mapping survivor set; keep aggregates-only in repo; obtain a second distinct replay before promotion (BLK-0019).
+  repeatWithoutChangedHypothesis: false
+artifacts:
+  rawFiles: none
+  committedSummary: this ledger entry
+```
+
+`OD-RECOVERY-005` is aggregate classification evidence only. It does not make any
+field `Candidate` or `Verified` and must not change
+`memory-offsets/11.19.0.10.json`. Absolute addresses, values, and scanner
+session identifiers were discarded and were not committed.
 
 ## Evidence promotion checklist
 

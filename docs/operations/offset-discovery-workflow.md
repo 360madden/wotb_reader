@@ -311,24 +311,26 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-005`. `OD-RECOVERY-004` completed as `Partial`: a
-managed Host.Web child reached `OfflineReplayVerified`, a Float32 A set of
-~1.23M in-range values narrowed to ~26k `changed` survivors after the A→B
-compare, and the scanner session was discarded. No address was classified.
-`OD-RECOVERY-003-BOUNDED` remains historical setup evidence and may have been
-contaminated by the GameHarness Int32 `valueKind` default.
+Session ID: `OD-RECOVERY-006`. `OD-RECOVERY-005` completed as `Partial`: a
+Host.Web-managed child reached `OfflineReplayVerified`, Float32 A≈757k narrowed
+to B `changed≈905` / `unchanged≈756k` after an owner-authorized pause→brief
+resume→pause transition, and the returned candidate sample was **100/100
+`private-mapping`** (survivor set classified `heap-dynamic` pending a stable
+root). The scanner session was discarded. No single address was promoted.
 
-1. Confirm operator availability and require an explicit state-B acknowledgement
-   before the changed compare (BLK-0022). Do not automate game input.
+1. Confirm owner authorization before any foreground window operation
+   (BLK-0022). The guarded GameHarness input adapter remains unregistered;
+   do not invent a bypass without explicit owner auth for that session.
 2. Start from zero game processes; ensure any live `wotblitz` parent is
    `WotBTreader.Host.Web.exe`, not WGC. Wait for `OfflineReplayVerified`.
 3. Keep the research lease bounds (`Research:OfflineReplayEvidenceLifetimeSeconds`
    5–120, `Research:LifecycleEvidenceTimeoutSeconds` 5–300).
-4. Snapshot with `valueKind=Float` and finite float bounds. Until
-   `MaxBytes` truncates instead of hard-failing, use a privacy-safe bounded
-   window or a fixed soft-cap path; never commit absolute bases.
-5. Reproduce the A→B narrowing, then classify survivors structurally (Phase 3):
-   module-rva, member-displacement, pointer-chain, or heap-dynamic.
+4. Snapshot with `valueKind=Float` and finite float bounds. Until `MaxBytes`
+   truncates instead of hard-failing, use a privacy-safe bounded window;
+   never commit absolute bases.
+5. Reproduce a tight A→B changed set, then pursue a **pointer-chain or other
+   stable root** into the private-mapping survivors (Phase 3). Prefer
+   privacy-safe aggregate / structural conclusions over raw addresses in repo.
 6. Obtain a second distinct replay before any promotion review (BLK-0019).
 7. Append the ledger and a dated handoff before stopping.
 

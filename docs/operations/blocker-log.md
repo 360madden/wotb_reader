@@ -558,6 +558,16 @@ folder for the full numbering convention and document map.
   replay lease. Keep natural progression classified as reconnaissance only,
   and do not record this setup attempt as position-field evidence.
 
+- Resolution amendment (`2026-08-02T19:20:00Z`): for `OD-RECOVERY-005` the owner
+  explicitly authorized end-to-end foreground window operation on the managed
+  offline child. Watch Offline was activated by a click in the visible dialog
+  region and the controlled pause→brief resume→pause transition used Space on
+  the foreground verified window. The guarded GameHarness input adapter remains
+  **unregistered**; this amendment does not wire or bypass that adapter for
+  general use. Natural replay progression without an authorized transition
+  remains reconnaissance-only. OD-RECOVERY-005 recorded aggregate narrowing and
+  a private-mapping kind histogram only — not a promoted offset.
+
 ## BLK-0023 — Managed replay launch hid the window and fabricated window evidence
 
 - First observed: `2026-08-02T04:34:31Z`
