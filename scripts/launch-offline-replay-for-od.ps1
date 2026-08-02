@@ -116,6 +116,39 @@ function Stop-OdProcesses {
     Start-Sleep -Seconds 2
 }
 
+# Keep wotblitz foreground — if the agent console keeps focus, the client logs
+# OnBackground → WindowDestroyed within ~1–3s of the first HWND.
+Add-Type -Namespace OdLaunch -Name Focus -MemberDefinition @"
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern bool SetForegroundWindow(System.IntPtr hWnd);
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern bool ShowWindow(System.IntPtr hWnd, int nCmdShow);
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, System.UIntPtr dwExtraInfo);
+public static void Force(System.IntPtr h) {
+  ShowWindow(h, 9);
+  keybd_event(0x12, 0, 0, System.UIntPtr.Zero);
+  SetForegroundWindow(h);
+  keybd_event(0x12, 0, 2, System.UIntPtr.Zero);
+}
+"@ -ErrorAction SilentlyContinue
+
+function Keep-GameForeground([int]$Seconds) {
+    $deadline = (Get-Date).AddSeconds($Seconds)
+    while ((Get-Date) -lt $deadline) {
+        $g = Get-Process -Name wotblitz -ErrorAction SilentlyContinue |
+            Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } |
+            Select-Object -First 1
+        if (-not $g) {
+            Write-Od 'game_window_lost_during_foreground_keep'
+            return $false
+        }
+        try { [OdLaunch.Focus]::Force($g.MainWindowHandle) } catch { }
+        Start-Sleep -Milliseconds 250
+    }
+    return $true
+}
+
 try {
     $replaysDir = Join-Path $env:LOCALAPPDATA 'wotblitz\DAVAProject\replays'
     $stagingDir = Join-Path $replaysDir 'wotbtreader-staging'
@@ -262,21 +295,34 @@ try {
     }
 
     if ($SettleSeconds -gt 0) {
-        Write-Od ("optional_settle_${SettleSeconds}s")
-        Start-Sleep -Seconds $SettleSeconds
+        Write-Od ("optional_settle_${SettleSeconds}s_keep_foreground")
+        if (-not (Keep-GameForeground -Seconds $SettleSeconds)) {
+            Write-Od 'FAILED_game_died_during_settle'
+            exit 3
+        }
     }
 
     $watchScript = Join-Path $RepoRoot 'scripts\click-watch-offline.ps1'
     # Hidden nested host: a normal console `powershell -File` steals focus and the
     # client logs OnBackground → WindowDestroyed before LoginOnReplayDialog.
     # Do not call the clicker in-process — it uses `exit` and would tear down us.
+    $watchOut = Join-Path $env:TEMP 'od-watch-offline.out.log'
+    $watchErr = Join-Path $env:TEMP 'od-watch-offline.err.log'
+    Remove-Item -LiteralPath $watchOut, $watchErr -Force -ErrorAction SilentlyContinue
     $watchProc = Start-Process -FilePath powershell.exe -ArgumentList @(
         '-NoProfile',
         '-ExecutionPolicy', 'Bypass',
         '-File', $watchScript,
         '-TimeoutSeconds', "$WatchTimeoutSeconds"
-    ) -Wait -PassThru -WindowStyle Hidden
+    ) -Wait -PassThru -WindowStyle Hidden `
+        -RedirectStandardOutput $watchOut -RedirectStandardError $watchErr
     $watchExit = [int]$watchProc.ExitCode
+    if (Test-Path -LiteralPath $watchOut) {
+        Get-Content -LiteralPath $watchOut | ForEach-Object { Write-Host $_ }
+    }
+    if (Test-Path -LiteralPath $watchErr) {
+        Get-Content -LiteralPath $watchErr | ForEach-Object { Write-Host $_ }
+    }
     Write-Od ("watch_exit=" + $watchExit)
     if ($watchExit -ne 0) {
         exit 4
