@@ -142,10 +142,11 @@ actual relation: ...
 remaining candidates: before → after
 ```
 
-Use Cheat Engine's interactive scan for controlled transitions. The timer-based
-`autoDiscover()` path is useful for a first pass, but its natural replay
-transitions do not prove that the observed field is the requested field.
-Interactive scans are preferred when the operator can create a known event.
+Use Cheat Engine's interactive scan or the guarded loopback snapshot/compare
+path for controlled transitions. The timer-based `autoDiscover()` and
+`discover-campaign` paths are useful for a first pass, but their natural replay
+transitions do not prove that the observed field is the requested field. A
+controlled scan requires an operator-created replay event.
 
 ### Bounded interactive research lease
 
@@ -172,17 +173,24 @@ For one controlled transition:
 1. Start from zero game and web-host processes, then launch exactly one replay
    through the managed loopback API or dashboard.
 2. Require `OfflineReplayVerified`, the expected executable identity, and one
-   exact game PID before attaching Cheat Engine to that PID.
-3. Keep Cheat Engine read-only: do not edit or freeze values, inject code,
-   enable speedhack, or create dumps, pointer maps, tables, or screenshots for
-   the repository.
-4. Scan readable private/mapped memory for one Float32 hypothesis. Capture
-   state A while the replay is paused, perform one operator-controlled replay
-   movement, then capture state B while paused again.
-5. Abort immediately if the host gate changes. Discard the scanner session,
-   detach Cheat Engine, and confirm the exact game exits at stop or lease
+   exact game PID before any scanner attaches or opens a guarded reader.
+3. Prefer the loopback snapshot endpoint for aggregate reconnaissance. Use
+   `valueKind=Float`, `valueSize=4`, `alignment=4`, private/mapped regions only,
+   a finite expected range, and the engine's 512 MiB snapshot ceiling. Request
+   at most one comparison candidate and suppress its address and value from
+   rendered output; retain only the aggregate counters.
+4. If Cheat Engine is used for local structural follow-up, keep it read-only:
+   do not edit or freeze values, inject code, enable speedhack, or create dumps,
+   pointer maps, tables, or screenshots for the repository.
+5. Capture state A while the replay is paused. Have the operator resume replay
+   movement briefly and pause it again, then compare state B with `changed` and
+   a rolling baseline. An `unchanged` pass while paused may remove volatile
+   values before a second controlled movement.
+6. Abort immediately if the host gate changes. Discard the scanner session,
+   detach any diagnostic, and confirm the exact game exits at stop or lease
    expiry. Commit only redacted aggregate counts and structural conclusions;
-   raw addresses and values remain local-only.
+   raw addresses, values, session identifiers, and replay details remain
+   local-only.
 
 The guarded input adapter remains unavailable until a concrete Windows
 implementation is registered. Do not compensate by sending game input through

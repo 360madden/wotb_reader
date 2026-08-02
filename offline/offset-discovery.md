@@ -105,6 +105,15 @@ is not registered, so the operator—not automation—must perform the replay
 transition. See `docs/operations/offset-discovery-workflow.md` for the full
 abort and privacy protocol.
 
+The preferred privacy-safe controlled-transition path uses the guarded
+snapshot/compare endpoints with Float32, alignment 4, readable private/mapped
+regions, a finite value range, and the engine's 512 MiB snapshot ceiling. The
+operator pauses state A, briefly resumes movement, and pauses state B. Request
+at most one comparison candidate, discard the response candidate without
+rendering it, retain aggregate counts only, use a rolling baseline, and always
+discard the scanner session. Cheat Engine is optional local structural
+follow-up and never replaces the loopback offline gate.
+
 ## Evidence publication
 
 1. Discover candidate offsets (Ghidra `FindOffsets.py`/`.java`,

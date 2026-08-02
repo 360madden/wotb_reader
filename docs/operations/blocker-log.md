@@ -520,3 +520,30 @@ entries rather than silently erasing prior evidence.
   expiry, and every immediate monitor revocation path before using the opt-in
   in a positively verified offline replay. Never expose it as an implicit
   production default or use it to authorize an uncorrelated process.
+
+## BLK-0022 — Controlled replay movement requires an available operator
+
+- First observed: `2026-08-02T03:45:40Z`
+- Status: open
+- Impact: OD-RECOVERY-004 cannot yet collect a defensible state A to state B
+  movement pair. Treating natural replay progression as controlled would repeat
+  the invalid hypothesis already ruled out by OD-RECOVERY-003.
+- Evidence: Cheat Engine 7.7 was located and launched twice without a game
+  process, first through its installed launcher and then through the registered
+  64-bit executable. Windows elevated the resulting process, and the approved
+  computer-use bridge could not target its window. The repository's guarded
+  input service has no registered Windows implementation. No replay was
+  launched and no scanner attached during either attempt.
+- Cause: the only policy-compliant transition source currently available is an
+  operator key press in the positively verified offline replay. Automating the
+  game through another UI or input-injection path would bypass the repository's
+  one-shot input-arm boundary.
+- Resolution: pending operator availability. Use the guarded loopback Float32
+  snapshot/compare path over private/mapped regions, have the operator pause
+  state A and perform the brief resume/pause transition, suppress response
+  candidate details, retain aggregate counters only, and discard the scanner
+  session. A two-minute hard lease bounds the attempt and terminates the exact
+  managed child at expiry.
+- Prevention/follow-up: confirm operator readiness before starting the managed
+  replay lease. Keep natural progression classified as reconnaissance only,
+  and do not record this setup attempt as position-field evidence.
