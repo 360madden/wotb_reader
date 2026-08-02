@@ -580,6 +580,12 @@ folder for the full numbering convention and document map.
   absolute pointer AOBs returned zero hits (negative structural evidence). No
   promoted offset.
 
+- Resolution amendment (`2026-08-02T20:05:00Z`): the same authorized foreground
+  path covered `OD-RECOVERY-008`. Windowed Float A→B + absolute LE pointer AOB
+  across private/all/image and align 1/8 returned zero hits. CE 7.7 x64
+  launched and responded under `OfflineReplayVerified`; no automated
+  attach/scan (adapter still unregistered). No promoted offset.
+
 ## BLK-0023 — Managed replay launch hid the window and fabricated window evidence
 
 - First observed: `2026-08-02T04:34:31Z`

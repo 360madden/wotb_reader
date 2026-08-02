@@ -48,8 +48,8 @@ Every address must be classified before publication:
 | Runtime-supported fields | None; current table has 0 usable offsets, 1 Stale/quarantined field, and 7 Unknown |
 | `playerYaw` | **Quarantined / Ambiguous** until decimal, hexadecimal, raw Ghidra, and address-kind evidence reconcile |
 | Trusted next anchor | `playerPositionX`/`playerPositionZ`, then `replayTime` or HP if the replay makes them observable |
-| Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007) |
-| Next planned session | `OD-RECOVERY-008` (structural access/root via CE/x64dbg or multi-level pointer hypothesis; do not repeat absolute image-only pointer AOB unchanged; second distinct replay still required before promotion) |
+| Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007); absolute LE pointer AOB across private/all/image + align 1/8 without a changed encoding hypothesis (ruled out by OD-RECOVERY-008) |
+| Next planned session | `OD-RECOVERY-009` (CE/x64dbg what-accesses or encoded/multi-level root under offline replay; absolute LE pointer AOB exhausted; second distinct replay still required before promotion) |
 
 The current yaw conflict is recorded explicitly:
 
@@ -89,6 +89,7 @@ occurred.
 | `OD-RECOVERY-005` | 2026-08-02 | Reproduce A→B Float32 narrowing and classify survivor address kind | managed launch + owner-authorized foreground Watch Offline / pause-resume + loopback Float snapshot/compare | `Partial` | Host.Web child verified; A≈757k → B changed≈905 (unchanged≈756k); returned sample 100/100 `private-mapping` → treat set as `heap-dynamic` pending root; session discarded | No single reproducible candidate; no module-rva/member/pointer-chain root; second replay still required (BLK-0019) |
 | `OD-RECOVERY-006` | 2026-08-02 | Reproduce narrowing and seek a stable root / pointer-chain into private-mapping survivors | managed launch + owner-authorized foreground ops + Float A→B + AOB pattern probe of survivor pointer bytes | `Partial` | First A→B: A≈1.24M → changed≈434 (100/100 private-mapping); pattern probe of 8 survivors: 1/8 had hits, hit kinds all `private-mapping` (no image/module root); second A→B for probes changed≈1175; sessions discarded | No module-rva or pointer-chain root; value discover cannot search 8-byte pointers (use `/discover/pattern`); second replay still required (BLK-0019) |
 | `OD-RECOVERY-007` | 2026-08-02 | Image-only static root search for private-mapping survivors | `ImageRegionsOnly` pattern API + soft-cap MaxBytes Float A→B + owner-authorized foreground ops | `NoSignal` (for image roots) / `Partial` (tooling) | Soft-cap unbounded snapshot worked (A≈14.5M retained under 64 MiB budget); B changed≈201k (noisier than windowed OD-006); 12/12 image-only pointer AOBs returned **0** hits | Direct absolute pointers to sampled survivors are not stored in MEM_IMAGE; do not repeat this absolute image-only AOB unchanged |
+| `OD-RECOVERY-008` | 2026-08-02 | Two-level absolute pointer hunt + CE launch smoke | windowed Float A→B + pattern matrix (priv/all/img × align 1/8) + CE 7.7 launch under verified offline | `NoSignal` | A→B changed≈670–1102 (private-mapping); 0 absolute LE pointer hits across matrix; CE x64 launched/responded while offline gate held (no automated attach/scan) | No static/multi-level absolute pointer root; CE structural attach/scan still manual |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -707,6 +708,65 @@ artifacts:
 ```
 
 `OD-RECOVERY-007` is aggregate structural evidence only. It does not make any
+field `Candidate` or `Verified` and must not change
+`memory-offsets/11.19.0.10.json` beyond narrative Unknown evidence notes.
+Absolute addresses, values, and scanner session identifiers were discarded.
+
+```yaml
+sessionId: OD-RECOVERY-008
+date: 2026-08-02
+observedAtUtc: 2026-08-02T20:00:00Z
+timebox: one managed launch; windowed Float A→B; L1 absolute pointer AOB matrix; CE launch smoke
+decision: absolute LE pointer AOB is exhausted for this survivor class without a changed encoding hypothesis; CE is launchable under the offline gate but attach/scan remains manual
+objective: Find any absolute pointer root (private or image, 1-level or 2-level) for position A→B survivors; smoke CE availability
+stopCondition: Stop after matrix aggregates + CE smoke, or gate loss
+method:
+  primaryTool: Host.Web discover/snapshot (bounded windows) + discover/pattern + CE 7.7 x64 launch
+  valueKind: Float32
+  floatBounds: [-500, 500]
+  transition: owner-authorized Watch Offline click + Space pause/resume/pause
+observations:
+  - state: launch
+    parentProcess: WotBTreader.Host.Web.exe
+    verificationState: OfflineReplayVerified
+  - state: A
+    aggregatePrevious: 840163
+    note: bounded window (preferred over soft-cap for narrowing)
+  - state: B
+    aggregateChanged: 1102
+    returnedCandidates: 30
+    addressKindHistogram:
+      private-mapping: 30
+  - state: absolute-pointer-aob-matrix
+    probedSurvivors: sample set from A→B
+    regionScopes: private, all, image
+    alignments: 1, 8
+    withHits: 0
+    twoLevelImageProbe: not reached (L1 zero)
+  - state: ce-smoke
+    cheatEnginePathPresent: true
+    launchedResponding: true
+    automatedAttachScan: false
+    scannerSessionDiscarded: true
+result:
+  whatWorked:
+    - Windowed A→B again produced a small private-mapping changed set.
+    - CE 7.7 x64 launched under OfflineReplayVerified without elevating past usability for this smoke.
+  whatFailed:
+    - Zero absolute LE pointer hits across the OD-008 matrix (stricter than OD-006's one private hit).
+    - No automated CE attach/pointer map (adapter gap).
+  rulesOut:
+    - Repeating absolute LE pointer AOB unchanged across private/all/image and align 1/8 for this field/sample class.
+  partials:
+    - CE structural path is the remaining practical next step under offline verification.
+  nextPivot: OD-RECOVERY-009 — CE/x64dbg what-accesses or encoded/relative/multi-level root; second distinct replay before promotion (BLK-0019).
+  repeatWithoutChangedHypothesis: false
+artifacts:
+  rawFiles: none
+  committedSummary: this ledger entry
+```
+
+`OD-RECOVERY-008` is aggregate structural evidence only. It does not make any
 field `Candidate` or `Verified` and must not change
 `memory-offsets/11.19.0.10.json` beyond narrative Unknown evidence notes.
 Absolute addresses, values, and scanner session identifiers were discarded.

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "gameVersion": "11.19.0.10",
   "executableSha256": "1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d",
-  "discoveredAtUtc": "2026-08-02T19:50:00Z",
+  "discoveredAtUtc": "2026-08-02T20:05:00Z",
   "offsets": {
     "replayTime": 0,
     "playerHP": 0,
@@ -46,6 +46,11 @@
           "provenanceKind": "DynamicScan",
           "sourceTool": "Host.Web discover/pattern ImageRegionsOnly",
           "notes": "OD-RECOVERY-007: 12/12 image-only little-endian absolute pointer AOBs for returned private-mapping survivors returned zero hits. Rules out direct MEM_IMAGE storage of those absolute pointers for this sample; does not promote any offset."
+        },
+        {
+          "provenanceKind": "DynamicScan",
+          "sourceTool": "Host.Web discover/pattern absolute LE pointer matrix + CE 7.7 smoke",
+          "notes": "OD-RECOVERY-008: windowed Float A->B private-mapping survivors; absolute LE pointer AOB across private/all/image and align 1/8 returned 0 hits; CE x64 launched under OfflineReplayVerified without automated attach/scan. Rules out repeating absolute LE pointer AOB unchanged; does not promote any offset."
         }
       ],
       "independentProcessLaunches": 0,
@@ -71,6 +76,11 @@
           "provenanceKind": "DynamicScan",
           "sourceTool": "Host.Web discover/pattern ImageRegionsOnly",
           "notes": "OD-RECOVERY-007: 12/12 image-only little-endian absolute pointer AOBs for returned private-mapping survivors returned zero hits. Rules out direct MEM_IMAGE storage of those absolute pointers for this sample; does not promote any offset."
+        },
+        {
+          "provenanceKind": "DynamicScan",
+          "sourceTool": "Host.Web discover/pattern absolute LE pointer matrix + CE 7.7 smoke",
+          "notes": "OD-RECOVERY-008: windowed Float A->B private-mapping survivors; absolute LE pointer AOB across private/all/image and align 1/8 returned 0 hits; CE x64 launched under OfflineReplayVerified without automated attach/scan. Rules out repeating absolute LE pointer AOB unchanged; does not promote any offset."
         }
       ],
       "independentProcessLaunches": 0,
@@ -81,5 +91,5 @@
     }
   },
   "confidence": "none",
-  "notes": "No usable offsets are currently published for 11.19.0.10. playerYaw remains Stale/quarantined. OD-RECOVERY-004/005/006 narrowed private-mapping Float survivors (heap-dynamic pending root). OD-RECOVERY-007: imageRegionsOnly absolute pointer AOB on 12 survivors returned 0 MEM_IMAGE hits; soft-cap MaxBytes live-proved but noisier for A->B than bounded windows. Next OD-RECOVERY-008 (CE/x64dbg or multi-level/encoded root). Do not promote until address kind, root, two launches, and two independent replays (BLK-0019)."
+  "notes": "No usable offsets are currently published for 11.19.0.10. playerYaw remains Stale/quarantined. OD-RECOVERY-004/005/006 narrowed private-mapping Float survivors (heap-dynamic pending root). OD-RECOVERY-007: imageRegionsOnly absolute pointer AOB on 12 survivors returned 0 MEM_IMAGE hits. OD-RECOVERY-008: absolute LE pointer AOB matrix 0 hits; CE launch smoke OK under offline gate. Next OD-RECOVERY-009 (CE/x64dbg what-accesses or encoded/relative/multi-level root). Do not promote until address kind, root, two launches, and two independent replays (BLK-0019)."
 }

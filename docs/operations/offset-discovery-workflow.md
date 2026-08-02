@@ -311,11 +311,12 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-008`. `OD-RECOVERY-007` completed as **NoSignal for
-image roots** (tooling Partial): soft-cap MaxBytes live-proved (A≈14.5M under
-64 MiB); B `changed≈201k` (noisier than windowed OD-006); **12/12**
-`imageRegionsOnly` pointer AOBs returned **0** hits. Direct absolute pointers
-to the sampled private-mapping survivors are not in MEM_IMAGE.
+Session ID: `OD-RECOVERY-009`. `OD-RECOVERY-008` completed as **NoSignal**:
+windowed Float A→B still yields private-mapping survivors (changed≈670–1102);
+absolute little-endian pointer AOB across private / all / image and align 1/8
+returned **0** hits (including samples that previously had private hits under
+OD-006). CE 7.7 x64 launched and responded while the offline gate held; no
+automated attach/scan (BLK-0022 adapter still unregistered).
 
 1. Confirm owner authorization before any foreground window operation
    (BLK-0022). The guarded GameHarness input adapter remains unregistered.
@@ -324,10 +325,11 @@ to the sampled private-mapping survivors are not in MEM_IMAGE.
 3. Keep the research lease bounds (`Research:OfflineReplayEvidenceLifetimeSeconds`
    5–120, `Research:LifecycleEvidenceTimeoutSeconds` 5–300).
 4. Prefer **bounded address windows** for controlled A→B narrowing; treat
-   soft-cap low-first fill as reconnaissance only (it was noisier live).
-5. Do **not** repeat absolute image-only pointer AOB unchanged. Next structural
-   work: CE 7.7 / x64dbg offline access tracing, or a multi-level/encoded root
-   hypothesis — keep aggregates-only in the repo.
+   soft-cap low-first fill as reconnaissance only.
+5. Do **not** repeat absolute LE pointer AOB unchanged (private/all/image ×
+   align). Next: CE/x64dbg offline **what accesses** / pointer map under
+   verified replay, or an encoded/relative/multi-level root hypothesis —
+   aggregates-only in the repo.
 6. Obtain a second distinct replay before any promotion review (BLK-0019).
 7. Append the ledger and a dated handoff before stopping.
 
