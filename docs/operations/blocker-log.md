@@ -604,6 +604,12 @@ folder for the full numbering convention and document map.
   narrowing reached changed≈1929; CE write breakpoints set (3) with zero RIP
   hits. Adapter still unregistered. No promoted offset.
 
+- Resolution amendment (`2026-08-02T20:25:00Z`): agent-owned **WATCH OFFLINE**
+  click covered `OD-RECOVERY-012`. Field pivot found a unique increased
+  `replayTime` Double (`private-mapping`) and an HP Int32 unchanged pool
+  (`mapped-mapping` sample). CE write-BP hitCount=0; pointer AOB 0. No
+  promoted offset.
+
 ## BLK-0023 — Managed replay launch hid the window and fabricated window evidence
 
 - First observed: `2026-08-02T04:34:31Z`

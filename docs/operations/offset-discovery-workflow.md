@@ -311,10 +311,10 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-012`. `OD-RECOVERY-011` completed as **Partial**:
-Watch Offline click was required for the gate; second-pass Float narrowing
-reached changed≈**1929** (from pass1≈**2899**); CE Windows debugger set
-**3** write breakpoints and recorded **0** RIP hits during overlapping resume.
+Session ID: `OD-RECOVERY-013`. `OD-RECOVERY-012` completed as **Partial**
+(near-`CandidateFound` behaviorally): agent clicked **WATCH OFFLINE**;
+`replayTime` Double **increased=1** (`private-mapping`); HP Int32 unchanged
+pool ≈4441 (`mapped-mapping` sample); CE write-BP **0** RIP; pointer AOB **0**.
 
 1. Confirm owner authorization before any foreground window operation
    (BLK-0022). The guarded GameHarness input adapter remains unregistered.
@@ -327,11 +327,12 @@ reached changed≈**1929** (from pass1≈**2899**); CE Windows debugger set
    appears, click **WATCH OFFLINE** only — never **LOG IN AND WATCH**.
 3. Keep the research lease bounds (`Research:OfflineReplayEvidenceLifetimeSeconds`
    5–120, `Research:LifecycleEvidenceTimeoutSeconds` 5–300).
-4. Prefer a **field pivot** (`playerHP` / `replayTime`) or interactive
-   x64dbg/CE GUI Find-what-writes. Do **not** expect automated CE write-BP
-   alone on Float second-pass survivors to produce RIP evidence.
-5. Do **not** repeat absolute/truncated pointer AOB or automated CE
-   access/write BP on Float survivors unchanged.
+4. **Primary:** reproduce the unique increased `replayTime` Double on a
+   **second independent process launch** (and eventually a second replay —
+   BLK-0019). Classify address kind / seek root via neighborhood or interactive
+   debugger. HP unchanged Int32 remains secondary.
+5. Do **not** promote from a single-launch unique hit. Do not expect automated
+   CE write-BP alone to yield RIP for this survivor class.
 6. Obtain a second distinct replay before any promotion review (BLK-0019).
 7. Append the ledger and a dated handoff before stopping.
 

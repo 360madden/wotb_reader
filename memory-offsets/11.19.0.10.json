@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "gameVersion": "11.19.0.10",
   "executableSha256": "1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d",
-  "discoveredAtUtc": "2026-08-02T20:20:00Z",
+  "discoveredAtUtc": "2026-08-02T20:25:00Z",
   "offsets": {
     "replayTime": 0,
     "playerHP": 0,
@@ -118,8 +118,38 @@
       "harnessInvariantsPassed": false,
       "leadApproved": false,
       "decoderAuditorApproved": false
+    },
+    "replayTime": {
+      "status": "Unknown",
+      "evidence": [
+        {
+          "provenanceKind": "DynamicScan",
+          "sourceTool": "Host.Web discover/snapshot+compare Double increased",
+          "notes": "OD-RECOVERY-012: offline Float/Double field pivot; replayTime Double increased filter collapsed to 1 private-mapping survivor after controlled resume. Absolute/truncated pointer AOB 0 hits; CE write-BP 0 RIP. Heap-dynamic pending root; offset remains 0; not Candidate/Verified."
+        }
+      ],
+      "independentProcessLaunches": 0,
+      "independentReplays": 0,
+      "harnessInvariantsPassed": false,
+      "leadApproved": false,
+      "decoderAuditorApproved": false
+    },
+    "playerHP": {
+      "status": "Unknown",
+      "evidence": [
+        {
+          "provenanceKind": "DynamicScan",
+          "sourceTool": "Host.Web discover/snapshot+compare Int32 unchanged",
+          "notes": "OD-RECOVERY-012: Int32 [100,3500] unchanged-during-move pool ~4441 with mapped-mapping sample kinds; secondary HP reconnaissance only; not promoted."
+        }
+      ],
+      "independentProcessLaunches": 0,
+      "independentReplays": 0,
+      "harnessInvariantsPassed": false,
+      "leadApproved": false,
+      "decoderAuditorApproved": false
     }
   },
   "confidence": "none",
-  "notes": "No usable offsets are currently published for 11.19.0.10. playerYaw remains Stale/quarantined. OD-RECOVERY-004..010: heap-dynamic Float survivors; pointer AOBs ruled out; CE access/write BP 0 hits. OD-RECOVERY-011: second-pass Float ~1929 survivors; CE write-BP still 0 RIP hits. Next OD-RECOVERY-012 (HP/replayTime pivot or interactive debugger). Do not promote until address kind, root, two launches, and two independent replays (BLK-0019)."
+  "notes": "No usable offsets published for 11.19.0.10. playerYaw Stale. OD-RECOVERY-012: unique increased replayTime Double (private-mapping) is the strongest dynamic anchor so far; HP Int32 unchanged pool is secondary. Next OD-RECOVERY-013 second independent launch for RT reproducibility. Do not promote until address kind/root, two launches, two independent replays (BLK-0019)."
 }

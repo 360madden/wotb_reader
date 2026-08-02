@@ -112,6 +112,7 @@ docs/operations/handoffs/2026-08-02-od-recovery-007-nosignal.md
 docs/operations/handoffs/2026-08-02-od-recovery-008-nosignal.md
 docs/operations/handoffs/2026-08-02-od-recovery-009-partial.md
 docs/operations/handoffs/2026-08-02-od-recovery-010-partial.md
+docs/operations/handoffs/2026-08-02-od-recovery-011-partial.md
 docs/operations/handoffs/2026-08-02-operations-docs-review.md
 docs/operations/handoffs/README.md
 docs/operations/offset-discovery-guide.md

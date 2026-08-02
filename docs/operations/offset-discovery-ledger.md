@@ -48,8 +48,8 @@ Every address must be classified before publication:
 | Runtime-supported fields | None; current table has 0 usable offsets, 1 Stale/quarantined field, and 7 Unknown |
 | `playerYaw` | **Quarantined / Ambiguous** until decimal, hexadecimal, raw Ghidra, and address-kind evidence reconcile |
 | Trusted next anchor | `playerPositionX`/`playerPositionZ`, then `replayTime` or HP if the replay makes them observable |
-| Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007); absolute LE pointer AOB across private/all/image + align 1/8 without a changed encoding hypothesis (ruled out by OD-RECOVERY-008); truncated low-32 LE dword AOB of survivor absolutes without a changed encoding hypothesis (ruled out by OD-RECOVERY-009); automated CE `bptAccess`/`bptWrite` on first- or second-pass Float A→B survivors without a field pivot or interactive debugger (0 RIP hits through OD-RECOVERY-011) |
-| Next planned session | `OD-RECOVERY-012` (field pivot to HP/replayTime, or x64dbg/CE GUI on a further-narrowed unique survivor; second-pass Float + automated CE write-BP still 0 RIP hits; second distinct replay still required before promotion) |
+| Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007); absolute LE pointer AOB across private/all/image + align 1/8 without a changed encoding hypothesis (ruled out by OD-RECOVERY-008); truncated low-32 LE dword AOB of survivor absolutes without a changed encoding hypothesis (ruled out by OD-RECOVERY-009); automated CE `bptAccess`/`bptWrite` on Float position survivors without a field pivot or interactive debugger (0 RIP hits through OD-RECOVERY-011); CE write-BP alone on the single increased `replayTime` Double without interactive debugger or a second independent launch (0 RIP in OD-RECOVERY-012) |
+| Next planned session | `OD-RECOVERY-013` (second independent launch for the increased `replayTime` Double survivor; neighborhood/root classification; or interactive x64dbg/CE GUI; HP Int32 unchanged pool remains secondary; promotion still blocked by BLK-0019) |
 
 The current yaw conflict is recorded explicitly:
 
@@ -93,6 +93,7 @@ occurred.
 | `OD-RECOVERY-009` | 2026-08-02 | Truncated-pointer encoding + CE access-BP under offline | windowed Float A→B + low32 LE dword pattern + CE Windows debugger access breakpoints during movement | `Partial` | Truncated low32 AOB 0 hits (priv/img/all on 6 survivors); CE attached+debugging with 3 access BPs set; 0 hits during overlapping resume pulse | Encoding not low32 absolute dword; CE access-BP path live but no instruction evidence yet |
 | `OD-RECOVERY-010` | 2026-08-02 | CE Find-what-writes under offline | tight-window probe + CE `bptWrite` (Windows debugger; VEH hung) during overlapping movement | `Partial` | Probe window changed≈1955; CE Windows debugger set 3 write BPs (list count 3); hitCount=0; VEH `debugProcess(2)` stalled | Automated write-BP on first-pass survivors yields no RIP; need tighter/second-pass or field pivot |
 | `OD-RECOVERY-011` | 2026-08-02 | Second-pass Float narrow + CE write-BP | rolling then second changed compare + CE `bptWrite` during movement | `Partial` | Pass1 changed≈2899 → pass2 changed≈1929 (private-mapping); CE 3 write BPs set; hitCount=0; Watch Offline click required for gate | Second-pass helps count; still no RIP — pivot field or interactive debugger |
+| `OD-RECOVERY-012` | 2026-08-02 | Field pivot HP + replayTime under offline | Int32 unchanged HP window + Double increased replayTime + CE write-BP + pointer AOB | `Partial` / near-`CandidateFound` | Agent clicked WATCH OFFLINE; HP unchanged≈4441 (`mapped-mapping` sample); **replayTime increased=1** (`private-mapping`); CE 3 write BPs hitCount=0; ptr AOB 0 | Unique increased Double is strong heap-dynamic evidence; no root/RIP; not promoted |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -934,6 +935,63 @@ artifacts:
 field `Candidate` or `Verified` and must not change
 `memory-offsets/11.19.0.10.json` beyond narrative Unknown evidence notes.
 Absolute addresses, values, and scanner session identifiers were discarded.
+
+```yaml
+sessionId: OD-RECOVERY-012
+date: 2026-08-02
+observedAtUtc: 2026-08-02T20:20:00Z
+timebox: managed launch; agent Watch Offline; HP Int32 unchanged + replayTime Double increased; CE write-BP; pointer AOB
+decision: field pivot succeeded for replayTime behavior (single increased Double); still heap-dynamic without root/RIP; do not promote
+objective: Find a cleaner dynamic anchor via playerHP or replayTime under OfflineReplayVerified
+stopCondition: Stop after HP/RT aggregates + CE attempt + pointer AOB, or gate loss
+method:
+  primaryTool: Host.Web discover/snapshot+compare (Int32/Double) + pattern + CE Windows debugger bptWrite
+  transition: agent-owned WATCH OFFLINE click + Space pause/resume/pause
+observations:
+  - state: launch
+    parentProcess: WotBTreader.Host.Web.exe
+    verificationState: OfflineReplayVerified
+    note: agent clicked WATCH OFFLINE (standing rule)
+  - state: hp-int32-unchanged
+    previousApprox: 4482
+    unchangedApprox: 4441
+    addressKindHistogram:
+      mapped-mapping: 20
+  - state: replayTime-double-increased
+    previousApprox: 1596941
+    increasedCount: 1
+    addressKindHistogram:
+      private-mapping: 1
+  - state: ce-write-bp
+    breakpointsSet: 3
+    hitCount: 0
+  - state: pointer-aob-on-rt
+    probed: ptr8 and lo32 across priv/img/all
+    withHits: 0
+    scannerSessionDiscarded: true
+result:
+  whatWorked:
+    - Agent Watch Offline standing rule applied successfully.
+    - replayTime Double increased filter collapsed to one private-mapping survivor.
+    - HP Int32 unchanged pool is usable secondary reconnaissance (mapped-mapping).
+  whatFailed:
+    - CE write-BP still produced no RIP on RT/HP samples.
+    - Absolute/truncated pointer AOB for the RT survivor returned zero hits.
+  rulesOut:
+    - Expecting CE write-BP alone to classify the unique RT survivor without interactive debugger or a second launch.
+  partials:
+    - Unique increased Double is the strongest dynamic anchor so far (heap-dynamic pending root).
+  nextPivot: OD-RECOVERY-013 — second independent launch for RT reproducibility; neighborhood/root; or interactive debugger; BLK-0019 still blocks promotion.
+  repeatWithoutChangedHypothesis: false
+artifacts:
+  rawFiles: none
+  committedSummary: this ledger entry
+```
+
+`OD-RECOVERY-012` is aggregate structural evidence only. It does not make any
+field `Candidate` or `Verified`. Update `memory-offsets/11.19.0.10.json` with
+narrative Unknown evidence for `replayTime` only (offset remains 0). Absolute
+addresses, values, and scanner session identifiers were discarded.
 
 ## Evidence promotion checklist
 
