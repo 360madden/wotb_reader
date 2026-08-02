@@ -311,9 +311,10 @@ try {
     }
 
     $watchScript = Join-Path $RepoRoot 'scripts\click-watch-offline.ps1'
-    # Hidden nested host: a normal console `powershell -File` steals focus and the
-    # client logs OnBackground → WindowDestroyed before LoginOnReplayDialog.
-    # Do not call the clicker in-process — it uses `exit` and would tear down us.
+    # Minimized (not Hidden): a visible console steals focus and destroys splash
+    # (OnBackground), but a fully Hidden host often cannot inject mouse clicks
+    # (WATCH OFFLINE stays orange after "click"). Do not invoke in-process — the
+    # clicker uses `exit` and would tear down this script.
     $watchOut = Join-Path $env:TEMP 'od-watch-offline.out.log'
     $watchErr = Join-Path $env:TEMP 'od-watch-offline.err.log'
     Remove-Item -LiteralPath $watchOut, $watchErr -Force -ErrorAction SilentlyContinue
@@ -322,7 +323,7 @@ try {
         '-ExecutionPolicy', 'Bypass',
         '-File', $watchScript,
         '-TimeoutSeconds', "$WatchTimeoutSeconds"
-    ) -Wait -PassThru -WindowStyle Hidden `
+    ) -Wait -PassThru -WindowStyle Minimized `
         -RedirectStandardOutput $watchOut -RedirectStandardError $watchErr
     $watchExit = [int]$watchProc.ExitCode
     if (Test-Path -LiteralPath $watchOut) {

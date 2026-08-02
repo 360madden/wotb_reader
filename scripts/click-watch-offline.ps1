@@ -50,7 +50,8 @@ param(
     # ignores this once SeenSyncing was observed).
     [int]$MinDialogAgeSeconds = 5,
     # Hard ceiling from first dialog sighting to click (beat Error 126).
-    [int]$MaxDialogLifetimeSeconds = 11
+    # Raised: sync can start ~5s after bright and last ~2s; ErrorDialog ~18s.
+    [int]$MaxDialogLifetimeSeconds = 16
 )
 
 Set-StrictMode -Version Latest
@@ -66,13 +67,15 @@ public static class WatchOfflineVision {
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
-  [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, UIntPtr e);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
+  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+  [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, UIntPtr e);
 
   public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
   public const uint MOUSEEVENTF_LEFTUP = 0x0004;
   public const uint PW_RENDERFULLCONTENT = 0x00000002;
+  static bool _dpiAware;
 
   [StructLayout(LayoutKind.Sequential)]
   public struct RECT { public int Left, Top, Right, Bottom; }
@@ -90,14 +93,23 @@ public static class WatchOfflineVision {
     public double DialogMeanLuminance;
   }
 
+  public static void EnsureDpiAware() {
+    if (_dpiAware) return;
+    try { SetProcessDPIAware(); } catch { }
+    _dpiAware = true;
+  }
+
   public static void ClickScreen(int x, int y) {
+    EnsureDpiAware();
     SetCursorPos(x, y);
-    System.Threading.Thread.Sleep(50);
+    System.Threading.Thread.Sleep(100);
     mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, UIntPtr.Zero);
+    System.Threading.Thread.Sleep(70);
     mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
   }
 
   public static Bitmap CaptureBitmap(IntPtr hWnd, out RECT r) {
+    EnsureDpiAware();
     r = new RECT();
     if (!GetWindowRect(hWnd, out r)) return null;
     int w = r.Right - r.Left;
@@ -305,6 +317,7 @@ function Test-ReadySample(
 }
 
 try {
+    [void][WatchOfflineVision]::EnsureDpiAware()
     try {
         $null = Get-Rendezvous
     }
@@ -465,12 +478,12 @@ try {
     }
 
     $preCount = [int]$readyAnalysis.Blob.PixelCount
-    # Hold only on grace path; after SeenSyncing click immediately (Error 126).
-    $holdSec = if ($seenSyncing) { 0 } else { $ReadyHoldSeconds }
-    Write-Host ("watch_offline: phase=Ready dialogMeanL={0} orangePx={1} seenSync={2} stable={3} hold_{4}s" -f `
-        [Math]::Round([double]$readyAnalysis.DialogMeanLuminance, 1), $preCount, $seenSyncing, $stable, $holdSec)
-    if ($holdSec -gt 0) {
-        Start-Sleep -Seconds $holdSec
+    # Brief settle after sync recovery so the CTA accepts input; still short vs Error 126.
+    $holdMs = if ($seenSyncing) { 350 } else { [int]($ReadyHoldSeconds * 1000) }
+    Write-Host ("watch_offline: phase=Ready dialogMeanL={0} orangePx={1} seenSync={2} stable={3} hold_{4}ms" -f `
+        [Math]::Round([double]$readyAnalysis.DialogMeanLuminance, 1), $preCount, $seenSyncing, $stable, $holdMs)
+    if ($holdMs -gt 0) {
+        Start-Sleep -Milliseconds $holdMs
     }
 
     # Re-check after hold — dialog may have timed out during hold.
@@ -479,6 +492,9 @@ try {
         Write-Host 'watch_offline: window_lost_after_hold'
         exit 1
     }
+    [void][WatchOfflineVision]::ShowWindow($game.MainWindowHandle, 9)
+    [void][WatchOfflineVision]::SetForegroundWindow($game.MainWindowHandle)
+    Start-Sleep -Milliseconds 150
     $analysis = Get-WindowAnalysis $game.MainWindowHandle $ScreenshotPath
     if (-not $analysis) {
         Write-Host 'watch_offline: capture_failed_after_hold'
