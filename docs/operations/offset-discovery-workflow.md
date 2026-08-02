@@ -311,11 +311,11 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-010`. `OD-RECOVERY-009` completed as **Partial**:
-truncated low-32 LE dword AOB of absolute survivors returned **0** hits across
-private / image / all; CE 7.x attached under `OfflineReplayVerified`, started
-the Windows debugger, set **3** access breakpoints, and recorded **0** hits
-during an overlapping resume pulse (no RIP module histogram).
+Session ID: `OD-RECOVERY-011`. `OD-RECOVERY-010` completed as **Partial**:
+a probed 64 MiB window reached changed≈**1955**; CE Windows debugger set
+**3** `bptWrite` breakpoints (list count 3) under `OfflineReplayVerified` and
+recorded **0** hits during overlapping resume pulses. VEH `debugProcess(2)`
+stalled and should not lead unattended runs.
 
 1. Confirm owner authorization before any foreground window operation
    (BLK-0022). The guarded GameHarness input adapter remains unregistered.
@@ -323,11 +323,12 @@ during an overlapping resume pulse (no RIP module histogram).
    `WotBTreader.Host.Web.exe`, not WGC. Wait for `OfflineReplayVerified`.
 3. Keep the research lease bounds (`Research:OfflineReplayEvidenceLifetimeSeconds`
    5–120, `Research:LifecycleEvidenceTimeoutSeconds` 5–300).
-4. Prefer **bounded address windows** that yield ~0.5k–2k changed survivors
-   (OD-008 class), not multi-million soft-filled windows, before CE breakpoints.
-5. Do **not** repeat absolute LE pointer AOB or truncated low32 dword AOB
-   unchanged. Next: CE/x64dbg **Find what writes** (try `bptWrite` / VEH) on
-   tight survivors during movement — aggregates-only (module-name histograms OK).
+4. Prefer **bounded windows** with a **second compare pass** (changed→changed)
+   before debugger breakpoints; avoid first-pass multi-10k survivor sets.
+5. Do **not** repeat absolute/truncated pointer AOB or automated CE
+   access/write BP on first-pass noisy Float survivors unchanged. Next:
+   x64dbg or CE GUI Find-what-writes on second-pass survivors, **or** pivot to
+   `playerHP` / `replayTime` — aggregates-only (module-name histograms OK).
 6. Obtain a second distinct replay before any promotion review (BLK-0019).
 7. Append the ledger and a dated handoff before stopping.
 

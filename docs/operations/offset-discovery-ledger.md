@@ -48,8 +48,8 @@ Every address must be classified before publication:
 | Runtime-supported fields | None; current table has 0 usable offsets, 1 Stale/quarantined field, and 7 Unknown |
 | `playerYaw` | **Quarantined / Ambiguous** until decimal, hexadecimal, raw Ghidra, and address-kind evidence reconcile |
 | Trusted next anchor | `playerPositionX`/`playerPositionZ`, then `replayTime` or HP if the replay makes them observable |
-| Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007); absolute LE pointer AOB across private/all/image + align 1/8 without a changed encoding hypothesis (ruled out by OD-RECOVERY-008); truncated low-32 LE dword AOB of survivor absolutes without a changed encoding hypothesis (ruled out by OD-RECOVERY-009) |
-| Next planned session | `OD-RECOVERY-010` (CE/x64dbg Find-what-writes with overlapping movement, or VEH/kernel debugger; truncated low32 and absolute LE pointer AOB exhausted; second distinct replay still required before promotion) |
+| Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007); absolute LE pointer AOB across private/all/image + align 1/8 without a changed encoding hypothesis (ruled out by OD-RECOVERY-008); truncated low-32 LE dword AOB of survivor absolutes without a changed encoding hypothesis (ruled out by OD-RECOVERY-009); automated CE `bptAccess`/`bptWrite` on first-pass noisy Float A→B survivors without further narrowing or a field pivot (0 hits in OD-RECOVERY-009/010) |
+| Next planned session | `OD-RECOVERY-011` (x64dbg or CE GUI Find-what-writes on a second-pass narrowed survivor, or pivot field to HP/replayTime; automated CE access/write BP on first-pass Float survivors returned 0 hits; second distinct replay still required before promotion) |
 
 The current yaw conflict is recorded explicitly:
 
@@ -91,6 +91,7 @@ occurred.
 | `OD-RECOVERY-007` | 2026-08-02 | Image-only static root search for private-mapping survivors | `ImageRegionsOnly` pattern API + soft-cap MaxBytes Float A→B + owner-authorized foreground ops | `NoSignal` (for image roots) / `Partial` (tooling) | Soft-cap unbounded snapshot worked (A≈14.5M retained under 64 MiB budget); B changed≈201k (noisier than windowed OD-006); 12/12 image-only pointer AOBs returned **0** hits | Direct absolute pointers to sampled survivors are not stored in MEM_IMAGE; do not repeat this absolute image-only AOB unchanged |
 | `OD-RECOVERY-008` | 2026-08-02 | Two-level absolute pointer hunt + CE launch smoke | windowed Float A→B + pattern matrix (priv/all/img × align 1/8) + CE 7.7 launch under verified offline | `NoSignal` | A→B changed≈670–1102 (private-mapping); 0 absolute LE pointer hits across matrix; CE x64 launched/responded while offline gate held (no automated attach/scan) | No static/multi-level absolute pointer root; CE structural attach/scan still manual |
 | `OD-RECOVERY-009` | 2026-08-02 | Truncated-pointer encoding + CE access-BP under offline | windowed Float A→B + low32 LE dword pattern + CE Windows debugger access breakpoints during movement | `Partial` | Truncated low32 AOB 0 hits (priv/img/all on 6 survivors); CE attached+debugging with 3 access BPs set; 0 hits during overlapping resume pulse | Encoding not low32 absolute dword; CE access-BP path live but no instruction evidence yet |
+| `OD-RECOVERY-010` | 2026-08-02 | CE Find-what-writes under offline | tight-window probe + CE `bptWrite` (Windows debugger; VEH hung) during overlapping movement | `Partial` | Probe window changed≈1955; CE Windows debugger set 3 write BPs (list count 3); hitCount=0; VEH `debugProcess(2)` stalled | Automated write-BP on first-pass survivors yields no RIP; need tighter/second-pass or field pivot |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -821,6 +822,58 @@ artifacts:
 ```
 
 `OD-RECOVERY-009` is aggregate structural evidence only. It does not make any
+field `Candidate` or `Verified` and must not change
+`memory-offsets/11.19.0.10.json` beyond narrative Unknown evidence notes.
+Absolute addresses, values, and scanner session identifiers were discarded.
+
+```yaml
+sessionId: OD-RECOVERY-010
+date: 2026-08-02
+observedAtUtc: 2026-08-02T20:15:00Z
+timebox: managed launches; tight-window probe; CE bptWrite under Windows debugger during movement
+decision: automated CE write breakpoints on first-pass Float A→B survivors produce no RIP evidence; VEH debug attach stalled; do not repeat without second-pass narrowing or field pivot
+objective: Obtain Find-what-writes module/instruction evidence for position survivors under offline verification
+stopCondition: Stop after CE write-BP aggregates (or attach failure), or gate loss
+method:
+  primaryTool: Host.Web discover/snapshot+compare + CE Lua debugProcess + debug_setBreakpoint(bptWrite)
+  valueKind: Float32
+  floatBounds: [-500, 500]
+  transition: owner-authorized Watch Offline click + Space pause/resume/pause
+observations:
+  - state: window-probe
+    bestChangedApprox: 1955
+    note: one 64 MiB window met the ~0.5k–2k changed target during probing
+  - state: ce-write-bp-windows
+    attached: true
+    debugProcess: windows
+    isDebugging: true
+    breakpointsSet: 3
+    breakpointListCount: 3
+    hitCount: 0
+    ripModuleHistogram: empty
+  - state: ce-veh-attempt
+    debugProcess: veh
+    result: stalled before completion (script hung after openProcess)
+    scannerSessionDiscarded: true
+result:
+  whatWorked:
+    - Located at least one bounded window with OD-008-class changed counts during probing.
+    - CE Windows debugger + bptWrite path set and listed three breakpoints under OfflineReplayVerified.
+  whatFailed:
+    - Zero write-breakpoint hits during overlapping resume pulses.
+    - VEH debugProcess(2) stalled (do not lead with VEH for unattended runs).
+  rulesOut:
+    - Repeating automated CE access/write BP on first-pass noisy Float survivors without further narrowing or a field pivot.
+  partials:
+    - Debugger attach works; instruction provenance still missing — try x64dbg/CE GUI on second-pass survivors or HP/replayTime.
+  nextPivot: OD-RECOVERY-011 — x64dbg or CE GUI Find-what-writes on second-pass narrowed survivors, or pivot to HP/replayTime; second distinct replay before promotion (BLK-0019).
+  repeatWithoutChangedHypothesis: false
+artifacts:
+  rawFiles: none
+  committedSummary: this ledger entry
+```
+
+`OD-RECOVERY-010` is aggregate structural evidence only. It does not make any
 field `Candidate` or `Verified` and must not change
 `memory-offsets/11.19.0.10.json` beyond narrative Unknown evidence notes.
 Absolute addresses, values, and scanner session identifiers were discarded.

@@ -592,6 +592,12 @@ folder for the full numbering convention and document map.
   the offline gate; overlapping resume pulse produced zero hits (no RIP module
   evidence yet). Adapter still unregistered. No promoted offset.
 
+- Resolution amendment (`2026-08-02T20:15:00Z`): the same authorized foreground
+  path covered `OD-RECOVERY-010`. A probed window reached changed≈1955; CE
+  Windows debugger set three `bptWrite` breakpoints (list count 3) with zero
+  hits during overlapping resume; VEH debug attach stalled. Adapter still
+  unregistered. No promoted offset.
+
 ## BLK-0023 — Managed replay launch hid the window and fabricated window evidence
 
 - First observed: `2026-08-02T04:34:31Z`

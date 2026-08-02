@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "gameVersion": "11.19.0.10",
   "executableSha256": "1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d",
-  "discoveredAtUtc": "2026-08-02T20:10:00Z",
+  "discoveredAtUtc": "2026-08-02T20:15:00Z",
   "offsets": {
     "replayTime": 0,
     "playerHP": 0,
@@ -56,6 +56,11 @@
           "provenanceKind": "DynamicScan",
           "sourceTool": "Host.Web discover/pattern truncated low32 + CE 7.x debug_setBreakpoint(bptAccess)",
           "notes": "OD-RECOVERY-009: truncated low-32 LE dword AOB of absolute survivors returned 0 hits (priv/img/all). CE attached under OfflineReplayVerified with Windows debugger and 3 access breakpoints; overlapping resume pulse produced 0 hits (no RIP module histogram). Does not promote any offset."
+        },
+        {
+          "provenanceKind": "DynamicScan",
+          "sourceTool": "CE 7.x debugProcess(Windows) + debug_setBreakpoint(bptWrite)",
+          "notes": "OD-RECOVERY-010: probed window changed~1955; CE Windows debugger set 3 write breakpoints (list count 3) under OfflineReplayVerified; overlapping resume pulse hitCount=0; VEH debugProcess stalled. Does not promote any offset."
         }
       ],
       "independentProcessLaunches": 0,
@@ -91,6 +96,11 @@
           "provenanceKind": "DynamicScan",
           "sourceTool": "Host.Web discover/pattern truncated low32 + CE 7.x debug_setBreakpoint(bptAccess)",
           "notes": "OD-RECOVERY-009: truncated low-32 LE dword AOB of absolute survivors returned 0 hits (priv/img/all). CE attached under OfflineReplayVerified with Windows debugger and 3 access breakpoints; overlapping resume pulse produced 0 hits (no RIP module histogram). Does not promote any offset."
+        },
+        {
+          "provenanceKind": "DynamicScan",
+          "sourceTool": "CE 7.x debugProcess(Windows) + debug_setBreakpoint(bptWrite)",
+          "notes": "OD-RECOVERY-010: probed window changed~1955; CE Windows debugger set 3 write breakpoints (list count 3) under OfflineReplayVerified; overlapping resume pulse hitCount=0; VEH debugProcess stalled. Does not promote any offset."
         }
       ],
       "independentProcessLaunches": 0,
@@ -101,5 +111,5 @@
     }
   },
   "confidence": "none",
-  "notes": "No usable offsets are currently published for 11.19.0.10. playerYaw remains Stale/quarantined. OD-RECOVERY-004/005/006 narrowed private-mapping Float survivors (heap-dynamic pending root). OD-RECOVERY-007/008 ruled out absolute image and absolute LE pointer AOB matrices. OD-RECOVERY-009 ruled out truncated low32 dword AOB; CE access-BP attach path live with 0 hits this pulse. Next OD-RECOVERY-010 (Find-what-writes / VEH on tighter survivors). Do not promote until address kind, root, two launches, and two independent replays (BLK-0019)."
+  "notes": "No usable offsets are currently published for 11.19.0.10. playerYaw remains Stale/quarantined. OD-RECOVERY-004..009: heap-dynamic Float survivors; absolute/truncated pointer AOBs ruled out; CE access-BP 0 hits. OD-RECOVERY-010: CE write-BP path live (3 BPs) with 0 hits; VEH attach stalled. Next OD-RECOVERY-011 (x64dbg/CE GUI second-pass or HP/replayTime pivot). Do not promote until address kind, root, two launches, and two independent replays (BLK-0019)."
 }
