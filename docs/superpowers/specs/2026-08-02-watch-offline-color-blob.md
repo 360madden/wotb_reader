@@ -20,21 +20,27 @@ Rejected: template matching (DPI/resolution brittle); fixed % grids (current fai
 ## Behavior (`scripts/click-watch-offline.ps1`)
 
 1. Capture game window (`PrintWindow` / screen blit fallback).
-2. Search ROI roughly **x 20–55%**, **y 40–68%** (left/center dialog band;
+2. **Sync-dim ready gate:** poll dialog mean luminance + orange blob until the
+   dialog is bright and interactive (see
+   [`2026-08-02-watch-offline-sync-ready-gate.md`](2026-08-02-watch-offline-sync-ready-gate.md))
+   — not a blind timer. Requires stable bright+orange samples (≥3 at ~500ms),
+   optionally after sync dim was observed or a grace period elapsed, then hold
+   ~2s before click.
+3. Search ROI roughly **x 20–55%**, **y 40–68%** (left/center dialog band;
    excludes green **LOG IN AND WATCH** on the right).
-3. Orange pixel heuristic: high R, mid G, low B, R≫B (excludes green).
-4. If blob area ≥ minimum → click window-relative centroid (once per round).
-5. Poll gate with a **fresh rendezvous capability each call**; re-capture;
+4. Orange pixel heuristic: high R, mid G, low B, R≫B (excludes green).
+5. Click window-relative centroid; confirming jitter click.
+6. Poll gate with a **fresh rendezvous capability each call**; re-capture;
    success only if gate verified **and** post blob area is below dismiss
    threshold (or ≪ pre-click area).
-6. Always write `%TEMP%\wotb-watch-offline-verify.png`.
-7. Exit `0` only on dual success; `3` if retries exhausted; `6` if host is
-   already `Denied` (do not keep clicking — re-run
+7. Always write `%TEMP%\wotb-watch-offline-verify.png`.
+8. Exit `0` only on dual success; `3` if retries exhausted; `5` if ready gate
+   never satisfied; `6` if host is already `Denied` (re-run
    `scripts/launch-offline-replay-for-od.ps1`).
 
 Prerequisite: managed OD launch via `scripts/launch-offline-replay-for-od.ps1`
-(folder `.wotbreplay` → import → managed launch → settle). File-association
-playback alone does not satisfy the gate.
+(folder `.wotbreplay` → import → managed launch → visual Watch Offline).
+File-association playback alone does not satisfy the gate.
 
 ## Non-goals
 

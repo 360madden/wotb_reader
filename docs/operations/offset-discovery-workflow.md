@@ -352,8 +352,10 @@ What it does:
 5. `POST /api/v1/game/launch` (managed). Staging writes under
    `…\DAVAProject\replays\wotbtreader-staging\` (not mixed with originals). A
    freshly read rendezvous capability is required (tokens rotate ~5 minutes).
-6. Waits for a real window, then **settles** (default 40s) so **WATCH OFFLINE**
-   can appear — launching/clicking too early drops into the hangar.
+6. Waits for a real window, then runs Watch Offline with **visual ready
+   feedback**: poll until the orange blob is stable (3 samples), hold ~2s, then
+   click. No long blind settle (avoids dialog timeout) and no instant click
+   (avoids racing the dialog).
 7. Runs `scripts/click-watch-offline.ps1` (agent-owned). Exit 0 only when **both**
    `OfflineReplayVerified` **and** the orange dialog is gone. Screenshot:
    `%TEMP%\wotb-watch-offline-verify.png`. Exit 6 = host already `Denied` → re-run

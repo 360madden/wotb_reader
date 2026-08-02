@@ -4,10 +4,14 @@
   Dismiss WoT Blitz "WATCH OFFLINE" via orange-button blob find + dual verify.
 
 .DESCRIPTION
-  Spec: docs/superpowers/specs/2026-08-02-watch-offline-color-blob.md
+  Specs:
+    docs/superpowers/specs/2026-08-02-watch-offline-color-blob.md
+    docs/superpowers/specs/2026-08-02-watch-offline-sync-ready-gate.md
 
-  Never clicks LOG IN AND WATCH (green, right). Finds the largest orange/amber
-  blob in the left/center dialog ROI, clicks its centroid, then requires both:
+  Never clicks LOG IN AND WATCH (green, right). Waits until the dialog passes the
+  sync-dim ready gate (bright + strong orange, optionally after sync dim observed
+  or grace elapsed), holds briefly so the dialog can accept input, then clicks
+  its centroid. Requires both:
     - GET /api/v1/game/state → OfflineReplayVerified
     - Post-click orange blob area below dismiss threshold (dialog gone)
 
@@ -17,16 +21,27 @@
   2  Rendezvous / capability missing
   3  Retries exhausted (gate and/or dialog check failed)
   4  Unexpected error
-  5  Dialog orange blob never found (cannot aim)
+  5  Ready gate never satisfied (dialog not interactive in time)
   6  Host already Denied (stale lifecycle timeout) — restart via launch-offline-replay-for-od.ps1
 #>
 [CmdletBinding()]
 param(
-    [int]$TimeoutSeconds = 60,
+    [int]$TimeoutSeconds = 90,
     [int]$MaxRounds = 5,
     [string]$ScreenshotPath = $(Join-Path $env:TEMP 'wotb-watch-offline-verify.png'),
     [int]$MinBlobPixels = 400,
-    [int]$DismissMaxPixels = 120
+    [int]$DismissMaxPixels = 120,
+    # Visual ready gate: sync-dim state machine (see sync-ready-gate spec).
+    [int]$AppearTimeoutSeconds = 45,
+    [int]$ReadyTimeoutSeconds = 90,
+    [int]$StableSamples = 3,
+    [int]$SampleIntervalMs = 500,
+    [int]$ReadyHoldSeconds = 2,
+    [int]$SyncMaxLuminance = 40,
+    [int]$SyncMaxOrange = 400,
+    [int]$ReadyMinOrange = 2000,
+    [int]$ReadyMinLuminance = 45,
+    [int]$SyncGraceSeconds = 12
 )
 
 Set-StrictMode -Version Latest
@@ -59,6 +74,11 @@ public static class WatchOfflineVision {
     public int CentroidX; // client/bitmap coords
     public int CentroidY;
     public int MinX, MinY, MaxX, MaxY;
+  }
+
+  public struct DialogAnalysis {
+    public BlobHit Blob;
+    public double DialogMeanLuminance;
   }
 
   public static void ClickScreen(int x, int y) {
@@ -102,51 +122,81 @@ public static class WatchOfflineVision {
     return true;
   }
 
-  public static BlobHit FindOrangeBlob(Bitmap bmp) {
-    var hit = new BlobHit();
-    if (bmp == null) return hit;
+  static double Rec709Luminance(byte r, byte g, byte b) {
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+
+  public static DialogAnalysis AnalyzeDialog(Bitmap bmp) {
+    var result = new DialogAnalysis();
+    if (bmp == null) return result;
 
     int w = bmp.Width, h = bmp.Height;
-    int x0 = (int)(w * 0.18);
-    int x1 = (int)(w * 0.55);
-    int y0 = (int)(h * 0.40);
-    int y1 = (int)(h * 0.70);
+    // Orange search: left/center band (avoid green LOG IN on the right).
+    int orangeX0 = (int)(w * 0.18);
+    int orangeX1 = (int)(w * 0.55);
+    int orangeY0 = (int)(h * 0.40);
+    int orangeY1 = (int)(h * 0.70);
+    // Luminance: wider modal ROI.
+    int lumX0 = (int)(w * 0.25);
+    int lumX1 = (int)(w * 0.75);
+    int lumY0 = (int)(h * 0.35);
+    int lumY1 = (int)(h * 0.70);
 
     long sumX = 0, sumY = 0;
-    int count = 0;
+    int orangeCount = 0;
     int minX = int.MaxValue, minY = int.MaxValue, maxX = 0, maxY = 0;
+    double lumSum = 0;
+    int lumCount = 0;
 
     var data = bmp.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
     try {
       int stride = data.Stride;
       IntPtr scan0 = data.Scan0;
       byte[] row = new byte[Math.Abs(stride)];
-      for (int y = y0; y < y1; y++) {
+      int yStart = Math.Min(orangeY0, lumY0);
+      int yEnd = Math.Max(orangeY1, lumY1);
+      for (int y = yStart; y < yEnd; y++) {
         Marshal.Copy(IntPtr.Add(scan0, y * stride), row, 0, row.Length);
-        for (int x = x0; x < x1; x++) {
+        for (int x = 0; x < w; x++) {
           int i = x * 4;
           byte bb = row[i], gg = row[i + 1], rr = row[i + 2];
-          if (!IsWatchOfflineOrange(rr, gg, bb)) continue;
-          count++;
-          sumX += x;
-          sumY += y;
-          if (x < minX) minX = x;
-          if (y < minY) minY = y;
-          if (x > maxX) maxX = x;
-          if (y > maxY) maxY = y;
+
+          if (y >= lumY0 && y < lumY1 && x >= lumX0 && x < lumX1) {
+            lumSum += Rec709Luminance(rr, gg, bb);
+            lumCount++;
+          }
+
+          if (y >= orangeY0 && y < orangeY1 && x >= orangeX0 && x < orangeX1) {
+            if (!IsWatchOfflineOrange(rr, gg, bb)) continue;
+            orangeCount++;
+            sumX += x;
+            sumY += y;
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+          }
         }
       }
     } finally {
       bmp.UnlockBits(data);
     }
 
-    hit.PixelCount = count;
-    if (count <= 0) return hit;
-    hit.Found = true;
-    hit.CentroidX = (int)(sumX / count);
-    hit.CentroidY = (int)(sumY / count);
-    hit.MinX = minX; hit.MinY = minY; hit.MaxX = maxX; hit.MaxY = maxY;
-    return hit;
+    result.Blob.PixelCount = orangeCount;
+    if (orangeCount > 0) {
+      result.Blob.Found = true;
+      result.Blob.CentroidX = (int)(sumX / orangeCount);
+      result.Blob.CentroidY = (int)(sumY / orangeCount);
+      result.Blob.MinX = minX; result.Blob.MinY = minY;
+      result.Blob.MaxX = maxX; result.Blob.MaxY = maxY;
+    }
+    result.DialogMeanLuminance = lumCount > 0 ? lumSum / lumCount : 0.0;
+    return result;
+  }
+
+  // Back-compat wrapper for callers expecting blob-only analysis.
+  public static BlobHit FindOrangeBlob(Bitmap bmp) {
+    return AnalyzeDialog(bmp).Blob;
   }
 }
 "@ -ReferencedAssemblies System.Drawing.dll
@@ -201,18 +251,41 @@ function Get-WindowAnalysis([IntPtr]$Hwnd, [string]$SavePath) {
     $bmp = [WatchOfflineVision]::CaptureBitmap($Hwnd, [ref]$rect)
     if (-not $bmp) { return $null }
     try {
-        $blob = [WatchOfflineVision]::FindOrangeBlob($bmp)
+        $dialog = [WatchOfflineVision]::AnalyzeDialog($bmp)
         if ($SavePath) { [void][WatchOfflineVision]::SaveBitmap($bmp, $SavePath) }
         return [pscustomobject]@{
-            Rect     = $rect
-            Blob     = $blob
-            Width    = $bmp.Width
-            Height   = $bmp.Height
+            Rect               = $rect
+            Blob               = $dialog.Blob
+            DialogMeanLuminance = [double]$dialog.DialogMeanLuminance
+            Width              = $bmp.Width
+            Height             = $bmp.Height
         }
     }
     finally {
         $bmp.Dispose()
     }
+}
+
+function Test-DialogPresent([int]$OrangePx, [double]$DialogMeanL) {
+    # First dialog sighting: orange blob (incl. dim sync ~63 px) or dim modal luminance.
+    if ($OrangePx -ge 50) { return $true }
+    if ($DialogMeanL -lt $SyncMaxLuminance -and $DialogMeanL -gt 15) { return $true }
+    return $false
+}
+
+function Test-ReadySample(
+    [int]$OrangePx,
+    [double]$DialogMeanL,
+    [bool]$SeenSyncing,
+    [Nullable[datetime]]$FirstDialogAt
+) {
+    if ($OrangePx -lt $ReadyMinOrange) { return $false }
+    if ($DialogMeanL -lt $ReadyMinLuminance) { return $false }
+    if ($SeenSyncing) { return $true }
+    if ($FirstDialogAt -and ((Get-Date) - $FirstDialogAt).TotalSeconds -ge $SyncGraceSeconds) {
+        return $true
+    }
+    return $false
 }
 
 try {
@@ -250,24 +323,132 @@ try {
     [void][WatchOfflineVision]::SetForegroundWindow($game.MainWindowHandle)
     Start-Sleep -Milliseconds 300
 
+    # --- Sync-dim ready gate ---
+    $phase = 'LookingForDialog'
+    $appearDeadline = (Get-Date).AddSeconds($AppearTimeoutSeconds)
+    $readyDeadline = $null
+    $firstDialogAt = $null
+    $seenSyncing = $false
+    $stable = 0
+    $readyAnalysis = $null
+    Write-Host ("watch_offline: ready_gate appear={0}s ready={1}s grace={2}s hold={3}s" -f `
+        $AppearTimeoutSeconds, $ReadyTimeoutSeconds, $SyncGraceSeconds, $ReadyHoldSeconds)
+
+    while ($true) {
+        $game = Get-GameWindow
+        if (-not $game) {
+            Write-Host 'watch_offline: no_game_window_while_waiting'
+            exit 1
+        }
+        [void][WatchOfflineVision]::ShowWindow($game.MainWindowHandle, 9)
+        [void][WatchOfflineVision]::SetForegroundWindow($game.MainWindowHandle)
+
+        $analysis = Get-WindowAnalysis $game.MainWindowHandle $ScreenshotPath
+        if (-not $analysis) {
+            Write-Host 'watch_offline: capture_failed_while_waiting'
+            Start-Sleep -Milliseconds $SampleIntervalMs
+            continue
+        }
+
+        $orangePx = [int]$analysis.Blob.PixelCount
+        $dialogMeanL = [Math]::Round([double]$analysis.DialogMeanLuminance, 1)
+
+        if ($phase -eq 'LookingForDialog') {
+            if (Test-DialogPresent $orangePx $dialogMeanL) {
+                $phase = 'WaitingForReady'
+                $firstDialogAt = Get-Date
+                $readyDeadline = (Get-Date).AddSeconds($ReadyTimeoutSeconds)
+                Write-Host ("watch_offline: phase={0} dialogMeanL={1} orangePx={2} seenSync={3} stable={4}" -f `
+                    $phase, $dialogMeanL, $orangePx, $seenSyncing, $stable)
+            }
+            elseif ((Get-Date) -ge $appearDeadline) {
+                break
+            }
+            else {
+                Write-Host ("watch_offline: phase={0} dialogMeanL={1} orangePx={2} seenSync={3} stable={4}" -f `
+                    $phase, $dialogMeanL, $orangePx, $seenSyncing, $stable)
+            }
+        }
+        else {
+            if ((Get-Date) -ge $readyDeadline) {
+                break
+            }
+
+            if ($dialogMeanL -lt $SyncMaxLuminance -or $orangePx -lt $SyncMaxOrange) {
+                $seenSyncing = $true
+            }
+
+            if (Test-ReadySample $orangePx $dialogMeanL $seenSyncing $firstDialogAt) {
+                $stable++
+                $readyAnalysis = $analysis
+                Write-Host ("watch_offline: phase={0} dialogMeanL={1} orangePx={2} seenSync={3} stable={4}/{5}" -f `
+                    $phase, $dialogMeanL, $orangePx, $seenSyncing, $stable, $StableSamples)
+                if ($stable -ge $StableSamples) {
+                    break
+                }
+            }
+            else {
+                if ($stable -gt 0) {
+                    Write-Host ("watch_offline: phase={0} dialogMeanL={1} orangePx={2} seenSync={3} stable=0_reset" -f `
+                        $phase, $dialogMeanL, $orangePx, $seenSyncing)
+                }
+                else {
+                    Write-Host ("watch_offline: phase={0} dialogMeanL={1} orangePx={2} seenSync={3} stable={4}" -f `
+                        $phase, $dialogMeanL, $orangePx, $seenSyncing, $stable)
+                }
+                $stable = 0
+                $readyAnalysis = $null
+            }
+        }
+
+        Start-Sleep -Milliseconds $SampleIntervalMs
+    }
+
+    if ($stable -lt $StableSamples -or -not $readyAnalysis) {
+        $vsNow = Get-VerificationState
+        if ($vsNow -eq 'OfflineReplayVerified') {
+            Write-Host 'watch_offline: already_verified_no_dialog'
+            exit 0
+        }
+        Write-Host 'watch_offline: FAILED_ready_never_reached'
+        exit 5
+    }
+
+    $preCount = [int]$readyAnalysis.Blob.PixelCount
+    Write-Host ("watch_offline: phase=Ready dialogMeanL={0} orangePx={1} seenSync={2} stable={3} hold_{4}s" -f `
+        [Math]::Round([double]$readyAnalysis.DialogMeanLuminance, 1), $preCount, $seenSyncing, $stable, $ReadyHoldSeconds)
+    if ($ReadyHoldSeconds -gt 0) {
+        Start-Sleep -Seconds $ReadyHoldSeconds
+    }
+
+    # Re-check after hold — dialog may have timed out during hold.
+    $game = Get-GameWindow
+    if (-not $game) {
+        Write-Host 'watch_offline: window_lost_after_hold'
+        exit 1
+    }
     $analysis = Get-WindowAnalysis $game.MainWindowHandle $ScreenshotPath
     if (-not $analysis) {
-        Write-Host 'watch_offline: capture_failed'
+        Write-Host 'watch_offline: capture_failed_after_hold'
         exit 4
     }
     $preCount = [int]$analysis.Blob.PixelCount
-    Write-Host ("watch_offline: pre_orange_pixels={0} found={1} centroid={2},{3}" -f `
+    Write-Host ("watch_offline: pre_click_orange_pixels={0} found={1} centroid={2},{3}" -f `
         $preCount, $analysis.Blob.Found, $analysis.Blob.CentroidX, $analysis.Blob.CentroidY)
+
+    $beforeState = Get-GameState
+    $before = if ($beforeState -and $beforeState.verificationState) {
+        [string]$beforeState.verificationState
+    }
+    else { 'Unknown' }
 
     if ($before -eq 'OfflineReplayVerified' -and $preCount -le $DismissMaxPixels) {
         Write-Host 'watch_offline: already_dismissed_and_verified'
-        Write-Host "watch_offline: screenshot=$ScreenshotPath"
         exit 0
     }
 
     if ($preCount -lt $MinBlobPixels -and $before -ne 'OfflineReplayVerified') {
-        Write-Host 'watch_offline: FAILED_no_orange_blob (dialog not visible or capture blank)'
-        Write-Host "watch_offline: screenshot=$ScreenshotPath"
+        Write-Host 'watch_offline: FAILED_blob_gone_after_hold (dialog timed out?)'
         exit 5
     }
 
@@ -346,7 +527,7 @@ try {
             }
         }
 
-        Write-Host "watch_offline: screenshot=$ScreenshotPath gateOk=$gateOk dialogGone=$dialogGone"
+        Write-Host ("watch_offline: gateOk={0} dialogGone={1}" -f $gateOk, $dialogGone)
         if ($gateOk -and $dialogGone) { break }
     }
 

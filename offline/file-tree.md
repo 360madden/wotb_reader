@@ -249,6 +249,7 @@ src/WotBTreader.GameIntegration/Session/GameSessionCoordinator.cs
 src/WotBTreader.GameIntegration/Session/ManagedLaunchCorrelationRegistrar.cs
 src/WotBTreader.GameIntegration/Session/ManagedLaunchPreparer.cs
 src/WotBTreader.GameIntegration/Session/ManagedReplayArtifactStager.cs
+src/WotBTreader.GameIntegration/Session/ReplayLaunchStagingPaths.cs
 src/WotBTreader.GameIntegration/Session/SuspendedGameProcessLaunch.cs
 src/WotBTreader.GameIntegration/Session/ThreadResumeLease.cs
 src/WotBTreader.GameIntegration/Session/TrustedGameIdentityProvider.cs
@@ -456,6 +457,7 @@ tests/WotBTreader.GameIntegration.Tests/ManagedLaunchCorrelationRegistrarTests.c
 tests/WotBTreader.GameIntegration.Tests/ManagedLaunchPreparerTests.cs
 tests/WotBTreader.GameIntegration.Tests/ManagedReplayArtifactStagerTests.cs
 tests/WotBTreader.GameIntegration.Tests/OptInInstalledGameTests.cs
+tests/WotBTreader.GameIntegration.Tests/ReplayLaunchStagingPathsTests.cs
 tests/WotBTreader.GameIntegration.Tests/SuspendedGameProcessLaunchTests.cs
 tests/WotBTreader.GameIntegration.Tests/TestInfrastructure.cs
 tests/WotBTreader.GameIntegration.Tests/TrustedGameIdentityProviderTests.cs

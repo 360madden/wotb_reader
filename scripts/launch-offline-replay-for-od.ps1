@@ -43,7 +43,7 @@
 param(
     [string]$ReplayPath,
     [string]$RepoRoot,
-    [int]$SettleSeconds = 40,
+    [int]$SettleSeconds = 0,
     [int]$HostWaitSeconds = 60,
     [int]$WindowWaitSeconds = 90,
     [int]$WatchTimeoutSeconds = 120,
@@ -242,8 +242,9 @@ try {
         exit 3
     }
 
-    Write-Od ("settle_${SettleSeconds}s_for_watch_offline")
-    Start-Sleep -Seconds $SettleSeconds
+    Write-Od 'watch_offline_sync_dim_ready_then_click'
+    # No long blind settle: click-watch-offline runs the sync-dim ready gate
+    # (bright dialog + strong orange, after sync dim or grace), holds ~2s, then clicks.
 
     $api = Get-ApiContext
     $pre = Invoke-RestMethod -Uri "$($api.Base)/api/v1/game/state" -Headers $api.Headers
@@ -257,6 +258,11 @@ try {
     if ($SkipWatchOffline) {
         Write-Od 'skip_watch_offline'
         exit 0
+    }
+
+    if ($SettleSeconds -gt 0) {
+        Write-Od ("optional_settle_${SettleSeconds}s")
+        Start-Sleep -Seconds $SettleSeconds
     }
 
     $watchScript = Join-Path $RepoRoot 'scripts\click-watch-offline.ps1'
