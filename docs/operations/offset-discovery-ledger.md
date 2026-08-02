@@ -49,7 +49,7 @@ Every address must be classified before publication:
 | `playerYaw` | **Quarantined / Ambiguous** until decimal, hexadecimal, raw Ghidra, and address-kind evidence reconcile |
 | Trusted next anchor | `playerPositionX`/`playerPositionZ`, then `replayTime` or HP if the replay makes them observable |
 | Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007); absolute LE pointer AOB across private/all/image + align 1/8 without a changed encoding hypothesis (ruled out by OD-RECOVERY-008); truncated low-32 LE dword AOB of survivor absolutes without a changed encoding hypothesis (ruled out by OD-RECOVERY-009); automated CE `bptAccess`/`bptWrite` on Float position survivors without a field pivot or interactive debugger (0 RIP hits through OD-RECOVERY-011); CE write-BP alone on the single increased `replayTime` Double without interactive debugger or a second independent launch (0 RIP in OD-RECOVERY-012) |
-| Next planned session | `OD-RECOVERY-014` (classify/root the ≤4 rolling-increased `replayTime` Doubles; neighborhood or interactive debugger; second distinct replay still required before promotion — BLK-0019) |
+| Next planned session | `OD-RECOVERY-015` (interactive debugger / stronger root for rolling `replayTime` Doubles; second distinct replay; neighborhood is usable but noisy — BLK-0019) |
 
 The current yaw conflict is recorded explicitly:
 
@@ -95,6 +95,7 @@ occurred.
 | `OD-RECOVERY-011` | 2026-08-02 | Second-pass Float narrow + CE write-BP | rolling then second changed compare + CE `bptWrite` during movement | `Partial` | Pass1 changed≈2899 → pass2 changed≈1929 (private-mapping); CE 3 write BPs set; hitCount=0; Watch Offline click required for gate | Second-pass helps count; still no RIP — pivot field or interactive debugger |
 | `OD-RECOVERY-012` | 2026-08-02 | Field pivot HP + replayTime under offline | Int32 unchanged HP window + Double increased replayTime + CE write-BP + pointer AOB | `Partial` / near-`CandidateFound` | Agent clicked WATCH OFFLINE; HP unchanged≈4441 (`mapped-mapping` sample); **replayTime increased=1** (`private-mapping`); CE 3 write BPs hitCount=0; ptr AOB 0 | Unique increased Double is strong heap-dynamic evidence; no root/RIP; not promoted |
 | `OD-RECOVERY-013` | 2026-08-02 | Second independent launch reproduce `replayTime` | agent Watch Offline + Double increased + rollingBaseline passes | `Partial` | Second Host.Web child PID; rolling increased **193→60→15→4** all `private-mapping`; same replay artifact | RT increased behavior reproduces across launches; still heap-dynamic; second distinct replay still required |
+| `OD-RECOVERY-014` | 2026-08-02 | Neighborhood + pointer classify on rolling RT set | rolling increased + `/discover/neighborhood` + pointer AOB | `Partial` | Rolling to ≤10; neighborhood OK on `relativeOffset` (noisy ~1k hits/4); pointer AOB flaky (1 hit then 0 on rebuild) | Neighborhood path live; no stable image/module pointer root |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -1036,6 +1037,47 @@ artifacts:
 
 `OD-RECOVERY-013` is aggregate structural evidence only. Offset remains 0.
 Absolute addresses, values, and scanner session identifiers were discarded.
+
+```yaml
+sessionId: OD-RECOVERY-014
+date: 2026-08-02
+observedAtUtc: 2026-08-02T20:35:00Z
+timebox: managed launch; rolling RT set; neighborhood + pointer AOB
+decision: neighborhood works against survivor relativeOffset but is too noisy for promotion; pointer AOB not stable across rebuilds
+objective: Classify/root the rolling-increased replayTime Double survivors
+stopCondition: Stop after neighborhood + pointer aggregates, or gate loss
+method:
+  primaryTool: Host.Web rolling Double increased + discover/neighborhood + discover/pattern
+  transition: agent-owned WATCH OFFLINE + Space pulses
+observations:
+  - state: rolling
+    finalIncreasedApprox: 10
+  - state: neighborhood
+    survivorsProbed: 4
+    ok: 4
+    aggregateHitsApprox: 1253
+    note: usable API path; not a unique struct fingerprint
+  - state: pointer-aob
+    firstPassWithHits: 1
+    rebuildPassWithHits: 0
+    scannerSessionDiscarded: true
+result:
+  whatWorked:
+    - relativeOffset from compare candidates can drive neighborhood probes.
+  whatFailed:
+    - No stable module/image pointer root; neighborhood too dense to classify alone.
+  rulesOut:
+    - Expecting neighborhood hit-count alone to yield a publishable replayTime offset.
+  partials:
+    - Tooling path for struct-neighborhood exists for future interactive/root work.
+  nextPivot: OD-RECOVERY-015 — interactive debugger or second distinct replay; keep rolling RT recipe.
+  repeatWithoutChangedHypothesis: false
+artifacts:
+  rawFiles: none
+  committedSummary: this ledger entry
+```
+
+`OD-RECOVERY-014` is aggregate structural evidence only. Offset remains 0.
 
 ## Evidence promotion checklist
 

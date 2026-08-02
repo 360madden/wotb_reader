@@ -615,6 +615,10 @@ folder for the full numbering convention and document map.
   Rolling Double increased narrowed 193→60→15→4 (`private-mapping`). Same
   replay artifact (independentReplays unchanged). No promoted offset.
 
+- Resolution amendment (`2026-08-02T20:35:00Z`): agent-owned **WATCH OFFLINE**
+  click covered `OD-RECOVERY-014`. Neighborhood via survivor relativeOffset
+  worked but was noisy; pointer AOB not stable. No promoted offset.
+
 ## BLK-0023 — Managed replay launch hid the window and fabricated window evidence
 
 - First observed: `2026-08-02T04:34:31Z`

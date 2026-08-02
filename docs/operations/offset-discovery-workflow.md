@@ -311,23 +311,18 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-014`. `OD-RECOVERY-013` completed as **Partial**:
-second independent Host.Web-managed launch (agent **WATCH OFFLINE**) reproduced
-`replayTime` Double **increased** behavior; rolling baseline narrowed
-**193→60→15→4** (`private-mapping`). Same replay artifact as OD-012, so
-`independentReplays` is still not satisfied (BLK-0019).
+Session ID: `OD-RECOVERY-015`. `OD-RECOVERY-014` completed as **Partial**:
+rolling `replayTime` Doubles remain `private-mapping`; `/discover/neighborhood`
+accepts survivor `relativeOffset` but returns dense/noisy hits; pointer AOB was
+not stable across rebuilds.
 
-1. Confirm owner authorization before any foreground window operation
-   (BLK-0022). After every managed launch, the agent clicks **WATCH OFFLINE**
-   (never **LOG IN AND WATCH**).
-2. Start from zero game processes; ensure `wotblitz` parent is
-   `WotBTreader.Host.Web.exe`, not WGC.
-3. Keep the research lease bounds (5–120 / 5–300).
-4. **Primary:** classify/root the ≤4 rolling-increased Doubles (neighborhood,
-   interactive x64dbg/CE GUI, or pointer hypothesis). Prefer a **second
-   distinct replay** when available (BLK-0019).
-5. Do **not** promote; do not treat same-artifact dual-launch as two replays.
-6. Append the ledger and a dated handoff before stopping.
+1. Agent clicks **WATCH OFFLINE** after every managed launch (never LOG IN).
+2. Prefer Host.Web-managed `wotblitz` (not WGC); research lease 5–120 / 5–300.
+3. Reuse rolling Double increased recipe to ≤10 survivors, then interactive
+   x64dbg/CE GUI Find-what-writes, **or** import a **second distinct replay**
+   (BLK-0019).
+4. Do not promote from neighborhood hit counts alone.
+5. Append ledger + handoff before stopping.
 
 The success criterion remains **one correctly classified, reproducible
 candidate**. Do not promote from aggregate counts alone.
