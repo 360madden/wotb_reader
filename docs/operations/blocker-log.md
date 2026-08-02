@@ -598,6 +598,12 @@ folder for the full numbering convention and document map.
   hits during overlapping resume; VEH debug attach stalled. Adapter still
   unregistered. No promoted offset.
 
+- Resolution amendment (`2026-08-02T20:20:00Z`): the same authorized foreground
+  path covered `OD-RECOVERY-011`, including a required **WATCH OFFLINE** click
+  on the not-logged-in dialog (never LOG IN AND WATCH). Second-pass Float
+  narrowing reached changed≈1929; CE write breakpoints set (3) with zero RIP
+  hits. Adapter still unregistered. No promoted offset.
+
 ## BLK-0023 — Managed replay launch hid the window and fabricated window evidence
 
 - First observed: `2026-08-02T04:34:31Z`

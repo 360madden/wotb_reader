@@ -311,24 +311,23 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-011`. `OD-RECOVERY-010` completed as **Partial**:
-a probed 64 MiB window reached changed≈**1955**; CE Windows debugger set
-**3** `bptWrite` breakpoints (list count 3) under `OfflineReplayVerified` and
-recorded **0** hits during overlapping resume pulses. VEH `debugProcess(2)`
-stalled and should not lead unattended runs.
+Session ID: `OD-RECOVERY-012`. `OD-RECOVERY-011` completed as **Partial**:
+Watch Offline click was required for the gate; second-pass Float narrowing
+reached changed≈**1929** (from pass1≈**2899**); CE Windows debugger set
+**3** write breakpoints and recorded **0** RIP hits during overlapping resume.
 
 1. Confirm owner authorization before any foreground window operation
    (BLK-0022). The guarded GameHarness input adapter remains unregistered.
 2. Start from zero game processes; ensure any live `wotblitz` parent is
-   `WotBTreader.Host.Web.exe`, not WGC. Wait for `OfflineReplayVerified`.
+   `WotBTreader.Host.Web.exe`, not WGC. When the "not logged in" dialog
+   appears, click **WATCH OFFLINE** only — never **LOG IN AND WATCH**.
 3. Keep the research lease bounds (`Research:OfflineReplayEvidenceLifetimeSeconds`
    5–120, `Research:LifecycleEvidenceTimeoutSeconds` 5–300).
-4. Prefer **bounded windows** with a **second compare pass** (changed→changed)
-   before debugger breakpoints; avoid first-pass multi-10k survivor sets.
+4. Prefer a **field pivot** (`playerHP` / `replayTime`) or interactive
+   x64dbg/CE GUI Find-what-writes. Do **not** expect automated CE write-BP
+   alone on Float second-pass survivors to produce RIP evidence.
 5. Do **not** repeat absolute/truncated pointer AOB or automated CE
-   access/write BP on first-pass noisy Float survivors unchanged. Next:
-   x64dbg or CE GUI Find-what-writes on second-pass survivors, **or** pivot to
-   `playerHP` / `replayTime` — aggregates-only (module-name histograms OK).
+   access/write BP on Float survivors unchanged.
 6. Obtain a second distinct replay before any promotion review (BLK-0019).
 7. Append the ledger and a dated handoff before stopping.
 

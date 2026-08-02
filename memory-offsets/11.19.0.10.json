@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "gameVersion": "11.19.0.10",
   "executableSha256": "1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d",
-  "discoveredAtUtc": "2026-08-02T20:15:00Z",
+  "discoveredAtUtc": "2026-08-02T20:20:00Z",
   "offsets": {
     "replayTime": 0,
     "playerHP": 0,
@@ -61,6 +61,11 @@
           "provenanceKind": "DynamicScan",
           "sourceTool": "CE 7.x debugProcess(Windows) + debug_setBreakpoint(bptWrite)",
           "notes": "OD-RECOVERY-010: probed window changed~1955; CE Windows debugger set 3 write breakpoints (list count 3) under OfflineReplayVerified; overlapping resume pulse hitCount=0; VEH debugProcess stalled. Does not promote any offset."
+        },
+        {
+          "provenanceKind": "DynamicScan",
+          "sourceTool": "Host.Web second-pass compare + CE bptWrite",
+          "notes": "OD-RECOVERY-011: Watch Offline click required for gate; second-pass Float narrowing ~2899->1929 private-mapping; CE Windows debugger 3 write BPs; hitCount=0 during overlapping resume. Does not promote any offset."
         }
       ],
       "independentProcessLaunches": 0,
@@ -101,6 +106,11 @@
           "provenanceKind": "DynamicScan",
           "sourceTool": "CE 7.x debugProcess(Windows) + debug_setBreakpoint(bptWrite)",
           "notes": "OD-RECOVERY-010: probed window changed~1955; CE Windows debugger set 3 write breakpoints (list count 3) under OfflineReplayVerified; overlapping resume pulse hitCount=0; VEH debugProcess stalled. Does not promote any offset."
+        },
+        {
+          "provenanceKind": "DynamicScan",
+          "sourceTool": "Host.Web second-pass compare + CE bptWrite",
+          "notes": "OD-RECOVERY-011: Watch Offline click required for gate; second-pass Float narrowing ~2899->1929 private-mapping; CE Windows debugger 3 write BPs; hitCount=0 during overlapping resume. Does not promote any offset."
         }
       ],
       "independentProcessLaunches": 0,
@@ -111,5 +121,5 @@
     }
   },
   "confidence": "none",
-  "notes": "No usable offsets are currently published for 11.19.0.10. playerYaw remains Stale/quarantined. OD-RECOVERY-004..009: heap-dynamic Float survivors; absolute/truncated pointer AOBs ruled out; CE access-BP 0 hits. OD-RECOVERY-010: CE write-BP path live (3 BPs) with 0 hits; VEH attach stalled. Next OD-RECOVERY-011 (x64dbg/CE GUI second-pass or HP/replayTime pivot). Do not promote until address kind, root, two launches, and two independent replays (BLK-0019)."
+  "notes": "No usable offsets are currently published for 11.19.0.10. playerYaw remains Stale/quarantined. OD-RECOVERY-004..010: heap-dynamic Float survivors; pointer AOBs ruled out; CE access/write BP 0 hits. OD-RECOVERY-011: second-pass Float ~1929 survivors; CE write-BP still 0 RIP hits. Next OD-RECOVERY-012 (HP/replayTime pivot or interactive debugger). Do not promote until address kind, root, two launches, and two independent replays (BLK-0019)."
 }

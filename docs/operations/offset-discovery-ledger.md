@@ -48,8 +48,8 @@ Every address must be classified before publication:
 | Runtime-supported fields | None; current table has 0 usable offsets, 1 Stale/quarantined field, and 7 Unknown |
 | `playerYaw` | **Quarantined / Ambiguous** until decimal, hexadecimal, raw Ghidra, and address-kind evidence reconcile |
 | Trusted next anchor | `playerPositionX`/`playerPositionZ`, then `replayTime` or HP if the replay makes them observable |
-| Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007); absolute LE pointer AOB across private/all/image + align 1/8 without a changed encoding hypothesis (ruled out by OD-RECOVERY-008); truncated low-32 LE dword AOB of survivor absolutes without a changed encoding hypothesis (ruled out by OD-RECOVERY-009); automated CE `bptAccess`/`bptWrite` on first-pass noisy Float A→B survivors without further narrowing or a field pivot (0 hits in OD-RECOVERY-009/010) |
-| Next planned session | `OD-RECOVERY-011` (x64dbg or CE GUI Find-what-writes on a second-pass narrowed survivor, or pivot field to HP/replayTime; automated CE access/write BP on first-pass Float survivors returned 0 hits; second distinct replay still required before promotion) |
+| Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007); absolute LE pointer AOB across private/all/image + align 1/8 without a changed encoding hypothesis (ruled out by OD-RECOVERY-008); truncated low-32 LE dword AOB of survivor absolutes without a changed encoding hypothesis (ruled out by OD-RECOVERY-009); automated CE `bptAccess`/`bptWrite` on first- or second-pass Float A→B survivors without a field pivot or interactive debugger (0 RIP hits through OD-RECOVERY-011) |
+| Next planned session | `OD-RECOVERY-012` (field pivot to HP/replayTime, or x64dbg/CE GUI on a further-narrowed unique survivor; second-pass Float + automated CE write-BP still 0 RIP hits; second distinct replay still required before promotion) |
 
 The current yaw conflict is recorded explicitly:
 
@@ -92,6 +92,7 @@ occurred.
 | `OD-RECOVERY-008` | 2026-08-02 | Two-level absolute pointer hunt + CE launch smoke | windowed Float A→B + pattern matrix (priv/all/img × align 1/8) + CE 7.7 launch under verified offline | `NoSignal` | A→B changed≈670–1102 (private-mapping); 0 absolute LE pointer hits across matrix; CE x64 launched/responded while offline gate held (no automated attach/scan) | No static/multi-level absolute pointer root; CE structural attach/scan still manual |
 | `OD-RECOVERY-009` | 2026-08-02 | Truncated-pointer encoding + CE access-BP under offline | windowed Float A→B + low32 LE dword pattern + CE Windows debugger access breakpoints during movement | `Partial` | Truncated low32 AOB 0 hits (priv/img/all on 6 survivors); CE attached+debugging with 3 access BPs set; 0 hits during overlapping resume pulse | Encoding not low32 absolute dword; CE access-BP path live but no instruction evidence yet |
 | `OD-RECOVERY-010` | 2026-08-02 | CE Find-what-writes under offline | tight-window probe + CE `bptWrite` (Windows debugger; VEH hung) during overlapping movement | `Partial` | Probe window changed≈1955; CE Windows debugger set 3 write BPs (list count 3); hitCount=0; VEH `debugProcess(2)` stalled | Automated write-BP on first-pass survivors yields no RIP; need tighter/second-pass or field pivot |
+| `OD-RECOVERY-011` | 2026-08-02 | Second-pass Float narrow + CE write-BP | rolling then second changed compare + CE `bptWrite` during movement | `Partial` | Pass1 changed≈2899 → pass2 changed≈1929 (private-mapping); CE 3 write BPs set; hitCount=0; Watch Offline click required for gate | Second-pass helps count; still no RIP — pivot field or interactive debugger |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -874,6 +875,62 @@ artifacts:
 ```
 
 `OD-RECOVERY-010` is aggregate structural evidence only. It does not make any
+field `Candidate` or `Verified` and must not change
+`memory-offsets/11.19.0.10.json` beyond narrative Unknown evidence notes.
+Absolute addresses, values, and scanner session identifiers were discarded.
+
+```yaml
+sessionId: OD-RECOVERY-011
+date: 2026-08-02
+observedAtUtc: 2026-08-02T20:20:00Z
+timebox: managed launch; Watch Offline click; second-pass Float narrow; CE bptWrite
+decision: second-pass Float narrowing reduces the changed set but automated CE write breakpoints still yield no RIP; pivot field or use interactive debugger next
+objective: Narrow Float A→B survivors with a second changed pass, then capture CE write-BP module hits
+stopCondition: Stop after second-pass aggregates + CE write-BP attempt, or gate loss
+method:
+  primaryTool: Host.Web snapshot/compare (rolling then second changed) + CE Windows debugger bptWrite
+  valueKind: Float32
+  floatBounds: [-500, 500]
+  transition: owner-authorized Watch Offline click + Space pause/resume/pause
+observations:
+  - state: launch
+    parentProcess: WotBTreader.Host.Web.exe
+    verificationState: OfflineReplayVerified
+    note: WATCH OFFLINE dialog click required (must not use LOG IN AND WATCH)
+  - state: second-pass
+    probeChangedApprox: 3129
+    pass1ChangedApprox: 2899
+    pass2PreviousApprox: 2899
+    pass2ChangedApprox: 1929
+    addressKindHistogram:
+      private-mapping: 12
+  - state: ce-write-bp
+    attached: true
+    debugProcess: windows
+    breakpointsSet: 3
+    breakpointListCount: 3
+    hitCount: 0
+    ripModuleHistogram: empty
+    scannerSessionDiscarded: true
+result:
+  whatWorked:
+    - Watch Offline foreground click recovered/maintained OfflineReplayVerified.
+    - Second changed pass kept a private-mapping survivor pool (~1929).
+    - CE write-BP attach/set path remained live.
+  whatFailed:
+    - Zero write-breakpoint hits during overlapping resume pulse.
+  rulesOut:
+    - Expecting automated CE write-BP RIP evidence from second-pass Float survivors alone without a field pivot.
+  partials:
+    - Second-pass narrowing is reusable setup; instruction provenance still missing.
+  nextPivot: OD-RECOVERY-012 — HP/replayTime field pivot or interactive x64dbg/CE GUI; second distinct replay before promotion (BLK-0019).
+  repeatWithoutChangedHypothesis: false
+artifacts:
+  rawFiles: none
+  committedSummary: this ledger entry
+```
+
+`OD-RECOVERY-011` is aggregate structural evidence only. It does not make any
 field `Candidate` or `Verified` and must not change
 `memory-offsets/11.19.0.10.json` beyond narrative Unknown evidence notes.
 Absolute addresses, values, and scanner session identifiers were discarded.
