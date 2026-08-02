@@ -318,6 +318,10 @@ reached changed≈**1929** (from pass1≈**2899**); CE Windows debugger set
 
 1. Confirm owner authorization before any foreground window operation
    (BLK-0022). The guarded GameHarness input adapter remains unregistered.
+   **Standing operator rule (2026-08-02):** after every managed launch, the
+   agent must click **WATCH OFFLINE** on the "You are not logged in" dialog
+   before waiting for `OfflineReplayVerified`. Do not leave that dialog for
+   the human and do not click **LOG IN AND WATCH**.
 2. Start from zero game processes; ensure any live `wotblitz` parent is
    `WotBTreader.Host.Web.exe`, not WGC. When the "not logged in" dialog
    appears, click **WATCH OFFLINE** only — never **LOG IN AND WATCH**.

@@ -30,3 +30,9 @@ survivors expecting RIP alone.
 1. Commit this closeout.
 2. OD-RECOVERY-012 field pivot or interactive debugger.
 3. Second distinct replay before promotion (BLK-0019).
+
+## Amendment — U1 standing Watch Offline ownership (`2026-08-02T20:25:00Z`)
+
+Owner clarified: after every managed launch the **agent** must click **WATCH
+OFFLINE** (never leave that dialog for the human; never **LOG IN AND WATCH**).
+Recorded as a standing rule in `offset-discovery-workflow.md` current protocol.
