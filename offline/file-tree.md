@@ -116,6 +116,7 @@ docs/operations/handoffs/2026-08-02-od-recovery-011-partial.md
 docs/operations/handoffs/2026-08-02-od-recovery-012-partial.md
 docs/operations/handoffs/2026-08-02-od-recovery-013-partial.md
 docs/operations/handoffs/2026-08-02-od-recovery-014-partial.md
+docs/operations/handoffs/2026-08-02-od-recovery-015-partial.md
 docs/operations/handoffs/2026-08-02-operations-docs-review.md
 docs/operations/handoffs/README.md
 docs/operations/offset-discovery-guide.md
@@ -165,6 +166,7 @@ research/uploaded-replays.md
 scripts/click-watch-offline.ps1
 scripts/ghidra-scan.py
 scripts/invoke-cursor-agent.ps1
+scripts/launch-offline-replay-for-od.ps1
 scripts/python/README.md
 scripts/python/e2e_smoke.py
 scripts/python/offline_check.py

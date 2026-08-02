@@ -6,6 +6,12 @@
 .DESCRIPTION
   Owner-proven source of truth for which replay to play is:
     %LOCALAPPDATA%\wotblitz\DAVAProject\replays\*.wotbreplay
+  (top-level originals only — never wotbtreader-staging\ GUID copies).
+
+  Managed launch stages under:
+    …\replays\wotbtreader-staging\{guid}.wotbreplay
+  so temporary copies are not mixed with originals. Flat GUID clones the game
+  may drop into the parent replays folder are scavenged on stage dispose.
 
   Flaw this script replaces:
   - File-association alone can play a replay, but Host.Web never receives managed
@@ -36,7 +42,7 @@
 [CmdletBinding()]
 param(
     [string]$ReplayPath,
-    [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path,
+    [string]$RepoRoot,
     [int]$SettleSeconds = 40,
     [int]$HostWaitSeconds = 60,
     [int]$WindowWaitSeconds = 90,
@@ -47,6 +53,16 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
+    $scriptDir = if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+        $PSScriptRoot
+    }
+    else {
+        Split-Path -Parent $MyInvocation.MyCommand.Path
+    }
+    $RepoRoot = (Resolve-Path (Join-Path $scriptDir '..')).Path
+}
 
 function Write-Od([string]$Message) {
     Write-Host ("od_launch: " + $Message)
@@ -101,10 +117,16 @@ function Stop-OdProcesses {
 
 try {
     $replaysDir = Join-Path $env:LOCALAPPDATA 'wotblitz\DAVAProject\replays'
+    $stagingDir = Join-Path $replaysDir 'wotbtreader-staging'
     if ([string]::IsNullOrWhiteSpace($ReplayPath)) {
-        $replay = Get-ChildItem -LiteralPath $replaysDir -Filter '*.wotbreplay' -ErrorAction SilentlyContinue |
-            Sort-Object LastWriteTime -Descending |
-            Select-Object -First 1
+        # Top-level originals only: never recurse into wotbtreader-staging, and
+        # prefer human-named files over GUID stage leftovers in the flat list.
+        $candidates = @(Get-ChildItem -LiteralPath $replaysDir -Filter '*.wotbreplay' -File -ErrorAction SilentlyContinue)
+        $originals = @($candidates | Where-Object {
+            $_.Name -notmatch '^[0-9a-fA-F]{32}\.wotbreplay$'
+        })
+        $pickFrom = if ($originals.Count -gt 0) { $originals } else { $candidates }
+        $replay = $pickFrom | Sort-Object LastWriteTime -Descending | Select-Object -First 1
         if (-not $replay) {
             Write-Od 'FAILED_no_wotbreplay_in_game_folder'
             exit 1
@@ -113,6 +135,13 @@ try {
     }
     elseif (-not (Test-Path -LiteralPath $ReplayPath)) {
         Write-Od 'FAILED_replay_path_missing'
+        exit 1
+    }
+
+    # Refuse launching a path that lives inside the staging folder as "source of truth".
+    $fullReplay = [IO.Path]::GetFullPath($ReplayPath)
+    if ($fullReplay.StartsWith([IO.Path]::GetFullPath($stagingDir) + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+        Write-Od 'FAILED_replay_is_staging_copy_use_original'
         exit 1
     }
 
@@ -157,13 +186,26 @@ try {
     Write-Od 'host_ok'
 
     Write-Od 'importing'
-    $importLines = & $cli import $replayItem.FullName 2>&1 | ForEach-Object { "$_" }
-    $importText = $importLines -join "`n"
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $importLines = & $cli import $replayItem.FullName 2>&1 | ForEach-Object { "$_" }
+    }
+    finally {
+        $ErrorActionPreference = $prevEap
+    }
+    $importText = ($importLines | ForEach-Object { "$_" }) -join "`n"
     if ($importText -notmatch '([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})') {
         Write-Od 'FAILED_import_parse'
         exit 1
     }
-    $artifactId = $Matches[1]
+    # Prefer the explicit "Imported artifact <guid>" line when present.
+    if ($importText -match 'Imported artifact\s+([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})') {
+        $artifactId = $Matches[1]
+    }
+    else {
+        $artifactId = $Matches[1]
+    }
     Set-Content -Path (Join-Path $env:TEMP 'od-launch-artifact.id') -Value $artifactId -NoNewline
     Write-Od ("artifact_prefix=" + $artifactId.Substring(0, 8))
 

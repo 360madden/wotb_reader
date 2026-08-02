@@ -72,7 +72,10 @@ public sealed class GameIntegrationOptions
 
     /// <summary>
     /// Gets the private directory used for collision-safe managed replay launch
-    /// copies. A null value keeps replay staging unavailable.
+    /// copies. Prefer
+    /// <c>{gameUserData}/DAVAProject/replays/wotbtreader-staging</c> so staged
+    /// GUID files are not mixed with the player's original replays. A null value
+    /// keeps replay staging unavailable.
     /// </summary>
     public string? ReplayLaunchStagingRoot { get; init; }
 

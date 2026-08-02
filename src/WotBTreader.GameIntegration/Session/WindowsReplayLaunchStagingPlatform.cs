@@ -522,6 +522,11 @@ internal sealed class WindowsReplayLaunchStagingPlatform
                 {
                     cleanupFailed = true;
                 }
+
+                // Best-effort: remove a flat GUID clone the game may have copied
+                // into …/replays/{guid}.wotbreplay while we staged under
+                // …/replays/wotbtreader-staging/. Never touch non-GUID originals.
+                TryDeleteFlatReplayClone(Path);
             }
             finally
             {
@@ -535,6 +540,32 @@ internal sealed class WindowsReplayLaunchStagingPlatform
             }
 
             return ValueTask.CompletedTask;
+        }
+    }
+
+    /// <summary>
+    /// Best-effort removal of a flat GUID clone under the parent <c>replays</c>
+    /// directory. Failures are ignored — originals must never be deleted.
+    /// </summary>
+    private static void TryDeleteFlatReplayClone(string stagingFilePath)
+    {
+        string? clonePath = ReplayLaunchStagingPaths.TryGetFlatReplayClonePath(
+            stagingFilePath);
+        if (clonePath is null || !File.Exists(clonePath))
+        {
+            return;
+        }
+
+        try
+        {
+            File.Delete(clonePath);
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or DirectoryNotFoundException)
+        {
+            // Best-effort only; a locked in-use clone is left for the next pass.
         }
     }
 

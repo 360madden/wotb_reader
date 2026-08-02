@@ -323,7 +323,10 @@ imported (`duplicate=True` → `independentReplays` still 0); rolling RT increas
 
 **Replay source:** `%LOCALAPPDATA%\wotblitz\DAVAProject\replays\*.wotbreplay`
 (example basename pattern: `YYYYMMDD_HHMM__… .wotbreplay`). That folder is the
-owner-chosen source of which battle to play.
+owner-chosen source of which battle to play. Managed launch stages under
+`…\replays\wotbtreader-staging\` so GUID temp copies are not mixed with
+originals; flat GUID clones the game may drop beside originals are scavenged
+when the stage file is disposed.
 
 **Do not** treat file-association alone (`Invoke-Item` / double-click) as the OD
 launch path. It can start playback and show a replay HUD, but Host.Web never
@@ -342,10 +345,13 @@ What it does:
 1. Stops stale `wotblitz` / Host.Web / CE (clears a sticky `Denied` host).
 2. Starts Host.Web with research lease (`OfflineReplayEvidenceLifetimeSeconds=120`,
    `LifecycleEvidenceTimeoutSeconds=120`).
-3. Picks the newest `.wotbreplay` from the game replays folder (or `-ReplayPath`).
+3. Picks the newest **original** `.wotbreplay` from the game replays folder
+   (top-level only; skips GUID leftovers and `wotbtreader-staging\`), or
+   `-ReplayPath`.
 4. Imports via CLI → content-addressed artifact (basename + sha12 only in logs).
-5. `POST /api/v1/game/launch` (managed) with a **freshly read** rendezvous
-   capability (tokens rotate ~5 minutes; mid-wait 401 means re-read, not “auth broken”).
+5. `POST /api/v1/game/launch` (managed). Staging writes under
+   `…\DAVAProject\replays\wotbtreader-staging\` (not mixed with originals). A
+   freshly read rendezvous capability is required (tokens rotate ~5 minutes).
 6. Waits for a real window, then **settles** (default 40s) so **WATCH OFFLINE**
    can appear — launching/clicking too early drops into the hangar.
 7. Runs `scripts/click-watch-offline.ps1` (agent-owned). Exit 0 only when **both**

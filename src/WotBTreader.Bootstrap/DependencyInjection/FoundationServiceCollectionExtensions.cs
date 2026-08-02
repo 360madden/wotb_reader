@@ -9,6 +9,7 @@ using WotBTreader.Bootstrap.Startup;
 using WotBTreader.CaptureLogs.DependencyInjection;
 using WotBTreader.GameIntegration;
 using WotBTreader.GameIntegration.DependencyInjection;
+using WotBTreader.GameIntegration.Session;
 using WotBTreader.Replays;
 using WotBTreader.Storage.Sqlite;
 
@@ -67,7 +68,9 @@ public static class FoundationServiceCollectionExtensions
             UserDataRoots = string.IsNullOrWhiteSpace(options.GameUserDataRoot)
                 ? []
                 : [options.GameUserDataRoot],
-            ReplayLaunchStagingRoot = Path.Combine(paths.Root, "launch"),
+            ReplayLaunchStagingRoot = ReplayLaunchStagingPaths.Resolve(
+                options.GameUserDataRoot,
+                paths.Root),
             LifecycleEvidenceTimeout =
                 options.LifecycleEvidenceTimeout ?? TimeSpan.FromSeconds(45),
             OfflineReplayEvidenceLifetime =
