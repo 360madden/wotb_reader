@@ -48,8 +48,8 @@ Every address must be classified before publication:
 | Runtime-supported fields | None; current table has 0 usable offsets, 1 Stale/quarantined field, and 7 Unknown |
 | `playerYaw` | **Quarantined / Ambiguous** until decimal, hexadecimal, raw Ghidra, and address-kind evidence reconcile |
 | Trusted next anchor | `playerPositionX`/`playerPositionZ`, then `replayTime` or HP if the replay makes them observable |
-| Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007); absolute LE pointer AOB across private/all/image + align 1/8 without a changed encoding hypothesis (ruled out by OD-RECOVERY-008) |
-| Next planned session | `OD-RECOVERY-009` (CE/x64dbg what-accesses or encoded/multi-level root under offline replay; absolute LE pointer AOB exhausted; second distinct replay still required before promotion) |
+| Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007); absolute LE pointer AOB across private/all/image + align 1/8 without a changed encoding hypothesis (ruled out by OD-RECOVERY-008); truncated low-32 LE dword AOB of survivor absolutes without a changed encoding hypothesis (ruled out by OD-RECOVERY-009) |
+| Next planned session | `OD-RECOVERY-010` (CE/x64dbg Find-what-writes with overlapping movement, or VEH/kernel debugger; truncated low32 and absolute LE pointer AOB exhausted; second distinct replay still required before promotion) |
 
 The current yaw conflict is recorded explicitly:
 
@@ -90,6 +90,7 @@ occurred.
 | `OD-RECOVERY-006` | 2026-08-02 | Reproduce narrowing and seek a stable root / pointer-chain into private-mapping survivors | managed launch + owner-authorized foreground ops + Float A→B + AOB pattern probe of survivor pointer bytes | `Partial` | First A→B: A≈1.24M → changed≈434 (100/100 private-mapping); pattern probe of 8 survivors: 1/8 had hits, hit kinds all `private-mapping` (no image/module root); second A→B for probes changed≈1175; sessions discarded | No module-rva or pointer-chain root; value discover cannot search 8-byte pointers (use `/discover/pattern`); second replay still required (BLK-0019) |
 | `OD-RECOVERY-007` | 2026-08-02 | Image-only static root search for private-mapping survivors | `ImageRegionsOnly` pattern API + soft-cap MaxBytes Float A→B + owner-authorized foreground ops | `NoSignal` (for image roots) / `Partial` (tooling) | Soft-cap unbounded snapshot worked (A≈14.5M retained under 64 MiB budget); B changed≈201k (noisier than windowed OD-006); 12/12 image-only pointer AOBs returned **0** hits | Direct absolute pointers to sampled survivors are not stored in MEM_IMAGE; do not repeat this absolute image-only AOB unchanged |
 | `OD-RECOVERY-008` | 2026-08-02 | Two-level absolute pointer hunt + CE launch smoke | windowed Float A→B + pattern matrix (priv/all/img × align 1/8) + CE 7.7 launch under verified offline | `NoSignal` | A→B changed≈670–1102 (private-mapping); 0 absolute LE pointer hits across matrix; CE x64 launched/responded while offline gate held (no automated attach/scan) | No static/multi-level absolute pointer root; CE structural attach/scan still manual |
+| `OD-RECOVERY-009` | 2026-08-02 | Truncated-pointer encoding + CE access-BP under offline | windowed Float A→B + low32 LE dword pattern + CE Windows debugger access breakpoints during movement | `Partial` | Truncated low32 AOB 0 hits (priv/img/all on 6 survivors); CE attached+debugging with 3 access BPs set; 0 hits during overlapping resume pulse | Encoding not low32 absolute dword; CE access-BP path live but no instruction evidence yet |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -767,6 +768,59 @@ artifacts:
 ```
 
 `OD-RECOVERY-008` is aggregate structural evidence only. It does not make any
+field `Candidate` or `Verified` and must not change
+`memory-offsets/11.19.0.10.json` beyond narrative Unknown evidence notes.
+Absolute addresses, values, and scanner session identifiers were discarded.
+
+```yaml
+sessionId: OD-RECOVERY-009
+date: 2026-08-02
+observedAtUtc: 2026-08-02T20:05:00Z
+timebox: managed launches; truncated low32 AOB; CE Windows-debugger access breakpoints during movement
+decision: low-32 truncated absolute encoding is ruled out for sampled survivors; CE debugger attach/access-BP path is live under OfflineReplayVerified but produced zero instruction hits in this pulse
+objective: Test truncated-pointer encoding and obtain CE what-accesses module names for position survivors
+stopCondition: Stop after truncated AOB aggregates + CE access-BP attempt, or gate loss
+method:
+  primaryTool: Host.Web discover/snapshot+compare+pattern + CE 7.5+ Lua debugProcess/debug_setBreakpoint(bptAccess)
+  valueKind: Float32
+  floatBounds: [-500, 500]
+  transition: owner-authorized Watch Offline click + Space pause/resume/pause
+observations:
+  - state: truncated-low32-aob
+    probedSurvivors: 6
+    regionScopes: private, image-only, all
+    withHits: 0
+  - state: windowed-ab-for-ce
+    aggregatePrevious: 3743791
+    aggregateChanged: 12660
+    note: noisier than OD-008 ~1k windows; used to feed CE only
+  - state: ce-access-bp
+    attached: true
+    debugProcess: windows
+    isDebugging: true
+    breakpointsSet: 3
+    hitCount: 0
+    ripModuleHistogram: empty
+    scannerSessionDiscarded: true
+result:
+  whatWorked:
+    - CE autorun one-shot attached and started Windows debugger without elevation failure in this run.
+    - Truncated low32 pattern API path exercised with correct fieldName/expectedValueHex schema.
+  whatFailed:
+    - Zero truncated low32 pointer hits in priv/img/all.
+    - Zero access-breakpoint hits during overlapping resume pulse (may be survivor noise, trigger type, or debugger mode).
+  rulesOut:
+    - Repeating truncated low-32 LE dword AOB of absolute survivors unchanged.
+  partials:
+    - CE structural debugger path is proven attachable under offline gate; needs Find-what-writes / VEH / tighter survivors next.
+  nextPivot: OD-RECOVERY-010 — CE/x64dbg Find-what-writes (or VEH/kernel) on tighter A→B survivors during movement; second distinct replay before promotion (BLK-0019).
+  repeatWithoutChangedHypothesis: false
+artifacts:
+  rawFiles: none
+  committedSummary: this ledger entry
+```
+
+`OD-RECOVERY-009` is aggregate structural evidence only. It does not make any
 field `Candidate` or `Verified` and must not change
 `memory-offsets/11.19.0.10.json` beyond narrative Unknown evidence notes.
 Absolute addresses, values, and scanner session identifiers were discarded.

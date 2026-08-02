@@ -586,6 +586,12 @@ folder for the full numbering convention and document map.
   launched and responded under `OfflineReplayVerified`; no automated
   attach/scan (adapter still unregistered). No promoted offset.
 
+- Resolution amendment (`2026-08-02T20:10:00Z`): the same authorized foreground
+  path covered `OD-RECOVERY-009`. Truncated low-32 LE dword AOB returned zero
+  hits. CE attached with Windows debugger and three access breakpoints under
+  the offline gate; overlapping resume pulse produced zero hits (no RIP module
+  evidence yet). Adapter still unregistered. No promoted offset.
+
 ## BLK-0023 — Managed replay launch hid the window and fabricated window evidence
 
 - First observed: `2026-08-02T04:34:31Z`

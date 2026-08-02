@@ -311,12 +311,11 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-009`. `OD-RECOVERY-008` completed as **NoSignal**:
-windowed Float A→B still yields private-mapping survivors (changed≈670–1102);
-absolute little-endian pointer AOB across private / all / image and align 1/8
-returned **0** hits (including samples that previously had private hits under
-OD-006). CE 7.7 x64 launched and responded while the offline gate held; no
-automated attach/scan (BLK-0022 adapter still unregistered).
+Session ID: `OD-RECOVERY-010`. `OD-RECOVERY-009` completed as **Partial**:
+truncated low-32 LE dword AOB of absolute survivors returned **0** hits across
+private / image / all; CE 7.x attached under `OfflineReplayVerified`, started
+the Windows debugger, set **3** access breakpoints, and recorded **0** hits
+during an overlapping resume pulse (no RIP module histogram).
 
 1. Confirm owner authorization before any foreground window operation
    (BLK-0022). The guarded GameHarness input adapter remains unregistered.
@@ -324,12 +323,11 @@ automated attach/scan (BLK-0022 adapter still unregistered).
    `WotBTreader.Host.Web.exe`, not WGC. Wait for `OfflineReplayVerified`.
 3. Keep the research lease bounds (`Research:OfflineReplayEvidenceLifetimeSeconds`
    5–120, `Research:LifecycleEvidenceTimeoutSeconds` 5–300).
-4. Prefer **bounded address windows** for controlled A→B narrowing; treat
-   soft-cap low-first fill as reconnaissance only.
-5. Do **not** repeat absolute LE pointer AOB unchanged (private/all/image ×
-   align). Next: CE/x64dbg offline **what accesses** / pointer map under
-   verified replay, or an encoded/relative/multi-level root hypothesis —
-   aggregates-only in the repo.
+4. Prefer **bounded address windows** that yield ~0.5k–2k changed survivors
+   (OD-008 class), not multi-million soft-filled windows, before CE breakpoints.
+5. Do **not** repeat absolute LE pointer AOB or truncated low32 dword AOB
+   unchanged. Next: CE/x64dbg **Find what writes** (try `bptWrite` / VEH) on
+   tight survivors during movement — aggregates-only (module-name histograms OK).
 6. Obtain a second distinct replay before any promotion review (BLK-0019).
 7. Append the ledger and a dated handoff before stopping.
 
