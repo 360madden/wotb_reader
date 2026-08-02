@@ -317,16 +317,13 @@ accepts survivor `relativeOffset` but returns dense/noisy hits; pointer AOB was
 not stable across rebuilds.
 
 1. After every managed launch, run
-   `powershell -File scripts/click-watch-offline.ps1` (agent-owned). It clicks
-   the orange **WATCH OFFLINE** region only (never **LOG IN AND WATCH**), polls
-   until `OfflineReplayVerified`, and writes
-   `%TEMP%\wotb-watch-offline-verify.png`. **Two checks are required before any
-   discover/scan:** (a) script exit code **0**, and (b) the agent **reads the
-   screenshot** and confirms the not-logged-in dialog is gone (no
-   "WATCH OFFLINE" / "LOG IN AND WATCH" / "You are not logged in"). Gate-only
-   success is insufficient — lifecycle evidence can flip while the dialog is
-   still up. If exit 3 or the screenshot still shows the dialog: retry clicks,
-   do not scan.
+   `powershell -File scripts/click-watch-offline.ps1` (agent-owned). It finds the
+   orange **WATCH OFFLINE** button by color-blob in a left/center ROI (never the
+   green **LOG IN**), clicks the centroid, and requires **both**
+   `OfflineReplayVerified` **and** post-click orange pixel count below the
+   dismiss threshold. Screenshot: `%TEMP%\wotb-watch-offline-verify.png`.
+   Spec: `docs/superpowers/specs/2026-08-02-watch-offline-color-blob.md`.
+   Exit 0 only on dual success; exit 3/5 → retry, do not scan.
 2. Prefer Host.Web-managed `wotblitz` (not WGC); research lease 5–120 / 5–300.
 3. Reuse rolling Double increased recipe to ≤10 survivors, then interactive
    x64dbg/CE GUI Find-what-writes, **or** import a **second distinct replay**

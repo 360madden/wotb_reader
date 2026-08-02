@@ -161,6 +161,7 @@ research/memory-offsets-unknowncheats.md
 research/reforged-ue5.md
 research/replay-loading-mechanisms.md
 research/uploaded-replays.md
+scripts/click-watch-offline.ps1
 scripts/ghidra-scan.py
 scripts/invoke-cursor-agent.ps1
 scripts/python/README.md
