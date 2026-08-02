@@ -324,8 +324,9 @@ image/module static root. Value discover cannot search 8-byte pointers
    `WotBTreader.Host.Web.exe`, not WGC. Wait for `OfflineReplayVerified`.
 3. Keep the research lease bounds (`Research:OfflineReplayEvidenceLifetimeSeconds`
    5–120, `Research:LifecycleEvidenceTimeoutSeconds` 5–300).
-4. Snapshot with `valueKind=Float` and finite float bounds; bounded windows
-   until `MaxBytes` soft-caps instead of hard-failing.
+4. Snapshot with `valueKind=Float` and finite float bounds. Prefer `--max-bytes`
+   soft-cap (partial snapshot when the budget fills) over process-specific
+   address windows; never commit absolute bases.
 5. Reproduce a tight A→B set, then search for **module-image-scoped** static
    roots (image-only region selection if/when available, or CE/x64dbg under
    offline rules). Do not treat private→private pointer hits as roots.

@@ -81,7 +81,7 @@ file, send `X-WotBTreader-Capability` on unsafe requests, and check the gate:
 | `discover <field> <Float\|Int32\|Double> <value> [tolerance]` | Known-value scan with numeric Float tolerance |
 | `discover-pattern <field> <patternHex> [mask]` | Bounded AOB/wildcard scan |
 | `discover-pointer-chain <rootOffset> <offset1,offset2,...>` | Bounded pointer-chain evidence probe |
-| `discover-snapshot 4 [--float-min/--float-max/--int-min/--int-max] [--max-bytes <n>]` | Snapshot of committed memory; prints session id. Float bounds select `valueKind=Float` (alignment 4); otherwise Int32. `--max-bytes` sets an explicit retained-byte budget (0 = engine ceiling of 512 MiB) |
+| `discover-snapshot 4 [--float-min/--float-max/--int-min/--int-max] [--max-bytes <n>]` | Snapshot of committed memory; prints session id. Float bounds select `valueKind=Float` (alignment 4); otherwise Int32. `--max-bytes` sets an explicit retained-byte budget (0 = engine ceiling of 512 MiB); the engine soft-caps and returns a partial snapshot when the budget fills instead of failing with `size_limit` |
 | `discover-compare <sessionId> [changed\|unchanged\|increased\|decreased]` | Compare current memory vs snapshot |
 | `discover-nearby <refOffset> [--window <bytes>]` | Neighborhood scan around a known offset |
 | `discover-discard <sessionId>` | Discard a snapshot session |

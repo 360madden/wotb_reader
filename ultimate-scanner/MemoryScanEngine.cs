@@ -112,8 +112,8 @@ internal sealed class MemoryScanEngine
         // A caller may request a tighter retained-byte budget than the fixed
         // engine ceiling, so an unbounded private/mapped snapshot cannot
         // silently exceed the operator's privacy-safe limit. The budget check
-        // precedes each whole-chunk read, so retained bytes never pass the
-        // resolved budget (a final chunk may land within one read chunk of it).
+        // precedes each whole-chunk read and soft-caps the snapshot when the
+        // next chunk would exceed it (partial success instead of size_limit).
         long snapshotByteBudget = ResolveSnapshotByteBudget(filter.MaxBytes);
 
         string sessionId = Interlocked.Increment(ref _sessionCounter)
@@ -159,9 +159,15 @@ internal sealed class MemoryScanEngine
         long storedBytes = 0;
         int readFailureCount = 0;
         byte[] readBuffer = GC.AllocateUninitializedArray<byte>(ReadChunkSize);
+        bool budgetExhausted = false;
 
         foreach (MemoryRegion region in regions)
         {
+            if (budgetExhausted)
+            {
+                break;
+            }
+
             if (cancellationToken.IsCancellationRequested)
             {
                 _logger.LogWarning(
@@ -188,7 +194,12 @@ internal sealed class MemoryScanEngine
                 int length = (int)Math.Min(ReadChunkSize, region.Length - offset);
                 if (storedBytes + length > snapshotByteBudget)
                 {
-                    return Error<string>("discover.snapshot.size_limit", "Snapshot size limit reached; narrow the address or region filters or raise the explicit byte budget.");
+                    // Privacy-safe soft cap: stop retaining further readable
+                    // chunks and return the partial snapshot instead of failing
+                    // the whole request. Callers that need a hard failure can
+                    // still reject oversized ranges via MinAddress/MaxAddress.
+                    budgetExhausted = true;
+                    break;
                 }
 
                 long address = checked(region.BaseAddress + offset);
