@@ -311,30 +311,23 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-013`. `OD-RECOVERY-012` completed as **Partial**
-(near-`CandidateFound` behaviorally): agent clicked **WATCH OFFLINE**;
-`replayTime` Double **increased=1** (`private-mapping`); HP Int32 unchanged
-pool ≈4441 (`mapped-mapping` sample); CE write-BP **0** RIP; pointer AOB **0**.
+Session ID: `OD-RECOVERY-014`. `OD-RECOVERY-013` completed as **Partial**:
+second independent Host.Web-managed launch (agent **WATCH OFFLINE**) reproduced
+`replayTime` Double **increased** behavior; rolling baseline narrowed
+**193→60→15→4** (`private-mapping`). Same replay artifact as OD-012, so
+`independentReplays` is still not satisfied (BLK-0019).
 
 1. Confirm owner authorization before any foreground window operation
-   (BLK-0022). The guarded GameHarness input adapter remains unregistered.
-   **Standing operator rule (2026-08-02):** after every managed launch, the
-   agent must click **WATCH OFFLINE** on the "You are not logged in" dialog
-   before waiting for `OfflineReplayVerified`. Do not leave that dialog for
-   the human and do not click **LOG IN AND WATCH**.
-2. Start from zero game processes; ensure any live `wotblitz` parent is
-   `WotBTreader.Host.Web.exe`, not WGC. When the "not logged in" dialog
-   appears, click **WATCH OFFLINE** only — never **LOG IN AND WATCH**.
-3. Keep the research lease bounds (`Research:OfflineReplayEvidenceLifetimeSeconds`
-   5–120, `Research:LifecycleEvidenceTimeoutSeconds` 5–300).
-4. **Primary:** reproduce the unique increased `replayTime` Double on a
-   **second independent process launch** (and eventually a second replay —
-   BLK-0019). Classify address kind / seek root via neighborhood or interactive
-   debugger. HP unchanged Int32 remains secondary.
-5. Do **not** promote from a single-launch unique hit. Do not expect automated
-   CE write-BP alone to yield RIP for this survivor class.
-6. Obtain a second distinct replay before any promotion review (BLK-0019).
-7. Append the ledger and a dated handoff before stopping.
+   (BLK-0022). After every managed launch, the agent clicks **WATCH OFFLINE**
+   (never **LOG IN AND WATCH**).
+2. Start from zero game processes; ensure `wotblitz` parent is
+   `WotBTreader.Host.Web.exe`, not WGC.
+3. Keep the research lease bounds (5–120 / 5–300).
+4. **Primary:** classify/root the ≤4 rolling-increased Doubles (neighborhood,
+   interactive x64dbg/CE GUI, or pointer hypothesis). Prefer a **second
+   distinct replay** when available (BLK-0019).
+5. Do **not** promote; do not treat same-artifact dual-launch as two replays.
+6. Append the ledger and a dated handoff before stopping.
 
 The success criterion remains **one correctly classified, reproducible
 candidate**. Do not promote from aggregate counts alone.

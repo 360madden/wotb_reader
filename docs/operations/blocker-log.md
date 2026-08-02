@@ -610,6 +610,11 @@ folder for the full numbering convention and document map.
   (`mapped-mapping` sample). CE write-BP hitCount=0; pointer AOB 0. No
   promoted offset.
 
+- Resolution amendment (`2026-08-02T20:30:00Z`): agent-owned **WATCH OFFLINE**
+  click covered `OD-RECOVERY-013` on a second independent process launch.
+  Rolling Double increased narrowed 193→60→15→4 (`private-mapping`). Same
+  replay artifact (independentReplays unchanged). No promoted offset.
+
 ## BLK-0023 — Managed replay launch hid the window and fabricated window evidence
 
 - First observed: `2026-08-02T04:34:31Z`

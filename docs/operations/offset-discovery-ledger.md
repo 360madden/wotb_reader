@@ -49,7 +49,7 @@ Every address must be classified before publication:
 | `playerYaw` | **Quarantined / Ambiguous** until decimal, hexadecimal, raw Ghidra, and address-kind evidence reconcile |
 | Trusted next anchor | `playerPositionX`/`playerPositionZ`, then `replayTime` or HP if the replay makes them observable |
 | Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007); absolute LE pointer AOB across private/all/image + align 1/8 without a changed encoding hypothesis (ruled out by OD-RECOVERY-008); truncated low-32 LE dword AOB of survivor absolutes without a changed encoding hypothesis (ruled out by OD-RECOVERY-009); automated CE `bptAccess`/`bptWrite` on Float position survivors without a field pivot or interactive debugger (0 RIP hits through OD-RECOVERY-011); CE write-BP alone on the single increased `replayTime` Double without interactive debugger or a second independent launch (0 RIP in OD-RECOVERY-012) |
-| Next planned session | `OD-RECOVERY-013` (second independent launch for the increased `replayTime` Double survivor; neighborhood/root classification; or interactive x64dbg/CE GUI; HP Int32 unchanged pool remains secondary; promotion still blocked by BLK-0019) |
+| Next planned session | `OD-RECOVERY-014` (classify/root the ≤4 rolling-increased `replayTime` Doubles; neighborhood or interactive debugger; second distinct replay still required before promotion — BLK-0019) |
 
 The current yaw conflict is recorded explicitly:
 
@@ -94,6 +94,7 @@ occurred.
 | `OD-RECOVERY-010` | 2026-08-02 | CE Find-what-writes under offline | tight-window probe + CE `bptWrite` (Windows debugger; VEH hung) during overlapping movement | `Partial` | Probe window changed≈1955; CE Windows debugger set 3 write BPs (list count 3); hitCount=0; VEH `debugProcess(2)` stalled | Automated write-BP on first-pass survivors yields no RIP; need tighter/second-pass or field pivot |
 | `OD-RECOVERY-011` | 2026-08-02 | Second-pass Float narrow + CE write-BP | rolling then second changed compare + CE `bptWrite` during movement | `Partial` | Pass1 changed≈2899 → pass2 changed≈1929 (private-mapping); CE 3 write BPs set; hitCount=0; Watch Offline click required for gate | Second-pass helps count; still no RIP — pivot field or interactive debugger |
 | `OD-RECOVERY-012` | 2026-08-02 | Field pivot HP + replayTime under offline | Int32 unchanged HP window + Double increased replayTime + CE write-BP + pointer AOB | `Partial` / near-`CandidateFound` | Agent clicked WATCH OFFLINE; HP unchanged≈4441 (`mapped-mapping` sample); **replayTime increased=1** (`private-mapping`); CE 3 write BPs hitCount=0; ptr AOB 0 | Unique increased Double is strong heap-dynamic evidence; no root/RIP; not promoted |
+| `OD-RECOVERY-013` | 2026-08-02 | Second independent launch reproduce `replayTime` | agent Watch Offline + Double increased + rollingBaseline passes | `Partial` | Second Host.Web child PID; rolling increased **193→60→15→4** all `private-mapping`; same replay artifact | RT increased behavior reproduces across launches; still heap-dynamic; second distinct replay still required |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -992,6 +993,49 @@ artifacts:
 field `Candidate` or `Verified`. Update `memory-offsets/11.19.0.10.json` with
 narrative Unknown evidence for `replayTime` only (offset remains 0). Absolute
 addresses, values, and scanner session identifiers were discarded.
+
+```yaml
+sessionId: OD-RECOVERY-013
+date: 2026-08-02
+observedAtUtc: 2026-08-02T20:25:00Z
+timebox: second independent managed launch; Watch Offline; rolling Double increased
+decision: replayTime increased-Double behavior reproduces on a second process launch; rolling narrows to a small private-mapping set (4); still not promotable without root + second replay
+objective: Reproduce OD-012 replayTime unique-increased signal on a fresh process identity
+stopCondition: Stop after rolling aggregates, or gate loss
+method:
+  primaryTool: Host.Web discover/snapshot+compare Double increased with rollingBaseline
+  transition: agent-owned WATCH OFFLINE click + Space pause/resume pulses
+observations:
+  - state: launch
+    parentProcess: WotBTreader.Host.Web.exe
+    verificationState: OfflineReplayVerified
+    independentProcessLaunch: true
+    note: distinct PID from OD-012; same source replay artifact
+  - state: rolling-increased
+    sequence: [193, 60, 15, 4]
+    finalIncreased: 4
+    addressKindHistogram:
+      private-mapping: 4
+    scannerSessionDiscarded: true
+result:
+  whatWorked:
+    - Second launch reproduced increased-Double behavior for replayTime.
+    - Rolling baseline narrowed to 4 private-mapping survivors.
+  whatFailed:
+    - Did not recover a single unique hit matching OD-012's increased=1 on first pass (window noise), but rolling reached ≤4.
+  rulesOut:
+    - Treating OD-012's unique hit as a one-off fluke of a single process instance.
+  partials:
+    - independentProcessLaunches evidence for replayTime advances; independentReplays still 0 (same artifact).
+  nextPivot: OD-RECOVERY-014 — root/neighborhood/interactive debugger on the ≤4 set; second distinct replay (BLK-0019).
+  repeatWithoutChangedHypothesis: false
+artifacts:
+  rawFiles: none
+  committedSummary: this ledger entry
+```
+
+`OD-RECOVERY-013` is aggregate structural evidence only. Offset remains 0.
+Absolute addresses, values, and scanner session identifiers were discarded.
 
 ## Evidence promotion checklist
 
