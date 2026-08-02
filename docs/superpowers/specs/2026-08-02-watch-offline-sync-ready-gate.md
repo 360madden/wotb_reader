@@ -39,11 +39,13 @@ LookingForDialog
 **Ready** requires all of:
 1. Orange blob ≥ strong threshold (default 2000 px in dialog ROI).
 2. Dialog-ROI mean luminance ≥ ready floor (default 45).
-3. Either `SeenSyncing` was observed (dim L≈18–40 with orange≈30–400), **or**
-   a short **bright grace** (default **2s**) since first bright+strong orange
-   without sync — longer idle causes **Error 126** (“Failed to replay”).
-4. **One** ready sample → click immediately (no hold). Hard cap:
-   `MaxDialogLifetimeSeconds` (default 18). Blank frames (L≈0) are not sync.
+3. Either `SeenSyncing` was observed (dim L≈18–40 with orange≈30–400) then
+   first bright recovery, **or** bright grace: ≥`SyncGraceSeconds` (default 5)
+   since first bright **and** ≥`MinDialogAgeSeconds` (default 5) since dialog
+   appear. Live blitz-logs: Start replay ~8–9s after dialog; clicks at ~2–3s
+   dismiss without Start; ErrorDialog ~11–13s → hard cap 11s.
+4. **One** ready sample → click immediately (no hold). Blank frames (L≈0) are
+   not sync.
 
 Never click green **LOG IN AND WATCH**.
 

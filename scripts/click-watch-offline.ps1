@@ -34,19 +34,23 @@ param(
     # Visual ready gate: sync-dim state machine (see sync-ready-gate spec).
     [int]$AppearTimeoutSeconds = 25,
     [int]$ReadyTimeoutSeconds = 35,
-    # After SeenSyncing: 1 sample. Grace path: also 1 — dialog dies ~Error 126 fast.
+    # After SeenSyncing: 1 sample. Grace path: also 1.
     [int]$StableSamples = 1,
-    [int]$SampleIntervalMs = 250,
+    [int]$SampleIntervalMs = 150,
     [int]$ReadyHoldSeconds = 0,
     [int]$SyncMaxLuminance = 40,
     [int]$SyncMaxOrange = 400,
     [int]$ReadyMinOrange = 2000,
     [int]$ReadyMinLuminance = 45,
-    # Bright without sync: click after this many seconds (sync often starts ~3–5s;
-    # waiting longer hits Error 126 Failed to replay).
-    [int]$SyncGraceSeconds = 2,
-    # Hard ceiling from first dialog sighting to click.
-    [int]$MaxDialogLifetimeSeconds = 18
+    # Bright without sync: wait this long after first bright before grace click.
+    # Live blitz-logs: Start replay ~8–9s after LoginOnReplayDialog; clicks at
+    # ~2–3s deactivate the dialog with no Start replay; ErrorDialog ~11–13s.
+    [int]$SyncGraceSeconds = 5,
+    # Never grace-click before the dialog has lived this long (post-sync path
+    # ignores this once SeenSyncing was observed).
+    [int]$MinDialogAgeSeconds = 5,
+    # Hard ceiling from first dialog sighting to click (beat Error 126).
+    [int]$MaxDialogLifetimeSeconds = 11
 )
 
 Set-StrictMode -Version Latest
@@ -282,14 +286,19 @@ function Test-ReadySample(
     [int]$OrangePx,
     [double]$DialogMeanL,
     [bool]$SeenSyncing,
-    [Nullable[datetime]]$FirstBrightAt
+    [Nullable[datetime]]$FirstBrightAt,
+    [Nullable[datetime]]$FirstDialogAt
 ) {
     if ($OrangePx -lt $ReadyMinOrange) { return $false }
     if ($DialogMeanL -lt $ReadyMinLuminance) { return $false }
+    # Prefer post-sync: first bright after dim is the interactive window.
     if ($SeenSyncing) { return $true }
-    # Bright but sync not seen yet: only a short grace — do not idle 12s on a
-    # clickable dialog or the client errors out (Failed to replay / 126).
-    if ($FirstBrightAt -and ((Get-Date) - $FirstBrightAt).TotalSeconds -ge $SyncGraceSeconds) {
+    # Grace: bright idle without observed sync — must clear both age floors so
+    # we do not click at ~2–3s (dialog dismisses, no Start replay in blitz-log).
+    if (-not $FirstBrightAt -or -not $FirstDialogAt) { return $false }
+    $brightAge = ((Get-Date) - $FirstBrightAt).TotalSeconds
+    $dialogAge = ((Get-Date) - $FirstDialogAt).TotalSeconds
+    if ($brightAge -ge $SyncGraceSeconds -and $dialogAge -ge $MinDialogAgeSeconds) {
         return $true
     }
     return $false
@@ -339,8 +348,9 @@ try {
     $seenSyncing = $false
     $stable = 0
     $readyAnalysis = $null
-    Write-Host ("watch_offline: ready_gate appear={0}s ready={1}s brightGrace={2}s hold={3}s" -f `
-        $AppearTimeoutSeconds, $ReadyTimeoutSeconds, $SyncGraceSeconds, $ReadyHoldSeconds)
+    Write-Host ("watch_offline: ready_gate appear={0}s ready={1}s brightGrace={2}s minDialogAge={3}s hold={4}s cap={5}s" -f `
+        $AppearTimeoutSeconds, $ReadyTimeoutSeconds, $SyncGraceSeconds, $MinDialogAgeSeconds, `
+        $ReadyHoldSeconds, $MaxDialogLifetimeSeconds)
 
     while ($true) {
         $game = Get-GameWindow
@@ -404,7 +414,7 @@ try {
 
             # After sync clears, click on the first bright+strong frame.
             $needStable = if ($seenSyncing) { 1 } else { $StableSamples }
-            if (Test-ReadySample $orangePx $dialogMeanL $seenSyncing $firstBrightAt) {
+            if (Test-ReadySample $orangePx $dialogMeanL $seenSyncing $firstBrightAt $firstDialogAt) {
                 $stable++
                 $readyAnalysis = $analysis
                 Write-Host ("watch_offline: phase={0} dialogMeanL={1} orangePx={2} seenSync={3} stable={4}/{5}" -f `
@@ -604,6 +614,21 @@ try {
         Write-Host 'watch_offline: FAILED_no_orange_blob'
         exit 5
     }
+
+    try {
+        $dava = Join-Path $env:LOCALAPPDATA 'wotblitz\DAVAProject'
+        $latestLog = Get-ChildItem -LiteralPath $dava -Filter 'blitz-logs_*.txt' -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+        if ($latestLog) {
+            $hasStart = Select-String -LiteralPath $latestLog.FullName -Pattern 'START_REPLAY_LOCAL|Start replay event' -Quiet
+            $hasErrDlg = Select-String -LiteralPath $latestLog.FullName -Pattern 'ErrorDialog' -SimpleMatch -Quiet
+            $hasLogin = Select-String -LiteralPath $latestLog.FullName -Pattern 'LoginOnReplayDialog' -SimpleMatch -Quiet
+            Write-Host ("watch_offline: blitz_log_markers startReplay={0} errorDialog={1} loginOnReplay={2}" -f `
+                [bool]$hasStart, [bool]$hasErrDlg, [bool]$hasLogin)
+        }
+    }
+    catch { }
 
     Write-Host ("watch_offline: FAILED gateOk={0} dialogGone={1}" -f $gateOk, $dialogGone)
     exit 3
