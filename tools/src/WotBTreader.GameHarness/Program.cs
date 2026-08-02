@@ -816,11 +816,17 @@ static async Task<int> SnapshotAsync(string[] args)
         return (int)HarnessExitCode.InvalidInput;
     }
 
-    Console.WriteLine($"Creating snapshot (valueSize={valueSize}, float=[{floatMin},{floatMax}], int=[{intMin},{intMax}], maxBytes={maxBytes})...");
+    // Float bounds are meaningless unless the host valueKind is Float; the
+    // contract defaults to Int32, which silently ignored --float-min/--float-max
+    // during OD-RECOVERY-004 until the API path sent valueKind explicitly.
+    string valueKind = floatMin.HasValue || floatMax.HasValue ? "Float" : "Int32";
+    int alignment = valueKind == "Float" ? 4 : 1;
+
+    Console.WriteLine($"Creating snapshot (valueSize={valueSize}, valueKind={valueKind}, float=[{floatMin},{floatMax}], int=[{intMin},{intMax}], maxBytes={maxBytes})...");
     try
     {
         using HttpResponseMessage response = await client.PostAsJsonAsync("/api/v1/game/discover/snapshot",
-            new { valueSize, floatMin, floatMax, intMin, intMax, minAddress = 0L, maxAddress = 0L, maxBytes }).ConfigureAwait(false);
+            new { valueSize, valueKind, alignment, floatMin, floatMax, intMin, intMax, minAddress = 0L, maxAddress = 0L, maxBytes }).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             Console.Error.WriteLine($"snapshot: HTTP {(int)response.StatusCode}");
