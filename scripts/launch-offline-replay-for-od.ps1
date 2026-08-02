@@ -311,26 +311,32 @@ try {
     }
 
     $watchScript = Join-Path $RepoRoot 'scripts\click-watch-offline.ps1'
-    # Minimized (not Hidden): a visible console steals focus and destroys splash
-    # (OnBackground), but a fully Hidden host often cannot inject mouse clicks
-    # (WATCH OFFLINE stays orange after "click"). Do not invoke in-process — the
-    # clicker uses `exit` and would tear down this script.
-    $watchOut = Join-Path $env:TEMP 'od-watch-offline.out.log'
-    $watchErr = Join-Path $env:TEMP 'od-watch-offline.err.log'
-    Remove-Item -LiteralPath $watchOut, $watchErr -Force -ErrorAction SilentlyContinue
-    $watchProc = Start-Process -FilePath powershell.exe -ArgumentList @(
-        '-NoProfile',
-        '-ExecutionPolicy', 'Bypass',
-        '-File', $watchScript,
-        '-TimeoutSeconds', "$WatchTimeoutSeconds"
-    ) -Wait -PassThru -WindowStyle Minimized `
-        -RedirectStandardOutput $watchOut -RedirectStandardError $watchErr
-    $watchExit = [int]$watchProc.ExitCode
-    if (Test-Path -LiteralPath $watchOut) {
-        Get-Content -LiteralPath $watchOut | ForEach-Object { Write-Host $_ }
+    # In-process invoke via ResultPath: nested consoles either steal focus
+    # (OnBackground / dialog dismiss) or, when Hidden, fail to inject clicks.
+    $watchResult = Join-Path $env:TEMP 'od-watch-offline.exit.txt'
+    Remove-Item -LiteralPath $watchResult -Force -ErrorAction SilentlyContinue
+    $watchExit = 99
+    try {
+        & $watchScript -TimeoutSeconds $WatchTimeoutSeconds -ResultPath $watchResult
+        if (Test-Path -LiteralPath $watchResult) {
+            $watchExit = [int](Get-Content -LiteralPath $watchResult -Raw)
+        }
+        else {
+            $watchExit = 0
+        }
     }
-    if (Test-Path -LiteralPath $watchErr) {
-        Get-Content -LiteralPath $watchErr | ForEach-Object { Write-Host $_ }
+    catch {
+        $msg = [string]$_.Exception.Message
+        if ($msg -match 'WATCH_EXIT:(\d+)') {
+            $watchExit = [int]$Matches[1]
+        }
+        elseif (Test-Path -LiteralPath $watchResult) {
+            $watchExit = [int](Get-Content -LiteralPath $watchResult -Raw)
+        }
+        else {
+            Write-Od ("watch_unexpected=" + $msg)
+            $watchExit = 4
+        }
     }
     Write-Od ("watch_exit=" + $watchExit)
     if ($watchExit -ne 0) {

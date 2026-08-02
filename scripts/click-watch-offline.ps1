@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
   Dismiss WoT Blitz "WATCH OFFLINE" via orange-button blob find + dual verify.
@@ -12,7 +12,7 @@
   sync-dim ready gate (bright + strong orange, optionally after sync dim observed
   or grace elapsed), holds briefly so the dialog can accept input, then clicks
   its centroid. Requires both:
-    - GET /api/v1/game/state → OfflineReplayVerified
+    - GET /api/v1/game/state â†’ OfflineReplayVerified
     - Post-click orange blob area below dismiss threshold (dialog gone)
 
 .EXITCODES
@@ -22,7 +22,7 @@
   3  Retries exhausted (gate and/or dialog check failed)
   4  Unexpected error
   5  Ready gate never satisfied (dialog not interactive in time)
-  6  Host already Denied (stale lifecycle timeout) — restart via launch-offline-replay-for-od.ps1
+  6  Host already Denied (stale lifecycle timeout) â€” restart via launch-offline-replay-for-od.ps1
 #>
 [CmdletBinding()]
 param(
@@ -43,20 +43,32 @@ param(
     [int]$ReadyMinOrange = 2000,
     [int]$ReadyMinLuminance = 45,
     # Bright without sync: wait this long after first bright before grace click.
-    # Live blitz-logs: Start replay ~8–9s after LoginOnReplayDialog; clicks at
-    # ~2–3s deactivate the dialog with no Start replay; ErrorDialog ~11–13s.
+    # Live blitz-logs: Start replay ~8-9s after LoginOnReplayDialog; clicks at
+    # ~2-3s deactivate the dialog with no Start replay; ErrorDialog ~11-13s.
     [int]$SyncGraceSeconds = 5,
     # Never grace-click before the dialog has lived this long (post-sync path
     # ignores this once SeenSyncing was observed).
     [int]$MinDialogAgeSeconds = 5,
     # Hard ceiling from first dialog sighting to click (beat Error 126).
     # Raised: sync can start ~5s after bright and last ~2s; ErrorDialog ~18s.
-    [int]$MaxDialogLifetimeSeconds = 16
+    [int]$MaxDialogLifetimeSeconds = 16,
+    # When set, write the exit code here and throw WATCH_EXIT:<code> so the
+    # launcher can invoke this script in-process (no nested console focus steal).
+    [string]$ResultPath = ''
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Quit-WatchOffline([int]$Code) {
+    if (-not [string]::IsNullOrWhiteSpace($ResultPath)) {
+        Set-Content -LiteralPath $ResultPath -Value "$Code" -Encoding ascii -NoNewline
+        throw "WATCH_EXIT:$Code"
+    }
+    exit $Code
+}
+
+if (-not ('WatchOfflineVision' -as [type])) {
 Add-Type @"
 using System;
 using System.Drawing;
@@ -71,6 +83,25 @@ public static class WatchOfflineVision {
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
   [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, UIntPtr e);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
+  [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
+  [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+
+  public static void ForceForeground(IntPtr hWnd) {
+    EnsureDpiAware();
+    uint unused;
+    uint target = GetWindowThreadProcessId(hWnd, out unused);
+    uint current = GetCurrentThreadId();
+    IntPtr fg = GetForegroundWindow();
+    uint fgThread = fg != IntPtr.Zero ? GetWindowThreadProcessId(fg, out unused) : 0;
+    if (fgThread != 0) AttachThreadInput(current, fgThread, true);
+    if (target != 0) AttachThreadInput(current, target, true);
+    ShowWindow(hWnd, 9);
+    SetForegroundWindow(hWnd);
+    if (target != 0) AttachThreadInput(current, target, false);
+    if (fgThread != 0) AttachThreadInput(current, fgThread, false);
+  }
 
   public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
   public const uint MOUSEEVENTF_LEFTUP = 0x0004;
@@ -221,6 +252,7 @@ public static class WatchOfflineVision {
   }
 }
 "@ -ReferencedAssemblies System.Drawing.dll
+}
 
 function Get-Rendezvous {
     $dir = Join-Path $env:LOCALAPPDATA 'WotBTreader\rendezvous'
@@ -305,8 +337,8 @@ function Test-ReadySample(
     if ($DialogMeanL -lt $ReadyMinLuminance) { return $false }
     # Prefer post-sync: first bright after dim is the interactive window.
     if ($SeenSyncing) { return $true }
-    # Grace: bright idle without observed sync — must clear both age floors so
-    # we do not click at ~2–3s (dialog dismisses, no Start replay in blitz-log).
+    # Grace: bright idle without observed sync â€” must clear both age floors so
+    # we do not click at ~2â€“3s (dialog dismisses, no Start replay in blitz-log).
     if (-not $FirstBrightAt -or -not $FirstDialogAt) { return $false }
     $brightAge = ((Get-Date) - $FirstBrightAt).TotalSeconds
     $dialogAge = ((Get-Date) - $FirstDialogAt).TotalSeconds
@@ -323,13 +355,13 @@ try {
     }
     catch {
         Write-Host 'watch_offline: rendezvous_missing'
-        exit 2
+        Quit-WatchOffline 2
     }
 
     $game = Get-GameWindow
     if (-not $game) {
         Write-Host 'watch_offline: no_game_window'
-        exit 1
+        Quit-WatchOffline 1
     }
 
     $beforeState = Get-GameState
@@ -345,7 +377,7 @@ try {
 
     if ($before -eq 'Denied') {
         Write-Host 'watch_offline: FAILED_host_denied (do not click; run scripts/launch-offline-replay-for-od.ps1)'
-        exit 6
+        Quit-WatchOffline 6
     }
 
     [void][WatchOfflineVision]::ShowWindow($game.MainWindowHandle, 9)
@@ -370,10 +402,10 @@ try {
         $game = Get-GameWindow
         if (-not $game) {
             Write-Host 'watch_offline: no_game_window_while_waiting'
-            exit 1
+            Quit-WatchOffline 1
         }
-        # Do not spam ShowWindow/SetForeground during splash — live logs show
-        # OnBackground → WindowDestroyed within ~1s when focus-churned early.
+        # Do not spam ShowWindow/SetForeground during splash â€” live logs show
+        # OnBackground â†’ WindowDestroyed within ~1s when focus-churned early.
         $shouldFocus = ($phase -ne 'LookingForDialog') -or `
             (((Get-Date) - $lastFocusAt).TotalSeconds -ge 3)
         if ($shouldFocus) {
@@ -413,8 +445,8 @@ try {
                 break
             }
 
-            # Owner sync: dim dialog (~31 L) with collapsed-but-nonzero orange (~60–80).
-            # Blank frames (L≈0) and bright low-orange splash must NOT arm SeenSyncing.
+            # Owner sync: dim dialog (~31 L) with collapsed-but-nonzero orange (~60â€“80).
+            # Blank frames (Lâ‰ˆ0) and bright low-orange splash must NOT arm SeenSyncing.
             $looksSyncing = (
                 $dialogMeanL -gt 18 -and
                 $dialogMeanL -lt $SyncMaxLuminance -and
@@ -471,10 +503,10 @@ try {
         $vsNow = Get-VerificationState
         if ($vsNow -eq 'OfflineReplayVerified') {
             Write-Host 'watch_offline: already_verified_no_dialog'
-            exit 0
+            Quit-WatchOffline 0
         }
         Write-Host 'watch_offline: FAILED_ready_never_reached'
-        exit 5
+        Quit-WatchOffline 5
     }
 
     $preCount = [int]$readyAnalysis.Blob.PixelCount
@@ -486,19 +518,18 @@ try {
         Start-Sleep -Milliseconds $holdMs
     }
 
-    # Re-check after hold — dialog may have timed out during hold.
+    # Re-check after hold â€” dialog may have timed out during hold.
     $game = Get-GameWindow
     if (-not $game) {
         Write-Host 'watch_offline: window_lost_after_hold'
-        exit 1
+        Quit-WatchOffline 1
     }
-    [void][WatchOfflineVision]::ShowWindow($game.MainWindowHandle, 9)
-    [void][WatchOfflineVision]::SetForegroundWindow($game.MainWindowHandle)
+    [WatchOfflineVision]::ForceForeground($game.MainWindowHandle)
     Start-Sleep -Milliseconds 150
     $analysis = Get-WindowAnalysis $game.MainWindowHandle $ScreenshotPath
     if (-not $analysis) {
         Write-Host 'watch_offline: capture_failed_after_hold'
-        exit 4
+        Quit-WatchOffline 4
     }
     $preCount = [int]$analysis.Blob.PixelCount
     $cx = [int]$analysis.Blob.CentroidX
@@ -516,19 +547,19 @@ try {
 
     if ($before -eq 'OfflineReplayVerified' -and $preCount -le $DismissMaxPixels) {
         Write-Host 'watch_offline: already_dismissed_and_verified'
-        exit 0
+        Quit-WatchOffline 0
     }
 
     if ($preCount -lt $MinBlobPixels -and $before -ne 'OfflineReplayVerified') {
         Write-Host 'watch_offline: FAILED_blob_gone_after_hold (dialog timed out?)'
-        exit 5
+        Quit-WatchOffline 5
     }
 
     $cxRatio = if ($cw -gt 0) { $cx / [double]$cw } else { 1.0 }
     $cyRatio = if ($ch -gt 0) { $cy / [double]$ch } else { 1.0 }
     if ($cxRatio -lt 0.18 -or $cxRatio -gt 0.48 -or $cyRatio -lt 0.38 -or $cyRatio -gt 0.62) {
         Write-Host ("watch_offline: FAILED_centroid_outside_dialog_band cxRatio={0:N2} cyRatio={1:N2}" -f $cxRatio, $cyRatio)
-        exit 5
+        Quit-WatchOffline 5
     }
 
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
@@ -542,7 +573,7 @@ try {
         $game = Get-GameWindow
         if (-not $game) {
             Write-Host 'watch_offline: window_lost'
-            exit 1
+            Quit-WatchOffline 1
         }
 
         [void][WatchOfflineVision]::ShowWindow($game.MainWindowHandle, 9)
@@ -570,8 +601,10 @@ try {
                 $screenY = $analysis.Rect.Top + $analysis.Blob.CentroidY
                 Write-Host ("watch_offline: click_blob screen={0},{1} client={2},{3}" -f `
                     $screenX, $screenY, $analysis.Blob.CentroidX, $analysis.Blob.CentroidY)
+                [WatchOfflineVision]::ForceForeground($game.MainWindowHandle)
+                Start-Sleep -Milliseconds 100
                 [WatchOfflineVision]::ClickScreen($screenX, $screenY)
-                Start-Sleep -Milliseconds 400
+                Start-Sleep -Milliseconds 250
                 [WatchOfflineVision]::ClickScreen($screenX + 3, $screenY + 2)
             }
         }
@@ -596,7 +629,7 @@ try {
             if ($vs -eq 'OfflineReplayVerified') { $gateOk = $true; break }
             if ($vs -eq 'Denied') {
                 Write-Host 'watch_offline: FAILED_host_denied_mid_click'
-                exit 6
+                Quit-WatchOffline 6
             }
         } while ((Get-Date) -lt $pollUntil)
 
@@ -620,7 +653,7 @@ try {
     $finalGame = Get-GameWindow
     if (-not $finalGame) {
         Write-Host 'watch_offline: window_lost_final'
-        exit 1
+        Quit-WatchOffline 1
     }
     $final = Get-WindowAnalysis $finalGame.MainWindowHandle $ScreenshotPath
     $finalCount = if ($final) { [int]$final.Blob.PixelCount } else { -1 }
@@ -631,12 +664,12 @@ try {
 
     if ($gateOk -and $dialogGone) {
         Write-Host 'watch_offline: SUCCESS_gate_and_dialog_dismissed'
-        exit 0
+        Quit-WatchOffline 0
     }
 
     if (-not $sawBlob) {
         Write-Host 'watch_offline: FAILED_no_orange_blob'
-        exit 5
+        Quit-WatchOffline 5
     }
 
     try {
@@ -655,9 +688,10 @@ try {
     catch { }
 
     Write-Host ("watch_offline: FAILED gateOk={0} dialogGone={1}" -f $gateOk, $dialogGone)
-    exit 3
+    Quit-WatchOffline 3
 }
 catch {
     Write-Host ("watch_offline: error=" + $_.Exception.Message)
-    exit 4
+    Quit-WatchOffline 4
 }
+
