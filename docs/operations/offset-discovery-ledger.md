@@ -48,8 +48,8 @@ Every address must be classified before publication:
 | Runtime-supported fields | None; current table has 0 usable offsets, 1 Stale/quarantined field, and 7 Unknown |
 | `playerYaw` | **Quarantined / Ambiguous** until decimal, hexadecimal, raw Ghidra, and address-kind evidence reconcile |
 | Trusted next anchor | `playerPositionX`/`playerPositionZ`, then `replayTime` or HP if the replay makes them observable |
-| Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance |
-| Next planned session | `OD-RECOVERY-007` (image/module-scoped static root search for private-mapping survivors; second distinct replay still required before promotion) |
+| Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007) |
+| Next planned session | `OD-RECOVERY-008` (structural access/root via CE/x64dbg or multi-level pointer hypothesis; do not repeat absolute image-only pointer AOB unchanged; second distinct replay still required before promotion) |
 
 The current yaw conflict is recorded explicitly:
 
@@ -88,6 +88,7 @@ occurred.
 | `OD-RECOVERY-004` | 2026-08-02 | Controlled movement A→B Float32 narrowing for `playerPositionX`/`playerPositionZ` under a privacy-safe bounded window | managed launch + loopback snapshot/compare (`valueKind=Float`) | `Partial` | Managed Host.Web child reached `OfflineReplayVerified`; state A≈1.23M in-range floats; state B `changed≈26k` / `current≈26k` / `unchanged≈793k`; session discarded | No single address classified; promotion still blocked (BLK-0019); unbounded `--max-bytes` still hard-fails |
 | `OD-RECOVERY-005` | 2026-08-02 | Reproduce A→B Float32 narrowing and classify survivor address kind | managed launch + owner-authorized foreground Watch Offline / pause-resume + loopback Float snapshot/compare | `Partial` | Host.Web child verified; A≈757k → B changed≈905 (unchanged≈756k); returned sample 100/100 `private-mapping` → treat set as `heap-dynamic` pending root; session discarded | No single reproducible candidate; no module-rva/member/pointer-chain root; second replay still required (BLK-0019) |
 | `OD-RECOVERY-006` | 2026-08-02 | Reproduce narrowing and seek a stable root / pointer-chain into private-mapping survivors | managed launch + owner-authorized foreground ops + Float A→B + AOB pattern probe of survivor pointer bytes | `Partial` | First A→B: A≈1.24M → changed≈434 (100/100 private-mapping); pattern probe of 8 survivors: 1/8 had hits, hit kinds all `private-mapping` (no image/module root); second A→B for probes changed≈1175; sessions discarded | No module-rva or pointer-chain root; value discover cannot search 8-byte pointers (use `/discover/pattern`); second replay still required (BLK-0019) |
+| `OD-RECOVERY-007` | 2026-08-02 | Image-only static root search for private-mapping survivors | `ImageRegionsOnly` pattern API + soft-cap MaxBytes Float A→B + owner-authorized foreground ops | `NoSignal` (for image roots) / `Partial` (tooling) | Soft-cap unbounded snapshot worked (A≈14.5M retained under 64 MiB budget); B changed≈201k (noisier than windowed OD-006); 12/12 image-only pointer AOBs returned **0** hits | Direct absolute pointers to sampled survivors are not stored in MEM_IMAGE; do not repeat this absolute image-only AOB unchanged |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -654,6 +655,61 @@ artifacts:
 field `Candidate` or `Verified` and must not change
 `memory-offsets/11.19.0.10.json`. Absolute addresses, values, and scanner
 session identifiers were discarded and were not committed.
+
+```yaml
+sessionId: OD-RECOVERY-007
+date: 2026-08-02
+observedAtUtc: 2026-08-02T19:46:00Z
+timebox: one managed launch; soft-cap Float A→B; image-only pointer AOB on returned survivors
+decision: absolute pointer bytes for sampled private-mapping survivors are absent from MEM_IMAGE; soft-cap works but low-first fill is noisier than bounded windows for A→B
+objective: Find a module-image static root for the heap-dynamic position survivor set
+stopCondition: Stop after image-only probes + aggregates, or gate loss
+method:
+  primaryTool: Host.Web discover/snapshot (MaxBytes soft-cap) + discover/pattern with includeImageRegions+imageRegionsOnly
+  valueKind: Float32
+  floatBounds: [-500, 500]
+  maxBytes: 64 MiB soft-cap (no address window)
+  transition: owner-authorized Watch Offline click + Space pause/resume/pause
+observations:
+  - state: launch
+    parentProcess: WotBTreader.Host.Web.exe
+    verificationState: OfflineReplayVerified
+  - state: A
+    aggregatePrevious: 14469841
+    note: soft-cap retained first budget-filling private/mapped readable chunks
+  - state: B
+    aggregateChanged: 201129
+    aggregateUnchanged: 14268712
+    returnedCandidates: 100
+    addressKindHistogram:
+      private-mapping: 100
+  - state: image-only-pointer-aob
+    probed: 12
+    withHits: 0
+    survivorsWithImageKindHits: 0
+    scannerSessionDiscarded: true
+result:
+  whatWorked:
+    - ImageRegionsOnly API path live-proven (0 hits is a valid negative result).
+    - MaxBytes soft-cap live-proven on unbounded private/mapped snapshot.
+  whatFailed:
+    - No MEM_IMAGE absolute pointer to any of 12 returned survivors.
+    - Soft-cap A→B changed set (~201k) much noisier than windowed OD-006 (~434); prefer windows for controlled narrowing.
+  rulesOut:
+    - Direct little-endian absolute pointer storage in MEM_IMAGE for this survivor sample (repeat only with changed encoding/root hypothesis).
+  partials:
+    - Heap-dynamic classification stands; need CE/x64dbg access tracing or multi-level/encoded roots next.
+  nextPivot: OD-RECOVERY-008 — structural access/root (CE/x64dbg offline or multi-level pointer hypothesis); keep aggregates-only; second distinct replay before promotion (BLK-0019).
+  repeatWithoutChangedHypothesis: false
+artifacts:
+  rawFiles: none
+  committedSummary: this ledger entry
+```
+
+`OD-RECOVERY-007` is aggregate structural evidence only. It does not make any
+field `Candidate` or `Verified` and must not change
+`memory-offsets/11.19.0.10.json` beyond narrative Unknown evidence notes.
+Absolute addresses, values, and scanner session identifiers were discarded.
 
 ## Evidence promotion checklist
 

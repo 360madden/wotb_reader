@@ -311,12 +311,11 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-007`. `OD-RECOVERY-006` completed as `Partial`:
-Host.Web-managed child verified; Float A≈1.24M → B `changed≈434` (100/100
-`private-mapping`); AOB pointer-byte probes on 8 survivors yielded **1/8 with
-hits**, and those hits were also **`private-mapping` only** — no
-image/module static root. Value discover cannot search 8-byte pointers
-(`discover.invalid_value_width`); use `/discover/pattern`. Sessions discarded.
+Session ID: `OD-RECOVERY-008`. `OD-RECOVERY-007` completed as **NoSignal for
+image roots** (tooling Partial): soft-cap MaxBytes live-proved (A≈14.5M under
+64 MiB); B `changed≈201k` (noisier than windowed OD-006); **12/12**
+`imageRegionsOnly` pointer AOBs returned **0** hits. Direct absolute pointers
+to the sampled private-mapping survivors are not in MEM_IMAGE.
 
 1. Confirm owner authorization before any foreground window operation
    (BLK-0022). The guarded GameHarness input adapter remains unregistered.
@@ -324,12 +323,11 @@ image/module static root. Value discover cannot search 8-byte pointers
    `WotBTreader.Host.Web.exe`, not WGC. Wait for `OfflineReplayVerified`.
 3. Keep the research lease bounds (`Research:OfflineReplayEvidenceLifetimeSeconds`
    5–120, `Research:LifecycleEvidenceTimeoutSeconds` 5–300).
-4. Snapshot with `valueKind=Float` and finite float bounds. Prefer `--max-bytes`
-   soft-cap (partial snapshot when the budget fills) over process-specific
-   address windows; never commit absolute bases.
-5. Reproduce a tight A→B set, then search for **module-image-scoped** static
-   roots (image-only region selection if/when available, or CE/x64dbg under
-   offline rules). Do not treat private→private pointer hits as roots.
+4. Prefer **bounded address windows** for controlled A→B narrowing; treat
+   soft-cap low-first fill as reconnaissance only (it was noisier live).
+5. Do **not** repeat absolute image-only pointer AOB unchanged. Next structural
+   work: CE 7.7 / x64dbg offline access tracing, or a multi-level/encoded root
+   hypothesis — keep aggregates-only in the repo.
 6. Obtain a second distinct replay before any promotion review (BLK-0019).
 7. Append the ledger and a dated handoff before stopping.
 

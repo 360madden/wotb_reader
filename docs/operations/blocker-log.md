@@ -574,6 +574,12 @@ folder for the full numbering convention and document map.
   instruction. OD-006 added aggregate A→B narrowing and privacy-safe AOB
   pointer-byte probes; no module-image root and no promoted offset.
 
+- Resolution amendment (`2026-08-02T19:50:00Z`): the same authorized foreground
+  path covered `OD-RECOVERY-007`. Soft-cap MaxBytes and `ImageRegionsOnly`
+  pattern probes ran under the verified offline lease; 12/12 image-only
+  absolute pointer AOBs returned zero hits (negative structural evidence). No
+  promoted offset.
+
 ## BLK-0023 — Managed replay launch hid the window and fabricated window evidence
 
 - First observed: `2026-08-02T04:34:31Z`

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "gameVersion": "11.19.0.10",
   "executableSha256": "1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d",
-  "discoveredAtUtc": "2026-08-02T19:40:00Z",
+  "discoveredAtUtc": "2026-08-02T19:50:00Z",
   "offsets": {
     "replayTime": 0,
     "playerHP": 0,
@@ -41,6 +41,11 @@
           "provenanceKind": "GameHarness",
           "sourceTool": "WotBTreader.GameHarness / Host.Web gated scanner",
           "notes": "Sessions discarded after aggregate compare; independentProcessLaunches/Replays remain 0 for promotion. Soft-capped MaxBytes available as of 2026-08-02."
+        },
+        {
+          "provenanceKind": "DynamicScan",
+          "sourceTool": "Host.Web discover/pattern ImageRegionsOnly",
+          "notes": "OD-RECOVERY-007: 12/12 image-only little-endian absolute pointer AOBs for returned private-mapping survivors returned zero hits. Rules out direct MEM_IMAGE storage of those absolute pointers for this sample; does not promote any offset."
         }
       ],
       "independentProcessLaunches": 0,
@@ -61,6 +66,11 @@
           "provenanceKind": "GameHarness",
           "sourceTool": "WotBTreader.GameHarness / Host.Web gated scanner",
           "notes": "Sessions discarded after aggregate compare; independentProcessLaunches/Replays remain 0 for promotion. Soft-capped MaxBytes available as of 2026-08-02."
+        },
+        {
+          "provenanceKind": "DynamicScan",
+          "sourceTool": "Host.Web discover/pattern ImageRegionsOnly",
+          "notes": "OD-RECOVERY-007: 12/12 image-only little-endian absolute pointer AOBs for returned private-mapping survivors returned zero hits. Rules out direct MEM_IMAGE storage of those absolute pointers for this sample; does not promote any offset."
         }
       ],
       "independentProcessLaunches": 0,
@@ -71,5 +81,5 @@
     }
   },
   "confidence": "none",
-  "notes": "No usable offsets are currently published for 11.19.0.10. playerYaw remains Stale/quarantined (decimal/hex/address-kind conflict unresolved). OD-RECOVERY-004/005/006 (2026-08-02) produced privacy-safe Float32 A->B narrowing on private-mapping survivors for position-like values (tightest first-pass changed~434; samples 100/100 private-mapping; AOB pointer-byte hits also private-mapping only). Survivor set is heap-dynamic pending a module-image static root (next: OD-RECOVERY-007). Do not promote playerPositionX/Z until address kind, pointer-chain/root, two launches, and two independent replays are satisfied (BLK-0019). Seven non-yaw fields remain unknown."
+  "notes": "No usable offsets are currently published for 11.19.0.10. playerYaw remains Stale/quarantined. OD-RECOVERY-004/005/006 narrowed private-mapping Float survivors (heap-dynamic pending root). OD-RECOVERY-007: imageRegionsOnly absolute pointer AOB on 12 survivors returned 0 MEM_IMAGE hits; soft-cap MaxBytes live-proved but noisier for A->B than bounded windows. Next OD-RECOVERY-008 (CE/x64dbg or multi-level/encoded root). Do not promote until address kind, root, two launches, and two independent replays (BLK-0019)."
 }
