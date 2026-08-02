@@ -20,12 +20,26 @@ internal sealed class WindowsGameProcessQueryPlatform(
 
     public bool IsSupported => OperatingSystem.IsWindows();
 
-    public GameWindowEnumerationResult EnumerateEligibleGameWindows()
+    public GameWindowEnumerationResult EnumerateEligibleGameWindows(
+        int? expectedProcessId = null)
     {
         if (!IsSupported)
         {
             return new GameWindowEnumerationResult([], IsComplete: true);
         }
+
+        if (expectedProcessId is <= 0)
+        {
+            return new GameWindowEnumerationResult([], IsComplete: true);
+        }
+
+        return expectedProcessId.HasValue
+            ? EnumerateEligibleProcessWindows(expectedProcessId.Value)
+            : EnumerateClassifiedGameWindows();
+    }
+
+    private static GameWindowEnumerationResult EnumerateClassifiedGameWindows()
+    {
 
         List<GameWindowCandidate> candidates = [];
         nint previous = nint.Zero;
@@ -53,6 +67,36 @@ internal sealed class WindowsGameProcessQueryPlatform(
         }
 
         return new GameWindowEnumerationResult(candidates, isComplete);
+    }
+
+    private static GameWindowEnumerationResult EnumerateEligibleProcessWindows(
+        int expectedProcessId)
+    {
+        List<GameWindowCandidate> candidates = [];
+        bool stoppedAtAmbiguity = false;
+        NativeMethods.EnumWindowsProc callback = (window, _) =>
+        {
+            if (TryGetEligibleCandidate(
+                window,
+                out GameWindowCandidate candidate,
+                expectedProcessId,
+                requireGameWindowClass: false))
+            {
+                candidates.Add(candidate);
+                if (candidates.Count > 1)
+                {
+                    stoppedAtAmbiguity = true;
+                    return false;
+                }
+            }
+
+            return true;
+        };
+
+        bool nativeComplete = NativeMethods.EnumWindows(callback, nint.Zero);
+        return new GameWindowEnumerationResult(
+            candidates,
+            IsComplete: nativeComplete || stoppedAtAmbiguity);
     }
 
     public async ValueTask<IGameProcessQuerySession?> OpenQuerySessionAsync(
@@ -136,25 +180,36 @@ internal sealed class WindowsGameProcessQueryPlatform(
 
         return TryGetEligibleCandidate(
                    new nint(candidate.WindowHandle),
-                   out GameWindowCandidate current)
+                   out GameWindowCandidate current,
+                   candidate.ProcessId,
+                   requireGameWindowClass: false)
                && current == candidate;
     }
 
     private static bool TryGetEligibleCandidate(
         nint window,
-        out GameWindowCandidate candidate)
+        out GameWindowCandidate candidate,
+        int? expectedProcessId = null,
+        bool requireGameWindowClass = true)
     {
         candidate = null!;
-        char[] className = new char[MaximumWindowClassCharacters];
-        int classCharacters = NativeMethods.GetClassNameW(
-            window,
-            className,
-            className.Length);
-        if (classCharacters <= 0
-            || !new string(className, 0, classCharacters).Equals(
-                GameWindowClass,
-                StringComparison.Ordinal)
-            || !NativeMethods.IsWindowVisible(window)
+        if (requireGameWindowClass)
+        {
+            char[] className = new char[MaximumWindowClassCharacters];
+            int classCharacters = NativeMethods.GetClassNameW(
+                window,
+                className,
+                className.Length);
+            if (classCharacters <= 0
+                || !new string(className, 0, classCharacters).Equals(
+                    GameWindowClass,
+                    StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        if (!NativeMethods.IsWindowVisible(window)
             || NativeMethods.GetAncestor(window, GaRoot) != window
             || NativeMethods.GetWindow(window, GwOwner) != nint.Zero
             || !NativeMethods.GetClientRect(window, out NativeRect rect)
@@ -166,6 +221,12 @@ internal sealed class WindowsGameProcessQueryPlatform(
 
         _ = NativeMethods.GetWindowThreadProcessId(window, out uint processId);
         if (processId is 0 or > int.MaxValue)
+        {
+            return false;
+        }
+
+        if (expectedProcessId.HasValue
+            && processId != checked((uint)expectedProcessId.Value))
         {
             return false;
         }
@@ -281,6 +342,14 @@ internal readonly struct NativeFileInformation
 
 internal static class NativeMethods
 {
+    internal delegate bool EnumWindowsProc(nint hWnd, nint lParam);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool EnumWindows(
+        EnumWindowsProc lpEnumFunc,
+        nint lParam);
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     internal static extern nint FindWindowExW(
         nint hWndParent,

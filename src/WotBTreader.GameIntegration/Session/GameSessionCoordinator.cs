@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using WotBTreader.Application.Game;
 using WotBTreader.Application.Replay;
@@ -142,6 +141,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     private readonly ISuspendedProcessPlatform _suspendedPlatform;
     private readonly IManagedLaunchCorrelationRegistrar _correlationRegistrar;
     private readonly IThreadResumePlatform _threadResumePlatform;
+    private readonly IGameProcessIdentityObserver _processIdentityObserver;
     private readonly IGuardedMemoryReaderFactory _memoryReaderFactory;
     private readonly IGameProcessModuleBaseAddressResolver _moduleBaseAddressResolver;
     private readonly IOffsetTableReader _offsetTableReader;
@@ -179,6 +179,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         ISuspendedProcessPlatform suspendedPlatform,
         IManagedLaunchCorrelationRegistrar correlationRegistrar,
         IThreadResumePlatform threadResumePlatform,
+        IGameProcessIdentityObserver processIdentityObserver,
         IGuardedMemoryReaderFactory memoryReaderFactory,
         IGameProcessModuleBaseAddressResolver moduleBaseAddressResolver,
         IOffsetTableReader offsetTableReader,
@@ -195,6 +196,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         _suspendedPlatform = suspendedPlatform ?? throw new ArgumentNullException(nameof(suspendedPlatform));
         _correlationRegistrar = correlationRegistrar ?? throw new ArgumentNullException(nameof(correlationRegistrar));
         _threadResumePlatform = threadResumePlatform ?? throw new ArgumentNullException(nameof(threadResumePlatform));
+        _processIdentityObserver = processIdentityObserver ?? throw new ArgumentNullException(nameof(processIdentityObserver));
         _memoryReaderFactory = memoryReaderFactory ?? throw new ArgumentNullException(nameof(memoryReaderFactory));
         _moduleBaseAddressResolver = moduleBaseAddressResolver ?? throw new ArgumentNullException(nameof(moduleBaseAddressResolver));
         _offsetTableReader = offsetTableReader ?? throw new ArgumentNullException(nameof(offsetTableReader));
@@ -1043,6 +1045,53 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         && _managedLaunch.TrustedGameIdentity.ExecutableSha256
             == process.ObservedExecutableSha256;
 
+    internal static GameProcessEvidence? CreateObservedProcessEvidence(
+        ManagedGameLaunchContext launch,
+        GameProcessObservationResult observation)
+    {
+        ArgumentNullException.ThrowIfNull(launch);
+        ArgumentNullException.ThrowIfNull(observation);
+
+        ObservedGameProcessIdentity? identity = observation.Identity;
+        if (observation.Status != GameProcessObservationStatus.Available
+            || identity is null
+            || identity.WindowHandle == 0
+            || identity.ProcessId != launch.ProcessId
+            || identity.ProcessStartIdentity != launch.ProcessStartIdentity
+            || !string.Equals(
+                identity.CanonicalExecutablePath,
+                launch.TrustedGameIdentity.ExecutablePath,
+                StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(
+                identity.ProductVersion,
+                launch.TrustedGameIdentity.ProductVersion,
+                StringComparison.Ordinal)
+            || identity.ExecutableSha256 != launch.TrustedGameIdentity.ExecutableSha256)
+        {
+            return null;
+        }
+
+        return new GameProcessEvidence(
+            identity.ProcessId,
+            identity.ProcessStartIdentity,
+            IsAlive: true,
+            identity.CanonicalExecutablePath,
+            identity.ProductVersion,
+            identity.ExecutableSha256,
+            identity.WindowHandle,
+            WindowOwnerProcessId: identity.ProcessId);
+    }
+
+    internal static bool IsWindowObservationTerminalFailure(
+        bool correlatedEvidenceObserved,
+        GameProcessObservationStatus status,
+        bool exactWindowObserved) =>
+        !exactWindowObserved
+        && (correlatedEvidenceObserved
+            || status is GameProcessObservationStatus.Unsupported
+                or GameProcessObservationStatus.Ambiguous
+                or GameProcessObservationStatus.Available);
+
     private void ExpireAuthorizationIfNeeded()
     {
         if (_authorization is null
@@ -1695,6 +1744,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             CancellationTokenSource? evidenceTimeoutCts = null;
             ITimer? evidenceTimeoutTimer = null;
             bool correlatedEvidenceObserved = false;
+            ReplayLifecycleEvidence? pendingLifecycleEvidence = null;
             try
             {
                 evidenceTimeoutCts = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -1736,36 +1786,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                         if (ev.MarkerKind == ReplayLogMarkerKind.OfflineReplayStarted
                             && ev.Cursor is not null)
                         {
-                            try
-                            {
-                                using Process process = Process.GetProcessById(launch.ProcessId);
-                                if (process.HasExited)
-                                {
-                                    throw new InvalidOperationException("The managed replay process exited.");
-                                }
-                            }
-                            catch
-                            {
-                                // Process exited — revoke any active scanner
-                                // authorization instead of waiting for expiry.
-                                if (!token.IsCancellationRequested)
-                                {
-                                    ReportMonitorFailure(launch, token);
-                                }
-                                return;
-                            }
-
-                            var processEvidence = new GameProcessEvidence(
-                                launch.ProcessId,
-                                launch.ProcessStartIdentity,
-                                IsAlive: true,
-                                launch.TrustedGameIdentity.ExecutablePath,
-                                launch.TrustedGameIdentity.ProductVersion,
-                                launch.TrustedGameIdentity.ExecutableSha256,
-                                WindowHandle: 1,
-                                WindowOwnerProcessId: launch.ProcessId);
-
-                            var lifecycleEvidence = new ReplayLifecycleEvidence(
+                            pendingLifecycleEvidence = new ReplayLifecycleEvidence(
                                 ReplayLifecycleState.OfflineReplayStarted,
                                 ev.ObservedAtUtc,
                                 ev.SourceTimestampUtc,
@@ -1778,30 +1799,6 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                                 launch.ProcessId,
                                 launch.ProcessStartIdentity,
                                 launch.LaunchCorrelation);
-
-                            ApplyMonitorEvidence(
-                                launch,
-                                new GameSessionEvidence(
-                                    GamePresent: true,
-                                    MonitorHealthy: true,
-                                    ReplayUiConfirmed: true,
-                                    processEvidence,
-                                    lifecycleEvidence),
-                                token);
-
-                            lock (_gate)
-                            {
-                                correlatedEvidenceObserved =
-                                    IsCurrentMonitorLocked(launch, token)
-                                    && _snapshot.State == GameSessionVerificationState.OfflineReplayVerified;
-                            }
-                            if (correlatedEvidenceObserved)
-                            {
-                                evidenceTimeoutTimer?.Change(
-                                    Timeout.InfiniteTimeSpan,
-                                    Timeout.InfiniteTimeSpan);
-                                LogLaunchStage("lifecycle_evidence", "verified");
-                            }
                         }
                         else if (ev.MarkerKind == ReplayLogMarkerKind.OfflineReplayStopped)
                         {
@@ -1814,6 +1811,55 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                                 ReportMonitorFailure(launch, token);
                             }
                             return;
+                        }
+                    }
+
+                    if (pendingLifecycleEvidence is not null || correlatedEvidenceObserved)
+                    {
+                        GameProcessObservationResult processObservation =
+                            await _processIdentityObserver
+                                .ObserveAsync(launch.ProcessId, readToken)
+                                .ConfigureAwait(false);
+                        GameProcessEvidence? processEvidence =
+                            CreateObservedProcessEvidence(launch, processObservation);
+
+                        if (IsWindowObservationTerminalFailure(
+                            correlatedEvidenceObserved,
+                            processObservation.Status,
+                            processEvidence is not null))
+                        {
+                            ReportMonitorFailure(launch, token);
+                            return;
+                        }
+
+                        if (!correlatedEvidenceObserved
+                            && pendingLifecycleEvidence is not null
+                            && processEvidence is not null)
+                        {
+                            ApplyMonitorEvidence(
+                                launch,
+                                new GameSessionEvidence(
+                                    GamePresent: true,
+                                    MonitorHealthy: true,
+                                    ReplayUiConfirmed: true,
+                                    processEvidence,
+                                    pendingLifecycleEvidence),
+                                token);
+
+                            lock (_gate)
+                            {
+                                correlatedEvidenceObserved =
+                                    IsCurrentMonitorLocked(launch, token)
+                                    && _snapshot.State == GameSessionVerificationState.OfflineReplayVerified;
+                            }
+                            if (correlatedEvidenceObserved)
+                            {
+                                pendingLifecycleEvidence = null;
+                                evidenceTimeoutTimer?.Change(
+                                    Timeout.InfiniteTimeSpan,
+                                    Timeout.InfiniteTimeSpan);
+                                LogLaunchStage("lifecycle_evidence", "verified");
+                            }
                         }
                     }
 

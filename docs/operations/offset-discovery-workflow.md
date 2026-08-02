@@ -156,17 +156,19 @@ research lease, with a hard maximum of two minutes:
 
 ```powershell
 $env:Research__OfflineReplayEvidenceLifetimeSeconds = '120'
+$env:Research__LifecycleEvidenceTimeoutSeconds = '120'
 dotnet run --project src/WotBTreader.Host.Web -c Release --no-build
 ```
 
-Values below 5 seconds or above 120 seconds fail host startup. The setting only
-changes the maximum age of the correlated live replay-start marker. The active
-lifecycle monitor still revokes authorization and terminates the exact managed
-child immediately on replay stop, unhealthy or gapped evidence, cancellation,
-or expiry. Reported process exit and identity changes also revoke immediately;
-each scanner read independently revalidates the exact process identity and
-fails closed if the process disappears or is replaced. Remove the environment
-variable when the research host exits.
+The replay-evidence lifetime accepts 5–120 seconds. The lifecycle-evidence
+timeout accepts 5–300 seconds and extends only the bounded startup wait for a
+fresh native replay-start marker; it does not authorize scanning before that
+marker exists. The active lifecycle monitor still revokes authorization and
+terminates the exact managed child immediately on replay stop, unhealthy or
+gapped evidence, cancellation, or expiry. Reported process exit and identity
+changes also revoke immediately; each scanner read independently revalidates
+the exact process identity and fails closed if the process disappears or is
+replaced. Remove both environment variables when the research host exits.
 
 For one controlled transition:
 

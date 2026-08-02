@@ -102,6 +102,7 @@ docs/operations/handoffs/2026-08-01-offset-campaign-reconnaissance.md
 docs/operations/handoffs/2026-08-01-real-offline-scanner-smoke.md
 docs/operations/handoffs/2026-08-01-scanner-external-access.md
 docs/operations/handoffs/2026-08-01-ultimate-scanner-bug-fix.md
+docs/operations/handoffs/2026-08-02-managed-replay-window-recovery.md
 docs/operations/handoffs/README.md
 docs/operations/offset-discovery-guide.md
 docs/operations/offset-discovery-ledger.md

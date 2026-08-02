@@ -242,8 +242,12 @@ internal sealed class WindowsSuspendedProcessPlatform : ISuspendedProcessPlatfor
 {
     private const int CreateSuspended = 0x0000_0004;
     private const int CreateUnicodeEnvironment = 0x0000_0400;
-    private const int StartfUseShowWindow = 0x0000_0001;
-    private const int SwHide = 0;
+
+    internal static StartupInfoEx CreateStartupInfo() =>
+        new()
+        {
+            cb = Marshal.SizeOf<StartupInfoEx>(),
+        };
 
     private static string NormalizeExePath(string path)
     {
@@ -297,12 +301,7 @@ internal sealed class WindowsSuspendedProcessPlatform : ISuspendedProcessPlatfor
             // Command line: "executable" "replayPath"
             string commandLine = $"\"{executablePath}\" \"{replayPath}\"";
 
-            var startupInfo = new StartupInfoEx
-            {
-                cb = Marshal.SizeOf<StartupInfoEx>(),
-                dwFlags = StartfUseShowWindow,
-                wShowWindow = SwHide
-            };
+            StartupInfoEx startupInfo = CreateStartupInfo();
 
             var processInfo = new ProcessInformation();
 

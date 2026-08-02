@@ -167,6 +167,22 @@ public sealed class CompositionRootTests
     }
 
     [TestMethod]
+    public void FoundationPropagatesExplicitLifecycleEvidenceTimeout()
+    {
+        using TemporaryRoot root = new();
+        ServiceCollection services = new();
+        services.AddWotBTreaderFoundation(new TreaderBootstrapOptions(
+            ApplicationDataRoot: root.Path,
+            LifecycleEvidenceTimeout: TimeSpan.FromMinutes(2)));
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        GameIntegrationOptions options =
+            provider.GetRequiredService<GameIntegrationOptions>();
+
+        Assert.AreEqual(TimeSpan.FromMinutes(2), options.LifecycleEvidenceTimeout);
+    }
+
+    [TestMethod]
     public async Task HostStartupInitializesStorageSchema()
     {
         using TemporaryRoot root = new();

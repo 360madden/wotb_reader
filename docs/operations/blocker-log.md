@@ -547,3 +547,60 @@ entries rather than silently erasing prior evidence.
 - Prevention/follow-up: confirm operator readiness before starting the managed
   replay lease. Keep natural progression classified as reconnaissance only,
   and do not record this setup attempt as position-field evidence.
+
+## BLK-0023 — Managed replay launch hid the window and fabricated window evidence
+
+- First observed: `2026-08-02T04:34:31Z`
+- Status: open
+- Impact: two managed replay attempts produced an exact correlated
+  `wotblitz.exe` PID and `OfflineReplayVerified`, but no visible game window.
+  The operator correctly rejected both launches before any scanner operation.
+- Evidence: the second attempt used exact PID 41072. It remained responsive and
+  positively lifecycle-verified for more than 20 seconds while
+  `MainWindowHandle` stayed zero; the approved computer-use window inventory
+  likewise found no game window. Source inspection then showed
+  `WindowsSuspendedProcessPlatform` passing `STARTF_USESHOWWINDOW` with
+  `SW_HIDE`, while `GameSessionCoordinator` constructed monitor evidence with
+  the synthetic constant `WindowHandle: 1`.
+- Cause: the low-level launch path intentionally hid the child window, and the
+  lifecycle monitor substituted a sentinel instead of querying the existing
+  eligible SDL-window/process identity observer.
+- Resolution: pending. Use the default normal window-display behavior for
+  `CreateProcessW`. Before authorization, require exactly one eligible visible
+  SDL game window whose PID, process-start identity, canonical executable,
+  version, and SHA-256 match the managed launch. Revalidate that observation
+  throughout the lease and revoke immediately on loss, ambiguity, query
+  failure, or identity mismatch.
+- Prevention/follow-up: lifecycle correlation and process liveness cannot
+  substitute for visible-window ownership. Keep regressions for normal startup
+  flags, zero-window denial, observed-handle propagation, delayed window
+  materialization, and post-verification window loss. These attempts contain no
+  offset evidence and must not be recorded as failed position scans.
+
+## BLK-0024 — Offline confirmation exceeded the fixed lifecycle startup wait
+
+- First observed: `2026-08-02T04:57:21Z`
+- Status: open
+- Impact: after the managed child became visible and the operator-selected
+  **Watch Offline** path began loading, no fresh native replay-start marker
+  arrived before the fixed 45-second lifecycle-evidence deadline. The
+  coordinator correctly denied the session and terminated the exact child;
+  no scanner request ran.
+- Evidence: the first visible attempt exposed the offline-choice dialog but
+  expired before it could be selected. A clean retry selected **Watch Offline**
+  immediately in exact PID 43004; the dialog disappeared and loading began,
+  but the same bounded deadline ended with
+  `launch.lifecycle_evidence_timeout` and zero game processes.
+- Cause: `GameIntegrationOptions` already validates lifecycle startup waits
+  from 5 seconds through 5 minutes, but the web-host composition exposed only
+  the post-verification research lifetime. Local replay startup therefore had
+  no supported way to accommodate the required operator confirmation and slow
+  client load while preserving the production default.
+- Resolution: pending live proof. Preserve the 45-second default and expose an
+  explicit `Research:LifecycleEvidenceTimeoutSeconds` host setting. Use 120
+  seconds for the next bounded offline retry; scanning remains denied until a
+  fresh correlated marker and exact visible-window identity both exist.
+- Prevention/follow-up: keep composition coverage for explicit timeout
+  propagation and document both independent research bounds. A longer startup
+  wait must never extend authorization after replay stop, feed failure, window
+  loss, identity change, cancellation, or evidence expiry.

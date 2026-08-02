@@ -97,6 +97,24 @@ public sealed class GameProcessIdentityObserverTests
     }
 
     [TestMethod]
+    public async Task ExpectedProcessId_IsPassedToWindowEnumeration()
+    {
+        FakeQuerySession session = CreateSession();
+        var platform = new FakePlatform
+        {
+            Candidates = [new GameWindowCandidate(10, 100)],
+            Session = session,
+        };
+        var observer = new GameProcessIdentityObserver(platform);
+
+        GameProcessObservationResult result =
+            await observer.ObserveAsync(100, CancellationToken.None);
+
+        Assert.AreEqual(GameProcessObservationStatus.Available, result.Status);
+        Assert.AreEqual(100, platform.ExpectedProcessId);
+    }
+
+    [TestMethod]
     public async Task QueryFailure_ReturnsNoPartialIdentity()
     {
         var platform = new FakePlatform
@@ -234,13 +252,17 @@ public sealed class GameProcessIdentityObserverTests
 
         public int OpenCount { get; private set; }
 
+        public int? ExpectedProcessId { get; private set; }
+
         public uint DesiredAccess { get; private set; }
 
         public Action? AfterOpen { get; init; }
 
-        public GameWindowEnumerationResult EnumerateEligibleGameWindows()
+        public GameWindowEnumerationResult EnumerateEligibleGameWindows(
+            int? expectedProcessId = null)
         {
             EnumerationCount++;
+            ExpectedProcessId = expectedProcessId;
             return new GameWindowEnumerationResult(
                 Candidates,
                 EnumerationComplete);

@@ -45,6 +45,69 @@ public sealed class GameSessionCoordinatorTests
     }
 
     [TestMethod]
+    public async Task EvidenceWithoutARealWindow_IsDenied()
+    {
+        var (coordinator, _) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess() with { WindowHandle = 0 },
+        });
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+        Assert.AreEqual("process.identity_mismatch", snapshot.ReasonCode);
+    }
+
+    [TestMethod]
+    public void ObservedProcessEvidence_UsesTheRealEligibleWindow()
+    {
+        ManagedGameLaunchContext launch = CreateManagedLaunch();
+        var identity = new ObservedGameProcessIdentity(
+            launch.ProcessId,
+            launch.ProcessStartIdentity,
+            WindowHandle: 9876,
+            launch.TrustedGameIdentity.ExecutablePath,
+            new ExecutableFileIdentity(1, 2),
+            launch.TrustedGameIdentity.ProductVersion,
+            launch.TrustedGameIdentity.ExecutableSha256);
+
+        GameProcessEvidence? evidence =
+            GameSessionCoordinator.CreateObservedProcessEvidence(
+                launch,
+                new GameProcessObservationResult(
+                    GameProcessObservationStatus.Available,
+                    identity));
+
+        Assert.IsNotNull(evidence);
+        Assert.AreEqual(9876, evidence.WindowHandle);
+        Assert.AreEqual(launch.ProcessId, evidence.WindowOwnerProcessId);
+    }
+
+    [TestMethod]
+    public void WindowObservationPolicy_WaitsBeforeVerificationAndFailsAfterLoss()
+    {
+        Assert.IsFalse(GameSessionCoordinator.IsWindowObservationTerminalFailure(
+            correlatedEvidenceObserved: false,
+            GameProcessObservationStatus.Absent,
+            exactWindowObserved: false));
+        Assert.IsTrue(GameSessionCoordinator.IsWindowObservationTerminalFailure(
+            correlatedEvidenceObserved: false,
+            GameProcessObservationStatus.Ambiguous,
+            exactWindowObserved: false));
+        Assert.IsTrue(GameSessionCoordinator.IsWindowObservationTerminalFailure(
+            correlatedEvidenceObserved: true,
+            GameProcessObservationStatus.Absent,
+            exactWindowObserved: false));
+        Assert.IsFalse(GameSessionCoordinator.IsWindowObservationTerminalFailure(
+            correlatedEvidenceObserved: true,
+            GameProcessObservationStatus.Available,
+            exactWindowObserved: true));
+    }
+
+    [TestMethod]
     public async Task CallerCannotSupplyMissingManagedLaunchCorrelation()
     {
         var (coordinator, _) = CreateCoordinator();
@@ -639,6 +702,7 @@ public sealed class GameSessionCoordinatorTests
             ISuspendedProcessPlatform? suspendedPlatform = null,
             IManagedLaunchCorrelationRegistrar? correlationRegistrar = null,
             IThreadResumePlatform? threadResumePlatform = null,
+            IGameProcessIdentityObserver? processIdentityObserver = null,
             IGuardedMemoryReaderFactory? memoryReaderFactory = null,
             IGameProcessModuleBaseAddressResolver? moduleBaseAddressResolver = null,
             IOffsetTableReader? offsetTableReader = null,
@@ -655,6 +719,7 @@ public sealed class GameSessionCoordinatorTests
             suspendedPlatform ?? new StubSuspendedPlatform(),
             correlationRegistrar ?? new StubCorrelationRegistrar(),
             threadResumePlatform ?? new StubThreadResumePlatform(),
+            processIdentityObserver ?? new StubProcessIdentityObserver(),
             memoryReaderFactory ?? new StubMemoryReaderFactory(),
             moduleBaseAddressResolver ?? new FixedModuleBaseResolver((nint)0x10000000),
             offsetTableReader ?? new StubOffsetTableReader(),
@@ -831,6 +896,15 @@ public sealed class GameSessionCoordinatorTests
             AuthorizedMemoryObservation observation,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException("StubMemoryReaderFactory is not intended for evidence evaluation tests.");
+    }
+
+    private sealed class StubProcessIdentityObserver : IGameProcessIdentityObserver
+    {
+        public ValueTask<GameProcessObservationResult> ObserveAsync(
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult(new GameProcessObservationResult(
+                GameProcessObservationStatus.Absent,
+                Identity: null));
     }
 
     private sealed class StubLifecycleFeed : IBlitzReplayLifecycleFeed

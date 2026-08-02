@@ -40,6 +40,11 @@ internal interface IGameProcessIdentityObserver
 {
     ValueTask<GameProcessObservationResult> ObserveAsync(
         CancellationToken cancellationToken);
+
+    ValueTask<GameProcessObservationResult> ObserveAsync(
+        int expectedProcessId,
+        CancellationToken cancellationToken) =>
+        ObserveAsync(cancellationToken);
 }
 
 internal interface IGameProcessQuerySession : IDisposable
@@ -63,7 +68,8 @@ internal interface IGameProcessQueryPlatform
 {
     bool IsSupported { get; }
 
-    GameWindowEnumerationResult EnumerateEligibleGameWindows();
+    GameWindowEnumerationResult EnumerateEligibleGameWindows(
+        int? expectedProcessId = null);
 
     ValueTask<IGameProcessQuerySession?> OpenQuerySessionAsync(
         GameWindowCandidate candidate,
@@ -86,6 +92,20 @@ internal sealed class GameProcessIdentityObserver(
         platform ?? throw new ArgumentNullException(nameof(platform));
 
     public async ValueTask<GameProcessObservationResult> ObserveAsync(
+        CancellationToken cancellationToken) =>
+        await ObserveCoreAsync(
+            expectedProcessId: null,
+            cancellationToken).ConfigureAwait(false);
+
+    public async ValueTask<GameProcessObservationResult> ObserveAsync(
+        int expectedProcessId,
+        CancellationToken cancellationToken) =>
+        await ObserveCoreAsync(
+            expectedProcessId > 0 ? expectedProcessId : null,
+            cancellationToken).ConfigureAwait(false);
+
+    private async ValueTask<GameProcessObservationResult> ObserveCoreAsync(
+        int? expectedProcessId,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -95,7 +115,7 @@ internal sealed class GameProcessIdentityObserver(
         }
 
         GameWindowEnumerationResult enumeration =
-            _platform.EnumerateEligibleGameWindows();
+            _platform.EnumerateEligibleGameWindows(expectedProcessId);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!enumeration.IsComplete)

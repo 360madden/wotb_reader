@@ -105,6 +105,12 @@ is not registered, so the operator—not automation—must perform the replay
 transition. See `docs/operations/offset-discovery-workflow.md` for the full
 abort and privacy protocol.
 
+Replay startup that requires an operator's **Watch Offline** confirmation may
+also opt into `Research:LifecycleEvidenceTimeoutSeconds`. The normal startup
+wait remains 45 seconds; validation accepts 5–300 seconds. This setting only
+extends the bounded wait for a fresh correlated replay-start marker and never
+authorizes a scanner before that marker exists.
+
 The preferred privacy-safe controlled-transition path uses the guarded
 snapshot/compare endpoints with Float32, alignment 4, readable private/mapped
 regions, a finite value range, and the engine's 512 MiB snapshot ceiling. The

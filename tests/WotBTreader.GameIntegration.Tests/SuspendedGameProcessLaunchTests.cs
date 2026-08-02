@@ -1,4 +1,5 @@
 using Microsoft.Win32.SafeHandles;
+using System.Runtime.InteropServices;
 using WotBTreader.Application.Game;
 using WotBTreader.Application.Results;
 using WotBTreader.Core;
@@ -9,6 +10,16 @@ namespace WotBTreader.GameIntegration.Tests;
 [TestClass]
 public sealed class SuspendedGameProcessLaunchTests
 {
+    [TestMethod]
+    public void CreateStartupInfo_UsesNormalDefaultWindowDisplay()
+    {
+        StartupInfoEx startupInfo = WindowsSuspendedProcessPlatform.CreateStartupInfo();
+
+        Assert.AreEqual(Marshal.SizeOf<StartupInfoEx>(), startupInfo.cb);
+        Assert.AreEqual(0, startupInfo.dwFlags);
+        Assert.AreEqual(0, startupInfo.wShowWindow);
+    }
+
     [TestMethod]
     public async Task CreateAsync_Success_ReturnsLeaseWithValidHandles()
     {

@@ -68,6 +68,8 @@ public static class FoundationServiceCollectionExtensions
                 ? []
                 : [options.GameUserDataRoot],
             ReplayLaunchStagingRoot = Path.Combine(paths.Root, "launch"),
+            LifecycleEvidenceTimeout =
+                options.LifecycleEvidenceTimeout ?? TimeSpan.FromSeconds(45),
             OfflineReplayEvidenceLifetime =
                 options.OfflineReplayEvidenceLifetime ?? TimeSpan.FromSeconds(15),
         };

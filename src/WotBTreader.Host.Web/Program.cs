@@ -32,7 +32,8 @@ builder.Services.AddWotBTreaderFoundation(new TreaderBootstrapOptions(
     builder.Configuration["Paths:ApplicationDataRoot"],
     builder.Configuration["Game:Root"],
     builder.Configuration["Game:UserDataRoot"],
-    ReadOfflineReplayEvidenceLifetime(builder.Configuration)));
+    ReadOfflineReplayEvidenceLifetime(builder.Configuration),
+    ReadLifecycleEvidenceTimeout(builder.Configuration)));
 
 builder.Services
     .AddRazorComponents()
@@ -85,5 +86,12 @@ static TimeSpan? ReadOfflineReplayEvidenceLifetime(IConfiguration configuration)
 {
     int? seconds = configuration.GetValue<int?>(
         "Research:OfflineReplayEvidenceLifetimeSeconds");
+    return seconds.HasValue ? TimeSpan.FromSeconds(seconds.Value) : null;
+}
+
+static TimeSpan? ReadLifecycleEvidenceTimeout(IConfiguration configuration)
+{
+    int? seconds = configuration.GetValue<int?>(
+        "Research:LifecycleEvidenceTimeoutSeconds");
     return seconds.HasValue ? TimeSpan.FromSeconds(seconds.Value) : null;
 }
