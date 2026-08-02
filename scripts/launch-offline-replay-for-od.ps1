@@ -43,7 +43,9 @@
 param(
     [string]$ReplayPath,
     [string]$RepoRoot,
-    [int]$SettleSeconds = 0,
+    # Brief pause after first HWND so splash can pass before the clicker
+    # captures/focuses (early focus churn has destroyed the window mid-splash).
+    [int]$SettleSeconds = 4,
     [int]$HostWaitSeconds = 60,
     [int]$WindowWaitSeconds = 90,
     [int]$WatchTimeoutSeconds = 120,
@@ -243,8 +245,8 @@ try {
     }
 
     Write-Od 'watch_offline_sync_dim_ready_then_click'
-    # No long blind settle: click-watch-offline runs the sync-dim ready gate
-    # (bright dialog + strong orange, after sync dim or grace), holds ~2s, then clicks.
+    # Short settle only (default 4s) so splash can finish; the clicker owns the
+    # sync-dim ready gate and must not spam focus during LookingForDialog.
 
     $api = Get-ApiContext
     $pre = Invoke-RestMethod -Uri "$($api.Base)/api/v1/game/state" -Headers $api.Headers

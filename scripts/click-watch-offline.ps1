@@ -352,14 +352,22 @@ try {
         $AppearTimeoutSeconds, $ReadyTimeoutSeconds, $SyncGraceSeconds, $MinDialogAgeSeconds, `
         $ReadyHoldSeconds, $MaxDialogLifetimeSeconds)
 
+    $lastFocusAt = [datetime]::MinValue
     while ($true) {
         $game = Get-GameWindow
         if (-not $game) {
             Write-Host 'watch_offline: no_game_window_while_waiting'
             exit 1
         }
-        [void][WatchOfflineVision]::ShowWindow($game.MainWindowHandle, 9)
-        [void][WatchOfflineVision]::SetForegroundWindow($game.MainWindowHandle)
+        # Do not spam ShowWindow/SetForeground during splash — live logs show
+        # OnBackground → WindowDestroyed within ~1s when focus-churned early.
+        $shouldFocus = ($phase -ne 'LookingForDialog') -or `
+            (((Get-Date) - $lastFocusAt).TotalSeconds -ge 3)
+        if ($shouldFocus) {
+            [void][WatchOfflineVision]::ShowWindow($game.MainWindowHandle, 9)
+            [void][WatchOfflineVision]::SetForegroundWindow($game.MainWindowHandle)
+            $lastFocusAt = Get-Date
+        }
 
         $analysis = Get-WindowAnalysis $game.MainWindowHandle $ScreenshotPath
         if (-not $analysis) {
