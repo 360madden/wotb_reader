@@ -519,12 +519,31 @@ discover-snapshot 4 [--float-min <f>] [--float-max <f>] [--int-min <n>] [--int-m
 discover-compare <sessionId> [changed|unchanged|increased|decreased]
 discover-nearby <refOffset> [--window <64-4096>]
 discover-discard <sessionId>
+discover-campaign [--comparisons <1-4>] [--interval-seconds <1-5>]
+                  [--span-mib <1-64>] [--float-min <f>] [--float-max <f>]
+                  [--mode <changed|unchanged|increased|decreased>]
 ```
 
 The CLI validates the rendezvous capability before making requests, sends it on
 all unsafe calls, uses invariant numeric parsing, rejects malformed ranges, and
 returns non-zero exit codes for host, HTTP, timeout, and input failures. It
 prints bounded summaries rather than raw memory dumps.
+
+`discover-campaign` is the privacy-safe first pass for a fresh managed launch.
+It privately derives the main-module range, snapshots aligned Float32 values in
+at most 64 MiB, performs rolling comparisons, requests only one candidate in
+each loopback response, suppresses that candidate's address and value, and
+always attempts to discard the retained scanner session. Defaults are two
+comparisons, two-second intervals, a 16 MiB cap, `-500..500`, and `changed`.
+The configured waits may total at most eight seconds so the workflow leaves
+room inside the coordinator's 15-second authorization lifetime for bounded
+native reads and cleanup.
+
+Campaign output is aggregate variability reconnaissance. Natural replay
+changes cannot identify `playerPositionX`, prove a member displacement or RVA,
+classify an address, or satisfy the controlled-transition requirement. Record
+launch independence and replay independence separately in the ledger; repeated
+launches of one replay do not satisfy the two-replay promotion rule.
 
 ## Managed-launch diagnostics
 

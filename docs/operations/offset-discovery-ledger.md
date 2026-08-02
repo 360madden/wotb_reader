@@ -327,6 +327,85 @@ a failed position scan and must not change `memory-offsets/11.19.0.10.json`.
 Do not attempt another managed launch, attach to an existing process, or terminate
 one until the launch timeout and lifecycle-correlation path have been diagnosed.
 
+## `OD-RECOVERY-003` result — 2026-08-02
+
+```yaml
+sessionId: OD-RECOVERY-003
+supersedes: OD-RECOVERY-003 planned recovery after OD-RECOVERY-002-BLOCKED
+status: Partial
+observedAtUtc: 2026-08-02T03:06:35Z
+timebox: two fresh managed launches; two rolling comparisons per launch
+objective: Prove a repeatable privacy-safe aggregate campaign and test whether a bounded main-module Float32 range is a useful natural-change anchor
+stopCondition: Stop after two successful fresh launches, any gate or cleanup failure, or a zero retained set
+process:
+  launchCount: 2
+  exactSingletonProcessEachLaunch: true
+  offlineGateEachLaunch: OfflineReplayVerified
+  postTrialGameProcessCount: 0
+  postTrialHostProcessCount: 0
+replay:
+  distinctReplayPayloadsUsed: 1
+  launchIndependence: true
+  replayIndependence: false
+  privacy: artifact identifiers, names, paths, hashes, bytes, and player data withheld
+method:
+  primaryTool: GameHarness discover-campaign
+  valueKind: Float32
+  valueRange: -500 to 500
+  alignment: 4
+  addressScope: first 16 MiB of the trusted main-module range, including readable image/private/mapped regions
+  compareMode: changed
+  rollingBaseline: true
+  comparisonsPerLaunch: 2
+  intervalSeconds: 2
+  renderedCandidatePayloads: 0
+observations:
+  - launch: 1
+    candidateCountBefore: 2265195
+    candidateCountAfterFirstCompare: 0
+    changedFirstCompare: 0
+    unchangedFirstCompare: 2265195
+    candidateCountAfterSecondCompare: 0
+    scannerSessionDiscarded: true
+    managedGameExitedOnEvidenceExpiry: true
+  - launch: 2
+    candidateCountBefore: 2265195
+    candidateCountAfterFirstCompare: 0
+    changedFirstCompare: 0
+    unchangedFirstCompare: 2265195
+    candidateCountAfterSecondCompare: 0
+    scannerSessionDiscarded: true
+    managedGameExitedOnEvidenceExpiry: true
+result:
+  whatWorked:
+    - Both fresh managed launches reached the positive offline gate with exactly one attributable game process.
+    - Aggregate counts repeated exactly across launches; no candidate address, value, or scanner session identifier was rendered.
+    - Rolling comparison narrowed the changed set to zero and explicit discard removed each retained scanner session.
+    - Evidence expiry terminated both exact managed game processes; only the lead-started web host required explicit cleanup.
+  whatFailed:
+    - An initial setup rehearsal polled the gate for only four seconds and stopped before the documented lifecycle window; no scanner command ran.
+    - The first verified campaign attempt exposed BLK-0020 and failed before snapshot creation; the probe was corrected and retested before these evidence trials.
+    - The bounded main-module range produced no changing candidates under natural replay progression.
+  rulesOut:
+    - No dynamic evidence supports playerPositionX, playerPositionZ, replayTime, HP, or any other field.
+    - No candidate address, RVA, member displacement, pointer chain, heap route, or address-kind classification was produced.
+    - This 16 MiB main-module slice is not a useful natural-change anchor under the recorded timing and filter protocol.
+    - The result cannot satisfy replay independence or offset promotion; BLK-0019 remains open.
+  partials:
+    - The negative aggregate result is repeatable across two independent process launches of the same replay.
+    - The new command proves bounded orchestration, output redaction, rolling reduction, and scanner-session cleanup against the real guarded scanner.
+  nextPivot: OD-RECOVERY-004 — use a controlled movement transition to search private/heap state for playerPositionX or playerPositionZ, then classify any surviving address structurally; obtain a second distinct replay before promotion review.
+  repeatWithoutChangedHypothesis: false
+artifacts:
+  rawFiles: none
+  committedSummary: this ledger entry
+```
+
+`OD-RECOVERY-003` is aggregate negative evidence only. It does not make any
+field `Candidate` or `Verified`, and it must not change
+`memory-offsets/11.19.0.10.json`. Do not repeat the same main-module natural
+change protocol without a changed scope or controlled transition.
+
 ## Evidence promotion checklist
 
 A field is ready for promotion review only when all are true:

@@ -449,3 +449,48 @@ entries rather than silently erasing prior evidence.
 - Prevention/follow-up: authorization, request/result, and diagnostic fields
   are separate concerns. Any new scanner log must remain path-free and must not
   serialize caller-controlled labels or process-memory content.
+
+## BLK-0019 — Offset promotion lacks a second independent replay
+
+- First observed: `2026-08-02T02:47:26Z`
+- Status: open
+- Impact: the private replay inventory contains multiple files but only one
+  distinct replay payload. Fresh process launches can establish cross-launch
+  repeatability, but no dynamic candidate may satisfy the repository's
+  two-independent-replay promotion rule with the currently available evidence.
+- Evidence: an aggregate-only local inventory counted replay artifacts and
+  distinct content digests without publishing file names, paths, hashes, replay
+  bytes, or player data. All available artifacts resolved to one distinct
+  payload.
+- Cause: no second independently sourced private replay is currently available
+  to the offset-discovery campaign.
+- Resolution: pending. Obtain or record a second offline replay through normal
+  gameplay, then repeat the same hypothesis and transition protocol in a fresh
+  managed launch. Keep all replay artifacts and raw discovery evidence local
+  and ignored.
+- Prevention/follow-up: campaign tooling and summaries must report launch and
+  replay independence separately. Never infer replay independence from file
+  count, file name, or repeated launches, and never promote a candidate while
+  this blocker remains open.
+
+## BLK-0020 — Campaign module probe crossed below the trusted module base
+
+- First observed: `2026-08-02T03:06:35Z`
+- Status: resolved and validated
+- Impact: the first positively verified campaign attempt failed closed with an
+  HTTP 400 before snapshot creation, so no aggregate evidence was collected.
+- Evidence: the campaign requested the minimum 64-byte neighborhood at relative
+  offset zero. Neighborhood windows are a radius on both sides of the reference,
+  which placed the computed lower bound before the trusted module base.
+- Cause: the new CLI treated `WindowSize` as a total forward length while the
+  scanner contract treats it as the radius around `ReferenceOffset`.
+- Resolution: place the private base-derivation probe one minimum radius into
+  the module. Its lower bound now lands exactly on the trusted base; value
+  decoders remain disabled, and neither the derived base nor response candidates
+  are rendered.
+- Validation: a focused regression asserts the 64-byte reference displacement;
+  the GameHarness suite passes. Two fresh managed offline launches then completed
+  the probe, bounded snapshot, two rolling comparisons, and session discard.
+- Prevention/follow-up: callers must distinguish radius-based neighborhood
+  windows from exclusive snapshot ranges. Keep a request-shape test at this
+  boundary.

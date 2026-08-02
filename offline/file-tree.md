@@ -98,6 +98,7 @@ docs/operations/handoffs/2026-07-31-offline-discovery-pack.md
 docs/operations/handoffs/2026-07-31-offset-discovery-evidence-report.md
 docs/operations/handoffs/2026-07-31-roadmap-hardening-cancellation.md
 docs/operations/handoffs/2026-08-01-managed-launch-timeout-diagnostics.md
+docs/operations/handoffs/2026-08-01-offset-campaign-reconnaissance.md
 docs/operations/handoffs/2026-08-01-real-offline-scanner-smoke.md
 docs/operations/handoffs/2026-08-01-scanner-external-access.md
 docs/operations/handoffs/2026-08-01-ultimate-scanner-bug-fix.md
@@ -512,7 +513,9 @@ tools/src/WotBTreader.GameHarness/HarnessJson.cs
 tools/src/WotBTreader.GameHarness/HarnessModels.cs
 tools/src/WotBTreader.GameHarness/HarnessSafetyPolicy.cs
 tools/src/WotBTreader.GameHarness/IGameHarnessPlatform.cs
+tools/src/WotBTreader.GameHarness/OffsetCampaign.cs
 tools/src/WotBTreader.GameHarness/Program.cs
+tools/src/WotBTreader.GameHarness/Properties/AssemblyInfo.cs
 tools/src/WotBTreader.GameHarness/RendezvousConnection.cs
 tools/src/WotBTreader.GameHarness/ScannerStateStore.cs
 tools/src/WotBTreader.GameHarness/UnavailableGameHarnessPlatform.cs
@@ -527,6 +530,7 @@ tools/src/WotBTreader.ReplaySanitizer/packages.lock.json
 tools/tests/WotBTreader.GameHarness.Tests/GameHarnessCommandContainmentTests.cs
 tools/tests/WotBTreader.GameHarness.Tests/HarnessSafetyPolicyTests.cs
 tools/tests/WotBTreader.GameHarness.Tests/MSTestSettings.cs
+tools/tests/WotBTreader.GameHarness.Tests/OffsetCampaignTests.cs
 tools/tests/WotBTreader.GameHarness.Tests/WotBTreader.GameHarness.Tests.csproj
 tools/tests/WotBTreader.GameHarness.Tests/packages.lock.json
 treader.cmd

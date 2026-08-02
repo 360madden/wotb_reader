@@ -32,6 +32,16 @@ public sealed class GameHarnessCommandContainmentTests
     }
 
     [TestMethod]
+    public async Task CampaignIsDeniedBeforeItCanProbeOrSnapshotGameMemory()
+    {
+        HarnessInvocation result = await InvokeAsync("discover-campaign");
+
+        Assert.AreEqual((int)HarnessExitCode.UnsupportedCapability, result.ExitCode);
+        Assert.AreEqual("campaign: no web host found.", result.StandardError.Trim());
+        Assert.IsEmpty(result.StandardOutput);
+    }
+
+    [TestMethod]
     public async Task MalformedCapabilityRecordIsDeniedBeforeAnyUnsafeRequest()
     {
         HarnessInvocation result = await InvokeWithRendezvousAsync(

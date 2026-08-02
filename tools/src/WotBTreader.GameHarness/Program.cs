@@ -56,6 +56,10 @@ switch (command)
     case "discard":
         exitCode = await DiscardSessionAsync(args);
         break;
+    case "discover-campaign":
+    case "campaign":
+        exitCode = await RunCampaignAsync(args);
+        break;
     case "help":
     case "--help":
     case "-h":
@@ -1052,6 +1056,34 @@ static async Task<int> DiscardSessionAsync(string[] args)
     }
 }
 
+// ── Aggregate campaign command ─────────────────────────────
+
+static async Task<int> RunCampaignAsync(string[] args)
+{
+    if (!OffsetCampaignOptions.TryParse(args, out OffsetCampaignOptions? options, out string? error))
+    {
+        Console.Error.WriteLine(error);
+        return (int)HarnessExitCode.InvalidInput;
+    }
+
+    RendezvousConnection? rendezvous = ReadRendezvous();
+    string? hostUrl = rendezvous?.BaseUri;
+    if (hostUrl is null) return HostNotFound("campaign");
+    int gateResult = await CheckGateAsync(hostUrl, "campaign", rendezvous!).ConfigureAwait(false);
+    if (gateResult != 0) return gateResult;
+
+    string baseAddress = hostUrl.EndsWith('/') ? hostUrl : hostUrl + "/";
+    using var client = new HttpClient
+    {
+        BaseAddress = new Uri(baseAddress),
+        Timeout = TimeSpan.FromMinutes(2),
+    };
+    AddCapabilityHeader(client, rendezvous!);
+
+    var runner = new OffsetCampaignRunner(client, Console.Out, Console.Error);
+    return await runner.RunAsync(options!).ConfigureAwait(false);
+}
+
 static int HostNotFound(string cmd)
 {
     Console.Error.WriteLine($"{cmd}: no web host found.");
@@ -1249,6 +1281,14 @@ Commands:
 
   discover-discard <sessionId>
     Discard a stored snapshot session.
+
+  discover-campaign [options]
+    Run a bounded aggregate-only Float32 rolling comparison campaign.
+    Options: --comparisons <1-4> --interval-seconds <1-5>
+             --span-mib <1-64> --float-min <f> --float-max <f>
+             --mode <changed|unchanged|increased|decreased>
+    Total configured wait time may not exceed 8 seconds. Candidate addresses,
+    values, and scanner session ids are suppressed; the session is discarded.
 
 Gate: all discover commands require the web host to have a
       verified offline replay session (launch one via the

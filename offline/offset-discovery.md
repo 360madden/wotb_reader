@@ -85,11 +85,14 @@ file, send `X-WotBTreader-Capability` on unsafe requests, and check the gate:
 | `discover-compare <sessionId> [changed\|unchanged\|increased\|decreased]` | Compare current memory vs snapshot |
 | `discover-nearby <refOffset> [--window <bytes>]` | Neighborhood scan around a known offset |
 | `discover-discard <sessionId>` | Discard a snapshot session |
+| `discover-campaign [--comparisons/--interval-seconds/--span-mib/--float-min/--float-max/--mode]` | Bounded rolling Float32 reconnaissance; prints aggregate counts only and discards its private scanner session |
 
 Run it like: `dotnet run --project tools/src/WotBTreader.GameHarness -c Release -- discover playerPositionX Float 42.5 1.0`
 (from a directory with a `memory-offsets/` folder for the offset-status commands). Use a
 controlled movement transition and record the session before treating any result as a
-candidate.
+candidate. `discover-campaign` is reconnaissance only: repeated natural replay
+changes do not identify a field or satisfy the controlled-transition,
+address-classification, two-launch, or two-replay promotion requirements.
 
 ## Evidence publication
 
