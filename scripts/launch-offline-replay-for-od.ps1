@@ -43,8 +43,8 @@
 param(
     [string]$ReplayPath,
     [string]$RepoRoot,
-    # Brief pause after first HWND so splash can pass before the clicker starts.
-    [int]$SettleSeconds = 5,
+    # Hands-off then soft-focus after first HWND (splash dies if churned).
+    [int]$SettleSeconds = 8,
     [int]$HostWaitSeconds = 60,
     [int]$WindowWaitSeconds = 90,
     [int]$WatchTimeoutSeconds = 120,
@@ -116,35 +116,43 @@ function Stop-OdProcesses {
     Start-Sleep -Seconds 2
 }
 
-# Keep wotblitz foreground — if the agent console keeps focus, the client logs
-# OnBackground → WindowDestroyed within ~1–3s of the first HWND.
+# Soft focus only (SetForegroundWindow). ShowWindow/keybd_event during splash
+# correlated with become hidden → WindowDestroyed in live blitz-logs.
 Add-Type -Namespace OdLaunch -Name Focus -MemberDefinition @"
 [System.Runtime.InteropServices.DllImport("user32.dll")]
 public static extern bool SetForegroundWindow(System.IntPtr hWnd);
-[System.Runtime.InteropServices.DllImport("user32.dll")]
-public static extern bool ShowWindow(System.IntPtr hWnd, int nCmdShow);
-[System.Runtime.InteropServices.DllImport("user32.dll")]
-public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, System.UIntPtr dwExtraInfo);
-public static void Force(System.IntPtr h) {
-  ShowWindow(h, 9);
-  keybd_event(0x12, 0, 0, System.UIntPtr.Zero);
-  SetForegroundWindow(h);
-  keybd_event(0x12, 0, 2, System.UIntPtr.Zero);
-}
+public static void Soft(System.IntPtr h) { SetForegroundWindow(h); }
 "@ -ErrorAction SilentlyContinue
 
-function Keep-GameForeground([int]$Seconds) {
-    $deadline = (Get-Date).AddSeconds($Seconds)
-    while ((Get-Date) -lt $deadline) {
+function Wait-GameSettle([int]$Seconds) {
+    # Hands-off for the first half of settle (splash is fragile), then soft-focus.
+    $handsOff = [Math]::Max(2, [int][Math]::Floor($Seconds / 2))
+    $focusSecs = [Math]::Max(0, $Seconds - $handsOff)
+    Write-Od ("settle_hands_off_${handsOff}s")
+    for ($i = 0; $i -lt $handsOff; $i++) {
         $g = Get-Process -Name wotblitz -ErrorAction SilentlyContinue |
             Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } |
             Select-Object -First 1
         if (-not $g) {
-            Write-Od 'game_window_lost_during_foreground_keep'
+            Write-Od 'game_window_lost_during_hands_off_settle'
             return $false
         }
-        try { [OdLaunch.Focus]::Force($g.MainWindowHandle) } catch { }
-        Start-Sleep -Milliseconds 250
+        Start-Sleep -Seconds 1
+    }
+    if ($focusSecs -gt 0) {
+        Write-Od ("settle_soft_focus_${focusSecs}s")
+        $deadline = (Get-Date).AddSeconds($focusSecs)
+        while ((Get-Date) -lt $deadline) {
+            $g = Get-Process -Name wotblitz -ErrorAction SilentlyContinue |
+                Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } |
+                Select-Object -First 1
+            if (-not $g) {
+                Write-Od 'game_window_lost_during_soft_focus_settle'
+                return $false
+            }
+            try { [OdLaunch.Focus]::Soft($g.MainWindowHandle) } catch { }
+            Start-Sleep -Milliseconds 500
+        }
     }
     return $true
 }
@@ -295,8 +303,8 @@ try {
     }
 
     if ($SettleSeconds -gt 0) {
-        Write-Od ("optional_settle_${SettleSeconds}s_keep_foreground")
-        if (-not (Keep-GameForeground -Seconds $SettleSeconds)) {
+        Write-Od ("optional_settle_${SettleSeconds}s")
+        if (-not (Wait-GameSettle -Seconds $SettleSeconds)) {
             Write-Od 'FAILED_game_died_during_settle'
             exit 3
         }
