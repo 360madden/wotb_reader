@@ -7,6 +7,10 @@ implementing the strict WotB 11.18 replay decoder. It is intentionally durable:
 future decoder work should update or supersede these decisions through another
 dated record instead of silently changing their meaning.
 
+These records continue the main numbering from
+[`../blocker-log.md`](../blocker-log.md) (BLK-0008–0011); see
+[`../README.md`](../README.md) for the numbering convention.
+
 ## BLK-0008: .NET 10 sealed `InvalidDataException`
 
 - First encountered: `2026-07-26` during the initial decoder compile.

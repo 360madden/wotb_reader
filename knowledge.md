@@ -181,6 +181,7 @@ replay gate; candidate-only offset evidence cannot authorize runtime reads.
 - **Bot status:** may be inferred from a player name; `unknown` remains the no-evidence default.
 - **Game automation:** developer-only, offline-replay-only, denied by default, fully audited.
 - **Commits:** author as `Codex Agent <codex@local.invalid>` unless user says otherwise. Never force-push. Push only when asked.
+- **Operations docs:** index and numbering convention in `docs/operations/README.md`.
 - **Blockers:** append `docs/operations/blocker-log.md` (immutable UTC).
 - **Handoffs:** append under `docs/operations/handoffs/` per format in the handoff README. Correct with amendments, never rewrite.
 

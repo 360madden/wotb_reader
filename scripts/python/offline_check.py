@@ -1,9 +1,13 @@
-"""offline_check.py — Validate internal links in the offline/ discovery pack.
+"""offline_check.py — Validate internal links and cross-document consistency.
 
 Checks that every markdown link in offline/*.md resolves to an existing file
-relative to the pack. Also checks research/README.md (the pack's canonical
-research index). External URLs and fragment-only anchors are skipped.
-Repo-root links (../docs/... etc.) are resolved against the repository root.
+relative to the pack, and that links in the live operations docs
+(docs/operations/*.md and docs/operations/blockers/*.md) resolve too.
+Handoffs are excluded: they are append-only historical records whose internal
+links must not fail the gate if a referenced path later changes. Also checks
+research/README.md (the pack's canonical research index). External URLs and
+fragment-only anchors are skipped. Repo-root links (../docs/... etc.) are
+resolved against the repository root.
 
 Modes:
     python scripts/python/offline_check.py             link check only
@@ -14,10 +18,25 @@ Modes:
                                                        stale vs `git ls-files` (gate/CI
                                                        mode), then link check
 
+Every mode also runs two consistency checks:
+
+- Blocker-numbering contiguity: the union of `## BLK-XXXX` headers across
+  `docs/operations/blocker-log.md` and `docs/operations/blockers/*.md` must be
+  exactly `0001..N` with no gaps, no intra-file duplicates, and no
+  out-of-range numbers. Companion deep-dives may repeat a main-log number
+  (e.g. BLK-0007 in the command-execution-gate record); numbers introduced
+  only in a deep-dive (e.g. BLK-0008-0011 in the replay-decoder record) must
+  still make the union contiguous.
+- Ledger consistency: every `## `OD-RECOVERY-XXX` result` section in
+  `docs/operations/offset-discovery-ledger.md` must have a matching row in the
+  Historical experiment index, and the decision register's next planned
+  session must match the workflow's `Session ID`.
+
 If both --refresh and --check-fresh are passed, --refresh wins (regenerate
 first, then the stale check passes by construction).
 
-Exit code: 0 = all checks pass, 1 = broken links or a stale file-tree snapshot.
+Exit code: 0 = all checks pass, 1 = broken links, a stale file-tree snapshot,
+or a blocker-numbering / ledger-consistency problem.
 """
 
 from __future__ import annotations
@@ -31,6 +50,11 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OFFLINE_DIR = REPO_ROOT / "offline"
 FILE_TREE_PATH = OFFLINE_DIR / "file-tree.md"
+OPERATIONS_DIR = REPO_ROOT / "docs" / "operations"
+BLOCKER_LOG_PATH = OPERATIONS_DIR / "blocker-log.md"
+BLOCKERS_DIR = OPERATIONS_DIR / "blockers"
+LEDGER_PATH = OPERATIONS_DIR / "offset-discovery-ledger.md"
+WORKFLOW_PATH = OPERATIONS_DIR / "offset-discovery-workflow.md"
 LOG_DIR = REPO_ROOT / ".build"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_PATH = LOG_DIR / f"offline-check-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.log"
@@ -122,6 +146,180 @@ def file_tree_is_fresh() -> tuple[bool, list[str], list[str]]:
     return False, expected, actual
 
 
+BLK_HEADER = re.compile(r"^##\s+BLK-(\d{4})(?:\s|—|:|$)")
+
+
+def collect_blk_numbers() -> list[tuple[str, int]]:
+    """Return (repo-relative path, number) for every `## BLK-XXXX` header."""
+    files = [BLOCKER_LOG_PATH, *sorted(BLOCKERS_DIR.glob("*.md"))]
+    found: list[tuple[str, int]] = []
+    for path in files:
+        if not path.is_file():
+            continue
+        rel = path.relative_to(REPO_ROOT).as_posix()
+        for line in path.read_text(encoding="utf-8").splitlines():
+            match = BLK_HEADER.match(line.strip())
+            if match:
+                found.append((rel, int(match.group(1))))
+    return found
+
+
+def check_blocker_numbering() -> int:
+    """Verify BLK-XXXX contiguity. Returns exit code (0 = clean)."""
+    if not BLOCKER_LOG_PATH.is_file():
+        print(f"ERROR: blocker register missing: {BLOCKER_LOG_PATH}")
+        return 1
+
+    entries = collect_blk_numbers()
+    if not entries:
+        print(f"ERROR: no BLK-XXXX headers found under {BLOCKER_LOG_PATH.parent}")
+        return 1
+
+    main_rel = BLOCKER_LOG_PATH.relative_to(REPO_ROOT).as_posix()
+    by_file: dict[str, list[int]] = {}
+    by_number: dict[int, list[str]] = {}
+    for rel, number in entries:
+        by_file.setdefault(rel, []).append(number)
+        by_number.setdefault(number, []).append(rel)
+
+    problems: list[str] = []
+    for rel in sorted(by_file):
+        numbers = by_file[rel]
+        dupes = sorted({n for n in numbers if numbers.count(n) > 1})
+        if dupes:
+            problems.append(
+                f"{rel}: duplicate BLK headers "
+                + ", ".join(f"BLK-{n:04d}" for n in dupes)
+            )
+
+    # A number may appear in the main log plus one companion deep-dive, or in
+    # the main log only, or in one deep-dive only. Two deep-dives sharing a
+    # number (with no main-log owner) is an ambiguous duplicate.
+    for number in sorted(by_number):
+        files = by_number[number]
+        deep_files = [f for f in files if f != main_rel]
+        if len(deep_files) > 1:
+            problems.append(
+                f"BLK-{number:04d} appears in multiple deep-dives: "
+                + ", ".join(files)
+            )
+
+    union = sorted({n for _, n in entries})
+    maximum = union[-1]
+    expected = set(range(1, maximum + 1))
+    missing = sorted(expected - set(union))
+    if missing:
+        problems.append(
+            "BLK numbering gap: missing "
+            + ", ".join(f"BLK-{n:04d}" for n in missing)
+        )
+
+    if problems:
+        print("ERROR: blocker numbering is inconsistent:")
+        for problem in problems:
+            print(f"  - {problem}")
+        print(
+            "Fix: keep BLK-XXXX contiguous across blocker-log.md and blockers/ "
+            "(deep-dives may repeat a main-log number or introduce the next ones)."
+        )
+        return 1
+
+    print(
+        f"Blocker numbering OK: BLK-0001..BLK-{maximum:04d} contiguous "
+        f"across {len(by_file)} record file(s)."
+    )
+    return 0
+
+
+RESULT_HEADING = re.compile(r"^## `(OD-RECOVERY-[^`]+)` result\b", flags=re.M)
+INDEX_ROW = re.compile(r"^\| `(OD-RECOVERY-[^`]+)` \|", flags=re.M)
+PLANNED_ROW = re.compile(
+    r"^\| Next planned session \| `(OD-RECOVERY-[^`]+)`", flags=re.M
+)
+SESSION_ID_LINE = re.compile(r"^\s*sessionId:\s*(OD-RECOVERY-[^\s]+)", flags=re.M)
+SUPERSEDES_LINE = re.compile(r"^\s*supersedes:\s*(.*)$", flags=re.M)
+SESSION_REF = re.compile(r"OD-RECOVERY-[A-Z0-9-]+")
+
+
+def check_ledger_consistency() -> int:
+    """Verify OD-RECOVERY session IDs are recorded consistently.
+
+    Checks, all fail-closed:
+    - every `## `OD-RECOVERY-XXX` result` section has a matching row in the
+      Historical experiment index table;
+    - the decision register's next planned session matches the workflow's
+      `Session ID`;
+    - every result section's YAML `sessionId` matches its heading;
+    - every OD-RECOVERY reference in a `supersedes:` value resolves to a
+      known session (an index row, a result section, or the planned session).
+    Returns exit code (0 = clean).
+    """
+    if not LEDGER_PATH.is_file():
+        print(f"ERROR: offset-discovery ledger missing: {LEDGER_PATH}")
+        return 1
+
+    text = LEDGER_PATH.read_text(encoding="utf-8")
+    problems: list[str] = []
+
+    result_ids = RESULT_HEADING.findall(text)
+    index_ids = INDEX_ROW.findall(text)
+    planned = PLANNED_ROW.search(text)
+    planned_id = planned.group(1) if planned else None
+
+    missing_from_index = sorted(set(result_ids) - set(index_ids))
+    if missing_from_index:
+        problems.append(
+            "ledger result sections missing from Historical experiment index: "
+            + ", ".join(missing_from_index)
+        )
+
+    if WORKFLOW_PATH.is_file():
+        workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+        workflow_session = re.search(r"Session ID: `(OD-RECOVERY-[^`]+)`", workflow)
+        if planned_id and workflow_session and planned_id != workflow_session.group(1):
+            problems.append(
+                f"ledger next planned session {planned_id} != "
+                f"workflow Session ID {workflow_session.group(1)}"
+            )
+
+    # Split the ledger on result headings so each section's YAML block is
+    # inspected on its own.
+    matches = list(RESULT_HEADING.finditer(text))
+    for i, match in enumerate(matches):
+        heading_id = match.group(1)
+        block_end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        block = text[match.end():block_end]
+
+        yaml_session = SESSION_ID_LINE.search(block)
+        if yaml_session is None:
+            problems.append(f"{heading_id}: result section has no `sessionId:` in its YAML block")
+        elif yaml_session.group(1) != heading_id:
+            problems.append(
+                f"{heading_id}: sessionId {yaml_session.group(1)} != heading"
+            )
+
+        known_ids = set(index_ids) | set(result_ids)
+        if planned_id:
+            known_ids.add(planned_id)
+        supersedes = SUPERSEDES_LINE.search(block)
+        if supersedes:
+            for ref in SESSION_REF.findall(supersedes.group(1)):
+                if ref not in known_ids:
+                    problems.append(f"{heading_id}: supersedes references unknown session {ref}")
+
+    if problems:
+        print("ERROR: offset-discovery ledger is inconsistent:")
+        for problem in problems:
+            print(f"  - {problem}")
+        return 1
+
+    print(
+        f"Ledger consistency OK: {len(set(result_ids))} result section(s), "
+        f"{len(set(index_ids))} index row(s)."
+    )
+    return 0
+
+
 def extract_links(md_file: Path) -> list[tuple[int, str]]:
     """Return (line_number, target) pairs for markdown links in a file.
 
@@ -177,6 +375,13 @@ def check_links() -> int:
     research_index = REPO_ROOT / "research" / "README.md"
     if research_index.is_file():
         md_files.append(research_index)
+    # Live operations docs (blocker log, deep-dives, README index, guide,
+    # ledger, workflow) are part of the navigation surface as well. Handoffs
+    # are excluded: they are append-only historical records whose internal
+    # links must not fail the gate if a referenced path later changes.
+    md_files.extend(sorted(OPERATIONS_DIR.glob("*.md")))
+    md_files.extend(sorted(BLOCKERS_DIR.glob("*.md")))
+    md_files = sorted(set(md_files))
     broken: list[tuple[str, int, str]] = []
     total_links = 0
 
@@ -237,7 +442,10 @@ def main(argv: list[str]) -> int:
             return 1
         print("file-tree.md is up to date.")
 
-    return check_links()
+    link_exit = check_links()
+    numbering_exit = check_blocker_numbering()
+    ledger_exit = check_ledger_consistency()
+    return link_exit or numbering_exit or ledger_exit
 
 
 if __name__ == "__main__":

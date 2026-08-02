@@ -54,5 +54,17 @@ adds, renames, or removes files, then commit the regenerated snapshot.
   or `AGENTS.md`, point at it. Only restate what's needed for quick orientation.
 - **Stay honest.** When the repo layout, API surface, or commands change, update
   these files in the same change. A stale discovery pack is worse than none.
+- **Blocker numbers stay contiguous.** `offline_check.py` fails the gate when
+  the union of `## BLK-XXXX` headers across `docs/operations/blocker-log.md` and
+  `docs/operations/blockers/*.md` is not exactly `0001..N`. Deep-dives may
+  repeat a main-log number (companion record) or introduce the next numbers;
+  new records must keep the union gap-free.
+- **Operations docs are link-checked too.** `offline_check.py` validates
+  internal links in `docs/operations/*.md` and `docs/operations/blockers/*.md`
+  (handoffs excluded: they are append-only history).
+- **Ledger sessions stay registered.** Every `## \`OD-RECOVERY-XXX\` result`
+  section in `offset-discovery-ledger.md` must have a row in the Historical
+  experiment index, and the register's next planned session must match the
+  workflow's `Session ID`.
 - **Never put private/runtime data here.** This folder is committed and scanned
   by `scripts/scan-repository.ps1` like the rest of the repo.

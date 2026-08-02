@@ -66,6 +66,7 @@ docs/architecture/roadmap.md
 docs/decisions/0001-modular-monolith.md
 docs/decisions/0002-evidence-and-offline-safety.md
 docs/formats/telemetry-capture-ndjson-v1.md
+docs/operations/README.md
 docs/operations/blocker-log.md
 docs/operations/blockers/2026-07-26-command-execution-gate.md
 docs/operations/blockers/2026-07-26-replay-decoder.md
@@ -102,7 +103,9 @@ docs/operations/handoffs/2026-08-01-offset-campaign-reconnaissance.md
 docs/operations/handoffs/2026-08-01-real-offline-scanner-smoke.md
 docs/operations/handoffs/2026-08-01-scanner-external-access.md
 docs/operations/handoffs/2026-08-01-ultimate-scanner-bug-fix.md
+docs/operations/handoffs/2026-08-02-budget-and-recovery-closeout.md
 docs/operations/handoffs/2026-08-02-managed-replay-window-recovery.md
+docs/operations/handoffs/2026-08-02-operations-docs-review.md
 docs/operations/handoffs/README.md
 docs/operations/offset-discovery-guide.md
 docs/operations/offset-discovery-ledger.md
