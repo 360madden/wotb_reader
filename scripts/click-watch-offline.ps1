@@ -18,6 +18,7 @@
   3  Retries exhausted (gate and/or dialog check failed)
   4  Unexpected error
   5  Dialog orange blob never found (cannot aim)
+  6  Host already Denied (stale lifecycle timeout) — restart via launch-offline-replay-for-od.ps1
 #>
 [CmdletBinding()]
 param(
@@ -158,8 +159,32 @@ function Get-Rendezvous {
     return (Get-Content $file.FullName -Raw | ConvertFrom-Json)
 }
 
-function Get-VerificationState([string]$BaseUri, [hashtable]$Headers) {
-    $state = Invoke-RestMethod -Uri "$BaseUri/api/v1/game/state" -Headers $Headers
+function Get-ApiContext {
+    # Re-read every call: rendezvous capability rotates (~5 min) and 401s mid-wait.
+    $rv = Get-Rendezvous
+    return @{
+        Base    = [string]$rv.baseUri
+        Headers = @{
+            'X-WotBTreader-Capability' = "$($rv.capability)"
+            'Content-Type'             = 'application/json'
+        }
+    }
+}
+
+function Get-GameState {
+    $api = Get-ApiContext
+    try {
+        return Invoke-RestMethod -Uri "$($api.Base)/api/v1/game/state" -Headers $api.Headers
+    }
+    catch {
+        Write-Host ("watch_offline: state_http_error=" + $_.Exception.Message)
+        return $null
+    }
+}
+
+function Get-VerificationState {
+    $state = Get-GameState
+    if (-not $state) { return 'Unknown' }
     if ($state.verificationState) { return [string]$state.verificationState }
     if ($state.VerificationState) { return [string]$state.VerificationState }
     return 'Unknown'
@@ -191,12 +216,13 @@ function Get-WindowAnalysis([IntPtr]$Hwnd, [string]$SavePath) {
 }
 
 try {
-    $rv = Get-Rendezvous
-    $headers = @{
-        'X-WotBTreader-Capability' = "$($rv.capability)"
-        'Content-Type'             = 'application/json'
+    try {
+        $null = Get-Rendezvous
     }
-    $base = [string]$rv.baseUri
+    catch {
+        Write-Host 'watch_offline: rendezvous_missing'
+        exit 2
+    }
 
     $game = Get-GameWindow
     if (-not $game) {
@@ -204,8 +230,21 @@ try {
         exit 1
     }
 
-    $before = Get-VerificationState $base $headers
-    Write-Host "watch_offline: before=$before pid=$($game.Id)"
+    $beforeState = Get-GameState
+    $before = if ($beforeState -and $beforeState.verificationState) {
+        [string]$beforeState.verificationState
+    }
+    else { Get-VerificationState }
+    $beforeReason = if ($beforeState -and $beforeState.reasonCode) {
+        [string]$beforeState.reasonCode
+    }
+    else { '' }
+    Write-Host "watch_offline: before=$before reason=$beforeReason pid=$($game.Id)"
+
+    if ($before -eq 'Denied') {
+        Write-Host 'watch_offline: FAILED_host_denied (do not click; run scripts/launch-offline-replay-for-od.ps1)'
+        exit 6
+    }
 
     [void][WatchOfflineVision]::ShowWindow($game.MainWindowHandle, 9)
     [void][WatchOfflineVision]::SetForegroundWindow($game.MainWindowHandle)
@@ -278,9 +317,21 @@ try {
         if ($pollUntil -gt $deadline) { $pollUntil = $deadline }
         do {
             Start-Sleep -Seconds 1
-            $vs = Get-VerificationState $base $headers
-            Write-Host "watch_offline: poll=$vs"
+            $pollState = Get-GameState
+            $vs = if ($pollState -and $pollState.verificationState) {
+                [string]$pollState.verificationState
+            }
+            else { 'Unknown' }
+            $reason = if ($pollState -and $pollState.reasonCode) {
+                [string]$pollState.reasonCode
+            }
+            else { '' }
+            Write-Host "watch_offline: poll=$vs reason=$reason"
             if ($vs -eq 'OfflineReplayVerified') { $gateOk = $true; break }
+            if ($vs -eq 'Denied') {
+                Write-Host 'watch_offline: FAILED_host_denied_mid_click'
+                exit 6
+            }
         } while ((Get-Date) -lt $pollUntil)
 
         Start-Sleep -Milliseconds 500
@@ -299,8 +350,13 @@ try {
         if ($gateOk -and $dialogGone) { break }
     }
 
-    $after = Get-VerificationState $base $headers
-    $final = Get-WindowAnalysis (Get-GameWindow).MainWindowHandle $ScreenshotPath
+    $after = Get-VerificationState
+    $finalGame = Get-GameWindow
+    if (-not $finalGame) {
+        Write-Host 'watch_offline: window_lost_final'
+        exit 1
+    }
+    $final = Get-WindowAnalysis $finalGame.MainWindowHandle $ScreenshotPath
     $finalCount = if ($final) { [int]$final.Blob.PixelCount } else { -1 }
     Write-Host ("watch_offline: after={0} final_orange_pixels={1}" -f $after, $finalCount)
 

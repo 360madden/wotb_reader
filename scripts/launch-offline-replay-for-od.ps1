@@ -1,0 +1,242 @@
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+  Canonical OD offline-replay launch: folder .wotbreplay → import → managed launch → Watch Offline.
+
+.DESCRIPTION
+  Owner-proven source of truth for which replay to play is:
+    %LOCALAPPDATA%\wotblitz\DAVAProject\replays\*.wotbreplay
+
+  Flaw this script replaces:
+  - File-association alone can play a replay, but Host.Web never receives managed
+    lifecycle evidence, so the gate stays Denied/Unknown and discover APIs refuse.
+  - Reusing a Host already in Denied (lifecycle_evidence_timeout) blocks the next attempt.
+  - Stale capability tokens (~5 min rendezvous lease) cause 401 if not re-read.
+  - Launching a replay before the game UI is ready drops into the hangar.
+
+  Correct sequence (this script):
+  1. Stop stale wotblitz / Host.Web / CE (clear Denied).
+  2. Start Host.Web with research lease (evidence 120s / lifecycle 120s).
+  3. Pick a .wotbreplay from the game replays folder (or -ReplayPath).
+  4. Import via CLI → content-addressed artifact id.
+  5. POST /api/v1/game/launch (managed) with a freshly read capability.
+  6. Wait for window + settle so WATCH OFFLINE can appear.
+  7. Run scripts/click-watch-offline.ps1 (dual: OfflineReplayVerified + dialog gone).
+
+  Never logs private full paths, tokens, or account ids. Basename + sha12 only.
+
+.EXITCODES
+  0  OfflineReplayVerified after Watch Offline
+  1  Missing replay / CLI / host
+  2  Managed launch failed
+  3  Game window never appeared
+  4  Watch Offline script failed
+  5  Unexpected error
+#>
+[CmdletBinding()]
+param(
+    [string]$ReplayPath,
+    [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path,
+    [int]$SettleSeconds = 40,
+    [int]$HostWaitSeconds = 60,
+    [int]$WindowWaitSeconds = 90,
+    [int]$WatchTimeoutSeconds = 120,
+    [switch]$SkipWatchOffline,
+    [switch]$KeepExistingHost
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+function Write-Od([string]$Message) {
+    Write-Host ("od_launch: " + $Message)
+}
+
+function Get-Rendezvous {
+    $dir = Join-Path $env:LOCALAPPDATA 'WotBTreader\rendezvous'
+    $file = Get-ChildItem $dir -File -ErrorAction Stop |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+    return (Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json)
+}
+
+function Get-ApiContext {
+    $rv = Get-Rendezvous
+    return @{
+        Base    = [string]$rv.baseUri
+        Headers = @{
+            'X-WotBTreader-Capability' = "$($rv.capability)"
+            'Content-Type'             = 'application/json'
+        }
+    }
+}
+
+function Wait-Port([int]$Port, [int]$Seconds) {
+    for ($i = 0; $i -lt $Seconds; $i++) {
+        try {
+            $c = New-Object Net.Sockets.TcpClient
+            $iar = $c.BeginConnect('127.0.0.1', $Port, $null, $null)
+            if ($iar.AsyncWaitHandle.WaitOne(250, $false) -and $c.Connected) {
+                $c.Close()
+                return $true
+            }
+            try { $c.Close() } catch { }
+        }
+        catch { }
+        Start-Sleep -Seconds 1
+    }
+    return $false
+}
+
+function Stop-OdProcesses {
+    Get-Process -Name wotblitz, 'WotBTreader.Host.Web', 'cheatengine*' -ErrorAction SilentlyContinue |
+        Stop-Process -Force -ErrorAction SilentlyContinue
+    Get-CimInstance Win32_Process -Filter "Name='dotnet.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -match 'Host\.Web' } |
+        ForEach-Object {
+            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+    Start-Sleep -Seconds 2
+}
+
+try {
+    $replaysDir = Join-Path $env:LOCALAPPDATA 'wotblitz\DAVAProject\replays'
+    if ([string]::IsNullOrWhiteSpace($ReplayPath)) {
+        $replay = Get-ChildItem -LiteralPath $replaysDir -Filter '*.wotbreplay' -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+        if (-not $replay) {
+            Write-Od 'FAILED_no_wotbreplay_in_game_folder'
+            exit 1
+        }
+        $ReplayPath = $replay.FullName
+    }
+    elseif (-not (Test-Path -LiteralPath $ReplayPath)) {
+        Write-Od 'FAILED_replay_path_missing'
+        exit 1
+    }
+
+    $replayItem = Get-Item -LiteralPath $ReplayPath
+    if ($replayItem.Extension -ne '.wotbreplay') {
+        Write-Od 'FAILED_not_wotbreplay'
+        exit 1
+    }
+
+    $sha12 = ((Get-FileHash -Algorithm SHA256 -LiteralPath $replayItem.FullName).Hash).Substring(0, 12)
+    Set-Content -Path (Join-Path $env:TEMP 'od-launch-replay.basename') -Value $replayItem.Name -NoNewline
+    Set-Content -Path (Join-Path $env:TEMP 'od-launch-replay.sha12') -Value $sha12 -NoNewline
+    Write-Od ("replay=" + $replayItem.Name + " bytes=" + $replayItem.Length + " sha12=" + $sha12)
+
+    $cli = Join-Path $RepoRoot 'src\WotBTreader.Host.Cli\bin\Release\net10.0\WotBTreader.Host.Cli.exe'
+    if (-not (Test-Path -LiteralPath $cli)) {
+        Write-Od 'FAILED_cli_missing_build_release_first'
+        exit 1
+    }
+
+    if (-not $KeepExistingHost) {
+        Write-Od 'stopping_stale_game_and_host'
+        Stop-OdProcesses
+    }
+
+    if (-not (Wait-Port -Port 9182 -Seconds 2)) {
+        Write-Od 'starting_host_research_lease'
+        $env:Research__OfflineReplayEvidenceLifetimeSeconds = '120'
+        $env:Research__LifecycleEvidenceTimeoutSeconds = '120'
+        $proj = Join-Path $RepoRoot 'src\WotBTreader.Host.Web'
+        $hostOut = Join-Path $env:TEMP 'od-launch-host.log'
+        $hostErr = Join-Path $env:TEMP 'od-launch-host.err.log'
+        Start-Process -FilePath 'dotnet' -ArgumentList @(
+            'run', '--project', $proj, '-c', 'Release', '--no-build', '--no-launch-profile'
+        ) -WorkingDirectory $proj -RedirectStandardOutput $hostOut -RedirectStandardError $hostErr -WindowStyle Hidden |
+            Out-Null
+        if (-not (Wait-Port -Port 9182 -Seconds $HostWaitSeconds)) {
+            Write-Od 'FAILED_host_down'
+            exit 1
+        }
+    }
+    Write-Od 'host_ok'
+
+    Write-Od 'importing'
+    $importLines = & $cli import $replayItem.FullName 2>&1 | ForEach-Object { "$_" }
+    $importText = $importLines -join "`n"
+    if ($importText -notmatch '([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})') {
+        Write-Od 'FAILED_import_parse'
+        exit 1
+    }
+    $artifactId = $Matches[1]
+    Set-Content -Path (Join-Path $env:TEMP 'od-launch-artifact.id') -Value $artifactId -NoNewline
+    Write-Od ("artifact_prefix=" + $artifactId.Substring(0, 8))
+
+    # Always re-read capability immediately before launch (rendezvous rotates ~5 min).
+    $api = Get-ApiContext
+    $body = @{ sourceArtifactId = $artifactId } | ConvertTo-Json
+    Write-Od 'managed_launch'
+    try {
+        $launch = Invoke-RestMethod -Uri "$($api.Base)/api/v1/game/launch" -Method Post -Headers $api.Headers -Body $body
+    }
+    catch {
+        Write-Od ("FAILED_launch_http=" + $_.Exception.Message)
+        exit 2
+    }
+    if (-not $launch.success) {
+        Write-Od ("FAILED_launch=" + $launch.message)
+        exit 2
+    }
+    Write-Od ("launch=" + $launch.message)
+
+    $game = $null
+    for ($i = 0; $i -lt $WindowWaitSeconds; $i++) {
+        $game = Get-Process -Name wotblitz -ErrorAction SilentlyContinue |
+            Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } |
+            Select-Object -First 1
+        if ($game) {
+            Write-Od ("window_after=${i}s pid=" + $game.Id)
+            break
+        }
+        Start-Sleep -Seconds 1
+    }
+    if (-not $game) {
+        Write-Od 'FAILED_no_window'
+        exit 3
+    }
+
+    Write-Od ("settle_${SettleSeconds}s_for_watch_offline")
+    Start-Sleep -Seconds $SettleSeconds
+
+    $api = Get-ApiContext
+    $pre = Invoke-RestMethod -Uri "$($api.Base)/api/v1/game/state" -Headers $api.Headers
+    Write-Od ("pre_watch_vs=" + $pre.verificationState + " reason=" + $pre.reasonCode)
+
+    if ($pre.verificationState -eq 'Denied') {
+        Write-Od 'FAILED_host_denied_before_watch_restart_required'
+        exit 2
+    }
+
+    if ($SkipWatchOffline) {
+        Write-Od 'skip_watch_offline'
+        exit 0
+    }
+
+    $watchScript = Join-Path $RepoRoot 'scripts\click-watch-offline.ps1'
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $watchScript -TimeoutSeconds $WatchTimeoutSeconds
+    $watchExit = $LASTEXITCODE
+    Write-Od ("watch_exit=" + $watchExit)
+    if ($watchExit -ne 0) {
+        exit 4
+    }
+
+    $api = Get-ApiContext
+    $post = Invoke-RestMethod -Uri "$($api.Base)/api/v1/game/state" -Headers $api.Headers
+    Write-Od ("post_watch_vs=" + $post.verificationState + " reason=" + $post.reasonCode)
+    if ($post.verificationState -ne 'OfflineReplayVerified') {
+        Write-Od 'FAILED_gate_not_verified'
+        exit 4
+    }
+
+    Write-Od 'OK OfflineReplayVerified'
+    exit 0
+}
+catch {
+    Write-Od ("FAILED_unexpected=" + $_.Exception.Message)
+    exit 5
+}

@@ -24,10 +24,17 @@ Rejected: template matching (DPI/resolution brittle); fixed % grids (current fai
    excludes green **LOG IN AND WATCH** on the right).
 3. Orange pixel heuristic: high R, mid G, low B, R≫B (excludes green).
 4. If blob area ≥ minimum → click window-relative centroid (once per round).
-5. Poll gate; re-capture; success only if gate verified **and** post blob area
-   is below dismiss threshold (or ≪ pre-click area).
+5. Poll gate with a **fresh rendezvous capability each call**; re-capture;
+   success only if gate verified **and** post blob area is below dismiss
+   threshold (or ≪ pre-click area).
 6. Always write `%TEMP%\wotb-watch-offline-verify.png`.
-7. Exit `0` only on dual success; `3` if retries exhausted.
+7. Exit `0` only on dual success; `3` if retries exhausted; `6` if host is
+   already `Denied` (do not keep clicking — re-run
+   `scripts/launch-offline-replay-for-od.ps1`).
+
+Prerequisite: managed OD launch via `scripts/launch-offline-replay-for-od.ps1`
+(folder `.wotbreplay` → import → managed launch → settle). File-association
+playback alone does not satisfy the gate.
 
 ## Non-goals
 
@@ -35,5 +42,5 @@ Pause/resume, other dialogs, accessibility/UIA, committed button templates.
 
 ## Verification
 
-Live managed launch: script exit 0; screenshot shows no login dialog; agent may
-still spot-check the PNG.
+`scripts/launch-offline-replay-for-od.ps1` exit 0; screenshot shows replay HUD
+(not garage) and no login dialog; agent may still spot-check the PNG.

@@ -19,7 +19,7 @@
       "evidence": [
         {
           "provenanceKind": "StaticAnalysis",
-          "sourceTool": "Ghidra 12.1.2 — FindOffsets.java",
+          "sourceTool": "Ghidra 12.1.2 \u2014 FindOffsets.java",
           "notes": "Historical hypothesis quarantined after reconciliation: prior table decimal 51808784 = 0x03168A10; prior notes claimed 0x0317A810 = 51882000; raw export top candidate was 56085200 = 0x0357CAD0. No dynamic verification or address-kind proof."
         }
       ],
@@ -131,9 +131,14 @@
           "provenanceKind": "DynamicScan",
           "sourceTool": "Host.Web discover/snapshot+compare Double increased rollingBaseline",
           "notes": "OD-RECOVERY-013: second independent Host.Web-managed process launch reproduced replayTime Double increased behavior; rolling narrow 193>60>15>4 private-mapping. Same replay artifact as OD-012 (independentReplays still 0). Offset remains 0; not Candidate/Verified."
+        },
+        {
+          "provenanceKind": "DynamicScan",
+          "sourceTool": "Host.Web discover/snapshot+compare Double increased rollingBaseline",
+          "notes": "OD-RECOVERY-015: game-folder .wotbreplay (sha12 0FAE5612491E, import duplicate=True) via managed launch; rolling Double increased completed 882617>...>7 private-mapping under OfflineReplayVerified. File-association alone insufficient for Host gate. independentReplays still 0 (content not proven distinct). Offset remains 0; not Candidate/Verified."
         }
       ],
-      "independentProcessLaunches": 2,
+      "independentProcessLaunches": 3,
       "independentReplays": 0,
       "harnessInvariantsPassed": false,
       "leadApproved": false,
@@ -156,5 +161,5 @@
     }
   },
   "confidence": "none",
-  "notes": "No usable offsets published for 11.19.0.10. playerYaw Stale. replayTime: OD-012/013 show reproducible increased-Double private-mapping survivors across 2 process launches (same replay artifact). Next OD-RECOVERY-014 root/neighborhood; second distinct replay required (BLK-0019). Offsets remain 0."
+  "notes": "No usable offsets published for 11.19.0.10. playerYaw Stale. replayTime: OD-012/013/015 show reproducible increased-Double private-mapping survivors across 3 process launches; independentReplays still 0 (BLK-0019). Next OD-RECOVERY-016 interactive root on <=7 set. Offsets remain 0."
 }

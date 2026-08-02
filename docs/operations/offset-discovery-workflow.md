@@ -173,7 +173,9 @@ replaced. Remove both environment variables when the research host exits.
 For one controlled transition:
 
 1. Start from zero game and web-host processes, then launch exactly one replay
-   through the managed loopback API or dashboard.
+   with `scripts/launch-offline-replay-for-od.ps1` (game-folder `.wotbreplay` →
+   import → managed launch → Watch Offline). Do not use file-association alone
+   when the discover gate is required.
 2. Require `OfflineReplayVerified`, the expected executable identity, and one
    exact game PID before any scanner attaches or opens a guarded reader.
 3. Prefer the loopback snapshot endpoint for aggregate reconnaissance. Use
@@ -311,25 +313,57 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-015`. `OD-RECOVERY-014` completed as **Partial**:
-rolling `replayTime` Doubles remain `private-mapping`; `/discover/neighborhood`
-accepts survivor `relativeOffset` but returns dense/noisy hits; pointer AOB was
-not stable across rebuilds.
+Session ID: `OD-RECOVERY-016`. `OD-RECOVERY-015` completed as **Partial**:
+canonical OD launch amended (game-folder `.wotbreplay` → managed gate via
+`scripts/launch-offline-replay-for-od.ps1`); Churchill sha12 `0FAE5612491E`
+imported (`duplicate=True` → `independentReplays` still 0); rolling RT increased
+**882617→…→7** (`private-mapping`).
 
-1. After every managed launch, run
-   `powershell -File scripts/click-watch-offline.ps1` (agent-owned). It finds the
-   orange **WATCH OFFLINE** button by color-blob in a left/center ROI (never the
-   green **LOG IN**), clicks the centroid, and requires **both**
-   `OfflineReplayVerified` **and** post-click orange pixel count below the
-   dismiss threshold. Screenshot: `%TEMP%\wotb-watch-offline-verify.png`.
-   Spec: `docs/superpowers/specs/2026-08-02-watch-offline-color-blob.md`.
-   Exit 0 only on dual success; exit 3/5 → retry, do not scan.
-2. Prefer Host.Web-managed `wotblitz` (not WGC); research lease 5–120 / 5–300.
-3. Reuse rolling Double increased recipe to ≤10 survivors, then interactive
-   x64dbg/CE GUI Find-what-writes, **or** import a **second distinct replay**
+### Canonical OD launch (amended 2026-08-02)
+
+**Replay source:** `%LOCALAPPDATA%\wotblitz\DAVAProject\replays\*.wotbreplay`
+(example basename pattern: `YYYYMMDD_HHMM__… .wotbreplay`). That folder is the
+owner-chosen source of which battle to play.
+
+**Do not** treat file-association alone (`Invoke-Item` / double-click) as the OD
+launch path. It can start playback and show a replay HUD, but Host.Web never
+receives managed lifecycle evidence, so the gate stays `Denied` /
+`launch.lifecycle_evidence_timeout` (or `Unknown`) and discover APIs refuse.
+Watch Offline clicks against a `Denied` host are wasted.
+
+**Correct sequence** — use the helper:
+
+```text
+powershell -File scripts/launch-offline-replay-for-od.ps1
+```
+
+What it does:
+
+1. Stops stale `wotblitz` / Host.Web / CE (clears a sticky `Denied` host).
+2. Starts Host.Web with research lease (`OfflineReplayEvidenceLifetimeSeconds=120`,
+   `LifecycleEvidenceTimeoutSeconds=120`).
+3. Picks the newest `.wotbreplay` from the game replays folder (or `-ReplayPath`).
+4. Imports via CLI → content-addressed artifact (basename + sha12 only in logs).
+5. `POST /api/v1/game/launch` (managed) with a **freshly read** rendezvous
+   capability (tokens rotate ~5 minutes; mid-wait 401 means re-read, not “auth broken”).
+6. Waits for a real window, then **settles** (default 40s) so **WATCH OFFLINE**
+   can appear — launching/clicking too early drops into the hangar.
+7. Runs `scripts/click-watch-offline.ps1` (agent-owned). Exit 0 only when **both**
+   `OfflineReplayVerified` **and** the orange dialog is gone. Screenshot:
+   `%TEMP%\wotb-watch-offline-verify.png`. Exit 6 = host already `Denied` → re-run
+   the launch helper, do not keep clicking.
+
+File-association remains useful only as a **playback smoke** (“does this
+`.wotbreplay` open?”). It is not a substitute for steps 1–7 before scanning.
+
+### After gate green
+
+1. Confirm the screenshot is a **replay HUD**, not the garage / **BATTLE!** menu.
+2. Reuse rolling Double increased recipe to ≤10 survivors, then interactive
+   x64dbg/CE GUI Find-what-writes, **or** confirm a **second distinct replay**
    (BLK-0019).
-4. Do not promote from neighborhood hit counts alone.
-5. Append ledger + handoff before stopping.
+3. Do not promote from neighborhood hit counts alone.
+4. Append ledger + handoff before stopping.
 
 The success criterion remains **one correctly classified, reproducible
 candidate**. Do not promote from aggregate counts alone.

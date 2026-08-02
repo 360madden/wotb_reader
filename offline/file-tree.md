@@ -123,6 +123,7 @@ docs/operations/offset-discovery-ledger.md
 docs/operations/offset-discovery-workflow.md
 docs/project-context.md
 docs/superpowers/plans/2026-07-26-dashboard-read-ui.md
+docs/superpowers/specs/2026-08-02-watch-offline-color-blob.md
 docs/testing/fixture-policy.md
 doctor.cmd
 everything.cmd

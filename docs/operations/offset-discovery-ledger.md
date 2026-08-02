@@ -48,8 +48,8 @@ Every address must be classified before publication:
 | Runtime-supported fields | None; current table has 0 usable offsets, 1 Stale/quarantined field, and 7 Unknown |
 | `playerYaw` | **Quarantined / Ambiguous** until decimal, hexadecimal, raw Ghidra, and address-kind evidence reconcile |
 | Trusted next anchor | `playerPositionX`/`playerPositionZ`, then `replayTime` or HP if the replay makes them observable |
-| Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007); absolute LE pointer AOB across private/all/image + align 1/8 without a changed encoding hypothesis (ruled out by OD-RECOVERY-008); truncated low-32 LE dword AOB of survivor absolutes without a changed encoding hypothesis (ruled out by OD-RECOVERY-009); automated CE `bptAccess`/`bptWrite` on Float position survivors without a field pivot or interactive debugger (0 RIP hits through OD-RECOVERY-011); CE write-BP alone on the single increased `replayTime` Double without interactive debugger or a second independent launch (0 RIP in OD-RECOVERY-012) |
-| Next planned session | `OD-RECOVERY-015` (interactive debugger / stronger root for rolling `replayTime` Doubles; second distinct replay; neighborhood is usable but noisy — BLK-0019) |
+| Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007); absolute LE pointer AOB across private/all/image + align 1/8 without a changed encoding hypothesis (ruled out by OD-RECOVERY-008); truncated low-32 LE dword AOB of survivor absolutes without a changed encoding hypothesis (ruled out by OD-RECOVERY-009); automated CE `bptAccess`/`bptWrite` on Float position survivors without a field pivot or interactive debugger (0 RIP hits through OD-RECOVERY-011); CE write-BP alone on the single increased `replayTime` Double without interactive debugger or a second independent launch (0 RIP in OD-RECOVERY-012); treating file-association / `Invoke-Item` alone as the OD gate path (playback can succeed while Host stays `Denied` / `lifecycle_evidence_timeout` — amended 2026-08-02) |
+| Next planned session | `OD-RECOVERY-016` (interactive debugger / root on ≤7 RT set; import a content-distinct second replay — BLK-0019; folder `.wotbreplay` remains the preferred source) |
 
 The current yaw conflict is recorded explicitly:
 
@@ -96,6 +96,7 @@ occurred.
 | `OD-RECOVERY-012` | 2026-08-02 | Field pivot HP + replayTime under offline | Int32 unchanged HP window + Double increased replayTime + CE write-BP + pointer AOB | `Partial` / near-`CandidateFound` | Agent clicked WATCH OFFLINE; HP unchanged≈4441 (`mapped-mapping` sample); **replayTime increased=1** (`private-mapping`); CE 3 write BPs hitCount=0; ptr AOB 0 | Unique increased Double is strong heap-dynamic evidence; no root/RIP; not promoted |
 | `OD-RECOVERY-013` | 2026-08-02 | Second independent launch reproduce `replayTime` | agent Watch Offline + Double increased + rollingBaseline passes | `Partial` | Second Host.Web child PID; rolling increased **193→60→15→4** all `private-mapping`; same replay artifact | RT increased behavior reproduces across launches; still heap-dynamic; second distinct replay still required |
 | `OD-RECOVERY-014` | 2026-08-02 | Neighborhood + pointer classify on rolling RT set | rolling increased + `/discover/neighborhood` + pointer AOB | `Partial` | Rolling to ≤10; neighborhood OK on `relativeOffset` (noisy ~1k hits/4); pointer AOB flaky (1 hit then 0 on rebuild) | Neighborhood path live; no stable image/module pointer root |
+| `OD-RECOVERY-015` | 2026-08-02 | Folder-source launch + rolling RT under managed gate | folder `.wotbreplay` → import → managed launch; rolling Double increased | `Partial` | Process amended (`launch-offline-replay-for-od.ps1`); file-assoc alone ruled out for gate; Churchill sha12 `0FAE5612491E` (import `duplicate=True`); rolling completed **882617→…→7** (`private-mapping`) | Content not proven independent of OD-012/013 (`independentReplays` still 0); no root/RIP; not promoted |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -1078,6 +1079,61 @@ artifacts:
 ```
 
 `OD-RECOVERY-014` is aggregate structural evidence only. Offset remains 0.
+
+```yaml
+sessionId: OD-RECOVERY-015
+date: 2026-08-02
+observedAtUtc: 2026-08-02T21:32:00Z
+timebox: amend OD launch process; game-folder .wotbreplay source; rolling RT to ≤10
+decision: process flaw fixed (folder source + managed gate); rolling RT completed to 7 private-mapping; content not yet proven independent (import duplicate=True)
+objective: Use owner game-folder .wotbreplay as source of truth and reach OfflineReplayVerified for discover
+stopCondition: Stop after process amend + rolling ≤10, or gate loss
+method:
+  primaryTool: scripts/launch-offline-replay-for-od.ps1 + click-watch-offline.ps1 + Host.Web Double rolling increased
+  transition: Space pause/resume pulses during rolling
+observations:
+  - state: process-amend
+    note: File-association Invoke-Item can play a replay HUD but Host stays Denied/lifecycle_evidence_timeout without managed lifecycle evidence. Canonical path is game-folder .wotbreplay → CLI import → managed POST /launch → settle → Watch Offline.
+    helper: scripts/launch-offline-replay-for-od.ps1
+    clickHardening: re-read rendezvous each poll; exit 6 on Denied
+  - state: folder-source
+    source: LOCALAPPDATA wotblitz DAVAProject replays (basename only in logs)
+    contentSha12: 0FAE5612491E
+    artifactPrefix: 019fc45f
+    importDuplicate: true
+    distinctFromPriorOdArtifacts: unproven
+  - state: gate
+    verificationState: OfflineReplayVerified
+  - state: rolling-increased-incomplete
+    sequence: [92793, 29401, 7243, 1556, 260]
+    finalIncreased: 260
+    stopReason: EvidenceStale (first pulse; lease elapsed mid-roll)
+  - state: rolling-increased-complete
+    sequence: [882617, 151684, 23719, 3670, 472, 84, 18, 7]
+    finalIncreased: 7
+    addressKindHistogram:
+      private-mapping: 7
+    note: Started immediately after verified gate; Space pulses between compares; session discarded
+result:
+  whatWorked:
+    - Owner folder .wotbreplay source is correct for which battle to play.
+    - Managed launch still required for OfflineReplayVerified / discover APIs.
+    - Rolling RT increased reaches ≤10 (7) when the scan starts before EvidenceStale.
+  whatFailed:
+    - File-association-only path left Host Denied while replay HUD played.
+    - First rolling pulse hit EvidenceStale at 260 before ≤10.
+  rulesOut:
+    - Treating Invoke-Item / file association alone as sufficient for OD scanning.
+  partials:
+    - Launch helper + workflow/spec amended; ≤7 set ready for interactive root; BLK-0019 still needs a content-distinct second replay.
+  nextPivot: OD-RECOVERY-016 — interactive debugger/root on ≤7; import content-distinct second .wotbreplay from game folder when available.
+  repeatWithoutChangedHypothesis: false
+artifacts:
+  rawFiles: none
+  committedSummary: this ledger entry + scripts/launch-offline-replay-for-od.ps1 + workflow/spec updates
+```
+
+`OD-RECOVERY-015` is aggregate structural evidence only. Offset remains 0.
 
 ## Evidence promotion checklist
 
