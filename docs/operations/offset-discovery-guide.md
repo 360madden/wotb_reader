@@ -501,6 +501,7 @@ Invoke-RestMethod "$($record.baseUri)/api/v1/game/discover/pattern" `
     fieldName = 'signature'; expectedValueHex = '488B90';
     toleranceMaskHex = '00FF00'; maxCandidates = 200;
     minRegionSize = 4096; alignment = 1
+    # includeImageRegions=true scans private/mapped+image; imageRegionsOnly=true with includeImageRegions restricts to MEM_IMAGE only
   } | ConvertTo-Json)
 ```
 

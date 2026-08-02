@@ -309,6 +309,53 @@ public sealed class GameApiEndpointsTests
         Assert.AreEqual(8, response.Alignment);
         Assert.AreEqual("image-mapping", response.Candidates[0].AddressKind);
         Assert.AreEqual(TestContext.CancellationToken, scanner.LastCancellationToken);
+        Assert.IsNotNull(scanner.LastScanRequest);
+        Assert.AreEqual(
+            MemoryRegionSelection.Default | MemoryRegionSelection.Image,
+            scanner.LastScanRequest.RegionSelection);
+    }
+
+    [TestMethod]
+    public async Task PatternForwardsImageRegionsOnlyToScanner()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.DiscoverPatternAsync(
+            scanner,
+            new OffsetDiscoveryRequest
+            {
+                FieldName = "signature",
+                ExpectedValueHex = "488B",
+                IncludeImageRegions = true,
+                ImageRegionsOnly = true,
+            },
+            TestContext.CancellationToken);
+
+        Assert.IsInstanceOfType<Ok<OffsetDiscoveryResponse>>(result);
+        Assert.IsNotNull(scanner.LastScanRequest);
+        Assert.AreEqual(MemoryRegionSelection.Image, scanner.LastScanRequest.RegionSelection);
+    }
+
+    [TestMethod]
+    public async Task DiscoverForwardsImageRegionsOnlyToScanner()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.DiscoverOffsetsAsync(
+            scanner,
+            new OffsetDiscoveryRequest
+            {
+                FieldName = "position",
+                FieldType = "Float",
+                ExpectedValueHex = "0000C842",
+                IncludeImageRegions = true,
+                ImageRegionsOnly = true,
+            },
+            TestContext.CancellationToken);
+
+        Assert.IsInstanceOfType<Ok<OffsetDiscoveryResponse>>(result);
+        Assert.IsNotNull(scanner.LastScanRequest);
+        Assert.AreEqual(MemoryRegionSelection.Image, scanner.LastScanRequest.RegionSelection);
     }
 
     [TestMethod]
@@ -669,6 +716,7 @@ public sealed class GameApiEndpointsTests
             MemoryScanRequest request, CancellationToken cancellationToken)
         {
             PatternCalled = true;
+            LastScanRequest = request;
             LastCancellationToken = cancellationToken;
             return ValueTask.FromResult(PatternResult);
         }

@@ -255,9 +255,11 @@ internal static class GameApiEndpoints
             MaxCandidates: request.MaxCandidates,
             MinRegionSize: request.MinRegionSize,
             Alignment: request.Alignment,
-            RegionSelection: request.IncludeImageRegions
-                ? MemoryRegionSelection.Default | MemoryRegionSelection.Image
-                : MemoryRegionSelection.Default,
+            RegionSelection: request.IncludeImageRegions && request.ImageRegionsOnly
+                ? MemoryRegionSelection.Image
+                : request.IncludeImageRegions
+                    ? MemoryRegionSelection.Default | MemoryRegionSelection.Image
+                    : MemoryRegionSelection.Default,
             IncludeWorkingSetClassification: request.IncludeWorkingSetClassification,
             FloatTolerance: request.FloatTolerance);
 
@@ -341,9 +343,11 @@ internal static class GameApiEndpoints
             request.MaxCandidates,
             request.MinRegionSize,
             request.Alignment,
-            request.IncludeImageRegions
-                ? MemoryRegionSelection.Default | MemoryRegionSelection.Image
-                : MemoryRegionSelection.Default,
+            request.IncludeImageRegions && request.ImageRegionsOnly
+                ? MemoryRegionSelection.Image
+                : request.IncludeImageRegions
+                    ? MemoryRegionSelection.Default | MemoryRegionSelection.Image
+                    : MemoryRegionSelection.Default,
             request.IncludeWorkingSetClassification,
             MemoryValueKind.Bytes);
 
@@ -494,9 +498,11 @@ internal static class GameApiEndpoints
             MaxAddress: request.MaxAddress,
             ValueKind: kind.Value,
             Alignment: request.Alignment,
-            RegionSelection: request.IncludeImageRegions
-                ? MemoryRegionSelection.Default | MemoryRegionSelection.Image
-                : MemoryRegionSelection.Default,
+            RegionSelection: request.IncludeImageRegions && request.ImageRegionsOnly
+                ? MemoryRegionSelection.Image
+                : request.IncludeImageRegions
+                    ? MemoryRegionSelection.Default | MemoryRegionSelection.Image
+                    : MemoryRegionSelection.Default,
             MaxBytes: request.MaxBytes,
             LongMin: kind == MemoryValueKind.Int64Value ? request.LongMin : null,
             LongMax: kind == MemoryValueKind.Int64Value ? request.LongMax : null,

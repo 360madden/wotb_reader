@@ -45,6 +45,12 @@ public sealed record OffsetDiscoveryRequest
     /// <summary>Whether image mappings are included in addition to private/mapped regions.</summary>
     public bool IncludeImageRegions { get; init; }
 
+    /// <summary>
+    /// When true with IncludeImageRegions, scan only MEM_IMAGE regions (exclude private/mapped).
+    /// Ignored when IncludeImageRegions is false.
+    /// </summary>
+    public bool ImageRegionsOnly { get; init; }
+
     /// <summary>Whether working-set page classification is requested.</summary>
     public bool IncludeWorkingSetClassification { get; init; }
 }
@@ -193,6 +199,12 @@ public sealed record OffsetSnapshotRequest
     public string ValueKind { get; init; } = "Int32";
     public int Alignment { get; init; } = 1;
     public bool IncludeImageRegions { get; init; }
+
+    /// <summary>
+    /// When true with IncludeImageRegions, scan only MEM_IMAGE regions (exclude private/mapped).
+    /// Ignored when IncludeImageRegions is false.
+    /// </summary>
+    public bool ImageRegionsOnly { get; init; }
 }
 
 /// <summary>Request to compare a snapshot against current memory.</summary>
