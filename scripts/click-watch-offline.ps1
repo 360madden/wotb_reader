@@ -149,16 +149,13 @@ public static class WatchOfflineVisionV2 {
     if (w < 64 || h < 64) return null;
     var bmp = new Bitmap(w, h, PixelFormat.Format32bppArgb);
     using (var g = Graphics.FromImage(bmp)) {
-      // Prefer screen capture so bitmap pixels share the same coordinate space
-      // as SetCursorPos / GetWindowRect (PrintWindow can disagree under DPI).
-      try {
+      // PrintWindow tracks live DAVA frames; CopyFromScreen froze on a stale
+      // composited frame (orangePx stuck) during OD pulses.
+      IntPtr hdc = g.GetHdc();
+      bool ok = PrintWindow(hWnd, hdc, PW_RENDERFULLCONTENT);
+      g.ReleaseHdc(hdc);
+      if (!ok) {
         g.CopyFromScreen(r.Left, r.Top, 0, 0, new Size(w, h), CopyPixelOperation.SourceCopy);
-      }
-      catch {
-        IntPtr hdc = g.GetHdc();
-        bool ok = PrintWindow(hWnd, hdc, PW_RENDERFULLCONTENT);
-        g.ReleaseHdc(hdc);
-        if (!ok) return null;
       }
     }
     return bmp;
