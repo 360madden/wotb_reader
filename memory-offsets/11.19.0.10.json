@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "gameVersion": "11.19.0.10",
   "executableSha256": "1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d",
-  "discoveredAtUtc": "2026-07-31T18:30:00Z",
+  "discoveredAtUtc": "2026-08-02T19:40:00Z",
   "offsets": {
     "replayTime": 0,
     "playerHP": 0,
@@ -28,8 +28,48 @@
       "harnessInvariantsPassed": false,
       "leadApproved": false,
       "decoderAuditorApproved": false
+    },
+    "playerPositionX": {
+      "status": "Unknown",
+      "evidence": [
+        {
+          "provenanceKind": "DynamicScan",
+          "sourceTool": "GameHarness loopback discover-snapshot/compare + discover/pattern",
+          "notes": "OD-RECOVERY-004/005/006: controlled offline A->B Float32 [-500,500] narrowing over bounded private/mapped windows; returned candidates addressKind=private-mapping (heap-dynamic pending root). No module-rva/member/pointer-chain root; absolute addresses and values not published."
+        },
+        {
+          "provenanceKind": "GameHarness",
+          "sourceTool": "WotBTreader.GameHarness / Host.Web gated scanner",
+          "notes": "Sessions discarded after aggregate compare; independentProcessLaunches/Replays remain 0 for promotion. Soft-capped MaxBytes available as of 2026-08-02."
+        }
+      ],
+      "independentProcessLaunches": 0,
+      "independentReplays": 0,
+      "harnessInvariantsPassed": false,
+      "leadApproved": false,
+      "decoderAuditorApproved": false
+    },
+    "playerPositionZ": {
+      "status": "Unknown",
+      "evidence": [
+        {
+          "provenanceKind": "DynamicScan",
+          "sourceTool": "GameHarness loopback discover-snapshot/compare + discover/pattern",
+          "notes": "OD-RECOVERY-004/005/006: controlled offline A->B Float32 [-500,500] narrowing over bounded private/mapped windows; returned candidates addressKind=private-mapping (heap-dynamic pending root). No module-rva/member/pointer-chain root; absolute addresses and values not published."
+        },
+        {
+          "provenanceKind": "GameHarness",
+          "sourceTool": "WotBTreader.GameHarness / Host.Web gated scanner",
+          "notes": "Sessions discarded after aggregate compare; independentProcessLaunches/Replays remain 0 for promotion. Soft-capped MaxBytes available as of 2026-08-02."
+        }
+      ],
+      "independentProcessLaunches": 0,
+      "independentReplays": 0,
+      "harnessInvariantsPassed": false,
+      "leadApproved": false,
+      "decoderAuditorApproved": false
     }
   },
   "confidence": "none",
-  "notes": "No usable offsets are currently published for 11.19.0.10. The prior playerYaw hypothesis is retained as Stale evidence only; resolve the decimal/hex/address-kind conflict before any yaw scan. Seven other fields remain unknown."
+  "notes": "No usable offsets are currently published for 11.19.0.10. playerYaw remains Stale/quarantined (decimal/hex/address-kind conflict unresolved). OD-RECOVERY-004/005/006 (2026-08-02) produced privacy-safe Float32 A->B narrowing on private-mapping survivors for position-like values (tightest first-pass changed~434; samples 100/100 private-mapping; AOB pointer-byte hits also private-mapping only). Survivor set is heap-dynamic pending a module-image static root (next: OD-RECOVERY-007). Do not promote playerPositionX/Z until address kind, pointer-chain/root, two launches, and two independent replays are satisfied (BLK-0019). Seven non-yaw fields remain unknown."
 }

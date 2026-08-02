@@ -71,8 +71,7 @@ repeating unresolved hypotheses.
 Offset discovery follows the timeboxed workflow in the canonical documents:
 identity/offline gate → static triage → controlled dynamic anchor → native access
 tracing → repeatability → conservative publication. The current 11.19.0.10 table
-contains one hash-bound but quarantined `playerYaw` hypothesis; seven fields remain
-unknown and no field is runtime-supported.
+contains one hash-bound quarantined `playerYaw` (Stale) plus Unknown `playerPositionX`/`playerPositionZ` fieldValidation from OD-RECOVERY-004/005/006 private-mapping / heap-dynamic aggregates; all eight offsets remain `0` and no field is runtime-supported.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
