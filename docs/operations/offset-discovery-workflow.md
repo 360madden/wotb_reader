@@ -311,37 +311,26 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-004`. `OD-RECOVERY-001` was blocked before scanning,
-`OD-RECOVERY-002` was blocked after staging, `OD-RECOVERY-003` completed as a
-repeatable aggregate negative result, and `OD-RECOVERY-003-BOUNDED` recorded the
-bounded low-address trial as negative setup evidence. The managed launch path is
-now live-proven (visible exact window, exact-PID enumeration, research lifecycle
-startup timeout).
+Session ID: `OD-RECOVERY-005`. `OD-RECOVERY-004` completed as `Partial`: a
+managed Host.Web child reached `OfflineReplayVerified`, a Float32 A set of
+~1.23M in-range values narrowed to ~26k `changed` survivors after the A→B
+compare, and the scanner session was discarded. No address was classified.
+`OD-RECOVERY-003-BOUNDED` remains historical setup evidence and may have been
+contaminated by the GameHarness Int32 `valueKind` default.
 
-1. Confirm operator availability before starting the managed replay lease
-   (BLK-0022): the controlled movement transition requires an operator key
-   press in the positively verified offline replay; do not automate game input
-   through another path.
-2. Start from zero game and web-host processes, launch exactly one managed
-   replay, and wait for `OfflineReplayVerified` with the exact visible window
-   and expected executable identity (BLK-0023/BLK-0025 live resolutions).
-3. Use the bounded research lease for the controlled transition: set
-   `Research:OfflineReplayEvidenceLifetimeSeconds` (5–120) and
-   `Research:LifecycleEvidenceTimeoutSeconds` (5–300, production default 45)
-   on the loopback web host.
-4. For the snapshot, prefer the privacy-safe byte budget
-   (`discover-snapshot 4 --float-min <f> --float-max <f> --max-bytes <n>`, or
-   `maxBytes` on the snapshot API) over process-specific address windows; the
-   engine ceiling remains 512 MiB and values above it are rejected.
-5. Capture state A while the replay is paused, have the operator resume briefly
-   and pause again, then compare state B with `changed` and a rolling baseline.
-   Retain aggregate counters only; discard the scanner session.
-6. If a candidate survives, classify its address kind structurally (Phase 3)
-   and repeat across two fresh launches and two independent replays (Phase 4);
-   a second distinct replay is still required (BLK-0019).
-7. Append the ledger and create a dated handoff before stopping.
+1. Confirm operator availability and require an explicit state-B acknowledgement
+   before the changed compare (BLK-0022). Do not automate game input.
+2. Start from zero game processes; ensure any live `wotblitz` parent is
+   `WotBTreader.Host.Web.exe`, not WGC. Wait for `OfflineReplayVerified`.
+3. Keep the research lease bounds (`Research:OfflineReplayEvidenceLifetimeSeconds`
+   5–120, `Research:LifecycleEvidenceTimeoutSeconds` 5–300).
+4. Snapshot with `valueKind=Float` and finite float bounds. Until
+   `MaxBytes` truncates instead of hard-failing, use a privacy-safe bounded
+   window or a fixed soft-cap path; never commit absolute bases.
+5. Reproduce the A→B narrowing, then classify survivors structurally (Phase 3):
+   module-rva, member-displacement, pointer-chain, or heap-dynamic.
+6. Obtain a second distinct replay before any promotion review (BLK-0019).
+7. Append the ledger and a dated handoff before stopping.
 
-The success criterion for this session remains **one correctly classified,
-reproducible candidate**, not all eight fields. Absence of an operator is a
-blocker, not a signal to treat natural replay progression as a controlled
-transition or to repeat an exhausted approach blindly.
+The success criterion remains **one correctly classified, reproducible
+candidate**. Do not promote from aggregate counts alone.

@@ -517,6 +517,7 @@ discover-pattern <field> <patternHex> [toleranceMaskHex] [--alignment 1|2|4|8]
 discover-pointer-chain <rootOffset> <offset1,offset2,...>
 discover-snapshot 4 [--float-min <f>] [--float-max <f>] [--int-min <n>] [--int-max <n>]
                   [--max-bytes <n>]   # explicit retained-byte budget; 0 = engine ceiling (512 MiB)
+                  # Float bounds send valueKind=Float (alignment 4); otherwise Int32.
 discover-compare <sessionId> [changed|unchanged|increased|decreased]
 discover-nearby <refOffset> [--window <64-4096>]
 discover-discard <sessionId>

@@ -49,7 +49,7 @@ Every address must be classified before publication:
 | `playerYaw` | **Quarantined / Ambiguous** until decimal, hexadecimal, raw Ghidra, and address-kind evidence reconcile |
 | Trusted next anchor | `playerPositionX`/`playerPositionZ`, then `replayTime` or HP if the replay makes them observable |
 | Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance |
-| Next planned session | `OD-RECOVERY-004` (controlled movement transition; requires operator availability, BLK-0022, and a privacy-safe bounded region budget) |
+| Next planned session | `OD-RECOVERY-005` (structurally classify survivors from the OD-RECOVERY-004 A→B float narrowing; requires operator availability and explicit state-B ack) |
 
 The current yaw conflict is recorded explicitly:
 
@@ -85,6 +85,7 @@ occurred.
 | `OD-RECOVERY-002-BLOCKED` | 2026-07-31 | Establish one managed replay after the prior gate block | managed launch, host state, read-only process inventory | `Blocked` | Replay staging completed, but the launch timed out without correlated lifecycle evidence; host remained `Unknown` / `launch.awaiting_evidence` | No existing process is admissible; do not repeat the launch until the timeout/correlation path is diagnosed |
 | `OD-RECOVERY-003` | 2026-08-02 | Prove a repeatable privacy-safe aggregate campaign; test whether a bounded main-module Float32 range is a useful natural-change anchor | two managed launches + rolling comparisons | `Partial` | Two fresh launches each reached `OfflineReplayVerified` with an exact singleton process and zero post-trial game/host processes; the aggregate-only campaign is repeatable | No single candidate survived; replay independence not proven (1 distinct payload used) |
 | `OD-RECOVERY-003-BOUNDED` | 2026-08-02 | Determine whether a bounded 0–64 MiB low-address Float32 window contains eligible retained values under the privacy-safe budget ceiling | loopback `discover-snapshot` (bounded window) | `NoSignal` | Zero retained/current/changed aggregates; scanner session discarded; recorded as bounded negative setup evidence for OD-RECOVERY-004 | It did not test a populated slice; the interrupted populated-slice attempt is not scan evidence |
+| `OD-RECOVERY-004` | 2026-08-02 | Controlled movement A→B Float32 narrowing for `playerPositionX`/`playerPositionZ` under a privacy-safe bounded window | managed launch + loopback snapshot/compare (`valueKind=Float`) | `Partial` | Managed Host.Web child reached `OfflineReplayVerified`; state A≈1.23M in-range floats; state B `changed≈26k` / `current≈26k` / `unchanged≈793k`; session discarded | No single address classified; promotion still blocked (BLK-0019); unbounded `--max-bytes` still hard-fails |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -456,6 +457,68 @@ make any field `Candidate` or `Verified` and must not change
 `memory-offsets/11.19.0.10.json`. The interrupted populated-slice selection
 attempt is explicitly **not** scan evidence: it produced no result and must not
 be cited as one.
+
+## `OD-RECOVERY-004` result — 2026-08-02
+
+```yaml
+sessionId: OD-RECOVERY-004
+supersedes: none
+status: Partial
+observedAtUtc: 2026-08-02T18:56:39Z
+timebox: one managed relaunch after EvidenceStale; one A→B float compare
+decision: aggregate A→B narrowing is real; structural classification deferred to OD-RECOVERY-005
+objective: Controlled movement transition search for playerPositionX or playerPositionZ in private/mapped Float32 state
+stopCondition: Stop after one A→B changed compare with aggregates retained only, or gate loss
+method:
+  primaryTool: loopback discover/snapshot + discover/compare with valueKind=Float
+  valueKind: Float32
+  floatBounds: [-500, 500]
+  addressScope: privacy-safe bounded 64 MiB window (absolute bases kept local-only; not committed)
+  maxBytes: 64 MiB per window
+  note: unbounded private/mapped with MaxBytes still returns discover.snapshot.size_limit instead of truncating
+observations:
+  - state: prior-attempt
+    outcome: EvidenceStale after 120s research lease; a WGC-parented wotblitz was present and is not admissible
+  - state: relaunch
+    parentProcess: WotBTreader.Host.Web.exe
+    verificationState: OfflineReplayVerified
+    reason: session.offline_replay_verified
+  - state: A
+    aggregatePrevious: 1229051
+    aggregateCurrent: 1229051
+    scannerSessionDiscarded: false
+  - state: B
+    aggregatePrevious: 1229051
+    aggregateCurrent: 26284
+    aggregateChanged: 26284
+    aggregateUnchanged: 792666
+    scannerSessionDiscarded: true
+result:
+  whatWorked:
+    - Exact managed Host.Web child reached OfflineReplayVerified after Watch Offline.
+    - Explicit valueKind=Float produced a populated in-range A set (~1.23M).
+    - A→B changed compare narrowed to ~26k survivors with ~793k unchanged.
+  whatFailed:
+    - GameHarness discover-snapshot omitted valueKind and defaulted to Int32, ignoring --float-min/--float-max (API path required).
+    - Unbounded MaxBytes still hard-fails with discover.snapshot.size_limit rather than completing a truncated budgeted snapshot.
+    - No single survivor was structurally classified (address kind unknown).
+  rulesOut:
+    - Treating a WGC-parented process as the managed research child.
+    - Using discover-snapshot float bounds without sending valueKind=Float.
+  partials:
+    - A→B Float32 narrowing under a bounded window is reusable setup for OD-RECOVERY-005 classification.
+    - OD-RECOVERY-003-BOUNDED NoSignal may have been contaminated by the Int32 CLI default; do not treat that empty low window as definitive against Float scans.
+  nextPivot: OD-RECOVERY-005 — classify address kind of changed survivors (module-rva / member-displacement / pointer-chain / heap-dynamic) with explicit operator state-B acknowledgement; second distinct replay still required before promotion (BLK-0019).
+  repeatWithoutChangedHypothesis: false
+artifacts:
+  rawFiles: none
+  committedSummary: this ledger entry
+```
+
+`OD-RECOVERY-004` is aggregate narrowing evidence only. It does not make any
+field `Candidate` or `Verified` and must not change
+`memory-offsets/11.19.0.10.json`. Scanner session identifiers and absolute
+window bases were kept local-only and discarded.
 
 ## Evidence promotion checklist
 
