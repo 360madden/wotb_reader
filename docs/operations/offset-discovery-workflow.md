@@ -1,6 +1,6 @@
 # WoT Blitz PC offset-discovery workflow
 
-Last updated: 2026-08-03 (OD-RECOVERY-033: two attempts landed at 12 and 17 survivors — both past the 120s lease edge; 401 refresh live a seventh time; convergence range now 11–17 survivors under current load; OD-034 changes the hypothesis, not the parameters)
+Last updated: 2026-08-03 (OD-RECOVERY-034: two-phase tail transition shave implemented + validated live — 18 rounds fit the 120s lease, but the survivor count plateaued at 12, proving the tail is value-bound, not round-bound; rolling alone cannot disambiguate high-frequency tickers — the interactive step is required)
 
 This is the operational playbook for discovering memory evidence from the
 Windows WoT Blitz client during a **positively verified offline replay**. It is
@@ -313,21 +313,24 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-034`. `OD-RECOVERY-033` completed as **Partial**
-with the **convergence range widened to 11–17 survivors across OD-032/033 (4
-attempts)** — every run lands just past the 120s lease edge, never ≤10 with
-staging. OD-033's two attempts (12 and 17 survivors, 13–14 rounds, 401
-refresh live a seventh time) confirmed the driver is at its best-known state;
-more identical runs are not the path. The next session changes the
-**hypothesis, not the parameters**: reduce round-1 walk cost via a snapshot
-byte budget / region-selection passthrough (MemoryScanEngine `MaxBytes`), or
-shave the tail transition, or run in a lighter-loaded window. This builds on
-the validated driver stack:
+Session ID: `OD-RECOVERY-035`. `OD-RECOVERY-034` completed as **Partial**
+with the **changed hypothesis validated but the tail proven value-bound**:
+the two-phase tail transition shave (1s pulse below 200 survivors) let **18
+rounds fit the 120s lease** (vs 14–15 before), but the survivor count
+**plateaued at 12 through four consecutive 1s-pulse rounds** — the last
+survivors tick every frame and survive even 1s pulses. This is conclusive:
+**rolling alone cannot disambiguate the high-frequency tickers**, so
+interactive Find-what-writes is required regardless of lease headroom. The
+next session's hypothesis space: (a) snapshot byte budget / region-selection
+passthrough (MemoryScanEngine `MaxBytes`) to open the operator window with
+lease to spare, (b) operator presence at a green window with a staged
+12-survivor set (acceptable for Find-what-writes), or (c) a content-distinct
+second replay for BLK-0019. This builds on the validated driver stack:
 
 1. **401 capability-rotation refresh** — the rendezvous token rotates ~5 min,
    and a 66M-baseline roll outlives it; the driver refreshes the rendezvous
    and retries on 401 (`Invoke-OdApi`, logged `capability_401_refresh_retry`).
-   Validated live a seventh time (OD-033 rounds 9/10).
+   Validated live an eighth time (OD-034 round 10).
 2. **Probe-fold** — the OD-026 standalone sanity probe ran a full 66M-candidate
    compare whose `previousCount` was identical to round-1's; the steady-state
    gate now lives in round 1 (an absurd round-1 `previousCount` discards +
@@ -362,7 +365,11 @@ harvest only on the target round (OD-RECOVERY-031); (8) use the default CE
 autorun survivor address-file path — a custom `-AddressFile` silently skips
 CE staging (OD-RECOVERY-031 attempt 4); (9) **convergence lands at 11–17
 survivors under current load, always just past the lease edge** — plan for
-lease-headroom work, not more identical runs (OD-RECOVERY-032/033).
+lease-headroom work, not more identical runs (OD-RECOVERY-032/033);
+(10) **the tail is value-bound, not round-bound** — the last survivors tick
+every frame and survive even 1s pulses, so pulse shaving alone cannot reach
+≤10; the interactive Find-what-writes step is required regardless of lease
+headroom (OD-RECOVERY-034).
 
 Operational notes: (1) detached launch + session driver remains the proven
 pattern; (2) the CE autorun staging (`od-autorun-writebp.lua`) works and now
@@ -377,9 +384,12 @@ timer-bound; (6) the steady-state gate now lives in round 1 of the rolling
 driver (`roll-replay-time-increased.ps1`): round-1 `previousCount` reports
 the snapshot candidate count; reject only absurd/transient counts and
 discard + re-snapshot with a gate-aware wait — no separate probe compare;
-(7) OD-034's priority is the lease-headroom hypothesis: reduce round-1 walk
-cost (snapshot budget / region selection) or shave tail transition time —
-not more identical runs.
+(7) the two-phase tail shave is now in the driver (`TailThreshold=200`,
+`TailTransitionSeconds=1` passthrough from the session driver) and buys
+lease margin (OD-034: 18 rounds fit the lease) — but it does not break the
+value-bound tail; OD-035 should prioritize the interactive step, a snapshot
+budget passthrough for a live operator window, or a content-distinct second
+replay — not more identical runs.
 
 ### Canonical OD launch (amended 2026-08-02)
 

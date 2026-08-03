@@ -4,6 +4,12 @@
 param(
     [int]$WaitVerifiedSeconds = 300,
     [int]$TransitionSeconds = 3,
+    # OD-034 two-phase transition passthrough to the rolling driver: below
+    # TailThreshold survivors the pulse drops to TailTransitionSeconds so more
+    # tail rounds fit the fixed 120s lease (replayTime advances every frame,
+    # so a short tail pulse still registers increases).
+    [int]$TailThreshold = 200,
+    [int]$TailTransitionSeconds = 1,
     [string]$TargetSurvivors = '10',
     [string]$AddressFile = '',
     # After rolling lands <=10, hold this many seconds while polling the gate
@@ -98,7 +104,7 @@ if ($PreSnapshotSettleSeconds -gt 0) {
 $roll = Join-Path $RepoRoot 'scripts\roll-replay-time-increased.ps1'
 Remove-Item -LiteralPath $AddressFile -Force -ErrorAction SilentlyContinue
 Write-Host 'od018: rolling_start'
-& $roll -TargetSurvivors $TargetSurvivors -TransitionSeconds $TransitionSeconds -AddressFile $AddressFile
+& $roll -TargetSurvivors $TargetSurvivors -TransitionSeconds $TransitionSeconds -TailThreshold $TailThreshold -TailTransitionSeconds $TailTransitionSeconds -AddressFile $AddressFile
 Write-Host ("od018: rolling_exit=" + $LASTEXITCODE)
 Write-Host ("od018: addresses=" + $AddressFile)
 if ($LASTEXITCODE -ne 0) {

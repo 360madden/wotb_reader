@@ -31,6 +31,15 @@ param(
     [int]$TargetSurvivors = 10,
     [int]$MaxRounds = 15,
     [int]$TransitionSeconds = 4,
+    # OD-034 two-phase transition: once the survivor set drops to
+    # TailThreshold, use the shorter TailTransitionSeconds pulse so more tail
+    # rounds fit the fixed 120s lease. The target field (replayTime Double)
+    # advances every frame, so a 1s pulse still registers an increase; the
+    # occasionally-ticking stragglers that only changed on long pulses get
+    # shed, which is the desired tail convergence. Round 1 always uses the
+    # full TransitionSeconds (survivors is -1 before the first compare).
+    [int]$TailThreshold = 200,
+    [int]$TailTransitionSeconds = 1,
     [switch]$AutoSpace,
     [int]$MaxCandidates = 1,
     [int]$Alignment = 8,
@@ -213,8 +222,16 @@ try {
         $insaneSnapshot = $false
         for ($round = 1; $round -le $roundLimit; $round++) {
             if ($AutoSpace) { Send-SpacePulse }
-            Write-Roll ("round={0} pulse_window={1}s" -f $round, $TransitionSeconds)
-            Start-Sleep -Seconds $TransitionSeconds
+            # Two-phase pulse (OD-034): full TransitionSeconds for the
+            # expensive early rounds, TailTransitionSeconds once the survivor
+            # set is small (survivors holds the previous round's count; -1 on
+            # round 1 means the full pulse is always used there).
+            $pulseSeconds = $TransitionSeconds
+            if ($survivors -ge 0 -and $survivors -le $TailThreshold) {
+                $pulseSeconds = $TailTransitionSeconds
+            }
+            Write-Roll ("round={0} pulse_window={1}s" -f $round, $pulseSeconds)
+            Start-Sleep -Seconds $pulseSeconds
 
             # Rolling rounds request a single candidate: only the FINAL round's
             # candidates are ever written to -AddressFile, so requesting 500
