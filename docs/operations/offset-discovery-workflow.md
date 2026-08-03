@@ -1,6 +1,6 @@
 # WoT Blitz PC offset-discovery workflow
 
-Last updated: 2026-08-03 (OD-RECOVERY-018: clicker gate-trust fix + rolling driver increasedCount fix)
+Last updated: 2026-08-03 (OD-RECOVERY-030: 401 capability-rotation refresh + probe-fold into round 1 both validated live; lease wall on the 66M baseline remains — closest 391 survivors)
 
 This is the operational playbook for discovering memory evidence from the
 Windows WoT Blitz client during a **positively verified offline replay**. It is
@@ -313,21 +313,59 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-018`. `OD-RECOVERY-017` completed as **Partial**:
-three live managed launches; attempts 1–2 reached `OfflineReplayVerified`
-(replay playing, `startReplay=True`) but the clicker's orange-blob ROI
-false-positived on the replay HUD (`dialogGone` never set; orangePx grew to
-~64k after dismissal), extra clicks hit in-game UI and killed the game
-(`monitor_unhealthy`), and the 120s lease died before rolling. Root-caused and
-fixed: once `OfflineReplayVerified` holds, the WATCH OFFLINE dialog is proven
-gone — stop clicking (`scripts/click-watch-offline.ps1`, commit `63845d7`).
-Attempt 3 with the fixed clicker: gate green (`watch_exit=0`,
-`SUCCESS_gate_and_dialog_dismissed`); CE 7.7 pre-armed and attached. The new
-rolling driver read `retainedCount` (unreadable-chunk carryover) instead of
-`increasedCount` (the survivor set) and stopped at round 1; fixed in
-`scripts/roll-replay-time-increased.ps1`. Attempt 4 not run; interactive
-Find-what-writes still outstanding. Same Churchill sha12 `0FAE5612491E`
-(`independentReplays` still 0; BLK-0019 open).
+Session ID: `OD-RECOVERY-031`. `OD-RECOVERY-030` completed as **Partial**
+with two durable driver fixes validated live. Rolling still narrows hard from
+the stable 66M baseline (attempt 3: 66.2M → 391 in 6 rounds), but the 120s
+lease wall after round-1's 66M walk is the binding constraint — 4 of 6
+attempts died mid-roll (`400` discard signature + `EvidenceStale`) before
+reaching ≤10. Attempts 2/5 crashed the game at replay start (game-side assert
+`AccountController.cpp:386` `activeController->GetName() == LOBBY`;
+`evidence.monitor_unhealthy`), diagnosed as game-side, not pipeline. Two
+driver changes were made and validated live this session:
+
+1. **401 capability-rotation refresh** — the rendezvous token rotates ~5 min,
+   and a 66M-baseline roll outlives it (sanity walk + round 1); the driver now
+   refreshes the rendezvous and retries on 401 (`Invoke-OdApi`, logged
+   `capability_401_refresh_retry`). Validated: attempt 3 round 4 recovered and
+   continued.
+2. **Probe-fold** — the OD-026 standalone sanity probe ran a full 66M-candidate
+   compare whose `previousCount` was identical to round-1's `previousCount`;
+   the walk narrowed nothing and burned lease. The steady-state gate now lives
+   in round 1 (an absurd round-1 `previousCount` discards + re-snapshots with a
+   gate-aware wait). Validated: attempt 6 ran `snapshot → round=1` with no
+   probe line.
+
+Key rules: (1) **never roll from a load-transition snapshot** — but the
+steady-state gate must accept the *measured stable baseline* (66M this
+session), not an assumed one (a 10M threshold wrongly rejected the stable
+state); (2) a large stable baseline needs shorter transitions (5s) and a
+higher round limit (22) to converge inside the 120s lease; (3) the rolling
+`400` on a discarded session is a discard signature (gate flip or session
+loss), not a host fault - the precise gate-transition trigger (lease expiry
+vs monitor health) may be either and must be read from the gate state, not
+assumed; (4) capture evidence should be read from persisted artifacts
+(address file, autorun log, gate state) when the driver sequence is
+live-terminal-only, so the record never invents unpersisted intermediates;
+(5) **launcher-green + immediate `Denied`/`evidence.monitor_unhealthy`** on
+~2/6 launches is a game-side assert crash at replay start — relaunch rather
+than re-clicking (OD-RECOVERY-030 attempts 2/5); (6) a single rendezvous
+capability captured at roll start is not valid for a full 66M-baseline roll
+(the 401 rotation) — the driver refreshes + retries on 401.
+
+Operational notes: (1) detached launch + session driver remains the proven
+pattern; (2) the CE autorun staging (`od-autorun-writebp.lua`) works — it
+stages survivors into CE's address list as `od-survivor-N`, so the operator's
+Find-what-writes is a single right-click; (3) the automated CE write-BP hit
+path stays ruled out (OD-020), so the interactive step is the evidence path;
+(4) stale CE / host are stopped automatically by the next launch helper;
+(5) the operator window is held inside the running driver and re-announced
+every 30s, so the operator acts on the live transcript while the gate is
+still green — use `-HoldAfterRollSeconds 240` (or higher) so the window is
+lease-bound, not timer-bound; (6) the steady-state gate now lives in round 1
+of the rolling driver (`roll-replay-time-increased.ps1`): round-1
+`previousCount` reports the snapshot candidate count; reject only
+absurd/transient counts and discard + re-snapshot with a gate-aware wait —
+no separate probe compare.
 
 ### Canonical OD launch (amended 2026-08-02)
 
@@ -418,7 +456,7 @@ File-association remains useful only as a **playback smoke** (“does this
    driver:
 
    ```text
-   powershell -File scripts/roll-replay-time-increased.ps1 -TargetRetained 10 `
+   powershell -File scripts/roll-replay-time-increased.ps1 -TargetSurvivors 10 `
      -AddressFile "$env:TEMP\od-survivors.txt"
    ```
 
@@ -433,6 +471,12 @@ File-association remains useful only as a **playback smoke** (“does this
    guaranteed to equal the retained survivor set — the driver logs a `WARN` on
    count mismatch, and the Lua pre-arm prints the same caution. The operator
    owns the Space transition; `-AutoSpace` is an explicit opt-in pulse loop.
+   The steady-state gate is folded into round 1: round-1 `previousCount`
+   reports the snapshot's candidate count, so an absurd count (game still
+   loading) discards and re-snapshots with a gate-aware wait — no separate
+   probe walk (OD-RECOVERY-030). The driver also refreshes the rendezvous
+   capability and retries on a mid-roll `401` (the token rotates ~5 min and a
+   66M-baseline roll outlives it — OD-RECOVERY-030).
 4. Confirm a **second distinct replay** in the game folder when available
    (BLK-0019).
 5. Do not promote from neighborhood hit counts alone.

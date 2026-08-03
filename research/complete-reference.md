@@ -3,8 +3,9 @@
 > **Status note (2026-07-31):** This is a research snapshot, not the runtime source
 > of truth. Current implementation status: the strict decoder accepts 11.18 and
 > 11.19 replay versions; the installed `11.19.0.10` executable hash is
-> `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d`; and only
-> `playerYaw` is recorded as a static-analysis `Candidate`. Seven offset fields remain
+> `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d`; and
+> `playerYaw` has static-analysis provenance but is quarantined/Stale (conflicting
+> representations). Seven offset fields remain
 > unknown and candidate-only evidence cannot authorize runtime reads.
 
 ## File Paths

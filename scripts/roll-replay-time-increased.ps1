@@ -38,11 +38,31 @@ param(
     # Local (untracked) file to receive survivor candidate absolute addresses
     # from the final compare, for interactive Find-what-writes. Aggregate counts
     # remain the only output on stdout; addresses never enter the repo.
-    [string]$AddressFile = ''
+    [string]$AddressFile = '',
+    # OD-026 steady-state gate. OD-026 probing showed the 66M+ snapshot state
+    # is STABLE for this game session (three snapshots within 0.05%, ~535MB,
+    # ~1880 regions) - not a transient load spike - and rolling converges from
+    # it (OD-025 attempt 1: 66M->679 in 6 rounds; it failed on lease, not
+    # baseline size). So the threshold only rejects genuinely absurd states
+    # (e.g. a growing footprint during an actual transition); a stable large
+    # baseline is accepted and rolled with shorter transitions to fit the 120s
+    # lease. Initial count is read from round-1's compare previousCount, which
+    # equals the snapshot's candidate count (probe folded into round 1,
+    # OD-RECOVERY-030).
+    [long]$MaxInitialCandidates = 100000000,
+    [int]$SnapshotRetrySeconds = 20,
+    [int]$MaxSnapshotRetries = 2
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# Script-scoped API context so a rendezvous capability rotation (~5 min) can be
+# refreshed and retried on 401 mid-rolling. OD-RECOVERY-030 finding: the first
+# 66M-candidate sanity probe + round-1 compare outlive the token captured at
+# startup, so round 2 returned 401 and aborted the campaign. Refresh + retry
+# keeps the roll alive (the scanner session itself remains valid server-side).
+$script:Api = $null
 
 function Write-Roll([string]$Message) {
     Write-Host ("roll_rt: " + $Message)
@@ -74,12 +94,49 @@ function Get-ApiContext {
     }
 }
 
-function Get-GateState($api) {
+function Get-GateState {
     try {
-        return Invoke-RestMethod -Uri "$($api.Base)/api/v1/game/state" -Headers $api.Headers
+        return Invoke-OdApi -Path '/api/v1/game/state'
     }
     catch {
         return $null
+    }
+}
+
+# Invoke an OD API endpoint with rendezvous capability rotation recovery: a 401
+# (token rotated ~5 min) refreshes the API context and retries the same request
+# with the fresh capability, up to Retries times. Keeps a long rolling campaign
+# from dying mid-roll to a rotated token.
+function Invoke-OdApi {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [string]$Method = 'Get',
+        [string]$Body = '',
+        [string]$ContentType = 'application/json',
+        [int]$Retries = 2
+    )
+    for ($attempt = 0; ; $attempt++) {
+        try {
+            $params = @{
+                Uri     = "$($script:Api.Base)$Path"
+                Method  = $Method
+                Headers = $script:Api.Headers
+            }
+            if ($Body) {
+                $params.Body = $Body
+                $params.ContentType = $ContentType
+            }
+            return Invoke-RestMethod @params
+        }
+        catch {
+            if ($_.Exception.Message -match '401' -and $attempt -lt $Retries) {
+                Write-Roll ("capability_401_refresh_retry=" + ($attempt + 1))
+                $script:Api = Get-ApiContext
+                if (-not $script:Api) { throw }
+                continue
+            }
+            throw
+        }
     }
 }
 
@@ -94,12 +151,12 @@ function Send-SpacePulse {
 }
 
 try {
-    $api = Get-ApiContext
-    if (-not $api) {
+    $script:Api = Get-ApiContext
+    if (-not $script:Api) {
         Write-Roll 'FAILED_rendezvous_missing'
         exit 2
     }
-    $state = Get-GateState $api
+    $state = Get-GateState
     if (-not $state) {
         Write-Roll 'FAILED_host_unreachable'
         exit 2
@@ -111,64 +168,120 @@ try {
     Write-Roll 'gate=OfflineReplayVerified'
 
     $snapBody = @{ valueKind = 'Double'; valueSize = 8; alignment = $Alignment } | ConvertTo-Json
-    $snap = Invoke-RestMethod -Uri "$($api.Base)/api/v1/game/discover/snapshot" -Method Post `
-        -Headers $api.Headers -ContentType 'application/json' -Body $snapBody
-    if ($snap.PSObject.Properties['error']) {
-        Write-Roll ("FAILED_snapshot=" + $snap.error)
-        exit 4
-    }
-    $sessionId = [string]$snap.sessionId
-    if ([string]::IsNullOrWhiteSpace($sessionId)) {
-        Write-Roll 'FAILED_snapshot_no_session'
-        exit 4
-    }
-    $short = if ($sessionId.Length -gt 8) { $sessionId.Substring(0, 8) } else { $sessionId }
-    Write-Roll ("snapshot session=" + $short)
 
+    # OD-026/030 steady-state gate: the snapshot response carries only the
+    # session id, so the snapshot's initial candidate count is learned from the
+    # FIRST round's compare previousCount (with rollingBaseline=true, round 1
+    # compares against the original snapshot, so previousCount == snapshot
+    # candidate count). A separate non-advancing sanity probe is redundant -
+    # OD-RECOVERY-030 showed round-1 previous always equals the probe's
+    # initial, and the probe's full 66M-candidate walk was consuming the 120s
+    # lease before convergence. Trade-off (documented, not a bug): the fold
+    # saves lease on the SANE path only - an insane snapshot now pays for a
+    # full round-1 walk before being discarded, where the old probe rejected
+    # it pre-round. Insane snapshots are rare (absurd counts only), so the
+    # sane-path savings win. An absurd round-1 count means the game is still
+    # loading: discard and re-snapshot after a gate-aware wait.
     $seq = @()
     $survivors = -1
+    # Larger stable baselines (OD-026: ~66M) need more rounds than the
+    # OD-018..024 dialog-state baselines (0.7-3M). 15 is the proven floor for
+    # small baselines; bump to 22 so a large baseline can reach <=10 inside the
+    # lease at short transitions without silently maxing out.
+    $roundLimit = [Math]::Max($MaxRounds, 22)
     $lastCmp = $null
-    for ($round = 1; $round -le $MaxRounds; $round++) {
-        if ($AutoSpace) { Send-SpacePulse }
-        Write-Roll ("round={0} pulse_window={1}s" -f $round, $TransitionSeconds)
-        Start-Sleep -Seconds $TransitionSeconds
-
-        $requestCandidates = if ($AddressFile) { 500 } else { $MaxCandidates }
-        $cmpBody = @{
-            compareMode     = 'increased'
-            maxCandidates   = $requestCandidates
-            rollingBaseline = $true
-        } | ConvertTo-Json
-        $cmp = Invoke-RestMethod -Uri "$($api.Base)/api/v1/game/discover/compare/$sessionId" `
-            -Method Post -Headers $api.Headers -ContentType 'application/json' -Body $cmpBody
-        if ($cmp.PSObject.Properties['error']) {
-            Write-Roll ("FAILED_compare=" + $cmp.error)
+    $sessionId = ''
+    $snapshotAttempts = 0
+    while ($true) {
+        $snapshotAttempts++
+        $snap = Invoke-OdApi -Path '/api/v1/game/discover/snapshot' -Method Post -Body $snapBody
+        if ($snap.PSObject.Properties['error']) {
+            Write-Roll ("FAILED_snapshot=" + $snap.error)
             exit 4
         }
-        $lastCmp = $cmp
-        # Survivor set = IncreasedCount for the round. RetainedCount only
-        # reports unreadable chunks carried forward, not survivors.
-        $survivors = [int]$cmp.increasedCount
-        $seq += $survivors
-        Write-Roll ("round={0} previous={1} increased={2} retained={3} truncated={4} rolling={5}" -f `
-            $round, $cmp.previousCount, $survivors, $cmp.retainedCount, $cmp.truncated, $cmp.comparedAgainstRollingBaseline)
-
-        if ($survivors -le $TargetSurvivors) {
-            Write-Roll ("TARGET survivors=" + $survivors + " le " + $TargetSurvivors)
-            break
+        $sessionId = [string]$snap.sessionId
+        if ([string]::IsNullOrWhiteSpace($sessionId)) {
+            Write-Roll 'FAILED_snapshot_no_session'
+            exit 4
         }
+        $short = if ($sessionId.Length -gt 8) { $sessionId.Substring(0, 8) } else { $sessionId }
+        Write-Roll ("snapshot session=" + $short)
 
-        $g = Get-GateState $api
-        if (-not $g -or $g.verificationState -ne 'OfflineReplayVerified') {
-            $vs = if ($g) { $g.verificationState } else { 'unreachable' }
-            Write-Roll ("STOP_gate=" + $vs)
-            break
+        $seq = @()
+        $lastCmp = $null
+        $survivors = -1
+        $insaneSnapshot = $false
+        for ($round = 1; $round -le $roundLimit; $round++) {
+            if ($AutoSpace) { Send-SpacePulse }
+            Write-Roll ("round={0} pulse_window={1}s" -f $round, $TransitionSeconds)
+            Start-Sleep -Seconds $TransitionSeconds
+
+            $requestCandidates = if ($AddressFile) { 500 } else { $MaxCandidates }
+            $cmpBody = @{
+                compareMode     = 'increased'
+                maxCandidates   = $requestCandidates
+                rollingBaseline = $true
+            } | ConvertTo-Json
+            $cmp = Invoke-OdApi -Path "/api/v1/game/discover/compare/$sessionId" -Method Post -Body $cmpBody
+            if ($cmp.PSObject.Properties['error']) {
+                Write-Roll ("FAILED_compare=" + $cmp.error)
+                exit 4
+            }
+            $lastCmp = $cmp
+            # Survivor set = IncreasedCount for the round. RetainedCount only
+            # reports unreadable chunks carried forward, not survivors.
+            $survivors = [int]$cmp.increasedCount
+            $seq += $survivors
+            Write-Roll ("round={0} previous={1} increased={2} retained={3} truncated={4} rolling={5}" -f `
+                $round, $cmp.previousCount, $survivors, $cmp.retainedCount, $cmp.truncated, $cmp.comparedAgainstRollingBaseline)
+
+            # Steady-state gate on round 1 (previousCount == snapshot count).
+            if ($round -eq 1 -and [long]$cmp.previousCount -gt $MaxInitialCandidates) {
+                if ($snapshotAttempts -gt $MaxSnapshotRetries) {
+                    Write-Roll 'FAILED_snapshot_not_sane'
+                    exit 4
+                }
+                Write-Roll ("snapshot_insane initial=" + $cmp.previousCount + " gt " + $MaxInitialCandidates + " attempt=" + $snapshotAttempts)
+                try {
+                    $null = Invoke-OdApi -Path "/api/v1/game/discover/session/$sessionId" -Method Delete
+                    Write-Roll 'snapshot_insane_discarded'
+                }
+                catch {
+                    Write-Roll 'snapshot_insane_discard_failed'
+                }
+                # Gate-aware retry wait: abort fast if the lease or monitor
+                # dies while we wait for steady state (OD-025 attempt 2).
+                $waitDeadline = (Get-Date).AddSeconds($SnapshotRetrySeconds)
+                while ((Get-Date) -lt $waitDeadline) {
+                    $g = Get-GateState
+                    if (-not $g -or $g.verificationState -ne 'OfflineReplayVerified') {
+                        $vs = if ($g) { $g.verificationState } else { 'unreachable' }
+                        Write-Roll ("STOP_snapshot_retry gate=" + $vs)
+                        exit 3
+                    }
+                    Start-Sleep -Seconds 2
+                }
+                $insaneSnapshot = $true
+                break
+            }
+
+            if ($survivors -le $TargetSurvivors) {
+                Write-Roll ("TARGET survivors=" + $survivors + " le " + $TargetSurvivors)
+                break
+            }
+
+            $g = Get-GateState
+            if (-not $g -or $g.verificationState -ne 'OfflineReplayVerified') {
+                $vs = if ($g) { $g.verificationState } else { 'unreachable' }
+                Write-Roll ("STOP_gate=" + $vs)
+                break
+            }
         }
+        if (-not $insaneSnapshot) { break }
     }
 
     try {
-        $null = Invoke-RestMethod -Uri "$($api.Base)/api/v1/game/discover/session/$sessionId" `
-            -Method Delete -Headers $api.Headers
+        $null = Invoke-OdApi -Path "/api/v1/game/discover/session/$sessionId" -Method Delete
         Write-Roll 'discarded'
     }
     catch {

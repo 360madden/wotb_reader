@@ -1,6 +1,6 @@
 # Offset Discovery Guide
 
-Last updated: 2026-08-02
+Last updated: 2026-08-03 (campaign status: OD-RECOVERY-030 Partial — two rolling-driver fixes validated live; see the workflow + ledger for the current next-session protocol)
 
 > **Operating workflow:** use [`offset-discovery-workflow.md`](offset-discovery-workflow.md)
 > for timeboxes, pivots, address-kind classification, and the next-session protocol.

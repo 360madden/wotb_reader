@@ -215,7 +215,8 @@ via CLI → published → served → all API endpoints verified → overlay laun
   `discover`, `discover-pattern`, `discover-pointer-chain`,
   `discover-snapshot`, `discover-compare`, `discover-nearby`,
   `discover-discard`. The 11.19.0.10 table is hash-bound to the
-  installed executable; only `playerYaw` is a static-analysis `Candidate`, and seven
+  installed executable; `playerYaw` has static-analysis provenance but is
+  quarantined/Stale (conflicting representations, OD-2026-07-31-YAW-RECONCILE-001), and seven
   fields remain unknown. Candidate evidence is not runtime-supported.
 
 ### 🟢 P4 — `watch` CLI command ✅

@@ -22,7 +22,7 @@
 ### Version and offset status — current snapshot (2026-07-31)
 - **Game installed:** v11.19.0.10
 - **Decoder:** `wotb-11.x-strict` supports normalized 11.18 and 11.19 versions; `EventStreamReader` and `IsSupportedVersion` accept both
-- **Offsets:** executable SHA-256 is recorded; only `playerYaw` is a static-analysis `Candidate`, and seven fields remain unknown
+- **Offsets:** executable SHA-256 is recorded; `playerYaw` has static-analysis provenance but is quarantined/Stale (conflicting representations), and seven fields remain unknown
 - **11.19 released July 2026** (per community release trackers: Reddit
   r/WorldOfTanksBlitz, Uptodown changelog) — minor rebalances only; replay
   format/log markers unchanged
