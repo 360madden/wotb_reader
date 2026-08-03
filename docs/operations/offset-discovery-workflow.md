@@ -1,6 +1,6 @@
 # WoT Blitz PC offset-discovery workflow
 
-Last updated: 2026-08-03 (OD-RECOVERY-037: 4-of-4 launches hit the game-side flake — a NEW crash signature appeared (game dies in the login/lobby phase with `LoginHandler::fail status=68 Invalid password` then window hidden, never reaching the replay; 7 of the last 8 launches across OD-036/037 flaked); no roll ran; the pipeline/driver remain at best-known state — the staging handoff is proven (OD-036), so the blocker is now launch reliability, not the roll)
+Last updated: 2026-08-03 (OD-RECOVERY-038: **lobby-login diagnosis corrected — the OD-037 `Invalid password status=68` crash signature is ruled out** — the login failure appears in *every* blitz log since 14:48 game-time *including the OD-036 SUCCESS run*, and every launch reaches `Start replay event` + `LoadGameScene`; the real death is `become hidden` + `GameCore::OnBackground` ~2s after scene load, the known replay-start flake at an elevated rate; the **first-ever 401-refresh failure in 13 validations** (round 9, roll 39.2M→65) was fixed with a 750ms settle + 4 retries and validated live (round-8 401 absorbed); attempt 4 rolled 39M→11 in 20 rounds, plateau 11 — value-bound, 1 above target)
 
 This is the operational playbook for discovering memory evidence from the
 Windows WoT Blitz client during a **positively verified offline replay**. It is
@@ -313,20 +313,28 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-038`. `OD-RECOVERY-037` completed as **Partial**
-with **launch reliability now the binding constraint, not the roll**: all 4
-attempts flaked game-side (7 of the last 8 launches across OD-036/037), and
-the blitz logs show a **NEW crash signature — the game never reaches the
-replay**. It dies in the login/lobby phase (`LoginHandler::fail status=68
-Invalid password` + `ConnectionManager::onLogOnFailure`, then
-`Window::HandleVisibilityChanged: become hidden` + `GameCore::OnBackground`),
-distinct from the OD-030/031 replay-start AccountController assert; this may
-indicate an online-login requirement blocking the offline path. The roll
-pipeline is proven (OD-036: TARGET 10 ≤ 10, 9 survivors staged in CE, 4 HW
-write-BPs armed), so **OD-038 must first diagnose the lobby-login failure
-(offline flag / login config / network) before running the proven
-invocation** (`-SnapshotMaxBytes 402653184 -MaxRounds 40 -HoldAfterRollSeconds
-240`) with the operator present. This builds on the validated driver
+Session ID: `OD-RECOVERY-039`. `OD-RECOVERY-038` completed as **Partial**
+and **corrected the OD-037 lobby-login hypothesis**: the `Invalid password
+status=68` login failure is a red herring — it appears in every blitz log
+since 14:48 game-time, *including the OD-036 SUCCESS run* (15:03 log: login
+failure + full replay to `onLeaveWorld`), and every launch reaches `Start
+replay event` + `LoadGameScene`. The real death signature is `become hidden`
++ `GameCore::OnBackground` ~1–2s after `LoadGameScene` ends with the log
+stopping there — a quiet game-side exit at replay start (the known flake
+family, at an elevated rate: 7 of last 8 before OD-038, 2 of 4 in OD-038).
+The session also produced the **first-ever 401-refresh failure in 13
+validations** (OD-038 attempt 3, round 9: the refreshed context re-read the
+rendezvous file but retried immediately into a mid-rotation file, exhausting
+the 2-retry budget) — **fixed by adding a 750ms settle after refresh +
+raising Retries to 4** and validated live on its first use (attempt 4 round
+8: 401 absorbed, roll continued). Attempt 4 rolled **39M → 11 in 20 rounds**
+(plateau 11 rounds 16–20 — the value-bound tail again, 1 above target) then
+the lease wall (round 21 `400`). The roll pipeline is proven (OD-036 staged
+9 + armed 4), so **OD-039 runs the proven invocation**
+(`-SnapshotMaxBytes 402653184 -MaxRounds 40 -HoldAfterRollSeconds 240`)
+**with the operator present during the held green window** — the 11-survivor
+set is usable for interactive Find-what-writes even without ≤10. This builds
+on the validated driver
 stack:
 
 1. **401 capability-rotation refresh** — the rendezvous token rotates ~5 min,
@@ -374,7 +382,16 @@ every frame and survive even 1s pulses, so pulse shaving alone cannot reach
 ≤10; the interactive Find-what-writes step is required regardless of lease
 headroom (OD-RECOVERY-034); (11) **lease headroom alone cannot reach ≤10** —
 proven across lease-constrained (OD-032/033/034) and lease-viable (OD-035:
-round-1 823K/50M, full round budget with rolling_exit=0) rolls alike.
+round-1 823K/50M, full round budget with rolling_exit=0) rolls alike;
+(12) **the `Invalid password status=68` login failure is a red herring, not
+an offline-path blocker** — it appears in every blitz log since 14:48
+game-time including the OD-036 SUCCESS run, and every launch reaches `Start
+replay event` + `LoadGameScene`; the real replay-start death is `become
+hidden` + `GameCore::OnBackground` ~1–2s after `LoadGameScene` ends with no
+crash dump (OD-RECOVERY-038 corrected the OD-037 record); (13) **the 401
+refresh can fail against a mid-rotation rendezvous file** — after refreshing
+on a 401, settle ~750ms before retrying and keep ≥4 retries; validated live
+when a round-8 401 was absorbed and the roll continued (OD-RECOVERY-038).
 
 Operational notes: (1) detached launch + session driver remains the proven
 pattern; (2) the CE autorun staging (`od-autorun-writebp.lua`) works and now

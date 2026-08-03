@@ -124,14 +124,20 @@ function Get-GateState {
 # Invoke an OD API endpoint with rendezvous capability rotation recovery: a 401
 # (token rotated ~5 min) refreshes the API context and retries the same request
 # with the fresh capability, up to Retries times. Keeps a long rolling campaign
-# from dying mid-roll to a rotated token.
+# from dying mid-roll to a rotated token. OD-RECOVERY-038 finding: the first
+# 401-refresh failure in 13 live validations happened at round 9 (roll 39.2M->65
+# in 9 rounds) - the refreshed context re-read the rendezvous file, but the
+# retry fired immediately, so a mid-rotation file (old token still present or
+# host re-rotating) 401'd again and the 2-retry budget was exhausted. A short
+# settle after refresh lets the rotation settle, and 4 retries absorb a
+# second-generation stale read.
 function Invoke-OdApi {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
         [string]$Method = 'Get',
         [string]$Body = '',
         [string]$ContentType = 'application/json',
-        [int]$Retries = 2
+        [int]$Retries = 4
     )
     for ($attempt = 0; ; $attempt++) {
         try {
@@ -151,6 +157,7 @@ function Invoke-OdApi {
                 Write-Roll ("capability_401_refresh_retry=" + ($attempt + 1))
                 $script:Api = Get-ApiContext
                 if (-not $script:Api) { throw }
+                Start-Sleep -Milliseconds 750
                 continue
             }
             throw

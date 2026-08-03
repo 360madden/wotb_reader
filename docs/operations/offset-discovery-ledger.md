@@ -1,6 +1,6 @@
 # Offset-discovery ledger
 
-Last updated: 2026-08-03 (OD-RECOVERY-037: 4-of-4 launches hit the game-side flake — a NEW crash signature appeared (game dies in the login/lobby phase with `LoginHandler::fail status=68 Invalid password` then window hidden, never reaching the replay; 7 of the last 8 launches across OD-036/037 flaked); no roll ran; the pipeline/driver remain at best-known state — the staging handoff is proven (OD-036), so the blocker is now launch reliability, not the roll)
+Last updated: 2026-08-03 (OD-RECOVERY-038: **lobby-login diagnosis corrected — the `Invalid password status=68` login failure is a red herring** (it appears in every blitz log since 14:48 game-time *including the OD-036 SUCCESS run*; it does not stop the replay path — every log reaches `Start replay event` + `LoadGameScene`); the real death signature is `become hidden` + `GameCore::OnBackground` ~2s after `LoadGameScene` ends — the known replay-start flake family at an elevated rate; **the first-ever 401-refresh failure in 13 validations** hit at round 9 (roll 39.2M→65) — fixed with settle + 4 retries and validated live (round-8 401 absorbed, roll continued); attempt 4 rolled **39M→11 in 20 rounds** (plateau 11 rounds 16–20, 1 above target) then lease wall round 21; 401-refresh hardening + diagnosis correction are the session's durable results)
 
 This ledger is the durable index of WoT Blitz PC offset-discovery work. It
 records experiments, partial results, failures, and pivots so future sessions do
@@ -49,7 +49,7 @@ Every address must be classified before publication:
 | `playerYaw` | **Quarantined / Ambiguous** until decimal, hexadecimal, raw Ghidra, and address-kind evidence reconcile |
 | Trusted next anchor | `playerPositionX`/`playerPositionZ`, then `replayTime` or HP if the replay makes them observable |
 | Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007); absolute LE pointer AOB across private/all/image + align 1/8 without a changed encoding hypothesis (ruled out by OD-RECOVERY-008); truncated low-32 LE dword AOB of survivor absolutes without a changed encoding hypothesis (ruled out by OD-RECOVERY-009); automated CE `bptAccess`/`bptWrite` on Float position survivors without a field pivot or interactive debugger (0 RIP hits through OD-RECOVERY-011); CE write-BP alone on the single increased `replayTime` Double without interactive debugger or a second independent launch (0 RIP in OD-RECOVERY-012); treating file-association / `Invoke-Item` alone as the OD gate path (playback can succeed while Host stays `Denied` / `lifecycle_evidence_timeout` — amended 2026-08-02); reaching ≤10 RT survivors then starting interactive debugger after the fact under a 120s research lease loses the window to EvidenceStale (OD-RECOVERY-016) — pre-arm debugger / reserve lease margin; requiring the Watch Offline orange-dialog blob to vanish after `OfflineReplayVerified` (the replay HUD renders orange in that ROI, so `dialogGone` never sets, extra clicks hit in-game UI and kill the game — OD-RECOVERY-017) — trust the verified gate; reading compare `retainedCount` as the rolling survivor count (it is unreadable-chunk carryover only; survivors are `increasedCount` — OD-RECOVERY-017); automated CE Windows-debugger write-BPs (`debugProcess(1)` + `debug_setBreakpoint(addr, bptWrite, 1)`) on rolling Double survivors — zero RIP hits across OD-009/010/011 and OD-020/021/022 probes, so the operator-owned interactive Find-what-writes step is required, not a scripting gap to keep probing; rolling from a snapshot taken during the game load transition — the candidate set can be 66M+ (22–87× steady state), convergence cannot fit the 120s lease, and the resulting session discard surfaces as a confusing compare `400` (OD-RECOVERY-025 attempt 1) — wait for a clean steady-state snapshot before rolling; capturing the rendezvous capability once at roll start — the token rotates ~5 min and a 66M-baseline roll outlives it, so a mid-roll compare dies with a confusing 401 (OD-RECOVERY-030 attempt 1; fixed by refresh + retry in the rolling driver); running the separate full-walk sanity probe when round-1 `previousCount` reports the identical snapshot count — the probe's 66M-candidate walk wasted lease inside the 120s budget (OD-RECOVERY-030; gate folded into round 1); requesting `maxCandidates=500` (or any large harvest) on every rolling round when only the final target round's addresses are written — the big early compares (66M→1M) pay candidate serialization for nothing and cost lease; request 1 candidate per round and harvest the full set only on the target round (OD-RECOVERY-031 attempt 1 → fixed in driver, validated attempts 3–5: 10–14 rounds fit the lease vs 6–7 before); overriding the CE autorun's default survivor address-file path (`%TEMP%\od-survivors.txt`) with a custom `-AddressFile` — the autorun polls the default path only, so staged survivors silently never reach CE (OD-RECOVERY-031 attempt 4; use the default path so the staging handoff works); keeping the CE autorun poll window at 90s when a 66M-baseline roll outlives it — the file appears right at the 120s lease edge, so the poll must span the whole lease + margin (OD-RECOVERY-031 attempts 3/4; extended to 300s) |
-| Next planned session | `OD-RECOVERY-038` (launch reliability is the new binding constraint: 4-of-4 flakes this session (7 of last 8) with a NEW signature — the game dies in the login/lobby phase (`LoginHandler::fail status=68 Invalid password` + window hidden + `GameCore::OnBackground`, never reaching the replay), possibly an online-login requirement blocking the offline path; the pipeline/driver are proven (OD-036 staged 9 + armed 4), so first diagnose the lobby-login failure (offline flag / login config / network), then run the proven invocation `-SnapshotMaxBytes 402653184 -MaxRounds 40 -HoldAfterRollSeconds 240` with the operator present; alternatively a content-distinct second replay for BLK-0019) |
+| Next planned session | `OD-RECOVERY-039` (the lobby-login hypothesis is now ruled out — the `Invalid password` login failure is baseline noise present in the OD-036 success too, and every launch reaches `LoadGameScene`; the binding constraint remains the elevated replay-start flake (`become hidden`/`OnBackground` ~2s after scene load) plus the value-bound 11-survivor plateau 1 above target; the 401-refresh hardening is validated, so the highest-value run is the proven invocation `-SnapshotMaxBytes 402653184 -MaxRounds 40 -HoldAfterRollSeconds 240` with the operator present during the held green window — the 11-survivor set is usable for interactive Find-what-writes even without ≤10; alternatively a content-distinct second replay for BLK-0019, or investigating the flake's root cause (the game dies quietly ~2s after `LoadGameScene` ends with no crash dump) |
 
 The current yaw conflict is recorded explicitly:
 
@@ -117,6 +117,7 @@ occurred.
 | `OD-RECOVERY-035` | 2026-08-03 | Changed hypothesis: snapshot byte-budget passthrough (MaxBytes) to shrink the round-1 66M walk | background launch helper + session driver (2 attempts) + pre-arm-debugger.ps1 + 401-refresh folded-gate candidate-optimized rolling Double increased + two-phase tail shave + **MaxBytes snapshot budget** + `MaxRounds` passthrough + default-path autorun staging (300s poll) | `Partial` | Attempt 1 (`-SnapshotMaxBytes 402653184`): round-1 **previous=823,484 vs 66M unbounded — 80× walk reduction**; rolled **823484→…→12 in 22 rounds** with **`rolling_exit=0` — full round budget completed, first non-lease-wall exit since OD-031** (tail shave rounds 8–22 at 1s; 401 refresh live round 15; plateaued 12 from round 15; round-22 address file wrote 1 candidate — WARN mismatch, target not reached); attempt 2 (`-MaxRounds 40`): round-1 **previous=50,061,014** (budget bound ~50M), rolled **750293→…→17 in 16 rounds**, plateaued 17 rounds 16–20, lease wall round 21 (`400` + `EvidenceStale`; 401 refresh live round 10) | **Budget hypothesis validated — rounds are cheap and can complete inside the lease, but the value-bound plateau (12/17) persists**; no ≤10 target staged; `independentReplays` still 0; no RIP/root |
 | `OD-RECOVERY-036` | 2026-08-03 | Operator-window run: TARGET ≤10 + CE staging with the proven budget invocation | background launch helper + session driver (4 attempts) + pre-arm-debugger.ps1 + 401-refresh folded-gate candidate-optimized rolling Double increased + two-phase tail shave + **MaxBytes budget** + `MaxRounds 40` + default-path autorun staging (300s poll) | `Partial` | Attempts 1–3: game-side flake — attempt 1 died during soft-focus settle (`game_window_lost_during_soft_focus_settle`); attempts 2/3 launcher-green but gate flipped `Denied`/`evidence.monitor_unhealthy` before the driver's first poll (no new blitz-log; 3-of-4 flake rate this session); attempt 4: **TARGET 10 ≤ 10 in 17 rounds** (`772551→…→10`; round-1 previous=39,126,523 budget-bound; 401 refresh live round 6; `rolling_exit=0`) with harvest **9 candidates → CE autorun loaded 9, staged 9 in address list, armed 4 HW write-BPs, 20s capture 0 hits** | **Full staging handoff proven end-to-end (9 staged + 4 armed)**; operator window opened but gate was `EvidenceStale` at close (lease expired during the 240s hold); no interactive Find-what-writes result; `independentReplays` still 0; no RIP/root |
 | `OD-RECOVERY-037` | 2026-08-03 | Launch-reliability diagnosis: 4 attempts with the proven invocation, all game-side flakes | background launch helper + session driver (4 attempts) + pre-arm-debugger.ps1 + proven invocation `-SnapshotMaxBytes 402653184 -MaxRounds 40 -HoldAfterRollSeconds 240` | `Partial` | Attempt 1: launcher-green but gate flipped `Denied`/`evidence.monitor_unhealthy` before the driver's first poll (no new blitz-log); attempt 2: gate verified then `window_lost_final`/`watch_exit=1` — blitz log shows the game was in the **login/lobby phase** (`LoginHandler::fail status=68 Invalid password` + `ConnectionManager::onLogOnFailure`) then `Window::HandleVisibilityChanged: become hidden` + `GameCore::OnBackground`; attempt 3: reached `BattleController::LoadGameScene ends` then window lost; attempt 4: launcher-green, driver first poll `Denied` (blitz log again shows lobby login-failure signature) | **NEW crash signature — game dies in the login/lobby phase, never reaching the replay (7 of last 8 launches across OD-036/037 flaked)**; no roll ran; `independentReplays` still 0; no RIP/root |
+| `OD-RECOVERY-038` | 2026-08-03 | Diagnose the lobby-login failure; run the proven invocation with the corrected diagnosis + hardened 401-refresh | background launch helper + session driver (4 attempts) + pre-arm-debugger.ps1 + proven invocation `-SnapshotMaxBytes 402653184 -MaxRounds 40 -HoldAfterRollSeconds 240` + **401-refresh hardening (settle + 4 retries)** | `Partial` | **Diagnosis corrected: `Invalid password status=68` is a red herring** — it appears in *every* blitz log since 14:48 game-time, *including the OD-036 SUCCESS run* (15:03 log: login failure + full replay to `onLeaveWorld`), and every log reaches `Start replay event` + `LoadGameScene`; real death = `become hidden` + `GameCore::OnBackground` ~2s after scene load (known replay-start flake, elevated). Attempt 1: launcher-green then gate flipped `Denied` (blitz 15:47:51: LoadGameScene ends 20:48:18, become hidden 20:48:19); attempt 2: `no_game_window_while_waiting`; attempt 3: gate green, roll **39.2M→…→65 in 9 rounds** then **first-ever 401-refresh failure** (round 9, `capability_401_refresh_retry=1` then `FAILED_unexpected 401`) — mechanism never failed in 13 prior validations → driver hardened (750ms settle + 4 retries); attempt 4: gate green, round-8 401 **absorbed by the hardened refresh** (validated live), roll **39M→…→11 in 20 rounds** (plateau 11 rounds 16–20 — value-bound, 1 above target) then lease wall round 21 (`400` + `EvidenceStale`) | **Lobby-login hypothesis ruled out (red herring); 401-refresh hardening validated live; value-bound 11-survivor plateau again 1 above target**; no ≤10 target, no address file, no operator-window staging; `independentReplays` still 0; no RIP/root |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -2357,6 +2358,83 @@ Launch reliability is the binding constraint: a NEW lobby-login crash
 signature (Invalid password status=68, window hidden before the replay)
 flaked 4-of-4 launches this session. The roll pipeline is proven; the next
 session diagnoses the login path first.
+
+## `OD-RECOVERY-038` result — 2026-08-03 (lobby-login diagnosis corrected; 401-refresh hardening validated)
+
+```yaml
+sessionId: OD-RECOVERY-038
+supersedes: the OD-037 lobby-login crash-signature hypothesis (now ruled out)
+date: 2026-08-03
+observedAtUtc: 2026-08-03T20:50:00Z # approximate; four attempts 20:44-21:03Z
+
+timebox: diagnose the OD-037 lobby-login failure first (offline flag / login config / network), then run the proven invocation with the corrected diagnosis; harden the 401-refresh when it failed live
+decision: the lobby-login hypothesis is RULED OUT — the `Invalid password status=68` login failure is baseline noise (present in every blitz log since 14:48 game-time INCLUDING the OD-036 SUCCESS run, and every log reaches Start replay event + LoadGameScene); the real death signature is become hidden + GameCore::OnBackground ~2s after LoadGameScene ends (the known replay-start flake family at an elevated rate). The first-ever 401-refresh failure in 13 validations hit at round 9 — fixed with a 750ms settle + 4 retries and validated live (round-8 401 absorbed). Attempt 4 rolled 39M->11 in 20 rounds (plateau 11 rounds 16-20, value-bound, 1 above target) then the lease wall.
+objective: per OD-038 protocol, diagnose the login failure before running the proven invocation; capture the best roll the elevated flake rate allows
+stopCondition: stop after diagnosis + proven-invocation attempts, or gate loss
+method:
+  primaryTool: scripts/launch-offline-replay-for-od.ps1 (detached) + od-018 session driver + roll-replay-time-increased.ps1 + pre-arm-debugger.ps1
+  secondaryTools: Cheat Engine 7.7 (C:\Program Files\Cheat Engine) pre-armed and attached; CE autorun od-autorun-writebp.lua
+  transition: natural replay progression between rounds (no manual Space pulses; -AutoSpace not used)
+observations:
+  - state: diagnosis
+    loginFailure: 'LoginHandler::fail status=68 Invalid password' present in EVERY blitz log since blitz-logs_20260803144823 (14:48 game-time) - INCLUDING blitz-logs_20260803150349 (15:03) which is the OD-036 SUCCESS run (login failure + Start replay event + onLeaveWorld full replay)
+    correctedSignature: every log reaches Start replay event + BattleController::LoadGameScene begins/ends; the dying logs then show Window::HandleVisibilityChanged: become hidden + GameCore::OnBackground ~1-2s after LoadGameScene ends, and the log stops (no crash dump, no assert)
+    redHerring: the login failure does not stop the replay path; it is a stored-token rejection baseline, not the blocker
+    elevatedFlakeRate: 7 of last 8 launches before this session; 2 of 4 this session game-side
+  - state: attempt-1
+    verificationState: launcher logged OK OfflineReplayVerified (watch_exit=0) then driver first poll Denied
+    blitzLog: blitz-logs_20260803154751 (15:47:51) - LoadGameScene ends 20:48:18, become hidden + OnBackground 20:48:19
+    note: exact OD-037 signature; game died ~1s after scene load
+  - state: attempt-2
+    outcome: no_game_window_while_waiting (watch_exit=1) - game window vanished during the watch-wait phase
+    note: same replay-start flake family
+  - state: attempt-3
+    verificationState: OfflineReplayVerified (watch_exit=0, round-2 click)
+    rolling: snapshot session 000001 (budget bound); sequence 39,190,222->617,377->146,022->28,098->6,427->1,985->1,024->74->65 (9 rounds)
+    failure: round 9 compare returned 401 - capability_401_refresh_retry=1 then FAILED_unexpected='The remote server returned an error: (401) Unauthorized.'
+    firstEver401Failure: the refresh+retry mechanism had survived 13 prior live validations (OD-030..036); this is its first failure
+    rootCause: the refreshed context re-read the rendezvous file but the retry fired immediately - a mid-rotation file (old token still present or host re-rotating) 401'd again and the 2-retry budget was exhausted
+    gateAfter: post_roll_gate=OfflineReplayVerified (gate held through the whole roll)
+  - state: driver-hardening
+    change: Invoke-OdApi Retries default 2->4 + Start-Sleep -Milliseconds 750 after each refresh before the retry (roll-replay-time-increased.ps1)
+    parseCheck: parse_ok
+  - state: attempt-4 (hardened refresh)
+    verificationState: OfflineReplayVerified (watch_exit=0, round-2 click)
+    rolling: sequence to live terminal only; previous 39,126,523 (round 1, budget bound) -> ... -> 11 in 20 rounds; plateau 11 rounds 16-20 (1s pulses - value-bound, the last 11 tick every frame)
+    hardRefreshValidated: round 8 returned 401 -> capability_401_refresh_retry=1 -> retry succeeded and the roll continued (validated live on first use)
+    end: lease wall round 21 (FAILED_unexpected 400 Bad Request - session_not_found mapped to 400) + EvidenceStale; rolling_exit=5
+    addressFile: none (target 10 not reached; 11 > 10)
+    ceAutorun: polled for od-survivors.txt (max 300s) - no address file to stage
+result:
+  whatWorked:
+    - Lobby-login hypothesis RULED OUT with hard evidence: the login failure appears in the OD-036 SUCCESS log too and every launch reaches LoadGameScene - the OD-037 'new lobby-login crash signature' record is corrected.
+    - Real death signature isolated: become hidden + GameCore::OnBackground ~2s after LoadGameScene ends; no crash dump, no assert - a quiet game-side exit at replay start (known flake family, elevated rate).
+    - First-ever 401-refresh failure diagnosed and fixed: 750ms settle + 4 retries.
+    - The hardened refresh was validated live on its first use (attempt 4 round 8: 401 absorbed, roll continued).
+    - Attempt 4 rolled 39M->11 in 20 rounds - the value-bound plateau (11, 1 above target) reproduced consistently.
+    - Gate held OfflineReplayVerified through both green rolls.
+  whatFailed:
+    - Target 10 not reached either attempt (plateau at 11, 1 above - the same value-bound tail from OD-034/035).
+    - Attempts 1-2 game-side flakes (2 of 4 this session; 9 of last 12 launches across OD-036/037/038 have flaked).
+    - No interactive Find-what-writes (no staging - target not reached).
+  rulesOut:
+    - The OD-037 lobby-login crash-signature hypothesis: the `Invalid password status=68` login failure is baseline noise, not a blocker (present in the OD-036 success log; every launch reaches LoadGameScene).
+  partials:
+    - 401-refresh hardening (settle + retries) validated live - the roll pipeline can now survive token rotation at an 8-round cadence.
+    - 11-survivor set again the reproducible convergence floor; 1 above target.
+    - BLK-0019 still needs content-distinct second replay (independentReplays 0).
+  nextPivot: OD-RECOVERY-039 - run the proven invocation (-SnapshotMaxBytes 402653184 -MaxRounds 40 -HoldAfterRollSeconds 240) with the operator present during the held green window; the 11-survivor set is usable for interactive Find-what-writes even without <=10; alternatively investigate the replay-start flake root cause (quiet exit ~2s after LoadGameScene, no dump) or import a content-distinct second replay for BLK-0019.
+  repeatWithoutChangedHypothesis: false
+artifacts:
+  rawFiles: blitz-logs_20260803154751/155628/155812.txt, session logs /tmp/od-launch-038{,b,c,d}.log, %TEMP%\od-ce-autorun.log
+  committedSummary: this ledger entry + workflow update + handoff (2026-08-03-od-recovery-038.md) + roll-replay-time-increased.ps1 401-refresh hardening
+```
+
+`OD-RECOVERY-038` is aggregate structural evidence only. Offset remains 0.
+The lobby-login hypothesis from OD-037 is ruled out (red herring - present in
+success runs too). The real signature is the replay-start flake (quiet exit
+~2s after LoadGameScene). The 401-refresh hardening is the session's durable
+driver result.
 
 ## Evidence promotion checklist
 
