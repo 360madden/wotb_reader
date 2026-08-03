@@ -1,6 +1,6 @@
 # Offset-discovery ledger
 
-Last updated: 2026-08-03 (OD-RECOVERY-016)
+Last updated: 2026-08-03 (OD-RECOVERY-016 + OD-RECOVERY-017-prep amendment)
 
 This ledger is the durable index of WoT Blitz PC offset-discovery work. It
 records experiments, partial results, failures, and pivots so future sessions do
@@ -1196,6 +1196,14 @@ artifacts:
 ```
 
 `OD-RECOVERY-016` is aggregate structural evidence only. Offset remains 0.
+
+> **Amendment (2026-08-03, pre-OD-RECOVERY-017):** the OD-RECOVERY-016
+> `ce-probe` observation ("defaultInstallPathFound: false") was a probe-path
+> miss, not absence. A registry-backed probe confirms **Cheat Engine 7.7** is
+> installed at `C:\Program Files\Cheat Engine\cheatengine-x86_64.exe`
+> (installer root is `Cheat Engine`, not `Cheat Engine 7.7`) and **x64dbg** at
+> `C:\work\tools\x64dbg\release\x64\x64dbg.exe`. Both are pre-arm candidates
+> for OD-RECOVERY-017; the interactive debugger requirement is satisfiable.
 
 ## Evidence promotion checklist
 

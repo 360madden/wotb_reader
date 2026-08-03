@@ -1,6 +1,6 @@
 # WoT Blitz PC offset-discovery workflow
 
-Last updated: 2026-08-02
+Last updated: 2026-08-03 (OD-RECOVERY-017 prep: pre-arm + rolling driver scripts)
 
 This is the operational playbook for discovering memory evidence from the
 Windows WoT Blitz client during a **positively verified offline replay**. It is
@@ -387,10 +387,29 @@ File-association remains useful only as a **playback smoke** (“does this
    open the interactive debugger as soon as the gate is green (or during managed
    launch settle). Do **not** wait until ≤10 survivors to start the debugger;
    the default 120s research lease can flip to `EvidenceStale` before
-   Find-what-writes runs (OD-RECOVERY-016).
+   Find-what-writes runs (OD-RECOVERY-016). Use the helper:
+
+   ```text
+   powershell -File scripts/pre-arm-debugger.ps1 -AutoAttach
+   ```
+
+   It locates CE 7.7 / x64dbg via registry + known paths, launches the chosen
+   debugger attached to the running `wotblitz.exe`, and writes
+   `%TEMP%\od-prearmed-debugger.json`. `-PreferX64Dbg` switches the default
+   (CE first).
 3. Start rolling Double increased (`rollingBaseline=true`) immediately
    post-verify with Space pause/resume pulses; aim to reach ≤10 with lease
-   margin reserved for interactive Find-what-writes on survivors.
+   margin reserved for interactive Find-what-writes on survivors. Use the
+   driver:
+
+   ```text
+   powershell -File scripts/roll-replay-time-increased.ps1 -TargetRetained 10
+   ```
+
+   It snapshots Double (8-byte aligned) and compares `increased` with a
+   rolling baseline each round, prints aggregate counts only, stops at the
+   target or on gate loss, and discards the scanner session. The operator owns
+   the Space transition; `-AutoSpace` is an explicit opt-in pulse loop.
 4. Confirm a **second distinct replay** in the game folder when available
    (BLK-0019).
 5. Do not promote from neighborhood hit counts alone.
