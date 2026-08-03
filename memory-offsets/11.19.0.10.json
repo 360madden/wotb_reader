@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "gameVersion": "11.19.0.10",
   "executableSha256": "1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d",
-  "discoveredAtUtc": "2026-08-02T20:30:00Z",
+  "discoveredAtUtc": "2026-08-03T21:20:00Z",
   "offsets": {
     "replayTime": 0,
     "playerHP": 0,
@@ -136,9 +136,44 @@
           "provenanceKind": "DynamicScan",
           "sourceTool": "Host.Web discover/snapshot+compare Double increased rollingBaseline",
           "notes": "OD-RECOVERY-015: game-folder .wotbreplay (sha12 0FAE5612491E, import duplicate=True) via managed launch; rolling Double increased completed 882617>...>7 private-mapping under OfflineReplayVerified. File-association alone insufficient for Host gate. independentReplays still 0 (content not proven distinct). Offset remains 0; not Candidate/Verified."
+        },
+        {
+          "provenanceKind": "DynamicScan",
+          "sourceTool": "Host.Web managed launch + rolling Double increased (fixed increasedCount driver)",
+          "notes": "OD-RECOVERY-018: first full automated pipeline (launch -> verify -> CE pre-arm -> roll) rolled 743576->...->8 in 13 rounds with -AddressFile staging 8 candidates (count==survivors, no WARN); gate held OfflineReplayVerified through rolling."
+        },
+        {
+          "provenanceKind": "DynamicScan",
+          "sourceTool": "Host.Web managed launch + rolling Double increased (fixed increasedCount driver)",
+          "notes": "OD-RECOVERY-019: second consecutive full pipeline; rolling 2980777->...->7 in 14 rounds (tightest at the time); gate still OfflineReplayVerified at session end with CE pre-armed."
+        },
+        {
+          "provenanceKind": "DynamicScan",
+          "sourceTool": "CE 7.7 autorun od-autorun-writebp.lua + rolling Double increased",
+          "notes": "OD-RECOVERY-020: three live runs; rolling reached 5 survivors (3084237->...->5, tightest ever); CE autorun staged + armed 4 hardware write-BPs but produced 0 hits in 20s windows. Automated CE Windows-debugger write-BP capture ruled out; interactive operator step required."
+        },
+        {
+          "provenanceKind": "DynamicScan",
+          "sourceTool": "Host.Web managed launch + rolling Double increased + CE autorun staging",
+          "notes": "OD-RECOVERY-023/024/026/027/028/029: operator-window staging sessions; rolling converged to 6-9 survivors each; CE staged od-survivor-N address lists and armed 4 HW write-BPs (0 hits); gate held OfflineReplayVerified through the window (lease-bound from OD-028)."
+        },
+        {
+          "provenanceKind": "DynamicScan",
+          "sourceTool": "Host.Web rolling Double increased + 401-refresh + folded steady-state gate",
+          "notes": "OD-RECOVERY-030/031: 401-refresh fix validated live (round 4); probe-fold validated (round-1 previousCount == snapshot count); TARGET 10<=10 reached twice (66.4M->10 in 10 rounds, 66.3M->10 in 14 rounds); attempt 5 CE staged all 10 survivors + 4 HW write-BPs armed (staging handoff fix)."
+        },
+        {
+          "provenanceKind": "DynamicScan",
+          "sourceTool": "Host.Web rolling Double increased + candidate-count harvest + tail shave + MaxBytes budget",
+          "notes": "OD-RECOVERY-032..036: 11-17 survivor plateau reproduced (always just past the 120s lease edge); OD-034 proved the tail value-bound (plateau survives 1s pulses); OD-035 MaxBytes budget cut the round-1 walk ~80x (823K vs 66M) letting a full round budget complete (rolling_exit=0); OD-036 TARGET 10<=10 (772551->10 in 17 rounds) with harvest 9 candidates -> CE loaded 9, staged 9, armed 4 HW write-BPs, 20s capture 0 hits - full staging handoff proven end-to-end."
+        },
+        {
+          "provenanceKind": "DynamicScan",
+          "sourceTool": "Host.Web rolling Double increased + hardened 401-refresh",
+          "notes": "OD-RECOVERY-038: diagnosis corrected - the LoginHandler::fail status=68 Invalid password login failure is baseline noise (present in every blitz log since 14:48 including the OD-036 success run) and every launch reaches LoadGameScene; real replay-start death is become hidden + GameCore::OnBackground ~2s after scene load with no crash dump. First-ever 401-refresh failure (round 9) hardened with 750ms settle + 4 retries and validated live (round-8 401 absorbed); roll 39M->11 in 20 rounds, plateau 11 - value-bound, 1 above target."
         }
       ],
-      "independentProcessLaunches": 3,
+      "independentProcessLaunches": 30,
       "independentReplays": 0,
       "harnessInvariantsPassed": false,
       "leadApproved": false,
@@ -161,5 +196,5 @@
     }
   },
   "confidence": "none",
-  "notes": "No usable offsets published for 11.19.0.10. playerYaw Stale. replayTime: OD-012/013/015 show reproducible increased-Double private-mapping survivors across 3 process launches; independentReplays still 0 (BLK-0019). Next OD-RECOVERY-016 interactive root on <=7 set. Offsets remain 0."
+  "notes": "No usable offsets published for 11.19.0.10. playerYaw Stale. replayTime: rolling increased-Double evidence reproduced across 30 verified process launches (OD-012..038); TARGET 10<=10 reached 3x (OD-031 x2, OD-036) with up to 10 survivors CE-staged + 4 HW write-BPs armed (OD-036 end-to-end). Tail is value-bound (11-17 plateau, 11 best under budget); OD-038 corrected the OD-037 lobby-login hypothesis (login failure is baseline noise, present in the OD-036 success run too) and hardened the 401-refresh (750ms settle + 4 retries). independentReplays still 0 (BLK-0019 - same Churchill replay content only). Next OD-039 operator-present interactive Find-what-writes on a staged set; offsets remain 0."
 }

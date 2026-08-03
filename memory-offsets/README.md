@@ -71,7 +71,14 @@ repeating unresolved hypotheses.
 Offset discovery follows the timeboxed workflow in the canonical documents:
 identity/offline gate → static triage → controlled dynamic anchor → native access
 tracing → repeatability → conservative publication. The current 11.19.0.10 table
-contains one hash-bound quarantined `playerYaw` (Stale) plus Unknown `playerPositionX`/`playerPositionZ` fieldValidation from OD-RECOVERY-004/005/006 private-mapping / heap-dynamic aggregates; all eight offsets remain `0` and no field is runtime-supported.
+contains one hash-bound quarantined `playerYaw` (Stale) plus Unknown
+`playerPositionX`/`playerPositionZ` (OD-RECOVERY-004/005/006 private-mapping /
+heap-dynamic aggregates) and Unknown `replayTime` with the campaign's most
+substantial evidence: rolling increased-Double convergence reproduced across
+30 verified process launches (OD-012…OD-038), TARGET 10 ≤ 10 reached three
+times (OD-031 ×2, OD-036), up to 10 survivors CE-staged with 4 hardware
+write-BPs armed (OD-036 end-to-end), and the value-bound 11–17 survivor tail
+plateau. All eight offsets remain `0` and no field is runtime-supported.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -338,14 +345,20 @@ When you have one or more independently corroborated candidate offsets:
 
 | Version | Executable hash | Known offsets | Runtime status |
 |---|---|---:|---|
-| `11.19.0.10` | `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d` | 0/8 usable | `playerYaw` is quarantined/Stale; runtime reads remain unsupported |
+| `11.19.0.10` | `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d` | 0/8 usable | `playerYaw` quarantined/Stale; `replayTime` Unknown with 30-launch rolling evidence (no root/RIP yet); runtime reads remain unsupported |
 
 The hash identifies the installed executable used for this evidence snapshot; it is
 not proof that a candidate offset is correct. The table intentionally preserves the
 quarantined yaw evidence with offset `0` and status `Stale`; the runtime reader maps
 zero-valued fields to `Unknown`, so no stale field can authorize a memory read.
 Dynamic verification must use a positively verified offline replay and preserve
-evidence summaries without committing raw dumps or scan files.
+evidence summaries without committing raw dumps or scan files. Campaign status as
+of OD-RECOVERY-038: the `Invalid password status=68` login failure seen since
+14:48 is baseline noise (present in the OD-036 success run too), not an offline-path
+blocker; the real replay-start death is `become hidden` + `GameCore::OnBackground`
+~2s after `LoadGameScene` with no crash dump; the 401-refresh was hardened (750ms
+settle + 4 retries) after its first-ever live failure. Next step (OD-039):
+operator-present interactive Find-what-writes on a staged ≤11-survivor set.
 
 ## Quick reference — common field types
 
