@@ -54,7 +54,10 @@ param(
     [int]$MaxDialogLifetimeSeconds = 16,
     # When set, write the exit code here and throw WATCH_EXIT:<code> so the
     # launcher can invoke this script in-process (no nested console focus steal).
-    [string]$ResultPath = ''
+    [string]$ResultPath = '',
+    # Playback-only: skip Host rendezvous/gate; success = dialog dismissed
+    # and/or START_REPLAY_LOCAL in blitz-log.
+    [switch]$VisualDismissOnly
 )
 
 Set-StrictMode -Version Latest
@@ -353,12 +356,17 @@ function Test-ReadySample(
 
 try {
     [void][WatchOfflineVisionV2]::EnsureDpiAware()
-    try {
-        $null = Get-Rendezvous
+    if (-not $VisualDismissOnly) {
+        try {
+            $null = Get-Rendezvous
+        }
+        catch {
+            Write-Host 'watch_offline: rendezvous_missing'
+            Quit-WatchOffline 2
+        }
     }
-    catch {
-        Write-Host 'watch_offline: rendezvous_missing'
-        Quit-WatchOffline 2
+    else {
+        Write-Host 'watch_offline: visual_dismiss_only'
     }
 
     $game = Get-GameWindow
@@ -367,20 +375,27 @@ try {
         Quit-WatchOffline 1
     }
 
-    $beforeState = Get-GameState
-    $before = if ($beforeState -and $beforeState.verificationState) {
-        [string]$beforeState.verificationState
-    }
-    else { Get-VerificationState }
-    $beforeReason = if ($beforeState -and $beforeState.reasonCode) {
-        [string]$beforeState.reasonCode
-    }
-    else { '' }
-    Write-Host "watch_offline: before=$before reason=$beforeReason pid=$($game.Id)"
+    $before = 'Unknown'
+    $beforeReason = ''
+    if (-not $VisualDismissOnly) {
+        $beforeState = Get-GameState
+        $before = if ($beforeState -and $beforeState.verificationState) {
+            [string]$beforeState.verificationState
+        }
+        else { Get-VerificationState }
+        $beforeReason = if ($beforeState -and $beforeState.reasonCode) {
+            [string]$beforeState.reasonCode
+        }
+        else { '' }
+        Write-Host "watch_offline: before=$before reason=$beforeReason pid=$($game.Id)"
 
-    if ($before -eq 'Denied') {
-        Write-Host 'watch_offline: FAILED_host_denied (do not click; run scripts/launch-offline-replay-for-od.ps1)'
-        Quit-WatchOffline 6
+        if ($before -eq 'Denied') {
+            Write-Host 'watch_offline: FAILED_host_denied (do not click; run scripts/launch-offline-replay-for-od.ps1)'
+            Quit-WatchOffline 6
+        }
+    }
+    else {
+        Write-Host ("watch_offline: before=visual_only pid=" + $game.Id)
     }
 
     [void][WatchOfflineVisionV2]::ShowWindow($game.MainWindowHandle, 9)
@@ -619,20 +634,37 @@ try {
         if ($pollUntil -gt $deadline) { $pollUntil = $deadline }
         do {
             Start-Sleep -Seconds 1
-            $pollState = Get-GameState
-            $vs = if ($pollState -and $pollState.verificationState) {
-                [string]$pollState.verificationState
+            if ($VisualDismissOnly) {
+                $vs = 'Unknown'
+                $reason = ''
+                # Playback-only: treat START_REPLAY_LOCAL as gate success.
+                $dava = Join-Path $env:LOCALAPPDATA 'wotblitz\DAVAProject'
+                $log = Get-ChildItem -LiteralPath $dava -Filter 'blitz-logs_*.txt' -ErrorAction SilentlyContinue |
+                    Sort-Object LastWriteTime -Descending |
+                    Select-Object -First 1
+                if ($log -and (Select-String -LiteralPath $log.FullName -Pattern 'START_REPLAY_LOCAL|Start replay event' -Quiet)) {
+                    $gateOk = $true
+                    Write-Host 'watch_offline: poll=START_REPLAY_LOCAL'
+                    break
+                }
+                Write-Host 'watch_offline: poll=visual_only'
             }
-            else { 'Unknown' }
-            $reason = if ($pollState -and $pollState.reasonCode) {
-                [string]$pollState.reasonCode
-            }
-            else { '' }
-            Write-Host "watch_offline: poll=$vs reason=$reason"
-            if ($vs -eq 'OfflineReplayVerified') { $gateOk = $true; break }
-            if ($vs -eq 'Denied') {
-                Write-Host 'watch_offline: FAILED_host_denied_mid_click'
-                Quit-WatchOffline 6
+            else {
+                $pollState = Get-GameState
+                $vs = if ($pollState -and $pollState.verificationState) {
+                    [string]$pollState.verificationState
+                }
+                else { 'Unknown' }
+                $reason = if ($pollState -and $pollState.reasonCode) {
+                    [string]$pollState.reasonCode
+                }
+                else { '' }
+                Write-Host "watch_offline: poll=$vs reason=$reason"
+                if ($vs -eq 'OfflineReplayVerified') { $gateOk = $true; break }
+                if ($vs -eq 'Denied') {
+                    Write-Host 'watch_offline: FAILED_host_denied_mid_click'
+                    Quit-WatchOffline 6
+                }
             }
         } while ((Get-Date) -lt $pollUntil)
 
@@ -652,7 +684,7 @@ try {
         if ($gateOk -and $dialogGone) { break }
     }
 
-    $after = Get-VerificationState
+    $after = if ($VisualDismissOnly) { 'visual_only' } else { Get-VerificationState }
     $finalGame = Get-GameWindow
     if (-not $finalGame) {
         Write-Host 'watch_offline: window_lost_final'
@@ -663,7 +695,21 @@ try {
     Write-Host ("watch_offline: after={0} final_orange_pixels={1}" -f $after, $finalCount)
 
     $dialogGone = $dialogGone -or ($finalCount -ge 0 -and $finalCount -le $DismissMaxPixels)
-    $gateOk = $gateOk -or ($after -eq 'OfflineReplayVerified')
+    if (-not $VisualDismissOnly) {
+        $gateOk = $gateOk -or ($after -eq 'OfflineReplayVerified')
+    }
+    else {
+        $dava = Join-Path $env:LOCALAPPDATA 'wotblitz\DAVAProject'
+        $log = Get-ChildItem -LiteralPath $dava -Filter 'blitz-logs_*.txt' -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+        if ($log -and (Select-String -LiteralPath $log.FullName -Pattern 'START_REPLAY_LOCAL|Start replay event' -Quiet)) {
+            $gateOk = $true
+        }
+        # Visual-only: require the final frame still show dialog gone (not a sticky mid-round flag).
+        $dialogGone = ($finalCount -ge 0 -and $finalCount -le $DismissMaxPixels)
+        if ($dialogGone) { $gateOk = $true }
+    }
 
     if ($gateOk -and $dialogGone) {
         Write-Host 'watch_offline: SUCCESS_gate_and_dialog_dismissed'
