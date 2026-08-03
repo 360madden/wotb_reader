@@ -1,6 +1,6 @@
 # WoT Blitz PC offset-discovery workflow
 
-Last updated: 2026-08-03 (OD-RECOVERY-035: snapshot byte-budget passthrough (MaxBytes) implemented + validated live — round-1 walked 823K/50M instead of 66M and attempt 1 completed the full 22-round budget with rolling_exit=0 (first non-lease-wall exit since OD-031); value-bound plateau persisted at 12/17 — the operator window can now open green for the interactive Find-what-writes step)
+Last updated: 2026-08-03 (OD-RECOVERY-036: TARGET 10 ≤ 10 reached with the budget driver — 9 survivors staged in CE's address list with 4 HW write-BPs armed (0 hits, consistent with OD-020); 3 of 4 launches hit the game-side flake; the full staging handoff now works end-to-end — the operator-window Find-what-writes step is the remaining evidence path)
 
 This is the operational playbook for discovering memory evidence from the
 Windows WoT Blitz client during a **positively verified offline replay**. It is
@@ -313,21 +313,22 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-036`. `OD-RECOVERY-035` completed as **Partial**
-with the **snapshot byte-budget passthrough validated live**: round-1 walked
-823K/50M instead of the unbounded 66M, and attempt 1 completed the **full
-22-round budget with `rolling_exit=0` — the first non-lease-wall exit since
-OD-031**. Rounds are now cheap; a full round budget finishes inside the 120s
-lease. The value-bound plateau persisted (12 / 17) — lease headroom alone
-cannot reach ≤10 — so the operator window can now open green and the
-**priority is operator presence at the held green window for interactive
-Find-what-writes on a staged ~12-survivor set** (`-SnapshotMaxBytes
-402653184 -MaxRounds 40 -HoldAfterRollSeconds 240`), or a content-distinct
-second replay for BLK-0019. This builds on the validated driver stack:
+Session ID: `OD-RECOVERY-037`. `OD-RECOVERY-036` completed as **Partial**
+with the **full staging handoff proven end-to-end**: attempt 4 reached
+**TARGET 10 ≤ 10 in 17 rounds** with the budget driver (round-1 walked
+39M), harvested **9 candidates**, and the CE autorun **staged all 9 into CE's
+address list with 4 hardware write-BPs armed** (0 hits in a 20s capture,
+consistent with the OD-020 standing rule). The operator window opened but
+the gate was `EvidenceStale` at close (the 120s lease expired during the
+240s hold), so the interactive Find-what-writes result remains operator-
+owned. 3 of 4 launches hit the game-side flake this session (an unusually
+high rate) — budget for relaunches. This builds on the validated driver
+stack:
 
 1. **401 capability-rotation refresh** — the rendezvous token rotates ~5 min,
    and a 66M-baseline roll outlives it; the driver refreshes the rendezvous
    and retries on 401 (`Invoke-OdApi`, logged `capability_401_refresh_retry`).
+   Validated live an eleventh time (OD-036 round 6).
    Validated live a tenth time (OD-035 rounds 15/10).
 2. **Probe-fold** — the OD-026 standalone sanity probe ran a full 66M-candidate
    compare whose `previousCount` was identical to round-1's; the steady-state
