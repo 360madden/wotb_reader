@@ -1,6 +1,6 @@
 # WoT Blitz PC offset-discovery workflow
 
-Last updated: 2026-08-03 (OD-041-STATIC: **classification correction — the two OD-039/040 'root candidates' are NOT standalone gameplay roots**; `0x037F3054` identified as an MSVC EH handler/funclet table (0xFFFFFFFF sentinel + {state, code-ptr} pairs into .text 0x02CF0D70+, 113 FuncInfo magics within ±0x2000) referenced from 48,609 4-aligned .data slots (0 unaligned); `0x03FA0C74` is the +0x04 member of record[1] of a repeating 0x50-byte .data record family `{0x00404064, <runtime slot>, 0x037F3054, 0, …}` based at `0x03FA0C20` (3,565 template matches); `tools/find-static-roots.py` gained `--record-map BASE,STRIDE,COUNT` (10 records / 9 runtime slots mapped); live-probing the two as singletons is ruled out without a changed hypothesis; prior milestones OD-039/040-STATIC: read-write decode + field dump; rolling driver gained `-CompareMode delta`/`-DeltaTarget`/`-DeltaTolerance` pass-through for the Track C2 pilot)
+Last updated: 2026-08-03 (OD-042-STATIC: **`0x037F3054` precisely identified as the shared RTTI `type_info` vftable** (every TypeDescriptor's pVFTable points at it — confirmed td@0x03DB5120 `pVFTable == 0x037F3054`; constructor at 0x020CB956 writes it to `[this]+0`); **`tools/find-static-roots.py` gained `--vtables` which names 17,133 of 18,721 vtables via the COL chain** — the fix: MSVC x86 stores the mangled name **inline at td+8** (char[]), not as a VA pointer; chain-class vtables located incl. `GameScene` 0x0319D3C4 (26 slots, **0 .data roots** = honest negative for the vtable-singleton path), `BaseContext`/`RootContext`, Vehicle component family; **Vehicle-family TypeDescriptor xref = 0 .text refs / 0 slots** — RTTI name→root path exhausted; prior milestone OD-041-STATIC: the two 'root candidates' reclassified as members of a repeating 0x50-byte record family, NOT gameplay roots; rolling driver gained `-CompareMode delta`/`-DeltaTarget`/`-DeltaTolerance` pass-through for the Track C2 pilot)
 
 This is the operational playbook for discovering memory evidence from the
 Windows WoT Blitz client during a **positively verified offline replay**. It is
@@ -313,22 +313,25 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-042`. Static milestones `OD-039/040/041-STATIC`
-landed and then **re-classified the two "root candidates"**: they are read-
-write code-initialized globals, but `0x03FA0C74` is the +0x04 member of
-record[1] of a repeating 0x50-byte `.data` EH/handler record family (base
-`0x03FA0C20`), and `0x037F3054` is an MSVC EH handler/funclet table (113
-FuncInfo magics, 48,609 aligned `.data` refs) — **NOT standalone gameplay
-roots** (live-probing them as singletons is ruled out without a changed
-hypothesis). The rolling driver exposes `-CompareMode delta -DeltaTarget X
--DeltaTolerance T` for the engine's delta-compare. `OD-RECOVERY-042` is the
-**Track C2 pilot**: reuse the proven invocation (`-SnapshotMaxBytes
-402653184 -MaxRounds 40 -HoldAfterRollSeconds 240`) but add `-CompareMode
-delta -DeltaTarget <replay position delta> -DeltaTolerance <tol>` and
-measure survivor collapse vs "increased" (11 → predicted ≤2–4), then run
-operator Find-what-writes on the staged set — the replayTime set remains the
-live anchor; do NOT waste lease probing the EH handler records as
-singletons. This builds on the validated driver stack:
+Session ID: `OD-RECOVERY-043`. Static milestones `OD-039..042-STATIC`
+landed and then **re-classified the two "root candidates"** as members of a
+repeating 0x50-byte `.data` record family (base `0x03FA0C20`) — NOT
+standalone gameplay roots; `0x037F3054` is precisely the shared RTTI
+`type_info` vftable (every TypeDescriptor's pVFTable points at it). The new
+`--vtables` mode names **17,133 of 18,721 vtables** (fix: MSVC x86 stores the
+mangled name inline at td+8) including `GameScene` 0x0319D3C4 (26 slots, **0
+.data roots** = honest negative for the vtable-singleton path) and the
+Vehicle component family — but the Vehicle-family TypeDescriptor xref is
+negative (0 refs / 0 slots), exhausting the RTTI name→root path. The rolling
+driver exposes `-CompareMode delta -DeltaTarget X -DeltaTolerance T`.
+`OD-RECOVERY-043` is the **Track C2 pilot**: reuse the proven invocation
+(`-SnapshotMaxBytes 402653184 -MaxRounds 40 -HoldAfterRollSeconds 240`) but
+add `-CompareMode delta -DeltaTarget <replay position delta> -DeltaTolerance
+<tol>` and measure survivor collapse vs "increased" (11 → predicted ≤2–4),
+then run operator Find-what-writes on the staged set — the replayTime set
+remains the live anchor; do NOT waste lease probing the handler records or
+chasing the exhausted static paths as singletons. This builds on the
+validated driver stack:
 The session also produced the **first-ever 401-refresh failure in 13
 validations** (OD-038 attempt 3, round 9: the refreshed context re-read the
 rendezvous file but retried immediately into a mid-rotation file, exhausting

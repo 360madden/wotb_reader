@@ -31,6 +31,11 @@ process, no memory reads). Three capabilities, all of which produce
                             (e.g. the 0x50-byte EH/handler family found around
                             0x03FA0C74) and list runtime-initialized
                             (zero-on-disk) slots.
+  --vtables [--min-slots N]  Discover vtable candidates in .rdata
+                            (consecutive .text-pointer runs of >= N slots),
+                            resolve each RTTI class name via the COL chain,
+                            and list .data slots pointing at vtable bases
+                            (named singleton roots).
 
 Examples:
   python tools/find-static-roots.py --chain 0x03E91978
@@ -38,6 +43,7 @@ Examples:
   python tools/find-static-roots.py --rtti AvatarContextBattle
   python tools/find-static-roots.py --refs 0x03FA0C74 --fields 0x03FA0C74
   python tools/find-static-roots.py --record-map 0x03FA0C20,0x50,8
+  python tools/find-static-roots.py --vtables --min-slots 5
 
 All findings are logged to a timestamped file under %TEMP%\\find-static-roots-*.log
 and printed to stdout. Exit code 0 on success (even with zero findings), 2 on
@@ -783,6 +789,136 @@ def _finite(value: float) -> bool:
 # --------------------------------------------------------------------------- #
 
 
+def _module_va_to_rva(pe: PeImage, value: int) -> Optional[int]:
+    """Convert a module VA (image_base + rva) to its rva, or None."""
+    if not pe.is_in_module(value):
+        return None
+    return value - pe.image_base
+
+
+def _resolve_vtable_rtti_name(pe: PeImage, vtable_rva: int) -> Optional[str]:
+    """MSVC x86 RTTI: vtable[-1] (at vtable-4) holds the Complete Object
+    Locator; COL+12 holds the pTypeDescriptor; the TypeDescriptor holds its
+    mangled name **inline** at td+8 (a char[] — NOT a pointer). Returns the
+    class name string or None when the chain is incomplete."""
+    col_va = pe.dword(vtable_rva - 4)
+    if col_va is None or not pe.is_in_module(col_va):
+        return None
+    col_rva = _module_va_to_rva(pe, col_va)
+    if col_rva is None:
+        return None
+    # COL signature must be 0 on x86 (sanity check before trusting the chain).
+    if pe.dword(col_rva) != 0:
+        return None
+    td_va = pe.dword(col_rva + 12)
+    if td_va is None or not pe.is_in_module(td_va):
+        return None
+    td_rva = _module_va_to_rva(pe, td_va)
+    if td_rva is None:
+        return None
+    # td+0 = pVFTable (must be in module), td+4 = spare, td+8 = inline name.
+    if pe.dword(td_rva) is None or not pe.is_in_module(pe.dword(td_rva)):
+        return None
+    raw = pe.rva_to_raw(td_rva + 8)
+    if raw is None:
+        return None
+    end = pe.data.find(b"\0", raw, raw + 256)
+    if end < 0:
+        return None
+    name = pe.data[raw:end].decode("latin1", "replace")
+    # RTTI names are mangled (start with .?AV / .?AU); reject strings that
+    # merely sit after a pointer-looking slot by requiring the mangled prefix.
+    if not (name.startswith(".?AV") or name.startswith(".?AU")):
+        return None
+    return name
+
+
+def discover_vtables(pe: PeImage, min_slots: int = 5, with_names: bool = True,
+                     max_results: int = 200) -> dict:
+    """Find vtable candidates in .rdata: runs of >= min_slots consecutive
+    4-aligned dwords that all point into .text. Optionally resolve each
+    vtable's RTTI class name via the COL chain, then find .data slots that
+    point at each vtable base (named singleton roots)."""
+    result: dict = {
+        "scan": "vtables",
+        "min_slots": min_slots,
+        "vtable_count": 0,
+        "named_count": 0,
+        "vtables": [],
+        "data_roots": [],
+    }
+    rdata = pe.rdata
+    if rdata is None:
+        return result
+    start = rdata.raw_pointer
+    end = min(start + rdata.raw_size, len(pe.data))
+    text_sec = pe.text
+    if text_sec is None:
+        return result
+    t_lo, t_hi = text_sec.virtual_address, text_sec.end
+
+    # Pass 1: mark 4-aligned .rdata offsets whose dword is a .text VA.
+    marked: list[int] = []
+    for off in range(start, end - 3, 4):
+        value = struct.unpack_from("<I", pe.data, off)[0]
+        rva = value - pe.image_base
+        if t_lo <= rva < t_hi:
+            marked.append(off)
+
+    # Pass 2: merge consecutive marks into runs.
+    runs: list[tuple[int, int]] = []  # (raw_start, slot_count)
+    run_start = None
+    prev = None
+    for off in marked:
+        if run_start is None:
+            run_start = off
+        elif off != prev + 4:
+            runs.append((run_start, (prev - run_start) // 4 + 1))
+            run_start = off
+        prev = off
+    if run_start is not None and prev is not None:
+        runs.append((run_start, (prev - run_start) // 4 + 1))
+
+    vtable_bases: list[int] = []
+    for raw_start, slot_count in runs:
+        if slot_count < min_slots:
+            continue
+        vtable_rva = rdata.virtual_address + (raw_start - start)
+        entry: dict = {
+            "vtable_rva": f"0x{vtable_rva:08X}",
+            "slots": slot_count,
+        }
+        if with_names:
+            name = _resolve_vtable_rtti_name(pe, vtable_rva)
+            entry["rtti_name"] = name
+            if name:
+                result["named_count"] += 1
+        result["vtables"].append(entry)
+        vtable_bases.append(vtable_rva)
+
+    result["vtable_count"] = len(result["vtables"])
+    result["vtables"] = result["vtables"][:max_results]
+
+    # Pass 3: find .data slots pointing at the vtable bases.
+    data_sec = pe.data_sec
+    if data_sec is not None and vtable_bases:
+        bases = {pe.image_base + rva for rva in vtable_bases}
+        d_start = data_sec.raw_pointer
+        d_end = min(d_start + data_sec.raw_size, len(pe.data))
+        root_count = 0
+        for off in range(d_start, d_end - 3, 4):
+            value = struct.unpack_from("<I", pe.data, off)[0]
+            if value in bases:
+                slot_rva = data_sec.virtual_address + (off - d_start)
+                result["data_roots"].append({
+                    "slot_rva": f"0x{slot_rva:08X}",
+                    "points_to_vtable": f"0x{value - pe.image_base:08X}",
+                })
+                root_count += 1
+        result["data_root_count"] = root_count
+    return result
+
+
 def map_record_array(pe: PeImage, base: int, stride: int, count: int) -> dict:
     """Classify each member of a repeating record array (like the 0x50-byte
     EH/handler record family found around 0x03FA0C74). For each dword member
@@ -905,6 +1041,12 @@ def main(argv: list[str]) -> int:
                         help="classify each member of a repeating record array "
                              "(e.g. 0x03FA0C20,0x50,8) and list runtime-initialized "
                              "(zero-on-disk) slots")
+    parser.add_argument("--vtables", action="store_true",
+                        help="discover vtable candidates in .rdata (consecutive "
+                             ".text-pointer runs), resolve RTTI names, and list "
+                             ".data slots pointing at vtable bases")
+    parser.add_argument("--min-slots", type=int, default=5,
+                        help="minimum consecutive .text slots for --vtables (default 5)")
     parser.add_argument("--json", metavar="PATH",
                         help="write findings as JSON to PATH")
     args = parser.parse_args(argv)
@@ -1061,6 +1203,22 @@ def main(argv: list[str]) -> int:
                              for m in record["members"])
             LOG.info("    rec[%d] %s %s", record["record_index"],
                      record["rva"], kinds)
+        ran_any = True
+
+    if args.vtables:
+        LOG.info("vtable discovery: min slots %d", args.min_slots)
+        vtable_result = discover_vtables(pe, min_slots=args.min_slots)
+        results["vtables"] = vtable_result
+        LOG.info("  %d vtables found (%d named), %d data roots",
+                 vtable_result["vtable_count"], vtable_result["named_count"],
+                 vtable_result.get("data_root_count", 0))
+        named = [v for v in vtable_result["vtables"] if v.get("rtti_name")]
+        for entry in named[:25]:
+            LOG.info("    %s (%d slots) %s", entry["vtable_rva"],
+                     entry["slots"], entry["rtti_name"])
+        for root in vtable_result.get("data_roots", [])[:20]:
+            LOG.info("    data root %s -> vtable %s", root["slot_rva"],
+                     root["points_to_vtable"])
         ran_any = True
 
     if not ran_any:

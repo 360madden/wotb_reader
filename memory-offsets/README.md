@@ -353,20 +353,23 @@ quarantined yaw evidence with offset `0` and status `Stale`; the runtime reader 
 zero-valued fields to `Unknown`, so no stale field can authorize a memory read.
 Dynamic verification must use a positively verified offline replay and preserve
 evidence summaries without committing raw dumps or scan files. Campaign status as
-of OD-041-STATIC: the `Invalid password status=68` login failure seen since
+of OD-042-STATIC: the `Invalid password status=68` login failure seen since
 14:48 is baseline noise (present in the OD-036 success run too), not an offline-path
 blocker; the real replay-start death is `become hidden` + `GameCore::OnBackground`
 ~2s after `LoadGameScene` with no crash dump; the 401-refresh was hardened (750ms
 settle + 4 retries) after its first-ever live failure. Static milestones
-OD-039/040/041-STATIC confirmed the two runtime-written `.data` candidates
-(`0x03FA0C74` with 9 .text refs, `0x03FA012C` with 6 refs) are read-write
-code-initialized globals — but **OD-041-STATIC re-classified them**: they are
-members of a repeating 0x50-byte `.data` EH/handler record family (base
-`0x03FA0C20`), and `0x037F3054` is an MSVC EH handler/funclet table (113
-FuncInfo magics within ±0x2000, 48,609 aligned `.data` references). They are
-**NOT standalone gameplay roots** — live-probing them as singletons is ruled
-out without a changed hypothesis. `EntityList` is a plain struct (0 RTTI hits).
-Next step (OD-042): operator-present interactive Find-what-writes on a staged
+OD-039..042-STATIC confirmed the two runtime-written `.data` candidates
+(`0x03FA0C74`, `0x03FA012C`) are read-write code-initialized globals, then
+**re-classified them as members of a repeating 0x50-byte record family** (base
+`0x03FA0C20`) — **NOT standalone gameplay roots**. `0x037F3054` is precisely the
+**shared RTTI `type_info` vftable** (every TypeDescriptor's pVFTable points at
+it; 48,609 aligned `.data` references). The new `--vtables` mode names
+**17,133 of 18,721 vtables** via the COL chain, including `GameScene`
+(`0x0319D3C4`, 26 slots, **0 .data roots** — an honest negative for the
+vtable-singleton path), `BaseContext`/`RootContext`, and the Vehicle component
+family; the Vehicle-family TypeDescriptor xref is negative (0 refs / 0 slots),
+exhausting the RTTI name→root path. `EntityList` is a plain struct (0 RTTI hits).
+Next step (OD-043): operator-present interactive Find-what-writes on a staged
 ≤11-survivor replayTime set (the live anchor), optionally piloting delta-compare.
 
 ## Quick reference — common field types
