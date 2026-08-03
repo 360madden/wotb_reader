@@ -313,11 +313,13 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-016`. `OD-RECOVERY-015` completed as **Partial**:
-canonical OD launch amended (game-folder `.wotbreplay` → managed gate via
-`scripts/launch-offline-replay-for-od.ps1`); Churchill sha12 `0FAE5612491E`
-imported (`duplicate=True` → `independentReplays` still 0); rolling RT increased
-**882617→…→7** (`private-mapping`).
+Session ID: `OD-RECOVERY-017`. `OD-RECOVERY-016` completed as **Partial**:
+managed launch green (`scripts/launch-offline-replay-for-od.ps1` exit 0 →
+`OfflineReplayVerified`); same Churchill sha12 `0FAE5612491E` imported
+(`duplicate=True` → `independentReplays` still 0; BLK-0019 open); rolling RT
+increased **628320→…→8** (`private-mapping`); gate flipped `EvidenceStale` /
+`evidence.expired` immediately after ≤10, before interactive CE/x64dbg
+Find-what-writes.
 
 ### Canonical OD launch (amended 2026-08-02)
 
@@ -328,13 +330,26 @@ owner-chosen source of which battle to play. Managed launch stages under
 originals; flat GUID clones the game may drop beside originals are scavenged
 when the stage file is disposed.
 
+**Playback-only (hangar UI)** — preferred when you only need an offline replay
+in-game and want to avoid argv/`WATCH OFFLINE` Error 126:
+
+```text
+powershell -File scripts/play-replay-from-hangar.ps1
+```
+
+Attach or start `wotblitz.exe` (no replay argv) → orange **Battle** → profile →
+**REPLAYS** → white play triangle on the first LATEST card. Spec:
+`docs/superpowers/specs/2026-08-02-hangar-replays-play.md`. Confirms via
+`Start replay event` / `START_REPLAY_LOCAL` in blitz-log. This path does **not**
+set Host `OfflineReplayVerified` (discover APIs stay fail-closed).
+
 **Do not** treat file-association alone (`Invoke-Item` / double-click) as the OD
 launch path. It can start playback and show a replay HUD, but Host.Web never
 receives managed lifecycle evidence, so the gate stays `Denied` /
 `launch.lifecycle_evidence_timeout` (or `Unknown`) and discover APIs refuse.
 Watch Offline clicks against a `Denied` host are wasted.
 
-**Correct sequence** — use the helper:
+**Correct OD sequence** (discover gate) — use the helper:
 
 ```text
 powershell -File scripts/launch-offline-replay-for-od.ps1
@@ -359,7 +374,8 @@ What it does:
 7. Runs `scripts/click-watch-offline.ps1` (agent-owned). Exit 0 only when **both**
    `OfflineReplayVerified` **and** the orange dialog is gone. Screenshot:
    `%TEMP%\wotb-watch-offline-verify.png`. Exit 6 = host already `Denied` → re-run
-   the launch helper, do not keep clicking.
+   the launch helper, do not keep clicking. For hangar-chained dismiss without a
+   Host correlation, use `-VisualDismissOnly` (playback-only success).
 
 File-association remains useful only as a **playback smoke** (“does this
 `.wotbreplay` open?”). It is not a substitute for steps 1–7 before scanning.
@@ -367,11 +383,18 @@ File-association remains useful only as a **playback smoke** (“does this
 ### After gate green
 
 1. Confirm the screenshot is a **replay HUD**, not the garage / **BATTLE!** menu.
-2. Reuse rolling Double increased recipe to ≤10 survivors, then interactive
-   x64dbg/CE GUI Find-what-writes, **or** confirm a **second distinct replay**
+2. **Pre-arm CE 7.7 or x64dbg before or concurrent with rolling** — attach or
+   open the interactive debugger as soon as the gate is green (or during managed
+   launch settle). Do **not** wait until ≤10 survivors to start the debugger;
+   the default 120s research lease can flip to `EvidenceStale` before
+   Find-what-writes runs (OD-RECOVERY-016).
+3. Start rolling Double increased (`rollingBaseline=true`) immediately
+   post-verify with Space pause/resume pulses; aim to reach ≤10 with lease
+   margin reserved for interactive Find-what-writes on survivors.
+4. Confirm a **second distinct replay** in the game folder when available
    (BLK-0019).
-3. Do not promote from neighborhood hit counts alone.
-4. Append ledger + handoff before stopping.
+5. Do not promote from neighborhood hit counts alone.
+6. Append ledger + handoff before stopping.
 
 The success criterion remains **one correctly classified, reproducible
 candidate**. Do not promote from aggregate counts alone.

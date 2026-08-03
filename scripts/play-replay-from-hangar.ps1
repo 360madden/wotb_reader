@@ -696,15 +696,30 @@ function Wait-HangarReady {
 
             # Do not treat hangar orange sparks / dark garage as a modal — only Error AFFIRMATIVE above.
 
-            # Already on REPLAYS only if title + play control (title-alone false-positives on splash).
+            # Already on REPLAYS only if title + left-card white play triangle
+            # (title/header whites alone false-positive and steal the play click).
             $replaysTitle = [HangarPlayVision]::FindReplaysScreenTitle($cap.Bitmap)
             $battle = $battleProbe
             if ((-not ($battle.Found -and $battle.PixelCount -ge $MinBattleOrange)) -and `
                 $replaysTitle.Found -and $replaysTitle.PixelCount -ge 80) {
                 $playProbe = [HangarPlayVision]::FindPlayColor($cap.Bitmap)
-                $playVisible = $playProbe.Found -and $playProbe.PixelCount -ge 80
-                if ($playVisible) {
-                    Write-Hangar ("already_on_replays titlePx=$($replaysTitle.PixelCount) playPx=$($playProbe.PixelCount)")
+                if ($playProbe.Found -and $playProbe.PixelCount -ge 40) {
+                    $playProbe = [HangarPlayVision]::RefinePlayTriangleClick($cap.Bitmap, $playProbe)
+                }
+                $px = [int]$playProbe.CentroidX
+                $py = [int]$playProbe.CentroidY
+                $w = [double]$cap.Bitmap.Width
+                $h = [double]$cap.Bitmap.Height
+                $inLeftCard = ($playProbe.Found -and $playProbe.PixelCount -ge 40 `
+                    -and ($px / $w) -ge 0.12 -and ($px / $w) -le 0.32 `
+                    -and ($py / $h) -ge 0.30 -and ($py / $h) -le 0.50)
+                $onWhite = $false
+                if ($inLeftCard -and $px -lt $cap.Bitmap.Width -and $py -lt $cap.Bitmap.Height) {
+                    $c = $cap.Bitmap.GetPixel($px, $py)
+                    $onWhite = ($c.R -ge 210 -and $c.G -ge 210 -and $c.B -ge 210)
+                }
+                if ($inLeftCard -and $onWhite) {
+                    Write-Hangar ("already_on_replays titlePx=$($replaysTitle.PixelCount) playPx=$($playProbe.PixelCount) at=$px,$py")
                     $script:AlreadyOnReplays = $true
                     if ($ScreenshotPath) { [void][HangarPlayVision]::SaveBitmap($cap.Bitmap, $ScreenshotPath) }
                     return $true
