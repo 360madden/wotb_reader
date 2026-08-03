@@ -73,13 +73,28 @@ strong file logging, three capabilities:
 |---|---|---|
 | Chain-root verification | `--chain 0x03E91978` | section, reloc target?, .text refs, on-disk shape, verdict |
 | Xref .data discovery | `--xref-data --min-refs N` | ranked store/load/reloc/shape candidates |
-| RTTI back-door | `--rtti AvatarContextBattle` | mangled name → TypeDescriptor → vtables → .data roots |
+| RTTI back-door | `--rtti A,B,C` (comma-separated batch) | per-class mangled name → TypeDescriptor → vtables → .data roots |
 
-**Proven results (2026-08-03 run against hash-bound binary):**
+**Proven results (2026-08-03 runs against hash-bound binary):**
 - Community root `0x03E91978`: **not a root** (in a string, 0 code refs).
 - Xref discovery: 2,398 store slots / 5,661 load targets; 163 candidates at
   ≥3 refs. Top zero-initialized store slots (`0x03FA0C74`, `0x03FA012C`) are
   runtime-written RMW candidates — the singleton shape.
+- **Batch chain verification (OD-039-STATIC):** `0x03FA0C74` has **9 .text
+  references** and `0x03FA012C` has **6** — both fail the reloc test, which is
+  the *expected* signature of a code-initialized root (not in the reloc table
+  because startup writes it). These are the campaign's strongest static root
+  candidates to date. The `AvatarContextBattle` TypeDescriptor (`0x03E7DF28`)
+  has 0 code refs — dead slot, expected for RTTI metadata.
+- **Batch RTTI walk (all chain classes):** TypeDescriptors located for
+  `VehicleGameLogicComponent` (`0x03C24F4C`), `AppContextImpl` (`0x03E356F4`),
+  `ScreensFlow` (`0x03E35C74`), `GameScene` (`0x03DB9AAC`),
+  `GameSceneController` (`0x03F1064C`), `GameCameraComponent` (`0x03C19E98`),
+  `GameCameraSingletonComponent` (`0x03E216B8`), `VehicleDescr`
+  (`0x03DBC468`), and the whole `Vehicle*Component` family (809 TDs under
+  `Vehicle`). `EntityList` has **0 RTTI name hits** — it is a plain struct
+  (or its vtable is not name-referenced), so it is *not* reachable via the
+  RTTI back-door; it must be found via xref/store-slot discovery instead.
 - RTTI: `AvatarContextBattle` mangled name at `0x03E7DF30` plus **embedded
   source path** `C:/ba/tc/work/t/client/Classes/Battle/AvatarContextBattle.cpp`
   at `0x0327735A` — direct Ghidra anchors.
@@ -138,7 +153,15 @@ selective than the four boolean modes.
   (|Δpos|/Δt), HP (damage-delta series).
 - Files changed: `MemoryScanEngine.cs`, `GameSessionContracts.cs`,
   `GameSessionCoordinator.cs`, `GameApiEndpoints.cs`,
-  `OffsetDiscoveryContracts.cs`, tests.
+  `OffsetDiscoveryContracts.cs`, tests, and the rolling driver
+  (`roll-replay-time-increased.ps1` gained `-CompareMode`/`-DeltaTarget`/
+  `-DeltaTolerance` pass-through).
+
+**Driver usage (OD-040):**
+`-CompareMode delta -DeltaTarget <replayDelta> -DeltaTolerance <tol>` — the
+rolling baseline advances each round, so the delta is measured against the
+*previous* round, not the original snapshot. Non-delta modes reject stray
+delta params (engine validation). First live validation is the Track C2 pilot.
 
 ### C3. Value-equality at synchronized time
 At known replay-time T (established by C1), snapshot-filter `FloatMin=FloatMax≈
@@ -177,8 +200,11 @@ failure (per `tools/external/README.md`); every addition registers in
 2. **Track C3/C4:** value-equality X/Y/Z intersection on the same session;
    target ≤2–4 survivors.
 3. **Track B pilot:** hangar-state known-truth scan (HP number, tank name).
-4. **Track A:** RTTI walk for `EntityList`/`VehicleGameLogic`/`Vehicle` names;
-   xref the source-path anchors (`AvatarContextBattle.cpp`).
+4. **Track A:** batch RTTI walk is *done* (OD-039-STATIC) — TypeDescriptors
+   located for the whole chain; next step is xref-discovery from the `Vehicle`
+   component family and live-confirming the two static root candidates
+   (`0x03FA0C74`, `0x03FA012C`) against a `replayTime`-anchored session
+   (validate them as the viewpoint-vehicle struct chain, not bare globals).
 5. **C5:** operator interactive Find-what-writes on the smallest staged set.
 
 Each session: same ledger entry, workflow stop rules, handoff, and commit.

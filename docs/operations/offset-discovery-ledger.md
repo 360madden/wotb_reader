@@ -1,6 +1,6 @@
 # Offset-discovery ledger
 
-Last updated: 2026-08-03 (OD-RECOVERY-038: **lobby-login diagnosis corrected — the `Invalid password status=68` login failure is a red herring** (it appears in every blitz log since 14:48 game-time *including the OD-036 SUCCESS run*; it does not stop the replay path — every log reaches `Start replay event` + `LoadGameScene`); the real death signature is `become hidden` + `GameCore::OnBackground` ~2s after `LoadGameScene` ends — the known replay-start flake family at an elevated rate; **the first-ever 401-refresh failure in 13 validations** hit at round 9 (roll 39.2M→65) — fixed with settle + 4 retries and validated live (round-8 401 absorbed, roll continued); attempt 4 rolled **39M→11 in 20 rounds** (plateau 11 rounds 16–20, 1 above target) then lease wall round 21; 401-refresh hardening + diagnosis correction are the session's durable results)
+Last updated: 2026-08-03 (OD-039-STATIC: **Track A batch static root analysis complete** — two runtime-written static root candidates confirmed: `0x03FA0C74` with 9 .text refs and `0x03FA012C` with 6, both `.data` zero-on-disk non-reloc = code-initialized global signature; RTTI TypeDescriptors located for every major chain class; `EntityList` proven a plain struct with 0 RTTI hits; `0x03E7DF28` (AvatarContextBattle td) is dead data, 0 refs; no statically-reachable vtable root found (all Vehicle/Context COL slots signature-fail); rolling driver gained `-CompareMode delta`/`-DeltaTarget`/`-DeltaTolerance` pass-through for the Track C2 pilot; prior session OD-RECOVERY-038: lobby-login diagnosis corrected — `Invalid password status=68` is a red herring; real death signature is `become hidden` + `GameCore::OnBackground` ~2s after `LoadGameScene`; first-ever 401-refresh failure fixed with settle + 4 retries, validated live; roll 39M→11 in 20 rounds, plateau 11 = value-bound)
 
 This ledger is the durable index of WoT Blitz PC offset-discovery work. It
 records experiments, partial results, failures, and pivots so future sessions do
@@ -49,7 +49,7 @@ Every address must be classified before publication:
 | `playerYaw` | **Quarantined / Ambiguous** until decimal, hexadecimal, raw Ghidra, and address-kind evidence reconcile |
 | Trusted next anchor | `playerPositionX`/`playerPositionZ`, then `replayTime` or HP if the replay makes them observable |
 | Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007); absolute LE pointer AOB across private/all/image + align 1/8 without a changed encoding hypothesis (ruled out by OD-RECOVERY-008); truncated low-32 LE dword AOB of survivor absolutes without a changed encoding hypothesis (ruled out by OD-RECOVERY-009); automated CE `bptAccess`/`bptWrite` on Float position survivors without a field pivot or interactive debugger (0 RIP hits through OD-RECOVERY-011); CE write-BP alone on the single increased `replayTime` Double without interactive debugger or a second independent launch (0 RIP in OD-RECOVERY-012); treating file-association / `Invoke-Item` alone as the OD gate path (playback can succeed while Host stays `Denied` / `lifecycle_evidence_timeout` — amended 2026-08-02); reaching ≤10 RT survivors then starting interactive debugger after the fact under a 120s research lease loses the window to EvidenceStale (OD-RECOVERY-016) — pre-arm debugger / reserve lease margin; requiring the Watch Offline orange-dialog blob to vanish after `OfflineReplayVerified` (the replay HUD renders orange in that ROI, so `dialogGone` never sets, extra clicks hit in-game UI and kill the game — OD-RECOVERY-017) — trust the verified gate; reading compare `retainedCount` as the rolling survivor count (it is unreadable-chunk carryover only; survivors are `increasedCount` — OD-RECOVERY-017); automated CE Windows-debugger write-BPs (`debugProcess(1)` + `debug_setBreakpoint(addr, bptWrite, 1)`) on rolling Double survivors — zero RIP hits across OD-009/010/011 and OD-020/021/022 probes, so the operator-owned interactive Find-what-writes step is required, not a scripting gap to keep probing; rolling from a snapshot taken during the game load transition — the candidate set can be 66M+ (22–87× steady state), convergence cannot fit the 120s lease, and the resulting session discard surfaces as a confusing compare `400` (OD-RECOVERY-025 attempt 1) — wait for a clean steady-state snapshot before rolling; capturing the rendezvous capability once at roll start — the token rotates ~5 min and a 66M-baseline roll outlives it, so a mid-roll compare dies with a confusing 401 (OD-RECOVERY-030 attempt 1; fixed by refresh + retry in the rolling driver); running the separate full-walk sanity probe when round-1 `previousCount` reports the identical snapshot count — the probe's 66M-candidate walk wasted lease inside the 120s budget (OD-RECOVERY-030; gate folded into round 1); requesting `maxCandidates=500` (or any large harvest) on every rolling round when only the final target round's addresses are written — the big early compares (66M→1M) pay candidate serialization for nothing and cost lease; request 1 candidate per round and harvest the full set only on the target round (OD-RECOVERY-031 attempt 1 → fixed in driver, validated attempts 3–5: 10–14 rounds fit the lease vs 6–7 before); overriding the CE autorun's default survivor address-file path (`%TEMP%\od-survivors.txt`) with a custom `-AddressFile` — the autorun polls the default path only, so staged survivors silently never reach CE (OD-RECOVERY-031 attempt 4; use the default path so the staging handoff works); keeping the CE autorun poll window at 90s when a 66M-baseline roll outlives it — the file appears right at the 120s lease edge, so the poll must span the whole lease + margin (OD-RECOVERY-031 attempts 3/4; extended to 300s) |
-| Next planned session | `OD-RECOVERY-039` (the lobby-login hypothesis is now ruled out — the `Invalid password` login failure is baseline noise present in the OD-036 success too, and every launch reaches `LoadGameScene`; the binding constraint remains the elevated replay-start flake (`become hidden`/`OnBackground` ~2s after scene load) plus the value-bound 11-survivor plateau 1 above target; the 401-refresh hardening is validated, so the highest-value run is the proven invocation `-SnapshotMaxBytes 402653184 -MaxRounds 40 -HoldAfterRollSeconds 240` with the operator present during the held green window — the 11-survivor set is usable for interactive Find-what-writes even without ≤10; alternatively a content-distinct second replay for BLK-0019, or investigating the flake's root cause (the game dies quietly ~2s after `LoadGameScene` ends with no crash dump) |
+| Next planned session | `OD-RECOVERY-040` (static milestone `OD-039-STATIC` complete: **two runtime-written static root candidates confirmed** — `0x03FA0C74` (9 .text refs) and `0x03FA012C` (6 refs), both `.data` zero-on-disk non-reloc = code-initialized global signature; RTTI TypeDescriptors located for every major chain class, `EntityList` proven a plain struct with 0 RTTI hits; rolling driver now exposes `-CompareMode delta -DeltaTarget X -DeltaTolerance T` for the Track C2 pilot). Highest-value live run: the proven invocation `-SnapshotMaxBytes 402653184 -MaxRounds 40 -HoldAfterRollSeconds 240` with the operator present during the held green window — the 11-survivor set is usable for interactive Find-what-writes even without ≤10 — optionally with a **delta-compare pilot** feeding a replay-derived position delta to break the plateau; alternatively a content-distinct second replay for BLK-0019, or investigating the replay-start flake root cause (the game dies quietly ~2s after `LoadGameScene` ends with no crash dump) |
 
 The current yaw conflict is recorded explicitly:
 
@@ -118,6 +118,7 @@ occurred.
 | `OD-RECOVERY-036` | 2026-08-03 | Operator-window run: TARGET ≤10 + CE staging with the proven budget invocation | background launch helper + session driver (4 attempts) + pre-arm-debugger.ps1 + 401-refresh folded-gate candidate-optimized rolling Double increased + two-phase tail shave + **MaxBytes budget** + `MaxRounds 40` + default-path autorun staging (300s poll) | `Partial` | Attempts 1–3: game-side flake — attempt 1 died during soft-focus settle (`game_window_lost_during_soft_focus_settle`); attempts 2/3 launcher-green but gate flipped `Denied`/`evidence.monitor_unhealthy` before the driver's first poll (no new blitz-log; 3-of-4 flake rate this session); attempt 4: **TARGET 10 ≤ 10 in 17 rounds** (`772551→…→10`; round-1 previous=39,126,523 budget-bound; 401 refresh live round 6; `rolling_exit=0`) with harvest **9 candidates → CE autorun loaded 9, staged 9 in address list, armed 4 HW write-BPs, 20s capture 0 hits** | **Full staging handoff proven end-to-end (9 staged + 4 armed)**; operator window opened but gate was `EvidenceStale` at close (lease expired during the 240s hold); no interactive Find-what-writes result; `independentReplays` still 0; no RIP/root |
 | `OD-RECOVERY-037` | 2026-08-03 | Launch-reliability diagnosis: 4 attempts with the proven invocation, all game-side flakes | background launch helper + session driver (4 attempts) + pre-arm-debugger.ps1 + proven invocation `-SnapshotMaxBytes 402653184 -MaxRounds 40 -HoldAfterRollSeconds 240` | `Partial` | Attempt 1: launcher-green but gate flipped `Denied`/`evidence.monitor_unhealthy` before the driver's first poll (no new blitz-log); attempt 2: gate verified then `window_lost_final`/`watch_exit=1` — blitz log shows the game was in the **login/lobby phase** (`LoginHandler::fail status=68 Invalid password` + `ConnectionManager::onLogOnFailure`) then `Window::HandleVisibilityChanged: become hidden` + `GameCore::OnBackground`; attempt 3: reached `BattleController::LoadGameScene ends` then window lost; attempt 4: launcher-green, driver first poll `Denied` (blitz log again shows lobby login-failure signature) | **NEW crash signature — game dies in the login/lobby phase, never reaching the replay (7 of last 8 launches across OD-036/037 flaked)**; no roll ran; `independentReplays` still 0; no RIP/root |
 | `OD-RECOVERY-038` | 2026-08-03 | Diagnose the lobby-login failure; run the proven invocation with the corrected diagnosis + hardened 401-refresh | background launch helper + session driver (4 attempts) + pre-arm-debugger.ps1 + proven invocation `-SnapshotMaxBytes 402653184 -MaxRounds 40 -HoldAfterRollSeconds 240` + **401-refresh hardening (settle + 4 retries)** | `Partial` | **Diagnosis corrected: `Invalid password status=68` is a red herring** — it appears in *every* blitz log since 14:48 game-time, *including the OD-036 SUCCESS run* (15:03 log: login failure + full replay to `onLeaveWorld`), and every log reaches `Start replay event` + `LoadGameScene`; real death = `become hidden` + `GameCore::OnBackground` ~2s after scene load (known replay-start flake, elevated). Attempt 1: launcher-green then gate flipped `Denied` (blitz 15:47:51: LoadGameScene ends 20:48:18, become hidden 20:48:19); attempt 2: `no_game_window_while_waiting`; attempt 3: gate green, roll **39.2M→…→65 in 9 rounds** then **first-ever 401-refresh failure** (round 9, `capability_401_refresh_retry=1` then `FAILED_unexpected 401`) — mechanism never failed in 13 prior validations → driver hardened (750ms settle + 4 retries); attempt 4: gate green, round-8 401 **absorbed by the hardened refresh** (validated live), roll **39M→…→11 in 20 rounds** (plateau 11 rounds 16–20 — value-bound, 1 above target) then lease wall round 21 (`400` + `EvidenceStale`) | **Lobby-login hypothesis ruled out (red herring); 401-refresh hardening validated live; value-bound 11-survivor plateau again 1 above target**; no ≤10 target, no address file, no operator-window staging; `independentReplays` still 0; no RIP/root |
+| `OD-039-STATIC` | 2026-08-03 | Batch static root analysis (Track A): RTTI-walk all 9 chain classes; verify store-slot xref candidates as static roots | `tools/find-static-roots.py` batch (`--rtti` class list + `--chain` candidate list) against the hash-bound 11.19.0.10 binary | `Partial` | **Two runtime-written static root candidates confirmed**: `0x03FA0C74` (**9 .text refs**) and `0x03FA012C` (**6 refs**) — both `.data` zero-on-disk non-reloc = code-initialized global signature; RTTI TypeDescriptors located for every major chain class (VehicleGameLogicComponent family 11 mangled, AppContextImpl 3, ScreensFlow 1, GameScene 5, GameCamera* 6, VehicleDescr 20, Vehicle*Component 809 mangled hits, Context 244); `EntityList` has **0 RTTI hits → plain struct, xref-discovery only**; `0x03E7DF28` (AvatarContextBattle td) has 0 .text refs → not a root | No static chain root proven; `Vehicle`/`Context` COL slots all `plausible=False` (signature mismatch) → no statically-reachable vtable root for those classes; live confirmation still required; no RIP/root |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -2435,6 +2436,85 @@ The lobby-login hypothesis from OD-037 is ruled out (red herring - present in
 success runs too). The real signature is the replay-start flake (quiet exit
 ~2s after LoadGameScene). The 401-refresh hardening is the session's durable
 driver result.
+
+## `OD-039-STATIC` result — 2026-08-03 (Track A batch static root analysis)
+
+```yaml
+sessionId: OD-039-STATIC
+supersedes: none (Track A milestone; no live session or lease used)
+date: 2026-08-03
+timebox: offline batch analysis of the hash-bound 11.19.0.10 binary only; no game process
+decision: batch RTTI walk over all 9 community chain classes + chain-root verification of xref store-slot candidates; two runtime-written static root candidates confirmed (0x03FA0C74 with 9 .text refs, 0x03FA012C with 6), EntityList proven a plain struct (0 RTTI hits), and no statically-reachable vtable root found for any chain class; rolling driver gained delta pass-through for the Track C2 pilot
+objective: Convert the Track A static backlog into concrete evidence: locate RTTI TypeDescriptors for every class in the community chain, verify which store-slot xref candidates are genuine static roots, and arm the Track C2 pilot with the new delta-compare driver parameters
+stopCondition: batch complete (all requested RTTI + chain verifications recorded)
+method:
+  primaryTool: tools/find-static-roots.py (stdlib-only PE parser; new --rtti/--chain batch args)
+  target: hash-bound 11.19.0.10 binary (identity re-verified before scan)
+  rttiClasses: EntityList, VehicleGameLogic, Vehicle, AppContextImpl, ScreensFlow, GameScene, GameCamera, Context, VehicleDescr
+  chainCandidates: 0x03FA0C74, 0x03FA012C, 0x03E7DF28 (AvatarContextBattle TypeDescriptor)
+observations:
+  - state: chain-verify-0x03FA0C74
+    root: 0x03FA0C74
+    section: .data
+    onDiskShape: zero (runtime-initialized candidate)
+    relocTarget: false (not a reloc target - runtime-written or not a pointer)
+    textReferences: 9 (.text operand references; samples 0x0005D531, 0x0005D53C, 0x006E52D1, 0x006E52DE, 0x006E52F6, 0x006E64D1, 0x006F18C1, 0x006F18F1)
+    verdict: PLAUSIBLE root candidate - code-initialized global signature
+  - state: chain-verify-0x03FA012C
+    root: 0x03FA012C
+    section: .data
+    onDiskShape: zero (runtime-initialized candidate)
+    relocTarget: false
+    textReferences: 6 (samples 0x005F7BBB, 0x005F7BCE, 0x005F7BDB, 0x00601764, 0x00601785, 0x00601792)
+    verdict: PLAUSIBLE root candidate - code-initialized global signature
+  - state: chain-verify-0x03E7DF28
+    root: 0x03E7DF28 (AvatarContextBattle TypeDescriptor from OD-036-era scan)
+    section: .data
+    onDiskShape: zero
+    relocTarget: false
+    textReferences: 0 (no .text instruction ever references this address)
+    verdict: NOT a root - dead data, no code reference
+  - state: rtti-EntityList
+    substring: EntityList
+    nameHits: 0 (mangled filter)
+    typedescriptorSteps: 0
+    verdict: plain struct, no RTTI - xref-discovery only
+  - state: rtti-chain-classes
+    VehicleGameLogic: 43 raw hits -> 11 mangled; td steps 11; colSlots 0; vtableSlots 0
+    Vehicle: 1516 raw -> 809 mangled; td steps 809; colSlots 8 (all plausible=False, signature mismatch); vtableSlots 0
+    AppContextImpl: 4 -> 3 mangled; colSlots 0
+    ScreensFlow: 6 -> 1 mangled; colSlots 0
+    GameScene: 26 -> 5 mangled; colSlots 0
+    GameCamera: 15 -> 6 mangled; colSlots 0
+    Context: 405 -> 244 mangled; colSlots 7 (all plausible=False); vtableSlots 0
+    VehicleDescr: 35 -> 20 mangled; colSlots 0
+result:
+  whatWorked:
+    - Batch mode validated: 9 RTTI class scans + 3 chain verifications in one pass with per-class TypeDescriptor/COL/vtable/data-root accounting.
+    - Two runtime-written static root candidates confirmed: 0x03FA0C74 (9 .text refs) and 0x03FA012C (6 refs) - both fail the reloc test which is exactly the code-initialized-global signature (a reloc target would be a compiler-generated pointer; a non-reloc slot with .text operands is written by code at init). These are the highest-confidence static roots found to date.
+    - EntityList is a plain struct: 0 RTTI hits means no vtable/COL to anchor - xref discovery is the only path, which the 2398-store-slot scan already covers.
+    - TypeDescriptors exist for the entire chain family - Ghidra anchors available for later deeper analysis.
+    - Rolling driver now exposes -CompareMode delta/-DeltaTarget/-DeltaTolerance pass-through (parse-checked) so the Track C2 pilot can run without further code changes.
+  whatFailed:
+    - No statically-reachable vtable root: Vehicle/Context COL slots all fail the signature check (plausible=False) - the classic missing-COL-hop evidence pattern (consistent with the AvatarContextBattle no-root result in the strategy-v2 pilot).
+    - 0x03E7DF28 (AvatarContextBattle td) is dead data - no code reference, so it cannot anchor a chain.
+  rulesOut:
+    - Statically-reachable vtable roots for the chain classes as a Track A mechanism (COL signature mismatch across all 15 slots examined) - repeat only with a changed hypothesis (e.g. COL signature check against the actual RTTI layout or a complete-object-locator fixup table).
+  partials:
+    - Two static root candidates (0x03FA0C74, 0x03FA012C) ready for live verification against a replayTime-anchored session (Track C2 step 4 in strategy-v2).
+    - Delta-compare driver pass-through ready; first live validation is the Track C2 pilot.
+    - BLK-0019 still needs content-distinct second replay (independentReplays 0).
+  nextPivot: OD-RECOVERY-040 - run the proven invocation with the operator present during the held green window; optionally pilot delta-compare with a replay-derived position delta to break the 11-survivor plateau; verify 0x03FA0C74/0x03FA012C live if the window allows; content-distinct second replay when available.
+  repeatWithoutChangedHypothesis: false
+artifacts:
+  rawFiles: %TEMP%\fsr-batch.json, %TEMP%\find-static-roots-*.log (timestamped per-run)
+  committedSummary: this ledger entry + workflow update + strategy-v2 updates + tools/find-static-roots.py batch mode + roll-replay-time-increased.ps1 delta pass-through
+```
+
+`OD-039-STATIC` is aggregate structural evidence only. Offset remains 0.
+The static campaign's durable outputs are the two runtime-written root
+candidates (0x03FA0C74, 0x03FA012C) and the proof that the chain classes
+are RTTI-reachable except EntityList. Live confirmation is still required.
 
 ## Evidence promotion checklist
 

@@ -1,6 +1,6 @@
 # WoT Blitz PC offset-discovery workflow
 
-Last updated: 2026-08-03 (OD-RECOVERY-038: **lobby-login diagnosis corrected — the OD-037 `Invalid password status=68` crash signature is ruled out** — the login failure appears in *every* blitz log since 14:48 game-time *including the OD-036 SUCCESS run*, and every launch reaches `Start replay event` + `LoadGameScene`; the real death is `become hidden` + `GameCore::OnBackground` ~2s after scene load, the known replay-start flake at an elevated rate; the **first-ever 401-refresh failure in 13 validations** (round 9, roll 39.2M→65) was fixed with a 750ms settle + 4 retries and validated live (round-8 401 absorbed); attempt 4 rolled 39M→11 in 20 rounds, plateau 11 — value-bound, 1 above target)
+Last updated: 2026-08-03 (OD-039-STATIC: **batch static root analysis completed** — 9 chain classes RTTI-walked with TypeDescriptors located for `VehicleGameLogicComponent`/`AppContextImpl`/`ScreensFlow`/`GameScene`/`GameCamera*`/`VehicleDescr`/`Vehicle*Component` family; `EntityList` has **0 RTTI hits** → plain struct, xref-discovery only; **two runtime-written static root candidates confirmed** — `0x03FA0C74` (9 .text refs) and `0x03FA012C` (6 refs), both non-reloc = code-initialized global signature; rolling driver gained `-CompareMode delta`/`-DeltaTarget`/`-DeltaTolerance` pass-through for the Track C2 pilot)
 
 This is the operational playbook for discovering memory evidence from the
 Windows WoT Blitz client during a **positively verified offline replay**. It is
@@ -313,15 +313,21 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-039`. `OD-RECOVERY-038` completed as **Partial**
-and **corrected the OD-037 lobby-login hypothesis**: the `Invalid password
-status=68` login failure is a red herring — it appears in every blitz log
-since 14:48 game-time, *including the OD-036 SUCCESS run* (15:03 log: login
-failure + full replay to `onLeaveWorld`), and every launch reaches `Start
-replay event` + `LoadGameScene`. The real death signature is `become hidden`
-+ `GameCore::OnBackground` ~1–2s after `LoadGameScene` ends with the log
-stopping there — a quiet game-side exit at replay start (the known flake
-family, at an elevated rate: 7 of last 8 before OD-038, 2 of 4 in OD-038).
+Session ID: `OD-RECOVERY-040`. The static milestone `OD-039-STATIC`
+completed: batch RTTI + chain verification landed **two runtime-written
+static root candidates** (`0x03FA0C74` with 9 .text refs, `0x03FA012C` with
+6 refs — both non-reloc, the code-initialized-global signature the old
+reloc-only test could not see) plus TypeDescriptors for the whole chain
+(`EntityList` is a plain struct — 0 RTTI hits, xref-discovery only). The
+rolling driver now exposes `-CompareMode delta -DeltaTarget X
+-DeltaTolerance T` so the engine's delta-compare can be driven from
+replay-derived markers without code changes. `OD-RECOVERY-040` is the
+**Track C2 pilot**: reuse the proven invocation
+(`-SnapshotMaxBytes 402653184 -MaxRounds 40 -HoldAfterRollSeconds 240`)
+but add `-CompareMode delta -DeltaTarget <replay position delta> -DeltaTolerance
+<tol>` and measure survivor collapse vs "increased" (11 → predicted ≤2–4),
+then run operator Find-what-writes on the staged set. This builds on the
+validated driver stack:
 The session also produced the **first-ever 401-refresh failure in 13
 validations** (OD-038 attempt 3, round 9: the refreshed context re-read the
 rendezvous file but retried immediately into a mid-rotation file, exhausting

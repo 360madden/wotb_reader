@@ -57,6 +57,18 @@ param(
     # from the final compare, for interactive Find-what-writes. Aggregate counts
     # remain the only output on stdout; addresses never enter the repo.
     [string]$AddressFile = '',
+    # OD-039 replay-marker compare mode. Default 'increased' preserves the
+    # classic replayTime campaign. Set -CompareMode 'delta' to use the engine's
+    # delta-compare primitive with a replay-derived marker: -DeltaTarget is the
+    # expected value change between baseline and live snapshots (e.g. a known
+    # position delta from the decoded replay), -DeltaTolerance the absolute
+    # tolerance. Both are required in delta mode; they are rejected if passed
+    # with a non-delta mode. Rolling baseline advances each round so the delta
+    # is measured against the PREVIOUS round, not the original snapshot.
+    [ValidateSet('increased', 'delta')]
+    [string]$CompareMode = 'increased',
+    [double]$DeltaTarget = 0,
+    [double]$DeltaTolerance = -1,
     # OD-026 steady-state gate. OD-026 probing showed the 66M+ snapshot state
     # is STABLE for this game session (three snapshots within 0.05%, ~535MB,
     # ~1880 regions) - not a transient load spike - and rolling converges from
@@ -255,10 +267,15 @@ try {
             # candidate serialization for nothing (OD-RECOVERY-031 lease wall).
             # The address list is harvested separately on the target round.
             $cmpBody = @{
-                compareMode     = 'increased'
+                compareMode     = $CompareMode
                 maxCandidates   = $MaxCandidates
                 rollingBaseline = $true
-            } | ConvertTo-Json
+            }
+            if ($CompareMode -eq 'delta') {
+                $cmpBody.deltaTarget = $DeltaTarget
+                $cmpBody.deltaTolerance = $DeltaTolerance
+            }
+            $cmpBody = $cmpBody | ConvertTo-Json
             $cmp = Invoke-OdApi -Path "/api/v1/game/discover/compare/$sessionId" -Method Post -Body $cmpBody
             if ($cmp.PSObject.Properties['error']) {
                 Write-Roll ("FAILED_compare=" + $cmp.error)
@@ -310,10 +327,15 @@ try {
                 # free of candidate serialization (OD-RECOVERY-031).
                 if ($AddressFile) {
                     $harvestBody = @{
-                        compareMode     = 'increased'
+                        compareMode     = $CompareMode
                         maxCandidates   = 500
                         rollingBaseline = $true
-                    } | ConvertTo-Json
+                    }
+                    if ($CompareMode -eq 'delta') {
+                        $harvestBody.deltaTarget = $DeltaTarget
+                        $harvestBody.deltaTolerance = $DeltaTolerance
+                    }
+                    $harvestBody = $harvestBody | ConvertTo-Json
                     $harvest = Invoke-OdApi -Path "/api/v1/game/discover/compare/$sessionId" -Method Post -Body $harvestBody
                     if (-not $harvest.PSObject.Properties['error']) {
                         $lastCmp = $harvest

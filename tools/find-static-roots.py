@@ -518,14 +518,15 @@ def main(argv: list[str]) -> int:
         description="Offline static root analysis for the hash-bound wotblitz.exe")
     parser.add_argument("--exe", default=DEFAULT_EXE,
                         help=f"path to wotblitz.exe (default: {DEFAULT_EXE})")
-    parser.add_argument("--chain", metavar="RVA",
-                        help="verify a claimed root RVA, e.g. 0x03E91978")
+    parser.add_argument("--chain", metavar="RVA[,RVA...]",
+                        help="verify claimed root RVAs, comma-separated, e.g. 0x03E91978")
     parser.add_argument("--xref-data", action="store_true",
                         help="discover .data slots referenced by .text")
     parser.add_argument("--min-refs", type=int, default=2,
                         help="minimum total references for xref discovery")
-    parser.add_argument("--rtti", metavar="SUBSTR",
-                        help="RTTI back-door: find mangled name + vtables + roots")
+    parser.add_argument("--rtti", metavar="NAME[,NAME...]",
+                        help="RTTI back-door for class names, comma-separated, "
+                             "e.g. EntityList,VehicleGameLogic")
     parser.add_argument("--json", metavar="PATH",
                         help="write findings as JSON to PATH")
     args = parser.parse_args(argv)
@@ -551,13 +552,20 @@ def main(argv: list[str]) -> int:
     ran_any = False
 
     if args.chain is not None:
-        try:
-            root = int(args.chain, 0)
-        except ValueError:
-            LOG.error("invalid --chain RVA: %s", args.chain)
-            return 2
-        LOG.info("verify chain root 0x%08X", root)
-        results["chain"] = verify_chain_root(pe, root)
+        roots = []
+        for raw in args.chain.split(","):
+            raw = raw.strip()
+            try:
+                roots.append(int(raw, 0))
+            except ValueError:
+                LOG.error("invalid --chain RVA: %s", raw)
+                return 2
+        results["chain"] = []
+        for root in roots:
+            LOG.info("verify chain root 0x%08X", root)
+            verdict = verify_chain_root(pe, root)
+            results["chain"].append(verdict)
+            LOG.info("chain %s verdict: %s", verdict["root"], verdict["verdict"])
         ran_any = True
 
     if args.xref_data:
@@ -575,17 +583,20 @@ def main(argv: list[str]) -> int:
         ran_any = True
 
     if args.rtti is not None:
-        LOG.info("RTTI back-door: %s", args.rtti)
-        results["rtti"] = find_rtti(pe, args.rtti)
-        rtti = results["rtti"]
-        LOG.info("RTTI: %d name hits, %d TypeDescriptors, %d vtable slots, %d data roots",
-                 len(rtti["name_hits"]), len(rtti["typedescriptor_steps"]),
-                 len(rtti.get("vtable_slots", [])), len(rtti.get("data_roots", [])))
-        for hit in rtti["name_hits"]:
-            LOG.info("  name: %s @ %s", hit["mangled"], hit["name_rva"])
-        for root in rtti.get("data_roots", []):
-            LOG.info("  data root: %s points_to=%s reloc=%s",
-                     root["root_rva"], root["points_to"], root["reloc_target"])
+        names = [name.strip() for name in args.rtti.split(",") if name.strip()]
+        results["rtti"] = {}
+        for name in names:
+            LOG.info("RTTI back-door: %s", name)
+            rtti = find_rtti(pe, name)
+            results["rtti"][name] = rtti
+            LOG.info("RTTI %s: %d name hits, %d TypeDescriptors, %d vtable slots, %d data roots",
+                     name, len(rtti["name_hits"]), len(rtti["typedescriptor_steps"]),
+                     len(rtti.get("vtable_slots", [])), len(rtti.get("data_roots", [])))
+            for hit in rtti["name_hits"]:
+                LOG.info("  name: %s @ %s", hit["mangled"], hit["name_rva"])
+            for root in rtti.get("data_roots", []):
+                LOG.info("  data root: %s points_to=%s reloc=%s",
+                         root["root_rva"], root["points_to"], root["reloc_target"])
         ran_any = True
 
     if not ran_any:
