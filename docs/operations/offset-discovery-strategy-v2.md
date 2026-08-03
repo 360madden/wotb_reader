@@ -86,6 +86,18 @@ strong file logging, three capabilities:
   because startup writes it). These are the campaign's strongest static root
   candidates to date. The `AvatarContextBattle` TypeDescriptor (`0x03E7DF28`)
   has 0 code refs — dead slot, expected for RTTI metadata.
+- **Reference-site decode (OD-040-STATIC):** `tools/find-static-roots.py`
+  `--refs`/`--fields` confirms both candidates are **read-write
+  code-initialized globals** — `0x03FA0C74`: 9 refs (5 load + 4 store;
+  A1/A3 `mov eax,[abs]` + 8B/89 `mov r32,[m+disp32]` ecx) across 3 disjoint
+  code clusters (`0x0005D5xx`, `0x006E52xx`, `0x006F18xx`); `0x03FA012C`:
+  6 refs (2 load + 4 store; all A1/A3) across 2 clusters (`0x005F7Bxx`,
+  `0x006017xx`). The store mix is the offline Find-what-writes equivalent —
+  runtime code writes these slots, so they are not dead data. Field dump
+  pre-computes member displacements: the `.rdata` pointer `0x037F3054`
+  repeats at `+0xFFFFFFB4`/`+0x4`/`+0x54` around `0x03FA0C74` (likely a
+  shared vtable/type-descriptor pointer) — a prepared offset list for the
+  live probe.
 - **Batch RTTI walk (all chain classes):** TypeDescriptors located for
   `VehicleGameLogicComponent` (`0x03C24F4C`), `AppContextImpl` (`0x03E356F4`),
   `ScreensFlow` (`0x03E35C74`), `GameScene` (`0x03DB9AAC`),

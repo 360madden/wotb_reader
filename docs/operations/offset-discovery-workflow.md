@@ -1,6 +1,6 @@
 # WoT Blitz PC offset-discovery workflow
 
-Last updated: 2026-08-03 (OD-039-STATIC: **batch static root analysis completed** — 9 chain classes RTTI-walked with TypeDescriptors located for `VehicleGameLogicComponent`/`AppContextImpl`/`ScreensFlow`/`GameScene`/`GameCamera*`/`VehicleDescr`/`Vehicle*Component` family; `EntityList` has **0 RTTI hits** → plain struct, xref-discovery only; **two runtime-written static root candidates confirmed** — `0x03FA0C74` (9 .text refs) and `0x03FA012C` (6 refs), both non-reloc = code-initialized global signature; rolling driver gained `-CompareMode delta`/`-DeltaTarget`/`-DeltaTolerance` pass-through for the Track C2 pilot)
+Last updated: 2026-08-03 (OD-040-STATIC: **the two root candidates are confirmed read-write code-initialized globals via reference-site decode** — `0x03FA0C74` has 9 .text refs (5 load + 4 store: A1/A3 mov eax,[abs] + 8B/89 mov r32,[m+disp32] ecx) across 3 disjoint code clusters; `0x03FA012C` has 6 refs (2 load + 4 store, all A1/A3) across 2 clusters — the offline Find-what-writes equivalent; the field dump pre-computes candidate member displacements (0x037F3054 .rdata ptr repeats at +0xFFFFFFB4/+0x4/+0x54 around `0x03FA0C74`); `tools/find-static-roots.py` gained `--refs`/`--fields` modes; prior milestone OD-039-STATIC: batch RTTI walk landed the two candidates + `EntityList` plain-struct proof; rolling driver gained `-CompareMode delta`/`-DeltaTarget`/`-DeltaTolerance` pass-through for the Track C2 pilot)
 
 This is the operational playbook for discovering memory evidence from the
 Windows WoT Blitz client during a **positively verified offline replay**. It is
@@ -313,20 +313,23 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-040`. The static milestone `OD-039-STATIC`
-completed: batch RTTI + chain verification landed **two runtime-written
-static root candidates** (`0x03FA0C74` with 9 .text refs, `0x03FA012C` with
-6 refs — both non-reloc, the code-initialized-global signature the old
-reloc-only test could not see) plus TypeDescriptors for the whole chain
-(`EntityList` is a plain struct — 0 RTTI hits, xref-discovery only). The
-rolling driver now exposes `-CompareMode delta -DeltaTarget X
--DeltaTolerance T` so the engine's delta-compare can be driven from
-replay-derived markers without code changes. `OD-RECOVERY-040` is the
-**Track C2 pilot**: reuse the proven invocation
-(`-SnapshotMaxBytes 402653184 -MaxRounds 40 -HoldAfterRollSeconds 240`)
-but add `-CompareMode delta -DeltaTarget <replay position delta> -DeltaTolerance
-<tol>` and measure survivor collapse vs "increased" (11 → predicted ≤2–4),
-then run operator Find-what-writes on the staged set. This builds on the
+Session ID: `OD-RECOVERY-041`. Static milestones `OD-039-STATIC` +
+`OD-040-STATIC` landed **two runtime-written static root candidates
+confirmed as read-write code-initialized globals**: `0x03FA0C74` (9 .text
+refs — 5 load + 4 store, A1/A3 + 8B/89, across 3 disjoint code clusters)
+and `0x03FA012C` (6 refs — 2 load + 4 store, all A1/A3, across 2
+clusters) — the offline Find-what-writes equivalent; plus TypeDescriptors
+for the whole chain (`EntityList` is a plain struct — 0 RTTI hits,
+xref-discovery only). The rolling driver now exposes
+`-CompareMode delta -DeltaTarget X -DeltaTolerance T` so the engine's
+delta-compare can be driven from replay-derived markers without code
+changes. `OD-RECOVERY-041` is the **Track C2 pilot**: reuse the proven
+invocation (`-SnapshotMaxBytes 402653184 -MaxRounds 40 -HoldAfterRollSeconds
+240`) but add `-CompareMode delta -DeltaTarget <replay position delta>
+-DeltaTolerance <tol>` and measure survivor collapse vs "increased" (11 →
+predicted ≤2–4), then run operator Find-what-writes on the staged set — and
+**probe the two static root candidates live** (compare/pattern them under
+OfflineReplayVerified to classify what they hold). This builds on the
 validated driver stack:
 The session also produced the **first-ever 401-refresh failure in 13
 validations** (OD-038 attempt 3, round 9: the refreshed context re-read the

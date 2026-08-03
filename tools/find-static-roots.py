@@ -19,11 +19,19 @@ process, no memory reads). Three capabilities, all of which produce
                             containing SUBSTR, locate its TypeDescriptor, walk
                             to vtables that reference it, and list .data slots
                             pointing at those vtables (named singleton roots).
+  --refs RVA[,RVA...]       Decode every .text reference site for the given
+                            roots (store / load / lea / imm forms) — the
+                            offline equivalent of Find-what-writes.
+  --fields RVA[,RVA...]     Dump plausible typed member candidates (float32 /
+                            double / in-module pointer / small int32) in a
+                            .data window around the given roots, as relative
+                            displacements for a live session.
 
 Examples:
   python tools/find-static-roots.py --chain 0x03E91978
   python tools/find-static-roots.py --xref-data --min-refs 4
   python tools/find-static-roots.py --rtti AvatarContextBattle
+  python tools/find-static-roots.py --refs 0x03FA0C74 --fields 0x03FA0C74
 
 All findings are logged to a timestamped file under %TEMP%\\find-static-roots-*.log
 and printed to stdout. Exit code 0 on success (even with zero findings), 2 on
@@ -177,6 +185,26 @@ def _readable_string(pe: PeImage, rva: int, maxlen: int = 64) -> Optional[str]:
     return text if len(text) > 4 else None
 
 
+def _text_refs(pe: PeImage, root: int) -> list[int]:
+    """RVA list of every .text instruction containing `root` as a 4-byte
+    operand (absolute disp32, moffs32, or imm32)."""
+    refs: list[int] = []
+    text_sec = pe.text
+    if text_sec is None:
+        return refs
+    tstart = text_sec.raw_pointer
+    tend = min(tstart + text_sec.raw_size, len(pe.data))
+    needle = struct.pack("<I", root)
+    pos = tstart
+    while True:
+        index = pe.data.find(needle, pos, tend)
+        if index < 0:
+            break
+        refs.append(text_sec.virtual_address + (index - tstart))
+        pos = index + 1
+    return refs
+
+
 def verify_chain_root(pe: PeImage, root: int) -> dict:
     findings: dict = {"root": f"0x{root:08X}", "section": None, "tests": {}}
     section = pe.section_of(root)
@@ -201,19 +229,7 @@ def verify_chain_root(pe: PeImage, root: int) -> dict:
     }
 
     # .text reference scan for the exact 4-byte operand.
-    refs = []
-    text_sec = pe.text
-    if text_sec is not None:
-        tstart = text_sec.raw_pointer
-        tend = min(tstart + text_sec.raw_size, len(pe.data))
-        needle = struct.pack("<I", root)
-        pos = tstart
-        while True:
-            index = pe.data.find(needle, pos, tend)
-            if index < 0:
-                break
-            refs.append(text_sec.virtual_address + (index - tstart))
-            pos = index + 1
+    refs = _text_refs(pe, root)
     findings["tests"]["text_references"] = {
         "pass": len(refs) > 0,
         "count": len(refs),
@@ -498,6 +514,265 @@ def find_rtti(pe: PeImage, substring: str) -> dict:
 
 
 # --------------------------------------------------------------------------- #
+# Capability 4: reference-site instruction decoding (offline "what writes this")
+# --------------------------------------------------------------------------- #
+
+# x86-32 register names for the ModRM.reg field and the B8+Bx opcodes.
+_REGS = ("eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi")
+
+# Opcodes that take an absolute disp32 or moffs32 operand (single-byte forms
+# that do NOT use ModRM): A1 = mov eax,[moffs], A3 = mov [moffs],eax.
+_MOFFS_OPS = {0xA1: "mov eax,[abs]", 0xA3: "mov [abs],eax"}
+# One-byte opcodes whose ModRM byte follows immediately (ModRM.disp32 form).
+_MODRM_OPS = {
+    0x88: "mov [m+disp32],r8",
+    0x89: "mov [m+disp32],r32",
+    0x8A: "mov r8,[m+disp32]",
+    0x8B: "mov r32,[m+disp32]",
+    0x8D: "lea r32,[m+disp32]",
+    0xC7: "mov [m+disp32],imm32",
+}
+# 0x0F-prefixed two-byte opcodes with a following ModRM disp32 operand.
+_MODRM_OPS_2BYTE = {
+    0xB6: "movzx r32,[m+disp32]",
+    0xB7: "movzx r32,[m+disp32]",
+    0xBE: "movsx r32,[m+disp32]",
+    0xBF: "movsx r32,[m+disp32]",
+}
+# 0xF0-0xF7 / 0xD0-0xD7 opcodes that write to memory (inc/dec/not/neg/test).
+_MEM_RMW_OPS = {0xFE, 0xFF}  # inc/dec/not/neg/call/push via /r
+
+
+def _modrm_reg(modrm: int) -> str:
+    return _REGS[(modrm >> 3) & 7]
+
+
+def _modrm_is_mem_disp32(modrm: int) -> bool:
+    """True when the ModRM addresses memory with a 4-byte disp32 that directly
+    follows the ModRM byte (no SIB byte between them):
+      - mod=00, rm=101  -> absolute [disp32]
+      - mod=10, rm!=100 -> [base+disp32] (rm=100 would insert a SIB byte)
+    mod=11 is register-register (no memory operand at all)."""
+    mod = (modrm >> 6) & 3
+    rm = modrm & 7
+    if mod == 0b11:
+        return False
+    if rm == 0b100:  # SIB present -> displacement is not immediately after ModRM
+        return False
+    if mod == 0b00:
+        return rm == 0b101  # absolute disp32
+    if mod == 0b10:
+        return True  # base + disp32
+    return False  # mod=01 -> disp8, never a 4-byte operand
+
+
+def decode_reference_site(text: bytes, operand_pos: int, rva: int) -> dict:
+    """Decode the instruction whose absolute operand starts at `operand_pos`
+    inside the .text section bytes. `operand_pos` points at the first byte of
+    the 4-byte little-endian address operand (offset into `text`).
+
+    x86-32 layouts where the absolute dword is the final operand:
+      2-byte opcode + ModRM:    [0F] [op] [modrm] [disp32]
+      1-byte opcode + ModRM:    [op] [modrm] [disp32]
+      moffs / imm forms:        [op] [imm32]        (A1/A3/B8+rd/68/…)
+    """
+    operand = struct.unpack_from("<I", text, operand_pos)[0]
+    kind, width, reg, detail, opcode = "other", "dword", None, "", None
+
+    def result() -> dict:
+        return {
+            "rva": f"0x{rva:08X}",
+            "operand": f"0x{operand:08X}",
+            "kind": kind,
+            "width": width,
+            "reg": reg,
+            "opcode": (f"0x{opcode:02X}" if isinstance(opcode, int) and opcode < 0x100
+                        else f"0x{opcode:04X}" if isinstance(opcode, int) else None),
+            "detail": detail,
+        }
+
+    # Layout 1: two-byte opcode (0F xx) + ModRM disp32.
+    if operand_pos >= 3 and text[operand_pos - 3] == 0x0F:
+        op2 = text[operand_pos - 2]
+        if op2 in _MODRM_OPS_2BYTE:
+            opcode = 0x0F00 | op2
+            kind = "load"
+            width = "byte" if op2 in (0xB6, 0xBE) else "word"
+            reg = _modrm_reg(text[operand_pos - 1])
+            detail = _MODRM_OPS_2BYTE[op2]
+            return result()
+        # Unrecognized 0F-prefixed instruction: do not fall through and re-try
+        # op2 as a one-byte opcode (that would misclassify 0F A1/A3/… forms).
+        detail = f"unclassified 0F-prefixed opcode 0x{op2:02X}"
+        return result()
+
+    # Layout 2: one-byte opcode + ModRM disp32.
+    if operand_pos >= 2:
+        raw_op = text[operand_pos - 2]
+        modrm = text[operand_pos - 1]
+        if not _modrm_is_mem_disp32(modrm):
+            detail = (f"ModRM 0x{modrm:02X} is not a mem disp32 form "
+                      f"(op 0x{raw_op:02X})")
+            return result()
+        if raw_op in _MODRM_OPS:
+            opcode = raw_op
+            if raw_op in (0x88, 0x89, 0xC7):
+                kind = "store"
+            elif raw_op == 0x8D:
+                kind = "lea"
+            else:
+                kind = "load"
+            width = "byte" if raw_op in (0x88, 0x8A) else "dword"
+            reg = _modrm_reg(modrm)
+            detail = _MODRM_OPS[raw_op]
+            return result()
+        if raw_op in _MEM_RMW_OPS:
+            opcode = raw_op
+            reg = _modrm_reg(modrm)
+            kind = "rmw" if reg in (0, 1, 2, 3) else "other"
+            detail = (f"{_REGS[reg]}-group rmw on [abs]"
+                      if reg in (0, 1, 2, 3) else f"{_REGS[reg]}-group on [abs]")
+            return result()
+
+    # Layout 3: opcode immediately before the operand (moffs / imm forms).
+    if operand_pos >= 1:
+        raw_op = text[operand_pos - 1]
+        if raw_op in _MOFFS_OPS:
+            opcode = raw_op
+            kind = "store" if raw_op == 0xA3 else "load"
+            reg = "eax"
+            detail = _MOFFS_OPS[raw_op]
+            return result()
+        if 0xB8 <= raw_op <= 0xBF:
+            opcode = raw_op
+            kind = "imm"
+            reg = _REGS[raw_op - 0xB8]
+            detail = f"mov {reg},imm32"
+            return result()
+        if raw_op == 0x68:
+            opcode = raw_op
+            kind = "imm"
+            detail = "push imm32"
+            return result()
+        detail = f"unclassified opcode 0x{raw_op:02X}"
+    else:
+        detail = "operand at section start (no preceding bytes)"
+    return result()
+
+
+def analyze_references(pe: PeImage, root: int) -> dict:
+    """For every .text reference to `root`, decode the referencing instruction
+    (store / load / lea / imm) — the offline equivalent of Find-what-writes."""
+    result: dict = {"root": f"0x{root:08X}", "references": [], "summary": {}}
+    text_sec = pe.text
+    if text_sec is None:
+        return result
+    needle = struct.pack("<I", root)
+    tstart = text_sec.raw_pointer
+    tend = min(tstart + text_sec.raw_size, len(pe.data))
+    text = pe.data[tstart:tend]
+    pos = tstart
+    while True:
+        index = pe.data.find(needle, pos, tend)
+        if index < 0:
+            break
+        operand_pos = index - tstart  # needle IS the 4-byte absolute operand
+        rva = text_sec.virtual_address + operand_pos
+        decoded = decode_reference_site(text, operand_pos, rva)
+        result["references"].append(decoded)
+        pos = index + 1
+    summary: dict = {}
+    for ref in result["references"]:
+        key = ref["kind"]
+        summary[key] = summary.get(key, 0) + 1
+    result["summary"] = summary
+    return result
+
+
+# --------------------------------------------------------------------------- #
+# Capability 5: plausible member-offset dump near a root (.data window)
+# --------------------------------------------------------------------------- #
+
+def dump_fields_near(pe: PeImage, root: int, window: int = 0x80) -> dict:
+    """Scan a .data window around `root` and classify plausible typed values:
+    float32 (position-like), doubles (time-like), in-module pointers (chain
+    continuations), and small ints. Produces candidate member displacements
+    (relative to the root) for a live session, never runtime offsets."""
+    section = pe.section_of(root)
+    result: dict = {
+        "root": f"0x{root:08X}",
+        "section": section,
+        "window_bytes": window,
+        "float32_candidates": [],
+        "double_candidates": [],
+        "pointer_candidates": [],
+        "int32_candidates": [],
+    }
+    if section is None:
+        return result
+    raw_root = pe.rva_to_raw(root)
+    if raw_root is None:
+        return result
+    # Clamp the window to the containing section's raw extent so neighbors are
+    # real same-section bytes (file raw layout == virtual layout within a
+    # section, so relative offsets computed from raw are the true displacements).
+    sec = next((s for s in pe.sections if s.name == section), None)
+    if sec is None:
+        return result
+    lo = max(sec.raw_pointer, raw_root - window)
+    hi = min(sec.raw_pointer + sec.raw_size, raw_root + window, len(pe.data))
+
+    def rel_off(off: int) -> int:
+        return off - raw_root  # signed displacement relative to the root
+
+    for off in range(lo, hi - 3, 4):
+        value = struct.unpack_from("<I", pe.data, off)[0]
+        rel = rel_off(off)
+        # pointer candidate: in-module address
+        if pe.is_in_module(value) and value not in (0,):
+            section_of_target = pe.section_of(value - pe.image_base)
+            result["pointer_candidates"].append({
+                "relative_offset": rel,
+                "relative_offset_hex": f"0x{rel & 0xFFFFFFFF:08X}",
+                "points_to": f"0x{value:08X}",
+                "target_section": section_of_target,
+            })
+        # float32 candidate: finite, non-trivial, and not an integral value
+        # that the int32 pass already reports (avoids double-counting small ints)
+        fval = struct.unpack_from("<f", pe.data, off)[0]
+        is_integral_small = (
+            _finite(fval) and abs(fval) < 100_000 and fval == float(int(fval)))
+        if _finite(fval) and abs(fval) > 1e-6 and abs(fval) < 1e7 \
+                and not is_integral_small:
+            result["float32_candidates"].append({
+                "relative_offset": rel,
+                "relative_offset_hex": f"0x{rel & 0xFFFFFFFF:08X}",
+                "value": round(fval, 4),
+            })
+        # int32 candidate: small non-negative
+        if 0 < value < 100_000:
+            result["int32_candidates"].append({
+                "relative_offset": rel,
+                "relative_offset_hex": f"0x{rel & 0xFFFFFFFF:08X}",
+                "value": value,
+            })
+    for off in range(lo, hi - 7, 8):
+        dval = struct.unpack_from("<d", pe.data, off)[0]
+        rel = rel_off(off)
+        if _finite(dval) and 0.0 < dval < 100_000.0:
+            result["double_candidates"].append({
+                "relative_offset": rel,
+                "relative_offset_hex": f"0x{rel & 0xFFFFFFFF:08X}",
+                "value": round(dval, 4),
+            })
+    return result
+
+
+def _finite(value: float) -> bool:
+    return value == value and abs(value) != float("inf")
+
+
+# --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
 
@@ -527,6 +802,14 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--rtti", metavar="NAME[,NAME...]",
                         help="RTTI back-door for class names, comma-separated, "
                              "e.g. EntityList,VehicleGameLogic")
+    parser.add_argument("--refs", metavar="RVA[,RVA...]",
+                        help="decode every .text reference site for the given "
+                             "roots (offline what-writes-this), comma-separated")
+    parser.add_argument("--fields", metavar="RVA[,RVA...]",
+                        help="dump plausible typed member candidates in a .data "
+                             "window around the given roots, comma-separated")
+    parser.add_argument("--window", type=int, default=0x80,
+                        help=".data window bytes around each --fields root (default 128)")
     parser.add_argument("--json", metavar="PATH",
                         help="write findings as JSON to PATH")
     args = parser.parse_args(argv)
@@ -597,6 +880,61 @@ def main(argv: list[str]) -> int:
             for root in rtti.get("data_roots", []):
                 LOG.info("  data root: %s points_to=%s reloc=%s",
                          root["root_rva"], root["points_to"], root["reloc_target"])
+        ran_any = True
+
+    if args.refs is not None:
+        roots = []
+        for raw in args.refs.split(","):
+            raw = raw.strip()
+            try:
+                roots.append(int(raw, 0))
+            except ValueError:
+                LOG.error("invalid --refs RVA: %s", raw)
+                return 2
+        results["refs"] = []
+        for root in roots:
+            LOG.info("reference-site analysis 0x%08X", root)
+            analysis = analyze_references(pe, root)
+            results["refs"].append(analysis)
+            LOG.info("  summary: %s", analysis["summary"])
+            for ref in analysis["references"]:
+                LOG.info("    %s %s %s reg=%s op=%s %s",
+                         ref["rva"], ref["kind"], ref["detail"],
+                         ref["reg"] or "-", ref["opcode"], ref["operand"])
+        ran_any = True
+
+    if args.fields is not None:
+        roots = []
+        for raw in args.fields.split(","):
+            raw = raw.strip()
+            try:
+                roots.append(int(raw, 0))
+            except ValueError:
+                LOG.error("invalid --fields RVA: %s", raw)
+                return 2
+        results["fields"] = []
+        for root in roots:
+            LOG.info("field dump 0x%08X window=%d", root, args.window)
+            fields = dump_fields_near(pe, root, args.window)
+            results["fields"].append(fields)
+            LOG.info("  float32=%d double=%d pointer=%d int32=%d",
+                     len(fields["float32_candidates"]),
+                     len(fields["double_candidates"]),
+                     len(fields["pointer_candidates"]),
+                     len(fields["int32_candidates"]))
+            for candidate in fields["pointer_candidates"]:
+                LOG.info("    ptr +%s -> %s (%s)",
+                         candidate["relative_offset_hex"],
+                         candidate["points_to"], candidate["target_section"])
+            for candidate in fields["double_candidates"]:
+                LOG.info("    dbl +%s = %s",
+                         candidate["relative_offset_hex"], candidate["value"])
+            for candidate in fields["float32_candidates"][:8]:
+                LOG.info("    f32 +%s = %s",
+                         candidate["relative_offset_hex"], candidate["value"])
+            for candidate in fields["int32_candidates"][:8]:
+                LOG.info("    i32 +%s = %s",
+                         candidate["relative_offset_hex"], candidate["value"])
         ran_any = True
 
     if not ran_any:

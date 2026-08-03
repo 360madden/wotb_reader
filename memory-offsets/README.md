@@ -353,12 +353,17 @@ quarantined yaw evidence with offset `0` and status `Stale`; the runtime reader 
 zero-valued fields to `Unknown`, so no stale field can authorize a memory read.
 Dynamic verification must use a positively verified offline replay and preserve
 evidence summaries without committing raw dumps or scan files. Campaign status as
-of OD-RECOVERY-038: the `Invalid password status=68` login failure seen since
+of OD-040-STATIC: the `Invalid password status=68` login failure seen since
 14:48 is baseline noise (present in the OD-036 success run too), not an offline-path
 blocker; the real replay-start death is `become hidden` + `GameCore::OnBackground`
 ~2s after `LoadGameScene` with no crash dump; the 401-refresh was hardened (750ms
-settle + 4 retries) after its first-ever live failure. Next step (OD-039):
-operator-present interactive Find-what-writes on a staged ≤11-survivor set.
+settle + 4 retries) after its first-ever live failure. Static milestone
+OD-039-STATIC/OD-040-STATIC confirmed two runtime-written `.data` root candidates
+(`0x03FA0C74` with 9 .text refs, `0x03FA012C` with 6 refs) that are read-write
+code-initialized globals (mixed load/store instruction mix — not dead data), and
+proved `EntityList` is a plain struct with 0 RTTI hits. Next step (OD-041):
+operator-present interactive Find-what-writes on a staged ≤11-survivor set,
+optionally verifying `0x03FA0C74`/`0x03FA012C` live.
 
 ## Quick reference — common field types
 
