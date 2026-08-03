@@ -18,6 +18,11 @@ param(
     # cheap (1s tail pulses), so raising MaxRounds past 22 lets the tail keep
     # pulsing instead of stopping at the old 22-round cap.
     [int]$MaxRounds = 22,
+    # OD-039 tail staging passthrough: positive value stages the full
+    # converged plateau set (11-17 survivors) for interactive Find-what-writes
+    # even when the value-bound tail never reaches the <=10 target. 0 = current
+    # behavior (stage only at/below the target).
+    [int]$HarvestThreshold = 0,
     [string]$TargetSurvivors = '10',
     [string]$AddressFile = '',
     # After rolling lands <=10, hold this many seconds while polling the gate
@@ -112,7 +117,7 @@ if ($PreSnapshotSettleSeconds -gt 0) {
 $roll = Join-Path $RepoRoot 'scripts\roll-replay-time-increased.ps1'
 Remove-Item -LiteralPath $AddressFile -Force -ErrorAction SilentlyContinue
 Write-Host 'od018: rolling_start'
-& $roll -TargetSurvivors $TargetSurvivors -TransitionSeconds $TransitionSeconds -TailThreshold $TailThreshold -TailTransitionSeconds $TailTransitionSeconds -SnapshotMaxBytes $SnapshotMaxBytes -MaxRounds $MaxRounds -AddressFile $AddressFile
+& $roll -TargetSurvivors $TargetSurvivors -TransitionSeconds $TransitionSeconds -TailThreshold $TailThreshold -TailTransitionSeconds $TailTransitionSeconds -SnapshotMaxBytes $SnapshotMaxBytes -MaxRounds $MaxRounds -HarvestThreshold $HarvestThreshold -AddressFile $AddressFile
 Write-Host ("od018: rolling_exit=" + $LASTEXITCODE)
 Write-Host ("od018: addresses=" + $AddressFile)
 if ($LASTEXITCODE -ne 0) {

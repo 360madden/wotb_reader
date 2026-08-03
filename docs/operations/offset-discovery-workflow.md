@@ -1,6 +1,6 @@
 # WoT Blitz PC offset-discovery workflow
 
-Last updated: 2026-08-03 (OD-RECOVERY-038: **lobby-login diagnosis corrected — the OD-037 `Invalid password status=68` crash signature is ruled out** — the login failure appears in *every* blitz log since 14:48 game-time *including the OD-036 SUCCESS run*, and every launch reaches `Start replay event` + `LoadGameScene`; the real death is `become hidden` + `GameCore::OnBackground` ~2s after scene load, the known replay-start flake at an elevated rate; the **first-ever 401-refresh failure in 13 validations** (round 9, roll 39.2M→65) was fixed with a 750ms settle + 4 retries and validated live (round-8 401 absorbed); attempt 4 rolled 39M→11 in 20 rounds, plateau 11 — value-bound, 1 above target)
+Last updated: 2026-08-03 (OD-RECOVERY-039: **full-lease green roll proven — gate verified 22:54:57Z, roll `2,090,084→…→13` in 40 rounds (`rolling_exit=0`), gate held `OfflineReplayVerified` through the entire 120s research lease and closed only at evidence expiry, the first full-lease survival since OD-031** — but the value-bound plateau (13) was **not staged** because the driver harvests only at/below the ≤10 target, so the operator window had 1 candidate instead of 13; **fixed with a new `-HarvestThreshold` param** that stages the full converged tail (one final 500-candidate compare before discard) for interactive Find-what-writes even without ≤10; replay-start flake remains the binding constraint at 4-of-5 attempts; observation: the managed child survived `EvidenceStale` ~7 min — expiry-termination property to check in OD-040)
 
 This is the operational playbook for discovering memory evidence from the
 Windows WoT Blitz client during a **positively verified offline replay**. It is
@@ -313,28 +313,29 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-039`. `OD-RECOVERY-038` completed as **Partial**
-and **corrected the OD-037 lobby-login hypothesis**: the `Invalid password
-status=68` login failure is a red herring — it appears in every blitz log
-since 14:48 game-time, *including the OD-036 SUCCESS run* (15:03 log: login
-failure + full replay to `onLeaveWorld`), and every launch reaches `Start
-replay event` + `LoadGameScene`. The real death signature is `become hidden`
-+ `GameCore::OnBackground` ~1–2s after `LoadGameScene` ends with the log
-stopping there — a quiet game-side exit at replay start (the known flake
-family, at an elevated rate: 7 of last 8 before OD-038, 2 of 4 in OD-038).
-The session also produced the **first-ever 401-refresh failure in 13
-validations** (OD-038 attempt 3, round 9: the refreshed context re-read the
-rendezvous file but retried immediately into a mid-rotation file, exhausting
-the 2-retry budget) — **fixed by adding a 750ms settle after refresh +
-raising Retries to 4** and validated live on its first use (attempt 4 round
-8: 401 absorbed, roll continued). Attempt 4 rolled **39M → 11 in 20 rounds**
-(plateau 11 rounds 16–20 — the value-bound tail again, 1 above target) then
-the lease wall (round 21 `400`). The roll pipeline is proven (OD-036 staged
-9 + armed 4), so **OD-039 runs the proven invocation**
-(`-SnapshotMaxBytes 402653184 -MaxRounds 40 -HoldAfterRollSeconds 240`)
-**with the operator present during the held green window** — the 11-survivor
-set is usable for interactive Find-what-writes even without ≤10. This builds
-on the validated driver
+Session ID: `OD-RECOVERY-040`. `OD-RECOVERY-039` completed as **Partial**
+and produced the **first full-lease green roll since OD-031**: the game
+survived the entire 120s research lease, the proven invocation
+(`-SnapshotMaxBytes 402653184 -MaxRounds 40`) ran all 40 rounds
+(`2,090,084 → … → 13` plateau, `rolling_exit=0`), and the gate held
+`OfflineReplayVerified` from verification (22:54:57Z) to evidence expiry
+(22:56:56Z) — closing on the lease wall, not on a flake. The durable
+finding: **the converged plateau set is not staged** because the driver
+harvests the address file only when survivors drop to/below the ≤10 target;
+this run wrote 1 candidate (`0x74A2478`) with
+`WARN_address_count_mismatch candidates=1 survivors=13`, so the operator
+window had nothing to Find-what-writes on. **Fixed** in
+`roll-replay-time-increased.ps1` with a new `-HarvestThreshold` param: when
+the roll ends without reaching the target but survivors ≤ the threshold, one
+final 500-candidate compare stages the full converged tail before the
+session is discarded (only while the gate is still verified). So **OD-040
+runs the proven invocation WITH `-HarvestThreshold 200`** (the plateau lands
+11–17, so 200 comfortably captures the converged tail) **and the operator
+present during the held green window** — the staged plateau set is directly
+usable for interactive Find-what-writes. The replay-start flake is still the
+binding constraint (4 of 5 attempts this session died ~2s after
+`LoadGameScene` ends: `become hidden` + `GameCore::OnBackground`, no crash
+dump). This builds on the validated driver
 stack:
 
 1. **401 capability-rotation refresh** — the rendezvous token rotates ~5 min,
@@ -391,7 +392,15 @@ hidden` + `GameCore::OnBackground` ~1–2s after `LoadGameScene` ends with no
 crash dump (OD-RECOVERY-038 corrected the OD-037 record); (13) **the 401
 refresh can fail against a mid-rotation rendezvous file** — after refreshing
 on a 401, settle ~750ms before retrying and keep ≥4 retries; validated live
-when a round-8 401 was absorbed and the roll continued (OD-RECOVERY-038).
+when a round-8 401 was absorbed and the roll continued (OD-RECOVERY-038);
+(14) **the converged plateau set is never staged without `-HarvestThreshold`**
+— the driver writes the address file only when survivors drop to/below the
+≤10 target, so a value-bound plateau at 11–17 leaves the operator window
+with a single arbitrary candidate (`WARN_address_count_mismatch
+candidates=1 survivors=13`, OD-RECOVERY-039); pass a positive
+`-HarvestThreshold` (e.g. 200) so one final 500-candidate compare stages the
+full converged tail before the session is discarded, and only while the gate
+is still verified (OD-RECOVERY-039).
 
 Operational notes: (1) detached launch + session driver remains the proven
 pattern; (2) the CE autorun staging (`od-autorun-writebp.lua`) works and now

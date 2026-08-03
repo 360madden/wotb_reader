@@ -711,6 +711,23 @@ folder for the full numbering convention and document map.
   coordinator tests pin that property. Composition coverage and both research
   bounds are documented in the operations and offline discovery guidance.
 
+## Amendment — BLK-0024 expiry-termination observation (`2026-08-03`)
+
+- Observation (not yet diagnosed): during `OD-RECOVERY-039` the managed
+  child (wotblitz PID 53100) was still alive ~7 minutes after evidence
+  expiry (`EvidenceStale` at 22:56:56Z, process last observed 23:03Z),
+  despite the resolution claim above that "the exact managed child is
+  terminated at evidence expiry or stop as before". The host log shows
+  `lifecycle_evidence verified` and no later termination line.
+- The gate stayed closed the whole time (`EvidenceStale` authorizes no
+  scanning), so this is a fail-closed/cleanup property gap, not an
+  authorization gap.
+- Follow-up: `OD-RECOVERY-040` should first confirm whether the
+  termination request (`RevokeSession(terminateProcess: true)` →
+  `TryTerminateAfterHandOff`) actually fires on the evidence-expiry path
+  and, if it does, why the child survives it. The next launch helper run
+  force-stops stale processes regardless, so the campaign is not blocked.
+
 ## BLK-0025 — Exact managed launches were blocked by the SDL_app restriction and a capped desktop enumeration
 
 - First observed: `2026-08-02T05:20:00Z` (identified while resolving BLK-0023)

@@ -52,6 +52,14 @@ param(
     # target; the round-1 previousCount is the evidence check that the budget
     # bound (and did not exclude the target region).
     [long]$SnapshotMaxBytes = 0,
+    # OD-039 tail staging: the value-bound plateau converges 11-17, above the
+    # <=10 target, so the target-path harvest never runs and the operator
+    # window gets only the 1 candidate from the final rolling round. A positive
+    # HarvestThreshold stages the full converged survivor set (one final
+    # 500-candidate compare before the session is discarded) so interactive
+    # Find-what-writes has the real tail even without reaching the target.
+    # 0 = current behavior (harvest only at/below the target).
+    [int]$HarvestThreshold = 0,
     [string]$ResultPath = '',
     # Local (untracked) file to receive survivor candidate absolute addresses
     # from the final compare, for interactive Find-what-writes. Aggregate counts
@@ -236,6 +244,7 @@ try {
         $lastCmp = $null
         $survivors = -1
         $insaneSnapshot = $false
+        $harvested = $false
         for ($round = 1; $round -le $roundLimit; $round++) {
             if ($AutoSpace) { Send-SpacePulse }
             # Two-phase pulse (OD-034): full TransitionSeconds for the
@@ -318,6 +327,7 @@ try {
                     if (-not $harvest.PSObject.Properties['error']) {
                         $lastCmp = $harvest
                         $survivors = [int]$harvest.increasedCount
+                        $harvested = $true
                         Write-Roll ("harvest increased=" + $survivors + " candidates=" + @($harvest.candidates).Count)
                     }
                     else {
@@ -335,6 +345,42 @@ try {
             }
         }
         if (-not $insaneSnapshot) { break }
+    }
+
+    # OD-039: when the roll ends without reaching the target (the value-bound
+    # plateau at 11-17), stage the full converged survivor set so the operator
+    # window has the real tail for interactive Find-what-writes. The rolling
+    # rounds request 1 candidate each, so without this the address file would
+    # hold a single arbitrary survivor. Only runs while the gate is still
+    # verified and the session is still alive (before the discard below).
+    if ($AddressFile -and $HarvestThreshold -gt 0 -and -not $harvested -and $survivors -ge 0 -and $survivors -le $HarvestThreshold) {
+        $g = Get-GateState
+        if ($g -and $g.verificationState -eq 'OfflineReplayVerified') {
+            $harvestBody = @{
+                compareMode     = 'increased'
+                maxCandidates   = 500
+                rollingBaseline = $true
+            } | ConvertTo-Json
+            try {
+                $harvest = Invoke-OdApi -Path "/api/v1/game/discover/compare/$sessionId" -Method Post -Body $harvestBody
+                if (-not $harvest.PSObject.Properties['error']) {
+                    $lastCmp = $harvest
+                    $survivors = [int]$harvest.increasedCount
+                    $harvested = $true
+                    Write-Roll ("tail_harvest increased=" + $survivors + " candidates=" + @($harvest.candidates).Count)
+                }
+                else {
+                    Write-Roll ("tail_harvest_failed=" + $harvest.error)
+                }
+            }
+            catch {
+                Write-Roll ("tail_harvest_error=" + $_.Exception.Message)
+            }
+        }
+        else {
+            $vs = if ($g) { $g.verificationState } else { 'unreachable' }
+            Write-Roll ("tail_harvest_skipped gate=" + $vs)
+        }
     }
 
     try {
