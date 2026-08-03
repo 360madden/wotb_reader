@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
   Dismiss WoT Blitz "WATCH OFFLINE" via orange-button blob find + dual verify.
@@ -11,9 +11,11 @@
   Never clicks LOG IN AND WATCH (green, right). Waits until the dialog passes the
   sync-dim ready gate (bright + strong orange, optionally after sync dim observed
   or grace elapsed), holds briefly so the dialog can accept input, then clicks
-  its centroid. Requires both:
-    - GET /api/v1/game/state â†’ OfflineReplayVerified
-    - Post-click orange blob area below dismiss threshold (dialog gone)
+  its centroid. Success requires OfflineReplayVerified, which proves the
+  replay started (lifecycle monitor requires a fresh START_REPLAY_LOCAL / Start
+  replay event marker) and therefore proves the dialog is gone - the orange
+  dialog ROI then false-positives on replay-HUD content (OD-RECOVERY-017), so
+  once verified the script stops clicking instead of chasing the blob.
 
 .EXITCODES
   0  Dual success (gate + dialog dismissed)
@@ -681,7 +683,11 @@ try {
         }
 
         Write-Host ("watch_offline: gateOk={0} dialogGone={1}" -f $gateOk, $dialogGone)
-        if ($gateOk -and $dialogGone) { break }
+        # OfflineReplayVerified proves the replay started (lifecycle monitor
+        # requires a fresh START_REPLAY_LOCAL marker), which proves the dialog
+        # is gone. The orange dialog ROI then false-positives on replay-HUD
+        # content; keep clicking only in visual-only mode where no gate exists.
+        if ($gateOk -and ($dialogGone -or -not $VisualDismissOnly)) { break }
     }
 
     $after = if ($VisualDismissOnly) { 'visual_only' } else { Get-VerificationState }
@@ -697,6 +703,9 @@ try {
     $dialogGone = $dialogGone -or ($finalCount -ge 0 -and $finalCount -le $DismissMaxPixels)
     if (-not $VisualDismissOnly) {
         $gateOk = $gateOk -or ($after -eq 'OfflineReplayVerified')
+        # Verified gate proves the replay started, which proves the dialog is
+        # gone; the orange ROI may show replay-HUD content instead (OD-017).
+        if ($after -eq 'OfflineReplayVerified') { $dialogGone = $true }
     }
     else {
         $dava = Join-Path $env:LOCALAPPDATA 'wotblitz\DAVAProject'
