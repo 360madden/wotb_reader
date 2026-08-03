@@ -1,6 +1,6 @@
 # WoT Blitz PC offset-discovery workflow
 
-Last updated: 2026-08-03 (OD-RECOVERY-036: TARGET 10 ≤ 10 reached with the budget driver — 9 survivors staged in CE's address list with 4 HW write-BPs armed (0 hits, consistent with OD-020); 3 of 4 launches hit the game-side flake; the full staging handoff now works end-to-end — the operator-window Find-what-writes step is the remaining evidence path)
+Last updated: 2026-08-03 (OD-RECOVERY-037: 4-of-4 launches hit the game-side flake — a NEW crash signature appeared (game dies in the login/lobby phase with `LoginHandler::fail status=68 Invalid password` then window hidden, never reaching the replay; 7 of the last 8 launches across OD-036/037 flaked); no roll ran; the pipeline/driver remain at best-known state — the staging handoff is proven (OD-036), so the blocker is now launch reliability, not the roll)
 
 This is the operational playbook for discovering memory evidence from the
 Windows WoT Blitz client during a **positively verified offline replay**. It is
@@ -313,22 +313,26 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-037`. `OD-RECOVERY-036` completed as **Partial**
-with the **full staging handoff proven end-to-end**: attempt 4 reached
-**TARGET 10 ≤ 10 in 17 rounds** with the budget driver (round-1 walked
-39M), harvested **9 candidates**, and the CE autorun **staged all 9 into CE's
-address list with 4 hardware write-BPs armed** (0 hits in a 20s capture,
-consistent with the OD-020 standing rule). The operator window opened but
-the gate was `EvidenceStale` at close (the 120s lease expired during the
-240s hold), so the interactive Find-what-writes result remains operator-
-owned. 3 of 4 launches hit the game-side flake this session (an unusually
-high rate) — budget for relaunches. This builds on the validated driver
+Session ID: `OD-RECOVERY-038`. `OD-RECOVERY-037` completed as **Partial**
+with **launch reliability now the binding constraint, not the roll**: all 4
+attempts flaked game-side (7 of the last 8 launches across OD-036/037), and
+the blitz logs show a **NEW crash signature — the game never reaches the
+replay**. It dies in the login/lobby phase (`LoginHandler::fail status=68
+Invalid password` + `ConnectionManager::onLogOnFailure`, then
+`Window::HandleVisibilityChanged: become hidden` + `GameCore::OnBackground`),
+distinct from the OD-030/031 replay-start AccountController assert; this may
+indicate an online-login requirement blocking the offline path. The roll
+pipeline is proven (OD-036: TARGET 10 ≤ 10, 9 survivors staged in CE, 4 HW
+write-BPs armed), so **OD-038 must first diagnose the lobby-login failure
+(offline flag / login config / network) before running the proven
+invocation** (`-SnapshotMaxBytes 402653184 -MaxRounds 40 -HoldAfterRollSeconds
+240`) with the operator present. This builds on the validated driver
 stack:
 
 1. **401 capability-rotation refresh** — the rendezvous token rotates ~5 min,
    and a 66M-baseline roll outlives it; the driver refreshes the rendezvous
    and retries on 401 (`Invoke-OdApi`, logged `capability_401_refresh_retry`).
-   Validated live an eleventh time (OD-036 round 6).
+   Validated live an eleventh time (OD-036 round 6).   Validated live an eleventh time (OD-036 round 6).
    Validated live a tenth time (OD-035 rounds 15/10).
 2. **Probe-fold** — the OD-026 standalone sanity probe ran a full 66M-candidate
    compare whose `previousCount` was identical to round-1's; the steady-state
