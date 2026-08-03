@@ -353,17 +353,21 @@ quarantined yaw evidence with offset `0` and status `Stale`; the runtime reader 
 zero-valued fields to `Unknown`, so no stale field can authorize a memory read.
 Dynamic verification must use a positively verified offline replay and preserve
 evidence summaries without committing raw dumps or scan files. Campaign status as
-of OD-040-STATIC: the `Invalid password status=68` login failure seen since
+of OD-041-STATIC: the `Invalid password status=68` login failure seen since
 14:48 is baseline noise (present in the OD-036 success run too), not an offline-path
 blocker; the real replay-start death is `become hidden` + `GameCore::OnBackground`
 ~2s after `LoadGameScene` with no crash dump; the 401-refresh was hardened (750ms
-settle + 4 retries) after its first-ever live failure. Static milestone
-OD-039-STATIC/OD-040-STATIC confirmed two runtime-written `.data` root candidates
-(`0x03FA0C74` with 9 .text refs, `0x03FA012C` with 6 refs) that are read-write
-code-initialized globals (mixed load/store instruction mix — not dead data), and
-proved `EntityList` is a plain struct with 0 RTTI hits. Next step (OD-041):
-operator-present interactive Find-what-writes on a staged ≤11-survivor set,
-optionally verifying `0x03FA0C74`/`0x03FA012C` live.
+settle + 4 retries) after its first-ever live failure. Static milestones
+OD-039/040/041-STATIC confirmed the two runtime-written `.data` candidates
+(`0x03FA0C74` with 9 .text refs, `0x03FA012C` with 6 refs) are read-write
+code-initialized globals — but **OD-041-STATIC re-classified them**: they are
+members of a repeating 0x50-byte `.data` EH/handler record family (base
+`0x03FA0C20`), and `0x037F3054` is an MSVC EH handler/funclet table (113
+FuncInfo magics within ±0x2000, 48,609 aligned `.data` references). They are
+**NOT standalone gameplay roots** — live-probing them as singletons is ruled
+out without a changed hypothesis. `EntityList` is a plain struct (0 RTTI hits).
+Next step (OD-042): operator-present interactive Find-what-writes on a staged
+≤11-survivor replayTime set (the live anchor), optionally piloting delta-compare.
 
 ## Quick reference — common field types
 

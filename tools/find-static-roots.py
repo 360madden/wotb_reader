@@ -26,12 +26,18 @@ process, no memory reads). Three capabilities, all of which produce
                             double / in-module pointer / small int32) in a
                             .data window around the given roots, as relative
                             displacements for a live session.
+  --record-map BASE,STRIDE[,COUNT]
+                            Classify each member of a repeating record array
+                            (e.g. the 0x50-byte EH/handler family found around
+                            0x03FA0C74) and list runtime-initialized
+                            (zero-on-disk) slots.
 
 Examples:
   python tools/find-static-roots.py --chain 0x03E91978
   python tools/find-static-roots.py --xref-data --min-refs 4
   python tools/find-static-roots.py --rtti AvatarContextBattle
   python tools/find-static-roots.py --refs 0x03FA0C74 --fields 0x03FA0C74
+  python tools/find-static-roots.py --record-map 0x03FA0C20,0x50,8
 
 All findings are logged to a timestamped file under %TEMP%\\find-static-roots-*.log
 and printed to stdout. Exit code 0 on success (even with zero findings), 2 on
@@ -773,6 +779,91 @@ def _finite(value: float) -> bool:
 
 
 # --------------------------------------------------------------------------- #
+# Capability 6: record-array member mapping
+# --------------------------------------------------------------------------- #
+
+
+def map_record_array(pe: PeImage, base: int, stride: int, count: int) -> dict:
+    """Classify each member of a repeating record array (like the 0x50-byte
+    EH/handler record family found around 0x03FA0C74). For each dword member
+    of each record, classify as zero (runtime-initialized candidate),
+    in-module pointer (chain continuation), small int, or float32 — and flag
+    which members are consistently zero on disk (the runtime-written slots)."""
+    section = pe.section_of(base)
+    result: dict = {
+        "base": f"0x{base:08X}",
+        "section": section,
+        "stride": f"0x{stride:X}",
+        "record_count": count,
+        "member_count": stride // 4,
+        "records": [],
+        "runtime_slots": [],
+    }
+    for record_index in range(count):
+        rva = base + record_index * stride
+        if pe.section_of(rva) != section:
+            break
+        raw = pe.rva_to_raw(rva)
+        if raw is None or raw + stride > len(pe.data):
+            break
+        members = []
+        for member_index in range(stride // 4):
+            offset = member_index * 4
+            value = struct.unpack_from("<I", pe.data, raw + offset)[0]
+            kind = "opaque"
+            note = ""
+            if value == 0:
+                kind = "zero"
+            elif pe.is_in_module(value):
+                kind = "pointer"
+                note = f"-> {pe.section_of(value - pe.image_base)}"
+            elif 0 < value < 100_000:
+                kind = "int32"
+            else:
+                fval = struct.unpack_from("<f", pe.data, raw + offset)[0]
+                if _finite(fval) and abs(fval) > 1e-6 and abs(fval) < 1e7 \
+                        and not (abs(fval) < 100_000 and fval == float(int(fval))):
+                    kind = "float32"
+                    note = f"~{fval:.3f}"
+            members.append({
+                "member": member_index,
+                "relative_offset": offset,
+                "relative_offset_hex": f"0x{offset:02X}",
+                "value": f"0x{value:08X}",
+                "kind": kind,
+                "note": note,
+            })
+        record = {
+            "record_index": record_index,
+            "rva": f"0x{rva:08X}",
+            "members": members,
+        }
+        result["records"].append(record)
+
+    # Runtime slots: members that are zero on disk for at least one record.
+    # Report the zero-count so heterogeneous families (like the 0x50 EH
+    # records, where early records zero a slot later records populate) stay
+    # honest: a low zero-count member is a per-record runtime field, while a
+    # high zero-count member is a family-wide runtime-initialized slot.
+    if result["records"]:
+        mapped = len(result["records"])
+        member_count = stride // 4
+        for member_index in range(member_count):
+            zero_count = sum(
+                1 for rec in result["records"]
+                if rec["members"][member_index]["kind"] == "zero")
+            if zero_count > 0:
+                result["runtime_slots"].append({
+                    "member": member_index,
+                    "relative_offset": member_index * 4,
+                    "relative_offset_hex": f"0x{member_index * 4:02X}",
+                    "zero_count": zero_count,
+                    "of_records": mapped,
+                })
+    return result
+
+
+# --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
 
@@ -810,6 +901,10 @@ def main(argv: list[str]) -> int:
                              "window around the given roots, comma-separated")
     parser.add_argument("--window", type=int, default=0x80,
                         help=".data window bytes around each --fields root (default 128)")
+    parser.add_argument("--record-map", metavar="BASE,STRIDE[,COUNT]",
+                        help="classify each member of a repeating record array "
+                             "(e.g. 0x03FA0C20,0x50,8) and list runtime-initialized "
+                             "(zero-on-disk) slots")
     parser.add_argument("--json", metavar="PATH",
                         help="write findings as JSON to PATH")
     args = parser.parse_args(argv)
@@ -935,6 +1030,37 @@ def main(argv: list[str]) -> int:
             for candidate in fields["int32_candidates"][:8]:
                 LOG.info("    i32 +%s = %s",
                          candidate["relative_offset_hex"], candidate["value"])
+        ran_any = True
+
+    if args.record_map is not None:
+        parts = [part.strip() for part in args.record_map.split(",")]
+        if len(parts) not in (2, 3):
+            LOG.error("--record-map needs BASE,STRIDE[,COUNT]: %s", args.record_map)
+            return 2
+        try:
+            base = int(parts[0], 0)
+            stride = int(parts[1], 0)
+            count = int(parts[2], 0) if len(parts) == 3 else 8
+        except ValueError:
+            LOG.error("invalid --record-map value: %s", args.record_map)
+            return 2
+        if stride <= 0 or stride % 4 != 0:
+            LOG.error("--record-map stride must be a positive multiple of 4")
+            return 2
+        LOG.info("record-array map 0x%08X stride=0x%X count=%d", base, stride, count)
+        mapping = map_record_array(pe, base, stride, count)
+        results["record_map"] = mapping
+        LOG.info("  section=%s records_mapped=%d runtime_slots=%d",
+                 mapping["section"], len(mapping["records"]),
+                 len(mapping["runtime_slots"]))
+        for slot in mapping["runtime_slots"]:
+            LOG.info("    runtime slot member=%d +%s",
+                     slot["member"], slot["relative_offset_hex"])
+        for record in mapping["records"][:4]:
+            kinds = " ".join(f"{m['relative_offset_hex']}:{m['kind']}"
+                             for m in record["members"])
+            LOG.info("    rec[%d] %s %s", record["record_index"],
+                     record["rva"], kinds)
         ran_any = True
 
     if not ran_any:

@@ -95,9 +95,22 @@ strong file logging, three capabilities:
   `0x006017xx`). The store mix is the offline Find-what-writes equivalent —
   runtime code writes these slots, so they are not dead data. Field dump
   pre-computes member displacements: the `.rdata` pointer `0x037F3054`
-  repeats at `+0xFFFFFFB4`/`+0x4`/`+0x54` around `0x03FA0C74` (likely a
-  shared vtable/type-descriptor pointer) — a prepared offset list for the
-  live probe.
+  repeats at `+0xFFFFFFB4`/`+0x4`/`+0x54` around `0x03FA0C74`.
+- **Repeating-record reclassification (OD-041-STATIC):** following the
+  `0x037F3054` lead proves both OD-039/040 "root candidates" are **NOT
+  standalone gameplay roots**. `0x037F3054` is an **MSVC EH handler/funclet
+  table** (0xFFFFFFFF sentinel + interleaved {state, code-ptr} pairs into
+  `.text` `0x02CF0D70`+; 113 FuncInfo magics `0x19930522` within ±0x2000)
+  referenced from **48,609 4-aligned `.data` slots (0 unaligned)** — a
+  massively-shared infrastructure pointer. `0x03FA0C74` is the `+0x04`
+  member of record[1] of a repeating 0x50-byte `.data` record family
+  `{0x00404064 (.text member-fn), <runtime slot>, 0x037F3054 (.rdata), 0,
+  …}` based at `0x03FA0C20` (3,565 template matches across `.data`). The
+  new `--record-map 0x03FA0C20,0x50,10` mode maps 10 records / 9
+  runtime-initialized slots (+0x04, +0x08, +0x0C, +0x10, +0x18, +0x28,
+  +0x30, +0x44, +0x4C). **Live-probing the two as singletons is ruled out
+  without a changed hypothesis** — the record family is handler
+  infrastructure, not gameplay state.
 - **Batch RTTI walk (all chain classes):** TypeDescriptors located for
   `VehicleGameLogicComponent` (`0x03C24F4C`), `AppContextImpl` (`0x03E356F4`),
   `ScreensFlow` (`0x03E35C74`), `GameScene` (`0x03DB9AAC`),
@@ -212,11 +225,14 @@ failure (per `tools/external/README.md`); every addition registers in
 2. **Track C3/C4:** value-equality X/Y/Z intersection on the same session;
    target ≤2–4 survivors.
 3. **Track B pilot:** hangar-state known-truth scan (HP number, tank name).
-4. **Track A:** batch RTTI walk is *done* (OD-039-STATIC) — TypeDescriptors
-   located for the whole chain; next step is xref-discovery from the `Vehicle`
-   component family and live-confirming the two static root candidates
-   (`0x03FA0C74`, `0x03FA012C`) against a `replayTime`-anchored session
-   (validate them as the viewpoint-vehicle struct chain, not bare globals).
+4. **Track A:** batch RTTI walk + reference decode are *done* (OD-039/040-STATIC)
+   — TypeDescriptors located for the whole chain, both "root candidates"
+   confirmed read-write globals, then **re-classified (OD-041-STATIC) as
+   members of a repeating 0x50-byte EH/handler record family — NOT standalone
+   gameplay roots** (live-probing them as singletons is ruled out). The
+   remaining Track A work is xref-discovery from the `Vehicle` component
+   family toward a `replayTime`-anchored session — validating the
+   viewpoint-vehicle struct chain, not bare globals.
 5. **C5:** operator interactive Find-what-writes on the smallest staged set.
 
 Each session: same ledger entry, workflow stop rules, handoff, and commit.

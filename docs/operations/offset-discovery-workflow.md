@@ -1,6 +1,6 @@
 # WoT Blitz PC offset-discovery workflow
 
-Last updated: 2026-08-03 (OD-040-STATIC: **the two root candidates are confirmed read-write code-initialized globals via reference-site decode** — `0x03FA0C74` has 9 .text refs (5 load + 4 store: A1/A3 mov eax,[abs] + 8B/89 mov r32,[m+disp32] ecx) across 3 disjoint code clusters; `0x03FA012C` has 6 refs (2 load + 4 store, all A1/A3) across 2 clusters — the offline Find-what-writes equivalent; the field dump pre-computes candidate member displacements (0x037F3054 .rdata ptr repeats at +0xFFFFFFB4/+0x4/+0x54 around `0x03FA0C74`); `tools/find-static-roots.py` gained `--refs`/`--fields` modes; prior milestone OD-039-STATIC: batch RTTI walk landed the two candidates + `EntityList` plain-struct proof; rolling driver gained `-CompareMode delta`/`-DeltaTarget`/`-DeltaTolerance` pass-through for the Track C2 pilot)
+Last updated: 2026-08-03 (OD-041-STATIC: **classification correction — the two OD-039/040 'root candidates' are NOT standalone gameplay roots**; `0x037F3054` identified as an MSVC EH handler/funclet table (0xFFFFFFFF sentinel + {state, code-ptr} pairs into .text 0x02CF0D70+, 113 FuncInfo magics within ±0x2000) referenced from 48,609 4-aligned .data slots (0 unaligned); `0x03FA0C74` is the +0x04 member of record[1] of a repeating 0x50-byte .data record family `{0x00404064, <runtime slot>, 0x037F3054, 0, …}` based at `0x03FA0C20` (3,565 template matches); `tools/find-static-roots.py` gained `--record-map BASE,STRIDE,COUNT` (10 records / 9 runtime slots mapped); live-probing the two as singletons is ruled out without a changed hypothesis; prior milestones OD-039/040-STATIC: read-write decode + field dump; rolling driver gained `-CompareMode delta`/`-DeltaTarget`/`-DeltaTolerance` pass-through for the Track C2 pilot)
 
 This is the operational playbook for discovering memory evidence from the
 Windows WoT Blitz client during a **positively verified offline replay**. It is
@@ -313,24 +313,22 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-041`. Static milestones `OD-039-STATIC` +
-`OD-040-STATIC` landed **two runtime-written static root candidates
-confirmed as read-write code-initialized globals**: `0x03FA0C74` (9 .text
-refs — 5 load + 4 store, A1/A3 + 8B/89, across 3 disjoint code clusters)
-and `0x03FA012C` (6 refs — 2 load + 4 store, all A1/A3, across 2
-clusters) — the offline Find-what-writes equivalent; plus TypeDescriptors
-for the whole chain (`EntityList` is a plain struct — 0 RTTI hits,
-xref-discovery only). The rolling driver now exposes
-`-CompareMode delta -DeltaTarget X -DeltaTolerance T` so the engine's
-delta-compare can be driven from replay-derived markers without code
-changes. `OD-RECOVERY-041` is the **Track C2 pilot**: reuse the proven
-invocation (`-SnapshotMaxBytes 402653184 -MaxRounds 40 -HoldAfterRollSeconds
-240`) but add `-CompareMode delta -DeltaTarget <replay position delta>
--DeltaTolerance <tol>` and measure survivor collapse vs "increased" (11 →
-predicted ≤2–4), then run operator Find-what-writes on the staged set — and
-**probe the two static root candidates live** (compare/pattern them under
-OfflineReplayVerified to classify what they hold). This builds on the
-validated driver stack:
+Session ID: `OD-RECOVERY-042`. Static milestones `OD-039/040/041-STATIC`
+landed and then **re-classified the two "root candidates"**: they are read-
+write code-initialized globals, but `0x03FA0C74` is the +0x04 member of
+record[1] of a repeating 0x50-byte `.data` EH/handler record family (base
+`0x03FA0C20`), and `0x037F3054` is an MSVC EH handler/funclet table (113
+FuncInfo magics, 48,609 aligned `.data` refs) — **NOT standalone gameplay
+roots** (live-probing them as singletons is ruled out without a changed
+hypothesis). The rolling driver exposes `-CompareMode delta -DeltaTarget X
+-DeltaTolerance T` for the engine's delta-compare. `OD-RECOVERY-042` is the
+**Track C2 pilot**: reuse the proven invocation (`-SnapshotMaxBytes
+402653184 -MaxRounds 40 -HoldAfterRollSeconds 240`) but add `-CompareMode
+delta -DeltaTarget <replay position delta> -DeltaTolerance <tol>` and
+measure survivor collapse vs "increased" (11 → predicted ≤2–4), then run
+operator Find-what-writes on the staged set — the replayTime set remains the
+live anchor; do NOT waste lease probing the EH handler records as
+singletons. This builds on the validated driver stack:
 The session also produced the **first-ever 401-refresh failure in 13
 validations** (OD-038 attempt 3, round 9: the refreshed context re-read the
 rendezvous file but retried immediately into a mid-rotation file, exhausting
