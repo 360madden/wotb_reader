@@ -1,6 +1,6 @@
 # Offset-discovery ledger
 
-Last updated: 2026-08-03 (OD-RECOVERY-034: two-phase tail transition shave implemented + validated live — 18 rounds fit the 120s lease, but the survivor count plateaued at 12, proving the tail is value-bound (the last survivors tick every frame and survive even 1s pulses), not round-bound; rolling alone cannot disambiguate high-frequency tickers — the interactive step is required)
+Last updated: 2026-08-03 (OD-RECOVERY-035: snapshot byte-budget passthrough (MaxBytes) implemented + validated live — round-1 walked 823K/50M instead of 66M and attempt 1 completed the full 22-round budget with rolling_exit=0 (first non-lease-wall exit since OD-031); the value-bound plateau persisted at 12/17 so no ≤10 staging; interactive Find-what-writes remains the required disambiguator)
 
 This ledger is the durable index of WoT Blitz PC offset-discovery work. It
 records experiments, partial results, failures, and pivots so future sessions do
@@ -49,7 +49,7 @@ Every address must be classified before publication:
 | `playerYaw` | **Quarantined / Ambiguous** until decimal, hexadecimal, raw Ghidra, and address-kind evidence reconcile |
 | Trusted next anchor | `playerPositionX`/`playerPositionZ`, then `replayTime` or HP if the replay makes them observable |
 | Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007); absolute LE pointer AOB across private/all/image + align 1/8 without a changed encoding hypothesis (ruled out by OD-RECOVERY-008); truncated low-32 LE dword AOB of survivor absolutes without a changed encoding hypothesis (ruled out by OD-RECOVERY-009); automated CE `bptAccess`/`bptWrite` on Float position survivors without a field pivot or interactive debugger (0 RIP hits through OD-RECOVERY-011); CE write-BP alone on the single increased `replayTime` Double without interactive debugger or a second independent launch (0 RIP in OD-RECOVERY-012); treating file-association / `Invoke-Item` alone as the OD gate path (playback can succeed while Host stays `Denied` / `lifecycle_evidence_timeout` — amended 2026-08-02); reaching ≤10 RT survivors then starting interactive debugger after the fact under a 120s research lease loses the window to EvidenceStale (OD-RECOVERY-016) — pre-arm debugger / reserve lease margin; requiring the Watch Offline orange-dialog blob to vanish after `OfflineReplayVerified` (the replay HUD renders orange in that ROI, so `dialogGone` never sets, extra clicks hit in-game UI and kill the game — OD-RECOVERY-017) — trust the verified gate; reading compare `retainedCount` as the rolling survivor count (it is unreadable-chunk carryover only; survivors are `increasedCount` — OD-RECOVERY-017); automated CE Windows-debugger write-BPs (`debugProcess(1)` + `debug_setBreakpoint(addr, bptWrite, 1)`) on rolling Double survivors — zero RIP hits across OD-009/010/011 and OD-020/021/022 probes, so the operator-owned interactive Find-what-writes step is required, not a scripting gap to keep probing; rolling from a snapshot taken during the game load transition — the candidate set can be 66M+ (22–87× steady state), convergence cannot fit the 120s lease, and the resulting session discard surfaces as a confusing compare `400` (OD-RECOVERY-025 attempt 1) — wait for a clean steady-state snapshot before rolling; capturing the rendezvous capability once at roll start — the token rotates ~5 min and a 66M-baseline roll outlives it, so a mid-roll compare dies with a confusing 401 (OD-RECOVERY-030 attempt 1; fixed by refresh + retry in the rolling driver); running the separate full-walk sanity probe when round-1 `previousCount` reports the identical snapshot count — the probe's 66M-candidate walk wasted lease inside the 120s budget (OD-RECOVERY-030; gate folded into round 1); requesting `maxCandidates=500` (or any large harvest) on every rolling round when only the final target round's addresses are written — the big early compares (66M→1M) pay candidate serialization for nothing and cost lease; request 1 candidate per round and harvest the full set only on the target round (OD-RECOVERY-031 attempt 1 → fixed in driver, validated attempts 3–5: 10–14 rounds fit the lease vs 6–7 before); overriding the CE autorun's default survivor address-file path (`%TEMP%\od-survivors.txt`) with a custom `-AddressFile` — the autorun polls the default path only, so staged survivors silently never reach CE (OD-RECOVERY-031 attempt 4; use the default path so the staging handoff works); keeping the CE autorun poll window at 90s when a 66M-baseline roll outlives it — the file appears right at the 120s lease edge, so the poll must span the whole lease + margin (OD-RECOVERY-031 attempts 3/4; extended to 300s) |
-| Next planned session | `OD-RECOVERY-035` (the tail is proven value-bound — rolling alone cannot disambiguate the high-frequency tickers that plateau at ~12: the changed-hypothesis space is now (a) a snapshot byte budget/region-selection passthrough to shave the round-1 walk so the operator window opens with lease to spare, (b) a content-distinct second replay for BLK-0019, or (c) operator presence at the green window for interactive Find-what-writes on a 12-survivor set; treat launcher-green + immediate `Denied`/`evidence.monitor_unhealthy` as a game-side assert crash — relaunch rather than re-clicking) |
+| Next planned session | `OD-RECOVERY-036` (the snapshot byte-budget passthrough is validated and now lives in the driver (`-SnapshotMaxBytes`); rolling can complete its round budget inside the lease, so the operator window can finally open green: priority is operator presence at a held green window for interactive Find-what-writes on a staged ~12-survivor set — use `-SnapshotMaxBytes 402653184 -MaxRounds 40 -HoldAfterRollSeconds 240`; alternatively a content-distinct second replay for BLK-0019; treat launcher-green + immediate `Denied`/`evidence.monitor_unhealthy` as a game-side assert crash — relaunch rather than re-clicking) |
 
 The current yaw conflict is recorded explicitly:
 
@@ -114,6 +114,7 @@ occurred.
 | `OD-RECOVERY-032` | 2026-08-03 | Reproduce the converged pipeline; target the lease headroom for the operator window | background launch helper + session driver (2 attempts) + pre-arm-debugger.ps1 + 401-refresh folded-gate candidate-optimized rolling Double increased + default-path autorun staging (300s poll) | `Partial` | Attempt 1: rolling **66.5M→…→11 in 14 rounds** (`855303→…→11`; high `retained=177581` unreadable-chunk carryover inflated rounds 4–12 `previous`; 401 refresh live round 10) then lease wall round 15 (`400` + `EvidenceStale`); attempt 2: rolling **66.5M→…→11 in 12 rounds** (`1200456→…→11`; `retained=0`; 401 refresh live round 8) then lease wall round 13 (`400` + `EvidenceStale`) | **11-survivor plateau is the reproducible ceiling — 1–2 rounds past the lease edge both attempts**; no ≤10 target, no address file, no operator window; `independentReplays` still 0; no RIP/root |
 | `OD-RECOVERY-033` | 2026-08-03 | Ride convergence variance for a ≤10 target with the best-known driver | background launch helper + session driver (2 attempts) + pre-arm-debugger.ps1 + 401-refresh folded-gate candidate-optimized rolling Double increased + default-path autorun staging (300s poll) | `Partial` | Attempt 1: rolling **66.3M→…→12 in 14 rounds** (`863861→…→12`; 401 refresh live round 10) then lease wall round 15 (`400` + `EvidenceStale`); attempt 2: rolling **66.6M→…→17 in 13 rounds** (`938727→…→17`; 401 refresh live round 9) then lease wall round 14 (`400` + `EvidenceStale`) | Convergence range **11–17 survivors across OD-032/033 (4 attempts), always past the 120s lease edge**; no ≤10 target, no address file, no operator window; `independentReplays` still 0; no RIP/root |
 | `OD-RECOVERY-034` | 2026-08-03 | Changed hypothesis: two-phase tail transition shave (1s pulse below 200 survivors) to fit more tail rounds in the lease | background launch helper + session driver (1 attempt) + pre-arm-debugger.ps1 + 401-refresh folded-gate candidate-optimized rolling Double increased + **two-phase tail shave** + default-path autorun staging (300s poll) | `Partial` | Rolling **66.6M→…→12 in 18 rounds** (`906685→…→12`; rounds 13–18 at `pulse_window=1s` — tail shave live; 401 refresh round 10; **18 rounds fit the lease vs 14–15 before**); count **plateaued at 12 through rounds 15–18** — the last survivors tick every frame and survive even 1s pulses → **the tail is value-bound, not round-bound**; round 19 `400` + `EvidenceStale` | **Rolling alone cannot disambiguate high-frequency tickers — interactive Find-what-writes is required regardless of lease headroom**; no ≤10 target, no address file, no operator window; `independentReplays` still 0; no RIP/root |
+| `OD-RECOVERY-035` | 2026-08-03 | Changed hypothesis: snapshot byte-budget passthrough (MaxBytes) to shrink the round-1 66M walk | background launch helper + session driver (2 attempts) + pre-arm-debugger.ps1 + 401-refresh folded-gate candidate-optimized rolling Double increased + two-phase tail shave + **MaxBytes snapshot budget** + `MaxRounds` passthrough + default-path autorun staging (300s poll) | `Partial` | Attempt 1 (`-SnapshotMaxBytes 402653184`): round-1 **previous=823,484 vs 66M unbounded — 80× walk reduction**; rolled **823484→…→12 in 22 rounds** with **`rolling_exit=0` — full round budget completed, first non-lease-wall exit since OD-031** (tail shave rounds 8–22 at 1s; 401 refresh live round 15; plateaued 12 from round 15; round-22 address file wrote 1 candidate — WARN mismatch, target not reached); attempt 2 (`-MaxRounds 40`): round-1 **previous=50,061,014** (budget bound ~50M), rolled **750293→…→17 in 16 rounds**, plateaued 17 rounds 16–20, lease wall round 21 (`400` + `EvidenceStale`; 401 refresh live round 10) | **Budget hypothesis validated — rounds are cheap and can complete inside the lease, but the value-bound plateau (12/17) persists**; no ≤10 target staged; `independentReplays` still 0; no RIP/root |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -2188,6 +2189,60 @@ The tail-transition shave is a durable driver improvement that buys lease
 margin, and the value-bound tail diagnosis redirects the campaign: rolling
 alone cannot finish the job; the interactive step (or a content-distinct
 second replay) is required.
+
+## `OD-RECOVERY-035` result — 2026-08-03 (two attempts; snapshot byte-budget passthrough validated)
+
+```yaml
+sessionId: OD-RECOVERY-035
+date: 2026-08-03
+observedAtUtc: 2026-08-03T15:4xZ # attempt 2 lease expired mid-round-21; both attempts ~19:4xZ local
+
+timebox: managed launch to gate green; CE pre-arm + autorun staging; rolling Double increased with the best-known driver PLUS the new snapshot byte-budget passthrough (OffsetSnapshotRequest MaxBytes)
+decision: The changed hypothesis (OD-035's mandate) was the snapshot byte-budget passthrough: cap the RETAINED snapshot bytes so the round-1 66M walk shrinks and the roll finishes inside the lease, opening the operator window with lease to spare. Implemented `-SnapshotMaxBytes` (rolling driver) + `-MaxRounds` passthrough (session driver), 0 = engine ceiling (unchanged). Validated live on both attempts: round-1 previous dropped to 823K (attempt 1) / 50M (attempt 2) vs 66M unbounded, and attempt 1 completed the full 22-round budget with rolling_exit=0 — the first non-lease-wall exit since OD-031. The value-bound plateau persisted (12 / 17), so no ≤10 staging: rolling is now lease-viable, but the interactive Find-what-writes step remains the only disambiguator of the every-frame tickers.
+objective: Shrink the round-1 walk so the roll finishes with lease to spare, then reach ≤10, stage into CE, and hold a green operator window
+stopCondition: Stop after target ≤10 + CE staging + green window, or gate loss
+method:
+  primaryTool: scripts/launch-offline-replay-for-od.ps1 (detached) + session driver + roll-replay-time-increased.ps1 (401-refresh + folded gate + candidate-count harvest + two-phase tail shave + MaxBytes budget) + pre-arm-debugger.ps1
+  secondaryTools: Cheat Engine 7.7 (C:\Program Files\Cheat Engine) pre-armed attached; CE autorun od-autorun-writebp.lua (default path, 300s poll)
+  transition: natural replay progression; tail rounds at 1s; snapshot retained bytes capped at 384 MiB (402653184)
+observations:
+  - state: attempt-1 (-SnapshotMaxBytes 402653184)
+    rolling: snapshot session=000001; sequence 823484->152041->30625->6400->637->246->71->51->46->45->45->45->45->45->12->12->12->12->12->12->12->12 (22 rounds)
+    budget: round-1 previous=823,484 vs ~66M unbounded — 80x walk reduction; tail shave active rounds 8-22 (1s pulses below 200)
+    outcome: rolling_exit=0 — full 22-round budget completed inside the lease (first non-lease-wall exit since OD-031); 401 refresh live round 15; plateaued at 12 from round 15; target not reached so no harvest — round-22 address file wrote 1 candidate (WARN_address_count_mismatch candidates=1 survivors=12, expected: lastCmp was the 1-candidate rolling compare)
+  - state: attempt-2 (-SnapshotMaxBytes 402653184 -MaxRounds 40)
+    rolling: snapshot session=000001; sequence 750293->132591->28888->6053->1743->1262->957->950->943->698->19->19->19->19->17->17->17->17->17 (20 rounds)
+    budget: round-1 previous=50,061,014 — budget bound at ~50M (this session's snapshot retained less); tail shave rounds 12-20 at 1s
+    outcome: 401 refresh live round 10; plateaued at 17 rounds 16-20; lease wall round 21 (400 + EvidenceStale)
+  - state: after-session
+    verificationState: EvidenceStale (reason evidence.expired) — expected teardown
+    addressFile: not written (target not reached)
+    ceAutorun: polled 300s both attempts; no address file appeared; 0 staged, 0 hits
+result:
+  whatWorked:
+    - Snapshot byte-budget passthrough implemented and validated live: round-1 walked 823K/50M instead of 66M, and attempt 1 completed its full 22-round budget with rolling_exit=0 — the first non-lease-wall exit since OD-031. Rounds are now cheap.
+    - 401 refresh fired live a ninth and tenth time (rounds 15 and 10).
+    - The two-phase tail shave combined with the budget: 22 rounds at 1s pulses fit comfortably.
+  whatFailed:
+    - The value-bound plateau persisted at 12 (attempt 1) and 17 (attempt 2) — the every-frame tickers survive short pulses regardless of lease headroom, so ≤10 staging still eludes the roll.
+    - No ≤10 target, no CE staging, no green operator window.
+  rulesOut:
+    - Lease headroom alone (budget + tail shave) cannot reach ≤10 — the value-bound plateau is now proven across lease-constrained (OD-032/033/034) and lease-viable (OD-035) rolls alike.
+  partials:
+    - The driver now carries five validated optimizations (401 refresh, folded gate, candidate-count harvest, two-phase tail shave, MaxBytes budget) + MaxRounds passthrough; a full round budget completes inside the lease.
+    - BLK-0019 still needs content-distinct second replay (independentReplays 0).
+  nextPivot: OD-RECOVERY-036 — the operator window can finally open green (roll completes inside the lease), so the priority is operator presence at the held green window for interactive Find-what-writes on a staged ~12-survivor set (-SnapshotMaxBytes 402653184 -MaxRounds 40 -HoldAfterRollSeconds 240); alternatively a content-distinct second replay for BLK-0019.
+  repeatWithoutChangedHypothesis: false
+artifacts:
+  rawFiles: %TEMP%\od-prearmed-debugger.json, %TEMP%\od-ce-autorun.log, session logs /tmp/od-launch-035{,b}.log
+  committedSummary: this ledger entry + workflow update + handoff (2026-08-03-od-recovery-035.md)
+```
+
+`OD-RECOVERY-035` is aggregate structural evidence only. Offset remains 0.
+The MaxBytes budget passthrough is a durable driver improvement: a full
+round budget now completes inside the 120s lease, so the operator window can
+finally open green — the interactive step (or a content-distinct second
+replay) is the remaining path.
 
 ## Evidence promotion checklist
 

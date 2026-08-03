@@ -10,6 +10,14 @@ param(
     # so a short tail pulse still registers increases).
     [int]$TailThreshold = 200,
     [int]$TailTransitionSeconds = 1,
+    # OD-035 snapshot retained-byte budget passthrough (0 = engine ceiling,
+    # unchanged). A positive budget shrinks the round-1 66M walk to open the
+    # operator window with lease to spare.
+    [long]$SnapshotMaxBytes = 0,
+    # OD-035 round-limit passthrough: with the snapshot budget the rounds are
+    # cheap (1s tail pulses), so raising MaxRounds past 22 lets the tail keep
+    # pulsing instead of stopping at the old 22-round cap.
+    [int]$MaxRounds = 22,
     [string]$TargetSurvivors = '10',
     [string]$AddressFile = '',
     # After rolling lands <=10, hold this many seconds while polling the gate
@@ -104,7 +112,7 @@ if ($PreSnapshotSettleSeconds -gt 0) {
 $roll = Join-Path $RepoRoot 'scripts\roll-replay-time-increased.ps1'
 Remove-Item -LiteralPath $AddressFile -Force -ErrorAction SilentlyContinue
 Write-Host 'od018: rolling_start'
-& $roll -TargetSurvivors $TargetSurvivors -TransitionSeconds $TransitionSeconds -TailThreshold $TailThreshold -TailTransitionSeconds $TailTransitionSeconds -AddressFile $AddressFile
+& $roll -TargetSurvivors $TargetSurvivors -TransitionSeconds $TransitionSeconds -TailThreshold $TailThreshold -TailTransitionSeconds $TailTransitionSeconds -SnapshotMaxBytes $SnapshotMaxBytes -MaxRounds $MaxRounds -AddressFile $AddressFile
 Write-Host ("od018: rolling_exit=" + $LASTEXITCODE)
 Write-Host ("od018: addresses=" + $AddressFile)
 if ($LASTEXITCODE -ne 0) {

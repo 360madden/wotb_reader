@@ -43,6 +43,15 @@ param(
     [switch]$AutoSpace,
     [int]$MaxCandidates = 1,
     [int]$Alignment = 8,
+    # OD-035 snapshot retained-byte budget passthrough (OffsetSnapshotRequest
+    # MaxBytes). Zero = engine ceiling (512 MiB), unchanged behavior. A
+    # positive budget soft-caps the RETAINED regions (enumerated low->high,
+    # stopping when the next chunk would exceed) and shrinks the round-1 66M
+    # walk that dominates the 120s lease. Staged survivor addresses across
+    # sessions all live below ~1 GB, so trimming the high tail is safe for the
+    # target; the round-1 previousCount is the evidence check that the budget
+    # bound (and did not exclude the target region).
+    [long]$SnapshotMaxBytes = 0,
     [string]$ResultPath = '',
     # Local (untracked) file to receive survivor candidate absolute addresses
     # from the final compare, for interactive Find-what-writes. Aggregate counts
@@ -176,7 +185,7 @@ try {
     }
     Write-Roll 'gate=OfflineReplayVerified'
 
-    $snapBody = @{ valueKind = 'Double'; valueSize = 8; alignment = $Alignment } | ConvertTo-Json
+    $snapBody = @{ valueKind = 'Double'; valueSize = 8; alignment = $Alignment; maxBytes = $SnapshotMaxBytes } | ConvertTo-Json
 
     # OD-026/030 steady-state gate: the snapshot response carries only the
     # session id, so the snapshot's initial candidate count is learned from the

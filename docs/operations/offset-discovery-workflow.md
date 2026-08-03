@@ -1,6 +1,6 @@
 # WoT Blitz PC offset-discovery workflow
 
-Last updated: 2026-08-03 (OD-RECOVERY-034: two-phase tail transition shave implemented + validated live — 18 rounds fit the 120s lease, but the survivor count plateaued at 12, proving the tail is value-bound, not round-bound; rolling alone cannot disambiguate high-frequency tickers — the interactive step is required)
+Last updated: 2026-08-03 (OD-RECOVERY-035: snapshot byte-budget passthrough (MaxBytes) implemented + validated live — round-1 walked 823K/50M instead of 66M and attempt 1 completed the full 22-round budget with rolling_exit=0 (first non-lease-wall exit since OD-031); value-bound plateau persisted at 12/17 — the operator window can now open green for the interactive Find-what-writes step)
 
 This is the operational playbook for discovering memory evidence from the
 Windows WoT Blitz client during a **positively verified offline replay**. It is
@@ -313,24 +313,22 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-035`. `OD-RECOVERY-034` completed as **Partial**
-with the **changed hypothesis validated but the tail proven value-bound**:
-the two-phase tail transition shave (1s pulse below 200 survivors) let **18
-rounds fit the 120s lease** (vs 14–15 before), but the survivor count
-**plateaued at 12 through four consecutive 1s-pulse rounds** — the last
-survivors tick every frame and survive even 1s pulses. This is conclusive:
-**rolling alone cannot disambiguate the high-frequency tickers**, so
-interactive Find-what-writes is required regardless of lease headroom. The
-next session's hypothesis space: (a) snapshot byte budget / region-selection
-passthrough (MemoryScanEngine `MaxBytes`) to open the operator window with
-lease to spare, (b) operator presence at a green window with a staged
-12-survivor set (acceptable for Find-what-writes), or (c) a content-distinct
+Session ID: `OD-RECOVERY-036`. `OD-RECOVERY-035` completed as **Partial**
+with the **snapshot byte-budget passthrough validated live**: round-1 walked
+823K/50M instead of the unbounded 66M, and attempt 1 completed the **full
+22-round budget with `rolling_exit=0` — the first non-lease-wall exit since
+OD-031**. Rounds are now cheap; a full round budget finishes inside the 120s
+lease. The value-bound plateau persisted (12 / 17) — lease headroom alone
+cannot reach ≤10 — so the operator window can now open green and the
+**priority is operator presence at the held green window for interactive
+Find-what-writes on a staged ~12-survivor set** (`-SnapshotMaxBytes
+402653184 -MaxRounds 40 -HoldAfterRollSeconds 240`), or a content-distinct
 second replay for BLK-0019. This builds on the validated driver stack:
 
 1. **401 capability-rotation refresh** — the rendezvous token rotates ~5 min,
    and a 66M-baseline roll outlives it; the driver refreshes the rendezvous
    and retries on 401 (`Invoke-OdApi`, logged `capability_401_refresh_retry`).
-   Validated live an eighth time (OD-034 round 10).
+   Validated live a tenth time (OD-035 rounds 15/10).
 2. **Probe-fold** — the OD-026 standalone sanity probe ran a full 66M-candidate
    compare whose `previousCount` was identical to round-1's; the steady-state
    gate now lives in round 1 (an absurd round-1 `previousCount` discards +
@@ -369,7 +367,9 @@ lease-headroom work, not more identical runs (OD-RECOVERY-032/033);
 (10) **the tail is value-bound, not round-bound** — the last survivors tick
 every frame and survive even 1s pulses, so pulse shaving alone cannot reach
 ≤10; the interactive Find-what-writes step is required regardless of lease
-headroom (OD-RECOVERY-034).
+headroom (OD-RECOVERY-034); (11) **lease headroom alone cannot reach ≤10** —
+proven across lease-constrained (OD-032/033/034) and lease-viable (OD-035:
+round-1 823K/50M, full round budget with rolling_exit=0) rolls alike.
 
 Operational notes: (1) detached launch + session driver remains the proven
 pattern; (2) the CE autorun staging (`od-autorun-writebp.lua`) works and now
