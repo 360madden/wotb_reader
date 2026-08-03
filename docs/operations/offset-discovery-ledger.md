@@ -1,6 +1,6 @@
 # Offset-discovery ledger
 
-Last updated: 2026-08-03 (OD-RECOVERY-016 + OD-RECOVERY-017-prep amendment)
+Last updated: 2026-08-03 (OD-RECOVERY-017 partial live session; clicker gate-trust fix + rolling-driver increasedCount fix)
 
 This ledger is the durable index of WoT Blitz PC offset-discovery work. It
 records experiments, partial results, failures, and pivots so future sessions do
@@ -48,8 +48,8 @@ Every address must be classified before publication:
 | Runtime-supported fields | None; current table has 0 usable offsets, 1 Stale/quarantined field, and 7 Unknown |
 | `playerYaw` | **Quarantined / Ambiguous** until decimal, hexadecimal, raw Ghidra, and address-kind evidence reconcile |
 | Trusted next anchor | `playerPositionX`/`playerPositionZ`, then `replayTime` or HP if the replay makes them observable |
-| Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007); absolute LE pointer AOB across private/all/image + align 1/8 without a changed encoding hypothesis (ruled out by OD-RECOVERY-008); truncated low-32 LE dword AOB of survivor absolutes without a changed encoding hypothesis (ruled out by OD-RECOVERY-009); automated CE `bptAccess`/`bptWrite` on Float position survivors without a field pivot or interactive debugger (0 RIP hits through OD-RECOVERY-011); CE write-BP alone on the single increased `replayTime` Double without interactive debugger or a second independent launch (0 RIP in OD-RECOVERY-012); treating file-association / `Invoke-Item` alone as the OD gate path (playback can succeed while Host stays `Denied` / `lifecycle_evidence_timeout` — amended 2026-08-02); reaching ≤10 RT survivors then starting interactive debugger after the fact under a 120s research lease loses the window to EvidenceStale (OD-RECOVERY-016) — pre-arm debugger / reserve lease margin |
-| Next planned session | `OD-RECOVERY-017` (pre-arm interactive CE/x64dbg before/during managed launch; start Double rolling immediately post-verify; aim to reach ≤10 with lease margin for Find-what-writes; second distinct folder replay still required for BLK-0019) |
+| Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007); absolute LE pointer AOB across private/all/image + align 1/8 without a changed encoding hypothesis (ruled out by OD-RECOVERY-008); truncated low-32 LE dword AOB of survivor absolutes without a changed encoding hypothesis (ruled out by OD-RECOVERY-009); automated CE `bptAccess`/`bptWrite` on Float position survivors without a field pivot or interactive debugger (0 RIP hits through OD-RECOVERY-011); CE write-BP alone on the single increased `replayTime` Double without interactive debugger or a second independent launch (0 RIP in OD-RECOVERY-012); treating file-association / `Invoke-Item` alone as the OD gate path (playback can succeed while Host stays `Denied` / `lifecycle_evidence_timeout` — amended 2026-08-02); reaching ≤10 RT survivors then starting interactive debugger after the fact under a 120s research lease loses the window to EvidenceStale (OD-RECOVERY-016) — pre-arm debugger / reserve lease margin; requiring the Watch Offline orange-dialog blob to vanish after `OfflineReplayVerified` (the replay HUD renders orange in that ROI, so `dialogGone` never sets, extra clicks hit in-game UI and kill the game — OD-RECOVERY-017) — trust the verified gate; reading compare `retainedCount` as the rolling survivor count (it is unreadable-chunk carryover only; survivors are `increasedCount` — OD-RECOVERY-017) |
+| Next planned session | `OD-RECOVERY-018` (fixed clicker `63845d7` + fixed rolling driver `increasedCount`; pre-arm CE/x64dbg concurrent with launch settle; rolling immediately post-verify to ≤10 with lease margin; interactive Find-what-writes; second distinct folder replay still required for BLK-0019) |
 
 The current yaw conflict is recorded explicitly:
 
@@ -98,6 +98,7 @@ occurred.
 | `OD-RECOVERY-014` | 2026-08-02 | Neighborhood + pointer classify on rolling RT set | rolling increased + `/discover/neighborhood` + pointer AOB | `Partial` | Rolling to ≤10; neighborhood OK on `relativeOffset` (noisy ~1k hits/4); pointer AOB flaky (1 hit then 0 on rebuild) | Neighborhood path live; no stable image/module pointer root |
 | `OD-RECOVERY-015` | 2026-08-02 | Folder-source launch + rolling RT under managed gate | folder `.wotbreplay` → import → managed launch; rolling Double increased | `Partial` | Process amended (`launch-offline-replay-for-od.ps1`); file-assoc alone ruled out for gate; Churchill sha12 `0FAE5612491E` (import `duplicate=True`); rolling completed **882617→…→7** (`private-mapping`) | Content not proven independent of OD-012/013 (`independentReplays` still 0); no root/RIP; not promoted |
 | `OD-RECOVERY-016` | 2026-08-03 | Managed launch + rolling RT to ≤10 before lease expiry | managed launch + Double rolling increased | `Partial` | Release rebuild green; gate `OfflineReplayVerified`; rolling **628320→…→8** (`private-mapping`); sha12 `0FAE5612491E` duplicate import | EvidenceStale before interactive CE/x64dbg; `independentReplays` still 0; no RIP/root |
+| `OD-RECOVERY-017` | 2026-08-03 | Pre-arm + rolling driver + live managed session | launch helper ×3 + fixed clicker + rolling Double increased + CE pre-arm | `Partial` | Attempts 1–2: clicker orange-blob ROI false-positives on the replay HUD → `dialogGone` never set → extra clicks killed game (`monitor_unhealthy`); root-caused + fixed (`63845d7`, trust verified gate); attempt 3 gate green (`watch_exit=0`) + CE pre-armed attached; rolling driver read `retainedCount` (unreadable carryover) instead of `increasedCount` (survivors) → fixed; attempt 4 not run | No interactive Find-what-writes; full rolling with fixed driver not yet run; `independentReplays` still 0; no RIP/root |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -1204,6 +1205,75 @@ artifacts:
 > (installer root is `Cheat Engine`, not `Cheat Engine 7.7`) and **x64dbg** at
 > `C:\work\tools\x64dbg\release\x64\x64dbg.exe`. Both are pre-arm candidates
 > for OD-RECOVERY-017; the interactive debugger requirement is satisfiable.
+
+```yaml
+sessionId: OD-RECOVERY-017
+date: 2026-08-03
+observedAtUtc: 2026-08-03T02:20:00Z
+timebox: managed launch to gate green; pre-arm debugger; rolling Double increased to ≤10; interactive Find-what-writes deferred to operator
+decision: gate green on attempt 3 with fixed clicker; CE pre-armed attached; rolling driver field bug (retainedCount vs increasedCount) found and fixed; lease expired before full rolling with fixed driver; attempt 4 not run
+objective: Run the first pre-armed live session: reach OfflineReplayVerified, pre-arm CE/x64dbg before/with rolling, roll replayTime Double increased to ≤10 for interactive Find-what-writes
+stopCondition: Stop after gate green + pre-arm + rolling ≤10 + interactive root attempt, or gate loss
+method:
+  primaryTool: scripts/launch-offline-replay-for-od.ps1 + click-watch-offline.ps1 + roll-replay-time-increased.ps1 + pre-arm-debugger.ps1
+  secondaryTools: Cheat Engine 7.7 (C:\Program Files\Cheat Engine) pre-armed and attached; x64dbg (C:\work\tools\x64dbg) discovered
+  transition: Space pause/resume pulses during rolling; rollingBaseline=true
+observations:
+  - state: attempt-1
+    launchOutcome: lifecycle_evidence outcome=verified
+    watchExit: unknown (helper hung past 420s; 1-byte exit file)
+    gateAfter: Denied / evidence.monitor_unhealthy
+    note: game launched and correlated; helper stalled (likely PrintWindow capture-freeze path); game exited
+  - state: attempt-2
+    verificationState: OfflineReplayVerified
+    startReplay: true
+    dialogGone: false
+    finalOrangePixels: 63876
+    loginOnReplay: true
+    watchExit: 3
+    gateAfter: Denied / evidence.monitor_unhealthy
+    note: replay actually playing (blitz-log startReplay=True) yet blob ROI false-positived on replay HUD; extra clicks killed game; lease lost
+  - state: root-cause
+    finding: OfflineReplayVerified proves the replay started (lifecycle monitor requires fresh START_REPLAY_LOCAL marker), which proves the WATCH OFFLINE dialog is gone; requiring the blob to vanish is redundant and harmful (orangePx grew 8276 → ~64k after dismissal)
+    fixCommitted: 63845d7
+  - state: attempt-3
+    verificationState: OfflineReplayVerified
+    watchExit: 0
+    helperOutcome: SUCCESS_gate_and_dialog_dismissed
+    preArm: CE 7.7 launched attached (PID 50152), marker written
+  - state: rolling-bug
+    round1Retained: 0
+    round1Increased: 1041003
+    driverRead: retainedCount (unreadable-chunk carryover only)
+    contractTruth: survivor count = increasedCount (matches OD-013/015/016 sequences)
+    fixStatus: applied to roll-replay-time-increased.ps1 (this unit)
+    note: first -AddressFile dump was a raw 500-candidate round-1 sample, discarded
+  - state: attempt-4
+    status: not run (operator stopped the live session)
+    gateAfter: EvidenceStale / evidence.expired
+result:
+  whatWorked:
+    - Root-caused the two-launch game-kill: clicker blob ROI false-positives on replay HUD; fixed by trusting the verified gate (63845d7).
+    - Attempt 3 reached OfflineReplayVerified with watch_exit=0 on the fixed clicker.
+    - First live CE pre-arm in repo history: CE 7.7 launched attached to wotblitz.exe.
+    - Contract-backed fix for the rolling driver: survivors are increasedCount, not retainedCount.
+  whatFailed:
+    - Full rolling to ≤10 with the fixed driver never ran; the 120s lease expired while fixing the field bug.
+    - Attempt 4 (fresh launch) not run; interactive Find-what-writes still outstanding.
+  rulesOut:
+    - Requiring the orange-dialog blob to vanish after OfflineReplayVerified.
+    - Treating compare retainedCount as the rolling survivor count.
+  partials:
+    - Clicker gate-trust fix live-proven (attempt 3 green); CE pre-arm path live-proven; rolling driver semantics fixed, ready for OD-RECOVERY-018.
+    - BLK-0019 still needs content-distinct second replay (independentReplays 0).
+  nextPivot: OD-RECOVERY-018 — fixed clicker + fixed driver; pre-arm concurrent with launch settle; rolling immediately post-verify; interactive Find-what-writes on ≤10; import content-distinct second .wotbreplay when available.
+  repeatWithoutChangedHypothesis: false
+artifacts:
+  rawFiles: none
+  committedSummary: this ledger entry + workflow update + handoff (2026-08-03-od-recovery-017-live.md)
+```
+
+`OD-RECOVERY-017` is aggregate structural evidence only. Offset remains 0.
 
 ## Evidence promotion checklist
 

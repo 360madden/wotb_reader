@@ -9,8 +9,8 @@
   for the operator to advance the replay (Space pause/resume pulse) and
   compare with CompareMode=increased and RollingBaseline=true. Prints
   aggregate counts only - never candidate addresses or values (privacy rule).
-  Stops at TargetRetained (default 10) or gate loss, then discards the
-  retained scanner session.
+  Stops at the target survivor count (default 10) or gate loss, then discards
+  the retained scanner session.
 
   The operator owns the replay transition (workflow rule: the guarded input
   adapter is unavailable). -AutoSpace is an explicit opt-in pulse loop for
@@ -25,7 +25,10 @@
 #>
 [CmdletBinding()]
 param(
-    [int]$TargetRetained = 10,
+    # Target survivor set. -TargetRetained is a deprecated alias (pre-OD-018
+    # name; survivors are increasedCount, never retainedCount).
+    [Alias('TargetRetained')]
+    [int]$TargetSurvivors = 10,
     [int]$MaxRounds = 15,
     [int]$TransitionSeconds = 4,
     [switch]$AutoSpace,
@@ -123,7 +126,8 @@ try {
     Write-Roll ("snapshot session=" + $short)
 
     $seq = @()
-    $retained = -1
+    $survivors = -1
+    $lastCmp = $null
     for ($round = 1; $round -le $MaxRounds; $round++) {
         if ($AutoSpace) { Send-SpacePulse }
         Write-Roll ("round={0} pulse_window={1}s" -f $round, $TransitionSeconds)
@@ -141,14 +145,16 @@ try {
             Write-Roll ("FAILED_compare=" + $cmp.error)
             exit 4
         }
-        $retained = [int]$cmp.retainedCount
-        $increased = [int]$cmp.increasedCount
-        $seq += $retained
+        $lastCmp = $cmp
+        # Survivor set = IncreasedCount for the round. RetainedCount only
+        # reports unreadable chunks carried forward, not survivors.
+        $survivors = [int]$cmp.increasedCount
+        $seq += $survivors
         Write-Roll ("round={0} previous={1} increased={2} retained={3} truncated={4} rolling={5}" -f `
-            $round, $cmp.previousCount, $increased, $retained, $cmp.truncated, $cmp.comparedAgainstRollingBaseline)
+            $round, $cmp.previousCount, $survivors, $cmp.retainedCount, $cmp.truncated, $cmp.comparedAgainstRollingBaseline)
 
-        if ($retained -le $TargetRetained) {
-            Write-Roll ("TARGET retained=" + $retained + " le " + $TargetRetained)
+        if ($survivors -le $TargetSurvivors) {
+            Write-Roll ("TARGET survivors=" + $survivors + " le " + $TargetSurvivors)
             break
         }
 
@@ -171,18 +177,18 @@ try {
 
     Write-Roll ("sequence=" + ($seq -join '->'))
     if ($ResultPath) {
-        Set-Content -LiteralPath $ResultPath -Value "$retained" -Encoding ascii -NoNewline
+        Set-Content -LiteralPath $ResultPath -Value "$survivors" -Encoding ascii -NoNewline
     }
-    if ($AddressFile -and $cmp -and $cmp.PSObject.Properties['candidates']) {
-        $lines = @($cmp.candidates | ForEach-Object { [string]$_.absoluteAddress })
+    if ($AddressFile -and $lastCmp -and $lastCmp.PSObject.Properties['candidates']) {
+        $lines = @($lastCmp.candidates | ForEach-Object { [string]$_.absoluteAddress })
         Set-Content -LiteralPath $AddressFile -Value $lines -Encoding ascii
-        # The compare response's candidate list is not contractually guaranteed
-        # to equal the retained survivor set; flag a mismatch so the operator
-        # does not trust non-survivor addresses in the debugger.
-        if ($retained -ge 0 -and $lines.Count -ne $retained) {
-            Write-Roll ("WARN_address_count_mismatch candidates=" + $lines.Count + " retained=" + $retained)
+        # The compare candidate list is not contractually guaranteed to equal
+        # the survivor set; flag a mismatch so the operator does not trust
+        # non-survivor addresses in the debugger.
+        if ($survivors -ge 0 -and $lines.Count -ne $survivors) {
+            Write-Roll ("WARN_address_count_mismatch candidates=" + $lines.Count + " survivors=" + $survivors)
         }
-        Write-Roll ("addresses_written=" + $AddressFile + " count=" + $lines.Count + " retained=" + $retained)
+        Write-Roll ("addresses_written=" + $AddressFile + " count=" + $lines.Count + " survivors=" + $survivors)
     }
     exit 0
 }

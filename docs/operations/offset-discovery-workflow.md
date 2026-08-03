@@ -1,6 +1,6 @@
 # WoT Blitz PC offset-discovery workflow
 
-Last updated: 2026-08-03 (OD-RECOVERY-017 prep: pre-arm + rolling driver scripts)
+Last updated: 2026-08-03 (OD-RECOVERY-018: clicker gate-trust fix + rolling driver increasedCount fix)
 
 This is the operational playbook for discovering memory evidence from the
 Windows WoT Blitz client during a **positively verified offline replay**. It is
@@ -313,13 +313,21 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-017`. `OD-RECOVERY-016` completed as **Partial**:
-managed launch green (`scripts/launch-offline-replay-for-od.ps1` exit 0 →
-`OfflineReplayVerified`); same Churchill sha12 `0FAE5612491E` imported
-(`duplicate=True` → `independentReplays` still 0; BLK-0019 open); rolling RT
-increased **628320→…→8** (`private-mapping`); gate flipped `EvidenceStale` /
-`evidence.expired` immediately after ≤10, before interactive CE/x64dbg
-Find-what-writes.
+Session ID: `OD-RECOVERY-018`. `OD-RECOVERY-017` completed as **Partial**:
+three live managed launches; attempts 1–2 reached `OfflineReplayVerified`
+(replay playing, `startReplay=True`) but the clicker's orange-blob ROI
+false-positived on the replay HUD (`dialogGone` never set; orangePx grew to
+~64k after dismissal), extra clicks hit in-game UI and killed the game
+(`monitor_unhealthy`), and the 120s lease died before rolling. Root-caused and
+fixed: once `OfflineReplayVerified` holds, the WATCH OFFLINE dialog is proven
+gone — stop clicking (`scripts/click-watch-offline.ps1`, commit `63845d7`).
+Attempt 3 with the fixed clicker: gate green (`watch_exit=0`,
+`SUCCESS_gate_and_dialog_dismissed`); CE 7.7 pre-armed and attached. The new
+rolling driver read `retainedCount` (unreadable-chunk carryover) instead of
+`increasedCount` (the survivor set) and stopped at round 1; fixed in
+`scripts/roll-replay-time-increased.ps1`. Attempt 4 not run; interactive
+Find-what-writes still outstanding. Same Churchill sha12 `0FAE5612491E`
+(`independentReplays` still 0; BLK-0019 open).
 
 ### Canonical OD launch (amended 2026-08-02)
 
@@ -371,11 +379,14 @@ What it does:
    feedback**: poll until the orange blob is stable (3 samples), hold ~2s, then
    click. No long blind settle (avoids dialog timeout) and no instant click
    (avoids racing the dialog).
-7. Runs `scripts/click-watch-offline.ps1` (agent-owned). Exit 0 only when **both**
-   `OfflineReplayVerified` **and** the orange dialog is gone. Screenshot:
-   `%TEMP%\wotb-watch-offline-verify.png`. Exit 6 = host already `Denied` → re-run
-   the launch helper, do not keep clicking. For hangar-chained dismiss without a
-   Host correlation, use `-VisualDismissOnly` (playback-only success).
+7. Runs `scripts/click-watch-offline.ps1` (agent-owned). Exit 0 when
+   `OfflineReplayVerified` is reached — the verified gate is the dialog-gone
+   proof (the lifecycle monitor requires a fresh `START_REPLAY_LOCAL` marker;
+   the orange-blob ROI false-positives on the replay HUD, amended 2026-08-03
+   OD-RECOVERY-017). Screenshot: `%TEMP%\wotb-watch-offline-verify.png`.
+   Exit 6 = host already `Denied` → re-run the launch helper, do not keep
+   clicking. For hangar-chained dismiss without a Host correlation, use
+   `-VisualDismissOnly` (playback-only success).
 
 File-association remains useful only as a **playback smoke** (“does this
 `.wotbreplay` open?”). It is not a substitute for steps 1–7 before scanning.
@@ -413,7 +424,9 @@ File-association remains useful only as a **playback smoke** (“does this
 
    It snapshots Double (8-byte aligned) and compares `increased` with a
    rolling baseline each round, prints aggregate counts only, stops at the
-   target or on gate loss, and discards the scanner session. With
+   target or on gate loss, and discards the scanner session. The survivor set
+   each round is the compare's `increasedCount` — `retainedCount` is only
+   unreadable-chunk carryover, not survivors (OD-RECOVERY-017). With
    `-AddressFile`, the final compare's candidate addresses are written to that
    local (untracked) file for the pre-armed debugger; addresses never reach
    stdout or the repo. The compare candidate list is not contractually
