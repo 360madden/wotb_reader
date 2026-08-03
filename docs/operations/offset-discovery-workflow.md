@@ -1,6 +1,6 @@
 # WoT Blitz PC offset-discovery workflow
 
-Last updated: 2026-08-03 (OD-RECOVERY-032: two attempts both converged to 11 survivors — one short of ≤10 — before the 120s lease expired mid-round; the 11-survivor plateau is the reproducible ceiling, 1–2 rounds past the lease edge; 401 refresh live a sixth time)
+Last updated: 2026-08-03 (OD-RECOVERY-033: two attempts landed at 12 and 17 survivors — both past the 120s lease edge; 401 refresh live a seventh time; convergence range now 11–17 survivors under current load; OD-034 changes the hypothesis, not the parameters)
 
 This is the operational playbook for discovering memory evidence from the
 Windows WoT Blitz client during a **positively verified offline replay**. It is
@@ -313,19 +313,21 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-033`. `OD-RECOVERY-032` completed as **Partial**
-with the **11-survivor plateau now the reproducible ceiling**: both attempts
-converged to 11 survivors (one short of the ≤10 target) inside the lease, and
-the 120s lease expired 1–2 rounds later (round-15 and round-13 `400` discard
-signatures). No new defect surfaced — the driver is at its best-known state
-and the tail is the binding constraint: rolling to ~11 fits the lease, the
-last 1–2 rounds to ≤10 do not on this machine's load. This builds on the
-OD-031 target convergence (10 ≤ 10 twice, attempts 4/5):
+Session ID: `OD-RECOVERY-034`. `OD-RECOVERY-033` completed as **Partial**
+with the **convergence range widened to 11–17 survivors across OD-032/033 (4
+attempts)** — every run lands just past the 120s lease edge, never ≤10 with
+staging. OD-033's two attempts (12 and 17 survivors, 13–14 rounds, 401
+refresh live a seventh time) confirmed the driver is at its best-known state;
+more identical runs are not the path. The next session changes the
+**hypothesis, not the parameters**: reduce round-1 walk cost via a snapshot
+byte budget / region-selection passthrough (MemoryScanEngine `MaxBytes`), or
+shave the tail transition, or run in a lighter-loaded window. This builds on
+the validated driver stack:
 
 1. **401 capability-rotation refresh** — the rendezvous token rotates ~5 min,
    and a 66M-baseline roll outlives it; the driver refreshes the rendezvous
    and retries on 401 (`Invoke-OdApi`, logged `capability_401_refresh_retry`).
-   Validated live a sixth time (OD-032 attempt 2 round 8).
+   Validated live a seventh time (OD-033 rounds 9/10).
 2. **Probe-fold** — the OD-026 standalone sanity probe ran a full 66M-candidate
    compare whose `previousCount` was identical to round-1's; the steady-state
    gate now lives in round 1 (an absurd round-1 `previousCount` discards +
@@ -358,9 +360,9 @@ is not valid for a full 66M-baseline roll (the 401 rotation) — the driver
 refreshes + retries on 401; (7) rolling rounds request 1 candidate and
 harvest only on the target round (OD-RECOVERY-031); (8) use the default CE
 autorun survivor address-file path — a custom `-AddressFile` silently skips
-CE staging (OD-RECOVERY-031 attempt 4); (9) **the 11-survivor plateau is the
-reproducible ceiling on this machine's load** — plan for the tail needing
-1–2 rounds past 11 (OD-RECOVERY-032).
+CE staging (OD-RECOVERY-031 attempt 4); (9) **convergence lands at 11–17
+survivors under current load, always just past the lease edge** — plan for
+lease-headroom work, not more identical runs (OD-RECOVERY-032/033).
 
 Operational notes: (1) detached launch + session driver remains the proven
 pattern; (2) the CE autorun staging (`od-autorun-writebp.lua`) works and now
@@ -375,10 +377,9 @@ timer-bound; (6) the steady-state gate now lives in round 1 of the rolling
 driver (`roll-replay-time-increased.ps1`): round-1 `previousCount` reports
 the snapshot candidate count; reject only absurd/transient counts and
 discard + re-snapshot with a gate-aware wait — no separate probe compare;
-(7) rolling to ≤10 is close but the tail sits at the lease edge — next
-session should target lease headroom: reduce round-1 walk cost (snapshot
-budget / region selection) or shave tail transition time, or run in a
-lighter-loaded window.
+(7) OD-034's priority is the lease-headroom hypothesis: reduce round-1 walk
+cost (snapshot budget / region selection) or shave tail transition time —
+not more identical runs.
 
 ### Canonical OD launch (amended 2026-08-02)
 

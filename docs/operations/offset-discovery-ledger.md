@@ -1,6 +1,6 @@
 # Offset-discovery ledger
 
-Last updated: 2026-08-03 (OD-RECOVERY-032: two attempts both converged to 11 survivors — one short of ≤10 — before the 120s lease expired mid-round; 401 refresh live a sixth time; the 11-survivor plateau is now the reproducible ceiling, 1–2 rounds past the lease edge)
+Last updated: 2026-08-03 (OD-RECOVERY-033: two attempts landed at 12 and 17 survivors — both past the 120s lease edge; 401 refresh live a seventh time; convergence range is now 11–17 survivors under current load, always just past the lease wall; no target reached, no staging)
 
 This ledger is the durable index of WoT Blitz PC offset-discovery work. It
 records experiments, partial results, failures, and pivots so future sessions do
@@ -49,7 +49,7 @@ Every address must be classified before publication:
 | `playerYaw` | **Quarantined / Ambiguous** until decimal, hexadecimal, raw Ghidra, and address-kind evidence reconcile |
 | Trusted next anchor | `playerPositionX`/`playerPositionZ`, then `replayTime` or HP if the replay makes them observable |
 | Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007); absolute LE pointer AOB across private/all/image + align 1/8 without a changed encoding hypothesis (ruled out by OD-RECOVERY-008); truncated low-32 LE dword AOB of survivor absolutes without a changed encoding hypothesis (ruled out by OD-RECOVERY-009); automated CE `bptAccess`/`bptWrite` on Float position survivors without a field pivot or interactive debugger (0 RIP hits through OD-RECOVERY-011); CE write-BP alone on the single increased `replayTime` Double without interactive debugger or a second independent launch (0 RIP in OD-RECOVERY-012); treating file-association / `Invoke-Item` alone as the OD gate path (playback can succeed while Host stays `Denied` / `lifecycle_evidence_timeout` — amended 2026-08-02); reaching ≤10 RT survivors then starting interactive debugger after the fact under a 120s research lease loses the window to EvidenceStale (OD-RECOVERY-016) — pre-arm debugger / reserve lease margin; requiring the Watch Offline orange-dialog blob to vanish after `OfflineReplayVerified` (the replay HUD renders orange in that ROI, so `dialogGone` never sets, extra clicks hit in-game UI and kill the game — OD-RECOVERY-017) — trust the verified gate; reading compare `retainedCount` as the rolling survivor count (it is unreadable-chunk carryover only; survivors are `increasedCount` — OD-RECOVERY-017); automated CE Windows-debugger write-BPs (`debugProcess(1)` + `debug_setBreakpoint(addr, bptWrite, 1)`) on rolling Double survivors — zero RIP hits across OD-009/010/011 and OD-020/021/022 probes, so the operator-owned interactive Find-what-writes step is required, not a scripting gap to keep probing; rolling from a snapshot taken during the game load transition — the candidate set can be 66M+ (22–87× steady state), convergence cannot fit the 120s lease, and the resulting session discard surfaces as a confusing compare `400` (OD-RECOVERY-025 attempt 1) — wait for a clean steady-state snapshot before rolling; capturing the rendezvous capability once at roll start — the token rotates ~5 min and a 66M-baseline roll outlives it, so a mid-roll compare dies with a confusing 401 (OD-RECOVERY-030 attempt 1; fixed by refresh + retry in the rolling driver); running the separate full-walk sanity probe when round-1 `previousCount` reports the identical snapshot count — the probe's 66M-candidate walk wasted lease inside the 120s budget (OD-RECOVERY-030; gate folded into round 1); requesting `maxCandidates=500` (or any large harvest) on every rolling round when only the final target round's addresses are written — the big early compares (66M→1M) pay candidate serialization for nothing and cost lease; request 1 candidate per round and harvest the full set only on the target round (OD-RECOVERY-031 attempt 1 → fixed in driver, validated attempts 3–5: 10–14 rounds fit the lease vs 6–7 before); overriding the CE autorun's default survivor address-file path (`%TEMP%\od-survivors.txt`) with a custom `-AddressFile` — the autorun polls the default path only, so staged survivors silently never reach CE (OD-RECOVERY-031 attempt 4; use the default path so the staging handoff works); keeping the CE autorun poll window at 90s when a 66M-baseline roll outlives it — the file appears right at the 120s lease edge, so the poll must span the whole lease + margin (OD-RECOVERY-031 attempts 3/4; extended to 300s) |
-| Next planned session | `OD-RECOVERY-033` (same pipeline — driver at best-known state; both OD-032 attempts plateaued at 11 survivors one round short of ≤10, so the tail is now the binding constraint: target the lease headroom by reducing round-1 walk cost via snapshot budget/region selection, or shave the tail transition; operator Find-what-writes on staged survivors during the lease-bound held green window; treat launcher-green + immediate `Denied`/`evidence.monitor_unhealthy` as a game-side assert crash — relaunch rather than re-clicking; second distinct folder replay still required for BLK-0019) |
+| Next planned session | `OD-RECOVERY-034` (the tail/lease headroom work is now the confirmed priority: convergence lands at 11–17 survivors under current load and the 120s lease expires 1–2 rounds short of ≤10 — reduce round-1 walk cost via a snapshot byte budget/region selection passthrough, or shave the tail transition; operator Find-what-writes on staged survivors during the lease-bound held green window; treat launcher-green + immediate `Denied`/`evidence.monitor_unhealthy` as a game-side assert crash — relaunch rather than re-clicking; second distinct folder replay still required for BLK-0019) |
 
 The current yaw conflict is recorded explicitly:
 
@@ -112,6 +112,7 @@ occurred.
 | `OD-RECOVERY-030` | 2026-08-03 | Reproduce the pipeline with the 401 fix; fold the redundant sanity probe into round 1 to save lease | background launch helper + session driver (6 attempts) + pre-arm-debugger.ps1 + 401-refresh rolling Double increased + folded steady-state gate | `Partial` | Attempt 1: **401 Unauthorized on round 2** — rendezvous token rotated mid-roll → driver fixed (refresh + retry, validated live attempt 3 round 4 `capability_401_refresh_retry=1`); rolling **66.2M→…→391 in 6 rounds** (attempt 3, tightest this session) then lease wall (round 7 `400` + `EvidenceStale`); attempts 2/5: game-side **assert crash at replay start** (`AccountController.cpp:386` `activeController->GetName() == LOBBY`) → launcher-green but driver saw `Denied`/`evidence.monitor_unhealthy` — diagnosed, not our pipeline; attempt 6 validated the **probe-fold** (round-1 `previousCount` == snapshot count, no separate 66M walk); attempts 4/6 died at round 2 on the lease wall | No survivors staged any attempt; no interactive Find-what-writes; `independentReplays` still 0; no RIP/root |
 | `OD-RECOVERY-031` | 2026-08-03 | Target convergence: candidate-count optimization (1/round, harvest on target only) + CE staging handoff fix (default path + 300s autorun poll) | background launch helper + session driver (5 attempts) + pre-arm-debugger.ps1 + 401-refresh folded-gate candidate-optimized rolling Double increased + default-path autorun staging | `Partial` | Attempt 1: lease wall (66.5M→…→1,093,960, round-2 `400`); candidate-count optimization applied → attempt 3 rolled **66.0M→…→14 in 12 rounds** (12 rounds fit the lease vs 6–7 before, 401 refresh live round 8) then lease wall; attempt 2: game-side assert crash at replay start (`evidence.expired`, launcher-green → driver `EvidenceStale`); attempt 4: **TARGET 10 ≤ 10** (66.4M→10 in 10 rounds, harvest 8, address file written) but CE staging silently failed — custom `-AddressFile` name bypassed the autorun's default-path poll; attempt 5: **TARGET 10 ≤ 10** (66.3M→10 in 14 rounds, sequence `983469→…→10`, harvest 10) with **CE staged all 10 survivors + 4 HW write-BPs armed** (staging handoff fix validated) — but the operator window opened with the gate already `EvidenceStale` (lease expired exactly at roll end, game terminated 18:58:19Z) | No interactive Find-what-writes (operator window stale both target runs — lease wall); `independentReplays` still 0; no RIP/root |
 | `OD-RECOVERY-032` | 2026-08-03 | Reproduce the converged pipeline; target the lease headroom for the operator window | background launch helper + session driver (2 attempts) + pre-arm-debugger.ps1 + 401-refresh folded-gate candidate-optimized rolling Double increased + default-path autorun staging (300s poll) | `Partial` | Attempt 1: rolling **66.5M→…→11 in 14 rounds** (`855303→…→11`; high `retained=177581` unreadable-chunk carryover inflated rounds 4–12 `previous`; 401 refresh live round 10) then lease wall round 15 (`400` + `EvidenceStale`); attempt 2: rolling **66.5M→…→11 in 12 rounds** (`1200456→…→11`; `retained=0`; 401 refresh live round 8) then lease wall round 13 (`400` + `EvidenceStale`) | **11-survivor plateau is the reproducible ceiling — 1–2 rounds past the lease edge both attempts**; no ≤10 target, no address file, no operator window; `independentReplays` still 0; no RIP/root |
+| `OD-RECOVERY-033` | 2026-08-03 | Ride convergence variance for a ≤10 target with the best-known driver | background launch helper + session driver (2 attempts) + pre-arm-debugger.ps1 + 401-refresh folded-gate candidate-optimized rolling Double increased + default-path autorun staging (300s poll) | `Partial` | Attempt 1: rolling **66.3M→…→12 in 14 rounds** (`863861→…→12`; 401 refresh live round 10) then lease wall round 15 (`400` + `EvidenceStale`); attempt 2: rolling **66.6M→…→17 in 13 rounds** (`938727→…→17`; 401 refresh live round 9) then lease wall round 14 (`400` + `EvidenceStale`) | Convergence range **11–17 survivors across OD-032/033 (4 attempts), always past the 120s lease edge**; no ≤10 target, no address file, no operator window; `independentReplays` still 0; no RIP/root |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -2086,6 +2087,56 @@ artifacts:
 `OD-RECOVERY-032` is aggregate structural evidence only. Offset remains 0.
 Convergence to ~11 survivors inside the lease is reproducible; the final 1–2
 rounds to ≤10 sit just past the 120s lease edge on this machine.
+
+## `OD-RECOVERY-033` result — 2026-08-03 (two attempts; convergence range widened)
+
+```yaml
+sessionId: OD-RECOVERY-033
+date: 2026-08-03
+observedAtUtc: 2026-08-03T15:2xZ # attempt 2 lease expired mid-round-14; both attempts ~19:2xZ local
+
+timebox: managed launch to gate green; CE pre-arm + autorun staging; rolling Double increased with the best-known driver (401-refresh + folded gate + candidate-count harvest + default-path staging); two attempts to ride convergence variance for a ≤10 target
+decision: No changed hypothesis was warranted for the driver — OD-031 reached 10 ≤ 10 twice on this same machine, so OD-032's 11-survivor runs are load variance, not a hard ceiling. Two more attempts under identical best-known parameters landed at 12 and 17 survivors, both past the 120s lease edge. The convergence range across OD-032/033 (4 attempts) is now 11–17 survivors — always just past the lease wall, never ≤10 with staging.
+objective: Reach ≤10 survivors inside the lease, stage them into CE, and hold a green operator window for interactive Find-what-writes
+stopCondition: Stop after target ≤10 + CE staging + green window, or gate loss
+method:
+  primaryTool: scripts/launch-offline-replay-for-od.ps1 (detached) + session driver + roll-replay-time-increased.ps1 (best-known state) + pre-arm-debugger.ps1
+  secondaryTools: Cheat Engine 7.7 (C:\Program Files\Cheat Engine) pre-armed attached; CE autorun od-autorun-writebp.lua (default path, 300s poll)
+  transition: natural replay progression between rounds (no manual Space pulses; -AutoSpace not used)
+observations:
+  - state: attempt-1
+    rolling: snapshot session=000001; sequence 863861->178820->39254->7755->2962->1744->1226->946->943->642->242->32->12->12 (14 rounds)
+    outcome: 401 refresh live round 10 (capability_401_refresh_retry=1); lease wall round 15 (400 + EvidenceStale); survivors 12 > 10 target
+  - state: attempt-2
+    rolling: snapshot session=000001; sequence 938727->213638->33463->6794->2458->1208->1024->978->669->21->21->18->17 (13 rounds)
+    outcome: 401 refresh live round 9; lease wall round 14 (400 + EvidenceStale); survivors 17 > 10 target
+  - state: after-session
+    verificationState: EvidenceStale (reason evidence.expired) — expected teardown
+    addressFile: not written (target not reached)
+    ceAutorun: polled 300s both attempts; no address file appeared; 0 staged, 0 hits
+result:
+  whatWorked:
+    - Pipeline reproduces cleanly with the best-known driver: 12 and 17 survivors in 13-14 rounds, 401 refresh live a seventh time (rounds 9/10).
+    - No game-side crash, no gate anomalies this session — both launches ran the full roll to the lease edge.
+  whatFailed:
+    - Neither attempt reached ≤10; the lease expired during the round after convergence plateaued (rounds 15 and 14).
+    - No address file, no CE staging, no operator window.
+  rulesOut:
+    - No new rules-outs. Automated CE write-BP capture stays ruled out (OD-020).
+  partials:
+    - Convergence range characterized: 11-17 survivors across OD-032/033 (4 attempts), always just past the 120s lease edge on current load.
+    - BLK-0019 still needs content-distinct second replay (independentReplays 0).
+  nextPivot: OD-RECOVERY-034 — the tail/lease-headroom work is now the confirmed priority, not more identical runs: reduce round-1 walk cost via a snapshot byte budget / region selection passthrough (MemoryScanEngine MaxBytes), or shave the tail transition; a lighter-loaded window or content-distinct second replay for BLK-0019 also helps.
+  repeatWithoutChangedHypothesis: false
+artifacts:
+  rawFiles: %TEMP%\od-prearmed-debugger.json, %TEMP%\od-ce-autorun.log, session logs /tmp/od-launch-033{,b}.log
+  committedSummary: this ledger entry + workflow update + handoff (2026-08-03-od-recovery-033.md)
+```
+
+`OD-RECOVERY-033` is aggregate structural evidence only. Offset remains 0.
+Convergence lands at 11–17 survivors under current load; the 120s lease edge
+is the standing blocker. Next session changes the hypothesis (lease headroom),
+not the driver parameters.
 
 ## Evidence promotion checklist
 
