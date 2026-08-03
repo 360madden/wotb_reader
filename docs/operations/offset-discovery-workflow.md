@@ -1,6 +1,6 @@
 # WoT Blitz PC offset-discovery workflow
 
-Last updated: 2026-08-03 (OD-RECOVERY-030: 401 capability-rotation refresh + probe-fold into round 1 both validated live; lease wall on the 66M baseline remains — closest 391 survivors)
+Last updated: 2026-08-03 (OD-RECOVERY-031: candidate-count optimization validated live — target convergence reached twice (10 ≤ 10) with CE staging handoff fixed (default path + 300s autorun poll); lease wall at roll end is the only remaining gap to a live operator window)
 
 This is the operational playbook for discovering memory evidence from the
 Windows WoT Blitz client during a **positively verified offline replay**. It is
@@ -313,27 +313,37 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-031`. `OD-RECOVERY-030` completed as **Partial**
-with two durable driver fixes validated live. Rolling still narrows hard from
-the stable 66M baseline (attempt 3: 66.2M → 391 in 6 rounds), but the 120s
-lease wall after round-1's 66M walk is the binding constraint — 4 of 6
-attempts died mid-roll (`400` discard signature + `EvidenceStale`) before
-reaching ≤10. Attempts 2/5 crashed the game at replay start (game-side assert
-`AccountController.cpp:386` `activeController->GetName() == LOBBY`;
-`evidence.monitor_unhealthy`), diagnosed as game-side, not pipeline. Two
-driver changes were made and validated live this session:
+Session ID: `OD-RECOVERY-032`. `OD-RECOVERY-031` completed as **Partial**
+with the first target convergence since OD-020: rolling reached **10 ≤ 10
+survivors on attempts 4 and 5**. The candidate-count optimization (request 1
+candidate per rolling round, harvest the full set only on the target round)
+lets **10–14 rounds fit the 120s lease** (vs 6–7 before) — rolling to ≤10 is
+now solved. The CE staging handoff defect was root-caused and fixed: a custom
+`-AddressFile` name bypassed the autorun's default-path poll (`%TEMP%\od-survivors.txt`),
+and the 90s poll expired before a 66M-baseline roll wrote the file; using the
+default path + a 300s autorun poll staged **all 10 survivors in CE's address
+list with 4 HW write-BPs armed**. The operator window is the only remaining
+gap: it opened with the gate already `EvidenceStale` both target runs — the
+120s lease expires exactly as the 66M-baseline roll ends.
+
+Three driver/tool changes are now validated live:
 
 1. **401 capability-rotation refresh** — the rendezvous token rotates ~5 min,
-   and a 66M-baseline roll outlives it (sanity walk + round 1); the driver now
-   refreshes the rendezvous and retries on 401 (`Invoke-OdApi`, logged
-   `capability_401_refresh_retry`). Validated: attempt 3 round 4 recovered and
-   continued.
+   and a 66M-baseline roll outlives it; the driver refreshes the rendezvous
+   and retries on 401 (`Invoke-OdApi`, logged `capability_401_refresh_retry`).
+   Validated live a fifth time (attempt 5 round 10).
 2. **Probe-fold** — the OD-026 standalone sanity probe ran a full 66M-candidate
-   compare whose `previousCount` was identical to round-1's `previousCount`;
-   the walk narrowed nothing and burned lease. The steady-state gate now lives
-   in round 1 (an absurd round-1 `previousCount` discards + re-snapshots with a
-   gate-aware wait). Validated: attempt 6 ran `snapshot → round=1` with no
-   probe line.
+   compare whose `previousCount` was identical to round-1's; the steady-state
+   gate now lives in round 1 (an absurd round-1 `previousCount` discards +
+   re-snapshots with a gate-aware wait).
+3. **Candidate-count harvest** — rolling rounds request 1 candidate and pay no
+   serialization cost on the big early compares (66M→1M); the full set is
+   harvested only on the target round. This doubled rounds-in-lease (6–7 →
+   10–14) and is what enabled target convergence.
+
+Plus the CE staging handoff rule: always use the default survivor
+address-file path so the autorun can stage survivors into CE, and keep the
+autorun poll window (300s) covering the whole lease + roll tail.
 
 Key rules: (1) **never roll from a load-transition snapshot** — but the
 steady-state gate must accept the *measured stable baseline* (66M this
@@ -346,26 +356,32 @@ vs monitor health) may be either and must be read from the gate state, not
 assumed; (4) capture evidence should be read from persisted artifacts
 (address file, autorun log, gate state) when the driver sequence is
 live-terminal-only, so the record never invents unpersisted intermediates;
-(5) **launcher-green + immediate `Denied`/`evidence.monitor_unhealthy`** on
-~2/6 launches is a game-side assert crash at replay start — relaunch rather
-than re-clicking (OD-RECOVERY-030 attempts 2/5); (6) a single rendezvous
-capability captured at roll start is not valid for a full 66M-baseline roll
-(the 401 rotation) — the driver refreshes + retries on 401.
+(5) **launcher-green + immediate `Denied`/`EvidenceStale`** on roughly
+1-in-4 to 1-in-2 launches is a game-side assert crash at replay start
+(OD-RECOVERY-030 attempts 2/5, OD-RECOVERY-031 attempt 2) — relaunch rather
+than re-clicking; (6) a single rendezvous capability captured at roll start
+is not valid for a full 66M-baseline roll (the 401 rotation) — the driver
+refreshes + retries on 401; (7) rolling rounds request 1 candidate and
+harvest only on the target round (OD-RECOVERY-031); (8) use the default CE
+autorun survivor address-file path — a custom `-AddressFile` silently skips
+CE staging (OD-RECOVERY-031 attempt 4).
 
 Operational notes: (1) detached launch + session driver remains the proven
-pattern; (2) the CE autorun staging (`od-autorun-writebp.lua`) works — it
-stages survivors into CE's address list as `od-survivor-N`, so the operator's
-Find-what-writes is a single right-click; (3) the automated CE write-BP hit
-path stays ruled out (OD-020), so the interactive step is the evidence path;
-(4) stale CE / host are stopped automatically by the next launch helper;
-(5) the operator window is held inside the running driver and re-announced
-every 30s, so the operator acts on the live transcript while the gate is
-still green — use `-HoldAfterRollSeconds 240` (or higher) so the window is
-lease-bound, not timer-bound; (6) the steady-state gate now lives in round 1
-of the rolling driver (`roll-replay-time-increased.ps1`): round-1
-`previousCount` reports the snapshot candidate count; reject only
-absurd/transient counts and discard + re-snapshot with a gate-aware wait —
-no separate probe compare.
+pattern; (2) the CE autorun staging (`od-autorun-writebp.lua`) works and now
+has a 300s poll — it stages survivors into CE's address list as
+`od-survivor-N`, so the operator's Find-what-writes is a single right-click;
+(3) the automated CE write-BP hit path stays ruled out (OD-020), so the
+interactive step is the evidence path; (4) stale CE / host are stopped
+automatically by the next launch helper; (5) the operator window is held
+inside the running driver and re-announced every 30s — use
+`-HoldAfterRollSeconds 240` (or higher) so the window is lease-bound, not
+timer-bound; (6) the steady-state gate now lives in round 1 of the rolling
+driver (`roll-replay-time-increased.ps1`): round-1 `previousCount` reports
+the snapshot candidate count; reject only absurd/transient counts and
+discard + re-snapshot with a gate-aware wait — no separate probe compare;
+(7) with rolling now fitting the lease, the operator window is the only
+missing piece — next session should aim to start the interactive step
+immediately at roll end within the remaining lease headroom.
 
 ### Canonical OD launch (amended 2026-08-02)
 

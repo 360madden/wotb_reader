@@ -216,10 +216,14 @@ try {
             Write-Roll ("round={0} pulse_window={1}s" -f $round, $TransitionSeconds)
             Start-Sleep -Seconds $TransitionSeconds
 
-            $requestCandidates = if ($AddressFile) { 500 } else { $MaxCandidates }
+            # Rolling rounds request a single candidate: only the FINAL round's
+            # candidates are ever written to -AddressFile, so requesting 500
+            # every round (esp. the expensive 66M-baseline round 1) adds
+            # candidate serialization for nothing (OD-RECOVERY-031 lease wall).
+            # The address list is harvested separately on the target round.
             $cmpBody = @{
                 compareMode     = 'increased'
-                maxCandidates   = $requestCandidates
+                maxCandidates   = $MaxCandidates
                 rollingBaseline = $true
             } | ConvertTo-Json
             $cmp = Invoke-OdApi -Path "/api/v1/game/discover/compare/$sessionId" -Method Post -Body $cmpBody
@@ -267,6 +271,26 @@ try {
 
             if ($survivors -le $TargetSurvivors) {
                 Write-Roll ("TARGET survivors=" + $survivors + " le " + $TargetSurvivors)
+                # Harvest the survivor addresses for -AddressFile: one more
+                # increased compare requesting up to 500 candidates. Cheap here
+                # (the survivor set is tiny), and keeps the big early rounds
+                # free of candidate serialization (OD-RECOVERY-031).
+                if ($AddressFile) {
+                    $harvestBody = @{
+                        compareMode     = 'increased'
+                        maxCandidates   = 500
+                        rollingBaseline = $true
+                    } | ConvertTo-Json
+                    $harvest = Invoke-OdApi -Path "/api/v1/game/discover/compare/$sessionId" -Method Post -Body $harvestBody
+                    if (-not $harvest.PSObject.Properties['error']) {
+                        $lastCmp = $harvest
+                        $survivors = [int]$harvest.increasedCount
+                        Write-Roll ("harvest increased=" + $survivors + " candidates=" + @($harvest.candidates).Count)
+                    }
+                    else {
+                        Write-Roll ("harvest_failed=" + $harvest.error)
+                    }
+                }
                 break
             }
 
