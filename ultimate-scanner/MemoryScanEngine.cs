@@ -286,6 +286,8 @@ internal sealed class MemoryScanEngine
         string compareMode,
         int maxCandidates,
         bool advanceBaseline,
+        double? deltaTarget = null,
+        double? deltaTolerance = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(observation);
@@ -299,21 +301,30 @@ internal sealed class MemoryScanEngine
         }
 
         string normalizedCompareMode = compareMode?.Trim().ToLowerInvariant() ?? string.Empty;
-        if (normalizedCompareMode is not ("changed" or "unchanged" or "increased" or "decreased")
-            || maxCandidates is < 1 or > 10_000)
+        bool isDeltaMode = normalizedCompareMode == "delta";
+        if (normalizedCompareMode is not ("changed" or "unchanged" or "increased" or "decreased" or "delta")
+            || maxCandidates is < 1 or > 10_000
+            || (isDeltaMode
+                && (!deltaTarget.HasValue || !deltaTolerance.HasValue
+                    || !double.IsFinite(deltaTarget.Value)
+                    || !double.IsFinite(deltaTolerance.Value)
+                    || deltaTolerance.Value < 0))
+            || (!isDeltaMode && (deltaTarget.HasValue || deltaTolerance.HasValue)))
         {
             return Error<CompareResult>(
                 "discover.invalid_options",
-                "Compare mode must be changed, unchanged, increased, or decreased, and maxCandidates must be between 1 and 10000.");
+                "Compare mode must be changed, unchanged, increased, decreased, or delta, and maxCandidates must be between 1 and 10000. Delta mode requires a finite delta target and a non-negative finite tolerance; other modes reject delta parameters.");
         }
 
         DateTimeOffset startedAt = _timeProvider.GetUtcNow();
         _logger.LogInformation(
-            "Memory snapshot comparison started: sessionId={SessionId}, compareMode={CompareMode}, maxCandidates={MaxCandidates}, advanceBaseline={AdvanceBaseline}, processId={ProcessId}, executableSha256={ExecutableSha256}",
+            "Memory snapshot comparison started: sessionId={SessionId}, compareMode={CompareMode}, maxCandidates={MaxCandidates}, advanceBaseline={AdvanceBaseline}, deltaTarget={DeltaTarget}, deltaTolerance={DeltaTolerance}, processId={ProcessId}, executableSha256={ExecutableSha256}",
             sessionId,
             compareMode,
             maxCandidates,
             advanceBaseline,
+            deltaTarget,
+            deltaTolerance,
             observation.ProcessId,
             observation.ExecutableSha256.Value);
 
@@ -330,6 +341,15 @@ internal sealed class MemoryScanEngine
                 "Memory snapshot comparison denied: sessionId={SessionId}, reason=session_not_found",
                 sessionId);
             return Error<CompareResult>("discover.session_not_found", "The snapshot session was not found or expired.");
+        }
+        if (isDeltaMode && previous.Filter.ValueKind == MemoryValueKind.Bytes)
+        {
+            // Delta semantics require a numeric value kind; a Bytes snapshot
+            // has no meaningful numeric difference. Reject instead of silently
+            // returning zero candidates.
+            return Error<CompareResult>(
+                "discover.invalid_options",
+                "Delta compare requires a numeric snapshot value kind (Float, Double, Int32, UInt32, Int64, or UInt64); Bytes snapshots have no numeric delta.");
         }
         if (!SameIdentity(previous.Observation, observation))
         {
@@ -411,6 +431,9 @@ internal sealed class MemoryScanEngine
                     "unchanged" => equal,
                     "increased" => comparison > 0,
                     "decreased" => comparison < 0,
+                    "delta" => PassesDelta(
+                        oldValue, newValue, previous.Filter.ValueKind,
+                        deltaTarget!.Value, deltaTolerance!.Value),
                     _ => !equal,
                 };
                 if (!include) continue;
@@ -473,9 +496,11 @@ internal sealed class MemoryScanEngine
         }
 
         _logger.LogInformation(
-            "Memory snapshot comparison completed: sessionId={SessionId}, compareMode={CompareMode}, previousCount={PreviousCount}, currentCount={CurrentCount}, changed={Changed}, unchanged={Unchanged}, increased={Increased}, decreased={Decreased}, returnedCandidates={ReturnedCandidates}, truncated={Truncated}, retained={Retained}, readFailures={ReadFailures}, elapsedMs={ElapsedMs}, executableSha256={ExecutableSha256}",
+            "Memory snapshot comparison completed: sessionId={SessionId}, compareMode={CompareMode}, deltaTarget={DeltaTarget}, deltaTolerance={DeltaTolerance}, previousCount={PreviousCount}, currentCount={CurrentCount}, changed={Changed}, unchanged={Unchanged}, increased={Increased}, decreased={Decreased}, returnedCandidates={ReturnedCandidates}, truncated={Truncated}, retained={Retained}, readFailures={ReadFailures}, elapsedMs={ElapsedMs}, executableSha256={ExecutableSha256}",
             sessionId,
             normalizedCompareMode,
+            deltaTarget,
+            deltaTolerance,
             previous.CandidateCount,
             effectiveCurrentCount,
             changed,
@@ -686,6 +711,49 @@ internal sealed class MemoryScanEngine
             MemoryValueKind.UInt64Value when bytes.Length == 8 => CompareULong(BitConverter.ToUInt64(bytes), filter.UIntMin, filter.UIntMax),
             _ => true,
         };
+    }
+
+    /// <summary>
+    /// True when the numeric difference between the two values is within
+    /// <paramref name="tolerance"/> of <paramref name="target"/>. This is the
+    /// replay-marker delta primitive: keep candidates whose observed change
+    /// matches a known replay-derived delta (position, speed, or HP between two
+    /// frames), which is far more selective than the four boolean modes.
+    /// </summary>
+    internal static bool PassesDelta(
+        ReadOnlySpan<byte> oldValue,
+        ReadOnlySpan<byte> newValue,
+        MemoryValueKind kind,
+        double target,
+        double tolerance)
+    {
+        if (oldValue.Length != newValue.Length)
+        {
+            return false;
+        }
+
+        (double oldNumber, double newNumber) = kind switch
+        {
+            MemoryValueKind.FloatValue when oldValue.Length == 4
+                => (BitConverter.ToSingle(oldValue), BitConverter.ToSingle(newValue)),
+            MemoryValueKind.DoubleValue when oldValue.Length == 8
+                => (BitConverter.ToDouble(oldValue), BitConverter.ToDouble(newValue)),
+            MemoryValueKind.Int32Value when oldValue.Length == 4
+                => (BitConverter.ToInt32(oldValue), BitConverter.ToInt32(newValue)),
+            MemoryValueKind.UInt32Value when oldValue.Length == 4
+                => (BitConverter.ToUInt32(oldValue), BitConverter.ToUInt32(newValue)),
+            MemoryValueKind.Int64Value when oldValue.Length == 8
+                => (BitConverter.ToInt64(oldValue), BitConverter.ToInt64(newValue)),
+            MemoryValueKind.UInt64Value when oldValue.Length == 8
+                => (BitConverter.ToUInt64(oldValue), BitConverter.ToUInt64(newValue)),
+            _ => (double.NaN, double.NaN),
+        };
+        if (double.IsNaN(oldNumber) || double.IsNaN(newNumber))
+        {
+            return false;
+        }
+
+        return Math.Abs((newNumber - oldNumber) - target) <= tolerance;
     }
 
     private static int CompareValues(ReadOnlySpan<byte> oldValue, ReadOnlySpan<byte> newValue, MemoryValueKind kind) => kind switch

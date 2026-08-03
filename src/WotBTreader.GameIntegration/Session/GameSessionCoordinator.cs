@@ -1463,7 +1463,9 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         string compareMode,
         int maxCandidates,
         CancellationToken cancellationToken,
-        bool advanceBaseline = false)
+        bool advanceBaseline = false,
+        double? deltaTarget = null,
+        double? deltaTolerance = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         cancellationToken.ThrowIfCancellationRequested();
@@ -1484,6 +1486,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     compareMode ?? "changed",
                     maxCandidates,
                     advanceBaseline,
+                    deltaTarget,
+                    deltaTolerance,
                     scanCancellation.Token),
                 scanCancellation.Token).ConfigureAwait(false);
             if (!IsScanAuthorizationCurrent(observation!, authorizationToken))

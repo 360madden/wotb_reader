@@ -609,6 +609,89 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task CompareRejectsDeltaWithoutBothParameters()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.CompareSnapshotAsync(
+            scanner,
+            "000001",
+            new OffsetCompareRequest
+            {
+                CompareMode = "delta",
+                DeltaTarget = 2.5,
+            },
+            TestContext.CancellationToken);
+
+        JsonElement response = BadRequestAnonymous(result);
+        Assert.AreEqual("discover.invalid_delta_options", response.GetProperty("error").GetString());
+    }
+
+    [TestMethod]
+    public async Task CompareRejectsDeltaWithNegativeTolerance()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.CompareSnapshotAsync(
+            scanner,
+            "000001",
+            new OffsetCompareRequest
+            {
+                CompareMode = "delta",
+                DeltaTarget = 2.5,
+                DeltaTolerance = -0.1,
+            },
+            TestContext.CancellationToken);
+
+        JsonElement response = BadRequestAnonymous(result);
+        Assert.AreEqual("discover.invalid_delta_options", response.GetProperty("error").GetString());
+    }
+
+    [TestMethod]
+    public async Task CompareRejectsDeltaParametersOnNonDeltaMode()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.CompareSnapshotAsync(
+            scanner,
+            "000001",
+            new OffsetCompareRequest
+            {
+                CompareMode = "changed",
+                DeltaTarget = 2.5,
+                DeltaTolerance = 0.1,
+            },
+            TestContext.CancellationToken);
+
+        JsonElement response = BadRequestAnonymous(result);
+        Assert.AreEqual("discover.delta_only_with_delta_mode", response.GetProperty("error").GetString());
+    }
+
+    [TestMethod]
+    public async Task CompareForwardsDeltaParametersToScanner()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.CompareSnapshotAsync(
+            scanner,
+            "000001",
+            new OffsetCompareRequest
+            {
+                CompareMode = "delta",
+                DeltaTarget = 2.5,
+                DeltaTolerance = 0.25,
+                RollingBaseline = true,
+            },
+            TestContext.CancellationToken);
+
+        Assert.IsNotNull(OkAnonymous(result));
+        Assert.AreEqual("000001", scanner.LastCompareSessionId);
+        Assert.AreEqual("delta", scanner.LastCompareMode);
+        Assert.AreEqual(2.5, scanner.LastCompareDeltaTarget);
+        Assert.AreEqual(0.25, scanner.LastCompareDeltaTolerance);
+    }
+
+    [TestMethod]
     public async Task PointerChainMapsBoundedEvidenceResult()
     {
         var scanner = new FakeGameMemoryScanner
@@ -696,6 +779,10 @@ public sealed class GameApiEndpointsTests
         public string? DiscardedSession { get; private set; }
         public MemoryScanRequest? LastScanRequest { get; private set; }
         public MemorySnapshotRequest? LastSnapshotRequest { get; private set; }
+        public string? LastCompareSessionId { get; private set; }
+        public string? LastCompareMode { get; private set; }
+        public double? LastCompareDeltaTarget { get; private set; }
+        public double? LastCompareDeltaTolerance { get; private set; }
         public CancellationToken LastCancellationToken { get; private set; }
         public OperationResult<MemoryCompareResult> CompareResult { get; init; } = OperationResult.Success(
             new MemoryCompareResult(DateTimeOffset.UnixEpoch, 0, 0, 0, 0, 0, 0, [], false, false, 0));
@@ -739,8 +826,15 @@ public sealed class GameApiEndpointsTests
 
         public ValueTask<OperationResult<MemoryCompareResult>> CompareAsync(
             string sessionId, string compareMode, int maxCandidates,
-            CancellationToken cancellationToken, bool advanceBaseline = false) =>
-            ValueTask.FromResult(CompareResult);
+            CancellationToken cancellationToken, bool advanceBaseline = false,
+            double? deltaTarget = null, double? deltaTolerance = null)
+        {
+            LastCompareSessionId = sessionId;
+            LastCompareMode = compareMode;
+            LastCompareDeltaTarget = deltaTarget;
+            LastCompareDeltaTolerance = deltaTolerance;
+            return ValueTask.FromResult(CompareResult);
+        }
 
         public void DiscardSession(string sessionId) => DiscardedSession = sessionId;
 

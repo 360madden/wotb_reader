@@ -524,15 +524,30 @@ internal static class GameApiEndpoints
         ArgumentNullException.ThrowIfNull(request);
         if (string.IsNullOrWhiteSpace(sessionId))
             return Results.BadRequest(new { error = "discover.session_id_required" });
-        if (request.CompareMode is not ("changed" or "unchanged" or "increased" or "decreased"))
+        bool isDelta = request.CompareMode == "delta";
+        if (request.CompareMode is not ("changed" or "unchanged" or "increased" or "decreased" or "delta"))
             return Results.BadRequest(new { error = "discover.invalid_compare_mode" });
         if (request.MaxCandidates is < 1 or > 500)
             return Results.BadRequest(new { error = "discover.invalid_options" });
+        if (isDelta
+            && (!request.DeltaTarget.HasValue || !request.DeltaTolerance.HasValue
+                || !double.IsFinite(request.DeltaTarget.Value)
+                || !double.IsFinite(request.DeltaTolerance.Value)
+                || request.DeltaTolerance.Value < 0))
+        {
+            return Results.BadRequest(new { error = "discover.invalid_delta_options" });
+        }
+        if (!isDelta && (request.DeltaTarget.HasValue || request.DeltaTolerance.HasValue))
+        {
+            return Results.BadRequest(new { error = "discover.delta_only_with_delta_mode" });
+        }
 
         var result = await scanner.CompareAsync(
             sessionId, request.CompareMode, request.MaxCandidates,
             cancellationToken,
-            request.RollingBaseline).ConfigureAwait(false);
+            request.RollingBaseline,
+            request.DeltaTarget,
+            request.DeltaTolerance).ConfigureAwait(false);
         if (!result.IsSuccess)
             return Results.BadRequest(new { error = result.Error?.Code ?? "discover.compare_failed" });
         var r = result.Value!;

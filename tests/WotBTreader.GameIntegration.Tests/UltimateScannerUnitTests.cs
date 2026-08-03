@@ -356,6 +356,135 @@ public sealed class UltimateScannerUnitTests
     }
 
     [TestMethod]
+    public void CompareRejectsDeltaModeWithoutTargetBeforeOpeningProcess()
+    {
+        var engine = new MemoryScanEngine(
+            TimeProvider.System,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<MemoryScanEngine>.Instance);
+        var observation = new AuthorizedMemoryObservation(
+            1,
+            1,
+            "C:\\game.exe",
+            "test",
+            new ContentHash(new string('a', 64)),
+            DateTimeOffset.UtcNow.AddMinutes(1),
+            new AuthorizationReadGate());
+
+        OperationResult<MemoryScanEngine.CompareResult> result = engine.Compare(
+            observation,
+            0x140000000,
+            "000001",
+            "delta",
+            10,
+            false);
+
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual("discover.invalid_options", result.Error?.Code);
+    }
+
+    [TestMethod]
+    public void CompareRejectsDeltaModeWithNegativeToleranceBeforeOpeningProcess()
+    {
+        var engine = new MemoryScanEngine(
+            TimeProvider.System,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<MemoryScanEngine>.Instance);
+        var observation = new AuthorizedMemoryObservation(
+            1,
+            1,
+            "C:\\game.exe",
+            "test",
+            new ContentHash(new string('a', 64)),
+            DateTimeOffset.UtcNow.AddMinutes(1),
+            new AuthorizationReadGate());
+
+        OperationResult<MemoryScanEngine.CompareResult> result = engine.Compare(
+            observation,
+            0x140000000,
+            "000001",
+            "delta",
+            10,
+            false,
+            deltaTarget: 2.5,
+            deltaTolerance: -0.1);
+
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual("discover.invalid_options", result.Error?.Code);
+    }
+
+    [TestMethod]
+    public void CompareRejectsDeltaParametersOnNonDeltaModeBeforeOpeningProcess()
+    {
+        var engine = new MemoryScanEngine(
+            TimeProvider.System,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<MemoryScanEngine>.Instance);
+        var observation = new AuthorizedMemoryObservation(
+            1,
+            1,
+            "C:\\game.exe",
+            "test",
+            new ContentHash(new string('a', 64)),
+            DateTimeOffset.UtcNow.AddMinutes(1),
+            new AuthorizationReadGate());
+
+        OperationResult<MemoryScanEngine.CompareResult> result = engine.Compare(
+            observation,
+            0x140000000,
+            "000001",
+            "changed",
+            10,
+            false,
+            deltaTarget: 2.5,
+            deltaTolerance: 0.1);
+
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual("discover.invalid_options", result.Error?.Code);
+    }
+
+    [TestMethod]
+    [DataRow(0.0f, 2.5f, 2.5, 0.1, true)]
+    [DataRow(1.0f, 4.0f, 3.0, 0.01, true)]
+    [DataRow(1.0f, 4.0f, 2.9, 0.01, false)]
+    [DataRow(1.0f, 1.0f, 0.0, 0.001, true)]
+    [DataRow(100.0f, 50.0f, -50.0, 0.001, true)]
+    public void PassesDeltaMatchesNumericChangeWithinTolerance(
+        float oldValue,
+        float newValue,
+        double target,
+        double tolerance,
+        bool expected)
+    {
+        bool actual = MemoryScanEngine.PassesDelta(
+            BitConverter.GetBytes(oldValue),
+            BitConverter.GetBytes(newValue),
+            MemoryValueKind.FloatValue,
+            target,
+            tolerance);
+        Assert.AreEqual(expected, actual);
+    }
+
+    [TestMethod]
+    public void PassesDeltaRejectsMismatchedLengths()
+    {
+        Assert.IsFalse(MemoryScanEngine.PassesDelta(
+            [1, 2, 3, 4],
+            [1, 2, 3, 4, 5],
+            MemoryValueKind.FloatValue,
+            1.0,
+            0.1));
+    }
+
+    [TestMethod]
+    public void PassesDeltaRejectsBytesKind()
+    {
+        Assert.IsFalse(MemoryScanEngine.PassesDelta(
+            [0x01, 0x02, 0x03, 0x04],
+            [0x01, 0x02, 0x03, 0x05],
+            MemoryValueKind.Bytes,
+            1.0,
+            0.1));
+    }
+
+    [TestMethod]
     public void SnapshotFilterRejectsInvertedTypedRanges()
     {
         var filter = new MemoryScanEngine.SnapshotFilter(

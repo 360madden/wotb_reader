@@ -213,6 +213,20 @@ public sealed record OffsetCompareRequest
     public string CompareMode { get; init; } = "changed";
     public int MaxCandidates { get; init; } = 100;
     public bool RollingBaseline { get; init; }
+
+    /// <summary>
+    /// Required with <see cref="CompareMode"/> = "delta": the expected numeric
+    /// change between the snapshot and current memory (e.g. a replay-derived
+    /// position or speed delta). Must be finite.
+    /// </summary>
+    public double? DeltaTarget { get; init; }
+
+    /// <summary>
+    /// Required with <see cref="CompareMode"/> = "delta": how close the
+    /// observed change must be to <see cref="DeltaTarget"/>. Must be finite
+    /// and non-negative.
+    /// </summary>
+    public double? DeltaTolerance { get; init; }
 }
 
 /// <summary>Request to scan a bounded memory window around a reference offset.</summary>

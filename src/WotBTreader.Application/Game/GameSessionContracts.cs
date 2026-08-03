@@ -235,7 +235,9 @@ public interface IGameMemoryScanner
         string compareMode,
         int maxCandidates,
         CancellationToken cancellationToken,
-        bool advanceBaseline = false);
+        bool advanceBaseline = false,
+        double? deltaTarget = null,
+        double? deltaTolerance = null);
 
     /// <summary>Discards a stored snapshot session.</summary>
     void DiscardSession(string sessionId);
