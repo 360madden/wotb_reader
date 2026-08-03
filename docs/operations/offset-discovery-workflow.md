@@ -396,20 +396,30 @@ File-association remains useful only as a **playback smoke** (“does this
    It locates CE 7.7 / x64dbg via registry + known paths, launches the chosen
    debugger attached to the running `wotblitz.exe`, and writes
    `%TEMP%\od-prearmed-debugger.json`. `-PreferX64Dbg` switches the default
-   (CE first).
+   (CE first). CE's `-p <pid>` open-process flag is version-dependent; the
+   robust alternative is loading `tools/cheat-engine/prearm-attach.lua` in CE
+   (Ctrl+Alt+L → Execute) — it attaches to `wotblitz.exe` and stages the
+   rolling driver's survivor addresses into CE's address list for one-click
+   Find-what-writes.
 3. Start rolling Double increased (`rollingBaseline=true`) immediately
    post-verify with Space pause/resume pulses; aim to reach ≤10 with lease
    margin reserved for interactive Find-what-writes on survivors. Use the
    driver:
 
    ```text
-   powershell -File scripts/roll-replay-time-increased.ps1 -TargetRetained 10
+   powershell -File scripts/roll-replay-time-increased.ps1 -TargetRetained 10 `
+     -AddressFile "$env:TEMP\od-survivors.txt"
    ```
 
    It snapshots Double (8-byte aligned) and compares `increased` with a
    rolling baseline each round, prints aggregate counts only, stops at the
-   target or on gate loss, and discards the scanner session. The operator owns
-   the Space transition; `-AutoSpace` is an explicit opt-in pulse loop.
+   target or on gate loss, and discards the scanner session. With
+   `-AddressFile`, the final compare's candidate addresses are written to that
+   local (untracked) file for the pre-armed debugger; addresses never reach
+   stdout or the repo. The compare candidate list is not contractually
+   guaranteed to equal the retained survivor set — the driver logs a `WARN` on
+   count mismatch, and the Lua pre-arm prints the same caution. The operator
+   owns the Space transition; `-AutoSpace` is an explicit opt-in pulse loop.
 4. Confirm a **second distinct replay** in the game folder when available
    (BLK-0019).
 5. Do not promote from neighborhood hit counts alone.

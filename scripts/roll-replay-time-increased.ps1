@@ -31,7 +31,11 @@ param(
     [switch]$AutoSpace,
     [int]$MaxCandidates = 1,
     [int]$Alignment = 8,
-    [string]$ResultPath = ''
+    [string]$ResultPath = '',
+    # Local (untracked) file to receive survivor candidate absolute addresses
+    # from the final compare, for interactive Find-what-writes. Aggregate counts
+    # remain the only output on stdout; addresses never enter the repo.
+    [string]$AddressFile = ''
 )
 
 Set-StrictMode -Version Latest
@@ -125,9 +129,10 @@ try {
         Write-Roll ("round={0} pulse_window={1}s" -f $round, $TransitionSeconds)
         Start-Sleep -Seconds $TransitionSeconds
 
+        $requestCandidates = if ($AddressFile) { 500 } else { $MaxCandidates }
         $cmpBody = @{
             compareMode     = 'increased'
-            maxCandidates   = $MaxCandidates
+            maxCandidates   = $requestCandidates
             rollingBaseline = $true
         } | ConvertTo-Json
         $cmp = Invoke-RestMethod -Uri "$($api.Base)/api/v1/game/discover/compare/$sessionId" `
@@ -167,6 +172,17 @@ try {
     Write-Roll ("sequence=" + ($seq -join '->'))
     if ($ResultPath) {
         Set-Content -LiteralPath $ResultPath -Value "$retained" -Encoding ascii -NoNewline
+    }
+    if ($AddressFile -and $cmp -and $cmp.PSObject.Properties['candidates']) {
+        $lines = @($cmp.candidates | ForEach-Object { [string]$_.absoluteAddress })
+        Set-Content -LiteralPath $AddressFile -Value $lines -Encoding ascii
+        # The compare response's candidate list is not contractually guaranteed
+        # to equal the retained survivor set; flag a mismatch so the operator
+        # does not trust non-survivor addresses in the debugger.
+        if ($retained -ge 0 -and $lines.Count -ne $retained) {
+            Write-Roll ("WARN_address_count_mismatch candidates=" + $lines.Count + " retained=" + $retained)
+        }
+        Write-Roll ("addresses_written=" + $AddressFile + " count=" + $lines.Count + " retained=" + $retained)
     }
     exit 0
 }
