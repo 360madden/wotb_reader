@@ -59,21 +59,24 @@
       "source_url": "https://github.com/ReClassNET/ReClass.NET",
       "releases_url": "https://github.com/ReClassNET/ReClass.NET/releases",
       "installed_path": "C:\\tools\\ReClass.NET",
-      "launcher": "ReClass.exe",
+      "launcher": "ReClass.NET_Launcher.exe",
+      "launcher_notes": "The root launcher (x86 PE) auto-selects the x86\\ReClass.NET.exe or x64\\ReClass.NET.exe build for the attached target; the x86 build is used for the 32-bit game process. Verified in the archive layout and by a live launch smoke test (launcher handed off to the app and kept a ReClass.NET window open).",
       "workflow_phase": "dynamic-analysis",
-      "installation_status": "pending-install",
-      "approval_status": "pending-approval",
+      "installation_status": "verified-local",
+      "approval_status": "approved-local",
       "approved_scope": "Runtime class-layout reconstruction from staged survivor pointers during positively verified offline replay sessions only",
       "verification": {
-        "verified_at_utc": null,
-        "launcher_present": false,
-        "sha256_matches": false,
-        "notes": "sha256 field is the verified hash of the canonical v1.2 GitHub release asset (computed 2026-08-04); local install not yet present, so launcher/sha256 verification is pending"
+        "verified_at_utc": "2026-08-04T08:48:42Z",
+        "launcher_present": true,
+        "sha256_matches": true,
+        "archive_sha256": "3822bf8974df152cae17714ee484fdcc3ede5c1e26bc159c7c9e9e62e60b9f46",
+        "launch_smoke": "ok",
+        "notes": "Installed 2026-08-04 from the canonical v1.2 GitHub release asset (ReClass.NET.rar, 2,748,658 bytes, sha256 verified against the registry). x86\\ReClass.NET.exe and x64\\ReClass.NET.exe both present (FileVersion 1.2.0.0); ReClass.NET_Launcher.exe launch smoke test started the app and kept the window open."
       },
       "spdx_license": "MIT",
       "platforms": ["win32", "win64"],
       "platform_notes": "Target game is x86 (WOW64-observed 32-bit; the scanner's GuardedMemoryReader resolves ImageFileMachineI386 with 32-bit pointers). ReClass.NET v1.2 ships x86 and x64 attach support; use the x86 process tree when attaching to wotblitz.exe.",
-      "install_instructions": "Download ReClass.NET.rar (2,748,658 bytes) from GitHub releases v1.2, extract to C:\\tools\\ReClass.NET\\, run ReClass.exe; SHA-256 above is the verified hash of the canonical v1.2 release asset. Newer nightly builds exist on reclass.net but are not pinned.",
+      "install_instructions": "Download ReClass.NET.rar (2,748,658 bytes) from GitHub releases v1.2, extract to C:\\tools\\ReClass.NET\\ (Windows bsdtar reads RAR natively), run ReClass.NET_Launcher.exe which selects the correct x86/x64 build for the attached target. SHA-256 above is the verified hash of the canonical v1.2 release asset. Newer nightly builds exist on reclass.net but are not pinned.",
       "registered_at_utc": "2026-08-04T00:00:00Z"
     },
     {

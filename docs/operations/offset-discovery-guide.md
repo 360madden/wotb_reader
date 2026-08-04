@@ -267,9 +267,10 @@ offline root verifier: the field offsets ReClass reveals become the input that
 `tools/find-static-roots.py` anchors to module RVAs.
 
 **Registration:** `tools/external/tools.lock.json` (MIT; v1.2 canonical release,
-SHA-256 `3822bf89…9f46`; pending-install/pending-approval). Download
-`ReClass.NET.rar` from the canonical GitHub releases page, extract to
-`C:\tools\ReClass.NET\`, run `ReClass.exe`. Newer nightly builds exist on
+SHA-256 `3822bf89…9f46`; **verified-local / approved-local since 2026-08-04**).
+Installed at `C:\tools\ReClass.NET\` (the canonical GitHub `ReClass.NET.rar`
+extracts with Windows bsdtar); run `ReClass.NET_Launcher.exe`, which selects
+the x86 build for the 32-bit game process. Newer nightly builds exist on
 reclass.net but are not pinned.
 
 #### Step-by-step workflow:
