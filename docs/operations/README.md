@@ -16,6 +16,7 @@ handoffs, offset-discovery evidence, and the offset-discovery operating guide.
 | [`offset-discovery-roadmap.md`](offset-discovery-roadmap.md) | Organized milestone plan (M0–M4) with session caps, exit criteria, and the descope gate. |
 | [`offset-discovery-ledger.md`](offset-discovery-ledger.md) | Append-only experiment ledger: status vocabulary, decision register, experiment index, session template, results. |
 | [`offset-discovery-guide.md`](offset-discovery-guide.md) | Detailed tool reference: x64dbg, System Informer, Ghidra, offset file format, scanner API and CLI matrix. |
+| [`replay-crosscheck.md`](replay-crosscheck.md) | Operator-run replay-decode cross-validation: when/how to run `crosscheck.cmd`, exit codes, known divergences. |
 | [`handoffs/`](handoffs/README.md) | Dated session handoffs, `YYYY-MM-DD-<topic>.md`; the newest by date is current. Append-only. |
 
 ## Blocker-numbering convention

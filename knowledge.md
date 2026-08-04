@@ -66,6 +66,7 @@ full design specification.
 | `compare create <leftId> <rightId>` | Create a comparison run from two decode runs |
 | `export sessions <id>` | Export session events as JSON |
 | `export positions <id>` | Export position samples as JSON |
+| `crosscheck [-Replay <file> | -GoldenVector]` | **Operator-run** replay-decode cross-validation (C# vs Rust oracle); not part of validate/CI — needs real replays. See `docs/operations/replay-crosscheck.md` |
 | `treader <cmd> [args]` | General CLI passthrough for any command |
 
 All CLI wrappers store data under `.data\` in the repo root (gitignored).
@@ -105,6 +106,14 @@ in separate windows with a short wait for the host to be ready.
 ./scripts/validate.ps1                     # locked restore → format → build → test → scan → PS hygiene
 ./scripts/validate.ps1 -AuditPackages      # above + transitive vulnerability audit
 ```
+
+**Decoder milestones additionally run the replay cross-check** (operator-run;
+needs real replays, so it is deliberately not in validate/CI):
+```powershell
+./crosscheck.cmd -GoldenVector             # trust the oracle first
+./crosscheck.cmd -Replay <real-replay>     # C# decoder vs Rust oracle on real 11.18/11.19 battles
+```
+See `docs/operations/replay-crosscheck.md` for exit codes and known divergences.
 
 **Single test project:**
 ```powershell
