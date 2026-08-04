@@ -1,6 +1,6 @@
 # WoT Blitz PC offset-discovery workflow
 
-Last updated: 2026-08-03 (OD-042-STATIC: **`0x037F3054` precisely identified as the shared RTTI `type_info` vftable** (every TypeDescriptor's pVFTable points at it — confirmed td@0x03DB5120 `pVFTable == 0x037F3054`; constructor at 0x020CB956 writes it to `[this]+0`); **`tools/find-static-roots.py` gained `--vtables` which names 17,133 of 18,721 vtables via the COL chain** — the fix: MSVC x86 stores the mangled name **inline at td+8** (char[]), not as a VA pointer; chain-class vtables located incl. `GameScene` 0x0319D3C4 (26 slots, **0 .data roots** = honest negative for the vtable-singleton path), `BaseContext`/`RootContext`, Vehicle component family; **Vehicle-family TypeDescriptor xref = 0 .text refs / 0 slots** — RTTI name→root path exhausted; prior milestone OD-041-STATIC: the two 'root candidates' reclassified as members of a repeating 0x50-byte record family, NOT gameplay roots; rolling driver gained `-CompareMode delta`/`-DeltaTarget`/`-DeltaTolerance` pass-through for the Track C2 pilot)
+Last updated: 2026-08-03 (OD-043-STATIC: **`.data 0x03B7E198` reclassified as the DAVA `AnyFn` invoker vtable table** — 34 entries, modal stride 0x2C (44-byte vtables, 24 named `StaticAnyFnInvoker<lambda>` binding `TankComponent`/`AimingPointComponent`/`Scene`/`Entity` = component event subscriptions), all 24 sharing dispatcher fn `0x002C4550`, each with exactly 1 `.data` root = its own array entry (internally-closed set); 3 `.text` refs incl. runtime write `mov [0x03B7E198],imm32` at 0x03104FAB repointing entry[0] — **dispatch infrastructure, NOT a gameplay root**; `tools/find-static-roots.py` gained `--vtable-root CLASS` (class→vtable→data-root query: `GameScene` 0x0319D3C4/COL 0x034A89F0, **0 .data holders** = vtable-singleton negative; `TankComponent` → 19 matches all AnyFn invokers roots=1) and `--table-map BASE[,MAX]` (pointer-array decoder with modal-stride + shared-dispatcher + ref-site analysis); prior milestone OD-042-STATIC: `0x037F3054` identified as the shared RTTI `type_info` vftable; `--vtables` names 17,133/18,721 vtables; OD-041-STATIC: the two 'root candidates' reclassified as repeating-record members, NOT gameplay roots; rolling driver gained `-CompareMode delta`/`-DeltaTarget`/`-DeltaTolerance` pass-through for the Track C2 pilot)
 
 This is the operational playbook for discovering memory evidence from the
 Windows WoT Blitz client during a **positively verified offline replay**. It is
@@ -313,25 +313,32 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-043`. Static milestones `OD-039..042-STATIC`
-landed and then **re-classified the two "root candidates"** as members of a
+Session ID: `OD-RECOVERY-044`. Static milestones `OD-039..043-STATIC`
+landed: the two "root candidates" were re-classified as members of a
 repeating 0x50-byte `.data` record family (base `0x03FA0C20`) — NOT
 standalone gameplay roots; `0x037F3054` is precisely the shared RTTI
-`type_info` vftable (every TypeDescriptor's pVFTable points at it). The new
-`--vtables` mode names **17,133 of 18,721 vtables** (fix: MSVC x86 stores the
-mangled name inline at td+8) including `GameScene` 0x0319D3C4 (26 slots, **0
-.data roots** = honest negative for the vtable-singleton path) and the
-Vehicle component family — but the Vehicle-family TypeDescriptor xref is
-negative (0 refs / 0 slots), exhausting the RTTI name→root path. The rolling
-driver exposes `-CompareMode delta -DeltaTarget X -DeltaTolerance T`.
-`OD-RECOVERY-043` is the **Track C2 pilot**: reuse the proven invocation
+`type_info` vftable (every TypeDescriptor's pVFTable points at it); `--vtables`
+names **17,133 of 18,721 vtables** (fix: MSVC x86 stores the mangled name
+inline at td+8) including `GameScene` 0x0319D3C4 (26 slots, **0 .data roots**
+= honest negative for the vtable-singleton path) and the Vehicle component
+family — but the Vehicle-family TypeDescriptor xref is negative (0 refs /
+0 slots), exhausting the RTTI name→root path. `--vtable-root`/`--table-map`
+modes were added and `.data 0x03B7E198` reclassified as the **DAVA `AnyFn`
+invoker vtable table** (34 entries, modal stride 0x2C, 24 named
+`StaticAnyFnInvoker<lambda>` binding TankComponent/AimingPointComponent/
+Scene/Entity = component event subscriptions; each vtable has exactly 1
+`.data` root = its array entry, internally-closed set; runtime write at
+0x03104FAB repoints entry[0]) — **dispatch infrastructure, NOT a gameplay
+root**; do NOT probe it as a singleton. The rolling driver exposes
+`-CompareMode delta -DeltaTarget X -DeltaTolerance T`.
+`OD-RECOVERY-044` is the **Track C2 pilot**: reuse the proven invocation
 (`-SnapshotMaxBytes 402653184 -MaxRounds 40 -HoldAfterRollSeconds 240`) but
 add `-CompareMode delta -DeltaTarget <replay position delta> -DeltaTolerance
 <tol>` and measure survivor collapse vs "increased" (11 → predicted ≤2–4),
 then run operator Find-what-writes on the staged set — the replayTime set
-remains the live anchor; do NOT waste lease probing the handler records or
-chasing the exhausted static paths as singletons. This builds on the
-validated driver stack:
+remains the live anchor; do NOT waste lease probing the handler records,
+the AnyFn table, or chasing the exhausted static paths as singletons. This
+builds on the validated driver stack:
 The session also produced the **first-ever 401-refresh failure in 13
 validations** (OD-038 attempt 3, round 9: the refreshed context re-read the
 rendezvous file but retried immediately into a mid-rotation file, exhausting

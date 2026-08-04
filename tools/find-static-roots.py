@@ -36,6 +36,15 @@ process, no memory reads). Three capabilities, all of which produce
                             resolve each RTTI class name via the COL chain,
                             and list .data slots pointing at vtable bases
                             (named singleton roots).
+  --vtable-root CLASS        Class-name lookup: find named vtables whose
+                            RTTI name contains CLASS, and dump each vtable's
+                            .text function slots + .data root slots (a direct
+                            class→root query for live probing).
+  --table-map BASE[,MAX]     Decode a .data pointer array whose entries point
+                            at .rdata vtables (e.g. the DAVA AnyFn invoker
+                            table 0x03B7E198): per-entry RTTI name + function
+                            slots, target stride, shared dispatcher slots, and
+                            .text sites that load or patch the array base.
 
 Examples:
   python tools/find-static-roots.py --chain 0x03E91978
@@ -44,6 +53,7 @@ Examples:
   python tools/find-static-roots.py --refs 0x03FA0C74 --fields 0x03FA0C74
   python tools/find-static-roots.py --record-map 0x03FA0C20,0x50,8
   python tools/find-static-roots.py --vtables --min-slots 5
+  python tools/find-static-roots.py --vtable-root GameScene
 
 All findings are logged to a timestamped file under %TEMP%\\find-static-roots-*.log
 and printed to stdout. Exit code 0 on success (even with zero findings), 2 on
@@ -60,6 +70,7 @@ import os
 import re
 import struct
 import sys
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -618,6 +629,35 @@ def decode_reference_site(text: bytes, operand_pos: int, rva: int) -> dict:
         detail = f"unclassified 0F-prefixed opcode 0x{op2:02X}"
         return result()
 
+    # Layout 2.5: C7 /0 id (mov [mem], imm32) where the needle is the imm32.
+    #   disp8 form:  [C7] [modrm] [disp8] [imm32]   (mod=01, rm!=100)
+    #   disp32 form: [C7] [modrm] [disp32] [imm32]  (mod=10 rm!=100, or
+    #                                                mod=00 rm=101)
+    # Without this the disp8 case mis-reads the disp8 byte as the ModRM and
+    # the ModRM as the opcode (reported as "other" even though it is a store).
+    if operand_pos >= 6 and text[operand_pos - 6] == 0xC7:
+        modrm = text[operand_pos - 5]
+        mod = (modrm >> 6) & 3
+        rm = modrm & 7
+        if (mod == 0b10 and rm != 0b100) or (mod == 0b00 and rm == 0b101):
+            opcode = 0xC7
+            kind = "store"
+            width = "dword"
+            reg = None
+            detail = "mov [m+disp32],imm32"
+            return result()
+    if operand_pos >= 3 and text[operand_pos - 3] == 0xC7:
+        modrm = text[operand_pos - 2]
+        mod = (modrm >> 6) & 3
+        rm = modrm & 7
+        if mod == 0b01 and rm != 0b100:
+            opcode = 0xC7
+            kind = "store"
+            width = "dword"
+            reg = None
+            detail = "mov [m+disp8],imm32"
+            return result()
+
     # Layout 2: one-byte opcode + ModRM disp32.
     if operand_pos >= 2:
         raw_op = text[operand_pos - 2]
@@ -640,10 +680,11 @@ def decode_reference_site(text: bytes, operand_pos: int, rva: int) -> dict:
             return result()
         if raw_op in _MEM_RMW_OPS:
             opcode = raw_op
-            reg = _modrm_reg(modrm)
-            kind = "rmw" if reg in (0, 1, 2, 3) else "other"
-            detail = (f"{_REGS[reg]}-group rmw on [abs]"
-                      if reg in (0, 1, 2, 3) else f"{_REGS[reg]}-group on [abs]")
+            reg_index = (modrm >> 3) & 7
+            reg = _REGS[reg_index]
+            kind = "rmw" if reg_index in (0, 1, 2, 3) else "other"
+            detail = (f"{reg}-group rmw on [abs]"
+                      if reg_index in (0, 1, 2, 3) else f"{reg}-group on [abs]")
             return result()
 
     # Layout 3: opcode immediately before the operand (moffs / imm forms).
@@ -919,6 +960,178 @@ def discover_vtables(pe: PeImage, min_slots: int = 5, with_names: bool = True,
     return result
 
 
+def query_vtable_root(pe: PeImage, class_substring: str, max_results: int = 20,
+                      slot_sample: int = 12) -> dict:
+    """Class-name → vtable lookup. Builds on the proven discover_vtables
+    inventory (which resolves RTTI names via the COL chain) and filters by
+    substring, then for each match dumps the first `slot_sample` .text function
+    slots and every .data slot pointing at the vtable base. This turns the
+    named vtable inventory into a direct class→root query for live probing."""
+    result: dict = {
+        "scan": "vtable-root",
+        "class_substring": class_substring,
+        "matches": [],
+        "total_matches": 0,
+    }
+    inventory = discover_vtables(pe, min_slots=3, with_names=True,
+                                 max_results=50_000)
+    needle = class_substring.lower()
+    matches: list[dict] = []
+    for entry in inventory["vtables"]:
+        name = entry.get("rtti_name") or ""
+        if needle not in name.lower():
+            continue
+        vtable_base = int(entry["vtable_rva"], 16)
+        # COL anchor: vtable[-1] (vtable-4) holds the Complete Object Locator.
+        # Validate the chain the same way _resolve_vtable_rtti_name does so a
+        # bogus COL (nonzero signature on x86) is not reported as an anchor.
+        col_va = pe.dword(vtable_base - 4)
+        col_rva = None
+        if col_va is not None and pe.is_in_module(col_va):
+            probe = _module_va_to_rva(pe, col_va)
+            if probe is not None and pe.dword(probe) == 0:
+                col_rva = probe
+        item: dict = {
+            "rtti_name": name,
+            "vtable_rva": entry["vtable_rva"],
+            "col": f"0x{col_rva:08X}" if col_rva is not None else None,
+            "slots_total": entry["slots"],
+            "slots": [],
+            "data_roots": [],
+        }
+        for i in range(slot_sample):
+            fn_va = pe.dword(vtable_base + i * 4)
+            if fn_va is None or not pe.is_in_module(fn_va):
+                break
+            item["slots"].append({
+                "index": i,
+                "offset": i * 4,
+                "function_rva": f"0x{fn_va - pe.image_base:08X}",
+            })
+        data_sec = pe.data_sec
+        if data_sec is not None:
+            base_va = pe.image_base + vtable_base
+            base_needle = struct.pack("<I", base_va)
+            d_start = data_sec.raw_pointer
+            d_end = min(d_start + data_sec.raw_size, len(pe.data))
+            dpos = d_start
+            while True:
+                didx = pe.data.find(base_needle, dpos, d_end)
+                if didx < 0:
+                    break
+                slot_rva = data_sec.virtual_address + (didx - d_start)
+                item["data_roots"].append(f"0x{slot_rva:08X}")
+                dpos = didx + 1
+        matches.append(item)
+        if len(matches) >= max_results:
+            break
+
+    result["total_matches"] = len(matches)
+    result["matches"] = matches
+    return result
+
+
+def map_table_array(pe: PeImage, base: int, max_entries: int = 4096) -> dict:
+    """Decode a .data pointer array whose entries point at .rdata vtables
+    (e.g. the DAVA AnyFn invoker vtable table found at 0x03B7E198). Walks
+    consecutive dwords from `base`, requiring each to be an in-module .rdata
+    target, and for each entry resolves the RTTI class name via the COL chain
+    (reusing _resolve_vtable_rtti_name) and the first few .text function
+    slots. Reports the target stride (constant gap = per-type table), how
+    many entries share the same dispatcher slots, and every .text reference
+    site that loads/indexes the array base (decoded via
+    decode_reference_site, so a runtime `mov [table], imm` patch is visible
+    as a store)."""
+    result: dict = {
+        "scan": "table-map",
+        "base": f"0x{base:08X}",
+        "entries": [],
+        "entry_count": 0,
+        "target_stride": None,
+        "named_count": 0,
+        "shared_slots": [],
+        "refs": [],
+    }
+    rdata = pe.rdata
+    text_sec = pe.text
+    if rdata is None or text_sec is None:
+        return result
+    prev_target = None
+    gaps: list[int] = []
+    for index in range(max_entries):
+        rva = base + index * 4
+        value = pe.dword(rva)
+        if value is None:
+            break
+        target = value - pe.image_base
+        if not (rdata.virtual_address <= target < rdata.end):
+            break
+        if prev_target is not None and target > prev_target:
+            gaps.append(target - prev_target)
+        prev_target = target
+        name = _resolve_vtable_rtti_name(pe, target)
+        slots: list[str] = []
+        for slot_index in range(8):
+            fn_va = pe.dword(target + slot_index * 4)
+            if fn_va is None or not pe.is_in_module(fn_va):
+                break
+            slots.append(f"0x{fn_va - pe.image_base:08X}")
+        entry: dict = {
+            "index": index,
+            "slot_rva": f"0x{rva:08X}",
+            "target": f"0x{target:08X}",
+            "rtti_name": name,
+            "slots": slots,
+        }
+        result["entries"].append(entry)
+        if name:
+            result["named_count"] += 1
+    result["entry_count"] = len(result["entries"])
+    if gaps:
+        dominant, dom_count = Counter(gaps).most_common(1)[0]
+        # Only report a stride when one pitch genuinely dominates; otherwise
+        # the most-common gap is noise on a heterogeneous array.
+        if dom_count * 2 >= len(gaps):
+            result["target_stride"] = f"0x{dominant:X}"
+            result["stride_entries"] = dom_count
+            result["irregular_gaps"] = len(gaps) - dom_count
+        else:
+            result["target_stride"] = None
+            result["irregular_gaps"] = len(gaps)
+    # Shared dispatcher slots: the most common first-slot function across entries.
+    first_slots = [e["slots"][0] for e in result["entries"] if e["slots"]]
+    if first_slots:
+        common = Counter(first_slots).most_common(5)
+        total = len(first_slots)
+        result["shared_slots"] = [
+            {"function": fn, "entries": count, "of": total}
+            for fn, count in common if count > 1
+        ]
+    # .text reference sites: scan the array base AND each entry slot VA so
+    # indexing sites (mov reg,[entry_VA]) are caught too, not just base refs.
+    tstart = text_sec.raw_pointer
+    tend = min(tstart + text_sec.raw_size, len(pe.data))
+    text = pe.data[tstart:tend]
+    seen: set[int] = set()
+    needles = [pe.image_base + base]
+    needles.extend(pe.image_base + int(e["slot_rva"], 16)
+                   for e in result["entries"])
+    for needle_va in needles:
+        needle = struct.pack("<I", needle_va)
+        pos = tstart
+        while True:
+            index = pe.data.find(needle, pos, tend)
+            if index < 0:
+                break
+            operand_pos = index - tstart
+            rva = text_sec.virtual_address + operand_pos
+            if rva not in seen:
+                seen.add(rva)
+                result["refs"].append(decode_reference_site(text, operand_pos, rva))
+            pos = index + 1
+    return result
+
+
 def map_record_array(pe: PeImage, base: int, stride: int, count: int) -> dict:
     """Classify each member of a repeating record array (like the 0x50-byte
     EH/handler record family found around 0x03FA0C74). For each dword member
@@ -1047,6 +1260,14 @@ def main(argv: list[str]) -> int:
                              ".data slots pointing at vtable bases")
     parser.add_argument("--min-slots", type=int, default=5,
                         help="minimum consecutive .text slots for --vtables (default 5)")
+    parser.add_argument("--vtable-root", metavar="CLASS",
+                        help="class-name lookup: find named vtables whose RTTI "
+                             "name contains CLASS and dump their .text slots + "
+                             ".data roots (e.g. GameScene)")
+    parser.add_argument("--table-map", metavar="BASE[,MAX]",
+                        help="decode a .data pointer array whose entries point "
+                             "at .rdata vtables (e.g. 0x03B7E198,256): per-entry "
+                             "RTTI name + slots, stride, shared dispatchers, refs")
     parser.add_argument("--json", metavar="PATH",
                         help="write findings as JSON to PATH")
     args = parser.parse_args(argv)
@@ -1219,6 +1440,50 @@ def main(argv: list[str]) -> int:
         for root in vtable_result.get("data_roots", [])[:20]:
             LOG.info("    data root %s -> vtable %s", root["slot_rva"],
                      root["points_to_vtable"])
+        ran_any = True
+
+    if args.vtable_root is not None:
+        LOG.info("vtable-root lookup: %s", args.vtable_root)
+        lookup = query_vtable_root(pe, args.vtable_root)
+        results["vtable_root"] = lookup
+        LOG.info("  %d match(es)", lookup["total_matches"])
+        for entry in lookup["matches"]:
+            LOG.info("    %s vtable=%s col=%s roots=%d slots=%d",
+                     entry["rtti_name"], entry["vtable_rva"], entry["col"],
+                     len(entry["data_roots"]), len(entry["slots"]))
+            for slot in entry["slots"][:8]:
+                LOG.info("      slot[%d] fn=%s", slot["index"],
+                         slot["function_rva"])
+            for root in entry["data_roots"][:8]:
+                LOG.info("      data root %s", root)
+        ran_any = True
+
+    if args.table_map is not None:
+        try:
+            parts = [p.strip() for p in args.table_map.split(",")]
+            base = int(parts[0], 16) if parts[0].lower().startswith("0x") \
+                else int(parts[0])
+            max_entries = int(parts[1]) if len(parts) > 1 else 4096
+        except (ValueError, IndexError):
+            LOG.error("--table-map needs BASE[,MAX]: %s", args.table_map)
+            return 2
+        LOG.info("table-map decode: 0x%08X (max %d entries)", base, max_entries)
+        table = map_table_array(pe, base, max_entries=max_entries)
+        results["table_map"] = table
+        LOG.info("  entries=%d stride=%s named=%d shared=%d refs=%d",
+                 table["entry_count"], table.get("target_stride"),
+                 table["named_count"], len(table["shared_slots"]),
+                 len(table["refs"]))
+        for entry in table["entries"][:12]:
+            LOG.info("    [%2d] %s -> %s %s", entry["index"],
+                     entry["slot_rva"], entry["target"],
+                     entry["rtti_name"] or "<unnamed>")
+        for shared in table["shared_slots"][:5]:
+            LOG.info("    shared dispatcher %s (%d/%d entries)",
+                     shared["function"], shared["entries"], shared["of"])
+        for ref in table["refs"][:12]:
+            LOG.info("    ref %s kind=%s width=%s op=%s", ref.get("rva"),
+                     ref.get("kind"), ref.get("width"), ref.get("detail") or "-")
         ran_any = True
 
     if not ran_any:

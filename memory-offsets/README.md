@@ -369,7 +369,18 @@ it; 48,609 aligned `.data` references). The new `--vtables` mode names
 vtable-singleton path), `BaseContext`/`RootContext`, and the Vehicle component
 family; the Vehicle-family TypeDescriptor xref is negative (0 refs / 0 slots),
 exhausting the RTTI name→root path. `EntityList` is a plain struct (0 RTTI hits).
-Next step (OD-043): operator-present interactive Find-what-writes on a staged
+OD-043-STATIC: new `--vtable-root` (class→vtable→data-root query: `GameScene`
+vtable `0x0319D3C4`/COL `0x034A89F0` has **0 .data holders** — vtable-singleton
+path confirmed negative; `TankComponent` → 19 matches, all `AnyFn` delegate
+invokers with `roots=1` each) and `--table-map` (pointer-array decoder) modes;
+`.data 0x03B7E198` reclassified as the **DAVA `AnyFn` invoker vtable table** — 34
+entries, modal stride `0x2C` (44-byte vtables), 24 named `StaticAnyFnInvoker
+<lambda>` vtables binding `TankComponent`/`AimingPointComponent`/`Scene`/`Entity`
+(component event subscriptions), all 24 sharing dispatcher fn `0x002C4550`, each
+with exactly 1 `.data` root = its own array entry (internally-closed set); 3
+`.text` refs incl. a runtime write `mov [0x03B7E198],imm32` at `0x03104FAB`
+repointing entry[0] — **dispatch infrastructure, NOT a gameplay root**.
+Next step (OD-044): operator-present interactive Find-what-writes on a staged
 ≤11-survivor replayTime set (the live anchor), optionally piloting delta-compare.
 
 ## Quick reference — common field types

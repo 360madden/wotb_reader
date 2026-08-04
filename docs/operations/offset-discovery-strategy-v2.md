@@ -123,6 +123,24 @@ strong file logging, three capabilities:
   …). The **Vehicle-family TypeDescriptor xref is negative** (0 `.text`
   refs, 0 `.data` slots) — the RTTI name→root path is exhausted for the
   chain classes.
+- **Class→vtable query + AnyFn table decode (OD-043-STATIC):** two new
+  modes convert the named inventory into usable queries and close one more
+  dead end. `--vtable-root CLASS` resolves a class substring to its vtables
+  with COL anchors + `.data` root counts (`GameScene` → `0x0319D3C4` / COL
+  `0x034A89F0`, **0 `.data` holders** — vtable-singleton path confirmed
+  negative; `TankComponent` → 19 matches, all `AnyFn` delegate invokers with
+  `roots=1` each). `--table-map BASE[,MAX]` decodes a `.data` pointer array:
+  `.data 0x03B7E198` is the **DAVA `AnyFn` invoker vtable table** — 34
+  entries, modal stride `0x2C` (44-byte vtables, 24 at that pitch + 9
+  irregular), 24 named `StaticAnyFnInvoker<lambda>` vtables binding
+  `TankComponent`/`AimingPointComponent`/`Scene`/`Entity` (component event
+  subscriptions), all 24 sharing dispatcher fn `0x002C4550` (24/24), each
+  with **exactly 1 `.data` root = its own array entry** (internally-closed
+  set, 0 external roots); 3 `.text` refs incl. the runtime write `mov
+  [0x03B7E198],imm32` at `0x03104FAB` repointing entry[0]. **The table is
+  dispatch infrastructure, NOT a gameplay root** — the component event
+  subscriptions route through AnyFn delegates, and the components themselves
+  are heap objects reached via `[esi+0x0C]`, not static singletons.
 - **Batch RTTI walk (all chain classes):** TypeDescriptors located for
   `VehicleGameLogicComponent` (`0x03C24F4C`), `AppContextImpl` (`0x03E356F4`),
   `ScreensFlow` (`0x03E35C74`), `GameScene` (`0x03DB9AAC`),
@@ -238,15 +256,19 @@ failure (per `tools/external/README.md`); every addition registers in
    target ≤2–4 survivors.
 3. **Track B pilot:** hangar-state known-truth scan (HP number, tank name).
 4. **Track A:** batch RTTI walk + reference decode + record-family
-   reclassification + named vtable inventory are *done* (OD-039..042-STATIC)
-   — both "root candidates" are members of a repeating 0x50-byte record
-   family, NOT standalone gameplay roots; `0x037F3054` is the shared RTTI
-   `type_info` vftable; `--vtables` names 17,133/18,721 vtables (`GameScene`
-   0x0319D3C4 has **0 `.data` roots** — vtable-singleton path exhausted for
-   the chain classes; Vehicle-family TD xref is negative). Remaining Track A
-   work is limited: the static paths to chain-class roots are exhausted, so
-   the campaign pivots to the live replayTime anchor (Track C) and the
-   hangar-state known-truth scan (Track B).
+   reclassification + named vtable inventory + class→vtable query + AnyFn
+   table decode are *done* (OD-039..043-STATIC) — both "root candidates"
+   are members of a repeating 0x50-byte record family, NOT standalone
+   gameplay roots; `0x037F3054` is the shared RTTI `type_info` vftable;
+   `--vtables` names 17,133/18,721 vtables (`GameScene` 0x0319D3C4 has **0
+   `.data` roots** — vtable-singleton path exhausted for the chain classes;
+   Vehicle-family TD xref is negative); `--vtable-root`/`--table-map` added
+   and `.data 0x03B7E198` reclassified as the **DAVA `AnyFn` invoker vtable
+   table** (24 named `StaticAnyFnInvoker<lambda>` at modal stride 0x2C, each
+   with exactly 1 `.data` root = its array entry — dispatch infrastructure,
+   NOT a gameplay root). Remaining Track A work is limited: the static paths
+   to chain-class roots are exhausted, so the campaign pivots to the live
+   replayTime anchor (Track C) and the hangar-state known-truth scan (Track B).
 5. **C5:** operator interactive Find-what-writes on the smallest staged set.
 
 Each session: same ledger entry, workflow stop rules, handoff, and commit.
