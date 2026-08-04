@@ -23,6 +23,14 @@ full design specification.
   `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d`;
   the `playerYaw` hypothesis is quarantined/Stale because its representations
   conflict; seven fields remain unknown and no field is runtime-supported.
+- **Replay-start flake (OD-044) fixed:** the ~50% launch deaths were two defects —
+  a watch_offline round-2 double-click + SW_RESTORE churn into the live replay HUD
+  (become hidden → OnBackground), and mid-battle `OfflineReplayEvidenceLifetime`
+  expiry terminating the managed game. The click script stops on the blitz-log
+  `Start replay event` marker (round 1 still dismisses a visible dialog), and the
+  coordinator refreshes verified authorization via a liveness heartbeat while the
+  process identity stays healthy. See
+  [`docs/operations/handoffs/2026-08-04-replay-start-flake-fix.md`](docs/operations/handoffs/2026-08-04-replay-start-flake-fix.md).
 - **Discovery workflow:** use [`docs/operations/offset-discovery-workflow.md`](docs/operations/offset-discovery-workflow.md)
   and append every attempt to [`docs/operations/offset-discovery-ledger.md`](docs/operations/offset-discovery-ledger.md).
 
