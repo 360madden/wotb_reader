@@ -330,15 +330,21 @@ Scene/Entity = component event subscriptions; each vtable has exactly 1
 `.data` root = its array entry, internally-closed set; runtime write at
 0x03104FAB repoints entry[0]) — **dispatch infrastructure, NOT a gameplay
 root**; do NOT probe it as a singleton. The rolling driver exposes
-`-CompareMode delta -DeltaTarget X -DeltaTolerance T`.
+`-CompareMode delta -DeltaTarget X -DeltaTolerance T`, and since
+OD-044-STATIC also `-ValueKind Double|Float` (default Double; Float sets
+valueSize 4 / alignment 4). `scripts/python/replay-delta-extractor.py`
+derives the marker values from a decoded session (11.19.0 Dead Rail, 4s
+window: position `-DeltaTarget 0.6935 -DeltaTolerance 2.4992`; replayTime
+`-DeltaTarget 4.0`).
 `OD-RECOVERY-044` is the **Track C2 pilot**: reuse the proven invocation
 (`-SnapshotMaxBytes 402653184 -MaxRounds 40 -HoldAfterRollSeconds 240`) but
-add `-CompareMode delta -DeltaTarget <replay position delta> -DeltaTolerance
-<tol>` and measure survivor collapse vs "increased" (11 → predicted ≤2–4),
-then run operator Find-what-writes on the staged set — the replayTime set
-remains the live anchor; do NOT waste lease probing the handler records,
-the AnyFn table, or chasing the exhausted static paths as singletons. This
-builds on the validated driver stack:
+add `-CompareMode delta -DeltaTarget 0.6935 -DeltaTolerance 2.4992
+-ValueKind Float` (or the Double replayTime variant `-DeltaTarget 4.0`) and
+measure survivor collapse vs "increased" (11 → predicted ≤2–4), then run
+operator Find-what-writes on the staged set — the replayTime set remains the
+live anchor; do NOT waste lease probing the handler records, the AnyFn
+table, or chasing the exhausted static paths as singletons. This builds on
+the validated driver stack:
 The session also produced the **first-ever 401-refresh failure in 13
 validations** (OD-038 attempt 3, round 9: the refreshed context re-read the
 rendezvous file but retried immediately into a mid-rotation file, exhausting

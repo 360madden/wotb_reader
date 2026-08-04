@@ -218,6 +218,19 @@ rolling baseline advances each round, so the delta is measured against the
 *previous* round, not the original snapshot. Non-delta modes reject stray
 delta params (engine validation). First live validation is the Track C2 pilot.
 
+**Pilot prep (OD-044-STATIC, 2026-08-03):** the delta path is verified wired
+end-to-end (ApiContracts → Host.Web → Coordinator → `MemoryScanEngine
+PassesDelta`, Float/Double/Int, tested) and the rolling driver now takes
+`-ValueKind Double|Float` (default Double; Float sets valueSize 4 /
+alignment 4). `scripts/python/replay-delta-extractor.py` derives the marker
+values from a decoded session via sliding-window interpolation — for the
+11.19.0 Dead Rail session (most-moving participant, 4s window): **2,779
+measurements, median 2D displacement 0.6935 m/4s, p90 3.1927, max 6.1432**
+→ ready command: `-CompareMode delta -DeltaTarget 0.6935 -DeltaTolerance
+2.4992 -ValueKind Float` (or the Double replayTime variant `-DeltaTarget
+4.0`). Replay-delta candidates to feed it: position Δ (X/Z per window),
+speed (|Δpos|/Δt), HP (damage-delta series).
+
 ### C3. Value-equality at synchronized time
 At known replay-time T (established by C1), snapshot-filter `FloatMin=FloatMax≈
 X(T)`. Only the true copy holds exactly X(T) — more selective than "increased".
@@ -250,8 +263,15 @@ failure (per `tools/external/README.md`); every addition registers in
 
 ## 8. Execution order (next sessions)
 
-1. **Track C2 pilot:** run delta-compare live with a replay-derived position
-   delta against a verified session; measure survivor collapse vs "increased".
+0. **Pilot prep done (OD-044-STATIC):** delta-compare verified wired end-to-end
+   (engine `PassesDelta` Float/Double/Int, tested); rolling driver gained
+   `-ValueKind Double|Float`; `scripts/python/replay-delta-extractor.py`
+   derives marker values from a decoded session (11.19.0 Dead Rail: median
+   2D displacement 0.6935 m/4s → `-DeltaTarget 0.6935 -DeltaTolerance
+   2.4992 -ValueKind Float`).
+1. **Track C2 pilot:** run delta-compare live with the replay-derived
+   position delta against a verified session; measure survivor collapse vs
+   "increased".
 2. **Track C3/C4:** value-equality X/Y/Z intersection on the same session;
    target ≤2–4 survivors.
 3. **Track B pilot:** hangar-state known-truth scan (HP number, tank name).

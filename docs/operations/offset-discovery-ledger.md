@@ -1,6 +1,6 @@
 # Offset-discovery ledger
 
-Last updated: 2026-08-03 (OD-043-STATIC: **the `.data` vtable-pointer array at 0x03B7E198 is the DAVA `AnyFn` invoker vtable table** — 24 named `StaticAnyFnInvoker<lambda>` vtables in `.rdata` at a modal 0x2C (44-byte) pitch (34 entries total, 24 named), all 24 sharing dispatcher fn `0x002C4550` (24/24 entries), each with **exactly 1 `.data` root = its own entry in the array** (internally-closed set); the lambdas bind `TankComponent`/`AimingPointComponent`/`Scene`/`Entity` = component event subscriptions, NOT gameplay roots; 3 `.text` refs: constructor `mov [esi+0x0C], <table>` (0x002DF2CB, object stores the table at +0x0C), `mov ecx,<table>` thunk (0x02B817E1), and a **runtime patch `mov [0x03B7E198], imm32` at 0x03104FAB that repoints entry[0]**; new `--vtable-root CLASS` mode (class→vtable→data-root query: GameScene 0x0319D3C4/COL 0x034A89F0/0 roots; TankComponent → 19 matches all AnyFn invokers with roots=1) and new `--table-map BASE[,MAX]` mode (pointer-array decoder); prior milestone OD-042-STATIC: `0x037F3054` identified as the shared RTTI `type_info` vftable; `--vtables` names 17,133/18,721 vtables; OD-041-STATIC: the two 'root candidates' reclassified as repeating-record members, NOT gameplay roots; rolling driver delta pass-through; prior session OD-RECOVERY-038: lobby-login red herring corrected; roll 39M→11, plateau 11 = value-bound)
+Last updated: 2026-08-03 (OD-044-STATIC: delta-compare pilot prep — new `scripts/python/replay-delta-extractor.py` derives the exact `-DeltaTarget`/`-DeltaTolerance` values for the driver's `CompareMode='delta'` from a decoded session: 11.19.0 Dead Rail `019fb86c-…`, most-moving participant, 4s window → **2,779 window measurements, median 2D displacement 0.6935 m/4s, p90 3.1927, max 6.1432** → recommended `-DeltaTarget 0.6935 -DeltaTolerance 2.4992` for the Float position pilot and `-DeltaTarget 4.0` for the Double replayTime pilot; `roll-replay-time-increased.ps1` gained `-ValueKind Double|Float` (valueSize/alignment follow the kind; default Double preserves the proven campaign; PS parse verified) — the Track C2 pilot now has a ready command line and a statically-derived marker, closing the last autonomous gap before the operator-present live run; prior milestone OD-043-STATIC: **the `.data` vtable-pointer array at 0x03B7E198 is the DAVA `AnyFn` invoker vtable table** — 24 named `StaticAnyFnInvoker<lambda>` vtables in `.rdata` at a modal 0x2C (44-byte) pitch (34 entries total, 24 named), all 24 sharing dispatcher fn `0x002C4550` (24/24 entries), each with **exactly 1 `.data` root = its own entry in the array** (internally-closed set); the lambdas bind `TankComponent`/`AimingPointComponent`/`Scene`/`Entity` = component event subscriptions, NOT gameplay roots; 3 `.text` refs: constructor `mov [esi+0x0C], <table>` (0x002DF2CB, object stores the table at +0x0C), `mov ecx,<table>` thunk (0x02B817E1), and a **runtime patch `mov [0x03B7E198], imm32` at 0x03104FAB that repoints entry[0]**; new `--vtable-root CLASS` mode (class→vtable→data-root query: GameScene 0x0319D3C4/COL 0x034A89F0/0 roots; TankComponent → 19 matches all AnyFn invokers with roots=1) and new `--table-map BASE[,MAX]` mode (pointer-array decoder); prior milestone OD-042-STATIC: `0x037F3054` identified as the shared RTTI `type_info` vftable; `--vtables` names 17,133/18,721 vtables; OD-041-STATIC: the two 'root candidates' reclassified as repeating-record members, NOT gameplay roots; rolling driver delta pass-through; prior session OD-RECOVERY-038: lobby-login red herring corrected; roll 39M→11, plateau 11 = value-bound)
 
 This ledger is the durable index of WoT Blitz PC offset-discovery work. It
 records experiments, partial results, failures, and pivots so future sessions do
@@ -123,6 +123,7 @@ occurred.
 | `OD-041-STATIC` | 2026-08-03 | Identify the repeating .rdata ptr `0x037F3054`; classify the two 'root candidates' as record-family members, not singletons | `tools/find-static-roots.py` investigation + new `--record-map BASE,STRIDE,COUNT` mode against the hash-bound 11.19.0.10 binary | `Partial` | **`0x037F3054` is an MSVC EH handler/funclet table** — 0xFFFFFFFF sentinel + interleaved {state, code-ptr} pairs into `.text` rva `0x02CF0D70`+ (`lea r,[ebp+..]; jmp` thunks), **113 FuncInfo magics (0x19930522) within ±0x2000**, referenced from **48,609 4-aligned `.data` slots (0 unaligned)** = massively-shared infrastructure pointer; **`0x03FA0C74` = +0x04 member of record[1] in a repeating 0x50-byte `.data` record family** `{0x00404064 (.text member-fn), <runtime slot>, 0x037F3054 (.rdata), 0, …}` based at `0x03FA0C20`; `--record-map 0x03FA0C20,0x50,10` → 10 records, 9 runtime slots (+0x04, +0x08, +0x0C, +0x10, +0x18, +0x28, +0x30, +0x44, +0x4C; +0x04 zero in 4/10) | **Both 'root candidates' reclassified as EH/handler record members — not gameplay state**; live-probing them as singleton roots ruled out without a changed hypothesis; no RIP/root; `independentReplays` still 0 |
 | `OD-042-STATIC` | 2026-08-03 | Vtable discovery + type_info vftable identification; Vehicle-family TypeDescriptor xref (negative) | `tools/find-static-roots.py` new `--vtables` mode (COL-chain name resolution fix: MSVC x86 mangled name is **inline at td+8**, not a pointer) against the hash-bound 11.19.0.10 binary | `Partial` | **`0x037F3054` re-identified as the shared RTTI `type_info` vftable** — every TypeDescriptor's pVFTable points at it (confirmed td@0x03DB5120 `pVFTable == 0x037F3054`), explaining the 48,609 `.data` refs; **`--vtables` names 17,133 of 18,721 vtables** (was 0 before the inline-name fix) including `GameScene` 0x0319D3C4 (26 slots, **0 .data roots** = honest negative for vtable-singleton path), `BaseContext` 0x03197044 / `RootContext` 0x03197068, Vehicle component family (VehicleMovementFilterComponent 0x03199C68, VehicleFashionComponent 0x03199FF8); **Vehicle-family TypeDescriptor xref = 0 .text refs / 0 slots** — RTTI name→root path exhausted | vtable-singleton path gives no chain-class root (GameScene vtable has no .data holder); `independentReplays` still 0; no RIP/root |
 | `OD-043-STATIC` | 2026-08-03 | Class→vtable→root query + decode of the 0x03B7E198 vtable-pointer array | `tools/find-static-roots.py` new `--vtable-root` + `--table-map` modes against the hash-bound 11.19.0.10 binary | `Partial` | **`0x03B7E198` = DAVA `AnyFn` invoker vtable table**: 34 entries, modal stride 0x2C (44-byte vtables, 24 at that pitch + 9 irregular), 24 named `StaticAnyFnInvoker<lambda>` vtables (bind `TankComponent`/`AimingPointComponent`/`Scene`/`Entity` = component event subscriptions), all 24 sharing dispatcher fn `0x002C4550` (24/24), each with **exactly 1 .data root = its array entry** (internally-closed set, 0 external roots); 3 .text refs incl. **runtime patch `mov [0x03B7E198],imm32` at 0x03104FAB repointing entry[0]**; `--vtable-root GameScene` → 0x0319D3C4/COL 0x034A89F0/0 roots/12 slots; `--vtable-root TankComponent` → 19 matches all AnyFn invokers roots=1 | **invoker table is dispatch infrastructure, NOT a gameplay root** (component event subscriptions route through AnyFn); GameScene/TankComponent vtables have no singleton .data holder; `independentReplays` still 0; no RIP/root |
+| `OD-044-STATIC` | 2026-08-03 | Delta-compare pilot prep: replay-derived target/tolerance extractor + Float scan support | `scripts/python/replay-delta-extractor.py` (new) + `roll-replay-time-increased.ps1` `-ValueKind Double\|Float` (new) against the decoded 11.19.0 Dead Rail session | `Partial` | Delta-compare pipeline verified wired end-to-end (ApiContracts `DeltaTarget`/`DeltaTolerance` → Host.Web → Coordinator → `MemoryScanEngine.PassesDelta`, Float/Double/Int, tested); extractor emits dense per-window displacement stats via sliding-window interpolation: **2,779 measurements for the most-moving participant, median 2D displacement 0.6935 m/4s, p90 3.1927, max 6.1432** → recommended `-CompareMode delta -DeltaTarget 0.6935 -DeltaTolerance 2.4992 -ValueKind Float` (position) and `-DeltaTarget 4.0` (Double replayTime); driver `-ValueKind` keeps default `Double` (valueSize/alignment follow kind) — PS parse verified | Track C2 pilot is now command-ready with a statically-derived marker; still needs the operator-present live run to measure survivor collapse; `independentReplays` still 0; no RIP/root |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -2764,6 +2765,58 @@ The milestone converts the named vtable inventory into reusable query modes
 and reclassifies 0x03B7E198 as DAVA AnyFn delegate dispatch infrastructure
 with an internally-closed reference set — one more ruled-out dead end on the
 static root path. The live session remains anchored on the replayTime set.
+
+## `OD-044-STATIC` result — 2026-08-03 (delta-compare pilot prep: replay-derived target extractor + Float scan)
+
+```yaml
+sessionId: OD-044-STATIC
+supersedes: none (Track C2 pilot prep; next live session is OD-RECOVERY-044)
+date: 2026-08-03
+observedAtUtc: 2026-08-03T21:30Z
+method: scripts/python/replay-delta-extractor.py (new) + roll-replay-time-increased.ps1 -ValueKind (new) against the decoded 11.19.0 Dead Rail session
+objective: Close the last autonomous gap before the operator-present Track C2 live run — (1) derive the exact replay-position delta the driver's CompareMode='delta' needs from a decoded session, and (2) let the rolling driver scan Float (position X/Z) in addition to the proven Double (replayTime)
+findings:
+  - plumbing: delta-compare verified wired end-to-end
+    path: ApiContracts OffsetCompareRequest.DeltaTarget/DeltaTolerance → Host.Web GameApiEndpoints (validation: finite, non-negative tolerance, delta-only-with-delta) → GameSessionCoordinator → MemoryScanEngine.PassesDelta
+    kinds: FloatValue/DoubleValue/Int32Value/UInt32Value/Int64Value/UInt64Value all supported; Bytes rejected in delta mode
+    tests: GameApiEndpointsTests delta cases (2.5 target / 0.1 and 0.25 tolerances) + UltimateScannerUnitTests PassesDelta cover the path
+    snapshotKind: snapshot API accepts valueKind Float (MemoryValueKind.FloatValue, valueSize 4, alignment 4) — GameApiEndpoints resolves all six kinds
+  - extractor: replay-delta-extractor.py
+    session: 019fb86c-c8e7-7004-9df6-a574f5a7835b (11.19.0, Dead Rail, 33,281 position samples)
+    tickRate: 1,000,000 ticks/sec (confirmed: sample median dt 992,279 ticks ~= 1s; session span 2,784.6s == duration_ticks 2,713,761,600 / 1e6)
+    participant: most-moving (019fb86c-c8f2-78ef-bc09-fa56f50031eb; viewpoint is stationary — median 1s disp 0.0, so auto-selection prefers moving participants)
+    window: 4.0s at speed 1.0 → 4,000,000 ticks
+    measurements: 2,779 window-straddling pairs via sliding-window linear interpolation (binary search + lerp between ~1s-spaced samples)
+    displacement2d: median 0.6935 m, mean 1.2675 m, p90 3.1927 m, max 6.1432 m
+    deltaX: median 0.0, mean -0.131, p90 1.048, max 3.1563 | deltaZ: median -0.0, mean -0.5902, p90 0.3719, max 2.1327
+    recommended: position -DeltaTarget 0.6935 -DeltaTolerance 2.4992 (Float); replayTime -DeltaTarget 4.0 -DeltaTolerance 2.4992 (Double window*speed)
+  - driver: -ValueKind Double|Float
+    default: Double (preserves the proven campaign; valueSize 8 / alignment 8)
+    Float: valueSize 4 / alignment 4; explicit -Alignment still overrides
+    parse: PowerShell AST parse verified (0 errors)
+result:
+  whatWorked:
+    - Delta-compare is fully wired and tested across the whole stack — the pilot needs no new product code.
+    - The extractor produces dense, usable marker statistics (2,779 measurements, not the 2 from the first naive straddling-pair scan) via sliding-window interpolation; the recommended target/tolerance are concrete command-line values.
+    - The rolling driver now scans Float without changing the default campaign behavior.
+  whatFailed:
+    - First extractor iteration returned only 2 measurements (pair filter required >=80% of a 4s window between consecutive ~1s samples) — fixed by interpolation-based sliding windows.
+  rulesOut:
+    - None new (pilot prep; no root hypothesis tested live).
+  partials:
+    - Track C2 pilot command is ready: `-CompareMode delta -DeltaTarget 0.6935 -DeltaTolerance 2.4992 -ValueKind Float -TransitionSeconds 4 -MaxRounds 22 -HoldAfterRollSeconds 240 -SnapshotMaxBytes 402653184` (or Double replayTime variant).
+    - BLK-0019 still needs content-distinct second replay (independentReplays 0).
+  nextPivot: OD-RECOVERY-044 - operator-present live run with the proven invocation + the delta pilot above; measure survivor collapse vs 'increased' (11 → predicted <=2-4); then operator Find-what-writes on the staged set.
+  repeatWithoutChangedHypothesis: false
+artifacts:
+  rawFiles: .data/treader.db (decoded sessions; gitignored), scripts/python/replay-delta-extractor.py (committed)
+  committedSummary: this ledger entry + workflow next-session + strategy-v2 + driver -ValueKind + extractor tool + handoff (2026-08-03-od-static-044.md)
+```
+
+`OD-044-STATIC` is aggregate structural evidence only. Offset remains 0.
+The delta-compare pilot is now command-ready with a statically-derived marker:
+the 11-survivor replayTime plateau can be filtered by the replay's own
+position/time deltas on the next operator-present live run.
 
 ## Evidence promotion checklist
 

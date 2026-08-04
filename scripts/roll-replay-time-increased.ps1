@@ -80,6 +80,14 @@ param(
     # equals the snapshot's candidate count (probe folded into round 1,
     # OD-RECOVERY-030).
     [long]$MaxInitialCandidates = 100000000,
+    # OD-044 delta-compare pilot: scan a Float (position X/Z) or Double
+    # (replayTime) snapshot. Default 'Double' preserves the proven campaign;
+    # 'Float' pairs with -CompareMode delta and a replay-derived position
+    # target from scripts/python/replay-delta-extractor.py. valueSize and the
+    # default alignment follow the kind (Float 4/4, Double 8/8); an explicit
+    # -Alignment still overrides.
+    [ValidateSet('Double', 'Float')]
+    [string]$ValueKind = 'Double',
     [int]$SnapshotRetrySeconds = 20,
     [int]$MaxSnapshotRetries = 2
 )
@@ -204,7 +212,11 @@ try {
     }
     Write-Roll 'gate=OfflineReplayVerified'
 
-    $snapBody = @{ valueKind = 'Double'; valueSize = 8; alignment = $Alignment; maxBytes = $SnapshotMaxBytes } | ConvertTo-Json
+    $valueSize = if ($ValueKind -eq 'Double') { 8 } else { 4 }
+    $kindAlignment = if ($ValueKind -eq 'Double') { 8 } else { 4 }
+    $snapAlignment = if ($Alignment -eq 8 -and $ValueKind -eq 'Float') { $kindAlignment } else { $Alignment }
+    $snapBody = @{ valueKind = $ValueKind; valueSize = $valueSize; alignment = $snapAlignment; maxBytes = $SnapshotMaxBytes } | ConvertTo-Json
+    Write-Roll ("snapshot valueKind=$ValueKind valueSize=$valueSize alignment=$snapAlignment")
 
     # OD-026/030 steady-state gate: the snapshot response carries only the
     # session id, so the snapshot's initial candidate count is learned from the
