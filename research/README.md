@@ -15,6 +15,7 @@
 | [memory-analysis.md](memory-analysis.md) | Memory scanning techniques — string search, pointer chains, Ghidra, ReClass |
 | [memory-offsets-unknowncheats.md](memory-offsets-unknowncheats.md) | Community-compiled memory offsets from UnknownCheats |
 | [community-tools.md](community-tools.md) | Community resources — parsers, reverse engineering, SteamDB |
+| [online-source-research-2026-08.md](online-source-research-2026-08.md) | **NEW** — 2026-08 web-swarm index: replay formats, BigWorld protocol, DVPL/DAVA formats, memory offsets, anti-cheat, APIs, UE5 Reforged status |
 | [approaches.md](approaches.md) | 6 approaches (A-F) with implementation details and testing protocols |
 
 ## Quick Facts
