@@ -101,6 +101,12 @@ Write-Host 'od018: prearm_start'
 & $preArm -AutoAttach
 Write-Host ("od018: prearm_exit=" + $LASTEXITCODE)
 
+# Advisory tool pre-flight: System Informer is a supporting operator tool
+# (memory map view, suspend/resume, module-base checks) -- never a gate.
+$siCheck = Join-Path $RepoRoot 'scripts\system-informer-check.ps1'
+$null = & $siCheck
+Write-Host ("od018: system_informer_check_exit=" + $LASTEXITCODE)
+
 if ($PreSnapshotSettleSeconds -gt 0) {
     Write-Host ("od018: settle_before_snapshot=" + $PreSnapshotSettleSeconds + "s")
     $settleDeadline = (Get-Date).AddSeconds($PreSnapshotSettleSeconds)

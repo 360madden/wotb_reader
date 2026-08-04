@@ -29,25 +29,25 @@
     },
     {
       "name": "System Informer",
-      "version": "3.2.25011",
-      "sha256": "pending-verification",
+      "version": "3.2.25011.2103",
+      "sha256": "0684d5382c346850eb2378caaa73606671ca579dda624c3d4d042ad514a50b32",
       "purpose": "Advanced Task Manager replacement for process inspection, memory map viewing, process suspend/resume, and module base address verification during offset discovery sessions",
       "source_url": "https://github.com/winsiderss/systeminformer",
       "releases_url": "https://github.com/winsiderss/systeminformer/releases",
-      "installed_path": "C:\\tools\\SystemInformer",
+      "installed_path": "C:\\Program Files\\SystemInformer",
       "launcher": "SystemInformer.exe",
       "workflow_phase": "dynamic-analysis",
-      "installation_status": "pending-install",
-      "approval_status": "pending-approval",
+      "installation_status": "verified-local",
+      "approval_status": "approved-local",
       "approved_scope": "Process inspection, suspension, and module address verification during offline replay sessions only",
       "verification": {
-        "verified_at_utc": null,
-        "launcher_present": false,
-        "sha256_matches": false
+        "verified_at_utc": "2026-08-04T23:30:00Z",
+        "launcher_present": true,
+        "sha256_matches": true
       },
       "spdx_license": "MIT",
       "platforms": ["win64"],
-      "install_instructions": "Install via WinGet: winget install --id=WinsiderSS.SystemInformer -e, or download portable zip from GitHub releases",
+      "install_instructions": "Installed 2026-08-04 via WinGet: winget install --id=WinsiderSS.SystemInformer -e (admin; installs to C:\\Program Files\\SystemInformer, not the pre-registered C:\\tools\\SystemInformer path). Launcher SystemInformer.exe + x86/ build for the x86 game.",
       "registered_at_utc": "2026-07-30T00:00:00Z"
     },
     {

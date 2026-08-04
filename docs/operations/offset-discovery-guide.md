@@ -21,7 +21,7 @@ Last updated: 2026-08-03 (campaign status: OD-RECOVERY-030 Partial — two rolli
 | Rolling driver | `scripts/roll-replay-time-increased.ps1` — snapshot → compare → survivor staging |
 | Delta extractor | `scripts/python/replay-delta-extractor.py` — statically derives delta markers from decoded sessions |
 | Evidence report | `tools/report-offset-evidence.ps1` — read-only Candidate/Verified/Unknown summary |
-| System Informer | **Not yet installed** — see installation below |
+| System Informer | ✅ Installed 2026-08-04 — `C:\Program Files\SystemInformer\SystemInformer.exe` (v3.2.25011.2103, sha256 `0684d538…0b32`, registry `verified-local`); advisory pre-flight in `od-018-session.ps1` / `od-047-exact-scan-session.ps1` / `validate.ps1` via `scripts/system-informer-check.ps1` |
 
 ## Tool Installation Guide
 
@@ -63,6 +63,16 @@ Process Hacker project.
 - **WinGet (recommended):** `winget install --id=WinsiderSS.SystemInformer -e`
 - **Portable:** Download `SystemInformer-<version>-x64.zip`, extract anywhere
 - **Microsoft Store:** Search "System Informer" in the Store
+
+**Installed (2026-08-04):** `winget install --id=WinsiderSS.SystemInformer -e`
+(admin; the WinGet installer is a setup.exe that installs to
+`C:\Program Files\SystemInformer\` — **not** the pre-registered
+`C:\tools\SystemInformer` path, which the registry now reflects).
+`scripts/system-informer-check.ps1` resolves the launcher and is called as an
+advisory pre-flight by the OD session drivers and `validate.ps1`. System
+Informer is a **supporting** tool — the live pipeline (scanner, x64dbg,
+GameIntegration suspend) covers the same capabilities, so a missing install
+never fails a session; the check only warns the operator.
 
 **Why it helps with offset discovery:**
 
@@ -156,7 +166,10 @@ Output goes to `tools\ghidra-scripts\ghidra-offset-candidates.json`.
 
 ### Phase 2a — System Informer quick checks
 
-Before diving into the debugger, use System Informer for rapid sanity checks:
+Before diving into the debugger, use System Informer for rapid sanity checks
+(launcher: `C:\Program Files\SystemInformer\SystemInformer.exe`; the session
+drivers announce its presence at start — `system_informer: present` — and
+warn when missing):
 
 **1. Confirm the replay is running**
 ```

@@ -68,3 +68,10 @@ Invoke-CheckedNative -FilePath python -ArgumentList @(
     "import json,sys; json.load(open(sys.argv[1], encoding='utf-8'))",
     (Join-Path $PSScriptRoot '..\tools\external\tools.lock.json')
 ) -Description 'Tool registry JSON validity'
+
+# Advisory (non-gating): System Informer launcher presence. The repo gate
+# cannot require the tool -- CI has no local install -- but the operator
+# sees the advisory line in doctor/validate output when a session would run
+# without the supporting tool.
+& (Join-Path $PSScriptRoot 'system-informer-check.ps1')
+Write-Host 'Tool presence check complete (System Informer advisory only).'

@@ -125,6 +125,12 @@ if (-not $state -or $state.verificationState -ne 'OfflineReplayVerified') {
     exit 1
 }
 
+# Advisory tool pre-flight: System Informer is a supporting operator tool
+# (memory map view, suspend/resume, module-base checks) -- never a gate.
+$siCheck = Join-Path $RepoRoot 'scripts\system-informer-check.ps1'
+$null = & $siCheck
+Write-Od047 ("system_informer_check_exit=" + $LASTEXITCODE)
+
 $roll = Join-Path $RepoRoot 'scripts\roll-replay-time-increased.ps1'
 
 function Invoke-VariantScan {
