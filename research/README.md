@@ -15,6 +15,7 @@
 | [memory-analysis.md](memory-analysis.md) | Memory scanning techniques — string search, pointer chains, Ghidra, ReClass |
 | [memory-offsets-unknowncheats.md](memory-offsets-unknowncheats.md) | Community-compiled memory offsets from UnknownCheats |
 | [community-tools.md](community-tools.md) | Community resources — parsers, reverse engineering, SteamDB |
+| [online-research-swarm-2026-08-03.md](online-research-swarm-2026-08-03.md) | **NEW** — 2026-08-03 online research swarm: current entity chain, rotation-near-position, struct dump, PDB lead, XMPP/TLS, replay parsers |
 | [approaches.md](approaches.md) | 6 approaches (A-F) with implementation details and testing protocols |
 
 ## Quick Facts

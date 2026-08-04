@@ -137,10 +137,65 @@ struct TankVisual {
 - **Position/rotation data** at `VehicleGameLogic → Vehicle → +0x68/0x6C/0x70` is
   confirmed by multiple independent community releases for 11.x.
 
+## 2026-08-03 Swarm Additions (verified against full thread reads)
+
+See [online-research-swarm-2026-08-03.md](online-research-swarm-2026-08-03.md) for the full
+write-up, struct dump (Errorc0de), helper functions, and pattern signatures.
+
+### Rotation is stored adjacent to position (playerYaw relevance)
+
+Thread #711725 (post #7, author `24235234`, Lesta 26.2.1.28, confirmed working
+on Steam/WG too):
+
+> "The tank's position is stored in `0x? VehicleGameLogic --> 0x8 Vehicle -->
+> 0x68 / 0x6C / 0x70` tank position. **Rotation is stored nearby.**"
+
+Community ESP reads yaw from a float physically next to the XYZ block. Our
+quarantined `playerYaw` hypothesis (conflicting representations) should be
+re-tested around `Vehicle + 0x74` with the yaw-convention question in mind
+(float yaw radians vs matrix/Euler).
+
+### Turret vs hull rotation (representation conflict)
+
+From the same post:
+
+> "After where the tower is looking, I used `0x? VehicleGameLogic --> 0x8 Vehicle
+> --> 0x60 TBVehicleFilter2 --> 0x10 TBVehicleFilterHelper --> somewhere there is
+> the position and rotation along Y and X relative to the heir of the hull
+> rotation from 0x8 Vehicle"
+
+This documents the **hull-yaw vs turret-yaw separation** — exactly the kind of
+representation conflict that got `playerYaw` quarantined. `TBVehicleFilter2` at
+`Vehicle + 0x60` holds turret rotation relative to hull rotation.
+
+### PDB lead (static analysis accelerant)
+
+Thread #689828 (May 2025, `sa413x`): *"You can find the beta build with the
+.pdb file in the game's Discord server."* Enesterio reported it later removed.
+If a beta `.pdb` for `wotblitz.exe`/`tanksblitz.exe` is recoverable anywhere,
+the OD-STATIC track gets class names and offsets directly.
+
+### Lesta 26.x versioning
+
+Lesta `tanksblitz.exe` uses a separate 26.x scheme (e.g., 26.2.1.28) vs WG
+11.x (e.g., 11.19.0.10). Community confirms the two builds share structures;
+the #618977 moderator noted the only difference between Steam and Lesta cheat
+files is process name and module name.
+
+### Player-list pointer fragility
+
+Thread #606655: static pointer scans break between map loads because the DAVA
+engine reaches entities via register-indexed addressing (`register + i*8 +
+offset`), which CE pointer scans handle poorly. The working approach is the
+`AppContextImpl → ScreensFlow → AvatarContextBattle` chain, not string/pointer
+scans — matches our `GuardedMemoryReader` traversal strategy.
+
 ## Application to Our Pipeline
 
 - The entity list base address (`BaseModule + 0x03E91978`) is version-specific but gives us a starting point for v11.19
 - Vehicle position offsets (+0x68, +0x6C, +0x70 via Vehicle pointer) can be used with our `GuardedMemoryReader` 
+- **Rotation is reported adjacent to position (candidate +0x74)** — re-test the quarantined `playerYaw` against this with the yaw-convention question open
+- **Turret rotation at `TBVehicleFilter2` (Vehicle+0x60) → `TBVehicleFilterHelper` (+0x10)** — documents the hull/turret yaw split
 - Player name at Vehicle+0x80 is public Wargaming statistics — no longer a privacy concern per project conventions
 - The `GameScene` structure is a potential target for finding replay state
 - Base address offset likely changes per version — our `memory-offsets/*.json` files will need updating for 11.19

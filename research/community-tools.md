@@ -8,6 +8,31 @@
 - **Features:** Extracts metadata, team rosters, account IDs, battle results
 - **Relevance:** Reference implementation for replay format. Can be used to
   validate our C# decoder against a known working parser.
+- **Data model (2026-08-03 swarm, from README):** `battle_results.timestamp_secs`,
+  `players[14]` with `account_id`, `info.nickname`, `info.team()` (TeamNumber
+  One/Two), `info.platoon_id`.
+
+### wotbreplay-inspector (Rust, by eigenein)
+- **GitHub:** `github.com/eigenein/wotbreplay-inspector`
+- **Language:** Rust
+- **Features:** Companion project for inspecting WoT Blitz replay mechanics
+  programmatically.
+- **Relevance:** Second independent reference for the replay data model.
+
+### evido/wotreplay-parser (C++, WoT PC)
+- **GitHub:** `github.com/evido/wotreplay-parser`
+- **Language:** C++ (CMake, LibPNG, Boost, LibXML2)
+- **Features:** Decodes WoT **PC** replays into JSON packet lists; renders
+  minimap PNGs (green allies / red enemies / blue recorder), animated GIF
+  position tracks over time, and position/class heatmaps.
+- **Relevance:** Demonstrates exactly the position-track rendering our overlay
+  does; closest visual reference for minimap plots.
+
+### rajesh-rahul/wot-replay-tools (Rust/WASM)
+- **GitHub:** `github.com/rajesh-rahul/wot-replay-tools`
+- **Language:** Rust & WebAssembly, runs client-side in the browser
+- **Status:** WIP
+- **Features:** HTML5 Canvas `.wotreplay` visualizer with tank position boxes.
 
 ### blitz-tools (Python, by Jylpah) — UNMAINTAINED
 - **GitHub:** `github.com/Jylpah/blitz-tools`
@@ -28,6 +53,34 @@
 - Web-based replay viewer
 - Inspects shots, trajectories, damage distribution
 - **Relevance:** Demonstrates replay data richness. Community values this data.
+- **Status (2026-08-03):** closed-source proprietary; provides Tankopedia/data
+  feeds that third-party tools consume. No public parser.
+
+### DAVA Engine Open-Source Roots (2026-08-03)
+- DAVA Engine originated at **DAVA Consulting**, later Wargaming-maintained;
+  early versions BSD-3-Clause open source
+- `github.com/smile4u/dava.engine` — DAVA engine mirror
+- `github.com/rifsxd/dava.engine.framework` — DAVA framework mirror
+- `github.com/vorlie/DAVA-Resource-Studio` — DAVA resource tooling (Data dirs, DVPL wrapping)
+- `github.com/DavaFramework` — **404 as of 2026-07-31** (dead)
+- **Relevance:** shipped Blitz engine is a heavily customized fork; open-source
+  DAVA gives naming/architecture conventions (Core, AppContext, screens, scene
+  graph, components), not the exact binary layout.
+
+### wg-toolkit-rs (lead, partially explored)
+- Rust toolkit for Wargaming network protocols surfaced mid-swarm
+- **Status:** not fully read yet — potential protocol/replay reference
+
+### PDB lead (static analysis accelerant)
+- Community (sa413x, May 2025): beta build with `.pdb` once available in the
+  game's Discord; later reported removed
+- If recoverable, the OD-STATIC track gets class names/offsets directly
+
+### XMPP/TLS/Frida traffic capture (2026-08-03)
+- Chat is XMPP over TLS (`jabber:client`, `wargaming.net/xmpp` extensions)
+- Frida `ws2_32.dll` `send`/`recv` hook captures all traffic (full harness in
+  UnknownCheats thread #702797); decrypted chat is searchable in memory
+- **Relevance:** 401-refresh / login-flow work touches the same auth surface
 
 ## Reverse Engineering Resources
 
@@ -58,6 +111,14 @@
   approach this project follows.
 - **Reload timers** extracted from `VehicleDescr` structs by recent ESP releases —
   demonstrates the descriptor tree is well-mapped by the community.
+- **Rotation adjacent to position** (thread #711725): community reads yaw from a
+  float physically next to the XYZ block (`Vehicle → +0x68/0x6C/0x70`, yaw
+  candidate +0x74) — re-test the quarantined `playerYaw` with this.
+- **Steam vs Lesta** (thread #618977): only difference is process name and module
+  name; offsets shared across `wotblitz.exe` and `tanksblitz.exe`.
+- **Static pointer scans break between map loads** (thread #606655): DAVA reaches
+  entities via register-indexed addressing; use the `AppContextImpl → ScreensFlow
+  → AvatarContextBattle` chain instead.
 
 ## Steam Platform Resources
 
@@ -86,7 +147,12 @@
 
 - `github.com/DavaFramework` — DAVA Engine source (**404 as of 2026-07-31**) — dead
 - `github.com/eigenein/wotbreplay-parser` — Rust replay parser (active)
+- `github.com/eigenein/wotbreplay-inspector` — Rust replay inspector (active)
+- `github.com/evido/wotreplay-parser` — C++ WoT PC replay renderer (minimap/GIF/heatmap)
 - `github.com/Jylpah/blitz-replays` — Python replay tools (**successor** to blitz-tools)
+- `github.com/smile4u/dava.engine` — DAVA engine mirror
+- `github.com/rifsxd/dava.engine.framework` — DAVA framework mirror
+- `github.com/vorlie/DAVA-Resource-Studio` — DAVA resource tooling
 - `steamdb.info/app/444200/` — SteamDB for WoT Blitz
 - `unknowncheats.me` — Reverse engineering forum (DAVA Engine threads)
 - `replays.wotinspector.com` — WOTInspector replay viewer/uploader
