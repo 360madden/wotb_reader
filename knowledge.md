@@ -18,7 +18,16 @@ full design specification.
   were deleted. `OverlayControlPlaneContainmentTests` keeps the second control plane out.
 - **No runtime dependency on:** Python, Node.js, Rust, Electron, containers, cloud
   services, runtime AI, or dynamic decoder DLLs. Python remains available only for
-  offline validation and test tooling.
+  offline validation and test tooling. The Rust `wotbreplay-inspector` oracle is a
+  hash-pinned dev-time artifact (see below) — never shipped, never loaded by product
+  code.
+- **Replay-decode cross-validation:** `scripts/invoke-replay-crosscheck.ps1` runs the
+  C# `Replays` decoder and the independent Rust `wotbreplay-inspector` (built on
+  `wotbreplay-parser` 0.4.2) on the same `.wotbreplay` and compares battle timestamp,
+  participants, and packet clocks; `-GoldenVector` validates the oracle against the
+  parser's published fixtures. Known documented divergences: bot-account sentinels
+  (Rust uint32-truncates, C# rejects sign-extended IDs) and battle-time source
+  (client `meta.json` vs server protobuf tag 2). See `tools/external/README.md`.
 - **Current offset evidence:** `11.19.0.10` is hash-bound to
   `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d`;
   the `playerYaw` hypothesis is quarantined/Stale because its representations
