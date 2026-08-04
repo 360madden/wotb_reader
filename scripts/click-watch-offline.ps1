@@ -17,6 +17,16 @@
   dialog ROI then false-positives on replay-HUD content (OD-RECOVERY-017), so
   once verified the script stops clicking instead of chasing the blob.
 
+  Flake fix (OD-044): the Host lifecycle gate lags the dialog dismissal by
+  ~9-10s, so the old 8s poll window expired before verification and round 2
+  re-clicked the live replay HUD; the SW_RESTORE/foreground churn around that
+  second click hid the window (become hidden -> OnBackground) in ~40% of
+  double-clicked runs. The script now treats the blitz-log 'Start replay
+  event' marker (written at dialog dismissal) as fast ground truth: once it
+  appears, no further clicks are ever fired, and the Host gate is awaited
+  separately so the launcher still observes OfflineReplayVerified. All
+  ShowWindow(SW_RESTORE) churn was removed in favor of soft SetForegroundWindow.
+
 .EXITCODES
   0  Dual success (gate + dialog dismissed)
   1  Game window missing
@@ -82,7 +92,6 @@ using System.Runtime.InteropServices;
 
 public static class WatchOfflineVisionV2 {
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
-  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
@@ -356,6 +365,28 @@ function Test-ReadySample(
     return $false
 }
 
+function Get-CurrentBlitzLog([datetime]$ProcessStartAt) {
+    # The current session's DAVA log is the newest blitz-logs_*.txt written
+    # at/after the game process started. Filtering on process start time
+    # prevents a stale log from a prior session satisfying the replay-start
+    # marker (the previous pin-once logic could grab the prior session's file
+    # when the script ran before the game created its log, suppressing round-2
+    # clicks with stale evidence). The 15s tolerance covers clock granularity;
+    # the newest-first sort then guarantees the current session's log wins as
+    # soon as it exists.
+    $davaDir = Join-Path $env:LOCALAPPDATA 'wotblitz\DAVAProject'
+    return Get-ChildItem -LiteralPath $davaDir -Filter 'blitz-logs_*.txt' -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTime -ge $ProcessStartAt.AddSeconds(-15) } |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+}
+
+function Test-ReplayStartedMarker([datetime]$ProcessStartAt) {
+    $log = Get-CurrentBlitzLog -ProcessStartAt $ProcessStartAt
+    if (-not $log) { return $false }
+    return [bool](Select-String -LiteralPath $log.FullName -Pattern 'START_REPLAY_LOCAL|Start replay event' -Quiet)
+}
+
 try {
     [void][WatchOfflineVisionV2]::EnsureDpiAware()
     if (-not $VisualDismissOnly) {
@@ -376,6 +407,13 @@ try {
         Write-Host 'watch_offline: no_game_window'
         Quit-WatchOffline 1
     }
+
+    # The replay-start marker is the fastest ground truth that playback began:
+    # the game writes 'Start replay event' at dialog dismissal, seconds before
+    # the Host lifecycle gate flips. The log is re-resolved per marker check
+    # against the game process start time (see Test-ReplayStartedMarker), so a
+    # stale log from a prior session can never satisfy the marker.
+    $gameProcessStartAt = $game.StartTime
 
     $before = 'Unknown'
     $beforeReason = ''
@@ -400,7 +438,8 @@ try {
         Write-Host ("watch_offline: before=visual_only pid=" + $game.Id)
     }
 
-    [void][WatchOfflineVisionV2]::ShowWindow($game.MainWindowHandle, 9)
+    # Soft focus only: SW_RESTORE during LoginOnReplay correlated with
+    # become hidden -> OnBackground in live OD pulses (see ForceForeground note).
     [void][WatchOfflineVisionV2]::SetForegroundWindow($game.MainWindowHandle)
     Start-Sleep -Milliseconds 300
 
@@ -424,12 +463,11 @@ try {
             Write-Host 'watch_offline: no_game_window_while_waiting'
             Quit-WatchOffline 1
         }
-        # Do not spam ShowWindow/SetForeground during splash â€” live logs show
-        # OnBackground â†’ WindowDestroyed within ~1s when focus-churned early.
-        $shouldFocus = ($phase -ne 'LookingForDialog') -or `
-            (((Get-Date) - $lastFocusAt).TotalSeconds -ge 3)
-        if ($shouldFocus) {
-            [void][WatchOfflineVisionV2]::ShowWindow($game.MainWindowHandle, 9)
+        # Soft-focus only, throttled in ALL phases. The previous logic fired
+        # ShowWindow(SW_RESTORE)+SetForegroundWindow on every ~150ms sample
+        # once the dialog was sighted (phase != LookingForDialog); SW_RESTORE
+        # during LoginOnReplay correlated with become hidden / OnBackground.
+        if (((Get-Date) - $lastFocusAt).TotalSeconds -ge 3) {
             [void][WatchOfflineVisionV2]::SetForegroundWindow($game.MainWindowHandle)
             $lastFocusAt = Get-Date
         }
@@ -596,7 +634,8 @@ try {
             Quit-WatchOffline 1
         }
 
-        [void][WatchOfflineVisionV2]::ShowWindow($game.MainWindowHandle, 9)
+        # Soft focus only (no ShowWindow/SW_RESTORE churn); ForceForeground
+        # before the click handles focus without SW_RESTORE.
         [void][WatchOfflineVisionV2]::SetForegroundWindow($game.MainWindowHandle)
         Start-Sleep -Milliseconds 250
 
@@ -609,7 +648,26 @@ try {
         $count = [int]$analysis.Blob.PixelCount
         Write-Host ("watch_offline: round={0} orange_pixels={1} found={2}" -f $round, $count, $analysis.Blob.Found)
 
-        if ($count -ge $MinBlobPixels) {
+        # Blitz-log ground truth beats the Host gate: the game writes
+        # 'Start replay event' when playback begins, seconds before the
+        # lifecycle monitor flips OfflineReplayVerified. In OD-044 the gate
+        # took ~9-10s, outliving the 8s poll window, so round 2 re-clicked the
+        # live replay HUD (OD-017 false positive) and the focus churn hid the
+        # window (become hidden -> OnBackground).
+        #
+        # Round 1 still clicks whenever the dialog blob is visibly present,
+        # EVEN IF the marker already fired (the game can auto-start playback
+        # ~8s after the dialog appears without dismissing it; leaving the
+        # dialog up over the live replay makes the game tear down early - seen
+        # in the 2026-08-04 validation runs). The marker only forbids clicks
+        # in rounds >= 2, once round 1 has had its chance to dismiss it.
+        $replayStarted = $false
+        if ($round -gt 1 -and (Test-ReplayStartedMarker -ProcessStartAt $gameProcessStartAt)) {
+            $replayStarted = $true
+            Write-Host 'watch_offline: replay_started_marker (no further clicks)'
+        }
+
+        if (-not $replayStarted -and $count -ge $MinBlobPixels) {
             $rx = $analysis.Blob.CentroidX / [double][Math]::Max(1, $analysis.Width)
             $ry = $analysis.Blob.CentroidY / [double][Math]::Max(1, $analysis.Height)
             if ($rx -lt 0.18 -or $rx -gt 0.48 -or $ry -lt 0.38 -or $ry -gt 0.62) {
@@ -628,7 +686,7 @@ try {
                 [WatchOfflineVisionV2]::ClickScreen($screenX + 3, $screenY + 2)
             }
         }
-        elseif (-not $sawBlob) {
+        elseif (-not $sawBlob -and $round -eq 1) {
             Write-Host 'watch_offline: no_blob_this_round'
         }
 
@@ -636,19 +694,18 @@ try {
         if ($pollUntil -gt $deadline) { $pollUntil = $deadline }
         do {
             Start-Sleep -Seconds 1
+            # Fast evidence in BOTH modes: the replay-start marker stops any
+            # further clicks once round 1 has had its chance to dismiss the
+            # dialog. In visual-only mode it is the success gate; in Host mode
+            # the gate is awaited separately so the launcher still observes
+            # OfflineReplayVerified.
+            if ($round -gt 1 -and -not $replayStarted -and
+                (Test-ReplayStartedMarker -ProcessStartAt $gameProcessStartAt)) {
+                $replayStarted = $true
+                Write-Host 'watch_offline: poll=replay_started_marker (no further clicks)'
+            }
             if ($VisualDismissOnly) {
-                $vs = 'Unknown'
-                $reason = ''
-                # Playback-only: treat START_REPLAY_LOCAL as gate success.
-                $dava = Join-Path $env:LOCALAPPDATA 'wotblitz\DAVAProject'
-                $log = Get-ChildItem -LiteralPath $dava -Filter 'blitz-logs_*.txt' -ErrorAction SilentlyContinue |
-                    Sort-Object LastWriteTime -Descending |
-                    Select-Object -First 1
-                if ($log -and (Select-String -LiteralPath $log.FullName -Pattern 'START_REPLAY_LOCAL|Start replay event' -Quiet)) {
-                    $gateOk = $true
-                    Write-Host 'watch_offline: poll=START_REPLAY_LOCAL'
-                    break
-                }
+                if ($replayStarted) { $gateOk = $true; break }
                 Write-Host 'watch_offline: poll=visual_only'
             }
             else {
@@ -682,12 +739,15 @@ try {
             }
         }
 
-        Write-Host ("watch_offline: gateOk={0} dialogGone={1}" -f $gateOk, $dialogGone)
+        Write-Host ("watch_offline: gateOk={0} dialogGone={1} replayStarted={2}" -f $gateOk, $dialogGone, $replayStarted)
         # OfflineReplayVerified proves the replay started (lifecycle monitor
         # requires a fresh START_REPLAY_LOCAL marker), which proves the dialog
         # is gone. The orange dialog ROI then false-positives on replay-HUD
-        # content; keep clicking only in visual-only mode where no gate exists.
+        # content (OD-017), so trust the marker/gate over the blob.
+        # Non-visual: the round loop continues (without clicking) until the
+        # Host gate flips, preserving the launcher's post-check contract.
         if ($gateOk -and ($dialogGone -or -not $VisualDismissOnly)) { break }
+        if ($replayStarted -and $VisualDismissOnly) { $gateOk = $true; break }
     }
 
     $after = if ($VisualDismissOnly) { 'visual_only' } else { Get-VerificationState }
@@ -708,16 +768,21 @@ try {
         if ($after -eq 'OfflineReplayVerified') { $dialogGone = $true }
     }
     else {
-        $dava = Join-Path $env:LOCALAPPDATA 'wotblitz\DAVAProject'
-        $log = Get-ChildItem -LiteralPath $dava -Filter 'blitz-logs_*.txt' -ErrorAction SilentlyContinue |
-            Sort-Object LastWriteTime -Descending |
-            Select-Object -First 1
-        if ($log -and (Select-String -LiteralPath $log.FullName -Pattern 'START_REPLAY_LOCAL|Start replay event' -Quiet)) {
+        $markerOk = Test-ReplayStartedMarker -ProcessStartAt $gameProcessStartAt
+        if ($markerOk) {
+            # Playback began (blitz-log ground truth): the replay-HUD orange
+            # false-positive (OD-017) makes the final-frame pixel check
+            # unreliable once playback is live, so the marker resolves the
+            # dialog check in visual-only too. Note the marker proves playback
+            # STARTED, not that a dialog is gone — dismissal is round 1's
+            # click's job; in the hangar flow there is no dialog at all.
             $gateOk = $true
+            $dialogGone = $true
         }
-        # Visual-only: require the final frame still show dialog gone (not a sticky mid-round flag).
-        $dialogGone = ($finalCount -ge 0 -and $finalCount -le $DismissMaxPixels)
-        if ($dialogGone) { $gateOk = $true }
+        else {
+            $dialogGone = ($finalCount -ge 0 -and $finalCount -le $DismissMaxPixels)
+            if ($dialogGone) { $gateOk = $true }
+        }
     }
 
     if ($gateOk -and $dialogGone) {

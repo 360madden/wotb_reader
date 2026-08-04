@@ -592,6 +592,130 @@ public sealed class GameSessionCoordinatorTests
     }
 
     [TestMethod]
+    public async Task VerifiedLivenessHeartbeat_ExtendsAuthorizationExpiry()
+    {
+        // Quiet replay playback produces no new Start markers, so the liveness
+        // heartbeat must keep a verified game alive past the default 15s
+        // evidence lifetime (OD-044: a 281s replay was terminated ~120s after
+        // verification because the authorization expired mid-battle). The
+        // monitor heartbeats every ~500ms; here one mid-window heartbeat must
+        // carry the authorization past the original marker-based expiry.
+        var (coordinator, timeProvider) = CreateCoordinator();
+        ManagedGameLaunchContext launch = CreateManagedLaunch();
+        coordinator.RecordManagedLaunch(launch);
+        coordinator.ApplyEvidence(CreateValidEvidence());
+
+        // 10s into the window, a fresh healthy process observation rolls the
+        // expiry forward by the lifetime again.
+        timeProvider.Advance(TimeSpan.FromSeconds(10));
+        coordinator.RefreshVerifiedEvidence(
+            launch,
+            CreateValidProcess(),
+            CancellationToken.None);
+
+        // Past the original 15s expiry (t=20s) but inside the heartbeat window
+        // (expiry t=25s): still verified.
+        timeProvider.Advance(TimeSpan.FromSeconds(10));
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+
+        Assert.AreEqual(
+            GameSessionVerificationState.OfflineReplayVerified,
+            snapshot.State);
+        Assert.IsTrue(snapshot.EvidenceExpiresAtUtc > timeProvider.GetUtcNow());
+    }
+
+    [TestMethod]
+    public async Task VerifiedLivenessHeartbeat_WithIdentityDrift_IsDenied()
+    {
+        var (coordinator, _) = CreateCoordinator();
+        ManagedGameLaunchContext launch = CreateManagedLaunch();
+        coordinator.RecordManagedLaunch(launch);
+        coordinator.ApplyEvidence(CreateValidEvidence());
+
+        // The heartbeat must never extend authorization for a different
+        // process identity — fail closed exactly like a fresh evidence apply.
+        coordinator.RefreshVerifiedEvidence(
+            launch,
+            CreateValidProcess() with { ProcessStartIdentity = 43 },
+            CancellationToken.None);
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+        Assert.AreEqual("process.identity_mismatch", snapshot.ReasonCode);
+    }
+
+    [TestMethod]
+    public async Task VerifiedLivenessHeartbeat_BeforeVerification_IsNoOp()
+    {
+        // A launch awaiting evidence must not be promoted to Verified by the
+        // heartbeat: only ApplyEvidence's marker correlation can do that.
+        var (coordinator, _) = CreateCoordinator();
+        ManagedGameLaunchContext launch = CreateManagedLaunch();
+        coordinator.RecordManagedLaunch(launch);
+
+        coordinator.RefreshVerifiedEvidence(
+            launch,
+            CreateValidProcess(),
+            CancellationToken.None);
+
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.Unknown, snapshot.State);
+    }
+
+    [TestMethod]
+    public async Task VerifiedLivenessHeartbeat_ForSupersededLaunch_IsNoOp()
+    {
+        // The heartbeat of a replaced launch must neither extend nor revoke:
+        // it belongs to an earlier generation whose leases were detached.
+        var (coordinator, _) = CreateCoordinator();
+        ManagedGameLaunchContext firstLaunch = CreateManagedLaunch();
+        coordinator.RecordManagedLaunch(firstLaunch);
+        coordinator.ApplyEvidence(CreateValidEvidence());
+
+        ManagedGameLaunchContext secondLaunch = CreateManagedLaunch(
+            sourceBaselines: [new LifecycleSourceCursor(Hash('b'), 2, 200)]);
+        coordinator.RecordManagedLaunch(secondLaunch);
+
+        coordinator.RefreshVerifiedEvidence(
+            firstLaunch,
+            CreateValidProcess(),
+            CancellationToken.None);
+
+        // Still awaiting evidence for the second launch, unchanged.
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.Unknown, snapshot.State);
+    }
+
+    [TestMethod]
+    public async Task VerifiedLivenessHeartbeat_CancelledMonitor_IsNoOp()
+    {
+        // A monitor that has been stopped (token cancelled) must not keep
+        // extending the authorization; the terminal path owns revocation.
+        var (coordinator, timeProvider) = CreateCoordinator();
+        ManagedGameLaunchContext launch = CreateManagedLaunch();
+        coordinator.RecordManagedLaunch(launch);
+        coordinator.ApplyEvidence(CreateValidEvidence());
+
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+
+        coordinator.RefreshVerifiedEvidence(
+            launch,
+            CreateValidProcess(),
+            cancelled.Token);
+
+        timeProvider.Advance(TimeSpan.FromSeconds(16));
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+        Assert.AreEqual(GameSessionVerificationState.EvidenceStale, snapshot.State);
+        Assert.AreEqual("evidence.expired", snapshot.ReasonCode);
+    }
+
+    [TestMethod]
     public async Task ExplicitResearchLifetime_ExtendsExpiryButNotStopRevocation()
     {
         var options = new GameIntegrationOptions

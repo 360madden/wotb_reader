@@ -160,6 +160,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     private ManagedGameLaunchContext? _managedLaunch;
     private EvidenceCursor? _lastCursor;
     private long _authorizationGeneration;
+    private DateTimeOffset _lastHeartbeatLoggedAtUtc = DateTimeOffset.MinValue;
 
     // Active launch leases owned by the coordinator until the session is revoked.
     private WindowsTrustedExecutableLaunchLease? _activeExecutableLease;
@@ -304,6 +305,74 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         && ReferenceEquals(_managedLaunch, launch)
         && _activeMonitoringCts is not null
         && _activeMonitoringCts.Token == monitorToken;
+
+    /// <summary>
+    /// Liveness heartbeat for an already-verified managed launch. The native
+    /// log goes quiet during replay playback (no new Start markers arrive), so
+    /// without this the authorization would expire at
+    /// <see cref="GameIntegrationOptions.OfflineReplayEvidenceLifetime"/> and
+    /// the managed game would be terminated mid-battle (observed 2026-08-04:
+    /// a 281s replay was killed ~120s after verification, "window closed
+    /// unexpectedly", no crash). Extends the expiry while the verified process
+    /// identity stays healthy; any process/window/identity anomaly still
+    /// revokes immediately through the monitor's terminal-failure path.
+    ///
+    /// Trade-off: this substitutes process liveness for fresh replay markers
+    /// during playback. It is bounded to the managed-launch pipeline, which
+    /// only ever produces offline replay sessions (offline session gate + argv
+    /// replay), so a live, identity-matched process of the trusted executable
+    /// cannot be an online session. The authorization still fails closed on
+    /// process death, window loss, identity drift, replay-stop markers, and
+    /// coordinator revocation (e.g. the next managed launch).
+    /// </summary>
+    internal void RefreshVerifiedEvidence(
+        ManagedGameLaunchContext launch,
+        GameProcessEvidence processEvidence,
+        CancellationToken monitorToken)
+    {
+        lock (_gate)
+        {
+            if (_disposed
+                || monitorToken.IsCancellationRequested
+                || !ReferenceEquals(_managedLaunch, launch)
+                || _snapshot.State != GameSessionVerificationState.OfflineReplayVerified)
+            {
+                return;
+            }
+
+            if (!IsProcessIdentityValid(processEvidence))
+            {
+                Deny("process.identity_mismatch");
+                return;
+            }
+
+            DateTimeOffset expiresAtUtc =
+                _timeProvider.GetUtcNow() + _options.OfflineReplayEvidenceLifetime;
+            if (_authorization is not null)
+            {
+                _authorization = _authorization with { ExpiresAtUtc = expiresAtUtc };
+            }
+
+            _snapshot = CreateSnapshot(
+                GameSessionVerificationState.OfflineReplayVerified,
+                gamePresent: true,
+                expiresAtUtc,
+                "session.offline_replay_verified");
+
+            // Throttled diagnostics: a heartbeat line every beat would spam;
+            // one per 30s shows the expiry rolling without noise.
+            DateTimeOffset now = _timeProvider.GetUtcNow();
+            if (_logger.IsEnabled(LogLevel.Debug)
+                && now - _lastHeartbeatLoggedAtUtc >= TimeSpan.FromSeconds(30))
+            {
+                _lastHeartbeatLoggedAtUtc = now;
+                _logger.LogDebug(
+                    "Heartbeat: verified launch {Correlation} expiry extended to {ExpiresAtUtc:O}.",
+                    launch.LaunchCorrelation,
+                    expiresAtUtc);
+            }
+        }
+    }
 
     public ValueTask<GameSessionSnapshot> GetSnapshotAsync(
         CancellationToken cancellationToken)
@@ -1865,6 +1934,15 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                                     Timeout.InfiniteTimeSpan);
                                 LogLaunchStage("lifecycle_evidence", "verified");
                             }
+                        }
+                        else if (correlatedEvidenceObserved
+                            && processEvidence is not null)
+                        {
+                            // Liveness heartbeat: the native log goes silent
+                            // during playback, so a live verified game must
+                            // keep its authorization fresh instead of expiring
+                            // at OfflineReplayEvidenceLifetime mid-battle.
+                            RefreshVerifiedEvidence(launch, processEvidence, token);
                         }
                     }
 
