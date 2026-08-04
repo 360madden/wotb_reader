@@ -312,6 +312,14 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
+> **Amended 2026-08-04 (v3 strategy).** The pilot order below is superseded by
+> [`offset-discovery-strategy-v3.md`](offset-discovery-strategy-v3.md) /
+> [`offset-discovery-roadmap.md`](offset-discovery-roadmap.md): the
+> **exact-value pause scan is now the primary pivot** (`-CompareMode exact`,
+> replay paused at a known decoded value, absolute target), with the Double
+> replayTime delta pilot as the fallback filter. The pipeline facts in this
+> section remain valid.
+
 Session ID: `OD-RECOVERY-045`. `OD-RECOVERY-044` proved the live pipeline
 **mechanically end-to-end for the first time**: gate green → pre-arm → rolling
 → harvest → address file → x32dbg direct attach → arm → `scriptload`+`scriptrun`
