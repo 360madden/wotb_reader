@@ -35,7 +35,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# ── Path discovery ──────────────────────────────────────────────────────────
+# -- Path discovery -----------------------------------------------------------
 
 function Find-WotBlitzExe {
     $candidates = @(
@@ -71,7 +71,7 @@ function Find-WotBlitzExe {
     return $null
 }
 
-# ── Main ────────────────────────────────────────────────────────────────────
+# -- Main ---------------------------------------------------------------------
 
 Write-Host "=== WoT Blitz Executable Hash Computer ===" -ForegroundColor Cyan
 Write-Host ""
@@ -107,7 +107,7 @@ Write-Host "SHA-256: $hash" -ForegroundColor Yellow
 Write-Host "Length : $($hash.Length) chars"
 Write-Host ""
 
-# ── Update offset file ──────────────────────────────────────────────────────
+# -- Update offset file -------------------------------------------------------
 
 if ($UpdateOffsetFile) {
     if (-not $OffsetDir) {
@@ -155,7 +155,7 @@ if ($UpdateOffsetFile) {
 
     # If notes contains the placeholder hash message, update it
     if ($json.notes -like "*Hash is empty*") {
-        $json.notes = $json.notes -replace [regex]::Escape("Hash is empty — compute with tools/compute-exe-hash.ps1 and update before runtime use. "), ""
+        $json.notes = $json.notes -replace [regex]::Escape("Hash is empty - compute with tools/compute-exe-hash.ps1 and update before runtime use. "), ""
     }
 
     $json | ConvertTo-Json -Depth 6 | Set-Content $offsetFile -Encoding UTF8

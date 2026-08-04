@@ -93,7 +93,7 @@ in separate windows with a short wait for the host to be ready.
 
 **Full gate (run before milestone commits):**
 ```powershell
-./scripts/validate.ps1                     # locked restore → format → build → test → scan
+./scripts/validate.ps1                     # locked restore → format → build → test → scan → PS hygiene
 ./scripts/validate.ps1 -AuditPackages      # above + transitive vulnerability audit
 ```
 
@@ -202,4 +202,5 @@ replay gate; candidate-only offset evidence cannot authorize runtime reads.
 - SignalR callbacks run on non-UI threads without a `SynchronizationContext`. Any ObservableCollection mutations from SignalR callbacks must be marshalled via `SynchronizationContext.Post`.
 
 - **cmd.exe wrapper scripts** have failure modes that survive casual review — delayed expansion corrupts `!` in filenames, unquoted `%~dp0` breaks on paths with spaces, whitespace input crashes arithmetic checks, and missing `setlocal` leaks env vars. See `docs/operations/cmd-wrapper-gotchas.md` for the full catalogue and review checklist. Always route cmd/batch reviews through a thinker agent.
+- **PowerShell scripts must pass the PSScriptAnalyzer gate** (`scripts/invoke-scriptanalyzer.ps1`, wired into `validate.ps1` + CI). Pinned 1.25.0 installs via `scripts/install-psscriptanalyzer.ps1`; settings in `tools/psscriptanalyzer-settings.psd1`; repo custom rules (ban `[double]::IsFinite` and PS7-only operators `??`/`&&`/`||`) in `tools/psscriptanalyzer-custom-rules.psm1`. The 5.1 host reads **BOM-less UTF-8 as ANSI**: non-ASCII bytes can silently corrupt strings at runtime (an em-dash's trailing byte `0x94` parses as `"` and terminates the string — this actually broke `tools/compute-exe-hash.ps1`). Keep every `.ps1` ASCII-only, or the gate's `PSUseBOMForUnicodeEncodedFile` + runtime mojibake will bite. Also: custom script rules must be typed with a **concrete AST node** (e.g. `[ScriptBlockAst]`), never the abstract `[Ast]` — PSScriptAnalyzer matches rules to nodes by type-name substring and silently never invokes `[Ast]`-typed rules; `-CustomRulePath` **replaces** the default rule set unless `-IncludeDefaultRules` is passed.
 - **Basher (terminal agent) timeouts are a recurring waste pattern.** Default 30s timeout is never enough for .NET commands. Use these timeouts: `dotnet build` → 300s, `dotnet test` (full suite) → 300s, `dotnet test` (single project) → 120s, `dotnet publish` → 180s. Never run interactive `.cmd` wrappers through basher — use direct `dotnet` commands. Verify prerequisites (CLI built, packages restored) before running dependent commands.

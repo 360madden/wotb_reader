@@ -42,6 +42,22 @@ if ($AuditPackages) {
 
 & (Join-Path $PSScriptRoot 'scan-repository.ps1')
 
+Invoke-CheckedNative powershell @(
+    '-NoProfile',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-File',
+    (Join-Path $PSScriptRoot 'install-psscriptanalyzer.ps1')
+) 'PSScriptAnalyzer install'
+
+Invoke-CheckedNative powershell @(
+    '-NoProfile',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-File',
+    (Join-Path $PSScriptRoot 'invoke-scriptanalyzer.ps1')
+) 'Script hygiene gate (PSScriptAnalyzer)'
+
 Invoke-CheckedNative python @(
     (Join-Path $PSScriptRoot 'python\offline_check.py'),
     '--check-fresh'

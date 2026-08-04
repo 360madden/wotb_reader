@@ -34,6 +34,12 @@ jobs:
       - name: Scan tracked repository
         shell: pwsh
         run: ./scripts/scan-repository.ps1
+      - name: Install PSScriptAnalyzer (pinned, hash-verified)
+        shell: pwsh
+        run: ./scripts/install-psscriptanalyzer.ps1
+      - name: Script hygiene gate (PSScriptAnalyzer)
+        shell: powershell
+        run: ./scripts/invoke-scriptanalyzer.ps1
       - name: Check offline discovery pack (links + file-tree freshness)
         shell: pwsh
         run: python scripts/python/offline_check.py --check-fresh

@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Start/attach game → hangar Battle ready → profile → REPLAYS → play.
+  Start/attach game -> hangar Battle ready -> profile -> REPLAYS -> play.
 
 .DESCRIPTION
   Spec: docs/superpowers/specs/2026-08-02-hangar-replays-play.md
@@ -485,7 +485,7 @@ public static class HangarPlayVision {
   }
 
   public static BlobHit FindColorWatchOffline(Bitmap bmp) {
-    // Left/center dialog band — same ROI as click-watch-offline.ps1.
+    // Left/center dialog band -- same ROI as click-watch-offline.ps1.
     return FindColor(bmp, 0.18, 0.55, 0.40, 0.70, IsWatchOfflineOrange);
   }
 }
@@ -624,7 +624,7 @@ function Wait-AndClick(
         if (-not $cap) { Start-Sleep -Milliseconds $SampleIntervalMs; continue }
 
         try {
-            # Avoid thrashing the same PNG every sample (GDI+ lock → exit 4).
+            # Avoid thrashing the same PNG every sample (GDI+ lock -> exit 4).
             if ($ScreenshotPath -and ((Get-Random -Maximum 5) -eq 0)) {
                 [void][HangarPlayVision]::SaveBitmap($cap.Bitmap, $ScreenshotPath)
             }
@@ -662,8 +662,8 @@ function Wait-HangarReady {
         $game = Get-GameWindow
         if (-not $game) { Write-Hangar 'no_game_window'; return $false }
 
-        # Soft focus only once at hangar entry — mid-wait focus churn has closed
-        # the game window (OnBackground → WindowDestroyed).
+        # Soft focus only once at hangar entry -- mid-wait focus churn has closed
+        # the game window (OnBackground -> WindowDestroyed).
         if ($lastFocus -eq [datetime]::MinValue) {
             try { [HangarPlayVision]::SoftForeground($game.MainWindowHandle) } catch { }
             $lastFocus = Get-Date
@@ -694,7 +694,7 @@ function Wait-HangarReady {
                 continue
             }
 
-            # Do not treat hangar orange sparks / dark garage as a modal — only Error AFFIRMATIVE above.
+            # Do not treat hangar orange sparks / dark garage as a modal -- only Error AFFIRMATIVE above.
 
             # Already on REPLAYS only if title + left-card white play triangle
             # (title/header whites alone false-positive and steal the play click).
@@ -865,7 +865,7 @@ try {
 
         $replaysOk = Wait-AndClick -TimeoutSeconds $StepTimeoutSeconds -Label 'replays' -ForceFocus -Finder {
             param($b)
-            # Prefer template — white-pixel centroid hits shop/gold chrome on the profile sheet.
+            # Prefer template -- white-pixel centroid hits shop/gold chrome on the profile sheet.
             if ($script:tplReplays) {
                 $m = [HangarPlayVision]::MatchTemplate($b, $script:tplReplays, 0.55, 0.995, 0.02, 0.30, 42.0)
                 if ($m.Found) { return $m }
@@ -923,7 +923,7 @@ try {
         if ($playBlob.Found) {
             $playBlob = [HangarPlayVision]::RefinePlayTriangleClick($cap.Bitmap, $playBlob)
         }
-        # Template only as a seed — must refine onto white pixels.
+        # Template only as a seed -- must refine onto white pixels.
         if ($script:tplPlay) {
             $tmpl = [HangarPlayVision]::MatchTemplate($cap.Bitmap, $script:tplPlay, 0.05, 0.50, 0.25, 0.55, 40.0)
             if ($tmpl.Found) {
@@ -976,7 +976,7 @@ try {
     if (-not $playOk) { exit 3 }
 
     Start-Sleep -Milliseconds 1000
-    # Confirm something reacted — use mtime-safe marker check (blitz clock ≠ Windows local).
+    # Confirm something reacted -- use mtime-safe marker check (blitz clock != Windows local).
     if (Test-StartReplayMarker -Since $since -LogCursor $logCursor) {
         Write-Hangar 'OK START_REPLAY_after_play_click'
         exit 0
@@ -995,7 +995,7 @@ try {
         Write-Hangar 'WARN_no_blitz_reaction_yet_continuing'
     }
 
-    # Keep $since from play click — do not reset (would miss START_REPLAY_LOCAL).
+    # Keep $since from play click -- do not reset (would miss START_REPLAY_LOCAL).
 
     # Only chain WATCH OFFLINE after LoginOnReplayDialog actually appears.
     if (-not $SkipWatchOfflineChain) {

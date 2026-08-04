@@ -217,6 +217,35 @@
       "registered_at_utc": "2026-07-28T22:14:50Z"
     },
     {
+      "name": "PSScriptAnalyzer",
+      "version": "1.25.0",
+      "release_name": "1.25.0 (PSGallery canonical nupkg)",
+      "sha256": "14e634c828eb98efb9f40b2918ba90f139ed5eccdf663a2a747736d996995d60",
+      "hash_target": "tools/external/downloads/psscriptanalyzer-1.25.0.nupkg",
+      "purpose": "PowerShell static-analysis linter and repo script-hygiene gate -- catches PS 5.1-incompatible static members ([double]::IsFinite), PS7-only operators (??, &&, ||), assignment to automatic variables (the $Pid bug class), and unused variables/params across every tracked .ps1, run by scripts/invoke-scriptanalyzer.ps1 inside the validate gate",
+      "source_url": "https://www.powershellgallery.com/packages/PSScriptAnalyzer",
+      "releases_url": "https://github.com/PowerShell/PSScriptAnalyzer/releases",
+      "installed_path": "tools/external/installed/psscriptanalyzer/1.25.0",
+      "launcher": "PSScriptAnalyzer.psd1",
+      "launcher_notes": "Dev-time module only -- never shipped, never loaded by product code. Module manifest declares PowerShellVersion 5.1; verified to import and run (75 rules) under both Windows PowerShell 5.1 and pwsh 7. Import must be invoked via a script file (powershell -File), not inline -Command, which hangs on this machine (PSSA-import-hang gotcha).",
+      "workflow_phase": "development-gate",
+      "installation_status": "verified-local",
+      "approval_status": "approved-local",
+      "approved_scope": "Dev-time static analysis of repository PowerShell scripts in the validate gate only; never downloaded or executed at application runtime",
+      "verification": {
+        "verified_at_utc": "2026-08-04T18:22:42Z",
+        "module_manifest_present": true,
+        "sha256_matches": true,
+        "import_smoke_5_1": "pass",
+        "import_smoke_pwsh7": "pass"
+      },
+      "spdx_license": "MIT",
+      "platforms": ["win32", "win64", "linux", "macos"],
+      "platform_notes": "Windows PowerShell 5.1 + PowerShell 7 on win32/win64; PowerShell 7 only on linux/macos. The repo's OD workflow host is Windows PowerShell 5.1 (5.1.26100), so 5.1 compatibility is the hard requirement (verified).",
+      "install_instructions": "Run scripts/install-psscriptanalyzer.ps1 (repo-root relative). It downloads the pinned nupkg from the PSGallery canonical URL to tools/external/downloads/, verifies SHA-256 against this entry, extracts to tools/external/installed/psscriptanalyzer/<version>/, and runs an import smoke test on both hosts.",
+      "registered_at_utc": "2026-08-04T00:00:00Z"
+    },
+    {
       "name": "Grok Build",
       "version": "0.2.112",
       "revision": "9bbd559437",

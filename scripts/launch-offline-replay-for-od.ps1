@@ -1,15 +1,15 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Canonical OD offline-replay launch: folder .wotbreplay → import → managed launch → Watch Offline.
+  Canonical OD offline-replay launch: folder .wotbreplay -> import -> managed launch -> Watch Offline.
 
 .DESCRIPTION
   Owner-proven source of truth for which replay to play is:
     %LOCALAPPDATA%\wotblitz\DAVAProject\replays\*.wotbreplay
-  (top-level originals only — never wotbtreader-staging\ GUID copies).
+  (top-level originals only -- never wotbtreader-staging\ GUID copies).
 
   Managed launch stages under:
-    …\replays\wotbtreader-staging\{guid}.wotbreplay
+    ...\replays\wotbtreader-staging\{guid}.wotbreplay
   so temporary copies are not mixed with originals. Flat GUID clones the game
   may drop into the parent replays folder are scavenged on stage dispose.
 
@@ -24,7 +24,7 @@
   1. Stop stale wotblitz / Host.Web / CE (clear Denied).
   2. Start Host.Web with research lease (evidence 120s / lifecycle 120s).
   3. Pick a .wotbreplay from the game replays folder (or -ReplayPath).
-  4. Import via CLI → content-addressed artifact id.
+  4. Import via CLI -> content-addressed artifact id.
   5. POST /api/v1/game/launch (managed) with a freshly read capability.
   6. Wait for window + settle so WATCH OFFLINE can appear.
   7. Run scripts/click-watch-offline.ps1 (dual: OfflineReplayVerified + dialog gone).
@@ -117,7 +117,7 @@ function Stop-OdProcesses {
 }
 
 # Soft focus only (SetForegroundWindow). ShowWindow/keybd_event during splash
-# correlated with become hidden → WindowDestroyed in live blitz-logs.
+# correlated with become hidden -> WindowDestroyed in live blitz-logs.
 Add-Type -Namespace OdLaunch -Name Focus -MemberDefinition @"
 [System.Runtime.InteropServices.DllImport("user32.dll")]
 public static extern bool SetForegroundWindow(System.IntPtr hWnd);

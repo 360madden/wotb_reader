@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Compatibility wrapper → scripts/play-replay-from-hangar.ps1
+  Compatibility wrapper -> scripts/play-replay-from-hangar.ps1
 #>
 [CmdletBinding()]
 param(

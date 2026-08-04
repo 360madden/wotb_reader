@@ -34,7 +34,7 @@
   3  Retries exhausted (gate and/or dialog check failed)
   4  Unexpected error
   5  Ready gate never satisfied (dialog not interactive in time)
-  6  Host already Denied (stale lifecycle timeout) â€” restart via launch-offline-replay-for-od.ps1
+  6  Host already Denied (stale lifecycle timeout) aEUR" restart via launch-offline-replay-for-od.ps1
 #>
 [CmdletBinding()]
 param(
@@ -111,7 +111,7 @@ public static class WatchOfflineVisionV2 {
     uint fgThread = fg != IntPtr.Zero ? GetWindowThreadProcessId(fg, out unused) : 0;
     if (fgThread != 0) AttachThreadInput(current, fgThread, true);
     if (target != 0) AttachThreadInput(current, target, true);
-    // No ShowWindow here — SW_RESTORE during LoginOnReplay has correlated with
+    // No ShowWindow here -- SW_RESTORE during LoginOnReplay has correlated with
     // OnBackground / window_lost in live OD pulses.
     SetForegroundWindow(hWnd);
     if (target != 0) AttachThreadInput(current, target, false);
@@ -354,8 +354,8 @@ function Test-ReadySample(
     if ($DialogMeanL -lt $ReadyMinLuminance) { return $false }
     # Prefer post-sync: first bright after dim is the interactive window.
     if ($SeenSyncing) { return $true }
-    # Grace: bright idle without observed sync â€” must clear both age floors so
-    # we do not click at ~2â€“3s (dialog dismisses, no Start replay in blitz-log).
+    # Grace: bright idle without observed sync aEUR" must clear both age floors so
+    # we do not click at ~2aEUR"3s (dialog dismisses, no Start replay in blitz-log).
     if (-not $FirstBrightAt -or -not $FirstDialogAt) { return $false }
     $brightAge = ((Get-Date) - $FirstBrightAt).TotalSeconds
     $dialogAge = ((Get-Date) - $FirstDialogAt).TotalSeconds
@@ -503,8 +503,8 @@ try {
                 break
             }
 
-            # Owner sync: dim dialog (~31 L) with collapsed-but-nonzero orange (~60â€“80).
-            # Blank frames (Lâ‰ˆ0) and bright low-orange splash must NOT arm SeenSyncing.
+            # Owner sync: dim dialog (~31 L) with collapsed-but-nonzero orange (~60aEUR"80).
+            # Blank frames (La%^0) and bright low-orange splash must NOT arm SeenSyncing.
             $looksSyncing = (
                 $dialogMeanL -gt 18 -and
                 $dialogMeanL -lt $SyncMaxLuminance -and
@@ -576,7 +576,7 @@ try {
         Start-Sleep -Milliseconds $holdMs
     }
 
-    # Re-check after hold â€” dialog may have timed out during hold.
+    # Re-check after hold aEUR" dialog may have timed out during hold.
     $game = Get-GameWindow
     if (-not $game) {
         Write-Host 'watch_offline: window_lost_after_hold'
@@ -774,7 +774,7 @@ try {
             # false-positive (OD-017) makes the final-frame pixel check
             # unreliable once playback is live, so the marker resolves the
             # dialog check in visual-only too. Note the marker proves playback
-            # STARTED, not that a dialog is gone — dismissal is round 1's
+            # STARTED, not that a dialog is gone -- dismissal is round 1's
             # click's job; in the hangar flow there is no dialog at all.
             $gateOk = $true
             $dialogGone = $true
