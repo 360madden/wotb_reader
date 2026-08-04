@@ -10,7 +10,8 @@
       "source_url": "https://github.com/x64dbg/x64dbg",
       "releases_url": "https://github.com/x64dbg/x64dbg/releases",
       "installed_path": "C:\\work\\tools\\x64dbg",
-      "launcher": "release\\x64\\x64dbg.exe",
+      "launcher": "release\\x96dbg.exe",
+      "launcher_notes": "x96dbg.exe is the bitness-aware launcher: for -p PID it inspects the target (IsWow64Process) and starts x32\\x32dbg.exe for 32-bit (WOW64) processes or x64\\x64dbg.exe for 64-bit ones (verified in x64dbg_launcher.cpp loadPid). The game is x86, so pre-arm-debugger.ps1 launches via x96dbg.exe and the debugger window that opens is x32dbg.",
       "workflow_phase": "dynamic-analysis",
       "installation_status": "verified-local",
       "approval_status": "approved-local",
@@ -21,8 +22,9 @@
         "sha256_matches": true
       },
       "spdx_license": "GPL-3.0-only",
-      "platforms": ["win64"],
-      "install_instructions": "Snapshot zip snapshot_2026-05-27_12-11.zip from GitHub releases, extracted to C:\\work\\tools\\x64dbg\\, launcher release\\x64\\x64dbg.exe",
+      "platforms": ["win32", "win64"],
+      "platform_notes": "Target game is x86 (WOW64-observed 32-bit); use release\\x96dbg.exe so the launcher selects the x32 build for the game process.",
+      "install_instructions": "Snapshot zip snapshot_2026-05-27_12-11.zip from GitHub releases, extracted to C:\\work\\tools\\x64dbg\\, launcher release\\x96dbg.exe (bitness-aware; x32\\x32dbg.exe and x64\\x64dbg.exe ship alongside)",
       "registered_at_utc": "2026-07-30T00:00:00Z"
     },
     {

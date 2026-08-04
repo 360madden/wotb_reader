@@ -98,6 +98,10 @@ function Find-X64DbgExe {
     }
     $roots = @('C:\work\tools\x64dbg', 'C:\x64dbg', 'C:\tools\x64dbg')
     foreach ($r in $roots) {
+        # x96dbg.exe auto-selects x32/x64 by target bitness (preferred for the
+        # x86 game); the x64 build alone cannot debug the 32-bit target.
+        $l = Join-Path $r 'release\x96dbg.exe'
+        if (Test-Path -LiteralPath $l) { return $l }
         $p = Join-Path $r 'release\x64\x64dbg.exe'
         if (Test-Path -LiteralPath $p) { return $p }
     }
@@ -105,7 +109,10 @@ function Find-X64DbgExe {
 }
 
 function Get-X64DbgProcess {
-    return Get-Process -Name x64dbg -ErrorAction SilentlyContinue |
+    # The pre-arm launcher (x96dbg.exe) starts x32\x32dbg.exe for the x86
+    # (WOW64) game, so the attached debugger process may be named x32dbg
+    # rather than x64dbg. Match both.
+    return Get-Process -Name x64dbg, x32dbg -ErrorAction SilentlyContinue |
         Select-Object -First 1
 }
 

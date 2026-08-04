@@ -36,11 +36,18 @@ game values.
 **Installation (done 2026-07-31):**
 1. Download the latest release zip (e.g., `snapshot_2026-05-27_12-11.zip`)
 2. Extract to `C:\work\tools\x64dbg\` (or any path without spaces)
-3. Run `release\x64\x64dbg.exe` (for 64-bit)
-4. No installer needed — portable executable
+3. No installer needed — portable executable
+
+**Bitness (important):** the target game is **x86** (WOW64-observed 32-bit;
+the scanner resolves `ImageFileMachineI386`). x64dbg's x64 build cannot
+properly debug a 32-bit process, so launch the **`release\x96dbg.exe`
+launcher** (or `release\x32\x32dbg.exe` directly): x96dbg inspects the
+target with `IsWow64Process` and starts the x32 build for the game
+(verified in `x64dbg_launcher.cpp loadPid`). The pre-arm script and the
+automated write-trace already do this.
 
 **Verification:**
-1. Launch `x64dbg.exe`
+1. Launch `release\x96dbg.exe`
 2. File → Open → select any `.exe` to confirm the UI loads
 3. Confirm the **Dump**, **Registers**, and **Disassembler** panes are visible
 
@@ -437,7 +444,7 @@ Expand-Archive -Path $out -DestinationPath "C:\work\tools\x64dbg" -Force
 # Create desktop shortcut
 $wshell = New-Object -ComObject WScript.Shell
 $shortcut = $wshell.CreateShortcut("$env:USERPROFILE\Desktop\x64dbg.lnk")
-$shortcut.TargetPath = "C:\work\tools\x64dbg\release\x64\x64dbg.exe"
+$shortcut.TargetPath = "C:\work\tools\x64dbg\release\x96dbg.exe"
 $shortcut.Save()
 Write-Host "x64dbg installed to C:\work\tools\x64dbg"
 ```
