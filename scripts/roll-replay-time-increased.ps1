@@ -77,13 +77,19 @@ param(
     # and the driver keeps addresses whose CURRENT value equals -ExactTarget
     # within -ExactTolerance (wire fields deltaTarget/deltaTolerance are
     # reused). No Space pulses fire in exact mode - the replay must stay
-    # paused so the value freezes at the target.
+    # paused so the value freezes at the target. Before scanning, the driver
+    # runs scripts/replay-play-state.ps1 to CONFIRM the pause via the
+    # bottom-center HUD icon (two bars = paused); per-round probes detect an
+    # accidental resume (triangle = playing). -SkipPauseProbe bypasses the
+    # pixel check (HUD hidden / headless validation only).
     [ValidateSet('increased', 'delta', 'exact')]
     [string]$CompareMode = 'increased',
     [double]$DeltaTarget = 0,
     [double]$DeltaTolerance = -1,
     [double]$ExactTarget = 0,
     [double]$ExactTolerance = -1,
+    [switch]$SkipPauseProbe,
+    [int]$PauseProbeTimeoutSeconds = 60,
     # OD-026 steady-state gate. OD-026 probing showed the 66M+ snapshot state
     # is STABLE for this game session (three snapshots within 0.05%, ~535MB,
     # ~1880 regions) - not a transient load spike - and rolling converges from
@@ -239,6 +245,22 @@ try {
             exit 5
         }
         Write-Roll ("exact_mode target=" + $ExactTarget + " tolerance=" + $ExactTolerance + " (replay must stay PAUSED; no Space pulses)")
+        # Pause confirmation via the replay HUD icon (scripts/replay-play-state.ps1):
+        # two vertical bars = paused, triangle = playing. Fail closed: without a
+        # confirmed paused icon the exact scan would read a moving value.
+        if (-not $SkipPauseProbe) {
+            $probe = Join-Path $PSScriptRoot 'replay-play-state.ps1'
+            Write-Roll ("PAUSE_PROBE waiting for paused icon (press SPACE in the game to pause at the target frame; up to " + $PauseProbeTimeoutSeconds + "s)")
+            $null = & $probe -WaitFor paused -TimeoutSeconds $PauseProbeTimeoutSeconds
+            if ($LASTEXITCODE -ne 0) {
+                Write-Roll ('FAILED_pause_not_confirmed code=' + $LASTEXITCODE + ' (HUD hidden? toggle the eye icon; or -SkipPauseProbe)')
+                exit 3
+            }
+            Write-Roll 'PAUSE_PROBE confirmed=paused'
+        }
+        else {
+            Write-Roll 'PAUSE_PROBE skipped (operator assumes paused)'
+        }
     }
 
     $valueSize = if ($ValueKind -eq 'Double') { 8 } else { 4 }
@@ -355,6 +377,21 @@ try {
             $survivorLabel = if ($CompareMode -eq 'exact') { 'matched' } else { 'increased' }
             Write-Roll ("round={0} previous={1} {2}={3} retained={4} truncated={5} rolling={6}" -f `
                 $round, $cmp.previousCount, $survivorLabel, $survivors, $cmp.retainedCount, $cmp.truncated, $cmp.comparedAgainstRollingBaseline)
+
+            # Pixel pause-state feedback in exact mode: if the HUD icon flipped
+            # to 'playing', the replay resumed (or the operator pressed Space)
+            # and the frozen target is gone - the match will collapse. Warn
+            # loudly instead of logging a confusing plateau. Advisory only:
+            # 'unknown' (HUD hidden) is not an error.
+            if ($CompareMode -eq 'exact' -and -not $SkipPauseProbe) {
+                $probeState = (& $probe | Select-Object -First 1) -replace '^replay_state=', ''
+                if ($probeState -eq 'playing') {
+                    Write-Roll ('EXACT_resumed_detected at round=' + $round + ' (replay is PLAYING - value will drift; pause again)')
+                }
+                elseif ($probeState -eq 'unknown') {
+                    Write-Roll ('EXACT_state_unknown at round=' + $round + ' (HUD icon not visible)')
+                }
+            }
 
             # Steady-state gate on round 1 (previousCount == snapshot count).
             if ($round -eq 1 -and [long]$cmp.previousCount -gt $MaxInitialCandidates) {

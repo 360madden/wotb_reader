@@ -34,10 +34,14 @@ without target/tolerance.
 
 1. Operator pauses the replay at a decoded clock value **T1** (e.g. 60.000s
    into the battle); record T1 from the decoded session data.
-2. Run `roll-replay-time-increased.ps1 -CompareMode exact` for each unit
+2. **Pause confirmed by pixel probe** (`scripts/replay-play-state.ps1`, 2026-08-04):
+   the driver waits for the bottom-center HUD icon to show `paused` (two bars,
+   not the play triangle) before scanning, and per-round probes warn on an
+   accidental resume. `-SkipPauseProbe` bypasses (HUD hidden / headless).
+3. Run `roll-replay-time-increased.ps1 -CompareMode exact` for each unit
    variant: `-ExactTarget <T1>`, `<T1*1000>`, `<T1*1000000>` with
    `-ExactTolerance 0.05` (Double, 8-byte aligned).
-3. Record the per-variant collapse from the ~66M baseline.
+4. Record the per-variant collapse from the ~66M baseline.
 
 **Exit:** at least one variant collapses to ≤ ~1% of baseline with stable
 addresses across rounds. If neither session collapses below ~1%, **stop** —
