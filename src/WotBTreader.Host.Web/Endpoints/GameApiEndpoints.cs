@@ -525,19 +525,23 @@ internal static class GameApiEndpoints
         if (string.IsNullOrWhiteSpace(sessionId))
             return Results.BadRequest(new { error = "discover.session_id_required" });
         bool isDelta = request.CompareMode == "delta";
-        if (request.CompareMode is not ("changed" or "unchanged" or "increased" or "decreased" or "delta"))
+        bool isExact = request.CompareMode == "exact";
+        if (request.CompareMode is not ("changed" or "unchanged" or "increased" or "decreased" or "delta" or "exact"))
             return Results.BadRequest(new { error = "discover.invalid_compare_mode" });
         if (request.MaxCandidates is < 1 or > 500)
             return Results.BadRequest(new { error = "discover.invalid_options" });
-        if (isDelta
+        if ((isDelta || isExact)
             && (!request.DeltaTarget.HasValue || !request.DeltaTolerance.HasValue
                 || !double.IsFinite(request.DeltaTarget.Value)
                 || !double.IsFinite(request.DeltaTolerance.Value)
                 || request.DeltaTolerance.Value < 0))
         {
-            return Results.BadRequest(new { error = "discover.invalid_delta_options" });
+            return Results.BadRequest(new
+            {
+                error = isExact ? "discover.invalid_exact_options" : "discover.invalid_delta_options",
+            });
         }
-        if (!isDelta && (request.DeltaTarget.HasValue || request.DeltaTolerance.HasValue))
+        if (!isDelta && !isExact && (request.DeltaTarget.HasValue || request.DeltaTolerance.HasValue))
         {
             return Results.BadRequest(new { error = "discover.delta_only_with_delta_mode" });
         }

@@ -302,18 +302,19 @@ internal sealed class MemoryScanEngine
 
         string normalizedCompareMode = compareMode?.Trim().ToLowerInvariant() ?? string.Empty;
         bool isDeltaMode = normalizedCompareMode == "delta";
-        if (normalizedCompareMode is not ("changed" or "unchanged" or "increased" or "decreased" or "delta")
+        bool isExactMode = normalizedCompareMode == "exact";
+        if (normalizedCompareMode is not ("changed" or "unchanged" or "increased" or "decreased" or "delta" or "exact")
             || maxCandidates is < 1 or > 10_000
-            || (isDeltaMode
+            || ((isDeltaMode || isExactMode)
                 && (!deltaTarget.HasValue || !deltaTolerance.HasValue
                     || !double.IsFinite(deltaTarget.Value)
                     || !double.IsFinite(deltaTolerance.Value)
                     || deltaTolerance.Value < 0))
-            || (!isDeltaMode && (deltaTarget.HasValue || deltaTolerance.HasValue)))
+            || (!isDeltaMode && !isExactMode && (deltaTarget.HasValue || deltaTolerance.HasValue)))
         {
             return Error<CompareResult>(
                 "discover.invalid_options",
-                "Compare mode must be changed, unchanged, increased, decreased, or delta, and maxCandidates must be between 1 and 10000. Delta mode requires a finite delta target and a non-negative finite tolerance; other modes reject delta parameters.");
+                "Compare mode must be changed, unchanged, increased, decreased, delta, or exact, and maxCandidates must be between 1 and 10000. Delta and exact modes require a finite target and a non-negative finite tolerance; other modes reject those parameters.");
         }
 
         DateTimeOffset startedAt = _timeProvider.GetUtcNow();
@@ -433,6 +434,16 @@ internal sealed class MemoryScanEngine
                     "decreased" => comparison < 0,
                     "delta" => PassesDelta(
                         oldValue, newValue, previous.Filter.ValueKind,
+                        deltaTarget!.Value, deltaTolerance!.Value),
+                    // Exact-value pause scan: the replay is paused at a known
+                    // decoded value (e.g. replayTime = 60.000s), so keep
+                    // candidates whose CURRENT value matches the absolute
+                    // target. The previous snapshot value is irrelevant — a
+                    // frozen field reads equal anyway. This is the strongest
+                    // filter the campaign has: tickers cannot contaminate a
+                    // paused frame.
+                    "exact" => PassesExact(
+                        newValue, previous.Filter.ValueKind,
                         deltaTarget!.Value, deltaTolerance!.Value),
                     _ => !equal,
                 };
@@ -714,6 +725,28 @@ internal sealed class MemoryScanEngine
     }
 
     /// <summary>
+    /// True when the value decodes to a number within <paramref name="tolerance"/>
+    /// of the absolute <paramref name="target"/>. This is the exact-value
+    /// pause-scan primitive: with the replay paused at a known decoded value
+    /// (replayTime at a given frame, a position, an HP after a damage event),
+    /// the true field must equal the target exactly, so tickers and decoys are
+    /// excluded by construction.
+    /// </summary>
+    internal static bool PassesExact(
+        ReadOnlySpan<byte> value,
+        MemoryValueKind kind,
+        double target,
+        double tolerance)
+    {
+        if (!TryDecodeNumber(value, kind, out double number))
+        {
+            return false;
+        }
+
+        return Math.Abs(number - target) <= tolerance;
+    }
+
+    /// <summary>
     /// True when the numeric difference between the two values is within
     /// <paramref name="tolerance"/> of <paramref name="target"/>. This is the
     /// replay-marker delta primitive: keep candidates whose observed change
@@ -727,33 +760,48 @@ internal sealed class MemoryScanEngine
         double target,
         double tolerance)
     {
-        if (oldValue.Length != newValue.Length)
-        {
-            return false;
-        }
-
-        (double oldNumber, double newNumber) = kind switch
-        {
-            MemoryValueKind.FloatValue when oldValue.Length == 4
-                => (BitConverter.ToSingle(oldValue), BitConverter.ToSingle(newValue)),
-            MemoryValueKind.DoubleValue when oldValue.Length == 8
-                => (BitConverter.ToDouble(oldValue), BitConverter.ToDouble(newValue)),
-            MemoryValueKind.Int32Value when oldValue.Length == 4
-                => (BitConverter.ToInt32(oldValue), BitConverter.ToInt32(newValue)),
-            MemoryValueKind.UInt32Value when oldValue.Length == 4
-                => (BitConverter.ToUInt32(oldValue), BitConverter.ToUInt32(newValue)),
-            MemoryValueKind.Int64Value when oldValue.Length == 8
-                => (BitConverter.ToInt64(oldValue), BitConverter.ToInt64(newValue)),
-            MemoryValueKind.UInt64Value when oldValue.Length == 8
-                => (BitConverter.ToUInt64(oldValue), BitConverter.ToUInt64(newValue)),
-            _ => (double.NaN, double.NaN),
-        };
-        if (double.IsNaN(oldNumber) || double.IsNaN(newNumber))
+        if (oldValue.Length != newValue.Length
+            || !TryDecodeNumber(oldValue, kind, out double oldNumber)
+            || !TryDecodeNumber(newValue, kind, out double newNumber))
         {
             return false;
         }
 
         return Math.Abs((newNumber - oldNumber) - target) <= tolerance;
+    }
+
+    // Shared kind/length -> double decode for the numeric filter primitives.
+    // UInt64 values lose sub-tick precision above 2^53 (e.g. a FILETIME clock
+    // ~1.3e18); fine for the Double/Int/Float campaign kinds.
+    private static bool TryDecodeNumber(
+        ReadOnlySpan<byte> value,
+        MemoryValueKind kind,
+        out double number)
+    {
+        switch (kind)
+        {
+            case MemoryValueKind.FloatValue when value.Length == 4:
+                number = BitConverter.ToSingle(value);
+                return true;
+            case MemoryValueKind.DoubleValue when value.Length == 8:
+                number = BitConverter.ToDouble(value);
+                return true;
+            case MemoryValueKind.Int32Value when value.Length == 4:
+                number = BitConverter.ToInt32(value);
+                return true;
+            case MemoryValueKind.UInt32Value when value.Length == 4:
+                number = BitConverter.ToUInt32(value);
+                return true;
+            case MemoryValueKind.Int64Value when value.Length == 8:
+                number = BitConverter.ToInt64(value);
+                return true;
+            case MemoryValueKind.UInt64Value when value.Length == 8:
+                number = BitConverter.ToUInt64(value);
+                return true;
+            default:
+                number = double.NaN;
+                return false;
+        }
     }
 
     private static int CompareValues(ReadOnlySpan<byte> oldValue, ReadOnlySpan<byte> newValue, MemoryValueKind kind) => kind switch

@@ -412,6 +412,62 @@ public sealed class UltimateScannerUnitTests
     }
 
     [TestMethod]
+    public void CompareRejectsExactModeWithoutTargetBeforeOpeningProcess()
+    {
+        var engine = new MemoryScanEngine(
+            TimeProvider.System,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<MemoryScanEngine>.Instance);
+        var observation = new AuthorizedMemoryObservation(
+            1,
+            1,
+            "C:\\game.exe",
+            "test",
+            new ContentHash(new string('a', 64)),
+            DateTimeOffset.UtcNow.AddMinutes(1),
+            new AuthorizationReadGate());
+
+        OperationResult<MemoryScanEngine.CompareResult> result = engine.Compare(
+            observation,
+            0x140000000,
+            "000001",
+            "exact",
+            10,
+            false);
+
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual("discover.invalid_options", result.Error?.Code);
+    }
+
+    [TestMethod]
+    public void CompareRejectsExactModeWithNegativeToleranceBeforeOpeningProcess()
+    {
+        var engine = new MemoryScanEngine(
+            TimeProvider.System,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<MemoryScanEngine>.Instance);
+        var observation = new AuthorizedMemoryObservation(
+            1,
+            1,
+            "C:\\game.exe",
+            "test",
+            new ContentHash(new string('a', 64)),
+            DateTimeOffset.UtcNow.AddMinutes(1),
+            new AuthorizationReadGate());
+
+        OperationResult<MemoryScanEngine.CompareResult> result = engine.Compare(
+            observation,
+            0x140000000,
+            "000001",
+            "exact",
+            10,
+            false,
+            deltaTarget: 60.0,
+            deltaTolerance: -0.1);
+
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual("discover.invalid_options", result.Error?.Code);
+    }
+
+    [TestMethod]
     public void CompareRejectsDeltaParametersOnNonDeltaModeBeforeOpeningProcess()
     {
         var engine = new MemoryScanEngine(
@@ -482,6 +538,49 @@ public sealed class UltimateScannerUnitTests
             MemoryValueKind.Bytes,
             1.0,
             0.1));
+    }
+
+    [TestMethod]
+    [DataRow(60.0, 60.0, 0.05, true)]
+    [DataRow(60.0, 60.03, 0.05, true)]
+    [DataRow(60.0, 60.2, 0.05, false)]
+    [DataRow(120.0, 120.0, 0.001, true)]
+    [DataRow(-5.0, -5.001, 0.01, true)]
+    public void PassesExactMatchesAbsoluteValueWithinTolerance(
+        double target,
+        double value,
+        double tolerance,
+        bool expected)
+    {
+        // The v3 exact-value pause scan: a paused replay freezes replayTime at
+        // a known decoded value, so the filter is an absolute match, not a
+        // relative transition.
+        bool actual = MemoryScanEngine.PassesExact(
+            BitConverter.GetBytes(value),
+            MemoryValueKind.DoubleValue,
+            target,
+            tolerance);
+        Assert.AreEqual(expected, actual);
+    }
+
+    [TestMethod]
+    public void PassesExactMatchesFloatAndIntKinds()
+    {
+        Assert.IsTrue(MemoryScanEngine.PassesExact(
+            BitConverter.GetBytes(4.0f), MemoryValueKind.FloatValue, 4.0, 0.001));
+        Assert.IsTrue(MemoryScanEngine.PassesExact(
+            BitConverter.GetBytes(42), MemoryValueKind.Int32Value, 42.0, 0.0));
+        Assert.IsFalse(MemoryScanEngine.PassesExact(
+            BitConverter.GetBytes(43), MemoryValueKind.Int32Value, 42.0, 0.0));
+    }
+
+    [TestMethod]
+    public void PassesExactRejectsMismatchedLengthAndBytesKind()
+    {
+        Assert.IsFalse(MemoryScanEngine.PassesExact(
+            [1, 2, 3], MemoryValueKind.FloatValue, 1.0, 0.1));
+        Assert.IsFalse(MemoryScanEngine.PassesExact(
+            [0x01], MemoryValueKind.Bytes, 1.0, 0.1));
     }
 
     [TestMethod]

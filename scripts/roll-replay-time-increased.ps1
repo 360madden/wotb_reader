@@ -16,6 +16,12 @@
   adapter is unavailable). -AutoSpace is an explicit opt-in pulse loop for
   unattended rounds; only use it when the game window is foreground.
 
+  -CompareMode 'exact' is the v3 exact-value pause scan: the operator pauses
+  the replay at a known decoded value (e.g. replayTime = 60.0s), and the
+  driver keeps addresses whose frozen value equals -ExactTarget within
+  -ExactTolerance. No Space pulses are sent; each round is a stability
+  re-read of the paused frame.
+
 .EXITCODES
   0  Rolling completed (target reached or rounds exhausted)
   2  Rendezvous / host missing
@@ -65,10 +71,19 @@ param(
     # tolerance. Both are required in delta mode; they are rejected if passed
     # with a non-delta mode. Rolling baseline advances each round so the delta
     # is measured against the PREVIOUS round, not the original snapshot.
-    [ValidateSet('increased', 'delta')]
+    #
+    # -CompareMode 'exact' (v3) is the exact-value pause scan: the operator
+    # pauses the replay at a known decoded value (replayTime at a given frame)
+    # and the driver keeps addresses whose CURRENT value equals -ExactTarget
+    # within -ExactTolerance (wire fields deltaTarget/deltaTolerance are
+    # reused). No Space pulses fire in exact mode - the replay must stay
+    # paused so the value freezes at the target.
+    [ValidateSet('increased', 'delta', 'exact')]
     [string]$CompareMode = 'increased',
     [double]$DeltaTarget = 0,
     [double]$DeltaTolerance = -1,
+    [double]$ExactTarget = 0,
+    [double]$ExactTolerance = -1,
     # OD-026 steady-state gate. OD-026 probing showed the 66M+ snapshot state
     # is STABLE for this game session (three snapshots within 0.05%, ~535MB,
     # ~1880 regions) - not a transient load spike - and rolling converges from
@@ -212,6 +227,20 @@ try {
     }
     Write-Roll 'gate=OfflineReplayVerified'
 
+    if ($CompareMode -eq 'exact') {
+        # Portable finite check: [double]::IsFinite does not exist on Windows
+        # PowerShell 5.1 (.NET Framework), which is the OD workflow host.
+        $targetFinite = -not [double]::IsNaN($ExactTarget) -and `
+            $ExactTarget -ne [double]::PositiveInfinity -and $ExactTarget -ne [double]::NegativeInfinity
+        $tolFinite = -not [double]::IsNaN($ExactTolerance) -and `
+            $ExactTolerance -ne [double]::PositiveInfinity -and $ExactTolerance -ne [double]::NegativeInfinity
+        if (-not $targetFinite -or -not $tolFinite -or $ExactTolerance -lt 0) {
+            Write-Roll 'FAILED_exact_requires_finite_target_and_nonnegative_tolerance'
+            exit 5
+        }
+        Write-Roll ("exact_mode target=" + $ExactTarget + " tolerance=" + $ExactTolerance + " (replay must stay PAUSED; no Space pulses)")
+    }
+
     $valueSize = if ($ValueKind -eq 'Double') { 8 } else { 4 }
     $kindAlignment = if ($ValueKind -eq 'Double') { 8 } else { 4 }
     $snapAlignment = if ($Alignment -eq 8 -and $ValueKind -eq 'Float') { $kindAlignment } else { $Alignment }
@@ -261,13 +290,17 @@ try {
         $survivors = -1
         $insaneSnapshot = $false
         for ($round = 1; $round -le $roundLimit; $round++) {
-            if ($AutoSpace) { Send-SpacePulse }
+            if ($AutoSpace -and $CompareMode -ne 'exact') { Send-SpacePulse }
             # Two-phase pulse (OD-034): full TransitionSeconds for the
             # expensive early rounds, TailTransitionSeconds once the survivor
             # set is small (survivors holds the previous round's count; -1 on
             # round 1 means the full pulse is always used there).
-            $pulseSeconds = $TransitionSeconds
-            if ($survivors -ge 0 -and $survivors -le $TailThreshold) {
+            #
+            # Exact mode keeps the replay PAUSED: the target is the frozen
+            # decoded value, so rounds are a 1s stability re-read (a resume
+            # pulse would change the field away from the target).
+            $pulseSeconds = if ($CompareMode -eq 'exact') { 1 } else { $TransitionSeconds }
+            if ($CompareMode -ne 'exact' -and $survivors -ge 0 -and $survivors -le $TailThreshold) {
                 $pulseSeconds = $TailTransitionSeconds
             }
             Write-Roll ("round={0} pulse_window={1}s" -f $round, $pulseSeconds)
@@ -294,6 +327,13 @@ try {
                 $cmpBody.deltaTarget = $DeltaTarget
                 $cmpBody.deltaTolerance = $DeltaTolerance
             }
+            elseif ($CompareMode -eq 'exact') {
+                # Exact mode reuses the delta wire fields: target = the frozen
+                # absolute value the paused replay clock must match, tolerance
+                # = the absolute epsilon.
+                $cmpBody.deltaTarget = $ExactTarget
+                $cmpBody.deltaTolerance = $ExactTolerance
+            }
             $cmpBody = $cmpBody | ConvertTo-Json
             $cmp = Invoke-OdApi -Path "/api/v1/game/discover/compare/$sessionId" -Method Post -Body $cmpBody
             if ($cmp.PSObject.Properties['error']) {
@@ -306,12 +346,15 @@ try {
             # bump).
             $prevCmp = $lastCmp
             $lastCmp = $cmp
-            # Survivor set = IncreasedCount for the round. RetainedCount only
-            # reports unreadable chunks carried forward, not survivors.
-            $survivors = [int]$cmp.increasedCount
+            # Survivor set = the filter-passing count: IncreasedCount for
+            # transition modes, CurrentCount for exact (the previous snapshot
+            # is irrelevant to an absolute match). RetainedCount only reports
+            # unreadable chunks carried forward, not survivors.
+            $survivors = if ($CompareMode -eq 'exact') { [int]$cmp.currentCount } else { [int]$cmp.increasedCount }
             $seq += $survivors
-            Write-Roll ("round={0} previous={1} increased={2} retained={3} truncated={4} rolling={5}" -f `
-                $round, $cmp.previousCount, $survivors, $cmp.retainedCount, $cmp.truncated, $cmp.comparedAgainstRollingBaseline)
+            $survivorLabel = if ($CompareMode -eq 'exact') { 'matched' } else { 'increased' }
+            Write-Roll ("round={0} previous={1} {2}={3} retained={4} truncated={5} rolling={6}" -f `
+                $round, $cmp.previousCount, $survivorLabel, $survivors, $cmp.retainedCount, $cmp.truncated, $cmp.comparedAgainstRollingBaseline)
 
             # Steady-state gate on round 1 (previousCount == snapshot count).
             if ($round -eq 1 -and [long]$cmp.previousCount -gt $MaxInitialCandidates) {
@@ -344,22 +387,22 @@ try {
             }
 
             if ($survivors -eq 0) {
-                # OD-044 live finding: increased=0 is a value-bound plateau
-                # (the tail stopped ticking), NOT a 0-survivor target. Stop
+                # OD-044 live finding: survivors=0 is a value-bound plateau
+                # (the tail stopped matching), NOT a 0-survivor target. Stop
                 # rolling and restore the last NON-zero round's compare for
                 # -AddressFile (its candidates were serialized by the small-set
                 # bump; the plateau round's compare has none). previousCount of
-                # the plateau round equals the last non-zero increased count.
+                # the plateau round equals the last non-zero survivor count.
                 if ($null -eq $prevCmp) {
-                    # Degenerate: increased=0 on round 1 (no previous round).
+                    # Degenerate: survivors=0 on round 1 (no previous round).
                     # The gate is almost certainly flipping; stop honestly.
-                    Write-Roll ('PLATEAU increased=0 at round=' + $round + ' - no previous round to restore; stop')
+                    Write-Roll ('PLATEAU survivors=0 at round=' + $round + ' - no previous round to restore; stop')
                     break
                 }
                 $lastNonZero = [long]$cmp.previousCount
                 $lastCmp = $prevCmp
                 $survivors = $lastNonZero
-                Write-Roll ('PLATEAU increased=0 at round=' + $round + ' - restored last non-zero round previous=' + $lastNonZero)
+                Write-Roll ('PLATEAU survivors=0 at round=' + $round + ' - restored last non-zero round previous=' + $lastNonZero)
                 break
             }
 
@@ -391,6 +434,10 @@ try {
                             $harvestBody.deltaTarget = $DeltaTarget
                             $harvestBody.deltaTolerance = $DeltaTolerance
                         }
+                        elseif ($CompareMode -eq 'exact') {
+                            $harvestBody.deltaTarget = $ExactTarget
+                            $harvestBody.deltaTolerance = $ExactTolerance
+                        }
                         $harvestBody = $harvestBody | ConvertTo-Json
                         $harvest = Invoke-OdApi -Path "/api/v1/game/discover/compare/$sessionId" -Method Post -Body $harvestBody
                         if ($harvest.PSObject.Properties['error']) {
@@ -398,8 +445,9 @@ try {
                             $harvest = $null
                             break
                         }
-                        $survivors = [int]$harvest.increasedCount
-                        Write-Roll ("harvest attempt=" + $h + " increased=" + $survivors + " candidates=" + @($harvest.candidates).Count)
+                        $survivors = if ($CompareMode -eq 'exact') { [int]$harvest.currentCount } else { [int]$harvest.increasedCount }
+                        $survivorLabel = if ($CompareMode -eq 'exact') { 'matched' } else { 'increased' }
+                        Write-Roll ("harvest attempt=" + $h + " " + $survivorLabel + "=" + $survivors + " candidates=" + @($harvest.candidates).Count)
                         if ($survivors -gt 0) {
                             $lastCmp = $harvest
                             break

@@ -215,16 +215,18 @@ public sealed record OffsetCompareRequest
     public bool RollingBaseline { get; init; }
 
     /// <summary>
-    /// Required with <see cref="CompareMode"/> = "delta": the expected numeric
-    /// change between the snapshot and current memory (e.g. a replay-derived
-    /// position or speed delta). Must be finite.
+    /// Required with <see cref="CompareMode"/> = "delta" or "exact": the
+    /// expected numeric value. For "delta" this is the expected change between
+    /// the snapshot and current memory (e.g. a replay-derived position or speed
+    /// delta); for "exact" it is the absolute value the current memory must
+    /// match (e.g. the decoded replay clock at a paused frame). Must be finite.
     /// </summary>
     public double? DeltaTarget { get; init; }
 
     /// <summary>
-    /// Required with <see cref="CompareMode"/> = "delta": how close the
-    /// observed change must be to <see cref="DeltaTarget"/>. Must be finite
-    /// and non-negative.
+    /// Required with <see cref="CompareMode"/> = "delta" or "exact": how close
+    /// the observed value/change must be to <see cref="DeltaTarget"/>. Must be
+    /// finite and non-negative.
     /// </summary>
     public double? DeltaTolerance { get; init; }
 }

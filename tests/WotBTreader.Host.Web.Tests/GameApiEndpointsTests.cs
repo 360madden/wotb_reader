@@ -692,6 +692,69 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task CompareRejectsExactWithoutTolerance()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.CompareSnapshotAsync(
+            scanner,
+            "000001",
+            new OffsetCompareRequest
+            {
+                CompareMode = "exact",
+                DeltaTarget = 60.0,
+            },
+            TestContext.CancellationToken);
+
+        JsonElement response = BadRequestAnonymous(result);
+        Assert.AreEqual("discover.invalid_exact_options", response.GetProperty("error").GetString());
+    }
+
+    [TestMethod]
+    public async Task CompareRejectsExactWithNegativeTolerance()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.CompareSnapshotAsync(
+            scanner,
+            "000001",
+            new OffsetCompareRequest
+            {
+                CompareMode = "exact",
+                DeltaTarget = 60.0,
+                DeltaTolerance = -0.1,
+            },
+            TestContext.CancellationToken);
+
+        JsonElement response = BadRequestAnonymous(result);
+        Assert.AreEqual("discover.invalid_exact_options", response.GetProperty("error").GetString());
+    }
+
+    [TestMethod]
+    public async Task CompareForwardsExactParametersToScanner()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.CompareSnapshotAsync(
+            scanner,
+            "000001",
+            new OffsetCompareRequest
+            {
+                CompareMode = "exact",
+                DeltaTarget = 60.0,
+                DeltaTolerance = 0.05,
+                RollingBaseline = true,
+            },
+            TestContext.CancellationToken);
+
+        Assert.IsNotNull(OkAnonymous(result));
+        Assert.AreEqual("000001", scanner.LastCompareSessionId);
+        Assert.AreEqual("exact", scanner.LastCompareMode);
+        Assert.AreEqual(60.0, scanner.LastCompareDeltaTarget);
+        Assert.AreEqual(0.05, scanner.LastCompareDeltaTolerance);
+    }
+
+    [TestMethod]
     public async Task PointerChainMapsBoundedEvidenceResult()
     {
         var scanner = new FakeGameMemoryScanner
