@@ -154,6 +154,7 @@ docs/operations/handoffs/2026-08-03-offset-discovery-strategy-v2.md
 docs/operations/handoffs/2026-08-03-remove-cheat-engine.md
 docs/operations/handoffs/2026-08-04-od-recovery-044.md
 docs/operations/handoffs/2026-08-04-offset-strategy-v3-exact-scan.md
+docs/operations/handoffs/2026-08-04-psscriptanalyzer-gate.md
 docs/operations/handoffs/2026-08-04-reclass-registry-and-write-trace.md
 docs/operations/handoffs/2026-08-04-replay-start-flake-fix.md
 docs/operations/handoffs/README.md
@@ -209,7 +210,9 @@ research/uploaded-replays.md
 scripts/click-hangar-replay.ps1
 scripts/click-watch-offline.ps1
 scripts/ghidra-scan.py
+scripts/install-psscriptanalyzer.ps1
 scripts/invoke-cursor-agent.ps1
+scripts/invoke-scriptanalyzer.ps1
 scripts/launch-offline-replay-for-od.ps1
 scripts/od-018-session.ps1
 scripts/od-query-state.ps1
@@ -580,6 +583,8 @@ tools/find-static-roots.py
 tools/ghidra-scripts/FindOffsets.java
 tools/ghidra-scripts/FindOffsets.py
 tools/ghidra-scripts/ghidra-offset-candidates.json
+tools/psscriptanalyzer-custom-rules.psm1
+tools/psscriptanalyzer-settings.psd1
 tools/report-offset-evidence.ps1
 tools/src/WotBTreader.GameHarness/GameHarnessService.cs
 tools/src/WotBTreader.GameHarness/HarnessAudit.cs
