@@ -114,6 +114,67 @@ public sealed record SessionPageResponse
     public IReadOnlyList<SessionSummaryResponse> Items { get; init; } = [];
 }
 
+/// <summary>
+/// Per-player battle results statistics. Every member is nullable because the
+/// replay evidence may simply not record it; null means unknown, never zero.
+/// </summary>
+public sealed record BattleStatsResponse
+{
+    /// <summary>Credits earned, without special awards, medals, or premium.</summary>
+    public int? CreditsEarned { get; init; }
+
+    /// <summary>Base XP, the total without multipliers.</summary>
+    public int? BaseXp { get; init; }
+
+    /// <summary>Number of shots fired.</summary>
+    public int? Shots { get; init; }
+
+    /// <summary>Number of hits dealt.</summary>
+    public int? HitsDealt { get; init; }
+
+    /// <summary>Number of penetrations dealt.</summary>
+    public int? PenetrationsDealt { get; init; }
+
+    /// <summary>Damage dealt.</summary>
+    public int? DamageDealt { get; init; }
+
+    /// <summary>Assisted damage, first kind.</summary>
+    public int? DamageAssisted1 { get; init; }
+
+    /// <summary>Assisted damage, second kind.</summary>
+    public int? DamageAssisted2 { get; init; }
+
+    /// <summary>Number of hits received.</summary>
+    public int? HitsReceived { get; init; }
+
+    /// <summary>Number of non-penetrating hits received.</summary>
+    public int? NonPenetratingHitsReceived { get; init; }
+
+    /// <summary>Number of penetrations received.</summary>
+    public int? PenetrationsReceived { get; init; }
+
+    /// <summary>Number of enemies damaged.</summary>
+    public int? EnemiesDamaged { get; init; }
+
+    /// <summary>Number of enemies destroyed.</summary>
+    public int? EnemiesDestroyed { get; init; }
+
+    /// <summary>Victory points earned.</summary>
+    public int? VictoryPointsEarned { get; init; }
+
+    /// <summary>Victory points seized.</summary>
+    public int? VictoryPointsSeized { get; init; }
+
+    /// <summary>
+    /// Rating-battles rating; matches the Wargaming.net API mm_rating.
+    /// Display rating is calculated as 3000.0 + mm_rating * 10.0.
+    /// </summary>
+    public float? MmRating { get; init; }
+
+    /// <summary>Damage blocked by armor.</summary>
+    public int? DamageBlocked { get; init; }
+}
+
 /// <summary>One participant in a battle session.</summary>
 public sealed record ParticipantResponse
 {
@@ -149,6 +210,9 @@ public sealed record ParticipantResponse
 
     /// <summary>Confidence level backing the bot classification.</summary>
     public string BotStatusConfidence { get; init; } = string.Empty;
+
+    /// <summary>Battle results statistics, or null when the replay recorded none.</summary>
+    public BattleStatsResponse? BattleStats { get; init; }
 }
 
 /// <summary>One position sample captured during a battle.</summary>

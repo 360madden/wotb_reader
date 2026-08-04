@@ -138,6 +138,23 @@ public static class SyntheticReplayFactory
         WriteBytesField(roster, 2, rosterInfo.ToArray());
 
         using MemoryStream resultsInfo = new();
+        WriteVarintField(resultsInfo, 2, 1200);   // credits earned
+        WriteVarintField(resultsInfo, 3, 850);    // base XP
+        WriteVarintField(resultsInfo, 4, 15);     // shots
+        WriteVarintField(resultsInfo, 5, 9);      // hits dealt
+        WriteVarintField(resultsInfo, 7, 5);      // penetrations dealt
+        WriteVarintField(resultsInfo, 8, 2340);   // damage dealt
+        WriteVarintField(resultsInfo, 9, 300);    // assisted damage 1
+        WriteVarintField(resultsInfo, 10, 120);   // assisted damage 2
+        WriteVarintField(resultsInfo, 12, 2);     // hits received
+        WriteVarintField(resultsInfo, 13, 1);     // non-penetrating hits received
+        WriteVarintField(resultsInfo, 15, 1);     // penetrations received
+        WriteVarintField(resultsInfo, 17, 3);     // enemies damaged
+        WriteVarintField(resultsInfo, 18, 1);     // enemies destroyed
+        WriteVarintField(resultsInfo, 32, 40);    // victory points earned
+        WriteVarintField(resultsInfo, 33, 20);    // victory points seized
+        WriteFixed32Field(resultsInfo, 107, BitConverter.SingleToInt32Bits(2575.5f));
+        WriteVarintField(resultsInfo, 117, 410);  // damage blocked
         WriteVarintField(resultsInfo, 101, 42);
         WriteVarintField(resultsInfo, 102, 1);
         WriteVarintField(resultsInfo, 103, 2897);
@@ -248,6 +265,14 @@ public static class SyntheticReplayFactory
         WriteVarint(output, checked((ulong)((fieldNumber << 3) | 2)));
         WriteVarint(output, checked((ulong)bytes.Length));
         output.Write(bytes);
+    }
+
+    private static void WriteFixed32Field(Stream output, int fieldNumber, int bits)
+    {
+        WriteVarint(output, checked((ulong)((fieldNumber << 3) | 5)));
+        Span<byte> buffer = stackalloc byte[sizeof(int)];
+        BinaryPrimitives.WriteInt32LittleEndian(buffer, bits);
+        output.Write(buffer);
     }
 
     private static void WriteVarintField(Stream output, int fieldNumber, ulong value)

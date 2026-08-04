@@ -51,6 +51,7 @@ internal static class SqliteDomainReaders
             (TankClass)reader.GetInt32(10),
             (BotStatus)reader.GetInt32(11),
             (EvidenceConfidence)reader.GetInt32(12),
+            BattleStatsJson.Deserialize(SqliteValueConversions.ReadNullableString(reader, 18)),
             SqliteValueConversions.ReadEvidence(reader, 13));
 
     public static PositionSample ReadPosition(SqliteDataReader reader) =>

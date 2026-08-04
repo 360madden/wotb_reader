@@ -160,6 +160,55 @@ public sealed class ReadApiEndpointsTests
     }
 
     [TestMethod]
+    public void BattleStatsAreMappedFieldByField()
+    {
+        Participant participant = ParticipantFixture() with
+        {
+            BattleStats = new BattleStats(
+                CreditsEarned: 1200,
+                BaseXp: 850,
+                Shots: 15,
+                HitsDealt: 9,
+                PenetrationsDealt: 5,
+                DamageDealt: 2340,
+                DamageAssisted1: 300,
+                DamageAssisted2: 120,
+                HitsReceived: 2,
+                NonPenetratingHitsReceived: 1,
+                PenetrationsReceived: 1,
+                EnemiesDamaged: 3,
+                EnemiesDestroyed: 1,
+                VictoryPointsEarned: 40,
+                VictoryPointsSeized: 20,
+                MmRating: 2575.5f,
+                DamageBlocked: 410),
+        };
+
+        ParticipantResponse response = participant.ToResponse();
+
+        Assert.IsNotNull(response.BattleStats);
+        Assert.AreEqual(1200, response.BattleStats.CreditsEarned);
+        Assert.AreEqual(850, response.BattleStats.BaseXp);
+        Assert.AreEqual(2340, response.BattleStats.DamageDealt);
+        Assert.AreEqual(300, response.BattleStats.DamageAssisted1);
+        Assert.AreEqual(120, response.BattleStats.DamageAssisted2);
+        Assert.AreEqual(2575.5f, response.BattleStats.MmRating);
+        Assert.AreEqual(410, response.BattleStats.DamageBlocked);
+        Assert.AreEqual(1, response.BattleStats.EnemiesDestroyed);
+        Assert.AreEqual(20, response.BattleStats.VictoryPointsSeized);
+    }
+
+    [TestMethod]
+    public void MissingBattleStatsMapToNull()
+    {
+        Participant participant = ParticipantFixture() with { BattleStats = null };
+
+        ParticipantResponse response = participant.ToResponse();
+
+        Assert.IsNull(response.BattleStats);
+    }
+
+    [TestMethod]
     public void CapabilityFlagsAreExpandedIntoNames()
     {
         DecodeRun run = DecodeRunFixture() with
@@ -237,6 +286,7 @@ public sealed class ReadApiEndpointsTests
             TankClass.Unknown,
             BotStatus.Unknown,
             EvidenceConfidence.Unknown,
+            BattleStats: null,
             EvidenceFixture());
 
     private static DecodeRunSummary Summary() =>

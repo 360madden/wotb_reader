@@ -1,6 +1,53 @@
+using System.Buffers.Binary;
 using WotBTreader.Application.Replay;
 
 namespace WotBTreader.Replays;
+
+/// <summary>
+/// Per-player battle statistics mapped from the player-results info message
+/// (root.301.2), cross-referenced against eigenein/wotbreplay-parser's
+/// documented protobuf tag map. Null means the tag was absent or its value
+/// fell outside the documented range (e.g. a uint32 varint read as 64-bit);
+/// unknown stays unknown — a missing stat is never guessed.
+/// </summary>
+internal sealed record BattleStatsObservation(
+    int? CreditsEarned,
+    int? BaseXp,
+    int? Shots,
+    int? HitsDealt,
+    int? PenetrationsDealt,
+    int? DamageDealt,
+    int? DamageAssisted1,
+    int? DamageAssisted2,
+    int? HitsReceived,
+    int? NonPenetratingHitsReceived,
+    int? PenetrationsReceived,
+    int? EnemiesDamaged,
+    int? EnemiesDestroyed,
+    int? VictoryPointsEarned,
+    int? VictoryPointsSeized,
+    float? MmRating,
+    int? DamageBlocked)
+{
+    public bool HasAny =>
+        CreditsEarned is not null ||
+        BaseXp is not null ||
+        Shots is not null ||
+        HitsDealt is not null ||
+        PenetrationsDealt is not null ||
+        DamageDealt is not null ||
+        DamageAssisted1 is not null ||
+        DamageAssisted2 is not null ||
+        HitsReceived is not null ||
+        NonPenetratingHitsReceived is not null ||
+        PenetrationsReceived is not null ||
+        EnemiesDamaged is not null ||
+        EnemiesDestroyed is not null ||
+        VictoryPointsEarned is not null ||
+        VictoryPointsSeized is not null ||
+        MmRating is not null ||
+        DamageBlocked is not null;
+}
 
 internal sealed record BattleParticipantObservation(
     long AccountId,
@@ -8,6 +55,7 @@ internal sealed record BattleParticipantObservation(
     string? ClanTag,
     int? TeamNumber,
     int? TankCompactDescriptor,
+    BattleStatsObservation? Stats,
     BinaryEvidence Evidence);
 
 internal sealed record BinaryEvidence(
@@ -118,6 +166,7 @@ internal static class BattleResultsReader
                     participant.ClanTag,
                     participant.TeamNumber,
                     participant.TankCompactDescriptor,
+                    participant.ToObservation(),
                     evidence));
         }
 
@@ -279,11 +328,81 @@ internal static class BattleResultsReader
                 case (103, ProtobufWireType.Varint) when field.NumericValue <= int.MaxValue:
                     participant.TankCompactDescriptor = (int)field.NumericValue.Value;
                     break;
+                case (2, ProtobufWireType.Varint):
+                    participant.Stats.CreditsEarned = ToUInt32(field.NumericValue);
+                    break;
+                case (3, ProtobufWireType.Varint):
+                    participant.Stats.BaseXp = ToUInt32(field.NumericValue);
+                    break;
+                case (4, ProtobufWireType.Varint):
+                    participant.Stats.Shots = ToUInt32(field.NumericValue);
+                    break;
+                case (5, ProtobufWireType.Varint):
+                    participant.Stats.HitsDealt = ToUInt32(field.NumericValue);
+                    break;
+                case (7, ProtobufWireType.Varint):
+                    participant.Stats.PenetrationsDealt = ToUInt32(field.NumericValue);
+                    break;
+                case (8, ProtobufWireType.Varint):
+                    participant.Stats.DamageDealt = ToUInt32(field.NumericValue);
+                    break;
+                case (9, ProtobufWireType.Varint):
+                    participant.Stats.DamageAssisted1 = ToUInt32(field.NumericValue);
+                    break;
+                case (10, ProtobufWireType.Varint):
+                    participant.Stats.DamageAssisted2 = ToUInt32(field.NumericValue);
+                    break;
+                case (12, ProtobufWireType.Varint):
+                    participant.Stats.HitsReceived = ToUInt32(field.NumericValue);
+                    break;
+                case (13, ProtobufWireType.Varint):
+                    participant.Stats.NonPenetratingHitsReceived = ToUInt32(field.NumericValue);
+                    break;
+                case (15, ProtobufWireType.Varint):
+                    participant.Stats.PenetrationsReceived = ToUInt32(field.NumericValue);
+                    break;
+                case (17, ProtobufWireType.Varint):
+                    participant.Stats.EnemiesDamaged = ToUInt32(field.NumericValue);
+                    break;
+                case (18, ProtobufWireType.Varint):
+                    participant.Stats.EnemiesDestroyed = ToUInt32(field.NumericValue);
+                    break;
+                case (32, ProtobufWireType.Varint):
+                    participant.Stats.VictoryPointsEarned = ToUInt32(field.NumericValue);
+                    break;
+                case (33, ProtobufWireType.Varint):
+                    participant.Stats.VictoryPointsSeized = ToUInt32(field.NumericValue);
+                    break;
+                case (117, ProtobufWireType.Varint):
+                    participant.Stats.DamageBlocked = ToUInt32(field.NumericValue);
+                    break;
+                case (107, ProtobufWireType.Fixed32):
+                    participant.Stats.MmRating = ReadFiniteSingle(field.Bytes);
+                    break;
                 default:
                     unknown.Add(CreateUnknown(field, infoBase, "root.301.2"));
                     break;
             }
         }
+    }
+
+    /// <summary>The parser documents these stats as uint32; a 64-bit value
+    /// exceeding that range is not the documented type and stays unknown.</summary>
+    private static int? ToUInt32(ulong? value) =>
+        value is not null && value.Value <= uint.MaxValue
+            ? (int)value.Value
+            : null;
+
+    private static float? ReadFiniteSingle(ReadOnlyMemory<byte> bytes)
+    {
+        if (bytes.Length < sizeof(float))
+        {
+            return null;
+        }
+
+        float value = BitConverter.Int32BitsToSingle(
+            BinaryPrimitives.ReadInt32LittleEndian(bytes.Span));
+        return float.IsFinite(value) ? value : null;
     }
 
     private static ulong? FirstVarint(IReadOnlyList<ProtobufField> fields, int number) =>
@@ -367,6 +486,87 @@ internal static class BattleResultsReader
 
         public int? TankCompactDescriptor { get; set; }
 
+        public MutableBattleStats Stats { get; } = new();
+
         public BinaryEvidence? Evidence { get; set; }
+
+        public BattleStatsObservation? ToObservation() => Stats.HasAny
+            ? Stats.ToObservation()
+            : null;
+    }
+
+    private sealed class MutableBattleStats
+    {
+        public int? CreditsEarned { get; set; }
+
+        public int? BaseXp { get; set; }
+
+        public int? Shots { get; set; }
+
+        public int? HitsDealt { get; set; }
+
+        public int? PenetrationsDealt { get; set; }
+
+        public int? DamageDealt { get; set; }
+
+        public int? DamageAssisted1 { get; set; }
+
+        public int? DamageAssisted2 { get; set; }
+
+        public int? HitsReceived { get; set; }
+
+        public int? NonPenetratingHitsReceived { get; set; }
+
+        public int? PenetrationsReceived { get; set; }
+
+        public int? EnemiesDamaged { get; set; }
+
+        public int? EnemiesDestroyed { get; set; }
+
+        public int? VictoryPointsEarned { get; set; }
+
+        public int? VictoryPointsSeized { get; set; }
+
+        public float? MmRating { get; set; }
+
+        public int? DamageBlocked { get; set; }
+
+        public bool HasAny =>
+            CreditsEarned is not null ||
+            BaseXp is not null ||
+            Shots is not null ||
+            HitsDealt is not null ||
+            PenetrationsDealt is not null ||
+            DamageDealt is not null ||
+            DamageAssisted1 is not null ||
+            DamageAssisted2 is not null ||
+            HitsReceived is not null ||
+            NonPenetratingHitsReceived is not null ||
+            PenetrationsReceived is not null ||
+            EnemiesDamaged is not null ||
+            EnemiesDestroyed is not null ||
+            VictoryPointsEarned is not null ||
+            VictoryPointsSeized is not null ||
+            MmRating is not null ||
+            DamageBlocked is not null;
+
+        public BattleStatsObservation ToObservation() => new(
+            CreditsEarned,
+            BaseXp,
+            Shots,
+            HitsDealt,
+            PenetrationsDealt,
+            DamageDealt,
+            DamageAssisted1,
+            DamageAssisted2,
+            HitsReceived,
+            NonPenetratingHitsReceived,
+            PenetrationsReceived,
+            EnemiesDamaged,
+            EnemiesDestroyed,
+            VictoryPointsEarned,
+            VictoryPointsSeized,
+            MmRating,
+            DamageBlocked);
     }
 }

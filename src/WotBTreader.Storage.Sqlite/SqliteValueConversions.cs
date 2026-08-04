@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using WotBTreader.Core;
 
@@ -62,4 +63,39 @@ internal static class SqliteValueConversions
             reader.GetInt64(startOrdinal + 2),
             reader.GetInt32(startOrdinal + 3),
             new ContentHash(reader.GetString(startOrdinal + 4)));
+}
+
+/// <summary>
+/// Serializes <see cref="BattleStats"/> to/from the nullable
+/// <c>participants.battle_stats_json</c> column. Property names are stable and
+/// explicit so a future host version can evolve the shape without breaking
+/// existing rows; unknown stays unknown — absent members simply deserialize
+/// to null.
+/// </summary>
+internal static class BattleStatsJson
+{
+    private static readonly JsonSerializerOptions Options = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+
+    public static string? Serialize(BattleStats? stats)
+    {
+        if (stats is null)
+        {
+            return null;
+        }
+
+        return JsonSerializer.Serialize(stats, Options);
+    }
+
+    public static BattleStats? Deserialize(string? json)
+    {
+        if (json is null)
+        {
+            return null;
+        }
+
+        return JsonSerializer.Deserialize<BattleStats>(json, Options);
+    }
 }

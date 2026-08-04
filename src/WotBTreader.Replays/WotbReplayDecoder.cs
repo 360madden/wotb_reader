@@ -629,6 +629,7 @@ public sealed class WotbReplayDecoder : IReplayDecoder
                 vehicle?.TankClass ?? TankClass.Unknown,
                 BotStatus.Unknown,
                 EvidenceConfidence.Unknown,
+                ToBattleStats(battle.Stats),
                 ToEvidence(request, sourceEvidence));
             participants.Add(participant);
             participantByAccount.Add(accountId, participantId);
@@ -674,6 +675,7 @@ public sealed class WotbReplayDecoder : IReplayDecoder
                 vehicle?.TankClass ?? TankClass.Unknown,
                 BotStatus.Unknown,
                 EvidenceConfidence.Unknown,
+                BattleStats: null,
                 ToEvidence(request, arena.Evidence)));
             if (!participantByEntity.TryAdd(arena.EntityId, participantId))
             {
@@ -845,6 +847,33 @@ public sealed class WotbReplayDecoder : IReplayDecoder
             ToEvidence(request, evidence),
             JsonSerializer.Serialize(properties)));
         TreaderDiagnostics.UnknownRecords.Add(1);
+    }
+
+    private static BattleStats? ToBattleStats(BattleStatsObservation? stats)
+    {
+        if (stats is null || !stats.HasAny)
+        {
+            return null;
+        }
+
+        return new BattleStats(
+            stats.CreditsEarned,
+            stats.BaseXp,
+            stats.Shots,
+            stats.HitsDealt,
+            stats.PenetrationsDealt,
+            stats.DamageDealt,
+            stats.DamageAssisted1,
+            stats.DamageAssisted2,
+            stats.HitsReceived,
+            stats.NonPenetratingHitsReceived,
+            stats.PenetrationsReceived,
+            stats.EnemiesDamaged,
+            stats.EnemiesDestroyed,
+            stats.VictoryPointsEarned,
+            stats.VictoryPointsSeized,
+            stats.MmRating,
+            stats.DamageBlocked);
     }
 
     private static EvidenceReference ToEvidence(

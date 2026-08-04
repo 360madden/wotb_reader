@@ -46,6 +46,23 @@ public sealed class ReplayDecoderTests
             17,
             projection.Participants.Single(
                 participant => participant.AccountId is null).VehicleCompactDescriptor);
+        BattleStats? stats = projection.Participants.Single(
+            participant => participant.AccountId == 42).BattleStats;
+        Assert.IsNotNull(stats);
+        Assert.AreEqual(1200, stats.CreditsEarned);
+        Assert.AreEqual(850, stats.BaseXp);
+        Assert.AreEqual(2340, stats.DamageDealt);
+        Assert.AreEqual(300, stats.DamageAssisted1);
+        Assert.AreEqual(120, stats.DamageAssisted2);
+        Assert.AreEqual(2575.5f, stats.MmRating);
+        Assert.AreEqual(410, stats.DamageBlocked);
+        Assert.AreEqual(15, stats.Shots);
+        Assert.AreEqual(9, stats.HitsDealt);
+        Assert.AreEqual(5, stats.PenetrationsDealt);
+        Assert.AreEqual(1, stats.EnemiesDestroyed);
+        Assert.IsNull(projection.Participants.Single(
+            participant => participant.AccountId is null).BattleStats,
+            "A participant without player-results evidence must carry no stats.");
         Assert.AreEqual(2, projection.Positions.Count(
             sample => sample.ParticipantId is not null));
         Assert.IsTrue(projection.RawRecords.Any(

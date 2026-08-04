@@ -66,6 +66,36 @@ internal static class ReadContractMapping
             TankClass = participant.TankClass.ToString(),
             BotStatus = participant.BotStatus.ToString(),
             BotStatusConfidence = participant.BotStatusConfidence.ToString(),
+            BattleStats = ToResponse(participant.BattleStats),
+        };
+    }
+
+    private static BattleStatsResponse? ToResponse(BattleStats? stats)
+    {
+        if (stats is null)
+        {
+            return null;
+        }
+
+        return new BattleStatsResponse
+        {
+            CreditsEarned = stats.CreditsEarned,
+            BaseXp = stats.BaseXp,
+            Shots = stats.Shots,
+            HitsDealt = stats.HitsDealt,
+            PenetrationsDealt = stats.PenetrationsDealt,
+            DamageDealt = stats.DamageDealt,
+            DamageAssisted1 = stats.DamageAssisted1,
+            DamageAssisted2 = stats.DamageAssisted2,
+            HitsReceived = stats.HitsReceived,
+            NonPenetratingHitsReceived = stats.NonPenetratingHitsReceived,
+            PenetrationsReceived = stats.PenetrationsReceived,
+            EnemiesDamaged = stats.EnemiesDamaged,
+            EnemiesDestroyed = stats.EnemiesDestroyed,
+            VictoryPointsEarned = stats.VictoryPointsEarned,
+            VictoryPointsSeized = stats.VictoryPointsSeized,
+            MmRating = stats.MmRating,
+            DamageBlocked = stats.DamageBlocked,
         };
     }
 

@@ -53,6 +53,7 @@ public sealed class AffiliationResolverTests
             TankClass.Unknown,
             BotStatus.Unknown,
             EvidenceConfidence.Unknown,
+            BattleStats: null,
             new EvidenceReference(
                 artifactId,
                 ArchiveEntry: "meta.json",

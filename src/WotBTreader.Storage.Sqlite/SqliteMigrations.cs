@@ -206,5 +206,62 @@ internal static class SqliteMigrations
                     source_anchor_utc,
                     replay_anchor_ticks);
             """),
+        // SQLite has no ALTER TABLE ... ADD COLUMN IF NOT EXISTS, so a column
+        // add is written as an idempotent table rebuild: a partial-migration
+        // recovery (version rows removed, tables re-applied) must succeed
+        // whether or not the column already exists. Existing rows are copied
+        // column-by-column (explicit lists, no *), and the participant index
+        // dropped with the old table is recreated. The copy deliberately
+        // excludes battle_stats_json: a fresh v3->v4 upgrade cannot SELECT a
+        // column that does not exist yet, so stats present on a re-apply are
+        // not preserved (an artificial partial-migration state only; the
+        // normal upgrade path runs this once on an empty column).
+        new(
+            4,
+            "participant_battle_stats",
+            """
+            CREATE TABLE participants_rebuilt (
+                id TEXT PRIMARY KEY,
+                battle_session_id TEXT NOT NULL REFERENCES battle_sessions(id),
+                account_id INTEGER,
+                entity_id INTEGER,
+                team_number INTEGER,
+                player_name TEXT,
+                clan_tag TEXT,
+                vehicle_compact_descriptor INTEGER,
+                tank_id TEXT,
+                tank_name TEXT,
+                tank_class INTEGER NOT NULL,
+                bot_status INTEGER NOT NULL,
+                bot_status_confidence INTEGER NOT NULL,
+                battle_stats_json TEXT,
+                evidence_source_artifact_id TEXT NOT NULL REFERENCES source_artifacts(id),
+                evidence_archive_entry TEXT,
+                evidence_offset INTEGER NOT NULL,
+                evidence_length INTEGER NOT NULL,
+                evidence_sha256 TEXT NOT NULL CHECK(length(evidence_sha256) = 64)
+            ) STRICT;
+
+            INSERT INTO participants_rebuilt(
+                id, battle_session_id, account_id, entity_id, team_number,
+                player_name, clan_tag, vehicle_compact_descriptor, tank_id, tank_name,
+                tank_class, bot_status, bot_status_confidence,
+                evidence_source_artifact_id, evidence_archive_entry,
+                evidence_offset, evidence_length, evidence_sha256)
+            SELECT
+                id, battle_session_id, account_id, entity_id, team_number,
+                player_name, clan_tag, vehicle_compact_descriptor, tank_id, tank_name,
+                tank_class, bot_status, bot_status_confidence,
+                evidence_source_artifact_id, evidence_archive_entry,
+                evidence_offset, evidence_length, evidence_sha256
+            FROM participants;
+
+            DROP TABLE participants;
+
+            ALTER TABLE participants_rebuilt RENAME TO participants;
+
+            CREATE INDEX IF NOT EXISTS ix_participants_session
+                ON participants(battle_session_id);
+            """),
     ];
 }

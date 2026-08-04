@@ -178,7 +178,8 @@ internal sealed class SqliteSessionQueryRepository : ISessionQueryRepository
                    player_name, clan_tag, vehicle_compact_descriptor, tank_id, tank_name,
                    tank_class, bot_status, bot_status_confidence,
                    evidence_source_artifact_id, evidence_archive_entry,
-                   evidence_offset, evidence_length, evidence_sha256
+                   evidence_offset, evidence_length, evidence_sha256,
+                   battle_stats_json
             FROM participants
             WHERE battle_session_id = $sessionId
             ORDER BY team_number, entity_id, id;

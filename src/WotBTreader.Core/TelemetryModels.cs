@@ -138,6 +138,31 @@ public sealed record BattleSession(
     ParticipantId? ViewpointParticipantId,
     string SchemaVersion);
 
+/// <summary>
+/// Per-player battle results statistics decoded from battle_results.dat
+/// (player-results info message), cross-referenced against the parser schema.
+/// Null means the value was absent or out of the documented range — unknown
+/// stays unknown; a missing stat is never guessed.
+/// </summary>
+public sealed record BattleStats(
+    int? CreditsEarned,
+    int? BaseXp,
+    int? Shots,
+    int? HitsDealt,
+    int? PenetrationsDealt,
+    int? DamageDealt,
+    int? DamageAssisted1,
+    int? DamageAssisted2,
+    int? HitsReceived,
+    int? NonPenetratingHitsReceived,
+    int? PenetrationsReceived,
+    int? EnemiesDamaged,
+    int? EnemiesDestroyed,
+    int? VictoryPointsEarned,
+    int? VictoryPointsSeized,
+    float? MmRating,
+    int? DamageBlocked);
+
 public sealed record Participant(
     ParticipantId Id,
     BattleSessionId BattleSessionId,
@@ -152,6 +177,7 @@ public sealed record Participant(
     TankClass TankClass,
     BotStatus BotStatus,
     EvidenceConfidence BotStatusConfidence,
+    BattleStats? BattleStats,
     EvidenceReference Evidence);
 
 public sealed record PositionSample(

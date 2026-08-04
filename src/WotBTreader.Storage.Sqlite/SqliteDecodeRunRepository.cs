@@ -503,13 +503,13 @@ internal sealed class SqliteDecodeRunRepository : IDecodeRunRepository
                 INSERT INTO participants(
                     id, battle_session_id, account_id, entity_id, team_number,
                     player_name, clan_tag, vehicle_compact_descriptor, tank_id, tank_name,
-                    tank_class, bot_status, bot_status_confidence,
+                    tank_class, bot_status, bot_status_confidence, battle_stats_json,
                     evidence_source_artifact_id, evidence_archive_entry,
                     evidence_offset, evidence_length, evidence_sha256)
                 VALUES(
                     $id, $battleSessionId, $accountId, $entityId, $teamNumber,
                     $playerName, $clanTag, $vehicleCompactDescriptor, $tankId, $tankName,
-                    $tankClass, $botStatus, $botStatusConfidence,
+                    $tankClass, $botStatus, $botStatusConfidence, $battleStatsJson,
                     $evidenceSourceArtifactId, $evidenceArchiveEntry,
                     $evidenceOffset, $evidenceLength, $evidenceSha256);
                 """;
@@ -535,6 +535,10 @@ internal sealed class SqliteDecodeRunRepository : IDecodeRunRepository
             command.Parameters.AddWithValue(
                 "$botStatusConfidence",
                 (int)participant.BotStatusConfidence);
+            SqliteValueConversions.AddNullable(
+                command.Parameters,
+                "$battleStatsJson",
+                BattleStatsJson.Serialize(participant.BattleStats));
             SqliteValueConversions.AddEvidence(command.Parameters, participant.Evidence);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
