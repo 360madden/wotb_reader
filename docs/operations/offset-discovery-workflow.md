@@ -335,16 +335,21 @@ OD-044-STATIC also `-ValueKind Double|Float` (default Double; Float sets
 valueSize 4 / alignment 4). `scripts/python/replay-delta-extractor.py`
 derives the marker values from a decoded session (11.19.0 Dead Rail, 4s
 window: position `-DeltaTarget 0.6935 -DeltaTolerance 2.4992`; replayTime
-`-DeltaTarget 4.0`).
+`-DeltaTarget 4.0`). **OD-045-STATIC added `--simulate`, which reordered the
+pilot: the replayTime delta marker is deterministic (pass-rate 1.0 at every
+tolerance 0.2–4.0s, survival 1.0 over 15 rounds) while the position marker
+is bursty → HOLLOW collapse (pass 0.8996 at the recommended tolerance →
+survival 0.205 over 15 rounds — the standing tank sheds the true field).**
 `OD-RECOVERY-044` is the **Track C2 pilot**: reuse the proven invocation
 (`-SnapshotMaxBytes 402653184 -MaxRounds 40 -HoldAfterRollSeconds 240`) but
-add `-CompareMode delta -DeltaTarget 0.6935 -DeltaTolerance 2.4992
--ValueKind Float` (or the Double replayTime variant `-DeltaTarget 4.0`) and
-measure survivor collapse vs "increased" (11 → predicted ≤2–4), then run
-operator Find-what-writes on the staged set — the replayTime set remains the
-live anchor; do NOT waste lease probing the handler records, the AnyFn
-table, or chasing the exhausted static paths as singletons. This builds on
-the validated driver stack:
+run the **Double replayTime delta pilot FIRST** — `-CompareMode delta
+-DeltaTarget 4.0 -DeltaTolerance 0.4 -ValueKind Double` (unit variants if
+needed: 4000ms / 4,000,000ticks) — measure survivor collapse vs "increased"
+(11 → predicted ≤2–4), then the Float position pilot on a movement-only
+window, then operator Find-what-writes on the staged set. The replayTime set
+remains the live anchor; do NOT waste lease probing the handler records, the
+AnyFn table, or chasing the exhausted static paths as singletons. This
+builds on the validated driver stack:
 The session also produced the **first-ever 401-refresh failure in 13
 validations** (OD-038 attempt 3, round 9: the refreshed context re-read the
 rendezvous file but retried immediately into a mid-rotation file, exhausting

@@ -231,6 +231,21 @@ measurements, median 2D displacement 0.6935 m/4s, p90 3.1927, max 6.1432**
 4.0`). Replay-delta candidates to feed it: position Δ (X/Z per window),
 speed (|Δpos|/Δt), HP (damage-delta series).
 
+**Pilot-order simulation (OD-045-STATIC, 2026-08-03):**
+`replay-delta-extractor.py --simulate` projects the rolling pass-rate for
+each marker (pass_rate^N survival over N rounds) BEFORE lease is spent. On
+the 11.19.0 Dead Rail session the **replayTime delta marker is deterministic
+(pass-rate 1.0 at every tolerance 0.2–4.0s → survival 1.0 even over 15
+rounds)** — the ideal filter — while the **position marker is bursty →
+HOLLOW collapse** (pass-rate 0.8996 at the recommended tolerance → survival
+0.347/10 rounds, 0.205/15: the standing tank sheds the true field like a
+decoy), and the speed marker only passes 1.0 at a tolerance ≥8× its target
+(not selective). **Live pilot order: (1) Double replayTime delta first —
+`-ValueKind Double -CompareMode delta -DeltaTarget 4.0 -DeltaTolerance 0.4`
+(unit variants 4.0s / 4000ms / 4,000,000ticks — the in-memory unit is
+unknown); (2) Float position delta on a movement-only window; (3) operator
+Find-what-writes on the staged set.**
+
 ### C3. Value-equality at synchronized time
 At known replay-time T (established by C1), snapshot-filter `FloatMin=FloatMax≈
 X(T)`. Only the true copy holds exactly X(T) — more selective than "increased".
@@ -263,15 +278,19 @@ failure (per `tools/external/README.md`); every addition registers in
 
 ## 8. Execution order (next sessions)
 
-0. **Pilot prep done (OD-044-STATIC):** delta-compare verified wired end-to-end
-   (engine `PassesDelta` Float/Double/Int, tested); rolling driver gained
-   `-ValueKind Double|Float`; `scripts/python/replay-delta-extractor.py`
-   derives marker values from a decoded session (11.19.0 Dead Rail: median
-   2D displacement 0.6935 m/4s → `-DeltaTarget 0.6935 -DeltaTolerance
-   2.4992 -ValueKind Float`).
-1. **Track C2 pilot:** run delta-compare live with the replay-derived
-   position delta against a verified session; measure survivor collapse vs
-   "increased".
+0. **Pilot prep done (OD-044/045-STATIC):** delta-compare verified wired
+   end-to-end (engine `PassesDelta` Float/Double/Int, tested); rolling driver
+   gained `-ValueKind Double|Float`; `scripts/python/replay-delta-extractor.py`
+   derives marker values from a decoded session and `--simulate` projects
+   per-round pass-rate/survival per marker — which reordered the pilot: the
+   **replayTime delta marker is deterministic (survival 1.0 over 15 rounds)
+   while the position marker is bursty → hollow collapse (survival 0.205/15)**.
+1. **Track C2 pilot (replayTime delta FIRST):** `-ValueKind Double
+   -CompareMode delta -DeltaTarget 4.0 -DeltaTolerance 0.4` (unit variants
+   4000ms / 4,000,000ticks) against a verified session; measure survivor
+   collapse vs "increased" (11 → predicted ≤2–4); then the Float position
+   delta pilot on a movement-only window; then operator Find-what-writes on
+   the staged set.
 2. **Track C3/C4:** value-equality X/Y/Z intersection on the same session;
    target ≤2–4 survivors.
 3. **Track B pilot:** hangar-state known-truth scan (HP number, tank name).

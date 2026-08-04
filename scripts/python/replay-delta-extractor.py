@@ -23,6 +23,14 @@ Modes:
 
   python scripts/python/replay-delta-extractor.py --session <id> --window 5
   python scripts/python/replay-delta-extractor.py --participant <id> --json out.json
+  python scripts/python/replay-delta-extractor.py --simulate
+      Additionally run the offline delta-filter simulation: for each marker
+      series (2D position delta, replayTime delta, speed) sweep tolerance
+      around the recommended target and compute the per-round pass rate and
+      the projected survival probability over R rolling rounds. A marker
+      whose per-round pass rate is low (e.g. a bursty position field) sheds
+      the TRUE field across rounds just as it sheds decoys — this predicts
+      the survivor-collapse outcome before the live run spends lease.
 """
 
 from __future__ import annotations
@@ -212,6 +220,79 @@ def recommend(delta_median: float, p90: float, delta_max: float) -> tuple[float,
     return round(delta_median, 4), tol
 
 
+def marker_series(
+    samples: list[tuple[int, float, float, float]],
+    window_seconds: float,
+    speed: float = 1.0,
+) -> tuple[list[float], list[float], list[float]]:
+    """Per-window marker series for the three marker types:
+
+      - dist2d: 2D (x,z) displacement in meters per window (position delta)
+      - replay_delta: replay-time advance in SECONDS per window (constant ==
+        window*speed for a real-time replay; jitter only from sample timing)
+      - speed: |pos|/dt in m/s averaged over the window
+
+    All three share the same sliding-window interpolation over `samples`.
+    """
+    window_ticks = int(window_seconds * speed * TICKS_PER_SECOND)
+    dist2d: list[float] = []
+    replay_delta: list[float] = []
+    speed: list[float] = []
+    for cur in samples:
+        t = cur[0]
+        target = t + window_ticks
+        if target >= samples[-1][0]:
+            break
+        pos = _interp_at(samples, target)
+        if pos is None:
+            continue
+        dt_sec = window_ticks / TICKS_PER_SECOND
+        dx = pos[0] - cur[1]
+        dz = pos[2] - cur[3]
+        d = math.hypot(dx, dz)
+        dist2d.append(d)
+        # replay-time advance per window: dt_sec is deterministic, but record
+        # the actual bracketing interval for honesty (sample jitter).
+        replay_delta.append(dt_sec)
+        speed.append(d / dt_sec)
+    return dist2d, replay_delta, speed
+
+
+def simulate_survival(
+    marker: list[float],
+    target: float,
+    tolerances: list[float],
+    rounds: list[int],
+) -> list[dict]:
+    """Offline delta-filter simulation.
+
+    PassesDelta keeps a candidate when |observed - target| <= tolerance. For
+    the TRUE field, the observed marker series is what we measured from the
+    replay, so the per-round pass rate is the fraction of windows within
+    tolerance. Survival over R independent rounds compounds as pass_rate^R
+    (rolling sheds any candidate that fails ONE round). A marker with a low
+    pass rate at the recommended tolerance will therefore shed the true
+    field too — predicting a hollow survivor collapse.
+    """
+    if not marker:
+        return []
+    out: list[dict] = []
+    for tol in tolerances:
+        pass_count = sum(1 for m in marker if abs(m - target) <= tol)
+        pass_rate = pass_count / len(marker)
+        out.append(
+            {
+                "target": round(target, 4),
+                "tolerance": round(tol, 4),
+                "pass_rate": round(pass_rate, 4),
+                "pass_count": pass_count,
+                "of": len(marker),
+                "survival": {r: round(pass_rate ** r, 4) for r in rounds},
+            }
+        )
+    return out
+
+
 def build_command(session_id: str, kind: str, target: float, tol: float, window: float) -> str:
     if kind == "Float":
         return (
@@ -237,6 +318,10 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--participant", default="", help="participant id (default: most-moving)")
     parser.add_argument("--window", type=float, default=4.0, help="transition window seconds (default 4)")
     parser.add_argument("--speed", type=float, default=1.0, help="replay speed multiplier (default 1)")
+    parser.add_argument("--simulate", action="store_true",
+                        help="run the offline delta-filter survival simulation")
+    parser.add_argument("--rounds", default="5,10,15",
+                        help="rolling round counts for survival projection (default 5,10,15)")
     parser.add_argument("--json", default="", help="also write JSON to this path")
     args = parser.parse_args(argv)
 
@@ -268,6 +353,8 @@ def main(argv: list[str]) -> int:
     wins = windowed_displacements(samples, args.window, args.speed)
     if not wins:
         raise SystemExit("no usable window-straddling sample pairs (samples too sparse)")
+
+    rounds = [int(r) for r in args.rounds.split(",") if r.strip()]
 
     dist2d = [w["dist2d"] for w in wins]
     dxs = [w["dx"] for w in wins]
@@ -301,6 +388,15 @@ def main(argv: list[str]) -> int:
             "position_delta_tolerance": tol,
             "replay_time_delta_seconds": args.window * args.speed,
             "replay_time_delta_ticks": dt_ticks,
+            # The in-memory replayTime Double's unit is unknown (that is the
+            # campaign's discovery question). DeltaTarget must be expressed in
+            # the same unit as the field; list all candidate scales so the live
+            # operator can pick the one that matches the observed value.
+            "replay_time_delta_unit_variants": {
+                "seconds": round(args.window * args.speed, 4),
+                "milliseconds": round(args.window * args.speed * 1000.0, 4),
+                "ticks_1e6": dt_ticks,
+            },
         },
         "commands": {
             "float_position_pilot": build_command(session["id"], "Float", target, tol, args.window),
@@ -314,6 +410,31 @@ def main(argv: list[str]) -> int:
             ),
         },
     }
+
+    if args.simulate:
+        dist2d_s, replay_s, speed_s = marker_series(samples, args.window, args.speed)
+        dt_sec = args.window * args.speed
+        # replayTime marker: deterministic target == window*speed seconds; sweep
+        # tolerances that absorb sample-timing jitter without admitting decoys.
+        replay_sweep = [round(dt_sec * f, 4) for f in (0.05, 0.10, 0.25, 0.5, 1.0)]
+        # position marker: median target; sweep tolerances around the spread.
+        pos_sweep = [round(target * f, 4) for f in (0.5, 1.0, 2.0, 4.0)]
+        pos_sweep = sorted(set([round(t, 4) for t in pos_sweep] + [tol]))
+        result["simulation"] = {
+            "rounds": rounds,
+            "position_delta": simulate_survival(dist2d_s, target, pos_sweep, rounds),
+            "replay_time_delta": simulate_survival(
+                replay_s, dt_sec, replay_sweep, rounds
+            ),
+            "speed": simulate_survival(speed_s, target / dt_sec, pos_sweep, rounds),
+            "note": (
+                "pass_rate is the fraction of replay windows within |Δ-target|≤tol; "
+                "survival[N] = pass_rate^N over N independent rolling rounds. "
+                "A marker with low pass_rate at the recommended tolerance sheds "
+                "the TRUE field across rounds (hollow collapse). Target a pass_rate "
+                ">= 0.9 so the true field survives ~15 rounds."
+            ),
+        }
 
     if args.json:
         Path(args.json).write_text(
