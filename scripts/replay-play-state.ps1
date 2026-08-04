@@ -33,6 +33,12 @@
   3  Unexpected error
   4  -SelfTest failed
 #>
+# ProcessId is read by Get-GameWindow (a child function) via script-scope
+# dynamic lookup; PSSA's PSReviewUnusedParameter cannot see cross-function
+# script-parameter use and would report it as dead. NOTE: the suppression is
+# file-scoped -- a genuinely dead parameter added to this script later will
+# also go un-flagged; review new parameters manually.
+[System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'ProcessId is consumed by Get-GameWindow via script-scope lookup.')]
 [CmdletBinding()]
 param(
     # Wait (poll) for this state instead of a single probe.

@@ -73,7 +73,23 @@ if ($SelfTest) {
             Exit-With 3 "SELF-TEST FAIL: clean file produced custom-rule findings: $($resGood.Count)"
         }
 
-        Write-Host 'SELF-TEST PASS: custom rules fire and clean files pass.'
+        # Fatal-rule lock: the settings profile CANNOT promote rule severity
+        # (1.25 ignores the Rules hashtable -- see the settings header), so the
+        # gate enforces the fatal list by name. Assert a Warning-labeled fatal
+        # finding still trips the gate logic, so this can never silently
+        # regress the way the settings promotion did.
+        $dead = Join-Path $tmpDir 'dead-param.ps1'
+        Set-Content -LiteralPath $dead -Value 'param([int]$NeverUsed = 1)' -Encoding UTF8
+        $fatalRules = @('PSReviewUnusedParameter', 'PSAvoidAssignmentToAutomaticVariable', 'PSUseCompatibleSyntax')
+        $deadRecords = @(Invoke-ScriptAnalyzer -Path $dead -IncludeDefaultRules -ErrorAction SilentlyContinue)
+        $deadViolations = @($deadRecords | Where-Object {
+                $_.Severity -in @('Error', 'ParseError') -or $_.RuleName -in $fatalRules
+            })
+        if ($deadViolations.Count -lt 1) {
+            Exit-With 3 'SELF-TEST FAIL: dead parameter did not trip the fatal-rule gate logic.'
+        }
+
+        Write-Host 'SELF-TEST PASS: custom rules fire, clean files pass, fatal-rule list enforced.'
         Exit-With 0
     }
     finally {
@@ -105,8 +121,24 @@ foreach ($scriptPath in $scriptPaths) {
     )
 }
 
-$gateViolations = @($records | Where-Object { $_.Severity -in @('Error', 'ParseError') })
-$warnings = @($records | Where-Object { $_.Severity -eq 'Warning' })
+# NOTE (verified against 1.25.0 source, Engine/Settings.cs): the settings-file
+# 'Rules' severity promotion is silently ignored -- ConfigurableRule only supports
+# 'Enable', and the cmdlet -Severity parameter is a rule FILTER, not a severity
+# reclassifier. So the gate must enforce the repo's fatal-rule list by name:
+# findings from these rules fail the gate even when PSSA labels them Warning.
+$fatalRules = @(
+    'PSReviewUnusedParameter',
+    'PSAvoidAssignmentToAutomaticVariable',
+    'PSUseCompatibleSyntax'
+)
+$gateViolations = @($records | Where-Object {
+        $_.Severity -in @('Error', 'ParseError') -or $_.RuleName -in $fatalRules
+    })
+# Advisory count only: exclude Error/ParseError and fatal-rule findings so the
+# gate violations and the warning figure do not double-count the same records.
+$warnings = @($records | Where-Object {
+        $_.Severity -eq 'Warning' -and $_.RuleName -notin $fatalRules
+    })
 
 # ---- 5. Report ----
 $report = @{

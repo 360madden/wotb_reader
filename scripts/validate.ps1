@@ -25,46 +25,46 @@ function Invoke-CheckedNative {
     }
 }
 
-Invoke-CheckedNative dotnet @('restore', $solution, '--locked-mode') 'Locked restore'
-Invoke-CheckedNative dotnet @('format', $solution, '--verify-no-changes', '--no-restore') 'Format verification'
-Invoke-CheckedNative dotnet @('build', $solution, '-c', 'Release', '--no-restore') 'Release build'
-Invoke-CheckedNative dotnet @('test', $solution, '-c', 'Release', '--no-build') 'Test suite'
+Invoke-CheckedNative -FilePath dotnet -ArgumentList @('restore', $solution, '--locked-mode') -Description 'Locked restore'
+Invoke-CheckedNative -FilePath dotnet -ArgumentList @('format', $solution, '--verify-no-changes', '--no-restore') -Description 'Format verification'
+Invoke-CheckedNative -FilePath dotnet -ArgumentList @('build', $solution, '-c', 'Release', '--no-restore') -Description 'Release build'
+Invoke-CheckedNative -FilePath dotnet -ArgumentList @('test', $solution, '-c', 'Release', '--no-build') -Description 'Test suite'
 
 if ($AuditPackages) {
-    Invoke-CheckedNative dotnet @(
+    Invoke-CheckedNative -FilePath dotnet -ArgumentList @(
         'list',
         $solution,
         'package',
         '--vulnerable',
         '--include-transitive'
-    ) 'Package vulnerability audit'
+    ) -Description 'Package vulnerability audit'
 }
 
 & (Join-Path $PSScriptRoot 'scan-repository.ps1')
 
-Invoke-CheckedNative powershell @(
+Invoke-CheckedNative -FilePath powershell -ArgumentList @(
     '-NoProfile',
     '-ExecutionPolicy',
     'Bypass',
     '-File',
     (Join-Path $PSScriptRoot 'install-psscriptanalyzer.ps1')
-) 'PSScriptAnalyzer install'
+) -Description 'PSScriptAnalyzer install'
 
-Invoke-CheckedNative powershell @(
+Invoke-CheckedNative -FilePath powershell -ArgumentList @(
     '-NoProfile',
     '-ExecutionPolicy',
     'Bypass',
     '-File',
     (Join-Path $PSScriptRoot 'invoke-scriptanalyzer.ps1')
-) 'Script hygiene gate (PSScriptAnalyzer)'
+) -Description 'Script hygiene gate (PSScriptAnalyzer)'
 
-Invoke-CheckedNative python @(
+Invoke-CheckedNative -FilePath python -ArgumentList @(
     (Join-Path $PSScriptRoot 'python\offline_check.py'),
     '--check-fresh'
-) 'Offline pack link + file-tree freshness check'
+) -Description 'Offline pack link + file-tree freshness check'
 
-Invoke-CheckedNative python @(
+Invoke-CheckedNative -FilePath python -ArgumentList @(
     '-c',
     "import json,sys; json.load(open(sys.argv[1], encoding='utf-8'))",
     (Join-Path $PSScriptRoot '..\tools\external\tools.lock.json')
-) 'Tool registry JSON validity'
+) -Description 'Tool registry JSON validity'

@@ -36,6 +36,12 @@
   5  Ready gate never satisfied (dialog not interactive in time)
   6  Host already Denied (stale lifecycle timeout) aEUR" restart via launch-offline-replay-for-od.ps1
 #>
+# ResultPath is read by Quit-WatchOffline (a child function) via script-scope
+# dynamic lookup; PSSA's PSReviewUnusedParameter cannot see cross-function
+# script-parameter use and would report it as dead. NOTE: the suppression is
+# file-scoped -- a genuinely dead parameter added to this script later will
+# also go un-flagged; review new parameters manually.
+[System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'ResultPath is consumed by Quit-WatchOffline via script-scope lookup.')]
 [CmdletBinding()]
 param(
     [int]$TimeoutSeconds = 90,
@@ -141,7 +147,7 @@ public static class WatchOfflineVisionV2 {
 
   public static void EnsureDpiAware() {
     if (_dpiAware) return;
-    try { SetProcessDPIAware(); } catch { }
+    try { SetProcessDPIAware(); } catch { Write-Verbose "watch_offline: SetProcessDPIAware failed: $($_.Exception.Message)" }
     _dpiAware = true;
   }
 
@@ -525,7 +531,7 @@ try {
 
             # After sync clears, click on the first bright+strong frame.
             $needStable = if ($seenSyncing) { 1 } else { $StableSamples }
-            if (Test-ReadySample $orangePx $dialogMeanL $seenSyncing $firstBrightAt $firstDialogAt) {
+            if (Test-ReadySample -OrangePx $orangePx -DialogMeanL $dialogMeanL -SeenSyncing $seenSyncing -FirstBrightAt $firstBrightAt -FirstDialogAt $firstDialogAt) {
                 $stable++
                 $readyAnalysis = $analysis
                 Write-Host ("watch_offline: phase={0} dialogMeanL={1} orangePx={2} seenSync={3} stable={4}/{5}" -f `
@@ -808,7 +814,7 @@ try {
                 [bool]$hasStart, [bool]$hasErrDlg, [bool]$hasLogin)
         }
     }
-    catch { }
+    catch { Write-Verbose "watch_offline: blitz-log marker probe failed (log mid-rotation): $($_.Exception.Message)" }
 
     Write-Host ("watch_offline: FAILED gateOk={0} dialogGone={1}" -f $gateOk, $dialogGone)
     Quit-WatchOffline 3

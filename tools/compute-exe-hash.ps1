@@ -126,18 +126,18 @@ if ($UpdateOffsetFile) {
 
     # Try partial version match if exact not found (e.g. 11.19.0.10 -> 11.19.0.10.json)
     if (-not (Test-Path $offsetFile)) {
-        $matches = Get-ChildItem $OffsetDir -Filter "*.json" |
+        $candidateFiles = Get-ChildItem $OffsetDir -Filter "*.json" |
             Where-Object { $_.BaseName -like "$($GameVersion.Split('.')[0..2] -join '.')*" } |
             Where-Object { $_.BaseName -ne "schema" -and $_.BaseName -ne "scanner-state" }
 
-        if ($matches.Count -eq 1) {
-            $offsetFile = $matches[0].FullName
-            $normalizedVersion = $matches[0].BaseName
+        if ($candidateFiles.Count -eq 1) {
+            $offsetFile = $candidateFiles[0].FullName
+            $normalizedVersion = $candidateFiles[0].BaseName
             Write-Host "Matched offset file: $normalizedVersion.json" -ForegroundColor Yellow
         }
-        elseif ($matches.Count -gt 1) {
+        elseif ($candidateFiles.Count -gt 1) {
             Write-Error "Multiple offset files match version $GameVersion. Be explicit."
-            $matches | ForEach-Object { Write-Host "  $_" }
+            $candidateFiles | ForEach-Object { Write-Host "  $_" }
             exit 1
         }
     }

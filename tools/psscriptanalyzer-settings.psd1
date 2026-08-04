@@ -4,10 +4,18 @@
 # tools/psscriptanalyzer-custom-rules.psm1 (passed via -CustomRulePath so the
 # paths resolve relative to the repo root, not this file).
 #
-# Severity mapping: the validate gate fails on Error + ParseError only.
-# Warnings are reported in the JSON report but are not fatal, so the profile
-# promotes the highest-value hygiene rules to Error and excludes only rules
-# that would flag deliberate operator-tooling conventions.
+# IMPORTANT (verified against the 1.25.0 source, Engine/Settings.cs +
+# Engine/Generic/ConfigurableRule.cs): the settings-file `Rules` hashtable
+# severity promotion is SILENTLY IGNORED. ConfigurableRule only supports an
+# `Enable` property; the cmdlet -Severity parameter is a rule FILTER (which
+# rules run), not a severity reclassifier. The repo's fatal-rule list is
+# therefore enforced in scripts/invoke-scriptanalyzer.ps1 by RULE NAME:
+#   PSReviewUnusedParameter, PSAvoidAssignmentToAutomaticVariable,
+#   PSUseCompatibleSyntax
+# Any finding from those rules fails the gate even when PSSA labels it Warning.
+# Those three rules are deliberately NOT excluded here: they stay active so
+# the gate's by-name list decides their fate. Exclusions below apply only to
+# rules whose naming/value is a documented operator-tooling convention.
 
 @{
     ExcludeRules = @(
@@ -24,23 +32,13 @@
         # Block comment help is not enforced on single-purpose automation
         # scripts.
         'PSProvideCommentHelp'
+
+        # Verb/noun naming exists for discoverable EXPORTED cmdlets. The OD
+        # workflow scripts define internal helper functions (Quit-WatchOffline,
+        # Ensure-Game, Get-Rendezvous -- a singular loanword -- and
+        # Stop-OdProcesses, deliberately plural: it stops several). Renaming
+        # them would churn call sites without adding discoverability value.
+        'PSUseApprovedVerbs'
+        'PSUseSingularNouns'
     )
-
-    Rules = @{
-        # Automatic variables are reserved ($Pid, $Host, ...). The OD workflow
-        # once shipped a `param($Pid)` that silently never bound; this rule
-        # makes that class a hard gate failure.
-        'PSAvoidAssignmentToAutomaticVariable' = @{ Severity = 'Error' }
-
-        # Unused parameters are almost always a typo or a wiring bug in this
-        # repo's launch drivers (every parameter has a caller).
-        'PSReviewUnusedParameter' = @{ Severity = 'Error' }
-
-        # Syntax that parses on the current host but not on Windows PowerShell
-        # 5.1 (the OD workflow host) is a hard failure.
-        'PSUseCompatibleSyntax' = @{ Severity = 'Error' }
-
-        # Assigned-but-never-used variables flag a typo'd read or dead code.
-        'PSUseDeclaredVarsMoreThanAssignments' = @{ Severity = 'Warning' }
-    }
 }

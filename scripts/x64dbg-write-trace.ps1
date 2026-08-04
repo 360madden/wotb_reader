@@ -46,6 +46,12 @@
   5  Gate lost during the trace window
   6  Unexpected error
 #>
+# X64DbgExe is read by Find-X64DbgExe (a child function) via script-scope
+# dynamic lookup; PSSA's PSReviewUnusedParameter cannot see cross-function
+# script-parameter use and would report it as dead. NOTE: the suppression is
+# file-scoped -- a genuinely dead parameter added to this script later will
+# also go un-flagged; review new parameters manually.
+[System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'X64DbgExe is consumed by Find-X64DbgExe via script-scope lookup.')]
 [CmdletBinding()]
 param(
     # Rolling driver's staged survivor file (one absolute hex address per line).

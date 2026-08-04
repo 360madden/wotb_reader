@@ -22,6 +22,13 @@
   4  Unexpected
   5  Error dialog / replay failed after play
 #>
+# The tuning params below are read inside child functions (Wait-AndClick,
+# Ensure-Game, Wait-HangarReady) via script-scope dynamic lookup; PSSA's
+# PSReviewUnusedParameter cannot see cross-function script-parameter use and
+# would report them as dead. NOTE: the suppression is file-scoped -- a
+# genuinely dead parameter added to this script later will also go un-flagged;
+# review new parameters manually.
+[System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'HangarTimeoutSeconds/SampleIntervalMs/MinBattleOrange/StableBattleSamples are consumed by child functions via script-scope lookup.')]
 [CmdletBinding()]
 param(
     [int]$HangarTimeoutSeconds = 240,
@@ -30,7 +37,6 @@ param(
     [int]$SampleIntervalMs = 250,
     [int]$MinBattleOrange = 1500,
     [int]$StableBattleSamples = 2,
-    [double]$DimMaxLuminance = 42,
     [string]$ScreenshotPath,
     [string]$TemplateDir,
     [string]$RepoRoot,
@@ -528,7 +534,7 @@ function Ensure-Game {
     $existing = Get-GameWindow
     if ($existing) {
         Write-Hangar ("reuse_window pid=" + $existing.Id)
-        try { [HangarPlayVision]::SoftForeground($existing.MainWindowHandle) } catch { }
+        try { [HangarPlayVision]::SoftForeground($existing.MainWindowHandle) } catch { Write-Verbose "hangar: reuse soft-focus failed: $($_.Exception.Message)" }
         return $existing
     }
 
@@ -616,7 +622,7 @@ function Wait-AndClick(
             try {
                 if ($ForceFocus) { [HangarPlayVision]::ForceForeground($game.MainWindowHandle) }
                 else { [HangarPlayVision]::SoftForeground($game.MainWindowHandle) }
-            } catch { }
+            } catch { Write-Verbose "hangar: periodic soft-focus failed: $($_.Exception.Message)" }
             $lastFocus = Get-Date
         }
 
@@ -632,7 +638,7 @@ function Wait-AndClick(
             $aff = [HangarPlayVision]::FindAffirmative($cap.Bitmap)
             if ($aff.Found -and $aff.PixelCount -ge 1800) {
                 Write-Hangar 'dismiss_error_affirmative'
-                Invoke-ClickBlob $cap $aff 'affirmative'
+                Invoke-ClickBlob -Capture $cap -Blob $aff -Label 'affirmative'
                 Start-Sleep -Milliseconds 900
                 continue
             }
@@ -640,7 +646,7 @@ function Wait-AndClick(
             $blob = & $Finder $cap.Bitmap
             if ($blob -and $blob.Found) {
                 if ($ScreenshotPath) { [void][HangarPlayVision]::SaveBitmap($cap.Bitmap, $ScreenshotPath) }
-                Invoke-ClickBlob $cap $blob $Label
+                Invoke-ClickBlob -Capture $cap -Blob $blob -Label $Label
                 return $true
             }
         }
@@ -665,7 +671,7 @@ function Wait-HangarReady {
         # Soft focus only once at hangar entry -- mid-wait focus churn has closed
         # the game window (OnBackground -> WindowDestroyed).
         if ($lastFocus -eq [datetime]::MinValue) {
-            try { [HangarPlayVision]::SoftForeground($game.MainWindowHandle) } catch { }
+            try { [HangarPlayVision]::SoftForeground($game.MainWindowHandle) } catch { Write-Verbose "hangar: entry soft-focus failed: $($_.Exception.Message)" }
             $lastFocus = Get-Date
         }
 
@@ -683,8 +689,8 @@ function Wait-HangarReady {
             $hangarVisible = $battleProbe.Found -and $battleProbe.PixelCount -ge 800
             if (-not $hangarVisible -and $aff.Found -and $aff.PixelCount -ge 1800) {
                 Write-Hangar ("dismiss_error_affirmative px=$($aff.PixelCount)")
-                try { [HangarPlayVision]::SoftForeground($game.MainWindowHandle) } catch { }
-                Invoke-ClickBlob $cap $aff 'affirmative'
+                try { [HangarPlayVision]::SoftForeground($game.MainWindowHandle) } catch { Write-Verbose "hangar: error-dialog focus failed: $($_.Exception.Message)" }
+                Invoke-ClickBlob -Capture $cap -Blob $aff -Label 'affirmative'
                 $stable = 0
                 Start-Sleep -Milliseconds 1500
                 if (-not (Get-GameWindow)) {
@@ -785,7 +791,7 @@ function Test-StartReplayMarker([datetime]$Since, [int64]$LogCursor = 0) {
         finally { $fs.Close() }
         if ($chunk -match 'START_REPLAY_LOCAL|Start replay event') { return $true }
     }
-    catch { }
+    catch { Write-Verbose "hangar: replay-marker log scan failed (log mid-rotation): $($_.Exception.Message)" }
     return $false
 }
 
@@ -823,7 +829,7 @@ function Test-ErrorDialogMarker([datetime]$Since) {
             if ($t -and $t -ge $sinceLocal) { return $true }
         }
     }
-    catch { }
+    catch { Write-Verbose "hangar: error-dialog log scan failed (log mid-rotation): $($_.Exception.Message)" }
     return $false
 }
 
@@ -958,7 +964,7 @@ try {
             Write-Hangar 'FAILED_play_target_not_on_white_triangle'
         }
         else {
-            try { [HangarPlayVision]::ForceForeground($g.MainWindowHandle) } catch { }
+            try { [HangarPlayVision]::ForceForeground($g.MainWindowHandle) } catch { Write-Verbose "hangar: play-click force-focus failed: $($_.Exception.Message)" }
             Start-Sleep -Milliseconds 300
             $sx = $cap.Rect.Left + $bx
             $sy = $cap.Rect.Top + $by
@@ -1028,7 +1034,7 @@ try {
                         if ($t -and $t -ge $sinceLocal) { $sawLogin = $true; break }
                     }
                 }
-                catch { }
+                catch { Write-Verbose "hangar: login-dialog log scan failed (log mid-rotation): $($_.Exception.Message)" }
             }
             if ($sawLogin) { break }
             Start-Sleep -Milliseconds 250
@@ -1067,7 +1073,17 @@ try {
         }
     }
 
-    Write-Hangar ("confirm_playback timeout=${ConfirmTimeoutSeconds}s")
+    Write-Hangar ("confirm_playback timeout=${ConfirmTimeoutSeconds}s skipConfirm=$SkipConfirm")
+    if ($SkipConfirm) {
+        # -SkipConfirm: trust the play click; verify the replay-start marker
+        # once (no error-dialog rescue, no wait loop).
+        if (Test-StartReplayMarker -Since $since -LogCursor $logCursor) {
+            Write-Hangar 'OK START_REPLAY_LOCAL (skip-confirm)'
+            exit 0
+        }
+        Write-Hangar 'FAILED_no_start_replay_marker (skip-confirm)'
+        exit 5
+    }
     $confirmDeadline = (Get-Date).AddSeconds($ConfirmTimeoutSeconds)
     while ((Get-Date) -lt $confirmDeadline) {
         if (Test-StartReplayMarker -Since $since -LogCursor $logCursor) {
@@ -1082,7 +1098,7 @@ try {
                     try {
                         $aff = [HangarPlayVision]::FindAffirmative($cap.Bitmap)
                         if ($aff.Found -and $aff.PixelCount -ge 1800) {
-                            Invoke-ClickBlob $cap $aff 'affirmative'
+                            Invoke-ClickBlob -Capture $cap -Blob $aff -Label 'affirmative'
                         }
                     }
                     finally { $cap.Bitmap.Dispose() }
@@ -1103,6 +1119,6 @@ catch {
 }
 finally {
     foreach ($img in @($tplProfile, $tplReplays, $tplPlay)) {
-        if ($img) { try { $img.Dispose() } catch { } }
+        if ($img) { try { $img.Dispose() } catch { Write-Verbose "hangar: template bitmap dispose failed: $($_.Exception.Message)" } }
     }
 }

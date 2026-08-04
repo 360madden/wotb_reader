@@ -97,9 +97,9 @@ function Wait-Port([int]$Port, [int]$Seconds) {
                 $c.Close()
                 return $true
             }
-            try { $c.Close() } catch { }
+            try { $c.Close() } catch { Write-Verbose "od-launch: port probe close failed: $($_.Exception.Message)" }
         }
-        catch { }
+        catch { Write-Verbose "od-launch: port probe failed: $($_.Exception.Message)" }
         Start-Sleep -Seconds 1
     }
     return $false
@@ -150,7 +150,7 @@ function Wait-GameSettle([int]$Seconds) {
                 Write-Od 'game_window_lost_during_soft_focus_settle'
                 return $false
             }
-            try { [OdLaunch.Focus]::Soft($g.MainWindowHandle) } catch { }
+            try { [OdLaunch.Focus]::Soft($g.MainWindowHandle) } catch { Write-Verbose "od-launch: soft focus failed: $($_.Exception.Message)" }
             Start-Sleep -Milliseconds 500
         }
     }
