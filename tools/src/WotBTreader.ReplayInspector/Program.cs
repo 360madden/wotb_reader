@@ -186,6 +186,26 @@ internal static class ReplayInspector
                         participant.TankClass,
                         participant.BotStatus,
                     }),
+                typedPackets = new
+                {
+                    // Type-0 BasePlayerCreate header, decoded from the event
+                    // stream (third arena-identity source). Null when the
+                    // replay has no such packet.
+                    basePlayerCreate = FindBasePlayerCreate(projection),
+                    // Arena participants derived from updateArena2 (type 8 /
+                    // subtype 48) packets: the players whose identity came
+                    // from the arena stream rather than battle results alone.
+                    updateArenaRoster = projection.Participants
+                        .Where(participant => participant.EntityId is not null)
+                        .Select(participant => new
+                        {
+                            entityId = participant.EntityId,
+                            accountId = includeSensitive ? participant.AccountId : null,
+                            playerName = participant.PlayerName,
+                            teamNumber = participant.TeamNumber,
+                        })
+                        .ToArray(),
+                },
                 counts = new
                 {
                     participants = projection.Participants.Count,
@@ -261,6 +281,43 @@ internal static class ReplayInspector
             ".wotbreplay",
             DateTimeOffset.UtcNow,
             "1");
+    }
+
+    private static object? FindBasePlayerCreate(ReplayDecodeProjection projection)
+    {
+        foreach (RawRecord record in projection.RawRecords)
+        {
+            if (!string.Equals(
+                    record.RecordKind,
+                    "event-stream.packet",
+                    StringComparison.Ordinal) ||
+                string.IsNullOrEmpty(record.PropertiesJson))
+            {
+                continue;
+            }
+
+            using JsonDocument document = JsonDocument.Parse(record.PropertiesJson);
+            JsonElement root = document.RootElement;
+            if (!root.TryGetProperty("basePlayerCreate", out JsonElement typed))
+            {
+                continue;
+            }
+
+            return new
+            {
+                authorNickname = typed.TryGetProperty(
+                    "authorNickname",
+                    out JsonElement author) ? author.GetString() : null,
+                arenaUniqueId = typed.TryGetProperty(
+                    "arenaUniqueId",
+                    out JsonElement arenaId) ? arenaId.GetUInt64() : (ulong?)null,
+                arenaTypeId = typed.TryGetProperty(
+                    "arenaTypeId",
+                    out JsonElement arenaType) ? arenaType.GetUInt32() : (uint?)null,
+            };
+        }
+
+        return null;
     }
 
     private static void WriteEnvelope(

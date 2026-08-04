@@ -19,7 +19,8 @@ public static class SyntheticReplayFactory
     public static byte[] CreateReplay(
         string version = "11.18.0",
         bool insertMalformedGap = false,
-        bool includeEndSentinel = true)
+        bool includeEndSentinel = true,
+        ulong? basePlayerCreateArenaId = null)
     {
         byte[] metadata = JsonSerializer.SerializeToUtf8Bytes(new
         {
@@ -39,7 +40,10 @@ public static class SyntheticReplayFactory
             camouflageCustomData = string.Empty,
         });
         byte[] battleResults = CreateBattleResults();
-        byte[] eventStream = CreateEventStream(insertMalformedGap, includeEndSentinel);
+        byte[] eventStream = CreateEventStream(
+            insertMalformedGap,
+            includeEndSentinel,
+            basePlayerCreateArenaId);
         return CreateArchive(
             (ReplayFormatConstants.MetadataEntry, metadata),
             (ReplayFormatConstants.BattleResultsEntry, battleResults),
@@ -100,7 +104,8 @@ public static class SyntheticReplayFactory
 
     public static byte[] CreateEventStream(
         bool insertMalformedGap,
-        bool includeEndSentinel)
+        bool includeEndSentinel,
+        ulong? basePlayerCreateArenaId = null)
     {
         using MemoryStream output = new();
         WriteUInt32(output, ReplayFormatConstants.EventStreamMagic);
@@ -109,6 +114,7 @@ public static class SyntheticReplayFactory
         WriteByteString(output, "11.18.0");
         output.WriteByte(0);
 
+        WritePacket(output, 0, 0.1f, CreateBasePlayerCreatePayload(basePlayerCreateArenaId));
         WritePacket(output, 8, 0.2f, CreateUpdateArenaPayload());
         WritePacket(output, 10, 1.0f, CreatePositionPayload(100, 10, 20, 30));
         if (insertMalformedGap)
@@ -169,6 +175,24 @@ public static class SyntheticReplayFactory
         WriteBytesField(root, 301, results.ToArray());
         WriteVarintField(root, 999, 123);
         return CreatePickle(root.ToArray());
+    }
+
+    private static byte[] CreateBasePlayerCreatePayload(ulong? arenaIdOverride = null)
+    {
+        using MemoryStream payload = new();
+        // 10 reserved bytes, then a 1-byte-length UTF-8 author nickname, a
+        // little-endian u64 arena unique id, a little-endian u32 arena type
+        // id, then the (unused here) pickled arguments length marker.
+        payload.Write(new byte[10]);
+        WriteByteString(payload, "pilot-a");
+        Span<byte> arenaId = stackalloc byte[sizeof(ulong)];
+        BinaryPrimitives.WriteUInt64LittleEndian(arenaId, arenaIdOverride ?? 42);
+        payload.Write(arenaId);
+        Span<byte> arenaType = stackalloc byte[sizeof(uint)];
+        BinaryPrimitives.WriteUInt32LittleEndian(arenaType, 7);
+        payload.Write(arenaType);
+        payload.WriteByte(0); // quirky length 0: no pickled arguments.
+        return payload.ToArray();
     }
 
     private static byte[] CreateUpdateArenaPayload()

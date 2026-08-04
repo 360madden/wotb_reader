@@ -11,6 +11,24 @@ internal sealed record ArenaParticipantObservation(
     int? TankCompactDescriptor,
     BinaryEvidence Evidence);
 
+/// <summary>
+/// Decoded fixed header of a type-0 (BasePlayerCreate) event-stream packet.
+/// </summary>
+/// <remarks>
+/// Layout cross-validated against the Rust wotbreplay-parser payload reader
+/// (payload.rs): 10 skipped bytes, a 1-byte-length UTF-8 author nickname, a
+/// little-endian u64 arena unique id, and a little-endian u32 arena type id.
+/// The trailing pickled arguments are preserved as raw evidence and never
+/// executed (evidence-first).
+/// </remarks>
+internal sealed record BasePlayerCreateObservation(
+    long Ordinal,
+    TimeSpan ReplayTime,
+    string AuthorNickname,
+    ulong ArenaUniqueId,
+    uint ArenaTypeId,
+    BinaryEvidence Evidence);
+
 internal sealed record PositionObservation(
     long Sequence,
     TimeSpan ReplayTime,
@@ -173,6 +191,65 @@ internal static class EventPacketDecoders
         catch (ReplayFormatException exception)
         {
             warning = $"A type 8/subtype 48 packet was preserved as raw evidence: {exception.Code}.";
+            return false;
+        }
+    }
+
+    public static bool TryReadBasePlayerCreate(
+        EventPacket packet,
+        out BasePlayerCreateObservation? observation,
+        out string? warning)
+    {
+        observation = null;
+        warning = null;
+        if (packet.Type != 0)
+        {
+            return false;
+        }
+
+        ReadOnlySpan<byte> payload = packet.Payload.Span;
+        // 10 reserved bytes, then 1-byte-length author nickname.
+        const int reserved = 10;
+        if (payload.Length <= reserved)
+        {
+            warning = "A type 0 packet was preserved as raw evidence (header too short).";
+            return false;
+        }
+
+        try
+        {
+            int offset = reserved;
+            int nameLength = payload[offset++];
+            if (nameLength > 512)
+            {
+                throw new ReplayFormatException(
+                    "replay.base_player_create_name_limit",
+                    "A BasePlayerCreate author nickname exceeds its byte limit.");
+            }
+
+            ReplayBinary.EnsureAvailable(payload, offset, nameLength);
+            string authorNickname = ReplayBinary.DecodeUtf8(
+                payload.Slice(offset, nameLength),
+                "BasePlayerCreate author nickname");
+            offset += nameLength;
+
+            ReplayBinary.EnsureAvailable(payload, offset, sizeof(ulong) + sizeof(uint));
+            ulong arenaUniqueId = BinaryPrimitives.ReadUInt64LittleEndian(payload[offset..]);
+            offset += sizeof(ulong);
+            uint arenaTypeId = BinaryPrimitives.ReadUInt32LittleEndian(payload[offset..]);
+
+            observation = new BasePlayerCreateObservation(
+                packet.Ordinal,
+                TimeSpan.FromSeconds(packet.ClockSeconds),
+                authorNickname,
+                arenaUniqueId,
+                arenaTypeId,
+                EvidenceForPacket(packet));
+            return true;
+        }
+        catch (ReplayFormatException exception)
+        {
+            warning = $"A type 0 packet was preserved as raw evidence: {exception.Code}.";
             return false;
         }
     }

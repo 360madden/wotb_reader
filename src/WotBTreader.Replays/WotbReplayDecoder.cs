@@ -136,6 +136,8 @@ public sealed class WotbReplayDecoder : IReplayDecoder
 
             List<RawRecord> rawRecords = [];
             long rawOrdinal = 0;
+            List<BasePlayerCreateObservation> basePlayerCreates = [];
+
             AddRaw(
                 rawRecords,
                 request,
@@ -258,6 +260,38 @@ public sealed class WotbReplayDecoder : IReplayDecoder
                     warnings.Add(damageWarning);
                 }
 
+                string? basePlayerCreateWarning = null;
+                if (!decoded &&
+                    EventPacketDecoders.TryReadBasePlayerCreate(
+                        packet,
+                        out BasePlayerCreateObservation? basePlayerCreate,
+                        out basePlayerCreateWarning))
+                {
+                    decoded = true;
+                    basePlayerCreates.Add(basePlayerCreate!);
+                    AddRaw(
+                        rawRecords,
+                        request,
+                        ref rawOrdinal,
+                        "event-stream.packet",
+                        basePlayerCreate!.ReplayTime,
+                        EventPacketDecoders.EvidenceForPacket(packet),
+                        new
+                        {
+                            packetType = packet.Type,
+                            basePlayerCreate = new
+                            {
+                                authorNickname = basePlayerCreate.AuthorNickname,
+                                arenaUniqueId = basePlayerCreate.ArenaUniqueId,
+                                arenaTypeId = basePlayerCreate.ArenaTypeId,
+                            },
+                        });
+                }
+                else if (basePlayerCreateWarning is not null)
+                {
+                    warnings.Add(basePlayerCreateWarning);
+                }
+
                 if (!decoded && packet.Type == 14)
                 {
                     decoded = true;
@@ -279,6 +313,24 @@ public sealed class WotbReplayDecoder : IReplayDecoder
                             packetType = packet.Type,
                             entityMethodSubtype = subtype,
                         });
+                }
+            }
+
+            foreach (BasePlayerCreateObservation basePlayerCreate in basePlayerCreates)
+            {
+                // Third arena-identity source: the type-0 packet header. Cross-
+                // validated against the Rust oracle payload reader layout; on
+                // real replays all three sources (meta.json, battle-results
+                // tuple, packet header) agree.
+                string packetArenaIdentity = basePlayerCreate.ArenaUniqueId.ToString(
+                    CultureInfo.InvariantCulture);
+                if (!string.Equals(
+                        packetArenaIdentity,
+                        tupleArenaIdentity,
+                        StringComparison.Ordinal))
+                {
+                    warnings.Add(
+                        "BasePlayerCreate packet and battle-results arena identities do not match.");
                 }
             }
 

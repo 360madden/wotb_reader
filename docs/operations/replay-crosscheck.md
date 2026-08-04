@@ -3,9 +3,11 @@
 The C# `Replays` decoder is the product's core capability, so its correctness
 must be proven against an **independent implementation**, not just its own
 tests. `scripts/invoke-replay-crosscheck.ps1` runs the C# decoder and the Rust
-`wotbreplay-inspector` oracle (built on eigenein's `wotbreplay-parser` 0.4.2)
-on the same `.wotbreplay` and compares the cross-check surface: battle
-timestamp, participant set (account/name/team), and packet clock sequence.
+`wotbreplay-inspector` oracle (built on eigenein's `wotbreplay-parser`, see
+"Oracle provenance" below) on the same `.wotbreplay` and compares the
+cross-check surface: battle timestamp, participant set (account/name/team),
+packet clock sequence, and the **typed packet surface** (`BasePlayerCreate`
+header + `UpdateArena` players roster).
 
 This is an **operator-run step, not a CI step**: it needs real (non-synthetic)
 11.18/11.19 replays, which CI does not have. It is not part of
@@ -56,7 +58,7 @@ with `Get-Content -Raw -Encoding UTF8` (handles both), not a bare
 
 | Code | Meaning | Action |
 |---|---|---|
-| 0 | Both decoders agree on battle time, participants, clocks | Proceed |
+| 0 | Both decoders agree on battle time, participants, clocks, and the typed packet surface | Proceed |
 | 1 | Real divergence found | Investigate before committing decoder changes |
 | 2 | Oracle or C# inspector binary missing | Re-stage `tools/external/installed/wotbreplay-inspector/` or rebuild the inspector tool |
 | 3 | One decoder failed to decode the replay | Check the replay is 11.18/11.19 and not corrupt |
@@ -79,7 +81,29 @@ with `Get-Content -Raw -Encoding UTF8` (handles both), not a bare
   participant on the C# side that Rust's battle-results read does not see
   (`player only in cs: unit-b|2`). This is a pre-existing harness nuance of
   the synthetic fixtures, unrelated to decoder changes — validate against the
-  large real battle replays instead.
+  large real battle replays instead. Note that the **typed UpdateArena
+  roster surface still agrees** on these fixtures: both decoders decode the
+  same field-1 roster, so the divergence is confined to the battle-results
+  comparison.
+- **UpdateArena `account_id 0` vs C# `null`.** Rust emits `account_id: 0`
+  for roster entries with no account binding; C# emits `null`. Both mean
+  "no account evidence" and the harness treats them as equal.
+
+## Typed packet surface
+
+Beyond battle time and rosters, the cross-check compares the typed packets
+both decoders can parse independently:
+
+- **`BasePlayerCreate` (type 0) header** — `author_nickname`,
+  `arena_unique_id`, `arena_type_id`. The fixed layout (10 skipped bytes,
+  1-byte-length UTF-8 nickname, little-endian u64/u32 ids) is shared by both
+  decoders, and `arena_unique_id` is the replay's **third arena-identity
+  source** after `meta.json` and the battle-results tuple. On real replays
+  all three agree; the C# decoder emits a warning if the packet header
+  disagrees with the battle-results tuple.
+- **`UpdateArena` (type 8 / subtype 48) players roster** — the field-1
+  players list, compared as a (nickname, team) presence map plus account
+  bindings (with `0 ≡ null` normalization above).
 
 ## Golden vectors
 
@@ -92,6 +116,18 @@ oracle binary is re-staged or rebuilt, so the oracle is trusted before it is
 used as the comparison baseline. The parser fixtures are 9.4–10.1 era —
 older than the C# decoder's 11.18/11.19 gate — so golden vectors never
 validate the C# decoder; real 11.18/11.19 replays do.
+
+## Oracle provenance
+
+The oracle binary is rebuilt from `C:\work\wotbreplay-inspector-main` with a
+**local path dependency** on the patched parser at
+`C:\work\tools\wotbreplay-parser-main` (`Cargo.toml` `[patch]`/path dep),
+staged to `tools/external/installed/wotbreplay-inspector/` and hash-pinned in
+`tools/external/tools.lock.json`. The local parser patch adds UpdateArena
+support for **subtype 48** (the 11.18/11.19 variant) alongside the upstream
+subtype 47 — without it, the oracle reports all arena packets as `Unknown`
+and the typed roster surface is empty. When re-staging a rebuilt binary,
+re-run `crosscheck.cmd -GoldenVector` before trusting it.
 
 ## Registry
 

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using WotBTreader.Application.Replay;
 using WotBTreader.Core;
 using WotBTreader.TestSupport;
@@ -69,6 +70,80 @@ public sealed class ReplayDecoderTests
             record => record.RecordKind == "event-stream.packet"));
         Assert.IsFalse(projection.Warnings.Any(
             warning => warning.Contains("malformed", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [TestMethod]
+    public async Task BasePlayerCreatePacketDecodesAsTypedRawRecordWithArenaIdentity()
+    {
+        ReplayInput input = SyntheticReplayFactory.CreateInput(
+            SyntheticReplayFactory.CreateReplay());
+        WotbReplayProbe probe = new();
+        var probeResult = await probe.ProbeAsync(
+            input,
+            DecoderLimits.Default,
+            CancellationToken.None);
+        Assert.IsTrue(probeResult.IsSuccess, probeResult.Error?.Message);
+
+        WotbReplayDecoder decoder = new();
+        var decodeResult = await decoder.DecodeAsync(
+            new ReplayDecodeRequest(
+                input,
+                DecodeRunId.New(),
+                probeResult.Value!,
+                DecoderLimits.Default),
+            CancellationToken.None);
+        Assert.IsTrue(decodeResult.IsSuccess, decodeResult.Error?.Message);
+        ReplayDecodeProjection projection = decodeResult.Value!;
+
+        // The type-0 packet decodes into a typed raw record carrying the
+        // BasePlayerCreate header (author nickname, arena unique id, arena
+        // type id) rather than an opaque unknown packet.
+        RawRecord? typed = projection.RawRecords.SingleOrDefault(
+            record => record.RecordKind == "event-stream.packet" &&
+                      record.PropertiesJson?.Contains(
+                          "basePlayerCreate",
+                          StringComparison.Ordinal) == true);
+        Assert.IsNotNull(typed, "A BasePlayerCreate packet should decode as a typed raw record.");
+        using JsonDocument document = JsonDocument.Parse(typed!.PropertiesJson!);
+        JsonElement bpc = document.RootElement.GetProperty("basePlayerCreate");
+        Assert.AreEqual("pilot-a", bpc.GetProperty("authorNickname").GetString());
+        Assert.AreEqual(42UL, bpc.GetProperty("arenaUniqueId").GetUInt64());
+        Assert.AreEqual(7u, bpc.GetProperty("arenaTypeId").GetUInt32());
+
+        // The synthetic replay's meta.json, battle-results tuple and packet
+        // header all carry arena unique id 42, so no identity warning fires.
+        Assert.IsFalse(projection.Warnings.Any(
+            warning => warning.Contains("arena identities", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
+    public async Task BasePlayerCreateArenaIdentityMismatchEmitsWarning()
+    {
+        ReplayInput input = SyntheticReplayFactory.CreateInput(
+            SyntheticReplayFactory.CreateReplay(basePlayerCreateArenaId: 999));
+        WotbReplayProbe probe = new();
+        var probeResult = await probe.ProbeAsync(
+            input,
+            DecoderLimits.Default,
+            CancellationToken.None);
+        Assert.IsTrue(probeResult.IsSuccess, probeResult.Error?.Message);
+
+        WotbReplayDecoder decoder = new();
+        var decodeResult = await decoder.DecodeAsync(
+            new ReplayDecodeRequest(
+                input,
+                DecodeRunId.New(),
+                probeResult.Value!,
+                DecoderLimits.Default),
+            CancellationToken.None);
+        Assert.IsTrue(decodeResult.IsSuccess, decodeResult.Error?.Message);
+
+        // The packet header (999) disagrees with the battle-results tuple (42),
+        // so the third arena-identity source flags the conflict as a warning.
+        Assert.IsTrue(decodeResult.Value!.Warnings.Any(
+            warning => warning.Contains(
+                "BasePlayerCreate packet and battle-results arena identities",
+                StringComparison.Ordinal)));
     }
 
     [TestMethod]

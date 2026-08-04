@@ -151,6 +151,48 @@ foreach ($player in $rustResults.players) {
     }
 }
 
+# Typed packet surface from dump-data NDJSON:
+#  - BasePlayerCreate (type 0): fixed header decoded by both decoders
+#    (author_nickname, arena_unique_id, arena_type_id).
+#  - UpdateArena (type 8 / subtype 48): the field-1 players roster seen in
+#    arena updates. Rust's parser models field 1 only; the C# decoder decodes
+#    the same roster, so the comparable surface is the union of
+#    (nickname, team) entries plus their account bindings.
+$rustBasePlayerCreate = $null
+$rustArenaRoster = @{}
+foreach ($line in $rustPackets) {
+    $payload = $line.payload
+    if ($null -eq $payload) { continue }
+    $payloadProps = $payload.PSObject.Properties
+    if ($null -ne ($payloadProps['BasePlayerCreate'])) {
+        $bpc = $payload.BasePlayerCreate
+        $rustBasePlayerCreate = [ordered]@{
+            author_nickname = $bpc.author_nickname
+            arena_unique_id = [uint64]$bpc.arena_unique_id
+            arena_type_id   = [uint32]$bpc.arena_type_id
+        }
+    }
+    if ($null -ne ($payloadProps['EntityMethod'])) {
+        $em = $payload.EntityMethod
+        if ($null -ne $em.PSObject.Properties['UpdateArena']) {
+            $arenaArguments = $em.UpdateArena.arguments
+            $playersWrapper = if ($null -ne $arenaArguments -and $null -ne $arenaArguments.PSObject.Properties['players']) { $arenaArguments.players } else { $null }
+            $players = if ($null -ne $playersWrapper -and $null -ne $playersWrapper.PSObject.Properties['players']) { $playersWrapper.players } else { $null }
+            if ($null -eq $players) { continue }
+            foreach ($player in $players) {
+                $key = "$($player.nickname)|$($player.team_number)"
+                if (-not $rustArenaRoster.ContainsKey($key)) {
+                    $rustArenaRoster[$key] = [ordered]@{
+                        account_id = $player.account_id
+                        nickname   = $player.nickname
+                        team       = $player.team_number
+                    }
+                }
+            }
+        }
+    }
+}
+
 # ---- 3b. C# decoder ----
 $csRaw = & $csInspector $Replay --include-sensitive 2>$null
 if ($LASTEXITCODE -ne 0) {
@@ -176,16 +218,45 @@ $report['rust'] = [ordered]@{
     players          = $rustPlayers.Count
     packets          = $rustPackets.Count
     packet_clocks    = @($rustPackets | ForEach-Object { $_.clock })
+    base_player_create = $rustBasePlayerCreate
+    arena_roster_count = $rustArenaRoster.Count
 }
+# Typed packet surface from the C# inspector (typedPackets block).
+$csBasePlayerCreate = $null
+$csTypedPackets = if ($null -ne $csData.PSObject.Properties['typedPackets']) { $csData.typedPackets } else { $null }
+if ($null -ne $csTypedPackets -and $null -ne $csTypedPackets.PSObject.Properties['basePlayerCreate']) {
+    $bpc = $csData.typedPackets.basePlayerCreate
+    $csBasePlayerCreate = [ordered]@{
+        author_nickname = $bpc.authorNickname
+        arena_unique_id = [uint64]$bpc.arenaUniqueId
+        arena_type_id   = [uint32]$bpc.arenaTypeId
+    }
+}
+$csArenaRoster = @{}
+$csRosterEntries = if ($null -ne $csTypedPackets -and $null -ne $csTypedPackets.PSObject.Properties['updateArenaRoster']) { $csTypedPackets.updateArenaRoster } else { @() }
+foreach ($p in $csRosterEntries) {
+    $key = "$($p.playerName)|$($p.teamNumber)"
+    if ($null -eq $key -or $key -eq '|') { continue }
+    if (-not $csArenaRoster.ContainsKey($key)) {
+        $csArenaRoster[$key] = [ordered]@{
+            account_id = $p.accountId
+            nickname   = $p.playerName
+            team       = $p.teamNumber
+        }
+    }
+}
+
 # C# inspector exposes only aggregate counts (not per-event clocks), so the
 # counts are informational with documented semantics; the pass/fail surface is
 # battle time + participants below.
 $report['cs'] = [ordered]@{
-    battle_time_unix = ConvertTo-UnixSeconds ([string]$csData.session.battleTimeUtc)
-    participants     = $csParticipants.Count
-    events           = $csData.counts.events
-    positions        = $csData.counts.positions
-    raw_records      = $csData.counts.rawRecords
+        battle_time_unix = ConvertTo-UnixSeconds ([string]$csData.session.battleTimeUtc)
+        participants     = $csParticipants.Count
+        events           = $csData.counts.events
+        positions        = $csData.counts.positions
+        raw_records      = $csData.counts.rawRecords
+        base_player_create = $csBasePlayerCreate
+        arena_roster_count = $csArenaRoster.Count
 }
 
 # ---- 3c. Compare the cross-check surface ----
@@ -282,7 +353,61 @@ if (($report['rust']['packets'] -eq 0) -ne ($report['cs']['events'] -eq 0)) {
     $report['disagreements'] += "packet presence: rust packets=$($report['rust']['packets']) cs events=$($report['cs']['events'])"
 }
 
-# ---- 3d. Emit report ----
+# ---- 3d. Typed packet surface (BasePlayerCreate + UpdateArena) ----
+#
+# Surface 4: BasePlayerCreate header. Both decoders independently parse the
+# type-0 fixed header (10 skipped bytes, 1-byte-length UTF-8 author nickname,
+# little-endian u64 arena unique id, little-endian u32 arena type id). The
+# arena_unique_id is the replay's third arena-identity source (after meta.json
+# and the battle-results tuple); on real replays all three agree.
+$bpcDisagreements = 0
+if ($null -eq $rustBasePlayerCreate -and $null -eq $csBasePlayerCreate) {
+    $report['base_player_create_note'] = 'No BasePlayerCreate packet in this replay (synthetic fixtures); surface skipped.'
+}
+elseif ($null -eq $rustBasePlayerCreate -or $null -eq $csBasePlayerCreate) {
+    $report['disagreements'] += "base player create present only on $($(if ($null -eq $rustBasePlayerCreate) { 'cs' } else { 'rust' }))"
+    $bpcDisagreements++
+}
+else {
+    foreach ($field in @('author_nickname', 'arena_unique_id', 'arena_type_id')) {
+        if ($rustBasePlayerCreate[$field] -ne $csBasePlayerCreate[$field]) {
+            $report['disagreements'] += "base player create $field`: rust=$($rustBasePlayerCreate[$field]) cs=$($csBasePlayerCreate[$field])"
+            $bpcDisagreements++
+        }
+    }
+}
+
+# Surface 5: UpdateArena roster. Both decoders decode the field-1 players
+# roster of subtype-48 packets. Compare roster presence by (nickname, team);
+# compare account bindings where either side carries a real id. Rust emits
+# account_id 0 for unbound entries; C# emits null -- 0 and null both mean
+# "no account evidence" and are treated as equal.
+$rosterKeys = @($rustArenaRoster.Keys + $csArenaRoster.Keys | Select-Object -Unique)
+$rosterDisagreements = 0
+foreach ($key in $rosterKeys) {
+    $rustHas = $rustArenaRoster.ContainsKey($key)
+    $csHas = $csArenaRoster.ContainsKey($key)
+    if ($rustHas -ne $csHas) {
+        $report['disagreements'] += "updateArena roster only on $($(if ($rustHas) { 'rust' } else { 'cs' })): $key"
+        $rosterDisagreements++
+        continue
+    }
+
+    if (-not $rustHas) { continue }
+    $rustId = [long]$rustArenaRoster[$key].account_id
+    $csIdRaw = $csArenaRoster[$key].account_id
+    $csId = if ($null -eq $csIdRaw) { 0L } else { [long]$csIdRaw }
+    if ($rustId -ne $csId) {
+        $report['disagreements'] += "updateArena account for $key`: rust=$rustId cs=$csIdRaw"
+        $rosterDisagreements++
+    }
+}
+$report['typed_surface'] = [ordered]@{
+    base_player_create_disagreements = $bpcDisagreements
+    arena_roster_disagreements       = $rosterDisagreements
+}
+
+# ---- 3e. Emit report ----
 if (-not $ReportPath) {
     $reportDir = Join-Path $repoRoot '.data'
     New-Item -ItemType Directory -Force -Path $reportDir | Out-Null
@@ -298,5 +423,5 @@ if ($disagreementCount -gt 0) {
     Exit-With 1
 }
 
-Write-Host 'CROSS-CHECK AGREES: both decoders report the same battle time, participants, and packet clocks.'
+Write-Host 'CROSS-CHECK AGREES: battle time, participants, packet clocks, and the typed packet surface all match.'
 Exit-With 0
