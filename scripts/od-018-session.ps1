@@ -27,6 +27,14 @@ param(
     # stays green past 60s, so a longer cap gives the operator the whole
     # remaining lease. 0 = no hold.
     [int]$HoldAfterRollSeconds = 240,
+    # Replace the operator prompt with the automated x64dbg write-trace
+    # (scripts/x64dbg-write-trace.ps1) during the held green window. The
+    # trace script reads the staged survivors, arms bphw write breakpoints in
+    # the pre-armed x64dbg via command-bar injection, and captures the writing
+    # RIP to %TEMP%\od-wt-hits.txt - no operator at the keyboard.
+    [switch]$AutoWriteTrace,
+    # Time-box for the automated write-trace (capped by the hold window).
+    [int]$WriteTraceSeconds = 120,
     # Legacy blind pre-snapshot wait. OD-026 moved steady-state detection into
     # the rolling driver (snapshot candidate-count sanity gate with discard +
     # gate-aware retry), so this default is 0. Keep the param for manual use;
@@ -125,7 +133,20 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 if ($HoldAfterRollSeconds -gt 0) {
-    Write-Host ("od018: OPERATOR WINDOW OPEN for up to " + $HoldAfterRollSeconds + "s - in x64dbg (pre-armed attached), load %TEMP%\od-survivors.txt and set a hardware write breakpoint (bphw) on each survivor address, then let the replay play.")
+    if ($AutoWriteTrace) {
+        $traceSecs = [Math]::Min($WriteTraceSeconds, $HoldAfterRollSeconds)
+        Write-Host ("od018: AUTOMATED WRITE-TRACE for up to " + $traceSecs + "s via x64dbg-write-trace.ps1 (no operator step)")
+        $wt = Join-Path $RepoRoot 'scripts\x64dbg-write-trace.ps1'
+        & $wt -SurvivorFile $AddressFile -TraceSeconds $traceSecs
+        Write-Host ("od018: write_trace_exit=" + $LASTEXITCODE)
+        if (Test-Path -LiteralPath (Join-Path $env:TEMP 'od-wt-hits.txt')) {
+            $hitLines = @(Get-Content -LiteralPath (Join-Path $env:TEMP 'od-wt-hits.txt') -ErrorAction SilentlyContinue | Where-Object { $_ })
+            Write-Host ("od018: write_trace_hits=" + $hitLines.Count + " evidence=%TEMP%\od-wt-hits.txt")
+        }
+    }
+    else {
+        Write-Host ("od018: OPERATOR WINDOW OPEN for up to " + $HoldAfterRollSeconds + "s - in x64dbg (pre-armed attached), load %TEMP%\od-survivors.txt and set a hardware write breakpoint (bphw) on each survivor address, then let the replay play.")
+    }
     $holdDeadline = (Get-Date).AddSeconds($HoldAfterRollSeconds)
     # Start the announce clock at now so the first periodic re-announce does
     # not fire immediately after the OPEN line (double-announce at open).
@@ -141,7 +162,12 @@ if ($HoldAfterRollSeconds -gt 0) {
         # Re-announce periodically so the instruction stays visible on the
         # live transcript for the whole window (OD-028).
         if (((Get-Date) - $lastAnnounce).TotalSeconds -ge 30) {
-            Write-Host ("od018: OPERATOR WINDOW STILL OPEN (gate=" + $vs + ") - in x64dbg, set a hardware write breakpoint (bphw) on each od-survivors.txt address, then let the replay play.")
+            if ($AutoWriteTrace) {
+                Write-Host ("od018: HOLD WINDOW STILL OPEN (gate=" + $vs + ") - automated write-trace completed; holding for the remaining lease")
+            }
+            else {
+                Write-Host ("od018: OPERATOR WINDOW STILL OPEN (gate=" + $vs + ") - in x64dbg, set a hardware write breakpoint (bphw) on each od-survivors.txt address, then let the replay play.")
+            }
             $lastAnnounce = Get-Date
         }
         Start-Sleep -Seconds 2

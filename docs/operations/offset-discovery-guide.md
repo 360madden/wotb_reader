@@ -102,6 +102,11 @@ Phase 2: guarded scanner / rolling driver controlled dynamic anchor
 Phase 3: x64dbg native access + layout tracing
 Phase 4: two launches × two replays + GameHarness evidence
 Phase 5: conservative publication and promotion review
+
+Optional but recommended: after Phase 2b stages survivors, reconstruct the
+survivor's class layout with ReClass.NET (Phase 2c) before the static root
+verification step -- the layout turns heap evidence into a field map that
+`tools/find-static-roots.py` can anchor to module RVAs.
 ```
 
 ### Phase 1 — Ghidra static analysis (string → cross-reference → candidate offset)
@@ -183,10 +188,23 @@ struct.
 ```
 Run scripts/roll-replay-time-increased.ps1 (snapshot → rolling compare →
 survivor staging to %TEMP%\od-survivors.txt via -AddressFile)
-    → load each survivor absolute address into x64dbg
+    → survivors feed the automated write-trace (below) or manual x64dbg
 ```
 
-**2. Arm a hardware write breakpoint on a survivor address**
+**2. Automated write-trace (operator optional)**
+```
+powershell -File scripts/x64dbg-write-trace.ps1 -TraceSeconds 120
+# or pass -AutoWriteTrace -WriteTraceSeconds 120 to scripts/od-018-session.ps1
+# so it runs inside the held green window
+```
+Requires the pre-armed x64dbg (`scripts/pre-arm-debugger.ps1 -AutoAttach`).
+It arms `bph <addr>,w,8` hardware write breakpoints (≤4 — the x64 DR0-DR3
+limit), captures the writing RIP to `%TEMP%\od-wt-hits.txt`, and writes 64
+bytes of memory at the writing RIP to `%TEMP%\od-wt-hits\` (the RIP is in
+the filename — automatable evidence, no GUI scraping). `-DryRun` generates
+the x64dbg script + prints the plan without touching the debugger.
+
+**3. Manual fallback (operator present) — arm a hardware write breakpoint**
 ```
 x64dbg: File → Attach → select wotblitz.exe
     → right-click the survivor address → Breakpoint → Hardware, On Write
@@ -195,7 +213,7 @@ x64dbg: File → Attach → select wotblitz.exe
     → Note the address of this instruction
 ```
 
-**3. Open x64dbg and set a breakpoint**
+**4. Open x64dbg and set a breakpoint**
 ```
 x64dbg: File → Attach → select wotblitz.exe
     → Ctrl+G → paste the instruction address
@@ -230,6 +248,65 @@ Example:
   playerYaw offset = 0x10317A44 + 0x34 - 0x10000000 = 0x0317A878
   → Compare with the reconciled candidate record, not the current quarantined yaw values.
   → A nearby address is not confirmation; classify the address kind first.
+```
+
+### Phase 2c — ReClass.NET class-layout reconstruction (survivor → field map)
+
+**Purpose:** Turn a staged survivor heap pointer into a concrete class layout.
+ReClass.NET attaches to the live game, pointer-chases the survivor into its
+object, and renders the surrounding struct (HP, position triple, angles) as a
+visual field map. This is the bridge between the dynamic anchor and the
+offline root verifier: the field offsets ReClass reveals become the input that
+`tools/find-static-roots.py` anchors to module RVAs.
+
+**Registration:** `tools/external/tools.lock.json` (MIT; v1.2 canonical release,
+SHA-256 `3822bf89…9f46`; pending-install/pending-approval). Download
+`ReClass.NET.rar` from the canonical GitHub releases page, extract to
+`C:\tools\ReClass.NET\`, run `ReClass.exe`. Newer nightly builds exist on
+reclass.net but are not pinned.
+
+#### Step-by-step workflow:
+
+**1. Stage survivors (same set the write-trace uses)**
+```
+Run scripts/roll-replay-time-increased.ps1 with -AddressFile
+    → %TEMP%\od-survivors.txt holds the ≤10 survivor absolute addresses
+    → pre-arm the debugger exactly as in Phase 2b step 2 (same green window)
+```
+
+**2. Attach and load the best survivor**
+```
+ReClass.NET: File → Attach → select wotblitz.exe
+    → right-click in the node list → Add Address → paste the top survivor
+    → ReClass pointer-chases and shows the object's fields
+```
+
+**3. Identify the struct family and field types**
+```
+Walk the rendered layout: look for the expected position triple (3× float32 in
+sequence), an HP-like int32 (~500-2000), and angle floats. Note each field's
+type + offset from the object base, exactly like the Phase 2b step 4 x64dbg
+field survey -- ReClass is the visual twin of that byte-walk.
+```
+
+**4. Export the layout to the offline verifier**
+```
+Record: object base register/pointer, each member offset, and the observed
+value range. Then run the offline static check against the hash-bound binary:
+
+    python tools/find-static-roots.py --fields 0x<module_rva_of_base>
+    python tools/find-static-roots.py --record-map 0x<base>,<stride>,<count>
+
+A layout that only exists on a heap pointer (no static .data anchor) is
+report-only -- it does not promote to a module RVA. ReClass reveals the field
+map; find-static-roots.py decides whether the map has a static root.
+```
+
+**5. Classify before publishing**
+```
+Same rules as Phase 3 step 2: a ReClass-revealed member displacement is not a
+module RVA; only evidence that survives the independent-launch,
+independent-replay, static, and approval checks is published as Candidate.
 ```
 
 ### Phase 3 — Native instruction and layout tracing
@@ -333,9 +410,12 @@ path to all 8 fields is to establish one controlled native dynamic anchor first:
    ↓ Survivors staged to `%TEMP%\od-survivors.txt` via `-AddressFile`
 2. x64dbg → hardware write breakpoint on the staged survivors
    ↓ Identify a member displacement or pointer-chain root
-3. x64dbg → confirm instruction/register context and reconstruct neighboring
-   fields from the same object
-4. Repeat across two launches and two replays before publication
+3. ReClass.NET (Phase 2c) → reconstruct the object layout from the staged
+   survivor, then x64dbg → confirm instruction/register context
+   ↓ Field map feeds the offline verifier
+4. `tools/find-static-roots.py --fields/--record-map` → anchor the layout to a
+   module RVA or prove it is heap-only
+5. Repeat across two launches and two replays before publication
 ```
 
 If the native path produces only heap-dynamic addresses, use x64dbg or a

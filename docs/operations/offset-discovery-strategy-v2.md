@@ -243,8 +243,10 @@ decoy), and the speed marker only passes 1.0 at a tolerance ≥8× its target
 (not selective). **Live pilot order: (1) Double replayTime delta first —
 `-ValueKind Double -CompareMode delta -DeltaTarget 4.0 -DeltaTolerance 0.4`
 (unit variants 4.0s / 4000ms / 4,000,000ticks — the in-memory unit is
-unknown); (2) Float position delta on a movement-only window; (3) operator
-Find-what-writes on the staged set.**
+unknown); (2) Float position delta on a movement-only window; (3) automated
+x64dbg write-trace on the staged set via `scripts/x64dbg-write-trace.ps1`
+(bphw write breakpoints armed by command-bar injection; writing RIP captured
+via `savedata` evidence files — operator step optional).**
 
 **Movement + HP markers (OD-046-STATIC, 2026-08-03):**
 `replay-delta-extractor.py --movement` segments the replay into
@@ -268,11 +270,19 @@ Filter X(T), then Y(T), then Z(T) on the same session; survivors must pass all
 three. X alone ≈ 10⁶ hits; X+Y+Z simultaneously → only the real position copy.
 Expected outcome: ≤2–4 survivors → ready for interactive Find-what-writes.
 
-### C5. Interactive Find-what-writes (operator-owned, final step)
-With ≤2–4 staged survivors, the operator runs Find-what-writes in the held
-green window to capture the writing instruction + struct base. This is the
-missing RIP/root evidence the whole campaign has lacked (all automated CE
-write-BP attempts: 0 hits).
+### C5. Automated x64dbg write-trace (final step, operator optional)
+With ≤4–10 staged survivors, `scripts/x64dbg-write-trace.ps1` arms hardware
+WRITE breakpoints (`bph <addr>,w,8` — ≤4, the DR0-DR3 x64 limit) in the
+pre-armed x64dbg, captures the writing RIP to `%TEMP%\od-wt-hits.txt`, and
+writes 64 bytes of memory at RIP per hit to `%TEMP%\od-wt-hits\`
+(`savedata` string-formats its filename arg, so the RIP lands in the
+filename — an automatable evidence channel with no GUI scraping). x64dbg's
+CLI has no script-execution flag (only `-p` attach), so the script injects
+`scriptload`+`scriptrun` into the running instance's command bar. This is
+the missing RIP/root evidence the campaign has lacked (all automated CE
+write-BP attempts: 0 hits); x64dbg hardware write BPs are the changed
+mechanism the OD-020 rules-out explicitly sanctioned. Manual fallback
+(operator present): Find-what-writes in the held green window.
 
 ## 7. Tooling decisions: build vs. third-party
 
@@ -281,7 +291,7 @@ write-BP attempts: 0 hits).
 | Static PE/RTTI analysis | **Build** (`tools/find-static-roots.py`) | stdlib-only, no install; proven results; repo convention (Python = offline tooling only) |
 | True instruction decoding | **Build** (A1/A3, 89/8B/8D/C7 + ModRM patterns) | covers the absolute-reference forms; capstone would be a later optimization, not a dependency |
 | Debugger for write-capture | **Third-party** (x64dbg, already locked in `tools.lock.json`) | repo cannot set breakpoints by design (no injection); x64dbg is the sanctioned external |
-| Dynamic RE / class layout | **Third-party** (ReClass.NET, CE — documented in `research/community-tools.md`) | interactive tools; not replaceable in-repo |
+| Dynamic RE / class layout | **Third-party** (ReClass.NET — documented in `research/community-tools.md`, registered in `tools.lock.json`) | interactive tools; not replaceable in-repo |
 | Ghidra class recovery | **Deferred** (`Ghidra-Cpp-Class-Analyzer`) | beneficial but needs Ghidra install; Python RTTI walk covers the same ground offline first |
 | DVPL asset decode | **Third-party** (rifsxd/dvpl_lz4 etc.) | asset decoding is out of scope for offsets; DvplReader already covers the game path |
 
@@ -302,8 +312,9 @@ failure (per `tools/external/README.md`); every addition registers in
    -CompareMode delta -DeltaTarget 4.0 -DeltaTolerance 0.4` (unit variants
    4000ms / 4,000,000ticks) against a verified session; measure survivor
    collapse vs "increased" (11 → predicted ≤2–4); then the Float position
-   delta pilot on a movement-only window; then operator Find-what-writes on
-   the staged set.
+   delta pilot on a movement-only window; then **automated x64dbg write-trace
+   on the staged set** (`scripts/x64dbg-write-trace.ps1`, or session driver
+   `-AutoWriteTrace`).
 2. **Track C3/C4:** value-equality X/Y/Z intersection on the same session;
    target ≤2–4 survivors.
 3. **Track B pilot:** hangar-state known-truth scan (HP number, tank name).
@@ -321,7 +332,8 @@ failure (per `tools/external/README.md`); every addition registers in
    NOT a gameplay root). Remaining Track A work is limited: the static paths
    to chain-class roots are exhausted, so the campaign pivots to the live
    replayTime anchor (Track C) and the hangar-state known-truth scan (Track B).
-5. **C5:** operator interactive Find-what-writes on the smallest staged set.
+5. **C5:** automated x64dbg write-trace on the smallest staged set (operator
+   step optional — manual Find-what-writes only as fallback).
 
 Each session: same ledger entry, workflow stop rules, handoff, and commit.
 

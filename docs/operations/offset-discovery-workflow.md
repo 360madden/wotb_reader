@@ -347,7 +347,11 @@ needed: 4000ms / 4,000,000ticks) — measure survivor collapse vs "increased"
 (11 → predicted ≤2–4), then the Float position pilot **on a movement-only
 span** (`--movement` shows only 32.3% of the Dead Rail replay is moving —
 891/2,756 windows; the position marker is only selective there), then
-operator Find-what-writes on the staged set. `--hp-delta --victim-entity
+**automated x64dbg write-trace** on the staged set via
+`scripts/x64dbg-write-trace.ps1` (bphw write breakpoints armed by
+command-bar injection; writing RIP captured via `savedata` evidence files —
+the operator step is now optional, run it with `-AutoWriteTrace` from the
+session driver). `--hp-delta --victim-entity
 <id>` is a supporting marker (kind-3 damage events; sparse-but-exact — the
 player took 0 damage this replay, so it is conditional on a damaged
 victim). The replayTime set remains the live anchor; do NOT waste lease
@@ -382,9 +386,10 @@ stack:
    harvested only on the target round. This doubled rounds-in-lease (6–7 →
    10–14) and enabled OD-031's target convergence.
 
-Plus the CE staging handoff rule: always use the default survivor
-address-file path so the autorun can stage survivors into CE, and keep the
-autorun poll window (300s) covering the whole lease + roll tail.
+Plus the staging handoff rule: always use the default survivor
+address-file path (`%TEMP%\od-survivors.txt`) so the pre-armed debugger and
+the automated write-trace (`scripts/x64dbg-write-trace.ps1`) find the staged
+set, and keep the write-trace poll window covering the whole lease + roll tail.
 
 Key rules: (1) **never roll from a load-transition snapshot** — but the
 steady-state gate must accept the *measured stable baseline* (66M this
@@ -403,9 +408,10 @@ live-terminal-only, so the record never invents unpersisted intermediates;
 than re-clicking; (6) a single rendezvous capability captured at roll start
 is not valid for a full 66M-baseline roll (the 401 rotation) — the driver
 refreshes + retries on 401; (7) rolling rounds request 1 candidate and
-harvest only on the target round (OD-RECOVERY-031); (8) use the default CE
-autorun survivor address-file path — a custom `-AddressFile` silently skips
-CE staging (OD-RECOVERY-031 attempt 4); (9) **convergence lands at 11–17
+harvest only on the target round (OD-RECOVERY-031); (8) use the default survivor
+address-file path — a custom `-AddressFile` silently skips the downstream
+staging step (first observed as a CE-autorun staging miss in OD-RECOVERY-031
+attempt 4; the same rule now covers the x64dbg pre-arm/write-trace staging); (9) **convergence lands at 11–17
 survivors under current load, always just past the lease edge** — plan for
 lease-headroom work, not more identical runs (OD-RECOVERY-032/033);
 (10) **the tail is value-bound, not round-bound** — the last survivors tick
@@ -427,9 +433,20 @@ when a round-8 401 was absorbed and the roll continued (OD-RECOVERY-038).
 Operational notes: (1) detached launch + session driver remains the proven
 pattern; (2) the rolling driver stages survivors to
 `-AddressFile` (default `%TEMP%\od-survivors.txt`) for the pre-armed x64dbg,
-so the operator's write-trace is a hardware write breakpoint (bphw) on each
-staged address; (3) the automated CE write-BP hit path stays ruled out
-(OD-020), so the interactive step is the evidence path — Cheat Engine is no
+and **`scripts/x64dbg-write-trace.ps1` automates the write-trace**: it reads
+the staged addresses, generates an x64dbg script that arms `bph <addr>,w,8`
+write breakpoints (≤4 — the DR0-DR3 limit; extras are reported unarmed),
+sets `bphwlog` + a `SetHardwareBreakpointCommand` that runs `savedata` so
+each hit writes `<hits>\odwt-0x<addr>-<rip>.bin` (64 bytes at RIP — the
+writing instruction bytes; `savedata` string-formats its filename arg, so the
+RIP is in the filename: the automatable evidence channel), and fast-resume so
+the replay keeps playing; it injects `scriptload`+`scriptrun` into the
+running x64dbg's command bar (x64dbg's CLI has no script-execution flag —
+only `-p` attach — so command-bar injection is the no-new-install path) and
+polls the hits dir + the gate; (3) the automated CE write-BP hit path stays
+ruled out (OD-020) — x64dbg's hardware write BPs are a *changed mechanism*
+the OD-020 rules-out explicitly sanctioned, and unlike CE's automated path
+this one writes evidence files without GUI scraping; Cheat Engine is no
 longer part of the pipeline (removed 2026-08-03); (4) stale game / host
 processes are stopped automatically by the next launch helper; (5) the
 operator window is held
@@ -523,9 +540,20 @@ File-association remains useful only as a **playback smoke** (“does this
 
    It locates x64dbg via known install roots, launches it attached to the
    running `wotblitz.exe` with `-p <pid>`, and writes
-   `%TEMP%\od-prearmed-debugger.json`. Load the rolling driver's staged
-   survivor addresses (`%TEMP%\od-survivors.txt`) and arm a hardware write
-   breakpoint (bphw) on each for Find-what-writes.
+   `%TEMP%\od-prearmed-debugger.json`. Then run the automated write-trace:
+
+   ```text
+   powershell -File scripts/x64dbg-write-trace.ps1 -TraceSeconds 120
+   ```
+
+   (or pass `-AutoWriteTrace -WriteTraceSeconds 120` to the session driver
+   so it runs inside the held green window). It arms a hardware write
+   breakpoint (`bph <addr>,w,8`) on the staged survivors, captures the
+   writing RIP to `%TEMP%\od-wt-hits.txt` + evidence bytes in
+   `%TEMP%\od-wt-hits\`, and exits 0 with the gate held. `-DryRun` generates
+   the x64dbg script + prints the plan without touching the debugger.
+   Manual fallback (operator present): load `%TEMP%\od-survivors.txt` and
+   arm a hardware write breakpoint (bphw) on each for Find-what-writes.
 3. Start rolling Double increased (`rollingBaseline=true`) immediately
    post-verify with Space pause/resume pulses; aim to reach ≤10 with lease
    margin reserved for interactive Find-what-writes on survivors. Use the

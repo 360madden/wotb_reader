@@ -49,6 +49,32 @@
       "registered_at_utc": "2026-07-30T00:00:00Z"
     },
     {
+      "name": "ReClass.NET",
+      "version": "v1.2",
+      "release_name": "v1.2 (2019-04-15; last published GitHub release -- dev continues on master/UnsafeMemoryScanner with newer nightlies distributed via reclass.net)",
+      "sha256": "3822bf8974df152cae17714ee484fdcc3ede5c1e26bc159c7c9e9e62e60b9f46",
+      "purpose": "Runtime class-layout reconstruction from staged survivor pointers -- attaches to the live game (x86 target; WOW64-observed like the scanner), pointer-chases a staged survivor into its object, and visualizes the surrounding struct fields (HP, position, yaw) so dynamic evidence becomes a concrete layout that feeds offline root verification",
+      "source_url": "https://github.com/ReClassNET/ReClass.NET",
+      "releases_url": "https://github.com/ReClassNET/ReClass.NET/releases",
+      "installed_path": "C:\\tools\\ReClass.NET",
+      "launcher": "ReClass.exe",
+      "workflow_phase": "dynamic-analysis",
+      "installation_status": "pending-install",
+      "approval_status": "pending-approval",
+      "approved_scope": "Runtime class-layout reconstruction from staged survivor pointers during positively verified offline replay sessions only",
+      "verification": {
+        "verified_at_utc": null,
+        "launcher_present": false,
+        "sha256_matches": false,
+        "notes": "sha256 field is the verified hash of the canonical v1.2 GitHub release asset (computed 2026-08-04); local install not yet present, so launcher/sha256 verification is pending"
+      },
+      "spdx_license": "MIT",
+      "platforms": ["win32", "win64"],
+      "platform_notes": "Target game is x86 (WOW64-observed 32-bit; the scanner's GuardedMemoryReader resolves ImageFileMachineI386 with 32-bit pointers). ReClass.NET v1.2 ships x86 and x64 attach support; use the x86 process tree when attaching to wotblitz.exe.",
+      "install_instructions": "Download ReClass.NET.rar (2,748,658 bytes) from GitHub releases v1.2, extract to C:\\tools\\ReClass.NET\\, run ReClass.exe; SHA-256 above is the verified hash of the canonical v1.2 release asset. Newer nightly builds exist on reclass.net but are not pinned.",
+      "registered_at_utc": "2026-08-04T00:00:00Z"
+    },
+    {
       "name": "ILSpy",
       "version": "9.0.x",
       "sha256": "pending-verification",
