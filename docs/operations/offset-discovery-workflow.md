@@ -345,11 +345,15 @@ survival 0.205 over 15 rounds — the standing tank sheds the true field).**
 run the **Double replayTime delta pilot FIRST** — `-CompareMode delta
 -DeltaTarget 4.0 -DeltaTolerance 0.4 -ValueKind Double` (unit variants if
 needed: 4000ms / 4,000,000ticks) — measure survivor collapse vs "increased"
-(11 → predicted ≤2–4), then the Float position pilot on a movement-only
-window, then operator Find-what-writes on the staged set. The replayTime set
-remains the live anchor; do NOT waste lease probing the handler records, the
-AnyFn table, or chasing the exhausted static paths as singletons. This
-builds on the validated driver stack:
+(11 → predicted ≤2–4), then the Float position pilot **on a movement-only
+span** (`--movement` shows only 32.3% of the Dead Rail replay is moving —
+891/2,756 windows; the position marker is only selective there), then
+operator Find-what-writes on the staged set. `--hp-delta --victim-entity
+<id>` is a supporting marker (kind-3 damage events; sparse-but-exact — the
+player took 0 damage this replay, so it is conditional on a damaged
+victim). The replayTime set remains the live anchor; do NOT waste lease
+probing the handler records, the AnyFn table, or chasing the exhausted
+static paths as singletons. This builds on the validated driver stack:
 The session also produced the **first-ever 401-refresh failure in 13
 validations** (OD-038 attempt 3, round 9: the refreshed context re-read the
 rendezvous file but retried immediately into a mid-rotation file, exhausting

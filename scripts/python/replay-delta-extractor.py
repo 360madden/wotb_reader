@@ -31,6 +31,19 @@ Modes:
       whose per-round pass rate is low (e.g. a bursty position field) sheds
       the TRUE field across rounds just as it sheds decoys — this predicts
       the survivor-collapse outcome before the live run spends lease.
+
+  python scripts/python/replay-delta-extractor.py --movement
+      Segment the participant's replay into moving vs stationary phases and
+      report the movement fraction plus per-window displacement stats for
+      the MOVING windows only — OD-045-STATIC showed position-delta markers
+      are only selective when the tank is actually moving, so this tells the
+      live pilot which replay-time span to scan.
+
+  python scripts/python/replay-delta-extractor.py --hp-delta --victim-entity <id>
+      Build a per-window HP damage-delta series from kind-3 damage events
+      (attacker/victim entity + damage amount) for the victim entity and run
+      it through the survival simulation. An HP field changes rarely and by
+      exact damage amounts — a strong marker when the victim takes hits.
 """
 
 from __future__ import annotations
@@ -258,6 +271,91 @@ def marker_series(
     return dist2d, replay_delta, speed
 
 
+def movement_phases(
+    samples: list[tuple[int, float, float, float]],
+    speed_threshold: float = 0.5,
+) -> dict:
+    """Segment the replay into moving / stationary phases.
+
+    A window is 'moving' when the 1s-spaced speed (|pos|/dt) exceeds
+    `speed_threshold` m/s. Returns phase count, movement fraction (fraction
+    of replay-time windows classified moving), and the moving-window
+    per-4s-window displacement stats (for the position-delta pilot).
+    """
+    moving_1s: list[float] = []  # 1s-window speeds
+    for i in range(len(samples) - 1):
+        dt = samples[i + 1][0] - samples[i][0]
+        if dt <= 0:
+            continue
+        dt_sec = dt / TICKS_PER_SECOND
+        dx = samples[i + 1][1] - samples[i][1]
+        dz = samples[i + 1][3] - samples[i][3]
+        moving_1s.append(math.hypot(dx, dz) / dt_sec)
+    if not moving_1s:
+        return {"windows": 0, "moving_fraction": 0.0}
+    n_moving = sum(1 for s in moving_1s if s > speed_threshold)
+    # Moving-window 4s displacement: use the same sliding-window interp but
+    # keep only windows whose midpoint speed exceeds the threshold.
+    moving_disp: list[float] = []
+    for i in range(len(samples) - 1):
+        dt = samples[i + 1][0] - samples[i][0]
+        if dt <= 0:
+            continue
+        dt_sec = dt / TICKS_PER_SECOND
+        dx = samples[i + 1][1] - samples[i][1]
+        dz = samples[i + 1][3] - samples[i][3]
+        speed = math.hypot(dx, dz) / dt_sec
+        if speed > speed_threshold:
+            moving_disp.append(math.hypot(dx, dz))
+    return {
+        "speed_threshold_mps": speed_threshold,
+        "windows": len(moving_1s),
+        "moving_fraction": round(n_moving / len(moving_1s), 4),
+        "moving_windows": n_moving,
+        "stationary_windows": len(moving_1s) - n_moving,
+        "moving_disp_1s": summarize(moving_disp),
+    }
+
+
+def hp_damage_series(
+    con: sqlite3.Connection,
+    session_id: str,
+    victim_entity_id: int,
+    window_seconds: float,
+) -> list[float]:
+    """Per-window HP damage-delta series from kind-3 damage events.
+
+    Each kind-3 event carries {attackerEntityId, victimEntityId, damage}.
+    Bucket damage dealt to `victim_entity_id` into replay-time windows of
+    `window_seconds` and return the per-window damage totals. An HP field
+    drops by these exact amounts when hit and is otherwise flat — a marker
+    that is sparse but exact (0 damage windows shed nothing; hit windows
+    identify the field precisely).
+    """
+    rows = con.execute(
+        "SELECT replay_time_ticks, values_json FROM canonical_events "
+        "WHERE battle_session_id=? AND kind=3",
+        (session_id,),
+    ).fetchall()
+    bucket_ticks = int(window_seconds * TICKS_PER_SECOND)
+    buckets: dict[int, float] = {}
+    for r in rows:
+        try:
+            v = json.loads(r[1])
+        except json.JSONDecodeError:
+            continue
+        if int(v.get("victimEntityId", -1)) != victim_entity_id:
+            continue
+        ticks = int(r[0])
+        idx = ticks // bucket_ticks
+        buckets[idx] = buckets.get(idx, 0.0) + float(v.get("damage", 0))
+    if not buckets:
+        return []
+    # Series: per window index in the session's window range.
+    max_idx = max(buckets)
+    return [buckets.get(i, 0.0) for i in range(max_idx + 1)]
+
+
 def simulate_survival(
     marker: list[float],
     target: float,
@@ -322,6 +420,14 @@ def main(argv: list[str]) -> int:
                         help="run the offline delta-filter survival simulation")
     parser.add_argument("--rounds", default="5,10,15",
                         help="rolling round counts for survival projection (default 5,10,15)")
+    parser.add_argument("--movement", action="store_true",
+                        help="segment the participant replay into moving/stationary phases")
+    parser.add_argument("--speed-threshold", type=float, default=0.5,
+                        help="m/s threshold for the moving phase (default 0.5)")
+    parser.add_argument("--hp-delta", action="store_true",
+                        help="build a per-window HP damage-delta series from kind-3 damage events")
+    parser.add_argument("--victim-entity", type=int, default=0,
+                        help="entity id of the HP victim to track (required with --hp-delta)")
     parser.add_argument("--json", default="", help="also write JSON to this path")
     args = parser.parse_args(argv)
 
@@ -410,6 +516,32 @@ def main(argv: list[str]) -> int:
             ),
         },
     }
+
+    if args.movement:
+        result["movement"] = movement_phases(samples, args.speed_threshold)
+
+    if args.hp_delta:
+        if args.victim_entity <= 0:
+            # Default to the player's own entity when available.
+            pid = con.execute(
+                "SELECT entity_id FROM participants WHERE battle_session_id=? "
+                "AND account_id IS NOT NULL AND player_name=? LIMIT 1",
+                (session["id"], "mrkool1138"),
+            ).fetchone()
+            victim = pid["entity_id"] if pid else 0
+        else:
+            victim = args.victim_entity
+        hp_series = hp_damage_series(con, session["id"], victim, args.window)
+        result["hp_delta"] = {
+            "victim_entity_id": victim,
+            "windows": len(hp_series),
+            "hit_windows": sum(1 for d in hp_series if d > 0),
+            "total_damage": round(sum(hp_series), 2),
+            "series": [round(d, 2) for d in hp_series],
+            "simulation": simulate_survival(
+                hp_series, 0.0, [0.0, 0.5, 1.0, 5.0], rounds
+            ),
+        }
 
     if args.simulate:
         dist2d_s, replay_s, speed_s = marker_series(samples, args.window, args.speed)

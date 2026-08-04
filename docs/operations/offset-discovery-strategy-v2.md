@@ -246,6 +246,19 @@ decoy), and the speed marker only passes 1.0 at a tolerance ≥8× its target
 unknown); (2) Float position delta on a movement-only window; (3) operator
 Find-what-writes on the staged set.**
 
+**Movement + HP markers (OD-046-STATIC, 2026-08-03):**
+`replay-delta-extractor.py --movement` segments the replay into
+moving/stationary phases — for Dead Rail **only 32.3% of windows are moving
+(891/2,756 @ 0.5 m/s), moving-window 1s displacement median 0.712 m, p90
+0.992, max 1.489** — the Float position pilot should scan a movement-only
+span so the position marker is selective (fixing the OD-045 hollow-collapse
+finding in practice). `--hp-delta --victim-entity <id>` builds a per-window
+damage series from kind-3 events and runs it through the survival sim: the
+player took **0 damage** this replay (marker is conditional on a damaged
+victim); a hit victim shows sparse-but-exact signals (5 hit windows, 2,618
+dmg, pass-rate 0.9808 @ tol 0, survival 0.907/0.824/0.747 over 5/10/15
+rounds) — a supporting marker, never the primary filter.
+
 ### C3. Value-equality at synchronized time
 At known replay-time T (established by C1), snapshot-filter `FloatMin=FloatMax≈
 X(T)`. Only the true copy holds exactly X(T) — more selective than "increased".
