@@ -214,7 +214,7 @@ offline-safety gates.
 ```
 
 All eight original roadmap items plus fifteen follow-on features and the
-Cheat Engine-like multi-scan engine shipped across the 2026-07-26 → 2026-07-30
+Standalone guarded multi-scan engine shipped across the 2026-07-26 → 2026-07-30
 sessions. Remaining: live HUD smoke test against a real installation.
 
 ### Track 2 · Architecture hardening (release gate)

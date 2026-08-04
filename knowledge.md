@@ -124,7 +124,7 @@ Core (no project refs)
       ├── CaptureLogs → Application + Core  (telemetry capture log reading)
       ├── GameIntegration → Application + Core (installed-game discovery, DVPL reading,
       │                                         offline session gate, guarded Win32, launch)
-      ├── UltimateScanner → Application + Core (standalone Cheat Engine-like memory
+      ├── UltimateScanner → Application + Core (standalone guarded memory
       │                                         scan module: multi-scan snapshot/compare,
       │                                         pattern/neighborhood scans, guarded VM reads)
       │                     referenced ONLY by GameIntegration

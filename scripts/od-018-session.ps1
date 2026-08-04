@@ -47,9 +47,9 @@ if ([string]::IsNullOrWhiteSpace($AddressFile)) {
     $AddressFile = Join-Path $env:TEMP 'od-survivors.txt'
 }
 
-# Freshness prerequisite for the CE autorun capture: the address file must
-# not exist before rolling, or the autorun script could stage stale survivor
-# addresses from a prior session (OD-RECOVERY-020 review finding).
+# Freshness prerequisite for the x64dbg staging: the address file must not
+# exist before rolling, or a stale survivor set from a prior session could be
+# staged in the debugger (OD-RECOVERY-020 review finding).
 Remove-Item -LiteralPath $AddressFile -Force -ErrorAction SilentlyContinue
 
 function Get-Rv {
@@ -125,7 +125,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 if ($HoldAfterRollSeconds -gt 0) {
-    Write-Host ("od018: OPERATOR WINDOW OPEN for up to " + $HoldAfterRollSeconds + "s - in CE, right-click any od-survivor-N entry and choose 'Find out what writes this address', then let the replay play.")
+    Write-Host ("od018: OPERATOR WINDOW OPEN for up to " + $HoldAfterRollSeconds + "s - in x64dbg (pre-armed attached), load %TEMP%\od-survivors.txt and set a hardware write breakpoint (bphw) on each survivor address, then let the replay play.")
     $holdDeadline = (Get-Date).AddSeconds($HoldAfterRollSeconds)
     # Start the announce clock at now so the first periodic re-announce does
     # not fire immediately after the OPEN line (double-announce at open).
@@ -141,7 +141,7 @@ if ($HoldAfterRollSeconds -gt 0) {
         # Re-announce periodically so the instruction stays visible on the
         # live transcript for the whole window (OD-028).
         if (((Get-Date) - $lastAnnounce).TotalSeconds -ge 30) {
-            Write-Host ("od018: OPERATOR WINDOW STILL OPEN (gate=" + $vs + ") - in CE, right-click any od-survivor-N entry and choose 'Find out what writes this address', then let the replay play.")
+            Write-Host ("od018: OPERATOR WINDOW STILL OPEN (gate=" + $vs + ") - in x64dbg, set a hardware write breakpoint (bphw) on each od-survivors.txt address, then let the replay play.")
             $lastAnnounce = Get-Date
         }
         Start-Sleep -Seconds 2

@@ -42,7 +42,7 @@ Several different things are often called an "offset":
    static offset without a stable root or instruction evidence.
 
 Every candidate record must state which kind it is. Never copy a raw Ghidra data
-reference or a Cheat Engine address into `memory-offsets/` without classifying
+reference or an x64dbg-resolved address into `memory-offsets/` without classifying
 it. This distinction is the main protection against repeating the current
 playerYaw error.
 
@@ -142,7 +142,7 @@ actual relation: ...
 remaining candidates: before → after
 ```
 
-Use Cheat Engine's interactive scan or the guarded loopback snapshot/compare
+Use x64dbg's interactive tracing or the guarded loopback snapshot/compare
 path for controlled transitions. The timer-based `autoDiscover()` and
 `discover-campaign` paths are useful for a first pass, but their natural replay
 transitions do not prove that the observed field is the requested field. A
@@ -183,9 +183,9 @@ For one controlled transition:
    a finite expected range, and the engine's 512 MiB snapshot ceiling. Request
    at most one comparison candidate and suppress its address and value from
    rendered output; retain only the aggregate counters.
-4. If Cheat Engine is used for local structural follow-up, keep it read-only:
-   do not edit or freeze values, inject code, enable speedhack, or create dumps,
-   pointer maps, tables, or screenshots for the repository.
+4. If x64dbg is used for local structural follow-up, keep it read-only: do
+   not edit or freeze values, inject code, or create dumps, pointer maps, or
+   screenshots for the repository.
 5. Capture state A while the replay is paused. Have the operator resume replay
    movement briefly and pause it again, then compare state B with `changed` and
    a rolling baseline. An `unchanged` pass while paused may remove volatile
@@ -265,13 +265,12 @@ A candidate that survives one replay but not a second is `superseded` or
 Use the repository tools only after the evidence record is complete:
 
 ```powershell
-.\tools\discover-offsets.ps1 -SelfTest
 .\tools\report-offset-evidence.ps1 -GameVersion 11.19.0.10
 python scripts/python/offset_check.py --check-schema
 ```
 
-`discover-offsets.ps1` may normalize a unique CE candidate, but that operation
-only records `Candidate` evidence. Before publication, review that:
+Publication only records `Candidate` evidence (never `Verified`). Before
+publication, review that:
 
 - decimal and hexadecimal forms agree;
 - the module name and module base are recorded;
@@ -426,12 +425,14 @@ on a 401, settle ~750ms before retrying and keep ≥4 retries; validated live
 when a round-8 401 was absorbed and the roll continued (OD-RECOVERY-038).
 
 Operational notes: (1) detached launch + session driver remains the proven
-pattern; (2) the CE autorun staging (`od-autorun-writebp.lua`) works and now
-has a 300s poll — it stages survivors into CE's address list as
-`od-survivor-N`, so the operator's Find-what-writes is a single right-click;
-(3) the automated CE write-BP hit path stays ruled out (OD-020), so the
-interactive step is the evidence path; (4) stale CE / host are stopped
-automatically by the next launch helper; (5) the operator window is held
+pattern; (2) the rolling driver stages survivors to
+`-AddressFile` (default `%TEMP%\od-survivors.txt`) for the pre-armed x64dbg,
+so the operator's write-trace is a hardware write breakpoint (bphw) on each
+staged address; (3) the automated CE write-BP hit path stays ruled out
+(OD-020), so the interactive step is the evidence path — Cheat Engine is no
+longer part of the pipeline (removed 2026-08-03); (4) stale game / host
+processes are stopped automatically by the next launch helper; (5) the
+operator window is held
 inside the running driver and re-announced every 30s — use
 `-HoldAfterRollSeconds 240` (or higher) so the window is lease-bound, not
 timer-bound; (6) the steady-state gate now lives in round 1 of the rolling
@@ -520,14 +521,11 @@ File-association remains useful only as a **playback smoke** (“does this
    powershell -File scripts/pre-arm-debugger.ps1 -AutoAttach
    ```
 
-   It locates CE 7.7 / x64dbg via registry + known paths, launches the chosen
-   debugger attached to the running `wotblitz.exe`, and writes
-   `%TEMP%\od-prearmed-debugger.json`. `-PreferX64Dbg` switches the default
-   (CE first). CE's `-p <pid>` open-process flag is version-dependent; the
-   robust alternative is loading `tools/cheat-engine/prearm-attach.lua` in CE
-   (Ctrl+Alt+L → Execute) — it attaches to `wotblitz.exe` and stages the
-   rolling driver's survivor addresses into CE's address list for one-click
-   Find-what-writes.
+   It locates x64dbg via known install roots, launches it attached to the
+   running `wotblitz.exe` with `-p <pid>`, and writes
+   `%TEMP%\od-prearmed-debugger.json`. Load the rolling driver's staged
+   survivor addresses (`%TEMP%\od-survivors.txt`) and arm a hardware write
+   breakpoint (bphw) on each for Find-what-writes.
 3. Start rolling Double increased (`rollingBaseline=true`) immediately
    post-verify with Space pause/resume pulses; aim to reach ≤10 with lease
    margin reserved for interactive Find-what-writes on survivors. Use the

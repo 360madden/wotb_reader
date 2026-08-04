@@ -205,7 +205,7 @@ via CLI → published → served → all API endpoints verified → overlay laun
 - **Game path via DI**: The overlay's game path discovery is a lightweight
   replica of `GameInstallationDiscovery`. A future refactor could extract
   discovery into a shared portable utility.
-- **Dynamic offset discovery**: Cheat Engine-like multi-scan engine (`MemoryScanEngine`)
+- **Dynamic offset discovery**: standalone multi-scan engine (`MemoryScanEngine`)
   with snapshot/compare/filter (changed/unchanged/increased/decreased). Neighborhood scanner
   reads memory windows around known offsets (`MemoryScanDiscoverer.ScanNeighborhood`).
   The scanner lives in the standalone `ultimate-scanner/` module (`WotBTreader.UltimateScanner`),

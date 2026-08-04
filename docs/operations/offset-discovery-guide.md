@@ -14,13 +14,12 @@ Last updated: 2026-08-03 (campaign status: OD-RECOVERY-030 Partial — two rolli
 | Game version installed | 11.19.0.10 (`C:\Games\World_of_Tanks_Blitz\wotblitz.exe`, ~71MB) |
 | Offset file | `memory-offsets/11.19.0.10.json` — hash-bound; `playerYaw` is Stale/quarantined; 7 fields unknown |
 | Ghidra 12.1.2 | Installed at `C:\work\tools\ghidra_12.1.2_PUBLIC` |
-| Cheat Engine 7.7 | Installed at `C:\Program Files\Cheat Engine\` |
 | x64dbg | Installed at `C:\work\tools\x64dbg` — snapshot 2026.05.27 (see Phase 2 below) |
 | Managed-artifact decompiler | **Conditional only** — verify exact installation artifacts before using; see Phase 3 below |
 | GameHarness scanner | `scan`/`probe` and `discover*` check the offline-session gate via HTTP |
 | Ghidra headless script | `tools/ghidra-scripts/FindOffsets.java` — ready to run |
-| Cheat Engine Lua scripts | `tools/cheat-engine/discover-offsets.lua`, `multiscan.lua` |
-| Discovery orchestrator | `tools/discover-offsets.ps1` — normalizes CE outputs and publishes unique candidates only |
+| Rolling driver | `scripts/roll-replay-time-increased.ps1` — snapshot → compare → survivor staging |
+| Delta extractor | `scripts/python/replay-delta-extractor.py` — statically derives delta markers from decoded sessions |
 | Evidence report | `tools/report-offset-evidence.ps1` — read-only Candidate/Verified/Unknown summary |
 | System Informer | **Not yet installed** — see installation below |
 
@@ -63,7 +62,7 @@ Process Hacker project.
 | Feature | How it helps |
 |---------|-------------|
 | **Process memory view** | See the full memory map of `wotblitz.exe` — which regions are readable/writable, addresses, and sizes without writing any code |
-| **Suspend/Resume** | Freeze the game process mid-replay so memory values don't change while you inspect them in CE or x64dbg |
+| **Suspend/Resume** | Freeze the game process mid-replay so memory values don't change while you inspect them in x64dbg |
 | **Module list** | View all loaded DLLs, their base addresses, and sizes — confirms ASLR-adjusted module bases for offset calculation |
 | **Handle explorer** | See what files wotblitz.exe has open (helps verify replay file is loaded) |
 | **GPU/CPU monitoring** | Confirm the replay is actively rendering (GPU usage spike) vs. idling on the menu |
@@ -89,7 +88,7 @@ ILSpy is therefore **conditional, not a required phase**. If applicable:
 3. Search for type/field layout clues, but treat names and inferred offsets as
    hypotheses until native access behavior confirms them.
 4. If the artifacts are absent or unrelated, close this branch immediately and
-   continue with native Ghidra/CE/x64dbg work.
+   continue with native Ghidra/x64dbg work.
 
 ## Full Discovery Pipeline
 
@@ -99,8 +98,8 @@ installed tools to its stages; the managed-artifact branch is optional.
 ```
 Phase 0: identity + offline gate
 Phase 1: Ghidra static triage
-Phase 2: CE controlled dynamic anchor
-Phase 3: CE/x64dbg native access + layout tracing
+Phase 2: guarded scanner / rolling driver controlled dynamic anchor
+Phase 3: x64dbg native access + layout tracing
 Phase 4: two launches × two replays + GameHarness evidence
 Phase 5: conservative publication and promotion review
 ```
@@ -157,7 +156,7 @@ System Informer → Find wotblitz.exe → CPU column
 **2. Suspend the game for stable scanning**
 ```
 Right-click wotblitz.exe → Suspend
-  → Game freezes → CE values stop changing → easier to narrow candidates
+  → Game freezes → memory values stop changing → easier to narrow candidates
   → Right-click → Resume when ready to advance the replay
 ```
 
@@ -165,32 +164,33 @@ Right-click wotblitz.exe → Suspend
 ```
 Right-click wotblitz.exe → Properties → Modules tab
   → Note the base address: e.g., wotblitz.exe = 0x00400000
-  → If your CE offset is absolute 0x0317A844:
+  → If your candidate address is absolute 0x0317A844:
      Relative offset = 0x0317A844 - 0x00400000 = 0x02D7A844
   → This confirms the module-relative offset for the offset file
 ```
 
 ### Phase 2b — x64dbg dynamic tracing (value → instruction → struct base)
 
-**Purpose:** After finding a value in Cheat Engine, x64dbg tells you *which
-instruction* writes to it and *which register* holds the player struct base.
-This is the most reliable way to discover all nearby offsets (HP, X/Y/Z, yaw,
-pitch) since they're all fields of the same struct.
+**Purpose:** After narrowing candidates with the rolling driver/scanner, x64dbg
+tells you *which instruction* writes to a survivor address and *which register*
+holds the player struct base. This is the most reliable way to discover all
+nearby offsets (HP, X/Y/Z, yaw, pitch) since they're all fields of the same
+struct.
 
 #### Step-by-step workflow:
 
-**1. Find the yaw value in Cheat Engine**
+**1. Stage survivors from the rolling driver**
 ```
-CE: Scan for float yaw (unknown initial value → changed on camera move)
-    → narrow to 1-3 candidates
-    → select one, add to address list
+Run scripts/roll-replay-time-increased.ps1 (snapshot → rolling compare →
+survivor staging to %TEMP%\od-survivors.txt via -AddressFile)
+    → load each survivor absolute address into x64dbg
 ```
 
-**2. Find what writes to that address**
+**2. Arm a hardware write breakpoint on a survivor address**
 ```
-CE: Right-click the address → "Find out what writes to this address"
-    → Attach dialog → OK
-    → Move the camera in-game
+x64dbg: File → Attach → select wotblitz.exe
+    → right-click the survivor address → Breakpoint → Hardware, On Write
+    → Resume the game and move the tank/camera
     → An instruction appears: movss [ecx+0x34], xmm0
     → Note the address of this instruction
 ```
@@ -234,15 +234,16 @@ Example:
 
 ### Phase 3 — Native instruction and layout tracing
 
-The current client is treated as native DAVA-era code. Start with Cheat Engine's
-access/write trace, then use x64dbg when the instruction or register context is
-insufficient. Any managed-artifact check is optional corroboration only.
+The current client is treated as native DAVA-era code. Start with the rolling
+driver's staged survivors, then use x64dbg hardware write breakpoints when the
+instruction or register context is insufficient. Any managed-artifact check is
+optional corroboration only.
 
 #### Step-by-step:
 
 **1. Capture the native access path**
 ```
-CE: right-click the best dynamic candidate → "Find out what writes"
+x64dbg: right-click the best staged survivor → Breakpoint → Hardware, On Write
     → record the instruction, register/pointer expression, and process/module identity
 ```
 
@@ -260,18 +261,19 @@ displacement or pointer chain after a fresh launch.
 
 **4. Confirm with x64dbg when needed**
 
-Use x64dbg to confirm instruction/register context when CE is insufficient. Do
-not infer a module offset from a nearby address or from a conceptual layout.
+Use x64dbg to confirm instruction/register context when the rolling trace is
+insufficient. Do not infer a module offset from a nearby address or from a
+conceptual layout.
 
 ### Phase 4 — Offset validation
 
 Once you have candidate offsets from any combination of tools:
 
-1. **CE test:** Add all offsets as manual addresses in Cheat Engine. Verify each
+1. **x64dbg test:** Add all offsets as manual addresses in x64dbg. Verify each
    value changes plausibly during gameplay (HP decreases on damage, yaw changes
    on camera turn, etc.)
 
-2. **Session test:** Close and restart the game. Re-attach CE. Re-verify the
+2. **Session test:** Close and restart the game. Re-attach x64dbg. Re-verify the
    offsets still point to valid values (handles ASLR).
 
 3. **Cross-battle test:** Load a different replay. Verify offsets still work.
@@ -295,22 +297,17 @@ scan or one battle.
 
 ### Discovery output and publication rules
 
-`multiscan.lua` has two output shapes:
-
-- `autoDiscover()` writes `fieldResults`, containing one result object per
-  scanned field.
-- `saveDiscovered()` writes the older single-field `fieldName` + `candidates`
-  shape for interactive scans.
-
-`tools/discover-offsets.ps1` accepts both shapes. It rejects invalid or unknown
-fields and writes a field into the versioned offset table only when raw, reported,
-and normalized candidate counts are all exactly one, decimal/hex forms agree,
-and the candidate is inside the named `wotblitz.exe` module range. Multiple,
-heap-only, stale, legacy-unclassified, or otherwise ambiguous results are
-report-only; they never overwrite existing evidence. Published values remain
-`Candidate`, never `Verified`, and receive `DynamicScan` provenance. The
-executable hash is updated only from the local binary and is still required
-before runtime reads.
+The rolling driver (`scripts/roll-replay-time-increased.ps1`) stages the
+surviving candidate absolute addresses to `-AddressFile` (default
+`%TEMP%\od-survivors.txt`) for the pre-armed debugger. Only the read-only
+report publishes: `tools/report-offset-evidence.ps1` writes a field into the
+versioned offset table only when raw, reported, and normalized candidate counts
+are all exactly one, decimal/hex forms agree, and the candidate is inside the
+named `wotblitz.exe` module range. Multiple, heap-only, stale,
+legacy-unclassified, or otherwise ambiguous results are report-only; they never
+overwrite existing evidence. Published values remain `Candidate`, never
+`Verified`, and receive `DynamicScan` provenance. The executable hash is
+updated only from the local binary and is still required before runtime reads.
 
 Use the read-only status report at any time:
 
@@ -319,9 +316,9 @@ Use the read-only status report at any time:
 .\tools\report-offset-evidence.ps1 -GameVersion 11.19.0.10
 ```
 
-The report does not modify offset tables, scanner state, or CE output. A field
-is runtime-promotable only after the reader's complete evidence requirements are
-met: exact executable hash, two independent process launches, two independent
+The report does not modify offset tables, scanner state, or evidence files. A
+field is runtime-promotable only after the reader's complete evidence
+requirements are met: exact executable hash, two independent process launches, two independent
 replays, passing harness invariants, lead approval, decoder-auditor approval,
 and both static-analysis and GameHarness provenance.
 
@@ -331,12 +328,13 @@ Since the current static run produced no reconciled runtime anchor, the fastest
 path to all 8 fields is to establish one controlled native dynamic anchor first:
 
 ```
-1. CE → establish one controlled dynamic anchor (position, replay time, or HP)
-   ↓ Capture candidate counts and state transitions
-2. CE → trace accesses/writes for the best candidates
+1. Rolling driver → establish one controlled dynamic anchor (replayTime delta
+   FIRST — deterministic; see OD-045) and capture candidate counts
+   ↓ Survivors staged to `%TEMP%\od-survivors.txt` via `-AddressFile`
+2. x64dbg → hardware write breakpoint on the staged survivors
    ↓ Identify a member displacement or pointer-chain root
-3. x64dbg → confirm instruction/register context when CE is insufficient
-   ↓ Reconstruct neighboring fields from the same object
+3. x64dbg → confirm instruction/register context and reconstruct neighboring
+   fields from the same object
 4. Repeat across two launches and two replays before publication
 ```
 

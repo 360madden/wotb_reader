@@ -61,8 +61,8 @@ The arrow denotes a compile-time dependency; the dotted arrow is a versioned
 loopback protocol. `Core` has none. `Bootstrap` is the only composition root.
 `GameIntegration` owns game discovery, log monitoring, replay launching,
 offline verification, and guarded Win32 access, and delegates memory scanning
-to the standalone `UltimateScanner` module (Cheat Engine-like multi-scan
-engine, pattern/neighborhood scans, and the guarded VM reader). The overlay is
+to the standalone `UltimateScanner` module (multi-scan engine,
+pattern/neighborhood scans, and the guarded VM reader). The overlay is
 outside parser, storage, application, domain, host, and adapter internals and
 consumes only the portable wire contract.
 

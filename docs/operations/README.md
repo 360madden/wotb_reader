@@ -13,7 +13,7 @@ handoffs, offset-discovery evidence, and the offset-discovery operating guide.
 | [`cmd-wrapper-gotchas.md`](cmd-wrapper-gotchas.md) | Canonical catalogue of cmd.exe wrapper failure modes and the review checklist. |
 | [`offset-discovery-workflow.md`](offset-discovery-workflow.md) | Timeboxed operating protocol: identity/safety gate, pivots, address-kind classification, next-session plan. |
 | [`offset-discovery-ledger.md`](offset-discovery-ledger.md) | Append-only experiment ledger: status vocabulary, decision register, experiment index, session template, results. |
-| [`offset-discovery-guide.md`](offset-discovery-guide.md) | Detailed tool reference: x64dbg, System Informer, Cheat Engine, Ghidra, offset file format, scanner API and CLI matrix. |
+| [`offset-discovery-guide.md`](offset-discovery-guide.md) | Detailed tool reference: x64dbg, System Informer, Ghidra, offset file format, scanner API and CLI matrix. |
 | [`handoffs/`](handoffs/README.md) | Dated session handoffs, `YYYY-MM-DD-<topic>.md`; the newest by date is current. Append-only. |
 
 ## Blocker-numbering convention

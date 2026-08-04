@@ -106,7 +106,7 @@ function Wait-Port([int]$Port, [int]$Seconds) {
 }
 
 function Stop-OdProcesses {
-    Get-Process -Name wotblitz, 'WotBTreader.Host.Web', 'cheatengine*' -ErrorAction SilentlyContinue |
+    Get-Process -Name wotblitz, 'WotBTreader.Host.Web' -ErrorAction SilentlyContinue |
         Stop-Process -Force -ErrorAction SilentlyContinue
     Get-CimInstance Win32_Process -Filter "Name='dotnet.exe'" -ErrorAction SilentlyContinue |
         Where-Object { $_.CommandLine -match 'Host\.Web' } |

@@ -222,7 +222,7 @@ static void ShowOffsetFieldStatus()
     if (offsetPath is null)
     {
         Console.WriteLine("  No offset file found for the installed game version.");
-        Console.WriteLine("  Run the Ghidra or Cheat Engine pipeline to discover offsets,");
+        Console.WriteLine("  Run the Ghidra or x64dbg pipeline to discover offsets,");
         Console.WriteLine("  then update memory-offsets/<version>.json.");
         return;
     }

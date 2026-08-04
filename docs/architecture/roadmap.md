@@ -55,7 +55,7 @@ The target is a Windows-first modular monolith in which:
   plane.
 - `GameHarness` is a Windows-only developer tool that consumes the same
   application ports and game-integration implementations as the product.
-- Ghidra and Cheat Engine are development-time evidence tools. Their raw
+- Ghidra and x64dbg are development-time evidence tools. Their raw
   projects, scans, dumps, and pointer maps remain local.
 
 ## Offline verification contract
@@ -87,7 +87,7 @@ healthy and the same PID, executable identity, launch correlation, replay UI,
 and lifecycle state continue to agree; low-level readers receive the lease
 rather than a raw PID.
 
-Manual process inspection with Cheat Engine or scanner tooling is allowed only after the operator starts a
+Manual process inspection with x64dbg or scanner tooling is allowed only after the operator starts a
 known pre-recorded replay, observes a fresh native `START_REPLAY_LOCAL` marker
 within 15 seconds, binds the marker to the selected PID/window and verified
 executable identity, confirms the replay playback UI, and records the
@@ -397,7 +397,7 @@ evidence are required for runtime reads. Candidate offset tables are discovery-o
 
 - Fix and smoke-test `FindOffsets.py` under Ghidra’s supported scripting
   runtime.
-- Treat Ghidra candidates and Cheat Engine scans as local hypotheses.
+- Treat Ghidra candidates and x64dbg traces as local hypotheses.
 - Define the tracked offset-table contract around exact game version,
   executable SHA-256, module identity, field type, units, provenance, and
   validation status.
@@ -409,7 +409,7 @@ evidence are required for runtime reads. Candidate offset tables are discovery-o
   transition invariants. The lead and decoder auditor approve promotion from
   `candidate` to `verified`; the commit records evidence summaries, not raw
   memory.
-- Keep candidate output, Cheat Engine tables, pointer maps, memory dumps, and
+- Keep candidate output, x64dbg trace files, pointer maps, memory dumps, and
   screenshots untracked.
 - Model a memory observation as ephemeral evidence. Persist only bounded,
   redacted derived telemetry when the product has a defined use for it.
@@ -493,7 +493,7 @@ evidence are required for runtime reads. Candidate offset tables are discovery-o
   tests in CI using synthetic fixtures only.
 - Add a packaged smoke test for host discovery and overlay connection without
   launching the game.
-- Keep private replay, installed-game, Ghidra, and Cheat Engine workflows as
+- Keep private replay, installed-game, Ghidra, and x64dbg workflows as
   explicit local opt-in validation.
 - Update the overview and handoff after each milestone.
 - Run `scripts/validate.ps1 -AuditPackages` before an alpha release candidate.
@@ -522,7 +522,7 @@ flowchart LR
 ```
 
 Do not rely on candidate-only discovered offsets for product memory reads. Static
-Ghidra work can proceed independently, and Cheat Engine may be used during positively
+Ghidra work can proceed independently, and x64dbg may be used during positively
 verified pre-recorded replay playback, but neither tool may promote data directly
 into product behavior. Runtime reads require exact executable identity and complete
 per-field promotion evidence.
