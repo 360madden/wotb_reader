@@ -17,15 +17,18 @@
   interactive role was superseded by x64dbg.
 
   Discovery order:
-    - x64dbg: known install roots -> release\x96dbg.exe (the auto-selecting
-      launcher) -> release\x64\x64dbg.exe.
+    - x64dbg: known install roots -> release\x32\x32dbg.exe (the x86 build,
+      correct for the x86 game target) -> release\x64\x64dbg.exe fallback.
 
   Bitness note: the target game is x86 (WOW64-observed 32-bit; the scanner's
   GuardedMemoryReader resolves ImageFileMachineI386 with 32-bit pointers).
-  x64dbg's x64 build cannot properly debug a 32-bit process, so this script
-  prefers release\x96dbg.exe: the launcher inspects the target and starts
-  x32\x32dbg.exe for WOW64 processes (verified in x64dbg_launcher.cpp
-  loadPid -> IsWow64Process -> load32).
+  We launch x32\x32dbg.exe DIRECTLY instead of the release\x96dbg.exe
+  launcher: the launcher worked in a headless smoke test but in the live
+  OD-044 run it stayed alive without ever spawning the debugger (its
+  first-run config-dialog / elevation state machine is a live failure mode
+  we cannot see), so the pre-arm was left with no debugger window. The
+  game bitness is known and fixed, so the launcher's auto-select adds
+  nothing but a failure surface -- skip it.
 
   Never logs private paths; the marker file (default %TEMP%\od-prearmed-debugger.json)
   holds resolved tool paths locally.
@@ -52,10 +55,10 @@ function Write-PreArm([string]$Message) {
 function Find-X64Dbg {
     $roots = @('C:\work\tools\x64dbg', 'C:\x64dbg', 'C:\tools\x64dbg')
     foreach ($r in $roots) {
-        # x96dbg.exe auto-selects x32/x64 by target bitness (preferred for the
-        # x86 game); fall back to the x64 build only if the launcher is absent.
-        $l = Join-Path $r 'release\x96dbg.exe'
-        if (Test-Path -LiteralPath $l) { return $l }
+        # x32dbg.exe (x86 build) is the correct debugger for the x86 game;
+        # launch it directly (see bitness note above). x64 build as fallback.
+        $x = Join-Path $r 'release\x32\x32dbg.exe'
+        if (Test-Path -LiteralPath $x) { return $x }
         $p = Join-Path $r 'release\x64\x64dbg.exe'
         if (Test-Path -LiteralPath $p) { return $p }
     }
@@ -79,9 +82,11 @@ try {
     $launchedTool = $null
     if ($AutoAttach -and $game) {
         $p = Start-Process -FilePath $x64Exe -ArgumentList @('-p', "$($game.Id)") -PassThru
-        # The launcher resolves to x32dbg.exe when the target is a 32-bit
-        # (WOW64) process, so the window that opens is the x32 debugger.
-        $launchedTool = if ($x64Leaf -eq 'x96dbg.exe') { 'x96dbg(->x32dbg)' } else { 'x64dbg' }
+        # Direct x32dbg.exe launch (x86 build) for the x86 game; the window
+        # that opens is x32dbg, which the write-trace process detection matches.
+        # Derive the label from the resolved path so an x64-fallback machine
+        # (no x32 build) does not misreport the attached tool.
+        $launchedTool = if ($x64Leaf -eq 'x32dbg.exe') { 'x32dbg' } else { 'x64dbg' }
         Write-PreArm ("launched_x64dbg_attach pid=" + $game.Id + " process=" + $p.Id)
     }
     elseif ($AutoAttach -and -not $game) {

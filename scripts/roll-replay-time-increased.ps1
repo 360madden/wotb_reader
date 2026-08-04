@@ -277,10 +277,17 @@ try {
             # candidates are ever written to -AddressFile, so requesting 500
             # every round (esp. the expensive 66M-baseline round 1) adds
             # candidate serialization for nothing (OD-RECOVERY-031 lease wall).
-            # The address list is harvested separately on the target round.
+            # OD-044 hardening: once the survivor set is small (<= TailThreshold),
+            # request 500 candidates each round so the LAST non-zero round's
+            # compare carries the actual survivor addresses -- a later
+            # increased=0 plateau round must not lose them.
+            $roundMaxCandidates = $MaxCandidates
+            if ($survivors -ge 0 -and $survivors -le $TailThreshold) {
+                $roundMaxCandidates = 500
+            }
             $cmpBody = @{
                 compareMode     = $CompareMode
-                maxCandidates   = $MaxCandidates
+                maxCandidates   = $roundMaxCandidates
                 rollingBaseline = $true
             }
             if ($CompareMode -eq 'delta') {
@@ -293,6 +300,11 @@ try {
                 Write-Roll ("FAILED_compare=" + $cmp.error)
                 exit 4
             }
+            # Keep the previous round's compare: an increased=0 plateau round
+            # returns no candidates, so the last NON-zero round's compare is
+            # the one that carries the serialized survivor addresses (small-set
+            # bump).
+            $prevCmp = $lastCmp
             $lastCmp = $cmp
             # Survivor set = IncreasedCount for the round. RetainedCount only
             # reports unreadable chunks carried forward, not survivors.
@@ -331,6 +343,26 @@ try {
                 break
             }
 
+            if ($survivors -eq 0) {
+                # OD-044 live finding: increased=0 is a value-bound plateau
+                # (the tail stopped ticking), NOT a 0-survivor target. Stop
+                # rolling and restore the last NON-zero round's compare for
+                # -AddressFile (its candidates were serialized by the small-set
+                # bump; the plateau round's compare has none). previousCount of
+                # the plateau round equals the last non-zero increased count.
+                if ($null -eq $prevCmp) {
+                    # Degenerate: increased=0 on round 1 (no previous round).
+                    # The gate is almost certainly flipping; stop honestly.
+                    Write-Roll ('PLATEAU increased=0 at round=' + $round + ' - no previous round to restore; stop')
+                    break
+                }
+                $lastNonZero = [long]$cmp.previousCount
+                $lastCmp = $prevCmp
+                $survivors = $lastNonZero
+                Write-Roll ('PLATEAU increased=0 at round=' + $round + ' - restored last non-zero round previous=' + $lastNonZero)
+                break
+            }
+
             if ($survivors -le $TargetSurvivors) {
                 Write-Roll ("TARGET survivors=" + $survivors + " le " + $TargetSurvivors)
                 # Harvest the survivor addresses for -AddressFile: one more
@@ -338,24 +370,54 @@ try {
                 # (the survivor set is tiny), and keeps the big early rounds
                 # free of candidate serialization (OD-RECOVERY-031).
                 if ($AddressFile) {
-                    $harvestBody = @{
-                        compareMode     = $CompareMode
-                        maxCandidates   = 500
-                        rollingBaseline = $true
-                    }
-                    if ($CompareMode -eq 'delta') {
-                        $harvestBody.deltaTarget = $DeltaTarget
-                        $harvestBody.deltaTolerance = $DeltaTolerance
-                    }
-                    $harvestBody = $harvestBody | ConvertTo-Json
-                    $harvest = Invoke-OdApi -Path "/api/v1/game/discover/compare/$sessionId" -Method Post -Body $harvestBody
-                    if (-not $harvest.PSObject.Properties['error']) {
-                        $lastCmp = $harvest
+                    # OD-044 live finding: the first fresh increased-compare
+                    # can return 0 candidates even when the target round found
+                    # survivors -- the rolling baseline advanced to the target
+                    # round's snapshot and the values may not have ticked again
+                    # in the harvest window (the tail is value-bound). The
+                    # survivors tick every frame during active playback, so
+                    # retry a few times with short waits before giving up.
+                    # Preserve the target round's count: a 0-candidate harvest
+                    # must not clobber it for the final record (OD-044 review).
+                    $targetSurvivors = $survivors
+                    $harvest = $null
+                    for ($h = 1; $h -le 5; $h++) {
+                        $harvestBody = @{
+                            compareMode     = $CompareMode
+                            maxCandidates   = 500
+                            rollingBaseline = $true
+                        }
+                        if ($CompareMode -eq 'delta') {
+                            $harvestBody.deltaTarget = $DeltaTarget
+                            $harvestBody.deltaTolerance = $DeltaTolerance
+                        }
+                        $harvestBody = $harvestBody | ConvertTo-Json
+                        $harvest = Invoke-OdApi -Path "/api/v1/game/discover/compare/$sessionId" -Method Post -Body $harvestBody
+                        if ($harvest.PSObject.Properties['error']) {
+                            Write-Roll ("harvest_failed=" + $harvest.error)
+                            $harvest = $null
+                            break
+                        }
                         $survivors = [int]$harvest.increasedCount
-                        Write-Roll ("harvest increased=" + $survivors + " candidates=" + @($harvest.candidates).Count)
+                        Write-Roll ("harvest attempt=" + $h + " increased=" + $survivors + " candidates=" + @($harvest.candidates).Count)
+                        if ($survivors -gt 0) {
+                            $lastCmp = $harvest
+                            break
+                        }
+                        if ($h -lt 5) {
+                            Start-Sleep -Seconds 2
+                        }
+                    }
+                    # Only replace $lastCmp when the harvest actually returned
+                    # candidates; a 0-candidate harvest must not discard the
+                    # target round's serialized survivors -- and when it stayed
+                    # at 0, restore the target round's count so the final
+                    # record does not report survivors=0 with valid addresses.
+                    if ($harvest -and -not $harvest.PSObject.Properties['error'] -and @($harvest.candidates).Count -gt 0) {
+                        $lastCmp = $harvest
                     }
                     else {
-                        Write-Roll ("harvest_failed=" + $harvest.error)
+                        $survivors = $targetSurvivors
                     }
                 }
                 break
@@ -385,6 +447,20 @@ try {
     }
     if ($AddressFile -and $lastCmp -and $lastCmp.PSObject.Properties['candidates']) {
         $lines = @($lastCmp.candidates | ForEach-Object { [string]$_.absoluteAddress })
+        # OD-045 live finding: the rolling scan can converge to the Windows
+        # shared kernel clock page KUSER_SHARED_DATA (0x7FFE0000-0x7FFE0FFF).
+        # Its SystemTime field (+0x10) is a FILETIME-style 8-byte value that
+        # increases every 100ns, so it survives every 'increased' compare even
+        # after the game's replayTime stops ticking (replay tail / dying game).
+        # Kernel writes to that page never fire user-mode hardware
+        # breakpoints, so arming a write-BP there yields 0 hits by
+        # construction. Drop the whole page from the address file and WARN so
+        # the operator knows the game field had stopped ticking.
+        $clockLines = @($lines | Where-Object { $_ -match '^0x7FFE0[0-9A-Fa-f]{3}$' })
+        if ($clockLines.Count -gt 0) {
+            $lines = @($lines | Where-Object { $_ -notmatch '^0x7FFE0[0-9A-Fa-f]{3}$' })
+            Write-Roll ("WARN_kuser_clock_dropped count=" + $clockLines.Count + " addresses=" + ($clockLines -join ','))
+        }
         Set-Content -LiteralPath $AddressFile -Value $lines -Encoding ascii
         # The compare candidate list is not contractually guaranteed to equal
         # the survivor set; flag a mismatch so the operator does not trust

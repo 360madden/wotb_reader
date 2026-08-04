@@ -312,50 +312,53 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-Session ID: `OD-RECOVERY-044`. Static milestones `OD-039..043-STATIC`
-landed: the two "root candidates" were re-classified as members of a
-repeating 0x50-byte `.data` record family (base `0x03FA0C20`) — NOT
-standalone gameplay roots; `0x037F3054` is precisely the shared RTTI
-`type_info` vftable (every TypeDescriptor's pVFTable points at it); `--vtables`
-names **17,133 of 18,721 vtables** (fix: MSVC x86 stores the mangled name
-inline at td+8) including `GameScene` 0x0319D3C4 (26 slots, **0 .data roots**
-= honest negative for the vtable-singleton path) and the Vehicle component
-family — but the Vehicle-family TypeDescriptor xref is negative (0 refs /
-0 slots), exhausting the RTTI name→root path. `--vtable-root`/`--table-map`
-modes were added and `.data 0x03B7E198` reclassified as the **DAVA `AnyFn`
-invoker vtable table** (34 entries, modal stride 0x2C, 24 named
-`StaticAnyFnInvoker<lambda>` binding TankComponent/AimingPointComponent/
-Scene/Entity = component event subscriptions; each vtable has exactly 1
-`.data` root = its array entry, internally-closed set; runtime write at
-0x03104FAB repoints entry[0]) — **dispatch infrastructure, NOT a gameplay
-root**; do NOT probe it as a singleton. The rolling driver exposes
-`-CompareMode delta -DeltaTarget X -DeltaTolerance T`, and since
-OD-044-STATIC also `-ValueKind Double|Float` (default Double; Float sets
-valueSize 4 / alignment 4). `scripts/python/replay-delta-extractor.py`
-derives the marker values from a decoded session (11.19.0 Dead Rail, 4s
-window: position `-DeltaTarget 0.6935 -DeltaTolerance 2.4992`; replayTime
-`-DeltaTarget 4.0`). **OD-045-STATIC added `--simulate`, which reordered the
-pilot: the replayTime delta marker is deterministic (pass-rate 1.0 at every
-tolerance 0.2–4.0s, survival 1.0 over 15 rounds) while the position marker
-is bursty → HOLLOW collapse (pass 0.8996 at the recommended tolerance →
-survival 0.205 over 15 rounds — the standing tank sheds the true field).**
-`OD-RECOVERY-044` is the **Track C2 pilot**: reuse the proven invocation
-(`-SnapshotMaxBytes 402653184 -MaxRounds 40 -HoldAfterRollSeconds 240`) but
-run the **Double replayTime delta pilot FIRST** — `-CompareMode delta
--DeltaTarget 4.0 -DeltaTolerance 0.4 -ValueKind Double` (unit variants if
-needed: 4000ms / 4,000,000ticks) — measure survivor collapse vs "increased"
-(11 → predicted ≤2–4), then the Float position pilot **on a movement-only
-span** (`--movement` shows only 32.3% of the Dead Rail replay is moving —
-891/2,756 windows; the position marker is only selective there), then
-**automated x64dbg write-trace** on the staged set via
-`scripts/x64dbg-write-trace.ps1` (bphw write breakpoints armed by
-command-bar injection; writing RIP captured via `savedata` evidence files —
-the operator step is now optional, run it with `-AutoWriteTrace` from the
-session driver). `--hp-delta --victim-entity
-<id>` is a supporting marker (kind-3 damage events; sparse-but-exact — the
-player took 0 damage this replay, so it is conditional on a damaged
-victim). The replayTime set remains the live anchor; do NOT waste lease
-probing the handler records, the AnyFn table, or chasing the exhausted
+Session ID: `OD-RECOVERY-045`. `OD-RECOVERY-044` proved the live pipeline
+**mechanically end-to-end for the first time**: gate green → pre-arm → rolling
+→ harvest → address file → x32dbg direct attach → arm → `scriptload`+`scriptrun`
+injection → run. Rolling collapsed **861399→…→1 survivor in 16 rounds** (the
+campaign record; previous best OD-020's 5) with three driver fixes landed live:
+**harvest retry** (the fresh increased-compare can return 0 when the tail froze
+between the target round and the harvest — retry 5×2s, survivors tick every
+frame), **plateau-stop** (`increased=0` is a value-bound plateau, NOT a
+0-survivor target — keep the last non-zero round's serialized candidates), and
+**small-set serialization** (bump the candidate request once the set is small so
+the last non-zero round carries the addresses). The single survivor was
+**`0x7FFE0010` = `KUSER_SHARED_DATA.SystemTime`** — the Windows shared kernel
+clock (FILETIME-style, ticks every 100ns): the always-ticking clock is the last
+"increased" Double in a process whose game field stopped ticking (the game died
+mid-roll from the replay-start flake; the 47→44→1 drop is the death signature).
+Kernel writes to that page never fire user-mode hardware breakpoints, so the 0
+write-trace hits were **by construction** — the mechanism was NOT the failure.
+The driver now drops the `0x7FFE0xxx` page from the address file + WARN. Also
+landed: the **x96dbg launcher was dropped from pre-arm** — it stayed alive
+without spawning x32dbg (ShellExecute/state-machine brittleness); pre-arm and
+the write-trace resolver now launch `release22dbg.exe` directly (the
+game bitness is known x86 — WOW64-observed, `ImageFileMachineI386`), which
+attached 2/2.
+
+`OD-RECOVERY-045` runs the **Double replayTime delta pilot FIRST** (the
+OD-045-STATIC simulation ranks it deterministic: pass-rate 1.0 at every
+tolerance, survival 1.0 over 15 rounds): reuse the proven invocation
+(`-SnapshotMaxBytes 402653184 -MaxRounds 40 -HoldAfterRollSeconds 240`) with
+`-CompareMode delta -DeltaTarget 4.0 -DeltaTolerance 0.4 -ValueKind Double`
+(unit variants if needed: 4000ms / 4,000,000ticks). The delta band's
+value-bound rejection also sheds the kernel clock (its 100ns increments fall
+outside a 4.0±0.4s delta), removing the dying-game false positive outright.
+Measure survivor collapse vs "increased" (11 → predicted ≤2–4), then the Float
+position pilot **on a movement-only span** (`--movement`: only 32.3% of the
+Dead Rail replay is moving — 891/2,756 windows), then **automated x64dbg
+write-trace** on the staged set via `scripts/x64dbg-write-trace.ps1`
+(`-AutoWriteTrace`; bphw write breakpoints by command-bar injection; writing
+RIP captured via `{rip}`-named `savedata` evidence files — the operator step
+is now optional). **Run with the operator present** during the held green
+window: the write-trace mechanism is proven, so a surviving window is the only
+missing ingredient for the first RIP. The replay-start flake (~50% of 8
+launches this session died within ~2s of gate green — `onLeaveWorld` → `become
+hidden` → `OnBackground`, no crash dump) is the lease-budget killer; root-causing
+it is a parallel workstream. `--hp-delta --victim-entity <id>` remains a
+supporting marker (conditional on a damaged victim). Do NOT waste lease probing
+the handler records, the AnyFn table, or chasing the exhausted static paths as
+singletons.
 static paths as singletons. This builds on the validated driver stack:
 The session also produced the **first-ever 401-refresh failure in 13
 validations** (OD-038 attempt 3, round 9: the refreshed context re-read the
