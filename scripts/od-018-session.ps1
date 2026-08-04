@@ -145,7 +145,7 @@ if ($HoldAfterRollSeconds -gt 0) {
         }
     }
     else {
-        Write-Host ("od018: OPERATOR WINDOW OPEN for up to " + $HoldAfterRollSeconds + "s - in x64dbg (pre-armed attached), load %TEMP%\od-survivors.txt and set a hardware write breakpoint (bphw) on each survivor address, then let the replay play.")
+        Write-Host ("od018: OPERATOR WINDOW OPEN for up to " + $HoldAfterRollSeconds + "s - in the pre-armed debugger window (x32dbg for the x86 game, launched via x96dbg.exe), load %TEMP%\od-survivors.txt and set a hardware write breakpoint (bphw) on each survivor address, then let the replay play.")
     }
     $holdDeadline = (Get-Date).AddSeconds($HoldAfterRollSeconds)
     # Start the announce clock at now so the first periodic re-announce does
