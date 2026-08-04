@@ -43,6 +43,34 @@ without target/tolerance.
    `-ExactTolerance 0.05` (Double, 8-byte aligned).
 4. Record the per-variant collapse from the ~66M baseline.
 
+**Prep (2026-08-04):** `scripts/od-047-exact-scan-session.ps1` (new) wraps the
+whole M1 flow — gate wait → M1 three unit variants (T1 seconds/ms/µs) with
+per-variant staging + JSON report (`.data\od-047-<timestamp>.json`) → optional
+M2 `-RunT2` fingerprint. T1/T2 anchor frames located in the decoded 11.19.0
+Dead Rail session `019fb86c-c8e7-7004-9df6-a574f5a7835b`:
+`replay_time_ticks` 599,839,248 ≈ 60s (sequence ≈ 8543) and 1,199,907,379 ≈
+120s (sequence ≈ 26186) — 100ns ticks, so the operator pauses when the HUD
+clock shows 1:00 / 2:00.
+
+**Live-run sequence (operator-present):**
+
+```powershell
+# 1. One-time: launch the offline replay via the canonical pipeline.
+scripts/launch-offline-replay-for-od.ps1
+
+# 2. In the game: let the replay play; press Space when the HUD clock shows 1:00.
+
+# 3. Run the M1 exact-scan campaign (pause probe waits for the paused icon).
+scripts/od-047-exact-scan-session.ps1 -T1Seconds 60 -ExactTolerance 0.05
+
+# 4. Read .data\od-047-<timestamp>.json for the per-variant collapse.
+#    A variant with final survivors <= ~1% of baseline (~660K) passes M1.
+
+# 5. M2 two-pause fingerprint (same session, keep the gate verified):
+scripts/od-047-exact-scan-session.ps1 -T1Seconds 60 -T2Seconds 120 -RunT2
+#    re-pause at 2:00 when prompted; report records per-variant T1∩T2.
+```
+
 **Exit:** at least one variant collapses to ≤ ~1% of baseline with stable
 addresses across rounds. If neither session collapses below ~1%, **stop** —
 descope per the strategy stop rules.

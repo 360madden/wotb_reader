@@ -3055,3 +3055,27 @@ pre-arm uses direct `x32\x32dbg.exe` for determinism (no ShellExecute/elevation
 surface), not because the launcher is defective. Evidence: `%TEMP%\od-x96dbg-verify.txt`
 (scratch harness `.data/x96dbg-launcher-verify.ps1`).
 
+
+## `OD-047` prep — 2026-08-04 (M1 exact-scan session driver + T1/T2 anchors)
+
+```yaml
+sessionId: OD-047
+supersedes: none (strategy-v3 M1; first live exact-scan campaign)
+status: Prepared (driver built + validated; live session not yet run)
+```
+
+- **New driver** `scripts/od-047-exact-scan-session.ps1` — the exact-mode
+  session wrapper the M0 handoff flagged as missing: waits for
+  `OfflineReplayVerified`, then runs the roll driver (`-CompareMode exact`)
+  for the three unit variants at T1 (seconds / ms / µs), stages survivors
+  per-variant, and emits `.data\od-047-<timestamp>.json` with per-variant
+  final survivors. `-RunT2` runs the M2 two-pause fingerprint (re-pause at
+  T2, per-variant T1∩T2 intersection in the report).
+- **T1/T2 anchors** from the decoded 11.19.0 Dead Rail session
+  `019fb86c-c8e7-7004-9df6-a574f5a7835b`: `replay_time_ticks` 599,839,248
+  (sequence ≈ 8543) ≈ 60s and 1,199,907,379 (sequence ≈ 26186) ≈ 120s
+  (100ns ticks; operator pauses when the HUD clock shows 1:00 / 2:00).
+- **Validation:** PS 5.1 + pwsh 7 parse clean; PSSA gate 20 tracked scripts
+  0 warnings; preflight fails closed (exit 1) with no host.
+- **Not run:** the live session burns one of the 2-session M1 cap and needs
+  the operator at the keyboard to pause at T1 — pending operator go-ahead.
