@@ -15,6 +15,7 @@ handoffs, offset-discovery evidence, and the offset-discovery operating guide.
 | [`offset-discovery-strategy-v3.md`](offset-discovery-strategy-v3.md) | Superseded strategy decision (exact-value pause scan — blocked by its human-precision requirement; kept as history). |
 | [`offset-discovery-strategy-v4.md`](offset-discovery-strategy-v4.md) | Current strategy decision: replay-guided trajectory correlation (stage → monitor → correlate), stop rules, guardrails. |
 | [`offset-discovery-roadmap.md`](offset-discovery-roadmap.md) | Organized milestone plan (M0–M4) with session caps, exit criteria, and the descope gate. |
+| [`offset-discovery-m1-m2-choreography.md`](offset-discovery-m1-m2-choreography.md) | M1→M2 same-launch live runbook: no-rewind constraint, phase sequence, timing budget, fail-closed edge-case table. |
 | [`offset-discovery-ledger.md`](offset-discovery-ledger.md) | Append-only experiment ledger: status vocabulary, decision register, experiment index, session template, results. |
 | [`offset-discovery-guide.md`](offset-discovery-guide.md) | Detailed tool reference: x64dbg, System Informer, Ghidra, offset file format, scanner API and CLI matrix. |
 | [`replay-crosscheck.md`](replay-crosscheck.md) | Operator-run replay-decode cross-validation: when/how to run `crosscheck.cmd`, exit codes, known divergences. |

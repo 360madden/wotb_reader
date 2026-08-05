@@ -93,6 +93,14 @@ amendment.
   writes a per-member hit report (`<ResultPath>.family.json`) with a
   `family-hit`/`family-no-hit` verdict. The only remaining live step is the
   operator-run trace on a surviving family.
+
+  **Same-launch constraint (2026-08-05):** the DAVA viewer has **no rewind**
+  (seek-forward-only) and no replay hot-swap, and `roll-replay-time-increased.ps1`
+  is a memory-scan roll, not a replay rewind. The write-trace window is the
+  **tail of the same playback**: the M1 final correlate fires with battle time
+  remaining and the write-trace starts immediately on the verdict. Full
+  operator sequence + timing budget:
+  [`offset-discovery-m1-m2-choreography.md`](offset-discovery-m1-m2-choreography.md).
 - **M3 — Repeatability + publication.** 2 launches × 2 replays, then publish
   per the workflow Phase 5.
 

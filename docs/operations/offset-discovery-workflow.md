@@ -95,6 +95,19 @@ Do not scan until all of these are true:
 If any item is unknown, record `blocked` and fix that item. Do not compensate
 with a longer scan.
 
+**Freshness gate (added 2026-08-05):** the host must be freshly built before
+every live session. A stale publish or stale build silently 404s on newer
+endpoints — e.g. the Jul-31-class publish predates the strategy-v4
+trajectory/correlate endpoints entirely, so an M1 campaign against it would
+burn a CAP-2 session before producing any evidence. The OD launch path runs
+`dotnet run --no-build` (stale `bin/Release` builds are the same class of
+failure); `launch-offline-replay-for-od.ps1` now fail-closes on an
+out-of-date host assembly. The dashboard/serve path uses
+`.build\publish\WotBTreader.Host.Web.exe` — run `serve.cmd` (it republishes)
+instead of invoking the publish exe directly. See
+[`offset-discovery-m1-m2-choreography.md`](offset-discovery-m1-m2-choreography.md)
+Phase 0 for the exact commands.
+
 ## Phase 1 — Static triage (maximum 20 minutes)
 
 Use Ghidra to generate hypotheses, not to declare fields found.

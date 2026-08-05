@@ -134,6 +134,16 @@ scripts/od-048-monitor-correlate-session.ps1
 **Exit:** ≥ 1 write hit with an instruction expressing a member displacement
 (e.g. `movss [reg+0x28], xmm0`); else descope.
 
+> **Same-launch choreography (2026-08-05):** the DAVA viewer has **no rewind**
+> and no replay hot-swap (seek-forward-only; selecting a replay reinitializes
+> the scenario), and `roll-replay-time-increased.ps1` is a memory-scan roll,
+> not a replay rewind. M2 therefore runs in the **tail of the SAME playback**:
+> with `-MaxReadRounds 90` on the 271s Dead Rail session the final correlate
+> fires ~200s in with ~60s of battle left, and the write-trace is started
+> IMMEDIATELY on the verdict with `-TraceSeconds` budgeted under battle end.
+> Full operator sequence, timing table, and edge-case guards:
+> [`offset-discovery-m1-m2-choreography.md`](offset-discovery-m1-m2-choreography.md).
+
 ### M3 — Repeatability and publication
 
 1. Second launch + second distinct replay (BLK-0019): same displacement or

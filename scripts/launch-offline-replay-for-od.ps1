@@ -204,6 +204,28 @@ try {
         exit 1
     }
 
+    # Stale-build guard (2026-08-05). The host is started below with `dotnet
+    # run --no-build` from bin\Release, so a Release build older than the newest
+    # source silently runs WITHOUT any endpoints added since that build (the
+    # Jul-31-class failure: the trajectory/correlate endpoints 404'd against the
+    # stale build and a CAP-2 session was at risk). Fail fast BEFORE any host
+    # launch instead of wasting a live session on a host that cannot serve the
+    # campaign. `dotnet build -c Release` (or serve.cmd, which republishes)
+    # fixes it.
+    $hostDll = Join-Path $RepoRoot 'src\WotBTreader.Host.Web\bin\Release\net10.0\WotBTreader.Host.Web.dll'
+    if (-not (Test-Path -LiteralPath $hostDll)) {
+        Write-Od 'FAILED_host_missing_build_release_first'
+        exit 1
+    }
+    $newestSource = Get-ChildItem -Path (Join-Path $RepoRoot 'src') -Recurse -File |
+        Where-Object { $_.Extension -in '.cs', '.csproj' } |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+    if ($null -ne $newestSource -and $newestSource.LastWriteTime -gt (Get-Item -LiteralPath $hostDll).LastWriteTime) {
+        Write-Od ('FAILED_host_stale_build rebuild_release_first newer=' + $newestSource.Name + ' dll=' + $hostDll)
+        exit 1
+    }
+
     if (-not $KeepExistingHost) {
         Write-Od 'stopping_stale_game_and_host'
         Stop-OdProcesses

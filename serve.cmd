@@ -5,6 +5,11 @@ REM  serve.cmd — Publish and start the web host on loopback.
 REM  The dashboard is at http://127.0.0.1:9182
 REM  Press Ctrl+C to stop.
 REM
+REM  ALWAYS launch the host through this script (it republishes first).
+REM  Running .build\publish\WotBTreader.Host.Web.exe directly risks a stale
+REM  publish that silently 404s on newer endpoints (see the Jul-31-class
+REM  blocker, docs/operations/offset-discovery-workflow.md Phase 0).
+REM
 REM  STARTUP SEQUENCE: import replays first, then serve, then overlay.
 REM  Keep this window running — the overlay needs it.
 REM
