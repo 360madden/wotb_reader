@@ -90,7 +90,13 @@ function Quit-WatchOffline([int]$Code) {
 }
 
 if (-not ('WatchOfflineVisionV2' -as [type])) {
-Add-Type @"
+# Single-quoted here-string: the C# body is passed to Add-Type verbatim.
+# A double-quoted (interpolating) here-string would let PowerShell evaluate
+# $($_.Exception.Message) at script top-level, where $_ is undefined ->
+# VariableIsUndefined RuntimeException before ANY dialog logic runs (the
+# 2026-08-05 OD-049 launch blocker; introduced by the PSSA triage adding
+# that Write-Verbose into the C# catch).
+Add-Type @'
 using System;
 using System.Drawing;
 using System.Drawing.Imaging;
@@ -147,7 +153,10 @@ public static class WatchOfflineVisionV2 {
 
   public static void EnsureDpiAware() {
     if (_dpiAware) return;
-    try { SetProcessDPIAware(); } catch { Write-Verbose "watch_offline: SetProcessDPIAware failed: $($_.Exception.Message)" }
+    // NOTE: keep this catch EMPTY C# - never reference PowerShell ($_ /
+    // Write-Verbose) here. The Add-Type here-string is single-quoted (no
+    // PS interpolation), so any PS syntax lands in the C# compiler.
+    try { SetProcessDPIAware(); } catch { }
     _dpiAware = true;
   }
 
@@ -274,7 +283,7 @@ public static class WatchOfflineVisionV2 {
     return AnalyzeDialog(bmp).Blob;
   }
 }
-"@ -ReferencedAssemblies System.Drawing.dll
+'@ -ReferencedAssemblies System.Drawing.dll
 }
 
 function Get-Rendezvous {
