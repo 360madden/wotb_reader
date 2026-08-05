@@ -58,6 +58,35 @@ correlation has no signal.
 3. **Rendezvous:** `%LocalAPPDATA%\WotBTreader\rendezvous\web.json` present
    (the driver discovers the host through it).
 
+### Host start/stop cycle (verified 2026-08-05)
+
+**Start (three interchangeable routes):**
+
+- `serve.cmd` — republishes and starts the host in the foreground (Ctrl+C
+  stops it). This is the route that guarantees a fresh host.
+- `launch-offline-replay-for-od.ps1` — starts Host.Web itself with the
+  research lease (`OfflineReplayEvidenceLifetimeSeconds=120`,
+  `LifecycleEvidenceTimeoutSeconds=120`) and **auto-stops any stale host**
+  via `Stop-OdProcesses` first; the canonical route for a live round.
+- `dotnet run --project src/WotBTreader.Host.Web -c Release` — dev route;
+  requires a fresh `bin\Release` build (the launch script's stale-build
+  guard enforces this for the OD path).
+
+**Stop (verified clean on the pre-flight host, pid 54436):**
+
+- Ctrl+C in the `serve.cmd` window, or
+- `Stop-OdProcesses` semantics (as implemented in
+  `scripts/launch-offline-replay-for-od.ps1` line 108):
+  `Stop-Process` on `WotBTreader.Host.Web` and any `dotnet.exe` whose
+  command line matches `Host\.Web`, then a 2s settle. The next launch
+  script run performs this automatically, so a forgotten host is never a
+  blocker.
+
+**Verified post-stop state (2026-08-05):** no `WotBTreader.Host.Web`, no
+`dotnet.exe` running Host.Web, no `wotblitz` processes; port 9182 closed.
+The stale `web.json` rendezvous capability remains on disk but is inert —
+the next host start overwrites it, and the driver reads the fresh file.
+
 ### Phase 1 — Launch the offline replay
 
 ```powershell
