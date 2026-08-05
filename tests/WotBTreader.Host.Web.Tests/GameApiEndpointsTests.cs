@@ -1,9 +1,13 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using WotBTreader.ApiContracts;
 using WotBTreader.Application.Game;
 using WotBTreader.Application.Results;
+using WotBTreader.Application.Storage;
+using WotBTreader.Core;
+using WotBTreader.Core.Discovery;
 using WotBTreader.Host.Web.Endpoints;
 
 namespace WotBTreader.Host.Web.Tests;
@@ -803,6 +807,275 @@ public sealed class GameApiEndpointsTests
         Assert.IsFalse(response.Message.Contains("secret", StringComparison.OrdinalIgnoreCase));
     }
 
+    [TestMethod]
+    public async Task ReadForwardsAddressesAndReportsValues()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.ReadOffsetsAsync(
+            scanner,
+            new OffsetReadRequest
+            {
+                Addresses = ["0x7FFA1234"],
+                ValueKind = "Float",
+                ValueSize = 4,
+            },
+            TestContext.CancellationToken);
+
+        OffsetReadResponse response = Value<OffsetReadResponse>(result);
+        Assert.IsNotNull(scanner.LastReadRequest);
+        Assert.HasCount(1, scanner.LastReadRequest!.Addresses);
+        Assert.AreEqual(0x7FFA1234L, scanner.LastReadRequest.Addresses[0]);
+        Assert.AreEqual(MemoryValueKind.FloatValue, scanner.LastReadRequest.ValueKind);
+        Assert.AreEqual(1, response.ReadCount);
+        Assert.AreEqual("0x7FFA1234", response.Reads[0].AbsoluteAddress);
+        Assert.IsTrue(response.Reads[0].ReadOk);
+        Assert.AreEqual("1", response.Reads[0].ValueSummary);
+    }
+
+    [TestMethod]
+    public async Task ReadRejectsInvalidAddressHex()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.ReadOffsetsAsync(
+            scanner,
+            new OffsetReadRequest { Addresses = ["not-hex"] },
+            TestContext.CancellationToken);
+
+        JsonElement response = BadRequestAnonymous(result);
+        Assert.AreEqual("discover.invalid_address", response.GetProperty("error").GetString());
+        Assert.IsNull(scanner.LastReadRequest);
+    }
+
+    [TestMethod]
+    public async Task ReadRejectsTooManyAddresses()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.ReadOffsetsAsync(
+            scanner,
+            new OffsetReadRequest
+            {
+                Addresses = [.. Enumerable.Range(0, 2001).Select(index => "0x" + index.ToString("X", CultureInfo.InvariantCulture))],
+            },
+            TestContext.CancellationToken);
+
+        JsonElement response = BadRequestAnonymous(result);
+        Assert.AreEqual("discover.invalid_options", response.GetProperty("error").GetString());
+        Assert.IsNull(scanner.LastReadRequest);
+    }
+
+    [TestMethod]
+    public async Task ReadRejectsKindWidthMismatch()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.ReadOffsetsAsync(
+            scanner,
+            new OffsetReadRequest
+            {
+                Addresses = ["0x1000"],
+                ValueKind = "Double",
+                ValueSize = 4,
+            },
+            TestContext.CancellationToken);
+
+        JsonElement response = BadRequestAnonymous(result);
+        Assert.AreEqual("discover.invalid_options", response.GetProperty("error").GetString());
+        Assert.IsNull(scanner.LastReadRequest);
+    }
+
+    [TestMethod]
+    public async Task TrajectoryReturnsGroundTruthWithViewpointFlag()
+    {
+        Guid sessionId = Guid.NewGuid();
+        var provider = new FakeTrajectoryProvider(OperationResult.Success(
+            new TrajectoryGroundTruth(
+                100_000_000,
+                [
+                    new EntityTrajectory(
+                        new ParticipantId(Guid.NewGuid()),
+                        EntityId: 42,
+                        "T-54",
+                        IsViewpoint: true,
+                        [new TrajectorySample(0, 1, 2, 3), new TrajectorySample(10_000_000, 5, 6, 7)]),
+                ])));
+
+        IResult result = await GameApiEndpoints.GetTrajectoryAsync(
+            provider,
+            sessionId,
+            TestContext.CancellationToken);
+
+        TrajectoryResponse response = Value<TrajectoryResponse>(result);
+        Assert.AreEqual(sessionId, response.BattleSessionId);
+        Assert.AreEqual(100_000_000L, response.DurationTicks);
+        Assert.HasCount(1, response.Entities);
+        Assert.IsTrue(response.Entities[0].IsViewpoint);
+        Assert.AreEqual(42L, response.Entities[0].EntityId);
+        Assert.AreEqual("T-54", response.Entities[0].TankName);
+        Assert.HasCount(2, response.Entities[0].Samples);
+        Assert.AreEqual(10_000_000L, response.Entities[0].Samples[1].ReplayTimeTicks);
+    }
+
+    [TestMethod]
+    public async Task TrajectoryNotFoundForUnknownSession()
+    {
+        var provider = new FakeTrajectoryProvider(OperationResult.Failure<TrajectoryGroundTruth>(
+            new ApplicationError("storage.not_found", "Battle session not found.", Retryable: false)));
+
+        IResult result = await GameApiEndpoints.GetTrajectoryAsync(
+            provider,
+            Guid.NewGuid(),
+            TestContext.CancellationToken);
+
+        JsonElement response = NotFoundAnonymous(result);
+        Assert.AreEqual("storage.not_found", response.GetProperty("error").GetString());
+    }
+
+    private static TrajectoryGroundTruth VShapeGroundTruth()
+    {
+        // Viewpoint entity: x follows a V shape (0 -> 100 at 50s -> 0 at 100s)
+        // so phase-shifted linear copies cannot reproduce it; y climbs linearly.
+        Guid viewpoint = Guid.NewGuid();
+        List<TrajectorySample> samples =
+        [
+            new(0, 0, 0, 100),
+            new(250_000_000, 50, 10, 100),
+            new(500_000_000, 100, 20, 100),
+            new(750_000_000, 50, 30, 100),
+            new(1_000_000_000, 0, 40, 100),
+        ];
+        return new TrajectoryGroundTruth(
+            100_000_000,
+            [
+                new EntityTrajectory(new ParticipantId(viewpoint), 1, "Viewpoint", true, samples),
+                new EntityTrajectory(new ParticipantId(Guid.NewGuid()), 2, "Stationary", false,
+                    [new TrajectorySample(0, 7, 7, 7), new TrajectorySample(100_000_000, 7, 7, 7)]),
+            ]);
+    }
+
+    [TestMethod]
+    public async Task CorrelateScoresTheReproducingAddress()
+    {
+        DateTimeOffset start = new(2026, 8, 4, 0, 0, 0, TimeSpan.Zero);
+        var provider = new FakeTrajectoryProvider(OperationResult.Success(VShapeGroundTruth()));
+        List<CorrelationSampleRequest> xSamples = [];
+        for (int index = 0; index < 5; index++)
+        {
+            int second = 10 + (index * 10);
+            xSamples.Add(new CorrelationSampleRequest(start.AddSeconds(second), second * 2));
+        }
+
+        IResult result = await GameApiEndpoints.CorrelateAsync(
+            provider,
+            new CorrelateRequest
+            {
+                GroundTruthSessionId = Guid.NewGuid(),
+                ReplayStartWallTimeUtc = start,
+                TolerancePerAxis = 5,
+                MaxTimeShiftSeconds = 8,
+                Observations =
+                [
+                    new CorrelationSeriesRequest("0x1000", xSamples),
+                    new CorrelationSeriesRequest("0x2000",
+                    [
+                        new CorrelationSampleRequest(start.AddSeconds(10), 7),
+                        new CorrelationSampleRequest(start.AddSeconds(20), 7),
+                        new CorrelationSampleRequest(start.AddSeconds(30), 7),
+                    ]),
+                    new CorrelationSeriesRequest("0x3000",
+                    [
+                        new CorrelationSampleRequest(start.AddSeconds(10), 110),
+                        new CorrelationSampleRequest(start.AddSeconds(20), 120),
+                        new CorrelationSampleRequest(start.AddSeconds(30), 130),
+                        new CorrelationSampleRequest(start.AddSeconds(40), 140),
+                        new CorrelationSampleRequest(start.AddSeconds(50), 150),
+                    ]),
+                ],
+            },
+            TestContext.CancellationToken);
+
+        CorrelateResponse response = Value<CorrelateResponse>(result);
+        Assert.HasCount(1, response.Results);
+        CorrelateResultItemResponse best = response.Results[0];
+        Assert.AreEqual("0x1000", best.Address);
+        Assert.AreEqual("x", best.Axis);
+        Assert.AreEqual(1, best.Sign);
+        Assert.AreEqual(5, best.MatchCount);
+        Assert.AreEqual(1.0, best.Score, 0.001);
+        Assert.AreEqual(1L, best.EntityId);
+    }
+
+    [TestMethod]
+    public async Task CorrelateFindsSignFlippedAxis()
+    {
+        DateTimeOffset start = new(2026, 8, 4, 0, 0, 0, TimeSpan.Zero);
+        var provider = new FakeTrajectoryProvider(OperationResult.Success(VShapeGroundTruth()));
+        // y climbs 0 -> 40 over the battle; a memory copy may store -y.
+        List<CorrelationSampleRequest> samples = [];
+        for (int index = 0; index < 5; index++)
+        {
+            int second = 10 + (index * 10);
+            samples.Add(new CorrelationSampleRequest(start.AddSeconds(second), -(second * 0.4)));
+        }
+
+        IResult result = await GameApiEndpoints.CorrelateAsync(
+            provider,
+            new CorrelateRequest
+            {
+                GroundTruthSessionId = Guid.NewGuid(),
+                ReplayStartWallTimeUtc = start,
+                TolerancePerAxis = 2,
+                MaxTimeShiftSeconds = 8,
+                Observations =
+                [
+                    new CorrelationSeriesRequest("0x4000", samples),
+                ],
+            },
+            TestContext.CancellationToken);
+
+        CorrelateResponse response = Value<CorrelateResponse>(result);
+        Assert.HasCount(1, response.Results);
+        Assert.AreEqual("y", response.Results[0].Axis);
+        Assert.AreEqual(-1, response.Results[0].Sign);
+    }
+
+    [TestMethod]
+    public async Task CorrelateRejectsInvalidOptions()
+    {
+        var provider = new FakeTrajectoryProvider(OperationResult.Success(VShapeGroundTruth()));
+
+        IResult nanTolerance = await GameApiEndpoints.CorrelateAsync(
+            provider,
+            new CorrelateRequest
+            {
+                GroundTruthSessionId = Guid.NewGuid(),
+                ReplayStartWallTimeUtc = DateTimeOffset.UtcNow,
+                TolerancePerAxis = double.NaN,
+                Observations =
+                [
+                    new CorrelationSeriesRequest("0x1000",
+                        [new CorrelationSampleRequest(DateTimeOffset.UtcNow, 1)]),
+                ],
+            },
+            TestContext.CancellationToken);
+        JsonElement response = BadRequestAnonymous(nanTolerance);
+        Assert.AreEqual("discover.invalid_options", response.GetProperty("error").GetString());
+
+        IResult empty = await GameApiEndpoints.CorrelateAsync(
+            provider,
+            new CorrelateRequest
+            {
+                GroundTruthSessionId = Guid.NewGuid(),
+                ReplayStartWallTimeUtc = DateTimeOffset.UtcNow,
+                Observations = [],
+            },
+            TestContext.CancellationToken);
+        Assert.AreEqual("discover.invalid_options",
+            BadRequestAnonymous(empty).GetProperty("error").GetString());
+    }
+
     private static T Value<T>(IResult result)
     {
         Assert.IsInstanceOfType<Ok<T>>(result);
@@ -820,6 +1093,14 @@ public sealed class GameApiEndpointsTests
     }
 
     private static JsonElement BadRequestAnonymous(IResult result)
+    {
+        Assert.IsInstanceOfType<IValueHttpResult>(result);
+        object? value = ((IValueHttpResult)result).Value;
+        Assert.IsNotNull(value);
+        return JsonSerializer.SerializeToElement(value);
+    }
+
+    private static JsonElement NotFoundAnonymous(IResult result)
     {
         Assert.IsInstanceOfType<IValueHttpResult>(result);
         object? value = ((IValueHttpResult)result).Value;
@@ -847,6 +1128,12 @@ public sealed class GameApiEndpointsTests
         public double? LastCompareDeltaTarget { get; private set; }
         public double? LastCompareDeltaTolerance { get; private set; }
         public CancellationToken LastCancellationToken { get; private set; }
+        public MemoryReadRequest? LastReadRequest { get; private set; }
+        public OperationResult<MemoryReadResult> ReadResult { get; init; } = OperationResult.Success(
+            new MemoryReadResult(DateTimeOffset.UnixEpoch,
+            [
+                new MemoryReadItem(0x7FFA1234, true, [0x00, 0x00, 0x80, 0x3F], "1"),
+            ]));
         public OperationResult<MemoryCompareResult> CompareResult { get; init; } = OperationResult.Success(
             new MemoryCompareResult(DateTimeOffset.UnixEpoch, 0, 0, 0, 0, 0, 0, [], false, false, 0));
         public OperationResult<MemoryPointerChainResult> PointerChainResult { get; init; } = OperationResult.Success(
@@ -904,6 +1191,28 @@ public sealed class GameApiEndpointsTests
         public ValueTask<OperationResult<MemoryScanResult>> ScanNeighborhoodAsync(
             MemoryNeighborhoodRequest request, CancellationToken cancellationToken) =>
             ValueTask.FromResult(PatternResult);
+
+        public ValueTask<OperationResult<MemoryReadResult>> ReadAddressesAsync(
+            MemoryReadRequest request, CancellationToken cancellationToken)
+        {
+            LastReadRequest = request;
+            LastCancellationToken = cancellationToken;
+            return ValueTask.FromResult(ReadResult);
+        }
+    }
+
+    private sealed class FakeTrajectoryProvider(
+        OperationResult<TrajectoryGroundTruth> result) : ITrajectoryGroundTruthProvider
+    {
+        public CancellationToken LastCancellationToken { get; private set; }
+
+        public ValueTask<OperationResult<TrajectoryGroundTruth>> GetAsync(
+            BattleSessionId sessionId,
+            CancellationToken cancellationToken)
+        {
+            LastCancellationToken = cancellationToken;
+            return ValueTask.FromResult(result);
+        }
     }
 
     private sealed class FakeGameSessionState(GameSessionSnapshot snapshot) : IGameSessionState

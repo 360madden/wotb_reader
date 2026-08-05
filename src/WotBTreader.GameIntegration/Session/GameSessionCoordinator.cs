@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.Logging;
 using WotBTreader.Application.Game;
 using WotBTreader.Application.Replay;
@@ -146,6 +147,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     private readonly IGameProcessModuleBaseAddressResolver _moduleBaseAddressResolver;
     private readonly IOffsetTableReader _offsetTableReader;
     private readonly MemoryScanDiscoverer _scanDiscoverer;
+    private const int MaximumReadAddresses = 2000;
     private readonly IBlitzReplayLifecycleFeed _lifecycleFeed;
     private readonly MemoryScanEngine _scanEngine;
     private readonly CancellationTokenSource _lifetimeCts = new();
@@ -1680,6 +1682,130 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 "The offline-session gate is no longer satisfied.");
         }
     }
+
+    public async ValueTask<OperationResult<MemoryReadResult>> ReadAddressesAsync(
+        MemoryReadRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (request.Addresses is null
+            || request.Addresses.Count is < 1 or > MaximumReadAddresses
+            || request.ValueSize is not (4 or 8)
+            || request.Addresses.Any(static address => address <= 0))
+        {
+            return OperationResult.Failure<MemoryReadResult>(
+                new ApplicationError(
+                    "discover.invalid_options",
+                    "The read request must contain between 1 and " + MaximumReadAddresses
+                        + " positive addresses and a value size of 4 or 8."));
+        }
+
+        (AuthorizedMemoryObservation? observation, long baseAddress, CancellationToken authorizationToken, bool ok) =
+            GetScanAuthorization(cancellationToken);
+        if (!ok)
+        {
+            return GateCheck<MemoryReadResult>(
+                "discover.gate_not_satisfied",
+                "The offline-session gate is not satisfied.");
+        }
+
+        _ = baseAddress;
+        using CancellationTokenSource scanCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, authorizationToken);
+        try
+        {
+            OperationResult<MemoryReadResult> result = await Task.Run(
+                () => ReadAddressesCoreAsync(observation!, request, scanCancellation.Token),
+                scanCancellation.Token).ConfigureAwait(false);
+            return IsScanAuthorizationCurrent(observation!, authorizationToken)
+                ? result
+                : GateCheck<MemoryReadResult>(
+                    "discover.gate_not_satisfied",
+                    "The offline-session gate is no longer satisfied.");
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return GateCheck<MemoryReadResult>(
+                "discover.gate_not_satisfied",
+                "The offline-session gate is no longer satisfied.");
+        }
+    }
+
+    private async Task<OperationResult<MemoryReadResult>> ReadAddressesCoreAsync(
+        AuthorizedMemoryObservation observation,
+        MemoryReadRequest request,
+        CancellationToken cancellationToken)
+    {
+        OperationResult<IAuthorizedMemoryReader> readerResult = await _memoryReaderFactory
+            .CreateAsync(observation, cancellationToken)
+            .ConfigureAwait(false);
+        if (!readerResult.IsSuccess)
+        {
+            return OperationResult.Failure<MemoryReadResult>(
+                new ApplicationError(
+                    "discover.read_unavailable",
+                    "The guarded memory reader is unavailable."));
+        }
+
+        IAuthorizedMemoryReader reader = readerResult.Value!;
+        // One process lease for the whole batch (the monitor loop re-reads up
+        // to 2000 staged addresses every few seconds; a per-address lease
+        // would open and revalidate that many handles per round).
+        OperationResult<IReadOnlyList<MemoryReadItem>> batch = await reader
+            .ReadBatchAsync(
+                [.. request.Addresses.Select(static address => (nint)address)],
+                request.ValueSize,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!batch.IsSuccess || batch.Value is null)
+        {
+            return OperationResult.Failure<MemoryReadResult>(
+                new ApplicationError(
+                    "discover.read_failed",
+                    "The batch memory read failed."));
+        }
+
+        List<MemoryReadItem> items = new(batch.Value.Count);
+        foreach (MemoryReadItem item in batch.Value)
+        {
+            if (!item.ReadOk || item.ObservedValue is null)
+            {
+                items.Add(new MemoryReadItem(
+                    item.AbsoluteAddress,
+                    ReadOk: false,
+                    null,
+                    "unreadable"));
+                continue;
+            }
+
+            byte[] bytes = item.ObservedValue;
+            items.Add(new MemoryReadItem(
+                item.AbsoluteAddress,
+                ReadOk: true,
+                bytes,
+                FormatReadValue(bytes, request.ValueKind)));
+        }
+
+        return OperationResult.Success(new MemoryReadResult(_timeProvider.GetUtcNow(), items));
+    }
+
+    private static string FormatReadValue(byte[] bytes, MemoryValueKind kind) => kind switch
+    {
+        MemoryValueKind.FloatValue when bytes.Length == 4 =>
+            BitConverter.ToSingle(bytes).ToString("R", CultureInfo.InvariantCulture),
+        MemoryValueKind.DoubleValue when bytes.Length == 8 =>
+            BitConverter.ToDouble(bytes).ToString("R", CultureInfo.InvariantCulture),
+        MemoryValueKind.Int32Value when bytes.Length == 4 =>
+            BitConverter.ToInt32(bytes).ToString(CultureInfo.InvariantCulture),
+        MemoryValueKind.UInt32Value when bytes.Length == 4 =>
+            BitConverter.ToUInt32(bytes).ToString(CultureInfo.InvariantCulture),
+        MemoryValueKind.Int64Value when bytes.Length == 8 =>
+            BitConverter.ToInt64(bytes).ToString(CultureInfo.InvariantCulture),
+        MemoryValueKind.UInt64Value when bytes.Length == 8 =>
+            BitConverter.ToUInt64(bytes).ToString(CultureInfo.InvariantCulture),
+        _ => Convert.ToHexString(bytes),
+    };
 
     public async ValueTask<OperationResult<MemoryPointerChainResult>> ResolvePointerChainAsync(
         MemoryPointerChainRequest request,

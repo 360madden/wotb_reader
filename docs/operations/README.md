@@ -12,7 +12,8 @@ handoffs, offset-discovery evidence, and the offset-discovery operating guide.
 | [`blockers/`](blockers/README.md) | Deep-dive records for major blockers. Holds BLK-0008–0011 (replay-decoder) and a companion record for BLK-0007 (command-execution-gate). |
 | [`cmd-wrapper-gotchas.md`](cmd-wrapper-gotchas.md) | Canonical catalogue of cmd.exe wrapper failure modes and the review checklist. |
 | [`offset-discovery-workflow.md`](offset-discovery-workflow.md) | Timeboxed operating protocol: identity/safety gate, pivots, address-kind classification, next-session plan. |
-| [`offset-discovery-strategy-v3.md`](offset-discovery-strategy-v3.md) | Strategy decision + honest progress assessment (exact-value pause scan pivot, stop rules, teachable closeout). |
+| [`offset-discovery-strategy-v3.md`](offset-discovery-strategy-v3.md) | Superseded strategy decision (exact-value pause scan — blocked by its human-precision requirement; kept as history). |
+| [`offset-discovery-strategy-v4.md`](offset-discovery-strategy-v4.md) | Current strategy decision: replay-guided trajectory correlation (stage → monitor → correlate), stop rules, guardrails. |
 | [`offset-discovery-roadmap.md`](offset-discovery-roadmap.md) | Organized milestone plan (M0–M4) with session caps, exit criteria, and the descope gate. |
 | [`offset-discovery-ledger.md`](offset-discovery-ledger.md) | Append-only experiment ledger: status vocabulary, decision register, experiment index, session template, results. |
 | [`offset-discovery-guide.md`](offset-discovery-guide.md) | Detailed tool reference: x64dbg, System Informer, Ghidra, offset file format, scanner API and CLI matrix. |

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
+using WotBTreader.Application.Game;
 using WotBTreader.Application.Results;
 using WotBTreader.Core;
 
@@ -10,6 +11,16 @@ internal interface IAuthorizedMemoryReader
 {
     ValueTask<OperationResult<byte[]>> ReadAsync(
         nint address,
+        int length,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reads many addresses under ONE process lease. The monitor loop re-reads
+    /// up to 2000 staged addresses every few seconds; a per-address lease
+    /// would open and revalidate that many handles per round.
+    /// </summary>
+    ValueTask<OperationResult<IReadOnlyList<MemoryReadItem>>> ReadBatchAsync(
+        IReadOnlyList<nint> addresses,
         int length,
         CancellationToken cancellationToken);
 }
@@ -406,6 +417,84 @@ internal sealed class GuardedMemoryReaderFactory(TimeProvider timeProvider)
                         "game.memory.unavailable",
                         "The memory read is unavailable.",
                         Retryable: true)));
+            }
+        }
+
+        public async ValueTask<OperationResult<IReadOnlyList<MemoryReadItem>>> ReadBatchAsync(
+            IReadOnlyList<nint> addresses,
+            int length,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (addresses is null
+                || addresses.Count == 0
+                || length <= 0
+                || length > MaxReadLength)
+            {
+                return OperationResult.Failure<IReadOnlyList<MemoryReadItem>>(
+                    new ApplicationError(
+                        "game.memory.invalid_range",
+                        "The batch memory read range is invalid.",
+                        Retryable: false));
+            }
+
+            using AuthorizedProcessLease? lease = AuthorizedProcessLease.Open(
+                observation,
+                timeProvider,
+                cancellationToken);
+            if (lease is null)
+            {
+                return OperationResult.Failure<IReadOnlyList<MemoryReadItem>>(
+                    new ApplicationError(
+                        "game.memory.identity_mismatch",
+                        "The process identity or architecture is not authorized.",
+                        Retryable: false));
+            }
+
+            try
+            {
+                List<MemoryReadItem> items = new(addresses.Count);
+                byte[] buffer = GC.AllocateUninitializedArray<byte>(length);
+                foreach (nint address in addresses)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (!lease.TryRead(
+                            address,
+                            buffer,
+                            0,
+                            length,
+                            cancellationToken,
+                            out nuint bytesRead)
+                        || bytesRead != (nuint)length)
+                    {
+                        items.Add(new MemoryReadItem(
+                            address.ToInt64(),
+                            ReadOk: false,
+                            null,
+                            "unreadable"));
+                        continue;
+                    }
+
+                    items.Add(new MemoryReadItem(
+                        address.ToInt64(),
+                        ReadOk: true,
+                        buffer.ToArray(),
+                        Convert.ToHexString(buffer.AsSpan(0, length))));
+                }
+
+                return OperationResult.Success<IReadOnlyList<MemoryReadItem>>(items);
+            }
+            catch (Exception exception) when (
+                exception is Win32Exception
+                    or IOException
+                    or UnauthorizedAccessException
+                    or InvalidOperationException)
+            {
+                return OperationResult.Failure<IReadOnlyList<MemoryReadItem>>(
+                    new ApplicationError(
+                        "game.memory.unavailable",
+                        "The batch memory read is unavailable.",
+                        Retryable: true));
             }
         }
     }

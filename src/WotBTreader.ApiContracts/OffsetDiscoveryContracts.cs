@@ -273,3 +273,117 @@ public sealed record OffsetDiscardResponse
 {
     public string Discarded { get; init; } = string.Empty;
 }
+
+/// <summary>
+/// Request to re-read a fixed set of staged absolute addresses (the
+/// replay-guided correlation monitor primitive). Each address is read as a
+/// single <see cref="ValueSize"/>-byte value of <see cref="ValueKind"/>.
+/// </summary>
+public sealed record OffsetReadRequest
+{
+    /// <summary>Absolute addresses as hex strings ("0x7FFA..." or plain hex).</summary>
+    public List<string> Addresses { get; init; } = [];
+
+    /// <summary>Float, Double, Int32, UInt32, Int64, or UInt64.</summary>
+    public string ValueKind { get; init; } = "Float";
+
+    /// <summary>Value width in bytes; must match the kind (4 or 8).</summary>
+    public int ValueSize { get; init; } = 4;
+}
+
+/// <summary>One per-address read result.</summary>
+public sealed record OffsetReadItem
+{
+    public string AbsoluteAddress { get; init; } = "0x0";
+    public bool ReadOk { get; init; }
+    public string ObservedValueHex { get; init; } = string.Empty;
+    public string ValueSummary { get; init; } = string.Empty;
+}
+
+/// <summary>Result of re-reading a staged address set.</summary>
+public sealed record OffsetReadResponse
+{
+    public DateTimeOffset CompletedAtUtc { get; init; }
+    public int RequestedCount { get; init; }
+    public int ReadCount { get; init; }
+    public List<OffsetReadItem> Reads { get; init; } = [];
+}
+
+/// <summary>One downsampled ground-truth position sample.</summary>
+public sealed record TrajectorySampleResponse(
+    long ReplayTimeTicks,
+    double X,
+    double Y,
+    double Z);
+
+/// <summary>One tracked entity's ground-truth trajectory.</summary>
+public sealed record TrajectoryEntityResponse(
+    long? EntityId,
+    string? ParticipantId,
+    string? TankName,
+    bool IsViewpoint,
+    List<TrajectorySampleResponse> Samples);
+
+/// <summary>Ground-truth trajectories for one decoded battle session.</summary>
+public sealed record TrajectoryResponse(
+    Guid BattleSessionId,
+    long DurationTicks,
+    List<TrajectoryEntityResponse> Entities);
+
+/// <summary>One observed read of a monitored address (wall time + value).</summary>
+public sealed record CorrelationSampleRequest(
+    DateTimeOffset WallTimeUtc,
+    double Value);
+
+/// <summary>One monitored address's observed value series.</summary>
+public sealed record CorrelationSeriesRequest(
+    string Address,
+    List<CorrelationSampleRequest> Samples);
+
+/// <summary>
+/// Scores monitored address series against the decoded replay trajectory
+/// (strategy v4). The replay plays at 1x; no exact pause is required.
+/// </summary>
+public sealed record CorrelateRequest
+{
+    /// <summary>Decoded battle session providing the ground truth.</summary>
+    public Guid GroundTruthSessionId { get; init; }
+
+    /// <summary>
+    /// Wall-clock time the replay started (the Start marker), anchoring wall
+    /// time to replay tick 0. Residual error is absorbed by the shift sweep.
+    /// </summary>
+    public DateTimeOffset ReplayStartWallTimeUtc { get; init; }
+
+    /// <summary>Per-axis tolerance in world units (default 6).</summary>
+    public double TolerancePerAxis { get; init; } = 6.0;
+
+    /// <summary>Whole-second shift sweep bound (default 8).</summary>
+    public int MaxTimeShiftSeconds { get; init; } = 8;
+
+    /// <summary>Observed series with a span below this are treated as constants and skipped.</summary>
+    public double MinMovingSpan { get; init; } = 0.5;
+
+    public List<CorrelationSeriesRequest> Observations { get; init; } = [];
+}
+
+/// <summary>Correlated evidence for one monitored address.</summary>
+public sealed record CorrelateResultItemResponse(
+    string Address,
+    string? ParticipantId,
+    long? EntityId,
+    string Axis,
+    int Sign,
+    int MatchCount,
+    int TotalSamples,
+    double Span,
+    double Score);
+
+/// <summary>Result of a trajectory correlation pass.</summary>
+public sealed record CorrelateResponse
+{
+    public DateTimeOffset CompletedAtUtc { get; init; }
+    public int AddressesScored { get; init; }
+    public int TotalSamples { get; init; }
+    public List<CorrelateResultItemResponse> Results { get; init; } = [];
+}

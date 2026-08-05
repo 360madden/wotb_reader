@@ -3079,3 +3079,52 @@ status: Prepared (driver built + validated; live session not yet run)
   0 warnings; preflight fails closed (exit 1) with no host.
 - **Not run:** the live session burns one of the 2-session M1 cap and needs
   the operator at the keyboard to pause at T1 — pending operator go-ahead.
+
+---
+
+## OD-048 — strategy-v4 trajectory-correlation capability (2026-08-04)
+
+**Verdict:** capability built, tested, and pushed; live campaign pending
+operator go-ahead (burns one of the 2-session M1 cap; no operator input
+needed during the run).
+
+**Why (v3 M1 was a design defect):** the exact-pause scan required the
+operator to pause at a decoded clock value within ~50ms — machine precision,
+not human precision. The pipeline cannot read the very value it hunts, so no
+automation could take the pause. The original strategy was always
+replay-guided correlation: **stage candidate addresses, monitor them while
+the replay plays, score each series against the known replay trajectory**.
+
+**Built and verified:**
+
+- `Core/Discovery/TrajectoryCorrelation.cs` — pure scorer: per-axis (x/y/z)
+  with sign flips, piecewise-linear tick lookup, whole-second time-shift
+  sweep (±8s default) absorbing Start-marker anchor error; the sweep finds
+  ONE consistent shift per (entity, axis, sign) — per-sample independent
+  shifts were rejected at review as weak, noisy evidence; stationary
+  ground-truth axes and constant observed series excluded. 12 unit tests.
+- Replay clock pinned at **10,000,000 ticks/s**: synthetic 120s fixture is
+  exactly 1,200,000,000 ticks; real decode 599,839,248 ticks ≈ 59.98s.
+- `SqliteTrajectoryGroundTruthProvider` — per-entity downsampled series from
+  `position_samples` (≤ 256/entity) + `duration_ticks` +
+  `viewpoint_participant_id` (local player).
+- `IGameMemoryScanner.ReadAddressesAsync` + `POST /api/v1/game/discover/read`
+  — the missing "re-read a fixed staged set" primitive (≤ 2000/call, guarded
+  reader, gate-checked; the batch read opens ONE process lease for the whole
+  call instead of a handle per address).
+- `GET /api/v1/game/discover/trajectory/{sessionId}` +
+  `POST /api/v1/game/discover/correlate` endpoints.
+- `scripts/od-048-monitor-correlate-session.ps1` — gate wait → stage
+  (viewpoint + top movers, 3 axis scans each, `FloatTolerance` 8) → monitor
+  loop (re-read every 2s) → correlate → JSON report with verdict +
+  `strongSurvivors` (score ≥ 0.7). Staging keeps canonical hex addresses
+  end-to-end; warns when the gate is already verified on the first poll (the
+  wall anchor would be wrong for a battle already underway) and accepts a
+  `-ReplayStartWallTimeUtc` override. PSSA gate 0 warnings (22 tracked
+  scripts); preflight fails closed (exit 1) with no host.
+- 6 new Host.Web endpoint tests (read validation, trajectory mapping/404,
+  correlate scoring/sign-flip/validation) + 12 scorer unit tests incl. the
+  per-sample-jitter regression (inconsistent shifts must not score).
+
+**Not run:** the live OD-048 session (launch → let the battle play → read the
+report) — pending operator go-ahead.

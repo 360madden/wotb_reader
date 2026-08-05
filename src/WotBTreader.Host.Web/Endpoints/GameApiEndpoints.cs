@@ -1,8 +1,11 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using WotBTreader.ApiContracts;
 using WotBTreader.Application.Game;
 using WotBTreader.Application.Results;
+using WotBTreader.Application.Storage;
 using WotBTreader.Core;
+using WotBTreader.Core.Discovery;
 
 namespace WotBTreader.Host.Web.Endpoints;
 
@@ -28,6 +31,9 @@ internal static class GameApiEndpoints
         group.MapPost("/discover/compare/{sessionId}", CompareSnapshotAsync);
         group.MapDelete("/discover/session/{sessionId}", DiscardSessionAsync);
         group.MapPost("/discover/neighborhood", DiscoverNeighborhoodAsync);
+        group.MapPost("/discover/read", ReadOffsetsAsync);
+        group.MapGet("/discover/trajectory/{battleSessionId:guid}", GetTrajectoryAsync);
+        group.MapPost("/discover/correlate", CorrelateAsync);
         return builder;
     }
 
@@ -648,6 +654,195 @@ internal static class GameApiEndpoints
                 AddressKind = c.AddressKind,
                 IsCopyOnWrite = c.IsCopyOnWrite,
             }).ToList(),
+        });
+    }
+
+    internal static async Task<IResult> ReadOffsetsAsync(
+        IGameMemoryScanner scanner,
+        OffsetReadRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(scanner);
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.Addresses is null || request.Addresses.Count is < 1 or > 2000)
+        {
+            return Results.BadRequest(new { error = "discover.invalid_options" });
+        }
+
+        MemoryValueKind? kind = request.ValueKind switch
+        {
+            "Int32" => MemoryValueKind.Int32Value,
+            "Float" => MemoryValueKind.FloatValue,
+            "Double" => MemoryValueKind.DoubleValue,
+            "UInt32" => MemoryValueKind.UInt32Value,
+            "Int64" => MemoryValueKind.Int64Value,
+            "UInt64" => MemoryValueKind.UInt64Value,
+            _ => null,
+        };
+        if (kind is null)
+        {
+            return Results.BadRequest(new { error = "discover.invalid_value_kind" });
+        }
+
+        bool widthMatchesKind = kind.Value switch
+        {
+            MemoryValueKind.FloatValue or MemoryValueKind.Int32Value or MemoryValueKind.UInt32Value
+                => request.ValueSize == 4,
+            MemoryValueKind.DoubleValue or MemoryValueKind.Int64Value or MemoryValueKind.UInt64Value
+                => request.ValueSize == 8,
+            _ => false,
+        };
+        if (request.ValueSize is not (4 or 8) || !widthMatchesKind)
+        {
+            return Results.BadRequest(new { error = "discover.invalid_options" });
+        }
+
+        List<long> addresses = new(request.Addresses.Count);
+        foreach (string raw in request.Addresses)
+        {
+            string hex = raw.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? raw[2..] : raw;
+            if (!IsHexString(hex)
+                || hex.Length > 16
+                || !long.TryParse(
+                    hex,
+                    NumberStyles.HexNumber,
+                    CultureInfo.InvariantCulture,
+                    out long value)
+                || value <= 0)
+            {
+                return Results.BadRequest(new { error = "discover.invalid_address" });
+            }
+
+            addresses.Add(value);
+        }
+
+        OperationResult<MemoryReadResult> result = await scanner
+            .ReadAddressesAsync(
+                new MemoryReadRequest(addresses, request.ValueSize, kind.Value),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!result.IsSuccess)
+        {
+            return Results.BadRequest(new { error = result.Error?.Code ?? "discover.read_failed" });
+        }
+
+        MemoryReadResult readResult = result.Value!;
+        return Results.Ok(new OffsetReadResponse
+        {
+            CompletedAtUtc = readResult.CompletedAtUtc,
+            RequestedCount = readResult.Reads.Count,
+            ReadCount = readResult.Reads.Count(static item => item.ReadOk),
+            Reads = readResult.Reads.Select(item => new OffsetReadItem
+            {
+                AbsoluteAddress = $"0x{item.AbsoluteAddress:X}",
+                ReadOk = item.ReadOk,
+                ObservedValueHex = item.ObservedValue is null
+                    ? string.Empty
+                    : Convert.ToHexString(item.ObservedValue),
+                ValueSummary = item.ValueSummary,
+            }).ToList(),
+        });
+    }
+
+    internal static async Task<IResult> GetTrajectoryAsync(
+        ITrajectoryGroundTruthProvider provider,
+        Guid battleSessionId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(provider);
+
+        OperationResult<TrajectoryGroundTruth> result = await provider
+            .GetAsync(new BattleSessionId(battleSessionId), cancellationToken)
+            .ConfigureAwait(false);
+        if (!result.IsSuccess || result.Value is null)
+        {
+            return Results.NotFound(new { error = result.Error?.Code ?? "trajectory.not_found" });
+        }
+
+        TrajectoryGroundTruth groundTruth = result.Value;
+        return Results.Ok(new TrajectoryResponse(
+            battleSessionId,
+            groundTruth.DurationTicks,
+            groundTruth.Entities.Select(entity => new TrajectoryEntityResponse(
+                entity.EntityId,
+                entity.ParticipantId?.Value.ToString(),
+                entity.TankName,
+                entity.IsViewpoint,
+                entity.Samples.Select(sample => new TrajectorySampleResponse(
+                    sample.ReplayTimeTicks,
+                    sample.X,
+                    sample.Y,
+                    sample.Z)).ToList())).ToList()));
+    }
+
+    internal static async Task<IResult> CorrelateAsync(
+        ITrajectoryGroundTruthProvider provider,
+        CorrelateRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(provider);
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.GroundTruthSessionId == Guid.Empty
+            || !double.IsFinite(request.TolerancePerAxis)
+            || request.TolerancePerAxis <= 0
+            || request.TolerancePerAxis > 1000
+            || request.MaxTimeShiftSeconds is < 0 or > 120
+            || !double.IsFinite(request.MinMovingSpan)
+            || request.MinMovingSpan < 0
+            || request.Observations is null
+            || request.Observations.Count is < 1 or > 2000)
+        {
+            return Results.BadRequest(new { error = "discover.invalid_options" });
+        }
+
+        foreach (CorrelationSeriesRequest series in request.Observations)
+        {
+            if (string.IsNullOrWhiteSpace(series.Address)
+                || series.Samples is null
+                || series.Samples.Count is < 1 or > 5000)
+            {
+                return Results.BadRequest(new { error = "discover.invalid_options" });
+            }
+        }
+
+        OperationResult<TrajectoryGroundTruth> groundResult = await provider
+            .GetAsync(new BattleSessionId(request.GroundTruthSessionId), cancellationToken)
+            .ConfigureAwait(false);
+        if (!groundResult.IsSuccess || groundResult.Value is null)
+        {
+            return Results.BadRequest(new { error = groundResult.Error?.Code ?? "trajectory.not_found" });
+        }
+
+        IReadOnlyList<ObservedAddressSeries> observations =
+            [.. request.Observations.Select(series => new ObservedAddressSeries(
+                series.Address,
+                [.. series.Samples.Select(sample => new CorrelationSample(
+                    sample.WallTimeUtc,
+                    sample.Value))]))];
+
+        IReadOnlyList<TrajectoryCorrelationResult> results = TrajectoryCorrelationScorer.Score(
+            groundResult.Value,
+            request.ReplayStartWallTimeUtc,
+            observations,
+            request.TolerancePerAxis,
+            request.MaxTimeShiftSeconds,
+            request.MinMovingSpan);
+
+        return Results.Ok(new CorrelateResponse
+        {
+            CompletedAtUtc = DateTimeOffset.UtcNow,
+            AddressesScored = results.Count,
+            TotalSamples = observations.Sum(static observation => observation.Samples.Count),
+            Results = results.Select(result => new CorrelateResultItemResponse(
+                result.Address,
+                result.ParticipantId?.Value.ToString(),
+                result.EntityId,
+                result.Axis,
+                result.Sign,
+                result.MatchCount,
+                result.TotalSamples,
+                result.Span,
+                result.Score)).ToList(),
         });
     }
 

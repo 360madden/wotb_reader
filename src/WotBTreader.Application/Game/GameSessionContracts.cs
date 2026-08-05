@@ -246,7 +246,38 @@ public interface IGameMemoryScanner
     ValueTask<OperationResult<MemoryScanResult>> ScanNeighborhoodAsync(
         MemoryNeighborhoodRequest request,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Re-reads a fixed, staged set of absolute addresses (the replay-guided
+    /// correlation monitor primitive). Only callable when the offline-session
+    /// gate is satisfied.
+    /// </summary>
+    ValueTask<OperationResult<MemoryReadResult>> ReadAddressesAsync(
+        MemoryReadRequest request,
+        CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// Request to re-read a fixed set of absolute addresses. The set is staged by
+/// an earlier scan; the values are correlated against the decoded replay
+/// trajectory while the replay plays.
+/// </summary>
+public sealed record MemoryReadRequest(
+    IReadOnlyList<long> Addresses,
+    int ValueSize = 4,
+    MemoryValueKind ValueKind = MemoryValueKind.FloatValue);
+
+/// <summary>One per-address read result.</summary>
+public sealed record MemoryReadItem(
+    long AbsoluteAddress,
+    bool ReadOk,
+    byte[]? ObservedValue,
+    string ValueSummary);
+
+/// <summary>Result of re-reading a staged address set.</summary>
+public sealed record MemoryReadResult(
+    DateTimeOffset CompletedAtUtc,
+    IReadOnlyList<MemoryReadItem> Reads);
 
 /// <summary>Request to create a memory snapshot with value filters.</summary>
 public sealed record MemorySnapshotRequest(
