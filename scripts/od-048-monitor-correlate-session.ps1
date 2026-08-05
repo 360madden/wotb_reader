@@ -132,7 +132,9 @@ function Get-GateState {
     param([object]$Rendezvous)
     try {
         if (-not $Rendezvous) { return $null }
-        return Invoke-RestMethod -Uri ($Rendezvous.baseUri + '/api/v1/game/state') -Headers @{
+        # Explicit 10s timeout: a hung host must fail a poll fast, not hang
+        # the driver silently (PS 5.1's default is indefinite).
+        return Invoke-RestMethod -Uri ($Rendezvous.baseUri + '/api/v1/game/state') -TimeoutSec 10 -Headers @{
             'X-WotBTreader-Capability' = [string]$Rendezvous.capability
         }
     }
@@ -144,12 +146,19 @@ function Invoke-Api {
         [object]$Rendezvous,
         [string]$Method,
         [string]$RelativePath,
-        [object]$Body = $null
+        [object]$Body = $null,
+        # Explicit timeout: a staging scan is a full-memory pass that can take
+        # tens of seconds, and pwsh 7's Invoke-RestMethod default (100s) would
+        # abort it mid-scan; PS 5.1's default (indefinite) hangs forever on a
+        # dead host. 300s is generous for the slowest scan while still failing
+        # a hung call in finite time.
+        [int]$TimeoutSec = 300
     )
     $params = @{
-        Uri     = $Rendezvous.baseUri + $RelativePath
-        Method  = $Method
-        Headers = @{ 'X-WotBTreader-Capability' = [string]$Rendezvous.capability }
+        Uri        = $Rendezvous.baseUri + $RelativePath
+        Method     = $Method
+        TimeoutSec = $TimeoutSec
+        Headers    = @{ 'X-WotBTreader-Capability' = [string]$Rendezvous.capability }
     }
     if ($null -ne $Body) {
         $params.ContentType = 'application/json'
@@ -158,7 +167,37 @@ function Invoke-Api {
     try {
         return Invoke-RestMethod @params
     }
-    catch { return $null }
+    catch {
+        # Log WHY the call failed (status + short error body): the generic
+        # FAILED_* messages alone leave the operator blind between a broken
+        # request, a gate-revoked 4xx, and a dead host. Loopback URIs and the
+        # small error bodies of 400s are error codes, not sensitive data.
+        $status = $null
+        $detail = ''
+        # PS 5.1 throws WebException (has Response, no StatusCode); pwsh 7
+        # throws HttpResponseException (has StatusCode, no Response). Bare
+        # property access on a non-matching exception type would throw
+        # PropertyNotFoundException under StrictMode, so gate every access
+        # on a PSObject.Properties presence check (index access is always
+        # StrictMode-safe and returns $null for a missing property).
+        if ($_.Exception.PSObject.Properties['Response'] -and $null -ne $_.Exception.Response -and $_.Exception.Response.StatusCode) {
+            $status = [int]$_.Exception.Response.StatusCode
+        }
+        elseif ($_.Exception.PSObject.Properties['StatusCode'] -and $_.Exception.StatusCode) {
+            $status = [int]$_.Exception.StatusCode
+        }
+        # ErrorDetails may be null (e.g. connection refused has no response
+        # body) -- null.Message throws under StrictMode, so guard the member.
+        if ($null -ne $_.ErrorDetails -and -not [string]::IsNullOrWhiteSpace([string]$_.ErrorDetails.Message)) {
+            $detail = ([string]$_.ErrorDetails.Message -replace '[\r\n]+', ' ').Trim()
+            if ($detail.Length -gt 200) { $detail = $detail.Substring(0, 200) }
+        }
+        $diag = ('api_failed method={0} path={1}' -f $Method, $RelativePath)
+        if ($null -ne $status) { $diag += (' status=' + $status) }
+        if ($detail) { $diag += (' body=' + $detail) }
+        Write-Od048 $diag
+        return $null
+    }
 }
 
 # Float -> little-endian hex for the staging scan.
@@ -364,6 +403,7 @@ if ($null -ne $battleEndUtc) {
 }
 $stagingStartUtc = [datetime]::UtcNow
 $budgetExhausted = $false
+$scanFailed = $false
 $staged = [System.Collections.Generic.List[string]]::new()
 $stagedEntitiesReport = @()
 $stagingAttempt = 0
@@ -371,6 +411,7 @@ while ($stagingAttempt -lt $MaxStagingAttempts -and -not $budgetExhausted) {
     $stagingAttempt += 1
     $staged.Clear()
     $stagedEntitiesReport = @()
+    $scanFailed = $false
     $attemptElapsed = ((Get-Date).ToUniversalTime() - $anchorUtc).TotalSeconds
     Write-Od048 ("staging attempt={0} elapsed_s={1}" -f $stagingAttempt, [Math]::Round([Math]::Max(0.0, $attemptElapsed), 1))
 
@@ -412,8 +453,9 @@ while ($stagingAttempt -lt $MaxStagingAttempts -and -not $budgetExhausted) {
             }
             $scan = Invoke-Api -Rendezvous $rendezvous -Method 'Post' -RelativePath '/api/v1/game/discover' -Body $scanBody
             if ($null -eq $scan -or $null -eq $scan.candidates) {
-                Write-Od048 ('FAILED_staging_scan axis=' + $axis)
-                exit 2
+                $scanFailed = $true
+                Write-Od048 ('staging_scan_failed axis=' + $axis + ' (retrying attempt)')
+                break
             }
             foreach ($candidate in $scan.candidates) {
                 if ($staged.Count -ge $MaxStaged) { break }
@@ -425,9 +467,10 @@ while ($stagingAttempt -lt $MaxStagingAttempts -and -not $budgetExhausted) {
                 if (-not $staged.Contains($hexAddress)) { $staged.Add($hexAddress) }
             }
         }
-        # Entity-level budget guard: once exhausted, stop the entity loop too,
-        # so entities whose scans never ran are NOT reported as staged.
-        if ($budgetExhausted) { break }
+        # Entity-level budget/scan guard: once exhausted or a scan has failed,
+        # stop the entity loop too, so entities whose scans never ran are NOT
+        # reported as staged.
+        if ($budgetExhausted -or $scanFailed) { break }
         # One report entry per ENTITY (not per axis scan).
         $stagedEntitiesReport += [pscustomobject]@{
             EntityId    = $entity.EntityId
@@ -436,6 +479,10 @@ while ($stagingAttempt -lt $MaxStagingAttempts -and -not $budgetExhausted) {
         }
     }
 
+    # Break the attempt loop only when we have enough staged addresses or the
+    # budget is gone. A scan FAILURE must NOT break here: it falls through to
+    # the retry block below so the next attempt (which resets $scanFailed) can
+    # succeed -- a failed attempt 1 is retried, not wasted.
     if ($staged.Count -ge 3 -or $budgetExhausted) { break }
     if ($stagingAttempt -lt $MaxStagingAttempts -and -not $budgetExhausted) {
         # Budget-aware retry: never sleep past the staging deadline.
@@ -450,7 +497,12 @@ while ($stagingAttempt -lt $MaxStagingAttempts -and -not $budgetExhausted) {
 }
 $stagingEndUtc = [datetime]::UtcNow
 if ($staged.Count -lt 3) {
-    Write-Od048 ("FAILED_staging_too_small staged=" + $staged.Count)
+    if ($scanFailed) {
+        Write-Od048 'FAILED_staging_scan (all attempts failed)'
+    }
+    else {
+        Write-Od048 ("FAILED_staging_too_small staged=" + $staged.Count)
+    }
     exit 2
 }
 Write-Od048 ("staged=" + $staged.Count)
@@ -569,6 +621,20 @@ if ($observations.Count -eq 0) {
     exit 3
 }
 
+# The correlate endpoint caps observations at 2000 series, but staging can
+# yield up to MaxStaged (3000) addresses, and the round-2 auto-scaled staging
+# tolerance makes >2000 staged addresses plausible. Truncate to the server
+# cap, keeping the most-observed series first (more samples = more
+# correlation evidence), and record the truncation in the report.
+$correlateMaxObservations = 2000
+$observationsTotal = $observations.Count
+$observations = @($observations |
+    Sort-Object { $_.Samples.Count } -Descending |
+    Select-Object -First $correlateMaxObservations)
+if ($observationsTotal -gt $observations.Count) {
+    Write-Od048 ("correlate observations truncated from {0} to {1} (server cap {2})" -f $observationsTotal, $observations.Count, $correlateMaxObservations)
+}
+
 $correlateBody = @{
     groundTruthSessionId   = $battleSessionId
     replayStartWallTimeUtc = $replayStartWallUtc
@@ -647,6 +713,9 @@ $report = [ordered]@{
     correlate              = [ordered]@{
         addressesScored       = $correlated.addressesScored
         totalSamples          = $correlated.totalSamples
+        observationsSent      = $observations.Count
+        observationsTotal     = $observationsTotal
+        observationsCap       = $correlateMaxObservations
         shiftAudit            = [ordered]@{
             edgeThresholdSeconds = $edgeThreshold
             edgeAlignedSuspects  = $edgeAlignedSurvivors.Count

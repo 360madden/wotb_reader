@@ -226,3 +226,47 @@ implementation, all fixed:
    scans never ran still appeared. The entry is now one per entity, after an
    entity-level `if ($budgetExhausted) { break }`, and the loop structure
    closes the axis/entity/attempt levels explicitly.
+
+## Round-4 deep-analysis amendment (2026-08-04): correlate cap, HTTP timeouts, diagnostics
+
+Round-4 hunted the previously unexamined pure functions, HTTP plumbing, and the
+monitor/correlate data flow. Verified clean (no changes needed): `Convert-ToFloatHex`
+is bit-exact little-endian matching the C# endpoint's `BitConverter.ToSingle`
+(unit fixture `0000C842` = 100.0f confirms the wire format); `valueSummary` from
+the read path is round-trip `"R"` invariant floats the driver's double.Parse
+handles (NaN/Inf caught by Test-FiniteDouble); the correlate DTO's
+`ShiftStepSeconds` has a C# default of 0.5 so omitting it in the body is valid;
+scan and read responses both emit uppercase `0x{:X}` hex so the case-sensitive
+series Dictionary keying is consistent; the report-write path already has its
+exit-5 try/catch.
+
+Three real defects fixed in the driver:
+
+1. **Correlate observations cap mismatch (latent campaign-killer).** The C#
+   endpoint rejects `Observations.Count > 2000`, but staging can yield up to
+   `MaxStaged` (3000) addresses and the driver sent every series with >=2
+   samples with no truncation -- and the round-2 auto-scaled staging tolerance
+   (up to +/-800 units) makes >2000 staged addresses plausible. A 400 from
+   correlate was swallowed into `FAILED_correlate` (exit 4) with zero
+   evidence. The driver now truncates to the server cap, keeping the
+   most-observed series first, logs the truncation, and records
+   `observationsSent`/`observationsTotal`/`observationsCap` in the report.
+2. **No HTTP timeouts.** `Invoke-Api`/`Get-GateState` used Invoke-RestMethod
+   defaults: pwsh 7's 100s would abort a slow staging scan mid-scan; PS 5.1's
+   indefinite timeout hangs forever on a dead host. `Invoke-Api` now takes an
+   explicit `TimeoutSec` (300 default, generous for full-memory scans);
+   `Get-GateState` polls with 10s so a hung host fails fast.
+3. **Silent error swallowing + hard exit on transient scan failure.** `Invoke-Api`
+   returned $null with no diagnostics, and a single failed staging scan exited
+   the whole run (exit 2), wasting the session on a host hiccup. It now logs
+   `api_failed method=... path=... status=... body=...` (error codes only, no
+   sensitive data), and a failed scan sets `$scanFailed`, breaks the current
+   attempt, and falls through to the retry loop (bounded by attempts + budget)
+   -- after attempts are exhausted it exits `FAILED_staging_scan (all attempts
+   failed)`. A corrected-loop simulation proved attempt-1-only failure now
+   recovers and proceeds.
+
+PSSA gate 0 warnings on 22 scripts; ASCII-clean; parse OK; smoke fails closed;
+the api_failed diagnostics path verified against a closed port; truncation and
+retry-logic simulations verified (2500 observations -> 2000 kept sorted
+descending; fail-attempt-1 -> proceed on attempt 2).
