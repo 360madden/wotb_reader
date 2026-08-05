@@ -202,13 +202,20 @@ internal sealed class SqliteTrajectoryGroundTruthProvider : ITrajectoryGroundTru
         long maxTick = samples[^1].ReplayTimeTicks;
         double step = Math.Max(1, (double)(maxTick - minTick) / maximumSamples);
         List<TrajectorySample> kept = [];
-        long lastKeptTick = long.MinValue;
+        bool first = true;
+        long lastKeptTick = 0;
         foreach (TrajectorySample sample in samples)
         {
-            if (sample.ReplayTimeTicks - lastKeptTick >= step)
+            // Overflow hazard: `tick - long.MinValue` wraps NEGATIVE for every
+            // non-negative tick (0 - long.MinValue == long.MinValue in unchecked
+            // arithmetic), so a lastKeptTick seed of long.MinValue dropped the
+            // whole series whenever downsampling actually ran (battles longer
+            // than ~256 samples). Guard the first sample explicitly.
+            if (first || sample.ReplayTimeTicks - lastKeptTick >= step)
             {
                 kept.Add(sample);
                 lastKeptTick = sample.ReplayTimeTicks;
+                first = false;
             }
         }
 

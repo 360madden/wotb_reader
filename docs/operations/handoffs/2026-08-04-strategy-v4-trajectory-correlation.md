@@ -83,3 +83,49 @@ most recent decoded session when `-SessionId` is empty.
   gate flipped verified; the ±8s sweep absorbs the residual skew.
 - The OD-047 exact-pause driver remains as a documented fallback for static
   values only — no live session is spent on it first.
+
+## Amendment (2026-08-04) — deep-analysis bug-fix pass
+
+A three-round deep-analysis hunt (reviewer + operator analysis) on the v4
+build caught four real defects. All fixed, all regression-tested:
+
+1. **Downsample overflow (critical).** `SqliteTrajectoryGroundTruthProvider`
+   seeded `lastKeptTick` with `long.MinValue`; `tick - long.MinValue` wraps
+   NEGATIVE for every non-negative tick, so any battle with > 256 samples
+   (any battle > ~25s at 10 Hz) produced an EMPTY ground truth and the
+   campaign could never correlate a real battle. Synthetic fixtures (< 256
+   samples) stayed green and hid it. Fixed with a `first` flag; regression
+   test `SqliteTrajectoryGroundTruthProviderTests` commits a 300-sample
+   battle and asserts non-empty, monotone, edge-preserving trajectories.
+2. **Whole-second shift sweep rejected fast movers.** A consistent integer
+   shift leaves up to 0.5s residual = a CONSTANT position offset (speed ×
+   residual) on every sample: at 17 m/s that is 8.5 units > the 6-unit
+   tolerance, so a true field scored ~0. The sweep is now 0.5s-step; the
+   winning shift is reported as `ShiftSeconds` for audit. Regression tests
+   prove the same fast mover scores 1.0 at 0.5s steps and 0 at 1.0s steps.
+3. **Unvalidated wall anchor.** A default/epoch `ReplayStartWallTimeUtc`
+   silently clamped every sample to the last ground-truth value. The scorer
+   throws and the correlate endpoint returns `discover.invalid_options`.
+4. **Staging could not catch a moving battle.** The scans targeted the tick-0
+   position band, which the game holds only for a sub-second window at battle
+   start (or not at all while loading). Staging now: waits
+   `-StageDelaySeconds` (15s) for load, targets the ground-truth sample
+   NEAREST the expected current tick, scales tolerance from max entity speed
+   × (delay + 25s), and retries (3 attempts). The sweep default is ±30s to
+   absorb load latency between the Start marker and battle start.
+
+Also fixed: `ReadBatchAsync` now isolates per-address failures (one throwing
+read no longer blanks a whole 2000-address round); the correlate endpoint
+validates series addresses as hex, uses the scorer's
+`MaximumTimeShiftSeconds` constant, and reports `TotalSamples` from scored
+samples only; the coordinator guards value-kind/width consistency.
+
+**Corrected operational guidance (replaces the notes above):**
+- The wall anchor is still captured at gate-verify; the sweep now covers
+  ~30s of load latency + anchor skew, so starting the driver before battle
+  start is still required, but a few seconds of load jitter no longer kills
+  the run. Pass `-ReplayStartWallTimeUtc` (Start marker wall time) for the
+  tightest anchor.
+- Staging tolerance is auto-scaled; `-ScanTolerance` remains the floor.
+- Read the `shiftSeconds` field of survivors: ≈ -load_latency validates the
+  anchor; a large outlier flags a bad anchor.

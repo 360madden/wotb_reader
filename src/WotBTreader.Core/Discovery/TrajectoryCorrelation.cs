@@ -35,13 +35,21 @@ public sealed record ObservedAddressSeries(
     string Address,
     IReadOnlyList<CorrelationSample> Samples);
 
-/// <summary>Correlated evidence for one monitored address.</summary>
+/// <summary>
+/// Correlated evidence for one monitored address. <see cref="ShiftSeconds"/>
+/// is the sweep shift (real seconds) that produced the best match: negative
+/// when the observed series trails the anchor (e.g. load latency after the
+/// Start marker), approximately zero when the anchor matched battle start.
+/// It is the single most diagnostic audit value for whether a survivor is
+/// real.
+/// </summary>
 public sealed record TrajectoryCorrelationResult(
     string Address,
     ParticipantId? ParticipantId,
     long? EntityId,
     string Axis,
     int Sign,
+    double ShiftSeconds,
     int MatchCount,
     int TotalSamples,
     double Span,
@@ -84,6 +92,16 @@ public static class TrajectoryCorrelationScorer
     public const double DefaultMinMovingSpan = 0.5;
     public const int MaximumTimeShiftSeconds = 120;
 
+    /// <summary>
+    /// Granularity of the time-shift sweep. Whole-second steps leave a
+    /// residual of up to 0.5s, which is a CONSTANT position offset of
+    /// speed x residual on every sample: a fast mover at 17 m/s is offset up
+    /// to 8.5 units and permanently outside a 6-unit tolerance, so a true
+    /// field would score ~0. Sub-second steps keep speed x residual inside
+    /// tolerance (0.25s x 17 = 4.25 units).
+    /// </summary>
+    public const double DefaultShiftStepSeconds = 0.5;
+
     private static readonly string[] Axes = ["x", "y", "z"];
 
     /// <summary>
@@ -99,10 +117,19 @@ public static class TrajectoryCorrelationScorer
         double tolerancePerAxis = DefaultTolerancePerAxis,
         int maxTimeShiftSeconds = DefaultMaxTimeShiftSeconds,
         double minMovingSpan = DefaultMinMovingSpan,
+        double shiftStepSeconds = DefaultShiftStepSeconds,
         double replayClockTicksPerSecond = ReplayClockTicksPerSecond)
     {
         ArgumentNullException.ThrowIfNull(groundTruth);
         ArgumentNullException.ThrowIfNull(observations);
+        // A default anchor turns every tick into a huge positive value that
+        // clamps to the last ground-truth sample: silent, meaningless evidence
+        // instead of an error.
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(
+            replayStartWallTimeUtc,
+            DateTimeOffset.MinValue,
+            nameof(replayStartWallTimeUtc));
+
         if (!double.IsFinite(tolerancePerAxis) || tolerancePerAxis <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(tolerancePerAxis));
@@ -123,20 +150,32 @@ public static class TrajectoryCorrelationScorer
             throw new ArgumentOutOfRangeException(nameof(minMovingSpan));
         }
 
+        if (!double.IsFinite(shiftStepSeconds) || shiftStepSeconds <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(shiftStepSeconds));
+        }
+
         List<AxisSeries> groundSeries = BuildGroundSeries(groundTruth, tolerancePerAxis);
         if (groundSeries.Count == 0)
         {
             return [];
         }
 
-        // Time-shift sweep (whole seconds): absorbs Start-marker anchor error
-        // and wall-clock skew. A one-second tick mis-alignment at battle speed
-        // is still within tolerance for typical tank movement.
-        int[] shifts = new int[(2 * maxTimeShiftSeconds) + 1];
-        for (int shift = -maxTimeShiftSeconds; shift <= maxTimeShiftSeconds; shift++)
+        // Time-shift sweep in shiftStepSeconds increments: absorbs Start-marker
+        // anchor error, wall-clock skew, and load latency. Sub-second steps keep
+        // the residual position offset (speed x residual) inside tolerance for
+        // fast movers; whole-second steps would reject them (see
+        // DefaultShiftStepSeconds).
+        int shiftCount = (int)((2.0 * maxTimeShiftSeconds) / shiftStepSeconds) + 1;
+        double[] shifts = new double[shiftCount];
+        for (int index = 0; index < shiftCount; index++)
         {
-            shifts[shift + maxTimeShiftSeconds] = shift;
+            shifts[index] = -maxTimeShiftSeconds + (index * shiftStepSeconds);
         }
+
+        // Clamp the final candidate exactly to +max; floating-point accumulation
+        // can otherwise end at max + epsilon.
+        shifts[^1] = maxTimeShiftSeconds;
 
         List<TrajectoryCorrelationResult> results = [];
         foreach (ObservedAddressSeries observation in observations)
@@ -178,27 +217,40 @@ public static class TrajectoryCorrelationScorer
 
             int total = valid.Count;
             int bestMatch = 0;
+            double bestShiftSeconds = 0;
             int bestAxisIndex = 0;
             int bestSign = 1;
             ParticipantId? bestParticipant = null;
             long? bestEntity = null;
+
+            // Wall-relative tick for every sample is fixed per address: it does
+            // not depend on the ground series or the sign, so compute it once
+            // instead of once per (ground, sign) pair.
+            double[] baseTicks = new double[total];
+            for (int index = 0; index < total; index++)
+            {
+                double wallSeconds =
+                    (valid[index].WallTimeUtc - replayStartWallTimeUtc).TotalSeconds;
+                baseTicks[index] = wallSeconds * replayClockTicksPerSecond;
+            }
 
             foreach (AxisSeries ground in groundSeries)
             {
                 for (int signIndex = 0; signIndex < 2; signIndex++)
                 {
                     int sign = signIndex == 0 ? 1 : -1;
-                    int matches = CountMatches(
+                    (int matches, double shiftSeconds) = CountMatches(
                         valid,
+                        baseTicks,
                         ground,
                         sign,
                         shifts,
                         tolerancePerAxis,
-                        replayClockTicksPerSecond,
-                        replayStartWallTimeUtc);
+                        replayClockTicksPerSecond);
                     if (matches > bestMatch)
                     {
                         bestMatch = matches;
+                        bestShiftSeconds = shiftSeconds;
                         bestAxisIndex = ground.AxisIndex;
                         bestSign = sign;
                         bestParticipant = ground.ParticipantId;
@@ -228,6 +280,7 @@ public static class TrajectoryCorrelationScorer
                 bestEntity,
                 Axes[bestAxisIndex],
                 bestSign,
+                bestShiftSeconds,
                 bestMatch,
                 total,
                 span,
@@ -238,14 +291,14 @@ public static class TrajectoryCorrelationScorer
             .ThenByDescending(static r => r.Span)];
     }
 
-    private static int CountMatches(
+    private static (int Matches, double ShiftSeconds) CountMatches(
         List<CorrelationSample> samples,
+        double[] baseTicks,
         AxisSeries ground,
         int sign,
-        int[] shifts,
+        double[] shifts,
         double tolerance,
-        double ticksPerSecond,
-        DateTimeOffset replayStartWallTimeUtc)
+        double ticksPerSecond)
     {
         // One CONSISTENT time alignment per (entity, axis, sign): the anchor
         // error is a single constant offset, so the same shift must fit the
@@ -253,15 +306,8 @@ public static class TrajectoryCorrelationScorer
         // address wander within the swept band without ever reproducing a
         // coherent trajectory — weak, noisy evidence. The max over shifts is
         // the correct alignment model and a far stronger discriminator.
-        double[] baseTicks = new double[samples.Count];
-        for (int index = 0; index < samples.Count; index++)
-        {
-            double wallSeconds =
-                (samples[index].WallTimeUtc - replayStartWallTimeUtc).TotalSeconds;
-            baseTicks[index] = wallSeconds * ticksPerSecond;
-        }
-
         int best = 0;
+        double bestShiftSeconds = 0;
         for (int shiftIndex = 0; shiftIndex < shifts.Length; shiftIndex++)
         {
             double shiftTicks = shifts[shiftIndex] * ticksPerSecond;
@@ -277,18 +323,27 @@ public static class TrajectoryCorrelationScorer
                 }
             }
 
-            if (matches > best)
+            // On a locally linear trajectory many shifts within the tolerance
+            // band tie. Report the one closest to zero: the anchor error is
+            // expected to be small, so the band's center is the least
+            // misleading representation of an indeterminate shift.
+            bool improved = matches > best;
+            bool tiedCloserToZero = matches == best
+                && best > 0
+                && Math.Abs(shifts[shiftIndex]) < Math.Abs(bestShiftSeconds);
+            if (improved || tiedCloserToZero)
             {
                 best = matches;
-                if (best == samples.Count)
+                bestShiftSeconds = shifts[shiftIndex];
+                if (best == samples.Count && bestShiftSeconds == 0)
                 {
-                    // Perfect alignment under one shift — cannot improve.
+                    // Perfect alignment under the zero shift — cannot improve.
                     break;
                 }
             }
         }
 
-        return best;
+        return (best, bestShiftSeconds);
     }
 
     private static List<AxisSeries> BuildGroundSeries(

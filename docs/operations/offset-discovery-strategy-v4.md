@@ -44,18 +44,31 @@ spent on it first.
 
 | Piece | Where | What it does |
 |---|---|---|
-| Pure correlation scorer | `Core/Discovery/TrajectoryCorrelation.cs` | Scores a monitored 1-D address series against every entity axis of the decoded trajectory. Per-axis with sign flips, piecewise-linear tick lookup, whole-second **time-shift sweep** (default ±8s) that absorbs Start-marker anchor error — no precise pause, no OCR. Excludes stationary ground-truth axes and constant observed series. 11 unit tests. |
+| Pure correlation scorer | `Core/Discovery/TrajectoryCorrelation.cs` | Scores a monitored 1-D address series against every entity axis of the decoded trajectory. Per-axis with sign flips, piecewise-linear tick lookup, **sub-second (0.5s-step) time-shift sweep** (driver default ±30s) that absorbs Start-marker anchor error AND load latency — no precise pause, no OCR. Reports the winning `shiftSeconds` (the anchor error) for audit. Excludes stationary ground-truth axes and constant observed series. 15 unit tests. |
 | Ground-truth provider | `Storage.Sqlite/SqliteTrajectoryGroundTruthProvider.cs` | Reads `position_samples` per participant from the decoded session, downsampled to ≤ 256 samples/entity, plus `duration_ticks` and the `viewpoint_participant_id` (local player). Purely offline. |
 | Read primitive | `IGameMemoryScanner.ReadAddressesAsync` + `POST /api/v1/game/discover/read` | Re-reads a staged set of absolute addresses (≤ 2000/call) through the guarded reader; the missing "monitor a fixed candidate set across time" capability. |
 | Correlate endpoint | `POST /api/v1/game/discover/correlate` | Loads ground truth, runs the scorer, returns ranked survivors. |
 | Trajectory endpoint | `GET /api/v1/game/discover/trajectory/{sessionId}` | Serves the downsampled ground truth for staging and reporting. |
-| Session driver | `scripts/od-048-monitor-correlate-session.ps1` | Gate wait → stage (viewpoint + top movers, 3 axis scans each) → monitor loop (re-read every 2s) → correlate → JSON report with verdict. No operator input after launch. |
+| Session driver | `scripts/od-048-monitor-correlate-session.ps1` | Gate wait → load-settle delay → stage (viewpoint + top movers; scans target the ground-truth sample nearest the expected current tick, tolerance auto-scaled from max entity speed × load-latency bound, retried until the battle is loaded) → monitor loop (re-read every 2s) → correlate → JSON report with verdict. No operator input after launch. |
 
 **Key evidence fact (verified from the decoded session):** the replay clock
 runs at **10,000,000 ticks per real second** — the synthetic 120s fixture is
 exactly 1,200,000,000 ticks and the real decode puts the HUD 1:00 frame at
 599,839,248 ticks ≈ 59.98s. The driver anchors wall time at the replay Start
-marker and the scorer's shift sweep absorbs the residual skew.
+marker and the scorer's shift sweep absorbs the residual skew AND the load
+latency between the Start marker and battle start (observed ~5–30s).
+
+**Bug-fix pass (2026-08-04):** the deep-analysis review of the v4 build
+caught and fixed four real defects: (1) the ground-truth `Downsample`
+overflowed for every battle > 256 samples and silently returned an EMPTY
+ground truth (regression test added); (2) the whole-second shift sweep
+rejected fast movers (a 0.5s residual × 17 m/s = 8.5 units > 6-unit
+tolerance) — the sweep is now sub-second; (3) a default/epoch wall anchor
+produced silent garbage evidence — now rejected; (4) the staging scans
+(targeting the tick-0 position) ran before the battle entities existed or
+after the tank had moved — staging now waits for load, targets the
+nearest-tick sample, and scales tolerance from entity speed. See the handoff
+amendment.
 
 ## Milestones (see `offset-discovery-roadmap.md`)
 

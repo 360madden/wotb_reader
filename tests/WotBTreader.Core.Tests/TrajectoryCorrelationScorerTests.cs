@@ -327,6 +327,124 @@ public sealed class TrajectoryCorrelationScorerTests
     }
 
     [TestMethod]
+    public void FastMoverNeedsSubSecondShiftStep()
+    {
+        // A fast ramp (20 units per second) recorded with a 0.5s anchor error:
+        // the whole-second sweep leaves a 0.5s residual = 10 units of constant
+        // offset, permanently outside the 6-unit tolerance, so a whole-second
+        // sweep would reject a TRUE field. The default 0.5s step must align it.
+        TrajectoryGroundTruth ramp = new(
+            1_000_000_000,
+            [
+                new EntityTrajectory(
+                    new ParticipantId(Guid.NewGuid()),
+                    EntityId: 40,
+                    "FastRamp",
+                    IsViewpoint: true,
+                    [
+                        new TrajectorySample(0, 0, 0, 0),
+                        // 2000 units over 100s = 20 units/s.
+                        new TrajectorySample(1_000_000_000, 2000, 0, 0),
+                    ]),
+            ]);
+
+        // Observed = GT(wall + 0.5s): value 20*second + 10.
+        List<CorrelationSample> samples = [];
+        for (int index = 0; index < 5; index++)
+        {
+            int second = 10 + (index * 10);
+            samples.Add(new CorrelationSample(Start.AddSeconds(second), (20 * second) + 10));
+        }
+
+        IReadOnlyList<TrajectoryCorrelationResult> results = TrajectoryCorrelationScorer.Score(
+            ramp,
+            Start,
+            [new ObservedAddressSeries("0xB000", samples)]);
+
+        Assert.HasCount(1, results);
+        Assert.AreEqual(1.0, results[0].Score, 0.001);
+        Assert.AreEqual(0.5, results[0].ShiftSeconds, 0.001);
+    }
+
+    [TestMethod]
+    public void WholeSecondStepRejectsTheSameFastMover()
+    {
+        TrajectoryGroundTruth ramp = new(
+            1_000_000_000,
+            [
+                new EntityTrajectory(
+                    new ParticipantId(Guid.NewGuid()),
+                    EntityId: 41,
+                    "FastRamp",
+                    IsViewpoint: true,
+                    [
+                        new TrajectorySample(0, 0, 0, 0),
+                        // 2000 units over 100s = 20 units/s.
+                        new TrajectorySample(1_000_000_000, 2000, 0, 0),
+                    ]),
+            ]);
+
+        List<CorrelationSample> samples = [];
+        for (int index = 0; index < 5; index++)
+        {
+            int second = 10 + (index * 10);
+            samples.Add(new CorrelationSample(Start.AddSeconds(second), (20 * second) + 10));
+        }
+
+        // With a whole-second step the best integer shift leaves 0.5s residual
+        // (10 units at 20 units/s) — the field cannot score.
+        IReadOnlyList<TrajectoryCorrelationResult> results = TrajectoryCorrelationScorer.Score(
+            ramp,
+            Start,
+            [new ObservedAddressSeries("0xB100", samples)],
+            shiftStepSeconds: 1.0);
+
+        Assert.HasCount(0, results);
+    }
+
+    [TestMethod]
+    public void WinningShiftIsReported()
+    {
+        // Steep ramp (30 units/s) so the shift is uniquely determined: the
+        // tolerance 6 / slope 30 ambiguity band is 0.2s, narrower than a 0.5s
+        // step, so only shift -3.0 aligns all samples. Wall anchor 3s late =>
+        // observed = GT(wall - 3); the winning shift must be -3s so operators
+        // can audit the anchor error.
+        TrajectoryGroundTruth steepRamp = new(
+            1_000_000_000,
+            [
+                new EntityTrajectory(
+                    new ParticipantId(Guid.NewGuid()),
+                    EntityId: 50,
+                    "SteepRamp",
+                    IsViewpoint: true,
+                    [
+                        new TrajectorySample(0, 0, 0, 0),
+                        // 3000 units over 100s = 30 units/s.
+                        new TrajectorySample(1_000_000_000, 3000, 0, 0),
+                    ]),
+            ]);
+        List<CorrelationSample> samples = [];
+        for (int index = 0; index < 5; index++)
+        {
+            int second = 10 + (index * 10);
+            samples.Add(new CorrelationSample(
+                Start.AddSeconds(second + 3),
+                30 * second));
+        }
+
+        IReadOnlyList<TrajectoryCorrelationResult> results = TrajectoryCorrelationScorer.Score(
+            steepRamp,
+            Start,
+            [new ObservedAddressSeries("0xC000", samples)],
+            maxTimeShiftSeconds: 8);
+
+        Assert.HasCount(1, results);
+        Assert.AreEqual(1.0, results[0].Score, 0.001);
+        Assert.AreEqual(-3.0, results[0].ShiftSeconds, 0.001);
+    }
+
+    [TestMethod]
     public void InvalidArgumentsAreRejected()
     {
         Assert.ThrowsExactly<ArgumentNullException>(() =>
@@ -337,5 +455,18 @@ public sealed class TrajectoryCorrelationScorerTests
             TrajectoryCorrelationScorer.Score(MovingGroundTruth(), Start, [], tolerancePerAxis: 0));
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(() =>
             TrajectoryCorrelationScorer.Score(MovingGroundTruth(), Start, [], maxTimeShiftSeconds: 121));
+        // A default anchor produces silent, meaningless evidence (every tick
+        // clamps to the last sample) — reject it instead.
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() =>
+            TrajectoryCorrelationScorer.Score(
+                MovingGroundTruth(),
+                DateTimeOffset.MinValue,
+                [new ObservedAddressSeries("0xD000", XSeries(10))]));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() =>
+            TrajectoryCorrelationScorer.Score(
+                MovingGroundTruth(),
+                Start,
+                [new ObservedAddressSeries("0xD000", XSeries(10))],
+                shiftStepSeconds: 0));
     }
 }

@@ -1692,13 +1692,15 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         if (request.Addresses is null
             || request.Addresses.Count is < 1 or > MaximumReadAddresses
             || request.ValueSize is not (4 or 8)
-            || request.Addresses.Any(static address => address <= 0))
+            || request.Addresses.Any(static address => address <= 0)
+            || !ValueSizeMatchesKind(request.ValueKind, request.ValueSize))
         {
             return OperationResult.Failure<MemoryReadResult>(
                 new ApplicationError(
                     "discover.invalid_options",
                     "The read request must contain between 1 and " + MaximumReadAddresses
-                        + " positive addresses and a value size of 4 or 8."));
+                        + " positive addresses, a value size of 4 or 8, and a value kind"
+                        + " whose width matches the requested size."));
         }
 
         (AuthorizedMemoryObservation? observation, long baseAddress, CancellationToken authorizationToken, bool ok) =
@@ -1789,6 +1791,16 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
 
         return OperationResult.Success(new MemoryReadResult(_timeProvider.GetUtcNow(), items));
     }
+
+    private static bool ValueSizeMatchesKind(MemoryValueKind kind, int valueSize) =>
+        kind switch
+        {
+            MemoryValueKind.FloatValue or MemoryValueKind.Int32Value or MemoryValueKind.UInt32Value
+                => valueSize == 4,
+            MemoryValueKind.DoubleValue or MemoryValueKind.Int64Value or MemoryValueKind.UInt64Value
+                => valueSize == 8,
+            _ => true, // Bytes: any width is a valid raw read.
+        };
 
     private static string FormatReadValue(byte[] bytes, MemoryValueKind kind) => kind switch
     {

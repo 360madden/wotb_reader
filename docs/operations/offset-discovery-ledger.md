@@ -3128,3 +3128,29 @@ the replay plays, score each series against the known replay trajectory**.
 
 **Not run:** the live OD-048 session (launch → let the battle play → read the
 report) — pending operator go-ahead.
+
+## 2026-08-04 — OD-048 bug-fix pass (deep analysis, 3 rounds)
+
+**Result: 4 real defects found and fixed in the strategy-v4 build (777f92c).**
+
+- `Downsample` overflow: `tick - long.MinValue` wraps negative for every
+  non-negative tick → EMPTY ground truth for every battle > 256 samples
+  (real battles are thousands). Regression test with a 300-sample commit.
+- Whole-second shift sweep rejected fast movers (0.5s residual × 17 m/s =
+  8.5 units > 6 tolerance → true field scored ~0). Sweep now 0.5s-step;
+  winning `shiftSeconds` reported for audit.
+- Unvalidated `ReplayStartWallTimeUtc` (epoch anchor → silent garbage
+  evidence). Scorer throws; endpoint returns `discover.invalid_options`.
+- Staging targeted the tick-0 band (unstageable on a moving/loading battle).
+  Now: load-settle delay, nearest-tick staging, speed-scaled tolerance,
+  retry loop; sweep default ±30s for load latency.
+
+Plus: per-address failure isolation in `ReadBatchAsync`, hex validation for
+correlate series, scorer `MaximumTimeShiftSeconds` const used by the endpoint,
+coordinator value-kind/width guard.
+
+**Tests:** 15 scorer tests (incl. fast-mover sub-second regression, shift
+reporting, anchor rejection), provider downsample regression, endpoint
+hardening (incl. null-address 400), full suite 587 passed / 0 failed, PSSA
+gate 0 warnings. Committed and pushed; see the strategy-v4 doc and handoff
+amendment for details.

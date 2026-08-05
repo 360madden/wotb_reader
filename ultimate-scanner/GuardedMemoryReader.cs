@@ -458,14 +458,37 @@ internal sealed class GuardedMemoryReaderFactory(TimeProvider timeProvider)
                 foreach (nint address in addresses)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    if (!lease.TryRead(
+                    bool readOk;
+                    nuint bytesRead;
+                    try
+                    {
+                        readOk = lease.TryRead(
                             address,
                             buffer,
                             0,
                             length,
                             cancellationToken,
-                            out nuint bytesRead)
-                        || bytesRead != (nuint)length)
+                            out bytesRead);
+                    }
+                    catch (Exception exception) when (
+                        exception is Win32Exception
+                            or IOException
+                            or UnauthorizedAccessException
+                            or InvalidOperationException)
+                    {
+                        // Isolate per-address failures: one throwing read must
+                        // not abort the whole 2000-address round (that would
+                        // blank every series for the round in the monitor
+                        // loop). The unreadable marker keeps the round alive.
+                        items.Add(new MemoryReadItem(
+                            address.ToInt64(),
+                            ReadOk: false,
+                            null,
+                            "unreadable"));
+                        continue;
+                    }
+
+                    if (!readOk || bytesRead != (nuint)length)
                     {
                         items.Add(new MemoryReadItem(
                             address.ToInt64(),

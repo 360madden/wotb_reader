@@ -1002,6 +1002,7 @@ public sealed class GameApiEndpointsTests
         Assert.AreEqual("0x1000", best.Address);
         Assert.AreEqual("x", best.Axis);
         Assert.AreEqual(1, best.Sign);
+        Assert.AreEqual(0.0, best.ShiftSeconds, 0.001);
         Assert.AreEqual(5, best.MatchCount);
         Assert.AreEqual(1.0, best.Score, 0.001);
         Assert.AreEqual(1L, best.EntityId);
@@ -1074,6 +1075,77 @@ public sealed class GameApiEndpointsTests
             TestContext.CancellationToken);
         Assert.AreEqual("discover.invalid_options",
             BadRequestAnonymous(empty).GetProperty("error").GetString());
+
+        // A default (epoch) anchor would silently clamp every sample to the
+        // last ground-truth value — meaningless evidence. It must be rejected.
+        IResult defaultAnchor = await GameApiEndpoints.CorrelateAsync(
+            provider,
+            new CorrelateRequest
+            {
+                GroundTruthSessionId = Guid.NewGuid(),
+                ReplayStartWallTimeUtc = DateTimeOffset.MinValue,
+                Observations =
+                [
+                    new CorrelationSeriesRequest("0x1000",
+                        [new CorrelationSampleRequest(DateTimeOffset.UtcNow, 1)]),
+                ],
+            },
+            TestContext.CancellationToken);
+        Assert.AreEqual("discover.invalid_options",
+            BadRequestAnonymous(defaultAnchor).GetProperty("error").GetString());
+
+        // A null series address must be a 400, not a 500: validation must
+        // null-check before any member access.
+        IResult nullAddress = await GameApiEndpoints.CorrelateAsync(
+            provider,
+            new CorrelateRequest
+            {
+                GroundTruthSessionId = Guid.NewGuid(),
+                ReplayStartWallTimeUtc = DateTimeOffset.UtcNow,
+                Observations =
+                [
+                    new CorrelationSeriesRequest(null!,
+                        [new CorrelationSampleRequest(DateTimeOffset.UtcNow, 1)]),
+                ],
+            },
+            TestContext.CancellationToken);
+        Assert.AreEqual("discover.invalid_options",
+            BadRequestAnonymous(nullAddress).GetProperty("error").GetString());
+
+        // A non-hex series address must be rejected, matching /discover/read.
+        IResult nonHexAddress = await GameApiEndpoints.CorrelateAsync(
+            provider,
+            new CorrelateRequest
+            {
+                GroundTruthSessionId = Guid.NewGuid(),
+                ReplayStartWallTimeUtc = DateTimeOffset.UtcNow,
+                Observations =
+                [
+                    new CorrelationSeriesRequest("not-an-address",
+                        [new CorrelationSampleRequest(DateTimeOffset.UtcNow, 1)]),
+                ],
+            },
+            TestContext.CancellationToken);
+        Assert.AreEqual("discover.invalid_options",
+            BadRequestAnonymous(nonHexAddress).GetProperty("error").GetString());
+
+        // A non-positive shift step must be rejected.
+        IResult badShiftStep = await GameApiEndpoints.CorrelateAsync(
+            provider,
+            new CorrelateRequest
+            {
+                GroundTruthSessionId = Guid.NewGuid(),
+                ReplayStartWallTimeUtc = DateTimeOffset.UtcNow,
+                ShiftStepSeconds = 0,
+                Observations =
+                [
+                    new CorrelationSeriesRequest("0x1000",
+                        [new CorrelationSampleRequest(DateTimeOffset.UtcNow, 1)]),
+                ],
+            },
+            TestContext.CancellationToken);
+        Assert.AreEqual("discover.invalid_options",
+            BadRequestAnonymous(badShiftStep).GetProperty("error").GetString());
     }
 
     private static T Value<T>(IResult result)

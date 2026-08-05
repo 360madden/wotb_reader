@@ -358,8 +358,16 @@ public sealed record CorrelateRequest
     /// <summary>Per-axis tolerance in world units (default 6).</summary>
     public double TolerancePerAxis { get; init; } = 6.0;
 
-    /// <summary>Whole-second shift sweep bound (default 8).</summary>
+    /// <summary>Shift sweep bound in seconds (default 8; the driver uses 30 to
+    /// absorb load latency after the Start marker).</summary>
     public int MaxTimeShiftSeconds { get; init; } = 8;
+
+    /// <summary>
+    /// Shift sweep granularity in seconds (default 0.5). Sub-second steps keep
+    /// the residual position offset (speed x residual) inside tolerance for
+    /// fast movers; whole-second steps would reject them.
+    /// </summary>
+    public double ShiftStepSeconds { get; init; } = 0.5;
 
     /// <summary>Observed series with a span below this are treated as constants and skipped.</summary>
     public double MinMovingSpan { get; init; } = 0.5;
@@ -367,13 +375,18 @@ public sealed record CorrelateRequest
     public List<CorrelationSeriesRequest> Observations { get; init; } = [];
 }
 
-/// <summary>Correlated evidence for one monitored address.</summary>
+/// <summary>
+/// Correlated evidence for one monitored address. <see cref="ShiftSeconds"/>
+/// is the sweep shift (real seconds) that produced the best match; negative
+/// when the observed series trails the anchor (e.g. load latency).
+/// </summary>
 public sealed record CorrelateResultItemResponse(
     string Address,
     string? ParticipantId,
     long? EntityId,
     string Axis,
     int Sign,
+    double ShiftSeconds,
     int MatchCount,
     int TotalSamples,
     double Span,

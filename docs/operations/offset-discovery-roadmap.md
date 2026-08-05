@@ -45,15 +45,19 @@ The replay plays at 1x. No operator input after launch.
    (`scripts/launch-offline-replay-for-od.ps1`); the gate verifies on the
    Start marker.
 2. Run `scripts/od-048-monitor-correlate-session.ps1`:
-   - **Stage:** fetch the decoded session trajectory; take the viewpoint
-     entity's first position sample (plus the top movers); scan the game for
-     Float values near each axis (3 scans/entity, `FloatTolerance` 8); union
-     the candidates.
+   - **Stage:** fetch the decoded session trajectory; wait -StageDelaySeconds
+     (15s) for the battle to load after the Start marker; for the viewpoint
+     entity (plus the top movers) scan the game for Float values near the
+     ground-truth sample NEAREST the expected current replay tick (3
+     scans/entity). The tolerance is auto-scaled from max entity speed ×
+     (delay + 25s) so the band covers the live position despite unknown load
+     latency; scans retry (up to 3 attempts) until candidates are found.
    - **Monitor:** re-read the staged set every 2s via
      `POST /api/v1/game/discover/read` while the replay plays.
    - **Correlate:** `POST /api/v1/game/discover/correlate` scores each
-     address's value series against every entity axis (sign flips, ±8s
-     time-shift sweep) and ranks the survivors.
+     address's value series against every entity axis (sign flips, 0.5s-step
+     ±30s time-shift sweep, reports the winning `shiftSeconds` for audit) and
+     ranks the survivors.
    - **Report:** `.data\od-048-<timestamp>.json` with staged/monitored/
      correlated counts, results, `strongSurvivors` (score ≥ 0.7) and a
      verdict.
@@ -61,8 +65,13 @@ The replay plays at 1x. No operator input after launch.
    the movement samples) is the field evidence.
 
 **Prep (2026-08-04):** scorer + read primitive + trajectory/correlate
-endpoints + `od-048` driver built and unit-tested (11 scorer tests; 6 new
-endpoint tests; PSSA gate 0 warnings on 22 scripts). Replay clock verified at
+endpoints + `od-048` driver built and unit-tested (15 scorer tests incl.
+fast-mover sub-second-shift regression; provider downsample regression;
+endpoint hardening tests; PSSA gate 0 warnings on 22 scripts). Bug-fix pass
+same day: downsample overflow (empty ground truth for battles > 256 samples),
+whole-second shift sweep rejecting fast movers, unvalidated wall anchor,
+staging timing — all fixed with regression tests; see the strategy-v4 doc and
+handoff amendment. Replay clock verified at
 **10,000,000 ticks/s** (synthetic fixture exactly 1.2e9 ticks / 120s; real
 decode 599,839,248 ticks ≈ 59.98s). Dead Rail session
 `019fb86c-c8e7-7004-9df6-a574f5a7835b` (`duration_ticks` 2,713,761,600 ≈

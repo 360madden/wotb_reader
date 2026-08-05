@@ -783,12 +783,17 @@ internal static class GameApiEndpoints
         ArgumentNullException.ThrowIfNull(provider);
         ArgumentNullException.ThrowIfNull(request);
         if (request.GroundTruthSessionId == Guid.Empty
+            || request.ReplayStartWallTimeUtc <= DateTimeOffset.MinValue
             || !double.IsFinite(request.TolerancePerAxis)
             || request.TolerancePerAxis <= 0
             || request.TolerancePerAxis > 1000
-            || request.MaxTimeShiftSeconds is < 0 or > 120
+            || request.MaxTimeShiftSeconds is < 0
+                or > TrajectoryCorrelationScorer.MaximumTimeShiftSeconds
             || !double.IsFinite(request.MinMovingSpan)
             || request.MinMovingSpan < 0
+            || !double.IsFinite(request.ShiftStepSeconds)
+            || request.ShiftStepSeconds <= 0
+            || request.ShiftStepSeconds > 1.0
             || request.Observations is null
             || request.Observations.Count is < 1 or > 2000)
         {
@@ -797,9 +802,28 @@ internal static class GameApiEndpoints
 
         foreach (CorrelationSeriesRequest series in request.Observations)
         {
-            if (string.IsNullOrWhiteSpace(series.Address)
+            // Null-check BEFORE any member access: a deserializer can produce
+            // a null series or a null Address, and StartsWith on null would
+            // 500 instead of 400.
+            if (series is null
+                || string.IsNullOrWhiteSpace(series.Address)
                 || series.Samples is null
                 || series.Samples.Count is < 1 or > 5000)
+            {
+                return Results.BadRequest(new { error = "discover.invalid_options" });
+            }
+
+            string hex = series.Address.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                ? series.Address[2..]
+                : series.Address;
+            if (!IsHexString(hex)
+                || hex.Length > 16
+                || !long.TryParse(
+                    hex,
+                    NumberStyles.HexNumber,
+                    CultureInfo.InvariantCulture,
+                    out long address)
+                || address <= 0)
             {
                 return Results.BadRequest(new { error = "discover.invalid_options" });
             }
@@ -826,19 +850,23 @@ internal static class GameApiEndpoints
             observations,
             request.TolerancePerAxis,
             request.MaxTimeShiftSeconds,
-            request.MinMovingSpan);
+            request.MinMovingSpan,
+            request.ShiftStepSeconds);
 
         return Results.Ok(new CorrelateResponse
         {
             CompletedAtUtc = DateTimeOffset.UtcNow,
             AddressesScored = results.Count,
-            TotalSamples = observations.Sum(static observation => observation.Samples.Count),
+            // Only samples the scorer actually retained and scored count;
+            // non-finite samples are dropped before matching.
+            TotalSamples = results.Sum(static result => result.TotalSamples),
             Results = results.Select(result => new CorrelateResultItemResponse(
                 result.Address,
                 result.ParticipantId?.Value.ToString(),
                 result.EntityId,
                 result.Axis,
                 result.Sign,
+                result.ShiftSeconds,
                 result.MatchCount,
                 result.TotalSamples,
                 result.Span,

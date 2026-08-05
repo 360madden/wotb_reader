@@ -16,9 +16,13 @@
   address that reproduces the movement sequence with direction/speed changes.
 
   Staging: the driver fetches the decoded session trajectory (viewpoint
-  entity first, then the most-moving entities), takes the first position
-  sample of each, and scans the game process for Float values near those
-  coordinates (one scan per axis). The union is the staged set.
+  entity first, then the most-moving entities), waits -StageDelaySeconds for
+  the battle to load after the Start marker, then scans the game process for
+  Float values near the ground-truth sample nearest the expected current
+  replay tick (one scan per axis). The tolerance is auto-scaled from the
+  entity's maximum speed x the load-latency bound, so the band covers the
+  battle entity's live position regardless of load jitter. The union is the
+  staged set; the scan retries until it finds candidates (battle loaded).
 
   No operator input is needed after the replay launches. The battle plays to
   completion; the gate revokes at battle end and the driver stops.
@@ -46,14 +50,25 @@ param(
     [double]$ScanTolerance = 8.0,
     # Hard cap on the staged union.
     [int]$MaxStaged = 3000,
+    # Load-settle delay after the gate verifies (the Start marker fires when
+    # loading BEGINS; the battle entities with live positions exist only after
+    # LoadGameScene completes). Staging scans run after this delay.
+    [int]$StageDelaySeconds = 15,
+    # Staging attempts: each retry re-estimates the current replay tick and
+    # rescans with a fresh delay, so a battle that is still loading on the
+    # first attempt is caught on a later one.
+    [int]$MaxStagingAttempts = 3,
     [double]$ReadIntervalSeconds = 2.0,
     # Read rounds; the battle length (duration_ticks / 10MHz) bounds the useful
     # window. Dead Rail is ~271s; default 90 rounds at 2s covers ~180s.
     [int]$MaxReadRounds = 90,
     # Per-axis correlation tolerance (world units).
     [double]$TolerancePerAxis = 6.0,
-    # Whole-second time-shift sweep bound; absorbs Start-marker anchor error.
-    [int]$MaxTimeShiftSeconds = 8,
+    # Time-shift sweep bound (seconds); absorbs Start-marker anchor error AND
+    # load latency (the battle starts at tick 0 some seconds AFTER the Start
+    # marker, so the observed series trails the anchor by the load time).
+    # 30s covers observed load latencies; the server cap is 120.
+    [int]$MaxTimeShiftSeconds = 30,
     # Observed series with a span below this are treated as constants.
     [double]$MinMovingSpan = 0.5,
     # Addresses per /discover/read call (server cap is 2000).
@@ -180,6 +195,9 @@ if ($null -eq $state -or $state.verificationState -ne 'OfflineReplayVerified') {
     exit 1
 }
 
+Write-Od048 ("staging_delay_s=" + $StageDelaySeconds)
+if ($StageDelaySeconds -gt 0) { Start-Sleep -Seconds $StageDelaySeconds }
+
 # -- Ground truth --
 $battleSessionId = $SessionId
 if ([string]::IsNullOrWhiteSpace($battleSessionId)) {
@@ -205,6 +223,8 @@ foreach ($entity in $trajectory.entities) {
     $minX = [double]::MaxValue; $maxX = [double]::MinValue
     $minY = [double]::MaxValue; $maxY = [double]::MinValue
     $minZ = [double]::MaxValue; $maxZ = [double]::MinValue
+    $maxSpeed = 0.0
+    $prevSample = $null
     foreach ($sample in $entity.samples) {
         if ($sample.x -lt $minX) { $minX = $sample.x }
         if ($sample.x -gt $maxX) { $maxX = $sample.x }
@@ -212,6 +232,18 @@ foreach ($entity in $trajectory.entities) {
         if ($sample.y -gt $maxY) { $maxY = $sample.y }
         if ($sample.z -lt $minZ) { $minZ = $sample.z }
         if ($sample.z -gt $maxZ) { $maxZ = $sample.z }
+        if ($null -ne $prevSample) {
+            $dtTicks = [double]$sample.replayTimeTicks - [double]$prevSample.replayTimeTicks
+            if ($dtTicks -gt 0) {
+                $dx = [double]$sample.x - [double]$prevSample.x
+                $dy = [double]$sample.y - [double]$prevSample.y
+                $dz = [double]$sample.z - [double]$prevSample.z
+                $dist = [Math]::Sqrt(($dx * $dx) + ($dy * $dy) + ($dz * $dz))
+                $speed = $dist / ($dtTicks / 10000000.0)
+                if ($speed -gt $maxSpeed) { $maxSpeed = $speed }
+            }
+        }
+        $prevSample = $sample
     }
     $movement = ($maxX - $minX) + ($maxY - $minY) + ($maxZ - $minZ)
     $scored += [pscustomobject]@{
@@ -219,8 +251,41 @@ foreach ($entity in $trajectory.entities) {
         TankName    = $entity.tankName
         IsViewpoint = $entity.isViewpoint
         Movement    = $movement
-        FirstSample = $entity.samples[0]
+        MaxSpeed    = $maxSpeed
+        Samples     = $entity.samples
     }
+}
+
+$maxSpeedGlobal = 0.0
+if ($scored.Count -gt 0) {
+    $speedMax = $scored | Measure-Object -Property MaxSpeed -Maximum
+    if ($null -ne $speedMax -and $null -ne $speedMax.Maximum) {
+        $maxSpeedGlobal = [double]$speedMax.Maximum
+    }
+}
+# The scan band must cover the entity's live position despite unknown load
+# latency: tolerance = maxSpeed x (load-latency bound) x 1.5 safety margin.
+# 25s beyond the settle delay covers observed LoadGameScene times, and the
+# margin covers the downsampled-series peak-speed underestimate (fast bursts
+# are averaged out); capped at 800 world units so the staged union stays
+# bounded (the correlate filter rejects decoys anyway).
+$stagingTolerance = [Math]::Max([double]$ScanTolerance,
+    [Math]::Min(800.0, $maxSpeedGlobal * 1.5 * ($StageDelaySeconds + 25)))
+Write-Od048 ("max_speed=" + [Math]::Round($maxSpeedGlobal, 2) + " staging_tolerance=" + [Math]::Round($stagingTolerance, 2))
+
+function Select-NearestSample {
+    param([object]$Samples, [long]$TargetTick)
+    $best = $null
+    $bestDistance = [long]::MaxValue
+    foreach ($s in $Samples) {
+        $distance = [Math]::Abs(([long]$s.replayTimeTicks) - $TargetTick)
+        if ($distance -lt $bestDistance) {
+            $bestDistance = $distance
+            $best = $s
+        }
+    }
+    if ($null -eq $best) { return $Samples[0] }
+    return $best
 }
 
 $stagingEntities = @(
@@ -235,42 +300,65 @@ if ($stagingEntities.Count -eq 0) {
 $stagingEntities = @($stagingEntities | Select-Object -First $StageTopN)
 Write-Od048 ("staging_entities=" + $stagingEntities.Count)
 
+# Stage on the ground-truth sample nearest the expected current replay tick
+# (elapsed since the anchor), not the tick-0 sample: the battle entities with
+# live positions exist only after load, and by scan time the tank is seconds
+# into the battle. The speed-scaled tolerance absorbs the unknown load latency;
+# the shift sweep then aligns the observed series to the ground truth.
+$anchorUtc = [datetime]$replayStartWallUtc
 $staged = [System.Collections.Generic.List[string]]::new()
 $stagedEntitiesReport = @()
-foreach ($entity in $stagingEntities) {
-    $sample = $entity.FirstSample
-    $axisValues = @{ x = $sample.x; y = $sample.y; z = $sample.z }
-    foreach ($axis in @('x', 'y', 'z')) {
-        $axisValue = [double]$axisValues[$axis]
-        if (-not (Test-FiniteDouble -Value $axisValue)) { continue }
-        $scanBody = @{
-            FieldName        = ('corr-' + $axis + '-' + [string]$entity.EntityId)
-            FieldType        = 'Float'
-            ExpectedValueHex = (Convert-ToFloatHex -Value $axisValue)
-            FloatTolerance   = $ScanTolerance
-            MaxCandidates    = 10000
-            MinRegionSize    = 4096
-            Alignment        = 1
+$stagingAttempt = 0
+while ($stagingAttempt -lt $MaxStagingAttempts) {
+    $stagingAttempt += 1
+    $staged.Clear()
+    $stagedEntitiesReport = @()
+    $elapsedSeconds = ((Get-Date).ToUniversalTime() - $anchorUtc).TotalSeconds
+    if ($elapsedSeconds -lt 0) { $elapsedSeconds = 0 }
+    $stageTickEstimate = [long]($elapsedSeconds * 10000000.0)
+    Write-Od048 ("staging attempt={0} elapsed_s={1} tick_est={2}" -f $stagingAttempt, [Math]::Round($elapsedSeconds, 1), $stageTickEstimate)
+
+    foreach ($entity in $stagingEntities) {
+        $sample = Select-NearestSample -Samples $entity.Samples -TargetTick $stageTickEstimate
+        $axisValues = @{ x = $sample.x; y = $sample.y; z = $sample.z }
+        foreach ($axis in @('x', 'y', 'z')) {
+            $axisValue = [double]$axisValues[$axis]
+            if (-not (Test-FiniteDouble -Value $axisValue)) { continue }
+            $scanBody = @{
+                FieldName        = ('corr-' + $axis + '-' + [string]$entity.EntityId)
+                FieldType        = 'Float'
+                ExpectedValueHex = (Convert-ToFloatHex -Value $axisValue)
+                FloatTolerance   = $stagingTolerance
+                MaxCandidates    = 10000
+                MinRegionSize    = 4096
+                Alignment        = 1
+            }
+            $scan = Invoke-Api -Rendezvous $rendezvous -Method 'Post' -RelativePath '/api/v1/game/discover' -Body $scanBody
+            if ($null -eq $scan -or $null -eq $scan.candidates) {
+                Write-Od048 ('FAILED_staging_scan axis=' + $axis)
+                exit 2
+            }
+            foreach ($candidate in $scan.candidates) {
+                if ($staged.Count -ge $MaxStaged) { break }
+                # Keep the canonical "0x..." form end-to-end (staging, read
+                # batches, series keys, report) so no decimal/hex mismatch can
+                # split an address across two identities.
+                $hexAddress = [string]$candidate.absoluteAddress
+                if ($hexAddress -notmatch '^0x[0-9a-fA-F]+$') { continue }
+                if (-not $staged.Contains($hexAddress)) { $staged.Add($hexAddress) }
+            }
         }
-        $scan = Invoke-Api -Rendezvous $rendezvous -Method 'Post' -RelativePath '/api/v1/game/discover' -Body $scanBody
-        if ($null -eq $scan -or $null -eq $scan.candidates) {
-            Write-Od048 ("FAILED_staging_scan axis=" + $axis)
-            exit 2
-        }
-        foreach ($candidate in $scan.candidates) {
-            if ($staged.Count -ge $MaxStaged) { break }
-            # Keep the canonical "0x..." form end-to-end (staging, read
-            # batches, series keys, report) so no decimal/hex mismatch can
-            # split an address across two identities.
-            $hexAddress = [string]$candidate.absoluteAddress
-            if ($hexAddress -notmatch '^0x[0-9a-fA-F]+$') { continue }
-            if (-not $staged.Contains($hexAddress)) { $staged.Add($hexAddress) }
+        $stagedEntitiesReport += [pscustomobject]@{
+            EntityId    = $entity.EntityId
+            TankName    = $entity.TankName
+            IsViewpoint = $entity.IsViewpoint
         }
     }
-    $stagedEntitiesReport += [pscustomobject]@{
-        EntityId    = $entity.EntityId
-        TankName    = $entity.TankName
-        IsViewpoint = $entity.IsViewpoint
+
+    if ($staged.Count -ge 3) { break }
+    if ($stagingAttempt -lt $MaxStagingAttempts) {
+        Write-Od048 'staging retry in 15s (battle may still be loading)'
+        Start-Sleep -Seconds 15
     }
 }
 if ($staged.Count -lt 3) {
@@ -414,9 +502,13 @@ $report = [ordered]@{
     durationTicks          = $trajectory.durationTicks
     replayStartWallTimeUtc = $replayStartWallUtc
     staged                 = [ordered]@{
-        entities = $stagedEntitiesReport
-        union    = $staged.Count
-        capped   = ($staged.Count -ge $MaxStaged)
+        entities   = $stagedEntitiesReport
+        union      = $staged.Count
+        capped     = ($staged.Count -ge $MaxStaged)
+        attempts   = $stagingAttempt
+        delayS     = $StageDelaySeconds
+        tolerance  = $stagingTolerance
+        maxSpeed   = $maxSpeedGlobal
     }
     monitor                = [ordered]@{
         rounds               = $round
@@ -432,27 +524,29 @@ $report = [ordered]@{
     }
     results                = @($results | Select-Object -First 50 | ForEach-Object {
         [ordered]@{
-            address      = $_.address
+            address       = $_.address
             participantId = $_.participantId
-            entityId     = $_.entityId
-            axis         = $_.axis
-            sign         = $_.sign
-            matchCount   = $_.matchCount
-            totalSamples = $_.totalSamples
-            span         = $_.span
-            score        = $_.score
+            entityId      = $_.entityId
+            axis          = $_.axis
+            sign          = $_.sign
+            shiftSeconds  = $_.shiftSeconds
+            matchCount    = $_.matchCount
+            totalSamples  = $_.totalSamples
+            span          = $_.span
+            score         = $_.score
         }
     })
     strongSurvivors        = @($strongSurvivors | Select-Object -First 20 | ForEach-Object {
         [ordered]@{
-            address      = $_.address
+            address       = $_.address
             participantId = $_.participantId
-            entityId     = $_.entityId
-            axis         = $_.axis
-            sign         = $_.sign
-            matchCount   = $_.matchCount
-            totalSamples = $_.totalSamples
-            score        = $_.score
+            entityId      = $_.entityId
+            axis          = $_.axis
+            sign          = $_.sign
+            shiftSeconds  = $_.shiftSeconds
+            matchCount    = $_.matchCount
+            totalSamples  = $_.totalSamples
+            score         = $_.score
         }
     })
     verdict                = $verdict
