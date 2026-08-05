@@ -310,3 +310,70 @@ later round (recovery) while a no-scored-series pass marks it done; (3) the
 report's `staged.union`/`staged.capped` now use a scan-only snapshot taken
 before the family expansion, so the flag reflects the scan cap, not neighbor
 staging.
+## Amendment 5 — M2 write-trace driver (2026-08-05)
+
+The M2 write side is built and offline-validated; the live step remains the
+operator-run trace on a surviving family.
+
+**`scripts/x64dbg-write-trace.ps1`** now supports two input modes and a
+driver mode:
+
+- **Family mode (M2):** `-FamilyFile <path>` accepts an od-048 correlate
+  report JSON (its `families` array) or a bare family JSON (with `members`).
+  The driver selects the best family deterministically — a `complete` x/y/z
+  triple wins, tie-broken by summed member score — and arms hardware WRITE
+  breakpoints on the member addresses at 4-byte width (`bph <addr>,w,4`,
+  Float32 at 4-byte offsets). Members are armed in base-relative offset
+  order, deduplicated, capped at DR0-DR3 (4); the rest are reported unarmed.
+  Legacy survivor-file input (`-SurvivorFile`, no `-FamilyFile`) keeps its
+  8-byte Double width (`w,8`) unchanged.
+- **Driver mode (`-AutoWriteTrace`, the roadmap's M2 invocation):**
+  1. Pre-arms the debugger when missing (`pre-arm-debugger.ps1 -AutoAttach`
+     via `Invoke-AutoPreArm`; also `-AutoPreArm` alone).
+  2. Gate-prechecks `OfflineReplayVerified` before injecting (exit 5).
+  3. Play-state awareness: requires the replay HUD icon to read `playing`
+     (probe `replay-play-state.ps1`); a confirmed `paused` replay writes no
+     position fields, so the driver waits up to `-PlayProbeTimeoutSeconds`
+     (default 60s) for the operator to resume, then fails closed (exit 7).
+     `unknown` (HUD hidden) proceeds — the probe is advisory, never a
+     hard gate. A periodic mid-window probe WARNs if the replay pauses
+     during the trace. `-SkipPlayProbe` bypasses.
+  4. Liveness: re-reads the armed family addresses through the guarded Host
+     read API (`/api/v1/game/discover/read`, Float/4) to confirm they are
+     live in the CURRENT process; a family from a previous launch fails fast
+     (exit 8) instead of burning a window on dead addresses.
+     `-SkipLivenessCheck` bypasses.
+- **Evidence/report:** hits stay `<HitsDir>\odwt-0x<addr>-0x<rip>.bin`
+  (the automatable `{rip}`-named channel) and the flat addr→rip lines go to
+  `-ResultPath` as before. Family mode additionally writes a per-member
+  report to `<ResultPath>.family.json`: each member's axis/offset/score and
+  its captured rips, plus `hitsTotal`, `hitMembers`, and a
+  `family-hit`/`family-no-hit` verdict.
+
+New exit codes: 7 (replay confirmed paused and never resumed in time) and
+8 (family liveness re-read failed — stale addresses).
+
+**Offline validation (no game, no debugger):** PS 5.1 parse OK, ASCII clean,
+PSSA gate 0 warnings (22 scripts), a 13-check simulation of the REAL
+extracted helpers (complete-family selection over a higher-scored decoy,
+DR0-DR3 cap at 4 with 2 unarmed, bare-family-without-score input, dedup +
+invalid-address skipping, offset-ordered arming), and DryRun smoke in both
+modes (family → `w,4` on the 3 members ordered 0x…3000/3004/3008; survivor →
+`w,8` unchanged). Exit codes verified under real Windows PowerShell 5.1
+(missing file → 2, no families → 2, success → 0).
+**Review pass (same day):** the reviewer confirmed the driver sound and
+flagged three items, all fixed:
+
+1. **Liveness vs `-SkipGateCheck` misattribution.** The family liveness
+   check now also requires `-not $SkipGateCheck` — it POSTs to the
+   gate-gated read API, so with playback-only mode a failure was exit 8
+   ("stale addresses") when the real cause was gate/host absence.
+2. **Empty armed set fail-fast.** A family whose member addresses all fail
+   to resolve now exits 2 (`FAILED_family_no_armed_members`) instead of
+   arming zero BPs and reporting a misleading "clean no-hit window".
+3. **Pre-arm fail-fast without the game.** `Invoke-AutoPreArm` now checks
+   for a wotblitz process with a window before invoking
+   `pre-arm-debugger.ps1 -AutoAttach` (which exits 0 even when it skips
+   attach), avoiding a full 15s stall when there is nothing to attach to.
+   Also documented that a bare top-level JSON array of families is not
+   accepted as -FamilyFile input.

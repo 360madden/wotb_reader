@@ -83,8 +83,16 @@ amendment.
   scored addresses into coordinate families (same entity, one byte window;
   `complete` = the clean x/y/z triple at distinct offsets with no edge-aligned
   member). One session maps all three coordinate components, and the verdict
-  upgrades to `family-complete`. Write-side (pre-arm x32dbg + write-trace)
-  remains the live step.
+  upgrades to `family-complete`. Write-side BUILT (2026-08-05, offline
+  validated): `x64dbg-write-trace.ps1 -FamilyFile <od-048 report>
+  -AutoWriteTrace` pre-arms x32dbg, gate-prechecks, requires the replay
+  play-state `playing` (a paused replay writes nothing — fail-closed exit 7),
+  re-reads the family addresses for liveness in the current process
+  (fail-closed exit 8 on a stale family from a fresh launch), arms 4-byte
+  write breakpoints on the member addresses, holds the trace window, and
+  writes a per-member hit report (`<ResultPath>.family.json`) with a
+  `family-hit`/`family-no-hit` verdict. The only remaining live step is the
+  operator-run trace on a surviving family.
 - **M3 — Repeatability + publication.** 2 launches × 2 replays, then publish
   per the workflow Phase 5.
 

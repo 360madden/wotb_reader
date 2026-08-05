@@ -112,9 +112,22 @@ scripts/od-048-monitor-correlate-session.ps1
    (the survivor may be the middle component; the family base is the lowest
    address). Verified by 12 family-builder unit tests + endpoint
    serialization test + a 16-check simulation of the real driver functions.
-2. Pre-arm x32dbg (`scripts/pre-arm-debugger.ps1`) and run the automated
-   write-trace (`scripts/x64dbg-write-trace.ps1 -AutoWriteTrace`) on the
-   surviving family during a held green window.
+2. **Write-trace driver (BUILT 2026-08-05, offline validated).**
+   `scripts/x64dbg-write-trace.ps1 -FamilyFile <od-048 report> -AutoWriteTrace`
+   pre-arms x32dbg when missing (pre-arm-debugger.ps1), gate-prechecks
+   `OfflineReplayVerified`, requires the replay HUD icon `playing` (a paused
+   replay writes no position fields — fail-closed exit 7, advisory mid-window
+   probe warns on a mid-window pause), re-reads the armed family addresses
+   through the guarded Host read API to confirm they are live in the CURRENT
+   process (exit 8 on a stale family from a fresh launch), arms 4-byte
+   hardware write breakpoints (`bph <addr>,w,4`) on the member addresses
+   (Float32 at 4-byte offsets; legacy survivor-file input stays `w,8`
+   Double), holds the trace window, and writes a per-member hit report to
+   `<ResultPath>.family.json` with a `family-hit`/`family-no-hit` verdict.
+   Validated: PS 5.1 parse, ASCII, PSSA gate 0 warnings, 13-check
+   simulation of the real extracted helpers (complete-family selection,
+   DR0-DR3 cap, bare-family input, dedup), DryRun smoke in family + survivor
+   modes.
 3. First `{rip}`-named evidence file → the writing instruction → member
    displacement.
 
