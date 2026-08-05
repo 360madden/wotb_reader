@@ -65,18 +65,22 @@ driver **before the battle reaches battle start** (the driver warns
 `anchor_captured_after_verified` otherwise; pass `-ReplayStartWallTimeUtc` from the
 Start marker if it starts late).
 
-### Phase 1.5 — Pre-arm x32dbg NOW (not lazily at Phase 3)
+### Phase 1.5 — Pre-arm x32dbg (REVISED 2026-08-05 after live evidence)
 
 ```powershell
 scripts/pre-arm-debugger.ps1 -AutoAttach
 ```
 
-Do this **immediately after launch, during the load-settle window** (the driver's
-15s `-StageDelaySeconds` is a natural cover). The write-trace's `-AutoWriteTrace`
-would lazily pre-arm if missing, but `Invoke-AutoPreArm` waits up to **15s for the
-debugger window** — that burn comes straight out of the green window. Pre-arming
-early also means the debugger **attach-pause lands during loading, not mid-battle**
-(a mid-monitor attach stalls the replay while M1 is collecting samples).
+**Original guidance (superseded):** "pre-arm immediately after launch during the
+load-settle window". The OD-049 launch-4 live run invalidated the premise:
+M1's 9 staging scans took ~65s, and the game **auto-loops the replay** with only
+~10s between battles — so a "load-settle window" big enough to pre-arm without
+cost does not exist, and the dominant failure was the gate revoking at the battle
+boundary (every read 400 `discover.gate_not_satisfied`), not a stalled replay.
+
+**Revised:** pre-arm during the inter-battle gap (after `onLeaveWorld`, before
+the next `Start replay event`) or rely on the same-process
+`-AutoWriteTraceOnVerdict` arming the tail window. Never attach mid-staging.
 
 ### Phase 2 — M1: monitor + correlate (same launch)
 
@@ -148,9 +152,19 @@ see §6 for why this should be automated before the live round. The driver:
 | 80 | 260s | ~1s — TOO LATE | — |
 | 90 (default) | ~290s — PAST BATTLE END | none | — |
 
-Budget model: `green_window ≈ battleSeconds − (StageDelay + rounds×3 + correlate +
-traceStartOverhead)`, with `StageDelay = 15`, `correlate ≈ 5`, `traceStartOverhead
-≈ 10` (prechecks + liveness + arm).
+Budget model: `green_window ≈ battleSeconds − (Staging + rounds×3 + correlate +
+traceStartOverhead)`, with `Staging = StageDelay + scan cost`, `correlate ≈ 5`,
+`traceStartOverhead ≈ 10` (prechecks + liveness + arm).
+
+> **Staging is the dominant cost — measured, not assumed.** The OD-049 launch-4
+> run (2026-08-05) showed 9 axis scans (3 entities × 3 axes) took ~65 s wall
+> time (15:37:22 → 15:38:27+), and the game auto-loops with only ~10 s between
+> battles — so `StageDelay=15` was a minor fraction of staging, and the whole
+> staging phase can span a battle boundary. Any stage that crosses the boundary
+> loses every read (gate revokes at `onLeaveWorld`). Trim staging to what fits
+> the window: `-StageTopN 2` (viewpoint + one mover) halves scan count, and a
+> correct battle-anchored `-ReplayStartWallTimeUtc` keeps the tick estimates on
+> target.
 
 > **The rounds are NOT 2s each.** The monitor sleeps `-ReadIntervalSeconds` (2s)
 > per round but also reads up to `-MaxStaged` (3000) addresses in 6×500-chunks ON

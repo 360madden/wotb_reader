@@ -226,3 +226,137 @@ not a replay rewind.
    `-ReplayPath` in the session runbook.
 3. Run the live round with this checklist; append the outcome (exit codes,
    verdict, timing observations) to the ledger and to a follow-up handoff.
+
+## Live-round execution log (2026-08-05) — first attempts: BLOCKED, root cause pinned
+
+Three launches were made on 2026-08-05; all three burned their battle window
+before M1 could stage. This section records the evidence so the next session
+starts from a known state.
+
+| # | Launch | What happened | Root cause | Fix landed |
+|---|---|---|---|---|
+| 1 | `od-049-launch.log` | `click-watch-offline.ps1` crashed in-process with
+  `The variable '$_' cannot be retrieved`; dialog never dismissed; replay
+  auto-started after ~8s and played to end while gate waited | **PS 5.1
+  here-string interpolation bug**: the C# `Add-Type` block used an
+  interpolating `@"…"@` here-string, so PowerShell evaluated
+  `$($_.Exception.Message)` (added by the PSSA-triage commit `7e2738b`)
+  at script top-level where `$_` is undefined — thrown at `Add-Type` time,
+  before any `watch_offline:` output | Commit `ec1586d`: single-quoted the
+  C# here-string AND replaced the invalid PS-in-C# line with plain C#
+  (`e.Message`); verified standalone + in-process |
+| 2 | `od-049-launch2.log` | Gate verified, clicker worked; M1 404'd the
+  trajectory fetch | Two compounding issues: (a) the launch script starts the
+  host WITHOUT `Paths__ApplicationDataRoot`, so it serves
+  `%LocalAppData%\WotBTreader\treader.db` (99 sessions), NOT `.data`
+  `treader.db` (19 sessions) — the pinned id `019fb86c-…` lives only in
+  `.data`; (b) every import creates a NEW session id, so the pinned id is
+  stale by construction | Commit `fa44c98`: driver auto-picks the host's
+  newest session via `/api/v1/sessions` (field `session.battleSessionId`,
+  NOT the driver's old `/api/v1/read/sessions` + `session.id`); runbook
+  updated — session id is HOST-derived, never hardcoded |
+| 3 | `od-049-launch3` | Gate verified; M1B (`od-049-m1b.log`) staged into a
+  DEAD battle: attempt 1 → **400** `discover.gate_not_satisfied`, attempts 2-3
+  → **401** (evidence revoked), then `FAILED_staging_scan`, exit 2 | **Timing
+  race (the master blocker).** The battle window is only **~107 s**
+  (blitz-log `blitz-logs_20260805101329.txt`: `LoadGameScene begins 10:13:44`
+  → `onLeaveWorld 10:15:31`), but the launch→gate→M1-start cycle took minutes
+  (launch3 wrapper relaunched the game, ~2-3 min boot + click + gate); M1B's
+  preflight anchored at ~10:16 local, ~1 min AFTER battle end. The 400/401 are
+  consequences of staging into a finished battle, not auth bugs. The x32dbg
+  `-AutoAttach` (fired right at M1 start) was NOT the killer this time —
+  battle-end evidence proves it | No code fix needed; see the retry plan below |
+
+**Key measured facts (from `blitz-logs_20260805101329.txt`):** battle start
+`LoadGameScene ends 10:13:44`, first `onLeaveWorld 10:15:31` — a **107 s**
+window from LoadGameScene to end. The ground-truth duration_ticks
+2,713,761,600 ≈ 271 s is the full replay wall length (includes pre-battle
+load); the *playable* window that M1 can sample is the ~107 s battle.
+
+### Retry plan for the next live round (timing-first)
+
+1. **Launch ONCE, then reuse.** `launch-offline-replay-for-od.ps1` plays the
+   replay exactly ONCE per launch (no auto-loop). The game stays up after the
+   battle ends and returns to the hangar/Watch-Offline dialog; re-click the
+   same replay via `click-watch-offline.ps1`-style flow or a second launch
+   script invocation WITHOUT stopping the game/host — do not re-boot.
+2. **M1 must start before `LoadGameScene`.** The current `-StageDelaySeconds
+   15` plus the wrapper's post-gate handoff costs ~20-30 s of the 107 s
+   window. For the next round: start M1 immediately on gate flip and reduce
+   `-StageDelaySeconds` to 2-3 (staging scans the battle head; the tolerance
+   auto-scales).
+3. **Reconsider Phase 1.5 pre-arm.** The choreography's "pre-arm during the
+   load window" guidance was written against a slower launch; with a 107 s
+   window, `-AutoAttach` right before M1 risks stalling samples. Options:
+   (a) pre-arm x32dbg WITHOUT pausing (arm breakpoints on already-known
+   addresses, no attach-pause) during Phase 1; (b) skip pre-arm entirely and
+   let `-AutoWriteTrace` arm the write-trace immediately post-verdict — the
+   green window is the battle tail (~31 s), and the auto-trace path is
+   same-process so its own arm is fast. **The live-round evidence now
+   contradicts Phase 1.5's "pre-arm NOW" — update the choreography before the
+   next session.**
+4. **Session id:** auto-pick (already fixed in `fa44c98`) — never hardcode.
+5. **Battle-end budget:** if M1 cannot stage inside the window, treat the run
+   as a timing negative (`Blocked`), NOT a field negative; the staging scans
+   and correlate are unexercised until a launch lands M1 inside the window.
+
+### Launch-4 execution log (2026-08-05, chained driver) — new evidence
+
+The chained one-command launch (`launch` → `od-048` on gate flip) finally got
+M1 **inside** the battle window — but the run still produced zero series.
+Timeline from `blitz-logs_20260805103420.txt` + `od-049-m1c.log`:
+
+| UTC | Event |
+|---|---|
+| 15:34:34 | `Start replay event` (battle 1 begins; `LoadGameScene ends 15:34:35`) |
+| 15:36:22 | battle 1 tail `onLeaveWorld` (entities 2549395–2549408) |
+| 15:37:20 | **M1C preflight anchors** — gate `OfflineReplayVerified`, but battle 1 is already ending (the chained start landed late) |
+| 15:37:22 | staging scans start (elapsed 2.5 s); 3 entities, 9 axis scans, all 200 → **staged=3000** (MaxStaged cap) |
+| 15:38:27 | `Start replay event` (battle 2 begins) — battle 1's vehicles `onLeaveWorld` |
+| 15:38:27+ | monitor round 1 reads → **all 400 `discover.gate_not_satisfied`** |
+| … | rounds 2–70 all 400, then 401 (gate fully `Denied evidence.monitor_unhealthy`) |
+| 15:43:06 | battle 2 ends (`onLeaveWorld`); game exited shortly after |
+
+**Diagnosis (two compounding causes):**
+
+1. **Late anchor.** M1C anchored at 15:37:20 — battle 1 was already in its
+   final minute. Its wall-clock anchor (`replayStartWallTimeUtc` = anchor
+   time) was therefore ~3 minutes BEFORE the battle that was actually running
+   when reads began, so the staging tick estimates were wrong for battle 2
+   and the monitor could never align.
+2. **Staging duration > remaining battle.** The 9 axis scans took ~65 s
+   (15:37:22 → 15:38:27+). By the time the monitor started reading, battle 1
+   had ended AND battle 2 had started — the gate revokes at the battle
+   boundary (`onLeaveWorld` → evidence monitor flips unhealthy → gate
+   `Denied`). **All reads hit the revocation window.** The 400s were NOT
+   payload/address problems (a 2-address `/discover/read` repro succeeded
+   while the gate was verified); they are the scanner's fail-closed
+   `discover.gate_not_satisfied`.
+
+**Key new fact — the game AUTO-LOOPS the replay.** `Start replay event`
+fired twice (15:34:34 and 15:38:27) in one game session: after battle 1
+ended, the viewer started battle 2 with the same replay, no operator input.
+This means one game launch yields REPEATED battle windows — M1 can be
+re-launched per loop iteration instead of relaunching the whole game, and
+the next window starts ~10 s after the previous `onLeaveWorld`.
+
+**The 400/401 answer for the driver:** `GameSessionCoordinator.GetScanAuthorization`
+returns fail-closed whenever `_snapshot.State != OfflineReplayVerified`; the
+gate flips at every battle boundary (evidence monitor sees the replay end).
+The driver's own `monitor_stop gate-lost` logic exists but never fired
+because the per-round gate poll raced the revocation — reads were already
+being rejected before the poll observed the flip.
+
+**Retry plan v2 (next session):**
+
+1. **Anchor on the battle, not the gate.** Start M1 BEFORE the next loop
+   iteration's `LoadGameScene` (i.e. during the ~10 s inter-battle gap), or
+   pass `-ReplayStartWallTimeUtc` from the latest `Start replay event`
+   marker so the anchor is the battle start, not the driver start.
+2. **Shrink staging.** `-StageTopN 2` (viewpoint + 1) cuts the 9 scans to 6;
+   `-ScanTolerance` tighter once the anchor is right. The staging scans are
+   the dominant latency (65 s for 9 scans) and must finish before the battle
+   boundary.
+3. **Exploit the auto-loop.** One launch → many windows. On a failed attempt,
+   re-run the driver during the next loop iteration without touching the
+   game/host — no more full relaunch cycles between attempts.

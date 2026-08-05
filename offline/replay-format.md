@@ -74,6 +74,45 @@ decoder; errors are `ReplayFormatException` with `replay.*` codes.
 
 ## Event packets → canonical events (`EventPacketDecoders`)
 
+**Position packet (type 10, `0x0A`) — 49-byte fixed layout (cross-validated
+byte-identical against the decoded DB ground truth on the 11.19.0 Dead Rail
+replay, 33 281 packets, all 49 bytes):**
+
+| Offset | Size | Field | Notes |
+|--------|------|-------|-------|
+| 0 | 4 | entity id (int32 LE) | e.g. `2549401` = the player (`mrkool1138`, Churchill_I) |
+| 4 | 4 | space id (int32 LE) | constant per battle (e.g. 261) |
+| 8 | 4 | vehicle id (int32 LE) | 0 in the observed sample |
+| 12 | 4 | x (float32 LE) | world coordinate, byte-identical to `position_samples.raw_x` |
+| 16 | 4 | y (float32 LE) | same for `raw_y` |
+| 20 | 4 | z (float32 LE) | same for `raw_z` |
+| 24 | 12 | padding (all zero) | verified across the whole stream (`0x00000000` x3) |
+| 36 | 4 | velocity x (float32 LE) | physics velocity; eases to 0 over ~1 s after a stop while position freezes |
+| 40 | 4 | velocity y (float32 LE) | |
+| 44 | 4 | velocity z (float32 LE) | |
+| 48 | 1 | flags byte | 1 for the observed stream |
+
+**Orientation:** no yaw/pitch/quaternion triple exists in the type-10
+payload. The velocity triple at 36–47 is a physics velocity (eases to 0 over
+~1 s after a stop while position freezes; NOT the finite-difference
+derivative — the median per-second direction match is only ~0.3). The
+28-byte type-39 packet (16 313 on this replay) is a fixed-size scene point
+(two float32 pairs + a float triple) that does NOT align to any type-10
+entity — a camera/marker coordinate, not per-tank orientation. Type-7
+(19 378) is an entity-status packet (varint entity + packed int32s; the
+value `0x02000000` repeats as a state flag — NOT yaw). **No orientation
+field has been located in any packet type; the known-conflict yaw hypothesis
+stands.**
+
+**Replay clock:** each frame header carries `float clockSeconds` (non-
+decreasing). Position packets are emitted at ~10 Hz per entity and are NOT
+per-entity sequential in the stream (they interleave across the 14–19
+entities, which is why the decoder stores `sequence` + `replay_time_ticks`).
+The full participant set (all tanks, all teammates) is present from
+`LoadGameScene` to `onLeaveWorld` — the complete per-entity position
+history for every entity is in `position_samples` (19 entities on this
+replay: 14 named participants + 5 effect/shell entities).
+
 Known packet types (decoded by `WotbReplayDecoder`):
 
 | Packet type | Result |

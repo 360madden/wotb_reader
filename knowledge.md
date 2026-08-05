@@ -40,6 +40,22 @@ full design specification.
   coordinator refreshes verified authorization via a liveness heartbeat while the
   process identity stays healthy. See
   [`docs/operations/handoffs/2026-08-04-replay-start-flake-fix.md`](docs/operations/handoffs/2026-08-04-replay-start-flake-fix.md).
+- **The game AUTO-LOOPS the offline replay (2026-08-05, blitz-log evidence):**
+  after a battle ends (`onLeaveWorld`), the Watch-Offline viewer starts the SAME
+  replay again (`Start replay event` fires again) with only ~10s between battles
+  — one game launch yields repeated battle windows with no operator input. Each
+  battle boundary revokes the offline-session gate (reads then fail closed with
+  400 `discover.gate_not_satisfied`), so memory reads must be anchored inside a
+  single battle, and staging scans (~65s for 9 axis scans) must not span a
+  boundary. M1 can be re-run per loop iteration without relaunching the game.
+- **Type-10 (`0x0A`) position packet layout is verified end-to-end** against the
+  decoded DB ground truth (33 281 packets, all 49 bytes, byte-identical floats):
+  `entity int32 | space int32 | vehicle int32 | x f32 | y f32 | z f32 | 12B zeros |
+  vx f32 | vy f32 | vz f32 | flags byte`. Every participant's full position history
+  (19 entities: 14 named + 5 effect/shell) is present from `LoadGameScene` to
+  `onLeaveWorld`. The velocity triple is physics velocity (eases after stops), NOT
+  the position derivative. No yaw/pitch field exists in any packet type — the yaw
+  hypothesis stays quarantined. See `offline/replay-format.md`.
 - **Discovery workflow:** use [`docs/operations/offset-discovery-workflow.md`](docs/operations/offset-discovery-workflow.md)
   and append every attempt to [`docs/operations/offset-discovery-ledger.md`](docs/operations/offset-discovery-ledger.md).
 
