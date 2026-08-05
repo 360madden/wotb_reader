@@ -490,6 +490,94 @@ public sealed class TrajectoryCorrelationScorerTests
     }
 
     [TestMethod]
+    public void SeriesParkedAtEndPositionOutsideWindowDoesNotFabricateMatches()
+    {
+        // Regression for the endpoint-clamp fabrication: a series whose best
+        // shift pushes its ticks PAST the last ground sample must NOT match
+        // by clamping to the tank's final position (a parked address at the
+        // end position would otherwise score as perfect evidence). Ground
+        // truth ends at 100s (x = 200); the observed series is parked at
+        // x ~ 200 from 110s onward -- outside the window at every sweep shift.
+        TrajectoryGroundTruth groundTruth = new(
+            1_000_000_000,
+            [
+                new EntityTrajectory(
+                    new ParticipantId(Guid.NewGuid()),
+                    EntityId: 70,
+                    "EndsAt100s",
+                    IsViewpoint: true,
+                    [
+                        new TrajectorySample(0, 0, 0, 0),
+                        new TrajectorySample(1_000_000_000, 200, 0, 0),
+                    ]),
+            ]);
+        // A MOVING series (span 4, above the moving-span threshold so it is
+        // not a constant decoy) parked around the end value 200 at wall times
+        // 140s..160s. The ground window ends at 100s and the sweep is +-30s,
+        // so the closest any sample can get to the window is 110s -- every
+        // tick is past battle end at every shift. Before the fix, the tail
+        // clamp returned the last sample (200) for all of these, so the
+        // parked series scored perfect evidence (5/5).
+        List<CorrelationSample> samples = [];
+        for (int index = 0; index < 5; index++)
+        {
+            int second = 140 + (index * 5);
+            samples.Add(new CorrelationSample(Start.AddSeconds(second), 200 + index));
+        }
+
+        IReadOnlyList<TrajectoryCorrelationResult> results = TrajectoryCorrelationScorer.Score(
+            groundTruth,
+            Start,
+            [new ObservedAddressSeries("0xF000", samples)],
+            maxTimeShiftSeconds: 30);
+
+        // No clamp: ticks past battle end are no-match, so nothing aligns.
+        Assert.HasCount(0, results);
+    }
+
+    [TestMethod]
+    public void SeriesParkedAtSpawnBeforeWindowDoesNotFabricateMatches()
+    {
+        // Head-clamp regression: an entity whose trajectory starts at 100s
+        // (late spawn) and a series parked at the spawn value from 20s on.
+        // Ticks before the first ground sample must not clamp to the spawn
+        // position -- that fabricated a "spawn-plateau coincidence" survivor.
+        TrajectoryGroundTruth groundTruth = new(
+            1_000_000_000,
+            [
+                new EntityTrajectory(
+                    new ParticipantId(Guid.NewGuid()),
+                    EntityId: 71,
+                    "SpawnsAt100s",
+                    IsViewpoint: true,
+                    [
+                        new TrajectorySample(1_000_000_000, 50, 0, 0),
+                        new TrajectorySample(1_500_000_000, 150, 0, 0),
+                    ]),
+            ]);
+        // A MOVING series (span 4, above the 0.5 moving-span threshold so it
+        // is not a constant decoy) parked around the spawn value: every sample
+        // is within tolerance of 50, and no sweep shift can move it inside the
+        // [100s, 150s] window (it would need +60s, beyond the 30s sweep).
+        // Before the fix, the head clamp matched all 5 samples against the
+        // clamped spawn value 50 and fabricated a perfect score.
+        List<CorrelationSample> samples = [];
+        for (int index = 0; index < 5; index++)
+        {
+            int second = 20 + (index * 5);
+            samples.Add(new CorrelationSample(Start.AddSeconds(second), 50 + index));
+        }
+
+        IReadOnlyList<TrajectoryCorrelationResult> results = TrajectoryCorrelationScorer.Score(
+            groundTruth,
+            Start,
+            [new ObservedAddressSeries("0xF100", samples)],
+            maxTimeShiftSeconds: 30);
+
+        Assert.HasCount(0, results);
+    }
+
+    [TestMethod]
     public void InvalidArgumentsAreRejected()
     {
         Assert.ThrowsExactly<ArgumentNullException>(() =>

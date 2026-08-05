@@ -119,6 +119,15 @@ public static class TrajectoryCorrelationScorer
     /// per scored address (addresses with a moving series that matched at least
     /// one entity axis within tolerance), ordered by match count descending,
     /// then observed span descending.
+    ///
+    /// Match semantics: a sample matches only if its (shifted) replay tick
+    /// falls INSIDE the entity's ground-sample window AND its value is within
+    /// tolerance of the interpolated ground value. Samples whose shifted tick
+    /// lands outside the window (before battle start or after battle end) are
+    /// counted in <see cref="TrajectoryCorrelationResult.TotalSamples"/> but
+    /// never match -- out-of-window alignment is not evidence, so it does not
+    /// contribute to <see cref="TrajectoryCorrelationResult.MatchCount"/> and
+    /// lowers the resulting <see cref="TrajectoryCorrelationResult.Score"/>.
     /// </summary>
     public static IReadOnlyList<TrajectoryCorrelationResult> Score(
         TrajectoryGroundTruth groundTruth,
@@ -234,6 +243,14 @@ public static class TrajectoryCorrelationScorer
             int bestSign = 1;
             ParticipantId? bestParticipant = null;
             long? bestEntity = null;
+            // Band width of the current best alignment. On an exact tie in
+            // match count between two (axis, sign, entity) candidates, the
+            // NARROWER ambiguity band is preferred: a tie means the address
+            // reproduces two trajectories equally often, and the tighter
+            // alignment is the more precise attribution. Without this, the
+            // first-iterated axis (x of the first entity) wins every tie,
+            // structurally biasing the evidence toward axis x.
+            double bestBandWidth = double.PositiveInfinity;
 
             // Wall-relative tick for every sample is fixed per address: it does
             // not depend on the ground series or the sign, so compute it once
@@ -260,12 +277,15 @@ public static class TrajectoryCorrelationScorer
                             shifts,
                             tolerancePerAxis,
                             replayClockTicksPerSecond);
-                    if (matches > bestMatch)
+                    double bandWidth = shiftMaxSeconds - shiftMinSeconds;
+                    if (matches > bestMatch
+                        || (matches == bestMatch && bestMatch > 0 && bandWidth < bestBandWidth))
                     {
                         bestMatch = matches;
                         bestShiftSeconds = shiftSeconds;
                         bestShiftMinSeconds = shiftMinSeconds;
                         bestShiftMaxSeconds = shiftMaxSeconds;
+                        bestBandWidth = bandWidth;
                         bestAxisIndex = ground.AxisIndex;
                         bestSign = sign;
                         bestParticipant = ground.ParticipantId;
@@ -433,7 +453,12 @@ public static class TrajectoryCorrelationScorer
 
     /// <summary>
     /// One entity axis with O(log n) piecewise-linear lookup by replay tick.
-    /// Clamps outside the sample window.
+    /// Lookup succeeds ONLY inside the sample window: ticks before the first
+    /// sample or after the last return false (no ground truth exists there),
+    /// so a shift pushing the series outside the battle window cannot
+    /// fabricate matches against the endpoint's constant value. This is what
+    /// keeps the edge-riding false survivors (spawn-plateau / end-position
+    /// coincidences) out of the evidence.
     /// </summary>
     private sealed class AxisSeries
     {
@@ -475,14 +500,25 @@ public static class TrajectoryCorrelationScorer
             int insertion = ~index;
             if (insertion == 0)
             {
-                value = SampleValue(_samples[0], AxisIndex);
-                return true;
+                // Before the first ground sample: NO ground truth exists there.
+                // Clamping to the first sample value would fabricate matches
+                // for any address whose value coincides with the tank's
+                // spawn/start position (a constant plateau), producing
+                // exactly the edge-riding false survivors the driver's
+                // shift-band audit exists to catch. A shift that pushes the
+                // series before the window simply does not align.
+                value = 0;
+                return false;
             }
 
             if (insertion >= _samples.Length)
             {
-                value = SampleValue(_samples[^1], AxisIndex);
-                return true;
+                // Past the last ground sample (battle end): no ground truth
+                // exists there either. Clamping to the final position would
+                // match any address parked at the tank's end position, again
+                // fabricating tail evidence.
+                value = 0;
+                return false;
             }
 
             TrajectorySample left = _samples[insertion - 1];

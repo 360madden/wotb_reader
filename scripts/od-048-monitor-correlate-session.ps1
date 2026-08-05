@@ -24,14 +24,18 @@
   sweep (bad anchor or load latency exceeded the bound).
 
   Family mapping (M2): after -FamilyRefineAfterRounds rounds, a provisional
-  correlate picks the top non-edge-aligned survivors (score >=
-  -FamilyMinScore, cap -FamilySurvivorCap); their +/-16-byte neighbors are
-  added to the staged set, so the remaining rounds record the sibling
-  components. The final correlate's families section groups the scored
-  addresses into coordinate families (same entity, one byte window); a family
-  whose three members reproduce x/y/z at distinct offsets (none edge-aligned)
-  upgrades the verdict to family-complete -- one session mapped the whole
-  coordinate vector.
+  correlate picks the top survivors (score >= -FamilyMinScore, cap
+  -FamilySurvivorCap; edge-aligned candidates are NOT rejected here -- short
+  series have wide ambiguity bands that ride the sweep edges, and the final
+  correlate re-audits alignment); their +/-16-byte neighbors are added to the
+  staged set, so the remaining rounds record the sibling components. A pass
+  that finds zero survivors DEFERS to a later round (cadence
+  -FamilyRefineRetryGapRounds) instead of self-terminating, so M2 is not
+  permanently disabled by one short-series pass. The final correlate's
+  families section groups the scored addresses into coordinate families
+  (same entity, one byte window); a family whose three members reproduce
+  x/y/z at distinct offsets (none edge-aligned) upgrades the verdict to
+  family-complete -- one session mapped the whole coordinate vector.
 
   Staging: the driver fetches the decoded session trajectory (viewpoint
   entity first, then the most-moving entities), waits -StageDelaySeconds for
@@ -81,9 +85,11 @@ param(
     # entities. Each staged entity costs three scans (x/y/z of its first
     # position sample).
     [int]$StageTopN = 3,
-    # FloatTolerance for each staging scan (world units). Absolute coordinate
-    # bands are rare in memory, so even a loose tolerance yields a small set.
-    [double]$ScanTolerance = 8.0,
+    # FloatTolerance for each staging scan (world units). MUST stay small:
+    # live probes show any band >= 0.5 floods 10000 candidates in this game
+    # (the coordinate field drowns in address-ordered garbage). 0.001 (exact
+    # float match) is the empirically selective setting (~1500 candidates).
+    [double]$ScanTolerance = 0.001,
     # Hard cap on the staged union.
     [int]$MaxStaged = 3000,
     # Load-settle delay after the gate verifies (the Start marker fires when
@@ -121,6 +127,11 @@ param(
     [int]$FamilyWindowBytes = 16,
     # Minimum score for a provisional survivor to seed a family.
     [double]$FamilyMinScore = 0.7,
+    # Retry cadence for the M2 provisional correlate: when a refinement pass
+    # finds zero survivors (short series -> wide ambiguity bands), defer the
+    # next attempt this many rounds later so the series accumulate more
+    # samples instead of burning a correlate call every round.
+    [int]$FamilyRefineRetryGapRounds = 5,
     # Addresses per /discover/read call (server cap is 2000).
     [int]$ReadChunk = 500,
     # Optional wall-clock anchor override (ISO-8601 UTC) captured from the
@@ -182,6 +193,22 @@ function Get-Rendezvous {
         return (Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json)
     }
     catch { return $null }
+}
+
+# The host rotates its short-lived local capability (5-minute lease) and
+# re-publishes the rendezvous record every >=15s. A driver that reads the
+# record once at startup holds a token that expires mid-battle (battles run
+# ~271s), after which every POST 401s with web.local_capability_required even
+# though the gate is still verified. Re-read the record so the capability
+# header always carries the host's current lease; keep the last known record
+# if the re-read fails (the host is up -- the read itself is best-effort).
+function Refresh-Rendezvous {
+    param([object]$Current)
+    $fresh = Get-Rendezvous
+    if ($null -ne $fresh -and -not [string]::IsNullOrWhiteSpace([string]$fresh.capability)) {
+        return $fresh
+    }
+    return $Current
 }
 
 function Get-GateState {
@@ -247,6 +274,26 @@ function Invoke-Api {
         if ($null -ne $_.ErrorDetails -and -not [string]::IsNullOrWhiteSpace([string]$_.ErrorDetails.Message)) {
             $detail = ([string]$_.ErrorDetails.Message -replace '[\r\n]+', ' ').Trim()
             if ($detail.Length -gt 200) { $detail = $detail.Substring(0, 200) }
+        }
+        # PS 5.1 fallback: WebException keeps the response body in the stream,
+        # not in ErrorDetails -- read it so a 400 reason is never invisible.
+        if (-not $detail -and $null -ne $_.Exception -and $_.Exception.PSObject.Properties['Response']) {
+            try {
+                $response = $_.Exception.Response
+                if ($null -ne $response -and $response.PSObject.Properties['GetResponseStream']) {
+                    $stream = $response.GetResponseStream()
+                    if ($null -ne $stream) {
+                        $reader = New-Object System.IO.StreamReader($stream)
+                        $body = $reader.ReadToEnd()
+                        $reader.Dispose()
+                        $detail = ($body -replace '[\r\n]+', ' ').Trim()
+                        if ($detail.Length -gt 200) { $detail = $detail.Substring(0, 200) }
+                    }
+                }
+            }
+            catch {
+                # Body read failure is not fatal; keep whatever detail we have.
+            }
         }
         $diag = ('api_failed method={0} path={1}' -f $Method, $RelativePath)
         if ($null -ne $status) { $diag += (' status=' + $status) }
@@ -444,14 +491,14 @@ if ($scored.Count -gt 0) {
         $maxSpeedGlobal = [double]$speedMax.Maximum
     }
 }
-# The scan band must cover the entity's live position despite unknown load
-# latency: tolerance = maxSpeed x (load-latency bound) x 1.5 safety margin.
-# 25s beyond the settle delay covers observed LoadGameScene times, and the
-# margin covers the downsampled-series peak-speed underestimate (fast bursts
-# are averaged out); capped at 800 world units so the staged union stays
-# bounded (the correlate filter rejects decoys anyway).
-$stagingTolerance = [Math]::Max([double]$ScanTolerance,
-    [Math]::Min(800.0, $maxSpeedGlobal * 1.5 * ($StageDelaySeconds + 25)))
+# The scan band must match the entity's LIVE position value. Empirically the
+# game holds many floats in ANY coordinate band: a live probe on the 11.19.0
+# client showed tolerance 0.5 already floods 10000 candidates (returned in
+# address order, so the true field drowns and never gets staged) while an
+# exact match (0.001) yields ~1500. The correlate shift sweep absorbs anchor
+# error and load latency at SCORING time; the staging scan must stay selective
+# or the staged set is random memory (all constant decoys -> zero results).
+$stagingTolerance = [double]$ScanTolerance
 Write-Od048 ("max_speed=" + [Math]::Round($maxSpeedGlobal, 2) + " staging_tolerance=" + [Math]::Round($stagingTolerance, 2))
 
 function Select-NearestSample {
@@ -529,14 +576,37 @@ $scanFailed = $false
 # mid-battle family refinement and the final survivor audit share the formula.
 $edgeThreshold = [Math]::Max(2, $MaxTimeShiftSeconds - 2)
 # Family refinement state (M2): provisional-survivor addresses, the staged
-# neighbor set, and whether the mid-battle pass already ran.
+# neighbor set, whether the mid-battle pass already ran, and the last round a
+# pass was ATTEMPTED (defer cadence; -99 means never attempted).
 $familyRefined = $false
 $familyRefineRound = 0
+$familyRefineLastAttemptRound = -99
+$familyRefineAttempts = 0
+$familyRefineDeferred = 0
 $familySurvivors = @()
 $familyStaged = [System.Collections.Generic.HashSet[string]]::new()
 $familyNeighborAdded = 0
 $staged = [System.Collections.Generic.List[string]]::new()
 $stagedEntitiesReport = @()
+# Per-scan staging budget (breadth fix): the union cap (MaxStaged) is GLOBAL,
+# so without per-scan budgets the first scan's candidates (the viewpoint x
+# scan alone returns ~1500 exact matches) consume the whole union and every
+# later scan -- the y/z axes and all entities after the first -- contributes
+# ZERO candidates (FRESH5: staged=3000 yet all 50 results were axis=x; the
+# y/z sibling fields were never staged, so no family could form). Reserve a
+# slice of the union for the backup entities so every axis of every staged
+# entity contributes candidates; the viewpoint scans keep the rest (their
+# depth found the true field in FRESH5). The viewpoint's budget is a TOTAL
+# across its three axis scans (not per scan), so the first flood (x ~1500)
+# cannot eat the reserve -- the union cap is enforced globally regardless.
+$reservedForBackup = if ($stagingEntities.Count -le 1) { 0 }
+    else { [int]($MaxStaged / [Math]::Max(2, $stagingEntities.Count)) }
+$backupScanCount = [Math]::Max(1, ($stagingEntities.Count - 1) * 3)
+$perScanBudgetBackup = [Math]::Max(100, [int]($reservedForBackup / $backupScanCount))
+# Decremented as the viewpoint's scans add candidates; when exhausted, the
+# remaining viewpoint axes are skipped so the reserve is honored.
+$viewpointBudgetLeft = $MaxStaged - $reservedForBackup
+Write-Od048 ("staging_budget viewpoint_total={0} backup_scan={1} reserved={2}" -f $viewpointBudgetLeft, $perScanBudgetBackup, $reservedForBackup)
 $stagingAttempt = 0
 while ($stagingAttempt -lt $MaxStagingAttempts -and -not $budgetExhausted) {
     $stagingAttempt += 1
@@ -546,9 +616,16 @@ while ($stagingAttempt -lt $MaxStagingAttempts -and -not $budgetExhausted) {
     $attemptElapsed = ((Get-Date).ToUniversalTime() - $anchorUtc).TotalSeconds
     Write-Od048 ("staging attempt={0} elapsed_s={1}" -f $stagingAttempt, [Math]::Round([Math]::Max(0.0, $attemptElapsed), 1))
 
-    foreach ($entity in $stagingEntities) {
+    for ($entityIndex = 0; $entityIndex -lt $stagingEntities.Count; $entityIndex++) {
+        $entity = $stagingEntities[$entityIndex]
         $entityLogged = $false
+        # Viewpoint scans draw from the shared viewpoint total (decremented as
+        # candidates are added); backup entities get the fair-share slice so
+        # their y/z fields are staged too.
         foreach ($axis in @('x', 'y', 'z')) {
+            # Viewpoint total exhausted: skip its remaining axes so the
+            # backup reserve is honored (the first flood must not eat it).
+            if ($entityIndex -eq 0 -and $viewpointBudgetLeft -le 0) { break }
             # Budget guard: a full-memory scan takes tens of seconds. If the
             # battle is about to end, stop staging and use what we have so the
             # monitor keeps a real observation window.
@@ -588,15 +665,24 @@ while ($stagingAttempt -lt $MaxStagingAttempts -and -not $budgetExhausted) {
                 Write-Od048 ('staging_scan_failed axis=' + $axis + ' (retrying attempt)')
                 break
             }
+            # Per-scan budget: viewpoint draws from its remaining total (so a
+            # 1500-candidate x flood leaves room for y/z and the reserve), and
+            # backup scans are capped at their fair share.
+            $scanBudget = if ($entityIndex -eq 0) { $viewpointBudgetLeft } else { $perScanBudgetBackup }
+            $scanAdded = 0
             foreach ($candidate in $scan.candidates) {
-                if ($staged.Count -ge $MaxStaged) { break }
+                # Per-scan budget (not just the global cap): a single flooding
+                # scan must not starve the remaining axes/entities (see the
+                # staging_budget computation above).
+                if ($scanAdded -ge $scanBudget -or $staged.Count -ge $MaxStaged) { break }
                 # Keep the canonical "0x..." form end-to-end (staging, read
                 # batches, series keys, report) so no decimal/hex mismatch can
                 # split an address across two identities.
                 $hexAddress = [string]$candidate.absoluteAddress
                 if ($hexAddress -notmatch '^0x[0-9a-fA-F]+$') { continue }
-                if (-not $staged.Contains($hexAddress)) { $staged.Add($hexAddress) }
+                if (-not $staged.Contains($hexAddress)) { $staged.Add($hexAddress); $scanAdded += 1 }
             }
+            if ($entityIndex -eq 0) { $viewpointBudgetLeft -= $scanAdded }
         }
         # Entity-level budget/scan guard: once exhausted or a scan has failed,
         # stop the entity loop too, so entities whose scans never ran are NOT
@@ -649,10 +735,18 @@ $readOkSamples = 0
 $stoppedReason = 'rounds-exhausted'
 while ($round -lt $MaxReadRounds) {
     $round++
+    # Refresh the capability BEFORE polling the gate: the host rotates its
+    # short-lived lease (~5 min) mid-battle; a stale token 401s every read
+    # even while the gate stays verified.
+    $rendezvous = Refresh-Rendezvous -Current $rendezvous
     $gate = Get-GateState -Rendezvous $rendezvous
+    # PS 5.1 gate-lost diag: the (if ...) expression used to label the gate
+    # state is PS7-only syntax and crashes Windows PowerShell at runtime --
+    # compute the label before the branch that consumes it.
+    if ($null -eq $gate) { $gateDiag = 'no-host' } else { $gateDiag = [string]$gate.verificationState }
     if ($null -eq $gate -or $gate.verificationState -ne 'OfflineReplayVerified') {
         $stoppedReason = 'gate-lost'
-        Write-Od048 ("monitor_stop gate=" + (if ($null -eq $gate) { 'no-host' } else { [string]$gate.verificationState }))
+        Write-Od048 ("monitor_stop gate=" + $gateDiag)
         break
     }
 
@@ -730,14 +824,28 @@ while ($round -lt $MaxReadRounds) {
     }
 
     # Family refinement (M2): once the series carry enough evidence, run a
-    # provisional correlate, take the top non-edge-aligned survivors, and add
-    # their +/-FamilyWindowBytes neighbors to the staged set so the remaining
-    # rounds capture the sibling x/y/z components. Refines once per SUCCESSFUL
-    # pass: a transient API failure leaves it unrefined and retries on a later
-    # round (recovery, one extra call per round until it succeeds), while a
-    # pass with no scored series marks it done so an empty world is not
-    # re-correlated.
-    if (-not $familyRefined -and $round -ge $FamilyRefineAfterRounds) {
+    # provisional correlate, take the top survivors, and add their
+    # +/-FamilyWindowBytes neighbors to the staged set so the remaining rounds
+    # capture the sibling x/y/z components. Refinement RETRIES until it finds
+    # survivors: a short-series pass at the first eligible round scores few
+    # samples over a wide ambiguity band (every candidate rides the sweep edge)
+    # and would find zero survivors -- marking the pass done there (FRESH5:
+    # 'family_refined round=10 survivors=0' -> families=0) permanently disables
+    # M2. So a pass with 0 survivors DEFERS to a later round (cadence
+    # -FamilyRefineRetryGapRounds) instead of self-terminating; a transient API
+    # failure also defers. The pass marks done only once survivors are found
+    # (neighbors staged) or the series are genuinely empty (no scored series).
+    # NOTE: the provisional pass deliberately does NOT apply the edge-aligned
+    # filter: short series have wide bands that ride the sweep edges, so the
+    # filter rejects every candidate (this is what produced survivors=0 at
+    # round 10). The provisional pass only SEEDS neighbor staging; the final
+    # correlate and the family builder re-audit edge alignment authoritatively.
+    if (-not $familyRefined -and $round -ge $FamilyRefineAfterRounds -and ($round - $familyRefineLastAttemptRound) -ge $FamilyRefineRetryGapRounds) {
+        $familyRefineLastAttemptRound = $round
+        $familyRefineAttempts += 1
+        # Fresh array per attempt: retries must not accumulate stale survivor
+        # addresses across passes (only the survivors of THIS pass seed staging).
+        $familySurvivors = @()
         $provisionalObs = @(Get-CorrelateObservations -Series $series |
             Sort-Object { $_.Samples.Count } -Descending |
             Select-Object -First $correlateMaxObservations)
@@ -747,9 +855,7 @@ while ($round -lt $MaxReadRounds) {
                 foreach ($r in @($provisional.results)) {
                     if ($familySurvivors.Count -ge $FamilySurvivorCap) { break }
                     if ($null -eq $r.score -or [double]$r.score -lt $FamilyMinScore) { continue }
-                    $minShift = if ($null -eq $r.shiftMinSeconds) { 0.0 } else { [double]$r.shiftMinSeconds }
-                    $maxShift = if ($null -eq $r.shiftMaxSeconds) { 0.0 } else { [double]$r.shiftMaxSeconds }
-                    if (([Math]::Abs($minShift) -ge $edgeThreshold) -or ([Math]::Abs($maxShift) -ge $edgeThreshold)) { continue }
+                    # No edge-aligned rejection here -- see NOTE above.
                     $familySurvivors += [string]$r.address
                 }
                 foreach ($address in $familySurvivors) {
@@ -762,9 +868,15 @@ while ($round -lt $MaxReadRounds) {
                         }
                     }
                 }
-                $familyRefined = $true
-                $familyRefineRound = $round
-                Write-Od048 ("family_refined round={0} survivors={1} neighbors_added={2}" -f $round, $familySurvivors.Count, $familyNeighborAdded)
+                if ($familySurvivors.Count -gt 0) {
+                    $familyRefined = $true
+                    $familyRefineRound = $round
+                    Write-Od048 ("family_refined round={0} survivors={1} neighbors_added={2}" -f $round, $familySurvivors.Count, $familyNeighborAdded)
+                }
+                else {
+                    $familyRefineDeferred += 1
+                    Write-Od048 ("family_refine_deferred round={0} survivors=0 (retry after {1} more rounds)" -f $round, $FamilyRefineRetryGapRounds)
+                }
             }
         }
     }
@@ -801,6 +913,10 @@ if ($observationsTotal -gt $observations.Count) {
     Write-Od048 ("correlate observations truncated from {0} to {1} (server cap {2}; family neighbors kept)" -f $observationsTotal, $observations.Count, $correlateMaxObservations)
 }
 
+# Refresh the capability one last time: the final correlate can run minutes
+# after the last monitor round (post-processing/truncation), by which point a
+# 5-minute lease may have rotated.
+$rendezvous = Refresh-Rendezvous -Current $rendezvous
 $correlated = Invoke-Api -Rendezvous $rendezvous -Method 'Post' -RelativePath '/api/v1/game/discover/correlate' -Body (New-CorrelateBody -Observations $observations -SessionId $battleSessionId -ReplayStartWallTimeUtc $replayStartWallUtc -TolerancePerAxis $TolerancePerAxis -MaxTimeShiftSeconds $MaxTimeShiftSeconds -MinMovingSpan $MinMovingSpan)
 if ($null -eq $correlated -or $null -eq $correlated.results) {
     Write-Od048 'FAILED_correlate'
@@ -891,6 +1007,19 @@ $report = [ordered]@{
             edgeAlignedSuspects  = $edgeAlignedSurvivors.Count
             method               = 'band-edges'
         }
+        # Axis histogram of the scored results: an all-x (or all-one-axis)
+        # report is the M2 family-starvation signature (sibling y/z fields
+        # never staged) and must be visible at a glance.
+        resultsByAxis         = [ordered]@{
+            x = @($results | Where-Object { $_.axis -eq 'x' }).Count
+            y = @($results | Where-Object { $_.axis -eq 'y' }).Count
+            z = @($results | Where-Object { $_.axis -eq 'z' }).Count
+        }
+        strongByAxis          = [ordered]@{
+            x = @($strongSurvivors | Where-Object { $_.axis -eq 'x' }).Count
+            y = @($strongSurvivors | Where-Object { $_.axis -eq 'y' }).Count
+            z = @($strongSurvivors | Where-Object { $_.axis -eq 'z' }).Count
+        }
     }
     results                = @($results | Select-Object -First 50 | ForEach-Object {
         [ordered]@{
@@ -945,6 +1074,9 @@ $report = [ordered]@{
         windowBytes          = $FamilyWindowBytes
         provisionalSurvivors = $familySurvivors.Count
         neighborsStaged      = $familyNeighborAdded
+        attempts             = $familyRefineAttempts
+        deferred             = $familyRefineDeferred
+        retryGapRounds       = $FamilyRefineRetryGapRounds
         totalStaged          = $staged.Count
     }
     families                = @($families | ForEach-Object {
@@ -990,8 +1122,11 @@ catch {
 $autoTrace = $null
 if ($AutoWriteTraceOnVerdict) {
     # Usable-family gate (M2 stop rule): a complete family is the prize; a
-    # 2-member family is still worth a trace window; fewer members means no
-    # trace (x64dbg DR0-DR3 arming of a lone member is not evidence).
+    # 2-member family is still worth a trace window -- but only if at least one
+    # member is NOT edge-aligned (a bad-anchor family whose every member rides
+    # the sweep edge would burn the trace window on fabricated alignment);
+    # fewer members means no trace (x64dbg DR0-DR3 arming of a lone member is
+    # not evidence).
     $usableFamily = $null
     if ($completeFamilies.Count -gt 0) {
         $usableFamily = $completeFamilies[0]
@@ -999,7 +1134,12 @@ if ($AutoWriteTraceOnVerdict) {
     else {
         foreach ($f in @($families)) {
             $memberCount = @($f.members).Count
-            if ($memberCount -ge 2) { $usableFamily = $f; break }
+            if ($memberCount -lt 2) { continue }
+            $hasNonEdgeAligned = $false
+            foreach ($m in @($f.members)) {
+                if (-not $m.edgeAligned) { $hasNonEdgeAligned = $true; break }
+            }
+            if ($hasNonEdgeAligned) { $usableFamily = $f; break }
         }
     }
 

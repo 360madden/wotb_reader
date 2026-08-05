@@ -441,6 +441,16 @@ internal static class GameApiEndpoints
         && value.Length % 2 == 0
         && Regex.IsMatch(value, "^[0-9a-fA-F]+$");
 
+    // Addresses are NOT byte-pair hex: IsHexString's even-length rule (needed
+    // for scan VALUE hex like "0000803F") rejects real addresses whose hex
+    // happens to be odd-length (e.g. "0x4520000" -> "4520000", 7 chars). The
+    // scan endpoint emits unpadded X-format addresses, so its own output must
+    // round-trip through read/correlate validation or every staged address
+    // fails with discover.invalid_address.
+    private static bool IsHexAddress(string value) =>
+        value.Length is > 0 and <= 16
+        && Regex.IsMatch(value, "^[0-9a-fA-F]+$");
+
     internal static async Task<IResult> CreateSnapshotAsync(
         IGameMemoryScanner scanner,
         OffsetSnapshotRequest request,
@@ -701,8 +711,9 @@ internal static class GameApiEndpoints
         foreach (string raw in request.Addresses)
         {
             string hex = raw.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? raw[2..] : raw;
-            if (!IsHexString(hex)
-                || hex.Length > 16
+            // IsHexAddress (not IsHexString): addresses are arbitrary-length
+            // hex, NOT even-length byte-pairs -- see IsHexAddress doc.
+            if (!IsHexAddress(hex)
                 || !long.TryParse(
                     hex,
                     NumberStyles.HexNumber,
@@ -816,8 +827,9 @@ internal static class GameApiEndpoints
             string hex = series.Address.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
                 ? series.Address[2..]
                 : series.Address;
-            if (!IsHexString(hex)
-                || hex.Length > 16
+            // IsHexAddress (not IsHexString): correlate consumes scan-produced
+            // addresses (arbitrary-length hex), not byte-pair value hex.
+            if (!IsHexAddress(hex)
                 || !long.TryParse(
                     hex,
                     NumberStyles.HexNumber,

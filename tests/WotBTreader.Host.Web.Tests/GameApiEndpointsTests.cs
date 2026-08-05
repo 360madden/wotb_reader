@@ -850,6 +850,53 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task ReadAcceptsOddLengthAddressHex()
+    {
+        // Scan-produced addresses are unpadded X-format and can be odd-length
+        // (e.g. "0x4520000" -> "4520000", 7 chars). IsHexString's even-length
+        // byte-pair rule would reject them; addresses must use IsHexAddress.
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.ReadOffsetsAsync(
+            scanner,
+            new OffsetReadRequest
+            {
+                Addresses = ["0x4520000", "0x04520000"],
+                ValueKind = "Float",
+                ValueSize = 4,
+            },
+            TestContext.CancellationToken);
+
+        OffsetReadResponse response = Value<OffsetReadResponse>(result);
+        Assert.IsNotNull(scanner.LastReadRequest);
+        Assert.HasCount(2, scanner.LastReadRequest!.Addresses);
+        Assert.AreEqual(0x4520000L, scanner.LastReadRequest.Addresses[0]);
+        Assert.AreEqual(0x4520000L, scanner.LastReadRequest.Addresses[1]);
+    }
+
+    [TestMethod]
+    public async Task ReadRejectsAddressBeyondSignedLong()
+    {
+        // 16-digit hex >= 0x8000000000000000 overflows signed long: the
+        // address must still be rejected as invalid, not silently wrapped.
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.ReadOffsetsAsync(
+            scanner,
+            new OffsetReadRequest
+            {
+                Addresses = ["0x8000000000000000"],
+                ValueKind = "Float",
+                ValueSize = 4,
+            },
+            TestContext.CancellationToken);
+
+        JsonElement response = BadRequestAnonymous(result);
+        Assert.AreEqual("discover.invalid_address", response.GetProperty("error").GetString());
+        Assert.IsNull(scanner.LastReadRequest);
+    }
+
+    [TestMethod]
     public async Task ReadRejectsTooManyAddresses()
     {
         var scanner = new FakeGameMemoryScanner();
