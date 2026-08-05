@@ -203,8 +203,12 @@ not a replay rewind.
 
 ## Recommended next steps
 
-1. Build `-AutoWriteTraceOnVerdict` into od-048 (the only remaining piece
-   between this handoff and a fully automated one-launch M1→M2 round).
+1. ✅ **DONE (2026-08-05):** `-AutoWriteTraceOnVerdict` built into od-048
+   (same-process write-trace invocation on a usable-family verdict; separate
+   `od-048-autotrace-*.json` report; M1 exit stays 0). The live round is now a
+   single command: `od-048-monitor-correlate-session.ps1 -SessionId
+   019fb86c-… -MaxReadRounds 70 -AutoWriteTraceOnVerdict -ResultPath
+   .data\od-048-live.json`.
 2. Verify the game replays folder's newest file before the session and pin
    `-ReplayPath` in the session runbook.
 3. Run the live round with this checklist; append the outcome (exit codes,

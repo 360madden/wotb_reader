@@ -52,6 +52,17 @@
   No operator input is needed after the replay launches. The battle plays to
   completion; the gate revokes at battle end and the driver stops.
 
+  -AutoWriteTraceOnVerdict (M2 automation, choreography 7): when the final
+  correlate produces a usable family (complete x/y/z triple, else >= 2
+  members), the driver IMMEDIATELY invokes x64dbg-write-trace.ps1
+  -FamilyFile <this report> -AutoWriteTrace in the same process/launch,
+  closing the human-reaction gap on the ~30s green window. The write-trace
+  result (exit code, hits, rips) is written to -AutoTraceResultPath
+  (default .data\od-048-autotrace-<timestamp>.json); the M1 report itself
+  is never re-written. The campaign exit code stays 0 even when the
+  auto-trace fails (a no-family / stale / paused verdict is recorded in
+  the auto-trace report, not treated as an M1 failure).
+
 .EXITCODES
   0  Campaign completed; report written to .data\od-048-<timestamp>.json
   1  Preflight failure (no host/rendezvous, gate never verified)
@@ -121,6 +132,25 @@ param(
     # JSON summary output. Default .data\od-048-<timestamp>.json (runtime
     # data, never tracked).
     [string]$ResultPath = '',
+    # M2 automation: when the final correlate yields a usable family, invoke
+    # x64dbg-write-trace.ps1 -FamilyFile <report> -AutoWriteTrace immediately
+    # in the same process (the write-trace's liveness re-read REQUIRES the
+    # same game process, and the green window is the battle tail - there is
+    # no time for an operator). The auto-trace result report goes to
+    # -AutoTraceResultPath. No-op (with a log line) when no family survives.
+    [switch]$AutoWriteTraceOnVerdict,
+    # How long the auto-invoked write-trace keeps its window. Budget from the
+    # choreography timing table: -MaxReadRounds 70 on Dead Rail leaves ~31s
+    # of battle; 25 is the recommended first attempt. The operator may pass a
+    # higher value on a later attempt once per-round timing is observed.
+    [int]$AutoTraceSeconds = 25,
+    # Where the auto-trace evidence report lands. Default
+    # .data\od-048-autotrace-<timestamp>.json (runtime data, never tracked).
+    [string]$AutoTraceResultPath = '',
+    # Pass -SkipPlayProbe / -SkipLivenessCheck through to the auto-invoked
+    # write-trace (headless validation; the live round keeps both defaults).
+    [switch]$AutoTraceSkipPlayProbe,
+    [switch]$AutoTraceSkipLivenessCheck,
     [string]$RepoRoot = ''
 )
 
@@ -941,6 +971,90 @@ try {
 catch {
     Write-Od048 ('FAILED_report_write: ' + $_.Exception.Message)
     exit 5
+}
+
+# -- M2 automation: auto-invoke the write-trace on a surviving family --
+# Closes the choreography 7 human-reaction gap: the write-trace must start
+# within seconds of the verdict (the green window is the battle tail, ~30s),
+# and its liveness re-read (exit 8) REQUIRES the same game process, so a
+# manual start loses most of the window. The auto-trace result is a SEPARATE
+# report: the M1 report is immutable once written.
+$autoTrace = $null
+if ($AutoWriteTraceOnVerdict) {
+    # Usable-family gate (M2 stop rule): a complete family is the prize; a
+    # 2-member family is still worth a trace window; fewer members means no
+    # trace (x64dbg DR0-DR3 arming of a lone member is not evidence).
+    $usableFamily = $null
+    if ($completeFamilies.Count -gt 0) {
+        $usableFamily = $completeFamilies[0]
+    }
+    else {
+        foreach ($f in @($families)) {
+            $memberCount = @($f.members).Count
+            if ($memberCount -ge 2) { $usableFamily = $f; break }
+        }
+    }
+
+    if ($null -eq $usableFamily) {
+        Write-Od048 ('auto_write_trace SKIPPED no_usable_family verdict=' + $verdict)
+    }
+    else {
+        $wtScript = Join-Path $PSScriptRoot 'x64dbg-write-trace.ps1'
+        if (-not (Test-Path -LiteralPath $wtScript)) {
+            Write-Od048 ('auto_write_trace FAILED script_missing=' + $wtScript)
+        }
+        else {
+            if ([string]::IsNullOrWhiteSpace($AutoTraceResultPath)) {
+                $dataDir = Join-Path $RepoRoot '.data'
+                if (-not (Test-Path -LiteralPath $dataDir)) { New-Item -ItemType Directory -Path $dataDir | Out-Null }
+                $AutoTraceResultPath = Join-Path $dataDir ("od-048-autotrace-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + ".json")
+            }
+            Write-Od048 ('auto_write_trace INVOKING verdict=' + $verdict + ' family_complete=' + $completeFamilies.Count + ' trace_s=' + $AutoTraceSeconds)
+            $wtArgs = @(
+                '-FamilyFile', $ResultPath,
+                '-AutoWriteTrace',
+                '-TraceSeconds', [string]$AutoTraceSeconds,
+                '-ResultPath', $AutoTraceResultPath
+            )
+            if ($AutoTraceSkipPlayProbe) { $wtArgs += '-SkipPlayProbe' }
+            if ($AutoTraceSkipLivenessCheck) { $wtArgs += '-SkipLivenessCheck' }
+            try {
+                & $wtScript @wtArgs
+                $wtExit = $LASTEXITCODE
+            }
+            catch {
+                $wtExit = -1
+                Write-Od048 ('auto_write_trace THREW ' + $_.Exception.Message)
+            }
+            Write-Od048 ('auto_write_trace exit=' + $wtExit)
+            $autoTrace = [ordered]@{
+                invokedUtc  = ([DateTime]::UtcNow).ToString('o')
+                script      = $wtScript
+                familyFile  = $ResultPath
+                traceSeconds = $AutoTraceSeconds
+                resultPath  = $AutoTraceResultPath
+                exitCode    = $wtExit
+                # 0 clean window; 7 paused (SPACE and rerun); 8 stale family
+                # (never relaunch between M1 and M2). M1 is unaffected either
+                # way: the verdict below stands.
+                verdict     = if ($wtExit -eq 0) { 'trace-complete' }
+                    elseif ($wtExit -eq 7) { 'trace-replay-paused' }
+                    elseif ($wtExit -eq 8) { 'trace-family-stale' }
+                    else { 'trace-failed' }
+            }
+            try {
+                $atJson = $autoTrace | ConvertTo-Json -Depth 6
+                [System.IO.File]::WriteAllText($AutoTraceResultPath, $atJson, (New-Object System.Text.UTF8Encoding($false)))
+                Write-Od048 ('auto_trace_report_written=' + $AutoTraceResultPath)
+            }
+            catch {
+                Write-Od048 ('auto_trace_report_write_failed: ' + $_.Exception.Message)
+            }
+        }
+    }
+}
+else {
+    Write-Od048 ('auto_write_trace off (pass -AutoWriteTraceOnVerdict for M2 automation)')
 }
 
 Write-Od048 ('done verdict=' + $verdict + ' results=' + $results.Count + ' families=' + $families.Count)

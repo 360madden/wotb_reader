@@ -195,17 +195,19 @@ a field negative; record it and retry once with a smaller staged set.
   is a memory-scan survivor roll for other campaigns (OD-018/OD-045 fallback
   paths), not the M1→M2 glue.
 
-## 7. The human-reaction gap (must be closed before the live round)
+## 7. The human-reaction gap — CLOSED (2026-08-05)
 
 "Start the write-trace within seconds of the verdict" is not reliably doable by
 hand: reading the report and typing a command costs 5–30s of a ~60s window. The
-robust fix is to **chain M1 → M2 in one invocation**: a thin wrapper (or an
-`od-048 -AutoWriteTraceOnVerdict` switch) that, on a `family-complete`/family
-verdict, computes the remaining battle budget from `duration_ticks` and
-immediately invokes the write-trace with the same `-FamilyFile`. Until that
-wrapper exists, the live round should be run with the operator's hands already on
-the second command, and the window assumed to be ~30s not ~60s. Recommend building
-the wrapper before spending the first CAP-2 session.
+robust fix was to **chain M1 → M2 in one invocation**: `od-048` now has an
+`-AutoWriteTraceOnVerdict` switch that, on a usable family verdict (complete
+x/y/z triple, else ≥ 2 members), immediately invokes
+`x64dbg-write-trace.ps1 -FamilyFile <report> -AutoWriteTrace` in the same
+process/launch with `-AutoTraceSeconds` (default 25) and records the write-trace
+exit code in a separate `od-048-autotrace-*.json` report (M1's own report stays
+immutable; M1's campaign exit stays 0 even when the auto-trace fails closed).
+Built and offline-validated 2026-08-05 (PS 5.1 parse, PSSA gate 0 warnings,
+DryRun smoke: complete family → 3× `w,4` arms).
 
 ## 8. Validation status
 
