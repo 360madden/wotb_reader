@@ -84,6 +84,9 @@ param(
     # How long to keep the write-trace window open (capped by the held green window).
     [int]$TraceSeconds = 120,
     [int]$PollIntervalSeconds = 2,
+    # Max seconds to wait for the x64dbg/x32dbg main window to appear after
+    # pre-arm (window creation is async; attach to a busy game can lag it).
+    [int]$WindowWaitSeconds = 20,
     # Directory receiving the savedata evidence files (created if missing).
     [string]$HitsDir = $(Join-Path $env:TEMP 'od-wt-hits'),
     # Generated x64dbg script file (loaded via scriptload).
@@ -174,6 +177,33 @@ function Get-X64DbgProcess {
     # the attached debugger process is named x32dbg. Match both for safety.
     return Get-Process -Name x64dbg, x32dbg -ErrorAction SilentlyContinue |
         Select-Object -First 1
+}
+
+function Get-X64DbgWindowHandle {
+    # Returns [pscustomobject]@{ Id; Handle } for a debugger process that
+    # currently HAS a main window, or $null. MainWindowHandle is computed once
+    # per Process object and is 0 if sampled mid-creation, so fall back to
+    # EnumWindows (which sees Qt windows MainWindowHandle can miss).
+    $proc = Get-X64DbgProcess
+    if (-not $proc) { return $null }
+    $h = $proc.MainWindowHandle
+    if ($h -ne [IntPtr]::Zero) { return [pscustomobject]@{ Id = $proc.Id; Handle = $h } }
+    $windows = @([WtX64Gui]::WindowsForProcess([uint32]$proc.Id))
+    if ($windows.Count -gt 0) { return [pscustomobject]@{ Id = $proc.Id; Handle = $windows[0] } }
+    return $null
+}
+
+function Wait-X64DbgWindow {
+    # Poll for a window-ready debugger process. Window creation is async after
+    # pre-arm launches the process, and attach to a busy game can lag it.
+    param([int]$TimeoutSeconds = 20)
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        $win = Get-X64DbgWindowHandle
+        if ($win) { return $win }
+        Start-Sleep -Milliseconds 500
+    }
+    return $null
 }
 
 function Get-Rendezvous {
@@ -381,7 +411,7 @@ function Get-ReplayPlayState {
 # x64dbg/x32dbg process to appear. Returns $true when a debugger process is
 # (or became) available.
 function Invoke-AutoPreArm {
-    if (Get-X64DbgProcess) { return $true }
+    if (Get-X64DbgWindowHandle) { return $true }
     # pre-arm-debugger.ps1 -AutoAttach exits 0 even when it skips attach
     # (no game process), so without this check the 15s wait below always
     # burns in full when the game is absent. A write-trace needs the game
@@ -404,12 +434,11 @@ function Invoke-AutoPreArm {
         Write-Wt ('FAILED_prearm_exit=' + $LASTEXITCODE)
         return $false
     }
-    # The debugger window may take a moment to appear after launch.
-    $deadline = (Get-Date).AddSeconds(15)
-    while ((Get-Date) -lt $deadline) {
-        if (Get-X64DbgProcess) { return $true }
-        Start-Sleep -Milliseconds 500
-    }
+    # The debugger window may take a moment to appear after launch; wait for
+    # the WINDOW, not just the process - Start-Process returns instantly while
+    # the Qt main window can lag (FRESH8 FAILED_x64dbg_no_window).
+    $win = Wait-X64DbgWindow -TimeoutSeconds 15
+    if ($win) { return $true }
     Write-Wt 'FAILED_prearm_no_window'
     return $false
 }
@@ -487,6 +516,34 @@ public static class WtX64Gui {
     public static bool WindowRect(IntPtr hWnd, out RECT r) {
         r = new RECT();
         return GetWindowRect(hWnd, out r);
+    }
+
+    private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+    [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+
+    // Top-level windows owned by the given pid (Qt windows that
+    // Process.MainWindowHandle can miss during creation are found here).
+    public static IntPtr[] WindowsForProcess(uint pid) {
+        var list = new System.Collections.Generic.List<IntPtr>();
+        EnumWindows(delegate(IntPtr hWnd, IntPtr lParam) {
+            uint wndPid;
+            GetWindowThreadProcessId(hWnd, out wndPid);
+            if (wndPid == pid) { list.Add(hWnd); }
+            return true;
+        }, IntPtr.Zero);
+        return list.ToArray();
+    }
+
+    // "title1|title2" diagnostic string of the pid's top-level window titles.
+    public static string WindowTitles(uint pid) {
+        var parts = new System.Collections.Generic.List<string>();
+        foreach (var h in WindowsForProcess(pid)) {
+            var sb = new System.Text.StringBuilder(256);
+            GetWindowText(h, sb, sb.Capacity);
+            parts.Add(sb.ToString());
+        }
+        return string.Join("|", parts);
     }
 }
 "@
@@ -696,26 +753,32 @@ try {
         Write-Wt 'FAILED_x64dbg_not_found'
         exit 3
     }
-    $proc = Get-X64DbgProcess
-    if (-not $proc) {
-        Write-Wt 'FAILED_x64dbg_not_running_run_pre-arm_debugger_first'
+    $win = Wait-X64DbgWindow -TimeoutSeconds $WindowWaitSeconds
+    if (-not $win) {
+        # Diagnostics: is the debugger process alive, responding, and does it
+        # have ANY top-level windows? Logging the titles distinguishes a
+        # window-lag race from a hung/attached-but-windowless state.
+        $dbg = Get-X64DbgProcess
+        if ($dbg) {
+            $titles = [WtX64Gui]::WindowTitles([uint32]$dbg.Id)
+            Write-Wt ('FAILED_x64dbg_no_window pid=' + $dbg.Id + ' responding=' + $dbg.Responding + ' windows="' + $titles + '"')
+        }
+        else {
+            Write-Wt 'FAILED_x64dbg_not_running_run_pre-arm_debugger_first'
+        }
         exit 3
     }
-    if ($proc.MainWindowHandle -eq [IntPtr]::Zero) {
-        Write-Wt 'FAILED_x64dbg_no_window'
-        exit 3
-    }
-    Write-Wt ("x64dbg_pid=" + $proc.Id)
+    Write-Wt ("x64dbg_pid=" + $win.Id)
 
     # ---- 5. Inject scriptload + scriptrun into the command bar -------------
     $rect = New-Object WtX64Gui+RECT
-    if (-not [WtX64Gui]::WindowRect($proc.MainWindowHandle, [ref]$rect)) {
+    if (-not [WtX64Gui]::WindowRect($win.Handle, [ref]$rect)) {
         Write-Wt 'FAILED_get_window_rect'
         exit 4
     }
     $cx = [int](($rect.Left + $rect.Right) / 2)
     $cy = [int]($rect.Bottom - 16)   # command bar is the full-width bottom strip
-    [WtX64Gui]::ForceForeground($proc.MainWindowHandle)
+    [WtX64Gui]::ForceForeground($win.Handle)
     Start-Sleep -Milliseconds 300
     [WtX64Gui]::Click($cx, $cy)
     Start-Sleep -Milliseconds 400
