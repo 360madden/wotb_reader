@@ -129,3 +129,16 @@ samples only; the coordinator guards value-kind/width consistency.
 - Staging tolerance is auto-scaled; `-ScanTolerance` remains the floor.
 - Read the `shiftSeconds` field of survivors: ≈ -load_latency validates the
   anchor; a large outlier flags a bad anchor.
+
+## Amendment 2 (2026-08-04) — shiftSeconds audit before the live run
+
+M1 prep hardening: `od-048-monitor-correlate-session.ps1` now audits the
+winning shift of every scored address before forming the verdict. A survivor
+whose |shiftSeconds| is within 2s of the sweep edge (`-MaxTimeShiftSeconds`)
+means the true alignment is probably beyond the sweep — the classic
+bad-anchor false positive (anchor captured mid-battle, or load latency
+exceeded the 30s bound). Such survivors are demoted from "strong" to
+"suspect": the verdict becomes `evidence-edge-aligned` when only
+edge-aligned survivors exist, and the report gains `suspectEdgeAligned` plus
+a `correlate.shiftAudit` section (threshold + suspect count). A clean strong
+survivor must now be score ≥ 0.7 AND not edge-aligned.

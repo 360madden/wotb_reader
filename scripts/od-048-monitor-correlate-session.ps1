@@ -15,6 +15,12 @@
   time-shift sweep, per axis, with sign flips. The winning evidence is an
   address that reproduces the movement sequence with direction/speed changes.
 
+  Shift audit: survivors whose winning shift rides the sweep EDGE (within 2s
+  of -MaxTimeShiftSeconds) are demoted from strong to suspect
+  (verdict evidence-edge-aligned) and listed under suspectEdgeAligned -- a
+  boundary-aligned shift means the true alignment is probably beyond the
+  sweep (bad anchor or load latency exceeded the bound).
+
   Staging: the driver fetches the decoded session trajectory (viewpoint
   entity first, then the most-moving entities), waits -StageDelaySeconds for
   the battle to load after the Start marker, then scans the game process for
@@ -486,13 +492,29 @@ if ($null -eq $correlated -or $null -eq $correlated.results) {
 }
 
 $results = @($correlated.results)
-$strongSurvivors = @($results | Where-Object { $_.score -ge 0.7 })
+
+# Shift audit: a survivor whose winning shift rides the sweep EDGE means the
+# true alignment is probably beyond the sweep (anchor wrong or load latency
+# exceeded the bound) -- the classic bad-anchor false positive. Demote those
+# from "strong" to "suspect" so a broken anchor cannot masquerade as evidence.
+$edgeThreshold = [Math]::Max(2, $MaxTimeShiftSeconds - 2)
+$edgeAlignedSurvivors = @()
+foreach ($result in $results) {
+    $shift = if ($null -eq $result.shiftSeconds) { 0.0 } else { [double]$result.shiftSeconds }
+    $isEdgeAligned = ([Math]::Abs($shift) -ge $edgeThreshold)
+    $result | Add-Member -NotePropertyName edgeAligned -NotePropertyValue $isEdgeAligned -Force
+    if ($isEdgeAligned -and $result.score -ge 0.7) {
+        $edgeAlignedSurvivors += $result
+    }
+}
+$strongSurvivors = @($results | Where-Object { $_.score -ge 0.7 -and -not $_.edgeAligned })
 $verdict = if ($strongSurvivors.Count -gt 0) { 'evidence-strong' }
+    elseif ($edgeAlignedSurvivors.Count -gt 0) { 'evidence-edge-aligned' }
     elseif ($results.Count -gt 0) { 'evidence-mixed' }
     else { 'no-evidence' }
 
 Write-Od048 ("correlate addresses_scored=" + $correlated.addressesScored + " total_samples=" + $correlated.totalSamples)
-Write-Od048 ("verdict=" + $verdict + " strong_survivors=" + $strongSurvivors.Count)
+Write-Od048 ("verdict=" + $verdict + " strong_survivors=" + $strongSurvivors.Count + " edge_aligned_suspects=" + $edgeAlignedSurvivors.Count)
 
 # -- Report --
 $report = [ordered]@{
@@ -519,8 +541,12 @@ $report = [ordered]@{
         stoppedReason        = $stoppedReason
     }
     correlate              = [ordered]@{
-        addressesScored = $correlated.addressesScored
-        totalSamples    = $correlated.totalSamples
+        addressesScored       = $correlated.addressesScored
+        totalSamples          = $correlated.totalSamples
+        shiftAudit            = [ordered]@{
+            edgeThresholdSeconds = $edgeThreshold
+            edgeAlignedSuspects  = $edgeAlignedSurvivors.Count
+        }
     }
     results                = @($results | Select-Object -First 50 | ForEach-Object {
         [ordered]@{
@@ -530,6 +556,7 @@ $report = [ordered]@{
             axis          = $_.axis
             sign          = $_.sign
             shiftSeconds  = $_.shiftSeconds
+            edgeAligned   = $_.edgeAligned
             matchCount    = $_.matchCount
             totalSamples  = $_.totalSamples
             span          = $_.span
@@ -537,6 +564,19 @@ $report = [ordered]@{
         }
     })
     strongSurvivors        = @($strongSurvivors | Select-Object -First 20 | ForEach-Object {
+        [ordered]@{
+            address       = $_.address
+            participantId = $_.participantId
+            entityId      = $_.entityId
+            axis          = $_.axis
+            sign          = $_.sign
+            shiftSeconds  = $_.shiftSeconds
+            matchCount    = $_.matchCount
+            totalSamples  = $_.totalSamples
+            score         = $_.score
+        }
+    })
+    suspectEdgeAligned      = @($edgeAlignedSurvivors | Select-Object -First 20 | ForEach-Object {
         [ordered]@{
             address       = $_.address
             participantId = $_.participantId
