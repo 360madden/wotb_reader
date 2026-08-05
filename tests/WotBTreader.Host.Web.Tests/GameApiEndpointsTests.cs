@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using WotBTreader.ApiContracts;
@@ -955,6 +956,31 @@ public sealed class GameApiEndpointsTests
             ]);
     }
 
+    private static TrajectoryGroundTruth AllAxesGroundTruth()
+    {
+        // Viewpoint entity with ALL THREE axes moving: x follows a V shape
+        // (slope 2/s), y climbs at 0.4/s, z climbs at 0.8/s. Distinct slopes
+        // keep each observation series attributable to its own axis, and every
+        // axis scores, so the correlate pass yields the clean COMPLETE x/y/z
+        // triple (the VShape fixture's z is constant and never scores).
+        Guid viewpoint = Guid.NewGuid();
+        List<TrajectorySample> samples =
+        [
+            new(0, 0, 0, 0),
+            new(250_000_000, 50, 10, 20),
+            new(500_000_000, 100, 20, 40),
+            new(750_000_000, 50, 30, 60),
+            new(1_000_000_000, 0, 40, 80),
+        ];
+        return new TrajectoryGroundTruth(
+            100_000_000,
+            [
+                new EntityTrajectory(new ParticipantId(viewpoint), 1, "Viewpoint", true, samples),
+                new EntityTrajectory(new ParticipantId(Guid.NewGuid()), 2, "Stationary", false,
+                    [new TrajectorySample(0, 7, 7, 7), new TrajectorySample(100_000_000, 7, 7, 7)]),
+            ]);
+    }
+
     [TestMethod]
     public async Task CorrelateScoresTheReproducingAddress()
     {
@@ -1100,6 +1126,110 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task CompleteFamilyReportMatchesTheWriteTraceParseContract()
+    {
+        // The od-048 correlate response that feeds the M2 write-trace driver:
+        // one COMPLETE family (x/y/z triple). Uppercase-hex observation
+        // addresses are preserved verbatim into the family members, which is
+        // exactly the mixed case x64dbg-write-trace.ps1 must handle.
+        DateTimeOffset start = new(2026, 8, 4, 0, 0, 0, TimeSpan.Zero);
+        var provider = new FakeTrajectoryProvider(OperationResult.Success(AllAxesGroundTruth()));
+        List<CorrelationSampleRequest> xSamples = [];
+        List<CorrelationSampleRequest> ySamples = [];
+        List<CorrelationSampleRequest> zSamples = [];
+        for (int index = 0; index < 5; index++)
+        {
+            int second = 10 + (index * 10);
+            xSamples.Add(new CorrelationSampleRequest(start.AddSeconds(second), second * 2));
+            ySamples.Add(new CorrelationSampleRequest(start.AddSeconds(second), second * 0.4));
+            zSamples.Add(new CorrelationSampleRequest(start.AddSeconds(second), second * 0.8));
+        }
+
+        IResult result = await GameApiEndpoints.CorrelateAsync(
+            provider,
+            new CorrelateRequest
+            {
+                GroundTruthSessionId = Guid.NewGuid(),
+                ReplayStartWallTimeUtc = start,
+                TolerancePerAxis = 2,
+                MaxTimeShiftSeconds = 8,
+                Observations =
+                [
+                    new CorrelationSeriesRequest("0x1A2B3000", xSamples),
+                    new CorrelationSeriesRequest("0x1A2B3004", ySamples),
+                    new CorrelationSeriesRequest("0x1A2B3008", zSamples),
+                ],
+            },
+            TestContext.CancellationToken);
+
+        CorrelateResponse response = Value<CorrelateResponse>(result);
+        Assert.HasCount(3, response.Results);
+        Assert.HasCount(1, response.Families);
+
+        // Serialize the way the wire does (camelCase, exactly the JSON the
+        // od-048 report's `families` section is built from and the write-trace
+        // script parses with ConvertFrom-Json).
+        JsonElement wire = JsonSerializer.SerializeToElement(response, CamelCaseJson);
+        JsonElement family = wire.GetProperty("families")[0];
+
+        // Family-level fields the report carries: baseAddress (mixed-case hex
+        // from the :X format the od-048 report serializes), spanBytes,
+        // complete, axesCovered.
+        Assert.AreEqual("0x1A2B3000", family.GetProperty("baseAddress").GetString());
+        Assert.AreEqual(8, family.GetProperty("spanBytes").GetInt32());
+        Assert.IsTrue(family.GetProperty("complete").GetBoolean());
+        string[] axes = family.GetProperty("axesCovered")
+            .EnumerateArray().Select(element => element.GetString()!).ToArray();
+        Assert.IsTrue(axes.SequenceEqual(["x", "y", "z"]));
+
+        // Member-level shape: the script reads address (ConvertTo-HexToken),
+        // offsetBytes (arm-plan ordering), axis, score, sign, edgeAligned.
+        JsonElement members = family.GetProperty("members");
+        Assert.AreEqual(3, members.GetArrayLength());
+        string[] addresses = ["0x1A2B3000", "0x1A2B3004", "0x1A2B3008"];
+        int[] offsets = [0, 4, 8];
+        string[] memberAxes = ["x", "y", "z"];
+        for (int index = 0; index < 3; index++)
+        {
+            JsonElement member = members[index];
+            // Address preserved verbatim (scorer -> builder -> wire).
+            Assert.AreEqual(addresses[index], member.GetProperty("address").GetString());
+            Assert.AreEqual(offsets[index], member.GetProperty("offsetBytes").GetInt32());
+            Assert.AreEqual(memberAxes[index], member.GetProperty("axis").GetString());
+            Assert.IsGreaterThan(0.0, member.GetProperty("score").GetDouble());
+            Assert.AreEqual(1, member.GetProperty("sign").GetInt32());
+            // No edge-aligned member: the triple stays the clean artifact.
+            Assert.IsFalse(member.GetProperty("edgeAligned").GetBoolean());
+        }
+
+        // Every serialized address must parse with the write-trace script's
+        // ConvertTo-HexToken regex: ^(0x)?([0-9a-fA-F]{4,16})$ — 0x-prefixed,
+        // 4-16 hex digits, any case.
+        foreach (JsonElement member in members.EnumerateArray())
+        {
+            StringAssert.Matches(
+                member.GetProperty("address").GetString()!,
+                WriteTraceAddressRegex);
+        }
+
+        // Case-insensitive hit-address matching: the script keys both the
+        // armed address and the hit filename addr with ToLowerInvariant
+        // (Get-FamilyArmPlan dedup + $parts[0].ToLowerInvariant() -eq
+        // $addrKey), so a savedata hit that rendered the address in a
+        // different case must still attribute to the same member, and a
+        // different member must never collide.
+        Assert.AreEqual(
+            WriteTraceAddressKey("0x1A2B3000"),
+            WriteTraceAddressKey("0x1a2b3000"));   // flipped case, same address
+        Assert.AreEqual(
+            WriteTraceAddressKey("0x1A2B3004"),
+            WriteTraceAddressKey("0x1a2b3004"));
+        Assert.AreNotEqual(
+            WriteTraceAddressKey("0x1A2B3000"),
+            WriteTraceAddressKey("0x1a2b3004"));   // neighbor must not collide
+    }
+
+    [TestMethod]
     public async Task CorrelateRejectsInvalidOptions()
     {
         var provider = new FakeTrajectoryProvider(OperationResult.Success(VShapeGroundTruth()));
@@ -1203,6 +1333,23 @@ public sealed class GameApiEndpointsTests
             TestContext.CancellationToken);
         Assert.AreEqual("discover.invalid_options",
             BadRequestAnonymous(badShiftStep).GetProperty("error").GetString());
+    }
+
+    // Mirrors x64dbg-write-trace.ps1 ConvertTo-HexToken: ^(0x)?([0-9a-fA-F]{4,16})$
+    // (case-insensitive, 0x-prefix optional, 4-16 hex digits) — the same regex
+    // the script uses to normalize every family member and survivor address.
+    private static readonly Regex WriteTraceAddressRegex =
+        new(@"^(0x)?([0-9a-fA-F]{4,16})$", RegexOptions.Compiled);
+
+    // Mirrors the script's address KEYING for dedup and hit attribution:
+    // normalize with ConvertTo-HexToken semantics then compare lowercased
+    // (Get-FamilyArmPlan $seen.ContainsKey($addr.ToLowerInvariant()) and the
+    // family report's $parts[0].ToLowerInvariant() -eq $addrKey).
+    private static string WriteTraceAddressKey(string address)
+    {
+        Match match = WriteTraceAddressRegex.Match(address);
+        Assert.IsTrue(match.Success, $"address not parseable by write-trace regex: {address}");
+        return ("0x" + match.Groups[2].Value).ToLowerInvariant();
     }
 
     private static T Value<T>(IResult result)
