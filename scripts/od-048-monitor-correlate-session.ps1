@@ -1158,14 +1158,21 @@ if ($AutoWriteTraceOnVerdict) {
                 $AutoTraceResultPath = Join-Path $dataDir ("od-048-autotrace-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + ".json")
             }
             Write-Od048 ('auto_write_trace INVOKING verdict=' + $verdict + ' family_complete=' + $completeFamilies.Count + ' trace_s=' + $AutoTraceSeconds)
-            $wtArgs = @(
-                '-FamilyFile', $ResultPath,
-                '-AutoWriteTrace',
-                '-TraceSeconds', [string]$AutoTraceSeconds,
-                '-ResultPath', $AutoTraceResultPath
-            )
-            if ($AutoTraceSkipPlayProbe) { $wtArgs += '-SkipPlayProbe' }
-            if ($AutoTraceSkipLivenessCheck) { $wtArgs += '-SkipLivenessCheck' }
+            # Hashtable splat, NOT an array: PowerShell array-splatting of
+            # '-Name value' pairs misaligns argument binding (a switch in the
+            # middle shifts the following value onto the wrong parameter --
+            # live proof: -TraceSeconds received the FamilyFile path and the
+            # trace THREW instead of arming). Hashtable splat binds by name
+            # and is immune to the shift. (Reproduced in a minimal repro:
+            # array-splat throws, hashtable-splat binds correctly.)
+            $wtArgs = @{
+                FamilyFile     = $ResultPath
+                AutoWriteTrace = $true
+                TraceSeconds   = $AutoTraceSeconds
+                ResultPath     = $AutoTraceResultPath
+            }
+            if ($AutoTraceSkipPlayProbe) { $wtArgs.SkipPlayProbe = $true }
+            if ($AutoTraceSkipLivenessCheck) { $wtArgs.SkipLivenessCheck = $true }
             try {
                 & $wtScript @wtArgs
                 $wtExit = $LASTEXITCODE

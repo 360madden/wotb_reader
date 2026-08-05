@@ -15,10 +15,12 @@
 
   Family mode (M2): reads the od-048 correlate report JSON (-FamilyFile,
     its `families` array) or a bare family JSON, selects the best family
-    (a complete x/y/z triple wins; else the highest summed member score),
-    and arms 4-byte write breakpoints on the member addresses (Float32
-    coordinates at 4-byte offsets). One trace window maps the write sites
-    of all three coordinate components.
+    (a complete x/y/z triple wins; else a usable family -- >=2 members with
+    at least one NOT edge-aligned -- by highest summed member score; all-edge
+    decoy families are excluded so a bad-anchor family cannot burn the trace
+    window over a real sibling pair), and arms 4-byte write breakpoints on
+    the member addresses (Float32 coordinates at 4-byte offsets). One trace
+    window maps the write sites of all three coordinate components.
 
   The generated x64dbg script arms hardware WRITE breakpoints (bph
   <addr>,w,<4|8>) on up to 4 addresses (the DR0-DR3 x64 limit), sets a
@@ -235,44 +237,94 @@ function Add-SendKeysType([ref]$Type, [string]$Text) {
 # -- M2 family helpers --------------------------------------------------------
 
 # Sum of a family's member correlation scores (a bare family JSON may omit
-# the score fields, so guard every member access under StrictMode).
-function Get-FamilyScore {
-    param([object]$Family)
-    $total = 0.0
-    if (-not $Family.PSObject.Properties['members'] -or $null -eq $Family.members) {
-        return $total
-    }
-    foreach ($m in @($Family.members)) {
-        if ($m.PSObject.Properties['score'] -and $null -ne $m.score) {
-            $total += [double]$m.score
-        }
-    }
-    return $total
-}
-
 # True when the family JSON marks the clean x/y/z triple complete.
 function Test-FamilyComplete {
     param([object]$Family)
     return ($Family.PSObject.Properties['complete'] -and $Family.complete)
 }
 
-# Pick the family to trace from the report's families array: a complete
-# family (clean x/y/z triple) wins over any incomplete one, and among the
-# candidates the highest summed member score breaks the tie. Deterministic
-# so the same report always selects the same family.
+# True when the family is usable for a trace window: at least two members
+# and at least one member NOT edge-aligned (the M2 stop rule, mirrors the
+# od-048 gate). An all-edge family is a bad-anchor decoy -- every member
+# rides the sweep edge, so it must never win the trace window over a real
+# sibling pair.
+function Test-UsableFamily {
+    param([object]$Family)
+    if (-not $Family.PSObject.Properties['members'] -or $null -eq $Family.members) {
+        return $false
+    }
+    $members = @($Family.members)
+    if ($members.Count -lt 2) { return $false }
+    foreach ($m in $members) {
+        if (-not $m.PSObject.Properties['edgeAligned'] -or -not $m.edgeAligned) {
+            return $true
+        }
+    }
+    return $false
+}
+
+# Distinct axis count of a family's members (x/z pair = 2, complete triple
+# = 3, a same-axis run = 1). The axis count is the primary selection rank:
+# a family reproducing MULTIPLE components of one entity is evidence of a
+# coordinate vector, while a run of same-axis addresses is a copy buffer.
+function Get-FamilyAxisCount {
+    param([object]$Family)
+    $axes = @{}
+    foreach ($m in @($Family.members)) {
+        if ($m.PSObject.Properties['axis'] -and $m.axis) { $axes[$m.axis] = $true }
+    }
+    return $axes.Count
+}
+
+# Mean member score. Mean (not sum) is the tie-break: summed score rewards
+# member COUNT over member QUALITY -- live OD-049 evidence had a 5-member
+# weak x-run (scores ~0.4, sum 2.16) beating a perfect x/z pair (1.0/1.0,
+# sum 2.0), which would have armed the trace on the copy buffer instead of
+# the coordinate vector.
+function Get-FamilyMeanScore {
+    param([object]$Family)
+    $count = 0
+    $total = 0.0
+    foreach ($m in @($Family.members)) {
+        if ($m.PSObject.Properties['score'] -and $null -ne $m.score) {
+            $total += [double]$m.score
+            $count++
+        }
+    }
+    if ($count -eq 0) { return 0.0 }
+    return ($total / $count)
+}
+
+# Pick the family to trace from the report's families array. Priority: (1) a
+# complete family (clean x/y/z triple); (2) a usable family (>=2 members,
+# at least one non-edge-aligned -- an all-edge family must never beat a real
+# sibling pair: live OD-049 evidence had the 5-member all-edge decoy
+# out-scoring the genuine x/z pair on summed score, which would have armed
+# the trace on fabricated alignment); (3) any family, as a direct-investigation
+# fallback when the caller (od-048 gate) has already vetted the report. Among
+# the candidates the rank is (distinct axis count desc, then mean member
+# score desc). Deterministic so the same report always selects the same
+# family.
 function Select-BestFamily {
     param([object[]]$Families)
-    $pool = @()
     $complete = @($Families | Where-Object { Test-FamilyComplete -Family $_ })
-    if ($complete.Count -gt 0) { $pool = @($complete) }
-    else { $pool = @($Families) }
-    if ($pool.Count -eq 0) { return $null }
+    if ($complete.Count -gt 0) { return (Select-HighestRankedFamily -Families $complete) }
+    $usable = @($Families | Where-Object { Test-UsableFamily -Family $_ })
+    if ($usable.Count -gt 0) { return (Select-HighestRankedFamily -Families $usable) }
+    return (Select-HighestRankedFamily -Families $Families)
+}
+
+function Select-HighestRankedFamily {
+    param([object[]]$Families)
     $best = $null
-    $bestScore = [double]::MinValue
-    foreach ($f in $pool) {
-        $s = Get-FamilyScore -Family $f
-        if ($s -gt $bestScore) {
-            $bestScore = $s
+    $bestAxes = -1
+    $bestMean = [double]::MinValue
+    foreach ($f in $Families) {
+        $axes = Get-FamilyAxisCount -Family $f
+        $mean = Get-FamilyMeanScore -Family $f
+        if ($axes -gt $bestAxes -or ($axes -eq $bestAxes -and $mean -gt $bestMean)) {
+            $bestAxes = $axes
+            $bestMean = $mean
             $best = $f
         }
     }
