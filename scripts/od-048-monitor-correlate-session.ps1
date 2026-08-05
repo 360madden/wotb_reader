@@ -30,6 +30,13 @@
   battle entity's live position regardless of load jitter. The union is the
   staged set; the scan retries until it finds candidates (battle loaded).
 
+  Battle-time budget: staging scans are expensive (tens of seconds each), so
+  the driver derives a hard staging deadline from the decoded battle duration
+  (battle end - 30s minimum monitor window). Staging never runs past the
+  deadline -- it stops with whatever it has staged -- and the monitor exits
+  early once the decoded battle duration has elapsed, so a slow staging pass
+  cannot consume the whole battle and leave the monitor with an empty world.
+
   No operator input is needed after the replay launches. The battle plays to
   completion; the gate revokes at battle end and the driver stops.
 
@@ -212,7 +219,15 @@ if ([string]::IsNullOrWhiteSpace($battleSessionId)) {
         Write-Od048 'FAILED_no_decoded_session'
         exit 2
     }
-    $battleSessionId = [string]$page.items[0].session.id
+    # items[].session is nullable on the wire: a decode run with no battle
+    # session serializes a null entry. Guard it so StrictMode fails with a
+    # clean diagnostic instead of crashing on a member access of null.
+    $newestSession = $page.items[0]
+    if ($null -eq $newestSession -or $null -eq $newestSession.session) {
+        Write-Od048 'FAILED_newest_session_null'
+        exit 2
+    }
+    $battleSessionId = [string]$newestSession.session.id
 }
 Write-Od048 ("ground_truth_session=" + $battleSessionId)
 
@@ -318,10 +333,41 @@ $anchorUtc = [datetime]::Parse(
     $replayStartWallUtc,
     [Globalization.CultureInfo]::InvariantCulture,
     ([Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal))
+# -- Battle-time budget --
+# Staging is the expensive step: up to MaxStagingAttempts x StageTopN entities
+# x 3 axes = 27 full-memory scans, each taking tens of seconds. Unguarded, a
+# slow first attempt plus retries can consume the ENTIRE battle (Dead Rail is
+# ~271s; the real decoded sessions average ~250s) and leave the monitor with
+# an empty world. Derive a hard staging deadline from the decoded duration:
+# staging must never run past (battle end - minimum monitor window). All
+# deadline comparisons use UTC explicitly (DateTime comparison in PS ignores
+# Kind, so local-vs-UTC mixing would compare wall clocks, not instants).
+$durationSeconds = 0.0
+if ($null -ne $trajectory.durationTicks -and [double]$trajectory.durationTicks -gt 0) {
+    $durationSeconds = [double]$trajectory.durationTicks / 10000000.0
+}
+$battleEndUtc = $null
+if ($durationSeconds -gt 0) { $battleEndUtc = $anchorUtc.AddSeconds($durationSeconds) }
+$monitorMinSeconds = 30.0
+$stagingDeadlineUtc = $null
+$monitorExitUtc = $null
+if ($null -ne $battleEndUtc) {
+    $stagingDeadlineUtc = $battleEndUtc.AddSeconds(-$monitorMinSeconds)
+    # The battle starts at tick 0 some seconds AFTER the Start marker (load
+    # latency, absorbed by the shift sweep up to MaxTimeShiftSeconds), so the
+    # UPPER bound on wall-time battle end = anchor + duration + max load
+    # latency. The monitor must not exit before that bound or it drops the
+    # tail observations; the staging deadline may stay at the nominal end
+    # (stopping staging early is safe, only losing scan attempts).
+    $monitorExitUtc = $battleEndUtc.AddSeconds([double]$MaxTimeShiftSeconds + 10.0)
+    Write-Od048 ("battle_duration_s=" + [Math]::Round($durationSeconds, 1) + " staging_deadline=" + $stagingDeadlineUtc.ToString('o'))
+}
+$stagingStartUtc = [datetime]::UtcNow
+$budgetExhausted = $false
 $staged = [System.Collections.Generic.List[string]]::new()
 $stagedEntitiesReport = @()
 $stagingAttempt = 0
-while ($stagingAttempt -lt $MaxStagingAttempts) {
+while ($stagingAttempt -lt $MaxStagingAttempts -and -not $budgetExhausted) {
     $stagingAttempt += 1
     $staged.Clear()
     $stagedEntitiesReport = @()
@@ -331,6 +377,14 @@ while ($stagingAttempt -lt $MaxStagingAttempts) {
     foreach ($entity in $stagingEntities) {
         $entityLogged = $false
         foreach ($axis in @('x', 'y', 'z')) {
+            # Budget guard: a full-memory scan takes tens of seconds. If the
+            # battle is about to end, stop staging and use what we have so the
+            # monitor keeps a real observation window.
+            if ($null -ne $stagingDeadlineUtc -and ([datetime]::UtcNow -gt $stagingDeadlineUtc)) {
+                $budgetExhausted = $true
+                Write-Od048 'staging_budget_exhausted'
+                break
+            }
             # Fresh tick estimate PER AXIS: the estimate computed at attempt
             # start goes stale while the full-memory scans run (tens of
             # seconds each), so the band would trail the tank by scan duration
@@ -371,6 +425,10 @@ while ($stagingAttempt -lt $MaxStagingAttempts) {
                 if (-not $staged.Contains($hexAddress)) { $staged.Add($hexAddress) }
             }
         }
+        # Entity-level budget guard: once exhausted, stop the entity loop too,
+        # so entities whose scans never ran are NOT reported as staged.
+        if ($budgetExhausted) { break }
+        # One report entry per ENTITY (not per axis scan).
         $stagedEntitiesReport += [pscustomobject]@{
             EntityId    = $entity.EntityId
             TankName    = $entity.TankName
@@ -378,12 +436,19 @@ while ($stagingAttempt -lt $MaxStagingAttempts) {
         }
     }
 
-    if ($staged.Count -ge 3) { break }
-    if ($stagingAttempt -lt $MaxStagingAttempts) {
-        Write-Od048 'staging retry in 15s (battle may still be loading)'
-        Start-Sleep -Seconds 15
+    if ($staged.Count -ge 3 -or $budgetExhausted) { break }
+    if ($stagingAttempt -lt $MaxStagingAttempts -and -not $budgetExhausted) {
+        # Budget-aware retry: never sleep past the staging deadline.
+        $retrySleepSeconds = 15
+        if ($null -ne $stagingDeadlineUtc) {
+            $remainingToDeadline = ($stagingDeadlineUtc - [datetime]::UtcNow).TotalSeconds
+            if ($remainingToDeadline -lt 15) { $retrySleepSeconds = [Math]::Max(0, [int]$remainingToDeadline) }
+        }
+        Write-Od048 ("staging retry in {0}s (battle may still be loading)" -f $retrySleepSeconds)
+        Start-Sleep -Seconds $retrySleepSeconds
     }
 }
+$stagingEndUtc = [datetime]::UtcNow
 if ($staged.Count -lt 3) {
     Write-Od048 ("FAILED_staging_too_small staged=" + $staged.Count)
     exit 2
@@ -402,6 +467,16 @@ while ($round -lt $MaxReadRounds) {
     if ($null -eq $gate -or $gate.verificationState -ne 'OfflineReplayVerified') {
         $stoppedReason = 'gate-lost'
         Write-Od048 ("monitor_stop gate=" + (if ($null -eq $gate) { 'no-host' } else { [string]$gate.verificationState }))
+        break
+    }
+
+    # End-of-battle early exit: once the UPPER bound on wall-time battle end
+    # (nominal duration + max load latency + trailing window) has elapsed,
+    # further rounds only observe an empty world -- stop and correlate what we
+    # have instead of burning rounds.
+    if ($null -ne $monitorExitUtc -and ([datetime]::UtcNow -gt $monitorExitUtc)) {
+        $stoppedReason = 'battle-ended'
+        Write-Od048 'monitor_stop battle-ended'
         break
     }
 
@@ -549,13 +624,17 @@ $report = [ordered]@{
     durationTicks          = $trajectory.durationTicks
     replayStartWallTimeUtc = $replayStartWallUtc
     staged                 = [ordered]@{
-        entities   = $stagedEntitiesReport
-        union      = $staged.Count
-        capped     = ($staged.Count -ge $MaxStaged)
-        attempts   = $stagingAttempt
-        delayS     = $StageDelaySeconds
-        tolerance  = $stagingTolerance
-        maxSpeed   = $maxSpeedGlobal
+        entities        = $stagedEntitiesReport
+        union           = $staged.Count
+        capped          = ($staged.Count -ge $MaxStaged)
+        attempts        = $stagingAttempt
+        delayS          = $StageDelaySeconds
+        tolerance       = $stagingTolerance
+        maxSpeed        = $maxSpeedGlobal
+        durationS       = [Math]::Round($durationSeconds, 1)
+        stagingS        = [Math]::Round(($stagingEndUtc - $stagingStartUtc).TotalSeconds, 1)
+        budgetExhausted = $budgetExhausted
+        monitorMinS     = $monitorMinSeconds
     }
     monitor                = [ordered]@{
         rounds               = $round

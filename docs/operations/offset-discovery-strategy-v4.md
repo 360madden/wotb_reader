@@ -49,7 +49,7 @@ spent on it first.
 | Read primitive | `IGameMemoryScanner.ReadAddressesAsync` + `POST /api/v1/game/discover/read` | Re-reads a staged set of absolute addresses (≤ 2000/call) through the guarded reader; the missing "monitor a fixed candidate set across time" capability. |
 | Correlate endpoint | `POST /api/v1/game/discover/correlate` | Loads ground truth, runs the scorer, returns ranked survivors. |
 | Trajectory endpoint | `GET /api/v1/game/discover/trajectory/{sessionId}` | Serves the downsampled ground truth for staging and reporting. |
-| Session driver | `scripts/od-048-monitor-correlate-session.ps1` | Gate wait → load-settle delay → stage (viewpoint + top movers; scans target the ground-truth sample nearest the expected current tick, tolerance auto-scaled from max entity speed × load-latency bound, retried until the battle is loaded) → monitor loop (re-read every 2s) → correlate → JSON report with verdict. No operator input after launch. |
+| Session driver | `scripts/od-048-monitor-correlate-session.ps1` | Gate wait → load-settle delay → stage (viewpoint + top movers; scans target the ground-truth sample nearest the expected current tick, tolerance auto-scaled from max entity speed × load-latency bound, retried until the battle is loaded; **battle-time budget**: staging deadline = decoded battle duration − 30s monitor minimum, so slow scans cannot consume the whole battle) → monitor loop (re-read every 2s, early-exits `battle-ended` once the decoded duration elapses) → correlate → JSON report with verdict. No operator input after launch. |
 
 **Key evidence fact (verified from the decoded session):** the replay clock
 runs at **10,000,000 ticks per real second** — the synthetic 120s fixture is
