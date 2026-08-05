@@ -142,3 +142,31 @@ exceeded the 30s bound). Such survivors are demoted from "strong" to
 edge-aligned survivors exist, and the report gains `suspectEdgeAligned` plus
 a `correlate.shiftAudit` section (threshold + suspect count). A clean strong
 survivor must now be score ≥ 0.7 AND not edge-aligned.
+
+## Amendment 3 (2026-08-04) — second bug-fix pass (shift band, staging staleness)
+
+Round-2 deep-analysis found two more real defects; both fixed with tests:
+
+1. **Shift-band masking of edge alignment (scorer + audit).** The
+   closest-to-zero tie-break pulls the reported `ShiftSeconds` toward zero by
+   up to (tolerance / local slope) seconds, so a true alignment riding the
+   sweep edge could be reported as a benign interior shift and escape the
+   edge audit. `CountMatches` now also tracks the AMBIGUITY BAND [min, max]
+   of shifts achieving the best count; `TrajectoryCorrelationResult` and
+   `CorrelateResultItemResponse` expose `ShiftMinSeconds`/`ShiftMaxSeconds`;
+   the driver's audit flags when EITHER band edge touches the sweep boundary
+   (method `band-edges` in `correlate.shiftAudit`). Regression test
+   `AmbiguityBandIsReportedAndCanMaskEdgeAlignment` proves a slow-mover
+   aligned at -25s reports shift -22 but band [-28, -22].
+2. **Stale staging tick estimate during long scans (driver).** The estimate
+   was computed once per attempt, but the 9 full-memory scans take tens of
+   seconds each, so the later bands trailed the tank by scan-duration x speed.
+   The estimate is now recomputed PER AXIS immediately before each scan
+   (`staging entity=<id> tick_est=<n>` log lines).
+
+Also: the anchor is now parsed with InvariantCulture +
+AssumeUniversal|AdjustToUniversal (bare-UTC, Z-suffixed, and explicit-offset
+ISO strings all normalize correctly); `SqliteTrajectoryGroundTruthProvider`
+treats NULL/zero `duration_ticks` as not-found instead of returning a
+degenerate ground truth. Full suite 588 passed / 0 failed; PSSA gate 0
+warnings.

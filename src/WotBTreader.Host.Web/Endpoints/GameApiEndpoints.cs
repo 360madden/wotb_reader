@@ -867,6 +867,8 @@ internal static class GameApiEndpoints
                 result.Axis,
                 result.Sign,
                 result.ShiftSeconds,
+                result.ShiftMinSeconds,
+                result.ShiftMaxSeconds,
                 result.MatchCount,
                 result.TotalSamples,
                 result.Span,

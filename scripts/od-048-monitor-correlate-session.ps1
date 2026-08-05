@@ -311,7 +311,13 @@ Write-Od048 ("staging_entities=" + $stagingEntities.Count)
 # live positions exist only after load, and by scan time the tank is seconds
 # into the battle. The speed-scaled tolerance absorbs the unknown load latency;
 # the shift sweep then aligns the observed series to the ground truth.
-$anchorUtc = [datetime]$replayStartWallUtc
+# Parse the anchor robustly: Z-suffixed, bare-UTC, and explicit-offset ISO
+# strings all normalize to UTC (a bare string is ASSUMED UTC, per the
+# documented contract, so it must NOT be reinterpreted as local time).
+$anchorUtc = [datetime]::Parse(
+    $replayStartWallUtc,
+    [Globalization.CultureInfo]::InvariantCulture,
+    ([Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal))
 $staged = [System.Collections.Generic.List[string]]::new()
 $stagedEntitiesReport = @()
 $stagingAttempt = 0
@@ -319,16 +325,27 @@ while ($stagingAttempt -lt $MaxStagingAttempts) {
     $stagingAttempt += 1
     $staged.Clear()
     $stagedEntitiesReport = @()
-    $elapsedSeconds = ((Get-Date).ToUniversalTime() - $anchorUtc).TotalSeconds
-    if ($elapsedSeconds -lt 0) { $elapsedSeconds = 0 }
-    $stageTickEstimate = [long]($elapsedSeconds * 10000000.0)
-    Write-Od048 ("staging attempt={0} elapsed_s={1} tick_est={2}" -f $stagingAttempt, [Math]::Round($elapsedSeconds, 1), $stageTickEstimate)
+    $attemptElapsed = ((Get-Date).ToUniversalTime() - $anchorUtc).TotalSeconds
+    Write-Od048 ("staging attempt={0} elapsed_s={1}" -f $stagingAttempt, [Math]::Round([Math]::Max(0.0, $attemptElapsed), 1))
 
     foreach ($entity in $stagingEntities) {
-        $sample = Select-NearestSample -Samples $entity.Samples -TargetTick $stageTickEstimate
-        $axisValues = @{ x = $sample.x; y = $sample.y; z = $sample.z }
+        $entityLogged = $false
         foreach ($axis in @('x', 'y', 'z')) {
-            $axisValue = [double]$axisValues[$axis]
+            # Fresh tick estimate PER AXIS: the estimate computed at attempt
+            # start goes stale while the full-memory scans run (tens of
+            # seconds each), so the band would trail the tank by scan duration
+            # x speed. Recentering before every scan keeps each band on target.
+            $elapsedSeconds = ((Get-Date).ToUniversalTime() - $anchorUtc).TotalSeconds
+            if ($elapsedSeconds -lt 0) { $elapsedSeconds = 0 }
+            $stageTickEstimate = [long]($elapsedSeconds * 10000000.0)
+            if (-not $entityLogged) {
+                Write-Od048 ("staging entity={0} tick_est={1}" -f $entity.EntityId, $stageTickEstimate)
+                $entityLogged = $true
+            }
+            $sample = Select-NearestSample -Samples $entity.Samples -TargetTick $stageTickEstimate
+            $rawAxisValue = $sample.$axis
+            if ($null -eq $rawAxisValue) { continue }
+            $axisValue = [double]$rawAxisValue
             if (-not (Test-FiniteDouble -Value $axisValue)) { continue }
             $scanBody = @{
                 FieldName        = ('corr-' + $axis + '-' + [string]$entity.EntityId)
@@ -501,8 +518,16 @@ $edgeThreshold = [Math]::Max(2, $MaxTimeShiftSeconds - 2)
 $edgeAlignedSurvivors = @()
 foreach ($result in $results) {
     $shift = if ($null -eq $result.shiftSeconds) { 0.0 } else { [double]$result.shiftSeconds }
-    $isEdgeAligned = ([Math]::Abs($shift) -ge $edgeThreshold)
+    # Band-based edge detection: the closest-to-zero reported shift can mask an
+    # edge-riding alignment by up to (tolerance / local slope) seconds, so flag
+    # when EITHER band edge touches the sweep boundary. (Older hosts without
+    # the band fields fall back to the reported shift.)
+    $minShift = if ($null -eq $result.shiftMinSeconds) { $shift } else { [double]$result.shiftMinSeconds }
+    $maxShift = if ($null -eq $result.shiftMaxSeconds) { $shift } else { [double]$result.shiftMaxSeconds }
+    $isEdgeAligned = ([Math]::Abs($minShift) -ge $edgeThreshold) -or ([Math]::Abs($maxShift) -ge $edgeThreshold)
     $result | Add-Member -NotePropertyName edgeAligned -NotePropertyValue $isEdgeAligned -Force
+    $result | Add-Member -NotePropertyName shiftBandMinSeconds -NotePropertyValue $minShift -Force
+    $result | Add-Member -NotePropertyName shiftBandMaxSeconds -NotePropertyValue $maxShift -Force
     if ($isEdgeAligned -and $result.score -ge 0.7) {
         $edgeAlignedSurvivors += $result
     }
@@ -546,6 +571,7 @@ $report = [ordered]@{
         shiftAudit            = [ordered]@{
             edgeThresholdSeconds = $edgeThreshold
             edgeAlignedSuspects  = $edgeAlignedSurvivors.Count
+            method               = 'band-edges'
         }
     }
     results                = @($results | Select-Object -First 50 | ForEach-Object {
@@ -555,9 +581,11 @@ $report = [ordered]@{
             entityId      = $_.entityId
             axis          = $_.axis
             sign          = $_.sign
-            shiftSeconds  = $_.shiftSeconds
-            edgeAligned   = $_.edgeAligned
-            matchCount    = $_.matchCount
+            shiftSeconds       = $_.shiftSeconds
+            shiftBandMinSeconds = $_.shiftBandMinSeconds
+            shiftBandMaxSeconds = $_.shiftBandMaxSeconds
+            edgeAligned        = $_.edgeAligned
+            matchCount         = $_.matchCount
             totalSamples  = $_.totalSamples
             span          = $_.span
             score         = $_.score
@@ -570,23 +598,27 @@ $report = [ordered]@{
             entityId      = $_.entityId
             axis          = $_.axis
             sign          = $_.sign
-            shiftSeconds  = $_.shiftSeconds
-            matchCount    = $_.matchCount
-            totalSamples  = $_.totalSamples
-            score         = $_.score
+            shiftSeconds       = $_.shiftSeconds
+            shiftBandMinSeconds = $_.shiftBandMinSeconds
+            shiftBandMaxSeconds = $_.shiftBandMaxSeconds
+            matchCount         = $_.matchCount
+            totalSamples       = $_.totalSamples
+            score              = $_.score
         }
     })
     suspectEdgeAligned      = @($edgeAlignedSurvivors | Select-Object -First 20 | ForEach-Object {
         [ordered]@{
-            address       = $_.address
-            participantId = $_.participantId
-            entityId      = $_.entityId
-            axis          = $_.axis
-            sign          = $_.sign
-            shiftSeconds  = $_.shiftSeconds
-            matchCount    = $_.matchCount
-            totalSamples  = $_.totalSamples
-            score         = $_.score
+            address             = $_.address
+            participantId       = $_.participantId
+            entityId            = $_.entityId
+            axis                = $_.axis
+            sign                = $_.sign
+            shiftSeconds        = $_.shiftSeconds
+            shiftBandMinSeconds = $_.shiftBandMinSeconds
+            shiftBandMaxSeconds = $_.shiftBandMaxSeconds
+            matchCount          = $_.matchCount
+            totalSamples        = $_.totalSamples
+            score               = $_.score
         }
     })
     verdict                = $verdict

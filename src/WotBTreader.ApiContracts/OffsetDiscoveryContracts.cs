@@ -379,6 +379,9 @@ public sealed record CorrelateRequest
 /// Correlated evidence for one monitored address. <see cref="ShiftSeconds"/>
 /// is the sweep shift (real seconds) that produced the best match; negative
 /// when the observed series trails the anchor (e.g. load latency).
+/// <see cref="ShiftMinSeconds"/>/<see cref="ShiftMaxSeconds"/> bound the
+/// ambiguity band (all shifts in [Min, Max] achieve the same match count);
+/// the band edges expose sweep-edge riding that the reported shift can mask.
 /// </summary>
 public sealed record CorrelateResultItemResponse(
     string Address,
@@ -387,6 +390,8 @@ public sealed record CorrelateResultItemResponse(
     string Axis,
     int Sign,
     double ShiftSeconds,
+    double ShiftMinSeconds,
+    double ShiftMaxSeconds,
     int MatchCount,
     int TotalSamples,
     double Span,

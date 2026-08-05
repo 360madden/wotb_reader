@@ -56,8 +56,10 @@ The replay plays at 1x. No operator input after launch.
      `POST /api/v1/game/discover/read` while the replay plays.
    - **Correlate:** `POST /api/v1/game/discover/correlate` scores each
      address's value series against every entity axis (sign flips, 0.5s-step
-     ±30s time-shift sweep, reports the winning `shiftSeconds` for audit) and
-     ranks the survivors.
+     ±30s time-shift sweep, reports the winning `shiftSeconds` plus the
+     ambiguity band `shiftMinSeconds`/`shiftMaxSeconds` for audit) and ranks
+     the survivors; the driver demotes edge-riding survivors (band touching
+     the sweep boundary) to suspect (`evidence-edge-aligned` verdict).
    - **Report:** `.data\od-048-<timestamp>.json` with staged/monitored/
      correlated counts, results, `strongSurvivors` (score ≥ 0.7) and a
      verdict.

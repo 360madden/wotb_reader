@@ -39,8 +39,12 @@ internal sealed class SqliteTrajectoryGroundTruthProvider : ITrajectoryGroundTru
                 connection,
                 sessionId,
                 cancellationToken).ConfigureAwait(false);
-            if (durationTicks < 0)
+            if (durationTicks <= 0)
             {
+                // Missing row OR a NULL/zero duration: either way the replay
+                // clock span is unknown, so the ground-truth window would be
+                // meaningless. Fail closed instead of returning a degenerate
+                // trajectory (evidence-first: unknown stays unknown).
                 return OperationResult.Failure<TrajectoryGroundTruth>(
                     StorageErrors.NotFound("Battle session"));
             }

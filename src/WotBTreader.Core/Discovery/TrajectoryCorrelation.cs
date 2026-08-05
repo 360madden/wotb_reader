@@ -42,6 +42,14 @@ public sealed record ObservedAddressSeries(
 /// Start marker), approximately zero when the anchor matched battle start.
 /// It is the single most diagnostic audit value for whether a survivor is
 /// real.
+///
+/// <see cref="ShiftMinSeconds"/> and <see cref="ShiftMaxSeconds"/> bound the
+/// AMBIGUITY BAND: every shift in [Min, Max] achieves the same match count on
+/// a locally linear trajectory (band width = tolerance / |local slope|). The
+/// reported <see cref="ShiftSeconds"/> is the closest-to-zero point of that
+/// band; the band edges expose how wide the alignment really is and whether
+/// it touches the sweep edge (a boundary-riding alignment is a bad-anchor
+/// symptom even when the reported shift looks benign).
 /// </summary>
 public sealed record TrajectoryCorrelationResult(
     string Address,
@@ -50,6 +58,8 @@ public sealed record TrajectoryCorrelationResult(
     string Axis,
     int Sign,
     double ShiftSeconds,
+    double ShiftMinSeconds,
+    double ShiftMaxSeconds,
     int MatchCount,
     int TotalSamples,
     double Span,
@@ -218,6 +228,8 @@ public static class TrajectoryCorrelationScorer
             int total = valid.Count;
             int bestMatch = 0;
             double bestShiftSeconds = 0;
+            double bestShiftMinSeconds = 0;
+            double bestShiftMaxSeconds = 0;
             int bestAxisIndex = 0;
             int bestSign = 1;
             ParticipantId? bestParticipant = null;
@@ -239,18 +251,21 @@ public static class TrajectoryCorrelationScorer
                 for (int signIndex = 0; signIndex < 2; signIndex++)
                 {
                     int sign = signIndex == 0 ? 1 : -1;
-                    (int matches, double shiftSeconds) = CountMatches(
-                        valid,
-                        baseTicks,
-                        ground,
-                        sign,
-                        shifts,
-                        tolerancePerAxis,
-                        replayClockTicksPerSecond);
+                    (int matches, double shiftSeconds, double shiftMinSeconds, double shiftMaxSeconds) =
+                        CountMatches(
+                            valid,
+                            baseTicks,
+                            ground,
+                            sign,
+                            shifts,
+                            tolerancePerAxis,
+                            replayClockTicksPerSecond);
                     if (matches > bestMatch)
                     {
                         bestMatch = matches;
                         bestShiftSeconds = shiftSeconds;
+                        bestShiftMinSeconds = shiftMinSeconds;
+                        bestShiftMaxSeconds = shiftMaxSeconds;
                         bestAxisIndex = ground.AxisIndex;
                         bestSign = sign;
                         bestParticipant = ground.ParticipantId;
@@ -281,6 +296,8 @@ public static class TrajectoryCorrelationScorer
                 Axes[bestAxisIndex],
                 bestSign,
                 bestShiftSeconds,
+                bestShiftMinSeconds,
+                bestShiftMaxSeconds,
                 bestMatch,
                 total,
                 span,
@@ -291,7 +308,7 @@ public static class TrajectoryCorrelationScorer
             .ThenByDescending(static r => r.Span)];
     }
 
-    private static (int Matches, double ShiftSeconds) CountMatches(
+    private static (int Matches, double ShiftSeconds, double ShiftMinSeconds, double ShiftMaxSeconds) CountMatches(
         List<CorrelationSample> samples,
         double[] baseTicks,
         AxisSeries ground,
@@ -308,6 +325,8 @@ public static class TrajectoryCorrelationScorer
         // the correct alignment model and a far stronger discriminator.
         int best = 0;
         double bestShiftSeconds = 0;
+        double shiftMinSeconds = 0;
+        double shiftMaxSeconds = 0;
         for (int shiftIndex = 0; shiftIndex < shifts.Length; shiftIndex++)
         {
             double shiftTicks = shifts[shiftIndex] * ticksPerSecond;
@@ -324,26 +343,36 @@ public static class TrajectoryCorrelationScorer
             }
 
             // On a locally linear trajectory many shifts within the tolerance
-            // band tie. Report the one closest to zero: the anchor error is
-            // expected to be small, so the band's center is the least
-            // misleading representation of an indeterminate shift.
-            bool improved = matches > best;
-            bool tiedCloserToZero = matches == best
-                && best > 0
-                && Math.Abs(shifts[shiftIndex]) < Math.Abs(bestShiftSeconds);
-            if (improved || tiedCloserToZero)
+            // band tie. The reported shift is the closest-to-zero candidate
+            // (the anchor error is expected small, so the band's center is the
+            // least misleading point), but the BAND [min, max] is tracked for
+            // every shift achieving the best count so callers can see the full
+            // alignment ambiguity and detect sweep-edge riding.
+            if (matches > best)
             {
                 best = matches;
                 bestShiftSeconds = shifts[shiftIndex];
-                if (best == samples.Count && bestShiftSeconds == 0)
+                shiftMinSeconds = shifts[shiftIndex];
+                shiftMaxSeconds = shifts[shiftIndex];
+            }
+            else if (matches == best && best > 0)
+            {
+                shiftMinSeconds = Math.Min(shiftMinSeconds, shifts[shiftIndex]);
+                shiftMaxSeconds = Math.Max(shiftMaxSeconds, shifts[shiftIndex]);
+                if (Math.Abs(shifts[shiftIndex]) < Math.Abs(bestShiftSeconds))
                 {
-                    // Perfect alignment under the zero shift — cannot improve.
-                    break;
+                    bestShiftSeconds = shifts[shiftIndex];
                 }
             }
+
+            // No early break on perfect alignment: scanning every shift keeps
+            // the ambiguity band COMPLETE (an early exit at shift 0 would
+            // truncate the positive extent of a wide symmetric band, e.g.
+            // reporting [-15, 0] for a true [-15, +15]). The full sweep is a
+            // bounded one-shot cost (<= 241 shifts at 120s/0.5s step).
         }
 
-        return (best, bestShiftSeconds);
+        return (best, bestShiftSeconds, shiftMinSeconds, shiftMaxSeconds);
     }
 
     private static List<AxisSeries> BuildGroundSeries(

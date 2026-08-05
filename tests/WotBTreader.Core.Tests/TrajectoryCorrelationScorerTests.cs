@@ -445,6 +445,51 @@ public sealed class TrajectoryCorrelationScorerTests
     }
 
     [TestMethod]
+    public void AmbiguityBandIsReportedAndCanMaskEdgeAlignment()
+    {
+        // Slow slope (2 units/s): the tie band is tolerance/slope = 3s wide.
+        // The series was recorded 25s AFTER the anchor (observed = GT(wall - 25)),
+        // so the true alignment is -25 and every shift in [-28, -22] matches
+        // perfectly. The closest-to-zero REPORTED shift is -22, which looks
+        // benign; only the band edges (-28) expose that the alignment rides
+        // the sweep boundary. This is the masking the driver's band-based
+        // edge audit is designed to catch.
+        TrajectoryGroundTruth slowRamp = new(
+            1_000_000_000,
+            [
+                new EntityTrajectory(
+                    new ParticipantId(Guid.NewGuid()),
+                    EntityId: 60,
+                    "SlowRamp",
+                    IsViewpoint: true,
+                    [
+                        new TrajectorySample(0, 0, 0, 0),
+                        // 200 units over 100s = 2 units/s.
+                        new TrajectorySample(1_000_000_000, 200, 0, 0),
+                    ]),
+            ]);
+        List<CorrelationSample> samples = [];
+        for (int index = 0; index < 5; index++)
+        {
+            int second = 10 + (index * 10);
+            samples.Add(new CorrelationSample(Start.AddSeconds(second + 25), 2 * second));
+        }
+
+        IReadOnlyList<TrajectoryCorrelationResult> results = TrajectoryCorrelationScorer.Score(
+            slowRamp,
+            Start,
+            [new ObservedAddressSeries("0xE000", samples)],
+            maxTimeShiftSeconds: 30);
+
+        Assert.HasCount(1, results);
+        Assert.AreEqual(1.0, results[0].Score, 0.001);
+        // Reported shift is the closest-to-zero point of the band [-28, -22].
+        Assert.AreEqual(-22.0, results[0].ShiftSeconds, 0.001);
+        Assert.AreEqual(-28.0, results[0].ShiftMinSeconds, 0.001);
+        Assert.AreEqual(-22.0, results[0].ShiftMaxSeconds, 0.001);
+    }
+
+    [TestMethod]
     public void InvalidArgumentsAreRejected()
     {
         Assert.ThrowsExactly<ArgumentNullException>(() =>
