@@ -21,7 +21,8 @@ runbook (phase sequence + timing budget) and
 
 | Fact | Value |
 |---|---|
-| Session id (Dead Rail) | `019fb86c-c8e7-7004-9df6-a574f5a7835b` |
+| Session id (Dead Rail, `.data` reference) | `019fb86c-c8e7-7004-9df6-a574f5a7835b` |
+| Session id (LIVE host, per-import) | **auto-pick** — the OD launch host serves `%LocalAppData%\WotBTreader\treader.db`, and every import creates a NEW Dead Rail session id (e.g. `019fd261-721b-7171-a15e-7cfa6675931c` on 08-05). Hardcoding a `.data` session id 404s the trajectory fetch (live-round blocker, 2026-08-05). |
 | Map / duration | Dead Rail, `duration_ticks 2,713,761,600` ≈ **271.4 s** |
 | Battle time (UTC) | 2026-07-29T17:35:16Z |
 | Game version | 11.19.0 (decoder `wotb-11.x-strict`, run status 2/complete) |
@@ -36,13 +37,15 @@ runbook (phase sequence + timing budget) and
 | Launch-dir replay (matches artifact hash) | `.data\launch\a9aed0467d7843efb06bb3319bb52ded.wotbreplay` |
 | What the launch script picks | Newest **original** `.wotbreplay` in `%LOCALAPPDATA%\wotblitz\DAVAProject\replays\` (top-level only; skips GUID leftovers and `wotbtreader-staging\`), or `-ReplayPath` |
 
-**Verification step (do not skip):** after import, confirm
-`./treader.cmd sessions` shows `019fb86c-…` (or `dotnet` CLI equivalent) and
-that `GET /api/v1/game/discover/trajectory/{id}` returns the Churchill_I
+**Verification step (do not skip):** after import, confirm the host's
+`GET /api/v1/sessions?limit=1` newest item is the Dead Rail battle just
+launched (a NEW per-import session id — the `.data` reference id
+`019fb86c-…` will NOT be present on the live host, which serves
+`%LocalAppData%\WotBTreader\treader.db`) and that
+`GET /api/v1/game/discover/trajectory/{newestId}` returns the Churchill_I
 series. If the newest game-folder replay is NOT the Dead Rail battle, pass
-`-ReplayPath` to the launch script explicitly — the driver's `-SessionId`
-pins the *ground truth*, but the *played battle* must be the same one or the
-correlation has no signal.
+`-ReplayPath` to the launch script explicitly — the *played battle* must be
+the one auto-picked, or the correlation has no signal.
 
 ## The live sequence (one launch, one window)
 
@@ -53,8 +56,12 @@ correlation has no signal.
    publish blocker). The OD launch path now fail-closes
    (`FAILED_host_stale_build`) if `bin\Release` is older than the newest
    `src\*.cs`.
-2. **Trajectory check:** `GET /api/v1/game/discover/trajectory/019fb86c-c8e7-7004-9df6-a574f5a7835b`
-   → 200 with 14 entities, viewpoint Churchill_I, real x/y/z samples.
+2. **Trajectory check (live host):** `GET /api/v1/sessions?limit=1` → newest
+   item is Dead Rail (a per-import id), then `GET
+   /api/v1/game/discover/trajectory/{newestId}` → 200 with 14 entities,
+   viewpoint Churchill_I, real x/y/z samples. (The `.data` reference id
+   `019fb86c-…` is NOT served by the OD launch host — see the live-session
+   note above.)
 3. **Rendezvous:** `%LocalAPPDATA%\WotBTreader\rendezvous\web.json` present
    (the driver discovers the host through it).
 
@@ -109,16 +116,22 @@ cover. **Never** let M2's lazy `-AutoWriteTrace` pre-arm do it: a mid-monitor
 attach-pause stalls the replay while M1 is collecting samples, and a lazy
 pre-arm burns up to 15s of the green window.
 
-### Phase 2 — M1: monitor + correlate (the pinned command)
+### Phase 2 — M1: monitor + correlate (auto-pick the LIVE session)
 
 ```powershell
 powershell -File scripts/od-048-monitor-correlate-session.ps1 `
-  -SessionId 019fb86c-c8e7-7004-9df6-a574f5a7835b `
   -MaxReadRounds 70 `
+  -AutoWriteTraceOnVerdict `
   -ResultPath .data\od-048-live.json
 ```
 
-- `-SessionId` pins the ground truth (never let it auto-pick).
+- **No `-SessionId`.** The OD launch host serves `%LocalAppData%\WotBTreader`
+  (the launch script does not set `Paths__ApplicationDataRoot`), and every
+  import creates a NEW session id — the driver auto-picks the host's newest
+  session (`/api/v1/sessions`, field `session.battleSessionId`), which is
+  exactly the battle just launched. A hardcoded `.data` id (like the old
+  `019fb86c-…`) 404s the trajectory fetch (live-round blocker, 2026-08-05).
+  `-SessionId` remains available for pinned replay of a specific session.
 - `-MaxReadRounds 70` is the first-attempt budget: rounds run ~3s, not 2s;
   the 90 default lands the final correlate PAST battle end (271s) and
   collapses the green window to zero. Watch the `round=N/M series=… samples=…`
@@ -206,9 +219,9 @@ not a replay rewind.
 1. ✅ **DONE (2026-08-05):** `-AutoWriteTraceOnVerdict` built into od-048
    (same-process write-trace invocation on a usable-family verdict; separate
    `od-048-autotrace-*.json` report; M1 exit stays 0). The live round is now a
-   single command: `od-048-monitor-correlate-session.ps1 -SessionId
-   019fb86c-… -MaxReadRounds 70 -AutoWriteTraceOnVerdict -ResultPath
-   .data\od-048-live.json`.
+   single command (auto-picks the host's newest session):
+   `od-048-monitor-correlate-session.ps1 -MaxReadRounds 70
+   -AutoWriteTraceOnVerdict -ResultPath .data\od-048-live.json`.
 2. Verify the game replays folder's newest file before the session and pin
    `-ReplayPath` in the session runbook.
 3. Run the live round with this checklist; append the outcome (exit codes,

@@ -366,7 +366,14 @@ if ($StageDelaySeconds -gt 0) { Start-Sleep -Seconds $StageDelaySeconds }
 # -- Ground truth --
 $battleSessionId = $SessionId
 if ([string]::IsNullOrWhiteSpace($battleSessionId)) {
-    $page = Invoke-Api -Rendezvous $rendezvous -Method 'Get' -RelativePath '/api/v1/read/sessions?limit=50'
+    # The read API route is /api/v1/sessions (the old /api/v1/read/sessions
+    # prefix 404'd -- 2026-08-05 live-round fix), and the wire field is
+    # session.battleSessionId (NOT session.id). The launch flow imports the
+    # replay into the HOST's data root (the OD launch host defaults to
+    # %LocalAppData%\WotBTreader, not .data), so the newest session in THIS
+    # host is the just-imported battle -- auto-pick must use the host's own
+    # list, never a hardcoded id from another data root.
+    $page = Invoke-Api -Rendezvous $rendezvous -Method 'Get' -RelativePath '/api/v1/sessions?limit=50'
     if ($null -eq $page -or $page.items.Count -eq 0) {
         Write-Od048 'FAILED_no_decoded_session'
         exit 2
@@ -379,7 +386,8 @@ if ([string]::IsNullOrWhiteSpace($battleSessionId)) {
         Write-Od048 'FAILED_newest_session_null'
         exit 2
     }
-    $battleSessionId = [string]$newestSession.session.id
+    $battleSessionId = [string]$newestSession.session.battleSessionId
+    Write-Od048 ("auto_picked_session=" + $battleSessionId)
 }
 Write-Od048 ("ground_truth_session=" + $battleSessionId)
 
