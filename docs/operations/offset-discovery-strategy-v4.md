@@ -47,9 +47,10 @@ spent on it first.
 | Pure correlation scorer | `Core/Discovery/TrajectoryCorrelation.cs` | Scores a monitored 1-D address series against every entity axis of the decoded trajectory. Per-axis with sign flips, piecewise-linear tick lookup, **sub-second (0.5s-step) time-shift sweep** (driver default ±30s) that absorbs Start-marker anchor error AND load latency — no precise pause, no OCR. Reports the winning `shiftSeconds` (the anchor error) AND the ambiguity band `shiftMinSeconds`/`shiftMaxSeconds` (all shifts achieving the same match count) for audit — the band edges expose sweep-edge riding that the closest-to-zero reported shift can mask. Excludes stationary ground-truth axes and constant observed series. 16 unit tests. |
 | Ground-truth provider | `Storage.Sqlite/SqliteTrajectoryGroundTruthProvider.cs` | Reads `position_samples` per participant from the decoded session, downsampled to ≤ 256 samples/entity, plus `duration_ticks` and the `viewpoint_participant_id` (local player). Purely offline. |
 | Read primitive | `IGameMemoryScanner.ReadAddressesAsync` + `POST /api/v1/game/discover/read` | Re-reads a staged set of absolute addresses (≤ 2000/call) through the guarded reader; the missing "monitor a fixed candidate set across time" capability. |
-| Correlate endpoint | `POST /api/v1/game/discover/correlate` | Loads ground truth, runs the scorer, returns ranked survivors. |
+| Correlate endpoint | `POST /api/v1/game/discover/correlate` | Loads ground truth, runs the scorer, returns ranked survivors plus the M2 `families` section. |
+| Family builder | `Core/Discovery/TrajectoryFamily.cs` | Pure M2 grouping (no live access): scored addresses inside one base-relative 16-byte window reproducing the SAME entity's axes become a family, with member offsets, axes covered, and `Complete` = the clean x/y/z triple at distinct offsets with no edge-aligned member (multi-copy families are reported but flagged incomplete). 12 unit tests. |
 | Trajectory endpoint | `GET /api/v1/game/discover/trajectory/{sessionId}` | Serves the downsampled ground truth for staging and reporting. |
-| Session driver | `scripts/od-048-monitor-correlate-session.ps1` | Gate wait → load-settle delay → stage (viewpoint + top movers; scans target the ground-truth sample nearest the expected current tick, tolerance auto-scaled from max entity speed × load-latency bound, retried until the battle is loaded; **battle-time budget**: staging deadline = decoded battle duration − 30s monitor minimum, so slow scans cannot consume the whole battle) → monitor loop (re-read every 2s, early-exits `battle-ended` once the decoded duration elapses) → correlate → JSON report with verdict. No operator input after launch. |
+| Session driver | `scripts/od-048-monitor-correlate-session.ps1` | Gate wait → load-settle delay → stage (viewpoint + top movers; scans target the ground-truth sample nearest the expected current tick, tolerance auto-scaled from max entity speed × load-latency bound, retried until the battle is loaded; **battle-time budget**: staging deadline = decoded battle duration − 30s monitor minimum, so slow scans cannot consume the whole battle) → monitor loop (re-read every 2s; early-exits `battle-ended`; at round 10 a provisional correlate re-stages the ±16-byte neighbors of the top non-edge-aligned survivors) → correlate (family-neighbor series kept first under the 2000 server cap; response `families` section) → JSON report with verdict (upgraded to `family-complete` for a clean triple). No operator input after launch. |
 
 **Key evidence fact (verified from the decoded session):** the replay clock
 runs at **10,000,000 ticks per real second** — the synthetic 120s fixture is
@@ -76,9 +77,14 @@ amendment.
   Launch the replay, let it play, run `od-048-monitor-correlate-session.ps1`.
   Verdict from the report: strong survivors = score ≥ 0.7 (addresses that
   reproduce ≥ 70% of the movement samples).
-- **M2 — Family mapping + write-trace.** For each strong survivor, read the
-  ±4-byte neighbors (the other two coordinate components) and confirm they
-  correlate; then pre-arm x32dbg and write-trace the surviving family.
+- **M2 — Family mapping + write-trace.** Read-side BUILT (2026-08-05): the
+  driver re-stages the ±16-byte neighbors of the top provisional survivors
+  mid-battle, and the correlate response's `families` section groups the
+  scored addresses into coordinate families (same entity, one byte window;
+  `complete` = the clean x/y/z triple at distinct offsets with no edge-aligned
+  member). One session maps all three coordinate components, and the verdict
+  upgrades to `family-complete`. Write-side (pre-arm x32dbg + write-trace)
+  remains the live step.
 - **M3 — Repeatability + publication.** 2 launches × 2 replays, then publish
   per the workflow Phase 5.
 

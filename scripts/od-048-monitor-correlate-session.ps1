@@ -1,10 +1,12 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  OD-048 monitor-and-correlate session driver (strategy v4, M1): stage
+  OD-048 monitor-and-correlate session driver (strategy v4, M1 + M2): stage
   candidate addresses from the decoded replay trajectory, monitor them while
   the replay plays, and correlate each address's value series against the
-  replay's known trajectory.
+  replay's known trajectory. M2 family mapping: mid-battle, the driver
+  re-stages the +/-16-byte neighbors of the top provisional survivors so the
+  final correlate maps the sibling x/y/z components in the same session.
 
 .DESCRIPTION
   This is the replay-guided correlation layer that replaces the exact-pause
@@ -20,6 +22,16 @@
   (verdict evidence-edge-aligned) and listed under suspectEdgeAligned -- a
   boundary-aligned shift means the true alignment is probably beyond the
   sweep (bad anchor or load latency exceeded the bound).
+
+  Family mapping (M2): after -FamilyRefineAfterRounds rounds, a provisional
+  correlate picks the top non-edge-aligned survivors (score >=
+  -FamilyMinScore, cap -FamilySurvivorCap); their +/-16-byte neighbors are
+  added to the staged set, so the remaining rounds record the sibling
+  components. The final correlate's families section groups the scored
+  addresses into coordinate families (same entity, one byte window); a family
+  whose three members reproduce x/y/z at distinct offsets (none edge-aligned)
+  upgrades the verdict to family-complete -- one session mapped the whole
+  coordinate vector.
 
   Staging: the driver fetches the decoded session trajectory (viewpoint
   entity first, then the most-moving entities), waits -StageDelaySeconds for
@@ -84,6 +96,20 @@ param(
     [int]$MaxTimeShiftSeconds = 30,
     # Observed series with a span below this are treated as constants.
     [double]$MinMovingSpan = 0.5,
+    # Family refinement (M2): after this many monitor rounds, a provisional
+    # correlate picks the top survivors and their +/-FamilyWindowBytes
+    # neighbors are added to the staged set for the remaining rounds, so one
+    # session can map the sibling x/y/z components without a second launch.
+    [int]$FamilyRefineAfterRounds = 10,
+    # Provisional-survivor cap for family refinement (8 neighbors each => up
+    # to 200 extra staged addresses, comfortably inside the read chunk).
+    [int]$FamilySurvivorCap = 25,
+    # Byte window around each survivor: three float32s are 12 bytes; 16 leaves
+    # headroom for padding or an interleaved field. Neighbor offsets are read
+    # at every 4-byte step inside [-Window, +Window] excluding 0.
+    [int]$FamilyWindowBytes = 16,
+    # Minimum score for a provisional survivor to seed a family.
+    [double]$FamilyMinScore = 0.7,
     # Addresses per /discover/read call (server cap is 2000).
     [int]$ReadChunk = 500,
     # Optional wall-clock anchor override (ISO-8601 UTC) captured from the
@@ -210,6 +236,63 @@ function Convert-ToFloatHex {
 function Test-FiniteDouble {
     param([double]$Value)
     return -not ([double]::IsNaN($Value) -or [double]::IsInfinity($Value))
+}
+
+# Server cap on correlate observations (matches the endpoint validation); the
+# driver keeps the family-neighbor series inside the cap with priority.
+$correlateMaxObservations = 2000
+
+# Build the correlate observations array from the monitored series.
+function Get-CorrelateObservations {
+    param([object]$Series)
+    $obs = @()
+    foreach ($addressKey in $Series.Keys) {
+        $list = [System.Collections.Generic.List[object]]$Series[$addressKey]
+        if ($list.Count -lt 2) { continue }
+        $obs += @{
+            Address = $addressKey
+            Samples = @($list | ForEach-Object {
+                @{ wallTimeUtc = $_.wallTimeUtc; value = $_.value }
+            })
+        }
+    }
+    return $obs
+}
+
+function New-CorrelateBody {
+    param(
+        [object]$Observations,
+        [string]$SessionId,
+        [string]$ReplayStartWallTimeUtc,
+        [double]$TolerancePerAxis,
+        [int]$MaxTimeShiftSeconds,
+        [double]$MinMovingSpan
+    )
+    return @{
+        groundTruthSessionId   = $SessionId
+        replayStartWallTimeUtc = $ReplayStartWallTimeUtc
+        tolerancePerAxis       = $TolerancePerAxis
+        maxTimeShiftSeconds    = $MaxTimeShiftSeconds
+        minMovingSpan          = $MinMovingSpan
+        observations           = $Observations
+    }
+}
+
+# Neighbor addresses at every 4-byte step inside +/-WindowBytes (excluding the
+# survivor itself): a 16-byte window yields -16,-12,-8,-4,+4,+8,+12,+16.
+function Get-FamilyNeighborAddresses {
+    param([string]$Address, [int]$WindowBytes, [int]$ValueSize = 4)
+    $hex = $Address
+    if ($hex.StartsWith('0x', [StringComparison]::OrdinalIgnoreCase)) { $hex = $hex.Substring(2) }
+    $value = [long]::Parse($hex, [Globalization.NumberStyles]::HexNumber, [Globalization.CultureInfo]::InvariantCulture)
+    $neighbors = @()
+    for ($offset = -$WindowBytes; $offset -le $WindowBytes; $offset += $ValueSize) {
+        if ($offset -eq 0) { continue }
+        $neighborValue = $value + $offset
+        if ($neighborValue -le 0) { continue }
+        $neighbors += ('0x{0:X}' -f $neighborValue)
+    }
+    return $neighbors
 }
 
 # -- Preflight: rendezvous + verified gate --
@@ -404,6 +487,16 @@ if ($null -ne $battleEndUtc) {
 $stagingStartUtc = [datetime]::UtcNow
 $budgetExhausted = $false
 $scanFailed = $false
+# Edge threshold for the shift-band audit: computed ONCE before staging so the
+# mid-battle family refinement and the final survivor audit share the formula.
+$edgeThreshold = [Math]::Max(2, $MaxTimeShiftSeconds - 2)
+# Family refinement state (M2): provisional-survivor addresses, the staged
+# neighbor set, and whether the mid-battle pass already ran.
+$familyRefined = $false
+$familyRefineRound = 0
+$familySurvivors = @()
+$familyStaged = [System.Collections.Generic.HashSet[string]]::new()
+$familyNeighborAdded = 0
 $staged = [System.Collections.Generic.List[string]]::new()
 $stagedEntitiesReport = @()
 $stagingAttempt = 0
@@ -506,6 +599,9 @@ if ($staged.Count -lt 3) {
     exit 2
 }
 Write-Od048 ("staged=" + $staged.Count)
+# Snapshot the SCAN-only staged count before the mid-battle family expansion
+# so the report's staged.union/capped reflect the scan cap, not the expansion.
+$scanStagedCount = $staged.Count
 
 # -- Monitor loop --
 $series = [System.Collections.Generic.Dictionary[string, object]]::new()
@@ -595,6 +691,46 @@ while ($round -lt $MaxReadRounds) {
         }
     }
 
+    # Family refinement (M2): once the series carry enough evidence, run a
+    # provisional correlate, take the top non-edge-aligned survivors, and add
+    # their +/-FamilyWindowBytes neighbors to the staged set so the remaining
+    # rounds capture the sibling x/y/z components. Refines once per SUCCESSFUL
+    # pass: a transient API failure leaves it unrefined and retries on a later
+    # round (recovery, one extra call per round until it succeeds), while a
+    # pass with no scored series marks it done so an empty world is not
+    # re-correlated.
+    if (-not $familyRefined -and $round -ge $FamilyRefineAfterRounds) {
+        $provisionalObs = @(Get-CorrelateObservations -Series $series |
+            Sort-Object { $_.Samples.Count } -Descending |
+            Select-Object -First $correlateMaxObservations)
+        if ($provisionalObs.Count -gt 0) {
+            $provisional = Invoke-Api -Rendezvous $rendezvous -Method 'Post' -RelativePath '/api/v1/game/discover/correlate' -Body (New-CorrelateBody -Observations $provisionalObs -SessionId $battleSessionId -ReplayStartWallTimeUtc $replayStartWallUtc -TolerancePerAxis $TolerancePerAxis -MaxTimeShiftSeconds $MaxTimeShiftSeconds -MinMovingSpan $MinMovingSpan)
+            if ($null -ne $provisional -and $null -ne $provisional.results) {
+                foreach ($r in @($provisional.results)) {
+                    if ($familySurvivors.Count -ge $FamilySurvivorCap) { break }
+                    if ($null -eq $r.score -or [double]$r.score -lt $FamilyMinScore) { continue }
+                    $minShift = if ($null -eq $r.shiftMinSeconds) { 0.0 } else { [double]$r.shiftMinSeconds }
+                    $maxShift = if ($null -eq $r.shiftMaxSeconds) { 0.0 } else { [double]$r.shiftMaxSeconds }
+                    if (([Math]::Abs($minShift) -ge $edgeThreshold) -or ([Math]::Abs($maxShift) -ge $edgeThreshold)) { continue }
+                    $familySurvivors += [string]$r.address
+                }
+                foreach ($address in $familySurvivors) {
+                    foreach ($neighbor in (Get-FamilyNeighborAddresses -Address $address -WindowBytes $FamilyWindowBytes)) {
+                        if ($familyStaged.Contains($neighbor)) { continue }
+                        $familyStaged.Add($neighbor) | Out-Null
+                        if (-not $staged.Contains($neighbor)) {
+                            $staged.Add($neighbor)
+                            $familyNeighborAdded += 1
+                        }
+                    }
+                }
+                $familyRefined = $true
+                $familyRefineRound = $round
+                Write-Od048 ("family_refined round={0} survivors={1} neighbors_added={2}" -f $round, $familySurvivors.Count, $familyNeighborAdded)
+            }
+        }
+    }
+
     if (($round % 10) -eq 0) {
         Write-Od048 ("round={0}/{1} series={2} samples={3}" -f $round, $MaxReadRounds, $series.Count, $readOkSamples)
     }
@@ -605,45 +741,29 @@ while ($round -lt $MaxReadRounds) {
 Write-Od048 ("monitor done rounds={0} reason={1} series={2}" -f $round, $stoppedReason, $series.Count)
 
 # -- Correlate --
-$observations = @()
-foreach ($addressKey in $series.Keys) {
-    $list = [System.Collections.Generic.List[object]]$series[$addressKey]
-    if ($list.Count -lt 2) { continue }
-    $observations += @{
-        Address = $addressKey
-        Samples = @($list | ForEach-Object {
-            @{ wallTimeUtc = $_.wallTimeUtc; value = $_.value }
-        })
-    }
-}
+$observations = @(Get-CorrelateObservations -Series $series)
 if ($observations.Count -eq 0) {
     Write-Od048 'FAILED_no_observations_for_correlate'
     exit 3
 }
 
 # The correlate endpoint caps observations at 2000 series, but staging can
-# yield up to MaxStaged (3000) addresses, and the round-2 auto-scaled staging
-# tolerance makes >2000 staged addresses plausible. Truncate to the server
-# cap, keeping the most-observed series first (more samples = more
-# correlation evidence), and record the truncation in the report.
-$correlateMaxObservations = 2000
+# yield up to MaxStaged (3000) addresses PLUS the M2 family neighbors. A plain
+# most-sampled-first truncation would drop exactly the family-neighbor series
+# (they were staged mid-battle and carry fewer samples than the originals), so
+# keep every family address first (capped), then fill the remaining budget
+# with the most-sampled rest. Record the truncation in the report.
 $observationsTotal = $observations.Count
-$observations = @($observations |
-    Sort-Object { $_.Samples.Count } -Descending |
-    Select-Object -First $correlateMaxObservations)
+$familyObs = @($observations | Where-Object { $familyStaged.Contains($_.Address) } | Select-Object -First $correlateMaxObservations)
+$restObs = @($observations | Where-Object { -not $familyStaged.Contains($_.Address) } | Sort-Object { $_.Samples.Count } -Descending)
+$keepRest = $correlateMaxObservations - $familyObs.Count
+if ($keepRest -lt 0) { $keepRest = 0 }
+$observations = @($familyObs) + @($restObs | Select-Object -First $keepRest)
 if ($observationsTotal -gt $observations.Count) {
-    Write-Od048 ("correlate observations truncated from {0} to {1} (server cap {2})" -f $observationsTotal, $observations.Count, $correlateMaxObservations)
+    Write-Od048 ("correlate observations truncated from {0} to {1} (server cap {2}; family neighbors kept)" -f $observationsTotal, $observations.Count, $correlateMaxObservations)
 }
 
-$correlateBody = @{
-    groundTruthSessionId   = $battleSessionId
-    replayStartWallTimeUtc = $replayStartWallUtc
-    tolerancePerAxis       = $TolerancePerAxis
-    maxTimeShiftSeconds    = $MaxTimeShiftSeconds
-    minMovingSpan          = $MinMovingSpan
-    observations           = $observations
-}
-$correlated = Invoke-Api -Rendezvous $rendezvous -Method 'Post' -RelativePath '/api/v1/game/discover/correlate' -Body $correlateBody
+$correlated = Invoke-Api -Rendezvous $rendezvous -Method 'Post' -RelativePath '/api/v1/game/discover/correlate' -Body (New-CorrelateBody -Observations $observations -SessionId $battleSessionId -ReplayStartWallTimeUtc $replayStartWallUtc -TolerancePerAxis $TolerancePerAxis -MaxTimeShiftSeconds $MaxTimeShiftSeconds -MinMovingSpan $MinMovingSpan)
 if ($null -eq $correlated -or $null -eq $correlated.results) {
     Write-Od048 'FAILED_correlate'
     exit 4
@@ -655,7 +775,8 @@ $results = @($correlated.results)
 # true alignment is probably beyond the sweep (anchor wrong or load latency
 # exceeded the bound) -- the classic bad-anchor false positive. Demote those
 # from "strong" to "suspect" so a broken anchor cannot masquerade as evidence.
-$edgeThreshold = [Math]::Max(2, $MaxTimeShiftSeconds - 2)
+# ($edgeThreshold was computed once before staging so the mid-battle family
+# refinement and this audit share the same formula.)
 $edgeAlignedSurvivors = @()
 foreach ($result in $results) {
     $shift = if ($null -eq $result.shiftSeconds) { 0.0 } else { [double]$result.shiftSeconds }
@@ -674,13 +795,23 @@ foreach ($result in $results) {
     }
 }
 $strongSurvivors = @($results | Where-Object { $_.score -ge 0.7 -and -not $_.edgeAligned })
-$verdict = if ($strongSurvivors.Count -gt 0) { 'evidence-strong' }
+$families = @($correlated.families)
+$completeFamilies = @($families | Where-Object { $_.complete })
+# M2 verdict upgrade: a complete family (three components of one entity
+# reproduced at distinct offsets, none edge-aligned) is the strongest artifact
+# this pipeline produces -- one session mapped the whole coordinate vector.
+$verdict = if ($completeFamilies.Count -gt 0) { 'family-complete' }
+    elseif ($strongSurvivors.Count -gt 0) { 'evidence-strong' }
     elseif ($edgeAlignedSurvivors.Count -gt 0) { 'evidence-edge-aligned' }
     elseif ($results.Count -gt 0) { 'evidence-mixed' }
     else { 'no-evidence' }
 
+if ($strongSurvivors.Count -gt 0 -and $families.Count -eq 0) {
+    Write-Od048 'family_mapping_failed no_families_from_survivors (M2 stop rule: recheck staging before burning another session)'
+}
+
 Write-Od048 ("correlate addresses_scored=" + $correlated.addressesScored + " total_samples=" + $correlated.totalSamples)
-Write-Od048 ("verdict=" + $verdict + " strong_survivors=" + $strongSurvivors.Count + " edge_aligned_suspects=" + $edgeAlignedSurvivors.Count)
+Write-Od048 ("verdict=" + $verdict + " strong_survivors=" + $strongSurvivors.Count + " families=" + $families.Count + " complete_families=" + $completeFamilies.Count)
 
 # -- Report --
 $report = [ordered]@{
@@ -691,8 +822,8 @@ $report = [ordered]@{
     replayStartWallTimeUtc = $replayStartWallUtc
     staged                 = [ordered]@{
         entities        = $stagedEntitiesReport
-        union           = $staged.Count
-        capped          = ($staged.Count -ge $MaxStaged)
+        union           = $scanStagedCount
+        capped          = ($scanStagedCount -ge $MaxStaged)
         attempts        = $stagingAttempt
         delayS          = $StageDelaySeconds
         tolerance       = $stagingTolerance
@@ -716,6 +847,7 @@ $report = [ordered]@{
         observationsSent      = $observations.Count
         observationsTotal     = $observationsTotal
         observationsCap       = $correlateMaxObservations
+        familyNeighborsSent   = $familyObs.Count
         shiftAudit            = [ordered]@{
             edgeThresholdSeconds = $edgeThreshold
             edgeAlignedSuspects  = $edgeAlignedSurvivors.Count
@@ -769,6 +901,35 @@ $report = [ordered]@{
             score               = $_.score
         }
     })
+    familyRefinement        = [ordered]@{
+        refinedAtRound       = $familyRefineRound
+        survivorCap          = $FamilySurvivorCap
+        windowBytes          = $FamilyWindowBytes
+        provisionalSurvivors = $familySurvivors.Count
+        neighborsStaged      = $familyNeighborAdded
+        totalStaged          = $staged.Count
+    }
+    families                = @($families | ForEach-Object {
+        [ordered]@{
+            baseAddress = $_.baseAddress
+            spanBytes   = $_.spanBytes
+            axesCovered = @($_.axesCovered)
+            complete    = $_.complete
+            members     = @($_.members | ForEach-Object {
+                [ordered]@{
+                    address             = $_.address
+                    offsetBytes         = $_.offsetBytes
+                    axis                = $_.axis
+                    sign                = $_.sign
+                    shiftSeconds        = $_.shiftSeconds
+                    shiftBandMinSeconds = $_.shiftMinSeconds
+                    shiftBandMaxSeconds = $_.shiftMaxSeconds
+                    score               = $_.score
+                    edgeAligned         = $_.edgeAligned
+                }
+            })
+        }
+    })
     verdict                = $verdict
 }
 
@@ -782,5 +943,5 @@ catch {
     exit 5
 }
 
-Write-Od048 ('done verdict=' + $verdict + ' survivors=' + $results.Count)
+Write-Od048 ('done verdict=' + $verdict + ' results=' + $results.Count + ' families=' + $families.Count)
 exit 0

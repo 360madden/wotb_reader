@@ -270,3 +270,43 @@ PSSA gate 0 warnings on 22 scripts; ASCII-clean; parse OK; smoke fails closed;
 the api_failed diagnostics path verified against a closed port; truncation and
 retry-logic simulations verified (2500 observations -> 2000 kept sorted
 descending; fail-attempt-1 -> proceed on attempt 2).
+
+## Amendment 4 — M2 family-mapping read-side (2026-08-05)
+
+M2's read side is built and testable without a live run:
+
+- **Server.** `TrajectoryFamilyBuilder` (`Core/Discovery/TrajectoryFamily.cs`)
+  groups correlated results into coordinate families: base-relative 16-byte
+  window, same-entity constraint (EntityId + ParticipantId; null==null),
+  member offsets relative to the lowest address, canonical axes, and
+  `Complete` = exactly three members (x/y/z) at distinct offsets with no
+  edge-aligned member. Edge-aligned mirrors the driver audit (a band edge
+  within 2s of the sweep bound). Multi-copy families are reported but flagged
+  incomplete. `CorrelateResponse` gains `families`.
+- **Driver.** At round `FamilyRefineAfterRounds` (10) a provisional correlate
+  picks the top non-edge-aligned survivors (score >= 0.7, cap 25); their 8
+  neighbor addresses (every 4-byte step in ±16) are staged for the remaining
+  rounds. The final correlate sends family-neighbor series FIRST (they carry
+  fewer samples and would otherwise be truncated away under the 2000 server
+  cap), then the most-sampled rest. The verdict upgrades to `family-complete`
+  when a clean triple exists; a strong-survivor run with no families logs the
+  M2 stop-rule warning. `New-CorrelateBody`/`Get-CorrelateObservations` were
+  factored out of the correlate section (fixing a PSSA PSReviewUnusedParameter
+  finding by passing the previously-script-scoped values explicitly).
+- **Verified:** 12 family-builder unit tests + endpoint serialization test
+  (Core 35 / Host.Web 110 green); PSSA gate 0 warnings on 22 scripts; PS 5.1
+  parse + ASCII clean; 16-check simulation of the REAL helper functions
+  (neighbor math incl. dedup/pre-existing guard, survivor score/edge filter,
+  family-priority selection, correlate body shape); smoke fails closed.
+- **Remaining live step:** the M1 live run that produces survivors, then the
+  M2 write-trace (pre-arm + x32dbg) on a surviving family.
+**Review pass (same day):** the reviewer confirmed the builder + driver
+sound, and three low-severity items were fixed: (1) grouping is now done per
+ENTITY first, so interleaved foreign-entity addresses (entity 1 at 0x1000 and
+0x1008 with entity 2 at 0x1004 between them) no longer split the legitimate
+same-entity pair into singletons — regression test added; (2) the driver's
+refinement comment now documents that a transient API failure retries on a
+later round (recovery) while a no-scored-series pass marks it done; (3) the
+report's `staged.union`/`staged.capped` now use a scan-only snapshot taken
+before the family expansion, so the flag reflects the scan cap, not neighbor
+staging.

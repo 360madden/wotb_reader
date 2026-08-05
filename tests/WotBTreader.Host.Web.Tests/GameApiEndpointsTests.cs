@@ -1043,6 +1043,63 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task CorrelateResponseIncludesFamilyMapping()
+    {
+        DateTimeOffset start = new(2026, 8, 4, 0, 0, 0, TimeSpan.Zero);
+        var provider = new FakeTrajectoryProvider(OperationResult.Success(VShapeGroundTruth()));
+        List<CorrelationSampleRequest> xSamples = [];
+        List<CorrelationSampleRequest> ySamples = [];
+        for (int index = 0; index < 5; index++)
+        {
+            int second = 10 + (index * 10);
+            xSamples.Add(new CorrelationSampleRequest(start.AddSeconds(second), second * 2));
+            // y(t) = 0.4 * second over the same wall window.
+            ySamples.Add(new CorrelationSampleRequest(start.AddSeconds(second), second * 0.4));
+        }
+
+        IResult result = await GameApiEndpoints.CorrelateAsync(
+            provider,
+            new CorrelateRequest
+            {
+                GroundTruthSessionId = Guid.NewGuid(),
+                ReplayStartWallTimeUtc = start,
+                TolerancePerAxis = 5,
+                MaxTimeShiftSeconds = 8,
+                Observations =
+                [
+                    new CorrelationSeriesRequest("0x1000", xSamples),
+                    new CorrelationSeriesRequest("0x1004", ySamples),
+                    // A moving far decoy that reproduces nothing (values far
+                    // above the ground truth, same walls): must not score and
+                    // must not join the family.
+                    new CorrelationSeriesRequest("0x9000", xSamples.Select(sample => sample with
+                    {
+                        Value = sample.Value + 1000,
+                    }).ToList()),
+                ],
+            },
+            TestContext.CancellationToken);
+
+        CorrelateResponse response = Value<CorrelateResponse>(result);
+        Assert.HasCount(2, response.Results);
+        Assert.HasCount(1, response.Families);
+        TrajectoryFamilyResponse family = response.Families[0];
+        Assert.AreEqual("0x1000", family.BaseAddress);
+        Assert.AreEqual(4, family.SpanBytes);
+        // The z ground axis is stationary in this fixture, so the family is
+        // the x/y pair: reported, but not the clean complete triple.
+        Assert.IsFalse(family.Complete);
+        Assert.IsTrue(family.AxesCovered.SequenceEqual(["x", "y"]));
+        Assert.HasCount(2, family.Members);
+        Assert.AreEqual("0x1000", family.Members[0].Address);
+        Assert.AreEqual(0, family.Members[0].OffsetBytes);
+        Assert.AreEqual("x", family.Members[0].Axis);
+        Assert.AreEqual("0x1004", family.Members[1].Address);
+        Assert.AreEqual(4, family.Members[1].OffsetBytes);
+        Assert.AreEqual("y", family.Members[1].Axis);
+    }
+
+    [TestMethod]
     public async Task CorrelateRejectsInvalidOptions()
     {
         var provider = new FakeTrajectoryProvider(OperationResult.Success(VShapeGroundTruth()));

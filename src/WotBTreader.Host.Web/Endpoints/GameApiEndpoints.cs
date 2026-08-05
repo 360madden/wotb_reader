@@ -853,6 +853,13 @@ internal static class GameApiEndpoints
             request.MinMovingSpan,
             request.ShiftStepSeconds);
 
+        // M2 family mapping: group the scored addresses into candidate
+        // coordinate families (survivor + sibling components within one small
+        // byte window, same entity). Pure logic; no live memory access.
+        IReadOnlyList<TrajectoryFamily> families = TrajectoryFamilyBuilder.Build(
+            results,
+            request.MaxTimeShiftSeconds);
+
         return Results.Ok(new CorrelateResponse
         {
             CompletedAtUtc = DateTimeOffset.UtcNow,
@@ -873,6 +880,21 @@ internal static class GameApiEndpoints
                 result.TotalSamples,
                 result.Span,
                 result.Score)).ToList(),
+            Families = families.Select(family => new TrajectoryFamilyResponse(
+                family.BaseAddress,
+                family.SpanBytes,
+                [.. family.AxesCovered],
+                family.Complete,
+                family.Members.Select(member => new FamilyMemberResponse(
+                    member.Address,
+                    member.OffsetBytes,
+                    member.Axis,
+                    member.Sign,
+                    member.ShiftSeconds,
+                    member.ShiftMinSeconds,
+                    member.ShiftMaxSeconds,
+                    member.Score,
+                    member.EdgeAligned)).ToList())).ToList(),
         });
     }
 

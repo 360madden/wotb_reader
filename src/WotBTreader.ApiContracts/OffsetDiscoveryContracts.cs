@@ -404,4 +404,38 @@ public sealed record CorrelateResponse
     public int AddressesScored { get; init; }
     public int TotalSamples { get; init; }
     public List<CorrelateResultItemResponse> Results { get; init; } = [];
+
+    /// <summary>
+    /// Candidate coordinate families (strategy v4 M2): scored addresses that
+    /// sit inside one small byte window and reproduce the same entity's axes,
+    /// grouped by proximity. Empty when no neighbor grouping emerged.
+    /// </summary>
+    public List<TrajectoryFamilyResponse> Families { get; init; } = [];
 }
+
+/// <summary>One member of a candidate coordinate family.</summary>
+public sealed record FamilyMemberResponse(
+    string Address,
+    int OffsetBytes,
+    string Axis,
+    int Sign,
+    double ShiftSeconds,
+    double ShiftMinSeconds,
+    double ShiftMaxSeconds,
+    double Score,
+    bool EdgeAligned);
+
+/// <summary>
+/// A candidate coordinate family: scored addresses inside one small byte
+/// window around a common base that reproduce the same entity's axes.
+/// <see cref="Complete"/> is true only for the clean triple (one member per
+/// axis x/y/z, none edge-aligned) — the "one session maps all three
+/// coordinate components" result; multi-copy families are still reported but
+/// flagged incomplete.
+/// </summary>
+public sealed record TrajectoryFamilyResponse(
+    string BaseAddress,
+    int SpanBytes,
+    List<string> AxesCovered,
+    bool Complete,
+    List<FamilyMemberResponse> Members);

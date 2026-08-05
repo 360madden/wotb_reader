@@ -98,8 +98,20 @@ scripts/od-048-monitor-correlate-session.ps1
 
 ### M2 — Family mapping + write-trace — **CAP: 2 attempts**
 
-1. For each strong survivor, read the ±4-byte neighbors and correlate them
-   too (the sibling x/y/z components; the "candidate family maps fast" step).
+1. **Family mapping (READ-SIDE BUILT 2026-08-05).** At monitor round 10 the
+   driver runs a provisional correlate, takes the top non-edge-aligned
+   survivors (score ≥ 0.7, cap 25), and re-stages their ±16-byte neighbors (8
+   addresses each: every 4-byte step in ±16) so the remaining rounds record
+   the sibling x/y/z components. The final correlate keeps the family-neighbor
+   series FIRST under the 2000 server cap (they carry fewer samples than the
+   originals and would otherwise be truncated) and its `families` section
+   groups the scored addresses into coordinate families (same entity, one
+   base-relative 16-byte window; member offsets; axes covered). A `complete`
+   family — exactly x/y/z at distinct offsets, none edge-aligned — upgrades
+   the verdict to `family-complete`: one session maps all three components
+   (the survivor may be the middle component; the family base is the lowest
+   address). Verified by 12 family-builder unit tests + endpoint
+   serialization test + a 16-check simulation of the real driver functions.
 2. Pre-arm x32dbg (`scripts/pre-arm-debugger.ps1`) and run the automated
    write-trace (`scripts/x64dbg-write-trace.ps1 -AutoWriteTrace`) on the
    surviving family during a held green window.
