@@ -145,3 +145,105 @@ with the code evidence cited.
 3. Third 10-round hunt on unexplored areas: Blazor dashboard + SignalR push,
    overlay ViewModels + PositionPlot transform math, replay decoder
    (pickle/protobuf packet layout), Storage.Sqlite comparison-run repository.
+
+---
+
+## Follow-up: third 10-round hunt (rounds 21–30) — ALL CLEAN
+
+Date: 2026-08-06 · Status: Committed · Type: bug hunt (verification only)
+Prior state: `c13e2d7` (this file's first two hunts shipped).
+
+Item 3 of the recommended next steps above. Ten rounds across the four
+previously unexplored surfaces; **no fixes were needed** — every round was
+verified against the actual code and either confirmed-clean or resolved as
+already-handled with cited evidence. This is the first hunt of the three with
+zero code changes, which is itself the finding: the production read/display
+surfaces are in better shape than the discovery pipeline (which the first two
+hunts had to fix).
+
+### Per-round verdicts
+
+- **R21 (web read surface + SignalR push):** clean. Read endpoints enforce
+  page-size caps (default 50, max 200) and position caps; Kestrel binds
+  `IPAddress.Loopback` plus `LoopbackOnlyMiddleware`. The hub is a
+  **stream**, not groups, so the group/connection lifecycle-leak concern is
+  moot; the publisher uses a bounded channel with `DropOldest`, so slow
+  subscribers cannot grow memory.
+- **R22 (overlay ViewModels + PlotTransform):** clean. PlotTransform guards
+  division by zero (`extentX > 0`); ObservableCollection mutations from
+  SignalR callbacks are marshalled via `SynchronizationContext.Post`;
+  `TelemetryStreamService` re-subscribes on reconnect.
+- **R23 (replay decoder: pickle/protobuf):** clean. `RestrictedPickleReader`
+  aborts on any non-allowlisted opcode, has length caps with `Ensure`
+  bounds, stack/memo depth caps, and throws on undefined memo. Varint
+  parsing is bounded (10 bytes, byte-9 cap, overflow throws).
+  `BattleResultsReader` stat tags are present and evidence-first: damage=8,
+  XP=3, credits=2, assisted=9/10, mm_rating=107 fixed32, tank=103 — all
+  nullable, `ReadFiniteSingle` rejects NaN/Inf, text capped at 512B.
+- **R24 (comparison-run repository):** clean. Create is transactional with
+  rollback + SQLite conflict handling; the diff is computed by
+  `TelemetryComparator` and **frozen at create** (not re-read at inspect);
+  greedy first-match with a consumed `matchedRight` set, deterministic
+  ordering, JSON-tolerance handling.
+- **R25 (packet decoders + framing):** clean. Framing is bounded
+  (`12 + declaredLength` with overflow check), EOF sentinel handled, and
+  malformed data triggers bounded resynchronization, not blind skips; the
+  Type-10 position decoder uses an exact 49-byte layout with explicit
+  little-endian reads and rejects non-finite coords. One curiosity noted:
+  `ReadUInt16BigEndian` for the damage amount amid all-little-endian reads —
+  evidence-backed, worth re-confirming against the Rust oracle in the next
+  cross-check.
+- **R26 (decode-run + session repos):** clean. The single `UPDATE
+  decode_runs` is a guarded status transition (`status IN (pending, running)`
+  + row-count check → conflict), not evidence mutation; SQL is parameterized
+  via `SqliteValueConversions.Guid`.
+- **R27 (overlay UI + P/Invoke):** clean. `GetWindowRect`/`SetWindowPos` are
+  both Win32 physical-pixel calls, so they are mutually consistent (WPF
+  scales its own content by DPI); the memory-observation SignalR callback
+  marshals via `_syncContext.Post` before touching `LivePlayerTrail`;
+  playback math uses fixed 50ms×speed ticks with clamp + wrap, no
+  division-by-zero; converters are null-safe; render uses throttled
+  `DispatcherTimer`s (no per-frame leak).
+- **R28 (ApiContracts wire shape):** clean. The overlay's client uses
+  `JsonSerializerOptions.Web` (case-insensitive) matching the host's
+  camelCase; all DTO lists default to empty (never null);
+  `PositionsTruncated` + `TotalPositionCount` are surfaced and events capped
+  at 2000.
+- **R29 (position precision path):** clean. **Double end-to-end with no
+  narrowing:** `PositionObservation(double X,Y,Z)` → SQLite `raw_x/y/z REAL`
+  (8-byte double round-trip) → `PositionSampleResponse.RawX/RawZ (double)`
+  → overlay `PlotPoint(double, double)`. No `float` cast anywhere on the
+  path.
+- **R30 (full gate):** clean. Build 0 warnings; full suite **613 passed,
+  0 failed, 2 opt-in skips** (12/12 projects); PSSA gate PASSED (40
+  advisories, 0 errors).
+
+### Evidence / validation
+
+- Every verdict above cites the verified file/line evidence (grep + sed
+  against the working tree at `c13e2d7`); nothing was left at the
+  reasoned-only level.
+- Full gate numbers at R30: `dotnet build` 0 warnings; 613/615 tests pass
+  across 12 projects; `scripts/invoke-scriptanalyzer.ps1` → SCRIPT HYGIENE
+  GATE PASSED.
+
+### Residual risk (unchanged by this hunt)
+
+- The live discovery pipeline (od-048 / x64dbg-write-trace / trajectory
+  correlation) remains the highest-risk surface — the first two hunts found
+  real bugs there, and live FRESH runs are still the only validation of the
+  auto-write-trace path.
+- The `ReadUInt16BigEndian` damage field (R25 note) should be re-checked in
+  the next `invoke-replay-crosscheck.ps1` run.
+
+### Recommended next steps
+
+1. Next live run (FRESH14): re-validate the M1→M2 auto-write-trace path now
+   that the window-wait, attach-smoke, band-width floor, and rendezvous
+   expiry fixes are all in.
+2. Add a regression test for the R29 precision path (synthetic
+   sub-millimeter position packet → decode → SQLite round-trip → overlay
+   PlotPoint retains full double precision).
+3. Re-run `invoke-replay-crosscheck.ps1` after any future format-version
+   change (per the cross-check operator step) to confirm the damage-field
+   endianness note.
