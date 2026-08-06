@@ -22,22 +22,32 @@
     the member addresses (Float32 coordinates at 4-byte offsets). One trace
     window maps the write sites of all three coordinate components.
 
-  The generated x64dbg script arms hardware WRITE breakpoints (bph
-  <addr>,w,<4|8>) on up to 4 addresses (the DR0-DR3 x64 limit), sets a
-  bphwlog line that string-formats {rip} on hit, sets a breakpoint command
-  that runs savedata - and savedata string-formats its own filename arg
-  (stringformatinline in cmd-memory-operations.cpp), so each hit writes
-  <HitsDir>\odwt-0x<addr>-<rip>.bin containing 64 bytes of memory at RIP
-  (the writing instruction bytes). The hit filename is the automatable
-  evidence channel - no GUI scraping required. Fast-resume keeps the
-  replay playing so all hits in the window are captured.
+  The generated x64dbg script arms MEMORY write breakpoints (bpm
+  <addr>, 1, w - guard-page, fires on ANY thread). Hardware bph was ruled
+  out by the FRESH9 probe campaign: bph arms DR registers on the active
+  thread only (the x64dbg source has "//TODO: hwbp in multiple threads
+  TEST"), and after attach the active thread is the break-in/loader thread,
+  not the game's writing thread - so bph provably misses. Each armed
+  address gets a SetMemoryBreakpointLog line (logText is formatted with
+  stringformatinline, so {rip} renders the writing instruction address)
+  and a SetMemoryBreakpointCommand savedata line writing a static
+  per-address evidence file (the command shape proven to produce hit
+  files; {rip} inside the savedata filename is not reliable across
+  builds). Fast-resume and break conditions are NOT used: the engine
+  source (debugger.cpp cbGenericBreakpoint) skips log+command when
+  fastResume && condition==0, and a non-zero condition breaks the
+  debuggee mid-window.
 
-  Script execution is injected via `scriptload "<file>"` then `scriptrun`
-  into the RUNNING x64dbg command bar via GUI automation (activate window,
-  click the command bar, SendKeys). x64dbg's CLI only supports `-p <pid>`
-  attach - there is no script-execution flag (verified against
-  help.x64dbg.com Commandline docs), so command-bar injection is the only
-  no-new-install path.
+  The script is injected via `scriptload "<file>"` then `scriptrun` into
+  the command bar, driven through UI Automation (ValuePattern set + focus
+  + PostMessage ENTER) - SendKeys is mangled by the IME on this machine
+  (FRESH9: a literal `strref 0, 0, 1` landed in the bar). The driver
+  attaches itself: x64dbg parses integer literals as HEX, so `attach 0x<pid>`
+  is required (the decimal -p pre-arm flag was the FRESH9 zero-hit root
+  cause); the command-bar attach does not pause the debuggee
+  (pauseAtAttach is script-only), so `pause` follows before scriptrun.
+  After the window, the Log tab is harvested via UIA for the ODWT_HIT
+  lines, yielding the addr -> rip write-site evidence.
 
   The driver polls the hits dir + the Host gate for -TraceSeconds; stops
   early on gate loss. Writes captured addr -> rip evidence to -ResultPath
@@ -247,21 +257,75 @@ function ConvertFrom-HitFilename([string]$Name) {
     }
 }
 
-function Add-SendKeysType([ref]$Type, [string]$Text) {
-    # WScript.Shell SendKeys treats + ^ % ~ ( ) { } [ ] as special; escape by
-    # wrapping each in braces so the literal character is typed.
-    $sb = New-Object System.Text.StringBuilder
-    foreach ($ch in $Text.ToCharArray()) {
-        if ('+^%~(){}[]'.Contains($ch)) {
-            [void]$sb.Append('{')
-            [void]$sb.Append($ch)
-            [void]$sb.Append('}')
-        }
-        else {
-            [void]$sb.Append($ch)
+# -- UIA command-bar channel ------------------------------------------------
+# SendKeys is broken on this machine (IME interception), so the command bar
+# is driven via UI Automation: find the CommandLineEdit by class, set its
+# value through ValuePattern (immune to focus/IME), focus it, and execute
+# with PostMessage ENTER (no foreground requirement). Proven end-to-end in
+# the FRESH9 probe campaign (markers landed 3/3, log tab readable).
+function Find-X64DbgCommandBar {
+    param([IntPtr]$Handle)
+    Add-Type -AssemblyName UIAutomationClient -ErrorAction SilentlyContinue
+    Add-Type -AssemblyName UIAutomationTypes -ErrorAction SilentlyContinue
+    $root = $null
+    for ($i = 0; $i -lt 10 -and -not $root; $i++) {
+        try { $root = [System.Windows.Automation.AutomationElement]::FromHandle($Handle) }
+        catch { Start-Sleep -Milliseconds 800 }
+    }
+    if (-not $root) { return $null }
+    $editCond = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+        [System.Windows.Automation.ControlType]::Edit)
+    $edits = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editCond)
+    foreach ($e in $edits) {
+        if ($e.Current.ClassName -eq 'CommandLineEdit') { return $e }
+    }
+    return $null
+}
+
+function Send-X64DbgCommand {
+    param($CommandBar, [IntPtr]$Handle, [string]$Text)
+    if (-not $CommandBar) { return }
+    $vp = $CommandBar.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+    $vp.SetValue($Text)
+    try { $CommandBar.SetFocus() } catch { }
+    Start-Sleep -Milliseconds 200
+    [WtX64Ui]::SendEnter($Handle)
+    Start-Sleep -Milliseconds 700
+}
+
+# Activate the Log tab (so its lines are exposed to UIA) and return text
+# elements that carry engine log lines of interest.
+function Read-X64DbgLog {
+    param([IntPtr]$Handle)
+    Add-Type -AssemblyName UIAutomationClient -ErrorAction SilentlyContinue
+    Add-Type -AssemblyName UIAutomationTypes -ErrorAction SilentlyContinue
+    $root = $null
+    for ($i = 0; $i -lt 10 -and -not $root; $i++) {
+        try { $root = [System.Windows.Automation.AutomationElement]::FromHandle($Handle) }
+        catch { Start-Sleep -Milliseconds 800 }
+    }
+    if (-not $root) { return @() }
+    $tabCond = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+        [System.Windows.Automation.ControlType]::TabItem)
+    foreach ($t in $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $tabCond)) {
+        if ($t.Current.Name -eq 'Log') {
+            try { $t.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke(); break }
+            catch { try { $t.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select(); break } catch { } }
         }
     }
-    $Type.Value = $sb.ToString()
+    Start-Sleep -Milliseconds 800
+    $lines = New-Object System.Collections.Generic.List[string]
+    $all = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+        [System.Windows.Automation.Condition]::TrueCondition)
+    foreach ($el in $all) {
+        $n = $el.Current.Name
+        if ($n -and ($n -match 'ODWT_|Error executing|Memory breakpoint|Hardware breakpoint')) {
+            $lines.Add($n)
+        }
+    }
+    return $lines
 }
 
 # -- M2 family helpers --------------------------------------------------------
@@ -549,6 +613,26 @@ public static class WtX64Gui {
 "@
 }
 
+if (-not ('WtX64Ui' -as [type])) {
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+
+// PostMessage ENTER for the command bar: immune to foreground/IME, unlike
+// SendKeys (proven broken on this machine in FRESH9).
+public static class WtX64Ui {
+    [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+    public const uint WM_KEYDOWN = 0x0100;
+    public const uint WM_KEYUP = 0x0101;
+    public const uint VK_RETURN = 0x0D;
+    public static void SendEnter(IntPtr hwnd) {
+        PostMessage(hwnd, WM_KEYDOWN, (IntPtr)VK_RETURN, IntPtr.Zero);
+        PostMessage(hwnd, WM_KEYUP, (IntPtr)VK_RETURN, IntPtr.Zero);
+    }
+}
+"@
+}
+
 try {
     # ---- 1. Resolve input mode: family (M2) or flat survivor file ----------
     $mode = 'survivor'
@@ -653,8 +737,19 @@ try {
     }
 
     # ---- 2. Generate the x64dbg script -------------------------------------
+    # Memory write breakpoints (bpm <addr>, 1, w: guard page, ANY thread)
+    # instead of hardware bph (active-thread-only, provably misses after
+    # attach). No fast-resume, no break condition: the engine source skips
+    # log+command when fastResume && condition==0, and a non-zero condition
+    # breaks the debuggee mid-window. The default (no condition) executes
+    # log + command on each hit.
+    #
     # savedata string-formats its filename arg (stringformatinline in
-    # cmd-memory-operations.cpp), so {rip} renders into the evidence filename.
+    # cmd-memory-operations.cpp), but {rip} inside the savedata filename was
+    # NOT reliable across builds in the FRESH9 probe campaign - so the
+    # command uses a STATIC per-address file (the one shape proven to
+    # produce hit files) and the RIP comes from the SetMemoryBreakpointLog
+    # line, harvested from the Log tab after the window.
     # The hits dir path is embedded unquoted; to stay quote-safe the script
     # rejects a HitsDir containing spaces (8.3 short paths are the workaround).
     if ($HitsDir -match '\s') {
@@ -665,11 +760,10 @@ try {
     $scriptLines = New-Object System.Collections.Generic.List[string]
     [void]$scriptLines.Add('// od-wt write-trace script generated by x64dbg-write-trace.ps1')
     foreach ($a in $armed) {
-        [void]$scriptLines.Add(('bph {0},w,{1}' -f $a, $writeSize))
-        [void]$scriptLines.Add(('bphwlog {0}, "ODWT_HIT addr={0} rip={{rip}}"' -f $a))
-        $hitFile = Join-Path $HitsDir ('odwt-{0}-{{rip}}.bin' -f $a)
-        [void]$scriptLines.Add(('SetHardwareBreakpointCommand {0}, "savedata {1} rip 64"' -f $a, $hitFile))
-        [void]$scriptLines.Add(('SetHardwareBreakpointFastResume {0}' -f $a))
+        [void]$scriptLines.Add(('bpm {0}, 1, w' -f $a))
+        [void]$scriptLines.Add(('SetMemoryBreakpointLog {0}, "ODWT_HIT addr={0} rip={{rip}}"' -f $a))
+        $hitFile = Join-Path $HitsDir ('odwt-{0}.bin' -f $a)
+        [void]$scriptLines.Add(('SetMemoryBreakpointCommand {0}, "savedata {1}, {0}, 4"' -f $a, $hitFile))
     }
     [void]$scriptLines.Add(('log "ODWT_ARMED count={0}"' -f $armed.Count))
     if (-not $NoResume) {
@@ -770,29 +864,36 @@ try {
     }
     Write-Wt ("x64dbg_pid=" + $win.Id)
 
-    # ---- 5. Inject scriptload + scriptrun into the command bar -------------
-    $rect = New-Object WtX64Gui+RECT
-    if (-not [WtX64Gui]::WindowRect($win.Handle, [ref]$rect)) {
-        Write-Wt 'FAILED_get_window_rect'
+    # ---- 5. Attach + pause, then inject scriptload + scriptrun -------------
+    # x64dbg parses integer literals as HEX: `attach <decimal>` silently
+    # targets a nonexistent pid (0x42284 != 42284) - the FRESH9 zero-hit
+    # root cause. The command-bar attach does not pause the debuggee
+    # (pauseAtAttach is script-only), so `pause` follows; scriptrun refuses
+    # while the debuggee runs. The command bar is driven via UI Automation
+    # ValuePattern + PostMessage ENTER (SendKeys is IME-mangled).
+    $cmdBar = Find-X64DbgCommandBar -Handle $win.Handle
+    if (-not $cmdBar) {
+        Write-Wt 'FAILED_no_command_bar (x64dbg command bar not exposed via UIA)'
         exit 4
     }
-    $cx = [int](($rect.Left + $rect.Right) / 2)
-    $cy = [int]($rect.Bottom - 16)   # command bar is the full-width bottom strip
+    $game = Get-Process -Name wotblitz -ErrorAction SilentlyContinue |
+        Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } |
+        Select-Object -First 1
+    if (-not $game) {
+        Write-Wt 'FAILED_no_game_process_to_attach (launch the replay first)'
+        exit 4
+    }
     [WtX64Gui]::ForceForeground($win.Handle)
     Start-Sleep -Milliseconds 300
-    [WtX64Gui]::Click($cx, $cy)
-    Start-Sleep -Milliseconds 400
+    Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle ('attach 0x{0:X}' -f $game.Id)
+    Start-Sleep -Seconds 4
+    Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle 'pause'
+    Start-Sleep -Seconds 2
+    Write-Wt ('attached pid=0x{0:X}' -f $game.Id)
 
-    $wshell = New-Object -ComObject WScript.Shell
-    $esc = ''
-    Add-SendKeysType ([ref]$esc) ('scriptload "' + $ScriptFile + '"')
-    $null = $wshell.SendKeys($esc)
-    Start-Sleep -Milliseconds 300
-    $null = $wshell.SendKeys('{ENTER}')
+    Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle ('scriptload "' + $ScriptFile + '"')
     Start-Sleep -Milliseconds 600
-    $null = $wshell.SendKeys('scriptrun')
-    Start-Sleep -Milliseconds 300
-    $null = $wshell.SendKeys('{ENTER}')
+    Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle 'scriptrun'
     Write-Wt 'injected scriptload+scriptrun'
 
     # ---- 6. Poll hits + gate for the trace window --------------------------
@@ -804,6 +905,11 @@ try {
             $parsed = ConvertFrom-HitFilename $f.Name
             if ($parsed) {
                 $hitKey = ($parsed.Addr + ' ' + $parsed.Rip)
+                if ($hits -notcontains $hitKey) { $hits += $hitKey }
+            }
+            elseif ($f.Name -match '^odwt-0x([0-9a-fA-F]+)\.bin$') {
+                # Static savedata proof file (the proven capture shape).
+                $hitKey = ('0x' + $Matches[1] + ' savedata')
                 if ($hits -notcontains $hitKey) { $hits += $hitKey }
             }
         }
@@ -836,7 +942,51 @@ try {
         Start-Sleep -Seconds $PollIntervalSeconds
     }
 
+    # ---- 6b. Release the debuggee ------------------------------------------
+    # The memory BP pauses the game on its first hit (breakCondition defaults
+    # to 1 -> break -> wait), so the trace captures one proof file per armed
+    # address and then holds the game paused. Detach to resume it cleanly.
+    try {
+        Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle 'detach'
+        Start-Sleep -Milliseconds 800
+        Write-Wt 'released_detach'
+    }
+    catch {
+        Write-Wt 'WARN_release_detach_failed'
+    }
+
     # ---- 7. Write evidence + report ----------------------------------------
+    # Harvest the Log tab for ODWT_HIT lines: logText is formatted with
+    # stringformatinline (proven in the engine source), so each line carries
+    # the substituted {rip} - the writing instruction address (the M2
+    # write-site evidence). The static savedata files prove the write
+    # occurred per armed address even if the log harvest misses.
+    $harvested = @()
+    try {
+        foreach ($ln in @(Read-X64DbgLog -Handle $win.Handle)) {
+            if ($ln -match 'ODWT_HIT addr=(0x[0-9a-fA-F]+) rip=(0x[0-9a-fA-F]+)') {
+                $harvested += ($Matches[1] + ' ' + $Matches[2])
+            }
+        }
+    }
+    catch { Write-Wt 'WARN_log_harvest_failed' }
+    Write-Wt ('log_harvest_hits=' + $harvested.Count)
+    foreach ($h in $harvested) {
+        if ($hits -notcontains $h) { $hits += $h }
+    }
+
+    # Static savedata proof files: odwt-0x<addr>.bin. A write that the log
+    # harvest missed is still counted (rip unknown, marked 'savedata').
+    $proofAddrs = @()
+    foreach ($f in @(Get-ChildItem -LiteralPath $HitsDir -Filter 'odwt-*.bin' -File -ErrorAction SilentlyContinue)) {
+        if ($f.Name -match '^odwt-0x([0-9a-fA-F]+)\.bin$') {
+            $proofAddrs += ('0x' + $Matches[1])
+        }
+    }
+    foreach ($pa in $proofAddrs) {
+        if (-not ($hits | Where-Object { $_ -like ($pa + ' *') })) { $hits += ($pa + ' savedata') }
+    }
+
     Set-Content -LiteralPath $ResultPath -Value $hits -Encoding ascii
     Write-Wt ("hits=" + $hits.Count)
 

@@ -8,9 +8,16 @@
   OD-RECOVERY-016 lost the interactive root window because no debugger was
   started until rolling reached <=10 survivors, after which the 120s research
   lease flipped EvidenceStale. This script locates the installed x64dbg
-  (known install roots), verifies it, and can launch it attached to a running
-  wotblitz.exe so Find-what-writes (hardware write breakpoints) is available
-  the moment rolling finishes.
+  (known install roots), verifies it, and launches it so a window is ready
+  for the write-trace driver (scripts/x64dbg-write-trace.ps1) the moment
+  rolling finishes.
+
+  The debugger is launched WITHOUT a target. x64dbg parses integer literals
+  as HEX, so the historical `-p <decimal pid>` attach silently targeted a
+  nonexistent process (FRESH9 root cause); the write-trace now attaches
+  itself through the command bar with an explicit 0x pid and pauses the
+  debuggee before injecting its script. A pre-attach here would also conflict
+  with that flow.
 
   Cheat Engine is no longer part of the pipeline (removed 2026-08-03): its
   automated write-BP path was ruled out by OD-RECOVERY-020, and its remaining
@@ -40,7 +47,8 @@
 #>
 [CmdletBinding()]
 param(
-    # Launch the preferred debugger attached to the running wotblitz process.
+    # Launch the preferred debugger window (no target; the write-trace
+    # attaches itself via the command bar with a hex pid).
     [switch]$AutoAttach,
     [string]$MarkerPath = $(Join-Path $env:TEMP 'od-prearmed-debugger.json')
 )
@@ -81,13 +89,16 @@ try {
 
     $launchedTool = $null
     if ($AutoAttach -and $game) {
-        $p = Start-Process -FilePath $x64Exe -ArgumentList @('-p', "$($game.Id)") -PassThru
-        # Direct x32dbg.exe launch (x86 build) for the x86 game; the window
-        # that opens is x32dbg, which the write-trace process detection matches.
+        # Launch the x32dbg.exe window ONLY - no -p attach. The decimal -p
+        # flag was the FRESH9 zero-hit root cause (x64dbg reads ints as
+        # hex), and the write-trace attaches itself via the command bar with
+        # a hex pid (scripts/x64dbg-write-trace.ps1 step 5), which also needs
+        # the debugger un-attached so its own attach succeeds.
+        $p = Start-Process -FilePath $x64Exe -PassThru
         # Derive the label from the resolved path so an x64-fallback machine
-        # (no x32 build) does not misreport the attached tool.
+        # (no x32 build) does not misreport the armed tool.
         $launchedTool = if ($x64Leaf -eq 'x32dbg.exe') { 'x32dbg' } else { 'x64dbg' }
-        Write-PreArm ("launched_x64dbg_attach pid=" + $game.Id + " process=" + $p.Id)
+        Write-PreArm ("launched_x64dbg_window process=" + $p.Id)
     }
     elseif ($AutoAttach -and -not $game) {
         Write-PreArm 'autoattach_skipped_no_game_process'
@@ -98,6 +109,7 @@ try {
         x64dbgExe      = $x64Exe
         launchedTool   = $launchedTool
         gamePid        = if ($game) { $game.Id } else { $null }
+        attachNote     = 'write-trace attaches via command bar with hex pid (decimal -p was broken)'
     } | ConvertTo-Json
     Set-Content -LiteralPath $MarkerPath -Value $marker -Encoding ascii
     Write-PreArm ("marker=" + $MarkerPath)
