@@ -250,6 +250,33 @@ Trigger on **any** of:
 ledger and blocker log, mark the track research-only, and refocus on the
 product. The pipeline and the structural negatives remain durable assets.
 
+### M1 cap re-baseline (decision, 2026-08-06, before FRESH20)
+
+**Decision: the M1.5 pivot re-baselines the M1 session cap.** The FRESH15→19
+campaign (six sessions) produced **zero valid scientific tests of the current
+pipeline** — every round failed on a distinct, now-fixed defect (staging
+before match-begin; marker anchor without attendance correction; 3 mid-run
+401 holes; 30s sweep too narrow for the true shift; the zero-viewpoint
+`$null.Count` crash; the stale-marker relaunch). A stop rule only means
+something when it tests the pipeline in production; archiving now would
+record an infrastructure failure as a scientific negative, and the offline
+dry-run already scores the corrected anchor at 1.000 @ shift 0 through the
+real scorer.
+
+Budget and triggers (no further extension):
+
+- **FRESH20 + at most FRESH21 = the re-baselined 2-session budget.**
+- A session **counts only when valid**: staging gate fired post-match-begin,
+  smoke green, no crash, correlate completed. An infra-failed run is retried
+  within the budget, not charged.
+- **Hard archive trigger:** 2 valid sessions under the fully-corrected
+  pipeline with no strong survivor (score ≥ 0.7, non-edge) → execute the
+  archive action above regardless of sunk cost.
+- **Pre-FRESH20 gate:** the tick-rate probe (offline) must classify what a
+  weak verdict means — wide band at the true shift = scorer cannot express a
+  ~1% tick-rate error (scorer limitation → archive-worthy) vs a capture
+  error (fixable → retry within budget).
+
 ## Fallback paths (only if correlation is blocked, not merely slow)
 
 - **Exact-pause scan** (v3 M1): `scripts/od-047-exact-scan-session.ps1` — for

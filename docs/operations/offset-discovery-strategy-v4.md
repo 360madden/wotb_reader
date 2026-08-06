@@ -124,6 +124,15 @@ amendment.
   burn M3.
 - M3: 0 write-trace hits in 2 attempts on a small clean set → descope.
 
+**M1 cap re-baseline (decision, 2026-08-06):** the M1.5 pivot re-baselines
+M1's 2-session cap. The FRESH15→19 campaign produced zero valid scientific
+tests of the current pipeline — every round failed on a distinct, now-fixed
+defect, and the offline dry-run scores the corrected anchor at 1.000 @ shift 0
+through the real scorer. Budget: FRESH20 + at most FRESH21 (a session counts
+only when valid: staging gate post-match-begin, smoke green, no crash,
+correlate completed). Hard archive trigger: 2 valid sessions with no strong
+survivor → archive regardless of sunk cost. See the roadmap Descope gate.
+
 ## Guardrails added by v4
 
 - **Never ask a human for machine precision again.** Any campaign design whose
