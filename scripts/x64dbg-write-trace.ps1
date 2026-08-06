@@ -1366,6 +1366,14 @@ try {
     Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle 'scriptrun'
     Write-Wt 'injected scriptload+scriptrun'
 
+    # FRESH23/24: CPU-liveness discriminator. The smoke verifies resume
+    # (resume_settle_rounds verified=True) but the trace never did -- the
+    # known WOW64 attach-freeze (~1/3 of runs) can leave the "window" frozen,
+    # so a family-no-hit reads as "not written" when the game never executed.
+    # A running game burns ~1-2 cores at 60fps; a frozen debuggee burns ~0.
+    $cpuWindowStart = $null
+    try { $cpuWindowStart = [double]$game.TotalProcessorTime.TotalMilliseconds } catch { }
+
     # ---- 6. Poll hits + gate for the trace window --------------------------
     $deadline = (Get-Date).AddSeconds($TraceSeconds)
     $hits = @()
@@ -1411,6 +1419,23 @@ try {
         }
         Start-Sleep -Seconds $PollIntervalSeconds
     }
+
+    # ---- 6a. Window liveness verdict ---------------------------------------
+    # Sample the game's CPU time across the window: running => the game
+    # executed while the BPs were armed (a no-hit is then a REAL no-write);
+    # frozen => the attach/resume failed and the window was an artifact.
+    $cpuWindowEnd = $null
+    try { $cpuWindowEnd = [double]$game.TotalProcessorTime.TotalMilliseconds } catch { }
+    $cpuDeltaMs = $null
+    $windowLiveness = 'unknown'
+    if ($null -ne $cpuWindowStart -and $null -ne $cpuWindowEnd) {
+        $cpuDeltaMs = [int64]($cpuWindowEnd - $cpuWindowStart)
+        # >= 50ms of CPU per second of window = the game was executing
+        # (a frozen debuggee consumes ~0; even a debugger-busy pause stays
+        # far below this).
+        $windowLiveness = if ($cpuDeltaMs -ge ([int64]($TraceSeconds * 50))) { 'running' } else { 'frozen' }
+    }
+    Write-Wt ('window_cpu_delta_ms=' + $(if ($null -eq $cpuDeltaMs) { 'unknown' } else { $cpuDeltaMs }) + ' liveness=' + $windowLiveness)
 
     # ---- 6b. Release the debuggee ------------------------------------------
     # The memory BP pauses the game on its first hit (breakCondition defaults
@@ -1517,13 +1542,18 @@ try {
             unarmedCount = $unarmed.Count
             hitsTotal    = $hits.Count
             hitMembers   = $hitMembers.Count
+            # FRESH23/24: liveness of the window -- 'frozen' means the
+            # attach/resume failed and the no-hit is an artifact, not a real
+            # absence of writes.
+            windowLiveness = $windowLiveness
+            windowCpuDeltaMs = $cpuDeltaMs
             verdict      = $familyVerdict
             members      = $memberEntries
         }
         $familyResultPath = $ResultPath + '.family.json'
         $familyJson = $familyReport | ConvertTo-Json -Depth 8
         [System.IO.File]::WriteAllText($familyResultPath, $familyJson, (New-Object System.Text.UTF8Encoding($false)))
-        Write-Wt ('family_verdict=' + $familyVerdict + ' hit_members=' + $hitMembers.Count)
+        Write-Wt ('family_verdict=' + $familyVerdict + ' hit_members=' + $hitMembers.Count + ' liveness=' + $windowLiveness)
         Write-Wt ('family_report=' + $familyResultPath)
     }
 
