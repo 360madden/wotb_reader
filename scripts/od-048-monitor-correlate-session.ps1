@@ -1850,7 +1850,21 @@ if ($AutoWriteTraceOnVerdict) {
                 if (-not (Test-Path -LiteralPath $dataDir)) { New-Item -ItemType Directory -Path $dataDir | Out-Null }
                 $AutoTraceResultPath = Join-Path $dataDir ("od-048-autotrace-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + ".json")
             }
-            Write-Od048 ('auto_write_trace INVOKING verdict=' + $verdict + ' family_complete=' + $completeFamilies.Count + ' trace_s=' + $AutoTraceSeconds)
+            # FRESH21: budget the trace window against the ACTUAL battle tail
+            # at invoke time. FRESH20's fixed 25s window straddled battle end
+            # (the battle ended 11s into it -> STOP_gate=Denied, exit 5), and
+            # the wrapper (re-pre-arm + attach + script inject) costs ~50-60s
+            # on top of the correlate. Cap the window to (tail - 15s margin),
+            # floored at 10s and ceilinged at the requested AutoTraceSeconds.
+            $tailSeconds = if ($null -ne $battleEndUtc) {
+                ([DateTime]$battleEndUtc - [DateTime]::UtcNow).TotalSeconds
+            }
+            else { [double]::MaxValue }
+            $traceSeconds = [int][Math]::Min($AutoTraceSeconds, [Math]::Max(10, $tailSeconds - 15))
+            if ($traceSeconds -ne $AutoTraceSeconds) {
+                Write-Od048 ('auto_write_trace window_adjusted requested={0} tail={1}s -> {2}s' -f $AutoTraceSeconds, [int]$tailSeconds, $traceSeconds)
+            }
+            Write-Od048 ('auto_write_trace INVOKING verdict=' + $verdict + ' family_complete=' + $completeFamilies.Count + ' trace_s=' + $traceSeconds)
             # Hashtable splat, NOT an array: PowerShell array-splatting of
             # '-Name value' pairs misaligns argument binding (a switch in the
             # middle shifts the following value onto the wrong parameter --
@@ -1861,7 +1875,7 @@ if ($AutoWriteTraceOnVerdict) {
             $wtArgs = @{
                 FamilyFile     = $ResultPath
                 AutoWriteTrace = $true
-                TraceSeconds   = $AutoTraceSeconds
+                TraceSeconds   = $traceSeconds
                 ResultPath     = $AutoTraceResultPath
                 # Keep both gates on the same floors: od-048 skips weak/
                 # degenerate families here, and the write-trace re-vets with
@@ -1886,7 +1900,8 @@ if ($AutoWriteTraceOnVerdict) {
                 invokedUtc  = ([DateTime]::UtcNow).ToString('o')
                 script      = $wtScript
                 familyFile  = $ResultPath
-                traceSeconds = $AutoTraceSeconds
+                traceSeconds = $traceSeconds
+                requestedSeconds = $AutoTraceSeconds
                 resultPath  = $AutoTraceResultPath
                 exitCode    = $wtExit
                 # 0 clean window; 7 paused (SPACE and rerun); 8 stale family

@@ -2,7 +2,11 @@
 param(
     [string]$RepoRoot = '',
     [string]$ReplayPath = '.data\launch\a9aed0467d7843efb06bb3319bb52ded.wotbreplay',
-    [int]$MaxReadRounds = 70,
+    # FRESH21: 50 rounds (was 70) so the correlate + auto-trace fire with
+    # more battle tail. FRESH20's 70 rounds pushed the trace start to 11s
+    # before battle end (STOP_gate=Denied, exit 5); 50 rounds saves ~40s and
+    # the trace window is separately capped to the tail by od-048.
+    [int]$MaxReadRounds = 50,
     [int]$StageTopN = 2,
     [int]$StageDelaySeconds = 2,
     # FRESH15i: wait until the match officially begins (loading + attendance
@@ -149,20 +153,21 @@ for ($attempt = 1; $attempt -le $MaxCampaignAttempts; $attempt++) {
         $launchExit = $LASTEXITCODE
         Write-Log ("relaunch_exit=" + $launchExit)
         if ($launchExit -ne 0) { exit $launchExit }
-        # FRESH19: the relaunched game writes a NEW blitz log + a NEW 'Start
-        # replay event' marker AFTER the watch/click phase. The OLD $logs list
-        # (enumerated before attempt 1) and the old marker would anchor the new
-        # battle ~40-100s early -- FRESH19 attempt 2 staged tick_est=91s
-        # instead of ~5s and found only 806 candidates (vs 3000), degrading
-        # the whole correlate. Re-enumerate logs and poll up to ~40s for a
-        # marker NEWER than the relaunch's own start.
-        $relaunchStartedUtc = [DateTime]::UtcNow
+        # FRESH19/20: the relaunched game writes a NEW blitz log + a NEW 'Start
+        # replay event' marker DURING the launch script's watch/click phase --
+        # BEFORE the script returns -- so a time bound against the relaunch
+        # start wrongly rejects the CURRENT marker (FRESH20 regression). The
+        # discriminator is the marker's AGE: the current replay's marker is
+        # seconds old; a previous attempt's is minutes old. Also scan the WHOLE
+        # file: the marker sits near the top of the game's log and leaves a
+        # -Tail 400 window once the log grows. Re-enumerate logs and poll up to
+        # ~40s for a marker written within the last 120s.
         $markerUtc = $null
         for ($wait = 0; $wait -lt 20 -and -not $markerUtc; $wait++) {
             $logs = @(Get-ChildItem (Join-Path $env:LOCALAPPDATA 'wotblitz\DAVAProject\blitz-logs_*.txt') -ErrorAction SilentlyContinue |
                 Sort-Object LastWriteTime -Descending)
             foreach ($log in $logs) {
-                $lines = @(Get-Content -LiteralPath $log.FullName -Tail 400 -ErrorAction SilentlyContinue)
+                $lines = @(Get-Content -LiteralPath $log.FullName -ErrorAction SilentlyContinue)
                 for ($i = $lines.Count - 1; $i -ge 0; $i--) {
                     $line = [string]$lines[$i]
                     if ($line -match 'START_REPLAY_LOCAL|Start replay event') {
@@ -172,9 +177,10 @@ for ($attempt = 1; $attempt -le $MaxCampaignAttempts; $attempt++) {
                             $parsed = [datetime]::ParseExact($anchorDateUtc.ToString('yyyy-MM-dd') + 'T' + $timeOnly, 'yyyy-MM-ddTHH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
                             $asUtc = [datetime]::SpecifyKind($parsed, [DateTimeKind]::Utc)
                             if ($asUtc -gt [datetime]::UtcNow) { $asUtc = $asUtc.AddDays(-1) }
-                            # Only accept a marker from THIS relaunch: anything
-                            # earlier is the previous attempt's stale anchor.
-                            if ($asUtc -lt $relaunchStartedUtc.AddSeconds(-5)) { continue }
+                            # Only accept a RECENT marker (the current replay
+                            # start): anything older than 120s is a previous
+                            # attempt's stale anchor.
+                            if ($asUtc -lt [datetime]::UtcNow.AddSeconds(-120)) { continue }
                             $markerUtc = $asUtc.ToString('o')
                             Write-Log ("marker_found(relaunch) log=" + $log.Name + " -> utc=" + $markerUtc)
                             break
