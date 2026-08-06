@@ -10,6 +10,11 @@ param(
     # matches the live in-battle position field instead of staging decoys
     # that hold the spawn-era value. Mirrors the attach-smoke gate.
     [double]$StageMinBattleSeconds = 55.0,
+    # FRESH18: loading + all-players-in-attendance lag between the Start
+    # marker and the decoded trajectory's tick 0 (match begin). The staging
+    # scan targets tick (elapsed - attendance) and the correlate maps
+    # wall->tick from (marker + attendance), so the needed shift is ~0.
+    [double]$AttendanceLatencySeconds = 50.0,
     [string]$ResultPath = '',
     # M2 pre-flight gate (FRESH9/FRESH14 chunk 2): after the first monitor
     # round proves the game readable, od-048 runs the x64dbg attach-smoke
@@ -167,6 +172,7 @@ for ($attempt = 1; $attempt -le $MaxCampaignAttempts; $attempt++) {
         StageTopN              = $StageTopN
         StageDelaySeconds      = $StageDelaySeconds
         StageMinBattleSeconds  = $StageMinBattleSeconds
+        AttendanceLatencySeconds = $AttendanceLatencySeconds
         AutoWriteTraceOnVerdict = $true
         AutoTraceSeconds       = $AutoTraceSeconds
         ResultPath             = $ResultPath

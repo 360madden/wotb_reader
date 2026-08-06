@@ -238,6 +238,16 @@ param(
     # match the live in-battle field, so the true field is staged among the
     # decoys and the correlate can find it. Mirrors the attach-smoke gate.
     [double]$StageMinBattleSeconds = 55.0,
+    # FRESH18: the replay-start anchor (Start replay event marker) fires when
+    # the replay STARTS LOADING, but the decoded trajectory's tick 0 is the
+    # moment the MATCH officially begins - which is this many seconds LATER
+    # (loading + all-players-in-attendance; the user-observed value is ~50s,
+    # matching the StageMinBattleSeconds / SmokeMinBattleSeconds defaults).
+    # The staging scan targets ground-truth tick (elapsed - attendance) and
+    # the correlate maps wall->tick from (marker + attendance), so the needed
+    # shift is ~0 instead of -50s (unreachable by the +/-30s sweep - the
+    # FRESH15j edge-aligned-all-results signature).
+    [double]$AttendanceLatencySeconds = 50.0,
     [string]$RepoRoot = ''
 )
 
@@ -737,6 +747,11 @@ $anchorUtc = [datetime]::Parse(
     $replayStartWallUtc,
     [Globalization.CultureInfo]::InvariantCulture,
     ([Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal))
+# FRESH18: the decoded trajectory's tick 0 is the MATCH-BEGIN instant, which
+# lags the Start marker by the loading+attendance phase. All tick math (staging
+# scan target, correlate wall->tick mapping, battle-end budget) must reference
+# the match-begin instant, not the marker.
+$battleStartUtc = $anchorUtc.AddSeconds([double]$AttendanceLatencySeconds)
 # -- Battle-time budget --
 # Staging is the expensive step: up to MaxStagingAttempts x StageTopN entities
 # x 3 axes = 27 full-memory scans, each taking tens of seconds. Unguarded, a
@@ -751,7 +766,7 @@ if ($null -ne $trajectory.durationTicks -and [double]$trajectory.durationTicks -
     $durationSeconds = [double]$trajectory.durationTicks / 10000000.0
 }
 $battleEndUtc = $null
-if ($durationSeconds -gt 0) { $battleEndUtc = $anchorUtc.AddSeconds($durationSeconds) }
+if ($durationSeconds -gt 0) { $battleEndUtc = $battleStartUtc.AddSeconds($durationSeconds) }
 $monitorMinSeconds = 30.0
 $stagingDeadlineUtc = $null
 $monitorExitUtc = $null
@@ -869,7 +884,12 @@ while ($stagingAttempt -lt $MaxStagingAttempts -and -not $budgetExhausted) {
             # start goes stale while the full-memory scans run (tens of
             # seconds each), so the band would trail the tank by scan duration
             # x speed. Recentering before every scan keeps each band on target.
-            $elapsedSeconds = ((Get-Date).ToUniversalTime() - $anchorUtc).TotalSeconds
+            # FRESH18: tick estimate relative to MATCH-BEGIN (battleStartUtc),
+            # not the marker - the decoded trajectory tick 0 is match-begin, so
+            # scanning for the value at (elapsed since marker) is ~50s ahead of
+            # the live tank (FRESH15j staged at 56s marker-elapsed -> scanned
+            # tick 56 while the tank sat at tick ~6, staging decoys).
+            $elapsedSeconds = ((Get-Date).ToUniversalTime() - $battleStartUtc).TotalSeconds
             if ($elapsedSeconds -lt 0) { $elapsedSeconds = 0 }
             $stageTickEstimate = [long]($elapsedSeconds * 10000000.0)
             if (-not $entityLogged) {
@@ -1206,7 +1226,7 @@ while ($round -lt $MaxReadRounds) {
             Sort-Object { $_.Samples.Count } -Descending |
             Select-Object -First $correlateMaxObservations)
         if ($provisionalObs.Count -gt 0) {
-            $provisional = Invoke-Api -Rendezvous $rendezvous -Method 'Post' -RelativePath '/api/v1/game/discover/correlate' -Body (New-CorrelateBody -Observations $provisionalObs -SessionId $battleSessionId -ReplayStartWallTimeUtc $replayStartWallUtc -TolerancePerAxis $TolerancePerAxis -MaxTimeShiftSeconds $MaxTimeShiftSeconds -MinMovingSpan $MinMovingSpan)
+            $provisional = Invoke-Api -Rendezvous $rendezvous -Method 'Post' -RelativePath '/api/v1/game/discover/correlate' -Body (New-CorrelateBody -Observations $provisionalObs -SessionId $battleSessionId -ReplayStartWallTimeUtc $battleStartUtc.ToString('o') -TolerancePerAxis $TolerancePerAxis -MaxTimeShiftSeconds $MaxTimeShiftSeconds -MinMovingSpan $MinMovingSpan)
             if ($null -ne $provisional -and $null -ne $provisional.results) {
                 foreach ($r in @($provisional.results)) {
                     if ($familySurvivors.Count -ge $FamilySurvivorCap) { break }
@@ -1300,7 +1320,7 @@ if ($observationsTotal -gt $observations.Count) {
 # after the last monitor round (post-processing/truncation), by which point a
 # 5-minute lease may have rotated.
 $rendezvous = Refresh-Rendezvous -Current $rendezvous
-$correlated = Invoke-Api -Rendezvous $rendezvous -Method 'Post' -RelativePath '/api/v1/game/discover/correlate' -Body (New-CorrelateBody -Observations $observations -SessionId $battleSessionId -ReplayStartWallTimeUtc $replayStartWallUtc -TolerancePerAxis $TolerancePerAxis -MaxTimeShiftSeconds $MaxTimeShiftSeconds -MinMovingSpan $MinMovingSpan)
+$correlated = Invoke-Api -Rendezvous $rendezvous -Method 'Post' -RelativePath '/api/v1/game/discover/correlate' -Body (New-CorrelateBody -Observations $observations -SessionId $battleSessionId -ReplayStartWallTimeUtc $battleStartUtc.ToString('o') -TolerancePerAxis $TolerancePerAxis -MaxTimeShiftSeconds $MaxTimeShiftSeconds -MinMovingSpan $MinMovingSpan)
 if ($null -eq $correlated -or $null -eq $correlated.results) {
     Write-Od048 'FAILED_correlate'
     exit 4
@@ -1475,7 +1495,12 @@ $report = [ordered]@{
     completedAtUtc         = ([DateTime]::UtcNow).ToString('o')
     battleSessionId        = $battleSessionId
     durationTicks          = $trajectory.durationTicks
+    # FRESH18: the correlate anchored wall->tick at battleStartUtc (marker +
+    # attendance), so record BOTH the raw marker and the corrected anchor the
+    # scoring actually used - the marker alone makes the run look 50s wrong.
     replayStartWallTimeUtc = $replayStartWallUtc
+    matchBeginWallTimeUtc  = $battleStartUtc.ToString('o')
+    attendanceLatencySeconds = $AttendanceLatencySeconds
     # Viewpoint-first pivot markers (null when the trajectory had no
     # IsViewpoint=true entity, or the switch was off).
     viewpointOnly          = [bool]$StageViewpointOnly
