@@ -751,6 +751,41 @@ function Test-FamilyLiveness {
     }
 }
 
+# FRESH24/25: read the armed addresses' CURRENT float values through the Host
+# read API (same mechanism as Test-FamilyLiveness). Returns a hashtable
+# address(lowercase) -> double, or $null on any failure. Used to decide
+# whether the BATTLE WORLD advanced across the trace window: a playing replay
+# moves the armed z addresses by tens of units in 25s; a paused/roster replay
+# renders (CPU burns -- liveness=running) but the world is frozen, so the
+# values are bit-identical.
+function Read-FamilyValues {
+    param([string[]]$Addresses)
+    $rv = Get-Rendezvous
+    if (-not $rv) { return $null }
+    try {
+        $body = @{
+            Addresses = @($Addresses)
+            ValueKind = 'Float'
+            ValueSize = 4
+        } | ConvertTo-Json -Compress
+        $resp = Invoke-RestMethod -Uri ($rv.baseUri + '/api/v1/game/discover/read') -Method Post -TimeoutSec 10 -Headers @{
+            'X-WotBTreader-Capability' = [string]$rv.capability
+            'Content-Type'             = 'application/json'
+        } -Body $body
+        if ($null -eq $resp -or $null -eq $resp.reads) { return $null }
+        $vals = @{}
+        foreach ($r in @($resp.reads)) {
+            if ($r.readOk -and $null -ne $r.value) {
+                $vals[[string]$r.address] = [double]$r.value
+            }
+        }
+        return $vals
+    }
+    catch {
+        return $null
+    }
+}
+
 if (-not ('WtX64Gui' -as [type])) {
 Add-Type @"
 using System;
@@ -1373,6 +1408,9 @@ try {
     # A running game burns ~1-2 cores at 60fps; a frozen debuggee burns ~0.
     $cpuWindowStart = $null
     try { $cpuWindowStart = [double]$game.TotalProcessorTime.TotalMilliseconds } catch { }
+    # FRESH24/25 value-liveness: snapshot the armed addresses' values at
+    # window start; compare with the post-window read in section 6a.
+    $valsStart = Read-FamilyValues -Addresses $armed
 
     # ---- 6. Poll hits + gate for the trace window --------------------------
     $deadline = (Get-Date).AddSeconds($TraceSeconds)
@@ -1435,7 +1473,26 @@ try {
         # far below this).
         $windowLiveness = if ($cpuDeltaMs -ge ([int64]($TraceSeconds * 50))) { 'running' } else { 'frozen' }
     }
-    Write-Wt ('window_cpu_delta_ms=' + $(if ($null -eq $cpuDeltaMs) { 'unknown' } else { $cpuDeltaMs }) + ' liveness=' + $windowLiveness)
+    # FRESH24/25 value-liveness: did the BATTLE WORLD advance across the
+    # window? A playing replay moves the armed z addresses (the tank drives
+    # ~20+ units per 25s); a paused/roster replay renders (CPU burns) but the
+    # world is frozen. Threshold 0.5 units on ANY armed address.
+    $windowValuesChanged = 'unknown'
+    $maxValueDelta = $null
+    $valsEnd = Read-FamilyValues -Addresses $armed
+    if ($null -ne $valsStart -and $null -ne $valsEnd) {
+        $maxDelta = 0.0
+        foreach ($a in $armed) {
+            $k = ([string]$a).ToLowerInvariant()
+            if ($valsStart.ContainsKey($k) -and $valsEnd.ContainsKey($k)) {
+                $d = [Math]::Abs($valsEnd[$k] - $valsStart[$k])
+                if ($d -gt $maxDelta) { $maxDelta = $d }
+            }
+        }
+        $maxValueDelta = [Math]::Round($maxDelta, 2)
+        $windowValuesChanged = if ($maxDelta -ge 0.5) { 'true' } else { 'false' }
+    }
+    Write-Wt ('window_cpu_delta_ms=' + $(if ($null -eq $cpuDeltaMs) { 'unknown' } else { $cpuDeltaMs }) + ' liveness=' + $windowLiveness + ' values_changed=' + $windowValuesChanged + $(if ($null -ne $maxValueDelta) { ' max_delta=' + $maxValueDelta } else { '' }))
 
     # ---- 6b. Release the debuggee ------------------------------------------
     # The memory BP pauses the game on its first hit (breakCondition defaults
@@ -1547,13 +1604,18 @@ try {
             # absence of writes.
             windowLiveness = $windowLiveness
             windowCpuDeltaMs = $cpuDeltaMs
+            # FRESH24/25: whether the battle world advanced across the window
+            # (armed-address values moved). 'false' with liveness=running =
+            # paused/roster replay: renders but writes nothing.
+            windowValuesChanged = $windowValuesChanged
+            windowMaxValueDelta = $maxValueDelta
             verdict      = $familyVerdict
             members      = $memberEntries
         }
         $familyResultPath = $ResultPath + '.family.json'
         $familyJson = $familyReport | ConvertTo-Json -Depth 8
         [System.IO.File]::WriteAllText($familyResultPath, $familyJson, (New-Object System.Text.UTF8Encoding($false)))
-        Write-Wt ('family_verdict=' + $familyVerdict + ' hit_members=' + $hitMembers.Count + ' liveness=' + $windowLiveness)
+        Write-Wt ('family_verdict=' + $familyVerdict + ' hit_members=' + $hitMembers.Count + ' liveness=' + $windowLiveness + ' values_changed=' + $windowValuesChanged)
         Write-Wt ('family_report=' + $familyResultPath)
     }
 
