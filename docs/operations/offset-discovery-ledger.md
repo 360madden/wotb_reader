@@ -3314,3 +3314,51 @@ Behavior note: ad-hoc score-less family JSONs now need `-MinMemberScore 0`
 **Next (FRESH12):** re-audit the edge-riding y@1.0 survivor (shift -7.5
 sitting on band edge [-10,-7.5]) - decide if the anchor is off or the
 address is real, then a clean-family live round.
+
+## 2026-08-06 — FRESH12 offline audit: the "edge-riding y@1.0 survivor" is REAL evidence, not a bad anchor (CORRECTED verdict)
+
+**Question:** FRESH10's only strong y survivor (0x1FC57238, y@1.00, shift -7.5s)
+was labelled "edge-riding" and demoted. Is the anchor off, or is the address
+real? Decided OFFLINE from the FRESH10 report + the live host DB — no new
+session spent.
+
+**Verdict: the address is real evidence; the FRESH10 writeup misread the
+ambiguity band as the sweep edge.**
+
+- 0x1FC57238: y@1.000 (69/69), entity 2549406, obsSpan=2.8, shift=-7.5s,
+  band=[-10,-8] (2.5s WIDE, INTERIOR), edgeAligned=**False**. The ambiguity
+  band is the set of shifts achieving max match count (width = tolerance /
+  |local slope|). A 2.5s-wide interior band 18s inside the ±30 sweep is the
+  OPPOSITE of degenerate: the observed series reproduces entity 2549406's y
+  shape at exactly one alignment. FRESH10 called shift -7.5 "band edge
+  [-10,-7.5]" — that band IS the ambiguity band, and its edge (-10) is nowhere
+  near the sweep edge (±28 threshold). The address survived every discriminator
+  this pipeline has.
+- The x-axis ground truth for entity 2549406 moves 70.6 units over 278.5s;
+  y moves only 10.9 units (avg slope ~0.04 u/s). Band width = 6.0/0.04 = 150s
+  → clamped to the whole sweep. **A near-flat ground axis makes y@~1.0 cheap**:
+  42 of 50 results were y-axis and 30/50 had ambiguity bands >20s (up to the
+  full 60s) — those "1.0" scores match at EVERY shift and carry zero
+  information. 0x1FC57238 is the ONLY result in the run with a tight band
+  (<=6s) AND not edge-aligned.
+- **The armed family was the worst possible pick**: fam0 = x@0.20 (noise) +
+  y@1.00, and the y member (0x22FC05D8) has a degenerate band [-10,+30]
+  (matches at any shift, obsSpan only 4.0). The report's family members carry
+  NO band fields (all [0,0] on the wire) — the discrimination information is
+  LOST in family serialization, so the auto-trace gate could never see it.
+- 0x1FC57238 was not even IN a family — its ±16-byte neighbors scored below
+  the seed floor, so the family builder never grouped it and the auto-trace
+  could only arm family members. The best evidence in the whole run was
+  structurally excluded.
+
+**Consequence:** FRESH10's hits=0 is explained: the trace armed degenerate
+family members (a noise x + an any-shift y), not the genuine survivor. The
+score floor (FRESH11) prevents noise members now, but a degenerate member
+still scores 1.0 and passes.
+
+**Next (FRESH13):** (1) enforce a BAND-WIDTH floor in the family gate — a
+member whose ambiguity band covers more than ~1/3 of the sweep is degenerate
+regardless of score; (2) serialize shiftMin/shiftMax per family member so the
+gate can see it; (3) consider a "solo survivor" arming path so a tight-band
+non-edge high-score address (like 0x1FC57238) can be traced even without a
+byte-window family.
