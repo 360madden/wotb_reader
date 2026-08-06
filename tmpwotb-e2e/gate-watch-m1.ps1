@@ -32,6 +32,31 @@ function Get-Gate {
         }
     } catch { return $null }
 }
+function Get-LogAnchorDateUtc([string]$LogPath) {
+    # The anchor DATE comes from the LOG FILE, not the wall clock: the blitz
+    # log's first column is UTC, and the file's own name embeds the real
+    # local write date (blitz-logs_YYYYMMDDHHMMSS.txt). UtcNow.Date is only
+    # correct for a same-day log; parsing yesterday's log today would anchor a
+    # full day off (the same failure class as the FRESH10 local-date bug).
+    # Priority: filename date -> LastWriteTime -> UtcNow, each normalized to
+    # the UTC date.
+    if (-not [string]::IsNullOrWhiteSpace($LogPath) -and (Split-Path $LogPath -Leaf) -match 'blitz-logs_(\d{8})(\d{6})') {
+        try {
+            $fileLocal = [datetime]::ParseExact($Matches[1] + ' ' + $Matches[2], 'yyyyMMdd HHmmss', [Globalization.CultureInfo]::InvariantCulture)
+            return ([datetime]::SpecifyKind($fileLocal, [DateTimeKind]::Local)).ToUniversalTime().Date
+        }
+        catch { }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($LogPath)) {
+        try {
+            $item = Get-Item -LiteralPath $LogPath -ErrorAction Stop
+            return ($item.LastWriteTime).ToUniversalTime().Date
+        }
+        catch { }
+    }
+    return ([datetime]::UtcNow).Date
+}
+
 function Get-LatestStartMarkerUtc {
     # Read the newest blitz-log; return the LAST 'Start replay event'/'START_REPLAY_LOCAL'
     # marker's leading timestamp as UTC ISO. Returns $null when absent.
@@ -44,12 +69,12 @@ function Get-LatestStartMarkerUtc {
             if ($line -match 'START_REPLAY_LOCAL|Start replay event') {
                 if ($line -match '^(\d{2}:\d{2}:\d{2})') {
                     $timeOnly = $Matches[1]
-                    # Log first column is UTC; anchor DATE must come from the
-                    # current UTC date, not local (local breaks after 20:00
-                    # local when UTC has rolled to the next day - FRESH10
-                    # live proof: staged=0 with elapsed_s=86403.9).
-                    $utcToday = ([datetime]::UtcNow).Date
-                    $parsed = [datetime]::ParseExact($utcToday.ToString('yyyy-MM-dd') + 'T' + $timeOnly, 'yyyy-MM-ddTHH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
+                    # Log first column is UTC; anchor DATE comes from the
+                    # LOG FILE (filename date -> LastWriteTime), NOT the wall
+                    # clock - a stale log parsed today would anchor a full
+                    # day off (FRESH10 failure class).
+                    $anchorDateUtc = Get-LogAnchorDateUtc -LogPath $log.FullName
+                    $parsed = [datetime]::ParseExact($anchorDateUtc.ToString('yyyy-MM-dd') + 'T' + $timeOnly, 'yyyy-MM-ddTHH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
                     $asUtc = [datetime]::SpecifyKind($parsed, [DateTimeKind]::Utc)
                     if ($asUtc -gt [datetime]::UtcNow) { $asUtc = $asUtc.AddDays(-1) }
                     return $asUtc.ToString('o')

@@ -212,7 +212,11 @@ if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
 if ([string]::IsNullOrWhiteSpace($ResultPath)) {
     $dataDir = Join-Path $RepoRoot '.data'
     if (-not (Test-Path -LiteralPath $dataDir)) { New-Item -ItemType Directory -Path $dataDir | Out-Null }
-    $ResultPath = Join-Path $dataDir ("od-048-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + ".json")
+    # Unique per run: second-resolution timestamps collide on fast-fail
+    # reruns (a preflight exit-1 rerun in the same second overwrites the
+    # prior report). The campaign suffix keeps retries diagnosable without
+    # clobbering evidence.
+    $ResultPath = Join-Path $dataDir ("od-048-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + "-" + ([Guid]::NewGuid().ToString('N').Substring(0, 6)) + ".json")
 }
 
 function Write-Od048([string]$Message) {
@@ -225,7 +229,30 @@ function Get-Rendezvous {
         $file = Get-ChildItem $dir -File -ErrorAction Stop |
             Sort-Object LastWriteTime -Descending | Select-Object -First 1
         if (-not $file) { return $null }
-        return (Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json)
+        $record = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json
+        # Expiry check (bug-hunt round 18): a host that was HARD-killed leaves
+        # the record on disk (graceful shutdown deletes it), and its capability
+        # lease is dead. Accepting it makes the driver POST a dead host's token
+        # until the host restarts and republishes -- every request 401s with
+        # web.local_capability_required and the campaign wastes rounds before
+        # the gate-lost path fires. An expired record is treated as absent so
+        # Refresh-Rendezvous keeps the LAST KNOWN good record (the host may
+        # still be up mid-rotation) and the gate check fails fast.
+        if ($record.PSObject.Properties['expiresAtUtc'] -and
+            -not [string]::IsNullOrWhiteSpace([string]$record.expiresAtUtc)) {
+            try {
+                # InvariantCulture (repo convention, cf. Convert-LogTimeToUtc):
+                # ISO 8601 parses identically on any machine.
+                $expiresAt = [datetime]::Parse(
+                    [string]$record.expiresAtUtc,
+                    [Globalization.CultureInfo]::InvariantCulture).ToUniversalTime()
+                if ($expiresAt -lt [datetime]::UtcNow.AddSeconds(-30)) {
+                    return $null
+                }
+            }
+            catch { }
+        }
+        return $record
     }
     catch { return $null }
 }
@@ -240,7 +267,12 @@ function Get-Rendezvous {
 function Refresh-Rendezvous {
     param([object]$Current)
     $fresh = Get-Rendezvous
-    if ($null -ne $fresh -and -not [string]::IsNullOrWhiteSpace([string]$fresh.capability)) {
+    # Guard the capability access: under StrictMode, property access on a
+    # JSON object that lacks the key throws PropertyNotFoundException, which
+    # would crash the mid-battle refresh instead of keeping the last record.
+    if ($null -ne $fresh -and
+        $fresh.PSObject.Properties['capability'] -and
+        -not [string]::IsNullOrWhiteSpace([string]$fresh.capability)) {
         return $fresh
     }
     return $Current
@@ -348,6 +380,18 @@ function Convert-ToFloatHex {
 function Test-FiniteDouble {
     param([double]$Value)
     return -not ([double]::IsNaN($Value) -or [double]::IsInfinity($Value))
+}
+
+# True when a family member is NOT edge-aligned, with the property access
+# guarded: under StrictMode a missing edgeAligned property would throw, so a
+# bare-family or old-host wire shape must not crash the gate loop. A missing
+# property is treated as NOT edge-aligned (usable) - this mirrors the
+# write-trace's Test-UsableFamily exactly ('-not $m.PSObject.Properties[...]
+# -or -not $m.edgeAligned'), so both gates agree on the same wire. The
+# caller uses the bare form: if (Test-MemberNotEdgeAligned -Member $m).
+function Test-MemberNotEdgeAligned {
+    param([object]$Member)
+    return -not $Member.PSObject.Properties['edgeAligned'] -or -not $Member.edgeAligned
 }
 
 # Server cap on correlate observations (matches the endpoint validation); the
@@ -817,10 +861,20 @@ while ($round -lt $MaxReadRounds) {
             break
         }
         $smokeProbe = $AttachSmokeProbeAddress
-        if ([string]::IsNullOrWhiteSpace($smokeProbe) -and $staged.Count -gt 0) {
-            # Default probe: the first staged address (already proven readable
-            # by this round's reads - a guaranteed-live game page).
-            $smokeProbe = [string]$staged[0]
+        if ([string]::IsNullOrWhiteSpace($smokeProbe) -and $series.Count -gt 0) {
+            # Default probe: the first address that ACCUMULATED READ SAMPLES
+            # this round ($series.Keys) - a guaranteed-live, already-readable
+            # game page. NOT $staged[0]: staging only lists candidate
+            # addresses; only $readOkSamples > 0 proves SOMETHING read OK, and
+            # it need not be $staged[0] (a broken first staged address would
+            # make the smoke arm a guard page on an unreadable region and
+            # false-red a healthy debugger).
+            $smokeProbe = [string]@($series.Keys)[0]
+        }
+        if ([string]::IsNullOrWhiteSpace($smokeProbe)) {
+            Write-Od048 'attach_smoke FAILED no_probe_address (no readable series; game may not be up)'
+            $stoppedReason = 'attach-smoke-failed'
+            break
         }
         if ([string]::IsNullOrWhiteSpace($smokeResultPath)) {
             $dataDir = Join-Path $RepoRoot '.data'
@@ -1078,9 +1132,18 @@ foreach ($result in $results) {
     # Band-based edge detection: the closest-to-zero reported shift can mask an
     # edge-riding alignment by up to (tolerance / local slope) seconds, so flag
     # when EITHER band edge touches the sweep boundary. (Older hosts without
-    # the band fields fall back to the reported shift.)
-    $minShift = if ($null -eq $result.shiftMinSeconds) { $shift } else { [double]$result.shiftMinSeconds }
-    $maxShift = if ($null -eq $result.shiftMaxSeconds) { $shift } else { [double]$result.shiftMaxSeconds }
+    # the band fields fall back to the reported shift.) The property access is
+    # GUARDED: under StrictMode, `$result.shiftMinSeconds` on a PSCustomObject
+    # lacking the key throws PropertyNotFoundException BEFORE the null check
+    # runs, so the documented fallback would crash instead of falling back.
+    $minShift = $shift
+    if ($result.PSObject.Properties['shiftMinSeconds'] -and $null -ne $result.shiftMinSeconds) {
+        $minShift = [double]$result.shiftMinSeconds
+    }
+    $maxShift = $shift
+    if ($result.PSObject.Properties['shiftMaxSeconds'] -and $null -ne $result.shiftMaxSeconds) {
+        $maxShift = [double]$result.shiftMaxSeconds
+    }
     $isEdgeAligned = ([Math]::Abs($minShift) -ge $edgeThreshold) -or ([Math]::Abs($maxShift) -ge $edgeThreshold)
     $result | Add-Member -NotePropertyName edgeAligned -NotePropertyValue $isEdgeAligned -Force
     $result | Add-Member -NotePropertyName shiftBandMinSeconds -NotePropertyValue $minShift -Force
@@ -1235,8 +1298,12 @@ $report = [ordered]@{
                     axis                = $_.axis
                     sign                = $_.sign
                     shiftSeconds        = $_.shiftSeconds
-                    shiftBandMinSeconds = $_.shiftMinSeconds
-                    shiftBandMaxSeconds = $_.shiftMaxSeconds
+                    # Guarded band access: an old host that omits the band
+                    # fields must serialize null (the write-trace then treats
+                    # the member as band-unknown and refuses it fail-closed),
+                    # not crash the report writer under StrictMode.
+                    shiftBandMinSeconds = if ($_.PSObject.Properties['shiftMinSeconds'] -and $null -ne $_.shiftMinSeconds) { [double]$_.shiftMinSeconds } else { $null }
+                    shiftBandMaxSeconds = if ($_.PSObject.Properties['shiftMaxSeconds'] -and $null -ne $_.shiftMaxSeconds) { [double]$_.shiftMaxSeconds } else { $null }
                     score               = $_.score
                     edgeAligned         = $_.edgeAligned
                 }
@@ -1292,9 +1359,21 @@ if ($AutoWriteTraceOnVerdict) {
     # weakest_score=0.00, but the first is an API bug, the second is a real
     # evidence verdict. Flag it so a live round is never misread.
     $anyScoreSeen = $false
+    # True once ANY family passes the member-count gate. The score-missing
+    # diagnosis below must only fire when a >=2-member family actually existed
+    # but carried no scores - otherwise an all-singleton report (no family
+    # passes the count gate, so the score loop never runs and $anyScoreSeen
+    # stays false) would be misread as a wire-shape regression when the real
+    # reason is that no family has two members (bug-hunt round 8/9).
+    $anyGe2MemberFamily = $false
+    # Catch-all reason when every family fails for a reason the near-miss
+    # trackers don't cover (e.g. all families are singletons - the memberCount
+    # guard rejects them before any floor runs).
+    $usableSkipReason = 'no_family_ge2_members'
     foreach ($f in @($families)) {
         $memberCount = @($f.members).Count
         if ($memberCount -lt 2) { continue }
+        $anyGe2MemberFamily = $true
         $weakestScore = [double]::MaxValue
         foreach ($m in @($f.members)) {
             if ($m.PSObject.Properties['score'] -and $null -ne $m.score) {
@@ -1334,10 +1413,12 @@ if ($AutoWriteTraceOnVerdict) {
         if ($AutoTraceMaxMemberBandSeconds -le 0) {
             $hasNonEdgeAligned = $false
             foreach ($m in @($f.members)) {
-                if (-not $m.edgeAligned) { $hasNonEdgeAligned = $true; break }
+                if (Test-MemberNotEdgeAligned -Member $m) { $hasNonEdgeAligned = $true; break }
             }
             if ($hasNonEdgeAligned) { $usableFamily = $f; $usableSkipReason = ''; break }
-            if ($weakestScore -gt $bestNearMiss) { $bestNearMiss = $weakestScore }
+            # A family that PASSED the score floor but is all-edge-aligned must
+            # NOT update $bestNearMiss (that tracker means "score floor
+            # rejected"); update it only on genuine score rejections above.
             $usableSkipReason = ('all_members_edge_aligned weakest_score=' + $weakestScore.ToString('F2'))
             continue
         }
@@ -1349,15 +1430,16 @@ if ($AutoWriteTraceOnVerdict) {
         }
         $hasNonEdgeAligned = $false
         foreach ($m in @($f.members)) {
-            if (-not $m.edgeAligned) { $hasNonEdgeAligned = $true; break }
+            if (Test-MemberNotEdgeAligned -Member $m) { $hasNonEdgeAligned = $true; break }
         }
         if ($hasNonEdgeAligned) { $usableFamily = $f; $usableSkipReason = ''; break }
-        if ($weakestScore -gt $bestNearMiss) { $bestNearMiss = $weakestScore }
+        # See the -le 0 branch: an edge-aligned rejection is NOT a score-floor
+        # rejection, so it must not feed the score near-miss tracker.
         $usableSkipReason = ('all_members_edge_aligned weakest_score=' + $weakestScore.ToString('F2'))
     }
 
     if ($null -eq $usableFamily) {
-        if (-not $anyScoreSeen -and $families.Count -gt 0) {
+        if (-not $anyScoreSeen -and $anyGe2MemberFamily) {
             $usableSkipReason = 'members_missing_score - check the correlate wire shape (score absent on every family member)'
         }
         elseif ($bestNearMiss -ge 0) {
@@ -1421,7 +1503,13 @@ if ($AutoWriteTraceOnVerdict) {
                 # 0 clean window; 7 paused (SPACE and rerun); 8 stale family
                 # (never relaunch between M1 and M2). M1 is unaffected either
                 # way: the verdict below stands.
+                # The write-trace re-vets the family with its OWN floors after
+                # od-048 approved it, so a refusal is a gate-parity signal. But
+                # exit 2 is shared with input failures (file missing, unparse,
+                # no families, no armed members) - the stdout line (captured in
+                # the campaign log) disambiguates, so the verdict stays neutral.
                 verdict     = if ($wtExit -eq 0) { 'trace-complete' }
+                    elseif ($wtExit -eq 2) { 'trace-refused-exit2' }
                     elseif ($wtExit -eq 7) { 'trace-replay-paused' }
                     elseif ($wtExit -eq 8) { 'trace-family-stale' }
                     else { 'trace-failed' }

@@ -819,8 +819,14 @@ internal static class GameApiEndpoints
             if (series is null
                 || string.IsNullOrWhiteSpace(series.Address)
                 || series.Samples is null
-                || series.Samples.Count is < 1 or > 5000)
+                || series.Samples.Count is < 2 or > 5000)
             {
+                // Minimum 2 samples, matching the scorer's actual floor: a
+                // 1-sample series passes serialization but is silently dropped
+                // by TrajectoryCorrelationScorer (valid.Count < 2 after
+                // non-finite filtering), so accepting it wastes an observation
+                // slot and makes AddressesScored < observations look like a
+                // server fault. Reject it up front (bug-hunt round 17).
                 return Results.BadRequest(new { error = "discover.invalid_options" });
             }
 

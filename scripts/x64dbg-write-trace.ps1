@@ -495,13 +495,16 @@ function Get-FamilyMeanScore {
 # within -MaxMemberBandSeconds, at least one non-edge-aligned -- an all-edge
 # family must never beat a real sibling pair: live OD-049 evidence had the
 # 5-member all-edge decoy out-scoring the genuine x/z pair on summed score,
-# which would have armed the trace on fabricated alignment); (3) any
-# fully-scored family, as a direct-investigation fallback when the caller
+# which would have armed the trace on fabricated alignment); (3) any family
+# clearing BOTH floors, as a direct-investigation fallback when the caller
 # (od-048 gate) has already vetted the report. The -MinMemberScore floor AND
-# the -MaxMemberBandSeconds floor apply to EVERY tier: a below-floor member is
-# noise (FRESH10: x@0.20 + y@1.00 -> family-no-hit) and a degenerate member
-# matches at any shift (FRESH12/FRESH13), so neither must ever be armed, even
-# inside an otherwise complete triple. Among the candidates the rank is
+# the -MaxMemberBandSeconds floor apply to EVERY tier (tier 3 included): a
+# below-floor member is noise (FRESH10: x@0.20 + y@1.00 -> family-no-hit) and
+# a degenerate/bandless member matches at any shift (FRESH12/FRESH13), so
+# neither must ever be armed, even inside an otherwise complete triple. A bare
+# score-only family JSON (no band fields) needs -MaxMemberBandSeconds 0 to arm
+# via tier 3 (direct investigation), since the band floor is fail-closed on
+# unknown bands. Among the candidates the rank is
 # (distinct axis count desc, then mean member score desc). Deterministic so
 # the same report always selects the same family. Returns $null when no
 # family clears both floors (caller must not arm).

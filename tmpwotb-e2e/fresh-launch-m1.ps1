@@ -55,18 +55,39 @@ function Get-LogState {
     return $null
 }
 
-function Convert-LogTimeToUtc([string]$Time) {
-    # The blitz log's FIRST column is UTC (e.g. "01:44:12 [info] 20:44:12 -5"
-    # where 20:44 is the engine's UTC-5 offset column), so the anchor DATE
-    # must come from the CURRENT UTC date, not the local date. Using the
-    # local date breaks after 20:00 local (UTC already rolled to the next
-    # day): the anchor lands ~20h in the past, the staging deadline is
-    # already exhausted, and the run dies with staged=0 (FRESH10 live proof:
-    # elapsed_s=86403.9). Rollover guard: a future-dated anchor means the
-    # marker line was written just before UTC midnight.
-    $utcToday = ([datetime]::UtcNow).Date
-    $parsed = [datetime]::ParseExact($utcToday.ToString('yyyy-MM-dd') + 'T' + $Time, 'yyyy-MM-ddTHH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
+function Get-LogAnchorDateUtc([string]$LogPath) {
+    # The anchor DATE comes from the LOG FILE, not the wall clock: the blitz
+    # log's first column is UTC ("01:44:12 [info] 20:44:12 -5" where 20:44 is
+    # the engine's UTC-5 offset), and the file's own name embeds the real
+    # local write date (blitz-logs_YYYYMMDDHHMMSS.txt). UtcNow.Date is only
+    # correct for a same-day log; parsing yesterday's log today would anchor a
+    # full day off (the same failure class as the FRESH10 local-date bug).
+    # Priority: filename date -> LastWriteTime -> UtcNow, each normalized to
+    # the UTC date.
+    if (-not [string]::IsNullOrWhiteSpace($LogPath) -and (Split-Path $LogPath -Leaf) -match 'blitz-logs_(\d{8})(\d{6})') {
+        try {
+            $fileLocal = [datetime]::ParseExact($Matches[1] + ' ' + $Matches[2], 'yyyyMMdd HHmmss', [Globalization.CultureInfo]::InvariantCulture)
+            return ([datetime]::SpecifyKind($fileLocal, [DateTimeKind]::Local)).ToUniversalTime().Date
+        }
+        catch { }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($LogPath)) {
+        try {
+            $item = Get-Item -LiteralPath $LogPath -ErrorAction Stop
+            return ($item.LastWriteTime).ToUniversalTime().Date
+        }
+        catch { }
+    }
+    return ([datetime]::UtcNow).Date
+}
+
+function Convert-LogTimeToUtc([string]$Time, [string]$LogPath = '') {
+    $anchorDateUtc = Get-LogAnchorDateUtc -LogPath $LogPath
+    $parsed = [datetime]::ParseExact($anchorDateUtc.ToString('yyyy-MM-dd') + 'T' + $Time, 'yyyy-MM-ddTHH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
     $asUtc = [datetime]::SpecifyKind($parsed, [DateTimeKind]::Utc)
+    # Rollover guard: a future-dated anchor means the marker line was written
+    # just before UTC midnight (the file-date and the marker's UTC date can
+    # straddle it), so pull back a day.
     if ($asUtc -gt [datetime]::UtcNow) { $asUtc = $asUtc.AddDays(-1) }
     return $asUtc.ToString('o')
 }
@@ -74,7 +95,7 @@ function Convert-LogTimeToUtc([string]$Time) {
 function Get-LatestMarkerUtc {
     $state = Get-LogState
     if (-not $state -or -not $state.LastMarkerTime) { return $null }
-    return Convert-LogTimeToUtc $state.LastMarkerTime
+    return Convert-LogTimeToUtc -Time $state.LastMarkerTime -LogPath $state.Log
 }
 
 # Stop any stale game/host, then launch fresh via the OD launch script.
@@ -112,7 +133,7 @@ while ((Get-Date) -lt $deadline) {
             $fresh = $true
         }
         if ($fresh -and $after.LastSceneEndsTime) {
-            $anchorUtc = Convert-LogTimeToUtc $after.LastSceneEndsTime
+            $anchorUtc = Convert-LogTimeToUtc $after.LastSceneEndsTime -LogPath $after.Log
             Write-Log ("fresh_marker count=" + $after.Count + " last=" + $after.LastMarkerTime +
                 " scene_ends=" + $after.LastSceneEndsTime + " utc=" + $anchorUtc)
             break

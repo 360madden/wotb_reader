@@ -217,6 +217,90 @@ public sealed class TrajectoryFamilyBuilderTests
     }
 
     [TestMethod]
+    public void DuplicateAddressIsDedupedWithinEntity()
+    {
+        // The same address scored twice (a duplicated observation entry, or
+        // two series parsing to the same address) must NOT create two members
+        // at offset 0: that would inflate the member count and corrupt the
+        // complete-triple rule and the span. The higher-scoring copy wins.
+        IReadOnlyList<TrajectoryFamily> families = TrajectoryFamilyBuilder.Build(
+        [
+            Result("0x1000", "x", ParticipantA, 1, score: 0.8),
+            Result("0x1000", "x", ParticipantA, 1, score: 1.0),
+            Result("0x1004", "y", ParticipantA, 1, score: 1.0),
+            Result("0x1008", "z", ParticipantA, 1, score: 1.0),
+        ], maxTimeShiftSeconds: 8);
+
+        Assert.HasCount(1, families);
+        // Three members (0x1000, 0x1004, 0x1008), not four.
+        Assert.HasCount(3, families[0].Members);
+        Assert.IsTrue(families[0].Complete);
+        // The higher score survived the dedup.
+        Assert.AreEqual(1.0, families[0].Members[0].Score, 0.001);
+        // Span is 8 bytes (offset of the last member), not 0.
+        Assert.AreEqual(8, families[0].SpanBytes);
+    }
+
+    [TestMethod]
+    public void DuplicateAddressTieKeepsFirstCopy()
+    {
+        // Equal scores must NOT flip to the later copy (the dedup uses a
+        // strict >): first-wins determinism, so a future change to >= cannot
+        // silently reorder evidence.
+        IReadOnlyList<TrajectoryFamily> families = TrajectoryFamilyBuilder.Build(
+        [
+            Result("0x1000", "x", ParticipantA, 1, score: 1.0),
+            Result("0x1000", "x", ParticipantA, 1, score: 1.0),
+            Result("0x1004", "y", ParticipantA, 1, score: 1.0),
+            Result("0x1008", "z", ParticipantA, 1, score: 1.0),
+        ], maxTimeShiftSeconds: 8);
+
+        Assert.HasCount(1, families);
+        Assert.HasCount(3, families[0].Members);
+        Assert.AreEqual(8, families[0].SpanBytes);
+    }
+
+    [TestMethod]
+    public void DuplicateAddressHigherScoreFirstIsNotReplaced()
+    {
+        // The higher-scoring copy listed FIRST must survive: the lower copy
+        // must not overwrite it (strict > only replaces when the newcomer is
+        // strictly higher).
+        IReadOnlyList<TrajectoryFamily> families = TrajectoryFamilyBuilder.Build(
+        [
+            Result("0x1000", "x", ParticipantA, 1, score: 1.0),
+            Result("0x1000", "x", ParticipantA, 1, score: 0.8),
+            Result("0x1004", "y", ParticipantA, 1, score: 1.0),
+            Result("0x1008", "z", ParticipantA, 1, score: 1.0),
+        ], maxTimeShiftSeconds: 8);
+
+        Assert.HasCount(1, families);
+        Assert.HasCount(3, families[0].Members);
+        Assert.AreEqual(1.0, families[0].Members[0].Score, 0.001);
+    }
+
+    [TestMethod]
+    public void DuplicateAddressDifferentCaseIsDeduped()
+    {
+        // Addresses from x64dbg-style sources can differ in hex case; the
+        // dedup compares the PARSED long, so mixed case must collapse to one
+        // member (the scorer emits lowercase 0x prefixes, but a hostile or
+        // foreign pipeline can send uppercase).
+        IReadOnlyList<TrajectoryFamily> families = TrajectoryFamilyBuilder.Build(
+        [
+            Result("0x1000", "x", ParticipantA, 1, score: 0.9),
+            Result("0X1000", "x", ParticipantA, 1, score: 1.0),
+            Result("0x1004", "y", ParticipantA, 1, score: 1.0),
+            Result("0x1008", "z", ParticipantA, 1, score: 1.0),
+        ], maxTimeShiftSeconds: 8);
+
+        Assert.HasCount(1, families);
+        Assert.HasCount(3, families[0].Members);
+        Assert.IsTrue(families[0].Complete);
+        Assert.AreEqual(1.0, families[0].Members[0].Score, 0.001);
+    }
+
+    [TestMethod]
     public void MalformedAndNullResultsAreSkipped()
     {
         IReadOnlyList<TrajectoryFamily> families = TrajectoryFamilyBuilder.Build(

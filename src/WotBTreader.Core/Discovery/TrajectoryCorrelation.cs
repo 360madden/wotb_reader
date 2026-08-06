@@ -290,17 +290,18 @@ public static class TrajectoryCorrelationScorer
                         bestSign = sign;
                         bestParticipant = ground.ParticipantId;
                         bestEntity = ground.EntityId;
-                        if (bestMatch == total)
-                        {
-                            // Perfect reproduction — cannot improve further.
-                            break;
-                        }
+                        // NO early break on a perfect match: a perfect match
+                        // cannot be beaten on COUNT, but a LATER (entity,
+                        // axis, sign) candidate can still TIE with a NARROWER
+                        // ambiguity band, and the tie-break above prefers it
+                        // (the documented attribution rule). Breaking here
+                        // would hand a perfect-yet-degenerate attribution (a
+                        // full-sweep band, e.g. FRESH10's y@1.0 flood) to the
+                        // first-scanned axis/entity even when a tight-band
+                        // perfect match exists elsewhere. The extra cost is
+                        // bounded: only perfect-match observations continue
+                        // scanning the remaining ground series.
                     }
-                }
-
-                if (bestMatch == total)
-                {
-                    break;
                 }
             }
 

@@ -578,6 +578,81 @@ public sealed class TrajectoryCorrelationScorerTests
     }
 
     [TestMethod]
+    public void PerfectMatchTieBreaksToNarrowerBandAcrossEntities()
+    {
+        // Regression for the early-break attribution bug (bug-hunt round 3):
+        // when the FIRST scanned candidate achieves a perfect match, the old
+        // code broke out of the scan, so a LATER (entity, axis, sign) candidate
+        // that TIED on match count with a NARROWER ambiguity band was never
+        // evaluated -- the first-scanned degenerate attribution always won.
+        // FRESH10's y@1.0 flood (full-sweep band) is the live incarnation.
+        //
+        // Here both entities perfectly reproduce the observed series at shift
+        // 0, but with different slopes, so their ambiguity bands differ:
+        //  - Entity A (scanned first): slope 0.5 units/s. Band = 2*tolerance /
+        //    slope = 24s wide, truncated to the full [-8, +8] sweep (the
+        //    degenerate, edge-aligned case the band audit must refuse).
+        //  - Entity B (scanned second): slope 2 units/s. The per-sample
+        //    alignments intersect to [-3, +1] (width 4) -- a quarter of A's
+        //    degenerate band.
+        // The narrower band must win the tie: the address is attributed to B.
+        TrajectoryGroundTruth groundTruth = new(
+            1_000_000_000,
+            [
+                new EntityTrajectory(
+                    new ParticipantId(Guid.NewGuid()),
+                    EntityId: 1,
+                    "Slow",
+                    IsViewpoint: false,
+                    [
+                        // x(t) = 90 + 0.5s over 0..100s (values 90..140).
+                        new TrajectorySample(0, 90, 0, 0),
+                        new TrajectorySample(1_000_000_000, 140, 0, 0),
+                    ]),
+                new EntityTrajectory(
+                    new ParticipantId(Guid.NewGuid()),
+                    EntityId: 2,
+                    "Fast",
+                    IsViewpoint: false,
+                    [
+                        // x(t) = 60 + 2s over 0..100s (values 60..260).
+                        new TrajectorySample(0, 60, 0, 0),
+                        new TrajectorySample(1_000_000_000, 260, 0, 0),
+                    ]),
+            ]);
+
+        // Observed: v(w) = 80 + w over wall 20s..24s (slope 1, span 4). It is
+        // within tolerance of BOTH trajectories at shift 0 (A: |v - (90+0.5w)|
+        // <= 2; B: |v - (60+2w)| <= 4), so both score 5/5. The tie-break must
+        // prefer B's narrower band over A's full-sweep degenerate band.
+        List<CorrelationSample> samples = [];
+        for (int index = 0; index < 5; index++)
+        {
+            int second = 20 + index;
+            samples.Add(new CorrelationSample(Start.AddSeconds(second), 80 + second));
+        }
+
+        IReadOnlyList<TrajectoryCorrelationResult> results = TrajectoryCorrelationScorer.Score(
+            groundTruth,
+            Start,
+            [new ObservedAddressSeries("0x1111", samples)],
+            maxTimeShiftSeconds: 8);
+
+        Assert.HasCount(1, results);
+        Assert.AreEqual(1.0, results[0].Score, 0.001);
+        Assert.AreEqual(2L, results[0].EntityId);
+        Assert.AreEqual("x", results[0].Axis);
+        Assert.AreEqual(1, results[0].Sign);
+        // The narrow band of entity B ([-3, +1]), not the full-sweep
+        // degenerate band of A ([-8, +8] inside the sweep).
+        Assert.AreEqual(-3.0, results[0].ShiftMinSeconds, 0.001);
+        Assert.AreEqual(1.0, results[0].ShiftMaxSeconds, 0.001);
+        Assert.AreEqual(4.0, results[0].ShiftMaxSeconds - results[0].ShiftMinSeconds, 0.001);
+        // This build's IsLessThan(upperBound, value) asserts value < upperBound.
+        Assert.IsLessThan(16.0, results[0].ShiftMaxSeconds - results[0].ShiftMinSeconds);
+    }
+
+    [TestMethod]
     public void InvalidArgumentsAreRejected()
     {
         Assert.ThrowsExactly<ArgumentNullException>(() =>

@@ -153,6 +153,41 @@ public static class TrajectoryFamilyBuilder
             entityList.Add(item);
         }
 
+        // Dedupe by address WITHIN an entity: the same address scored twice
+        // (a duplicated observation entry, or two series whose parse produced
+        // the same address) would otherwise create two members at offset 0,
+        // inflating member count and corrupting the complete-triple rule and
+        // the span. Keep the higher-scoring copy (both represent the same
+        // physical field; the better evidence is the more diagnostic one).
+        // Cross-entity duplicates (the same address attributed to two
+        // different entities) are deliberately NOT merged here: they stay in
+        // their separate families, and the write-trace re-dedups by address in
+        // Get-FamilyArmPlan before arming.
+        foreach (List<(TrajectoryCorrelationResult Result, long Address)> entityList in byEntity.Values)
+        {
+            if (entityList.Count < 2)
+            {
+                continue;
+            }
+
+            List<(TrajectoryCorrelationResult Result, long Address)> deduped = [];
+            foreach ((TrajectoryCorrelationResult Result, long Address) item in entityList)
+            {
+                int existing = deduped.FindIndex(d => d.Address == item.Address);
+                if (existing < 0)
+                {
+                    deduped.Add(item);
+                }
+                else if (item.Result.Score > deduped[existing].Result.Score)
+                {
+                    deduped[existing] = item;
+                }
+            }
+
+            entityList.Clear();
+            entityList.AddRange(deduped);
+        }
+
         List<(long BaseValue, TrajectoryFamily Family)> built = [];
         foreach (List<(TrajectoryCorrelationResult Result, long Address)> entityAddresses in byEntity.Values)
         {
