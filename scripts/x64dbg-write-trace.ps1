@@ -189,11 +189,23 @@ param(
     # FRESH10 results were degenerate y@~1.0 with 20-60s bands on a 10.9-unit
     # ground axis). A member whose band is missing or wider than the floor is
     # refused before arming. 0 disables the floor entirely (unknown bands
-    # allowed, direct-investigation override). Default 20s = 1/3 of the
-    # od-048 default sweep (+-30s = 60s band) -- the FRESH12 degenerate
-    # threshold. NOTE: the floor is absolute, not sweep-relative; pair it with
+    # allowed, direct-investigation override). Default 60s = 1/3 of the
+    # od-048 default sweep (+-90s = 180s band). FRESH22: this floor was 20s
+    # (1/3 of the OLD +-30s sweep) and was never re-derived when the sweep
+    # widened to +-90s (commit 888fb58) -- FRESH21's real z survivors (span
+    # 275, band 31.5s = 17.5% of the sweep) were refused and the trace never
+    # fired. NOTE: the floor is absolute, not sweep-relative; pair it with
     # the same -MaxTimeShiftSeconds that produced the bands.
-    [double]$MaxMemberBandSeconds = 20.0,
+    [double]$MaxMemberBandSeconds = 60.0,
+    # FRESH22: minimum observed movement SPAN (max-min of the value series,
+    # game units) for every member of the armed family. The band floor alone
+    # cannot catch the degenerate static class at the widened sweep (FRESH10's
+    # y@~1.0 had a 20-60s band that now fits): a value that never moves
+    # matches a low-information axis at any shift, so its score is cheap. A
+    # member whose span is KNOWN and below the floor is refused; a member with
+    # no span on the wire (server-family members predate the field) passes
+    # this check and is still guarded by the band + edge floors. 0 disables.
+    [double]$MinMemberSpan = 10.0,
     # FRESH14 solo-survivor mode: arm ONE address without a -FamilyFile. This
     # is the direct-investigation escape hatch for the strongest-evidence
     # class the pipeline has produced (FRESH12: 0x1FC57238, tight interior
@@ -507,6 +519,13 @@ function Test-FamilyBanded {
     foreach ($m in @($Family.members)) {
         $width = Get-MemberBandWidth -Member $m
         if ($null -eq $width -or $width -gt $MaxMemberBandSeconds) { return $false }
+        # FRESH22 span floor: a member that provably never moves (span below
+        # the floor) matched a low-information axis at any shift -- its score
+        # is cheap and it must not win the trace window. Unknown span (no
+        # field on the wire) passes; the band + edge floors still guard it.
+        if ($MinMemberSpan -gt 0 -and $m.PSObject.Properties['span'] -and $null -ne $m.span) {
+            if ([double]$m.span -lt $MinMemberSpan) { return $false }
+        }
     }
     return $true
 }

@@ -204,11 +204,24 @@ param(
     # y@~1.0 with 20-60s bands on a 10.9-unit ground axis). A family with a
     # member whose band is missing or wider than the floor is SKIPPED, not
     # armed. 0 disables the floor entirely (unknown bands allowed too, mirror
-    # the write-trace). Default 20s = 1/3 of the +-30s (60s) sweep band -- the
-    # FRESH12 degenerate threshold. NOTE: the floor is absolute, not
-    # sweep-relative; pair it with the same -MaxTimeShiftSeconds that produced
-    # the bands (od-048's default 30 -> 60s sweep).
-    [double]$AutoTraceMaxMemberBandSeconds = 20.0,
+    # the write-trace). Default 60s = 1/3 of the +-90s (180s) sweep band.
+    # FRESH22: this floor was 20s (1/3 of the OLD +-30s sweep) and was never
+    # re-derived when the sweep widened to +-90s (commit 888fb58) -- FRESH21
+    # refused its real z survivors (span 275, band 31.5s = 17.5% of the sweep)
+    # and the trace never fired. The band is the set of shifts achieving the
+    # max match count; a band covering most of the sweep = degenerate, a band
+    # under ~1/3 of the sweep = discriminating. NOTE: the floor is absolute,
+    # not sweep-relative; pair it with the same -MaxTimeShiftSeconds that
+    # produced the bands (od-048's default 90 -> 180s sweep).
+    [double]$AutoTraceMaxMemberBandSeconds = 60.0,
+    # FRESH22: minimum observed movement SPAN (max-min of the value series,
+    # game units) for a solo-emitted survivor. The band floor alone cannot
+    # catch the degenerate class at the widened sweep (FRESH10's static
+    # y@~1.0 had a 20-60s band that now fits): a value that never moves
+    # matches a low-information axis at any shift, so its score is cheap and
+    # proves nothing about being a written coordinate. A survivor whose span
+    # is unknown or below the floor is SKIPPED fail-closed. 0 disables.
+    [double]$AutoTraceMinMemberSpan = 10.0,
     # Pass -SkipPlayProbe / -SkipLivenessCheck through to the auto-invoked
     # write-trace (headless validation; the live round keeps both defaults).
     [switch]$AutoTraceSkipPlayProbe,
@@ -1441,11 +1454,12 @@ $completeFamilies = @($families | Where-Object { $_.complete })
 # strong survivor is not already a member of any family, synthesize a
 # single-member "solo" family from it (with its real score + ambiguity band)
 # so the auto-trace can arm it. Emission is gated on the SAME floors the
-# auto-trace applies: the survivor must clear -AutoTraceMinMemberScore and
-# (when the band floor is enabled) -AutoTraceMaxMemberBandSeconds -- a
-# degenerate y@~1.0 with a 40s band is NOT emitted (that is the FRESH10 armed
-# family's exact failure class). When nothing clears, the family_mapping_failed
-# message below stands.
+# auto-trace applies: the survivor must clear -AutoTraceMinMemberScore,
+# -AutoTraceMaxMemberBandSeconds (sweep-derived 60s for +-90) and
+# -AutoTraceMinMemberSpan (movement proof) -- a degenerate static y@~1.0 is
+# NOT emitted (the FRESH10 armed family's failure class; FRESH22 caught the
+# band floor at a stale 20s refusing FRESH21's real span-275 z survivors).
+# When nothing clears, the family_mapping_failed message below stands.
 $soloFamilyEmitted = $false
 if ($strongSurvivors.Count -gt 0) {
     # Best strong survivor: highest score, then narrowest ambiguity band (a
@@ -1471,6 +1485,16 @@ if ($strongSurvivors.Count -gt 0) {
         if (-not $s.PSObject.Properties['shiftSeconds'] -or $null -eq $s.shiftSeconds) { continue }
         if ([double]$s.score -lt $AutoTraceMinMemberScore) { continue }
         if ($AutoTraceMaxMemberBandSeconds -gt 0 -and $bandW -gt $AutoTraceMaxMemberBandSeconds) { continue }
+        # FRESH22 span floor: a survivor that never moves (span below the
+        # floor) matched a low-information axis at any shift -- its score is
+        # cheap and it must not win the trace window. Unknown span is refused
+        # fail-closed (a band with no movement proof is not discriminating).
+        $soloSpan = $null
+        if ($AutoTraceMinMemberSpan -gt 0) {
+            if (-not $s.PSObject.Properties['span'] -or $null -eq $s.span) { continue }
+            $soloSpan = [double]$s.span
+            if ($soloSpan -lt $AutoTraceMinMemberSpan) { continue }
+        }
         $alreadyMember = $false
         foreach ($f in $families) {
             foreach ($m in @($f.members)) {
@@ -1501,6 +1525,9 @@ if ($strongSurvivors.Count -gt 0) {
             shiftMaxSeconds = $maxB
             score           = [double]$bestSolo.score
             edgeAligned     = $false
+            # FRESH22: carry the observed movement span so the write-trace's
+            # -MinMemberSpan floor can vet it (the degenerate static class).
+            span            = if ($null -eq $soloSpan) { $null } else { $soloSpan }
         }
         $soloFamily = [pscustomobject]@{
             baseAddress = [string]$bestSolo.address
@@ -1683,6 +1710,9 @@ $report = [ordered]@{
                     shiftBandMaxSeconds = if ($_.PSObject.Properties['shiftMaxSeconds'] -and $null -ne $_.shiftMaxSeconds) { [double]$_.shiftMaxSeconds } else { $null }
                     score               = $_.score
                     edgeAligned         = $_.edgeAligned
+                    # FRESH22: movement span when the source carried it (solo
+                    # members do; server-family members may not).
+                    span                = if ($_.PSObject.Properties['span'] -and $null -ne $_.span) { [double]$_.span } else { $null }
                 }
             })
         }
@@ -1884,6 +1914,9 @@ if ($AutoWriteTraceOnVerdict) {
                 # -> write-trace refuses).
                 MinMemberScore      = $AutoTraceMinMemberScore
                 MaxMemberBandSeconds = $AutoTraceMaxMemberBandSeconds
+                # FRESH22: same span floor on both gates so the solo member
+                # vetted here can never be refused there for the same reason.
+                MinMemberSpan        = $AutoTraceMinMemberSpan
             }
             if ($AutoTraceSkipPlayProbe) { $wtArgs.SkipPlayProbe = $true }
             if ($AutoTraceSkipLivenessCheck) { $wtArgs.SkipLivenessCheck = $true }
