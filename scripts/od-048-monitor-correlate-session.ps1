@@ -222,6 +222,13 @@ param(
     # proves nothing about being a written coordinate. A survivor whose span
     # is unknown or below the floor is SKIPPED fail-closed. 0 disables.
     [double]$AutoTraceMinMemberSpan = 10.0,
+    # FRESH23: max members emitted in the solo family. The solo path used to
+    # emit ONE survivor (the score-max), and FRESH22 proved that can be a
+    # partial-window copy (span 75.5 vs the span-275.4 consensus class) that
+    # gets zero writes in a live moving window. The real per-frame field is
+    # one of MANY synchronized copies, so arm the top-N consensus addresses
+    # at once -- the write-trace caps at DR0-DR3 (4). Default 4.
+    [int]$AutoTraceMaxSoloMembers = 4,
     # Pass -SkipPlayProbe / -SkipLivenessCheck through to the auto-invoked
     # write-trace (headless validation; the live round keeps both defaults).
     [switch]$AutoTraceSkipPlayProbe,
@@ -1462,10 +1469,16 @@ $completeFamilies = @($families | Where-Object { $_.complete })
 # When nothing clears, the family_mapping_failed message below stands.
 $soloFamilyEmitted = $false
 if ($strongSurvivors.Count -gt 0) {
-    # Best strong survivor: highest score, then narrowest ambiguity band (a
-    # narrow interior band is the most discriminating artifact the scorer
-    # produces).
-    $bestSolo = $null
+    # FRESH23 selection: prefer the FULL-TRAJECTORY consensus class.
+    # Tiebreak order: (1) LARGEST movement SPAN -- a field tracking the axis
+    # end-to-end carries the axis's full span (FRESH22: the span-275.4 z
+    # consensus ~20 copies vs the armed span-75.5 partial that tracked the
+    # series only part-way and got ZERO writes in a live moving window); a
+    # static value, a partial-window copy, and a low-information y all carry
+    # smaller spans; (2) higher score; (3) narrower ambiguity band. Then arm
+    # the top-N candidates (DR0-DR3 = 4) so one of the consensus copies
+    # catches the per-frame writer.
+    $soloCandidates = @()
     $bestSoloBand = [double]::MaxValue
     foreach ($s in $strongSurvivors) {
         $bandW = Get-SurvivorBandWidth -Result $s
@@ -1489,11 +1502,9 @@ if ($strongSurvivors.Count -gt 0) {
         # floor) matched a low-information axis at any shift -- its score is
         # cheap and it must not win the trace window. Unknown span is refused
         # fail-closed (a band with no movement proof is not discriminating).
-        $soloSpan = $null
         if ($AutoTraceMinMemberSpan -gt 0) {
             if (-not $s.PSObject.Properties['span'] -or $null -eq $s.span) { continue }
-            $soloSpan = [double]$s.span
-            if ($soloSpan -lt $AutoTraceMinMemberSpan) { continue }
+            if ([double]$s.span -lt $AutoTraceMinMemberSpan) { continue }
         }
         $alreadyMember = $false
         foreach ($f in $families) {
@@ -1503,46 +1514,64 @@ if ($strongSurvivors.Count -gt 0) {
             if ($alreadyMember) { break }
         }
         if ($alreadyMember) { continue }
-        if ($null -eq $bestSolo -or [double]$s.score -gt [double]$bestSolo.score -or
-            ([double]$s.score -eq [double]$bestSolo.score -and $bandW -lt $bestSoloBand)) {
-            $bestSolo = $s
-            $bestSoloBand = $bandW
-        }
+        $soloCandidates += $s
     }
-    if ($null -ne $bestSolo) {
-        $minB = $null; $maxB = $null
-        if ($bestSolo.PSObject.Properties['shiftBandMinSeconds'] -and $null -ne $bestSolo.shiftBandMinSeconds) { $minB = [double]$bestSolo.shiftBandMinSeconds }
-        elseif ($bestSolo.PSObject.Properties['shiftMinSeconds'] -and $null -ne $bestSolo.shiftMinSeconds) { $minB = [double]$bestSolo.shiftMinSeconds }
-        if ($bestSolo.PSObject.Properties['shiftBandMaxSeconds'] -and $null -ne $bestSolo.shiftBandMaxSeconds) { $maxB = [double]$bestSolo.shiftBandMaxSeconds }
-        elseif ($bestSolo.PSObject.Properties['shiftMaxSeconds'] -and $null -ne $bestSolo.shiftMaxSeconds) { $maxB = [double]$bestSolo.shiftMaxSeconds }
-        $soloMember = [pscustomobject]@{
-            address         = [string]$bestSolo.address
-            offsetBytes     = 0
-            axis            = $bestSolo.axis
-            sign            = $bestSolo.sign
-            shiftSeconds    = $bestSolo.shiftSeconds
-            shiftMinSeconds = $minB
-            shiftMaxSeconds = $maxB
-            score           = [double]$bestSolo.score
-            edgeAligned     = $false
-            # FRESH22: carry the observed movement span so the write-trace's
-            # -MinMemberSpan floor can vet it (the degenerate static class).
-            span            = if ($null -eq $soloSpan) { $null } else { $soloSpan }
+    if ($soloCandidates.Count -gt 0) {
+        $soloCandidates = @($soloCandidates | Sort-Object -Property @(
+            @{ Expression = { if ($_.PSObject.Properties['span'] -and $null -ne $_.span) { [double]$_.span } else { -1.0 } }; Descending = $true },
+            @{ Expression = { [double]$_.score }; Descending = $true },
+            @{ Expression = { Get-SurvivorBandWidth -Result $_ }; Descending = $false }
+        ))
+        if ($soloCandidates.Count -gt $AutoTraceMaxSoloMembers) {
+            $soloCandidates = @($soloCandidates[0..($AutoTraceMaxSoloMembers - 1)])
+        }
+        $bestSolo = $soloCandidates[0]
+        $bestSoloBand = Get-SurvivorBandWidth -Result $bestSolo
+        if ($null -eq $bestSoloBand) { $bestSoloBand = [double]::MaxValue }
+        $soloMembers = @()
+        $seenSolo = @{}
+        $soloAxes = @{}
+        foreach ($sc in $soloCandidates) {
+            $addrKey = ([string]$sc.address).ToLowerInvariant()
+            if ($seenSolo.ContainsKey($addrKey)) { continue }
+            $seenSolo[$addrKey] = $true
+            $minB = $null; $maxB = $null
+            if ($sc.PSObject.Properties['shiftBandMinSeconds'] -and $null -ne $sc.shiftBandMinSeconds) { $minB = [double]$sc.shiftBandMinSeconds }
+            elseif ($sc.PSObject.Properties['shiftMinSeconds'] -and $null -ne $sc.shiftMinSeconds) { $minB = [double]$sc.shiftMinSeconds }
+            if ($sc.PSObject.Properties['shiftBandMaxSeconds'] -and $null -ne $sc.shiftBandMaxSeconds) { $maxB = [double]$sc.shiftBandMaxSeconds }
+            elseif ($sc.PSObject.Properties['shiftMaxSeconds'] -and $null -ne $sc.shiftMaxSeconds) { $maxB = [double]$sc.shiftMaxSeconds }
+            $scSpan = $null
+            if ($sc.PSObject.Properties['span'] -and $null -ne $sc.span) { $scSpan = [double]$sc.span }
+            $soloMembers += [pscustomobject]@{
+                address         = [string]$sc.address
+                offsetBytes     = 0
+                axis            = $sc.axis
+                sign            = $sc.sign
+                shiftSeconds    = $sc.shiftSeconds
+                shiftMinSeconds = $minB
+                shiftMaxSeconds = $maxB
+                score           = [double]$sc.score
+                edgeAligned     = $false
+                # FRESH22: carry the observed movement span so the write-trace's
+                # -MinMemberSpan floor can vet it (the degenerate static class).
+                span            = $scSpan
+            }
+            $soloAxes[[string]$sc.axis] = $true
         }
         $soloFamily = [pscustomobject]@{
             baseAddress = [string]$bestSolo.address
             spanBytes   = 0
-            axesCovered = @($bestSolo.axis)
+            axesCovered = @($soloAxes.Keys)
             complete    = $false
             solo        = $true
-            members     = @($soloMember)
+            members     = @($soloMembers)
         }
         $families = @($families) + @($soloFamily)
         $soloFamilyEmitted = $true
         $bandText = if ($bestSoloBand -lt [double]::MaxValue) { $bestSoloBand.ToString('F1') + 's' } else { 'unknown' }
         # NO address on the log line (bug-hunt R2 HIGH privacy fix): the
-        # evidence payload keeps it; stdout carries only axis/score/band.
-        Write-Od048 ('family_solo_emitted axis=' + $bestSolo.axis + ' score=' + $bestSolo.score + ' band=' + $bandText + ' (was structurally un-armable: not in any family)')
+        # evidence payload keeps it; stdout carries only axis/score/band/count.
+        Write-Od048 ('family_solo_emitted axis=' + $bestSolo.axis + ' members=' + $soloMembers.Count + ' score=' + $bestSolo.score + ' span=' + $(if ($null -eq $bestSolo.span) { 'unknown' } else { $bestSolo.span.ToString('F1') }) + ' band=' + $bandText + ' (was structurally un-armable: not in any family)')
     }
 }
 # M2 verdict upgrade: a complete family (three components of one entity
