@@ -780,7 +780,10 @@ function Test-FamilyLiveness {
 function Read-FamilyValues {
     param([string[]]$Addresses)
     $rv = Get-Rendezvous
-    if (-not $rv) { return $null }
+    if (-not $rv) {
+        Write-Wt 'read_values FAILED no_rendezvous'
+        return $null
+    }
     try {
         $body = @{
             Addresses = @($Addresses)
@@ -791,16 +794,31 @@ function Read-FamilyValues {
             'X-WotBTreader-Capability' = [string]$rv.capability
             'Content-Type'             = 'application/json'
         } -Body $body
-        if ($null -eq $resp -or $null -eq $resp.reads) { return $null }
+        if ($null -eq $resp -or $null -eq $resp.reads) {
+            Write-Wt 'read_values FAILED empty_response'
+            return $null
+        }
         $vals = @{}
         foreach ($r in @($resp.reads)) {
-            if ($r.readOk -and $null -ne $r.value) {
-                $vals[[string]$r.address] = [double]$r.value
+            # FRESH26b: the wire shape is OffsetReadItem -> absoluteAddress /
+            # observedValueHex / valueSummary (NOT address/value). Convert the
+            # hex string back to the float (little-endian) so the value map
+            # keys on the real address instead of ''.
+            if (-not $r.readOk -or [string]::IsNullOrWhiteSpace($r.observedValueHex)) { continue }
+            $hex = [string]$r.observedValueHex
+            if (($hex.Length % 2) -ne 0) { continue }
+            $bytes = New-Object byte[] ($hex.Length / 2)
+            for ($i = 0; $i -lt $bytes.Length; $i++) {
+                $bytes[$i] = [Convert]::ToByte($hex.Substring($i * 2, 2), 16)
             }
+            $val = [BitConverter]::ToSingle($bytes, 0)
+            $vals[[string]$r.absoluteAddress] = $val
         }
+        Write-Wt ('read_values ok read=' + @($resp.reads).Count + ' mapped=' + $vals.Count)
         return $vals
     }
     catch {
+        Write-Wt ('read_values FAILED ' + $_.Exception.Message)
         return $null
     }
 }
@@ -1014,7 +1032,7 @@ function Invoke-AttachSmoke {
             $finish = if ($KeepAttached) { 'scriptrun-resume -> KEEP ATTACHED (trace reuses)' } else { 'detach -> verify resume' }
             Write-Wt ('attach_smoke DRYRUN would attach 0x<hex> -> pause -> verify -> ' + $probeText + ' -> ' + $finish)
             $report.smoke = 'ok'
-            $report.keptAttached = $KeepAttached
+            $report.keptAttached = [bool]$KeepAttached
             Write-SmokeReport
             return 0
         }
@@ -1171,7 +1189,7 @@ function Invoke-AttachSmoke {
 try {
     # ---- 0. Attach-smoke mode (M2 pre-flight) - bypass everything else ----
     if ($AttachSmoke) {
-        exit (Invoke-AttachSmoke -ProbeAddress $SmokeProbeAddress -ResultPath $SmokeResultPath)
+        exit (Invoke-AttachSmoke -ProbeAddress $SmokeProbeAddress -ResultPath $SmokeResultPath -KeepAttached:$KeepAttached)
     }
 
     # ---- 1. Resolve input mode: family (M2), solo (FRESH14), or flat survivor
