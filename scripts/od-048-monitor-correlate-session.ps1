@@ -57,9 +57,13 @@
   completion; the gate revokes at battle end and the driver stops.
 
   -AutoWriteTraceOnVerdict (M2 automation, choreography 7): when the final
-  correlate produces a usable family (complete x/y/z triple, else >= 2
-  members), the driver IMMEDIATELY invokes x64dbg-write-trace.ps1
-  -FamilyFile <this report> -AutoWriteTrace in the same process/launch,
+  correlate produces a usable family (complete x/y/z triple, else one or
+  more members clearing the score + band floors -- FRESH14: a lone
+  tight-band non-edge survivor is emitted as a single-member solo family,
+  since the strongest artifact produced (FRESH12 0x1FC57238) was
+  structurally excluded from every family), the driver IMMEDIATELY invokes
+  x64dbg-write-trace.ps1 -FamilyFile <this report> -AutoWriteTrace in the
+  same process/launch,
   closing the human-reaction gap on the ~30s green window. The write-trace
   result (exit code, hits, rips) is written to -AutoTraceResultPath
   (default .data\od-048-autotrace-<timestamp>.json); the M1 report itself
@@ -380,6 +384,32 @@ function Convert-ToFloatHex {
 function Test-FiniteDouble {
     param([double]$Value)
     return -not ([double]::IsNaN($Value) -or [double]::IsInfinity($Value))
+}
+
+# Ambiguity-band width (seconds) of a correlate RESULT (not a family member),
+# or $null when the band is unknown. Accepts both wire pairs like the family
+# side: the correlate response emits shiftMin/MaxSeconds and the audit block
+# re-emits them as shiftBandMin/MaxSeconds. Used by the FRESH14 solo-family
+# emission to rank strong survivors by band width and gate emission on the
+# band floor.
+function Get-SurvivorBandWidth {
+    param([object]$Result)
+    $minB = $null
+    $maxB = $null
+    if ($Result.PSObject.Properties['shiftBandMinSeconds'] -and $null -ne $Result.shiftBandMinSeconds) {
+        $minB = [double]$Result.shiftBandMinSeconds
+    }
+    elseif ($Result.PSObject.Properties['shiftMinSeconds'] -and $null -ne $Result.shiftMinSeconds) {
+        $minB = [double]$Result.shiftMinSeconds
+    }
+    if ($Result.PSObject.Properties['shiftBandMaxSeconds'] -and $null -ne $Result.shiftBandMaxSeconds) {
+        $maxB = [double]$Result.shiftBandMaxSeconds
+    }
+    elseif ($Result.PSObject.Properties['shiftMaxSeconds'] -and $null -ne $Result.shiftMaxSeconds) {
+        $maxB = [double]$Result.shiftMaxSeconds
+    }
+    if ($null -eq $minB -or $null -eq $maxB) { return $null }
+    return [double]($maxB - $minB)
 }
 
 # True when a family member is NOT edge-aligned, with the property access
@@ -1155,6 +1185,83 @@ foreach ($result in $results) {
 $strongSurvivors = @($results | Where-Object { $_.score -ge 0.7 -and -not $_.edgeAligned })
 $families = @($correlated.families)
 $completeFamilies = @($families | Where-Object { $_.complete })
+
+# FRESH14 solo-survivor arming path: the strongest artifact this pipeline has
+# produced (FRESH12: 0x1FC57238, y@1.000, tight INTERIOR band [-10,-7.5] =
+# 2.5s, not edge-aligned) was structurally excluded from every family -- its
+# +/-16-byte neighbors scored below the family-seed floor, so the builder
+# never grouped it and the >=2-member gate could never arm it. When the best
+# strong survivor is not already a member of any family, synthesize a
+# single-member "solo" family from it (with its real score + ambiguity band)
+# so the auto-trace can arm it. Emission is gated on the SAME floors the
+# auto-trace applies: the survivor must clear -AutoTraceMinMemberScore and
+# (when the band floor is enabled) -AutoTraceMaxMemberBandSeconds -- a
+# degenerate y@~1.0 with a 40s band is NOT emitted (that is the FRESH10 armed
+# family's exact failure class). When nothing clears, the family_mapping_failed
+# message below stands.
+$soloFamilyEmitted = $false
+if ($strongSurvivors.Count -gt 0) {
+    # Best strong survivor: highest score, then narrowest ambiguity band (a
+    # narrow interior band is the most discriminating artifact the scorer
+    # produces).
+    $bestSolo = $null
+    $bestSoloBand = [double]::MaxValue
+    foreach ($s in $strongSurvivors) {
+        $bandW = Get-SurvivorBandWidth -Result $s
+        if ($null -eq $bandW) { $bandW = [double]::MaxValue }
+        # GUARDED score access, matching the auto-trace gate loop below: under
+        # Set-StrictMode a missing score property would throw BEFORE the null
+        # check runs, crashing the campaign after the correlate window is
+        # spent instead of skipping the survivor (bug-hunt rounds 8/9/14
+        # hardened this convention for exactly this reason).
+        if (-not $s.PSObject.Properties['score'] -or $null -eq $s.score) { continue }
+        if ([double]$s.score -lt $AutoTraceMinMemberScore) { continue }
+        if ($AutoTraceMaxMemberBandSeconds -gt 0 -and $bandW -gt $AutoTraceMaxMemberBandSeconds) { continue }
+        $alreadyMember = $false
+        foreach ($f in $families) {
+            foreach ($m in @($f.members)) {
+                if ([string]$m.address -ieq [string]$s.address) { $alreadyMember = $true; break }
+            }
+            if ($alreadyMember) { break }
+        }
+        if ($alreadyMember) { continue }
+        if ($null -eq $bestSolo -or [double]$s.score -gt [double]$bestSolo.score -or
+            ([double]$s.score -eq [double]$bestSolo.score -and $bandW -lt $bestSoloBand)) {
+            $bestSolo = $s
+            $bestSoloBand = $bandW
+        }
+    }
+    if ($null -ne $bestSolo) {
+        $minB = $null; $maxB = $null
+        if ($bestSolo.PSObject.Properties['shiftBandMinSeconds'] -and $null -ne $bestSolo.shiftBandMinSeconds) { $minB = [double]$bestSolo.shiftBandMinSeconds }
+        elseif ($bestSolo.PSObject.Properties['shiftMinSeconds'] -and $null -ne $bestSolo.shiftMinSeconds) { $minB = [double]$bestSolo.shiftMinSeconds }
+        if ($bestSolo.PSObject.Properties['shiftBandMaxSeconds'] -and $null -ne $bestSolo.shiftBandMaxSeconds) { $maxB = [double]$bestSolo.shiftBandMaxSeconds }
+        elseif ($bestSolo.PSObject.Properties['shiftMaxSeconds'] -and $null -ne $bestSolo.shiftMaxSeconds) { $maxB = [double]$bestSolo.shiftMaxSeconds }
+        $soloMember = [pscustomobject]@{
+            address         = [string]$bestSolo.address
+            offsetBytes     = 0
+            axis            = $bestSolo.axis
+            sign            = $bestSolo.sign
+            shiftSeconds    = $bestSolo.shiftSeconds
+            shiftMinSeconds = $minB
+            shiftMaxSeconds = $maxB
+            score           = [double]$bestSolo.score
+            edgeAligned     = $false
+        }
+        $soloFamily = [pscustomobject]@{
+            baseAddress = [string]$bestSolo.address
+            spanBytes   = 0
+            axesCovered = @($bestSolo.axis)
+            complete    = $false
+            solo        = $true
+            members     = @($soloMember)
+        }
+        $families = @($families) + @($soloFamily)
+        $soloFamilyEmitted = $true
+        $bandText = if ($bestSoloBand -lt [double]::MaxValue) { $bestSoloBand.ToString('F1') + 's' } else { 'unknown' }
+        Write-Od048 ('family_solo_emitted address=' + $bestSolo.address + ' axis=' + $bestSolo.axis + ' score=' + $bestSolo.score + ' band=' + $bandText + ' (was structurally un-armable: not in any family)')
+    }
+}
 # M2 verdict upgrade: a complete family (three components of one entity
 # reproduced at distinct offsets, none edge-aligned) is the strongest artifact
 # this pipeline produces -- one session mapped the whole coordinate vector.
@@ -1291,6 +1398,11 @@ $report = [ordered]@{
             spanBytes   = $_.spanBytes
             axesCovered = @($_.axesCovered)
             complete    = $_.complete
+            # FRESH14: true for a synthesized single-member family emitted
+            # from a lone tight-band non-edge survivor (structurally excluded
+            # from the real families). The write-trace selects it through the
+            # same floors as any other family.
+            solo        = $(if ($_.PSObject.Properties['solo'] -and $_.solo) { $true } else { $false })
             members     = @($_.members | ForEach-Object {
                 [ordered]@{
                     address             = $_.address
@@ -1311,6 +1423,11 @@ $report = [ordered]@{
         }
     })
     verdict                = $verdict
+    # FRESH14: true when a lone tight-band non-edge survivor (structurally
+    # excluded from every family) was emitted as a single-member solo family
+    # and IS armable by the auto-trace. False when every strong survivor was
+    # already in a family or failed the score/band floors.
+    soloFamilyEmitted      = $soloFamilyEmitted
 }
 
 try {
@@ -1331,18 +1448,22 @@ catch {
 # report: the M1 report is immutable once written.
 $autoTrace = $null
 if ($AutoWriteTraceOnVerdict) {
-    # Usable-family gate (M2 stop rule): a complete family is the prize; a
-    # 2-member family is still worth a trace window -- but only if every member
-    # clears the score floor AND at least one member is NOT edge-aligned (a
-    # bad-anchor family whose every member rides the sweep edge would burn the
-    # trace window on fabricated alignment); fewer members means no trace
-    # (x64dbg DR0-DR3 arming of a lone member is not evidence). Score floor
-    # added FRESH11: a below-floor member is noise (FRESH10: x@0.20 armed
-    # alongside y@1.00 -> family-no-hit), so a family with any member under
-    # -AutoTraceMinMemberScore is skipped, not armed. The complete-family
-    # shortcut is GONE: 'complete' only proves 3 axes + no edge alignment, not
-    # that every member scored (a noise member inside a 'complete' triple
-    # would still burn the window).
+    # Usable-family gate (M2 stop rule): a complete family is the prize; any
+    # family with one or more members is worth a trace window -- but only if
+    # every member clears the score floor AND at least one member is NOT
+    # edge-aligned (a bad-anchor family whose every member rides the sweep
+    # edge would burn the trace window on fabricated alignment). FRESH14
+    # removed the >=2-member requirement: the strongest artifact the pipeline
+    # has produced (FRESH12's 0x1FC57238, tight interior band) was
+    # structurally excluded from every family because its +/-16-byte
+    # neighbors scored below the seed floor, so the driver now emits a
+    # single-member solo family from the best lone tight-band non-edge
+    # survivor. Score floor added FRESH11: a below-floor member is noise
+    # (FRESH10: x@0.20 armed alongside y@1.00 -> family-no-hit), so a family
+    # with any member under -AutoTraceMinMemberScore is skipped, not armed.
+    # The complete-family shortcut is GONE: 'complete' only proves 3 axes +
+    # no edge alignment, not that every member scored (a noise member inside
+    # a 'complete' triple would still burn the window).
     $usableFamily = $null
     $usableSkipReason = ''
     # Best near-miss across ALL rejected families: the skip log reports the
@@ -1360,20 +1481,23 @@ if ($AutoWriteTraceOnVerdict) {
     # evidence verdict. Flag it so a live round is never misread.
     $anyScoreSeen = $false
     # True once ANY family passes the member-count gate. The score-missing
-    # diagnosis below must only fire when a >=2-member family actually existed
-    # but carried no scores - otherwise an all-singleton report (no family
-    # passes the count gate, so the score loop never runs and $anyScoreSeen
-    # stays false) would be misread as a wire-shape regression when the real
-    # reason is that no family has two members (bug-hunt round 8/9).
-    $anyGe2MemberFamily = $false
+    # diagnosis below must only fire when a family actually existed but
+    # carried no scores - otherwise a report with no families at all (no
+    # family passes the count gate, so the score loop never runs and
+    # $anyScoreSeen stays false) would be misread as a wire-shape regression
+    # when the real reason is that no family exists (bug-hunt round 8/9).
+    $anyGe1MemberFamily = $false
     # Catch-all reason when every family fails for a reason the near-miss
-    # trackers don't cover (e.g. all families are singletons - the memberCount
-    # guard rejects them before any floor runs).
-    $usableSkipReason = 'no_family_ge2_members'
+    # trackers don't cover (e.g. no families - the memberCount guard rejects
+    # them before any floor runs). FRESH14: the count gate is >=1 member, so
+    # a single-member (solo) family emitted from a lone tight-band survivor is
+    # eligible; the >=2 rule was removed because FRESH12's 0x1FC57238 (the
+    # strongest artifact produced) was structurally excluded from every family.
+    $usableSkipReason = 'no_family_with_members'
     foreach ($f in @($families)) {
         $memberCount = @($f.members).Count
-        if ($memberCount -lt 2) { continue }
-        $anyGe2MemberFamily = $true
+        if ($memberCount -lt 1) { continue }
+        $anyGe1MemberFamily = $true
         $weakestScore = [double]::MaxValue
         foreach ($m in @($f.members)) {
             if ($m.PSObject.Properties['score'] -and $null -ne $m.score) {
@@ -1439,7 +1563,7 @@ if ($AutoWriteTraceOnVerdict) {
     }
 
     if ($null -eq $usableFamily) {
-        if (-not $anyScoreSeen -and $anyGe2MemberFamily) {
+        if (-not $anyScoreSeen -and $anyGe1MemberFamily) {
             $usableSkipReason = 'members_missing_score - check the correlate wire shape (score absent on every family member)'
         }
         elseif ($bestNearMiss -ge 0) {

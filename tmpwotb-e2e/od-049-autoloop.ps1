@@ -5,7 +5,17 @@ param(
     [int]$MaxReadRounds = 70,
     [int]$StageTopN = 2,
     [int]$StageDelaySeconds = 2,
-    [string]$ResultPath = ''
+    [string]$ResultPath = '',
+    # M2 pre-flight gate (FRESH9/FRESH14 chunk 2): after the first monitor
+    # round proves the game readable, od-048 runs the x64dbg attach-smoke
+    # against the LIVE game (hex attach -> pause -> verify -> bpm -> detach
+    # -> verify resume) and fails closed (exit 6) on a red smoke BEFORE the
+    # correlate + trace window is spent. The live round must run with this on.
+    [switch]$AttachSmokeOnFirstRound,
+    # Auto-trace green-window seconds (passed through to the auto-invoked
+    # x64dbg-write-trace.ps1). Budget from the choreography table: 70 rounds
+    # leaves ~31s on Dead Rail; 25 is the recommended first attempt.
+    [int]$AutoTraceSeconds = 25
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -93,14 +103,21 @@ if (-not $markerUtc) {
 }
 
 # 3. Run M1 anchored to the marker, slim staging, auto write-trace on verdict.
-Write-Log ("running M1 anchored=" + $markerUtc + " rounds=" + $MaxReadRounds + " topN=" + $StageTopN)
-& (Join-Path $RepoRoot 'scripts\od-048-monitor-correlate-session.ps1') `
-    -ReplayStartWallTimeUtc $markerUtc `
-    -MaxReadRounds $MaxReadRounds `
-    -StageTopN $StageTopN `
-    -StageDelaySeconds $StageDelaySeconds `
-    -AutoWriteTraceOnVerdict `
-    -ResultPath $ResultPath *>&1 | ForEach-Object { Write-Log ("m1: " + $_) }
+Write-Log ("running M1 anchored=" + $markerUtc + " rounds=" + $MaxReadRounds + " topN=" + $StageTopN + " attachSmoke=" + $AttachSmokeOnFirstRound.IsPresent)
+# Hashtable splat (NOT array splatting of '-Name value' pairs, which
+# misaligns argument binding around switches - the exact failure od-048's
+# own wtArgs comment documents). Switches are added conditionally.
+$m1Args = @{
+    ReplayStartWallTimeUtc = $markerUtc
+    MaxReadRounds          = $MaxReadRounds
+    StageTopN              = $StageTopN
+    StageDelaySeconds      = $StageDelaySeconds
+    AutoWriteTraceOnVerdict = $true
+    AutoTraceSeconds       = $AutoTraceSeconds
+    ResultPath             = $ResultPath
+}
+if ($AttachSmokeOnFirstRound) { $m1Args.AttachSmokeOnFirstRound = $true }
+& (Join-Path $RepoRoot 'scripts\od-048-monitor-correlate-session.ps1') @m1Args *>&1 | ForEach-Object { Write-Log ("m1: " + $_) }
 $m1Exit = $LASTEXITCODE
 Write-Log ("m1_exit=" + $m1Exit)
 exit $m1Exit

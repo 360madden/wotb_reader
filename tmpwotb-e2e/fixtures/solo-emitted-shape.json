@@ -1,0 +1,26 @@
+{
+ "families": [
+  {
+   "baseAddress": "0x1FC57238",
+   "spanBytes": 0,
+   "axesCovered": [
+    "y"
+   ],
+   "complete": false,
+   "solo": true,
+   "members": [
+    {
+     "address": "0x1FC57238",
+     "offsetBytes": 0,
+     "axis": "y",
+     "sign": 1,
+     "shiftSeconds": -7.5,
+     "shiftMinSeconds": -10.0,
+     "shiftMaxSeconds": -7.5,
+     "score": 1.0,
+     "edgeAligned": false
+    }
+   ]
+  }
+ ]
+}

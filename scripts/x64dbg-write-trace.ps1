@@ -15,12 +15,28 @@
 
   Family mode (M2): reads the od-048 correlate report JSON (-FamilyFile,
     its `families` array) or a bare family JSON, selects the best family
-    (a complete x/y/z triple wins; else a usable family -- >=2 members with
-    at least one NOT edge-aligned -- by highest summed member score; all-edge
-    decoy families are excluded so a bad-anchor family cannot burn the trace
-    window over a real sibling pair), and arms 4-byte write breakpoints on
-    the member addresses (Float32 coordinates at 4-byte offsets). One trace
-    window maps the write sites of all three coordinate components.
+    (a complete x/y/z triple wins; else a usable family -- one or more
+    members with at least one NOT edge-aligned -- by highest mean member
+    score; all-edge decoy families are excluded so a bad-anchor family cannot
+    burn the trace window over a real sibling pair), and arms 4-byte write
+    breakpoints on the member addresses (Float32 coordinates at 4-byte
+    offsets). One trace window maps the write sites of all three coordinate
+    components.
+
+  Solo mode (FRESH14): -SoloAddress <hex> arms ONE address without a family
+    file. This exists because the strongest artifact the pipeline has
+    produced (FRESH12: 0x1FC57238, y@1.000, tight INTERIOR ambiguity band
+    [-10,-7.5] = 2.5s, not edge-aligned) was structurally excluded from every
+    family -- its +/-16-byte neighbors scored below the family-seed floor, so
+    the builder never grouped it and the >=2-member gate could never arm it.
+    Solo mode runs the address through the SAME floors as a family member:
+    -SoloScore must clear -MinMemberScore and the supplied
+    -SoloBandMinSeconds/-SoloBandMaxSeconds must clear -MaxMemberBandSeconds
+    (missing band = unknown = refused fail-closed unless the floor is 0). A
+    bare override with no correlation evidence requires -MinMemberScore 0
+    -MaxMemberBandSeconds 0 (direct investigation). Single-member families in
+    a -FamilyFile are accepted by the same path (Test-UsableFamily no longer
+    requires >=2 members), so the od-048 report can carry a solo family.
 
   The generated x64dbg script arms MEMORY write breakpoints (bpm
   <addr>, 1, w - guard-page, fires on ANY thread). Hardware bph was ruled
@@ -177,7 +193,29 @@ param(
     # od-048 default sweep (+-30s = 60s band) -- the FRESH12 degenerate
     # threshold. NOTE: the floor is absolute, not sweep-relative; pair it with
     # the same -MaxTimeShiftSeconds that produced the bands.
-    [double]$MaxMemberBandSeconds = 20.0
+    [double]$MaxMemberBandSeconds = 20.0,
+    # FRESH14 solo-survivor mode: arm ONE address without a -FamilyFile. This
+    # is the direct-investigation escape hatch for the strongest-evidence
+    # class the pipeline has produced (FRESH12: 0x1FC57238, tight interior
+    # band, structurally excluded from every family because its +/-16-byte
+    # neighbors scored below the seed floor). The address is run through the
+    # SAME score + band floors as a family member - pass -SoloScore (must
+    # clear -MinMemberScore) and -SoloBandMinSeconds/-SoloBandMaxSeconds
+    # (width must clear -MaxMemberBandSeconds); a missing band is refused
+    # fail-closed unless the band floor is 0. A bare override with no
+    # correlation evidence needs -MinMemberScore 0 -MaxMemberBandSeconds 0.
+    [string]$SoloAddress = '',
+    # Axis label for -SoloAddress (report/metadata only; the breakpoint does
+    # not depend on it). Default 'x'.
+    [string]$SoloAxis = 'x',
+    # Correlation score for -SoloAddress (0 = unknown, fails the default
+    # -MinMemberScore 0.9 floor unless raised or the floor is disabled).
+    [double]$SoloScore = 0.0,
+    # Ambiguity band for -SoloAddress (seconds). Both required for the band
+    # floor to pass; either missing = band unknown = refused unless
+    # -MaxMemberBandSeconds 0.
+    [double]$SoloBandMinSeconds = [double]::MinValue,
+    [double]$SoloBandMaxSeconds = [double]::MinValue
 )
 
 Set-StrictMode -Version Latest
@@ -438,17 +476,21 @@ function Test-FamilyBanded {
 # or above the -MinMemberScore floor (score floor added FRESH11: a below-floor
 # member is noise and would burn the window), every member's ambiguity band is
 # known and within -MaxMemberBandSeconds (band floor added FRESH13: a
-# degenerate member matches at any shift regardless of score), at least two
-# members, and at least one member NOT edge-aligned (the M2 stop rule, mirrors
-# the od-048 gate). An all-edge family is a bad-anchor decoy -- every member
-# rides the sweep edge, so it must never win the trace window over a real
-# sibling pair.
+# degenerate member matches at any shift regardless of score), at least ONE
+# member (>=2 no longer required since FRESH14: the strongest evidence the
+# pipeline has produced - FRESH12's 0x1FC57238, tight interior band - was
+# structurally excluded from every family because its +/-16-byte neighbors
+# scored below the seed floor; a single-member family whose sole member
+# clears both floors is now armable), and at least one member NOT
+# edge-aligned (the M2 stop rule, mirrors the od-048 gate). An all-edge
+# family is a bad-anchor decoy -- every member rides the sweep edge, so it
+# must never win the trace window over a real sibling pair.
 function Test-UsableFamily {
     param([object]$Family)
     if (-not (Test-FamilyScored -Family $Family)) { return $false }
     if (-not (Test-FamilyBanded -Family $Family)) { return $false }
     $members = @($Family.members)
-    if ($members.Count -lt 2) { return $false }
+    if ($members.Count -lt 1) { return $false }
     foreach ($m in $members) {
         if (-not $m.PSObject.Properties['edgeAligned'] -or -not $m.edgeAligned) {
             return $true
@@ -490,21 +532,21 @@ function Get-FamilyMeanScore {
 }
 
 # Pick the family to trace from the report's families array. Priority: (1) a
-# complete family (clean x/y/z triple); (2) a usable family (>=2 members,
-# every member at or above -MinMemberScore, every member's ambiguity band
-# within -MaxMemberBandSeconds, at least one non-edge-aligned -- an all-edge
-# family must never beat a real sibling pair: live OD-049 evidence had the
-# 5-member all-edge decoy out-scoring the genuine x/z pair on summed score,
-# which would have armed the trace on fabricated alignment); (3) any family
-# clearing BOTH floors, as a direct-investigation fallback when the caller
-# (od-048 gate) has already vetted the report. The -MinMemberScore floor AND
-# the -MaxMemberBandSeconds floor apply to EVERY tier (tier 3 included): a
-# below-floor member is noise (FRESH10: x@0.20 + y@1.00 -> family-no-hit) and
-# a degenerate/bandless member matches at any shift (FRESH12/FRESH13), so
-# neither must ever be armed, even inside an otherwise complete triple. A bare
-# score-only family JSON (no band fields) needs -MaxMemberBandSeconds 0 to arm
-# via tier 3 (direct investigation), since the band floor is fail-closed on
-# unknown bands. Among the candidates the rank is
+# complete family (clean x/y/z triple); (2) a usable family (one or more
+# members, every member at or above -MinMemberScore, every member's ambiguity
+# band within -MaxMemberBandSeconds, at least one non-edge-aligned -- an
+# all-edge family must never beat a real sibling pair: live OD-049 evidence
+# had the 5-member all-edge decoy out-scoring the genuine x/z pair on summed
+# score, which would have armed the trace on fabricated alignment); (3) any
+# family clearing BOTH floors, as a direct-investigation fallback when the
+# caller (od-048 gate) has already vetted the report. The -MinMemberScore
+# floor AND the -MaxMemberBandSeconds floor apply to EVERY tier (tier 3
+# included): a below-floor member is noise (FRESH10: x@0.20 + y@1.00 ->
+# family-no-hit) and a degenerate/bandless member matches at any shift
+# (FRESH12/FRESH13), so neither must ever be armed, even inside an otherwise
+# complete triple. A bare score-only family JSON (no band fields) needs
+# -MaxMemberBandSeconds 0 to arm via tier 3 (direct investigation), since the
+# band floor is fail-closed on unknown bands. Among the candidates the rank is
 # (distinct axis count desc, then mean member score desc). Deterministic so
 # the same report always selects the same family. Returns $null when no
 # family clears both floors (caller must not arm).
@@ -889,13 +931,14 @@ try {
         exit (Invoke-AttachSmoke -ProbeAddress $SmokeProbeAddress -ResultPath $SmokeResultPath)
     }
 
-    # ---- 1. Resolve input mode: family (M2) or flat survivor file ----------
+    # ---- 1. Resolve input mode: family (M2), solo (FRESH14), or flat survivor
     $mode = 'survivor'
     if (-not [string]::IsNullOrWhiteSpace($FamilyFile)) { $mode = 'family' }
+    elseif (-not [string]::IsNullOrWhiteSpace($SoloAddress)) { $mode = 'solo' }
     # Write-breakpoint width: Float32 family members are 4 bytes, the legacy
     # Double survivors 8. -WriteSize overrides the mode default.
     $writeSize = if ($WriteSize -ne 0) { $WriteSize }
-        elseif ($mode -eq 'family') { 4 }
+        elseif ($mode -eq 'family' -or $mode -eq 'solo') { 4 }
         else { 8 }
     if ($writeSize -ne 4 -and $writeSize -ne 8) {
         Write-Wt ('FAILED_write_size_must_be_4_or_8 got=' + $WriteSize)
@@ -906,27 +949,79 @@ try {
     $familyAxes = @()
     $armed = @()
     $unarmed = @()
-    if ($mode -eq 'family') {
+    if ($mode -eq 'family' -or $mode -eq 'solo') {
         # Family input: an od-048 correlate report JSON (its `families`
-        # array) or a bare family JSON object with `members`.
-        if (-not (Test-Path -LiteralPath $FamilyFile)) {
-            Write-Wt ('FAILED_family_file_missing=' + $FamilyFile)
-            exit 2
-        }
-        $familyDoc = $null
-        try {
-            $familyDoc = Get-Content -LiteralPath $FamilyFile -Raw -ErrorAction Stop | ConvertFrom-Json
-        }
-        catch {
-            Write-Wt ('FAILED_family_file_unparseable=' + $FamilyFile)
-            exit 2
-        }
+        # array) or a bare family JSON object with `members`. Solo input
+        # (FRESH14): -SoloAddress synthesizes a single-member family object
+        # (with -SoloAxis/-SoloScore/-SoloBandMinSeconds/-SoloBandMaxSeconds
+        # when the caller has correlation evidence) and runs it through the
+        # SAME floors, so a lone tight-band survivor like FRESH12's
+        # 0x1FC57238 - structurally excluded from every real family because
+        # its +/-16-byte neighbors scored below the seed floor - can be armed
+        # without a family file. A bare address with no score/band is refused
+        # fail-closed unless the caller disables the floors (direct
+        # investigation).
         $families = @()
-        if ($null -ne $familyDoc -and $familyDoc.PSObject.Properties['families']) {
-            $families = @($familyDoc.families)
+        if ($mode -eq 'solo') {
+            $soloToken = ConvertTo-HexToken $SoloAddress
+            if (-not $soloToken) {
+                Write-Wt ('FAILED_solo_address_invalid=' + $SoloAddress)
+                exit 2
+            }
+            $bandMin = $null
+            $bandMax = $null
+            if ($SoloBandMinSeconds -ne [double]::MinValue) { $bandMin = $SoloBandMinSeconds }
+            if ($SoloBandMaxSeconds -ne [double]::MinValue) { $bandMax = $SoloBandMaxSeconds }
+            $soloMember = [pscustomobject]@{
+                address             = $soloToken
+                offsetBytes         = 0
+                axis                = $SoloAxis
+                # sign/shiftSeconds are correlation evidence the operator did
+                # NOT provide in solo mode - leave them null so the evidence
+                # report cannot imply a verdict (evidence-first: unknown stays
+                # unknown; never guess). Get-FamilyArmPlan only consumes
+                # address/offsetBytes.
+                sign                = $null
+                shiftSeconds        = $null
+                shiftBandMinSeconds = $bandMin
+                shiftBandMaxSeconds = $bandMax
+                score               = $SoloScore
+                edgeAligned         = $false
+            }
+            $families = @([pscustomobject]@{
+                baseAddress = $soloToken
+                spanBytes   = 0
+                axesCovered = @($SoloAxis)
+                complete    = $false
+                solo        = $true
+                members     = @($soloMember)
+            })
+            # No address on stdout (privacy rule: addresses never enter stdout;
+            # they go to the local evidence file). The axis/score/band describe
+            # the arm without leaking the address.
+            Write-Wt ('solo axis=' + $SoloAxis + ' score=' + $SoloScore +
+                ' band=[' + $(if ($null -eq $bandMin) { 'unknown' } else { $bandMin }) + ',' +
+                $(if ($null -eq $bandMax) { 'unknown' } else { $bandMax }) + ']')
         }
-        elseif ($null -ne $familyDoc -and $familyDoc.PSObject.Properties['members']) {
-            $families = @($familyDoc)   # bare family object
+        else {
+            if (-not (Test-Path -LiteralPath $FamilyFile)) {
+                Write-Wt ('FAILED_family_file_missing=' + $FamilyFile)
+                exit 2
+            }
+            $familyDoc = $null
+            try {
+                $familyDoc = Get-Content -LiteralPath $FamilyFile -Raw -ErrorAction Stop | ConvertFrom-Json
+            }
+            catch {
+                Write-Wt ('FAILED_family_file_unparseable=' + $FamilyFile)
+                exit 2
+            }
+            if ($null -ne $familyDoc -and $familyDoc.PSObject.Properties['families']) {
+                $families = @($familyDoc.families)
+            }
+            elseif ($null -ne $familyDoc -and $familyDoc.PSObject.Properties['members']) {
+                $families = @($familyDoc)   # bare family object
+            }
         }
         if ($families.Count -eq 0) {
             Write-Wt 'FAILED_family_file_no_families'
@@ -1095,7 +1190,7 @@ try {
     # so a stale family (fresh replay launch) fails fast instead of producing
     # a clean-looking no-hit window. Requires a verified gate (the read API
     # is gate-gated); skippable with -SkipLivenessCheck.
-    if ($mode -eq 'family' -and $AutoWriteTrace -and -not $SkipLivenessCheck -and -not $SkipGateCheck) {
+    if (($mode -eq 'family' -or $mode -eq 'solo') -and $AutoWriteTrace -and -not $SkipLivenessCheck -and -not $SkipGateCheck) {
         if (-not (Test-FamilyLiveness -Addresses $armed)) {
             Write-Wt 'FAILED_family_stale (addresses not live in this process; re-run od-048 on THIS launch, or -SkipLivenessCheck)'
             exit 8

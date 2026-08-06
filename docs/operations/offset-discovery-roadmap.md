@@ -144,6 +144,26 @@ scripts/od-048-monitor-correlate-session.ps1
 > Full operator sequence, timing table, and edge-case guards:
 > [`offset-discovery-m1-m2-choreography.md`](offset-discovery-m1-m2-choreography.md).
 
+> **Gating decision before the next live round — the solo-survivor path
+> (RESOLVED 2026-08-06).** FRESH12 proved the pipeline's strongest artifact
+> (`0x1FC57238`, y@1.000, tight interior ambiguity band [−10,−7.5] = 2.5s,
+> non-edge) was **structurally un-armable**: its ±16-byte neighbors scored
+> below the family-seed floor, so it was never grouped into a family, and
+> both gates required ≥2 members. The FRESH14 session plan
+> ([`handoffs/2026-08-06-fresh14-session-plan.md`](handoffs/2026-08-06-fresh14-session-plan.md))
+> made building the solo path the Chunk 3 decision gate **before** spending
+> a live session. That path is now BUILT and offline-validated: the
+> write-trace has a `-SoloAddress` mode (single-member family run through the
+> same score + band floors) and `Test-UsableFamily` accepts ≥1 member; od-048
+> emits a single-member `solo` family from the best lone tight-band non-edge
+> survivor and serializes `solo`/`soloFamilyEmitted` in the report; the
+> auto-trace gate accepts ≥1 member. Validated: tight-band solo fixture arms
+> (exit 0), degenerate 40s-band y@1.0 refused (exit 2), real FRESH10 report
+> still refused, emitted shape round-trips, AST-extraction harness passes,
+> PS 5.1/pwsh 7 parse + PSSA gate green. **Remaining gate: the live round
+> itself** (`od-049-autoloop.ps1` with `-AttachSmokeOnFirstRound`; offline
+> chunks 0–2+4 pre-flight complete).
+
 ### M3 — Repeatability and publication
 
 1. Second launch + second distinct replay (BLK-0019): same displacement or
