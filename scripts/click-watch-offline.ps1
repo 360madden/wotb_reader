@@ -79,6 +79,23 @@ param(
     # When set, write the exit code here and throw WATCH_EXIT:<code> so the
     # launcher can invoke this script in-process (no nested console focus steal).
     [string]$ResultPath = '',
+    # FRESH16 click reliability: the ready gate fires on the FIRST bright frame
+    # (StableSamples=1 post-sync), but the CTA's entrance animation can still be
+    # running - clicking mid-animation misses (the button is not yet hit-testable).
+    # Before the click, require the blob centroid to settle: consecutive samples
+    # whose centroid moves less than SettleMaxCentroidDeltaPx. The click then
+    # happens on a fully-rendered button.
+    [int]$SettleSamples = 2,
+    [int]$SettleMaxCentroidDeltaPx = 12,
+    [int]$SettleSampleIntervalMs = 120,
+    # Hover-before-press and press-hold durations for the SendInput click.
+    [int]$ClickHoverMs = 200,
+    [int]$ClickHoldMs = 120,
+    # FRESH16: alternate the click channel per round. SendInput is the primary
+    # (real-input injection); a covering window stealing the foreground makes it
+    # land elsewhere, so even rounds use the PostMessage client-message channel
+    # (delivers straight to the game window, immune to the foreground lock).
+    [int]$MessageClickEveryRound = 2,
     # Playback-only: skip Host rendezvous/gate; success = dialog dismissed
     # and/or START_REPLAY_LOCAL in blitz-log.
     [switch]$VisualDismissOnly
@@ -95,7 +112,12 @@ function Quit-WatchOffline([int]$Code) {
     exit $Code
 }
 
-if (-not ('WatchOfflineVisionV2' -as [type])) {
+# FRESH16: renamed V2 -> V3. The autoloop retry relaunches the launch script
+# IN-PROCESS in the same pwsh process, so the old `-as [type]` guard would
+# skip recompiling and the retry would use the stale V2 class (no SendInput /
+# message-click methods) -> MethodNotFound at click time. A fresh class name
+# forces a recompile on every retry.
+if (-not ('WatchOfflineVisionV3' -as [type])) {
 # Single-quoted here-string: the C# body is passed to Add-Type verbatim.
 # A double-quoted (interpolating) here-string would let PowerShell evaluate
 # $($_.Exception.Message) at script top-level, where $_ is undefined ->
@@ -154,7 +176,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 
-public static class WatchOfflineVisionV2 {
+public static class WatchOfflineVisionV3 {
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
@@ -217,6 +239,19 @@ public static class WatchOfflineVisionV2 {
     _dpiAware = true;
   }
 
+  [StructLayout(LayoutKind.Sequential)]
+  public struct MOUSEINPUT { public int dx; public int dy; public uint mouseData; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
+  [StructLayout(LayoutKind.Sequential)]
+  public struct INPUT { public uint type; public MOUSEINPUT mi; }
+  public const uint INPUT_MOUSE = 0;
+  public const uint WM_LBUTTONDOWN = 0x0201;
+  public const uint WM_LBUTTONUP = 0x0202;
+  public const int MK_LBUTTON = 0x0001;
+  [DllImport("user32.dll", SetLastError = true)] public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+  // Legacy mouse_event click (kept for back-compat; the script uses the
+  // SendInput / message channels below).
   public static void ClickScreen(int x, int y) {
     EnsureDpiAware();
     SetCursorPos(x, y);
@@ -224,6 +259,42 @@ public static class WatchOfflineVisionV2 {
     mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, UIntPtr.Zero);
     Sleep(70);
     mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
+  }
+
+  // Reliable real-input click: hover, press (down), hold, release. Uses
+  // SendInput (the same injection the OS gives physical input), NOT the legacy
+  // mouse_event - DAVA/Unity-style UI can swallow synthesized mouse_event
+  // clicks, and the old blind double-click (two clicks 250ms apart with no
+  // verification) could double-trigger or hit a moving button. Returns whether
+  // BOTH the down and up events were accepted by the input system.
+  public static bool ClickScreenSendInput(int x, int y, int hoverMs, int holdMs) {
+    EnsureDpiAware();
+    SetCursorPos(x, y);
+    Sleep((uint)hoverMs);
+    var down = new INPUT[1];
+    down[0].type = INPUT_MOUSE;
+    down[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+    uint rd = SendInput(1, down, System.Runtime.InteropServices.Marshal.SizeOf(typeof(INPUT)));
+    Sleep((uint)holdMs);
+    var up = new INPUT[1];
+    up[0].type = INPUT_MOUSE;
+    up[0].mi.dwFlags = MOUSEEVENTF_LEFTUP;
+    uint ru = SendInput(1, up, System.Runtime.InteropServices.Marshal.SizeOf(typeof(INPUT)));
+    return rd == 1 && ru == 1;
+  }
+
+  // Message-based click at CLIENT coordinates: delivers WM_LBUTTONDOWN/UP
+  // directly to the game window's message queue via PostMessage. Works even
+  // when a covering window holds the foreground (the SendInput channel is
+  // swallowed by the foreground lock), because the message goes straight to
+  // the target hWnd. Some engines ignore posted mouse messages - hence the
+  // alternating-channel design - but Blitz's DAVA widgets accept them.
+  public static void ClickClientMessage(IntPtr hWnd, int clientX, int clientY) {
+    EnsureDpiAware();
+    IntPtr lp = (IntPtr)(((clientY & 0xFFFF) << 16) | (clientX & 0xFFFF));
+    PostMessage(hWnd, WM_LBUTTONDOWN, (IntPtr)MK_LBUTTON, lp);
+    Sleep(70);
+    PostMessage(hWnd, WM_LBUTTONUP, IntPtr.Zero, lp);
   }
 
   public static Bitmap CaptureBitmap(IntPtr hWnd, out RECT r) {
@@ -389,12 +460,12 @@ function Get-GameWindow {
 }
 
 function Get-WindowAnalysis([IntPtr]$Hwnd, [string]$SavePath) {
-    $rect = New-Object WatchOfflineVisionV2+RECT
-    $bmp = [WatchOfflineVisionV2]::CaptureBitmap($Hwnd, [ref]$rect)
+    $rect = New-Object WatchOfflineVisionV3+RECT
+    $bmp = [WatchOfflineVisionV3]::CaptureBitmap($Hwnd, [ref]$rect)
     if (-not $bmp) { return $null }
     try {
-        $dialog = [WatchOfflineVisionV2]::AnalyzeDialog($bmp)
-        if ($SavePath) { [void][WatchOfflineVisionV2]::SaveBitmap($bmp, $SavePath) }
+        $dialog = [WatchOfflineVisionV3]::AnalyzeDialog($bmp)
+        if ($SavePath) { [void][WatchOfflineVisionV3]::SaveBitmap($bmp, $SavePath) }
         return [pscustomobject]@{
             Rect               = $rect
             Blob               = $dialog.Blob
@@ -460,7 +531,7 @@ function Test-ReplayStartedMarker([datetime]$ProcessStartAt) {
 }
 
 try {
-    [void][WatchOfflineVisionV2]::EnsureDpiAware()
+    [void][WatchOfflineVisionV3]::EnsureDpiAware()
     if (-not $VisualDismissOnly) {
         try {
             $null = Get-Rendezvous
@@ -512,7 +583,7 @@ try {
 
     # Soft focus only: SW_RESTORE during LoginOnReplay correlated with
     # become hidden -> OnBackground in live OD pulses (see ForceForeground note).
-    [void][WatchOfflineVisionV2]::SetForegroundWindow($game.MainWindowHandle)
+    [void][WatchOfflineVisionV3]::SetForegroundWindow($game.MainWindowHandle)
     Start-Sleep -Milliseconds 300
 
     # --- Sync-dim ready gate ---
@@ -540,7 +611,7 @@ try {
         # once the dialog was sighted (phase != LookingForDialog); SW_RESTORE
         # during LoginOnReplay correlated with become hidden / OnBackground.
         if (((Get-Date) - $lastFocusAt).TotalSeconds -ge 3) {
-            [void][WatchOfflineVisionV2]::SetForegroundWindow($game.MainWindowHandle)
+            [void][WatchOfflineVisionV3]::SetForegroundWindow($game.MainWindowHandle)
             $lastFocusAt = Get-Date
         }
 
@@ -640,6 +711,51 @@ try {
     }
 
     $preCount = [int]$readyAnalysis.Blob.PixelCount
+    # FRESH16: entrance-animation settle. The ready gate accepted the FIRST
+    # bright frame (post-sync StableSamples=1), but the CTA is still animating
+    # in at that instant - a click lands before the widget is hit-testable and
+    # the game drops it (the user-observed 'click does not register'). Wait
+    # until the blob CENTROID stops moving across consecutive samples (or a
+    # cap), so the click happens on a fully-rendered button. Centroid stability
+    # beats pixel-count stability: the count stays ~flat during a fade, but the
+    # button's position/shape moving is what marks the animation in progress.
+    $settleSamplesOk = 0
+    $prevCentroidX = -1
+    $prevCentroidY = -1
+    $settleDeadline = (Get-Date).AddSeconds([Math]::Max(1, ($SettleSamples * $SettleSampleIntervalMs / 1000.0) * 4))
+    while ((Get-Date) -lt $settleDeadline -and $settleSamplesOk -lt $SettleSamples) {
+        Start-Sleep -Milliseconds $SettleSampleIntervalMs
+        $settleGame = Get-GameWindow
+        if (-not $settleGame) {
+            Write-Host 'watch_offline: window_lost_during_settle'
+            Quit-WatchOffline 1
+        }
+        $settleAnalysis = Get-WindowAnalysis $settleGame.MainWindowHandle $ScreenshotPath
+        if (-not $settleAnalysis -or -not $settleAnalysis.Blob.Found) {
+            $settleSamplesOk = 0
+            $prevCentroidX = -1
+            $prevCentroidY = -1
+            continue
+        }
+        $cxNow = [int]$settleAnalysis.Blob.CentroidX
+        $cyNow = [int]$settleAnalysis.Blob.CentroidY
+        if ($prevCentroidX -lt 0) {
+            $prevCentroidX = $cxNow
+            $prevCentroidY = $cyNow
+            continue
+        }
+        $moved = [Math]::Abs($cxNow - $prevCentroidX) + [Math]::Abs($cyNow - $prevCentroidY)
+        $prevCentroidX = $cxNow
+        $prevCentroidY = $cyNow
+        if ($moved -le $SettleMaxCentroidDeltaPx) {
+            $settleSamplesOk++
+        }
+        else {
+            $settleSamplesOk = 0
+        }
+    }
+    Write-Host ("watch_offline: animation_settle samples={0}/{1} centroid={2},{3}" -f `
+        $settleSamplesOk, $SettleSamples, $prevCentroidX, $prevCentroidY)
     # Brief settle after sync recovery so the CTA accepts input; still short vs Error 126.
     $holdMs = if ($seenSyncing) { 350 } else { [int]($ReadyHoldSeconds * 1000) }
     Write-Host ("watch_offline: phase=Ready dialogMeanL={0} orangePx={1} seenSync={2} stable={3} hold_{4}ms" -f `
@@ -654,7 +770,7 @@ try {
         Write-Host 'watch_offline: window_lost_after_hold'
         Quit-WatchOffline 1
     }
-    [WatchOfflineVisionV2]::ForceForeground($game.MainWindowHandle)
+    [WatchOfflineVisionV3]::ForceForeground($game.MainWindowHandle)
     Start-Sleep -Milliseconds 150
     $analysis = Get-WindowAnalysis $game.MainWindowHandle $ScreenshotPath
     if (-not $analysis) {
@@ -708,7 +824,7 @@ try {
 
         # Soft focus only (no ShowWindow/SW_RESTORE churn); ForceForeground
         # before the click handles focus without SW_RESTORE.
-        [void][WatchOfflineVisionV2]::SetForegroundWindow($game.MainWindowHandle)
+        [void][WatchOfflineVisionV3]::SetForegroundWindow($game.MainWindowHandle)
         Start-Sleep -Milliseconds 250
 
         $analysis = Get-WindowAnalysis $game.MainWindowHandle $ScreenshotPath
@@ -749,13 +865,35 @@ try {
                 $sawBlob = $true
                 $screenX = $analysis.Rect.Left + $analysis.Blob.CentroidX
                 $screenY = $analysis.Rect.Top + $analysis.Blob.CentroidY
-                Write-Host ("watch_offline: click_blob screen={0},{1} client={2},{3}" -f `
-                    $screenX, $screenY, $analysis.Blob.CentroidX, $analysis.Blob.CentroidY)
-                [WatchOfflineVisionV2]::ForceForeground($game.MainWindowHandle)
-                Start-Sleep -Milliseconds 100
-                [WatchOfflineVisionV2]::ClickScreen($screenX, $screenY)
-                Start-Sleep -Milliseconds 250
-                [WatchOfflineVisionV2]::ClickScreen($screenX + 3, $screenY + 2)
+                # FRESH16: ONE click per round, alternating channels - never the
+                # old blind double-click (two clicks 250ms apart, no verification
+                # between: the second could double-trigger a button still mid-
+                # entrance-animation, or miss as the button moves). SendInput on
+                # odd rounds is the primary real-input channel; even rounds use
+                # the PostMessage client-message channel, which reaches the game
+                # window even when a covering window has stolen the foreground.
+                $useMessageClick = ($MessageClickEveryRound -gt 0 -and ($round % $MessageClickEveryRound) -eq 0)
+                if ($useMessageClick) {
+                    Write-Host ("watch_offline: click_message_channel screen={0},{1} client={2},{3}" -f `
+                        $screenX, $screenY, $analysis.Blob.CentroidX, $analysis.Blob.CentroidY)
+                    [WatchOfflineVisionV3]::ClickClientMessage($game.MainWindowHandle, $analysis.Blob.CentroidX, $analysis.Blob.CentroidY)
+                }
+                else {
+                    Write-Host ("watch_offline: click_sendinput screen={0},{1}" -f $screenX, $screenY)
+                    [WatchOfflineVisionV3]::ForceForeground($game.MainWindowHandle)
+                    Start-Sleep -Milliseconds 100
+                    $clickOk = [WatchOfflineVisionV3]::ClickScreenSendInput($screenX, $screenY, $ClickHoverMs, $ClickHoldMs)
+                    Write-Host ("watch_offline: sendinput_accept=" + $clickOk)
+                }
+                # Verify the click landed BEFORE the next round: a quick
+                # re-capture right after the click catches an immediately
+                # dismissed dialog (button gone) so round 2 does not re-click a
+                # live replay HUD (OD-017 false positive).
+                Start-Sleep -Milliseconds 400
+                $quickPost = Get-WindowAnalysis $game.MainWindowHandle $null
+                if ($quickPost -and $quickPost.Blob.Found -and [int]$quickPost.Blob.PixelCount -gt $DismissMaxPixels) {
+                    Write-Host ("watch_offline: post_click_blob_still_present px=" + [int]$quickPost.Blob.PixelCount)
+                }
             }
         }
         elseif (-not $sawBlob -and $round -eq 1) {

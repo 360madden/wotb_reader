@@ -1,7 +1,7 @@
-# Smoke: prove click-watch-offline.ps1's WatchOfflineVisionV2 C# Add-Type block
+# Smoke: prove click-watch-offline.ps1's WatchOfflineVisionV3 C# Add-Type block
 # compiles on the RUNNING engine (the 2026-08-06 FRESH15 blocker: pwsh 7 could
 # not resolve 'System.Drawing.dll' -> CS1069). Extracts the exact
-# `if (-not ('WatchOfflineVisionV2' -as [type])) { ... }` block via AST and
+# `if (-not ('WatchOfflineVisionV3' -as [type])) { ... }` block via AST and
 # executes it, then asserts the type loaded. Run under BOTH engines:
 #   powershell -File tmpwotb-e2e/probe-watch-compile.ps1
 #   pwsh        -File tmpwotb-e2e/probe-watch-compile.ps1
@@ -32,16 +32,16 @@ $ifStmt = $ast.FindAll({
     elseif ($n.PSObject.Properties['Condition']) {
         $condText = $n.Condition.Extent.Text
     }
-    return ($null -ne $condText -and $condText.Contains('WatchOfflineVisionV2'))
+    return ($null -ne $condText -and $condText.Contains('WatchOfflineVisionV3'))
 }, $true) | Select-Object -First 1
-if (-not $ifStmt) { throw 'WatchOfflineVisionV2 Add-Type guard block not found' }
+if (-not $ifStmt) { throw 'WatchOfflineVisionV3 Add-Type guard block not found' }
 
 . ([scriptblock]::Create($ifStmt.Extent.Text))
-if (-not ('WatchOfflineVisionV2' -as [type])) { throw 'FAIL: WatchOfflineVisionV2 did not load' }
+if (-not ('WatchOfflineVisionV3' -as [type])) { throw 'FAIL: WatchOfflineVisionV3 did not load' }
 
 # Exercise the core path so a link error (not just a compile error) surfaces:
 $hwnd = [IntPtr]::Zero
-$rect = New-Object WatchOfflineVisionV2+RECT
-$bmp = [WatchOfflineVisionV2]::CaptureBitmap($hwnd, [ref]$rect)
+$rect = New-Object WatchOfflineVisionV3+RECT
+$bmp = [WatchOfflineVisionV3]::CaptureBitmap($hwnd, [ref]$rect)
 if ($null -ne $bmp) { $bmp.Dispose() }
 Write-Host ('WATCH_COMPILE_OK engine=' + $PSVersionTable.PSEdition + ' ps=' + $PSVersionTable.PSVersion.ToString() + ' drawing=' + ([System.Drawing.Bitmap].Assembly.GetName().Name))
