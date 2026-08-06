@@ -96,10 +96,23 @@ runs (probe-integration.ps1) capture reliably.
 ## FRESH10 checklist (the live run)
 
 1. Fresh publish of the Host (stale-publish blocker rule).
-2. `od-048-monitor-correlate-session.ps1 -MaxReadRounds 70` → verdict +
+2. `od-048-monitor-correlate-session.ps1 -MaxReadRounds 70
+   -AutoWriteTraceOnVerdict -AttachSmokeOnFirstRound
+   -ResultPath .data\od-048-live.json` → verdict +
    `-AutoWriteTraceOnVerdict` fires in-process.
-3. Expect in the log: `x64dbg_pid=...`, `attached pid=0x...`,
+3. **Attach-smoke gate (NEW, internal chunk):** after the first monitor
+   round proves the game readable, od-048 invokes
+   `x64dbg-write-trace.ps1 -AttachSmoke` against the LIVE game
+   (hex-pid attach → pause → verify stall → optional `bpm` arm/clear on
+   the first staged address → detach → verify resume). Expect
+   `attach_smoke INVOKING round=2 ...`, `attach_smoke ok ...` and
+   `od-048-attach-smoke-*.json` (`smoke: ok`). **A red smoke aborts the
+   campaign with exit 6 BEFORE the correlate + trace window is spent** —
+   that is the point: diagnose attach-vs-address on the live process
+   cheaply, never as a mystery no-hit run.
+4. Expect in the log: `x64dbg_pid=...`, `attached pid=0x...`,
    `injected scriptload+scriptrun`, `released_detach`,
    `hits=N` with N ≥ armed count, `family_verdict=family-hit`,
    and `odwt-0x<addr>.bin` proof files + the `.family.json` report.
-4. ~5 min hands-off window; x32dbg window flashes during the trace.
+5. ~5 min hands-off window; x32dbg window flashes during the trace
+   (once for the smoke, once for the auto-trace).

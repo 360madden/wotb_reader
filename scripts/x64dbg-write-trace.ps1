@@ -142,7 +142,22 @@ param(
     # Do not re-read the armed family addresses through the Host read API
     # before arming. Without it, stale addresses from an earlier session
     # fail fast (exit 8) instead of producing a no-hit window.
-    [switch]$SkipLivenessCheck
+    [switch]$SkipLivenessCheck,
+    # Attach-smoke mode (M2 mid-window pre-flight, driven by od-048
+    # -AttachSmokeOnFirstRound): attach to the LIVE game (hex pid) -> pause ->
+    # verify the pause stalled -> optional bpm arm/clear on -SmokeProbeAddress
+    # -> detach -> verify the game resumed. Writes a JSON smoke report and
+    # exits 0 (green) or 1 (red) WITHOUT touching family files, survivors, or
+    # the trace window. Exists so the two live-only mechanics (x64dbg attach
+    # to the real game, guard-page install) are proven mid-battle, before the
+    # correlate + trace window is spent on an undiagnosable no-hit run.
+    [switch]$AttachSmoke,
+    # For -AttachSmoke: an absolute hex address (0x...) whose guard page is
+    # armed and immediately cleared, proving memory-BP install works on the
+    # live process. Empty = attach/pause/detach round-trip only.
+    [string]$SmokeProbeAddress = '',
+    # For -AttachSmoke: JSON report path (default %TEMP%\od-048-attach-smoke.json).
+    [string]$SmokeResultPath = $(Join-Path $env:TEMP 'od-048-attach-smoke.json')
 )
 
 Set-StrictMode -Version Latest
@@ -633,7 +648,146 @@ public static class WtX64Ui {
 "@
 }
 
+# Attach-smoke gate: prove the x64dbg -> live-game attach/pause/detach
+# round-trip (hex pid) and, optionally, a guard-page install/clear on a probe
+# address. Returns 0 (green) / 1 (red) and writes a JSON report so the caller
+# (od-048) can fail closed BEFORE spending the correlate + trace window.
+function Invoke-AttachSmoke {
+    param([string]$ProbeAddress, [string]$ResultPath)
+    $report = [ordered]@{
+        smoke          = 'fail'
+        ranUtc         = ([DateTime]::UtcNow).ToString('o')
+        pid            = 0
+        attachedHexPid = ''
+        pauseVerified  = $false
+        bpmArmed       = 'unverified'
+        resumeVerified = $false
+        probeAddress   = $ProbeAddress
+        detail         = ''
+    }
+    function Write-SmokeReport {
+        try {
+            $json = $report | ConvertTo-Json -Depth 6
+            [System.IO.File]::WriteAllText($ResultPath, $json, (New-Object System.Text.UTF8Encoding($false)))
+            Write-Wt ('attach_smoke_report=' + $ResultPath)
+        }
+        catch {
+            Write-Wt ('attach_smoke_report_write_failed: ' + $_.Exception.Message)
+        }
+    }
+    try {
+        if ($DryRun) {
+            $probeText = if ($ProbeAddress) { 'bpm ' + $ProbeAddress + ' -> bpmc' } else { 'no probe' }
+            Write-Wt ('attach_smoke DRYRUN would attach 0x<hex> -> pause -> verify -> ' + $probeText + ' -> detach -> verify resume')
+            $report.smoke = 'ok'
+            Write-SmokeReport
+            return 0
+        }
+        $win = Get-X64DbgWindowHandle
+        if (-not $win) {
+            if (-not (Invoke-AutoPreArm)) {
+                $report.detail = 'no_debugger_window'
+                Write-SmokeReport
+                return 1
+            }
+            $win = Wait-X64DbgWindow -TimeoutSeconds 20
+            if (-not $win) {
+                $report.detail = 'no_debugger_window_after_prearm'
+                Write-SmokeReport
+                return 1
+            }
+        }
+        $cmdBar = Find-X64DbgCommandBar -Handle $win.Handle
+        if (-not $cmdBar) {
+            $report.detail = 'no_command_bar'
+            Write-SmokeReport
+            return 1
+        }
+        $game = Get-Process -Name wotblitz -ErrorAction SilentlyContinue |
+            Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } |
+            Select-Object -First 1
+        if (-not $game) {
+            $report.detail = 'no_game_process'
+            Write-SmokeReport
+            return 1
+        }
+        $report.pid = $game.Id
+        $report.attachedHexPid = ('0x{0:X}' -f $game.Id)
+        [WtX64Gui]::ForceForeground($win.Handle)
+        Start-Sleep -Milliseconds 300
+        Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle ('attach 0x{0:X}' -f $game.Id)
+        Start-Sleep -Seconds 4
+        Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle 'pause'
+        Start-Sleep -Seconds 2
+        # Pause proof: TotalProcessorTime must stall (~0 delta over 1.5s).
+        $t0 = $game.TotalProcessorTime
+        Start-Sleep -Milliseconds 1500
+        $t1 = $game.TotalProcessorTime
+        $report.pauseVerified = (($t1 - $t0).TotalMilliseconds) -lt 5
+        if ($ProbeAddress -and $report.pauseVerified) {
+            Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle ('bpm {0}, 1, w' -f $ProbeAddress)
+            Start-Sleep -Milliseconds 500
+            # Best-effort arm check. The UIA log-tab read is LOSSY (FRESH9:
+            # returned 0 lines in clean-rig runs), so an empty read is NOT
+            # proof of success - 'unverified' is the honest default. An
+            # explicit 'Error executing' line means the command failed.
+            $logTail = @(Read-X64DbgLog -Handle $win.Handle | Where-Object { $_ -match 'Error executing|Memory breakpoint' })
+            if ($logTail -match 'Error executing') {
+                $report.bpmArmed = 'no'
+                $report.detail = 'bpm_arm_error: ' + ($logTail -join '; ')
+            }
+            elseif ($logTail -match 'Memory breakpoint') {
+                $report.bpmArmed = 'yes'
+            }
+            try { Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle ('bpmc {0}' -f $ProbeAddress) }
+            catch { }
+        }
+        Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle 'detach'
+        Start-Sleep -Seconds 2
+        $t2 = $game.TotalProcessorTime
+        Start-Sleep -Milliseconds 1200
+        $t3 = $game.TotalProcessorTime
+        $report.resumeVerified = (($t3 - $t2).TotalMilliseconds) -gt 0
+        if (-not $report.resumeVerified) {
+            # First detach may have failed silently (command bar dead). One
+            # retry: run (resume a still-paused debuggee), then detach again.
+            Write-Wt 'attach_smoke WARN_resume_not_verified - retrying run+detach'
+            try { Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle 'run' } catch { }
+            Start-Sleep -Seconds 1
+            try { Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle 'detach' } catch { }
+            Start-Sleep -Seconds 2
+            $t4 = $game.TotalProcessorTime
+            Start-Sleep -Milliseconds 1200
+            $t5 = $game.TotalProcessorTime
+            $report.resumeVerified = (($t5 - $t4).TotalMilliseconds) -gt 0
+            if (-not $report.resumeVerified) {
+                $report.detail = 'game_may_be_left_paused (detach failed twice)'
+            }
+        }
+        $report.smoke = if ($report.pauseVerified -and $report.resumeVerified) { 'ok' } else { 'fail' }
+        if ($report.smoke -eq 'fail' -and -not $report.detail) {
+            $report.detail = 'attach_pause_detach_roundtrip_incomplete'
+        }
+        Write-Wt ('attach_smoke ' + $report.smoke + ' pid=' + $report.attachedHexPid +
+            ' pause=' + $report.pauseVerified + ' bpm=' + $report.bpmArmed + ' resume=' + $report.resumeVerified)
+        Write-SmokeReport
+        if ($report.smoke -eq 'ok') { return 0 }
+        return 1
+    }
+    catch {
+        $report.detail = $_.Exception.Message
+        Write-Wt ('attach_smoke THREW ' + $_.Exception.Message)
+        Write-SmokeReport
+        return 1
+    }
+}
+
 try {
+    # ---- 0. Attach-smoke mode (M2 pre-flight) - bypass everything else ----
+    if ($AttachSmoke) {
+        exit (Invoke-AttachSmoke -ProbeAddress $SmokeProbeAddress -ResultPath $SmokeResultPath)
+    }
+
     # ---- 1. Resolve input mode: family (M2) or flat survivor file ----------
     $mode = 'survivor'
     if (-not [string]::IsNullOrWhiteSpace($FamilyFile)) { $mode = 'family' }

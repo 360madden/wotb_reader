@@ -3199,3 +3199,29 @@ checklist in `docs/operations/handoffs/2026-08-05-fresh9-chunked-write-trace-fix
 and `; run` self-resume are dead ends in this x32dbg build). `ODWT_HIT`
 log harvest returned 0 (UIA log-tab read limitation); proof files are the
 primary evidence; follow-up is `setlogfile`/active-tab log capture.
+
+## 2026-08-06 — Attach-smoke gate (M2 pre-flight) added to od-048
+
+**Why.** FRESH10 is one scarce CAP-2 launch; the two live-only write-trace
+mechanics (x64dbg attach to the real game, memory-BP install) were only
+proven offline against the counter rig. Rather than chunking the live run
+into multiple launches (each a full session), chunk INSIDE the launch:
+fail-closed pre-flight mid-battle.
+
+**What.** `od-048 -AttachSmokeOnFirstRound`: after the first monitor round
+proves the game readable, invoke `x64dbg-write-trace.ps1 -AttachSmoke`
+against the LIVE game — hex-pid attach → pause → verify the stall (CPU-time
+delta) → optional `bpm` arm/clear on the first staged address → detach →
+verify resume. Report to `od-048-attach-smoke-*.json`. **Red smoke aborts
+with exit 6 before the correlate + trace window is spent** — a live defect
+is diagnosed as attach-vs-address, never a mystery no-hit run.
+
+**Validated offline:** parse OK on PS 5.1 + pwsh 7 (both scripts), PSSA
+gate passed with 0 findings on the edited scripts, ASCII clean; smoke
+DryRun → `smoke: ok` report, no-game fail-closed → `smoke: fail` +
+diagnostic. Full attach round-trip remains live-only (FRESH10).
+
+**Status:** FRESH10 is one launch with two internal gates — the attach
+smoke (round ~2) and the auto-write-trace (family verdict, battle tail).
+Checklist updated in `2026-08-05-fresh9-chunked-write-trace-fix.md` and
+`2026-08-05-od-049-session-prep.md`.

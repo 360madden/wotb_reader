@@ -222,9 +222,17 @@ not a replay rewind.
    single command (auto-picks the host's newest session):
    `od-048-monitor-correlate-session.ps1 -MaxReadRounds 70
    -AutoWriteTraceOnVerdict -ResultPath .data\od-048-live.json`.
-2. Verify the game replays folder's newest file before the session and pin
+2. ✅ **DONE (2026-08-06):** `-AttachSmokeOnFirstRound` internal chunk added —
+   after the first monitor round proves the game readable, od-048 runs
+   `x64dbg-write-trace.ps1 -AttachSmoke` against the LIVE game (hex-pid
+   attach → pause → verify → optional bpm arm/clear → detach → verify
+   resume) and writes `od-048-attach-smoke-*.json`. A red smoke aborts the
+   campaign with **exit 6** before the correlate + trace window is spent,
+   so FRESH10 is one launch with a fail-closed pre-flight, not multiple
+   launches. Add `-AttachSmokeOnFirstRound` to the live-round command above.
+3. Verify the game replays folder's newest file before the session and pin
    `-ReplayPath` in the session runbook.
-3. Run the live round with this checklist; append the outcome (exit codes,
+4. Run the live round with this checklist; append the outcome (exit codes,
    verdict, timing observations) to the ledger and to a follow-up handoff.
 
 ## Live-round execution log (2026-08-05) — first attempts: BLOCKED, root cause pinned

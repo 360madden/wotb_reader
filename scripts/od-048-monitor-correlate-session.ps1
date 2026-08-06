@@ -74,6 +74,10 @@
   3  Monitor failure (read loop aborted before completion)
   4  Correlate failure
   5  Report could not be written
+  6  Attach-smoke gate failed (-AttachSmokeOnFirstRound): the x64dbg
+     attach/pause/detach round-trip or memory-BP install is red against the
+     live game - fix the debugger wiring, then rerun. The correlate + trace
+     window was deliberately NOT spent.
 #>
 [CmdletBinding()]
 param(
@@ -162,6 +166,18 @@ param(
     # write-trace (headless validation; the live round keeps both defaults).
     [switch]$AutoTraceSkipPlayProbe,
     [switch]$AutoTraceSkipLivenessCheck,
+    # M2 pre-flight gate: after the first monitor round proves the game
+    # process is readable, run x64dbg-write-trace.ps1 -AttachSmoke against the
+    # LIVE game (hex-pid attach -> pause -> verify -> optional bpm arm/clear
+    # -> detach -> verify resume). This validates the two live-only write-trace
+    # mechanics mid-battle so a defect is diagnosed as attach-vs-address, not
+    # an undiagnosable no-hit run. Fail-closed: a red smoke aborts the
+    # campaign (exit 6) before the correlate + trace window is spent.
+    [switch]$AttachSmokeOnFirstRound,
+    # For -AttachSmokeOnFirstRound: absolute hex address whose guard page is
+    # armed+cleared during the smoke (default: the first staged address,
+    # which the monitor already reads successfully).
+    [string]$AttachSmokeProbeAddress = '',
     [string]$RepoRoot = ''
 )
 
@@ -584,6 +600,12 @@ $familyRefineLastAttemptRound = -99
 $familyRefineAttempts = 0
 $familyRefineDeferred = 0
 $familySurvivors = @()
+# Attach-smoke gate (M2 pre-flight): whether it already ran, its report
+# (null until run; a red smoke aborts the campaign with exit 6), and the
+# path its JSON report lands at (defaulted when the gate fires).
+$attachSmokeDone = $false
+$attachSmoke = $null
+$smokeResultPath = ''
 $familyStaged = [System.Collections.Generic.HashSet[string]]::new()
 $familyNeighborAdded = 0
 $staged = [System.Collections.Generic.List[string]]::new()
@@ -760,6 +782,79 @@ while ($round -lt $MaxReadRounds) {
         break
     }
 
+    # M2 attach-smoke gate (fail-closed pre-flight): once the FIRST round has
+    # produced readable samples (the game process is up and the read path
+    # works), prove the two live-only write-trace mechanics against the live
+    # process - x64dbg hex-pid attach + pause + detach round-trip and (with a
+    # probe address) memory-BP install. A red smoke aborts BEFORE the correlate
+    # rounds and trace window are spent, so a live defect is diagnosed as
+    # attach-vs-address, not an undiagnosable no-hit run. The smoke pauses the
+    # game briefly; the next round's reads happen after detach resumes it.
+    if ($AttachSmokeOnFirstRound -and -not $attachSmokeDone -and $readOkSamples -gt 0) {
+        $smokeScript = Join-Path $PSScriptRoot 'x64dbg-write-trace.ps1'
+        if (-not (Test-Path -LiteralPath $smokeScript)) {
+            Write-Od048 'attach_smoke FAILED script_missing'
+            $stoppedReason = 'attach-smoke-failed'
+            break
+        }
+        $smokeProbe = $AttachSmokeProbeAddress
+        if ([string]::IsNullOrWhiteSpace($smokeProbe) -and $staged.Count -gt 0) {
+            # Default probe: the first staged address (already proven readable
+            # by this round's reads - a guaranteed-live game page).
+            $smokeProbe = [string]$staged[0]
+        }
+        if ([string]::IsNullOrWhiteSpace($smokeResultPath)) {
+            $dataDir = Join-Path $RepoRoot '.data'
+            if (-not (Test-Path -LiteralPath $dataDir)) { New-Item -ItemType Directory -Path $dataDir | Out-Null }
+            $smokeResultPath = Join-Path $dataDir ("od-048-attach-smoke-" + (Get-Date -Format 'yyyyMMdd-HHmmss') + ".json")
+        }
+        $smokeArgs = @{
+            AttachSmoke       = $true
+            SmokeProbeAddress = $smokeProbe
+            SmokeResultPath   = $smokeResultPath
+            SkipGateCheck     = $true
+        }
+        Write-Od048 ('attach_smoke INVOKING round=' + $round + ' probe=' + $smokeProbe)
+        try {
+            & $smokeScript @smokeArgs
+            $smokeExit = $LASTEXITCODE
+        }
+        catch {
+            $smokeExit = -1
+            Write-Od048 ('attach_smoke THREW ' + $_.Exception.Message)
+        }
+        Write-Od048 ('attach_smoke exit=' + $smokeExit)
+        $attachSmokeDone = $true
+        $attachSmoke = [ordered]@{
+            ranUtc       = ([DateTime]::UtcNow).ToString('o')
+            atRound      = $round
+            probeAddress = $smokeProbe
+            resultPath   = $smokeResultPath
+            exitCode     = $smokeExit
+            ok           = ($smokeExit -eq 0)
+        }
+        if ($smokeExit -ne 0) {
+            $stoppedReason = 'attach-smoke-failed'
+            Write-Od048 'attach_smoke FAILED aborting before correlate (fix x64dbg attach/memory-BP on the live game, then rerun)'
+            Write-Od048 'attach_smoke WARN_game_may_be_left_paused - close the game window if it is frozen'
+            break
+        }
+        # Green smoke: the ~15-20s pause may have aged out the host's
+        # lifecycle evidence (gate transiently not verified). Wait for the
+        # gate to recover so a green smoke is NOT followed by a gate-lost
+        # abort on the next round. The loop's own gate check re-verifies
+        # next round anyway - this grace only covers the stall window.
+        $gateGraceDeadline = (Get-Date).AddSeconds(30)
+        while ((Get-Date) -lt $gateGraceDeadline) {
+            $rendezvous = Refresh-Rendezvous -Current $rendezvous
+            $gate = Get-GateState -Rendezvous $rendezvous
+            $gateNow = if ($null -ne $gate) { [string]$gate.verificationState } else { 'no-host' }
+            if ($gateNow -eq 'OfflineReplayVerified') { break }
+            Write-Od048 ('attach_smoke gate_recovering ' + $gateNow)
+            Start-Sleep -Seconds 3
+        }
+    }
+
     $addressBatch = @()
     $i = 0
     foreach ($address in $staged) {
@@ -890,6 +985,33 @@ while ($round -lt $MaxReadRounds) {
 }
 Write-Od048 ("monitor done rounds={0} reason={1} series={2}" -f $round, $stoppedReason, $series.Count)
 
+# -- Attach-smoke gate: fail-closed abort (exit 6) ----------------------------
+# A red pre-flight means the write-trace cannot work against this live game
+# (attach, pause, or memory-BP install failed). Correlating would still
+# produce a family, and the auto-trace would then burn the green window on an
+# undiagnosable no-hit run - so stop now with a diagnostic report instead.
+if ($stoppedReason -eq 'attach-smoke-failed') {
+    Write-Od048 'attach_smoke FAILED aborting campaign (exit 6) - correlate skipped'
+    $failReport = [ordered]@{
+        verdict       = 'attach-smoke-failed'
+        stoppedReason = $stoppedReason
+        monitorRounds = $round
+        seriesCount   = $series.Count
+        attachSmoke   = $attachSmoke
+        ranUtc        = ([DateTime]::UtcNow).ToString('o')
+        note          = 'M2 pre-flight gate red - fix the x64dbg attach/memory-BP wiring on the live game, then rerun'
+    }
+    try {
+        $failJson = $failReport | ConvertTo-Json -Depth 8
+        [System.IO.File]::WriteAllText($ResultPath, $failJson, (New-Object System.Text.UTF8Encoding($false)))
+        Write-Od048 ('report_written=' + $ResultPath)
+    }
+    catch {
+        Write-Od048 ('FAILED_report_write: ' + $_.Exception.Message)
+    }
+    exit 6
+}
+
 # -- Correlate --
 $observations = @(Get-CorrelateObservations -Series $series)
 if ($observations.Count -eq 0) {
@@ -974,6 +1096,8 @@ $report = [ordered]@{
     battleSessionId        = $battleSessionId
     durationTicks          = $trajectory.durationTicks
     replayStartWallTimeUtc = $replayStartWallUtc
+    # M2 pre-flight gate result (null when -AttachSmokeOnFirstRound was off).
+    attachSmoke            = $attachSmoke
     staged                 = [ordered]@{
         entities        = $stagedEntitiesReport
         union           = $scanStagedCount
