@@ -226,6 +226,18 @@ param(
     # touches the game once the match has officially begun. A round-count
     # clamp (45) guarantees the gate can never skip the smoke entirely.
     [double]$SmokeMinBattleSeconds = 55.0,
+    # FRESH15i: do not run the FIRST STAGING SCAN until this many seconds of
+    # battle have elapsed from the replay-start anchor. The replay's first
+    # ~50s are loading + all-players-in-attendance (the match is paused, tanks
+    # sit at spawn), and the decoded ground truth at tick ~8s is already the
+    # tank MOVING - so an exact-match scan at elapsed 8.6s cannot find the
+    # live position field (value mismatch) and stages ~1500 decoy floats that
+    # happen to hold that value, poisoning the entire series (FRESH15i: staged
+    # at elapsed 8.6s -> 31 edge-aligned weak results, 0 strong survivors).
+    # Waiting until the match officially begins makes the staged sample value
+    # match the live in-battle field, so the true field is staged among the
+    # decoys and the correlate can find it. Mirrors the attach-smoke gate.
+    [double]$StageMinBattleSeconds = 55.0,
     [string]$RepoRoot = ''
 )
 
@@ -753,6 +765,26 @@ if ($null -ne $battleEndUtc) {
     # (stopping staging early is safe, only losing scan attempts).
     $monitorExitUtc = $battleEndUtc.AddSeconds([double]$MaxTimeShiftSeconds + 10.0)
     Write-Od048 ("battle_duration_s=" + [Math]::Round($durationSeconds, 1) + " staging_deadline=" + $stagingDeadlineUtc.ToString('o'))
+}
+# FRESH15i: match-begin gate for the FIRST staging scan (mirror of the
+# attach-smoke gate). The Start marker fires when loading BEGINS; the match
+# does not officially start until ~50s later (loading + attendance), and the
+# decoded ground truth is the tank MOVING at the anchor while the live tank is
+# still at spawn. Staging during that window scans against a value the live
+# field does not hold yet (it stages decoys, not the position field). Wait
+# until battle elapsed >= StageMinBattleSeconds; cap the wait at the staging
+# deadline so a short battle cannot have its staging pushed past the end.
+$stagingElapsedSec = [Math]::Max(0.0, ([datetime]::UtcNow - $anchorUtc).TotalSeconds)
+if ($stagingElapsedSec -lt $StageMinBattleSeconds) {
+    $matchBeginWait = [double]($StageMinBattleSeconds - $stagingElapsedSec)
+    if ($null -ne $stagingDeadlineUtc) {
+        $toDeadline = ($stagingDeadlineUtc - [datetime]::UtcNow).TotalSeconds
+        if ($toDeadline -lt $matchBeginWait) { $matchBeginWait = [Math]::Max(0.0, $toDeadline) }
+    }
+    if ($matchBeginWait -gt 0) {
+        Write-Od048 ("staging_match_begin_gate elapsed_s=" + [Math]::Round($stagingElapsedSec, 1) + " waiting_s=" + [Math]::Round($matchBeginWait, 1) + " min=" + $StageMinBattleSeconds + 's')
+        Start-Sleep -Seconds ([int][Math]::Ceiling($matchBeginWait))
+    }
 }
 $stagingStartUtc = [datetime]::UtcNow
 $budgetExhausted = $false

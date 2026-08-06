@@ -5,6 +5,11 @@ param(
     [int]$MaxReadRounds = 70,
     [int]$StageTopN = 2,
     [int]$StageDelaySeconds = 2,
+    # FRESH15i: wait until the match officially begins (loading + attendance
+    # is ~50s) before the FIRST staging scan, so the staged sample value
+    # matches the live in-battle position field instead of staging decoys
+    # that hold the spawn-era value. Mirrors the attach-smoke gate.
+    [double]$StageMinBattleSeconds = 55.0,
     [string]$ResultPath = '',
     # M2 pre-flight gate (FRESH9/FRESH14 chunk 2): after the first monitor
     # round proves the game readable, od-048 runs the x64dbg attach-smoke
@@ -161,6 +166,7 @@ for ($attempt = 1; $attempt -le $MaxCampaignAttempts; $attempt++) {
         MaxReadRounds          = $MaxReadRounds
         StageTopN              = $StageTopN
         StageDelaySeconds      = $StageDelaySeconds
+        StageMinBattleSeconds  = $StageMinBattleSeconds
         AutoWriteTraceOnVerdict = $true
         AutoTraceSeconds       = $AutoTraceSeconds
         ResultPath             = $ResultPath
