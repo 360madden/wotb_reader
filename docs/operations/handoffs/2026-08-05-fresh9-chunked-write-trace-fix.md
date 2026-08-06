@@ -116,3 +116,25 @@ runs (probe-integration.ps1) capture reliably.
    and `odwt-0x<addr>.bin` proof files + the `.family.json` report.
 5. ~5 min hands-off window; x32dbg window flashes during the trace
    (once for the smoke, once for the auto-trace).
+
+## FRESH10 result (2026-08-06) — mechanics proven, evidence pending
+
+**GREEN:** attach-smoke gate (`attach_smoke ok pid=0xAA6C pause=True
+bpm=yes resume=True`), family liveness re-read, hex attach, scriptload+
+scriptrun, detach, exit 0. **Zero hits** (`family-no-hit`): the armed
+family was weak (x@0.20 noise + y@1.0), and the sole 1.0 survivor rides
+the sweep edge (bad-anchor signature). Timing was CORRECT this time (the
+anchor UTC-date fix below). See the ledger entry for the full writeup.
+
+**Run-blocking bugs found live (both fixed in e2e wrappers):**
+
+1. **Anchor UTC-date bug** — `Convert-LogTimeToUtc` used the LOCAL date
+   with the log's UTC first-column time; after 20:00 local the anchor
+   landed ~20h in the past → `staging_budget_exhausted staged=0`
+   (elapsed_s=86403.9). Fixed with `[datetime]::UtcNow.Date` + rollover
+   guard, propagated to all 5 anchor producers (fresh-launch-m1,
+   gate-watch-m1, hangar-m1, od-049-autoloop, reclick-m1).
+2. **Launch flow must run under PowerShell 5.1** — click-watch-offline's
+   Add-Type needs System.Drawing (missing from the .NET Core shared
+   framework): pwsh 7 dies with CS1069 (watch_exit=4). Run the wrapper
+   with powershell.exe; od-048 still runs under pwsh 7.

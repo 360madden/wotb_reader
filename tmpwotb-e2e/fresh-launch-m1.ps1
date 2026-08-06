@@ -1,7 +1,10 @@
 [CmdletBinding()]
 param(
     [string]$RepoRoot = '',
-    [string]$ReplayPath = '.data\launch\a9aed0467d7843efb06bb3319bb52ded.wotbreplay',
+    # Dead Rail content hash 59c3b92eb221 (same battle FRESH9 played); the
+    # old .data\launch\a9aed... staging copy is gone, and the picker would
+    # otherwise choose the human-named Churchill I replay (different battle).
+    [string]$ReplayPath = "$env:LOCALAPPDATA\wotblitz\DAVAProject\replays\36f5abcfa07e4763adcd31af50300fd0.wotbreplay",
     [int]$MaxReadRounds = 70,
     [int]$StageTopN = 2,
     [int]$StageDelaySeconds = 2,
@@ -53,9 +56,19 @@ function Get-LogState {
 }
 
 function Convert-LogTimeToUtc([string]$Time) {
-    $today = (Get-Date).Date
-    $parsed = [datetime]::ParseExact($today.ToString('yyyy-MM-dd') + 'T' + $Time, 'yyyy-MM-ddTHH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
-    return [datetime]::SpecifyKind($parsed, [DateTimeKind]::Utc).ToString('o')
+    # The blitz log's FIRST column is UTC (e.g. "01:44:12 [info] 20:44:12 -5"
+    # where 20:44 is the engine's UTC-5 offset column), so the anchor DATE
+    # must come from the CURRENT UTC date, not the local date. Using the
+    # local date breaks after 20:00 local (UTC already rolled to the next
+    # day): the anchor lands ~20h in the past, the staging deadline is
+    # already exhausted, and the run dies with staged=0 (FRESH10 live proof:
+    # elapsed_s=86403.9). Rollover guard: a future-dated anchor means the
+    # marker line was written just before UTC midnight.
+    $utcToday = ([datetime]::UtcNow).Date
+    $parsed = [datetime]::ParseExact($utcToday.ToString('yyyy-MM-dd') + 'T' + $Time, 'yyyy-MM-ddTHH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
+    $asUtc = [datetime]::SpecifyKind($parsed, [DateTimeKind]::Utc)
+    if ($asUtc -gt [datetime]::UtcNow) { $asUtc = $asUtc.AddDays(-1) }
+    return $asUtc.ToString('o')
 }
 
 function Get-LatestMarkerUtc {
@@ -123,6 +136,7 @@ Write-Log ("running M1 anchored=" + $anchorUtc + " rounds=" + $MaxReadRounds + "
     -StageTopN $StageTopN `
     -StageDelaySeconds $StageDelaySeconds `
     -AutoWriteTraceOnVerdict `
+    -AttachSmokeOnFirstRound `
     -ResultPath $ResultPath *>&1 | ForEach-Object { Write-Log ("m1: " + $_) }
 $m1Exit = $LASTEXITCODE
 Write-Log ("m1_exit=" + $m1Exit)

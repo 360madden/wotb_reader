@@ -43,11 +43,17 @@ foreach ($log in $logs) {
         if ($line -match 'START_REPLAY_LOCAL|Start replay event') {
             if ($line -match '^(\d{2}:\d{2}:\d{2})') {
                 $timeOnly = $Matches[1]
-                $today = (Get-Date).Date
-                $parsed = [datetime]::ParseExact($today.ToString('yyyy-MM-dd') + 'T' + $timeOnly, 'yyyy-MM-ddTHH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
+                # Log first column is UTC; anchor DATE must come from the
+                # current UTC date, not local (local breaks after 20:00 local
+                # when UTC has rolled to the next day - FRESH10 live proof:
+                # staged=0 with elapsed_s=86403.9).
+                $utcToday = ([datetime]::UtcNow).Date
+                $parsed = [datetime]::ParseExact($utcToday.ToString('yyyy-MM-dd') + 'T' + $timeOnly, 'yyyy-MM-ddTHH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
                 # The leading timestamp is UTC; ToUniversalTime is a no-op on a
                 # Kind=Unspecified value, so stamp it explicitly.
-                $markerUtc = [datetime]::SpecifyKind($parsed, [DateTimeKind]::Utc).ToString('o')
+                $asUtc = [datetime]::SpecifyKind($parsed, [DateTimeKind]::Utc)
+                if ($asUtc -gt [datetime]::UtcNow) { $asUtc = $asUtc.AddDays(-1) }
+                $markerUtc = $asUtc.ToString('o')
                 Write-Log ("marker_found log=" + $log.Name + " line=" + $line.Trim() + " -> utc=" + $markerUtc)
                 break
             }

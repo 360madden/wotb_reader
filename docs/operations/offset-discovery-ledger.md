@@ -3225,3 +3225,58 @@ diagnostic. Full attach round-trip remains live-only (FRESH10).
 smoke (round ~2) and the auto-write-trace (family verdict, battle tail).
 Checklist updated in `2026-08-05-fresh9-chunked-write-trace-fix.md` and
 `2026-08-05-od-049-session-prep.md`.
+
+## 2026-08-06 — FRESH10 live: attach-smoke gate GREEN, auto-trace mechanics clean, hits=0 (family quality)
+
+**Run.** One launch (Dead Rail content 59c3b92eb221 via 36f5ab..., replay
+auto-loops), anchor = LoadGameScene-ends 01:48:53Z, M1 70 rounds / 218,502
+samples / 3,178 series, verdict `evidence-strong`, auto-trace fired
+in-process.
+
+**MILESTONE: attach-smoke gate proven live.** Round-2 smoke against the
+REAL game went green: `attach_smoke ok pid=0xAA6C pause=True bpm=yes
+resume=True` (report `od-048-attach-smoke-20260805-214906.json`). The two
+live-only write-trace mechanics are now source-confirmed AND
+live-confirmed: x64dbg hex-pid attach to wotblitz works, and a memory
+breakpoint (bpm) installs on a live game page (log-tab read returned the
+breakpoint marker - first time that channel produced data live).
+
+**Auto-trace mechanics all clean:** family selected (2-member x/y),
+liveness re-read OK, `attached pid=0xAA6C`, `injected scriptload+scriptrun`,
+`released_detach`, exit 0, report + .family.json written.
+
+**But hits=0** (`family-no-hit`). The armed family was WEAK:
+`0x22FC05D4 x score=0.20` (noise) + `0x22FC05D8 y score=1.00`. The single
+strong survivor (y@1.0, shift -7.5s) rides the sweep EDGE (band
+[-10,-7.5]) - the bad-anchor signature the edge audit exists to catch. The
+trace window (01:52:47-01:53:12Z) correctly overlapped the battle tail
+(battle 2 of the loop ends 01:53:24Z), so timing was NOT the cause this
+time. Remaining gap is EVIDENCE QUALITY: the family builder armed a weak
+2-member family instead of a clean complete triple; and the y@1.0 survivor
+needs its anchor re-audited before it can be trusted as a write site.
+
+**Two run-blocking bugs found live and fixed:**
+
+1. **Anchor UTC-date bug (staged=0 killer).** `Convert-LogTimeToUtc`
+   built the anchor from the LOCAL date + log first-column (UTC) time;
+   after 20:00 local the UTC date has rolled to the next day, so the
+   anchor landed ~20h in the past and every round saw
+   `staging_budget_exhausted staged=0` (elapsed_s=86403.9). Fixed: base
+   the anchor date on `[datetime]::UtcNow.Date` with a rollover guard.
+   **Propagated to all 5 anchor producers** (fresh-launch-m1,
+   gate-watch-m1, hangar-m1, od-049-autoloop, reclick-m1).
+2. **Launch flow must run under PowerShell 5.1, not pwsh 7.** The
+   click-watch-offline.ps1 Add-Type needs System.Drawing (in .NET
+   Framework, not the .NET Core shared framework): pwsh 7 fails with
+   CS1069 (Bitmap type forwarded to System.Drawing.Common). FRESH10's
+   first attempt died at watch_exit=4; relaunching the wrapper under
+   powershell.exe (5.1) got the full pipeline through. od-048 itself
+   still runs under pwsh 7 (PS7-only syntax) - the wrapper already splits
+   this correctly.
+
+**Status: chunk 6 (FRESH10) COMPLETE - mechanics proven, evidence pending.**
+The debugger layer is no longer the unknown. Next: (a) hold the auto-trace
+for a complete family (3 axes) or a 2-member family with BOTH members
+score >= ~0.9, (b) re-audit the y@1.0 survivor's anchor (edge-riding shift
+= suspect), (c) consider arming earlier in the battle tail so position
+writes are still flowing.
