@@ -42,6 +42,12 @@
 # file-scoped -- a genuinely dead parameter added to this script later will
 # also go un-flagged; review new parameters manually.
 [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'ResultPath is consumed by Quit-WatchOffline via script-scope lookup.')]
+# PSAvoidUsingEmptyCatchBlock: every empty catch in this file is DELIBERATE
+# and documented inline - best-effort engine probing (Add-Type / assembly
+# resolution / optional probes) where a throw would kill the watch step before
+# any dialog logic runs. The FRESH15 fix added five such probes so the C#
+# vision helper compiles on PS 5.1 AND pwsh 7.6/.NET 10.
+[System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingEmptyCatchBlock', '', Justification = 'Deliberate best-effort probes; each empty catch is documented inline.')]
 [CmdletBinding()]
 param(
     [int]$TimeoutSeconds = 90,
@@ -96,6 +102,52 @@ if (-not ('WatchOfflineVisionV2' -as [type])) {
 # VariableIsUndefined RuntimeException before ANY dialog logic runs (the
 # 2026-08-05 OD-049 launch blocker; introduced by the PSSA triage adding
 # that Write-Verbose into the C# catch).
+#
+# Reference resolution (2026-08-06 FRESH15 launch blocker): on .NET
+# Framework (Windows PowerShell 5.1) the drawing types live in System.Drawing
+# (GAC); on .NET Core/5+ (pwsh 7) they were forwarded to System.Drawing.Common
+# and the old `-ReferencedAssemblies System.Drawing.dll` could not resolve ->
+# CS1069 'Bitmap' forwarded to 'System.Drawing.Common' at compile time, killing
+# the watch step (watch_exit=4) before any dialog logic ran. Resolve the
+# ACTUAL assembly location on the running engine and reference that; each
+# Add-Type -AssemblyName is best-effort (the name the engine lacks just fails
+# silently). Keep the guard above so a second invocation never recompiles.
+try { Add-Type -AssemblyName System.Drawing -ErrorAction Stop } catch { }
+try { Add-Type -AssemblyName System.Drawing.Common -ErrorAction Stop } catch { }
+# try/catch (NOT -ErrorAction SilentlyContinue): the probe and the launcher
+# both run $ErrorActionPreference='Stop', which promotes the missing-assembly
+# error to terminating.
+$sdCandidates = @()
+try { $sdCandidates += [System.Drawing.Bitmap].Assembly.Location } catch { }
+# .NET 10 split GDI+ internals into System.Private.Windows.GdiPlus and
+# Add-Type's default reference set is incomplete on pwsh 7.6: Thread (CS0234)
+# and IGraphics (CS0012) both needed explicit refs during the FRESH15 fix.
+# Belt-and-braces: load GdiPlus by name AND reference the whole shared-
+# framework runtime directory, so no further transitive dep can surface on
+# any engine.
+try {
+    $gdiPlus = [System.Reflection.Assembly]::Load('System.Private.Windows.GdiPlus')
+    $sdCandidates += $gdiPlus.Location
+} catch { }
+try {
+    $runtimeDir = [System.Runtime.InteropServices.RuntimeEnvironment]::GetRuntimeDirectory()
+    foreach ($dll in (Get-ChildItem -LiteralPath $runtimeDir -Filter '*.dll' -File -ErrorAction Stop)) {
+        $sdCandidates += $dll.FullName
+    }
+} catch { }
+# Dedupe by SIMPLE NAME, not path: the explicit drawing location and the
+# runtime dir can both carry System.Drawing (same identity, different path),
+# and the .NET Framework compiler rejects duplicate identities ('An assembly
+# with the same identity ... has already been imported'). GetAssemblyName
+# also skips native images (CS0009) - one pass does both jobs.
+$sdRefs = @()
+$sdSeen = @{}
+foreach ($path in $sdCandidates) {
+    try { $sdName = [System.Reflection.AssemblyName]::GetAssemblyName($path).Name } catch { continue }
+    if ($sdSeen.ContainsKey($sdName)) { continue }
+    $sdSeen[$sdName] = $true
+    $sdRefs += $path
+}
 Add-Type @'
 using System;
 using System.Drawing;
@@ -111,6 +163,11 @@ public static class WatchOfflineVisionV2 {
   [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, UIntPtr e);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
   [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
+  // Sleep via kernel32, NOT System.Threading.Thread.Sleep: pwsh 7.6's Add-Type
+  // cannot resolve System.Threading.Thread even when its assembly location is
+  // passed in -ReferencedAssemblies (CS0234; verified with a minimal repro),
+  // and kernel32 is referenced on every engine.
+  [DllImport("kernel32.dll")] public static extern void Sleep(uint ms);
   [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
 
@@ -163,9 +220,9 @@ public static class WatchOfflineVisionV2 {
   public static void ClickScreen(int x, int y) {
     EnsureDpiAware();
     SetCursorPos(x, y);
-    System.Threading.Thread.Sleep(100);
+    Sleep(100);
     mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, UIntPtr.Zero);
-    System.Threading.Thread.Sleep(70);
+    Sleep(70);
     mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
   }
 
@@ -283,7 +340,7 @@ public static class WatchOfflineVisionV2 {
     return AnalyzeDialog(bmp).Blob;
   }
 }
-'@ -ReferencedAssemblies System.Drawing.dll
+'@ -ReferencedAssemblies $sdRefs
 }
 
 function Get-Rendezvous {
