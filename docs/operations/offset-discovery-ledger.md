@@ -3280,3 +3280,37 @@ for a complete family (3 axes) or a 2-member family with BOTH members
 score >= ~0.9, (b) re-audit the y@1.0 survivor's anchor (edge-riding shift
 = suspect), (c) consider arming earlier in the battle tail so position
 writes are still flowing.
+
+## 2026-08-06 — FRESH11: family-gate score floor (no more noise-member arming)
+
+**Why.** FRESH10 armed x@0.20 (noise) + y@1.00 and the trace burned the
+green window on the noise member (family-no-hit). Root cause: the
+usable-family gates in BOTH scripts checked member COUNT + edge-alignment
+but never member SCORE, and od-048 blind-picked `completeFamilies[0]`
+(complete only proves 3 axes + no edge, not that members scored).
+
+**What.**
+- `x64dbg-write-trace.ps1`: new `-MinMemberScore` (default 0.9);
+  `Test-FamilyScored` (every member >= floor; missing score = 0);
+  `Test-UsableFamily` gates on score first; `Select-BestFamily` filters
+  EVERY tier (complete/usable/any) through the floor and returns $null
+  when nothing clears it; `FAILED_family_selection` names the floor.
+- `od-048`: new `-AutoTraceMinMemberScore` (default 0.9); gate requires
+  weakest member score >= floor before the edge check; blind
+  completeFamilies[0] shortcut REMOVED; skip log carries the reason;
+  floor passed through to the write-trace (`MinMemberScore` splat) so
+  both gates can never disagree. Review fixes: skip reason reports the
+  BEST near-miss (not the last-scanned family), and a missing-score wire
+  regression is called out distinctly (`members_missing_score`) instead
+  of masquerading as weakest_score=0.00.
+
+**Validated:** parse OK PS 5.1 + pwsh 7, PSSA 0 findings on edited
+scripts, ASCII clean. Functional: the REAL FRESH10 family file
+(x@0.20+y@1.00) is now REFUSED (`no_family_clears_min_score=0.9`, exit 2);
+a synthetic x@0.98/y@1.00 family still ARMS (exit 0, full bpm script).
+Behavior note: ad-hoc score-less family JSONs now need `-MinMemberScore 0`
+(the write-trace's own .family.json and od-048 reports always carry scores).
+
+**Next (FRESH12):** re-audit the edge-riding y@1.0 survivor (shift -7.5
+sitting on band edge [-10,-7.5]) - decide if the anchor is off or the
+address is real, then a clean-family live round.

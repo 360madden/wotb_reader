@@ -162,6 +162,12 @@ param(
     # Where the auto-trace evidence report lands. Default
     # .data\od-048-autotrace-<timestamp>.json (runtime data, never tracked).
     [string]$AutoTraceResultPath = '',
+    # Minimum correlation score for EVERY member of the family handed to the
+    # auto-trace. A below-floor member is noise, not evidence (FRESH10 live:
+    # x@0.20 was armed alongside y@1.00 and the trace burned the green window
+    # on the noise member, producing family-no-hit). A family that cannot
+    # clear the floor is SKIPPED, not armed. 0 disables the floor.
+    [double]$AutoTraceMinMemberScore = 0.9,
     # Pass -SkipPlayProbe / -SkipLivenessCheck through to the auto-invoked
     # write-trace (headless validation; the live round keeps both defaults).
     [switch]$AutoTraceSkipPlayProbe,
@@ -1246,29 +1252,64 @@ catch {
 $autoTrace = $null
 if ($AutoWriteTraceOnVerdict) {
     # Usable-family gate (M2 stop rule): a complete family is the prize; a
-    # 2-member family is still worth a trace window -- but only if at least one
-    # member is NOT edge-aligned (a bad-anchor family whose every member rides
-    # the sweep edge would burn the trace window on fabricated alignment);
-    # fewer members means no trace (x64dbg DR0-DR3 arming of a lone member is
-    # not evidence).
+    # 2-member family is still worth a trace window -- but only if every member
+    # clears the score floor AND at least one member is NOT edge-aligned (a
+    # bad-anchor family whose every member rides the sweep edge would burn the
+    # trace window on fabricated alignment); fewer members means no trace
+    # (x64dbg DR0-DR3 arming of a lone member is not evidence). Score floor
+    # added FRESH11: a below-floor member is noise (FRESH10: x@0.20 armed
+    # alongside y@1.00 -> family-no-hit), so a family with any member under
+    # -AutoTraceMinMemberScore is skipped, not armed. The complete-family
+    # shortcut is GONE: 'complete' only proves 3 axes + no edge alignment, not
+    # that every member scored (a noise member inside a 'complete' triple
+    # would still burn the window).
     $usableFamily = $null
-    if ($completeFamilies.Count -gt 0) {
-        $usableFamily = $completeFamilies[0]
-    }
-    else {
-        foreach ($f in @($families)) {
-            $memberCount = @($f.members).Count
-            if ($memberCount -lt 2) { continue }
-            $hasNonEdgeAligned = $false
-            foreach ($m in @($f.members)) {
-                if (-not $m.edgeAligned) { $hasNonEdgeAligned = $true; break }
+    $usableSkipReason = ''
+    # Best near-miss across ALL rejected families: the skip log reports the
+    # CLOSEST family to the floor, not the last one scanned (families arrive
+    # member-count-desc, so the most informative near-miss is the highest
+    # weakest-member score seen, not whichever family the loop hit last).
+    $bestNearMiss = -1.0
+    # Distinguish a wire-shape regression (score property missing on EVERY
+    # member) from a genuinely weak correlate: both fail the floor with
+    # weakest_score=0.00, but the first is an API bug, the second is a real
+    # evidence verdict. Flag it so a live round is never misread.
+    $anyScoreSeen = $false
+    foreach ($f in @($families)) {
+        $memberCount = @($f.members).Count
+        if ($memberCount -lt 2) { continue }
+        $weakestScore = [double]::MaxValue
+        foreach ($m in @($f.members)) {
+            if ($m.PSObject.Properties['score'] -and $null -ne $m.score) {
+                $score = [double]$m.score
+                $anyScoreSeen = $true
             }
-            if ($hasNonEdgeAligned) { $usableFamily = $f; break }
+            else {
+                $score = 0.0
+            }
+            if ($score -lt $weakestScore) { $weakestScore = $score }
         }
+        if ($weakestScore -lt $AutoTraceMinMemberScore) {
+            if ($weakestScore -gt $bestNearMiss) { $bestNearMiss = $weakestScore }
+            continue
+        }
+        $hasNonEdgeAligned = $false
+        foreach ($m in @($f.members)) {
+            if (-not $m.edgeAligned) { $hasNonEdgeAligned = $true; break }
+        }
+        if ($hasNonEdgeAligned) { $usableFamily = $f; $usableSkipReason = ''; break }
+        if ($weakestScore -gt $bestNearMiss) { $bestNearMiss = $weakestScore }
+        $usableSkipReason = ('all_members_edge_aligned weakest_score=' + $weakestScore.ToString('F2'))
     }
 
     if ($null -eq $usableFamily) {
-        Write-Od048 ('auto_write_trace SKIPPED no_usable_family verdict=' + $verdict)
+        if (-not $anyScoreSeen -and $families.Count -gt 0) {
+            $usableSkipReason = 'members_missing_score - check the correlate wire shape (score absent on every family member)'
+        }
+        elseif ($bestNearMiss -ge 0) {
+            $usableSkipReason = ('best_near_miss=' + $bestNearMiss.ToString('F2') + ' below_floor=' + $AutoTraceMinMemberScore)
+        }
+        Write-Od048 ('auto_write_trace SKIPPED no_usable_family verdict=' + $verdict + ' reason=' + $usableSkipReason)
     }
     else {
         $wtScript = Join-Path $PSScriptRoot 'x64dbg-write-trace.ps1'
@@ -1294,6 +1335,11 @@ if ($AutoWriteTraceOnVerdict) {
                 AutoWriteTrace = $true
                 TraceSeconds   = $AutoTraceSeconds
                 ResultPath     = $AutoTraceResultPath
+                # Keep both gates on the same score floor: od-048 skips weak
+                # families here, and the write-trace re-vets with its own
+                # -MinMemberScore - pass the same value so the two can never
+                # disagree (od-048 approves -> write-trace refuses).
+                MinMemberScore = $AutoTraceMinMemberScore
             }
             if ($AutoTraceSkipPlayProbe) { $wtArgs.SkipPlayProbe = $true }
             if ($AutoTraceSkipLivenessCheck) { $wtArgs.SkipLivenessCheck = $true }

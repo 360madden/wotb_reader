@@ -157,7 +157,14 @@ param(
     # live process. Empty = attach/pause/detach round-trip only.
     [string]$SmokeProbeAddress = '',
     # For -AttachSmoke: JSON report path (default %TEMP%\od-048-attach-smoke.json).
-    [string]$SmokeResultPath = $(Join-Path $env:TEMP 'od-048-attach-smoke.json')
+    [string]$SmokeResultPath = $(Join-Path $env:TEMP 'od-048-attach-smoke.json'),
+    # Minimum correlation score for EVERY member of the armed family. A member
+    # below the floor is noise, not evidence (FRESH10 live: the gate armed
+    # x@0.20 + y@1.00 and the trace burned the green window on the noise
+    # member, producing family-no-hit). Families with any below-floor member
+    # are refused before arming. 0 disables the floor (direct-investigation
+    # override).
+    [double]$MinMemberScore = 0.9
 )
 
 Set-StrictMode -Version Latest
@@ -352,16 +359,33 @@ function Test-FamilyComplete {
     return ($Family.PSObject.Properties['complete'] -and $Family.complete)
 }
 
-# True when the family is usable for a trace window: at least two members
-# and at least one member NOT edge-aligned (the M2 stop rule, mirrors the
-# od-048 gate). An all-edge family is a bad-anchor decoy -- every member
-# rides the sweep edge, so it must never win the trace window over a real
-# sibling pair.
-function Test-UsableFamily {
+# True when EVERY member of the family carries a correlation score at or
+# above the -MinMemberScore floor. A below-floor member is noise (FRESH10:
+# x@0.20 armed alongside y@1.00 -> the trace burned the window on the noise
+# member). Scores below the floor can be coincidental matches, not the
+# coordinate field, so such a family must never win a trace window.
+function Test-FamilyScored {
     param([object]$Family)
     if (-not $Family.PSObject.Properties['members'] -or $null -eq $Family.members) {
         return $false
     }
+    foreach ($m in @($Family.members)) {
+        $score = 0.0
+        if ($m.PSObject.Properties['score'] -and $null -ne $m.score) { $score = [double]$m.score }
+        if ($score -lt $MinMemberScore) { return $false }
+    }
+    return $true
+}
+
+# True when the family is usable for a trace window: every member scored at
+# or above the -MinMemberScore floor (score floor added FRESH11: a below-floor
+# member is noise and would burn the window), at least two members, and at
+# least one member NOT edge-aligned (the M2 stop rule, mirrors the od-048
+# gate). An all-edge family is a bad-anchor decoy -- every member rides the
+# sweep edge, so it must never win the trace window over a real sibling pair.
+function Test-UsableFamily {
+    param([object]$Family)
+    if (-not (Test-FamilyScored -Family $Family)) { return $false }
     $members = @($Family.members)
     if ($members.Count -lt 2) { return $false }
     foreach ($m in $members) {
@@ -406,21 +430,27 @@ function Get-FamilyMeanScore {
 
 # Pick the family to trace from the report's families array. Priority: (1) a
 # complete family (clean x/y/z triple); (2) a usable family (>=2 members,
-# at least one non-edge-aligned -- an all-edge family must never beat a real
-# sibling pair: live OD-049 evidence had the 5-member all-edge decoy
-# out-scoring the genuine x/z pair on summed score, which would have armed
-# the trace on fabricated alignment); (3) any family, as a direct-investigation
-# fallback when the caller (od-048 gate) has already vetted the report. Among
-# the candidates the rank is (distinct axis count desc, then mean member
-# score desc). Deterministic so the same report always selects the same
-# family.
+# every member at or above -MinMemberScore, at least one non-edge-aligned --
+# an all-edge family must never beat a real sibling pair: live OD-049
+# evidence had the 5-member all-edge decoy out-scoring the genuine x/z pair
+# on summed score, which would have armed the trace on fabricated alignment);
+# (3) any fully-scored family, as a direct-investigation fallback when the
+# caller (od-048 gate) has already vetted the report. The -MinMemberScore
+# floor applies to EVERY tier: a below-floor member is noise (FRESH10:
+# x@0.20 + y@1.00 -> family-no-hit) and must never be armed, even inside an
+# otherwise complete triple. Among the candidates the rank is (distinct axis
+# count desc, then mean member score desc). Deterministic so the same report
+# always selects the same family. Returns $null when no family clears the
+# score floor (caller must not arm).
 function Select-BestFamily {
     param([object[]]$Families)
-    $complete = @($Families | Where-Object { Test-FamilyComplete -Family $_ })
+    $scored = @($Families | Where-Object { Test-FamilyScored -Family $_ })
+    $complete = @($scored | Where-Object { Test-FamilyComplete -Family $_ })
     if ($complete.Count -gt 0) { return (Select-HighestRankedFamily -Families $complete) }
-    $usable = @($Families | Where-Object { Test-UsableFamily -Family $_ })
+    $usable = @($scored | Where-Object { Test-UsableFamily -Family $_ })
     if ($usable.Count -gt 0) { return (Select-HighestRankedFamily -Families $usable) }
-    return (Select-HighestRankedFamily -Families $Families)
+    if ($scored.Count -gt 0) { return (Select-HighestRankedFamily -Families $scored) }
+    return $null
 }
 
 function Select-HighestRankedFamily {
@@ -833,7 +863,12 @@ try {
         }
         $family = Select-BestFamily -Families $families
         if ($null -eq $family) {
-            Write-Wt 'FAILED_family_selection'
+            # Every family has at least one member below the score floor - a
+            # noise member (FRESH10: x@0.20 armed alongside y@1.00 -> the
+            # trace burned the green window on the noise member). Arming
+            # nothing is the evidence-first outcome: a family that cannot
+            # clear the floor would only produce a no-hit window.
+            Write-Wt ('FAILED_family_selection no_family_clears_min_score=' + $MinMemberScore)
             exit 2
         }
         $plan = Get-FamilyArmPlan -Family $family
