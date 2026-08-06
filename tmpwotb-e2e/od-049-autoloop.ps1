@@ -15,7 +15,11 @@ param(
     # Auto-trace green-window seconds (passed through to the auto-invoked
     # x64dbg-write-trace.ps1). Budget from the choreography table: 70 rounds
     # leaves ~31s on Dead Rail; 25 is the recommended first attempt.
-    [int]$AutoTraceSeconds = 25
+    [int]$AutoTraceSeconds = 25,
+    # Viewpoint-first pivot (passed through to od-048): stage ONLY the
+    # viewpoint player and trace its first strong survivor - no top movers,
+    # no XYZ family assembly, no alternate-entity decoys.
+    [switch]$StageViewpointOnly
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -117,6 +121,7 @@ $m1Args = @{
     ResultPath             = $ResultPath
 }
 if ($AttachSmokeOnFirstRound) { $m1Args.AttachSmokeOnFirstRound = $true }
+if ($StageViewpointOnly) { $m1Args.StageViewpointOnly = $true }
 & (Join-Path $RepoRoot 'scripts\od-048-monitor-correlate-session.ps1') @m1Args *>&1 | ForEach-Object { Write-Log ("m1: " + $_) }
 $m1Exit = $LASTEXITCODE
 Write-Log ("m1_exit=" + $m1Exit)

@@ -46,6 +46,15 @@
   battle entity's live position regardless of load jitter. The union is the
   staged set; the scan retries until it finds candidates (battle loaded).
 
+  Viewpoint-first pivot (-StageViewpointOnly): stage only the viewpoint
+  player, skip family refinement (no XYZ neighbor assembly), and restrict
+  the correlate results + families to the viewpoint entity - the server
+  scores every address against the BEST-matching entity trajectory, so
+  decoy addresses tracking a teammate's movement would otherwise surface as
+  alternate-entity matches. The auto-trace then arms the first strong
+  viewpoint survivor via the solo path: one discriminating live coordinate,
+  no complete XYZ family, no waiting to assemble siblings.
+
   Battle-time budget: staging scans are expensive (tens of seconds each), so
   the driver derives a hard staging deadline from the decoded battle duration
   (battle end - 30s minimum monitor window). Staging never runs past the
@@ -93,6 +102,14 @@ param(
     # entities. Each staged entity costs three scans (x/y/z of its first
     # position sample).
     [int]$StageTopN = 3,
+    # Viewpoint-first discovery pivot: stage ONLY the viewpoint player's
+    # trajectory (no top movers). The pivot's goal is ONE discriminating
+    # viewpoint coordinate: correlate results are restricted to the viewpoint
+    # entity (alternate-entity decoys excluded), family refinement is skipped
+    # (no XYZ neighbor assembly), and the auto-trace fires on the first strong
+    # viewpoint survivor via the solo path - no complete-family requirement.
+    # Fails closed (exit 2) when the trajectory has no IsViewpoint=true entity.
+    [switch]$StageViewpointOnly,
     # FloatTolerance for each staging scan (world units). MUST stay small:
     # live probes show any band >= 0.5 floods 10000 candidates in this game
     # (the coordinate field drowns in address-ordered garbage). 0.001 (exact
@@ -424,6 +441,42 @@ function Test-MemberNotEdgeAligned {
     return -not $Member.PSObject.Properties['edgeAligned'] -or -not $Member.edgeAligned
 }
 
+# -- Viewpoint-first filter (pivot) -----------------------------------------
+# Restrict correlate results to the viewpoint player's entity. The correlate
+# server scores each address against the BEST-matching entity trajectory, so
+# an address staged from viewpoint ground truth can come back matched to a
+# different entity (a decoy tracking a teammate) - alternate-entity matches
+# are noise and must be excluded before ANY evidence gate (shift audit, strong
+# survivors, solo emission, verdict). entityId is guarded: under StrictMode a
+# missing property would throw before the null check runs.
+function Select-ViewpointResults {
+    param([object[]]$Results, [string]$ViewpointEntityId)
+    return @($Results | Where-Object {
+        $_.PSObject.Properties['entityId'] -and $null -ne $_.entityId -and
+        ([string]$_.entityId) -eq $ViewpointEntityId
+    })
+}
+
+# True when every member of a family has an address present in the
+# viewpoint-result address set (i.e. the family was built exclusively from
+# addresses the pivot accepted as viewpoint matches). A server-built family
+# may group decoy addresses scored under another entity; in viewpoint-only
+# mode such families are excluded. Missing/empty members are rejected
+# (fail-closed: unknown is not viewpoint).
+function Test-FamilyAllViewpoint {
+    param([object]$Family, [hashtable]$ViewpointAddresses)
+    # Guarded: under StrictMode a family lacking 'members' throws BEFORE the
+    # count check would run - a fail-closed $false must not become a crash.
+    if (-not $Family.PSObject.Properties['members']) { return $false }
+    $members = @($Family.members)
+    if ($members.Count -eq 0) { return $false }
+    foreach ($m in $members) {
+        if (-not $m.PSObject.Properties['address'] -or $null -eq $m.address) { return $false }
+        if (-not $ViewpointAddresses.ContainsKey([string]$m.address)) { return $false }
+    }
+    return $true
+}
+
 # Server cap on correlate observations (matches the endpoint validation); the
 # driver keeps the family-neighbor series inside the cap with priority.
 $correlateMaxObservations = 2000
@@ -625,10 +678,25 @@ function Select-NearestSample {
     return $best
 }
 
-$stagingEntities = @(
-    ($scored | Where-Object { $_.IsViewpoint } | Select-Object -First 1)
-    ($scored | Where-Object { -not $_.IsViewpoint } | Sort-Object Movement -Descending | Select-Object -First ($StageTopN - 1))
-) | Where-Object { $null -ne $_ }
+# Viewpoint-first pivot: -StageViewpointOnly stages ONLY the viewpoint
+# player (no top movers) - the goal is one discriminating viewpoint
+# coordinate, so other entities' trajectories are never staged or prioritized.
+$viewpointEntity = $scored | Where-Object { $_.IsViewpoint } | Select-Object -First 1
+if ($StageViewpointOnly) {
+    if ($null -eq $viewpointEntity) {
+        Write-Od048 'FAILED_no_viewpoint_entity (trajectory has no IsViewpoint=true entity)'
+        exit 2
+    }
+    $stagingEntities = @($viewpointEntity)
+    Write-Od048 ('viewpoint_only stage_entity=' + $viewpointEntity.EntityId + ' tank=' + $viewpointEntity.TankName)
+}
+else {
+    $stagingEntities = @(
+        $viewpointEntity
+        ($scored | Where-Object { -not $_.IsViewpoint } | Sort-Object Movement -Descending | Select-Object -First ($StageTopN - 1))
+    ) | Where-Object { $null -ne $_ }
+}
+$viewpointEntityId = if ($null -ne $viewpointEntity) { $viewpointEntity.EntityId } else { $null }
 
 if ($stagingEntities.Count -eq 0) {
     Write-Od048 'FAILED_no_staging_entity'
@@ -1038,7 +1106,11 @@ while ($round -lt $MaxReadRounds) {
     # filter rejects every candidate (this is what produced survivors=0 at
     # round 10). The provisional pass only SEEDS neighbor staging; the final
     # correlate and the family builder re-audit edge alignment authoritatively.
-    if (-not $familyRefined -and $round -ge $FamilyRefineAfterRounds -and ($round - $familyRefineLastAttemptRound) -ge $FamilyRefineRetryGapRounds) {
+    # Viewpoint-first pivot: refinement is SKIPPED under -StageViewpointOnly -
+    # it assembles XYZ neighbors for a family the pivot never waits on, and
+    # each provisional correlate burns a correlate call + series budget that
+    # the single final correlate needs for the strongest evidence.
+    if (-not $StageViewpointOnly -and -not $familyRefined -and $round -ge $FamilyRefineAfterRounds -and ($round - $familyRefineLastAttemptRound) -ge $FamilyRefineRetryGapRounds) {
         $familyRefineLastAttemptRound = $round
         $familyRefineAttempts += 1
         # Fresh array per attempt: retries must not accumulate stale survivor
@@ -1150,6 +1222,20 @@ if ($null -eq $correlated -or $null -eq $correlated.results) {
 
 $results = @($correlated.results)
 
+# Viewpoint-first pivot: restrict the scored results to the viewpoint player's
+# entity BEFORE the shift audit, so every downstream gate (strong survivors,
+# edge audit, solo emission, verdict) is viewpoint-scoped. The server scores
+# each address against the BEST-matching entity trajectory; alternate-entity
+# matches are decoys tracking other tanks' movement, not viewpoint evidence.
+if ($StageViewpointOnly) {
+    $preFilterCount = $results.Count
+    $results = Select-ViewpointResults -Results $results -ViewpointEntityId ([string]$viewpointEntityId)
+    Write-Od048 ('viewpoint_only results=' + $results.Count + '/' + $preFilterCount + ' excluded_non_viewpoint=' + ($preFilterCount - $results.Count))
+    if ($results.Count -eq 0) {
+        Write-Od048 'viewpoint_only no_viewpoint_results (every match was an alternate-entity decoy)'
+    }
+}
+
 # Shift audit: a survivor whose winning shift rides the sweep EDGE means the
 # true alignment is probably beyond the sweep (anchor wrong or load latency
 # exceeded the bound) -- the classic bad-anchor false positive. Demote those
@@ -1184,6 +1270,16 @@ foreach ($result in $results) {
 }
 $strongSurvivors = @($results | Where-Object { $_.score -ge 0.7 -and -not $_.edgeAligned })
 $families = @($correlated.families)
+# Viewpoint-first pivot: keep only families whose members' addresses belong
+# to the viewpoint-scoped results (a server-built family may group decoy
+# addresses scored under another entity). The solo family appended below is
+# viewpoint-only by construction.
+if ($StageViewpointOnly) {
+    $vpAddresses = @{}
+    foreach ($r in $results) { $vpAddresses[[string]$r.address] = $true }
+    $families = @($families | Where-Object { Test-FamilyAllViewpoint -Family $_ -ViewpointAddresses $vpAddresses })
+    Write-Od048 ('viewpoint_only families=' + $families.Count)
+}
 $completeFamilies = @($families | Where-Object { $_.complete })
 
 # FRESH14 solo-survivor arming path: the strongest artifact this pipeline has
@@ -1215,6 +1311,13 @@ if ($strongSurvivors.Count -gt 0) {
         # spent instead of skipping the survivor (bug-hunt rounds 8/9/14
         # hardened this convention for exactly this reason).
         if (-not $s.PSObject.Properties['score'] -or $null -eq $s.score) { continue }
+        # GUARDED axis/sign/shiftSeconds (bug-hunt R2 HIGH): the member synth
+        # below reads all three unguarded; under StrictMode a wire shape
+        # missing any of them would crash the campaign after the correlate
+        # window is spent. Skip such candidates fail-closed instead.
+        if (-not $s.PSObject.Properties['axis'] -or $null -eq $s.axis) { continue }
+        if (-not $s.PSObject.Properties['sign'] -or $null -eq $s.sign) { continue }
+        if (-not $s.PSObject.Properties['shiftSeconds'] -or $null -eq $s.shiftSeconds) { continue }
         if ([double]$s.score -lt $AutoTraceMinMemberScore) { continue }
         if ($AutoTraceMaxMemberBandSeconds -gt 0 -and $bandW -gt $AutoTraceMaxMemberBandSeconds) { continue }
         $alreadyMember = $false
@@ -1259,7 +1362,9 @@ if ($strongSurvivors.Count -gt 0) {
         $families = @($families) + @($soloFamily)
         $soloFamilyEmitted = $true
         $bandText = if ($bestSoloBand -lt [double]::MaxValue) { $bestSoloBand.ToString('F1') + 's' } else { 'unknown' }
-        Write-Od048 ('family_solo_emitted address=' + $bestSolo.address + ' axis=' + $bestSolo.axis + ' score=' + $bestSolo.score + ' band=' + $bandText + ' (was structurally un-armable: not in any family)')
+        # NO address on the log line (bug-hunt R2 HIGH privacy fix): the
+        # evidence payload keeps it; stdout carries only axis/score/band.
+        Write-Od048 ('family_solo_emitted axis=' + $bestSolo.axis + ' score=' + $bestSolo.score + ' band=' + $bandText + ' (was structurally un-armable: not in any family)')
     }
 }
 # M2 verdict upgrade: a complete family (three components of one entity
@@ -1285,6 +1390,10 @@ $report = [ordered]@{
     battleSessionId        = $battleSessionId
     durationTicks          = $trajectory.durationTicks
     replayStartWallTimeUtc = $replayStartWallUtc
+    # Viewpoint-first pivot markers (null when the trajectory had no
+    # IsViewpoint=true entity, or the switch was off).
+    viewpointOnly          = [bool]$StageViewpointOnly
+    viewpointEntityId      = if ($null -eq $viewpointEntityId) { $null } else { [string]$viewpointEntityId }
     # M2 pre-flight gate result (null when -AttachSmokeOnFirstRound was off).
     attachSmoke            = $attachSmoke
     staged                 = [ordered]@{

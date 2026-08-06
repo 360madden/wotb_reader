@@ -96,6 +96,42 @@ scripts/od-048-monitor-correlate-session.ps1
 **Exit:** ≥ 1 strong survivor. If neither of the 2 sessions produces one,
 **stop** — descope per the strategy stop rules.
 
+### M1.5 — Viewpoint-first discovery pivot (2026-08-06) — ✅ implemented offline, ⏳ live (FRESH15)
+
+**Pivot:** find ONE highly discriminating live coordinate of the **viewpoint
+player** by correlating its observed value history against the decoded
+viewpoint trajectory — then trace its writer immediately. See
+[`specs/2026-08-06-viewpoint-first-discovery.md`](../superpowers/specs/2026-08-06-viewpoint-first-discovery.md).
+
+**Why:** the server scores each address against the BEST-matching entity, so
+decoy addresses tracking teammates surface as alternate-entity matches; the
+strongest artifact produced so far was a lone viewpoint survivor that family
+assembly never grouped. The pivot stages only the viewpoint, requires only
+one axis, and refuses to delay tracing for XYZ neighbors.
+
+**Implemented (`-StageViewpointOnly` in od-048 + autoloop pass-through):**
+
+- Stage ONLY the `IsViewpoint=true` entity (hard exit 2 if none).
+- Skip mid-battle family refinement (no XYZ neighbor assembly, no wasted
+  correlate calls).
+- Restrict correlate results to the viewpoint `entityId` before the shift
+  audit (`Select-ViewpointResults`) — alternate-entity decoys excluded even
+  at higher score.
+- Restrict families to members whose addresses belong to the viewpoint
+  results (`Test-FamilyAllViewpoint`).
+- Solo path arms the first strong viewpoint survivor; report gains
+  `viewpointOnly`/`viewpointEntityId`.
+
+**Offline-validated:** `tmpwotb-e2e/test-viewpoint-filter.ps1` (AST-extracted
+functions + verbatim staging block: entity filter, family filter, staging
+parity, no-viewpoint exit 2), parse PS5.1+pwsh7, PSSA baseline, no-game
+DryRun, autoloop splat probe.
+
+**Pending live (FRESH15):** viewpoint-only staging hits; attach-smoke green;
+viewpoint survivor (not a decoy) armed + `family-hit` + `odwt-*.bin`;
+writer evidence → object base → sibling-coordinate local read → resolver
+classification (pointer path / object relationship / code signature).
+
 ### M2 — Family mapping + write-trace — **CAP: 2 attempts**
 
 1. **Family mapping (READ-SIDE BUILT 2026-08-05).** At monitor round 10 the
