@@ -96,7 +96,7 @@ scripts/od-048-monitor-correlate-session.ps1
 **Exit:** ≥ 1 strong survivor. If neither of the 2 sessions produces one,
 **stop** — descope per the strategy stop rules.
 
-### M1.5 — Viewpoint-first discovery pivot (2026-08-06) — ✅ implemented offline, ⏳ live (FRESH15)
+### M1.5 — Viewpoint-first discovery pivot (2026-08-06) — ✅ implemented offline, ⏳ live validation (FRESH15→19 campaign, crash fixed 2026-08-06)
 
 **Pivot:** find ONE highly discriminating live coordinate of the **viewpoint
 player** by correlating its observed value history against the decoded
@@ -127,10 +127,39 @@ functions + verbatim staging block: entity filter, family filter, staging
 parity, no-viewpoint exit 2), parse PS5.1+pwsh7, PSSA baseline, no-game
 DryRun, autoloop splat probe.
 
-**Pending live (FRESH15):** viewpoint-only staging hits; attach-smoke green;
-viewpoint survivor (not a decoy) armed + `family-hit` + `odwt-*.bin`;
-writer evidence → object base → sibling-coordinate local read → resolver
-classification (pointer path / object relationship / code signature).
+**Live campaign status (FRESH15 → FRESH19, 2026-08-06):** six live rounds
+have each surfaced and fixed one real infrastructure bug; the pipeline is now
+mechanically reliable (all fixes committed):
+
+| Round | Outcome | Bug found → fix (commit) |
+|---|---|---|
+| FRESH15 | attach-smoke left the game permanently frozen ~1/3 of runs (x64dbg/WOW64 resume limitation) | campaign retry loop (auto-relaunch, max 3) + detach-then-poll recovery + battle-started smoke gate |
+| FRESH15h | smoke green, 0 strong survivors | pause-compensation so the smoke pause doesn't warp the sample series |
+| FRESH15i/j | staging ran during attendance (elapsed 8.6s) → staged decoys | `-StageMinBattleSeconds` gate; then the attendance-latency correction — stage/correlate at match-begin (marker + latency), not the marker (`c918694`) |
+| FRESH17 | click registration flaky (blind double-click) | single verified click + SendInput + message-click channel + animation settle + 640×360 window resize (`885a537`, `14633a0`) |
+| FRESH18 | 3 mid-run 401s (host rotates the capability token on every ≥15s publish); z axis rode the −30s sweep edge (true shift beyond it) | 401-retry in `Invoke-Api` (re-read rendezvous + retry ≤5×2s, non-401 fails closed); `MaxTimeShiftSeconds` 30→90 (`888fb58`) |
+| FRESH19 | **zero-viewpoint `$null.Count` crash** killed the campaign after the correlate; relaunch re-used attempt 1's stale marker (staged 806 vs 3000) | caller-side `@(Select-ViewpointResults …)` (`540c6bc`); fresh-marker polling on relaunch |
+
+**FRESH19 crash root cause (2026-08-06):** `Select-ViewpointResults` returns
+`@(…)` but PowerShell **unwraps function pipeline output on return** — zero
+matches become `$null`, and `$null.Count` throws PropertyNotFoundException
+under StrictMode. The sharper 90s sweep can produce zero viewpoint matches
+(every address scored as an alternate-entity decoy). Fixed with a caller-side
+`@()`; a unit probe reproduces the exact error without the fix and passes with
+it; an 8-round campaign now completes (`NO_CRASH`, report written). This bug
+would have crashed EVERY sharp-sweep run — FRESH18's 173-result array masked
+it.
+
+**Remaining live gate (FRESH20):** a clean correlate verdict — non-edge,
+narrow ambiguity band at the true shift (the offline dry-run predicts 1.000 @
+shift 0 with the corrected anchor; live ceiling ≈ 0.9+) — then the armed
+viewpoint survivor fires the first `odwt-*.bin` hit report. Open science
+question if the verdict still won't lock: tick-rate mismatch (a constant
+shift can't fix a rate error → a rate dimension in the scorer).
+
+**Pending after a strong survivor:** writer evidence → object base →
+sibling-coordinate local read → resolver classification (pointer path /
+object relationship / code signature).
 
 ### M2 — Family mapping + write-trace — **CAP: 2 attempts**
 

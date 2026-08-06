@@ -77,6 +77,18 @@ amendment.
   Launch the replay, let it play, run `od-048-monitor-correlate-session.ps1`.
   Verdict from the report: strong survivors = score ≥ 0.7 (addresses that
   reproduce ≥ 70% of the movement samples).
+- **M1.5 — Viewpoint-first pivot (2026-08-06).** Stage ONLY the viewpoint
+  player and trace the first strong survivor immediately; alternate-entity
+  decoys are excluded before the shift audit (`od-048 -StageViewpointOnly`,
+  see the roadmap). The FRESH15→19 live campaign (six rounds) hardened the
+  infrastructure end-to-end — every round surfaced one real bug, all now
+  fixed and committed: attach-freeze auto-relaunch, battle-started staging
+  gate, attendance-latency correction, capability-401 retry (host rotates the
+  token every ≥15s publish), the 30→90s shift sweep, the FRESH19
+  zero-viewpoint `$null.Count` crash (caller-side `@()` on
+  `Select-ViewpointResults`), and fresh-marker polling on campaign relaunch.
+  The remaining gate is a clean live correlate verdict (FRESH20) before the
+  write-trace fires its first real `odwt-*.bin` hit report.
 - **M2 — Family mapping + write-trace.** Read-side BUILT (2026-08-05): the
   driver re-stages the ±16-byte neighbors of the top provisional survivors
   mid-battle, and the correlate response's `families` section groups the
