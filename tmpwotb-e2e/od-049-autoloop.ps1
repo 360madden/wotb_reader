@@ -15,6 +15,18 @@ param(
     # scan targets tick (elapsed - attendance) and the correlate maps
     # wall->tick from (marker + attendance), so the needed shift is ~0.
     [double]$AttendanceLatencySeconds = 50.0,
+    # FRESH19: correlate shift-sweep half-width (passed through). FRESH18
+    # proved the 50s attendance estimate is per-replay -- the z axis wanted a
+    # shift ~20-30s beyond the old 30s sweep. 90s lets the scorer REACH the
+    # true shift so the band-floor gate can judge it honestly instead of
+    # refusing everything as edge-aligned.
+    [int]$MaxTimeShiftSeconds = 90,
+    # FRESH19: the offline replay viewer auto-loops after the battle ends; the
+    # second LoadGameScene reload hits the OD-044-class flake (frozen roster
+    # screen, 'Not Responding'). After the campaign concludes (auto-trace, if
+    # any, already ran in-process inside M1), the game is stopped so the
+    # operator is never left with a frozen window. -KeepGame opts out.
+    [switch]$KeepGame,
     [string]$ResultPath = '',
     # M2 pre-flight gate (FRESH9/FRESH14 chunk 2): after the first monitor
     # round proves the game readable, od-048 runs the x64dbg attach-smoke
@@ -179,6 +191,7 @@ for ($attempt = 1; $attempt -le $MaxCampaignAttempts; $attempt++) {
     }
     if ($AttachSmokeOnFirstRound) { $m1Args.AttachSmokeOnFirstRound = $true }
     if ($StageViewpointOnly) { $m1Args.StageViewpointOnly = $true }
+    $m1Args.MaxTimeShiftSeconds = $MaxTimeShiftSeconds
     & (Join-Path $RepoRoot 'scripts\od-048-monitor-correlate-session.ps1') @m1Args *>&1 | ForEach-Object { Write-Log ("m1: " + $_) }
     $m1Exit = $LASTEXITCODE
     Write-Log ("m1_exit=" + $m1Exit)
@@ -186,5 +199,14 @@ for ($attempt = 1; $attempt -le $MaxCampaignAttempts; $attempt++) {
     if ($attempt -lt $MaxCampaignAttempts) {
         Write-Log ("campaign attempt " + $attempt + " failed with exit 6 (attach-smoke; game likely frozen by the detach) - relaunching")
     }
+}
+# FRESH19: the replay viewer loops after the battle ends and the second
+# LoadGameScene reload hits the OD-044-class flake (frozen roster). M1's
+# auto-trace (if any) already ran in-process before this point, so stopping
+# the game now cannot lose evidence -- it only prevents the frozen-window
+# end-state the operator keeps hitting.
+if (-not $KeepGame) {
+    Write-Log 'stopping game after campaign (replay-loop flake prevention)'
+    Stop-Process -Name 'wotblitz' -Force -ErrorAction SilentlyContinue
 }
 exit $m1Exit

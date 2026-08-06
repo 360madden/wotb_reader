@@ -135,7 +135,14 @@ param(
     # load latency (the battle starts at tick 0 some seconds AFTER the Start
     # marker, so the observed series trails the anchor by the load time).
     # 30s covers observed load latencies; the server cap is 120.
-    [int]$MaxTimeShiftSeconds = 30,
+    # FRESH19: FRESH18's z-axis rode the -30s sweep edge at -18.5s with span
+    # 275 -- the true shift is BEYOND the old sweep. The 50s attendance
+    # estimate is per-replay (this replay took ~20-30s longer in attendance,
+    # putting the true match-begin at marker+70..80). The scorer must be able
+    # to REACH the true shift instead of pinning the band at the edge, or the
+    # band-floor gate refuses everything as edge-aligned. 90s covers an
+    # attendance of 50-90s plus signal slack.
+    [int]$MaxTimeShiftSeconds = 90,
     # Observed series with a span below this are treated as constants.
     [double]$MinMovingSpan = 0.5,
     # Family refinement (M2): after this many monitor rounds, a provisional
@@ -353,22 +360,34 @@ function Invoke-Api {
         # abort it mid-scan; PS 5.1's default (indefinite) hangs forever on a
         # dead host. 300s is generous for the slowest scan while still failing
         # a hung call in finite time.
-        [int]$TimeoutSec = 300
+        [int]$TimeoutSec = 300,
+        # FRESH19: the host ROTATES its capability token on every rendezvous
+        # publish (PublishAsync -> security.Rotate(), every >=15s), so any
+        # driver holding a token older than one publish cycle 401s with
+        # web.local_capability_required even though the gate is verified and
+        # the host is healthy. FRESH18 lost 3 mid-run rounds to exactly this
+        # (holes in the observation series widened every ambiguity band). A
+        # 401 is not a failure -- it is a signal to re-read the rendezvous
+        # record and retry with the fresh token. Bounded retry, 2s apart, so
+        # a genuinely revoked host still fails closed in finite time.
+        [int]$CapabilityRetries = 5
     )
-    $params = @{
-        Uri        = $Rendezvous.baseUri + $RelativePath
-        Method     = $Method
-        TimeoutSec = $TimeoutSec
-        Headers    = @{ 'X-WotBTreader-Capability' = [string]$Rendezvous.capability }
-    }
-    if ($null -ne $Body) {
-        $params.ContentType = 'application/json'
-        $params.Body = ($Body | ConvertTo-Json -Depth 12 -Compress)
-    }
-    try {
-        return Invoke-RestMethod @params
-    }
-    catch {
+    $attempt = 0
+    while ($true) {
+        $params = @{
+            Uri        = $Rendezvous.baseUri + $RelativePath
+            Method     = $Method
+            TimeoutSec = $TimeoutSec
+            Headers    = @{ 'X-WotBTreader-Capability' = [string]$Rendezvous.capability }
+        }
+        if ($null -ne $Body) {
+            $params.ContentType = 'application/json'
+            $params.Body = ($Body | ConvertTo-Json -Depth 12 -Compress)
+        }
+        try {
+            return Invoke-RestMethod @params
+        }
+        catch {
         # Log WHY the call failed (status + short error body): the generic
         # FAILED_* messages alone leave the operator blind between a broken
         # request, a gate-revoked 4xx, and a dead host. Loopback URIs and the
@@ -413,11 +432,27 @@ function Invoke-Api {
                 # Body read failure is not fatal; keep whatever detail we have.
             }
         }
+        # FRESH19: a 401 is the capability-rotation race, not a revoked host.
+        # Re-read the rendezvous record (the publisher has written the next
+        # rotated token) and retry. Only 401s retry; anything else -- gate
+        # denial, dead host, malformed request -- fails through immediately.
+        if ($status -eq 401 -and $attempt -lt $CapabilityRetries) {
+            $fresh = Get-Rendezvous
+            if ($null -ne $fresh -and $fresh.PSObject.Properties['capability'] -and
+                -not [string]::IsNullOrWhiteSpace([string]$fresh.capability)) {
+                $Rendezvous = $fresh
+            }
+            Write-Od048 ('api_capability_retry path={0} attempt={1} fresh={2}' -f $RelativePath, ($attempt + 1), [bool]$fresh)
+            $attempt++
+            Start-Sleep -Seconds 2
+            continue
+        }
         $diag = ('api_failed method={0} path={1}' -f $Method, $RelativePath)
         if ($null -ne $status) { $diag += (' status=' + $status) }
         if ($detail) { $diag += (' body=' + $detail) }
         Write-Od048 $diag
         return $null
+        }
     }
 }
 
