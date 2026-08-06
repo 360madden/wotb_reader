@@ -174,6 +174,25 @@ param(
     [string]$SmokeProbeAddress = '',
     # For -AttachSmoke: JSON report path (default %TEMP%\od-048-attach-smoke.json).
     [string]$SmokeResultPath = $(Join-Path $env:TEMP 'od-048-attach-smoke.json'),
+    # For -AttachSmoke: keep the debugger attached + the game resumed
+    # (scriptrun-resume) after the smoke instead of detaching, so the M2
+    # trace can reuse the SAME debugger. FRESH26: the trace's SECOND attach
+    # (fresh re-pre-arm at trace time) was the FRESH25 STOP_gate=Denied root
+    # cause - it froze the game (WOW64 attach-freeze class; the operator saw
+    # 'not responding'), the host monitor denied the evidence terminally, and
+    # the trace's first gate poll read Denied (exit 5) before the window
+    # opened. Attach-once keeps ONE debugger from smoke (battle-start,
+    # verified, relaunchable) through the trace, eliminating the second
+    # attach and the denial with it.
+    [switch]$KeepAttached,
+    # For the trace window (-AutoWriteTrace): reuse the debugger the smoke
+    # left attached instead of attaching a second time (see -KeepAttached).
+    # When set, the script skips the `attach` step (the debugger is already
+    # attached to the game) and goes straight to pause + scriptload +
+    # scriptrun. Passed by od-048 only when its smoke report says
+    # keptAttached=true; fail-closed otherwise (a fresh attach is safe when
+    # no debugger owns the process).
+    [switch]$ReuseAttached,
     # Minimum correlation score for EVERY member of the armed family. A member
     # below the floor is noise, not evidence (FRESH10 live: the gate armed
     # x@0.20 + y@1.00 and the trace burned the green window on the noise
@@ -908,7 +927,15 @@ public static class WtX64Ui {
 # address. Returns 0 (green) / 1 (red) and writes a JSON report so the caller
 # (od-048) can fail closed BEFORE spending the correlate + trace window.
 function Invoke-AttachSmoke {
-    param([string]$ProbeAddress, [string]$ResultPath)
+    param(
+        [string]$ProbeAddress,
+        [string]$ResultPath,
+        # FRESH26 attach-once: leave the debugger attached + the game resumed
+        # (scriptrun-resume) so the M2 trace reuses it instead of a second
+        # attach (the FRESH25 STOP_gate=Denied root cause). Off by default for
+        # standalone smoke; od-048 passes it when the auto-trace will follow.
+        [switch]$KeepAttached
+    )
     $report = [ordered]@{
         smoke          = 'fail'
         ranUtc         = ([DateTime]::UtcNow).ToString('o')
@@ -917,6 +944,10 @@ function Invoke-AttachSmoke {
         pauseVerified  = $false
         bpmArmed       = 'unverified'
         resumeVerified = $false
+        # FRESH26: whether the debugger was left ATTACHED (not detached) so
+        # the trace can reuse it. Only true when -KeepAttached was requested
+        # AND the scriptrun resume succeeded; otherwise false (fail-closed).
+        keptAttached   = $false
         # FRESH15e: the exact game-paused wall window (pause verified ->
         # resume verified). od-048 subtracts it from post-smoke sample stamps
         # so the correlate's wall->tick mapping stays linear across the pause.
@@ -935,11 +966,55 @@ function Invoke-AttachSmoke {
             Write-Wt ('attach_smoke_report_write_failed: ' + $_.Exception.Message)
         }
     }
+    # FRESH26: attach-once (the FRESH25 STOP_gate=Denied root cause). The
+    # trace's SECOND x32dbg attach (re-pre-arm at trace time) froze the game
+    # (WOW64 attach-freeze class; the operator saw 'not responding'), and the
+    # host monitor - polling every 500ms - denied the evidence terminally
+    # (evidence.monitor_unhealthy at 21:32:53) so the trace's first gate poll
+    # read Denied and exited 5 before the window opened. Keeping ONE debugger
+    # attached from the smoke (battle-start, verified, relaunchable) through
+    # the trace eliminates the second attach and the denial with it. The
+    # smoke leaves the debugger attached + the game RESUMED via scriptrun of
+    # a resume script (the proven resume path - command-bar 'run' never
+    # resumes this WOW64 combo, scriptrun does), so the trace can reuse it
+    # instead of re-attaching.
+    function Resume-AttachedAndKeep {
+        param([object]$Win, [object]$CmdBar, [string]$GameName = 'wotblitz')
+        $game = Get-Process -Name $GameName -ErrorAction SilentlyContinue |
+            Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } |
+            Select-Object -First 1
+        if (-not $game) { return $false }
+        $resumeScript = Join-Path $env:TEMP 'od-wt-smoke-resume.script'
+        try {
+            [System.IO.File]::WriteAllText($resumeScript, "log `"ODWT_SMOKE_RESUME`"`r`nrun`r`n", (New-Object System.Text.UTF8Encoding($false)))
+            Send-X64DbgCommand -CommandBar $CmdBar -Handle $Win.Handle ('scriptload "' + $resumeScript + '"')
+            Start-Sleep -Milliseconds 600
+            Send-X64DbgCommand -CommandBar $CmdBar -Handle $Win.Handle 'scriptrun'
+        }
+        catch { return $false }
+        $deadline = (Get-Date).AddSeconds(30)
+        $settleRounds = 0
+        while ((Get-Date) -lt $deadline) {
+            $settleRounds++
+            $ta = $game.TotalProcessorTime
+            Start-Sleep -Milliseconds 1200
+            $tb = $game.TotalProcessorTime
+            if ((($tb - $ta).TotalMilliseconds) -gt 0) {
+                Write-Wt ('attach_smoke keep_attached resume_settle_rounds=' + $settleRounds + ' verified=True')
+                return $true
+            }
+            Start-Sleep -Milliseconds 800
+        }
+        Write-Wt ('attach_smoke keep_attached resume_settle_rounds=' + $settleRounds + ' verified=False')
+        return $false
+    }
     try {
         if ($DryRun) {
             $probeText = if ($ProbeAddress) { 'bpm ' + $ProbeAddress + ' -> bpmc' } else { 'no probe' }
-            Write-Wt ('attach_smoke DRYRUN would attach 0x<hex> -> pause -> verify -> ' + $probeText + ' -> detach -> verify resume')
+            $finish = if ($KeepAttached) { 'scriptrun-resume -> KEEP ATTACHED (trace reuses)' } else { 'detach -> verify resume' }
+            Write-Wt ('attach_smoke DRYRUN would attach 0x<hex> -> pause -> verify -> ' + $probeText + ' -> ' + $finish)
             $report.smoke = 'ok'
+            $report.keptAttached = $KeepAttached
             Write-SmokeReport
             return 0
         }
@@ -1037,6 +1112,26 @@ function Invoke-AttachSmoke {
         # after ~5-20s of WOW64 debugger-cleanup settling. So a single
         # post-detach CPU sample would false-red a healthy game; poll up to
         # 30s for it to resume, and only fail if it never comes back.
+        # FRESH26 attach-once: when -KeepAttached is set, resume via scriptrun
+        # (the proven resume path) and KEEP the debugger attached so the M2
+        # trace reuses it - the second attach was the FRESH25 denial trigger.
+        # Only skip the detach when the scriptrun resume verifies; otherwise
+        # fall through to the detach path (fail-closed, game must not be left
+        # frozen with a stray debugger attached).
+        $keptAttachedOk = $false
+        if ($KeepAttached) {
+            $keptAttachedOk = Resume-AttachedAndKeep -Win $win -CmdBar $cmdBar -GameName $game.ProcessName
+            if ($keptAttachedOk) {
+                $report.keptAttached = $true
+                $report.resumeUtc = ([DateTime]::UtcNow).ToString('o')
+                $report.resumeVerified = $true
+                Write-Wt ('attach_smoke kept_attached=True pid=' + $report.attachedHexPid + ' (trace will reuse this debugger)')
+                $report.smoke = 'ok'
+                Write-SmokeReport
+                return 0
+            }
+            Write-Wt 'attach_smoke keep_attached resume failed - falling back to detach path'
+        }
         Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle 'detach'
         $resumeDeadline = (Get-Date).AddSeconds(30)
         $resumeVerified = $false
@@ -1365,9 +1460,38 @@ try {
         else {
             Write-Wt 'FAILED_x64dbg_not_running_run_pre-arm_debugger_first'
         }
-        exit 3
+        # FRESH26: -ReuseAttached was set (smoke kept its debugger) but no
+        # debugger window is here - the smoke's x32dbg died or was closed in
+        # the gap. Degrade to a fresh pre-arm + attach instead of failing the
+        # window (a second attach on a debugger-free process is the SAFE
+        # path; the freeze only bites when a second debugger grabs an already-
+        # attached process). Fall through so the attach step re-arms.
+        if ($ReuseAttached) {
+            Write-Wt 'reuse_attached_debugger_gone - falling back to fresh pre-arm + attach'
+            if (-not (Invoke-AutoPreArm)) {
+                Write-Wt 'FAILED_prearm_on_reuse_fallback'
+                exit 3
+            }
+            $win = Wait-X64DbgWindow -TimeoutSeconds $WindowWaitSeconds
+            if (-not $win) {
+                Write-Wt 'FAILED_x64dbg_no_window_after_reuse_fallback'
+                exit 3
+            }
+            Write-Wt ("x64dbg_pid=" + $win.Id + ' (fresh fallback)')
+            $doReuse = $false
+        }
+        else {
+            exit 3
+        }
     }
-    Write-Wt ("x64dbg_pid=" + $win.Id)
+    else {
+        Write-Wt ("x64dbg_pid=" + $win.Id)
+        $doReuse = $ReuseAttached
+    }
+    if (-not $PSBoundParameters.ContainsKey('ReuseAttached')) {
+        $doReuse = $false
+    }
+    if ($null -eq $doReuse) { $doReuse = $false }
 
     # ---- 5. Attach + pause, then inject scriptload + scriptrun -------------
     # x64dbg parses integer literals as HEX: `attach <decimal>` silently
@@ -1390,8 +1514,21 @@ try {
     }
     [WtX64Gui]::ForceForeground($win.Handle)
     Start-Sleep -Milliseconds 300
-    Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle ('attach 0x{0:X}' -f $game.Id)
-    Start-Sleep -Seconds 4
+    # FRESH26 attach-once: when the smoke left its debugger attached, reuse
+    # it - skip the `attach` command entirely (the debugger already owns the
+    # process; a second attach is what froze the game and denied the gate in
+    # FRESH25). The `pause` below still runs (scriptrun requires the debuggee
+    # paused). Fail-closed: -ReuseAttached is only set by od-048 when the
+    # smoke report says keptAttached=true, so a mismatch here means the
+    # debugger is NOT attached - refuse rather than scriptrun into an
+    # unattached debugger.
+    if ($doReuse) {
+        Write-Wt ('reused_attached_debugger pid=0x{0:X} (no second attach)' -f $game.Id)
+    }
+    else {
+        Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle ('attach 0x{0:X}' -f $game.Id)
+        Start-Sleep -Seconds 4
+    }
     Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle 'pause'
     Start-Sleep -Seconds 2
     Write-Wt ('attached pid=0x{0:X}' -f $game.Id)

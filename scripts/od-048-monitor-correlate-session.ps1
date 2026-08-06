@@ -1116,6 +1116,12 @@ while ($round -lt $MaxReadRounds) {
             SmokeProbeAddress = $smokeProbe
             SmokeResultPath   = $smokeResultPath
             SkipGateCheck     = $true
+            # FRESH26 attach-once: leave the debugger attached + the game
+            # resumed so the M2 trace reuses it instead of a second attach
+            # (the FRESH25 STOP_gate=Denied root cause). The smoke is the
+            # SAFE attach point: battle-start, pause verified, resume verified,
+            # relaunchable on failure. The trace then skips its own attach.
+            KeepAttached      = $true
         }
         Write-Od048 ('attach_smoke INVOKING round=' + $round + ' probe=' + $smokeProbe)
         try {
@@ -1151,14 +1157,30 @@ while ($round -lt $MaxReadRounds) {
             }
         }
         $attachSmokeDone = $true
-        $attachSmoke = [ordered]@{
-            ranUtc       = ([DateTime]::UtcNow).ToString('o')
-            atRound      = $round
-            probeAddress = $smokeProbe
-            resultPath   = $smokeResultPath
-            exitCode     = $smokeExit
-            ok           = ($smokeExit -eq 0)
+        # FRESH26: whether the smoke left the debugger attached (attach-once
+        # handoff). Only true when the smoke report says keptAttached - the
+        # trace's -ReuseAttached flag gates on this exact value so the two can
+        # never disagree about who owns the debugger.
+        $smokeKeptAttached = $false
+        if ($smokeExit -eq 0 -and (Test-Path -LiteralPath $smokeResultPath)) {
+            try {
+                $smokeReport = Get-Content -LiteralPath $smokeResultPath -Raw | ConvertFrom-Json
+                $smokeKeptAttached = ($smokeReport.PSObject.Properties['keptAttached'] -and $smokeReport.keptAttached -eq $true)
+            }
+            catch {
+                Write-Od048 ('attach_smoke kept_attached_parse_failed: ' + $_.Exception.Message)
+            }
         }
+        $attachSmoke = [ordered]@{
+            ranUtc        = ([DateTime]::UtcNow).ToString('o')
+            atRound       = $round
+            probeAddress  = $smokeProbe
+            resultPath    = $smokeResultPath
+            exitCode      = $smokeExit
+            ok            = ($smokeExit -eq 0)
+            keptAttached  = $smokeKeptAttached
+        }
+        Write-Od048 ('attach_smoke keptAttached=' + $smokeKeptAttached)
         if ($smokeExit -ne 0) {
             $stoppedReason = 'attach-smoke-failed'
             Write-Od048 'attach_smoke FAILED aborting before correlate (fix x64dbg attach/memory-BP on the live game, then rerun)'
@@ -1946,6 +1968,10 @@ if ($AutoWriteTraceOnVerdict) {
                 # FRESH22: same span floor on both gates so the solo member
                 # vetted here can never be refused there for the same reason.
                 MinMemberSpan        = $AutoTraceMinMemberSpan
+                # FRESH26 attach-once: when the smoke left its debugger
+                # attached, the trace reuses it (skips its own attach) - the
+                # second attach was the FRESH25 STOP_gate=Denied root cause.
+                ReuseAttached        = $smokeKeptAttached
             }
             if ($AutoTraceSkipPlayProbe) { $wtArgs.SkipPlayProbe = $true }
             if ($AutoTraceSkipLivenessCheck) { $wtArgs.SkipLivenessCheck = $true }

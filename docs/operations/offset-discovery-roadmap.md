@@ -96,7 +96,7 @@ scripts/od-048-monitor-correlate-session.ps1
 **Exit:** ≥ 1 strong survivor. If neither of the 2 sessions produces one,
 **stop** — descope per the strategy stop rules.
 
-### M1.5 — Viewpoint-first discovery pivot (2026-08-06) — ✅ implemented offline, ✅ TWO strong live verdicts (FRESH20/21) + first armed trace (FRESH22), ⏳ consensus-class arming → first hit report (FRESH23)
+### M1.5 — Viewpoint-first discovery pivot (2026-08-06) — ✅ implemented offline, ✅ SIX strong live verdicts (FRESH20–25) + attach-once fix, ⏳ trace window under attach-once → first hit report (FRESH26)
 
 **Pivot:** find ONE highly discriminating live coordinate of the **viewpoint
 player** by correlating its observed value history against the decoded
@@ -127,11 +127,15 @@ functions + verbatim staging block: entity filter, family filter, staging
 parity, no-viewpoint exit 2), parse PS5.1+pwsh7, PSSA baseline, no-game
 DryRun, autoloop splat probe.
 
-**Live campaign status (FRESH15 → FRESH22, 2026-08-06):** nine live rounds
-have each surfaced and fixed one real bug — six infrastructure defects, two
-strong scientific verdicts (FRESH20/21), then the first completed armed trace
-(FRESH22, no-hit → selection fix); the pipeline is mechanically reliable and
-the arming machinery is proven end-to-end (all fixes committed):
+**Live campaign status (FRESH15 → FRESH25, 2026-08-06):** eleven live rounds,
+each surfacing and fixing one real bug — six infrastructure defects, then six
+consecutive strong scientific verdicts (FRESH20–25), the first completed
+armed trace (FRESH22, no-hit → selection fix), and the frozen/attach
+mechanism questions settled: FRESH24 ruled out a frozen window
+(liveness=running) and FRESH25 found the real killer — the trace's SECOND
+attach froze the game and the monitor denied the gate → **attach-once fix**
+(smoke keeps one debugger, trace reuses it). The pipeline is mechanically
+reliable and the arming machinery is proven end-to-end (all fixes committed):
 
 | Round | Outcome | Bug found → fix (commit) |
 |---|---|---|
@@ -145,6 +149,8 @@ the arming machinery is proven end-to-end (all fixes committed):
 | FRESH21 | **SECOND STRONG VERDICT, cleanest run** — 32 strong survivors (29 z @ score 0.92, span 275.15 = decoded z span, shift 0, non-edge band [−19.5,+12]); **but families=0 → trace SKIPPED** (`no_families_from_survivors`) | **stale 20s band floor** (1/3 of the old ±30s sweep, never re-derived when the sweep widened to ±90) refused every survivor in the solo gate → band floor re-derived to 60s + new span floor (`7c02f7d`) |
 | FRESH22 | **FIRST ARMED TRACE COMPLETED** — `family_solo_emitted axis=z score=0.94` (the FRESH22 gate fix held); trace ran end-to-end (BP armed, script injected, 25s live window) → **`family-no-hit` — zero writes** while the decoded replay proves the tank was moving through the whole window | **score-desc tiebreak armed a partial-window copy** (span 75.5) over the consensus class (~20 z @ span exactly 275.4, shift 0) → **span-first selection** (span desc, score desc, band asc) + **arm top-4 consensus addresses** (`-AutoTraceMaxSoloMembers` = 4 DR0-DR3) (`6f36067`) |
 | FRESH23 | **consensus class armed exactly as designed** — `family_solo_emitted axis=z members=4 span=275.4`; trace ran end-to-end → **`family-no-hit` AGAIN** (3/3 traces, zero hits, tank moving) | **frozen-window hypothesis** (the trace never verifies the game resumed after attach; the smoke does) → **CPU-liveness discriminator** in the write-trace: `window_liveness=running|frozen` from the game's TotalProcessorTime across the window (`x64dbg-write-trace.ps1`) |
+| FRESH24 | **frozen-window hypothesis DEAD** — `window_cpu_delta_ms=25672 liveness=running` (game consumed 25.7s of CPU in the 25s window; fully executing) yet **`family-no-hit`** again → the no-hits are REAL for the correlated class | new leading hypothesis: **the battle world isn't advancing during the window** (paused viewer / roster screen / packet-gap renders but writes nothing; the pixel play-state probe read `unknown`) → **value-liveness discriminator**: re-read the armed addresses' float values at window start/end (`window_values_changed` + `window_max_value_delta`) (`1c6690d`) |
+| FRESH25 | **value-liveness never got its window** — M1 strong again (`family_solo_emitted axis=z members=4 span=275.2`), but the auto-trace **re-pre-armed a SECOND x32dbg (pid 48272) and attached at ~21:32:52** → WOW64 attach-freeze (operator saw "not responding") → host monitor denied terminally (`evidence.monitor_unhealthy` at 21:32:53) → first gate poll read `Denied` → exit 5 before the window opened | **attach-once fix**: smoke keeps ONE debugger attached (scriptrun-resume, `-KeepAttached`) through the campaign and the trace **reuses it** (`-ReuseAttached`, skips its own attach; fallback to fresh attach if the smoke's debugger died). Eliminates the second attach, the freeze, the denial, and the wrapper latency (`x64dbg-write-trace.ps1` + od-048 wiring) |
 
 **FRESH22 no-hit root cause (2026-08-06, `6f36067`):** the trace machinery
 completed perfectly (gate → liveness → attach → `scriptload+scriptrun` → BP
@@ -192,16 +198,18 @@ it; an 8-round campaign now completes (`NO_CRASH`, report written). This bug
 would have crashed EVERY sharp-sweep run — FRESH18's 173-result array masked
 it.
 
-**Remaining live gate (FRESH23):** the arming machinery is now fully proven
-end-to-end — FRESH22 completed the first armed trace (BP armed, script
-injected, clean window) and the only miss was a **selection** defect (armed a
-partial copy instead of the per-frame field), fixed by span-first selection +
-top-4 consensus arming. FRESH23 — arming the span-275.4 consensus class —
-should produce the first `odwt-*.bin` hit report (writer RIP/RVA, base
-register, displacement, nearby-object dump). If the armed consensus still
-yields nothing, the suspect flips to the WOW64 frozen-window class (a
-distinguishing post-window liveness re-read is the planned discriminator),
-and the open science question (tick-rate mismatch → a rate dimension in the
+**Remaining live gate (FRESH26):** the mechanism question is settled — FRESH24
+ruled out a frozen window (liveness=running) and FRESH25 found the actual
+killer: the trace's SECOND x64dbg attach (fresh re-pre-arm at trace time)
+freezes the game and the host monitor denies the gate before the window
+opens. The **attach-once fix** (smoke keeps one debugger via scriptrun-resume,
+trace reuses it, no second attach) is implemented + offline-validated.
+FRESH26 — the first trace under attach-once — should produce the first
+`odwt-*.bin` hit report (writer RIP/RVA, base register, displacement,
+nearby-object dump) and finally answer the FRESH24 value-liveness question
+(`window_values_changed=true|false` on a window that actually runs). If the
+armed consensus still yields nothing, the open science question (tick-rate
+mismatch → a rate dimension in the
 scorer) remains as the last resort.
 
 **Pending after a strong survivor:** writer evidence → object base →
