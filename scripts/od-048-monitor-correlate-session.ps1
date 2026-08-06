@@ -1370,7 +1370,17 @@ $results = @($correlated.results)
 # matches are decoys tracking other tanks' movement, not viewpoint evidence.
 if ($StageViewpointOnly) {
     $preFilterCount = $results.Count
-    $results = Select-ViewpointResults -Results $results -ViewpointEntityId ([string]$viewpointEntityId)
+    # FRESH19 fix: Select-ViewpointResults returns @(...), but PowerShell
+    # UNWRAPS the function's pipeline output on return. A SINGLE match
+    # becomes a scalar PSCustomObject (whose .Count happens to work via the
+    # unified Count property) and ZERO matches become $null -- and
+    # $null.Count throws PropertyNotFoundException under StrictMode. The
+    # sharper 90s sweep can produce zero viewpoint matches (all addresses
+    # scored as alternate-entity decoys), which crashed the campaign after
+    # the correlate window was spent (FRESH18's 173-result array masked it).
+    # The caller-side @() re-collects the pipeline output into a real array
+    # (empty or not), so every downstream .Count is safe.
+    $results = @(Select-ViewpointResults -Results $results -ViewpointEntityId ([string]$viewpointEntityId))
     Write-Od048 ('viewpoint_only results=' + $results.Count + '/' + $preFilterCount + ' excluded_non_viewpoint=' + ($preFilterCount - $results.Count))
     if ($results.Count -eq 0) {
         Write-Od048 'viewpoint_only no_viewpoint_results (every match was an alternate-entity decoy)'

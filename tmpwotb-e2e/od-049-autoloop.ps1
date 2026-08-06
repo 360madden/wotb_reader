@@ -149,25 +149,41 @@ for ($attempt = 1; $attempt -le $MaxCampaignAttempts; $attempt++) {
         $launchExit = $LASTEXITCODE
         Write-Log ("relaunch_exit=" + $launchExit)
         if ($launchExit -ne 0) { exit $launchExit }
+        # FRESH19: the relaunched game writes a NEW blitz log + a NEW 'Start
+        # replay event' marker AFTER the watch/click phase. The OLD $logs list
+        # (enumerated before attempt 1) and the old marker would anchor the new
+        # battle ~40-100s early -- FRESH19 attempt 2 staged tick_est=91s
+        # instead of ~5s and found only 806 candidates (vs 3000), degrading
+        # the whole correlate. Re-enumerate logs and poll up to ~40s for a
+        # marker NEWER than the relaunch's own start.
+        $relaunchStartedUtc = [DateTime]::UtcNow
         $markerUtc = $null
-        foreach ($log in $logs) {
-            $lines = @(Get-Content -LiteralPath $log.FullName -Tail 400 -ErrorAction SilentlyContinue)
-            for ($i = $lines.Count - 1; $i -ge 0; $i--) {
-                $line = [string]$lines[$i]
-                if ($line -match 'START_REPLAY_LOCAL|Start replay event') {
-                    if ($line -match '^(\d{2}:\d{2}:\d{2})') {
-                        $timeOnly = $Matches[1]
-                        $anchorDateUtc = Get-LogAnchorDateUtc -LogPath $log.FullName
-                        $parsed = [datetime]::ParseExact($anchorDateUtc.ToString('yyyy-MM-dd') + 'T' + $timeOnly, 'yyyy-MM-ddTHH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
-                        $asUtc = [datetime]::SpecifyKind($parsed, [DateTimeKind]::Utc)
-                        if ($asUtc -gt [datetime]::UtcNow) { $asUtc = $asUtc.AddDays(-1) }
-                        $markerUtc = $asUtc.ToString('o')
-                        Write-Log ("marker_found(relaunch) log=" + $log.Name + " -> utc=" + $markerUtc)
-                        break
+        for ($wait = 0; $wait -lt 20 -and -not $markerUtc; $wait++) {
+            $logs = @(Get-ChildItem (Join-Path $env:LOCALAPPDATA 'wotblitz\DAVAProject\blitz-logs_*.txt') -ErrorAction SilentlyContinue |
+                Sort-Object LastWriteTime -Descending)
+            foreach ($log in $logs) {
+                $lines = @(Get-Content -LiteralPath $log.FullName -Tail 400 -ErrorAction SilentlyContinue)
+                for ($i = $lines.Count - 1; $i -ge 0; $i--) {
+                    $line = [string]$lines[$i]
+                    if ($line -match 'START_REPLAY_LOCAL|Start replay event') {
+                        if ($line -match '^(\d{2}:\d{2}:\d{2})') {
+                            $timeOnly = $Matches[1]
+                            $anchorDateUtc = Get-LogAnchorDateUtc -LogPath $log.FullName
+                            $parsed = [datetime]::ParseExact($anchorDateUtc.ToString('yyyy-MM-dd') + 'T' + $timeOnly, 'yyyy-MM-ddTHH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
+                            $asUtc = [datetime]::SpecifyKind($parsed, [DateTimeKind]::Utc)
+                            if ($asUtc -gt [datetime]::UtcNow) { $asUtc = $asUtc.AddDays(-1) }
+                            # Only accept a marker from THIS relaunch: anything
+                            # earlier is the previous attempt's stale anchor.
+                            if ($asUtc -lt $relaunchStartedUtc.AddSeconds(-5)) { continue }
+                            $markerUtc = $asUtc.ToString('o')
+                            Write-Log ("marker_found(relaunch) log=" + $log.Name + " -> utc=" + $markerUtc)
+                            break
+                        }
                     }
                 }
+                if ($markerUtc) { break }
             }
-            if ($markerUtc) { break }
+            if (-not $markerUtc -and $wait -lt 19) { Start-Sleep -Seconds 2 }
         }
         if (-not $markerUtc) {
             Write-Log 'FAILED_no_marker(relaunch)'
