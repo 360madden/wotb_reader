@@ -877,6 +877,9 @@ $familySurvivors = @()
 $attachSmokeDone = $false
 $attachSmoke = $null
 $smokeResultPath = ''
+# FRESH27b: set when the attach-smoke fires on the last sampling round so
+# the loop ends immediately after (no samples stamped under the debugger).
+$smokeFiredThisRound = $false
 # FRESH15e: wall-clock compensation for the attach-smoke's game pause. The
 # smoke pauses the game ~10-20s mid-battle; the correlate maps observation
 # ticks as (wallTimeUtc - replayStartWallTimeUtc), so without compensation the
@@ -1077,7 +1080,19 @@ while ($round -lt $MaxReadRounds) {
     # spent, so a live defect is diagnosed as attach-vs-address, not an
     # undiagnosable no-hit run.
     $smokeElapsedSeconds = [Math]::Max(0.0, ([datetime]::UtcNow - $anchorUtc).TotalSeconds)
-    $smokeDue = ($smokeElapsedSeconds -ge $SmokeMinBattleSeconds) -or ($round -ge 45)
+    # FRESH27b: fire the smoke ONLY on the last sampling round, not at round 2.
+    # FRESH27 proved that sampling under an attached (kept) x32dbg warps the
+    # wall->tick stamps: rounds 3-50 were read under the debugger and the z
+    # consensus collapsed from 0.92 (FRESH26, clean sampling) to 0.22 - the
+    # correlate could no longer align the series. The smoke's fail-closed job
+    # (prove attach/pause/resume BEFORE the trace window is spent) is still
+    # satisfied at the last round, and the round's reads are skipped (below)
+    # so NOTHING is sampled under the debugger.
+    # Keep the FRESH15e attendance guard: never attach during the ~50s
+    # loading/attendance phase (attaching+pausing there froze the game).
+    # The last-round placement is safe for the default 50 rounds, but a
+    # small -MaxReadRounds could otherwise land round N-1 inside attendance.
+    $smokeDue = ($round -ge ($MaxReadRounds - 1)) -and ($smokeElapsedSeconds -ge $SmokeMinBattleSeconds)
     # Log the gate only on rounds where the smoke is actually eligible (not
     # every round - the pre-smoke FRESH15e runs spammed this line 40+ times).
     if ($AttachSmokeOnFirstRound -and -not $attachSmokeDone -and $smokeDue) {
@@ -1157,6 +1172,9 @@ while ($round -lt $MaxReadRounds) {
             }
         }
         $attachSmokeDone = $true
+        # FRESH27b: skip THIS round's reads - the debugger is now attached
+        # (keep-attached) and sampling under it warps wall->tick stamps.
+        $smokeFiredThisRound = $true
         # FRESH26: whether the smoke left the debugger attached (attach-once
         # handoff). Only true when the smoke report says keptAttached - the
         # trace's -ReuseAttached flag gates on this exact value so the two can
@@ -1201,6 +1219,18 @@ while ($round -lt $MaxReadRounds) {
             Write-Od048 ('attach_smoke gate_recovering ' + $gateNow)
             Start-Sleep -Seconds 3
         }
+    }
+
+    # FRESH27b: the smoke fired this round (the LAST sampling round) and the
+    # debugger is now attached - END the sampling loop so NO samples are ever
+    # stamped under the debugger (the FRESH27 wall->tick warp: rounds 3-50
+    # read under the kept debugger collapsed the z consensus 0.92 -> 0.22).
+    # All rounds 1..N-1 sampled clean; the keep-attach handoff is complete
+    # and the trace reuses the debugger after the correlate.
+    if ($smokeFiredThisRound) {
+        $smokeFiredThisRound = $false
+        Write-Od048 ('monitor_stop smoke_fired_last_round rounds=' + $round + ' (all sampling clean, debugger attached for trace)')
+        break
     }
 
     $addressBatch = @()
