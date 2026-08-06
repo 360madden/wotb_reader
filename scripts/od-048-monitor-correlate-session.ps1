@@ -218,6 +218,14 @@ param(
     # armed+cleared during the smoke (default: the first staged address,
     # which the monitor already reads successfully).
     [string]$AttachSmokeProbeAddress = '',
+    # FRESH15e: do not run the attach-smoke until this many seconds of battle
+    # have elapsed from the replay-start anchor. The replay's first ~50s are
+    # the loading + all-players-in-attendance phase, during which the match is
+    # still paused; attaching+pausing the game mid-load froze it (observed
+    # 'WoT Blitz (Not Responding)' on the loading screen). The smoke only
+    # touches the game once the match has officially begun. A round-count
+    # clamp (45) guarantees the gate can never skip the smoke entirely.
+    [double]$SmokeMinBattleSeconds = 55.0,
     [string]$RepoRoot = ''
 )
 
@@ -767,6 +775,14 @@ $familySurvivors = @()
 $attachSmokeDone = $false
 $attachSmoke = $null
 $smokeResultPath = ''
+# FRESH15e: wall-clock compensation for the attach-smoke's game pause. The
+# smoke pauses the game ~10-20s mid-battle; the correlate maps observation
+# ticks as (wallTimeUtc - replayStartWallTimeUtc), so without compensation the
+# post-smoke samples land ahead of their true tick and the constant-shift
+# sweep cannot re-align a mid-series warp (FRESH15e: all 18 viewpoint results
+# edge-aligned, max score 0.63 vs 0.9+ in no-pause sessions). The smoke
+# reports its exact game-paused window; we subtract it from post-smoke stamps.
+$smokePauseCompensationSeconds = 0.0
 $familyStaged = [System.Collections.Generic.HashSet[string]]::new()
 $familyNeighborAdded = 0
 $staged = [System.Collections.Generic.List[string]]::new()
@@ -943,15 +959,24 @@ while ($round -lt $MaxReadRounds) {
         break
     }
 
-    # M2 attach-smoke gate (fail-closed pre-flight): once the FIRST round has
-    # produced readable samples (the game process is up and the read path
-    # works), prove the two live-only write-trace mechanics against the live
-    # process - x64dbg hex-pid attach + pause + detach round-trip and (with a
-    # probe address) memory-BP install. A red smoke aborts BEFORE the correlate
-    # rounds and trace window are spent, so a live defect is diagnosed as
-    # attach-vs-address, not an undiagnosable no-hit run. The smoke pauses the
-    # game briefly; the next round's reads happen after detach resumes it.
-    if ($AttachSmokeOnFirstRound -and -not $attachSmokeDone -and $readOkSamples -gt 0) {
+    # M2 attach-smoke gate (fail-closed pre-flight): once the game is readable
+    # AND the match has officially begun (battle elapsed >= SmokeMinBattleSeconds
+    # past the ~50s loading+attendance phase, or a round-count clamp), prove the
+    # two live-only write-trace mechanics against the live process - x64dbg
+    # hex-pid attach + pause + detach round-trip and (with a probe address)
+    # memory-BP install. FRESH15e: attaching+pausing during the loading screen
+    # froze the game ('Not Responding'); the smoke must only run in live battle.
+    # A red smoke aborts BEFORE the correlate rounds and trace window are
+    # spent, so a live defect is diagnosed as attach-vs-address, not an
+    # undiagnosable no-hit run.
+    $smokeElapsedSeconds = [Math]::Max(0.0, ([datetime]::UtcNow - $anchorUtc).TotalSeconds)
+    $smokeDue = ($smokeElapsedSeconds -ge $SmokeMinBattleSeconds) -or ($round -ge 45)
+    # Log the gate only on rounds where the smoke is actually eligible (not
+    # every round - the pre-smoke FRESH15e runs spammed this line 40+ times).
+    if ($AttachSmokeOnFirstRound -and -not $attachSmokeDone -and $smokeDue) {
+        Write-Od048 ('attach_smoke gate elapsed=' + [Math]::Round($smokeElapsedSeconds, 1) + 's min=' + $SmokeMinBattleSeconds + 's round=' + $round + ' readOk=' + $readOkSamples)
+    }
+    if ($AttachSmokeOnFirstRound -and -not $attachSmokeDone -and $readOkSamples -gt 0 -and $smokeDue) {
         $smokeScript = Join-Path $PSScriptRoot 'x64dbg-write-trace.ps1'
         if (-not (Test-Path -LiteralPath $smokeScript)) {
             Write-Od048 'attach_smoke FAILED script_missing'
@@ -995,6 +1020,29 @@ while ($round -lt $MaxReadRounds) {
             Write-Od048 ('attach_smoke THREW ' + $_.Exception.Message)
         }
         Write-Od048 ('attach_smoke exit=' + $smokeExit)
+        # FRESH15e: read the smoke's reported game-paused wall window and
+        # compensate all subsequent sample stamps so the mid-series pause does
+        # not warp the wall->tick mapping the correlate relies on.
+        if ($smokeExit -eq 0 -and (Test-Path -LiteralPath $smokeResultPath)) {
+            try {
+                $smokeReport = Get-Content -LiteralPath $smokeResultPath -Raw | ConvertFrom-Json
+                $pauseStart = [datetime]::MinValue
+                $resumeAt = [datetime]::MinValue
+                if ($smokeReport.pauseStartUtc) {
+                    [datetime]::TryParse([string]$smokeReport.pauseStartUtc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind, [ref]$pauseStart) | Out-Null
+                }
+                if ($smokeReport.resumeUtc) {
+                    [datetime]::TryParse([string]$smokeReport.resumeUtc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind, [ref]$resumeAt) | Out-Null
+                }
+                if ($resumeAt -gt $pauseStart -and $pauseStart -gt [datetime]::MinValue) {
+                    $smokePauseCompensationSeconds = ($resumeAt - $pauseStart).TotalSeconds
+                    Write-Od048 ('attach_smoke pause_compensation_s=' + [Math]::Round($smokePauseCompensationSeconds, 2))
+                }
+            }
+            catch {
+                Write-Od048 ('attach_smoke compensation_parse_failed: ' + $_.Exception.Message)
+            }
+        }
         $attachSmokeDone = $true
         $attachSmoke = [ordered]@{
             ranUtc       = ([DateTime]::UtcNow).ToString('o')
@@ -1040,7 +1088,11 @@ while ($round -lt $MaxReadRounds) {
             }
             $read = Invoke-Api -Rendezvous $rendezvous -Method 'Post' -RelativePath '/api/v1/game/discover/read' -Body $readBody
             if ($null -ne $read -and $null -ne $read.reads) {
-                $wallNow = ([DateTime]::UtcNow).ToString('o')
+                # FRESH15e: subtract the attach-smoke pause from post-smoke
+                # stamps so wall->tick stays linear (see $smokePauseCompensationSeconds).
+                $stampNow = [DateTime]::UtcNow
+                if ($smokePauseCompensationSeconds -gt 0) { $stampNow = $stampNow.AddSeconds(-$smokePauseCompensationSeconds) }
+                $wallNow = $stampNow.ToString('o')
                 foreach ($item in $read.reads) {
                     if (-not $item.readOk) { continue }
                     $value = [double]::Parse([string]$item.valueSummary, [Globalization.CultureInfo]::InvariantCulture)
@@ -1070,7 +1122,9 @@ while ($round -lt $MaxReadRounds) {
         }
         $read = Invoke-Api -Rendezvous $rendezvous -Method 'Post' -RelativePath '/api/v1/game/discover/read' -Body $readBody
         if ($null -ne $read -and $null -ne $read.reads) {
-            $wallNow = ([DateTime]::UtcNow).ToString('o')
+            $stampNow = [DateTime]::UtcNow
+            if ($smokePauseCompensationSeconds -gt 0) { $stampNow = $stampNow.AddSeconds(-$smokePauseCompensationSeconds) }
+            $wallNow = $stampNow.ToString('o')
             foreach ($item in $read.reads) {
                 if (-not $item.readOk) { continue }
                 $value = [double]::Parse([string]$item.valueSummary, [Globalization.CultureInfo]::InvariantCulture)

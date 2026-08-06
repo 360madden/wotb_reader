@@ -19,7 +19,14 @@ param(
     # Viewpoint-first pivot (passed through to od-048): stage ONLY the
     # viewpoint player and trace its first strong survivor - no top movers,
     # no XYZ family assembly, no alternate-entity decoys.
-    [switch]$StageViewpointOnly
+    [switch]$StageViewpointOnly,
+    # FRESH15g: the attach-smoke's detach-while-paused leaves the game
+    # permanently frozen ~1/3 of the time (x64dbg/WOW64 limitation - `run` is
+    # broken in both command-bar and script channels, so the debuggee can only
+    # resume via the detach cleanup, which is flaky). On an exit-6 smoke
+    # failure the whole campaign is relaunched (the launch script kills the
+    # stale game+host) up to this many total attempts.
+    [int]$MaxCampaignAttempts = 3
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -106,23 +113,66 @@ if (-not $markerUtc) {
     exit 2
 }
 
-# 3. Run M1 anchored to the marker, slim staging, auto write-trace on verdict.
-Write-Log ("running M1 anchored=" + $markerUtc + " rounds=" + $MaxReadRounds + " topN=" + $StageTopN + " attachSmoke=" + $AttachSmokeOnFirstRound.IsPresent)
-# Hashtable splat (NOT array splatting of '-Name value' pairs, which
-# misaligns argument binding around switches - the exact failure od-048's
-# own wtArgs comment documents). Switches are added conditionally.
-$m1Args = @{
-    ReplayStartWallTimeUtc = $markerUtc
-    MaxReadRounds          = $MaxReadRounds
-    StageTopN              = $StageTopN
-    StageDelaySeconds      = $StageDelaySeconds
-    AutoWriteTraceOnVerdict = $true
-    AutoTraceSeconds       = $AutoTraceSeconds
-    ResultPath             = $ResultPath
+# 3. Run M1 anchored to the marker, slim staging, auto write-trace on
+#    verdict. FRESH15g: wrapped in a campaign loop - an exit-6 attach-smoke
+#    failure (game left permanently frozen by the detach) relaunches the whole
+#    session; the launch script's own stale-game+host kill cleans up first.
+$m1Exit = 0
+for ($attempt = 1; $attempt -le $MaxCampaignAttempts; $attempt++) {
+    Write-Log ("campaign attempt=" + $attempt + "/" + $MaxCampaignAttempts)
+    if ($attempt -gt 1) {
+        # Relaunch (kills the frozen game + host from the failed attempt).
+        & (Join-Path $RepoRoot 'scripts\launch-offline-replay-for-od.ps1') -ReplayPath $ReplayPath *>&1 |
+            ForEach-Object { Write-Log ("relaunch: " + $_) }
+        $launchExit = $LASTEXITCODE
+        Write-Log ("relaunch_exit=" + $launchExit)
+        if ($launchExit -ne 0) { exit $launchExit }
+        $markerUtc = $null
+        foreach ($log in $logs) {
+            $lines = @(Get-Content -LiteralPath $log.FullName -Tail 400 -ErrorAction SilentlyContinue)
+            for ($i = $lines.Count - 1; $i -ge 0; $i--) {
+                $line = [string]$lines[$i]
+                if ($line -match 'START_REPLAY_LOCAL|Start replay event') {
+                    if ($line -match '^(\d{2}:\d{2}:\d{2})') {
+                        $timeOnly = $Matches[1]
+                        $anchorDateUtc = Get-LogAnchorDateUtc -LogPath $log.FullName
+                        $parsed = [datetime]::ParseExact($anchorDateUtc.ToString('yyyy-MM-dd') + 'T' + $timeOnly, 'yyyy-MM-ddTHH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
+                        $asUtc = [datetime]::SpecifyKind($parsed, [DateTimeKind]::Utc)
+                        if ($asUtc -gt [datetime]::UtcNow) { $asUtc = $asUtc.AddDays(-1) }
+                        $markerUtc = $asUtc.ToString('o')
+                        Write-Log ("marker_found(relaunch) log=" + $log.Name + " -> utc=" + $markerUtc)
+                        break
+                    }
+                }
+            }
+            if ($markerUtc) { break }
+        }
+        if (-not $markerUtc) {
+            Write-Log 'FAILED_no_marker(relaunch)'
+            exit 2
+        }
+    }
+    Write-Log ("running M1 anchored=" + $markerUtc + " rounds=" + $MaxReadRounds + " topN=" + $StageTopN + " attachSmoke=" + $AttachSmokeOnFirstRound.IsPresent)
+    # Hashtable splat (NOT array splatting of '-Name value' pairs, which
+    # misaligns argument binding around switches - the exact failure od-048's
+    # own wtArgs comment documents). Switches are added conditionally.
+    $m1Args = @{
+        ReplayStartWallTimeUtc = $markerUtc
+        MaxReadRounds          = $MaxReadRounds
+        StageTopN              = $StageTopN
+        StageDelaySeconds      = $StageDelaySeconds
+        AutoWriteTraceOnVerdict = $true
+        AutoTraceSeconds       = $AutoTraceSeconds
+        ResultPath             = $ResultPath
+    }
+    if ($AttachSmokeOnFirstRound) { $m1Args.AttachSmokeOnFirstRound = $true }
+    if ($StageViewpointOnly) { $m1Args.StageViewpointOnly = $true }
+    & (Join-Path $RepoRoot 'scripts\od-048-monitor-correlate-session.ps1') @m1Args *>&1 | ForEach-Object { Write-Log ("m1: " + $_) }
+    $m1Exit = $LASTEXITCODE
+    Write-Log ("m1_exit=" + $m1Exit)
+    if ($m1Exit -ne 6) { break }
+    if ($attempt -lt $MaxCampaignAttempts) {
+        Write-Log ("campaign attempt " + $attempt + " failed with exit 6 (attach-smoke; game likely frozen by the detach) - relaunching")
+    }
 }
-if ($AttachSmokeOnFirstRound) { $m1Args.AttachSmokeOnFirstRound = $true }
-if ($StageViewpointOnly) { $m1Args.StageViewpointOnly = $true }
-& (Join-Path $RepoRoot 'scripts\od-048-monitor-correlate-session.ps1') @m1Args *>&1 | ForEach-Object { Write-Log ("m1: " + $_) }
-$m1Exit = $LASTEXITCODE
-Write-Log ("m1_exit=" + $m1Exit)
 exit $m1Exit

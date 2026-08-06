@@ -271,8 +271,12 @@ function Get-X64DbgWindowHandle {
     if (-not $proc) { return $null }
     $h = $proc.MainWindowHandle
     if ($h -ne [IntPtr]::Zero) { return [pscustomobject]@{ Id = $proc.Id; Handle = $h } }
-    $windows = @([WtX64Gui]::WindowsForProcess([uint32]$proc.Id))
-    if ($windows.Count -gt 0) { return [pscustomobject]@{ Id = $proc.Id; Handle = $windows[0] } }
+    # FRESH15b: the EnumWindows fallback must pick the LARGEST-AREA window
+    # (the real main window), not the first enumerated one - a transient Qt
+    # splash/helper window can precede the main window and never exposes the
+    # command bar (smoke detail='no_command_bar', pre-attach).
+    $best = [WtX64Gui]::LargestWindowForProcess([uint32]$proc.Id)
+    if ($best -ne [IntPtr]::Zero) { return [pscustomobject]@{ Id = $proc.Id; Handle = $best } }
     return $null
 }
 
@@ -340,18 +344,43 @@ function Find-X64DbgCommandBar {
     param([IntPtr]$Handle)
     Add-Type -AssemblyName UIAutomationClient -ErrorAction SilentlyContinue
     Add-Type -AssemblyName UIAutomationTypes -ErrorAction SilentlyContinue
-    $root = $null
-    for ($i = 0; $i -lt 10 -and -not $root; $i++) {
-        try { $root = [System.Windows.Automation.AutomationElement]::FromHandle($Handle) }
-        catch { Start-Sleep -Milliseconds 800 }
-    }
-    if (-not $root) { return $null }
     $editCond = New-Object System.Windows.Automation.PropertyCondition(
         [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
         [System.Windows.Automation.ControlType]::Edit)
-    $edits = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editCond)
-    foreach ($e in $edits) {
-        if ($e.Current.ClassName -eq 'CommandLineEdit') { return $e }
+    # FRESH15b: a freshly-launched x32dbg window's UIA tree lags window
+    # creation - the smoke sampled in the SAME second the window appeared and
+    # the single FindAll found no Edit (detail='no_command_bar', pre-attach).
+    # The probe campaign settled 4s before any UIA read; poll both root
+    # acquisition AND the edit find for up to 15s so the tree-population race
+    # is absorbed instead of failing the smoke.
+    $deadline = (Get-Date).AddSeconds(15)
+    while ((Get-Date) -lt $deadline) {
+        $root = $null
+        try { $root = [System.Windows.Automation.AutomationElement]::FromHandle($Handle) }
+        catch { }
+        if ($root) {
+            try {
+                $edits = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $editCond)
+                foreach ($e in $edits) {
+                    if ($e.Current.ClassName -eq 'CommandLineEdit') {
+                        # FRESH15f: only accept an element whose ValuePattern
+                        # is actually supported - a half-initialized Qt UIA
+                        # provider can expose the edit class without the
+                        # pattern, and the first Send would throw 'Unsupported
+                        # Pattern' (observed mid-run after a UIA rebuild). The
+                        # poll loop keeps searching for a pattern-capable one.
+                        try {
+                            if ($e.GetSupportedPatterns() -contains [System.Windows.Automation.ValuePattern]::Pattern) {
+                                return $e
+                            }
+                        }
+                        catch { }
+                    }
+                }
+            }
+            catch { }
+        }
+        Start-Sleep -Milliseconds 500
     }
     return $null
 }
@@ -359,7 +388,17 @@ function Find-X64DbgCommandBar {
 function Send-X64DbgCommand {
     param($CommandBar, [IntPtr]$Handle, [string]$Text)
     if (-not $CommandBar) { return }
-    $vp = $CommandBar.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+    try {
+        $vp = $CommandBar.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+    }
+    catch {
+        # FRESH15f: a ForceForeground or a Qt UIA rebuild can invalidate the
+        # cached element between Find and Send ('Unsupported Pattern').
+        # Re-find a fresh pattern-capable element and retry once.
+        $CommandBar = Find-X64DbgCommandBar -Handle $Handle
+        if (-not $CommandBar) { return }
+        $vp = $CommandBar.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
+    }
     $vp.SetValue($Text)
     try { $CommandBar.SetFocus() } catch { }
     Start-Sleep -Milliseconds 200
@@ -757,6 +796,25 @@ public static class WtX64Gui {
         return list.ToArray();
     }
 
+    // FRESH15b: when Process.MainWindowHandle is still 0 mid-creation, the
+    // old fallback took the FIRST enumerated window, which can be a transient
+    // Qt helper/splash window that never carries the CommandLineEdit - the
+    // attach-smoke failed with 'no_command_bar' on such a handle. Select the
+    // LARGEST-AREA top-level window instead: that is the real main window
+    // (the probe campaign found the command bar 0.1s after it appeared).
+    public static IntPtr LargestWindowForProcess(uint pid) {
+        IntPtr best = IntPtr.Zero;
+        long bestArea = -1;
+        RECT r;
+        foreach (var h in WindowsForProcess(pid)) {
+            if (GetWindowRect(h, out r)) {
+                long area = (long)(r.Right - r.Left) * (r.Bottom - r.Top);
+                if (area > bestArea) { bestArea = area; best = h; }
+            }
+        }
+        return best;
+    }
+
     // "title1|title2" diagnostic string of the pid's top-level window titles.
     public static string WindowTitles(uint pid) {
         var parts = new System.Collections.Generic.List<string>();
@@ -805,6 +863,11 @@ function Invoke-AttachSmoke {
         pauseVerified  = $false
         bpmArmed       = 'unverified'
         resumeVerified = $false
+        # FRESH15e: the exact game-paused wall window (pause verified ->
+        # resume verified). od-048 subtracts it from post-smoke sample stamps
+        # so the correlate's wall->tick mapping stays linear across the pause.
+        pauseStartUtc   = ''
+        resumeUtc       = ''
         probeAddress   = $ProbeAddress
         detail         = ''
     }
@@ -840,6 +903,11 @@ function Invoke-AttachSmoke {
                 return 1
             }
         }
+        # FRESH15b: the freshly-pre-armed debugger's UIA tree lags window
+        # creation (the probe campaign settled 4s before any UIA read; the
+        # smoke failed finding the command bar in the same second the window
+        # appeared). Settle before probing, mirroring the validated probes.
+        Start-Sleep -Seconds 3
         $cmdBar = Find-X64DbgCommandBar -Handle $win.Handle
         if (-not $cmdBar) {
             $report.detail = 'no_command_bar'
@@ -861,12 +929,26 @@ function Invoke-AttachSmoke {
         Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle ('attach 0x{0:X}' -f $game.Id)
         Start-Sleep -Seconds 4
         Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle 'pause'
-        Start-Sleep -Seconds 2
-        # Pause proof: TotalProcessorTime must stall (~0 delta over 1.5s).
-        $t0 = $game.TotalProcessorTime
-        Start-Sleep -Milliseconds 1500
-        $t1 = $game.TotalProcessorTime
-        $report.pauseVerified = (($t1 - $t0).TotalMilliseconds) -lt 5
+        # Pause proof: TotalProcessorTime must stall (~0 delta). FRESH15e:
+        # in live battle x64dbg is busy right after attach (module/symbol
+        # loading), so the pause can land LATE - FRESH15d showed pause=False
+        # with the game still consuming CPU in the 2s+1.5s window. Poll for
+        # the stall (up to 12s) instead of one-shot checking.
+        $pauseDeadline = (Get-Date).AddSeconds(12)
+        $report.pauseVerified = $false
+        $pauseRounds = 0
+        while ((Get-Date) -lt $pauseDeadline -and -not $report.pauseVerified) {
+            $pauseRounds++
+            $t0 = $game.TotalProcessorTime
+            Start-Sleep -Milliseconds 1200
+            $t1 = $game.TotalProcessorTime
+            $report.pauseVerified = (($t1 - $t0).TotalMilliseconds) -lt 5
+            if ($report.pauseVerified -and -not $report.pauseStartUtc) {
+                $report.pauseStartUtc = ([DateTime]::UtcNow).ToString('o')
+            }
+            if (-not $report.pauseVerified) { Start-Sleep -Milliseconds 800 }
+        }
+        Write-Wt ('attach_smoke pause_settle_rounds=' + $pauseRounds + ' verified=' + $report.pauseVerified)
         if ($ProbeAddress -and $report.pauseVerified) {
             Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle ('bpm {0}, 1, w' -f $ProbeAddress)
             Start-Sleep -Milliseconds 500
@@ -882,30 +964,42 @@ function Invoke-AttachSmoke {
             elseif ($logTail -match 'Memory breakpoint') {
                 $report.bpmArmed = 'yes'
             }
-            try { Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle ('bpmc {0}' -f $ProbeAddress) }
+            # FRESH15d: `bpmc <addr>` (address form) silently FAILS to clear
+            # the memory BP - the probe campaign proved the debuggee stays
+            # frozen after run+detach (the write-BP re-breaks on the first
+            # write, and detach-while-paused leaves it frozen). The no-arg
+            # `bpmc` (clear ALL memory BPs) clears reliably and the target
+            # resumes cleanly. No other memory BPs exist on the fresh
+            # debugger, so clearing all is safe.
+            try { Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle 'bpmc' }
             catch { }
         }
+        # FRESH15e: detach directly, then POLL for the game to resume. The
+        # probe campaign established three facts about this x64dbg/WOW64
+        # combination: (1) the command-bar `run` NEVER resumes the debuggee
+        # after attach+pause (0/15 attempts) so it is pointless; (2) detach
+        # while paused leaves the game frozen ~2/3 of the time; (3) the freeze
+        # is NOT thread suspension (DebugPort=0, threads free) and SELF-HEALS
+        # after ~5-20s of WOW64 debugger-cleanup settling. So a single
+        # post-detach CPU sample would false-red a healthy game; poll up to
+        # 30s for it to resume, and only fail if it never comes back.
         Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle 'detach'
-        Start-Sleep -Seconds 2
-        $t2 = $game.TotalProcessorTime
-        Start-Sleep -Milliseconds 1200
-        $t3 = $game.TotalProcessorTime
-        $report.resumeVerified = (($t3 - $t2).TotalMilliseconds) -gt 0
-        if (-not $report.resumeVerified) {
-            # First detach may have failed silently (command bar dead). One
-            # retry: run (resume a still-paused debuggee), then detach again.
-            Write-Wt 'attach_smoke WARN_resume_not_verified - retrying run+detach'
-            try { Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle 'run' } catch { }
-            Start-Sleep -Seconds 1
-            try { Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle 'detach' } catch { }
-            Start-Sleep -Seconds 2
-            $t4 = $game.TotalProcessorTime
+        $resumeDeadline = (Get-Date).AddSeconds(30)
+        $resumeVerified = $false
+        $settleRounds = 0
+        while ((Get-Date) -lt $resumeDeadline -and -not $resumeVerified) {
+            $settleRounds++
+            $ta = $game.TotalProcessorTime
             Start-Sleep -Milliseconds 1200
-            $t5 = $game.TotalProcessorTime
-            $report.resumeVerified = (($t5 - $t4).TotalMilliseconds) -gt 0
-            if (-not $report.resumeVerified) {
-                $report.detail = 'game_may_be_left_paused (detach failed twice)'
-            }
+            $tb = $game.TotalProcessorTime
+            $resumeVerified = (($tb - $ta).TotalMilliseconds) -gt 0
+            if ($resumeVerified) { $report.resumeUtc = ([DateTime]::UtcNow).ToString('o') }
+            if (-not $resumeVerified) { Start-Sleep -Milliseconds 800 }
+        }
+        $report.resumeVerified = $resumeVerified
+        Write-Wt ('attach_smoke resume_settle_rounds=' + $settleRounds + ' verified=' + $resumeVerified)
+        if (-not $resumeVerified) {
+            $report.detail = 'game_frozen_after_detach (no resume in 30s)'
         }
         $report.smoke = if ($report.pauseVerified -and $report.resumeVerified) { 'ok' } else { 'fail' }
         if ($report.smoke -eq 'fail' -and -not $report.detail) {
