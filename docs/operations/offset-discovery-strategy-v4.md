@@ -96,10 +96,16 @@ amendment.
   widened to ±90) refused every strong survivor in the solo gate. Fixed
   (`7c02f7d`): band floor re-derived to **60s** (= 1/3 of ±90) and a new
   **span floor** (default 10 units) catches the FRESH10 static-degenerate
-  class the widened floor alone can't. The remaining gate is **arming +
-  tracing the survivor (FRESH22)** — the first round where a strong survivor
-  clears every gate, producing the first real `odwt-*.bin` hit report
-  (writer RIP/RVA, base register, displacement, nearby-object dump).
+  class the widened floor alone can't. **FRESH22 completed the first armed
+  trace end-to-end** (BP armed, script injected, clean 25s window) but got
+  `family-no-hit`: the decoded replay proves the tank was moving through the
+  whole window, so the armed span-75.5 partial copy was not the per-frame
+  field — the score-desc tiebreak beat the span-275.4 consensus class (~20
+  synchronized z copies). Fixed (`6f36067`): **span-first selection** (span
+  desc, score desc, band asc) + **arm the top-4 consensus addresses**
+  (DR0-DR3). The remaining gate is **FRESH23** — arming the consensus class,
+  producing the first real `odwt-*.bin` hit report (writer RIP/RVA, base
+  register, displacement, nearby-object dump).
 - **M2 — Family mapping + write-trace.** Read-side BUILT (2026-08-05): the
   driver re-stages the ±16-byte neighbors of the top provisional survivors
   mid-battle, and the correlate response's `families` section groups the
@@ -144,7 +150,7 @@ only when valid: staging gate post-match-begin, smoke green, no crash,
 correlate completed). Hard archive trigger: 2 valid sessions with no strong
 survivor → archive regardless of sunk cost. **Outcome: both budget sessions
 returned strong verdicts** — the archive trigger did not fire; the remaining
-live need is arming + tracing the survivor (FRESH22, M2's own live
+live need is arming + tracing the survivor (FRESH23, M2's own live
 requirement, not a budget extension). See the roadmap Descope gate.
 
 ## Guardrails added by v4

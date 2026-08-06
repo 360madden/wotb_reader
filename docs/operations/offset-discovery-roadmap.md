@@ -96,7 +96,7 @@ scripts/od-048-monitor-correlate-session.ps1
 **Exit:** ≥ 1 strong survivor. If neither of the 2 sessions produces one,
 **stop** — descope per the strategy stop rules.
 
-### M1.5 — Viewpoint-first discovery pivot (2026-08-06) — ✅ implemented offline, ✅ TWO strong live verdicts (FRESH20/21), ⏳ arm + trace the survivor (FRESH22)
+### M1.5 — Viewpoint-first discovery pivot (2026-08-06) — ✅ implemented offline, ✅ TWO strong live verdicts (FRESH20/21) + first armed trace (FRESH22), ⏳ consensus-class arming → first hit report (FRESH23)
 
 **Pivot:** find ONE highly discriminating live coordinate of the **viewpoint
 player** by correlating its observed value history against the decoded
@@ -127,10 +127,11 @@ functions + verbatim staging block: entity filter, family filter, staging
 parity, no-viewpoint exit 2), parse PS5.1+pwsh7, PSSA baseline, no-game
 DryRun, autoloop splat probe.
 
-**Live campaign status (FRESH15 → FRESH21, 2026-08-06):** eight live rounds
-have each surfaced and fixed one real bug — six infrastructure defects, then
-two strong scientific verdicts (FRESH20/21); the pipeline is now mechanically
-reliable and the verdict stage is complete (all fixes committed):
+**Live campaign status (FRESH15 → FRESH22, 2026-08-06):** nine live rounds
+have each surfaced and fixed one real bug — six infrastructure defects, two
+strong scientific verdicts (FRESH20/21), then the first completed armed trace
+(FRESH22, no-hit → selection fix); the pipeline is mechanically reliable and
+the arming machinery is proven end-to-end (all fixes committed):
 
 | Round | Outcome | Bug found → fix (commit) |
 |---|---|---|
@@ -142,6 +143,26 @@ reliable and the verdict stage is complete (all fixes committed):
 | FRESH19 | **zero-viewpoint `$null.Count` crash** killed the campaign after the correlate; relaunch re-used attempt 1's stale marker (staged 806 vs 3000) | caller-side `@(Select-ViewpointResults …)` (`540c6bc`); fresh-marker polling on relaunch |
 | FRESH20 | **FIRST STRONG VERDICT** — 5 non-edge viewpoint survivors; 3 z candidates at span ~270 (= decoded z span), shift −27.5…−31.5, 60–62/70 matches; trace fired but battle ended 11s into the 25s window (`STOP_gate=Denied`) | adaptive trace window (budgets `TraceSeconds` from the battle tail) + rounds 70→50 (`256984e`) |
 | FRESH21 | **SECOND STRONG VERDICT, cleanest run** — 32 strong survivors (29 z @ score 0.92, span 275.15 = decoded z span, shift 0, non-edge band [−19.5,+12]); **but families=0 → trace SKIPPED** (`no_families_from_survivors`) | **stale 20s band floor** (1/3 of the old ±30s sweep, never re-derived when the sweep widened to ±90) refused every survivor in the solo gate → band floor re-derived to 60s + new span floor (`7c02f7d`) |
+| FRESH22 | **FIRST ARMED TRACE COMPLETED** — `family_solo_emitted axis=z score=0.94` (the FRESH22 gate fix held); trace ran end-to-end (BP armed, script injected, 25s live window) → **`family-no-hit` — zero writes** while the decoded replay proves the tank was moving through the whole window | **score-desc tiebreak armed a partial-window copy** (span 75.5) over the consensus class (~20 z @ span exactly 275.4, shift 0) → **span-first selection** (span desc, score desc, band asc) + **arm top-4 consensus addresses** (`-AutoTraceMaxSoloMembers` = 4 DR0-DR3) (`6f36067`) |
+
+**FRESH22 no-hit root cause (2026-08-06, `6f36067`):** the trace machinery
+completed perfectly (gate → liveness → attach → `scriptload+scriptrun` → BP
+on `0x228B9050` → clean 25s window) but got zero writes. The decoded replay
+disposes of timing artifacts: the viewpoint tank is **alive and moving the
+entire battle** (last movement t=266s of 279s; z 23.3→−10.1→−28.3 at t≈190–240s
+= the trace window) — a per-frame position field MUST be written while the
+tank drives. The armed address was a **partial-window copy**: the solo
+tiebreak was score-desc, so span-75.5 @ 0.94 beat the **consensus class — ~20
+z addresses at span EXACTLY 275.4, score 0.92, shift 0** (the synchronized-copy
+signature; same as FRESH21's 29). A partial copy correlates well inside its
+active window but is not written every frame. Fix (`6f36067`): solo
+candidates sort by **(span desc, score desc, band asc)** — a full-trajectory
+field carries the axis's full span, while static values, partial copies, and
+low-information y's lose — and the top-**4** consensus addresses are armed at
+once (DR0-DR3), since the per-frame writer is one of MANY synchronized copies.
+Validated: selection simulation on the real FRESH22 result arms the span-275.4
+class (the armed partial drops to rank 41); a 4-member DryRun shows
+`family_members_armed=4` with 4× `bpm addr,1,w` BPs.
 
 **FRESH21 no-trace root cause (2026-08-06, `7c02f7d`):** the band floor
 (`AutoTraceMaxMemberBandSeconds` / `MaxMemberBandSeconds` = 20s) was 1/3 of the
@@ -170,18 +191,17 @@ it; an 8-round campaign now completes (`NO_CRASH`, report written). This bug
 would have crashed EVERY sharp-sweep run — FRESH18's 173-result array masked
 it.
 
-**Remaining live gate (FRESH22):** the verdict question is RESOLVED — FRESH20
-and FRESH21 both returned `verdict=evidence-strong` under the fully-corrected
-pipeline (non-edge, span-275 z survivors at score ≥ 0.857; the offline
-dry-run's 1.000 @ shift-0 prediction holds in live shape). The remaining gate
-is **arming + tracing the survivor**: FRESH20 fired the trace but the battle
-ended mid-window (fixed via the adaptive window); FRESH21 skipped it because
-the stale band floor refused every survivor (fixed via the 60s re-derivation +
-span floor). FRESH22 — the first round where a strong survivor passes every
-gate — should produce the first `odwt-*.bin` hit report (writer RIP/RVA, base
-register, displacement, nearby-object dump). Open science question if the
-armed trace still yields nothing: tick-rate mismatch (a constant shift can't
-fix a rate error → a rate dimension in the scorer).
+**Remaining live gate (FRESH23):** the arming machinery is now fully proven
+end-to-end — FRESH22 completed the first armed trace (BP armed, script
+injected, clean window) and the only miss was a **selection** defect (armed a
+partial copy instead of the per-frame field), fixed by span-first selection +
+top-4 consensus arming. FRESH23 — arming the span-275.4 consensus class —
+should produce the first `odwt-*.bin` hit report (writer RIP/RVA, base
+register, displacement, nearby-object dump). If the armed consensus still
+yields nothing, the suspect flips to the WOW64 frozen-window class (a
+distinguishing post-window liveness re-read is the planned discriminator),
+and the open science question (tick-rate mismatch → a rate dimension in the
+scorer) remains as the last resort.
 
 **Pending after a strong survivor:** writer evidence → object base →
 sibling-coordinate local read → resolver classification (pointer path /
@@ -307,7 +327,7 @@ Budget and triggers (no further extension):
 `verdict=evidence-strong` — the archive trigger (2 valid sessions with no
 strong survivor) did **not** fire. The verdict-stage budget is complete; the
 remaining live need is **arming + tracing the survivor** (the M1.5→M2
-handoff, FRESH22), which is M2's own live requirement rather than an
+handoff, FRESH23), which is M2's own live requirement rather than an
 extension of the verdict budget. The tick-rate probe remains the classifier
 if the armed trace still yields no writer evidence.
 
