@@ -164,7 +164,20 @@ param(
     # member, producing family-no-hit). Families with any below-floor member
     # are refused before arming. 0 disables the floor (direct-investigation
     # override).
-    [double]$MinMemberScore = 0.9
+    [double]$MinMemberScore = 0.9,
+    # Maximum AMBIGUITY-BAND width (shiftMax - shiftMin, seconds) for every
+    # member of the armed family. The band is the set of shifts achieving the
+    # max match count (width = tolerance / |local slope|); a member whose band
+    # covers most of the sweep matches at ANY shift, so its score is cheap and
+    # proves nothing about being a written coordinate (FRESH12: 42 of 50
+    # FRESH10 results were degenerate y@~1.0 with 20-60s bands on a 10.9-unit
+    # ground axis). A member whose band is missing or wider than the floor is
+    # refused before arming. 0 disables the floor entirely (unknown bands
+    # allowed, direct-investigation override). Default 20s = 1/3 of the
+    # od-048 default sweep (+-30s = 60s band) -- the FRESH12 degenerate
+    # threshold. NOTE: the floor is absolute, not sweep-relative; pair it with
+    # the same -MaxTimeShiftSeconds that produced the bands.
+    [double]$MaxMemberBandSeconds = 20.0
 )
 
 Set-StrictMode -Version Latest
@@ -377,15 +390,63 @@ function Test-FamilyScored {
     return $true
 }
 
+# Member ambiguity-band width in seconds, or $null when the band is unknown.
+# Accepts BOTH wire shapes: the correlate response emits shiftMin/MaxSeconds
+# (C# camelCase) and the od-048 M1 report re-emits them as
+# shiftBandMin/MaxSeconds, so the family file may carry either pair.
+function Get-MemberBandWidth {
+    param([object]$Member)
+    $minB = $null
+    $maxB = $null
+    if ($Member.PSObject.Properties['shiftBandMinSeconds'] -and $null -ne $Member.shiftBandMinSeconds) {
+        $minB = [double]$Member.shiftBandMinSeconds
+    }
+    elseif ($Member.PSObject.Properties['shiftMinSeconds'] -and $null -ne $Member.shiftMinSeconds) {
+        $minB = [double]$Member.shiftMinSeconds
+    }
+    if ($Member.PSObject.Properties['shiftBandMaxSeconds'] -and $null -ne $Member.shiftBandMaxSeconds) {
+        $maxB = [double]$Member.shiftBandMaxSeconds
+    }
+    elseif ($Member.PSObject.Properties['shiftMaxSeconds'] -and $null -ne $Member.shiftMaxSeconds) {
+        $maxB = [double]$Member.shiftMaxSeconds
+    }
+    if ($null -eq $minB -or $null -eq $maxB) { return $null }
+    return [double]($maxB - $minB)
+}
+
+# True when EVERY member's ambiguity band is known and at or under the
+# -MaxMemberBandSeconds floor. A degenerate member matches at any shift and
+# carries zero alignment information (FRESH12: FRESH10's armed y@1.00 had a
+# [-10,+30] = 40s band on a 60s sweep -> family-no-hit even though its score
+# was perfect), so it must never win a trace window. A member with NO band
+# fields is refused too (fail-closed: an unknown band is not proven
+# discriminating). 0 disables the floor.
+function Test-FamilyBanded {
+    param([object]$Family)
+    if ($MaxMemberBandSeconds -le 0) { return $true }
+    if (-not $Family.PSObject.Properties['members'] -or $null -eq $Family.members) {
+        return $false
+    }
+    foreach ($m in @($Family.members)) {
+        $width = Get-MemberBandWidth -Member $m
+        if ($null -eq $width -or $width -gt $MaxMemberBandSeconds) { return $false }
+    }
+    return $true
+}
+
 # True when the family is usable for a trace window: every member scored at
 # or above the -MinMemberScore floor (score floor added FRESH11: a below-floor
-# member is noise and would burn the window), at least two members, and at
-# least one member NOT edge-aligned (the M2 stop rule, mirrors the od-048
-# gate). An all-edge family is a bad-anchor decoy -- every member rides the
-# sweep edge, so it must never win the trace window over a real sibling pair.
+# member is noise and would burn the window), every member's ambiguity band is
+# known and within -MaxMemberBandSeconds (band floor added FRESH13: a
+# degenerate member matches at any shift regardless of score), at least two
+# members, and at least one member NOT edge-aligned (the M2 stop rule, mirrors
+# the od-048 gate). An all-edge family is a bad-anchor decoy -- every member
+# rides the sweep edge, so it must never win the trace window over a real
+# sibling pair.
 function Test-UsableFamily {
     param([object]$Family)
     if (-not (Test-FamilyScored -Family $Family)) { return $false }
+    if (-not (Test-FamilyBanded -Family $Family)) { return $false }
     $members = @($Family.members)
     if ($members.Count -lt 2) { return $false }
     foreach ($m in $members) {
@@ -430,21 +491,28 @@ function Get-FamilyMeanScore {
 
 # Pick the family to trace from the report's families array. Priority: (1) a
 # complete family (clean x/y/z triple); (2) a usable family (>=2 members,
-# every member at or above -MinMemberScore, at least one non-edge-aligned --
-# an all-edge family must never beat a real sibling pair: live OD-049
-# evidence had the 5-member all-edge decoy out-scoring the genuine x/z pair
-# on summed score, which would have armed the trace on fabricated alignment);
-# (3) any fully-scored family, as a direct-investigation fallback when the
-# caller (od-048 gate) has already vetted the report. The -MinMemberScore
-# floor applies to EVERY tier: a below-floor member is noise (FRESH10:
-# x@0.20 + y@1.00 -> family-no-hit) and must never be armed, even inside an
-# otherwise complete triple. Among the candidates the rank is (distinct axis
-# count desc, then mean member score desc). Deterministic so the same report
-# always selects the same family. Returns $null when no family clears the
-# score floor (caller must not arm).
+# every member at or above -MinMemberScore, every member's ambiguity band
+# within -MaxMemberBandSeconds, at least one non-edge-aligned -- an all-edge
+# family must never beat a real sibling pair: live OD-049 evidence had the
+# 5-member all-edge decoy out-scoring the genuine x/z pair on summed score,
+# which would have armed the trace on fabricated alignment); (3) any
+# fully-scored family, as a direct-investigation fallback when the caller
+# (od-048 gate) has already vetted the report. The -MinMemberScore floor AND
+# the -MaxMemberBandSeconds floor apply to EVERY tier: a below-floor member is
+# noise (FRESH10: x@0.20 + y@1.00 -> family-no-hit) and a degenerate member
+# matches at any shift (FRESH12/FRESH13), so neither must ever be armed, even
+# inside an otherwise complete triple. Among the candidates the rank is
+# (distinct axis count desc, then mean member score desc). Deterministic so
+# the same report always selects the same family. Returns $null when no
+# family clears both floors (caller must not arm).
 function Select-BestFamily {
     param([object[]]$Families)
-    $scored = @($Families | Where-Object { Test-FamilyScored -Family $_ })
+    # Both predicates parenthesized: `A -and (B)` after a bare command parses
+    # `-and` into A's argument binding (PowerShell command-expression
+    # precedence), so a family that FAILS Test-FamilyBanded could still be
+    # selected. Verified in a harness: the un-parenthesized form selected a
+    # bandless family; the parenthesized form correctly refused it.
+    $scored = @($Families | Where-Object { (Test-FamilyScored -Family $_) -and (Test-FamilyBanded -Family $_) })
     $complete = @($scored | Where-Object { Test-FamilyComplete -Family $_ })
     if ($complete.Count -gt 0) { return (Select-HighestRankedFamily -Families $complete) }
     $usable = @($scored | Where-Object { Test-UsableFamily -Family $_ })
@@ -863,12 +931,14 @@ try {
         }
         $family = Select-BestFamily -Families $families
         if ($null -eq $family) {
-            # Every family has at least one member below the score floor - a
-            # noise member (FRESH10: x@0.20 armed alongside y@1.00 -> the
-            # trace burned the green window on the noise member). Arming
-            # nothing is the evidence-first outcome: a family that cannot
-            # clear the floor would only produce a no-hit window.
-            Write-Wt ('FAILED_family_selection no_family_clears_min_score=' + $MinMemberScore)
+            # No family cleared BOTH gates: a below-floor member is noise
+            # (FRESH10: x@0.20 armed alongside y@1.00 -> the trace burned the
+            # window on the noise member) or a member's ambiguity band is
+            # missing/too wide (FRESH13: a degenerate member matches at any
+            # shift regardless of score). Arming nothing is the evidence-first
+            # outcome: a family that cannot clear both floors would only
+            # produce a no-hit window.
+            Write-Wt ('FAILED_family_selection no_family_clears_floors min_score=' + $MinMemberScore + ' max_band_s=' + $MaxMemberBandSeconds)
             exit 2
         }
         $plan = Get-FamilyArmPlan -Family $family
@@ -1197,11 +1267,30 @@ try {
                     $rips += $parts[1]
                 }
             }
+            # Normalize the member's ambiguity band (either wire pair) to the
+            # report's canonical shiftBandMin/MaxSeconds so a re-run against
+            # this .family.json can re-apply the band floor.
+            $bandMin = $null
+            $bandMax = $null
+            if ($m.PSObject.Properties['shiftBandMinSeconds'] -and $null -ne $m.shiftBandMinSeconds) {
+                $bandMin = [double]$m.shiftBandMinSeconds
+            }
+            elseif ($m.PSObject.Properties['shiftMinSeconds'] -and $null -ne $m.shiftMinSeconds) {
+                $bandMin = [double]$m.shiftMinSeconds
+            }
+            if ($m.PSObject.Properties['shiftBandMaxSeconds'] -and $null -ne $m.shiftBandMaxSeconds) {
+                $bandMax = [double]$m.shiftBandMaxSeconds
+            }
+            elseif ($m.PSObject.Properties['shiftMaxSeconds'] -and $null -ne $m.shiftMaxSeconds) {
+                $bandMax = [double]$m.shiftMaxSeconds
+            }
             $memberEntries += [ordered]@{
                 address     = $addr
                 offsetBytes = if ($m.PSObject.Properties['offsetBytes'] -and $null -ne $m.offsetBytes) { [int]$m.offsetBytes } else { 0 }
                 axis        = if ($m.PSObject.Properties['axis']) { [string]$m.axis } else { '?' }
                 score       = if ($m.PSObject.Properties['score'] -and $null -ne $m.score) { [double]$m.score } else { 0.0 }
+                shiftBandMinSeconds = $bandMin
+                shiftBandMaxSeconds = $bandMax
                 hits        = $rips.Count
                 rips        = $rips
             }

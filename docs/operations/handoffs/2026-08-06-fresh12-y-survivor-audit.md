@@ -1,6 +1,6 @@
-# FRESH12 — offline audit of the "edge-riding" y@1.0 survivor (CORRECTED verdict)
+# FRESH12 + FRESH13 — y-survivor audit (CORRECTED verdict) and band-width floor
 
-Date: 2026-08-06 · Status: Closed (offline, no session spent) · Type: evidence audit
+Date: 2026-08-06 · Status: FRESH12 Closed (offline audit); FRESH13 Implemented + validated offline · Type: evidence audit + gate hardening
 
 ## Question
 
@@ -74,6 +74,32 @@ but a *degenerate* member still scores 1.0 and passes.
    family — it is the strongest evidence and currently un-armable.
 4. Optional: raise the y-axis `MinMovingSpan`-style discrimination for
    near-flat ground axes in the C# scorer so they don't dominate results.
+
+## FRESH13 — band-width floor (implemented 2026-08-06, `docs/operations/offset-discovery-ledger.md` FRESH13 entry)
+
+Both gates now refuse a family whose member's ambiguity band is unknown or
+wider than the floor (default 20s = 1/3 of the ±30s sweep):
+
+- `x64dbg-write-trace.ps1`: `-MaxMemberBandSeconds` + `Get-MemberBandWidth`
+  (accepts both wire pairs) + `Test-FamilyBanded`, wired into
+  `Test-UsableFamily` and every `Select-BestFamily` tier; `.family.json`
+  output carries the band per member.
+- `od-048`: `-AutoTraceMaxMemberBandSeconds` + widest-band gate check
+  (`degenerate_member_band` / `member_band_unknown` skip reasons),
+  best-near-miss band in the skip log, floor passed through the splat so
+  both gates agree.
+
+Validated offline: the real FRESH10 report is refused (exit 2); a band-only
+fixture (scores 0.98/1.0 pass the score floor, 40s band) is refused — the
+band floor catches what the score floor cannot; bandless wire refused
+(fail-closed); floor 0 arms bandless (parity); a synthetic family with
+0x1FC57238-style metrics (2s interior band, non-edge) arms (exit 0).
+
+**Caveat (honest):** 0x1FC57238 is a RESULT, not a family member, and both
+gates require ≥2 members — the real FRESH10 report still cannot arm it. Its
+metrics pass the new floor; arming it standalone requires the solo-survivor
+path (next). A future live round must not misread a ≥2-member refusal as the
+band floor failing.
 
 ## Evidence files
 

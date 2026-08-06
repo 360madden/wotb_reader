@@ -3362,3 +3362,48 @@ regardless of score; (2) serialize shiftMin/shiftMax per family member so the
 gate can see it; (3) consider a "solo survivor" arming path so a tight-band
 non-edge high-score address (like 0x1FC57238) can be traced even without a
 byte-window family.
+
+## 2026-08-06 — FRESH13: band-width floor in the family gate (implemented + validated offline)
+
+The FRESH12 finding implemented: a family member whose ambiguity band covers
+too much of the sweep matches at ANY shift, so its score is cheap (FRESH10's
+armed y@1.00 had a [-10,+30] = 40s band on a 60s sweep -> family-no-hit even
+with a perfect score). The score floor (FRESH11) cannot catch this; the BAND
+WIDTH can.
+
+**What.**
+- `x64dbg-write-trace.ps1`: new `-MaxMemberBandSeconds` (default 20.0 = 1/3 of
+  the od-048 default ±30s/60s sweep); `Get-MemberBandWidth` (accepts BOTH wire
+  pairs — correlate response emits shiftMin/MaxSeconds, the M1 report re-emits
+  shiftBandMin/MaxSeconds); `Test-FamilyBanded` (every member band known and
+  ≤ floor; unknown band = refuse, fail-closed; 0 disables entirely);
+  `Test-UsableFamily` gates on it; `Select-BestFamily` applies it to EVERY tier
+  via a PARENTHESIZED filter — a bare `Test-FamilyScored -Family $_ -and
+  (Test-FamilyBanded ...)` parsed `-and` into the first command's argument
+  binding (harness-proven: the un-parenthesized form selected a bandless
+  family; the parenthesized form refused it); `.family.json` output now carries
+  shiftBandMin/MaxSeconds per member (normalized from either wire pair).
+- `od-048`: new `-AutoTraceMaxMemberBandSeconds` (default 20.0); the gate loop
+  computes each family's widest member band and refuses degenerate families
+  (`degenerate_member_band widest_band=Ns floor=Ns`) or unknown-band wire
+  (`member_band_unknown`); best-near-miss band tracked for the skip log;
+  floor 0 disables entirely (parity with the write-trace); splat passes
+  `MaxMemberBandSeconds` through so both gates agree.
+
+**Validated (offline, no session spent):** parse OK PS 5.1 + pwsh 7, PSSA 0
+findings on both scripts, ASCII clean. Gate matrix (exit codes): the real
+FRESH10 report -> refused (exit 2); band-only fixture (scores 0.98/1.0 pass
+the score floor, y band 40s) -> refused — proves the band floor catches what
+the score floor cannot; bandless wire -> refused (fail-closed); floor disabled
+(0) -> bandless arms (parity); the tight-band synthetic family (0x1FC57238
+metrics: 2s interior band, score 1.0, non-edge) -> arms (exit 0).
+
+**Honest caveat:** 0x1FC57238 is a RESULT, not a family member (its ±16-byte
+neighbors scored below the seed floor), and both gates require ≥2 members — so
+the real FRESH10 report still cannot arm it. Its METRICS pass the new floor;
+arming it standalone needs the solo-survivor path (FRESH13 follow-up, not
+implemented here). A future live round must not misread a ≥2-member refusal
+as the band floor failing.
+
+**Next:** solo-survivor arming path (trace a tight-band non-edge high-score
+address without a byte-window family), then a clean-family live round.

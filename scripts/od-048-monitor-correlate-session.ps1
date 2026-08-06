@@ -168,6 +168,19 @@ param(
     # on the noise member, producing family-no-hit). A family that cannot
     # clear the floor is SKIPPED, not armed. 0 disables the floor.
     [double]$AutoTraceMinMemberScore = 0.9,
+    # Maximum AMBIGUITY-BAND width (shiftMax - shiftMin, seconds) for every
+    # family member handed to the auto-trace. A member whose band covers most
+    # of the sweep matches at ANY shift, so its score is cheap regardless of
+    # how high it is (FRESH12: FRESH10's armed y@1.00 had a [-10,+30] = 40s
+    # band on a 60s sweep -> family-no-hit; 42 of 50 results were degenerate
+    # y@~1.0 with 20-60s bands on a 10.9-unit ground axis). A family with a
+    # member whose band is missing or wider than the floor is SKIPPED, not
+    # armed. 0 disables the floor entirely (unknown bands allowed too, mirror
+    # the write-trace). Default 20s = 1/3 of the +-30s (60s) sweep band -- the
+    # FRESH12 degenerate threshold. NOTE: the floor is absolute, not
+    # sweep-relative; pair it with the same -MaxTimeShiftSeconds that produced
+    # the bands (od-048's default 30 -> 60s sweep).
+    [double]$AutoTraceMaxMemberBandSeconds = 20.0,
     # Pass -SkipPlayProbe / -SkipLivenessCheck through to the auto-invoked
     # write-trace (headless validation; the live round keeps both defaults).
     [switch]$AutoTraceSkipPlayProbe,
@@ -1266,10 +1279,14 @@ if ($AutoWriteTraceOnVerdict) {
     $usableFamily = $null
     $usableSkipReason = ''
     # Best near-miss across ALL rejected families: the skip log reports the
-    # CLOSEST family to the floor, not the last one scanned (families arrive
+    # CLOSEST family to the floors, not the last one scanned (families arrive
     # member-count-desc, so the most informative near-miss is the highest
     # weakest-member score seen, not whichever family the loop hit last).
     $bestNearMiss = -1.0
+    # Band-floor near-miss: the NARROWEST widest-band seen (a family whose
+    # widest member band is just over the floor is a better next attempt than
+    # one whose members match at every shift).
+    $bestNearMissBand = [double]::MaxValue
     # Distinguish a wire-shape regression (score property missing on EVERY
     # member) from a genuinely weak correlate: both fail the floor with
     # weakest_score=0.00, but the first is an API bug, the second is a real
@@ -1293,6 +1310,43 @@ if ($AutoWriteTraceOnVerdict) {
             if ($weakestScore -gt $bestNearMiss) { $bestNearMiss = $weakestScore }
             continue
         }
+        # Band floor (FRESH13): a member whose ambiguity band is missing or
+        # wider than the floor matches at any shift -- its score is cheap and
+        # proves nothing about being a written coordinate. Refuse the family
+        # regardless of score. The correlate wire emits shiftMin/MaxSeconds;
+        # the M1 report re-emits them as shiftBandMin/MaxSeconds, so accept
+        # either pair.
+        $widestBand = 0.0
+        $bandUnknown = $false
+        foreach ($m in @($f.members)) {
+            $minB = $null; $maxB = $null
+            if ($m.PSObject.Properties['shiftBandMinSeconds'] -and $null -ne $m.shiftBandMinSeconds) { $minB = [double]$m.shiftBandMinSeconds }
+            elseif ($m.PSObject.Properties['shiftMinSeconds'] -and $null -ne $m.shiftMinSeconds) { $minB = [double]$m.shiftMinSeconds }
+            if ($m.PSObject.Properties['shiftBandMaxSeconds'] -and $null -ne $m.shiftBandMaxSeconds) { $maxB = [double]$m.shiftBandMaxSeconds }
+            elseif ($m.PSObject.Properties['shiftMaxSeconds'] -and $null -ne $m.shiftMaxSeconds) { $maxB = [double]$m.shiftMaxSeconds }
+            if ($null -eq $minB -or $null -eq $maxB) { $bandUnknown = $true; break }
+            $width = $maxB - $minB
+            if ($width -gt $widestBand) { $widestBand = $width }
+        }
+        # 0 disables the floor ENTIRELY (unknown bands allowed), mirroring the
+        # write-trace's Test-FamilyBanded - otherwise the two gates disagree
+        # on the same report when an operator passes 0 to disable it.
+        if ($AutoTraceMaxMemberBandSeconds -le 0) {
+            $hasNonEdgeAligned = $false
+            foreach ($m in @($f.members)) {
+                if (-not $m.edgeAligned) { $hasNonEdgeAligned = $true; break }
+            }
+            if ($hasNonEdgeAligned) { $usableFamily = $f; $usableSkipReason = ''; break }
+            if ($weakestScore -gt $bestNearMiss) { $bestNearMiss = $weakestScore }
+            $usableSkipReason = ('all_members_edge_aligned weakest_score=' + $weakestScore.ToString('F2'))
+            continue
+        }
+        if ($bandUnknown -or $widestBand -gt $AutoTraceMaxMemberBandSeconds) {
+            if (-not $bandUnknown -and $widestBand -lt $bestNearMissBand) { $bestNearMissBand = $widestBand }
+            $usableSkipReason = ('degenerate_member_band widest_band=' + $widestBand.ToString('F1') + 's floor=' + $AutoTraceMaxMemberBandSeconds + 's')
+            if ($bandUnknown) { $usableSkipReason = 'member_band_unknown (no shiftMin/MaxSeconds on the wire)' }
+            continue
+        }
         $hasNonEdgeAligned = $false
         foreach ($m in @($f.members)) {
             if (-not $m.edgeAligned) { $hasNonEdgeAligned = $true; break }
@@ -1308,6 +1362,9 @@ if ($AutoWriteTraceOnVerdict) {
         }
         elseif ($bestNearMiss -ge 0) {
             $usableSkipReason = ('best_near_miss=' + $bestNearMiss.ToString('F2') + ' below_floor=' + $AutoTraceMinMemberScore)
+        }
+        elseif ($bestNearMissBand -lt [double]::MaxValue) {
+            $usableSkipReason = ('best_near_miss_band=' + $bestNearMissBand.ToString('F1') + 's over_floor=' + $AutoTraceMaxMemberBandSeconds + 's')
         }
         Write-Od048 ('auto_write_trace SKIPPED no_usable_family verdict=' + $verdict + ' reason=' + $usableSkipReason)
     }
@@ -1335,11 +1392,13 @@ if ($AutoWriteTraceOnVerdict) {
                 AutoWriteTrace = $true
                 TraceSeconds   = $AutoTraceSeconds
                 ResultPath     = $AutoTraceResultPath
-                # Keep both gates on the same score floor: od-048 skips weak
-                # families here, and the write-trace re-vets with its own
-                # -MinMemberScore - pass the same value so the two can never
-                # disagree (od-048 approves -> write-trace refuses).
-                MinMemberScore = $AutoTraceMinMemberScore
+                # Keep both gates on the same floors: od-048 skips weak/
+                # degenerate families here, and the write-trace re-vets with
+                # its own -MinMemberScore/-MaxMemberBandSeconds - pass the
+                # same values so the two can never disagree (od-048 approves
+                # -> write-trace refuses).
+                MinMemberScore      = $AutoTraceMinMemberScore
+                MaxMemberBandSeconds = $AutoTraceMaxMemberBandSeconds
             }
             if ($AutoTraceSkipPlayProbe) { $wtArgs.SkipPlayProbe = $true }
             if ($AutoTraceSkipLivenessCheck) { $wtArgs.SkipLivenessCheck = $true }
