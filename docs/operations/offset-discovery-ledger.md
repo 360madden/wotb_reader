@@ -3154,3 +3154,48 @@ reporting, anchor rejection), provider downsample regression, endpoint
 hardening (incl. null-address 400), full suite 587 passed / 0 failed, PSSA
 gate 0 warnings. Committed and pushed; see the strategy-v4 doc and handoff
 amendment for details.
+
+## 2026-08-05 — FRESH9 chunked investigation: write-trace root causes fixed (08c6a4f)
+
+**Context.** FRESH9 (live M1→M2) completed every mechanical step — gate
+verified, anchor pinned, M1 monitored 220,560 samples / 3,176 addresses,
+`evidence-strong` verdict, auto-write-trace fired in-process, scriptload+
+scriptrun injected, exit 0 — but produced **zero hits** for the armed x/z
+pair (0x2CACA258/0x2CACA260, both score 1.0).
+
+**Result: 4 root causes proven, each verified against x64dbg development-branch source.**
+
+1. **Decimal-pid attach (the zero-hit killer).** x64dbg parses every
+   integer literal as hex, so `attach 42284` targets a nonexistent pid.
+   The old pre-arm's `x32dbg.exe -p <decimal>` was provably broken.
+   Fix: `attach 0x<hex>` via the command bar; pre-arm now launches the
+   debugger window only.
+2. **SendKeys broken by IME** (mangled `strref 0, 0, 1` landed in the
+   command bar). Fix: UIA ValuePattern + focus + PostMessage ENTER.
+3. **`bph` arms DRs only on the active thread** (engine has a literal
+   `//TODO: hwbp in multiple threads TEST`); after attach that is the
+   break-in thread. Fix: memory breakpoints `bpm <addr>, 1, w`
+   (guard page, fires on any thread).
+4. **Capture idiom:** `bpmwlog` is not a script command; fast-resume +
+   condition-0 skips the command; `{rip}`-token savedata froze the
+   debuggee. Proven shape: `bpm` + `SetMemoryBreakpointLog` + static
+   per-address `savedata`, no condition (first hit pauses, then detach).
+
+**Also caught:** leaked duplicate counter processes from earlier probes
+contaminated every zero-hit run (BPs armed at a stale process's address);
+stackalloc counter address confounded memory-BP behavior. Rebuilt the rig
+as a static-field counter (`tmpwotb-e2e/wt-counter-target.cs`).
+
+**First write evidence ever produced:** clean-rig run of the product's
+exact step-5 flow captured `odwt-0x<addr>.bin` (4 bytes) via
+`tmpwotb-e2e/probe-integration.ps1`.
+
+**Status: chunks 1–5 done** (memory-BP flow, UIA channel, product-script
+fixes, offline integration, static gate — PSSA passed, parse OK, ASCII
+clean). **Chunk 6 (FRESH10 live) pending** — needs a hands-off window;
+checklist in `docs/operations/handoffs/2026-08-05-fresh9-chunked-write-trace-fix.md`.
+
+**Known limitation:** one capture per armed address per trace (condition-0
+and `; run` self-resume are dead ends in this x32dbg build). `ODWT_HIT`
+log harvest returned 0 (UIA log-tab read limitation); proof files are the
+primary evidence; follow-up is `setlogfile`/active-tab log capture.
