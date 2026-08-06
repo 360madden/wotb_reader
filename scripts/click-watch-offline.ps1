@@ -17,6 +17,12 @@
   dialog ROI then false-positives on replay-HUD content (OD-RECOVERY-017), so
   once verified the script stops clicking instead of chasing the blob.
 
+  Window resize (FRESH17): the launch script may shrink the game window to
+  640x360 so it never covers the operator's other programs. All absolute-pixel
+  thresholds (orange counts) are scaled by the captured window's area ratio vs
+  the 1920x1080 reference (-ReferenceWidth/Height), so the ready gate fires at
+  any window size; luminance means are area-independent and stay absolute.
+
   Flake fix (OD-044): the Host lifecycle gate lags the dialog dismissal by
   ~9-10s, so the old 8s poll window expired before verification and round 2
   re-clicked the live replay HUD; the SW_RESTORE/foreground churn around that
@@ -96,6 +102,15 @@ param(
     # land elsewhere, so even rounds use the PostMessage client-message channel
     # (delivers straight to the game window, immune to the foreground lock).
     [int]$MessageClickEveryRound = 2,
+    # FRESH17: the launch script may resize the game window to a small footprint
+    # (640x360 default) so it never covers the operator's other programs. All
+    # absolute-pixel thresholds here were tuned at ~1920x1080; at 640x360 the
+    # same UI yields ~1/9 the orange pixels, so the ready gate would never fire.
+    # Get-WindowAnalysis computes PxScale = window area / reference area and
+    # every absolute threshold is multiplied by it (floored at 5px). Luminance
+    # thresholds are area-independent (means) and are NOT scaled.
+    [int]$ReferenceWidth = 1920,
+    [int]$ReferenceHeight = 1080,
     # Playback-only: skip Host rendezvous/gate; success = dialog dismissed
     # and/or START_REPLAY_LOCAL in blitz-log.
     [switch]$VisualDismissOnly
@@ -472,6 +487,10 @@ function Get-WindowAnalysis([IntPtr]$Hwnd, [string]$SavePath) {
             DialogMeanLuminance = [double]$dialog.DialogMeanLuminance
             Width              = $bmp.Width
             Height             = $bmp.Height
+            # FRESH17: area ratio vs the reference resolution the absolute
+            # pixel thresholds were tuned at. Floored so a tiny window cannot
+            # collapse a threshold to 0 (a 5px floor keeps the gates sane).
+            PxScale            = [Math]::Max(0.05, ($bmp.Width * $bmp.Height) / ([double]$ReferenceWidth * $ReferenceHeight))
         }
     }
     finally {
@@ -479,9 +498,18 @@ function Get-WindowAnalysis([IntPtr]$Hwnd, [string]$SavePath) {
     }
 }
 
-function Test-DialogPresent([int]$OrangePx, [double]$DialogMeanL) {
-    # First dialog sighting: orange blob (incl. dim sync ~63 px) or dim modal luminance.
-    if ($OrangePx -ge 50) { return $true }
+# FRESH17: scale an absolute-pixel threshold by the window-area ratio, floored
+# at 5px (a threshold of 0 would make every frame look like the dialog/ready
+# gate). Luminance means are NOT scaled - callers only pass pixel counts.
+function Get-ScaledThreshold([int]$Base, [double]$Scale) {
+    return [Math]::Max(5, [int]($Base * $Scale))
+}
+
+function Test-DialogPresent([int]$OrangePx, [double]$DialogMeanL, [double]$PxScale = 1.0) {
+    # First dialog sighting: orange blob (incl. dim sync ~63 px at 1080p) or dim
+    # modal luminance. Pixel count scaled by window area (FRESH17); luminance is
+    # a mean and stays absolute.
+    if ($OrangePx -ge (Get-ScaledThreshold 50 $PxScale)) { return $true }
     if ($DialogMeanL -lt $SyncMaxLuminance -and $DialogMeanL -gt 15) { return $true }
     return $false
 }
@@ -491,9 +519,12 @@ function Test-ReadySample(
     [double]$DialogMeanL,
     [bool]$SeenSyncing,
     [Nullable[datetime]]$FirstBrightAt,
-    [Nullable[datetime]]$FirstDialogAt
+    [Nullable[datetime]]$FirstDialogAt,
+    [double]$PxScale = 1.0
 ) {
-    if ($OrangePx -lt $ReadyMinOrange) { return $false }
+    # FRESH17: ready threshold is a pixel count - scale by window area so the
+    # gate fires at 640x360 (1/9 the pixels of 1080p).
+    if ($OrangePx -lt (Get-ScaledThreshold $ReadyMinOrange $PxScale)) { return $false }
     if ($DialogMeanL -lt $ReadyMinLuminance) { return $false }
     # Prefer post-sync: first bright after dim is the interactive window.
     if ($SeenSyncing) { return $true }
@@ -626,7 +657,7 @@ try {
         $dialogMeanL = [Math]::Round([double]$analysis.DialogMeanLuminance, 1)
 
         if ($phase -eq 'LookingForDialog') {
-            if (Test-DialogPresent $orangePx $dialogMeanL) {
+            if (Test-DialogPresent -OrangePx $orangePx -DialogMeanL $dialogMeanL -PxScale $analysis.PxScale) {
                 $phase = 'WaitingForReady'
                 $firstDialogAt = Get-Date
                 $readyDeadline = (Get-Date).AddSeconds($ReadyTimeoutSeconds)
@@ -646,20 +677,23 @@ try {
                 break
             }
 
-            # Owner sync: dim dialog (~31 L) with collapsed-but-nonzero orange (~60aEUR"80).
-            # Blank frames (La%^0) and bright low-orange splash must NOT arm SeenSyncing.
+            # Owner sync: dim dialog (~31 L) with collapsed-but-nonzero orange (~60aEUR"80
+            # at 1080p; scaled by window area). Blank frames (La%^0) and bright
+            # low-orange splash must NOT arm SeenSyncing.
+            $syncOrangeFloor = Get-ScaledThreshold 30 $analysis.PxScale
+            $syncOrangeCeil = Get-ScaledThreshold $SyncMaxOrange $analysis.PxScale
             $looksSyncing = (
                 $dialogMeanL -gt 18 -and
                 $dialogMeanL -lt $SyncMaxLuminance -and
-                $orangePx -ge 30 -and
-                $orangePx -lt $SyncMaxOrange
+                $orangePx -ge $syncOrangeFloor -and
+                $orangePx -lt $syncOrangeCeil
             )
             if ($looksSyncing) {
                 $seenSyncing = $true
                 $firstBrightAt = $null
                 Write-Host ("watch_offline: syncing_observed dialogMeanL={0} orangePx={1}" -f $dialogMeanL, $orangePx)
             }
-            elseif ($orangePx -ge $ReadyMinOrange -and $dialogMeanL -ge $ReadyMinLuminance) {
+            elseif ($orangePx -ge (Get-ScaledThreshold $ReadyMinOrange $analysis.PxScale) -and $dialogMeanL -ge $ReadyMinLuminance) {
                 if (-not $firstBrightAt) {
                     $firstBrightAt = Get-Date
                     Write-Host 'watch_offline: first_bright_ready_looking'
@@ -668,7 +702,7 @@ try {
 
             # After sync clears, click on the first bright+strong frame.
             $needStable = if ($seenSyncing) { 1 } else { $StableSamples }
-            if (Test-ReadySample -OrangePx $orangePx -DialogMeanL $dialogMeanL -SeenSyncing $seenSyncing -FirstBrightAt $firstBrightAt -FirstDialogAt $firstDialogAt) {
+            if (Test-ReadySample -OrangePx $orangePx -DialogMeanL $dialogMeanL -SeenSyncing $seenSyncing -FirstBrightAt $firstBrightAt -FirstDialogAt $firstDialogAt -PxScale $analysis.PxScale) {
                 $stable++
                 $readyAnalysis = $analysis
                 Write-Host ("watch_offline: phase={0} dialogMeanL={1} orangePx={2} seenSync={3} stable={4}/{5}" -f `
@@ -796,7 +830,8 @@ try {
         Quit-WatchOffline 0
     }
 
-    if ($preCount -lt $MinBlobPixels -and $before -ne 'OfflineReplayVerified') {
+    $minBlobScaled = Get-ScaledThreshold $MinBlobPixels $analysis.PxScale
+    if ($preCount -lt $minBlobScaled -and $before -ne 'OfflineReplayVerified') {
         Write-Host 'watch_offline: FAILED_blob_gone_after_hold (dialog timed out?)'
         Quit-WatchOffline 5
     }
@@ -809,7 +844,7 @@ try {
     }
 
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-    $sawBlob = $preCount -ge $MinBlobPixels
+    $sawBlob = $preCount -ge $minBlobScaled
     $gateOk = $false
     $dialogGone = $false
 
@@ -855,7 +890,7 @@ try {
             Write-Host 'watch_offline: replay_started_marker (no further clicks)'
         }
 
-        if (-not $replayStarted -and $count -ge $MinBlobPixels) {
+        if (-not $replayStarted -and $count -ge (Get-ScaledThreshold $MinBlobPixels $analysis.PxScale)) {
             $rx = $analysis.Blob.CentroidX / [double][Math]::Max(1, $analysis.Width)
             $ry = $analysis.Blob.CentroidY / [double][Math]::Max(1, $analysis.Height)
             if ($rx -lt 0.18 -or $rx -gt 0.48 -or $ry -lt 0.38 -or $ry -gt 0.62) {
@@ -891,7 +926,7 @@ try {
                 # live replay HUD (OD-017 false positive).
                 Start-Sleep -Milliseconds 400
                 $quickPost = Get-WindowAnalysis $game.MainWindowHandle $null
-                if ($quickPost -and $quickPost.Blob.Found -and [int]$quickPost.Blob.PixelCount -gt $DismissMaxPixels) {
+                if ($quickPost -and $quickPost.Blob.Found -and [int]$quickPost.Blob.PixelCount -gt (Get-ScaledThreshold $DismissMaxPixels $quickPost.PxScale)) {
                     Write-Host ("watch_offline: post_click_blob_still_present px=" + [int]$quickPost.Blob.PixelCount)
                 }
             }
@@ -942,8 +977,9 @@ try {
         if ($post) {
             $postCount = [int]$post.Blob.PixelCount
             Write-Host ("watch_offline: post_orange_pixels={0}" -f $postCount)
-            if ($postCount -le $DismissMaxPixels) { $dialogGone = $true }
-            elseif ($sawBlob -and $preCount -gt 0 -and $postCount -lt [Math]::Max($DismissMaxPixels, [int]($preCount * 0.15))) {
+            $dismissScaled = Get-ScaledThreshold $DismissMaxPixels $post.PxScale
+            if ($postCount -le $dismissScaled) { $dialogGone = $true }
+            elseif ($sawBlob -and $preCount -gt 0 -and $postCount -lt [Math]::Max($dismissScaled, [int]($preCount * 0.15))) {
                 $dialogGone = $true
                 Write-Host 'watch_offline: dialog_shrunk_ok'
             }
@@ -970,7 +1006,9 @@ try {
     $finalCount = if ($final) { [int]$final.Blob.PixelCount } else { -1 }
     Write-Host ("watch_offline: after={0} final_orange_pixels={1}" -f $after, $finalCount)
 
-    $dialogGone = $dialogGone -or ($finalCount -ge 0 -and $finalCount -le $DismissMaxPixels)
+    $finalScale = if ($final) { $final.PxScale } else { 1.0 }
+    $dismissScaledFinal = Get-ScaledThreshold $DismissMaxPixels $finalScale
+    $dialogGone = $dialogGone -or ($finalCount -ge 0 -and $finalCount -le $dismissScaledFinal)
     if (-not $VisualDismissOnly) {
         $gateOk = $gateOk -or ($after -eq 'OfflineReplayVerified')
         # Verified gate proves the replay started, which proves the dialog is
@@ -990,7 +1028,7 @@ try {
             $dialogGone = $true
         }
         else {
-            $dialogGone = ($finalCount -ge 0 -and $finalCount -le $DismissMaxPixels)
+            $dialogGone = ($finalCount -ge 0 -and $finalCount -le $dismissScaledFinal)
             if ($dialogGone) { $gateOk = $true }
         }
     }

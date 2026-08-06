@@ -49,7 +49,20 @@ param(
     [int]$WindowWaitSeconds = 90,
     [int]$WatchTimeoutSeconds = 120,
     [switch]$SkipWatchOffline,
-    [switch]$KeepExistingHost
+    [switch]$KeepExistingHost,
+    # FRESH17: shrink the game window after the game settles so it never
+    # covers the operator's other programs (a covering window steals the
+    # foreground lock and swallows the dialog click - the recurring
+    # OD-044/FRESH16 focus class). Default 640x360 at the top-left corner,
+    # applied ONCE after the settle (the splash is fragile; SW_RESTORE churn
+    # during LoginOnReplay correlated with OnBackground). The clicker
+    # auto-scales its pixel thresholds from the captured window size, so the
+    # ready gate still fires at the small size. -NoResizeWindow opts out.
+    [int]$ResizeWindowWidth = 640,
+    [int]$ResizeWindowHeight = 360,
+    [int]$ResizeWindowX = 0,
+    [int]$ResizeWindowY = 0,
+    [switch]$NoResizeWindow
 )
 
 Set-StrictMode -Version Latest
@@ -123,6 +136,39 @@ Add-Type -Namespace OdLaunch -Name Focus -MemberDefinition @"
 public static extern bool SetForegroundWindow(System.IntPtr hWnd);
 public static void Soft(System.IntPtr h) { SetForegroundWindow(h); }
 "@ -ErrorAction SilentlyContinue
+
+# FRESH17: window-resize P/Invoke (SetWindowPos), a SEPARATE type from
+# OdLaunch.Focus so an in-process autoloop relaunch never hits a stale-type
+# guard (same failure class as the clicker's V2->V3 rename). Guarded with the
+# -as [type] check for the same reason.
+if (-not ('OdLaunch.WindowResize' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace OdLaunch {
+    public static class WindowResize {
+        [StructLayout(LayoutKind.Sequential)]
+        public struct RECT { public int Left, Top, Right, Bottom; }
+        [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+        [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+        [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+        [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr hWnd);
+        [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+        public const uint SWP_NOZORDER = 0x0004;
+        public const uint SWP_NOACTIVATE = 0x0010;
+        public const int SW_RESTORE = 9;
+        // DPI-aware + synchronous (no SWP_ASYNCWINDOWPOS): the caller reads the
+        // rect back immediately after, so the resize must be applied before we
+        // return, and physical-pixel coords on scaled displays.
+        public static bool Resize(IntPtr h, int w, int hgt, int x, int y) {
+            SetProcessDPIAware();
+            return SetWindowPos(h, IntPtr.Zero, x, y, w, hgt, SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+        public static bool Restore(IntPtr h) { return ShowWindow(h, SW_RESTORE); }
+    }
+}
+'@ -ErrorAction Stop
+}
 
 function Wait-GameSettle([int]$Seconds) {
     # Hands-off for the first half of settle (splash is fragile), then soft-focus.
@@ -329,6 +375,34 @@ try {
         if (-not (Wait-GameSettle -Seconds $SettleSeconds)) {
             Write-Od 'FAILED_game_died_during_settle'
             exit 3
+        }
+    }
+
+    # FRESH17: shrink the game window so it never covers the operator's other
+    # programs. Done AFTER the settle (splash is fragile), ONCE, and before the
+    # watch/click phase so the dialog renders at the small size from the start.
+    # A maximized window is restored first (SetWindowPos cannot shrink a
+    # maximized window in place); this single restore is the pre-dialog path,
+    # NOT the LoginOnReplay churn that correlated with OnBackground.
+    if (-not $NoResizeWindow -and $ResizeWindowWidth -gt 0 -and $ResizeWindowHeight -gt 0) {
+        $rg = Get-Process -Name wotblitz -ErrorAction SilentlyContinue |
+            Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } |
+            Select-Object -First 1
+        if ($rg) {
+            $before = New-Object OdLaunch.WindowResize+RECT
+            [void][OdLaunch.WindowResize]::GetWindowRect($rg.MainWindowHandle, [ref]$before)
+            $wasZoomed = [OdLaunch.WindowResize]::IsZoomed($rg.MainWindowHandle)
+            if ($wasZoomed) { [void][OdLaunch.WindowResize]::Restore($rg.MainWindowHandle) }
+            $resized = [OdLaunch.WindowResize]::Resize(
+                $rg.MainWindowHandle, $ResizeWindowWidth, $ResizeWindowHeight, $ResizeWindowX, $ResizeWindowY)
+            Start-Sleep -Milliseconds 300
+            $after = New-Object OdLaunch.WindowResize+RECT
+            [void][OdLaunch.WindowResize]::GetWindowRect($rg.MainWindowHandle, [ref]$after)
+            Write-Od ("resize_window ok=" + $resized + " from=" + ($before.Right - $before.Left) + "x" + ($before.Bottom - $before.Top) +
+                " to=" + ($after.Right - $after.Left) + "x" + ($after.Bottom - $after.Top) + " at=" + $after.Left + "," + $after.Top + " zoomed=" + $wasZoomed)
+        }
+        else {
+            Write-Od 'resize_window no_game_window_skip'
         }
     }
 
