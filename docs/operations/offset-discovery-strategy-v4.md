@@ -87,8 +87,19 @@ amendment.
   token every ≥15s publish), the 30→90s shift sweep, the FRESH19
   zero-viewpoint `$null.Count` crash (caller-side `@()` on
   `Select-ViewpointResults`), and fresh-marker polling on campaign relaunch.
-  The remaining gate is a clean live correlate verdict (FRESH20) before the
-  write-trace fires its first real `odwt-*.bin` hit report.
+  **FRESH20 and FRESH21 (the re-baselined budget) both returned
+  `verdict=evidence-strong`** — non-edge span-275 z survivors at score
+  ≥ 0.857/0.92, confirming the offline dry-run's prediction in live shape.
+  FRESH20 fired the trace but the battle ended mid-window (fixed via the
+  adaptive trace window + rounds 70→50); FRESH21 skipped it because a stale
+  20s band floor (1/3 of the old ±30s sweep, never re-derived when the sweep
+  widened to ±90) refused every strong survivor in the solo gate. Fixed
+  (`7c02f7d`): band floor re-derived to **60s** (= 1/3 of ±90) and a new
+  **span floor** (default 10 units) catches the FRESH10 static-degenerate
+  class the widened floor alone can't. The remaining gate is **arming +
+  tracing the survivor (FRESH22)** — the first round where a strong survivor
+  clears every gate, producing the first real `odwt-*.bin` hit report
+  (writer RIP/RVA, base register, displacement, nearby-object dump).
 - **M2 — Family mapping + write-trace.** Read-side BUILT (2026-08-05): the
   driver re-stages the ±16-byte neighbors of the top provisional survivors
   mid-battle, and the correlate response's `families` section groups the
@@ -131,7 +142,10 @@ defect, and the offline dry-run scores the corrected anchor at 1.000 @ shift 0
 through the real scorer. Budget: FRESH20 + at most FRESH21 (a session counts
 only when valid: staging gate post-match-begin, smoke green, no crash,
 correlate completed). Hard archive trigger: 2 valid sessions with no strong
-survivor → archive regardless of sunk cost. See the roadmap Descope gate.
+survivor → archive regardless of sunk cost. **Outcome: both budget sessions
+returned strong verdicts** — the archive trigger did not fire; the remaining
+live need is arming + tracing the survivor (FRESH22, M2's own live
+requirement, not a budget extension). See the roadmap Descope gate.
 
 ## Guardrails added by v4
 

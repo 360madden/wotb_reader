@@ -96,7 +96,7 @@ scripts/od-048-monitor-correlate-session.ps1
 **Exit:** ≥ 1 strong survivor. If neither of the 2 sessions produces one,
 **stop** — descope per the strategy stop rules.
 
-### M1.5 — Viewpoint-first discovery pivot (2026-08-06) — ✅ implemented offline, ⏳ live validation (FRESH15→19 campaign, crash fixed 2026-08-06)
+### M1.5 — Viewpoint-first discovery pivot (2026-08-06) — ✅ implemented offline, ✅ TWO strong live verdicts (FRESH20/21), ⏳ arm + trace the survivor (FRESH22)
 
 **Pivot:** find ONE highly discriminating live coordinate of the **viewpoint
 player** by correlating its observed value history against the decoded
@@ -127,9 +127,10 @@ functions + verbatim staging block: entity filter, family filter, staging
 parity, no-viewpoint exit 2), parse PS5.1+pwsh7, PSSA baseline, no-game
 DryRun, autoloop splat probe.
 
-**Live campaign status (FRESH15 → FRESH19, 2026-08-06):** six live rounds
-have each surfaced and fixed one real infrastructure bug; the pipeline is now
-mechanically reliable (all fixes committed):
+**Live campaign status (FRESH15 → FRESH21, 2026-08-06):** eight live rounds
+have each surfaced and fixed one real bug — six infrastructure defects, then
+two strong scientific verdicts (FRESH20/21); the pipeline is now mechanically
+reliable and the verdict stage is complete (all fixes committed):
 
 | Round | Outcome | Bug found → fix (commit) |
 |---|---|---|
@@ -139,6 +140,25 @@ mechanically reliable (all fixes committed):
 | FRESH17 | click registration flaky (blind double-click) | single verified click + SendInput + message-click channel + animation settle + 640×360 window resize (`885a537`, `14633a0`) |
 | FRESH18 | 3 mid-run 401s (host rotates the capability token on every ≥15s publish); z axis rode the −30s sweep edge (true shift beyond it) | 401-retry in `Invoke-Api` (re-read rendezvous + retry ≤5×2s, non-401 fails closed); `MaxTimeShiftSeconds` 30→90 (`888fb58`) |
 | FRESH19 | **zero-viewpoint `$null.Count` crash** killed the campaign after the correlate; relaunch re-used attempt 1's stale marker (staged 806 vs 3000) | caller-side `@(Select-ViewpointResults …)` (`540c6bc`); fresh-marker polling on relaunch |
+| FRESH20 | **FIRST STRONG VERDICT** — 5 non-edge viewpoint survivors; 3 z candidates at span ~270 (= decoded z span), shift −27.5…−31.5, 60–62/70 matches; trace fired but battle ended 11s into the 25s window (`STOP_gate=Denied`) | adaptive trace window (budgets `TraceSeconds` from the battle tail) + rounds 70→50 (`256984e`) |
+| FRESH21 | **SECOND STRONG VERDICT, cleanest run** — 32 strong survivors (29 z @ score 0.92, span 275.15 = decoded z span, shift 0, non-edge band [−19.5,+12]); **but families=0 → trace SKIPPED** (`no_families_from_survivors`) | **stale 20s band floor** (1/3 of the old ±30s sweep, never re-derived when the sweep widened to ±90) refused every survivor in the solo gate → band floor re-derived to 60s + new span floor (`7c02f7d`) |
+
+**FRESH21 no-trace root cause (2026-08-06, `7c02f7d`):** the band floor
+(`AutoTraceMaxMemberBandSeconds` / `MaxMemberBandSeconds` = 20s) was 1/3 of the
+**old ±30s sweep** and was never re-derived when commit `888fb58` widened the
+sweep to ±90s — the write-trace's own doc says the floor must be paired with
+the sweep that produced the bands. FRESH21's z bands (31.5s = 17.5% of the
+±90 sweep — discriminating, not degenerate) failed the stale 20s floor, so the
+solo gate skipped every strong survivor (`soloFamilyEmitted=False`) and the
+trace never fired. Fix: band floor 20s → **60s** (= 1/3 of ±90, the original
+ratio at the real sweep) plus a **new span floor** (`MinMemberSpan` /
+`AutoTraceMinMemberSpan`, default 10 game units): a value that never moves
+matches a low-information axis at any shift (the FRESH10 static y@span 4.0
+class the widened band floor alone can no longer catch). Solo members now
+serialize `span`; od-048 passes the floor through `wtArgs` so the two gates
+never disagree. Validated offline: write-trace probe admits the FRESH21-class
+family (armed) and refuses the FRESH10 degenerate; a solo simulation on the
+real FRESH21 result emits `0x23BD2C50` (z, band 31.5s, span 275.2, score 0.92).
 
 **FRESH19 crash root cause (2026-08-06):** `Select-ViewpointResults` returns
 `@(…)` but PowerShell **unwraps function pipeline output on return** — zero
@@ -150,12 +170,18 @@ it; an 8-round campaign now completes (`NO_CRASH`, report written). This bug
 would have crashed EVERY sharp-sweep run — FRESH18's 173-result array masked
 it.
 
-**Remaining live gate (FRESH20):** a clean correlate verdict — non-edge,
-narrow ambiguity band at the true shift (the offline dry-run predicts 1.000 @
-shift 0 with the corrected anchor; live ceiling ≈ 0.9+) — then the armed
-viewpoint survivor fires the first `odwt-*.bin` hit report. Open science
-question if the verdict still won't lock: tick-rate mismatch (a constant
-shift can't fix a rate error → a rate dimension in the scorer).
+**Remaining live gate (FRESH22):** the verdict question is RESOLVED — FRESH20
+and FRESH21 both returned `verdict=evidence-strong` under the fully-corrected
+pipeline (non-edge, span-275 z survivors at score ≥ 0.857; the offline
+dry-run's 1.000 @ shift-0 prediction holds in live shape). The remaining gate
+is **arming + tracing the survivor**: FRESH20 fired the trace but the battle
+ended mid-window (fixed via the adaptive window); FRESH21 skipped it because
+the stale band floor refused every survivor (fixed via the 60s re-derivation +
+span floor). FRESH22 — the first round where a strong survivor passes every
+gate — should produce the first `odwt-*.bin` hit report (writer RIP/RVA, base
+register, displacement, nearby-object dump). Open science question if the
+armed trace still yields nothing: tick-rate mismatch (a constant shift can't
+fix a rate error → a rate dimension in the scorer).
 
 **Pending after a strong survivor:** writer evidence → object base →
 sibling-coordinate local read → resolver classification (pointer path /
@@ -276,6 +302,14 @@ Budget and triggers (no further extension):
   weak verdict means — wide band at the true shift = scorer cannot express a
   ~1% tick-rate error (scorer limitation → archive-worthy) vs a capture
   error (fixable → retry within budget).
+
+**Budget outcome (2026-08-06, after FRESH21):** both budget sessions returned
+`verdict=evidence-strong` — the archive trigger (2 valid sessions with no
+strong survivor) did **not** fire. The verdict-stage budget is complete; the
+remaining live need is **arming + tracing the survivor** (the M1.5→M2
+handoff, FRESH22), which is M2's own live requirement rather than an
+extension of the verdict budget. The tick-rate probe remains the classifier
+if the armed trace still yields no writer evidence.
 
 ## Fallback paths (only if correlation is blocked, not merely slow)
 
