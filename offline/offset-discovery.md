@@ -124,6 +124,33 @@ rendering it, retain aggregate counts only, use a rolling baseline, and always
 discard the scanner session. Cheat Engine is optional local structural
 follow-up and never replaces the loopback offline gate.
 
+## M2 write-site evidence (strategy v4 tail)
+
+Primary path after M1 `evidence-strong` / solo-family arm. Full milestones:
+[`docs/operations/offset-discovery-roadmap.md`](../docs/operations/offset-discovery-roadmap.md),
+choreography:
+[`docs/operations/offset-discovery-m1-m2-choreography.md`](../docs/operations/offset-discovery-m1-m2-choreography.md).
+
+| Piece | Role |
+|-------|------|
+| `tools/WriteInterceptor` | x86 helper: PAGE_GUARD + debug attach; records RIP, RVA, registers, instruction bytes, attach-time `modules[]` |
+| `scripts/invoke-csharp-write-trace.ps1` | Arms family members, runs interceptor, writes durable `ResultPath.capture.json` + `.family.json` (`modules`, `writeSites`, member `rvas`) |
+| `src/WotBTreader.Core/Discovery/WriteSiteAnalysis.cs` | Pure offline: RIP→module+RVA, object-base candidates, sibling-read plan, resolver kind (unknown stays unknown) |
+| `tmpwotb-e2e/test-guard-interceptor.ps1` / `test-csharp-write-trace.ps1` | Offline mechanism + wrapper e2e (no game) |
+
+**Flow:** `od-049-autoloop` / `od-048` auto-trace → interceptor → **keep both**
+`.capture.json` and `.family.json` under local `.data` (never commit) → optional
+`WriteSiteAnalysis` on the capture for classification → Ghidra/static on RVAs
+when module ownership is known → sibling `POST /api/v1/game/discover/read`
+only under `OfflineReplayVerified`.
+
+**Do not:** reopen x64dbg write-BP; invent image bases for absolute RIPs without
+a module map; promote to `memory-offsets/` before M3 repeatability.
+
+**FRESH36 lesson:** first live hit report proved the mechanism; module map was
+ephemeral. Always republish the interceptor before the next live round.
+Spec: [`docs/superpowers/specs/2026-08-06-guard-page-write-interceptor.md`](../docs/superpowers/specs/2026-08-06-guard-page-write-interceptor.md).
+
 ## Evidence publication
 
 1. Discover candidate offsets (Ghidra `FindOffsets.py`/`.java`,

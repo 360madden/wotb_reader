@@ -58,6 +58,18 @@ full design specification.
   hypothesis stays quarantined. See `offline/replay-format.md`.
 - **Discovery workflow:** use [`docs/operations/offset-discovery-workflow.md`](docs/operations/offset-discovery-workflow.md)
   and append every attempt to [`docs/operations/offset-discovery-ledger.md`](docs/operations/offset-discovery-ledger.md).
+- **M2 write-site path (FRESH36+):** the C# guard-page interceptor
+  (`tools/WriteInterceptor`, x86 self-contained publish) is the live write-trace
+  path; x64dbg write-BP is closed. FRESH36 proved first real game hits (51 writes,
+  4 RIPs) but lost module/RVA/registers because the capture stayed under TEMP —
+  absolute RIPs alone cannot be mapped offline. Durable evidence is now
+  `ResultPath.capture.json` + `.family.json` (`modules`, `writeSites`, member
+  `rvas`) via `scripts/invoke-csharp-write-trace.ps1`. Pure offline analysis:
+  `Core/Discovery/WriteSiteAnalysis` (unit-tested). Next live: republish
+  interceptor, then `od-049-autoloop` with `-StageViewpointOnly` and
+  `-PlaybackSpeedEstimate 2.4`. Detail:
+  [`offline/offset-discovery.md`](offline/offset-discovery.md),
+  [`docs/operations/handoffs/2026-08-07-write-site-durable-evidence.md`](docs/operations/handoffs/2026-08-07-write-site-durable-evidence.md).
 
 ## Quickstart
 
