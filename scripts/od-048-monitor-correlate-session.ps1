@@ -71,14 +71,17 @@
   tight-band non-edge survivor is emitted as a single-member solo family,
   since the strongest artifact produced (FRESH12 0x1FC57238) was
   structurally excluded from every family), the driver IMMEDIATELY invokes
-  x64dbg-write-trace.ps1 -FamilyFile <this report> -AutoWriteTrace in the
-  same process/launch,
-  closing the human-reaction gap on the ~30s green window. The write-trace
-  result (exit code, hits, rips) is written to -AutoTraceResultPath
-  (default .data\od-048-autotrace-<timestamp>.json); the M1 report itself
-  is never re-written. The campaign exit code stays 0 even when the
-  auto-trace fails (a no-family / stale / paused verdict is recorded in
-  the auto-trace report, not treated as an M1 failure).
+  the write-trace in the same process/launch,
+  closing the human-reaction gap on the ~30s green window. The engine is
+  -TraceEngine: 'csharp' (default) drives the x86 WriteInterceptor helper
+  via scripts/invoke-csharp-write-trace.ps1 (arm PAGE_GUARD, capture every
+  write while the game keeps running - the x64dbg write-BP route is dead,
+  FRESH32/33); 'x64dbg' is the legacy opt-in via x64dbg-write-trace.ps1.
+  The write-trace result (exit code, hits, rips) is written to
+  -AutoTraceResultPath (default .data\od-048-autotrace-<timestamp>.json);
+  the M1 report itself is never re-written. The campaign exit code stays 0
+  even when the auto-trace fails (a no-family / stale / paused verdict is
+  recorded in the auto-trace report, not treated as an M1 failure).
 
 .EXITCODES
   0  Campaign completed; report written to .data\od-048-<timestamp>.json
@@ -176,12 +179,26 @@ param(
     # data, never tracked).
     [string]$ResultPath = '',
     # M2 automation: when the final correlate yields a usable family, invoke
-    # x64dbg-write-trace.ps1 -FamilyFile <report> -AutoWriteTrace immediately
-    # in the same process (the write-trace's liveness re-read REQUIRES the
-    # same game process, and the green window is the battle tail - there is
-    # no time for an operator). The auto-trace result report goes to
-    # -AutoTraceResultPath. No-op (with a log line) when no family survives.
+    # the write-trace immediately in the same process (the write-trace's
+    # liveness re-read REQUIRES the same game process, and the green window
+    # is the battle tail - there is no time for an operator). The auto-trace
+    # result report goes to -AutoTraceResultPath. No-op (with a log line)
+    # when no family survives.
     [switch]$AutoWriteTraceOnVerdict,
+    # Which write-trace engine the auto-trace invokes. 'csharp' (default) is
+    # the M2 successor: scripts/invoke-csharp-write-trace.ps1 drives the x86
+    # WriteInterceptor helper (tools/WriteInterceptor) - arm PAGE_GUARD on
+    # the pages holding the armed member addresses, attach as the process's
+    # only debugger, capture every write (RIP/value/registers) while the game
+    # KEEPS RUNNING (no breakin, no freeze - the WOW64 attach-freeze class is
+    # gone by construction). The x64dbg write-BP route is dead (FRESH32/33
+    # root-caused bpm/bph to never fire in this environment), so 'x64dbg'
+    # exists only as an explicit opt-in for legacy comparison runs - and the
+    # x64dbg attach-smoke gate (-AttachSmokeOnFirstRound) only runs for that
+    # engine, because a debugger left attached by the smoke would block the
+    # interceptor's DebugActiveProcess.
+    [ValidateSet('csharp', 'x64dbg')]
+    [string]$TraceEngine = 'csharp',
     # How long the auto-invoked write-trace keeps its window. Budget from the
     # choreography timing table: -MaxReadRounds 70 on Dead Rail leaves ~31s
     # of battle; 25 is the recommended first attempt. The operator may pass a
@@ -1173,6 +1190,16 @@ while ($round -lt $MaxReadRounds) {
     # A red smoke aborts BEFORE the correlate rounds and trace window are
     # spent, so a live defect is diagnosed as attach-vs-address, not an
     # undiagnosable no-hit run.
+    # The smoke is x64dbg-ENGINE ONLY: the C# interceptor (TraceEngine
+    # 'csharp', the default) attaches via DebugActiveProcess, which fails
+    # with ERROR_INVALID_PARAMETER when the process already has a debugger -
+    # a smoke that left x32dbg attached (KeepAttached) would block it, and
+    # the smoke exists to validate x64dbg-specific attach mechanics the
+    # interceptor does not use. Skipped for 'csharp' with a log line.
+    if ($TraceEngine -ne 'x64dbg' -and $AttachSmokeOnFirstRound -and -not $attachSmokeDone) {
+        Write-Od048 'attach_smoke skipped (TraceEngine=csharp - the interceptor validates its own attach offline; no x64dbg mechanics to pre-flight)'
+        $attachSmokeDone = $true
+    }
     $smokeElapsedSeconds = [Math]::Max(0.0, ([datetime]::UtcNow - $anchorUtc).TotalSeconds)
     # FRESH27b: fire the smoke ONLY on the last sampling round, not at round 2.
     # FRESH27 proved that sampling under an attached (kept) x32dbg warps the
@@ -1192,7 +1219,7 @@ while ($round -lt $MaxReadRounds) {
     if ($AttachSmokeOnFirstRound -and -not $attachSmokeDone -and $smokeDue) {
         Write-Od048 ('attach_smoke gate elapsed=' + [Math]::Round($smokeElapsedSeconds, 1) + 's min=' + $SmokeMinBattleSeconds + 's round=' + $round + ' readOk=' + $readOkSamples)
     }
-    if ($AttachSmokeOnFirstRound -and -not $attachSmokeDone -and $readOkSamples -gt 0 -and $smokeDue) {
+    if ($AttachSmokeOnFirstRound -and -not $attachSmokeDone -and $readOkSamples -gt 0 -and $smokeDue -and $TraceEngine -eq 'x64dbg') {
         $smokeScript = Join-Path $PSScriptRoot 'x64dbg-write-trace.ps1'
         if (-not (Test-Path -LiteralPath $smokeScript)) {
             Write-Od048 'attach_smoke FAILED script_missing'
@@ -2045,7 +2072,14 @@ if ($AutoWriteTraceOnVerdict) {
         Write-Od048 ('auto_write_trace SKIPPED no_usable_family verdict=' + $verdict + ' reason=' + $usableSkipReason)
     }
     else {
-        $wtScript = Join-Path $PSScriptRoot 'x64dbg-write-trace.ps1'
+        # TraceEngine selects the write-trace driver. 'csharp' (default) is
+        # the M2 successor: invoke-csharp-write-trace.ps1 drives the x86
+        # WriteInterceptor helper (tools/WriteInterceptor), which arms
+        # PAGE_GUARD and captures writes while the game keeps running - no
+        # x64dbg, no attach-freeze, no DR0-DR3 limit. 'x64dbg' is the legacy
+        # opt-in (the write-BP route is dead; kept for comparison runs).
+        $wtScript = if ($TraceEngine -eq 'x64dbg') { Join-Path $PSScriptRoot 'x64dbg-write-trace.ps1' }
+            else { Join-Path $PSScriptRoot 'invoke-csharp-write-trace.ps1' }
         if (-not (Test-Path -LiteralPath $wtScript)) {
             Write-Od048 ('auto_write_trace FAILED script_missing=' + $wtScript)
         }
@@ -2114,18 +2148,28 @@ if ($AutoWriteTraceOnVerdict) {
                 # FRESH22: same span floor on both gates so the solo member
                 # vetted here can never be refused there for the same reason.
                 MinMemberSpan        = $AutoTraceMinMemberSpan
-                # FRESH26 attach-once: when the smoke left its debugger
-                # attached, the trace reuses it (skips its own attach) - the
-                # second attach was the FRESH25 STOP_gate=Denied root cause.
-                ReuseAttached        = $smokeKeptAttached
+            }
+            # FRESH26 attach-once (x64dbg engine only): when the smoke left
+            # its debugger attached, the trace reuses it (skips its own
+            # attach) - the second attach was the FRESH25 STOP_gate=Denied
+            # root cause. The C# interceptor never accepts a pre-attached
+            # debugger (DebugActiveProcess fails when the process already
+            # has one), so ReuseAttached is passed only to the x64dbg driver.
+            if ($TraceEngine -eq 'x64dbg') {
+                $wtArgs.ReuseAttached = $smokeKeptAttached
             }
             if ($wtSkipped) {
                 $wtExit = 0
                 Write-Od048 ('auto_write_trace skipped (battle-ended/gate-lost) - window not spent')
             }
             else {
-                if ($AutoTraceSkipPlayProbe) { $wtArgs.SkipPlayProbe = $true }
-                if ($AutoTraceSkipLivenessCheck) { $wtArgs.SkipLivenessCheck = $true }
+                # The skip probes are x64dbg-engine diagnostics (they exercise
+                # the UIA attach/play-state mechanics); the C# interceptor has
+                # no such mechanics, so they are passed only to x64dbg.
+                if ($TraceEngine -eq 'x64dbg') {
+                    if ($AutoTraceSkipPlayProbe) { $wtArgs.SkipPlayProbe = $true }
+                    if ($AutoTraceSkipLivenessCheck) { $wtArgs.SkipLivenessCheck = $true }
+                }
                 try {
                     & $wtScript @wtArgs
                     $wtExit = $LASTEXITCODE
@@ -2138,6 +2182,7 @@ if ($AutoWriteTraceOnVerdict) {
             }
             $autoTrace = [ordered]@{
                 invokedUtc  = ([DateTime]::UtcNow).ToString('o')
+                engine      = $TraceEngine
                 script      = $wtScript
                 familyFile  = $ResultPath
                 traceSeconds = $traceSeconds
