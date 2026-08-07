@@ -96,7 +96,7 @@ scripts/od-048-monitor-correlate-session.ps1
 **Exit:** ≥ 1 strong survivor. If neither of the 2 sessions produces one,
 **stop** — descope per the strategy stop rules.
 
-### M1.5 — Viewpoint-first discovery pivot (2026-08-06) — ✅ implemented offline, ✅ SIX strong live verdicts (FRESH20–25) + attach-once fix, ⏳ trace window under attach-once → first hit report (FRESH26)
+### M1.5 — Viewpoint-first discovery pivot (2026-08-06) — ✅ implemented offline, ✅ strong live verdicts (FRESH20–25), ❌ x64dbg write-trace capture route CLOSED (FRESH26–33, root-caused — see M2)
 
 **Pivot:** find ONE highly discriminating live coordinate of the **viewpoint
 player** by correlating its observed value history against the decoded
@@ -198,19 +198,26 @@ it; an 8-round campaign now completes (`NO_CRASH`, report written). This bug
 would have crashed EVERY sharp-sweep run — FRESH18's 173-result array masked
 it.
 
-**Remaining live gate (FRESH26):** the mechanism question is settled — FRESH24
-ruled out a frozen window (liveness=running) and FRESH25 found the actual
-killer: the trace's SECOND x64dbg attach (fresh re-pre-arm at trace time)
-freezes the game and the host monitor denies the gate before the window
-opens. The **attach-once fix** (smoke keeps one debugger via scriptrun-resume,
-trace reuses it, no second attach) is implemented + offline-validated.
-FRESH26 — the first trace under attach-once — should produce the first
-`odwt-*.bin` hit report (writer RIP/RVA, base register, displacement,
-nearby-object dump) and finally answer the FRESH24 value-liveness question
-(`window_values_changed=true|false` on a window that actually runs). If the
-armed consensus still yields nothing, the open science question (tick-rate
-mismatch → a rate dimension in the
-scorer) remains as the last resort.
+**Live outcome FRESH26–33 (2026-08-06) — x64dbg capture route CLOSED.**
+FRESH26–33 (attach-once + every fix) ran clean end-to-end every time —
+anchor, staging, rounds, smoke-kept-debugger, evidence-strong x-consensus,
+`reused_attached_debugger`, `values_changed=true` (14.8–22.5 units, world
+advancing), `m1_exit=0` — and produced **zero capture on every channel**
+(no engine log, no BP log, no savedata hit file). The FRESH32/33 diagnostic
+probes root-caused it at the mechanism level (full chain:
+[`handoffs/2026-08-06-fresh32-33-x64dbg-write-bp-route-dead.md`](handoffs/2026-08-06-fresh32-33-x64dbg-write-bp-route-dead.md)):
+(1) every UIA log read was reading UI chrome (`Name`), not log text
+(`DataItem` `Value`) — so `bpmArmed`/`ODWT_ARMED` verifications read noise;
+(2) in-script `bpm 0x…,1,w` fails with `Error executing command!` — the
+memory BP never arms, so nothing can ever capture; (3) `bpm` AND `bph` never
+fire even via the command bar on a synthetic target writing to a known
+address in a tight loop (all 4 syntax variants); (4) the counter target runs
+6 threads — worker-thread writes escape main-thread DR hardware BPs, and the
+game's position writes almost certainly do the same. Earlier "proofs"
+(`static-hit.bin`, "hits landed 3/3") are ambiguous or from the resume
+campaign, not BP capture. **Decision (CAP discipline): stop x64dbg live
+runs; the M2 successor is a C#-native guard-page write interceptor (below).
+The M1 address-level evidence stands as the interim result.**
 
 **Pending after a strong survivor:** writer evidence → object base →
 sibling-coordinate local read → resolver classification (pointer path /
@@ -251,8 +258,22 @@ object relationship / code signature).
 3. First `{rip}`-named evidence file → the writing instruction → member
    displacement.
 
+> **M2 pivot — x64dbg write-BP route CLOSED (2026-08-06, `882227b`).** The
+> x64dbg write-breakpoint capture is conclusively non-functional in this
+> environment (see M1.5 live outcome above + the FRESH32/33 handoff). The
+> write-trace script remains as a documented tool but no live session may be
+> spent on it. **Successor: C#-native guard-page write interceptor** —
+> `VirtualProtect(PAGE_GUARD)` on the armed page + debug-event handling
+> (`DebugActiveProcess`/`DebugActiveProcessStop` + `WaitForDebugEvent`,
+> catching `STATUS_GUARD_PAGE_VIOLATION`) + `GetThreadContext` on the
+> faulting thread → RIP = write site → single-step past + re-arm + record.
+> Lives inside the sanctioned UltimateScanner/GameIntegration Win32
+> allowlist; buildable and testable offline against a synthetic target
+> before any live session (the original M2 mandate).
+
 **Exit:** ≥ 1 write hit with an instruction expressing a member displacement
-(e.g. `movss [reg+0x28], xmm0`); else descope.
+(e.g. `movss [reg+0x28], xmm0`) captured by the C# guard-page interceptor;
+else descope per the archive action.
 
 > **Same-launch choreography (2026-08-05):** the DAVA viewer has **no rewind**
 > and no replay hot-swap (seek-forward-only; selecting a replay reinitializes

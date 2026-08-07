@@ -120,8 +120,23 @@ amendment.
   (fail-closed exit 8 on a stale family from a fresh launch), arms 4-byte
   write breakpoints on the member addresses, holds the trace window, and
   writes a per-member hit report (`<ResultPath>.family.json`) with a
-  `family-hit`/`family-no-hit` verdict. The only remaining live step is the
-  operator-run trace on a surviving family.
+  `family-hit`/`family-no-hit` verdict.
+
+  **M2 pivot (2026-08-06, `882227b`): the x64dbg write-BP route is CLOSED.**
+  FRESH26–33 ran the full fixed stack cleanly every time (evidence-strong
+  consensus, reused debugger, values_changed=true, m1_exit=0) with zero
+  capture on every channel; the FRESH32/33 probes root-caused it: in-script
+  `bpm` errors (`Error executing command!`), `bpm`/`bph` never fire even via
+  the command bar on a constantly-writing synthetic target, worker-thread
+  writes escape main-thread DR hardware BPs, and every UIA log read was
+  reading chrome names, not log text (full chain:
+  [`handoffs/2026-08-06-fresh32-33-x64dbg-write-bp-route-dead.md`](handoffs/2026-08-06-fresh32-33-x64dbg-write-bp-route-dead.md)).
+  No live session may be spent on x64dbg. **Successor: a C#-native
+  guard-page write interceptor** (PAGE_GUARD + debug-event handling +
+  GetThreadContext RIP) inside the UltimateScanner/GameIntegration Win32
+  allowlist, buildable + testable offline before any live session. The M1
+  address-level evidence (strong correlate + value-liveness on a moving
+  world) stands as the interim result.
 
   **Same-launch constraint (2026-08-05):** the DAVA viewer has **no rewind**
   (seek-forward-only) and no replay hot-swap, and `roll-replay-time-increased.ps1`
