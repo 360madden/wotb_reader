@@ -275,7 +275,22 @@ param(
     # shift is ~0 instead of -50s (unreachable by the +/-30s sweep - the
     # FRESH15j edge-aligned-all-results signature).
     [double]$AttendanceLatencySeconds = 50.0,
-    [string]$RepoRoot = ''
+    [string]$RepoRoot = '',
+    # FRESH30 post-mortem (OD-RECOVERY-051): the decoded-duration battle-end
+    # model ran ~3.5 minutes past the REAL battle end (blitz log onLeaveWorld),
+    # so the smoke fired 26s after the battle was over and the trace invoked
+    # 70s after, into a dead world whose log had gone silent -> the host
+    # monitor revoked -> STOP_gate=Denied exit 5 with zero window time. The
+    # driver therefore watches the newest blitz log for the real battle-end
+    # signature (player onLeaveWorld / OnLeaveBattle) and (a) stops the round
+    # loop early with 'battle-ended-log' instead of trusting the model, and
+    # (b) BEFORE invoking the auto-trace, re-verifies the gate is still
+    # OfflineReplayVerified AND the log shows no battle-end; otherwise it
+    # skips the trace with a clean 'battle-ended-skip' verdict (exit 0)
+    # instead of burning the window on a guaranteed denial. Fail-closed: the
+    # watcher+skip are ON unless this switch is passed (opt-in escape hatch
+    # only for offline runs where the blitz log cannot be resolved).
+    [switch]$AllowTraceAfterBattleEnd
 )
 
 Set-StrictMode -Version Latest
@@ -494,6 +509,74 @@ function Test-FiniteDouble {
 # re-emits them as shiftBandMin/MaxSeconds. Used by the FRESH14 solo-family
 # emission to rank strong survivors by band width and gate emission on the
 # band floor.
+# FRESH30 post-mortem (OD-RECOVERY-051): find the newest blitz log and
+# return $true when it shows the battle has ACTUALLY ended (the player's
+# vehicle left the world, or the battle controller left the battle). The
+# decoded-duration model overestimates the real wall-clock battle end by
+# ~3.5 minutes on the rolled/accelerated launch replay, so the log is the
+# only evidence-first source of the real end. Reads the newest blitz-logs_*
+# file under the WotBlitz DAVAProject dir (falling back to $RepoRoot/.data
+# for offline tests) and scans only lines at/after $AnchorUtc to avoid
+# matching the PREVIOUS battle's teardown in the same file.
+function Test-BlitzBattleEnded {
+    [CmdletBinding()]
+    param(
+        [string]$AnchorUtc = ''
+    )
+    $log = Get-NewestBlitzLog
+    if (-not $log) { return $false }
+    try {
+        $anchor = [datetime]::MinValue
+        if (-not [string]::IsNullOrWhiteSpace($AnchorUtc)) {
+            $anchor = [datetime]::Parse(
+                $AnchorUtc,
+                [Globalization.CultureInfo]::InvariantCulture,
+                ([Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal))
+        }
+        # The blitz log's leading timestamp is UTC wall clock (the host
+        # lifecycle parser reads it with AssumeUniversal). Replay stop is
+        # 'STOP_REPLAY_LOCAL' / the player vehicle leaving the world; battle
+        # end is the player's onLeaveWorld or OnLeaveBattle. Match the player
+        # (isPlayer: 1) to avoid false positives from destroyed enemy tanks.
+        foreach ($line in @(Get-Content -LiteralPath $log -ErrorAction SilentlyContinue)) {
+            if ($line -match '^(\d{2}:\d{2}:\d{2})') {
+                $lineUtc = [datetime]::ParseExact($Matches[1], 'HH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
+                # Anchor-date from the log file name (same convention as the
+                # autoloop anchor): the file name embeds the local write date.
+                if ($lineUtc -lt $anchor) { continue }
+            }
+            if ($line -match 'STOP_REPLAY_LOCAL|Stop replay event|ReplayRecorder::StopRecording') {
+                return $true
+            }
+            if ($line -match 'VehicleGameLogic::onLeaveWorld.*isPlayer: 1') {
+                return $true
+            }
+            if ($line -match 'BattleController::OnLeaveBattle') {
+                return $true
+            }
+        }
+    }
+    catch { }
+    return $false
+}
+
+# Newest blitz log under the game's DAVAProject dir, or a test fixture under
+# $RepoRoot/.data if the game dir is unavailable (offline validation only).
+function Get-NewestBlitzLog {
+    $candidates = @()
+    try {
+        $gameDir = Join-Path $env:LOCALAPPDATA 'wotblitz\DAVAProject'
+        $candidates += @(Get-ChildItem -LiteralPath $gameDir -Filter 'blitz-logs_*.txt' -ErrorAction SilentlyContinue)
+    }
+    catch { }
+    $fixtureDir = Join-Path $RepoRoot '.data\blitz-logs'
+    if (Test-Path -LiteralPath $fixtureDir) {
+        $candidates += @(Get-ChildItem -LiteralPath $fixtureDir -Filter 'blitz-logs_*.txt' -ErrorAction SilentlyContinue)
+    }
+    if ($candidates.Count -eq 0) { return $null }
+    return ($candidates | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+}
+
 function Get-SurvivorBandWidth {
     param([object]$Result)
     $minB = $null
@@ -1066,6 +1149,17 @@ while ($round -lt $MaxReadRounds) {
     if ($null -ne $monitorExitUtc -and ([datetime]::UtcNow -gt $monitorExitUtc)) {
         $stoppedReason = 'battle-ended'
         Write-Od048 'monitor_stop battle-ended'
+        break
+    }
+
+    # FRESH30 post-mortem (OD-RECOVERY-051): the decoded-duration model ran
+    # ~3.5 min past the REAL battle end, so rounds 40-49 sampled a dead world
+    # and the smoke fired after the battle was over. Watch the blitz log for
+    # the real end and stop early -- the correlate still runs on the live
+    # samples, and the pre-trace gate recheck (below) skips the trace.
+    if (-not $AllowTraceAfterBattleEnd -and (Test-BlitzBattleEnded -AnchorUtc $replayStartWallUtc)) {
+        $stoppedReason = 'battle-ended-log'
+        Write-Od048 'monitor_stop battle-ended-log (blitz log shows player left the world)'
         break
     }
 
@@ -1975,7 +2069,29 @@ if ($AutoWriteTraceOnVerdict) {
             if ($traceSeconds -ne $AutoTraceSeconds) {
                 Write-Od048 ('auto_write_trace window_adjusted requested={0} tail={1}s -> {2}s' -f $AutoTraceSeconds, [int]$tailSeconds, $traceSeconds)
             }
-            Write-Od048 ('auto_write_trace INVOKING verdict=' + $verdict + ' family_complete=' + $completeFamilies.Count + ' trace_s=' + $traceSeconds)
+            # FRESH30 post-mortem (OD-RECOVERY-051): re-verify the gate is
+            # still OfflineReplayVerified AND the blitz log shows no battle
+            # end BEFORE invoking. FRESH30's trace invoked 70s after the real
+            # battle end (decoded-duration model was ~3.5 min late), the host
+            # monitor had already revoked, and the first gate poll read Denied
+            # -> exit 5 with zero window time. Skipping here preserves the
+            # strong M1 verdict and writes a clean reason instead of burning
+            # the window on a guaranteed denial.
+            $wtSkipped = $false
+            $wtSkipReason = ''
+            if (-not $AllowTraceAfterBattleEnd) {
+                $gateNow = Get-GateState -Rendezvous $rendezvous
+                $gateNowDiag = if ($null -eq $gateNow) { 'no-host' } else { [string]$gateNow.verificationState }
+                $logEnded = Test-BlitzBattleEnded -AnchorUtc $replayStartWallUtc
+                if ($null -eq $gateNow -or $gateNow.verificationState -ne 'OfflineReplayVerified' -or $logEnded) {
+                    $wtSkipped = $true
+                    $wtSkipReason = ('gate=' + $gateNowDiag + ' log_battle_ended=' + $logEnded)
+                    Write-Od048 ('auto_write_trace SKIPPED battle_ended_or_gate_lost ' + $wtSkipReason)
+                }
+            }
+            if (-not $wtSkipped) {
+                Write-Od048 ('auto_write_trace INVOKING verdict=' + $verdict + ' family_complete=' + $completeFamilies.Count + ' trace_s=' + $traceSeconds)
+            }
             # Hashtable splat, NOT an array: PowerShell array-splatting of
             # '-Name value' pairs misaligns argument binding (a switch in the
             # middle shifts the following value onto the wrong parameter --
@@ -2003,17 +2119,23 @@ if ($AutoWriteTraceOnVerdict) {
                 # second attach was the FRESH25 STOP_gate=Denied root cause.
                 ReuseAttached        = $smokeKeptAttached
             }
-            if ($AutoTraceSkipPlayProbe) { $wtArgs.SkipPlayProbe = $true }
-            if ($AutoTraceSkipLivenessCheck) { $wtArgs.SkipLivenessCheck = $true }
-            try {
-                & $wtScript @wtArgs
-                $wtExit = $LASTEXITCODE
+            if ($wtSkipped) {
+                $wtExit = 0
+                Write-Od048 ('auto_write_trace skipped (battle-ended/gate-lost) - window not spent')
             }
-            catch {
-                $wtExit = -1
-                Write-Od048 ('auto_write_trace THREW ' + $_.Exception.Message)
+            else {
+                if ($AutoTraceSkipPlayProbe) { $wtArgs.SkipPlayProbe = $true }
+                if ($AutoTraceSkipLivenessCheck) { $wtArgs.SkipLivenessCheck = $true }
+                try {
+                    & $wtScript @wtArgs
+                    $wtExit = $LASTEXITCODE
+                }
+                catch {
+                    $wtExit = -1
+                    Write-Od048 ('auto_write_trace THREW ' + $_.Exception.Message)
+                }
+                Write-Od048 ('auto_write_trace exit=' + $wtExit)
             }
-            Write-Od048 ('auto_write_trace exit=' + $wtExit)
             $autoTrace = [ordered]@{
                 invokedUtc  = ([DateTime]::UtcNow).ToString('o')
                 script      = $wtScript
@@ -2030,11 +2152,13 @@ if ($AutoWriteTraceOnVerdict) {
                 # exit 2 is shared with input failures (file missing, unparse,
                 # no families, no armed members) - the stdout line (captured in
                 # the campaign log) disambiguates, so the verdict stays neutral.
-                verdict     = if ($wtExit -eq 0) { 'trace-complete' }
+                verdict     = if ($wtSkipped) { 'battle-ended-skip' }
+                    elseif ($wtExit -eq 0) { 'trace-complete' }
                     elseif ($wtExit -eq 2) { 'trace-refused-exit2' }
                     elseif ($wtExit -eq 7) { 'trace-replay-paused' }
                     elseif ($wtExit -eq 8) { 'trace-family-stale' }
                     else { 'trace-failed' }
+                skipReason  = $wtSkipReason
             }
             try {
                 $atJson = $autoTrace | ConvertTo-Json -Depth 6

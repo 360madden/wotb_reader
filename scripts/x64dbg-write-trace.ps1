@@ -1034,9 +1034,15 @@ function Invoke-AttachSmoke {
         $settleRounds = 0
         while ((Get-Date) -lt $deadline) {
             $settleRounds++
-            $ta = $game.TotalProcessorTime
+            $ta = $null
+            $tb = $null
+            try { $ta = $game.TotalProcessorTime } catch { }
             Start-Sleep -Milliseconds 1200
-            $tb = $game.TotalProcessorTime
+            try { $tb = $game.TotalProcessorTime } catch { }
+            if ($null -eq $ta -or $null -eq $tb) {
+                # Dead process (WOW64 attach can kill the game outright).
+                return $false
+            }
             if ((($tb - $ta).TotalMilliseconds) -gt 0) {
                 Write-Wt ('attach_smoke keep_attached resume_settle_rounds=' + $settleRounds + ' verified=True')
                 return $true
@@ -1106,9 +1112,21 @@ function Invoke-AttachSmoke {
         $pauseRounds = 0
         while ((Get-Date) -lt $pauseDeadline -and -not $report.pauseVerified) {
             $pauseRounds++
-            $t0 = $game.TotalProcessorTime
+            # FRESH30: TotalProcessorTime reads throw/null once the process
+            # EXITS (the WOW64 attach can kill the game outright - the
+            # 'TotalMilliseconds cannot be found' error was a dead-process
+            # mask). Guard both reads so a dead game produces a clean
+            # diagnostic, not a confusing property error.
+            $t0 = $null
+            $t1 = $null
+            try { $t0 = $game.TotalProcessorTime } catch { }
             Start-Sleep -Milliseconds 1200
-            $t1 = $game.TotalProcessorTime
+            try { $t1 = $game.TotalProcessorTime } catch { }
+            if ($null -eq $t0 -or $null -eq $t1) {
+                $report.detail = 'game_exited_during_attach (process handle stale)'
+                Write-Wt ('attach_smoke pause FAILED game_exited t0=' + ($null -ne $t0) + ' t1=' + ($null -ne $t1))
+                break
+            }
             $report.pauseVerified = (($t1 - $t0).TotalMilliseconds) -lt 5
             if ($report.pauseVerified -and -not $report.pauseStartUtc) {
                 $report.pauseStartUtc = ([DateTime]::UtcNow).ToString('o')
@@ -1176,10 +1194,12 @@ function Invoke-AttachSmoke {
         $settleRounds = 0
         while ((Get-Date) -lt $resumeDeadline -and -not $resumeVerified) {
             $settleRounds++
-            $ta = $game.TotalProcessorTime
+            $ta = $null
+            $tb = $null
+            try { $ta = $game.TotalProcessorTime } catch { }
             Start-Sleep -Milliseconds 1200
-            $tb = $game.TotalProcessorTime
-            $resumeVerified = (($tb - $ta).TotalMilliseconds) -gt 0
+            try { $tb = $game.TotalProcessorTime } catch { }
+            $resumeVerified = ($null -ne $ta -and $null -ne $tb -and (($tb - $ta).TotalMilliseconds) -gt 0)
             if ($resumeVerified) { $report.resumeUtc = ([DateTime]::UtcNow).ToString('o') }
             if (-not $resumeVerified) { Start-Sleep -Milliseconds 800 }
         }
