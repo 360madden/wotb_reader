@@ -20,10 +20,11 @@ param(
     # wall->tick from (marker + attendance), so the needed shift is ~0.
     [double]$AttendanceLatencySeconds = 50.0,
     # FRESH35: replay playback speed (decoded seconds per wall second).
-    # FRESH34 measured 2.03x on the accelerated launch; pass the measured
-    # value once a session records it so the fire-by deadline lands the trace
-    # inside the live battle instead of on the result screen.
-    [double]$PlaybackSpeedEstimate = 1.0,
+    # Every FRESH session measured 2.01-2.03x on the accelerated launch; the
+    # 1x model overshoots the real wall end by ~2.5 min and the trace fires
+    # on the result screen. Over-estimating fires the trace EARLIER (still a
+    # live, moving world) - strictly safer than firing late.
+    [double]$PlaybackSpeedEstimate = 2.0,
     [double]$TraceStartupSeconds = 20.0,
     # FRESH19: correlate shift-sweep half-width (passed through). FRESH18
     # proved the 50s attendance estimate is per-replay -- the z axis wanted a

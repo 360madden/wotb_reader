@@ -319,9 +319,12 @@ param(
     # shows the real battle end (Get-BlitzRealWindow), the real end wins and
     # this estimate is unused; when the log has not yet shown it (battle
     # still live), the budget predicts realEnd = realMatchBegin + decoded /
-    # speed. Default 1.0 keeps the historical behavior; pass the measured
-    # speed (~2.0) once a session records playbackSpeed in the report.
-    [double]$PlaybackSpeedEstimate = 1.0,
+    # speed. Default 2.0 is the MEASURED playback across every FRESH session
+    # (2.01-2.03x on the rolled launch replay; the model's 1x overshoots the
+    # real wall end by ~2.5 min and the trace fires on the result screen).
+    # Over-estimating the speed fires the trace EARLIER (still a live,
+    # moving world) - strictly safer than firing late.
+    [double]$PlaybackSpeedEstimate = 2.0,
     # FRESH35: wall-clock budget from the fire-by deadline to the moment the
     # interceptor is armed and writing: the final correlate round-trip +
     # verdict + wrapper launch + interceptor attach. The monitor loop stops
@@ -581,7 +584,12 @@ function Convert-BlitzLogLineUtc {
     param(
         [string]$Line,
         [datetime]$Anchor,
-        [datetime]$AnchorDate
+        [datetime]$AnchorDate,
+        # Upper bound on a line's accepted time. Defaults to +24h (no-op);
+        # Get-BlitzRealWindow passes a duration-aware horizon so a previous
+        # battle's lines (hours away) can never be accepted as THIS battle's
+        # evidence, in either heuristic direction.
+        [datetime]$HorizonUtc = [datetime]::MaxValue
     )
     if ($Line -notmatch '^(\d{2}:\d{2}:\d{2})') { return [datetime]::MinValue }
     $lineUtc = [datetime]::SpecifyKind(
@@ -603,6 +611,7 @@ function Convert-BlitzLogLineUtc {
         }
     }
     if ($lineUtc -lt $Anchor) { return [datetime]::MinValue }
+    if ($lineUtc -gt $HorizonUtc) { return [datetime]::MinValue }
     return $lineUtc
 }
 
@@ -632,6 +641,12 @@ function Get-BlitzRealWindow {
         $logItem = Get-Item -LiteralPath $log -ErrorAction SilentlyContinue
         if ($null -ne $logItem) { $result.LogStaleUtc = $logItem.LastWriteTimeUtc }
         $anchorDate = if ($anchor -eq [datetime]::MinValue) { ([datetime]::UtcNow).Date } else { $anchor.Date }
+        # Horizon for line acceptance: anchor + 4x decoded duration + 900s
+        # slack covers any plausible playback speed (0.25x-8x) while rejecting
+        # previous-battle lines hours away in either heuristic direction (a
+        # line parsing AFTER the anchor that is really yesterday's, or a
+        # same-day previous-battle line the 6h promotion would over-reach).
+        $horizonUtc = if ($anchor -eq [datetime]::MinValue) { [datetime]::MaxValue } else { $anchor.AddSeconds([double]$DecodedDurationSeconds * 4.0 + 900.0) }
         # Pass 1: find the LAST 'LoadGameScene ends' at/after the anchor. The
         # replay sequence is Start marker -> scene load (hangar->replay
         # transition, whose teardown logs the player's onLeaveWorld) -> the
@@ -641,19 +656,22 @@ function Get-BlitzRealWindow {
         $lines = @(Get-Content -LiteralPath $log -ErrorAction SilentlyContinue)
         $finalMatchBegin = [datetime]::MinValue
         foreach ($line in $lines) {
-            $lineUtc = Convert-BlitzLogLineUtc -Line $line -Anchor $anchor -AnchorDate $anchorDate
+            $lineUtc = Convert-BlitzLogLineUtc -Line $line -Anchor $anchor -AnchorDate $anchorDate -HorizonUtc $horizonUtc
             if ($lineUtc -eq [datetime]::MinValue) { continue }
             if ($line -match 'BattleController::LoadGameScene ends') {
                 $finalMatchBegin = $lineUtc
             }
         }
         $result.MatchBeginUtc = $finalMatchBegin
+        if ($finalMatchBegin -eq [datetime]::MinValue -and $lines.Count -gt 0) {
+            Write-Od048 'WARNING blitz_log_no_match_begin (no LoadGameScene ends at/after anchor) - log evidence unusable this round'
+        }
         # Pass 2: end markers AT/AFTER the final match begin only. The
         # hangar->replay transition teardown (before the real scene) can never
         # false-positive now: it predates the final LoadGameScene ends.
         if ($finalMatchBegin -ne [datetime]::MinValue) {
             foreach ($line in $lines) {
-                $lineUtc = Convert-BlitzLogLineUtc -Line $line -Anchor $anchor -AnchorDate $anchorDate
+                $lineUtc = Convert-BlitzLogLineUtc -Line $line -Anchor $anchor -AnchorDate $anchorDate -HorizonUtc $horizonUtc
                 if ($lineUtc -eq [datetime]::MinValue -or $lineUtc -lt $finalMatchBegin) { continue }
                 if ($line -match 'VehicleGameLogic::onLeaveWorld') {
                     $result.BattleActivitySeen = $true
@@ -681,10 +699,21 @@ function Get-BlitzRealWindow {
             $wallSeconds = ($endEvidenceUtc - $result.MatchBeginUtc).TotalSeconds
             if ($wallSeconds -gt 1.0 -and $DecodedDurationSeconds -gt 0) {
                 $result.PlaybackSpeed = $DecodedDurationSeconds / $wallSeconds
+                # Degenerate-window guard: a wall span of a few seconds for a
+                # 271s decoded battle (~135x) means the end evidence is spurious
+                # (e.g. the log mtime raced a live battle or a mid-battle write
+                # gap). A real replay plays 0.5x-8x; outside that the speed is
+                # unusable and callers must fall back to the estimate - never
+                # let a nonsense speed drive the fire-by deadline.
+                if ($result.PlaybackSpeed -gt 10.0 -or $result.PlaybackSpeed -lt 0.1) {
+                    $result.PlaybackSpeed = $null
+                }
             }
         }
     }
-    catch { }
+    catch {
+        Write-Od048 ('blitz_log_window_error ' + $_.Exception.Message)
+    }
     return $result
 }
 
@@ -1075,7 +1104,23 @@ $realMatchBeginUtc = $realWindow.MatchBeginUtc
 # time (FRESH34: no stop marker - the log just stops at the last death; the
 # last write IS the end evidence, and PlaybackSpeed already used it).
 $realBattleEndUtc = $realWindow.EndUtc
-if ($realBattleEndUtc -eq [datetime]::MinValue -and $realWindow.LogStaleUtc -gt $realMatchBeginUtc) {
+# Silence-derived end ONLY when the log is genuinely silent (>20s since its
+# last write), the battle produced activity, and the window yielded a sane
+# playback speed. At driver start the game is ACTIVELY writing (transition
+# scene lines), so LogStaleUtc ~= now: treating that as battle end would set
+# battleEndUtc = now and stop the monitor at round 1 with a past fire-by
+# deadline (the bug fixed here). A mid-battle write gap is gated by the
+# activity requirement (deaths must have begun) and the speed clamp in
+# Get-BlitzRealWindow.
+$logStaleSeconds = if ($realWindow.LogStaleUtc -ne [datetime]::MinValue) { ([datetime]::UtcNow - $realWindow.LogStaleUtc).TotalSeconds } else { -1.0 }
+# Monotonic-forward guard: the silence-derived end must be LATER than the
+# current model end. A mid-battle early death + write gap (the log is
+# event-driven; FRESH34 had 20-87s gaps as the norm) would otherwise fake a
+# battle end at matchBegin+40s and stop the monitor at round 1. A genuine
+# end near the estimate passes; a faster-than-estimate battle's early end is
+# rejected and handled by the battle-ended-log break instead (the trace
+# genuinely cannot fit in a shorter battle).
+if ($realBattleEndUtc -eq [datetime]::MinValue -and $realWindow.LogStaleUtc -gt $realMatchBeginUtc -and $realWindow.LogStaleUtc -gt $battleEndUtc -and $realWindow.BattleActivitySeen -and $logStaleSeconds -gt 20.0 -and $null -ne $realWindow.PlaybackSpeed) {
     $realBattleEndUtc = $realWindow.LogStaleUtc
 }
 $measuredPlaybackSpeed = $realWindow.PlaybackSpeed
@@ -1087,12 +1132,16 @@ if ($realBattleEndUtc -ne [datetime]::MinValue) {
     Write-Od048 ('real_battle_end=' + $realBattleEndUtc.ToString('o') + ' measured_playback_speed=' + $(if ($null -ne $measuredPlaybackSpeed) { [Math]::Round($measuredPlaybackSpeed, 2) } else { 'n/a' }))
     $battleEndUtc = $realBattleEndUtc
 }
-elseif ($PlaybackSpeedEstimate -gt 0 -and $null -ne $battleEndUtc -and $realMatchBeginUtc -ne [datetime]::MinValue) {
+elseif ($PlaybackSpeedEstimate -gt 0 -and $null -ne $battleEndUtc) {
     # Battle still live: predict the end so the fire-by deadline can stop the
     # monitor in time. (Decoded-duration model at 1x would overshoot by the
-    # playback factor; the estimate absorbs it.)
-    $battleEndUtc = $realMatchBeginUtc.AddSeconds($durationSeconds / $PlaybackSpeedEstimate)
-    Write-Od048 ('battle_end_estimated_speed=' + $PlaybackSpeedEstimate + ' end=' + $battleEndUtc.ToString('o'))
+    # playback factor; the estimate absorbs it.) When the log has not yet
+    # shown the real match begin (driver start: transition scene lines are
+    # pre-anchor), fall back to the model begin - the monitor loop refresh
+    # corrects to the real scene end the moment it appears.
+    $estimateBeginUtc = if ($realMatchBeginUtc -ne [datetime]::MinValue) { $realMatchBeginUtc } else { $battleStartUtc }
+    $battleEndUtc = $estimateBeginUtc.AddSeconds($durationSeconds / $PlaybackSpeedEstimate)
+    Write-Od048 ('battle_end_estimated_speed=' + $PlaybackSpeedEstimate + ' begin=' + $estimateBeginUtc.ToString('o') + ' end=' + $battleEndUtc.ToString('o'))
 }
 $monitorMinSeconds = 30.0
 $stagingDeadlineUtc = $null
@@ -1359,6 +1408,30 @@ while ($round -lt $MaxReadRounds) {
         $battleEndUtc = $rwNow.EndUtc
         $measuredPlaybackSpeed = $rwNow.PlaybackSpeed
         $traceFireByUtc = $battleEndUtc.AddSeconds(-($TraceStartupSeconds + [double]$AutoTraceSeconds))
+    }
+    elseif ($null -ne $rwNow.PlaybackSpeed -and $rwNow.MatchBeginUtc -ne [datetime]::MinValue -and $rwNow.BattleActivitySeen -and (([datetime]::UtcNow - $rwNow.LogStaleUtc).TotalSeconds -gt 20.0)) {
+        # Silence-derived real end (log stopped at the last death, no stop
+        # marker - the FRESH34 shape): snap the fire-by deadline to the
+        # measured speed instead of the estimate. Activity + genuine silence
+        # + monotonic-forward (the candidate must be LATER than the current
+        # end) gate it, so a mid-battle early death + write gap can never
+        # fake an early end and stop the monitor prematurely.
+        $silenceEndUtc = $rwNow.MatchBeginUtc.AddSeconds($durationSeconds / $rwNow.PlaybackSpeed)
+        if ($silenceEndUtc -gt $battleEndUtc) {
+            $battleEndUtc = $silenceEndUtc
+            $measuredPlaybackSpeed = $rwNow.PlaybackSpeed
+            $traceFireByUtc = $battleEndUtc.AddSeconds(-($TraceStartupSeconds + [double]$AutoTraceSeconds))
+            Write-Od048 ('real_battle_end_silence_speed=' + [Math]::Round($rwNow.PlaybackSpeed, 2) + ' end=' + $battleEndUtc.ToString('o'))
+        }
+    }
+    elseif ($PlaybackSpeedEstimate -gt 0 -and $rwNow.MatchBeginUtc -ne [datetime]::MinValue -and $null -ne $battleEndUtc) {
+        # Real match begin visible (the scene end appears seconds after the
+        # anchor): correct the model's battle end to the real begin BEFORE the
+        # fire-by deadline is reached - the budget-time estimate used the
+        # model begin (anchor+attendance), which overshoots on a 2x replay.
+        $battleEndUtc = $rwNow.MatchBeginUtc.AddSeconds($durationSeconds / $PlaybackSpeedEstimate)
+        $traceFireByUtc = $battleEndUtc.AddSeconds(-($TraceStartupSeconds + [double]$AutoTraceSeconds))
+        Write-Od048 ('real_battle_begin_visible end_corrected=' + $battleEndUtc.ToString('o') + ' fire_by=' + $traceFireByUtc.ToString('o'))
     }
     if ($null -ne $traceFireByUtc -and ([datetime]::UtcNow -gt $traceFireByUtc)) {
         $stoppedReason = 'fire-by-deadline'
