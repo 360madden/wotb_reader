@@ -1440,6 +1440,16 @@ try {
         [void]$scriptLines.Add(('bpm {0}, 1, w' -f $a))
         [void]$scriptLines.Add(('SetMemoryBreakpointLog {0}, "ODWT_HIT addr={0} rip={{rip}}"' -f $a))
         [void]$scriptLines.Add(('SetBreakpointLogFile {0}, "{1}"' -f $a, $bpLogFile))
+        # FRESH32: the FRESH9 probe's bisected requirement. The probe script
+        # (probe-membp-final.ps1, sentinels S1-S5 all landed + static-hit.bin
+        # produced) sets SetMemoryBreakpointCondition addr, 0 per BP; the
+        # trace omitted it and FRESH29/31 both showed the exact pause-
+        # mid-window signature (window_cpu_delta_ms~4-5s in a 25s window,
+        # values_changed=true up to 22.46) with ZERO capture on any channel.
+        # In x64dbg memory-BP semantics condition 0 = break always; without
+        # an explicit condition the BP can swallow the hit without firing the
+        # log/command callbacks. Match the proven recipe exactly.
+        [void]$scriptLines.Add(('SetMemoryBreakpointCondition {0}, 0' -f $a))
         $hitFile = Join-Path $HitsDir ('odwt-{0}.bin' -f $a)
         [void]$scriptLines.Add(('SetMemoryBreakpointCommand {0}, "savedata {1}, {0}, 4"' -f $a, $hitFile))
     }

@@ -84,24 +84,27 @@ $logs = @(Get-ChildItem (Join-Path $env:LOCALAPPDATA 'wotblitz\DAVAProject\blitz
     Sort-Object LastWriteTime -Descending)
 
 function Get-LogAnchorDateUtc([string]$LogPath) {
-    # The anchor DATE comes from the LOG FILE, not the wall clock: the blitz
-    # log's first column is UTC, and the file's own name embeds the real
-    # local write date (blitz-logs_YYYYMMDDHHMMSS.txt). UtcNow.Date is only
-    # correct for a same-day log; parsing yesterday's log today would anchor a
-    # full day off (the same failure class as the FRESH10 local-date bug).
-    # Priority: filename date -> LastWriteTime -> UtcNow, each normalized to
-    # the UTC date.
-    if (-not [string]::IsNullOrWhiteSpace($LogPath) -and (Split-Path $LogPath -Leaf) -match 'blitz-logs_(\d{8})(\d{6})') {
-        try {
-            $fileLocal = [datetime]::ParseExact($Matches[1] + ' ' + $Matches[2], 'yyyyMMdd HHmmss', [Globalization.CultureInfo]::InvariantCulture)
-            return ([datetime]::SpecifyKind($fileLocal, [DateTimeKind]::Local)).ToUniversalTime().Date
-        }
-        catch { }
-    }
+    # The anchor DATE comes from the LOG FILE's LastWriteTime, not the wall
+    # clock and NOT the filename: the filename embeds the GAME's local time
+    # (blitz-logs_YYYYMMDDHHMMSS.txt is written at the game's own UTC offset,
+    # e.g. 19:12:46 at -5 = 00:12:46Z the NEXT day). Converting that
+    # game-local timestamp with the OS timezone (UTC-4 here) lands an hour
+    # off - which crosses the UTC midnight boundary and anchored FRESH31's
+    # 00:13Z marker to the PREVIOUS day (elapsed_s=86408.2 ->
+    # staging_budget_exhausted -> session burned before staging). The file is
+    # written continuously by the live game, so LastWriteTime.ToUniversalTime()
+    # is OS-correct AND current; the filename date is only a fallback.
     if (-not [string]::IsNullOrWhiteSpace($LogPath)) {
         try {
             $item = Get-Item -LiteralPath $LogPath -ErrorAction Stop
             return ($item.LastWriteTime).ToUniversalTime().Date
+        }
+        catch { }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($LogPath) -and (Split-Path $LogPath -Leaf) -match 'blitz-logs_(\d{8})(\d{6})') {
+        try {
+            $fileLocal = [datetime]::ParseExact($Matches[1] + ' ' + $Matches[2], 'yyyyMMdd HHmmss', [Globalization.CultureInfo]::InvariantCulture)
+            return ([datetime]::SpecifyKind($fileLocal, [DateTimeKind]::Local)).ToUniversalTime().Date
         }
         catch { }
     }
@@ -125,7 +128,13 @@ foreach ($log in $logs) {
                 # The leading timestamp is UTC; ToUniversalTime is a no-op on a
                 # Kind=Unspecified value, so stamp it explicitly.
                 $asUtc = [datetime]::SpecifyKind($parsed, [DateTimeKind]::Utc)
-                if ($asUtc -gt [datetime]::UtcNow) { $asUtc = $asUtc.AddDays(-1) }
+                # FRESH31: bound the future-rollback to >60s (a sub-minute
+                # extraction race is clock skew, not a yesterday marker), and
+                # only accept a marker written within the last 120s so a
+                # failed-click fallback to an OLD session's log cannot anchor
+                # the run (fail-closed: FAILED_no_marker instead of a burn).
+                if ($asUtc -gt [datetime]::UtcNow.AddSeconds(60)) { $asUtc = $asUtc.AddDays(-1) }
+                if ($asUtc -lt [datetime]::UtcNow.AddSeconds(-120)) { continue }
                 $markerUtc = $asUtc.ToString('o')
                 Write-Log ("marker_found log=" + $log.Name + " line=" + $line.Trim() + " -> utc=" + $markerUtc)
                 break
@@ -176,7 +185,9 @@ for ($attempt = 1; $attempt -le $MaxCampaignAttempts; $attempt++) {
                             $anchorDateUtc = Get-LogAnchorDateUtc -LogPath $log.FullName
                             $parsed = [datetime]::ParseExact($anchorDateUtc.ToString('yyyy-MM-dd') + 'T' + $timeOnly, 'yyyy-MM-ddTHH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
                             $asUtc = [datetime]::SpecifyKind($parsed, [DateTimeKind]::Utc)
-                            if ($asUtc -gt [datetime]::UtcNow) { $asUtc = $asUtc.AddDays(-1) }
+                            # FRESH31: bound the future-rollback to >60s (clock
+                            # skew vs yesterday-marker disambiguation).
+                            if ($asUtc -gt [datetime]::UtcNow.AddSeconds(60)) { $asUtc = $asUtc.AddDays(-1) }
                             # Only accept a RECENT marker (the current replay
                             # start): anything older than 120s is a previous
                             # attempt's stale anchor.
