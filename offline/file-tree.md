@@ -186,6 +186,7 @@ docs/operations/handoffs/2026-08-06-fresh31-capture-condition-fix.md
 docs/operations/handoffs/2026-08-06-fresh32-33-x64dbg-write-bp-route-dead.md
 docs/operations/handoffs/2026-08-07-crosscheck-stats-surface.md
 docs/operations/handoffs/2026-08-07-fresh36-first-write-site-hit.md
+docs/operations/handoffs/2026-08-07-write-site-durable-evidence.md
 docs/operations/handoffs/README.md
 docs/operations/offset-discovery-guide.md
 docs/operations/offset-discovery-ledger.md
@@ -321,6 +322,7 @@ src/WotBTreader.Core/AffiliationResolver.cs
 src/WotBTreader.Core/ComparisonModels.cs
 src/WotBTreader.Core/Discovery/TrajectoryCorrelation.cs
 src/WotBTreader.Core/Discovery/TrajectoryFamily.cs
+src/WotBTreader.Core/Discovery/WriteSiteAnalysis.cs
 src/WotBTreader.Core/Identifiers.cs
 src/WotBTreader.Core/OffsetModels.cs
 src/WotBTreader.Core/TelemetryModels.cs
@@ -544,6 +546,7 @@ tests/WotBTreader.Core.Tests/MSTestSettings.cs
 tests/WotBTreader.Core.Tests/TrajectoryCorrelationScorerTests.cs
 tests/WotBTreader.Core.Tests/TrajectoryFamilyBuilderTests.cs
 tests/WotBTreader.Core.Tests/WotBTreader.Core.Tests.csproj
+tests/WotBTreader.Core.Tests/WriteSiteAnalysisTests.cs
 tests/WotBTreader.Core.Tests/packages.lock.json
 tests/WotBTreader.GameIntegration.Tests/BlitzReplayLifecycleFeedTests.cs
 tests/WotBTreader.GameIntegration.Tests/BlitzReplayLifecycleParserTests.cs
