@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- The game is 32-bit and DebugActiveProcess requires same-bitness
+         (the reason x64dbg ships a separate x32 build). The interceptor
+         helper must run as x86 to attach to wotblitz. -->
+    <PlatformTarget>x86</PlatformTarget>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>WotBTreader.WriteInterceptor</AssemblyName>
+    <RootNamespace>WotBTreader.WriteInterceptor</RootNamespace>
+  </PropertyGroup>
+
+</Project>
