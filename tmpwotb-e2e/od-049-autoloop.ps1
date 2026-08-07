@@ -7,6 +7,12 @@ param(
     # before battle end (STOP_gate=Denied, exit 5); 50 rounds saves ~40s and
     # the trace window is separately capped to the tail by od-048.
     [int]$MaxReadRounds = 50,
+    # FRESH41: monitor read cadence passed through to od-048. The default 2.0
+    # quantizes the correlation score coarsely (0.857 = 6/7 matches on a
+    # 15-round series, FRESH40); halving to 1.0 doubles samples per address
+    # in the same battle window so the score ratio sharpens and ambiguity
+    # bands tighten.
+    [double]$ReadIntervalSeconds = 2.0,
     [int]$StageTopN = 2,
     [int]$StageDelaySeconds = 2,
     # FRESH15i: wait until the match officially begins (loading + attendance
@@ -224,6 +230,7 @@ for ($attempt = 1; $attempt -le $MaxCampaignAttempts; $attempt++) {
     $m1Args = @{
         ReplayStartWallTimeUtc = $markerUtc
         MaxReadRounds          = $MaxReadRounds
+        ReadIntervalSeconds    = $ReadIntervalSeconds
         StageTopN              = $StageTopN
         StageDelaySeconds      = $StageDelaySeconds
         StageMinBattleSeconds  = $StageMinBattleSeconds

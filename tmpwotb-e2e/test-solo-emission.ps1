@@ -70,7 +70,10 @@ $verdict = 'evidence-strong'
 . ([scriptblock]::Create($capture))   # dot-source: assignments persist
 
 if (-not $soloFamilyEmitted) { throw 'FAIL: 0x1FC57238 was NOT emitted as a solo family' }
-$emitted = $families | Where-Object { $_.solo }
+# @() wrap: a single matching family is a scalar PSCustomObject whose .Count
+# is $null (the FRESH23 block appends exactly one solo family) - the unwrapped
+# form false-negatives. Array-wrap so the count and index reads are reliable.
+$emitted = @($families | Where-Object { $_.solo })
 if ($emitted.Count -ne 1) { throw 'FAIL: expected exactly 1 solo family, got ' + $emitted.Count }
 $m = $emitted[0].members[0]
 if ([string]$m.address -ne '0x1FC57238') { throw 'FAIL: solo member address ' + $m.address }
