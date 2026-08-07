@@ -67,6 +67,16 @@ param(
     [string]$ResultPath = $(Join-Path $env:TEMP 'od-wt-hits.txt'),
     # Minimum correlation score for EVERY selected family member (0 disables).
     [double]$MinMemberScore = 0.9,
+    # FRESH42 band-weighted floor (mirrors od-048's AutoTraceTightBand*): a
+    # member whose ambiguity band is TIGHT (<= TightBandMaxSeconds) clears at
+    # TightBandMinScore instead of MinMemberScore -- the score is a match
+    # ratio that quantizes coarsely on short series, so the tight-band class
+    # (both live hits were 0.5s/6.5s at 0.933) is discriminating even at 0.85.
+    # A wide-band member still needs MinMemberScore. 0 disables the tight-band
+    # path (both gates fall back to the strict floor). od-048 passes these
+    # through so the two gates can never disagree.
+    [double]$TightBandMinScore = 0.85,
+    [double]$TightBandMaxSeconds = 10.0,
     # Maximum ambiguity-band width for every member (0 disables).
     [double]$MaxMemberBandSeconds = 60.0,
     # Minimum observed movement span for every member (0 disables).
@@ -137,7 +147,16 @@ function Test-FamilyScored {
     foreach ($m in @($Family.members)) {
         $score = 0.0
         if ($m.PSObject.Properties['score'] -and $null -ne $m.score) { $score = [double]$m.score }
-        if ($score -lt $MinMemberScore) { return $false }
+        # FRESH42 band-weighted floor (mirrors od-048's solo + family gates):
+        # a tight-band member (band <= TightBandMaxSeconds) clears at
+        # TightBandMinScore; a wide-band or unknown-band member needs the
+        # strict MinMemberScore.
+        $floor = $MinMemberScore
+        if ($TightBandMaxSeconds -gt 0 -and $TightBandMinScore -lt $MinMemberScore) {
+            $width = Get-MemberBandWidth -Member $m
+            if ($null -ne $width -and $width -le $TightBandMaxSeconds) { $floor = $TightBandMinScore }
+        }
+        if ($score -lt $floor) { return $false }
     }
     return $true
 }
@@ -301,7 +320,7 @@ if ($families.Count -eq 0) {
 
 $family = Select-BestFamily -Families $families
 if ($null -eq $family) {
-    Write-CsWt ('FAILED_no_usable_family score_floor=' + $MinMemberScore + ' band_floor=' + $MaxMemberBandSeconds + 's span_floor=' + $MinMemberSpan)
+    Write-CsWt ('FAILED_no_usable_family score_floor=' + $MinMemberScore + ' tight_band_floor=' + $TightBandMinScore + '@' + $TightBandMaxSeconds + 's band_floor=' + $MaxMemberBandSeconds + 's span_floor=' + $MinMemberSpan)
     exit 2
 }
 $armPlan = Get-FamilyArmPlan -Family $family

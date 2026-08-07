@@ -219,6 +219,23 @@ param(
     # on the noise member, producing family-no-hit). A family that cannot
     # clear the floor is SKIPPED, not armed. 0 disables the floor.
     [double]$AutoTraceMinMemberScore = 0.9,
+    # FRESH42 band-weighted emission (score-distribution analysis,
+    # OD-RECOVERY-049): a survivor whose ambiguity band is TIGHT
+    # (<= AutoTraceTightBandMaxSeconds) is a discriminating copy of the
+    # trajectory axis even at a slightly lower score -- the score is a match
+    # ratio that quantizes coarsely on short series (6/7 = 0.857, 14/15 =
+    # 0.933) -- so it clears at AutoTraceTightBandMinScore instead of the
+    # strict AutoTraceMinMemberScore. A WIDE-band survivor must still clear
+    # the strict floor (a wide band matches at any shift; its score is
+    # cheap). Data: both hits were tight-band x (0.5s/6.5s at 0.933);
+    # FRESH40's 0.857 x/3.0s (the same class) was refused by the flat 0.9
+    # floor while the wide-band z class (0.857/64.5s, 0.846/45.5s) was
+    # correctly refused -- the flat floor cannot distinguish them. Selection
+    # also prefers tight-band over score-max (span desc, band asc, score
+    # desc). 0 disables the tight-band path (both gates fall back to the
+    # strict floor).
+    [double]$AutoTraceTightBandMinScore = 0.85,
+    [double]$AutoTraceTightBandMaxSeconds = 10.0,
     # Maximum AMBIGUITY-BAND width (shiftMax - shiftMin, seconds) for every
     # family member handed to the auto-trace. A member whose band covers most
     # of the sweep matches at ANY shift, so its score is cheap regardless of
@@ -1988,7 +2005,15 @@ if ($strongSurvivors.Count -gt 0) {
         if (-not $s.PSObject.Properties['axis'] -or $null -eq $s.axis) { continue }
         if (-not $s.PSObject.Properties['sign'] -or $null -eq $s.sign) { continue }
         if (-not $s.PSObject.Properties['shiftSeconds'] -or $null -eq $s.shiftSeconds) { continue }
-        if ([double]$s.score -lt $AutoTraceMinMemberScore) { continue }
+        # FRESH42 band-weighted floor: a TIGHT-band survivor (band <= the
+        # tight-band max) clears at AutoTraceTightBandMinScore; a wide-band
+        # survivor needs the strict AutoTraceMinMemberScore. $bandW is
+        # computed above (null = unknown, stays on the strict floor).
+        $effectiveScoreFloor = $AutoTraceMinMemberScore
+        if ($AutoTraceTightBandMaxSeconds -gt 0 -and $AutoTraceTightBandMinScore -lt $AutoTraceMinMemberScore -and $null -ne $bandW -and $bandW -le $AutoTraceTightBandMaxSeconds) {
+            $effectiveScoreFloor = $AutoTraceTightBandMinScore
+        }
+        if ([double]$s.score -lt $effectiveScoreFloor) { continue }
         if ($AutoTraceMaxMemberBandSeconds -gt 0 -and $bandW -gt $AutoTraceMaxMemberBandSeconds) { continue }
         # FRESH22 span floor: a survivor that never moves (span below the
         # floor) matched a low-information axis at any shift -- its score is
@@ -2009,10 +2034,15 @@ if ($strongSurvivors.Count -gt 0) {
         $soloCandidates += $s
     }
     if ($soloCandidates.Count -gt 0) {
+        # FRESH42 selection order: span desc (full-trajectory consensus),
+        # then BAND ASC (tightest ambiguity band = most discriminating),
+        # then score desc. The old order ranked score before band, so a
+        # wide-band score-max could beat a tight-band sibling of the hit
+        # class (FRESH40: 0.857 z/64.5s vs 0.857 x/3.0s).
         $soloCandidates = @($soloCandidates | Sort-Object -Property @(
             @{ Expression = { if ($_.PSObject.Properties['span'] -and $null -ne $_.span) { [double]$_.span } else { -1.0 } }; Descending = $true },
-            @{ Expression = { [double]$_.score }; Descending = $true },
-            @{ Expression = { Get-SurvivorBandWidth -Result $_ }; Descending = $false }
+            @{ Expression = { $bw = Get-SurvivorBandWidth -Result $_; if ($null -eq $bw) { [double]::MaxValue } else { $bw } }; Descending = $false },
+            @{ Expression = { [double]$_.score }; Descending = $true }
         ))
         if ($soloCandidates.Count -gt $AutoTraceMaxSoloMembers) {
             $soloCandidates = @($soloCandidates[0..($AutoTraceMaxSoloMembers - 1)])
@@ -2348,16 +2378,11 @@ if ($AutoWriteTraceOnVerdict) {
             }
             if ($score -lt $weakestScore) { $weakestScore = $score }
         }
-        if ($weakestScore -lt $AutoTraceMinMemberScore) {
-            if ($weakestScore -gt $bestNearMiss) { $bestNearMiss = $weakestScore }
-            continue
-        }
-        # Band floor (FRESH13): a member whose ambiguity band is missing or
-        # wider than the floor matches at any shift -- its score is cheap and
-        # proves nothing about being a written coordinate. Refuse the family
-        # regardless of score. The correlate wire emits shiftMin/MaxSeconds;
-        # the M1 report re-emits them as shiftBandMin/MaxSeconds, so accept
-        # either pair.
+        # FRESH42 band-weighted floor (mirrors the solo path): a TIGHT-band
+        # family (widest member band <= the tight-band max) clears at
+        # AutoTraceTightBandMinScore; a wide-band family needs the strict
+        # AutoTraceMinMemberScore. Compute the widest band BEFORE the score
+        # gate so the effective floor can depend on it.
         $widestBand = 0.0
         $bandUnknown = $false
         foreach ($m in @($f.members)) {
@@ -2370,6 +2395,21 @@ if ($AutoWriteTraceOnVerdict) {
             $width = $maxB - $minB
             if ($width -gt $widestBand) { $widestBand = $width }
         }
+        $effectiveScoreFloor = $AutoTraceMinMemberScore
+        if ($AutoTraceTightBandMaxSeconds -gt 0 -and $AutoTraceTightBandMinScore -lt $AutoTraceMinMemberScore -and -not $bandUnknown -and $widestBand -le $AutoTraceTightBandMaxSeconds) {
+            $effectiveScoreFloor = $AutoTraceTightBandMinScore
+        }
+        if ($weakestScore -lt $effectiveScoreFloor) {
+            if ($weakestScore -gt $bestNearMiss) { $bestNearMiss = $weakestScore }
+            continue
+        }
+        # Band floor (FRESH13): a member whose ambiguity band is missing or
+        # wider than the floor matches at any shift -- its score is cheap and
+        # proves nothing about being a written coordinate. Refuse the family
+        # regardless of score. ($widestBand/$bandUnknown were already computed
+        # above for the FRESH42 band-weighted score floor.) The correlate wire
+        # emits shiftMin/MaxSeconds; the M1 report re-emits them as
+        # shiftBandMin/MaxSeconds, so accept either pair.
         # 0 disables the floor ENTIRELY (unknown bands allowed), mirroring the
         # write-trace's Test-FamilyBanded - otherwise the two gates disagree
         # on the same report when an operator passes 0 to disable it.
@@ -2486,6 +2526,10 @@ if ($AutoWriteTraceOnVerdict) {
                 # same values so the two can never disagree (od-048 approves
                 # -> write-trace refuses).
                 MinMemberScore      = $AutoTraceMinMemberScore
+                # FRESH42: same band-weighted floor on both gates so the
+                # tight-band member approved here can never be refused there.
+                TightBandMinScore   = $AutoTraceTightBandMinScore
+                TightBandMaxSeconds = $AutoTraceTightBandMaxSeconds
                 MaxMemberBandSeconds = $AutoTraceMaxMemberBandSeconds
                 # FRESH22: same span floor on both gates so the solo member
                 # vetted here can never be refused there for the same reason.

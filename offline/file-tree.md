@@ -190,6 +190,7 @@ docs/operations/handoffs/2026-08-07-fresh37-live-durable-hit.md
 docs/operations/handoffs/2026-08-07-fresh38-reproduce-source-arm-negative.md
 docs/operations/handoffs/2026-08-07-fresh39-source-arm-live-validation.md
 docs/operations/handoffs/2026-08-07-fresh40-negative-sample-depth-diagnosis.md
+docs/operations/handoffs/2026-08-07-fresh41-sample-grid-refuted.md
 docs/operations/handoffs/2026-08-07-write-site-durable-evidence.md
 docs/operations/handoffs/README.md
 docs/operations/offset-discovery-guide.md
