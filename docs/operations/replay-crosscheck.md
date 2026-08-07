@@ -6,8 +6,10 @@ tests. `scripts/invoke-replay-crosscheck.ps1` runs the C# decoder and the Rust
 `wotbreplay-inspector` oracle (built on eigenein's `wotbreplay-parser`, see
 "Oracle provenance" below) on the same `.wotbreplay` and compares the
 cross-check surface: battle timestamp, participant set (account/name/team),
-packet clock sequence, and the **typed packet surface** (`BasePlayerCreate`
-header + `UpdateArena` players roster).
+packet clock sequence, the **typed packet surface** (`BasePlayerCreate`
+header + `UpdateArena` players roster), and the **per-player battle-stats
+surface** (damage/XP/credits/mm_rating/tank_id and the full
+`PlayerResultsInfo` stat set).
 
 This is an **operator-run step, not a CI step**: it needs real (non-synthetic)
 11.18/11.19 replays, which CI does not have. It is not part of
@@ -58,7 +60,7 @@ with `Get-Content -Raw -Encoding UTF8` (handles both), not a bare
 
 | Code | Meaning | Action |
 |---|---|---|
-| 0 | Both decoders agree on battle time, participants, clocks, and the typed packet surface | Proceed |
+| 0 | Both decoders agree on battle time, participants, clocks, the typed packet surface, and per-player battle stats | Proceed |
 | 1 | Real divergence found | Investigate before committing decoder changes |
 | 2 | Oracle or C# inspector binary missing | Re-stage `tools/external/installed/wotbreplay-inspector/` or rebuild the inspector tool |
 | 3 | One decoder failed to decode the replay | Check the replay is 11.18/11.19 and not corrupt |
@@ -88,6 +90,38 @@ with `Get-Content -Raw -Encoding UTF8` (handles both), not a bare
 - **UpdateArena `account_id 0` vs C# `null`.** Rust emits `account_id: 0`
   for roster entries with no account binding; C# emits `null`. Both mean
   "no account evidence" and the harness treats them as equal.
+- **Bot sentinel stats.** Rust carries full battle stats for bot sentinels
+  (accounts -1…-10, read as truncated uint32); C# deliberately rejects
+  sentinel identities (evidence-first), so bot participants have
+  `battleStats: null` and their stats are **not compared** — counted as
+  `sentinel_stats_skipped`, never a failure.
+- **`rust=0` vs `cs=null` on absent stats.** Rust's prost serializes a
+  uint32 stat field that is absent on the wire as the default `0` (it
+  cannot distinguish "absent" from "genuinely zero"); C# keeps absent
+  fields `null` (evidence-first). A `rust=0 / cs=null` pair is counted as
+  an `absent_zero_note`, not a disagreement. A `rust≠0 / cs=null` pair
+  **is** a hard disagreement (the Rust oracle read a value the C# decoder
+  missed).
+
+## Battle-stats surface
+
+`crosscheck` now compares the per-player `PlayerResultsInfo` stat set from
+`battle_results.dat` (root.301.2) for every non-sentinel account present in
+both decoders:
+
+- `credits_earned` / `base_xp` / `damage_dealt` / `damage_assisted_1|2` /
+  `damage_blocked` and the rest of the uint32 stat fields (exact match);
+- `mm_rating` (float, compared with 1e-3 tolerance; Rust serializes it as
+  `Option<f32>`);
+- `tank_id` — Rust tag 103 vs C# `vehicleCompactDescriptor` (the same
+  field; C# maps tag 103 to the participant's compact descriptor).
+
+The C# inspector emits these as `participant.battleStats` (camelCase) plus
+`vehicleCompactDescriptor`; the Rust oracle emits them as
+`player_results[].info`. Verified exact-match on the Dead Rail replay:
+4 real accounts compared, 10 bot sentinels skipped, 0 disagreements
+(e.g. author: damage 1598, base_xp 759, credits 13220, tank_id 2897 on
+both sides).
 
 ## Typed packet surface
 

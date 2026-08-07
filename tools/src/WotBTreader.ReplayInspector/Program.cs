@@ -180,12 +180,40 @@ internal static class ReplayInspector
                         clanTag = includeSensitive ? participant.ClanTag : null,
                         participant.EntityId,
                         participant.TeamNumber,
+                        // Tag 103 (player-results info): the compact vehicle
+                        // descriptor, identical on both decoders to the Rust
+                        // oracle's tank_id.
                         participant.VehicleCompactDescriptor,
                         participant.TankId,
                         participant.TankName,
                         participant.TankClass,
                         participant.BotStatus,
+                        // Battle-results stats from battle_results.dat
+                        // (root.301.2), cross-checked against the parser schema.
+                        battleStats = participant.BattleStats is null
+                            ? null
+                            : new
+                            {
+                                participant.BattleStats.CreditsEarned,
+                                participant.BattleStats.BaseXp,
+                                participant.BattleStats.Shots,
+                                participant.BattleStats.HitsDealt,
+                                participant.BattleStats.PenetrationsDealt,
+                                participant.BattleStats.DamageDealt,
+                                participant.BattleStats.DamageAssisted1,
+                                participant.BattleStats.DamageAssisted2,
+                                participant.BattleStats.HitsReceived,
+                                participant.BattleStats.NonPenetratingHitsReceived,
+                                participant.BattleStats.PenetrationsReceived,
+                                participant.BattleStats.EnemiesDamaged,
+                                participant.BattleStats.EnemiesDestroyed,
+                                participant.BattleStats.VictoryPointsEarned,
+                                participant.BattleStats.VictoryPointsSeized,
+                                participant.BattleStats.MmRating,
+                                participant.BattleStats.DamageBlocked,
+                            },
                     }),
+
                 typedPackets = new
                 {
                     // Type-0 BasePlayerCreate header, decoded from the event

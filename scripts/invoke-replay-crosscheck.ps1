@@ -407,7 +407,166 @@ $report['typed_surface'] = [ordered]@{
     arena_roster_disagreements       = $rosterDisagreements
 }
 
-# ---- 3e. Emit report ----
+# ---- 3e. Battle-stats surface (player-results info) ----
+#
+# Surface 6: per-player battle statistics. Rust emits player_results
+# (root.301) with the full info stat set; C# exposes the same fields as
+# participant.battleStats plus vehicleCompactDescriptor (tag 103 == Rust
+# tank_id). Match by account id (real ids only).
+#
+# Bots are excluded with a documented note: Rust reads the sentinel
+# (-1..-10) as a truncated uint32 and carries their stats; C# rejects the
+# sign-extended 64-bit identity (evidence-first) so those participants have
+# battleStats null and cannot be compared -- the same sentinel semantics as
+# the participant surface above.
+$statFieldMap = @(
+    @{ Rust = 'credits_earned';                   Cs = 'creditsEarned' },
+    @{ Rust = 'base_xp';                          Cs = 'baseXp' },
+    @{ Rust = 'n_shots';                          Cs = 'shots' },
+    @{ Rust = 'n_hits_dealt';                     Cs = 'hitsDealt' },
+    @{ Rust = 'n_penetrations_dealt';             Cs = 'penetrationsDealt' },
+    @{ Rust = 'damage_dealt';                     Cs = 'damageDealt' },
+    @{ Rust = 'damage_assisted_1';                Cs = 'damageAssisted1' },
+    @{ Rust = 'damage_assisted_2';                Cs = 'damageAssisted2' },
+    @{ Rust = 'n_hits_received';                  Cs = 'hitsReceived' },
+    @{ Rust = 'n_non_penetrating_hits_received';  Cs = 'nonPenetratingHitsReceived' },
+    @{ Rust = 'n_penetrations_received';          Cs = 'penetrationsReceived' },
+    @{ Rust = 'n_enemies_damaged';                Cs = 'enemiesDamaged' },
+    @{ Rust = 'n_enemies_destroyed';              Cs = 'enemiesDestroyed' },
+    @{ Rust = 'victory_points_earned';            Cs = 'victoryPointsEarned' },
+    @{ Rust = 'victory_points_seized';            Cs = 'victoryPointsSeized' },
+    @{ Rust = 'damage_blocked';                   Cs = 'damageBlocked' },
+    @{ Rust = 'mm_rating';                        Cs = 'mmRating' }
+)
+
+# StrictMode-safe field read: ConvertFrom-Json objects are PSCustomObject,
+# so a missing property must be probed via PSObject.Properties, never by
+# direct member access (that throws under Set-StrictMode -Version Latest).
+function Get-JsonField {
+    param([object] $Object, [string] $Name)
+    if ($null -eq $Object) { return $null }
+    $prop = $Object.PSObject.Properties[$Name]
+    if ($null -eq $prop) { return $null }
+    return $prop.Value
+}
+
+$rustStatsByAccount = @{}
+foreach ($result in @($rustResults.player_results)) {
+    $info = $result.info
+    $account = Get-JsonField $info 'account_id'
+    if ($null -eq $account) { continue }
+    $rustStatsByAccount[[long]$account] = $info
+}
+
+$csStatsByAccount = @{}
+foreach ($participant in $csData.participants) {
+    if ($null -eq $participant.accountId) { continue }
+    $csStatsByAccount[[long]$participant.accountId] = $participant
+}
+
+$statDisagreements = 0
+$statsCompared = 0
+$statsSentinelSkipped = 0
+$statsAbsentZeroNotes = 0
+$statFieldFailures = @{}
+foreach ($account in $rustStatsByAccount.Keys) {
+    $rustInfo = $rustStatsByAccount[$account]
+    $rustAccountId = [long]$account
+
+    if (Is-BotSentinelAccount $rustAccountId) {
+        # Documented evidence-first difference: C# rejects the sentinel
+        # identity, so its stats for bots are intentionally absent.
+        $statsSentinelSkipped++
+        continue
+    }
+
+    if (-not $csStatsByAccount.ContainsKey([long]$account)) {
+        $report['disagreements'] += "battle stats only in rust for account $account"
+        $statDisagreements++
+        continue
+    }
+
+    $csParticipant = $csStatsByAccount[[long]$account]
+    $csStats = $csParticipant.battleStats
+    if ($null -eq $csStats) {
+        $report['disagreements'] += "battle stats only in rust for account $account (cs battleStats null)"
+        $statDisagreements++
+        continue
+    }
+
+    $statsCompared++
+    foreach ($mapping in $statFieldMap) {
+        $rustVal = Get-JsonField $rustInfo $mapping.Rust
+        $csVal = Get-JsonField $csStats $mapping.Cs
+        $rustHas = $null -ne $rustVal
+        $csHas = $null -ne $csVal
+        if (-not $rustHas -and -not $csHas) { continue }
+        if ($mapping.Rust -ne 'mm_rating' -and
+            $rustHas -and -not $csHas -and [long]$rustVal -eq 0) {
+            # Rust cannot distinguish "absent on wire" from "genuinely
+            # zero": prost defaults a missing uint32 to 0 and serde emits
+            # it. C# keeps absent = null (evidence-first). This is a
+            # documented note, not a disagreement. mm_rating is Option<f32>
+            # in the schema: absent serializes as null on both sides, so it
+            # never needs this note (and a present 0.0 is a real value).
+            $statsAbsentZeroNotes++
+            continue
+        }
+        if ($rustHas -ne $csHas) {
+            $report['disagreements'] += "stats $($mapping.Rust) for account $account`: rust=$rustVal cs=$csVal"
+            $statDisagreements++
+            $statFieldFailures[$mapping.Rust] = ($statFieldFailures[$mapping.Rust] + 1)
+            continue
+        }
+        $equal = $false
+        if ($mapping.Rust -eq 'mm_rating') {
+            # Float tolerance: both sides serialize f32; allow 1e-3 absolute.
+            $equal = [Math]::Abs([double]$rustVal - [double]$csVal) -le 1e-3
+        }
+        else {
+            $equal = [long]$rustVal -eq [long]$csVal
+        }
+        if (-not $equal) {
+            $report['disagreements'] += "stats $($mapping.Rust) for account $account`: rust=$rustVal cs=$csVal"
+            $statDisagreements++
+            $statFieldFailures[$mapping.Rust] = ($statFieldFailures[$mapping.Rust] + 1)
+        }
+    }
+
+    # tank_id (tag 103) vs C# vehicleCompactDescriptor. One-sided presence
+    # is a hard failure (mirrors the field loop); both present and equal
+    # passes.
+    $rustTank = Get-JsonField $rustInfo 'tank_id'
+    $csTank = $csParticipant.vehicleCompactDescriptor
+    $rustTankHas = $null -ne $rustTank
+    $csTankHas = $null -ne $csTank
+    if ($rustTankHas -ne $csTankHas) {
+        $report['disagreements'] += "stats tank_id for account $account`: rust=$rustTank cs=$csTank"
+        $statDisagreements++
+        $statFieldFailures['tank_id'] = ($statFieldFailures['tank_id'] + 1)
+    }
+    elseif ($rustTankHas -and [long]$rustTank -ne [long]$csTank) {
+        $report['disagreements'] += "stats tank_id for account $account`: rust=$rustTank cs=$csTank"
+        $statDisagreements++
+        $statFieldFailures['tank_id'] = ($statFieldFailures['tank_id'] + 1)
+    }
+}
+
+$report['stats_surface'] = [ordered]@{
+    players_compared       = $statsCompared
+    sentinel_stats_skipped = $statsSentinelSkipped
+    absent_zero_notes      = $statsAbsentZeroNotes
+    disagreements          = $statDisagreements
+    field_failures         = $statFieldFailures
+}
+if ($statsSentinelSkipped -gt 0) {
+    $report['stats_sentinel_note'] = 'Rust carries battle stats for bot sentinels; C# deliberately rejects sentinel identities (evidence-first), so bot stats are not compared. See the participant-surface sentinel note.'
+}
+if ($statsAbsentZeroNotes -gt 0) {
+    $report['stats_absent_zero_note'] = 'Rust emits 0 for uint32 stat fields absent on the wire (prost default); C# keeps them null (evidence-first). Counted as a note, not a disagreement -- Rust cannot distinguish absent from genuinely zero.'
+}
+
+# ---- 3f. Emit report ----
 if (-not $ReportPath) {
     $reportDir = Join-Path $repoRoot '.data'
     New-Item -ItemType Directory -Force -Path $reportDir | Out-Null
@@ -423,5 +582,5 @@ if ($disagreementCount -gt 0) {
     Exit-With 1
 }
 
-Write-Host 'CROSS-CHECK AGREES: battle time, participants, packet clocks, and the typed packet surface all match.'
+Write-Host 'CROSS-CHECK AGREES: battle time, participants, packet clocks, typed packet surface, and per-player battle stats all match.'
 Exit-With 0
