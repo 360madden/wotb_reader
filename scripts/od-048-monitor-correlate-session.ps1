@@ -263,24 +263,28 @@ param(
     # which the monitor already reads successfully).
     [string]$AttachSmokeProbeAddress = '',
     # FRESH15e: do not run the attach-smoke until this many seconds of battle
-    # have elapsed from the replay-start anchor. The replay's first ~50s are
-    # the loading + all-players-in-attendance phase, during which the match is
-    # still paused; attaching+pausing the game mid-load froze it (observed
-    # 'WoT Blitz (Not Responding)' on the loading screen). The smoke only
-    # touches the game once the match has officially begun. A round-count
-    # clamp (45) guarantees the gate can never skip the smoke entirely.
+    # have elapsed from the match begin (FRESH35: the REAL match begin from
+    # the blitz log when visible, else the anchor+attendance model). The
+    # replay's first ~50s are the loading + all-players-in-attendance phase,
+    # during which the match is still paused; attaching+pausing the game
+    # mid-load froze it (observed 'WoT Blitz (Not Responding)' on the loading
+    # screen). The smoke only touches the game once the match has officially
+    # begun. A round-count clamp (45) guarantees the gate can never skip the
+    # smoke entirely.
     [double]$SmokeMinBattleSeconds = 55.0,
     # FRESH15i: do not run the FIRST STAGING SCAN until this many seconds of
-    # battle have elapsed from the replay-start anchor. The replay's first
-    # ~50s are loading + all-players-in-attendance (the match is paused, tanks
-    # sit at spawn), and the decoded ground truth at tick ~8s is already the
-    # tank MOVING - so an exact-match scan at elapsed 8.6s cannot find the
-    # live position field (value mismatch) and stages ~1500 decoy floats that
-    # happen to hold that value, poisoning the entire series (FRESH15i: staged
-    # at elapsed 8.6s -> 31 edge-aligned weak results, 0 strong survivors).
-    # Waiting until the match officially begins makes the staged sample value
-    # match the live in-battle field, so the true field is staged among the
-    # decoys and the correlate can find it. Mirrors the attach-smoke gate.
+    # battle have elapsed from the match begin (FRESH35: the REAL match begin
+    # from the blitz log when visible, else the anchor+attendance model). The
+    # replay's first ~50s are loading + all-players-in-attendance (the match
+    # is paused, tanks sit at spawn), and the decoded ground truth at tick
+    # ~8s is already the tank MOVING - so an exact-match scan at elapsed
+    # 8.6s cannot find the live position field (value mismatch) and stages
+    # ~1500 decoy floats that happen to hold that value, poisoning the entire
+    # series (FRESH15i: staged at elapsed 8.6s -> 31 edge-aligned weak
+    # results, 0 strong survivors). Waiting until the match officially begins
+    # makes the staged sample value match the live in-battle field, so the
+    # true field is staged among the decoys and the correlate can find it.
+    # Mirrors the attach-smoke gate.
     [double]$StageMinBattleSeconds = 55.0,
     # FRESH18: the replay-start anchor (Start replay event marker) fires when
     # the replay STARTS LOADING, but the decoded trajectory's tick 0 is the
@@ -307,7 +311,23 @@ param(
     # instead of burning the window on a guaranteed denial. Fail-closed: the
     # watcher+skip are ON unless this switch is passed (opt-in escape hatch
     # only for offline runs where the blitz log cannot be resolved).
-    [switch]$AllowTraceAfterBattleEnd
+    [switch]$AllowTraceAfterBattleEnd,
+    # FRESH35 (FRESH34 post-mortem): the replay plays at ~2x on the
+    # accelerated launch (FRESH34: 271.4s decoded in 134s wall), so the
+    # decoded-duration battle-end model runs ~2.5 min PAST the real end and
+    # the auto-trace fires on the result screen. When the blitz log already
+    # shows the real battle end (Get-BlitzRealWindow), the real end wins and
+    # this estimate is unused; when the log has not yet shown it (battle
+    # still live), the budget predicts realEnd = realMatchBegin + decoded /
+    # speed. Default 1.0 keeps the historical behavior; pass the measured
+    # speed (~2.0) once a session records playbackSpeed in the report.
+    [double]$PlaybackSpeedEstimate = 1.0,
+    # FRESH35: wall-clock budget from the fire-by deadline to the moment the
+    # interceptor is armed and writing: the final correlate round-trip +
+    # verdict + wrapper launch + interceptor attach. The monitor loop stops
+    # sampling at (realBattleEnd - TraceStartupSeconds - trace window) so the
+    # correlate+verdict+trace all land INSIDE the live battle.
+    [double]$TraceStartupSeconds = 20.0
 )
 
 Set-StrictMode -Version Latest
@@ -526,54 +546,171 @@ function Test-FiniteDouble {
 # re-emits them as shiftBandMin/MaxSeconds. Used by the FRESH14 solo-family
 # emission to rank strong survivors by band width and gate emission on the
 # band floor.
-# FRESH30 post-mortem (OD-RECOVERY-051): find the newest blitz log and
-# return $true when it shows the battle has ACTUALLY ended (the player's
-# vehicle left the world, or the battle controller left the battle). The
-# decoded-duration model overestimates the real wall-clock battle end by
-# ~3.5 minutes on the rolled/accelerated launch replay, so the log is the
-# only evidence-first source of the real end. Reads the newest blitz-logs_*
-# file under the WotBlitz DAVAProject dir (falling back to $RepoRoot/.data
-# for offline tests) and scans only lines at/after $AnchorUtc to avoid
-# matching the PREVIOUS battle's teardown in the same file.
+# FRESH35 (FRESH34 post-mortem): derive the REAL battle window from the
+# newest blitz log. The M1 budget's anchor+attendance+decoded-duration math
+# runs minutes past the real wall-clock battle end on the accelerated
+# (~2x) launch replay (FRESH34: real battle 02:31:34 -> 02:33:48 = 134s wall
+# for a 271.4s decoded battle), so the auto-trace invoked after the last log
+# line wrote on the frozen result screen (40 guard events, 0 hits). Returns:
+#   MatchBeginUtc - last 'BattleController::LoadGameScene ends' at/after the
+#                   anchor (the real battle start). The FIRST scene load is
+#                   the hangar->replay transition, whose teardown (including
+#                   the player's onLeaveWorld) must NOT count as battle end;
+#                   only lines at/after match begin do.
+#   EndUtc        - last definitive end marker (Stop replay / OnLeaveBattle /
+#                   player onLeaveWorld at/after match begin); MinValue when
+#                   the log just went silent instead.
+#   PlaybackSpeed - decodedDuration / (End - MatchBegin) when both known.
+# Every timestamp is UTC: the log's leading time field is UTC wall clock
+# (the host lifecycle parser reads it with AssumeUniversal). It is stamped
+# with the ANCHOR'S calendar date: ParseExact('HH:mm:ss') alone uses today's
+# LOCAL date, so during an evening run local date != UTC date and every line
+# compares BEFORE the anchor and is skipped - the FRESH34 watcher-silent
+# root cause (all 764 lines dated Aug 6 vs the Aug 7 anchor).
+# Convert a blitz log line's leading HH:mm:ss (UTC wall clock) to a UTC
+# DateTime on the anchor's calendar date. The +1-day promotion handles a
+# battle crossing UTC midnight (a line at 00:05 whose anchor is 23:58 the
+# prior day). REVIEW FIX (FRESH35): the promotion must only apply to a
+# genuine midnight crossing - a line whose time-of-day is within ~6h BEFORE
+# the anchor is a PREVIOUS battle (or the pre-anchor hangar teardown), NOT a
+# midnight-crossing current battle, and promoting it would fabricate a future
+# timestamp that pass 2 would misread as a battle-end marker (wasted session:
+# Test-BlitzBattleEnded returns True at round 1). Returns MinValue when the
+# line is not part of this battle.
+function Convert-BlitzLogLineUtc {
+    param(
+        [string]$Line,
+        [datetime]$Anchor,
+        [datetime]$AnchorDate
+    )
+    if ($Line -notmatch '^(\d{2}:\d{2}:\d{2})') { return [datetime]::MinValue }
+    $lineUtc = [datetime]::SpecifyKind(
+        [datetime]::ParseExact(
+            $AnchorDate.ToString('yyyy-MM-dd ', [Globalization.CultureInfo]::InvariantCulture) + $Matches[1],
+            'yyyy-MM-dd HH:mm:ss',
+            [Globalization.CultureInfo]::InvariantCulture),
+        [DateTimeKind]::Utc)
+    if ($lineUtc -lt $Anchor) {
+        # Genuine midnight crossing: the line is a FULL DAY of wall time
+        # before the anchor in parsed terms, so it is the NEXT day's early
+        # hours of THIS battle. A line only a few hours before the anchor is
+        # a previous battle or the pre-battle hangar teardown - skip it.
+        if (($Anchor - $lineUtc).TotalHours -gt 6) {
+            $lineUtc = $lineUtc.AddDays(1)
+        }
+        else {
+            return [datetime]::MinValue
+        }
+    }
+    if ($lineUtc -lt $Anchor) { return [datetime]::MinValue }
+    return $lineUtc
+}
+
+function Get-BlitzRealWindow {
+    [CmdletBinding()]
+    param(
+        [string]$AnchorUtc = '',
+        [double]$DecodedDurationSeconds = 0.0
+    )
+    $result = [ordered]@{
+        MatchBeginUtc = [datetime]::MinValue
+        EndUtc        = [datetime]::MinValue
+        PlaybackSpeed = $null
+        LogStaleUtc   = [datetime]::MinValue
+        BattleActivitySeen = $false
+    }
+    $log = Get-NewestBlitzLog
+    if (-not $log) { return $result }
+    $anchor = [datetime]::MinValue
+    if (-not [string]::IsNullOrWhiteSpace($AnchorUtc)) {
+        $anchor = [datetime]::Parse(
+            $AnchorUtc,
+            [Globalization.CultureInfo]::InvariantCulture,
+            ([Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal))
+    }
+    try {
+        $logItem = Get-Item -LiteralPath $log -ErrorAction SilentlyContinue
+        if ($null -ne $logItem) { $result.LogStaleUtc = $logItem.LastWriteTimeUtc }
+        $anchorDate = if ($anchor -eq [datetime]::MinValue) { ([datetime]::UtcNow).Date } else { $anchor.Date }
+        # Pass 1: find the LAST 'LoadGameScene ends' at/after the anchor. The
+        # replay sequence is Start marker -> scene load (hangar->replay
+        # transition, whose teardown logs the player's onLeaveWorld) -> the
+        # REAL battle scene -> deaths. Only lines at/after the FINAL scene
+        # load can be battle-end evidence; taking the last one here lets pass
+        # 2 gate every end marker against the real match begin.
+        $lines = @(Get-Content -LiteralPath $log -ErrorAction SilentlyContinue)
+        $finalMatchBegin = [datetime]::MinValue
+        foreach ($line in $lines) {
+            $lineUtc = Convert-BlitzLogLineUtc -Line $line -Anchor $anchor -AnchorDate $anchorDate
+            if ($lineUtc -eq [datetime]::MinValue) { continue }
+            if ($line -match 'BattleController::LoadGameScene ends') {
+                $finalMatchBegin = $lineUtc
+            }
+        }
+        $result.MatchBeginUtc = $finalMatchBegin
+        # Pass 2: end markers AT/AFTER the final match begin only. The
+        # hangar->replay transition teardown (before the real scene) can never
+        # false-positive now: it predates the final LoadGameScene ends.
+        if ($finalMatchBegin -ne [datetime]::MinValue) {
+            foreach ($line in $lines) {
+                $lineUtc = Convert-BlitzLogLineUtc -Line $line -Anchor $anchor -AnchorDate $anchorDate
+                if ($lineUtc -eq [datetime]::MinValue -or $lineUtc -lt $finalMatchBegin) { continue }
+                if ($line -match 'VehicleGameLogic::onLeaveWorld') {
+                    $result.BattleActivitySeen = $true
+                }
+                if ($line -match 'STOP_REPLAY_LOCAL|Stop replay event|ReplayRecorder::StopRecording') {
+                    if ($lineUtc -gt $result.EndUtc) { $result.EndUtc = $lineUtc }
+                }
+                if ($line -match 'BattleController::OnLeaveBattle') {
+                    if ($lineUtc -gt $result.EndUtc) { $result.EndUtc = $lineUtc }
+                }
+                if ($line -match 'VehicleGameLogic::onLeaveWorld.*isPlayer: 1') {
+                    if ($lineUtc -gt $result.EndUtc) { $result.EndUtc = $lineUtc }
+                }
+            }
+        }
+        # Playback speed: decoded duration / real wall battle length. The end
+        # marker is preferred; when the log went silent instead (FRESH34: no
+        # player onLeaveWorld / stop marker - the log just stops at the last
+        # death), the log's last write IS the battle-end evidence.
+        $endEvidenceUtc = $result.EndUtc
+        if ($endEvidenceUtc -eq [datetime]::MinValue -and $result.LogStaleUtc -gt $result.MatchBeginUtc) {
+            $endEvidenceUtc = $result.LogStaleUtc
+        }
+        if ($result.MatchBeginUtc -ne [datetime]::MinValue -and $endEvidenceUtc -ne [datetime]::MinValue) {
+            $wallSeconds = ($endEvidenceUtc - $result.MatchBeginUtc).TotalSeconds
+            if ($wallSeconds -gt 1.0 -and $DecodedDurationSeconds -gt 0) {
+                $result.PlaybackSpeed = $DecodedDurationSeconds / $wallSeconds
+            }
+        }
+    }
+    catch { }
+    return $result
+}
+
+# FRESH30 post-mortem (OD-RECOVERY-051) + FRESH35: find the newest blitz log
+# and return $true when the battle has ACTUALLY ended. Evidence-first: a
+# definitive end marker from Get-BlitzRealWindow (Stop replay / OnLeaveBattle
+# / player onLeaveWorld after match begin), OR the log has gone silent for
+# >20s after the battle began (FRESH34: the log stops at the last death with
+# NO definitive marker - silence is the end signal). The decoded-duration
+# model overestimates the real wall-clock battle end by minutes on the
+# rolled/accelerated launch replay, so the log is the only reliable source.
 function Test-BlitzBattleEnded {
     [CmdletBinding()]
     param(
         [string]$AnchorUtc = ''
     )
-    $log = Get-NewestBlitzLog
-    if (-not $log) { return $false }
-    try {
-        $anchor = [datetime]::MinValue
-        if (-not [string]::IsNullOrWhiteSpace($AnchorUtc)) {
-            $anchor = [datetime]::Parse(
-                $AnchorUtc,
-                [Globalization.CultureInfo]::InvariantCulture,
-                ([Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal))
-        }
-        # The blitz log's leading timestamp is UTC wall clock (the host
-        # lifecycle parser reads it with AssumeUniversal). Replay stop is
-        # 'STOP_REPLAY_LOCAL' / the player vehicle leaving the world; battle
-        # end is the player's onLeaveWorld or OnLeaveBattle. Match the player
-        # (isPlayer: 1) to avoid false positives from destroyed enemy tanks.
-        foreach ($line in @(Get-Content -LiteralPath $log -ErrorAction SilentlyContinue)) {
-            if ($line -match '^(\d{2}:\d{2}:\d{2})') {
-                $lineUtc = [datetime]::ParseExact($Matches[1], 'HH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
-                # Anchor-date from the log file name (same convention as the
-                # autoloop anchor): the file name embeds the local write date.
-                if ($lineUtc -lt $anchor) { continue }
-            }
-            if ($line -match 'STOP_REPLAY_LOCAL|Stop replay event|ReplayRecorder::StopRecording') {
-                return $true
-            }
-            if ($line -match 'VehicleGameLogic::onLeaveWorld.*isPlayer: 1') {
-                return $true
-            }
-            if ($line -match 'BattleController::OnLeaveBattle') {
-                return $true
-            }
-        }
+    $win = Get-BlitzRealWindow -AnchorUtc $AnchorUtc
+    if ($win.EndUtc -ne [datetime]::MinValue) { return $true }
+    # REVIEW FIX (FRESH35): the log-silence signal alone can false-positive on
+    # a >20s log-write pause mid-battle (loading stall, writer throttle). Only
+    # trust silence once the battle ACTUALLY produced activity (an
+    # onLeaveWorld after match begin = deaths/teardown began) AND the log has
+    # gone silent >20s since. A pre-combat stall cannot end the battle.
+    if ($win.BattleActivitySeen -and $win.MatchBeginUtc -ne [datetime]::MinValue -and $win.LogStaleUtc -ne [datetime]::MinValue) {
+        if (([datetime]::UtcNow - $win.LogStaleUtc).TotalSeconds -gt 20.0) { return $true }
     }
-    catch { }
     return $false
 }
 
@@ -922,9 +1059,45 @@ if ($null -ne $trajectory.durationTicks -and [double]$trajectory.durationTicks -
 }
 $battleEndUtc = $null
 if ($durationSeconds -gt 0) { $battleEndUtc = $battleStartUtc.AddSeconds($durationSeconds) }
+# FRESH35 (FRESH34 post-mortem): the real battle window from the blitz log
+# beats the anchor+attendance+decoded-duration model. FRESH34's model said
+# battleEnd 02:36:21 but the real battle ended 02:33:48 (last onLeaveWorld)
+# - 2.5 minutes late, so the trace armed on the result screen (40 guard
+# events, 0 hits, value frozen at the final position). When the log already
+# shows the real match begin AND the real end, use them directly and derive
+# the measured playback speed for the report. When only the match begin is
+# visible (battle still live), predict the end from the decoded duration /
+# -PlaybackSpeedEstimate so the fire-by deadline lands the trace INSIDE the
+# live battle.
+$realWindow = Get-BlitzRealWindow -AnchorUtc $replayStartWallUtc -DecodedDurationSeconds $durationSeconds
+$realMatchBeginUtc = $realWindow.MatchBeginUtc
+# Real battle end: the definitive marker when present, else the log-silence
+# time (FRESH34: no stop marker - the log just stops at the last death; the
+# last write IS the end evidence, and PlaybackSpeed already used it).
+$realBattleEndUtc = $realWindow.EndUtc
+if ($realBattleEndUtc -eq [datetime]::MinValue -and $realWindow.LogStaleUtc -gt $realMatchBeginUtc) {
+    $realBattleEndUtc = $realWindow.LogStaleUtc
+}
+$measuredPlaybackSpeed = $realWindow.PlaybackSpeed
+if ($realMatchBeginUtc -ne [datetime]::MinValue) {
+    Write-Od048 ('real_match_begin=' + $realMatchBeginUtc.ToString('o') + ' model_start=' + $battleStartUtc.ToString('o'))
+    $battleStartUtc = $realMatchBeginUtc
+}
+if ($realBattleEndUtc -ne [datetime]::MinValue) {
+    Write-Od048 ('real_battle_end=' + $realBattleEndUtc.ToString('o') + ' measured_playback_speed=' + $(if ($null -ne $measuredPlaybackSpeed) { [Math]::Round($measuredPlaybackSpeed, 2) } else { 'n/a' }))
+    $battleEndUtc = $realBattleEndUtc
+}
+elseif ($PlaybackSpeedEstimate -gt 0 -and $null -ne $battleEndUtc -and $realMatchBeginUtc -ne [datetime]::MinValue) {
+    # Battle still live: predict the end so the fire-by deadline can stop the
+    # monitor in time. (Decoded-duration model at 1x would overshoot by the
+    # playback factor; the estimate absorbs it.)
+    $battleEndUtc = $realMatchBeginUtc.AddSeconds($durationSeconds / $PlaybackSpeedEstimate)
+    Write-Od048 ('battle_end_estimated_speed=' + $PlaybackSpeedEstimate + ' end=' + $battleEndUtc.ToString('o'))
+}
 $monitorMinSeconds = 30.0
 $stagingDeadlineUtc = $null
 $monitorExitUtc = $null
+$traceFireByUtc = $null
 if ($null -ne $battleEndUtc) {
     $stagingDeadlineUtc = $battleEndUtc.AddSeconds(-$monitorMinSeconds)
     # The battle starts at tick 0 some seconds AFTER the Start marker (load
@@ -934,7 +1107,14 @@ if ($null -ne $battleEndUtc) {
     # tail observations; the staging deadline may stay at the nominal end
     # (stopping staging early is safe, only losing scan attempts).
     $monitorExitUtc = $battleEndUtc.AddSeconds([double]$MaxTimeShiftSeconds + 10.0)
-    Write-Od048 ("battle_duration_s=" + [Math]::Round($durationSeconds, 1) + " staging_deadline=" + $stagingDeadlineUtc.ToString('o'))
+    # FRESH35 fire-by deadline: stop the monitor sampling window with enough
+    # wall time left to run the final correlate + verdict + wrapper launch +
+    # interceptor attach (TraceStartupSeconds) AND the trace window itself.
+    # The correlate/verdict/trace then all land INSIDE the live battle; the
+    # previous behavior ran the trace after the real battle end, writing on
+    # the frozen result screen.
+    $traceFireByUtc = $battleEndUtc.AddSeconds(-($TraceStartupSeconds + [double]$AutoTraceSeconds))
+    Write-Od048 ("battle_duration_s=" + [Math]::Round($durationSeconds, 1) + " staging_deadline=" + $stagingDeadlineUtc.ToString('o') + " fire_by=" + $traceFireByUtc.ToString('o'))
 }
 # FRESH15i: match-begin gate for the FIRST staging scan (mirror of the
 # attach-smoke gate). The Start marker fires when loading BEGINS; the match
@@ -944,7 +1124,11 @@ if ($null -ne $battleEndUtc) {
 # field does not hold yet (it stages decoys, not the position field). Wait
 # until battle elapsed >= StageMinBattleSeconds; cap the wait at the staging
 # deadline so a short battle cannot have its staging pushed past the end.
-$stagingElapsedSec = [Math]::Max(0.0, ([datetime]::UtcNow - $anchorUtc).TotalSeconds)
+# FRESH35: battle-elapsed is measured from the REAL match begin when the
+# log has already shown it (battleStartUtc is re-anchored above), not from
+# the Start marker - the marker fires when loading BEGINS, the scene loads
+# ~seconds later.
+$stagingElapsedSec = [Math]::Max(0.0, ([datetime]::UtcNow - $battleStartUtc).TotalSeconds)
 if ($stagingElapsedSec -lt $StageMinBattleSeconds) {
     $matchBeginWait = [double]($StageMinBattleSeconds - $stagingElapsedSec)
     if ($null -ne $stagingDeadlineUtc) {
@@ -1159,6 +1343,29 @@ while ($round -lt $MaxReadRounds) {
         break
     }
 
+    # FRESH35 fire-by deadline: stop sampling with enough wall time left for
+    # the final correlate + verdict + wrapper launch + trace window to land
+    # INSIDE the live battle. REVIEW FIX: the real window is refreshed EVERY
+    # round BEFORE the deadline comparison (not only once the initial
+    # deadline passes) - with the default -PlaybackSpeedEstimate 1.0 on a
+    # ~2x replay the initial estimate is ~2.5 min late, so the old placement
+    # only refreshed after the battle had already ended and the trace was a
+    # guaranteed 'battle-ended-log' skip. Refreshing first means the deadline
+    # snaps to the REAL end the moment deaths appear in the log, whatever the
+    # estimate said. The monitor keeps whatever series it has - the correlate
+    # still runs on the live samples.
+    $rwNow = Get-BlitzRealWindow -AnchorUtc $replayStartWallUtc -DecodedDurationSeconds $durationSeconds
+    if ($rwNow.EndUtc -ne [datetime]::MinValue) {
+        $battleEndUtc = $rwNow.EndUtc
+        $measuredPlaybackSpeed = $rwNow.PlaybackSpeed
+        $traceFireByUtc = $battleEndUtc.AddSeconds(-($TraceStartupSeconds + [double]$AutoTraceSeconds))
+    }
+    if ($null -ne $traceFireByUtc -and ([datetime]::UtcNow -gt $traceFireByUtc)) {
+        $stoppedReason = 'fire-by-deadline'
+        Write-Od048 ('monitor_stop fire-by-deadline fire_by=' + $traceFireByUtc.ToString('o') + ' real_end=' + $battleEndUtc.ToString('o'))
+        break
+    }
+
     # End-of-battle early exit: once the UPPER bound on wall-time battle end
     # (nominal duration + max load latency + trailing window) has elapsed,
     # further rounds only observe an empty world -- stop and correlate what we
@@ -1174,7 +1381,17 @@ while ($round -lt $MaxReadRounds) {
     # and the smoke fired after the battle was over. Watch the blitz log for
     # the real end and stop early -- the correlate still runs on the live
     # samples, and the pre-trace gate recheck (below) skips the trace.
+    # FRESH35: refresh the real window (deaths appear mid-battle), so the
+    # fire-by deadline snaps to the ACTUAL end the moment the log shows it
+    # instead of waiting out the estimate.
     if (-not $AllowTraceAfterBattleEnd -and (Test-BlitzBattleEnded -AnchorUtc $replayStartWallUtc)) {
+        $realWindowNow = Get-BlitzRealWindow -AnchorUtc $replayStartWallUtc -DecodedDurationSeconds $durationSeconds
+        if ($realWindowNow.EndUtc -ne [datetime]::MinValue -and $null -ne $battleEndUtc) {
+            $battleEndUtc = $realWindowNow.EndUtc
+            $measuredPlaybackSpeed = $realWindowNow.PlaybackSpeed
+            $traceFireByUtc = $battleEndUtc.AddSeconds(-($TraceStartupSeconds + [double]$AutoTraceSeconds))
+            Write-Od048 ('real_battle_end_refreshed=' + $battleEndUtc.ToString('o') + ' measured_playback_speed=' + $(if ($null -ne $measuredPlaybackSpeed) { [Math]::Round($measuredPlaybackSpeed, 2) } else { 'n/a' }))
+        }
         $stoppedReason = 'battle-ended-log'
         Write-Od048 'monitor_stop battle-ended-log (blitz log shows player left the world)'
         break
@@ -1200,7 +1417,7 @@ while ($round -lt $MaxReadRounds) {
         Write-Od048 'attach_smoke skipped (TraceEngine=csharp - the interceptor validates its own attach offline; no x64dbg mechanics to pre-flight)'
         $attachSmokeDone = $true
     }
-    $smokeElapsedSeconds = [Math]::Max(0.0, ([datetime]::UtcNow - $anchorUtc).TotalSeconds)
+    $smokeElapsedSeconds = [Math]::Max(0.0, ([datetime]::UtcNow - $battleStartUtc).TotalSeconds)
     # FRESH27b: fire the smoke ONLY on the last sampling round, not at round 2.
     # FRESH27 proved that sampling under an attached (kept) x32dbg warps the
     # wall->tick stamps: rounds 3-50 were read under the debugger and the z
@@ -1925,6 +2142,16 @@ $report = [ordered]@{
     # and IS armable by the auto-trace. False when every strong survivor was
     # already in a family or failed the score/band floors.
     soloFamilyEmitted      = $soloFamilyEmitted
+    # FRESH35 (FRESH34 post-mortem): the real battle window from the blitz
+    # log + the playback speed derived from it. The decoded-duration model
+    # overshot the real end by ~2.5 min (FRESH34: real 02:33:48 vs model
+    # 02:36:21) because the launch replay plays at ~2x - the measured speed
+    # calibrates the next run's -PlaybackSpeedEstimate.
+    realMatchBeginUtc      = if ($realMatchBeginUtc -ne [datetime]::MinValue) { $realMatchBeginUtc.ToString('o') } else { $null }
+    realBattleEndUtc       = if ($realBattleEndUtc -ne [datetime]::MinValue) { $realBattleEndUtc.ToString('o') } else { $null }
+    measuredPlaybackSpeed  = if ($null -ne $measuredPlaybackSpeed) { [Math]::Round($measuredPlaybackSpeed, 2) } else { $null }
+    playbackSpeedEstimate  = $PlaybackSpeedEstimate
+    traceFireByUtc         = if ($null -ne $traceFireByUtc) { $traceFireByUtc.ToString('o') } else { $null }
 }
 
 try {

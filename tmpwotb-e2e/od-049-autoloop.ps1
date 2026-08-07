@@ -19,6 +19,12 @@ param(
     # scan targets tick (elapsed - attendance) and the correlate maps
     # wall->tick from (marker + attendance), so the needed shift is ~0.
     [double]$AttendanceLatencySeconds = 50.0,
+    # FRESH35: replay playback speed (decoded seconds per wall second).
+    # FRESH34 measured 2.03x on the accelerated launch; pass the measured
+    # value once a session records it so the fire-by deadline lands the trace
+    # inside the live battle instead of on the result screen.
+    [double]$PlaybackSpeedEstimate = 1.0,
+    [double]$TraceStartupSeconds = 20.0,
     # FRESH19: correlate shift-sweep half-width (passed through). FRESH18
     # proved the 50s attendance estimate is per-replay -- the z axis wanted a
     # shift ~20-30s beyond the old 30s sweep. 90s lets the scorer REACH the
@@ -218,6 +224,8 @@ for ($attempt = 1; $attempt -le $MaxCampaignAttempts; $attempt++) {
         StageDelaySeconds      = $StageDelaySeconds
         StageMinBattleSeconds  = $StageMinBattleSeconds
         AttendanceLatencySeconds = $AttendanceLatencySeconds
+        PlaybackSpeedEstimate = $PlaybackSpeedEstimate
+        TraceStartupSeconds   = $TraceStartupSeconds
         AutoWriteTraceOnVerdict = $true
         AutoTraceSeconds       = $AutoTraceSeconds
         ResultPath             = $ResultPath

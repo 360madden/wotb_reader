@@ -464,6 +464,11 @@ $familyReport = [ordered]@{
     interceptorArmedPageEvents = if ($capture.PSObject.Properties['armedPageEvents'] -and $null -ne $capture.armedPageEvents) { [int]$capture.armedPageEvents } else { 0 }
     interceptorForeignGuardEvents = if ($capture.PSObject.Properties['foreignGuardEvents'] -and $null -ne $capture.foreignGuardEvents) { [int]$capture.foreignGuardEvents } else { 0 }
     verdict            = $familyVerdict
+    # Genuine read of the splat-parity switch: records the invocation mode.
+    # od-048 always passes AutoWriteTrace=$true (driver mode); a standalone
+    # operator invocation omits it. The value is evidence, not dead state -
+    # it also keeps PSReviewUnusedParameter satisfied without a suppression.
+    invocationMode     = if ($AutoWriteTrace) { 'auto-write-trace' } else { 'operator' }
     members            = $memberEntries
 }
 
