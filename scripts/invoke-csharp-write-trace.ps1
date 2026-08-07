@@ -376,7 +376,17 @@ if ($interceptorExit -ne 0) {
 # ---------------------------------------------------------------------------
 # 5. Parse the capture report and merge into the odwt-* shapes.
 # ---------------------------------------------------------------------------
-$capture = Get-Content -LiteralPath $captureJson -Raw | ConvertFrom-Json
+$capture = $null
+try {
+    $capture = Get-Content -LiteralPath $captureJson -Raw | ConvertFrom-Json
+}
+catch {
+    # StrictMode+Stop: a missing/empty/truncated capture file after a clean
+    # interceptor exit would otherwise crash with a raw error, not the
+    # exit-code contract. Fail closed with the diagnostic instead.
+    Write-CsWt ('FAILED_capture_parse ' + $_.Exception.Message)
+    exit 6
+}
 $hits = @()
 if ($null -ne $capture -and $capture.PSObject.Properties['hits'] -and $null -ne $capture.hits) {
     $hits = @($capture.hits)

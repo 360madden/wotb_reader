@@ -1126,7 +1126,18 @@ if ($realBattleEndUtc -eq [datetime]::MinValue -and $realWindow.LogStaleUtc -gt 
 $measuredPlaybackSpeed = $realWindow.PlaybackSpeed
 if ($realMatchBeginUtc -ne [datetime]::MinValue) {
     Write-Od048 ('real_match_begin=' + $realMatchBeginUtc.ToString('o') + ' model_start=' + $battleStartUtc.ToString('o'))
-    $battleStartUtc = $realMatchBeginUtc
+    # battleStartUtc is DELIBERATELY not re-anchored to the log's scene end.
+    # It is the tick-math anchor (staging target tick, correlate wall->tick,
+    # staging/smoke gates) whose contract is "decoded tick 0 = marker +
+    # attendance" - proven by FRESH15j (marker+56s elapsed -> the live tank
+    # sits at decoded tick ~6, so the correct target is marker-elapsed MINUS
+    # the attendance) and FRESH34. The log's LoadGameScene-ends is the
+    # RECORDING start (marker + ~4s), ~46s earlier: re-anchoring here would
+    # stage the tank's position ~46 decoded-seconds AHEAD of the live value
+    # (decoys) and fire the staging/smoke gates early - the exact FRESH15j
+    # failure mode. The battle-END budget uses realMatchBeginUtc directly
+    # (estimate path + the loop's begin-visible correction), so nothing is
+    # lost by keeping the tick anchor stable.
 }
 if ($realBattleEndUtc -ne [datetime]::MinValue) {
     Write-Od048 ('real_battle_end=' + $realBattleEndUtc.ToString('o') + ' measured_playback_speed=' + $(if ($null -ne $measuredPlaybackSpeed) { [Math]::Round($measuredPlaybackSpeed, 2) } else { 'n/a' }))
@@ -1173,10 +1184,12 @@ if ($null -ne $battleEndUtc) {
 # field does not hold yet (it stages decoys, not the position field). Wait
 # until battle elapsed >= StageMinBattleSeconds; cap the wait at the staging
 # deadline so a short battle cannot have its staging pushed past the end.
-# FRESH35: battle-elapsed is measured from the REAL match begin when the
-# log has already shown it (battleStartUtc is re-anchored above), not from
-# the Start marker - the marker fires when loading BEGINS, the scene loads
-# ~seconds later.
+# battleStartUtc is the decoded tick-0 instant (marker + attendance): the
+# Start marker fires when loading begins, and the decoded trajectory's tick 0
+# is the match-begin instant - so elapsed-from-battleStartUtc IS the live
+# decoded tick. Measured from the marker alone the estimate would run ~50s
+# ahead and stage decoys (FRESH15j); the log's scene end (recording start) is
+# used only for the battle-END budget, never for the tick math.
 $stagingElapsedSec = [Math]::Max(0.0, ([datetime]::UtcNow - $battleStartUtc).TotalSeconds)
 if ($stagingElapsedSec -lt $StageMinBattleSeconds) {
     $matchBeginWait = [double]($StageMinBattleSeconds - $stagingElapsedSec)
@@ -1269,6 +1282,16 @@ while ($stagingAttempt -lt $MaxStagingAttempts -and -not $budgetExhausted) {
             if ($null -ne $stagingDeadlineUtc -and ([datetime]::UtcNow -gt $stagingDeadlineUtc)) {
                 $budgetExhausted = $true
                 Write-Od048 'staging_budget_exhausted'
+                break
+            }
+            # Real-end guard: the model deadline can be minutes late on a 2x
+            # replay, so a slow scan could overrun the REAL battle end and
+            # stage a dead world. The blitz-log window (activity + silence, or
+            # a definitive stop marker) stops staging the moment the battle is
+            # actually over - the monitor then keeps a real observation window.
+            if (Test-BlitzBattleEnded -AnchorUtc $replayStartWallUtc) {
+                $budgetExhausted = $true
+                Write-Od048 'staging_stop_battle_ended (real window from blitz log)'
                 break
             }
             # Fresh tick estimate PER AXIS: the estimate computed at attempt
@@ -2117,6 +2140,19 @@ $report = [ordered]@{
             y = @($strongSurvivors | Where-Object { $_.axis -eq 'y' }).Count
             z = @($strongSurvivors | Where-Object { $_.axis -eq 'z' }).Count
         }
+    }
+    # FRESH35: log-derived real battle window evidence. measuredPlaybackSpeed
+    # is the feedback value the param contract promises - the NEXT run should
+    # pass it as -PlaybackSpeedEstimate so the fire-by deadline tracks the
+    # true end. traceFireByUtc shows where the trace was budgeted relative to
+    # realBattleEndUtc (a past fire-by means the run stopped early or late).
+    blitzLog               = [ordered]@{
+        realMatchBeginUtc     = if ($realMatchBeginUtc -ne [datetime]::MinValue) { $realMatchBeginUtc.ToString('o') } else { $null }
+        realBattleEndUtc      = if ($realBattleEndUtc -ne [datetime]::MinValue) { $realBattleEndUtc.ToString('o') } else { $null }
+        logStaleUtc           = if ($realWindow.LogStaleUtc -ne [datetime]::MinValue) { $realWindow.LogStaleUtc.ToString('o') } else { $null }
+        playbackSpeedEstimate = $PlaybackSpeedEstimate
+        measuredPlaybackSpeed = if ($null -ne $measuredPlaybackSpeed) { [Math]::Round($measuredPlaybackSpeed, 3) } else { $null }
+        traceFireByUtc        = if ($null -ne $traceFireByUtc) { $traceFireByUtc.ToString('o') } else { $null }
     }
     results                = @($results | Select-Object -First 50 | ForEach-Object {
         [ordered]@{
