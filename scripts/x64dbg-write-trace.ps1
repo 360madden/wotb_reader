@@ -460,7 +460,7 @@ function Add-OdwtHitLines {
 }
 
 function Read-X64DbgLog {
-    param([IntPtr]$Handle)
+    param([IntPtr]$Handle, [string]$Pattern = '')
     Add-Type -AssemblyName UIAutomationClient -ErrorAction SilentlyContinue
     Add-Type -AssemblyName UIAutomationTypes -ErrorAction SilentlyContinue
     $root = $null
@@ -484,11 +484,35 @@ function Read-X64DbgLog {
         [System.Windows.Automation.Condition]::TrueCondition)
     foreach ($el in $all) {
         $n = $el.Current.Name
-        if ($n -and ($n -match 'ODWT_|Error executing|Memory breakpoint|Hardware breakpoint')) {
+        if ($n -and (
+                ($Pattern -and $n -match $Pattern) -or
+                (-not $Pattern -and ($n -match 'ODWT_|Error executing|Memory breakpoint|Hardware breakpoint')))) {
             $lines.Add($n)
         }
     }
     return $lines
+}
+
+# FRESH32b diagnostic: capture the RAW x64dbg log tab (broad filter: bpm
+# results, errors, ODWT lines, breakpoint list, register output) so a
+# zero-hit run is explainable - the log tab carries the ground truth of
+# whether bpm armed, whether the script errored, and (via `bl` / `r rip`)
+# whether the debuggee is paused at a write site.
+function Add-TraceRawLog {
+    param(
+        [IntPtr]$Handle,
+        [System.Collections.Generic.List[string]]$Log,
+        [string]$LogFile
+    )
+    try {
+        foreach ($ln in @(Read-X64DbgLog -Handle $Handle -Pattern 'ODWT_|Error|Memory breakpoint|Hardware breakpoint|bpm|bpc|mwb|breakpoint|Breakpoint|rip|Unable|Invalid|Exception|script|Script|pause')) {
+            if ($Log -notcontains $ln) { $Log.Add($ln) }
+        }
+    }
+    catch { }
+    if ($LogFile -and $Log.Count -gt 0) {
+        try { Set-Content -LiteralPath $LogFile -Value $Log -Encoding ascii } catch { }
+    }
 }
 
 # -- M2 family helpers --------------------------------------------------------
@@ -1639,6 +1663,11 @@ try {
     $valsStart = Read-FamilyValues -Addresses $armed
 
     # ---- 6. Poll hits + gate for the trace window --------------------------
+    # FRESH32b: raw-log diagnostic accumulator (see Add-TraceRawLog). Swept
+    # after injection, each poll tick, and after `bl`/`r rip` pre-detach.
+    $traceLog = New-Object System.Collections.Generic.List[string]
+    $rawLogFile = Join-Path $HitsDir 'od-wt-raw.log'
+    [void](Add-TraceRawLog -Handle $win.Handle -Log $traceLog -LogFile $rawLogFile)
     $deadline = (Get-Date).AddSeconds($TraceSeconds)
     $hits = @()
     $lastAnnounce = Get-Date
@@ -1662,6 +1691,9 @@ try {
         # log file never materialized.
         [void](Add-OdwtHitLines -Path $bpLogFile -ToList $hits)
         [void](Add-OdwtHitLines -Path $engineLog -ToList $hits)
+        # FRESH32b: raw log tab capture every tick (bpm errors, ODWT lines,
+        # breakpoint list, register output).
+        [void](Add-TraceRawLog -Handle $win.Handle -Log $traceLog -LogFile $rawLogFile)
 
         if (-not $SkipGateCheck) {
             $st = Get-GateState
@@ -1728,6 +1760,22 @@ try {
     Write-Wt ('window_cpu_delta_ms=' + $(if ($null -eq $cpuDeltaMs) { 'unknown' } else { $cpuDeltaMs }) + ' liveness=' + $windowLiveness + ' values_changed=' + $windowValuesChanged + $(if ($null -ne $maxValueDelta) { ' max_delta=' + $maxValueDelta } else { '' }))
 
     # ---- 6b. Release the debuggee ------------------------------------------
+    # FRESH32b: capture the raw x64dbg state BEFORE detach. `bl` lists the
+    # breakpoints (did our bpm commands arm?); `r rip` reads the instruction
+    # pointer - if the debuggee is paused at a BP hit, RIP IS the write-site
+    # evidence the campaign has been chasing. Output lands in the log tab
+    # and is swept into $traceLog.
+    try {
+        Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle 'bl'
+        Start-Sleep -Milliseconds 400
+        Send-X64DbgCommand -CommandBar $cmdBar -Handle $win.Handle 'r rip'
+        Start-Sleep -Milliseconds 800
+    }
+    catch { }
+    [void](Add-TraceRawLog -Handle $win.Handle -Log $traceLog -LogFile $rawLogFile)
+    Write-Wt ('trace_log_lines=' + $traceLog.Count)
+    $bpmErrors = @($traceLog | Where-Object { $_ -match 'Error executing|Unable|Invalid' })
+    if ($bpmErrors.Count -gt 0) { Write-Wt ('TRACE_BPM_ERRORS: ' + ($bpmErrors -join ' | ')) }
     # The memory BP pauses the game on its first hit (breakCondition defaults
     # to 1 -> break -> wait), so the trace captures one proof file per armed
     # address and then holds the game paused. Detach to resume it cleanly.
@@ -1858,6 +1906,11 @@ try {
             # paused/roster replay: renders but writes nothing.
             windowValuesChanged = $windowValuesChanged
             windowMaxValueDelta = $maxValueDelta
+            # FRESH32b: raw x64dbg log-tab lines (bpm results, errors,
+            # breakpoint list, register output) - the ground-truth record
+            # for a zero-hit run.
+            traceLogLines = $traceLog.Count
+            traceLog      = @($traceLog | Select-Object -Last 60)
             verdict      = $familyVerdict
             members      = $memberEntries
         }
