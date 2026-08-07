@@ -85,3 +85,67 @@ a **copy destination**; the *fill* happens at `wotblitz.exe+0x7C39AB`.
   function via Ghidra (FindOffsets.py), then trace the source-page pointer
   chain to see whether the staging buffer holds x/y/z consecutively (the
   `MOVDQU` writes 4 floats = x, y, z + one more, at `0x28FFCF10`).
+
+## Ghidra follow-through (same-session offline, 2026-08-07)
+
+`wotblitz.exe` verified hash-bound to the 11.19.0.10 evidence
+(`1cda5c31…`, exact match) before disassembly, so the decode applies to the
+binary that produced the FRESH43 hit. Headless scripts:
+`tools/ghidra-scripts/DumpWriteSite.java` + `DumpChain.java` (run with
+`-noanalysis` against the existing `WotBlitz` project; ~90s each). Raw
+dumps in `tools/ghidra-scripts/writesite-disasm.txt` +
+`functions-disasm.txt` + `chain-disasm.txt` (71 KB).
+
+### The write-site function: FUN_00bc3940 (RVA 0x7C3940, 0x2E6 bytes)
+
+The RIP `wotblitz.exe+0x7C39AB` (`MOV EAX,[EBX+0xA0]`) sits inside a
+**per-frame tank/entity transform update**, called per entity from the
+entity-list iteration `FUN_00bb9b30` (flag-gated: `[entity+0x20] & 0x800`).
+Structure:
+
+- **Object source:** `EBX = FUN_00d29ea0(0)` where `FUN_00d29ea0` =
+  `return *(int *)(param_1 + 0x3c)` — a **single-indirection getter**; the
+  updated object is `[entity + 0x3C]`.
+- **Validity gate:** `[obj+0xA0]` non-zero (the exact RIP instruction).
+- **Position gate:** checks `[obj+0x1C]`, `[obj+0x20]`, `[obj+0x24]` floats
+  non-zero — **a position triple (x, y, z) at obj+0x1C/0x20/0x24**.
+- **World transform:** refills `[obj+0x60 .. 0x9C]` (16 floats = 4×4 matrix)
+  via 4× `MOVUPS xmmword` stores — **the exact SSE 16-byte pattern captured
+  in hits 2–5** — from `FUN_00729570` (a 4×4 matrix multiply) composed from
+  `FUN_00d1a0f0` (quaternion→matrix build from `[obj+0x10]`) and the
+  per-entity basis from `FUN_00e6a690`/`FUN_00d155c0`
+  (orthonormal-basis normalizer: sqrt of squared sums).
+- **Second block:** `[obj+0x38 .. 0x5C]` written from `FUN_00d16380` output
+  (identity-with-diagonal + quaternion product terms) — a second
+  rotation/position representation.
+
+### What this means (offline milestone, no promotion)
+
+1. **The write site is real game transform code, not a CRT blob.** The
+   captured `REP MOVSB`/`MOVDQU` hits were the CRT copy of a **64-byte
+   transform block** whose producer is `FUN_00bc3940` — a tank world-matrix
+   update. The member address the correlator found (`0x22AB0F90`) is one
+   destination copy of this block.
+2. **Candidate stable layout for the player tank:**
+   `position x/y/z = [entity+0x3C] + 0x1C / 0x20 / 0x24` and
+   `world matrix = [entity+0x3C] + 0x60` (translation column likely carries
+   world x/y/z). The 4-float `MOVDQU` values captured
+   (0.000457 / 2.5736 / −0.112 / −0.112) are a rotation/scale row of that
+   matrix, not world coordinates — consistent with FRESH37's hit values being
+   matrix rows, not direct positions.
+3. **Promotion still blocked (evidence-first):** no offset is promoted.
+   M3 requires (a) a live read of `[entity+0x3C]+0x1C/20/24` at a known replay
+   instant matched to decoded ground truth, (b) repeatability across battles,
+   and (c) `independentReplays >= 1` (BLK-0019). The entity pointer chain
+   above `FUN_00bb9b30` (the array container) is not yet rooted to a global.
+
+### Next (offline-first, no live round without a changed hypothesis)
+
+1. Dump `FUN_00bb9b30`'s caller to find the entity-array container and walk
+   it to a stable global root → candidate static pointer chain.
+2. Interceptor experiment (offline-validated, live round): on the next
+   family-hit, arm `[obj+0x1C..0x24]` (the position triple) instead of the
+   whole block and verify the captured values match decoded ground truth at
+   the same replay clock.
+3. Keep `0x7C39AB` (and the +0x38/+0x60 blocks) as the anchor evidence for
+   the transform-object hypothesis.
