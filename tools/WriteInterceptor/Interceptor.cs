@@ -28,6 +28,7 @@ internal sealed class WriteInterceptor
     private static readonly nuint PageMask = ~(nuint)0xFFF;
     private const uint WaitTimeoutMs = 200;
     private const int ContinueSettleMs = 2;
+    private const int PostWriteReadRetries = 10;
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     private readonly uint _pid;
@@ -44,6 +45,8 @@ internal sealed class WriteInterceptor
     private int _exceptionEvents;
     private int _guardEvents;
     private int _armedPageEvents;
+    private int _foreignGuardEvents;
+    private const int MaxDiagnostics = 400;
 
     public WriteInterceptor(uint pid, nuint[] addresses, double seconds, string outPath)
     {
@@ -66,7 +69,7 @@ internal sealed class WriteInterceptor
         {
             if (process.IsInvalid)
             {
-                _diagnostics.Add($"open_process_failed win32={Marshal.GetLastWin32Error()}");
+                AddDiagnostic($"open_process_failed win32={Marshal.GetLastWin32Error()}");
                 WriteReport(startedUtc, 2);
                 return 2;
             }
@@ -81,18 +84,24 @@ internal sealed class WriteInterceptor
             // event).
             if (!NativeMethods.DebugActiveProcess(_pid))
             {
-                _diagnostics.Add($"debug_attach_failed win32={Marshal.GetLastWin32Error()} (already has a debugger?)");
+                AddDiagnostic($"debug_attach_failed win32={Marshal.GetLastWin32Error()} (already has a debugger?)");
                 RestorePages(process);
                 WriteReport(startedUtc, 4);
                 return 4;
             }
-            _diagnostics.Add("attached_debug_active");
+            AddDiagnostic("attached_debug_active");
 
             // Threads are frozen while we hold the CREATE_PROCESS event
-            // pending; arm now with no race.
+            // pending; arm now with no race. Fail CLOSED if no page could be
+            // armed: a capture loop on zero armed pages can never capture and
+            // must not report success.
             if (!ArmPages(process))
             {
-                _diagnostics.Add("arm_after_attach_failed");
+                AddDiagnostic("arm_after_attach_failed - no page armed");
+                _ = NativeMethods.DebugActiveProcessStop(_pid);
+                RestorePages(process);
+                WriteReport(startedUtc, 3);
+                return 3;
             }
 
             try
@@ -109,7 +118,8 @@ internal sealed class WriteInterceptor
                             // the event queue was simply empty.
                             continue;
                         }
-                        _diagnostics.Add($"wait_for_debug_event_failed win32={win32}");
+                        AddDiagnostic($"wait_for_debug_event_failed win32={win32}");
+                        exitCode = 5; // unexpected debug-event failure is not success
                         break;
                     }
 
@@ -156,11 +166,11 @@ internal sealed class WriteInterceptor
             if (TryReadFloat(process, address, out float value))
             {
                 _snapshots[address] = value;
-                _diagnostics.Add($"snapshot addr=0x{address:X8} value={value:F4}");
+                AddDiagnostic($"snapshot addr=0x{address:X8} value={value:F4}");
             }
             else
             {
-                _diagnostics.Add($"snapshot_failed addr=0x{address:X8} win32={Marshal.GetLastWin32Error()}");
+                AddDiagnostic($"snapshot_failed addr=0x{address:X8} win32={Marshal.GetLastWin32Error()}");
             }
         }
 
@@ -183,7 +193,7 @@ internal sealed class WriteInterceptor
             byte[] mbi = new byte[28];
             if (NativeMethods.VirtualQueryEx(process, (nint)page, mbi, (nuint)mbi.Length) == 0)
             {
-                _diagnostics.Add($"virtual_query_failed page=0x{page:X8} win32={Marshal.GetLastWin32Error()}");
+                AddDiagnostic($"virtual_query_failed page=0x{page:X8} win32={Marshal.GetLastWin32Error()}");
                 continue;
             }
 
@@ -193,10 +203,10 @@ internal sealed class WriteInterceptor
             uint allocProtect = BitConverter.ToUInt32(mbi, 8);
             uint regionSize = BitConverter.ToUInt32(mbi, 12);
 
-            _diagnostics.Add($"query page=0x{page:X8} raw={Convert.ToHexString(mbi)} allocProtect=0x{allocProtect:X} region=0x{regionSize:X} state=0x{state:X} protect=0x{protect:X} type=0x{type:X}");
+            AddDiagnostic($"query page=0x{page:X8} raw={Convert.ToHexString(mbi)} allocProtect=0x{allocProtect:X} region=0x{regionSize:X} state=0x{state:X} protect=0x{protect:X} type=0x{type:X}");
             if (state != 0x1000) // MEM_COMMIT
             {
-                _diagnostics.Add($"page_not_committed page=0x{page:X8} state=0x{state:X} protect=0x{protect:X}");
+                AddDiagnostic($"page_not_committed page=0x{page:X8} state=0x{state:X} protect=0x{protect:X}");
                 continue;
             }
 
@@ -204,22 +214,26 @@ internal sealed class WriteInterceptor
             // bookkeeping bits (PAGE_TARGETS_INVALID 0x40000000) that
             // VirtualProtectEx rejects with ERROR_INVALID_PARAMETER (87).
             uint original = protect & 0xFF;
-            if ((original & NativeMethods.PageNoAccess) != 0)
+            if (original == 0 || (original & NativeMethods.PageNoAccess) != 0)
             {
-                _diagnostics.Add($"page_no_access page=0x{page:X8} - cannot arm");
+                // original == 0 additionally guards the layout-misparse case
+                // (a 32-byte MBI with PartitionId would read State into the
+                // Protect slot and mask to 0x00, which the NOACCESS bit test
+                // alone would miss and would arm a zero-access guard page).
+                AddDiagnostic($"page_no_access page=0x{page:X8} orig=0x{original:X} - cannot arm");
                 continue;
             }
 
             uint newProtect = original | NativeMethods.PageGuard;
             if (!NativeMethods.VirtualProtectEx(process, (nint)page, 0x1000, newProtect, out _))
             {
-                _diagnostics.Add($"arm_failed page=0x{page:X8} orig=0x{original:X} new=0x{newProtect:X} win32={Marshal.GetLastWin32Error()}");
+                AddDiagnostic($"arm_failed page=0x{page:X8} orig=0x{original:X} new=0x{newProtect:X} win32={Marshal.GetLastWin32Error()}");
                 continue;
             }
 
             _originalProtects[page] = original;
             _armedPages.Add(page);
-            _diagnostics.Add($"page_armed page=0x{page:X8} orig=0x{original:X}");
+            AddDiagnostic($"page_armed page=0x{page:X8} orig=0x{original:X}");
         }
 
         return _armedPages.Count > 0;
@@ -245,7 +259,9 @@ internal sealed class WriteInterceptor
             // ExceptionInformation is not populated for guard events on this
             // OS (observed data=0x0), so the touched page cannot be identified
             // from the event; instead scan all armed addresses post-access and
-            // re-arm every armed page.
+            // re-arm every armed page. Count events that touched no armed
+            // address (foreign guard users, e.g. stack growth) so a live run
+            // can distinguish our traps from the target's own guard usage.
             _armedPageEvents++;
 
             // The faulting thread is suspended while we hold the event: grab
@@ -262,16 +278,34 @@ internal sealed class WriteInterceptor
 
             // Post-access: reads leave the value unchanged, writes change it -
             // the read/write discriminator (PAGE_GUARD traps on ANY access).
+            // The write lands asynchronously after the thread resumes, so retry
+            // the read briefly rather than trusting a single settle sleep.
             bool anyChanged = false;
             foreach (nuint address in _addresses)
             {
-                if (!_snapshots.ContainsKey(address) || !TryReadFloat(process, address, out float value))
+                if (!_snapshots.ContainsKey(address))
                 {
                     continue;
                 }
 
                 float previous = _snapshots[address];
-                if (MathF.Abs(value - previous) > 0.0001f)
+                float value = 0f;
+                bool readOk = false;
+                for (int attempt = 0; attempt < PostWriteReadRetries; attempt++)
+                {
+                    if (TryReadFloat(process, address, out value))
+                    {
+                        readOk = true;
+                        if (MathF.Abs(value - previous) > 0.0001f)
+                        {
+                            break;
+                        }
+                    }
+
+                    Thread.Sleep(1);
+                }
+
+                if (readOk && MathF.Abs(value - previous) > 0.0001f)
                 {
                     _snapshots[address] = value;
                     anyChanged = true;
@@ -283,7 +317,7 @@ internal sealed class WriteInterceptor
                         de.ThreadId,
                         DateTimeOffset.UtcNow,
                         registers));
-                    _diagnostics.Add($"write_captured addr=0x{address:X8} value={value:F4} rip=0x{rip:X8} numParams={numParams}");
+                    AddDiagnostic($"write_captured addr=0x{address:X8} value={value:F4} rip=0x{rip:X8} numParams={numParams}");
                 }
             }
 
@@ -293,10 +327,15 @@ internal sealed class WriteInterceptor
             {
                 if (!NativeMethods.VirtualProtectEx(process, (nint)page, 0x1000, _originalProtects[page] | NativeMethods.PageGuard, out _))
                 {
-                    _diagnostics.Add($"rearm_failed page=0x{page:X8} win32={Marshal.GetLastWin32Error()}");
+                    AddDiagnostic($"rearm_failed page=0x{page:X8} win32={Marshal.GetLastWin32Error()}");
                 }
             }
-            _diagnostics.Add($"guard_handled rip=0x{rip:X8} changed={anyChanged}");
+            if (!anyChanged)
+            {
+                _foreignGuardEvents++;
+            }
+
+            AddDiagnostic($"guard_handled rip=0x{rip:X8} changed={anyChanged}");
             return;
         }
 
@@ -424,7 +463,7 @@ internal sealed class WriteInterceptor
             _pid);
         if (snapshot.IsInvalid)
         {
-            _diagnostics.Add($"module_snapshot_failed win32={Marshal.GetLastWin32Error()}");
+            AddDiagnostic($"module_snapshot_failed win32={Marshal.GetLastWin32Error()}");
             return;
         }
 
@@ -442,6 +481,17 @@ internal sealed class WriteInterceptor
         while (NativeMethods.Module32Next(snapshot, ref entry));
     }
 
+    private void AddDiagnostic(string line)
+    {
+        _diagnostics.Add(line); // direct list append (not a recursive call)
+        if (_diagnostics.Count > MaxDiagnostics)
+        {
+            // Keep the head (setup/arm evidence) and the tail (last events)
+            // rather than an unbounded list.
+            _diagnostics.RemoveRange(MaxDiagnostics / 2, _diagnostics.Count - MaxDiagnostics);
+        }
+    }
+
     private void WriteReport(DateTimeOffset startedUtc, int exitCode)
     {
         var report = new
@@ -453,6 +503,7 @@ internal sealed class WriteInterceptor
             exceptionEvents = _exceptionEvents,
             guardEvents = _guardEvents,
             armedPageEvents = _armedPageEvents,
+            foreignGuardEvents = _foreignGuardEvents,
             durationSeconds = _seconds,
             startedUtc = startedUtc.ToString("o"),
             finishedUtc = DateTimeOffset.UtcNow.ToString("o"),

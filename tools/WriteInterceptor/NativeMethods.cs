@@ -41,8 +41,10 @@ internal static partial class NativeMethods
 
     // Thread access rights for the context snapshot. THREAD_ALL_ACCESS is
     // required: minimal GET_CONTEXT+QUERY_INFO+SUSPEND_RESUME made
-    // GetThreadContext fail with ACCESS_DENIED (5) empirically.
-    internal const uint ThreadAllAccess = 0x1FFFFF;
+    // GetThreadContext fail with ACCESS_DENIED (5) empirically. Documented
+    // x86 value is 0x1F03FF (STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | the
+    // thread-specific rights).
+    internal const uint ThreadAllAccess = 0x1F03FF;
 
     // Toolhelp flags.
     internal const uint Th32csSnapshotModule = 0x00000008;
