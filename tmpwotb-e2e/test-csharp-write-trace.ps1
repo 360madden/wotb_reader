@@ -109,6 +109,21 @@ Write-Host ('member_hits=' + $member.hits + ' first_rip=' + (@($member.rips)[0])
 if ($member.hits -lt 1) { Write-Host 'FAIL_member_zero_hits'; Cleanup 1 }
 if (-not (@($member.rips)[0] -match '^0x[0-9a-fA-F]{4,16}$')) { Write-Host 'FAIL_bad_rip_format'; Cleanup 1 }
 
+# Durable capture + M2-tail enrichment (modules / writeSites / member rvas).
+$captureReport = $resultTxt + '.capture.json'
+if (-not (Test-Path -LiteralPath $captureReport)) { Write-Host 'FAIL_missing_durable_capture'; Cleanup 1 }
+Write-Host ('durable_capture_ok=' + $captureReport)
+$mods = @()
+if ($fr.PSObject.Properties['modules'] -and $null -ne $fr.modules) { $mods = @($fr.modules) }
+Write-Host ('family_modules=' + $mods.Count)
+if ($mods.Count -lt 1) { Write-Host 'FAIL_family_modules_missing'; Cleanup 1 }
+$sites = @()
+if ($fr.PSObject.Properties['writeSites'] -and $null -ne $fr.writeSites) { $sites = @($fr.writeSites) }
+Write-Host ('write_sites=' + $sites.Count)
+if ($sites.Count -lt 1) { Write-Host 'FAIL_write_sites_missing'; Cleanup 1 }
+if (-not $sites[0].PSObject.Properties['rva'] -or -not $sites[0].rva) { Write-Host 'FAIL_write_site_missing_rva'; Cleanup 1 }
+if (-not $member.PSObject.Properties['rvas']) { Write-Host 'FAIL_member_rvas_key_missing'; Cleanup 1 }
+
 # 4. Hits text file (odwt-* shape) must carry 'addr rip' lines.
 if (-not (Test-Path -LiteralPath $resultTxt)) { Write-Host 'FAIL_missing_hits_txt'; Cleanup 1 }
 $lines = @(Get-Content -LiteralPath $resultTxt)

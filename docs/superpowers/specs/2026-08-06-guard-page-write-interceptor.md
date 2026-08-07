@@ -70,9 +70,26 @@ base-register + field-displacement evidence) with no WOW64 gymnastics.
 - armed address + written value (4 bytes, float)
 - **RIP** (ExceptionAddress) + module-relative **RVA** (best-effort; JIT code
   reported as `jit`)
+- **instructionHex** — up to 16 code bytes at the RIP (best-effort RPM)
 - thread id + wall timestamp
-- full register dump (32-bit context) — scaffolded; consumed in the live
-  integration step for base-register/displacement classification.
+- full register dump (32-bit context) — used offline by
+  `Core/Discovery/WriteSiteAnalysis` for object-base / member-displacement
+  ranking
+
+### Report durability (FRESH36 lesson)
+
+The interceptor always wrote `rva` + `registers` into its JSON, but the live
+pipeline only kept absolute `rips[]` in `.family.json` and left the capture
+under `%TEMP%\od-wt-capture-<guid>.json` (ephemeral). That path is now:
+
+1. Interceptor report includes attach-time **`modules[]`**
+   (`name`, `baseAddress`, `size`, `pathBasename` — never full install paths).
+2. `scripts/invoke-csharp-write-trace.ps1` copies the capture to
+   **`ResultPath.capture.json`** and merges additive
+   `modules` / `writeSites` / member `rvas` into **`ResultPath.family.json`**.
+3. Offline re-analysis of a durable capture uses pure
+   `WriteSiteAnalysis` (unit-tested in Core) for module resolve, object-base
+   candidates, sibling-read plan, and resolver hints.
 
 ## Offline proof (before any live session)
 

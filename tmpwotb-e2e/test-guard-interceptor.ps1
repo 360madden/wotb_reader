@@ -61,7 +61,16 @@ if ($hits.Count -lt 1) { Write-Host 'FAIL_no_hits'; Cleanup 1 }
 $h0 = $hits[0]
 if (-not $h0.rip -or $h0.rip -eq '0x00000000') { Write-Host 'FAIL_bad_rip'; Cleanup 1 }
 if ($null -eq $h0.value) { Write-Host 'FAIL_missing_value'; Cleanup 1 }
-Write-Host ('first_hit rip=' + $h0.rip + ' value=' + $h0.value + ' rva=' + $h0.rva + ' regs_present=' + ($null -ne $h0.registers))
+if (-not $h0.PSObject.Properties['rva'] -or -not $h0.rva) { Write-Host 'FAIL_missing_rva_key'; Cleanup 1 }
+# Synthetic counter writes from JIT/private code: rva may be "jit"; module list
+# must still be non-empty (at least the interceptor/counter module itself).
+$mods = @()
+if ($json.PSObject.Properties['modules'] -and $null -ne $json.modules) { $mods = @($json.modules) }
+Write-Host ('modules=' + $mods.Count)
+if ($mods.Count -lt 1) { Write-Host 'FAIL_modules_missing'; Cleanup 1 }
+$instrPresent = ($h0.PSObject.Properties['instructionHex'] -and $null -ne $h0.instructionHex -and [string]$h0.instructionHex)
+Write-Host ('first_hit rip=' + $h0.rip + ' value=' + $h0.value + ' rva=' + $h0.rva + ' instr=' + $instrPresent + ' regs_present=' + ($null -ne $h0.registers))
+if (-not $instrPresent) { Write-Host 'FAIL_missing_instruction_hex'; Cleanup 1 }
 Write-Host 'PASS_capture'
 
 # 4. Negative control: bogus pid must fail closed (no pages armed / no attach).

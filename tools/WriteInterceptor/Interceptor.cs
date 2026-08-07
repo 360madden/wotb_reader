@@ -10,6 +10,7 @@ internal sealed record WriteHit(
     float Value,
     nuint Rip,
     string? Rva,
+    string? InstructionHex,
     uint ThreadId,
     DateTimeOffset Utc,
     IReadOnlyDictionary<string, uint>? Registers);
@@ -42,11 +43,13 @@ internal sealed class WriteInterceptor
     private readonly Dictionary<nuint, float> _snapshots = [];
     private readonly List<nuint> _armedPages = [];
     private readonly List<ModuleEntry32> _modules = [];
+    private readonly Dictionary<nuint, string?> _instructionHexByRip = [];
     private int _exceptionEvents;
     private int _guardEvents;
     private int _armedPageEvents;
     private int _foreignGuardEvents;
     private const int MaxDiagnostics = 400;
+    private const int InstructionBytesToRead = 16;
 
     public WriteInterceptor(uint pid, nuint[] addresses, double seconds, string outPath)
     {
@@ -90,6 +93,11 @@ internal sealed class WriteInterceptor
                 return 4;
             }
             AddDiagnostic("attached_debug_active");
+
+            // Snapshot modules while threads are still frozen so write-site
+            // RIPs can be resolved to module-relative RVAs for durable evidence.
+            EnsureModules();
+            AddDiagnostic($"module_snapshot count={_modules.Count}");
 
             // Threads are frozen while we hold the CREATE_PROCESS event
             // pending; arm now with no race. Fail CLOSED if no page could be
@@ -309,11 +317,13 @@ internal sealed class WriteInterceptor
                 {
                     _snapshots[address] = value;
                     anyChanged = true;
+                    string? instructionHex = TryReadInstructionHex(process, rip);
                     _hits.Add(new WriteHit(
                         address,
                         value,
                         rip,
                         ResolveRva(rip),
+                        instructionHex,
                         de.ThreadId,
                         DateTimeOffset.UtcNow,
                         registers));
@@ -451,6 +461,57 @@ internal sealed class WriteInterceptor
         return null; // JIT code or an unmapped region (the synthetic counter).
     }
 
+    private string? TryReadInstructionHex(SafeProcessHandle process, nuint rip)
+    {
+        if (_instructionHexByRip.TryGetValue(rip, out string? cached))
+        {
+            return cached;
+        }
+
+        byte[] buffer = new byte[InstructionBytesToRead];
+        if (!NativeMethods.ReadProcessMemory(process, (nint)rip, buffer, (nuint)buffer.Length, out nuint read)
+            || read == 0)
+        {
+            AddDiagnostic($"instruction_read_failed rip=0x{rip:X8} win32={Marshal.GetLastWin32Error()}");
+            _instructionHexByRip[rip] = null;
+            return null;
+        }
+
+        int count = (int)read;
+        var hex = string.Create(count * 2, (buffer, count), static (span, state) =>
+        {
+            ReadOnlySpan<byte> bytes = state.buffer.AsSpan(0, state.count);
+            for (int i = 0; i < bytes.Length; i++)
+            {
+                byte b = bytes[i];
+                span[i * 2] = ToHexNibble(b >> 4);
+                span[(i * 2) + 1] = ToHexNibble(b & 0xF);
+            }
+        });
+        _instructionHexByRip[rip] = hex;
+        return hex;
+    }
+
+    private static char ToHexNibble(int value) =>
+        (char)(value < 10 ? ('0' + value) : ('A' + (value - 10)));
+
+    private static string PathBasename(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            return Path.GetFileName(path);
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
     private void EnsureModules()
     {
         if (_modules.Count > 0)
@@ -470,6 +531,7 @@ internal sealed class WriteInterceptor
         ModuleEntry32 entry = new() { DwSize = (uint)Marshal.SizeOf<ModuleEntry32>() };
         if (!NativeMethods.Module32First(snapshot, ref entry))
         {
+            AddDiagnostic($"module32_first_failed win32={Marshal.GetLastWin32Error()}");
             return;
         }
 
@@ -494,6 +556,16 @@ internal sealed class WriteInterceptor
 
     private void WriteReport(DateTimeOffset startedUtc, int exitCode)
     {
+        // Basename-only module paths: never write full install paths into
+        // durable evidence that may later be grepped or summarized.
+        var modules = _modules.Select(m => new
+        {
+            name = m.SzModule ?? string.Empty,
+            baseAddress = $"0x{(nuint)m.ModBaseAddr:X8}",
+            size = m.ModBaseSize,
+            pathBasename = PathBasename(m.SzExePath),
+        }).ToArray();
+
         var report = new
         {
             mode = "interceptor",
@@ -507,12 +579,14 @@ internal sealed class WriteInterceptor
             durationSeconds = _seconds,
             startedUtc = startedUtc.ToString("o"),
             finishedUtc = DateTimeOffset.UtcNow.ToString("o"),
+            modules,
             hits = _hits.Select(h => new
             {
                 address = $"0x{h.Address:X8}",
                 value = h.Value,
                 rip = $"0x{h.Rip:X8}",
                 rva = h.Rva ?? "jit",
+                instructionHex = h.InstructionHex,
                 threadId = h.ThreadId,
                 utc = h.Utc.ToString("o"),
                 registers = h.Registers,

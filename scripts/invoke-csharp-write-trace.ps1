@@ -362,6 +362,21 @@ catch {
     exit 6
 }
 Write-CsWt ('interceptor_exit=' + $interceptorExit)
+
+# Durable capture next to ResultPath: FRESH36 lost modules/rva/registers
+# because the TEMP GUID path was ephemeral and never copied. Always promote
+# the raw interceptor report when present (success or fail-closed exit).
+$durableCapturePath = $ResultPath + '.capture.json'
+if (Test-Path -LiteralPath $captureJson) {
+    try {
+        Copy-Item -LiteralPath $captureJson -Destination $durableCapturePath -Force
+        Write-CsWt ('durable_capture=' + $durableCapturePath)
+    }
+    catch {
+        Write-CsWt ('WARN_durable_capture_copy_failed ' + $_.Exception.Message)
+    }
+}
+
 if ($interceptorExit -ne 0) {
     # 3 = no pages armed (unreadable/committed-check failed), 4 = attach
     # failed (already has a debugger? the x64dbg smoke must not have left
@@ -392,6 +407,23 @@ if ($null -ne $capture -and $capture.PSObject.Properties['hits'] -and $null -ne 
     $hits = @($capture.hits)
 }
 
+# Module list from the interceptor attach-time snapshot (basename only).
+$modulesOut = @()
+if ($null -ne $capture -and $capture.PSObject.Properties['modules'] -and $null -ne $capture.modules) {
+    foreach ($mod in @($capture.modules)) {
+        $modName = if ($mod.PSObject.Properties['name']) { [string]$mod.name } else { '' }
+        $modBase = if ($mod.PSObject.Properties['baseAddress']) { [string]$mod.baseAddress } else { '' }
+        $modSize = if ($mod.PSObject.Properties['size'] -and $null -ne $mod.size) { [uint32]$mod.size } else { [uint32]0 }
+        $modPath = if ($mod.PSObject.Properties['pathBasename']) { [string]$mod.pathBasename } else { '' }
+        $modulesOut += [ordered]@{
+            name         = $modName
+            baseAddress  = $modBase
+            size         = $modSize
+            pathBasename = $modPath
+        }
+    }
+}
+
 # Hits text lines in the exact odwt-* shape the campaign greps:
 # '0x<addr> 0x<rip>' per captured write.
 $hitLines = @()
@@ -419,11 +451,17 @@ foreach ($m in @($family.members)) {
     if (-not $addr) { continue }
     $addrKey = $addr.ToLowerInvariant()
     $rips = @()
+    $rvas = @()
     foreach ($h in $hits) {
         $hAddr = ConvertTo-HexToken ([string]$h.address)
         if ($hAddr -and $hAddr.ToLowerInvariant() -eq $addrKey) {
             $hRip = ConvertTo-HexToken ([string]$h.rip)
             if ($hRip -and ($rips -notcontains $hRip)) { $rips += $hRip }
+            $hRva = $null
+            if ($h.PSObject.Properties['rva'] -and $null -ne $h.rva -and [string]$h.rva) {
+                $hRva = [string]$h.rva
+            }
+            if ($hRva -and ($rvas -notcontains $hRva)) { $rvas += $hRva }
         }
     }
     $bandMin = $null
@@ -449,10 +487,54 @@ foreach ($m in @($family.members)) {
         shiftBandMaxSeconds = $bandMax
         hits                = $rips.Count
         rips                = $rips
+        rvas                = $rvas
     }
 }
 $hitMembers = @($memberEntries | Where-Object { $_.hits -gt 0 })
 $familyVerdict = if ($hitMembers.Count -gt 0) { 'family-hit' } else { 'family-no-hit' }
+
+# Aggregate unique write sites from the capture (durable M2 tail evidence).
+$writeSitesByRip = @{}
+foreach ($h in $hits) {
+    $hRip = ConvertTo-HexToken ([string]$h.rip)
+    if (-not $hRip) { continue }
+    $ripKey = $hRip.ToLowerInvariant()
+    if (-not $writeSitesByRip.ContainsKey($ripKey)) {
+        $hRva = 'jit'
+        if ($h.PSObject.Properties['rva'] -and $null -ne $h.rva -and [string]$h.rva) {
+            $hRva = [string]$h.rva
+        }
+        $hInstr = $null
+        if ($h.PSObject.Properties['instructionHex'] -and $null -ne $h.instructionHex) {
+            $hInstr = [string]$h.instructionHex
+        }
+        $hRegs = $null
+        if ($h.PSObject.Properties['registers'] -and $null -ne $h.registers) {
+            $hRegs = $h.registers
+        }
+        $writeSitesByRip[$ripKey] = [ordered]@{
+            rip             = $hRip
+            rva             = $hRva
+            instructionHex  = $hInstr
+            hitCount        = 0
+            memberAddresses = @()
+            registersSample = $hRegs
+        }
+    }
+    $site = $writeSitesByRip[$ripKey]
+    $site.hitCount = [int]$site.hitCount + 1
+    $hAddr = ConvertTo-HexToken ([string]$h.address)
+    if ($hAddr -and ($site.memberAddresses -notcontains $hAddr)) {
+        $site.memberAddresses = @($site.memberAddresses) + @($hAddr)
+    }
+    if ($null -eq $site.registersSample -and $h.PSObject.Properties['registers'] -and $null -ne $h.registers) {
+        $site.registersSample = $h.registers
+    }
+    if (-not $site.instructionHex -and $h.PSObject.Properties['instructionHex'] -and $null -ne $h.instructionHex) {
+        $site.instructionHex = [string]$h.instructionHex
+    }
+}
+$writeSitesOut = @($writeSitesByRip.Values | Sort-Object { $_.rip })
 
 # The interceptor never pauses the game, so 'running' is by construction;
 # expose the raw guard/arm counters for a zero-hit diagnosis.
@@ -479,14 +561,18 @@ $familyReport = [ordered]@{
     # operator invocation omits it. The value is evidence, not dead state -
     # it also keeps PSReviewUnusedParameter satisfied without a suppression.
     invocationMode     = if ($AutoWriteTrace) { 'auto-write-trace' } else { 'operator' }
+    capturePath        = $durableCapturePath
+    modules            = $modulesOut
+    writeSites         = $writeSitesOut
     members            = $memberEntries
 }
 
 $familyResultPath = $ResultPath + '.family.json'
-$familyJson = $familyReport | ConvertTo-Json -Depth 8
+$familyJson = $familyReport | ConvertTo-Json -Depth 10
 [System.IO.File]::WriteAllText($familyResultPath, $familyJson, (New-Object System.Text.UTF8Encoding($false)))
 Write-CsWt ('family_verdict=' + $familyVerdict + ' hit_members=' + $hitMembers.Count + ' liveness=' + $familyReport.windowLiveness + ' values_changed=' + $familyReport.windowValuesChanged)
 Write-CsWt ('family_report=' + $familyResultPath)
+Write-CsWt ('write_sites=' + $writeSitesOut.Count + ' modules=' + $modulesOut.Count)
 
 Write-CsWt 'OK trace_window_completed'
 exit 0
