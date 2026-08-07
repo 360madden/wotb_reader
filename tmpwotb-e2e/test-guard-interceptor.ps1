@@ -73,6 +73,29 @@ Write-Host ('first_hit rip=' + $h0.rip + ' value=' + $h0.value + ' rva=' + $h0.r
 if (-not $instrPresent) { Write-Host 'FAIL_missing_instruction_hex'; Cleanup 1 }
 Write-Host 'PASS_capture'
 
+# 3b. FRESH38+ source-arm scenario: the counter now mimics the game (fill
+# the source buffer, then copy source->dest via a loop). With
+# -ArmSourceOnFirstHit the interceptor must arm the source page at the first
+# member hit and then capture source-kind hits at the fill site (a DIFFERENT
+# RIP than the copy loop).
+$srcReport = Join-Path $work 'capture-sourcearm-report.json'
+& $Exe '--interceptor' '-Pid' $counter.Id '-Addresses' ('0x' + $addr) '-Seconds' '6' '-Out' $srcReport '-ArmSourceOnFirstHit' | Out-Null
+$srcCode = $LASTEXITCODE
+Write-Host ('sourcearm_exit=' + $srcCode)
+$srcJson = Get-Content -LiteralPath $srcReport -Raw | ConvertFrom-Json
+$srcHits = @($srcJson.hits)
+$srcKindHits = @($srcHits | Where-Object { $_.PSObject.Properties['kind'] -and [string]$_.kind -eq 'source' })
+Write-Host ('sourcearm_pages=' + $srcJson.sourcePagesArmed + ' hits=' + $srcHits.Count + ' source_kind_hits=' + $srcKindHits.Count)
+if ($srcCode -ne 0) { Write-Host 'FAIL_sourcearm_exit'; Cleanup 1 }
+if ($srcJson.sourcePagesArmed -lt 1) { Write-Host 'FAIL_sourcearm_no_source_page_armed'; Cleanup 1 }
+if ($srcKindHits.Count -lt 1) { Write-Host 'FAIL_sourcearm_no_source_hits'; Cleanup 1 }
+$memberRips = @($srcHits | Where-Object { $_.PSObject.Properties['kind'] -and [string]$_.kind -eq 'member' } | ForEach-Object { [string]$_.rip })
+$sourceRips = @($srcKindHits | ForEach-Object { [string]$_.rip })
+$distinctRip = @($sourceRips | Where-Object { $_ -notin $memberRips }).Count -gt 0
+Write-Host ('sourcearm_distinct_fill_rip=' + $distinctRip)
+if (-not $distinctRip) { Write-Host 'FAIL_sourcearm_fill_rip_not_distinct'; Cleanup 1 }
+Write-Host 'PASS_sourcearm_capture'
+
 # 4. Negative control: bogus pid must fail closed (no pages armed / no attach).
 & $Exe '--interceptor' '-Pid' '999999' '-Addresses' ('0x' + $addr) '-Seconds' '2' '-Out' $negReport | Out-Null
 $negCode = $LASTEXITCODE

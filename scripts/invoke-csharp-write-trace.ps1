@@ -78,7 +78,12 @@ param(
     # wotblitz game process. Used by the synthetic-counter harness
     # (tmpwotb-e2e) to prove the family->capture pipeline without a live
     # game; the live round never passes it.
-    [int]$TargetPid = 0
+    [int]$TargetPid = 0,
+    # FRESH38+ source-arm: when set, the interceptor arms the page holding the
+    # esi copy-source pointer captured at hit time, so the game's own fill
+    # write site (one level above a VCRUNTIME memcpy) can trap in the same
+    # window. Requires a running game (the synthetic counter also supports it).
+    [switch]$ArmSourceOnFirstHit
 )
 
 Set-StrictMode -Version Latest
@@ -354,7 +359,12 @@ $addressCsv = ($armed -join ',')
 Write-CsWt ('invoking_interceptor pid=' + $TargetPid + ' seconds=' + $TraceSeconds + ' armed=' + $armed.Count)
 $interceptorExit = -1
 try {
-    & $interceptorExe '--interceptor' '-Pid' $TargetPid '-Addresses' $addressCsv '-Seconds' $TraceSeconds '-Out' $captureJson
+    $interceptorArgs = @('--interceptor', '-Pid', ([string]$TargetPid), '-Addresses', $addressCsv, '-Seconds', ([string]$TraceSeconds), '-Out', $captureJson)
+if ($ArmSourceOnFirstHit) {
+    $interceptorArgs += '-ArmSourceOnFirstHit'
+    Write-CsWt 'source_arm ON (arm esi copy-source page at first hit)'
+}
+& $interceptorExe @interceptorArgs
     $interceptorExit = $LASTEXITCODE
 }
 catch {
@@ -512,6 +522,10 @@ foreach ($h in $hits) {
         if ($h.PSObject.Properties['registers'] -and $null -ne $h.registers) {
             $hRegs = $h.registers
         }
+        $hKind = 'member'
+        if ($h.PSObject.Properties['kind'] -and $null -ne $h.kind) {
+            $hKind = [string]$h.kind
+        }
         $writeSitesByRip[$ripKey] = [ordered]@{
             rip             = $hRip
             rva             = $hRva
@@ -519,6 +533,7 @@ foreach ($h in $hits) {
             hitCount        = 0
             memberAddresses = @()
             registersSample = $hRegs
+            kind            = $hKind
         }
     }
     $site = $writeSitesByRip[$ripKey]
@@ -555,6 +570,8 @@ $familyReport = [ordered]@{
     interceptorGuardEvents = if ($capture.PSObject.Properties['guardEvents'] -and $null -ne $capture.guardEvents) { [int]$capture.guardEvents } else { 0 }
     interceptorArmedPageEvents = if ($capture.PSObject.Properties['armedPageEvents'] -and $null -ne $capture.armedPageEvents) { [int]$capture.armedPageEvents } else { 0 }
     interceptorForeignGuardEvents = if ($capture.PSObject.Properties['foreignGuardEvents'] -and $null -ne $capture.foreignGuardEvents) { [int]$capture.foreignGuardEvents } else { 0 }
+    interceptorSourcePagesArmed = if ($capture.PSObject.Properties['sourcePagesArmed'] -and $null -ne $capture.sourcePagesArmed) { [int]$capture.sourcePagesArmed } else { 0 }
+    sourceHits         = @($hits | Where-Object { $_.PSObject.Properties['kind'] -and [string]$_.kind -eq 'source' }).Count
     verdict            = $familyVerdict
     # Genuine read of the splat-parity switch: records the invocation mode.
     # od-048 always passes AutoWriteTrace=$true (driver mode); a standalone

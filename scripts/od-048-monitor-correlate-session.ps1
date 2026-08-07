@@ -204,6 +204,12 @@ param(
     # of battle; 25 is the recommended first attempt. The operator may pass a
     # higher value on a later attempt once per-round timing is observed.
     [int]$AutoTraceSeconds = 25,
+    # FRESH38+ source-arm: when set, the auto-invoked C# interceptor arms the
+    # page holding the esi copy-source pointer captured at hit time (the
+    # coordinate is written by a VCRUNTIME memcpy from a per-battle heap
+    # buffer), so the game's own fill write site one level up can trap in the
+    # same window. Passed through to invoke-csharp-write-trace.ps1.
+    [switch]$ArmSourceOnFirstHit,
     # Where the auto-trace evidence report lands. Default
     # .data\od-048-autotrace-<timestamp>.json (runtime data, never tracked).
     [string]$AutoTraceResultPath = '',
@@ -2484,6 +2490,11 @@ if ($AutoWriteTraceOnVerdict) {
                 # FRESH22: same span floor on both gates so the solo member
                 # vetted here can never be refused there for the same reason.
                 MinMemberSpan        = $AutoTraceMinMemberSpan
+            }
+            # FRESH38+ source-arm passthrough (C# engine only; the x64dbg
+            # driver has no such flag).
+            if ($ArmSourceOnFirstHit -and $TraceEngine -eq 'csharp') {
+                $wtArgs.ArmSourceOnFirstHit = $true
             }
             # FRESH26 attach-once (x64dbg engine only): when the smoke left
             # its debugger attached, the trace reuses it (skips its own

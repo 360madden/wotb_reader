@@ -13,8 +13,12 @@ internal static class Program
               in a loop, reports progress. For offline mechanism tests only.
 
           --interceptor -Pid <n> -Addresses <0x..,0x..> -Seconds <n> -Out <path>
+              [-ArmSourceOnFirstHit]
               Attach to the process, arm PAGE_GUARD on the pages holding the
               addresses, and capture every write (RIP, value, registers, RVA).
+              -ArmSourceOnFirstHit arms the page holding the esi copy-source
+              pointer captured at hit time, so the game's own fill write site
+              (one level above a VCRUNTIME memcpy) can trap in the same window.
 
         Exit codes: 0 ok; 2 usage; 3 no pages armed; 4 attach failed; 5 error.
         """;
@@ -93,7 +97,7 @@ internal static class Program
             return 2;
         }
 
-        return new WriteInterceptor(pid, addresses, seconds, outPath).Run();
+        return new WriteInterceptor(pid, addresses, seconds, outPath, HasArg(args, "-ArmSourceOnFirstHit")).Run();
     }
 
     private static string? GetArg(string[] args, string name)
@@ -107,6 +111,11 @@ internal static class Program
         }
 
         return null;
+    }
+
+    private static bool HasArg(string[] args, string name)
+    {
+        return args.Any(a => string.Equals(a, name, StringComparison.OrdinalIgnoreCase));
     }
 
     private static nuint[]? ParseAddresses(string? value)

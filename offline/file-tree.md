@@ -187,6 +187,7 @@ docs/operations/handoffs/2026-08-06-fresh32-33-x64dbg-write-bp-route-dead.md
 docs/operations/handoffs/2026-08-07-crosscheck-stats-surface.md
 docs/operations/handoffs/2026-08-07-fresh36-first-write-site-hit.md
 docs/operations/handoffs/2026-08-07-fresh37-live-durable-hit.md
+docs/operations/handoffs/2026-08-07-fresh38-reproduce-source-arm-negative.md
 docs/operations/handoffs/2026-08-07-write-site-durable-evidence.md
 docs/operations/handoffs/README.md
 docs/operations/offset-discovery-guide.md

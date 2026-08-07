@@ -49,6 +49,9 @@ param(
     # x64dbg-write-trace.ps1). Budget from the choreography table: 70 rounds
     # leaves ~31s on Dead Rail; 25 is the recommended first attempt.
     [int]$AutoTraceSeconds = 25,
+    # FRESH38+ source-arm: arm the esi copy-source page at first hit during
+    # the auto write-trace (passed through to od-048 / invoke-csharp).
+    [switch]$ArmSourceOnFirstHit,
     # Viewpoint-first pivot (passed through to od-048): stage ONLY the
     # viewpoint player and trace its first strong survivor - no top movers,
     # no XYZ family assembly, no alternate-entity decoys.
@@ -231,6 +234,7 @@ for ($attempt = 1; $attempt -le $MaxCampaignAttempts; $attempt++) {
         AutoTraceSeconds       = $AutoTraceSeconds
         ResultPath             = $ResultPath
     }
+    if ($ArmSourceOnFirstHit) { $m1Args.ArmSourceOnFirstHit = $true }
     if ($AttachSmokeOnFirstRound) { $m1Args.AttachSmokeOnFirstRound = $true }
     if ($StageViewpointOnly) { $m1Args.StageViewpointOnly = $true }
     $m1Args.MaxTimeShiftSeconds = $MaxTimeShiftSeconds

@@ -4,7 +4,13 @@ using Microsoft.Win32.SafeHandles;
 
 namespace WotBTreader.WriteInterceptor;
 
-/// <summary>A single captured write to an armed address.</summary>
+/// <summary>
+/// A single captured write to an armed address. <c>Kind</c> is <c>member</c>
+/// for an originally-armed family address, or <c>source</c> for a
+/// dynamically-armed copy-source address (FRESH38+: the coordinate is written
+/// by a VCRUNTIME memcpy from a per-battle heap buffer held in esi, so arming
+/// the source page can catch the game's own fill write site one level up).
+/// </summary>
 internal sealed record WriteHit(
     nuint Address,
     float Value,
@@ -13,7 +19,8 @@ internal sealed record WriteHit(
     string? InstructionHex,
     uint ThreadId,
     DateTimeOffset Utc,
-    IReadOnlyDictionary<string, uint>? Registers);
+    IReadOnlyDictionary<string, uint>? Registers,
+    string Kind);
 
 /// <summary>
 /// The C#-native replacement for the (dead) x64dbg write-BP capture:
@@ -36,6 +43,7 @@ internal sealed class WriteInterceptor
     private readonly nuint[] _addresses;
     private readonly double _seconds;
     private readonly string _outPath;
+    private readonly bool _armSourceOnFirstHit;
 
     private readonly List<WriteHit> _hits = [];
     private readonly List<string> _diagnostics = [];
@@ -44,6 +52,15 @@ internal sealed class WriteInterceptor
     private readonly List<nuint> _armedPages = [];
     private readonly List<ModuleEntry32> _modules = [];
     private readonly Dictionary<nuint, string?> _instructionHexByRip = [];
+
+    // FRESH38+ dynamic source-arm: addresses copied FROM (esi at hit time),
+    // discovered live and armed mid-trace so the game's own fill write site
+    // (one level above the VCRUNTIME memcpy) can be caught in the same window.
+    private readonly List<nuint> _sourceAddresses = [];
+    private int _sourcePagesArmed;
+    private const int MaxSourcePages = 8;
+    private const int SourceSnapshotFloats = 4;
+
     private int _exceptionEvents;
     private int _guardEvents;
     private int _armedPageEvents;
@@ -51,12 +68,13 @@ internal sealed class WriteInterceptor
     private const int MaxDiagnostics = 400;
     private const int InstructionBytesToRead = 16;
 
-    public WriteInterceptor(uint pid, nuint[] addresses, double seconds, string outPath)
+    public WriteInterceptor(uint pid, nuint[] addresses, double seconds, string outPath, bool armSourceOnFirstHit = false)
     {
         _pid = pid;
         _addresses = addresses;
         _seconds = seconds;
         _outPath = outPath;
+        _armSourceOnFirstHit = armSourceOnFirstHit;
     }
 
     public int Run()
@@ -288,8 +306,10 @@ internal sealed class WriteInterceptor
             // the read/write discriminator (PAGE_GUARD traps on ANY access).
             // The write lands asynchronously after the thread resumes, so retry
             // the read briefly rather than trusting a single settle sleep.
+            // Scan the original member addresses FIRST (kind=member), then any
+            // dynamically-armed source addresses (kind=source).
             bool anyChanged = false;
-            foreach (nuint address in _addresses)
+            foreach ((nuint address, string kind) in EnumerateTrackedAddresses())
             {
                 if (!_snapshots.ContainsKey(address))
                 {
@@ -326,13 +346,26 @@ internal sealed class WriteInterceptor
                         instructionHex,
                         de.ThreadId,
                         DateTimeOffset.UtcNow,
-                        registers));
-                    AddDiagnostic($"write_captured addr=0x{address:X8} value={value:F4} rip=0x{rip:X8} numParams={numParams}");
+                        registers,
+                        kind));
+                    AddDiagnostic($"write_captured kind={kind} addr=0x{address:X8} value={value:F4} rip=0x{rip:X8} numParams={numParams}");
                 }
             }
 
+            // FRESH38+ source-arm: the first captured write to a member is a
+            // memcpy store (esi = the per-battle heap source buffer). Arm the
+            // source page NOW, in the same trace window, so the game's own
+            // fill write to that buffer (one level above VCRUNTIME) can trap
+            // before the window ends. Snapshots precede the arm (the two-pass
+            // rule: reads on a guarded page fail with ERROR_PARTIAL_COPY).
+            if (_armSourceOnFirstHit && registers is not null && anyChanged)
+            {
+                TryArmSourcePages(process, registers);
+            }
+
             // Re-arm EVERY armed page: the one-shot guard bit was cleared by
-            // the trap and cannot be located from the event.
+            // the trap and cannot be located from the event. Includes any
+            // source pages armed above.
             foreach (nuint page in _armedPages)
             {
                 if (!NativeMethods.VirtualProtectEx(process, (nint)page, 0x1000, _originalProtects[page] | NativeMethods.PageGuard, out _))
@@ -354,11 +387,124 @@ internal sealed class WriteInterceptor
         _ = NativeMethods.ContinueDebugEvent(de.ProcessId, de.ThreadId, NativeMethods.DbgExceptionNotHandled);
     }
 
+    /// <summary>
+    /// Arms up to <see cref="MaxSourcePages"/> distinct pages containing the
+    /// copy-source pointer (esi) captured at hit time, snapshotting the floats
+    /// at that address first. The source page then traps on the game's own
+    /// writes to the buffer (the fill site), which the post-access scan picks
+    /// up as a <c>source</c>-kind hit. Fail-open on unreadable/committed/access
+    /// failures: the member capture is already armed, a failed dynamic arm must
+    /// not fail the whole trace.
+    /// </summary>
+    private void TryArmSourcePages(SafeProcessHandle process, IReadOnlyDictionary<string, uint> registers)
+    {
+        if (!registers.TryGetValue("esi", out uint esi) || esi == 0)
+        {
+            AddDiagnostic("source_arm skipped (no esi in registers)");
+            return;
+        }
+
+        nuint source = esi;
+        nuint page = source & PageMask;
+        if (_originalProtects.ContainsKey(page))
+        {
+            AddDiagnostic($"source_arm skipped page_already_armed page=0x{page:X8}");
+            return;
+        }
+
+        if (_sourcePagesArmed >= MaxSourcePages)
+        {
+            AddDiagnostic($"source_arm capped at {MaxSourcePages} pages");
+            return;
+        }
+
+        // Snapshot BEFORE arming (reads on a guarded page fail/consume the
+        // guard bit). Snapshot a few floats: the copy moves 16 bytes, so the
+        // sibling slots are plausibly the same struct's other axes. The
+        // snapshots are held in a LOCAL list and only committed to tracking
+        // AFTER the arm succeeds: an unarmed page must never be scanned (the
+        // game's source buffer drifts every frame, so a tracked-but-unarmed
+        // address would emit false source-kind hits attributed to whatever
+        // member RIP fired the current guard event).
+        var pending = new List<nuint>();
+        for (int i = 0; i < SourceSnapshotFloats; i++)
+        {
+            nuint addr = source + (nuint)(i * 4);
+            if (TryReadFloat(process, addr, out float value))
+            {
+                pending.Add(addr);
+                _snapshots[addr] = value;
+                AddDiagnostic($"source_snapshot addr=0x{addr:X8} value={value:F4}");
+            }
+            else
+            {
+                AddDiagnostic($"source_snapshot_failed addr=0x{addr:X8} win32={Marshal.GetLastWin32Error()}");
+            }
+        }
+
+        byte[] mbi = new byte[28];
+        if (NativeMethods.VirtualQueryEx(process, (nint)page, mbi, (nuint)mbi.Length) == 0)
+        {
+            AddDiagnostic($"source_query_failed page=0x{page:X8} win32={Marshal.GetLastWin32Error()}");
+            return;
+        }
+
+        uint state = BitConverter.ToUInt32(mbi, 16);
+        uint protect = BitConverter.ToUInt32(mbi, 20);
+        if (state != 0x1000)
+        {
+            AddDiagnostic($"source_page_not_committed page=0x{page:X8} state=0x{state:X}");
+            return;
+        }
+
+        uint original = protect & 0xFF;
+        if (original == 0 || (original & NativeMethods.PageNoAccess) != 0)
+        {
+            AddDiagnostic($"source_page_no_access page=0x{page:X8} orig=0x{original:X}");
+            return;
+        }
+
+        if (!NativeMethods.VirtualProtectEx(process, (nint)page, 0x1000, original | NativeMethods.PageGuard, out _))
+        {
+            AddDiagnostic($"source_arm_failed page=0x{page:X8} orig=0x{original:X} win32={Marshal.GetLastWin32Error()}");
+            return;
+        }
+
+        // Arm succeeded: NOW commit the snapshots to the tracked set (the
+        // guard event that just fired cleared the one-shot bit, so the values
+        // read above are pre-arm baselines and stay valid until a write traps).
+        foreach (nuint addr in pending)
+        {
+            _sourceAddresses.Add(addr);
+        }
+
+        _originalProtects[page] = original;
+        _armedPages.Add(page);
+        _sourcePagesArmed++;
+        AddDiagnostic($"source_page_armed page=0x{page:X8} esi=0x{source:X8} tracked={pending.Count} armed_count={_sourcePagesArmed}");
+    }
+
     private void RestorePages(SafeProcessHandle process)
     {
         foreach ((nuint page, uint original) in _originalProtects)
         {
             _ = NativeMethods.VirtualProtectEx(process, (nint)page, 0x1000, original, out _);
+        }
+    }
+
+    /// <summary>Member addresses first (kind=member), then dynamically-armed
+    /// source addresses (kind=source). The member scan dominates the post-access
+    /// discriminator; source slots catch the fill write one level up.</summary>
+    private IEnumerable<(nuint Address, string Kind)> EnumerateTrackedAddresses()
+    {
+        foreach (nuint address in _addresses)
+        {
+            yield return (address, "member");
+        }
+
+        foreach (nuint address in _sourceAddresses)
+        {
+            yield return (address, "source");
         }
     }
 
@@ -580,6 +726,7 @@ internal sealed class WriteInterceptor
             startedUtc = startedUtc.ToString("o"),
             finishedUtc = DateTimeOffset.UtcNow.ToString("o"),
             modules,
+            sourcePagesArmed = _sourcePagesArmed,
             hits = _hits.Select(h => new
             {
                 address = $"0x{h.Address:X8}",
@@ -590,6 +737,7 @@ internal sealed class WriteInterceptor
                 threadId = h.ThreadId,
                 utc = h.Utc.ToString("o"),
                 registers = h.Registers,
+                kind = h.Kind,
             }).ToArray(),
             diagnostics = _diagnostics,
             exitCode,

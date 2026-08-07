@@ -1,6 +1,6 @@
 # Offset-discovery ledger
 
-Last updated: 2026-08-04 (OD-RECOVERY-044: **live pipeline proven end-to-end + kernel-clock false positive identified** — rolling collapsed **861399→…→1 survivor in 16 rounds** (campaign record, was OD-020's 5) with the fixed harvest retry + plateau-stop logic; the single survivor was **`0x7FFE0010` = `KUSER_SHARED_DATA.SystemTime`**, the Windows shared kernel clock (FILETIME-style, +100ns ticks) — NOT the game field: the game died mid-roll from the documented replay-start flake, and the always-ticking kernel clock is the last 'increased' Double in a dying process; kernel writes never fire user-mode HW breakpoints so write-BP hits there are 0 by construction (explains the 0 hits — the mechanism was NOT the failure); driver hardened to drop the `0x7FFE0xxx` page from the address file + WARN; **x96dbg launcher bug found & fixed** — it stayed alive without spawning x32dbg (ShellExecute/state-machine brittleness), replaced by direct `x322dbg.exe` launch (game bitness known x86); x32dbg attach, `scriptload`+`scriptrun` injection, and arming all proven live (pid 45256); prior milestones OD-045/046-STATIC: offline delta-filter simulation ranked the **Double replayTime delta marker deterministic (pass-rate 1.0, survival 1.0/15 rounds)** — pilot order flip: delta pilot FIRST); **replay-start flake root-caused & fixed (2026-08-04)** — the ~50% OD-044 launch deaths were two defects: watch_offline's round-2 double-click + SW_RESTORE churn into the live replay HUD (become hidden → OnBackground, 2s/16s/42s deaths), and mid-battle `OfflineReplayEvidenceLifetime` expiry terminating the managed game (~60–105s exits, incl. the dying-process kernel-clock artifact); the click script now stops on the blitz-log `Start replay event` marker and the coordinator keeps verified authorization fresh via a liveness heartbeat while the process identity stays healthy (see `docs/operations/handoffs/2026-08-04-replay-start-flake-fix.md`)
+Last updated: 2026-08-07 (OD-RECOVERY-046/047: **first durable module-mapped write-site hits (M2, FRESH37/38)** — the C# guard-page interceptor captured real writes inside live battles and the write sites resolve to **VCRUNTIME140.dll+0xED69 / +0xE8AE**, proving the armed coordinate is a synchronized multi-copy field written by **CRT struct copies**, not a direct `movss`; the real game write is one level up (the memcpy source buffers, held in `esi`, which are **battle-scoped heap allocations** — cross-battle arming ruled out by live evidence; a same-window dynamic source-arm is the changed hypothesis, now implemented in the interceptor and offline-tested); two earlier runs were honest timing negatives (2.4× starved M1, 0.857<0.9 solo floor) that tuned the invocation to `-PlaybackSpeedEstimate 2.4 -StageMinBattleSeconds 30`; earlier milestone OD-RECOVERY-044: **live pipeline proven end-to-end + kernel-clock false positive identified** — rolling collapsed **861399→…→1 survivor in 16 rounds** (campaign record, was OD-020's 5) with the fixed harvest retry + plateau-stop logic; the single survivor was **`0x7FFE0010` = `KUSER_SHARED_DATA.SystemTime`**, the Windows shared kernel clock (FILETIME-style, +100ns ticks) — NOT the game field: the game died mid-roll from the documented replay-start flake, and the always-ticking kernel clock is the last 'increased' Double in a dying process; kernel writes never fire user-mode HW breakpoints so write-BP hits there are 0 by construction (explains the 0 hits — the mechanism was NOT the failure); driver hardened to drop the `0x7FFE0xxx` page from the address file + WARN; **x96dbg launcher bug found & fixed** — it stayed alive without spawning x32dbg (ShellExecute/state-machine brittleness), replaced by direct `x322dbg.exe` launch (game bitness known x86); x32dbg attach, `scriptload`+`scriptrun` injection, and arming all proven live (pid 45256); prior milestones OD-045/046-STATIC: offline delta-filter simulation ranked the **Double replayTime delta marker deterministic (pass-rate 1.0, survival 1.0/15 rounds)** — pilot order flip: delta pilot FIRST); **replay-start flake root-caused & fixed (2026-08-04)** — the ~50% OD-044 launch deaths were two defects: watch_offline's round-2 double-click + SW_RESTORE churn into the live replay HUD (become hidden → OnBackground, 2s/16s/42s deaths), and mid-battle `OfflineReplayEvidenceLifetime` expiry terminating the managed game (~60–105s exits, incl. the dying-process kernel-clock artifact); the click script now stops on the blitz-log `Start replay event` marker and the coordinator keeps verified authorization fresh via a liveness heartbeat while the process identity stays healthy (see `docs/operations/handoffs/2026-08-04-replay-start-flake-fix.md`)
 
 This ledger is the durable index of WoT Blitz PC offset-discovery work. It
 records experiments, partial results, failures, and pivots so future sessions do
@@ -127,6 +127,8 @@ occurred.
 | `OD-045-STATIC` | 2026-08-03 | Offline delta-filter simulation: predict survivor collapse per marker before spending lease | `replay-delta-extractor.py --simulate` (new) on the 11.19.0 Dead Rail session (4s window, 2,779 measurements) | `Partial` | **Simulation of `PassesDelta` as a rolling filter**: replayTime delta marker pass-rate **1.0 at every tolerance (0.2/0.4/1.0/2.0/4.0s), survival 1.0 even over 15 rounds** — deterministic (replayTime advances exactly window×speed per window), the true field never sheds → **ideal filter**; position-delta marker is **bursty → HOLLOW collapse**: pass-rate 0.8996 at recommended tol 2.4992 → survival 0.347/10 rounds, 0.205/15 (the tank stands still much of the replay, so the true position field sheds like a decoy); speed marker passes 1.0 only at tol ≥8×target (not selective); unit variants for the unknown in-memory replayTime Double: 4.0s / 4000ms / 4,000,000ticks | **Pilot order flip: run the Double replayTime delta pilot FIRST** (`-ValueKind Double -CompareMode delta -DeltaTarget 4.0 -DeltaTolerance 0.4`); Float position pilot deferred or re-targeted to a movement-only window; `independentReplays` still 0; no RIP/root |
 | `OD-046-STATIC` | 2026-08-03 | Movement-only windows + HP damage-delta markers for the live pilot | `replay-delta-extractor.py --movement` + `--hp-delta --victim-entity <id>` (new) on the 11.19.0 Dead Rail session | `Partial` | **Movement segmentation**: 32.3% of the replay is moving (891/2,756 1s windows @ 0.5 m/s); moving-window 1s displacement median 0.712 m, p90 0.992, max 1.489 — the Float position pilot should scan a movement-only span (e.g. the 32% moving window) where the position marker is selective; **HP damage-delta**: kind-3 events carry `{attackerEntityId, victimEntityId, damage}`; the player (entity 2549401) took **0 damage** this replay (marker needs a victim that gets hit — conditional); victim 2549395: 260 windows, 5 hit windows, 2,618 total damage (512/819/462/314/511), pass-rate 0.9808 @ tol 0, survival 0.907/0.824/0.747 over 5/10/15 rounds — sparse-but-exact, a supporting marker only | **replayTime delta remains the primary live filter**; Float position re-targeted to movement-only span; HP-delta is conditional on a damaged victim; fixed truncated module-docstring closer (line 47 `""`→`"""`) that broke both new modes; `independentReplays` still 0; no RIP/root |
 | `OD-RECOVERY-044` | 2026-08-04 | Live pipeline end-to-end: gate green → pre-arm x32dbg -> rolling ≤10 -> automated write-trace for {rip} evidence | launch helper + session driver + pre-arm-debugger.ps1 (x32dbg direct) + fixed rolling Double increased (harvest retry, plateau-stop) + x64dbg-write-trace.ps1 -AutoWriteTrace | `Partial` | **Full pipeline mechanically proven end-to-end**: rolling collapsed **861399→…→1 survivor in 16 rounds** (campaign record; was OD-020's 5); harvest retry + plateau-stop fixes live-proven; **x96dbg launcher bug found** (stayed alive, never spawned x32dbg) -> replaced by direct `x322dbg.exe` launch, which attached (pid 45256) and the write-trace injected `scriptload`+`scriptrun` + armed 1 HW BP; the single survivor was **`0x7FFE0010` = `KUSER_SHARED_DATA.SystemTime`** (kernel clock false positive — game died mid-roll from the replay-start flake; always-ticking clock outlives the game field) → driver now drops the `0x7FFE0xxx` page + WARN | No {rip} evidence captured (lease expired before hits; hits would have been 0 by construction - kernel writes never fire user-mode HW BPs); no RIP/root; `independentReplays` still 0 |
+| `OD-RECOVERY-046` | 2026-08-07 | FRESH37 live run: first durable module-mapped write-site hit from the C# guard-page interceptor (M2) | od-049-autoloop.ps1 (`-PlaybackSpeedEstimate 2.4 -StageMinBattleSeconds 30`, timing tuned from two honest negatives) → C# WriteInterceptor auto-trace, durable `.capture.json` + `.family.json` | `Partial` | **First durable module-mapped write-site evidence**: `family-hit`, **4 real writes inside the live battle**, `windowValuesChanged=true`, 135-module attach-time snapshot; write sites decode to **VCRUNTIME140.dll+0xED69 (4-dword copy loop `mov [edi],edx; add edi,4; sub ecx,1; jnz`) and +0xE8AE (`rep movsb`)** — the armed x-coordinate is a synchronized multi-copy field written by **CRT struct copies**, not a direct `movss`; captured values (-0.0003 / 245.35 / -124.00) are coherent world coordinates | **The real game write is one level up — the memcpy SOURCE buffers** (captured `esi` 0x2C2A9E18 / 0x2C2AB2E0 / 0x2C2AD880); no offset promoted, kind stays `heap-dynamic`, M3 repeatability not yet met; `independentReplays` still 0 |
+| `OD-RECOVERY-047` | 2026-08-07 | FRESH38 live round: reproduce the FRESH37 hit; test arming the memcpy source addresses next battle (same-process two-pass) | od-049-autoloop.ps1 proven invocation + `-KeepGame`; phase A reproduced the hit, phase B (arm `esi` sources in battle 2) | `Partial` | **Hit reproduced a second time** (`family-hit`, 2 real writes, VCRUNTIME+0xED69, `valuesChanged=true`, 135-module durable capture) — M3 repeatability step 1; **phase B ruled out by live evidence**: the `esi` copy sources are **battle-scoped heap allocations** (FRESH37: 0x2C2A9E18… vs FRESH38: **0x2DDBB418 / 0x3EBEB878** — different address space, and ~0x110000 apart within one window), not process-stable buffers — arming captured sources in a later battle is invalid for the same reason cross-process arming was | **Changed hypothesis required to catch the real write site**: arm the source page IN THE SAME WINDOW it is discovered (on first hit, read `esi` and dynamically arm that page) — implemented in `tools/WriteInterceptor` (FRESH38+ source-arm, `-ArmSourceOnFirstHit`, offline mechanism test passing); no offset promoted; `independentReplays` still 0 |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -3407,3 +3409,84 @@ as the band floor failing.
 
 **Next:** solo-survivor arming path (trace a tight-band non-edge high-score
 address without a byte-window family), then a clean-family live round.
+
+## `OD-RECOVERY-046` result — 2026-08-07 (FRESH37: first durable module-mapped write-site hit)
+
+```yaml
+sessionId: OD-RECOVERY-046
+date: 2026-08-07
+observedAtUtc: 2026-08-07T06:58:00Z
+timebox: 3 live launches (2 honest timing negatives then the hit); interceptor publish + Host Release build fresh
+decision: FIRST DURABLE MODULE-MAPPED WRITE-SITE HIT (family-hit, 4 real writes inside the live battle); write sites resolve to VCRUNTIME140.dll+0xED69 / +0xE8AE = CRT struct-copy sites; the armed x-coordinate is a synchronized multi-copy field, NOT a direct movss store; no offset promoted
+objective: Capture a write-trace whose RIPs map to modules (closing the FRESH36 durability gap) using the proven live choreography
+stopCondition: family-hit with durable .capture.json + .family.json, or gate loss
+method:
+  primaryTool: od-049-autoloop.ps1 (-AttachSmokeOnFirstRound -StageViewpointOnly -PlaybackSpeedEstimate 2.4 -StageMinBattleSeconds 30) -> C# WriteInterceptor auto-trace (invoke-csharp-write-trace.ps1)
+  secondaryTools: offline WriteSiteAnalysis (pure Core), 135-module attach-time snapshot
+  transition: natural replay progression
+  invocation: -PlaybackSpeedEstimate 2.4 -StageMinBattleSeconds 30
+observations:
+  - state: attempt-1 (2.4x alone)
+    outcome: 3 monitor rounds, verdict=no-evidence - the 55s staging gate is wall-clock and consumed the whole fire-by budget at 2.4x
+    finding: timing negative, not field negative
+  - state: attempt-2 (default 2.0)
+    outcome: 15 rounds, evidence-strong, 50 x-strong survivors, top score 0.857 < 0.9 solo floor -> no family, no trace (fail-closed held)
+    finding: score variance below the AutoTraceMinMemberScore floor
+  - state: attempt-3 (2.4x + StageMinBattleSeconds 30)
+    outcome: 16 rounds, score-0.933 solo family, family-hit: 4 real writes, windowValuesChanged=true, 135 modules
+    writeSites: VCRUNTIME140.dll+0xED69 (4-dword copy loop: mov [edi],edx; add edi,4; sub ecx,1; jnz) hits=3; +0xE8AE (rep movsb) hits=1
+    capturedValues: -0.0003 / 245.35 / -124.00 (coherent world coordinates)
+    registers: edi=0x22BA1020/0x22BA1060 (dest base), esi=0x2C269518/0x2C26A670/0x2C26E900 (copy sources), ebx=0x22BA10A0
+    finding: the armed coordinate sits at edi+0xB0 inside the memcpy destination struct - the write is a CRT struct copy, not a direct movss
+candidates:
+  - rawAddress: local-only
+    absoluteAddress: local-only
+    moduleRelativeOffsetHex: VCRUNTIME140.dll+0xED69 / +0xE8AE
+    addressKind: heap-dynamic (write site); the field itself remains unknown
+```
+
+Offline `WriteSiteAnalysis` (real Core code, both family-hit captures) confirms the
+struct-copy class: resolver `unknown/ambiguous` with **object-base candidates
+`ebx+0x70` / `edi+0xB0` (support 2 each)** on the 4-hit capture. The next write
+site is one level up — the memcpy **source** buffers held in `esi`.
+
+## `OD-RECOVERY-047` result — 2026-08-07 (FRESH38: hit reproduced; cross-battle source-arm ruled out)
+
+```yaml
+sessionId: OD-RECOVERY-047
+date: 2026-08-07
+observedAtUtc: 2026-08-07T07:22:00Z
+timebox: same-process two-pass (phase A reproduce with -KeepGame, phase B arm esi sources in battle 2); phase A hit, phase B invalid by live evidence
+decision: HIT REPRODUCED (M3 repeatability step 1); CROSS-BATTLE SOURCE-ARM RULED OUT - the esi copy sources are battle-scoped heap allocations, not process-stable buffers; the changed hypothesis is a same-window dynamic source-arm, now implemented + offline-tested
+objective: Reproduce the FRESH37 hit, then arm the memcpy source addresses captured at hit time to catch the game's real per-frame write site
+stopCondition: family-hit + fresh esi capture in the same process, then phase B within the same launch
+method:
+  primaryTool: od-049-autoloop.ps1 proven invocation + -KeepGame (phase A); interceptor direct arm of freshly captured esi sources (phase B)
+  secondaryTools: blitz-log battle-boundary watch, offline WriteSiteAnalysis
+  transition: game auto-loop into battle 2 (same process)
+  invocation: -AttachSmokeOnFirstRound -StageViewpointOnly -PlaybackSpeedEstimate 2.4 -StageMinBattleSeconds 30 -KeepGame
+observations:
+  - state: phase-A (phaseA1)
+    outcome: families=0 - top survivor scores 0.8 (tight 3s bands), under the 0.9 solo floor; no auto-trace, no fresh esi capture
+  - state: phase-A2
+    outcome: family-hit (2 real writes, 1 write site VCRUNTIME140.dll+0xED69, valuesChanged=true, 135 modules) - second reproducible hit; game stayed alive into battle 2
+    esiSources: 0x2DDBB418 / 0x3EBEB878 (vs FRESH37's 0x2C2A9E18 / 0x2C2AB2E0 / 0x2C2AD880)
+  - state: phase-B
+    outcome: invalid by evidence - esi values differ per hit within one window (~0x110000 apart) and per launch; battle 2 reallocates them; the game process also exited after battle 2
+    finding: memcpy sources are per-battle heap allocations; arming captured sources in a later battle is invalid for the same reason cross-process arming was
+candidates:
+  - rawAddress: local-only
+    absoluteAddress: local-only
+    moduleRelativeOffsetHex: VCRUNTIME140.dll+0xED69
+    addressKind: heap-dynamic (write site); the field itself remains unknown
+```
+
+**Changed hypothesis (implemented, offline-tested):** arm the page containing
+`esi` **in the same trace window it is discovered** — `Interceptor.cs` now
+dynamically arms the esi copy-source page on the first captured hit
+(`-ArmSourceOnFirstHit`, `sourcePagesArmed` cap 8, source-kind hits tagged in the
+report). Offline mechanism test passes end-to-end: the synthetic counter faults
+inside a real CRT memcpy (esi=source/edi=dest like the game), the source page is
+armed at hit time, and the fill-site write is captured as a **source-kind hit at
+a distinct RIP**. Ledger rule: do not repeat cross-battle/cross-process source
+arming without a changed hypothesis (this IS the changed hypothesis).
