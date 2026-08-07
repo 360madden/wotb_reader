@@ -1,6 +1,6 @@
 # Offset-discovery ledger
 
-Last updated: 2026-08-07 (OD-RECOVERY-046/047/048/049/050: **first durable module-mapped write-site hits (M2, FRESH37/38)** — the C# guard-page interceptor captured real writes inside live battles and the write sites resolve to **VCRUNTIME140.dll+0xED69 / +0xE8AE**, proving the armed coordinate is a synchronized multi-copy field written by **CRT struct copies**, not a direct `movss`; the real game write is one level up (the memcpy source buffers, held in `esi`, which are **battle-scoped heap allocations** — cross-battle arming ruled out by live evidence; a same-window dynamic source-arm is the changed hypothesis, now implemented in the interceptor and offline-tested); two earlier runs were honest timing negatives (2.4× starved M1, 0.857<0.9 solo floor) that tuned the invocation to `-PlaybackSpeedEstimate 2.4 -StageMinBattleSeconds 30`; earlier milestone OD-RECOVERY-044: **live pipeline proven end-to-end + kernel-clock false positive identified** — rolling collapsed **861399→…→1 survivor in 16 rounds** (campaign record, was OD-020's 5) with the fixed harvest retry + plateau-stop logic; the single survivor was **`0x7FFE0010` = `KUSER_SHARED_DATA.SystemTime`**, the Windows shared kernel clock (FILETIME-style, +100ns ticks) — NOT the game field: the game died mid-roll from the documented replay-start flake, and the always-ticking kernel clock is the last 'increased' Double in a dying process; kernel writes never fire user-mode HW breakpoints so write-BP hits there are 0 by construction (explains the 0 hits — the mechanism was NOT the failure); driver hardened to drop the `0x7FFE0xxx` page from the address file + WARN; **x96dbg launcher bug found & fixed** — it stayed alive without spawning x32dbg (ShellExecute/state-machine brittleness), replaced by direct `x322dbg.exe` launch (game bitness known x86); x32dbg attach, `scriptload`+`scriptrun` injection, and arming all proven live (pid 45256); prior milestones OD-045/046-STATIC: offline delta-filter simulation ranked the **Double replayTime delta marker deterministic (pass-rate 1.0, survival 1.0/15 rounds)** — pilot order flip: delta pilot FIRST); **replay-start flake root-caused & fixed (2026-08-04)** — the ~50% OD-044 launch deaths were two defects: watch_offline's round-2 double-click + SW_RESTORE churn into the live replay HUD (become hidden → OnBackground, 2s/16s/42s deaths), and mid-battle `OfflineReplayEvidenceLifetime` expiry terminating the managed game (~60–105s exits, incl. the dying-process kernel-clock artifact); the click script now stops on the blitz-log `Start replay event` marker and the coordinator keeps verified authorization fresh via a liveness heartbeat while the process identity stays healthy (see `docs/operations/handoffs/2026-08-04-replay-start-flake-fix.md`)
+Last updated: 2026-08-07 (OD-RECOVERY-052: **FIRST DURABLE GAME-CODE FILL-SITE HIT (FRESH43)** — the dynamic source-arm caught `wotblitz.exe+0x7C39AB` writing the memcpy source buffer per-frame, with the CRT propagation copy `VCRUNTIME140.dll+0xE8AE` (`rep movsb`) landing on the armed member `0x22AB0F90` whose `esi` = `0x28FFCF10` exactly, and the SSE 4-float `movdqu` stage `VCRUNTIME140.dll+0xED49` refilling that source — the write chain is now: game fill → CRT vectorized stage → memcpy into tracked field; OD-RECOVERY-046/047/048/049/050/051: first durable module-mapped write-site hits (M2, FRESH37/38) — the C# guard-page interceptor captured real writes inside live battles and the write sites resolve to **VCRUNTIME140.dll+0xED69 / +0xE8AE**, proving the armed coordinate is a synchronized multi-copy field written by **CRT struct copies**, not a direct `movss`; the real game write is one level up (the memcpy source buffers, held in `esi`, which are **battle-scoped heap allocations** — cross-battle arming ruled out by live evidence; a same-window dynamic source-arm is the changed hypothesis, now implemented in the interceptor and offline-tested); two earlier runs were honest timing negatives (2.4× starved M1, 0.857<0.9 solo floor) that tuned the invocation to `-PlaybackSpeedEstimate 2.4 -StageMinBattleSeconds 30`; earlier milestone OD-RECOVERY-044: **live pipeline proven end-to-end + kernel-clock false positive identified** — rolling collapsed **861399→…→1 survivor in 16 rounds** (campaign record, was OD-020's 5) with the fixed harvest retry + plateau-stop logic; the single survivor was **`0x7FFE0010` = `KUSER_SHARED_DATA.SystemTime`**, the Windows shared kernel clock (FILETIME-style, +100ns ticks) — NOT the game field: the game died mid-roll from the documented replay-start flake, and the always-ticking kernel clock is the last 'increased' Double in a dying process; kernel writes never fire user-mode HW breakpoints so write-BP hits there are 0 by construction (explains the 0 hits — the mechanism was NOT the failure); driver hardened to drop the `0x7FFE0xxx` page from the address file + WARN; **x96dbg launcher bug found & fixed** — it stayed alive without spawning x32dbg (ShellExecute/state-machine brittleness), replaced by direct `x322dbg.exe` launch (game bitness known x86); x32dbg attach, `scriptload`+`scriptrun` injection, and arming all proven live (pid 45256); prior milestones OD-045/046-STATIC: offline delta-filter simulation ranked the **Double replayTime delta marker deterministic (pass-rate 1.0, survival 1.0/15 rounds)** — pilot order flip: delta pilot FIRST); **replay-start flake root-caused & fixed (2026-08-04)** — the ~50% OD-044 launch deaths were two defects: watch_offline's round-2 double-click + SW_RESTORE churn into the live replay HUD (become hidden → OnBackground, 2s/16s/42s deaths), and mid-battle `OfflineReplayEvidenceLifetime` expiry terminating the managed game (~60–105s exits, incl. the dying-process kernel-clock artifact); the click script now stops on the blitz-log `Start replay event` marker and the coordinator keeps verified authorization fresh via a liveness heartbeat while the process identity stays healthy (see `docs/operations/handoffs/2026-08-04-replay-start-flake-fix.md`)
 
 This ledger is the durable index of WoT Blitz PC offset-discovery work. It
 records experiments, partial results, failures, and pivots so future sessions do
@@ -131,6 +131,8 @@ occurred.
 | `OD-RECOVERY-047` | 2026-08-07 | FRESH38 live round: reproduce the FRESH37 hit; test arming the memcpy source addresses next battle (same-process two-pass) | od-049-autoloop.ps1 proven invocation + `-KeepGame`; phase A reproduced the hit, phase B (arm `esi` sources in battle 2) | `Partial` | **Hit reproduced a second time** (`family-hit`, 2 real writes, VCRUNTIME+0xED69, `valuesChanged=true`, 135-module durable capture) — M3 repeatability step 1; **phase B ruled out by live evidence**: the `esi` copy sources are **battle-scoped heap allocations** (FRESH37: 0x2C2A9E18… vs FRESH38: **0x2DDBB418 / 0x3EBEB878** — different address space, and ~0x110000 apart within one window), not process-stable buffers — arming captured sources in a later battle is invalid for the same reason cross-process arming was | **Changed hypothesis required to catch the real write site**: arm the source page IN THE SAME WINDOW it is discovered (on first hit, read `esi` and dynamically arm that page) — implemented in `tools/WriteInterceptor` (FRESH38+ source-arm, `-ArmSourceOnFirstHit`, offline mechanism test passing); no offset promoted; `independentReplays` still 0 |
 | `OD-RECOVERY-048` | 2026-08-07 | FRESH40 live round: first live attempt at the FRESH39 dynamic source-arm (proven invocation + `-ArmSourceOnFirstHit`) | od-049-autoloop.ps1 `-AttachSmokeOnFirstRound -StageViewpointOnly -PlaybackSpeedEstimate 2.4 -StageMinBattleSeconds 30 -AutoTraceSeconds 25 -ArmSourceOnFirstHit`; offline diagnosis vs od-048 source + FRESH37/38 control runs | `NoSignal` | **Honest negative — 4th consecutive sub-0.9**: verdict `evidence-strong`, 526 addresses scored (130 viewpoint-only), 7364 samples, 20 strong survivors, top score **0.857 (6/7) < 0.9 solo floor** → `family_mapping_failed` → auto-trace SKIPPED → **source-arm never armed** (requires a family hit first); M2 stop rule held; game cleaned up (launch_exit=0) | **Root cause diagnosed offline, not a driver defect**: `measuredPlaybackSpeed=None` is the expected estimate fallback (FRESH38's 0.933 hit ran the identical estimate-only path with the same fire-by-deadline stop) and staging tolerance stayed 0.001 exact-match; the 0.857 cap is **correlation score quantization from a thinner sample grid** (526 addresses / 7364 samples vs the hit run's 598 / 8970) — changed hypothesis for FRESH41: sharpen the grid (`-ReadIntervalSeconds 1.0 -MaxReadRounds 120`); no offset promoted; `independentReplays` still 0 |
 | `OD-RECOVERY-049` | 2026-08-07 | FRESH41 live round: test the sample-grid changed hypothesis (`-ReadIntervalSeconds 1.0 -MaxReadRounds 120`) + `-ArmSourceOnFirstHit` | od-049-autoloop.ps1 sample-grid fix + proven invocation + `-ArmSourceOnFirstHit`; FRESH37/38/39/40 controls | `NoSignal` | **Changed hypothesis tested and REFUTED**: the finer grid worked mechanically (27 rounds vs 15–16, 589 addresses, **15,314 samples ≈ 2× FRESH40's 7,364**) but the top score held at **0.846 (11/13)**, not the predicted 14/16 → no family ≥ 0.9 → auto-trace SKIPPED → **source-arm still never armed**; top z survivors carry ~45s ambiguity bands (6→51.5/52s) vs FRESH37's hit at 0.933 with a **6.5s band** — the ~0.85 cap is the axis's inherent run-to-run correlation variance, not a sampling artifact | **Ledger rule applied — no further live rounds on this replay with the current scoring setup**: next moves are offline (aggregate the 5-round score distribution to test whether the 0.9 floor sits inside the natural range ~0.77–0.93; band-weighted emission selector — prefer tight-band over score-max, FRESH37's 6.5s band vs today's 45s; `independentReplays` still 0 / BLK-0019 unchanged) |
+| `OD-RECOVERY-051` | 2026-08-07 | FRESH42 live round: first test of the band-weighted emission floor + `-ArmSourceOnFirstHit` | od-049-autoloop.ps1 proven invocation + `-ArmSourceOnFirstHit` (band-weighted floor = new od-048 defaults) | `NoSignal` | **Floor behaved CORRECTLY; emission not yet observed live**: top survivors were x@0.800 with 0s bands — all below the 0.85 tight-band floor, refused exactly as designed (no floor defect); FRESH42 drew the low tail of the round-top distribution (0.80–0.933 observed), so no candidate ≥ 0.85 existed to emit → auto-trace SKIPPED → source-arm unexercised | **One more roll (FRESH43) is within the changed-hypothesis warrant**: the floor has not yet had a live emission to observe; offline replay proves it converts ~4/8 rounds including FRESH40's 0.857 x/3s class — completing the first live test of the new approach, not repeating an exhausted one |
+| `OD-RECOVERY-052` | 2026-08-07 | FRESH43 live round: second roll of the band-weighted floor (within warrant) + `-ArmSourceOnFirstHit` — **FIRST DURABLE GAME-CODE FILL-SITE HIT** | od-049-autoloop.ps1 proven invocation + band-weighted floor (od-048 defaults) + `-ArmSourceOnFirstHit`; source-arm = dynamic esi-page arming on first hit (FRESH38 design) | `Hit` | **The source-arm CAUGHT the game's fill site**: family emitted at **0.933** (`0x23A4C490` z + `0x22AB0F90` x, band 50.5s, span 177.9/46.8), auto-trace invoked, `source_arm ON`, **6 hits → verdict `family-hit`** (`hit_members=1`, `values_changed=true`): (1) `VCRUNTIME140.dll+0xE8AE` `rep movsb` wrote **into armed member `0x22AB0F90`** with `esi`=**`0x28FFCF10` exactly** (the copy source); (2) `VCRUNTIME140.dll+0xED49` `movdqu` SSE-stored **4 floats into that source buffer** (`0x28FFCF10..1C`: 0.000457/2.574/−0.112/−0.112 = x,y,z,+1); (3) **`wotblitz.exe+0x7C39AB` (game code, base 0x00C30000, RVA math re-verified) wrote a float into the second armed source page `0x2C5C8A90`** — the per-frame fill site; write path = game fills staging buffer → CRT vectorized copy stages 4-float chunks → `memcpy` propagates into the tracked position field | **Write-chain identified**: the member address is a **copy destination**; the *fill* happens at `wotblitz.exe+0x7C39AB` + `VCRUNTIME140.dll+0xED49`; source buffer holds x,y,z consecutively (MOVDQU writes 4 floats) — next: Ghidra-disassemble `wotblitz.exe+0x7C39AB` to identify the function and trace the staging-buffer pointer chain, then evaluate reading x/y/z from the source (or promoting the destination if M3 repeatability met); `independentReplays` still 0 |
 | `OD-RECOVERY-050` | 2026-08-07 | Offline score-distribution analysis (76 survivors across FRESH37/38/39/40/41) + band-weighted emission implemented | `.data/score-distribution-analysis.py` aggregate + od-048 emission harness (4 cases) + end-to-end replay vs real FRESH38/40/41 reports | `Complete` (offline) | **The 0.9 floor is band-blind, not wrong**: both hits were tight-band x (0.5s/6.5s at 0.933); the refused class splits into tight-band x@0.857/3s (FRESH40, same class as hits — should emit) vs wide-band z@0.846–0.857/45–65s (should refuse); band width is the discriminator (score quantizes coarsely: 6/7 = 0.857, 14/15 = 0.933) | **Band-weighted floor implemented in BOTH gates** (od-048 solo emission + family-usable + write-trace Test-FamilyScored, threaded via `TightBandMinScore`/`TightBandMaxSeconds`): tight-band (≤10s) clears at 0.85, wide-band needs strict 0.9; selection order now span → band asc → score; validated offline: FRESH40's 0.857 x/3s would now emit, FRESH38 still emits (0.933 + 2 tight x-siblings), FRESH41's wide z still refused — **2/8 → 4/8 rounds emit, all tight-band x class**; FRESH42 live round is the changed hypothesis |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
@@ -3613,3 +3615,113 @@ z@0.846 refused (new). PSSA gate + offline pack gate green. **Changed
 hypothesis for FRESH42:** run the proven invocation + `-ArmSourceOnFirstHit`
 with the band-weighted floor in place - the next live round should emit the
 tight-band x class at 0.85+ and finally exercise the source-arm.
+
+## `OD-RECOVERY-051` result — 2026-08-07 (FRESH42: band-weighted floor live, first test — roll produced no 0.85+ candidate)
+
+```yaml
+sessionId: OD-RECOVERY-051
+date: 2026-08-07
+observedAtUtc: 2026-08-07T16:30:00Z
+timebox: live round with the OD-RECOVERY-050 band-weighted emission (tight-band <=10s clears at 0.85, wide-band needs 0.9) + proven invocation + -ArmSourceOnFirstHit
+decision: NEGATIVE (honest) but informative - the band-weighted floor behaved CORRECTLY (top survivors 0.800 x/0s-band were refused, exactly as designed); this round's roll simply produced no tight-band candidate >= 0.85, so the new floor has NOT yet been observed emitting live - one more roll is within the changed-hypothesis warrant
+objective: first live test of the band-weighted floor; emit the tight-band x class at 0.85+ and exercise the source-arm
+stopCondition: tight-band survivor >= 0.85 emitted, auto-trace fires, source-arm arms and traps a fill-site hit
+method:
+  primaryTool: od-049-autoloop.ps1 -AttachSmokeOnFirstRound -StageViewpointOnly -PlaybackSpeedEstimate 2.4 -StageMinBattleSeconds 30 -AutoTraceSeconds 25 -ArmSourceOnFirstHit (band-weighted floor = new od-048 defaults)
+  secondaryTools: score-distribution analysis (OD-RECOVERY-050)
+  invocation: proven invocation + -ArmSourceOnFirstHit (band-weighted floor active)
+observations:
+  - state: M1 correlate
+    outcome: verdict=evidence-strong, addresses_scored=528, total_samples=7920, 16 rounds fire-by-deadline, strong_survivors=20, families=0
+    topScores: 0.800 (x, 0s band, x2), then 0.733 (x) - ALL below the 0.85 tight-band floor; no candidate >= 0.85 existed to emit
+    floorBehavior: CORRECT - the 0.800 x survivors were refused by the band-weighted floor (0.800 < 0.85), exactly as designed; this is not a floor defect, it is a low roll (the round's top score is at the bottom of the observed 0.80-0.933 range)
+  - state: auto-trace
+    outcome: SKIPPED no_usable_family - no candidate crossed the floor; source-arm never armed
+  - state: hypothesis status
+    bandWeightedFloor: validated as CORRECT (refuses sub-0.85), but not yet observed EMITTING live - FRESH42 rolled 0.800 tops; the floor converts 0.857+ tight-band rounds (FRESH40 class) into emissions and needs a roll that produces one
+    emissionRate: observed round-top distribution 0.800/0.867/0.800/0.857/0.846/0.800/0.800/0.933/0.933 - the floor emits ~4/8 rounds by the offline replay; FRESH42 drew the 0.800 tail
+candidates:
+  - rawAddress: 0x23BEF4D0 (top survivor, x@0.800, 0s band - refused, below 0.85 floor)
+  - moduleRelativeOffsetHex: none - no trace ran
+  - addressKind: unknown
+```
+
+**Floor verified correct; emission not yet observed live.** The band-weighted
+floor refused the 0.800 tops exactly as designed (0.800 < 0.85 tight floor) —
+no floor defect, no candidate existed. FRESH42 drew the low tail of the
+round-top distribution. **One more roll (FRESH43) is within the changed-
+hypothesis warrant**: the floor has not yet had a live emission to observe,
+and the offline replay proves it converts ~4/8 rounds (including the FRESH40
+0.857 x/3s class). A second identical roll to give the floor a fair live test
+is not "repeating an exhausted approach" - it is completing the first test of
+the new approach.
+
+## `OD-RECOVERY-052` result — 2026-08-07 (FRESH43: FIRST DURABLE GAME-CODE FILL-SITE HIT)
+
+```yaml
+sessionId: OD-RECOVERY-052
+date: 2026-08-07
+observedAtUtc: 2026-08-07T16:37:00Z
+timebox: live round - second roll of the band-weighted floor (within the FRESH42 warrant), proven invocation, -ArmSourceOnFirstHit
+decision: HIT - the dynamic source-arm caught the game's per-frame fill site: wotblitz.exe+0x7C39AB writes the memcpy source buffer, VCRUNTIME140.dll+0xED49 SSE-stages 4-float chunks into it, and VCRUNTIME140.dll+0xE8AE (rep movsb) propagates into the armed member 0x22AB0F90
+objective: give the band-weighted floor a fair live emission test AND exercise the source-arm against a real family (FRESH39/40/41 never armed)
+stopCondition: family-hit with values_changed=true and a module-mapped write site, or clean negative
+hypothesis: a same-window dynamic source-arm (arm the esi page at first hit) will catch the game code that fills the memcpy source buffer
+```
+
+### Evidence (all six hits, one game process, thread 45272)
+
+| # | Address | Kind | RIP | Module RVA | Instruction | Value |
+|---|---|---|---|---|---|---|
+| 1 | `0x22AB0F90` | member | `0x5B24E8AE` | `VCRUNTIME140.dll+0xE8AE` | `F3A4` rep movsb | 0 |
+| 2 | `0x28FFCF10` | source | `0x5B24ED49` | `VCRUNTIME140.dll+0xED49` | `F30F7F07` movdqu | 0.000457 |
+| 3 | `0x28FFCF14` | source | `0x5B24ED49` | same | movdqu | 2.5736 |
+| 4 | `0x28FFCF18` | source | `0x5B24ED49` | same | movdqu | -0.1119 |
+| 5 | `0x28FFCF1C` | source | `0x5B24ED49` | same | movdqu | -0.1119 |
+| 6 | `0x2C5C8A90` | source | `0x013F39AB` | **`wotblitz.exe+0x7C39AB`** | `8B83A0000000`… | 0.008282 |
+
+Module bases verified against the capture's own module table:
+`wotblitz.exe` base `0x00C30000` size 0x4482000; `VCRUNTIME140.dll` base
+`0x5B240000` size 0x15000. RVA re-derived: `0x013F39AB − 0x00C30000 =
+0x7C39AB`; `0x5B24E8AE − 0x5B240000 = 0xE8AE`; `0x5B24ED49 − 0x5B240000 =
+0xED49`.
+
+### Analysis
+
+- **Hit 1 is the propagation copy**: `rep movsb` wrote into the armed member
+  `0x22AB0F90` (the x-position candidate, score 0.933, span 46.8s). The
+  captured `esi` = 687,853,328 = **`0x28FFCF10` exactly** — the copy source
+  pointer.
+- **Hits 2–5 are the source refill**: `movdqu` at `VCRUNTIME140.dll+0xED49`
+  stored 4 consecutive floats into that exact source buffer (`0x28FFCF10`..
+  `1C`). Values (0.000457, 2.574, −0.112, −0.112) are plausibly x, y, z + one
+  more — the source buffer holds the position triple consecutively.
+- **Hit 6 is the game fill site**: **`wotblitz.exe+0x7C39AB`** — game code,
+  not CRT — wrote a float into the second armed source page at `0x2C5C8A90`
+  (`sourcePagesArmed=2`).
+
+**Write chain (answers FRESH37's question):** game code fills a staging
+buffer (`wotblitz.exe+0x7C39AB`) → CRT vectorized copy stages 4-float chunks
+(`VCRUNTIME140.dll+0xED49`) → `memcpy` propagates into the tracked position
+field (`VCRUNTIME140.dll+0xE8AE` → member `0x22AB0F90`). The member address is
+a copy destination; the *fill* is at `wotblitz.exe+0x7C39AB`.
+
+### M3 status
+
+- `complete=False` on the family: z member `0x23A4C490` was armed but not hit
+  in the 25s window (only the x destination took the copy). Multi-copy family
+  confirmed — one source, several destinations.
+- `independentReplays` still 0 (BLK-0019 unchanged). The write-site evidence is
+  durable (capture/family/trace JSONs on disk, module table, full registers).
+
+### Next
+
+1. Ghidra-disassemble `wotblitz.exe+0x7C39AB` (FindOffsets.py workflow) to
+   identify the enclosing function and the source-page pointer chain.
+2. Test reading x/y/z directly from the source buffer layout hinted by the
+   `movdqu` 4-float store (0x28FFCF10..1C consecutive).
+3. M3 repeatability: one more live family-hit on a fresh battle to confirm
+   `0x22AB0F90`-class destinations + `0x7C39AB` fill persist; then evaluate
+   promotion.
+4. `independentReplays`: import a second replay and re-run the emission to
+   satisfy BLK-0019.
