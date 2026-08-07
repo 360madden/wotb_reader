@@ -96,7 +96,7 @@ scripts/od-048-monitor-correlate-session.ps1
 **Exit:** ≥ 1 strong survivor. If neither of the 2 sessions produces one,
 **stop** — descope per the strategy stop rules.
 
-### M1.5 — Viewpoint-first discovery pivot (2026-08-06) — ✅ implemented offline, ✅ strong live verdicts (FRESH20–25), ❌ x64dbg write-trace capture route CLOSED (FRESH26–33, root-caused — see M2)
+### M1.5 — Viewpoint-first discovery pivot (2026-08-06) — ✅ implemented offline, ✅ strong live verdicts (FRESH20–25), ❌ x64dbg write-trace capture route CLOSED (FRESH26–33, root-caused — see M2), ✅ **C# interceptor lands the FIRST WRITE-SITE HIT REPORT (FRESH36, 2026-08-07)**
 
 **Pivot:** find ONE highly discriminating live coordinate of the **viewpoint
 player** by correlating its observed value history against the decoded
@@ -218,6 +218,33 @@ game's position writes almost certainly do the same. Earlier "proofs"
 campaign, not BP capture. **Decision (CAP discipline): stop x64dbg live
 runs; the M2 successor is a C#-native guard-page write interceptor (below).
 The M1 address-level evidence stands as the interim result.**
+
+**Live outcome FRESH34–36 (2026-08-06/07) — C# interceptor route LANDS THE FIRST WRITE-SITE HIT (2026-08-07, `da48c92`).**
+FRESH34 (interceptor wired, 2026-08-06): 40 real guard traps at a stable
+write-site rip (`0x00379554` ×39) but **0 hits — `changed=False`** — the
+trace fired ~40s AFTER the real battle end (result screen, world frozen): the
+battle-end model assumed 1× playback + 50s attendance while the game plays
+~2× (FRESH34: 271.4s decoded = 134s wall, scene-end 02:31:34 → deaths
+02:33:48). Root cause 2: `Test-BlitzBattleEnded`'s log lines parsed with
+*local* dates, so during the run (local Aug 6 22:xx, log UTC Aug 7) all 764
+lines compared `<` the Aug-7 anchor and were skipped — the watcher never
+fired (the offline-vs-live date-rollover trap). Fixes (`38f5e91`, then the
+bug-hunt round `b5849a5` and the adversarial fresh-eyes pass `da48c92`):
+`Get-BlitzRealWindow` (two-pass UTC-dated log parse: real match begin =
+last `LoadGameScene ends`, end markers gated to it, log-silence as end
+evidence, playback-speed derivation, midnight-crossing-safe horizon),
+fire-by deadline refreshed every round, `-PlaybackSpeedEstimate` default 2.0
+(measured 2.01–2.03×), monotonic-forward + activity + >20s-silence guards on
+silence-derived ends, staging-tick anchor kept at marker+attendance (the
+FRESH15j contract — the log scene-end is the *recording* start, not the
+decoded tick-0 instant), `blitzLog` evidence block in the report
+(realMatchBegin/End, measured speed, fire-by), fail-closed capture parse.
+
+| Round | Outcome | Bug found → fix (commit) |
+|---|---|---|
+| FRESH34 | C# interceptor mechanism PROVEN live (40 guard traps at a stable rip, no freeze, clean detach) but **0 hits — `changed=False`**: trace fired 40s after the REAL battle end (result screen) because the battle-end model assumed 1×+50s attendance while the game plays ~2×; the log watcher also never fired (date-rollover: local Aug-6 dates vs the Aug-7 UTC anchor) | log-derived real battle window + fire-by deadline + UTC-date parse (`38f5e91`) |
+| FRESH35 | offline fix round (no live run): horizon/rejection, degenerate-speed clamp, live-window guards, playback estimate 2.0, loop end-correction, harness AST-extraction false-confidence fix | bug-hunt round (`b5849a5`) + adversarial fresh-eyes: staging-anchor regression, `blitzLog` report evidence, fail-closed capture parse (`da48c92`) |
+| FRESH36 | **FIRST REAL WRITE-SITE HIT REPORT FROM THE GAME** — `family_solo_emitted axis=x members=4 score=1 span=77.3 band=1.5s`; interceptor armed 4 addresses (0x3D525BE8/0x3D525CC0/0x3D525C98/0x3D525C20, one 4KB page) against pid 21924 for 25s → **`family-hit` hits=51 hit_members=4 values_changed=true liveness=running** — 4 distinct write-site RIPs write ALL 4 armed addresses (0x01005F19, 0x01331878, 0x01B62D9D, 0x0239E856); game log proves the trace window (05:13:05–30Z) sat INSIDE the live battle (scene-end 05:11:32Z, deaths 05:13:20–22Z); `stoppedReason=fire-by-deadline` after 14 rounds; 554 addresses scored / 7202 samples; measured playback this session ~2.47× (271.4/110s) vs the 2.0 estimate — the fire-by still landed inside the battle because the estimate errs early-safe | none (all fixes held); **next: resolve which module owns the 4 RIPs (module-relative RVAs) → the writing instruction → the position/transform object base** |
 
 **Pending after a strong survivor:** writer evidence → object base →
 sibling-coordinate local read → resolver classification (pointer path /
