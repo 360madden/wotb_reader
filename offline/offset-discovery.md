@@ -260,10 +260,19 @@ and detach proven. The Host projects only an opaque object key,
 `replayEntityId`, UTC, values, and proof flags; raw addresses remain private.
 The entity-ID and XYZ reads occur while the same debug event holds the process,
 but they are two memory reads: hardware atomicity, same-decoded-clock identity,
-and local-player identity remain unproven.
-After the full repository gate and a fresh identity-pinned helper publish, one
-five-second/64-hit positively verified offline capture is the next admissible
-test. Do not run the old member triples, broad scans, or transform target.
+and local-player identity are not established synthetically.
+
+OD-RECOVERY-071 completed the first live equality test after the full gate and
+fresh identity-pinned publish. The five-second positively verified offline
+capture returned 49 hits; every hit had a readable replay entity ID and finite
+XYZ. Seven decoded vehicle entities matched the captured triple exactly after
+Float32 normalization, including the replay viewpoint entity. One additional
+zero-vector object had no decoded trajectory and was excluded. This proves
+event-based player-position identity for that session. The captured positions
+did not change, so motion freshness, same-decoded-clock identity, and
+cross-replay repeatability remain open. The next live proof must use the same
+fixed target during a verified movement window on the other content-distinct
+replay; do not run old member triples, broad scans, or the transform target.
 
 ## Evidence publication
 

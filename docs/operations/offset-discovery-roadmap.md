@@ -406,13 +406,17 @@ hit bound, non-Host parent rejection, cleanup, detach, and address-free Host
 projection passed. The two reads share one suspended debug event but are not
 hardware-atomic; same-decoded-clock and local-player identity remain unproven.
 
-`OD-RECOVERY-071` may run once after the full gate and a fresh pinned publish:
-five seconds, at most 64 accepted hits, positively verified offline replay
-only. Match each captured `replayEntityId` only against the decoded type-10
-trajectory for that entity at the aligned clock. Stop after the result; no
-target/displacement changes or scans belong in the same live session. Exact
-entity/XYZ equality proves event-based entity-location reading. Calling it
-player-location reading requires independent local-player entity-ID evidence.
+`OD-RECOVERY-071` completed the first live equality proof: 49 valid hits, seven
+decoded vehicle entity/XYZ triples matched exactly at Float32 precision, and
+one exact match was the replay viewpoint entity. The unmatched eighth object
+was a zero vector with no decoded trajectory. This proves event-based
+player-position identity for one replay/static window. It does not prove motion
+freshness, same decoded clock, cross-replay repeatability, or a stable root.
+
+`OD-RECOVERY-072` is the next bounded live gate: use the unchanged target for
+five seconds during verified movement on the other content-distinct replay.
+Require a changing viewpoint series and same-entity decoded matches. Stop after
+the result; no target/displacement changes or scans belong in the session.
 
 No live budget exists for static exploration. Offset publication still
 requires a stable module-relative resolver/root and the M3 evidence gates.

@@ -49,6 +49,15 @@ changing finite XYZ samples; max-hit stop, non-Host parent rejection, cleanup,
 and detach passed. Host output contains no raw addresses. One bounded live
 equality test is admissible only after the full gate and fresh pinned publish.
 
+**OD-RECOVERY-071 amendment (2026-08-08):** the first bounded live equality
+test passed under `OfflineReplayVerified`. The fixed target returned 49 hits;
+all had readable replay entity IDs and finite XYZ. Seven decoded vehicle
+entities matched exactly at Float32 precision, including the replay viewpoint
+entity. One zero-vector object had no decoded trajectory and was excluded.
+This proves event-based player-position identity in one static window. Motion
+freshness, same-decoded-clock identity, cross-replay repeatability, hardware
+atomicity, a stable polling root, and offset promotion remain unproven.
+
 This ledger is the durable index of WoT Blitz PC offset-discovery work. It
 records experiments, partial results, failures, and pivots so future sessions do
 not repeat an exhausted approach without a changed hypothesis.
@@ -199,6 +208,7 @@ occurred.
 | `OD-RECOVERY-068` | 2026-08-08 | Re-test the UnknownCheats-derived Vehicle position layout as a current-build candidate family | Hash-bound Ghidra full-function structural scan, current `VehicleGameLogic` RTTI/vtable query, vtable-method dump, and manual decompilation | `NoSignal` (position layout) / `Partial` (entity anchor) | Root `0x03E91978` remains refuted; current VGL vtable RVA `0x0327DA50`; slot `+0x04` getter RVA `0x0031B560` returns `[this+0x04]`; 17/79 getter-using methods touch 23 entity offsets but not `0x68/0x6C/0x70`; sole complete generic chained match is matrix/pose copy code | Does not prove entity member semantics, replay type-10 dispatch, XYZ destination, stable root, or live identity; next is static convergence of reader/framer flow with the proven entity getter; no live run or offset promotion |
 | `OD-RECOVERY-069` | 2026-08-08 | Trace the verified replay type-10 XYZ into a resolved engine entity | Hash-bound Ghidra replay/entity mapper, fixed 40-check semantic verifier, direct-call/vtable/instruction review | `CandidateFound` (entity-bound instruction event) / `Partial` (reliable player read) | Type-10 handler RVA `0x00FE31C0`; engine resolver proves `[entity+0x1C]` is packet entity ID; at RVA `0x022FA78D` bytes `F30F7E00`, `ESI` is resolved entity and `EAX` points to contiguous XYZ; downstream AvatarFilterHelper ring corroborates position semantics | Not a stable polling offset and no player identity/live equality yet; next is fixed two-source synthetic capture of `[ESI+0x1C]` plus 12 bytes at `EAX`, with no live run until review |
 | `OD-RECOVERY-070` | 2026-08-08 | Implement and synthetically prove the fixed type-10 entity/XYZ capture | Re-pinned coordinator/helper policy, v2 private report, replay-entity-ID public projection, x86 owned target, focused tests | `Complete` (synthetic capture) / `CandidateFound` (live plan) | Exact `F30F7E00` hit; entity ID `4242`; 4 changing finite XYZ hits; max-hit stop; non-Host pipe caller rejected; cleanup/detach proven; no raw addresses on Host surface | No live equality or stable polling root yet; after full gate/fresh publish, one 5-second/64-hit positively verified offline capture may compare same-ID XYZ to decoded type-10 |
+| `OD-RECOVERY-071` | 2026-08-08 | First live equality proof for the fixed type-10 entity/XYZ event | Fresh pinned publish + managed `OfflineReplayVerified` launch + one 5-second/64-hit capture + same-entity decoded trajectory comparison | `Hit` / `Partial` (reliable player read) | 49/49 ID+XYZ reads valid; 7 decoded vehicle entities matched exactly at Float32 precision; 1 exact match was the replay viewpoint; fingerprint/cleanup passed; 1 zero-vector non-trajectory object excluded | Player-position identity proven for one static window; no motion freshness/same clock/cross-replay repeatability/stable root/offset promotion; next repeat exact target during movement on other replay |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -4761,3 +4771,70 @@ event-based entity-location reading, not local-player identity, a stable polling
 offset, or a publication-ready resolver. Player-location wording requires
 independent evidence that the matched replay entity ID belongs to the local
 player.
+
+## `OD-RECOVERY-071` result - 2026-08-08 (first live type-10 equality)
+
+```yaml
+sessionId: OD-RECOVERY-071
+status: Hit / Partial (reliable player read)
+mode: managed positively verified offline replay
+gate: OfflineReplayVerified
+target:
+  module: wotblitz.exe
+  rva: 0x022FA78D
+  bytes: F30F7E00
+  captureKind: type10-entity-position
+capture:
+  durationSeconds: 5
+  maxHits: 64
+  acceptedHits: 49
+  successfulEntityAndFiniteVectorHits: 49
+  opaqueObjects: 8
+  fingerprintMatched: true
+  cleanupProven: true
+comparison:
+  decodedTrajectoryEntities: 14
+  decodedEntityMatches: 7
+  float32ExactTripleMatches: 7
+  viewpointFloat32ExactMatches: 1
+  unmatchedZeroVectorObjects: 1
+  capturedMovementObserved: false
+proof:
+  entityPositionIdentityProven: true
+  viewpointPlayerPositionIdentityProven: true
+  motionFreshnessProven: false
+  sameDecodedClockProven: false
+  hardwareAtomicReadProven: false
+  crossReplayRepeatabilityProven: false
+  stablePollingRootProven: false
+  offsetPromoted: false
+privacy:
+  trackedIdsCoordinatesPathsOrNames: false
+  aggregateOnly: true
+shutdown:
+  gameHostHelperDebuggerRemaining: 0
+```
+
+The capture was admitted only after the managed replay reached
+`OfflineReplayVerified`. Every accepted hit supplied a readable replay-local
+entity ID and finite XYZ from the fixed `ESI`/`EAX` event. Comparison was
+strictly same-entity: seven vehicle entities each had an exact Float32 triple
+in decoded type-10 ground truth, and one of those entities was independently
+marked as the replay viewpoint. The eighth opaque object was a zero vector with
+no decoded trajectory and was not counted as a match.
+
+This is the first direct live proof that the current instruction event yields
+the replay player's position value. It is deliberately not a stable offset or
+a timing claim. Values were unchanged during the window, no decoded-clock value
+was captured, and entity ID plus XYZ use two reads during the same suspended
+event. No address, entity ID, coordinate, player/account datum, replay path, or
+raw capture is persisted in tracked source.
+
+### Decision and next
+
+Do not return to heap scans, stale community offsets, or the transform-fill
+branch. `OD-RECOVERY-072` may run the unchanged five-second/64-hit target during
+a verified movement window on the other content-distinct replay. It must show a
+changing viewpoint series and same-entity decoded matches. That would establish
+motion freshness and cross-replay repeatability for event-based player-location
+reading; a stable continuously pollable resolver remains separate work.

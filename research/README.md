@@ -28,8 +28,10 @@
   resolved entity, `[ESI+0x1C]` is its type-10 entity ID, and `EAX` points to
   the packet-derived XYZ vector. This is an entity-bound event candidate, not
   a stable polling offset. The fixed two-source helper now passes synthetic
-  validation; one bounded offline live equality test is next after the full
-  repository gate and fresh pinned publish.
+  validation. OD-RECOVERY-071 live-proved seven exact decoded entity/XYZ
+  matches at Float32 precision, including the replay viewpoint entity. The
+  window was position-static, so motion freshness and cross-replay
+  repeatability remain next; no offset is promoted.
 - **11.19 released July 2026** (per community release trackers: Reddit
   r/WorldOfTanksBlitz, Uptodown changelog) — minor rebalances only; replay
   format/log markers unchanged

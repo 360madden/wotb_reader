@@ -148,13 +148,19 @@ full design specification.
   helper contract and passes its synthetic x86 proof: entity ID `4242`, four
   changing finite XYZ samples, exact target fingerprint, hit bound, parent
   rejection, cleanup, and detach all pass. The public response calls the value
-  `replayEntityId` and suppresses process/entity/vector addresses. After the
-  full repository gate and a fresh pinned publish, one bounded positively
-  verified offline capture is recommended to test exact replay-entity/XYZ
-  equality. No stable polling offset or player identity is yet claimed.
+  `replayEntityId` and suppresses process/entity/vector addresses.
+  OD-RECOVERY-071 then completed the first bounded live equality proof under a
+  positively verified offline replay: 49/49 hits had readable IDs and finite
+  XYZ, seven decoded vehicle entities matched exactly at Float32 precision,
+  and one exact match was the replay viewpoint entity. A separate zero-vector
+  object had no decoded trajectory and was not treated as evidence. This proves
+  the current instruction event can read the player's replay position in that
+  session. The values did not move during the five-second window, so motion
+  freshness, same-decoded-clock identity, cross-replay repeatability, and a
+  stable polling offset remain unproven. No offset is promoted.
   Detail:
   [`offline/offset-discovery.md`](offline/offset-discovery.md) and
-  [`docs/operations/handoffs/2026-08-08-type10-entity-movement-anchor.md`](docs/operations/handoffs/2026-08-08-type10-entity-movement-anchor.md).
+  [`docs/operations/handoffs/2026-08-08-od071-type10-live-equality.md`](docs/operations/handoffs/2026-08-08-od071-type10-live-equality.md).
 
 ## Quickstart
 

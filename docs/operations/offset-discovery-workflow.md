@@ -361,12 +361,21 @@ addresses. The entity-ID and vector reads share a suspended debug event but are
 not hardware-atomic. Same-decoded-clock and local-player identity also remain
 unproven.
 
-Session ID: `OD-RECOVERY-071`. After the full repository gate and a fresh
-identity-pinned helper publish, run one five-second/64-hit capture in a
-positively verified offline replay. Accept evidence only from hits where both
-`replayEntityIdReadOk` and XYZ `readOk/finite` are true. Compare each replay
-entity ID only with that same entity's decoded type-10 XYZ at the aligned
-clock. Stop after this result; do not scan or change the target in the session.
+OD-RECOVERY-071 completed that bounded live proof. The five-second/64-hit
+request ran in a positively verified offline replay and completed with 49 hits;
+all 49 had successful replay-entity-ID and finite XYZ reads. Seven decoded
+vehicle entities matched exactly after Float32 normalization, and one was the
+replay viewpoint entity. A separate zero-vector object had no decoded
+trajectory and was excluded. Fingerprint and cleanup were proven, and all live
+processes were stopped after comparison.
+
+This establishes player-position identity at the fixed type-10 instruction in
+one session, not motion freshness or a polling offset: the retained values did
+not change during the capture, the comparison was time-agnostic, and the two
+reads are not hardware-atomic. `OD-RECOVERY-072` may repeat the exact frozen
+target during a verified movement window on the other content-distinct replay.
+Require a changing viewpoint series plus same-entity decoded matches; do not
+scan or change the target/register/displacement in that session.
 
 The first static triage did not find a direct consumer anchor. Across 526,935
 executable functions, displacement-layout matches were dominated by matrix,
@@ -391,12 +400,11 @@ position triple remains refuted.
 Do not spend a live replay on a broader matrix read, a different displacement at
 the transform-fill instruction, a latency-only retry, or another heap scan. The
 instruction-snapshot mechanism is now pinned to the two-source target and has
-passed synthetic review. The next bounded live result advances
-field identity only when its entity-bound samples match decoded type-10 ground
-truth at the aligned clock. That proves entity-location reading; player-location
-reading additionally requires independent evidence that the matched replay
-entity ID is the local player. Stable resolution and offset publication remain
-separate gates. Existing safety contract:
+passed synthetic and first-live equality review. OD-RECOVERY-071 proves
+entity-location identity and independently matches one exact entity to the
+replay viewpoint. Motion freshness and cross-replay repeatability remain the
+next event-based gates; stable resolution and offset publication remain
+separate work. Existing safety contract:
 [`../superpowers/specs/2026-08-08-instruction-first-position-snapshot.md`](../superpowers/specs/2026-08-08-instruction-first-position-snapshot.md).
 
 > **Amended 2026-08-04 (v3 strategy).** The pilot order below is superseded by

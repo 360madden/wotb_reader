@@ -195,6 +195,11 @@ offset.
 No current position displacement, stable root, player identity, or publishable
 offset follows from the community post alone. Live work remains gated on a
 two-source capture that reads `[ESI+0x1C]` and 12 bytes from `EAX` within the
-same held debug event. OD-RECOVERY-070 now passes that synthetic proof. The
-next admissible step is one bounded positively verified offline equality test
-after the full repository gate and a fresh pinned helper publish.
+same held debug event. OD-RECOVERY-070 passed that synthetic proof, and
+OD-RECOVERY-071 then captured 49 valid live hits in a positively verified
+offline replay. Seven decoded vehicle entities matched exactly at Float32
+precision, including the replay viewpoint entity. The stale community offsets
+were therefore useful as a relationship clue even though none was reusable.
+The result proves the new event-based player-position path for one static
+window; it does not prove motion freshness, cross-replay repeatability, or a
+stable polling offset.
