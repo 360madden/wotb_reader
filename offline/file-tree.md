@@ -198,6 +198,7 @@ docs/operations/handoffs/2026-08-08-fresh44-live-crossbattle.md
 docs/operations/handoffs/2026-08-08-fresh45-immediate-triple.md
 docs/operations/handoffs/2026-08-08-instruction-first-pivot.md
 docs/operations/handoffs/2026-08-08-instruction-snapshot-live-correction.md
+docs/operations/handoffs/2026-08-08-instruction-snapshot-push-handoff.md
 docs/operations/handoffs/README.md
 docs/operations/offset-discovery-guide.md
 docs/operations/offset-discovery-ledger.md
