@@ -193,6 +193,7 @@ docs/operations/handoffs/2026-08-07-fresh40-negative-sample-depth-diagnosis.md
 docs/operations/handoffs/2026-08-07-fresh41-sample-grid-refuted.md
 docs/operations/handoffs/2026-08-07-fresh43-game-code-fill-site-hit.md
 docs/operations/handoffs/2026-08-07-write-site-durable-evidence.md
+docs/operations/handoffs/2026-08-08-community-vehicle-position-family.md
 docs/operations/handoffs/2026-08-08-fresh44-crossbattle-staged.md
 docs/operations/handoffs/2026-08-08-fresh44-live-crossbattle.md
 docs/operations/handoffs/2026-08-08-fresh45-immediate-triple.md
@@ -778,6 +779,7 @@ tools/ghidra-scripts/FindOffsets.py
 tools/ghidra-scripts/FindType10DispatchTable.java
 tools/ghidra-scripts/FindType10PositionConsumers.java
 tools/ghidra-scripts/FindType10RecordDispatch.java
+tools/ghidra-scripts/FindVehiclePositionFamily.java
 tools/ghidra-scripts/callers-disasm.txt
 tools/ghidra-scripts/chain-disasm.txt
 tools/ghidra-scripts/functions-disasm.txt

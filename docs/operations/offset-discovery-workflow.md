@@ -340,23 +340,35 @@ The best coherent absolute fit across every participant, 48 axis/sign mappings,
 EBX+`0x90/+0x94/+0x98` is a composed matrix translation; the negative concerns
 the sampled object's semantic identity or coordinate space.
 
-Session ID: `OD-RECOVERY-067`. This session is offline/static-only. Trace the
+Session ID: `OD-RECOVERY-069`. This session is offline/static-only. Trace the
 verified type-10 replay position layout from its decode/dispatch consumer to the
-game code that applies X/Y/Z to an entity or physics state. Before another live
-request exists, freeze all of the following: exact executable hash, module RVA,
-instruction bytes, owning entity/register provenance, member displacement or
-one fixed contiguous read, and a synthetic target proving hit classification,
-bounds, privacy projection, cancellation, and cleanup.
+game code that applies X/Y/Z to an entity or physics state, while converging on
+the exact current-build `VehicleGameLogic` entity getter (vtable RVA
+`0x0327DA50`, getter RVA `0x0031B560`). Before another live request exists,
+freeze all of the following: exact executable hash, module RVA, instruction
+bytes, owning entity/register provenance, member displacement or one fixed
+contiguous read, and a synthetic target proving hit classification, bounds,
+privacy projection, cancellation, and cleanup.
 
 The first static triage did not find a direct consumer anchor. Across 526,935
 executable functions, displacement-layout matches were dominated by matrix,
 copy, serializer, and destructor code; the highest-ranked candidate was
 decompiled and refuted. No same-base direct comparison of record length `49`
 and type `10` exists in the scanned code, and all eight apparent initialized
-dispatch rows were MSVC exception metadata. Continue OD-RECOVERY-067 by finding
-the generic replay event reader/framer from replay/file entry points and
-following payload data flow. Do not rerun the literal/layout heuristics as if a
-higher candidate count supplied semantic evidence.
+dispatch rows were MSVC exception metadata. The surviving route is to find the
+generic replay event reader/framer from replay/file entry points and follow its
+payload data flow. Do not rerun the literal/layout heuristics as if a higher
+candidate count supplied semantic evidence.
+
+OD-RECOVERY-068 also tested the repository's historical community Vehicle
+layout as a candidate family. The old root remains refuted. The real
+`VehicleGameLogic` slot-`+0x04` getter still returns `[this+0x04]`, but none of
+17 getter-using virtual methods accesses the claimed entity position triple at
+`+0x68/+0x6C/+0x70`. The sole exact generic chained match and the strongest
+float fallback both decompile as matrix/pose structures. Do not read that stale
+triple live. For OD-RECOVERY-069, use the getter as an entity data-flow anchor;
+treat returned-entity `+0x1C` only as an identifier hypothesis and health-like
+`+0xB8` only as type corroboration until the type-10 path supplies semantics.
 
 Do not spend a live replay on a broader matrix read, a different displacement at
 the transform-fill instruction, a latency-only retry, or another heap scan. The

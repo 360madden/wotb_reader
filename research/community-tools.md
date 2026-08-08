@@ -38,9 +38,14 @@
   - `GameScene` structure
   - `VehicleGameLogic` with health, team, destruction state
   - Static pointer offsets for entity lists
-- **Relevance:** Direct memory structure reference for our `MemoryScanEngine`.
-- **2026-07 verification:** Entity-list chain (`Base + 0x03E91978`) still current in
-  community releases for recent 11.x builds; see `memory-offsets-unknowncheats.md`.
+- **Relevance:** Historical names and layout families for hash-bound static
+  triage; never direct runtime input.
+- **Current repo verdict (2026-08-08):** the attributed entity-list root
+  (`Base + 0x03E91978`) is refuted in the installed `11.19.0.10` executable,
+  and the complete `VehicleGameLogic +0x04 -> +0x68/+0x6C/+0x70` position
+  relationship was not reproduced. The `+0x04` entity getter itself survives
+  as a useful vtable/data-flow clue. See
+  [memory-offsets-unknowncheats.md](memory-offsets-unknowncheats.md).
 
 ### Community Tool Stack (verified 2026-07)
 | Tool | Use | Notes |

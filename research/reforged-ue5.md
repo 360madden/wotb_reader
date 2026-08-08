@@ -36,8 +36,10 @@ by Reforged:
 1. **Replay format (.wotbreplay)** — DAVA scenario/event stream. UE5 client will almost
    certainly record a different format (or none at launch). The `wotb-11.x-strict`
    decoder, pickle/protobuf boundary, and event-packet offsets all assume DAVA.
-2. **Memory offsets** — `memory-offsets/*.json` (entity list `Base+0x03E91978`, position
-   +0x68/0x6C/0x70, etc.) are DAVA heap layouts. UE5 rewrites them wholesale.
+2. **Memory research** — historical DAVA candidates such as entity-list
+   `Base+0x03E91978` and position `+0x68/+0x6C/+0x70` would be invalidated
+   wholesale. Those candidates are already unverified/refuted for the current
+   DAVA build and are not published offsets.
 3. **Native logs / lifecycle markers** — `blitz-logs_*.txt`, `START_REPLAY_LOCAL` /
    `STOP_REPLAY_LOCAL` markers are DAVA log plumbing. Unreal uses a different logging
    pipeline and file layout.

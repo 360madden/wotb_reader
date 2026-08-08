@@ -13,7 +13,7 @@
 | [lifecycle-monitor.md](lifecycle-monitor.md) | Native log lifecycle monitor — markers, FileSystemWatcher, offline gate |
 | [dava-engine.md](dava-engine.md) | DAVA Engine analysis — architecture, scene management, open source effort |
 | [memory-analysis.md](memory-analysis.md) | Memory scanning techniques — string search, pointer chains, Ghidra, ReClass |
-| [memory-offsets-unknowncheats.md](memory-offsets-unknowncheats.md) | Community-compiled memory offsets from UnknownCheats |
+| [memory-offsets-unknowncheats.md](memory-offsets-unknowncheats.md) | Historical UnknownCheats-derived candidate family plus current-build refutation/triage |
 | [community-tools.md](community-tools.md) | Community resources — parsers, reverse engineering, SteamDB |
 | [approaches.md](approaches.md) | 6 approaches (A-F) with implementation details and testing protocols |
 

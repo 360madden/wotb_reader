@@ -67,8 +67,9 @@ $env:WOTB_READER_GHIDRA_OUTPUT_DIR = `
 
 Run these scripts only against the already analyzed, hash-verified Ghidra
 project. `FindType10PositionConsumers.java`, `FindType10RecordDispatch.java`,
-and `FindType10DispatchTable.java` are triage tools: their output is not a
-consumer, handler, or offset claim without decompiler/data-flow proof.
+`FindType10DispatchTable.java`, and `FindVehiclePositionFamily.java` are triage
+tools: their output is not a consumer, handler, object type, or offset claim
+without decompiler/data-flow proof.
 
 ```powershell
 & $analyzeHeadless $projectDirectory $projectName `
@@ -85,7 +86,22 @@ consumer, handler, or offset claim without decompiler/data-flow proof.
   -process wotblitz.exe -noanalysis `
   -postScript FindType10DispatchTable.java `
   -scriptPath (Join-Path $PWD 'tools\ghidra-scripts')
+
+& $analyzeHeadless $projectDirectory $projectName `
+  -process wotblitz.exe -noanalysis `
+  -postScript FindVehiclePositionFamily.java `
+  -scriptPath (Join-Path $PWD 'tools\ghidra-scripts')
+
+python tools/find-static-roots.py `
+  --chain 0x03E91978 `
+  --vtable-root VehicleGameLogic
 ```
+
+The vehicle-family scan deliberately separates exact `[reg+0x04]` handoffs
+from same-base displacement fallbacks and reports matrix-shaped matches. The
+root/vtable command independently rechecks the stale community root and names
+the current-build `VehicleGameLogic` vtable. Neither command authorizes a live
+read.
 
 ## Agent-shell (basher) timeouts — never use the default 30s
 

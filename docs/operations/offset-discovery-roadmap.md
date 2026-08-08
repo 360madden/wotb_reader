@@ -384,7 +384,7 @@ decoded ground truth. The shortest remaining route to a reliable player
 location is to identify where the game consumes or applies that known XYZ,
 rather than infer semantics from a render transform.
 
-`OD-RECOVERY-067` is offline/static-only:
+`OD-RECOVERY-069` is offline/static-only:
 
 1. Locate the hash-bound type-10 dispatch/application code and preserve the
    exact module RVA and instruction bytes.
@@ -410,6 +410,19 @@ identified by the surrounding `0x19930522` FuncInfo structures. The next step
 is therefore data-flow-first: locate the generic replay event reader/framer
 through replay/file entry points and trace its payload dispatch into an entity
 or physics setter. Do not repeat displacement or literal scans unchanged.
+
+Community-family result (`OD-RECOVERY-068`): the historical
+`VehicleGameLogic +0x04 -> entity +0x68/+0x6C/+0x70` layout does not reproduce
+as player position in this exact build. The root `0x03E91978` remains refuted.
+The current `VehicleGameLogic` vtable is named at RVA `0x0327DA50`, and slot
+`+0x04` resolves to getter RVA `0x0031B560`, which returns `[this+0x04]`. That
+getter is the useful clue. Across 79 virtual methods, 17 getter users access 23
+returned-entity offsets, but none uses the claimed position triple. A full
+generic scan found one exact chained triple, and decompilation refuted it as a
+larger matrix/pose copy. OD-RECOVERY-069 should converge the reader/framer
+trace with this entity getter; returned-entity `+0x1C` is only an identifier
+hypothesis and `+0xB8` only class corroboration until exact data flow proves
+their meaning.
 
 ## Descope gate
 

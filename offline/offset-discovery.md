@@ -225,8 +225,19 @@ Eight initialized-data candidates that placed `10`, `49`, and a code pointer
 near each other were all MSVC exception metadata. These are useful structural
 negatives, not evidence that the game lacks the data. The next static step is
 to identify the generic replay event reader/framer from replay/file entry
-points, then follow its payload data flow into an entity/physics setter. Do not
-run another literal, displacement-only, or live capture pass unchanged.
+points, then follow its payload data flow into an entity/physics setter.
+
+OD-RECOVERY-068 separately treated the repository's UnknownCheats-derived
+Vehicle layout as a candidate family. The old module root remains refuted. The
+current executable does preserve a real `VehicleGameLogic` vtable at RVA
+`0x0327DA50` and a slot-`+0x04` entity getter at RVA `0x0031B560`, but none of
+17 getter-using virtual methods accesses the claimed returned-entity
+`+0x68/+0x6C/+0x70` triple. The only exact generic chained match and the
+strongest float fallback were matrix/pose false positives. The active
+OD-RECOVERY-069 route is to converge the reader/framer trace with this proven
+entity getter, treating returned-entity `+0x1C` only as an identifier
+hypothesis. Do not run another literal, stale-member, displacement-only, or
+live capture pass unchanged.
 
 ## Evidence publication
 

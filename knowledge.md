@@ -58,7 +58,7 @@ full design specification.
   hypothesis stays quarantined. See `offline/replay-format.md`.
 - **Discovery workflow:** use [`docs/operations/offset-discovery-workflow.md`](docs/operations/offset-discovery-workflow.md)
   and append every attempt to [`docs/operations/offset-discovery-ledger.md`](docs/operations/offset-discovery-ledger.md).
-- **M2/M3 offset-discovery state (FRESH43-OD-RECOVERY-067):** the C# guard-page
+- **M2/M3 offset-discovery state (FRESH43-OD-RECOVERY-068):** the C# guard-page
   interceptor (`tools/WriteInterceptor`, x86 self-contained publish) is the
   live write-trace path; x64dbg write-BP is closed. FRESH43 captured and
   module-mapped the game transform fill path. The original static reading
@@ -118,10 +118,22 @@ full design specification.
   common record base against both length `49` and type `10`. Eight nearby
   initialized-data `{10,49,code-pointer}` candidates were all MSVC exception
   metadata (`0x19930522`), not replay dispatch. Do not repeat literal/layout
-  searches unchanged. The active method is now data-flow-first: identify the
-  generic replay event reader/framer through replay/file entry points and trace
-  its dispatched payload into entity/physics state before defining another
-  capture target.
+  searches unchanged. OD-RECOVERY-068 then re-evaluated the repository's
+  UnknownCheats-derived `VehicleGameLogic +0x04 -> entity +0x68/+0x6C/+0x70`
+  family against the same exact executable. The claimed module root
+  `0x03E91978` remains refuted. A full scan found 111,693 generic `+0x04`
+  pointer loads, 68 structurally related candidates, and one complete chained
+  triple; that sole exact match is a matrix/pose interpolation-copy function,
+  not a `VehicleGameLogic` entity. The current `VehicleGameLogic` vtable is
+  statically named at RVA `0x0327DA50`, and slot `+0x04` resolves to the real
+  entity getter at RVA `0x0031B560` (`MOV EAX,[ECX+0x04]`). Across its 79
+  virtual methods, 17 getter-using methods access 23 distinct entity members,
+  but none accesses the claimed position triple. This makes the community
+  layout a useful naming/relationship clue, not a live-read candidate. The
+  active method remains data-flow-first: converge the generic replay
+  reader/framer path with this proven entity getter, treating frequently used
+  entity member `+0x1C` only as an unproven identifier bridge, until an exact
+  entity-bound XYZ application/write is found.
   Detail:
   [`offline/offset-discovery.md`](offline/offset-discovery.md) and
   [`docs/operations/handoffs/2026-08-08-world-translation-negative-type10-pivot.md`](docs/operations/handoffs/2026-08-08-world-translation-negative-type10-pivot.md).
