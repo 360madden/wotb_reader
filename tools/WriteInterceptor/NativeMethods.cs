@@ -28,27 +28,42 @@ internal static partial class NativeMethods
 
     // STATUS_GUARD_PAGE_VIOLATION.
     internal const uint StatusGuardPageViolation = 0x80000001;
+    internal const uint StatusBreakpoint = 0x80000003;
+    internal const uint StatusSingleStep = 0x80000004;
 
-    // Memory protections.
+#if !INSTRUCTION_SNAPSHOT_HELPER
+    // Legacy PAGE_GUARD memory protections and access rights. These symbols
+    // are compiled out of the production instruction-snapshot helper.
     internal const uint PageGuard = 0x100;
     internal const uint PageNoAccess = 0x01;
+#endif
 
     // Process access rights for the read/arm handle.
-    internal const uint ProcessVmOperation = 0x0008;
     internal const uint ProcessVmRead = 0x0010;
-    internal const uint ProcessVmWrite = 0x0020;
     internal const uint ProcessQueryInformation = 0x0400;
+    internal const uint ProcessQueryLimitedInformation = 0x1000;
+#if !INSTRUCTION_SNAPSHOT_HELPER
+    internal const uint ProcessVmOperation = 0x0008;
+    internal const uint ProcessVmWrite = 0x0020;
+#endif
 
     // Thread access rights for the context snapshot. THREAD_ALL_ACCESS is
     // required: minimal GET_CONTEXT+QUERY_INFO+SUSPEND_RESUME made
     // GetThreadContext fail with ACCESS_DENIED (5) empirically. Documented
     // x86 value is 0x1F03FF (STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | the
     // thread-specific rights).
+    internal const uint ThreadGetContext = 0x0008;
+    internal const uint ThreadSetContext = 0x0010;
+    internal const uint ThreadContextAccess = ThreadGetContext | ThreadSetContext;
+#if !INSTRUCTION_SNAPSHOT_HELPER
     internal const uint ThreadAllAccess = 0x1F03FF;
+#endif
 
     // Toolhelp flags.
     internal const uint Th32csSnapshotModule = 0x00000008;
     internal const uint Th32csSnapshotModule32 = 0x00000010;
+    internal const uint Th32csSnapshotThread = 0x00000004;
+    internal const uint Th32csSnapshotProcess = 0x00000002;
 
     internal const uint ContextI386 = 0x00010000;
     internal const uint ContextControl = ContextI386 | 0x00000001;
@@ -74,6 +89,10 @@ internal static partial class NativeMethods
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool DebugBreakProcess(SafeProcessHandle process);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool WaitForDebugEvent(out DebugEvent lpDebugEvent, uint dwMilliseconds);
 
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -83,6 +102,7 @@ internal static partial class NativeMethods
         uint dwThreadId,
         uint dwContinueStatus);
 
+#if !INSTRUCTION_SNAPSHOT_HELPER
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool VirtualProtectEx(
@@ -91,6 +111,7 @@ internal static partial class NativeMethods
         nuint dwSize,
         uint flNewProtect,
         out uint lpflOldProtect);
+#endif
 
     /// <summary>Raw-buffer variant: the native struct is parsed manually at
     /// hard-coded x86 offsets (this helper is PlatformTarget x86 by design, so
@@ -126,10 +147,18 @@ internal static partial class NativeMethods
         ref Context lpContext);
 
     [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool SetThreadContext(
+        SafeThreadHandle hThread,
+        ref Context lpContext);
+
+#if !INSTRUCTION_SNAPSHOT_HELPER
+    [DllImport("kernel32.dll", SetLastError = true)]
     internal static extern uint SuspendThread(SafeThreadHandle hThread);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     internal static extern uint ResumeThread(SafeThreadHandle hThread);
+#endif
 
     [DllImport("kernel32.dll", SetLastError = true)]
     internal static extern SafeSnapshotHandle CreateToolhelp32Snapshot(
@@ -147,6 +176,47 @@ internal static partial class NativeMethods
     internal static extern bool Module32Next(
         SafeSnapshotHandle hSnapshot,
         ref ModuleEntry32 lpme);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool Thread32First(
+        SafeSnapshotHandle hSnapshot,
+        ref ThreadEntry32 lpte);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool Thread32Next(
+        SafeSnapshotHandle hSnapshot,
+        ref ThreadEntry32 lpte);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool Process32First(
+        SafeSnapshotHandle hSnapshot,
+        ref ProcessEntry32 lppe);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool Process32Next(
+        SafeSnapshotHandle hSnapshot,
+        ref ProcessEntry32 lppe);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool GetProcessTimes(
+        SafeProcessHandle hProcess,
+        out NativeFileTime creationTime,
+        out NativeFileTime exitTime,
+        out NativeFileTime kernelTime,
+        out NativeFileTime userTime);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool QueryFullProcessImageNameW(
+        SafeProcessHandle hProcess,
+        uint dwFlags,
+        [Out] char[] lpExeName,
+        ref uint lpdwSize);
 }
 
 /// <summary>Raw debug event: 12 bytes of header + the 160-byte union kept as
@@ -232,6 +302,44 @@ internal struct ModuleEntry32
 
     [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
     public string SzExePath;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct ThreadEntry32
+{
+    public uint DwSize;
+    public uint CntUsage;
+    public uint ThreadId;
+    public uint OwnerProcessId;
+    public int BasePriority;
+    public int DeltaPriority;
+    public uint Flags;
+}
+
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+internal struct ProcessEntry32
+{
+    public uint DwSize;
+    public uint CntUsage;
+    public uint ProcessId;
+    public nuint DefaultHeapId;
+    public uint ModuleId;
+    public uint Threads;
+    public uint ParentProcessId;
+    public int PriorityClassBase;
+    public uint Flags;
+
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+    public string ExeFile;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeFileTime
+{
+    public uint LowDateTime;
+    public uint HighDateTime;
+
+    internal long ToInt64() => unchecked((long)(((ulong)HighDateTime << 32) | LowDateTime));
 }
 
 internal sealed class SafeSnapshotHandle : SafeHandleZeroOrMinusOneIsInvalid

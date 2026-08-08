@@ -255,6 +255,15 @@ public interface IGameMemoryScanner
     ValueTask<OperationResult<MemoryReadResult>> ReadAddressesAsync(
         MemoryReadRequest request,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Captures bounded register-derived position triples at a version-pinned
+    /// game-code instruction. The coordinator, not the caller, supplies the
+    /// process identity, module, RVA, register, and member displacement.
+    /// </summary>
+    ValueTask<OperationResult<InstructionSnapshotResult>> CaptureInstructionSnapshotAsync(
+        InstructionSnapshotRequest request,
+        CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -278,6 +287,51 @@ public sealed record MemoryReadItem(
 public sealed record MemoryReadResult(
     DateTimeOffset CompletedAtUtc,
     IReadOnlyList<MemoryReadItem> Reads);
+
+/// <summary>
+/// Bounded operator request for the server-owned instruction-first position
+/// probe. No process identity or memory address is caller-controlled.
+/// </summary>
+public sealed record InstructionSnapshotRequest(
+    int DurationMilliseconds = 5_000,
+    int MaxHits = 16);
+
+/// <summary>
+/// One privacy-projected XYZ read captured while the matching debug event was
+/// held. Object and absolute process addresses remain inside GameIntegration.
+/// </summary>
+public sealed record InstructionSnapshotHit(
+    int Sequence,
+    string ObjectKey,
+    DateTimeOffset CapturedAtUtc,
+    bool ReadOk,
+    bool Finite,
+    float? X,
+    float? Y,
+    float? Z,
+    bool SameDebugEvent,
+    bool SingleRead12Bytes,
+    bool ObjectRegisterCaptured,
+    bool HardwareAtomicReadProven,
+    bool SameDecodedClockProven,
+    bool ViewpointIdentityProven,
+    bool StableRootProven);
+
+/// <summary>
+/// Aggregate result of the instruction-first position probe. A successful
+/// capture proves register/displacement provenance only; semantic viewpoint
+/// identity and a stable resolver require separate evidence.
+/// </summary>
+public sealed record InstructionSnapshotResult(
+    DateTimeOffset StartedUtc,
+    DateTimeOffset FinishedUtc,
+    string Status,
+    string TargetModule,
+    long TargetRva,
+    bool InstructionFingerprintMatched,
+    bool CleanupProven,
+    bool Truncated,
+    IReadOnlyList<InstructionSnapshotHit> Hits);
 
 /// <summary>Request to create a memory snapshot with value filters.</summary>
 public sealed record MemorySnapshotRequest(

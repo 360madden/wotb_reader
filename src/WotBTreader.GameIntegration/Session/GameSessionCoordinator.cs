@@ -4,6 +4,7 @@ using WotBTreader.Application.Game;
 using WotBTreader.Application.Replay;
 using WotBTreader.Application.Results;
 using WotBTreader.Core;
+using WotBTreader.GameIntegration.Discovery;
 using WotBTreader.GameIntegration.Logs;
 using WotBTreader.UltimateScanner;
 
@@ -147,6 +148,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     private readonly IGameProcessModuleBaseAddressResolver _moduleBaseAddressResolver;
     private readonly IOffsetTableReader _offsetTableReader;
     private readonly MemoryScanDiscoverer _scanDiscoverer;
+    private readonly IInstructionSnapshotRunner _instructionSnapshotRunner;
     private const int MaximumReadAddresses = 2000;
     private readonly IBlitzReplayLifecycleFeed _lifecycleFeed;
     private readonly MemoryScanEngine _scanEngine;
@@ -188,7 +190,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         IOffsetTableReader offsetTableReader,
         MemoryScanDiscoverer scanDiscoverer,
         MemoryScanEngine scanEngine,
-        IBlitzReplayLifecycleFeed lifecycleFeed)
+        IBlitzReplayLifecycleFeed lifecycleFeed,
+        IInstructionSnapshotRunner instructionSnapshotRunner)
     {
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _options = options ?? throw new ArgumentNullException(nameof(options));
@@ -206,6 +209,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         _scanDiscoverer = scanDiscoverer ?? throw new ArgumentNullException(nameof(scanDiscoverer));
         _scanEngine = scanEngine ?? throw new ArgumentNullException(nameof(scanEngine));
         _lifecycleFeed = lifecycleFeed ?? throw new ArgumentNullException(nameof(lifecycleFeed));
+        _instructionSnapshotRunner = instructionSnapshotRunner
+            ?? throw new ArgumentNullException(nameof(instructionSnapshotRunner));
     }
 
     /// <summary>
@@ -1732,6 +1737,105 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 "discover.gate_not_satisfied",
                 "The offline-session gate is no longer satisfied.");
         }
+    }
+
+    public async ValueTask<OperationResult<InstructionSnapshotResult>> CaptureInstructionSnapshotAsync(
+        InstructionSnapshotRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (request.DurationMilliseconds is < 1_000 or > 5_000
+            || request.MaxHits is < 1 or > 64)
+        {
+            return OperationResult.Failure<InstructionSnapshotResult>(
+                new ApplicationError(
+                    "discover.instruction_snapshot.invalid_options",
+                    "Duration must be at most five seconds and max hits at most 64."));
+        }
+
+        (AuthorizedMemoryObservation? observation, long baseAddress, CancellationToken authorizationToken, bool ok) =
+            GetScanAuthorization(cancellationToken);
+        if (!ok)
+        {
+            return GateCheck<InstructionSnapshotResult>(
+                "discover.gate_not_satisfied",
+                "The offline-session gate is not satisfied.");
+        }
+
+        _ = baseAddress;
+        using CancellationTokenSource captureCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, authorizationToken);
+        InstructionSnapshotRunnerOutcome outcome;
+        try
+        {
+            outcome = await _instructionSnapshotRunner.RunAsync(
+                new InstructionSnapshotExecutionRequest(
+                    observation!.ProcessId,
+                    observation.ProcessStartIdentity,
+                    observation.CanonicalExecutablePath,
+                    observation.ProductVersion,
+                    observation.ExecutableSha256,
+                    request.DurationMilliseconds,
+                    request.MaxHits),
+                captureCancellation.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return GateCheck<InstructionSnapshotResult>(
+                "discover.gate_not_satisfied",
+                "The offline-session gate is no longer satisfied.");
+        }
+
+        if (!outcome.CleanupProven)
+        {
+            lock (_gate)
+            {
+                if (_managedLaunch is not null
+                    && _managedLaunch.ProcessId == observation!.ProcessId
+                    && _managedLaunch.ProcessStartIdentity == observation.ProcessStartIdentity
+                    && string.Equals(
+                        _managedLaunch.TrustedGameIdentity.ExecutablePath,
+                        observation.CanonicalExecutablePath,
+                        StringComparison.OrdinalIgnoreCase)
+                    && _managedLaunch.TrustedGameIdentity.ExecutableSha256
+                        == observation.ExecutableSha256)
+                {
+                    Deny("discover.instruction_snapshot.cleanup_unproven");
+                }
+            }
+
+            return OperationResult.Failure<InstructionSnapshotResult>(
+                outcome.Error ?? new ApplicationError(
+                    "discover.instruction_snapshot.cleanup_unproven",
+                    "The helper could not prove exact debug-register cleanup."));
+        }
+
+        bool authorizationCurrent;
+        try
+        {
+            authorizationCurrent = IsScanAuthorizationCurrent(observation!, authorizationToken);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return GateCheck<InstructionSnapshotResult>(
+                "discover.gate_not_satisfied",
+                "The offline-session gate is no longer satisfied.");
+        }
+
+        if (!authorizationCurrent)
+        {
+            return GateCheck<InstructionSnapshotResult>(
+                "discover.gate_not_satisfied",
+                "The offline-session gate is no longer satisfied.");
+        }
+
+        return outcome.IsSuccess && outcome.Result is not null
+            ? OperationResult.Success(outcome.Result)
+            : OperationResult.Failure<InstructionSnapshotResult>(
+                outcome.Error ?? new ApplicationError(
+                    "discover.instruction_snapshot.failed",
+                    "The instruction snapshot capture failed."));
     }
 
     private async Task<OperationResult<MemoryReadResult>> ReadAddressesCoreAsync(

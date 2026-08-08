@@ -60,6 +60,10 @@ switch (command)
     case "campaign":
         exitCode = await RunCampaignAsync(args);
         break;
+    case "discover-instruction-snapshot":
+    case "instruction-snapshot":
+        exitCode = await InstructionSnapshotAsync(args);
+        break;
     case "help":
     case "--help":
     case "-h":
@@ -210,6 +214,122 @@ static async Task<int> CheckGateAsync(
     {
         Console.Error.WriteLine(
             $"{command}: could not reach web host at {hostUrl}. Is 'serve' running?");
+        return (int)HarnessExitCode.ConflictOrBusy;
+    }
+}
+
+// ── Instruction-first position snapshot ────────────────────
+
+static async Task<int> InstructionSnapshotAsync(string[] args)
+{
+    int durationMilliseconds = 5_000;
+    int maxHits = 16;
+    for (int index = 1; index < args.Length; index++)
+    {
+        if (index + 1 >= args.Length)
+        {
+            Console.Error.WriteLine("instruction-snapshot: option value missing.");
+            return (int)HarnessExitCode.InvalidArguments;
+        }
+
+        string option = args[index];
+        string value = args[++index];
+        if (option == "--seconds"
+            && int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int seconds)
+            && seconds is >= 1 and <= 5)
+        {
+            durationMilliseconds = seconds * 1_000;
+        }
+        else if (option == "--max-hits"
+            && int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int parsedHits)
+            && parsedHits is >= 1 and <= 64)
+        {
+            maxHits = parsedHits;
+        }
+        else
+        {
+            Console.Error.WriteLine("instruction-snapshot: invalid option or bound.");
+            return (int)HarnessExitCode.InvalidArguments;
+        }
+    }
+
+    RendezvousConnection? rendezvous = ReadRendezvous();
+    string? hostUrl = rendezvous?.BaseUri;
+    if (hostUrl is null)
+    {
+        return HostNotFound("instruction-snapshot");
+    }
+
+    int gateResult = await CheckGateAsync(hostUrl, "instruction-snapshot", rendezvous!);
+    if (gateResult != 0)
+    {
+        return gateResult;
+    }
+
+    string baseAddress = hostUrl.EndsWith('/') ? hostUrl : hostUrl + "/";
+    using var client = new HttpClient
+    {
+        BaseAddress = new Uri(baseAddress),
+        Timeout = TimeSpan.FromSeconds(12),
+    };
+    AddCapabilityHeader(client, rendezvous!);
+    try
+    {
+        using HttpResponseMessage response = await client.PostAsJsonAsync(
+            "/api/v1/game/discover/instruction-snapshot",
+            new { durationMilliseconds, maxHits }).ConfigureAwait(false);
+        string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            string error = "discover.instruction_snapshot.failed";
+            try
+            {
+                using JsonDocument errorDocument = JsonDocument.Parse(body);
+                if (errorDocument.RootElement.TryGetProperty("error", out JsonElement errorElement))
+                {
+                    error = errorElement.GetString() ?? error;
+                }
+            }
+            catch (JsonException)
+            {
+                // Keep the stable fallback; never echo an unbounded response.
+            }
+
+            Console.Error.WriteLine($"instruction-snapshot: {error}");
+            return (int)HarnessExitCode.ConflictOrBusy;
+        }
+
+        using JsonDocument document = JsonDocument.Parse(body);
+        JsonElement root = document.RootElement;
+        string status = root.GetProperty("status").GetString() ?? "unknown";
+        int hitCount = root.GetProperty("hitCount").GetInt32();
+        bool cleanupProven = root.GetProperty("cleanupProven").GetBoolean();
+        bool fingerprintMatched = root.GetProperty("instructionFingerprintMatched").GetBoolean();
+        Console.WriteLine(
+            $"instruction-snapshot: status={status} hits={hitCount} " +
+            $"fingerprint={fingerprintMatched} cleanup={cleanupProven}");
+        foreach (JsonElement hit in root.GetProperty("hits").EnumerateArray())
+        {
+            int sequence = hit.GetProperty("sequence").GetInt32();
+            string objectKey = hit.GetProperty("objectKey").GetString() ?? "object-unknown";
+            bool readOk = hit.GetProperty("readOk").GetBoolean();
+            bool finite = hit.GetProperty("finite").GetBoolean();
+            string x = hit.GetProperty("x").ToString();
+            string y = hit.GetProperty("y").ToString();
+            string z = hit.GetProperty("z").ToString();
+            Console.WriteLine(
+                $"  hit={sequence} {objectKey} read={readOk} finite={finite} xyz=({x},{y},{z}) " +
+                "identity=unknown stable_root=false");
+        }
+
+        return cleanupProven && fingerprintMatched
+            ? 0
+            : (int)HarnessExitCode.ConflictOrBusy;
+    }
+    catch (Exception exception) when (
+        exception is HttpRequestException or TaskCanceledException or JsonException)
+    {
+        Console.Error.WriteLine("instruction-snapshot: host request failed.");
         return (int)HarnessExitCode.ConflictOrBusy;
     }
 }
@@ -1302,6 +1422,12 @@ Commands:
              --max-bytes <n>  (0-512 MiB; 0 = engine ceiling)
     Total configured wait time may not exceed 8 seconds. Candidate addresses,
     values, and scanner session ids are suppressed; the session is discarded.
+
+  discover-instruction-snapshot [--seconds <1-5>] [--max-hits <1-64>]
+    Capture register-derived XYZ triples at the server-pinned transform-fill
+    instruction. No PID, address, module, register, or displacement is caller
+    controlled. A hit proves only same-debug-event register/displacement
+    provenance; viewpoint identity and a stable root remain separate evidence.
 
 Gate: all discover commands require the web host to have a
       verified offline replay session (launch one via the

@@ -32,6 +32,7 @@ internal static class GameApiEndpoints
         group.MapDelete("/discover/session/{sessionId}", DiscardSessionAsync);
         group.MapPost("/discover/neighborhood", DiscoverNeighborhoodAsync);
         group.MapPost("/discover/read", ReadOffsetsAsync);
+        group.MapPost("/discover/instruction-snapshot", CaptureInstructionSnapshotAsync);
         group.MapGet("/discover/trajectory/{battleSessionId:guid}", GetTrajectoryAsync);
         group.MapPost("/discover/correlate", CorrelateAsync);
         return builder;
@@ -751,6 +752,70 @@ internal static class GameApiEndpoints
                     ? string.Empty
                     : Convert.ToHexString(item.ObservedValue),
                 ValueSummary = item.ValueSummary,
+            }).ToList(),
+        });
+    }
+
+    internal static async Task<IResult> CaptureInstructionSnapshotAsync(
+        IGameMemoryScanner scanner,
+        WotBTreader.ApiContracts.InstructionSnapshotRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(scanner);
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.DurationMilliseconds is < 1_000 or > 5_000
+            || request.MaxHits is < 1 or > 64)
+        {
+            return Results.BadRequest(new
+            {
+                error = "discover.instruction_snapshot.invalid_options",
+            });
+        }
+
+        OperationResult<InstructionSnapshotResult> result = await scanner
+            .CaptureInstructionSnapshotAsync(
+                new WotBTreader.Application.Game.InstructionSnapshotRequest(
+                    request.DurationMilliseconds,
+                    request.MaxHits),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!result.IsSuccess || result.Value is null)
+        {
+            return Results.BadRequest(new
+            {
+                error = result.Error?.Code ?? "discover.instruction_snapshot.failed",
+            });
+        }
+
+        InstructionSnapshotResult capture = result.Value;
+        return Results.Ok(new InstructionSnapshotResponse
+        {
+            StartedUtc = capture.StartedUtc,
+            FinishedUtc = capture.FinishedUtc,
+            Status = capture.Status,
+            TargetModule = capture.TargetModule,
+            TargetRva = $"0x{capture.TargetRva:X}",
+            InstructionFingerprintMatched = capture.InstructionFingerprintMatched,
+            CleanupProven = capture.CleanupProven,
+            Truncated = capture.Truncated,
+            HitCount = capture.Hits.Count,
+            Hits = capture.Hits.Select(hit => new InstructionSnapshotHitResponse
+            {
+                Sequence = hit.Sequence,
+                ObjectKey = hit.ObjectKey,
+                CapturedAtUtc = hit.CapturedAtUtc,
+                ReadOk = hit.ReadOk,
+                Finite = hit.Finite,
+                X = hit.X,
+                Y = hit.Y,
+                Z = hit.Z,
+                SameDebugEvent = hit.SameDebugEvent,
+                SingleRead12Bytes = hit.SingleRead12Bytes,
+                ObjectRegisterCaptured = hit.ObjectRegisterCaptured,
+                HardwareAtomicReadProven = hit.HardwareAtomicReadProven,
+                SameDecodedClockProven = hit.SameDecodedClockProven,
+                ViewpointIdentityProven = hit.ViewpointIdentityProven,
+                StableRootProven = hit.StableRootProven,
             }).ToList(),
         });
     }

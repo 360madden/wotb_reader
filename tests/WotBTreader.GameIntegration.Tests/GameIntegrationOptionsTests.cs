@@ -74,4 +74,33 @@ public sealed class GameIntegrationOptionsTests
 
         options.Validate();
     }
+
+    [TestMethod]
+    public void InstructionSnapshotHelper_RequiresAbsolutePathAndHashTogether()
+    {
+        var missingHash = new GameIntegrationOptions
+        {
+            InstructionSnapshotHelperPath = @"C:\tools\snapshot.exe",
+        };
+        var relativePath = new GameIntegrationOptions
+        {
+            InstructionSnapshotHelperPath = @"tools\snapshot.exe",
+            InstructionSnapshotHelperSha256 = new string('a', 64),
+        };
+
+        Assert.ThrowsExactly<ArgumentException>(missingHash.Validate);
+        Assert.ThrowsExactly<ArgumentException>(relativePath.Validate);
+    }
+
+    [TestMethod]
+    public void InstructionSnapshotHelper_ExactIdentityPairIsAccepted()
+    {
+        var options = new GameIntegrationOptions
+        {
+            InstructionSnapshotHelperPath = @"C:\tools\snapshot.exe",
+            InstructionSnapshotHelperSha256 = new string('a', 64),
+        };
+
+        options.Validate();
+    }
 }

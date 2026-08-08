@@ -309,6 +309,51 @@ public sealed record OffsetReadResponse
     public List<OffsetReadItem> Reads { get; init; } = [];
 }
 
+/// <summary>
+/// Bounded instruction-first capture request. The server owns the target
+/// process, module, instruction, register, and displacement.
+/// </summary>
+public sealed record InstructionSnapshotRequest
+{
+    public int DurationMilliseconds { get; init; } = 5_000;
+    public int MaxHits { get; init; } = 16;
+}
+
+/// <summary>One privacy-projected register-derived XYZ snapshot.</summary>
+public sealed record InstructionSnapshotHitResponse
+{
+    public int Sequence { get; init; }
+    public string ObjectKey { get; init; } = string.Empty;
+    public DateTimeOffset CapturedAtUtc { get; init; }
+    public bool ReadOk { get; init; }
+    public bool Finite { get; init; }
+    public float? X { get; init; }
+    public float? Y { get; init; }
+    public float? Z { get; init; }
+    public bool SameDebugEvent { get; init; }
+    public bool SingleRead12Bytes { get; init; }
+    public bool ObjectRegisterCaptured { get; init; }
+    public bool HardwareAtomicReadProven { get; init; }
+    public bool SameDecodedClockProven { get; init; }
+    public bool ViewpointIdentityProven { get; init; }
+    public bool StableRootProven { get; init; }
+}
+
+/// <summary>Privacy-safe aggregate instruction-first capture response.</summary>
+public sealed record InstructionSnapshotResponse
+{
+    public DateTimeOffset StartedUtc { get; init; }
+    public DateTimeOffset FinishedUtc { get; init; }
+    public string Status { get; init; } = string.Empty;
+    public string TargetModule { get; init; } = string.Empty;
+    public string TargetRva { get; init; } = string.Empty;
+    public bool InstructionFingerprintMatched { get; init; }
+    public bool CleanupProven { get; init; }
+    public bool Truncated { get; init; }
+    public int HitCount { get; init; }
+    public List<InstructionSnapshotHitResponse> Hits { get; init; } = [];
+}
+
 /// <summary>One downsampled ground-truth position sample.</summary>
 public sealed record TrajectorySampleResponse(
     long ReplayTimeTicks,

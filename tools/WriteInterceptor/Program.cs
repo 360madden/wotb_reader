@@ -44,7 +44,7 @@ internal static class Program
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"unexpected_error: {ex.Message}");
+            Console.Error.WriteLine($"unexpected_error:{ex.GetType().Name}");
             return 5;
         }
     }

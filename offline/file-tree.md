@@ -196,6 +196,7 @@ docs/operations/handoffs/2026-08-07-write-site-durable-evidence.md
 docs/operations/handoffs/2026-08-08-fresh44-crossbattle-staged.md
 docs/operations/handoffs/2026-08-08-fresh44-live-crossbattle.md
 docs/operations/handoffs/2026-08-08-fresh45-immediate-triple.md
+docs/operations/handoffs/2026-08-08-instruction-first-pivot.md
 docs/operations/handoffs/README.md
 docs/operations/offset-discovery-guide.md
 docs/operations/offset-discovery-ledger.md
@@ -213,6 +214,7 @@ docs/superpowers/specs/2026-08-02-watch-offline-color-blob.md
 docs/superpowers/specs/2026-08-02-watch-offline-sync-ready-gate.md
 docs/superpowers/specs/2026-08-06-guard-page-write-interceptor.md
 docs/superpowers/specs/2026-08-06-viewpoint-first-discovery.md
+docs/superpowers/specs/2026-08-08-instruction-first-position-snapshot.md
 docs/testing/fixture-policy.md
 doctor.cmd
 everything.cmd
@@ -268,6 +270,7 @@ scripts/od-048-monitor-correlate-session.ps1
 scripts/od-query-state.ps1
 scripts/play-replay-from-hangar.ps1
 scripts/pre-arm-debugger.ps1
+scripts/publish-instruction-snapshot-helper.ps1
 scripts/python/README.md
 scripts/python/e2e_smoke.py
 scripts/python/offline_check.py
@@ -341,6 +344,7 @@ src/WotBTreader.Core/WotBTreader.Core.csproj
 src/WotBTreader.Core/packages.lock.json
 src/WotBTreader.GameIntegration/DependencyInjection/GameIntegrationServiceCollectionExtensions.cs
 src/WotBTreader.GameIntegration/Discovery/GameInstallationDiscovery.cs
+src/WotBTreader.GameIntegration/Discovery/InstructionSnapshotRunner.cs
 src/WotBTreader.GameIntegration/Dvpl/Crc32.cs
 src/WotBTreader.GameIntegration/Dvpl/DvplContracts.cs
 src/WotBTreader.GameIntegration/Dvpl/DvplReader.cs
@@ -569,6 +573,7 @@ tests/WotBTreader.GameIntegration.Tests/GameIntegrationRegistrationTests.cs
 tests/WotBTreader.GameIntegration.Tests/GameProcessIdentityObserverTests.cs
 tests/WotBTreader.GameIntegration.Tests/GameSessionCoordinatorTests.cs
 tests/WotBTreader.GameIntegration.Tests/InstalledGameMetadataProviderTests.cs
+tests/WotBTreader.GameIntegration.Tests/InstructionSnapshotTargetPolicyTests.cs
 tests/WotBTreader.GameIntegration.Tests/LifecycleEventJournalTests.cs
 tests/WotBTreader.GameIntegration.Tests/MSTestSettings.cs
 tests/WotBTreader.GameIntegration.Tests/ManagedLaunchCorrelationRegistrarTests.cs
@@ -738,15 +743,22 @@ tmpwotb-e2e/stop-and-go.ps1
 tmpwotb-e2e/test-battle-end-watcher.ps1
 tmpwotb-e2e/test-blitz-real-window.ps1
 tmpwotb-e2e/test-csharp-write-trace.ps1
+tmpwotb-e2e/test-execute-snapshot-interceptor.ps1
 tmpwotb-e2e/test-guard-interceptor.ps1
 tmpwotb-e2e/test-immediate-position-triple.ps1
 tmpwotb-e2e/test-solo-emission.ps1
 tmpwotb-e2e/test-viewpoint-filter.ps1
 tmpwotb-e2e/wt-counter-target.cs
+tools/InstructionSnapshotHelper/InstructionSnapshotHelper.csproj
+tools/InstructionSnapshotHelper/Program.cs
+tools/InstructionSnapshotHelper/packages.lock.json
 tools/WriteInterceptor/CounterMode.cs
+tools/WriteInterceptor/ExecuteSnapshotInterceptor.cs
+tools/WriteInterceptor/ExecuteSnapshotProtocol.cs
 tools/WriteInterceptor/Interceptor.cs
 tools/WriteInterceptor/NativeMethods.cs
 tools/WriteInterceptor/Program.cs
+tools/WriteInterceptor/SnapshotCounterMode.cs
 tools/WriteInterceptor/WriteInterceptor.csproj
 tools/WriteInterceptor/packages.lock.json
 tools/compute-exe-hash.ps1

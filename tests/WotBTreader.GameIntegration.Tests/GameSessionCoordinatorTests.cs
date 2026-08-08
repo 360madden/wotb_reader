@@ -3,6 +3,7 @@ using WotBTreader.Application.Game;
 using WotBTreader.Application.Replay;
 using WotBTreader.Application.Results;
 using WotBTreader.Core;
+using WotBTreader.GameIntegration.Discovery;
 using WotBTreader.GameIntegration.Logs;
 using WotBTreader.GameIntegration.Session;
 using WotBTreader.UltimateScanner;
@@ -880,6 +881,111 @@ public sealed class GameSessionCoordinatorTests
     }
 
     [TestMethod]
+    public async Task InstructionSnapshot_UsesVerifiedIdentityAndReturnsProjectedCapture()
+    {
+        DateTimeOffset capturedAt = StartTime.AddSeconds(1);
+        var runner = new RecordingInstructionSnapshotRunner(
+            new InstructionSnapshotRunnerOutcome(
+                IsSuccess: true,
+                new InstructionSnapshotResult(
+                    StartTime,
+                    capturedAt,
+                    "completed",
+                    "wotblitz.exe",
+                    0x7C39AB,
+                    InstructionFingerprintMatched: true,
+                    CleanupProven: true,
+                    Truncated: false,
+                    []),
+                Error: null,
+                CleanupProven: true));
+        var (coordinator, _) = CreateCoordinator(instructionSnapshotRunner: runner);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+        coordinator.ApplyEvidence(CreateValidEvidence());
+
+        OperationResult<InstructionSnapshotResult> result =
+            await coordinator.CaptureInstructionSnapshotAsync(
+                new InstructionSnapshotRequest(2_000, 8),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.IsNotNull(runner.Request);
+        Assert.AreEqual(1234, runner.Request!.ProcessId);
+        Assert.AreEqual(42, runner.Request.ProcessStartIdentity);
+        Assert.AreEqual(@"C:\Games\wotblitz.exe", runner.Request.CanonicalExecutablePath);
+        Assert.AreEqual(2_000, runner.Request.DurationMilliseconds);
+        Assert.AreEqual(8, runner.Request.MaxHits);
+    }
+
+    [TestMethod]
+    public async Task InstructionSnapshot_CleanupFailureRevokesVerifiedSession()
+    {
+        var runner = new RecordingInstructionSnapshotRunner(
+            new InstructionSnapshotRunnerOutcome(
+                IsSuccess: false,
+                Result: null,
+                new ApplicationError(
+                    "discover.instruction_snapshot.cleanup_unproven",
+                    "Test failure."),
+                CleanupProven: false));
+        GameSessionCoordinator? coordinatorForRefresh = null;
+        runner.BeforeReturn = () => coordinatorForRefresh!.ApplyEvidence(
+            CreateValidEvidence() with
+            {
+                Lifecycle = CreateValidLifecycle() with
+                {
+                    SourceSequence = 12,
+                    SourceByteOffset = 102,
+                },
+            });
+        var (coordinator, _) = CreateCoordinator(instructionSnapshotRunner: runner);
+        coordinatorForRefresh = coordinator;
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+        coordinator.ApplyEvidence(CreateValidEvidence());
+
+        OperationResult<InstructionSnapshotResult> result =
+            await coordinator.CaptureInstructionSnapshotAsync(
+                new InstructionSnapshotRequest(),
+                CancellationToken.None);
+        GameSessionSnapshot snapshot =
+            await coordinator.GetSnapshotAsync(CancellationToken.None);
+
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual(
+            "discover.instruction_snapshot.cleanup_unproven",
+            result.Error?.Code);
+        Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+        Assert.AreEqual(
+            "discover.instruction_snapshot.cleanup_unproven",
+            snapshot.ReasonCode);
+    }
+
+    [TestMethod]
+    public async Task InstructionSnapshot_InvalidBoundsAndMissingGateNeverCallRunner()
+    {
+        var runner = new RecordingInstructionSnapshotRunner(
+            new InstructionSnapshotRunnerOutcome(
+                IsSuccess: false,
+                Result: null,
+                new ApplicationError("unexpected", "Should not run."),
+                CleanupProven: true));
+        var (coordinator, _) = CreateCoordinator(instructionSnapshotRunner: runner);
+
+        OperationResult<InstructionSnapshotResult> invalid =
+            await coordinator.CaptureInstructionSnapshotAsync(
+                new InstructionSnapshotRequest(5_001, 65),
+                CancellationToken.None);
+        OperationResult<InstructionSnapshotResult> gated =
+            await coordinator.CaptureInstructionSnapshotAsync(
+                new InstructionSnapshotRequest(),
+                CancellationToken.None);
+
+        Assert.AreEqual("discover.instruction_snapshot.invalid_options", invalid.Error?.Code);
+        Assert.AreEqual("discover.gate_not_satisfied", gated.Error?.Code);
+        Assert.IsNull(runner.Request);
+    }
+
+    [TestMethod]
     public async Task ObservationCancellation_IsHonoredBeforeReturningData()
     {
         var (coordinator, _) = CreateVerifiedCoordinator();
@@ -920,6 +1026,7 @@ public sealed class GameSessionCoordinatorTests
             IGameProcessModuleBaseAddressResolver? moduleBaseAddressResolver = null,
             IOffsetTableReader? offsetTableReader = null,
             IBlitzReplayLifecycleFeed? lifecycleFeed = null,
+            IInstructionSnapshotRunner? instructionSnapshotRunner = null,
             GameIntegrationOptions? options = null)
     {
         var timeProvider = new ManualTimeProvider(StartTime);
@@ -938,7 +1045,8 @@ public sealed class GameSessionCoordinatorTests
             offsetTableReader ?? new StubOffsetTableReader(),
             new MemoryScanDiscoverer(timeProvider, NullLogger<MemoryScanDiscoverer>.Instance),
             new MemoryScanEngine(timeProvider, NullLogger<MemoryScanEngine>.Instance),
-            lifecycleFeed ?? new StubLifecycleFeed()), timeProvider);
+            lifecycleFeed ?? new StubLifecycleFeed(),
+            instructionSnapshotRunner ?? new StubInstructionSnapshotRunner()), timeProvider);
     }
 
     private static (GameSessionCoordinator Coordinator, ManualTimeProvider TimeProvider)
@@ -1049,6 +1157,33 @@ public sealed class GameSessionCoordinatorTests
     {
         public OperationResult<ThreadResumeOutcome> Resume(SafeThreadHandle threadHandle) =>
             throw new NotSupportedException("StubThreadResumePlatform is not intended for LaunchAsync tests.");
+    }
+
+    private sealed class StubInstructionSnapshotRunner : IInstructionSnapshotRunner
+    {
+        public ValueTask<InstructionSnapshotRunnerOutcome> RunAsync(
+            InstructionSnapshotExecutionRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException(
+                "StubInstructionSnapshotRunner is not intended for unrelated coordinator tests.");
+    }
+
+    private sealed class RecordingInstructionSnapshotRunner(
+        InstructionSnapshotRunnerOutcome outcome) : IInstructionSnapshotRunner
+    {
+        public InstructionSnapshotExecutionRequest? Request { get; private set; }
+
+        public Action? BeforeReturn { get; set; }
+
+        public ValueTask<InstructionSnapshotRunnerOutcome> RunAsync(
+            InstructionSnapshotExecutionRequest request,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Request = request;
+            BeforeReturn?.Invoke();
+            return ValueTask.FromResult(outcome);
+        }
     }
 
     private sealed class FailingPreparer(string errorCode) : IManagedLaunchPreparer

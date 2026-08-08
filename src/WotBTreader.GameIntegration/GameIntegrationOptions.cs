@@ -96,6 +96,18 @@ public sealed class GameIntegrationOptions
     /// </summary>
     public TimeSpan OfflineReplayEvidenceLifetime { get; init; } = TimeSpan.FromSeconds(15);
 
+    /// <summary>
+    /// Gets the absolute path to the separately published x86 instruction
+    /// snapshot helper. Null keeps the research-only endpoint unavailable.
+    /// </summary>
+    public string? InstructionSnapshotHelperPath { get; init; }
+
+    /// <summary>
+    /// Gets the exact SHA-256 of the configured helper. Path and hash must be
+    /// supplied together so a stale helper can never be launched silently.
+    /// </summary>
+    public string? InstructionSnapshotHelperSha256 { get; init; }
+
     internal void Validate()
     {
         if (MaxDvplStoredBytes <= 0 ||
@@ -177,6 +189,20 @@ public sealed class GameIntegrationOptions
         {
             throw new ArgumentException(
                 "The replay launch staging root is invalid.",
+                nameof(GameIntegrationOptions));
+        }
+
+
+        bool helperPathSet = !string.IsNullOrWhiteSpace(InstructionSnapshotHelperPath);
+        bool helperHashSet = !string.IsNullOrWhiteSpace(InstructionSnapshotHelperSha256);
+        if (helperPathSet != helperHashSet
+            || helperPathSet && (!Path.IsPathFullyQualified(InstructionSnapshotHelperPath!)
+                || InstructionSnapshotHelperPath!.Length > 32_768)
+            || helperHashSet && (InstructionSnapshotHelperSha256!.Length != 64
+                || InstructionSnapshotHelperSha256.Any(static character => !Uri.IsHexDigit(character))))
+        {
+            throw new ArgumentException(
+                "The instruction snapshot helper requires an absolute path and exact SHA-256.",
                 nameof(GameIntegrationOptions));
         }
     }

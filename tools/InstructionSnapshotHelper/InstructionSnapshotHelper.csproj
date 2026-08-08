@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <PlatformTarget>x86</PlatformTarget>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DefineConstants>$(DefineConstants);INSTRUCTION_SNAPSHOT_HELPER</DefineConstants>
+    <AssemblyName>WotBTreader.InstructionSnapshotHelper</AssemblyName>
+    <RootNamespace>WotBTreader.WriteInterceptor</RootNamespace>
+    <ExpectedCoordinatorSha256 Condition="'$(ExpectedCoordinatorSha256)' == ''">UNCONFIGURED</ExpectedCoordinatorSha256>
+    <ExpectedCoordinatorAssemblySha256 Condition="'$(ExpectedCoordinatorAssemblySha256)' == ''">UNCONFIGURED</ExpectedCoordinatorAssemblySha256>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>WotBTreader.ExpectedCoordinatorSha256</_Parameter1>
+      <_Parameter2>$(ExpectedCoordinatorSha256)</_Parameter2>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>WotBTreader.ExpectedCoordinatorAssemblySha256</_Parameter1>
+      <_Parameter2>$(ExpectedCoordinatorAssemblySha256)</_Parameter2>
+    </AssemblyAttribute>
+    <Compile Include="..\WriteInterceptor\ExecuteSnapshotInterceptor.cs" Link="ExecuteSnapshotInterceptor.cs" />
+    <Compile Include="..\WriteInterceptor\ExecuteSnapshotProtocol.cs" Link="ExecuteSnapshotProtocol.cs" />
+    <Compile Include="..\WriteInterceptor\NativeMethods.cs" Link="NativeMethods.cs" />
+    <Compile Include="..\WriteInterceptor\CounterMode.cs" Link="CounterMode.cs" />
+    <Compile Include="..\WriteInterceptor\SnapshotCounterMode.cs" Link="SnapshotCounterMode.cs" />
+  </ItemGroup>
+
+</Project>

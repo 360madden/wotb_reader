@@ -165,4 +165,6 @@ public sealed record TreaderBootstrapOptions(
     string? GameRoot = null,
     string? GameUserDataRoot = null,
     TimeSpan? OfflineReplayEvidenceLifetime = null,
-    TimeSpan? LifecycleEvidenceTimeout = null);
+    TimeSpan? LifecycleEvidenceTimeout = null,
+    string? InstructionSnapshotHelperPath = null,
+    string? InstructionSnapshotHelperSha256 = null);

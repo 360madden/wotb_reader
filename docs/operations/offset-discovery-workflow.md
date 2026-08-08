@@ -325,6 +325,37 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
+> **Amended 2026-08-08 (instruction-first policy).** The scan/roll/debugger
+> material below is retained as historical evidence, but it is superseded for
+> player-position work. FRESH44 satisfied repeatability only for transient
+> viewpoint correlation; FRESH45 rejected the candidate-derived contiguous
+> layout at the sampled instant. Do not run either path unchanged.
+
+Session ID: `OD-RECOVERY-063`. First publish and pass the synthetic x86 helper
+test. Then start a **new** Host.Web process via
+`launch-offline-replay-for-od.ps1 -EnableInstructionSnapshot` so the helper
+path and SHA-256 are pinned before the managed replay launch. Run exactly one
+`GameHarness discover-instruction-snapshot --seconds 5 --max-hits 64` capture.
+The server fixes the PID, module, RVA, instruction bytes, EBX register, and
+`+0x1C` member displacement; caller input cannot widen that target.
+The helper also independently verifies the post-attach process-event identity
+and the build-pinned Host.Web EXE+DLL parent before arming any thread.
+
+Accept a live result only when the gate stayed `OfflineReplayVerified`, the
+instruction fingerprint matched, cleanup/detach are proven, and every retained
+sample carries `sameDebugEvent=true`, `singleRead12Bytes=true`, and an opaque
+object key. Group samples by object key and compare each XYZ trajectory with
+decoded ground truth. A match advances field identity only; it does not prove
+hardware atomicity, exact decoded clock, viewpoint identity until correlated,
+or a stable resolver. A no-hit or no-match is an honest bounded result.
+
+Stop after the single capture. Cleanup failure is terminal: the coordinator
+revokes authorization and terminates the exact managed child. Do not retry by
+passing a raw PID, changing the RVA/register/displacement, shaving latency, or
+falling back to broad scans. A second live replay is admissible only after the
+first capture produces a matching object-key trajectory. Full contract:
+[`../superpowers/specs/2026-08-08-instruction-first-position-snapshot.md`](../superpowers/specs/2026-08-08-instruction-first-position-snapshot.md).
+
 > **Amended 2026-08-04 (v3 strategy).** The pilot order below is superseded by
 > [`offset-discovery-strategy-v3.md`](offset-discovery-strategy-v3.md) /
 > [`offset-discovery-roadmap.md`](offset-discovery-roadmap.md): the
@@ -333,7 +364,7 @@ entry says what was ruled out.
 > replayTime delta pilot as the fallback filter. The pipeline facts in this
 > section remain valid.
 
-Session ID: `OD-RECOVERY-045`. `OD-RECOVERY-044` proved the live pipeline
+Historical session ID: `OD-RECOVERY-045`. `OD-RECOVERY-044` proved the live pipeline
 **mechanically end-to-end for the first time**: gate green → pre-arm → rolling
 → harvest → address file → x32dbg direct attach → arm → `scriptload`+`scriptrun`
 injection → run. Rolling collapsed **861399→…→1 survivor in 16 rounds** (the

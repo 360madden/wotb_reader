@@ -75,6 +75,8 @@ public static class FoundationServiceCollectionExtensions
                 options.LifecycleEvidenceTimeout ?? TimeSpan.FromSeconds(45),
             OfflineReplayEvidenceLifetime =
                 options.OfflineReplayEvidenceLifetime ?? TimeSpan.FromSeconds(15),
+            InstructionSnapshotHelperPath = options.InstructionSnapshotHelperPath,
+            InstructionSnapshotHelperSha256 = options.InstructionSnapshotHelperSha256,
         };
 
     /// <summary>

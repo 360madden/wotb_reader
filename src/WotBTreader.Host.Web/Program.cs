@@ -28,12 +28,21 @@ builder.WebHost.ConfigureKestrel(options =>
     options.Listen(IPAddress.Loopback, configuredPort);
 });
 
+string? instructionSnapshotHelperPath =
+    builder.Configuration["Research:InstructionSnapshotHelperPath"];
+string? instructionSnapshotHelperSha256 =
+    builder.Configuration["Research:InstructionSnapshotHelperSha256"];
+Environment.SetEnvironmentVariable("Research__InstructionSnapshotHelperPath", null);
+Environment.SetEnvironmentVariable("Research__InstructionSnapshotHelperSha256", null);
+
 builder.Services.AddWotBTreaderFoundation(new TreaderBootstrapOptions(
     builder.Configuration["Paths:ApplicationDataRoot"],
     builder.Configuration["Game:Root"],
     builder.Configuration["Game:UserDataRoot"],
     ReadOfflineReplayEvidenceLifetime(builder.Configuration),
-    ReadLifecycleEvidenceTimeout(builder.Configuration)));
+    ReadLifecycleEvidenceTimeout(builder.Configuration),
+    instructionSnapshotHelperPath,
+    instructionSnapshotHelperSha256));
 
 builder.Services
     .AddRazorComponents()

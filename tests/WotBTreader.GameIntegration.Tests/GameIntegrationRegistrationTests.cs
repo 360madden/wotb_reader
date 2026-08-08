@@ -54,6 +54,7 @@ public sealed class GameIntegrationRegistrationTests
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IManagedLaunchCorrelationRegistrar)));
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IThreadResumePlatform)));
         Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IGuardedMemoryReaderFactory)));
+        Assert.IsTrue(services.Any(item => item.ServiceType == typeof(IInstructionSnapshotRunner)));
         Assert.AreEqual(
             ServiceLifetime.Singleton,
             services.Single(item =>

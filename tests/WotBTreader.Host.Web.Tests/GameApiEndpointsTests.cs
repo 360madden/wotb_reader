@@ -935,6 +935,85 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task InstructionSnapshotForwardsOnlyBoundsAndProjectsSafeEvidence()
+    {
+        DateTimeOffset capturedAt = DateTimeOffset.UnixEpoch.AddSeconds(5);
+        var scanner = new FakeGameMemoryScanner
+        {
+            InstructionSnapshotResult = OperationResult.Success(
+                new WotBTreader.Application.Game.InstructionSnapshotResult(
+                    DateTimeOffset.UnixEpoch,
+                    capturedAt,
+                    "completed",
+                    "wotblitz.exe",
+                    0x7C39AB,
+                    InstructionFingerprintMatched: true,
+                    CleanupProven: true,
+                    Truncated: false,
+                    [
+                        new WotBTreader.Application.Game.InstructionSnapshotHit(
+                            1,
+                            "object-01",
+                            capturedAt,
+                            ReadOk: true,
+                            Finite: true,
+                            1f,
+                            2f,
+                            3f,
+                            SameDebugEvent: true,
+                            SingleRead12Bytes: true,
+                            ObjectRegisterCaptured: true,
+                            HardwareAtomicReadProven: false,
+                            SameDecodedClockProven: false,
+                            ViewpointIdentityProven: false,
+                            StableRootProven: false),
+                    ])),
+        };
+
+        IResult result = await GameApiEndpoints.CaptureInstructionSnapshotAsync(
+            scanner,
+            new WotBTreader.ApiContracts.InstructionSnapshotRequest
+            {
+                DurationMilliseconds = 2_000,
+                MaxHits = 8,
+            },
+            TestContext.CancellationToken);
+
+        InstructionSnapshotResponse response = Value<InstructionSnapshotResponse>(result);
+        Assert.AreEqual(2_000, scanner.LastInstructionSnapshotRequest!.DurationMilliseconds);
+        Assert.AreEqual(8, scanner.LastInstructionSnapshotRequest.MaxHits);
+        Assert.AreEqual("0x7C39AB", response.TargetRva);
+        Assert.AreEqual(1, response.HitCount);
+        Assert.IsFalse(response.Hits[0].ViewpointIdentityProven);
+        string json = JsonSerializer.Serialize(response, CamelCaseJson);
+        Assert.IsFalse(json.Contains("processId", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(json.Contains("objectAddress", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(json.Contains("absoluteAddress", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(json.Contains("instructionHex", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
+    public async Task InstructionSnapshotRejectsOutOfRangeBoundsWithoutCallingPort()
+    {
+        var scanner = new FakeGameMemoryScanner();
+
+        IResult result = await GameApiEndpoints.CaptureInstructionSnapshotAsync(
+            scanner,
+            new WotBTreader.ApiContracts.InstructionSnapshotRequest
+            {
+                DurationMilliseconds = 5_001,
+                MaxHits = 65,
+            },
+            TestContext.CancellationToken);
+
+        JsonElement response = BadRequestAnonymous(result);
+        Assert.AreEqual(
+            "discover.instruction_snapshot.invalid_options",
+            response.GetProperty("error").GetString());
+        Assert.IsNull(scanner.LastInstructionSnapshotRequest);
+    }
+
+    [TestMethod]
     public async Task TrajectoryReturnsGroundTruthWithViewpointFlag()
     {
         Guid sessionId = Guid.NewGuid();
@@ -1452,11 +1531,15 @@ public sealed class GameApiEndpointsTests
         public double? LastCompareDeltaTolerance { get; private set; }
         public CancellationToken LastCancellationToken { get; private set; }
         public MemoryReadRequest? LastReadRequest { get; private set; }
+        public WotBTreader.Application.Game.InstructionSnapshotRequest? LastInstructionSnapshotRequest { get; private set; }
         public OperationResult<MemoryReadResult> ReadResult { get; init; } = OperationResult.Success(
             new MemoryReadResult(DateTimeOffset.UnixEpoch,
             [
                 new MemoryReadItem(0x7FFA1234, true, [0x00, 0x00, 0x80, 0x3F], "1"),
             ]));
+        public OperationResult<WotBTreader.Application.Game.InstructionSnapshotResult> InstructionSnapshotResult { get; init; } =
+            OperationResult.Failure<WotBTreader.Application.Game.InstructionSnapshotResult>(
+                new ApplicationError("discover.instruction_snapshot.not_configured", "Test default."));
         public OperationResult<MemoryCompareResult> CompareResult { get; init; } = OperationResult.Success(
             new MemoryCompareResult(DateTimeOffset.UnixEpoch, 0, 0, 0, 0, 0, 0, [], false, false, 0));
         public OperationResult<MemoryPointerChainResult> PointerChainResult { get; init; } = OperationResult.Success(
@@ -1521,6 +1604,15 @@ public sealed class GameApiEndpointsTests
             LastReadRequest = request;
             LastCancellationToken = cancellationToken;
             return ValueTask.FromResult(ReadResult);
+        }
+
+        public ValueTask<OperationResult<WotBTreader.Application.Game.InstructionSnapshotResult>> CaptureInstructionSnapshotAsync(
+            WotBTreader.Application.Game.InstructionSnapshotRequest request,
+            CancellationToken cancellationToken)
+        {
+            LastInstructionSnapshotRequest = request;
+            LastCancellationToken = cancellationToken;
+            return ValueTask.FromResult(InstructionSnapshotResult);
         }
     }
 

@@ -49,7 +49,7 @@ Every address must be classified before publication:
 | `playerYaw` | **Quarantined / Ambiguous** until decimal, hexadecimal, raw Ghidra, and address-kind evidence reconcile |
 | Trusted next anchor | `playerPositionX`/`playerPositionZ`, then `replayTime` or HP if the replay makes them observable |
 | Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007); absolute LE pointer AOB across private/all/image + align 1/8 without a changed encoding hypothesis (ruled out by OD-RECOVERY-008); truncated low-32 LE dword AOB of survivor absolutes without a changed encoding hypothesis (ruled out by OD-RECOVERY-009); automated CE `bptAccess`/`bptWrite` on Float position survivors without a field pivot or interactive debugger (0 RIP hits through OD-RECOVERY-011); CE write-BP alone on the single increased `replayTime` Double without interactive debugger or a second independent launch (0 RIP in OD-RECOVERY-012); treating file-association / `Invoke-Item` alone as the OD gate path (playback can succeed while Host stays `Denied` / `lifecycle_evidence_timeout` — amended 2026-08-02); reaching ≤10 RT survivors then starting interactive debugger after the fact under a 120s research lease loses the window to EvidenceStale (OD-RECOVERY-016) — pre-arm debugger / reserve lease margin; requiring the Watch Offline orange-dialog blob to vanish after `OfflineReplayVerified` (the replay HUD renders orange in that ROI, so `dialogGone` never sets, extra clicks hit in-game UI and kill the game — OD-RECOVERY-017) — trust the verified gate; reading compare `retainedCount` as the rolling survivor count (it is unreadable-chunk carryover only; survivors are `increasedCount` — OD-RECOVERY-017); automated CE Windows-debugger write-BPs (`debugProcess(1)` + `debug_setBreakpoint(addr, bptWrite, 1)`) on rolling Double survivors — zero RIP hits across OD-009/010/011 and OD-020/021/022 probes, so the operator-owned interactive Find-what-writes step is required, not a scripting gap to keep probing; rolling from a snapshot taken during the game load transition — the candidate set can be 66M+ (22–87× steady state), convergence cannot fit the 120s lease, and the resulting session discard surfaces as a confusing compare `400` (OD-RECOVERY-025 attempt 1) — wait for a clean steady-state snapshot before rolling; capturing the rendezvous capability once at roll start — the token rotates ~5 min and a 66M-baseline roll outlives it, so a mid-roll compare dies with a confusing 401 (OD-RECOVERY-030 attempt 1; fixed by refresh + retry in the rolling driver); running the separate full-walk sanity probe when round-1 `previousCount` reports the identical snapshot count — the probe's 66M-candidate walk wasted lease inside the 120s budget (OD-RECOVERY-030; gate folded into round 1); requesting `maxCandidates=500` (or any large harvest) on every rolling round when only the final target round's addresses are written — the big early compares (66M→1M) pay candidate serialization for nothing and cost lease; request 1 candidate per round and harvest the full set only on the target round (OD-RECOVERY-031 attempt 1 → fixed in driver, validated attempts 3–5: 10–14 rounds fit the lease vs 6–7 before); overriding the CE autorun's default survivor address-file path (`%TEMP%\od-survivors.txt`) with a custom `-AddressFile` — the autorun polls the default path only, so staged survivors silently never reach CE (OD-RECOVERY-031 attempt 4; use the default path so the staging handoff works); keeping the CE autorun poll window at 90s when a 66M-baseline roll outlives it — the file appears right at the 120s lease edge, so the poll must span the whole lease + margin (OD-RECOVERY-031 attempts 3/4; extended to 300s)  trusting a rolled-down survivor set landing on `0x7FFE0xxx` as a game-field hit — `KUSER_SHARED_DATA.SystemTime` (0x7FFE0010) is a FILETIME-style value that ticks every 100ns, so it survives every 'increased' compare after the game field stops ticking (replay tail / dying game); kernel writes to that page never fire user-mode hardware breakpoints, so a write-BP there returns 0 hits by construction (OD-RECOVERY-044 — drop the page from the address file + WARN, now in the driver); treating the x96dbg launcher as unusable for pre-arm — **re-verified 2026-08-04: in a healthy gated session `release\x96dbg.exe -p <pid>` headlessly dispatched cleanly to `x32\x32dbg.exe -p <pid>` (x86 build attached to wotblitz pid 50724, launcher exited, window title confirmed `wotblitz.exe - PID: 50724`) — the OD-RECOVERY-044 linger was environmental (game already dying that session), not a launcher defect; direct `x32\x32dbg.exe` launch remains the pipeline choice for determinism (removes the ShellExecute/elevation surface entirely), not because the launcher is broken (OD-044 launcher re-verification) |
-| Next planned session | `OD-RECOVERY-045` (OD-045/046-STATIC simulation ranks the **Double replayTime delta marker first**: `-CompareMode delta -DeltaTarget 4.0 -DeltaTolerance 0.4` — deterministic pass-rate 1.0, so it should collapse the replayTime set faster than 'increased' and without the kernel-clock tail; the KUSER page is already dropped from the address file, and the delta marker's value-bound rejection also sheds the clock because its 100ns increments fall outside the replay-time delta band). Highest-value live run: the proven invocation `-SnapshotMaxBytes 402653184 -MaxRounds 40 -HoldAfterRollSeconds 240` **with the operator present** during the held green window to run Find-what-writes on a staged ≤10 set — the write-trace mechanism is now proven (arm + inject + run), only the live window needs to survive long enough for a hit; then the {rip}-named savedata evidence becomes the first RIP. Alternatives: content-distinct second replay for BLK-0019 (`independentReplays` still 0), or root-causing the replay-start flake (game dies quietly ~2s after `LoadGameScene` ends with no crash dump — it flaked ~50% of this session's launches) |
+| Next planned session | `OD-RECOVERY-063`: one coordinator-authorized, five-second instruction-first snapshot at the hash/byte-pinned FRESH43 transform-fill site; group privacy-safe object-key XYZ trajectories and compare them with decoded ground truth. Stop after one capture. A second replay/fresh-process repeat is admissible only if one object-key trajectory matches. No broad scan, delayed trace, raw-PID attach, latency-only rerun, or offset promotion. |
 
 The current yaw conflict is recorded explicitly:
 
@@ -143,6 +143,7 @@ occurred.
 | `OD-RECOVERY-059` | 2026-08-08 | FRESH44 live cross-battle M3 correlation on the second independent replay | `invoke-fresh44-crossbattle.ps1` → managed offline launch → OD-048 correlate → C# guard-page interceptor | `Partial` (M3 correlation repeatability) | **BLK-0019 resolved**: a fresh `OfflineReplayVerified` launch on the second content-distinct replay repeated the viewpoint-position phenomenon; selected x family scored **0.9375 (15/16)**, 21 sampled series were preserved, and several survivors matched 16/16 | No stable module RVA, pointer chain, or same-clock live position-triple read; 25-second trace stayed live with 3 pages armed but captured 0 hits/write sites; no offset promoted |
 | `OD-RECOVERY-060` | 2026-08-08 | Formal read-only promotion review after FRESH44 | Promotion checklist + workflow + schema + current offset table + FRESH43/FRESH44 aggregate evidence | `Blocked` (publication only) | M3 cross-battle repeatability is satisfied for the transient viewpoint-position correlation phenomenon; the second independent replay/fresh process and negative heap-copy classification are established | No single module-relative candidate, stable resolver, same-clock `[obj+0x1C/0x20/0x24]` read, all-axis field identity, candidate-bound invariants/provenance, conflict resolution, or approvals; `playerPosition*` correctly remain `0` / `Unknown` |
 | `OD-RECOVERY-061` | 2026-08-08 | FRESH45 live immediate position-triple read | Managed `OfflineReplayVerified` launch → viewpoint correlate → one immediate Float32 batch read for four `candidate-0x1C` layout hypotheses; delayed trace disabled | `NoSignal` (layout hypothesis) / `Partial` (instrumentation) | All 12 requested floats were readable, but none of the four candidates produced a complete XYZ match; the immediate-read choreography and fail-closed reporting worked | Honest negative for those four candidate-derived layouts at that sampled instant only; 102.2 ms completion gap, no proven object base/atomicity/same clock/stable resolver, and no offset promoted |
+| `OD-RECOVERY-062` | 2026-08-08 | Implement the instruction-first player-position pivot | Coordinator-authorized x86 execute-breakpoint helper + parent-bound pipe capability + server-pinned target + privacy-safe Host/GameHarness surface + synthetic owned target | `Complete` (implementation) / `Partial` (discovery) | Separate no-legacy helper; Host EXE+DLL and helper identity manifest pinned; post-attach event reverified; synthetic changing XYZ plus max-hit/timeout cleanup and non-pinned-parent rejection pass; scan-first repeats stopped | No live game hit, viewpoint identity, decoded-clock match, stable resolver, publication candidate, promotion count, or offset change |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -4228,3 +4229,75 @@ artifacts:
 3. Only after that provenance path passes synthetic validation, use one fresh
    positively verified offline session to read the actual object base's
    `+0x1C/+0x20/+0x24` members and compare them with decoded ground truth.
+
+## `OD-RECOVERY-062` result — 2026-08-08 (instruction-first pivot implemented)
+
+```yaml
+sessionId: OD-RECOVERY-062
+status: Complete (implementation) / Partial (discovery)
+objective: Replace the exhausted candidate-scan loop with a provenance-changing capture of the actual transform-object register.
+liveAccess: none
+targetPolicy:
+  gameVersion: 11.19.0.10
+  executableIdentity: exact-hash-pinned
+  module: wotblitz.exe
+  rva: 0x7C39AB
+  instructionHex: 8B83A0000000
+  objectRegister: ebx
+  positionRead: one-12-byte-read-at-ebx-plus-0x1C
+bounds:
+  durationSecondsMax: 5
+  acceptedHitsMax: 64
+  threadsMax: 128
+  resultBytesMax: 65536
+authorization:
+  gate: OfflineReplayVerified
+  process: exact-managed-child
+  generationCancellation: required
+  rawPidProductionCli: denied
+  helperBinary: separate-no-legacy-mode
+  helperIdentity: owner-only-publish-manifest
+  coordinatorIdentity: build-pinned-exe-and-managed-dll
+  postAttachIdentity: create-process-event-revalidated-before-arm
+result:
+  fullRepositoryValidation: pass
+  releaseBuild: pass
+  syntheticExactInstructionHits: 4
+  syntheticChangingFiniteXyz: pass
+  maxHitCleanupDetach: pass
+  timeoutCleanupDetach: pass
+  directPipeFromNonPinnedParent: rejected-before-target-access
+  publicObjectIdentity: per-capture-opaque-key
+  offsetTableChanged: false
+```
+
+### Decision
+
+- The active player-position workflow is instruction-first. Broad scans,
+  transient-candidate `address-0x1C` guesses, and delayed PAGE_GUARD tracing are
+  historical evidence paths, not fallbacks for the next session.
+- Production callers control only duration and accepted-hit bounds. The
+  coordinator fixes PID/creation identity/path/version/hash/module/RVA/bytes/
+  register/displacement and transmits them through inherited anonymous pipes.
+- The helper accepts only an owned first-chance single-step at the exact target,
+  reads the XYZ triple while the event is held, preserves unrelated debug
+  registers, and must prove restore/detach. Cleanup failure denies the session
+  and terminates the exact managed child.
+- The helper does not trust self-asserted pipe metadata: its controlled publish
+  embeds the exact Host.Web EXE+DLL hashes, the launcher checks an owner-only
+  helper/Host identity manifest and fresh nonce response, and the helper
+  independently verifies its actual parent plus the post-attach process-event
+  handle before any thread context write.
+- Host/GameHarness output replaces heap addresses with `object-NN` keys. This
+  permits trajectory grouping while keeping process-local addresses private.
+- The synthetic result proves the mechanism, not the game semantics. Hardware
+  atomicity, exact decoded clock, viewpoint identity, stable root, candidate
+  publication, and Verified promotion remain not satisfied.
+
+### Next
+
+`OD-RECOVERY-063` is one bounded live capture after a fresh helper publish,
+synthetic pass, and new `OfflineReplayVerified` managed launch. Group XYZ
+samples by object key and compare them with decoded ground truth. Stop after
+the result. Only a matching object-key trajectory permits repeating this exact
+instruction/member relationship on the other replay/fresh process.

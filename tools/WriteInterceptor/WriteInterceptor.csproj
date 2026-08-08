@@ -12,4 +12,10 @@
     <RootNamespace>WotBTreader.WriteInterceptor</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Compile Remove="ExecuteSnapshotInterceptor.cs" />
+    <Compile Remove="ExecuteSnapshotProtocol.cs" />
+    <Compile Remove="SnapshotCounterMode.cs" />
+  </ItemGroup>
+
 </Project>

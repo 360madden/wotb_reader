@@ -168,6 +168,37 @@ provenance-changing capture of the actual object pointer from the known
 game-code transform-fill instruction/register path. See the
 [`FRESH45 handoff`](../docs/operations/handoffs/2026-08-08-fresh45-immediate-triple.md).
 
+## Instruction-first position pivot (OD-RECOVERY-062)
+
+Scan-first discovery is closed for the next player-position proof. The new
+path starts from the already evidenced game-code instruction and captures the
+object pointer before reading members:
+
+1. `GameSessionCoordinator` admits the operation only while the exact managed
+   child remains `OfflineReplayVerified`; authorization generation and
+   cancellation stay live for the entire capture.
+2. The target policy is fixed to executable version/hash `11.19.0.10`, module
+   `wotblitz.exe`, RVA `0x7C39AB`, bytes `8B83A0000000`, register EBX, and one
+   12-byte read at EBX+`0x1C` (X/Y/Z at +0/+4/+8).
+3. A separate x86 helper receives the sensitive plan through inherited pipes.
+   It contains no legacy raw-PID mode, hard-pins the game target, and verifies
+   its actual parent against build-pinned Host.Web EXE+DLL hashes before target
+   access.
+4. A hardware execute breakpoint captures registers and the contiguous read
+   while the matching debug event holds the process. The helper preserves
+   unrelated debug-register state, arms new threads, caps the run at 5 seconds,
+   64 accepted hits, 128 threads, and 64 KiB, then restores and detaches.
+5. Host output projects heap addresses to local `object-NN` keys, which lets a
+   later correlation group short XYZ trajectories without exposing addresses.
+
+Synthetic x86 validation proves exact instruction hits, changing finite XYZ
+values, max-hit cleanup, timeout cleanup, raw-PID/legacy-mode rejection, and
+non-pinned parent rejection. This is an implementation milestone, not live
+game evidence. The next live round is one
+bounded capture plus trajectory comparison. Stop after that result; do not
+fall back to candidate scanning or tune latency thresholds. See the
+[`instruction-first handoff`](../docs/operations/handoffs/2026-08-08-instruction-first-pivot.md).
+
 ## Evidence publication
 
 1. Discover candidate offsets (Ghidra `FindOffsets.py`/`.java`,

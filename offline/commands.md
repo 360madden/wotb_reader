@@ -33,7 +33,26 @@ dotnet run --project src/WotBTreader.Host.Cli -c Release -- doctor
 
 # Publish web host
 dotnet publish src/WotBTreader.Host.Web -c Release -o .build/publish
+
+# Publish + synthetically validate the x86 instruction-first helper
+pwsh -NoProfile -File scripts/publish-instruction-snapshot-helper.ps1
+pwsh -NoProfile -File tmpwotb-e2e/test-execute-snapshot-interceptor.ps1
 ```
+
+## Instruction-first position discovery (offline replay only)
+
+After the publish and synthetic test pass, start a new managed offline replay
+host with the helper identity pinned, then run one bounded capture:
+
+```powershell
+powershell -File scripts/launch-offline-replay-for-od.ps1 -EnableInstructionSnapshot
+dotnet run --project tools/src/WotBTreader.GameHarness -c Release -- `
+  discover-instruction-snapshot --seconds 5 --max-hits 64
+```
+
+The command emits privacy-safe object keys and XYZ values, not process/object
+addresses. A hit proves register/displacement provenance at the pinned
+instruction; it does not by itself prove viewpoint identity or a stable root.
 
 ## Agent-shell (basher) timeouts — never use the default 30s
 

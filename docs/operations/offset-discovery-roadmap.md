@@ -342,6 +342,34 @@ else descope per the archive action.
 
 **Exit:** candidate published; or `Superseded`/`Stale` recorded honestly.
 
+### M2.5 — Instruction-first object snapshot (active pivot, 2026-08-08)
+
+FRESH45 closed the candidate-minus-displacement hypothesis: four transient
+correlation candidates produced 12 readable floats but zero complete XYZ
+matches. Do not repeat that scan-first path or the delayed write trace.
+
+The active implementation starts at the FRESH43 game-code fill instruction:
+
+- exact target: `11.19.0.10` executable hash, `wotblitz.exe+0x7C39AB`, bytes
+  `8B83A0000000` (`MOV EAX,[EBX+0xA0]`);
+- capture: hardware execute breakpoint, EBX from the held event, one 12-byte
+  read from EBX+`0x1C` for X/Y/Z;
+- authorization: exact coordinator-owned managed offline child and current
+  authorization generation; separate helper with no raw-PID mode; actual
+  parent bound to build-pinned Host.Web EXE+DLL hashes;
+- bounds: at most 5 seconds, 64 accepted samples, 128 threads, 64 KiB result;
+- output: opaque per-capture object keys plus values/timestamps, never heap
+  addresses on the Host/GameHarness surface;
+- semantics: register/displacement provenance may be proven; viewpoint
+  identity, decoded-clock identity, hardware atomicity, and stable root remain
+  false until separate evidence establishes them.
+
+Synthetic validation is complete. The next live budget is one capture on one
+positively verified offline replay. Correlate object-key trajectories to
+decoded XYZ ground truth. Only a match justifies repeating the same
+instruction/member relationship on the other replay/fresh process. Offset
+publication still requires a stable module-relative resolver/root.
+
 ## Descope gate
 
 Trigger on **any** of:

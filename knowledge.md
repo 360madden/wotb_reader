@@ -74,12 +74,26 @@ full design specification.
   proposed `candidate-0x1C` layouts were readable, but none matched the complete
   decoded XYZ triple (102.2 ms completion gap). That is an honest negative for
   those four layouts at that instant, not a refutation of the static transform
-  layout. Do not repeat it for latency alone. Next is offline/synthetic work to
-  preserve the object pointer from the known game-code transform-fill
-  instruction/register path; only that provenance-changing capture justifies
-  another live round. Detail:
+  layout. Do not repeat it for latency alone. The durable pivot is now
+  **instruction-first**: the coordinator-authorized x86 helper sets an execute
+  breakpoint on the exact hash-bound transform-fill instruction
+  (`wotblitz.exe+0x7C39AB`, bytes `8B83A0000000`), captures EBX at the held
+  debug event, and reads one 12-byte XYZ block from EBX+0x1C. Callers cannot
+  supply a PID, address, module, register, or displacement; the helper is
+  a separate no-legacy-mode binary, bounded to five seconds/64 accepted hits,
+  and hard-pins both the game target and the exact Host.Web EXE+DLL parent.
+  A controlled publish manifest plus fresh nonce response prevents a candidate
+  helper from self-attesting its own identity.
+  The post-attach process event is revalidated before thread arming; cleanup
+  failure revokes the session and terminates the exact managed child even
+  across a normal authorization refresh. Synthetic capture, max-hit cleanup,
+  timeout cleanup, and non-pinned-parent rejection pass. The next live round
+  may use this path once; it must
+  correlate the returned privacy-safe object-key trajectories to decoded
+  ground truth. No viewpoint identity, stable root, or offset is claimed yet.
+  Detail:
   [`offline/offset-discovery.md`](offline/offset-discovery.md) and
-  [`docs/operations/handoffs/2026-08-08-fresh45-immediate-triple.md`](docs/operations/handoffs/2026-08-08-fresh45-immediate-triple.md).
+  [`docs/operations/handoffs/2026-08-08-instruction-first-pivot.md`](docs/operations/handoffs/2026-08-08-instruction-first-pivot.md).
 
 ## Quickstart
 

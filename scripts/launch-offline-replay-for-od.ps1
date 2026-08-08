@@ -50,6 +50,10 @@ param(
     [int]$WatchTimeoutSeconds = 120,
     [switch]$SkipWatchOffline,
     [switch]$KeepExistingHost,
+    # Instruction-first position discovery is opt-in. The helper must already
+    # be a fresh self-contained win-x86 publish; this script pins its exact
+    # hash into the new Host.Web process without logging the path or hash.
+    [switch]$EnableInstructionSnapshot,
     # FRESH17: shrink the game window after the game settles so it never
     # covers the operator's other programs (a covering window steals the
     # foreground lock and swallows the dialog click - the recurring
@@ -78,8 +82,34 @@ if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
     $RepoRoot = (Resolve-Path (Join-Path $scriptDir '..')).Path
 }
 
+if ($EnableInstructionSnapshot -and $KeepExistingHost) {
+    Write-Host 'od_launch: FAILED_instruction_snapshot_requires_new_host'
+    exit 1
+}
+
 function Write-Od([string]$Message) {
     Write-Host ("od_launch: " + $Message)
+}
+
+function Test-OwnerOnlyFileAcl([string]$Path) {
+    try {
+        $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
+        $acl = Get-Acl -LiteralPath $Path
+        $observedOwner = (New-Object Security.Principal.NTAccount($acl.Owner)).Translate(
+            [Security.Principal.SecurityIdentifier])
+        $rules = @($acl.GetAccessRules(
+            $true,
+            $false,
+            [Security.Principal.SecurityIdentifier]))
+        return $acl.AreAccessRulesProtected -and $observedOwner -eq $owner -and
+            $rules.Count -eq 1 -and $rules[0].IdentityReference -eq $owner -and
+            $rules[0].AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and
+            (($rules[0].FileSystemRights -band [Security.AccessControl.FileSystemRights]::FullControl) -eq
+                [Security.AccessControl.FileSystemRights]::FullControl)
+    }
+    catch {
+        return $false
+    }
 }
 
 function Get-Rendezvous {
@@ -239,9 +269,6 @@ try {
         exit 1
     }
 
-    $sha12 = ((Get-FileHash -Algorithm SHA256 -LiteralPath $replayItem.FullName).Hash).Substring(0, 12)
-    Set-Content -Path (Join-Path $env:TEMP 'od-launch-replay.basename') -Value $replayItem.Name -NoNewline
-    Set-Content -Path (Join-Path $env:TEMP 'od-launch-replay.sha12') -Value $sha12 -NoNewline
     Write-Od ("replay_selected bytes=" + $replayItem.Length)
 
     $cli = Join-Path $RepoRoot 'src\WotBTreader.Host.Cli\bin\Release\net10.0\WotBTreader.Host.Cli.exe'
@@ -259,9 +286,75 @@ try {
     # campaign. `dotnet build -c Release` (or serve.cmd, which republishes)
     # fixes it.
     $hostDll = Join-Path $RepoRoot 'src\WotBTreader.Host.Web\bin\Release\net10.0\WotBTreader.Host.Web.dll'
-    if (-not (Test-Path -LiteralPath $hostDll)) {
+    $hostExe = Join-Path $RepoRoot 'src\WotBTreader.Host.Web\bin\Release\net10.0\WotBTreader.Host.Web.exe'
+    if (-not (Test-Path -LiteralPath $hostDll) -or -not (Test-Path -LiteralPath $hostExe)) {
         Write-Od 'FAILED_host_missing_build_release_first'
         exit 1
+    }
+
+    $instructionSnapshotHelper = $null
+    $instructionSnapshotHelperSha256 = $null
+    if ($EnableInstructionSnapshot) {
+        $instructionSnapshotHelper = Join-Path $RepoRoot '.build\publish\instruction-snapshot-helper\WotBTreader.InstructionSnapshotHelper.exe'
+        $instructionSnapshotManifest = Join-Path $RepoRoot '.build\publish\instruction-snapshot-helper\identity.json'
+        if (-not (Test-Path -LiteralPath $instructionSnapshotHelper) -or
+            -not (Test-Path -LiteralPath $instructionSnapshotManifest)) {
+            Write-Od 'FAILED_instruction_snapshot_helper_missing_publish_first'
+            exit 1
+        }
+        if (-not (Test-OwnerOnlyFileAcl -Path $instructionSnapshotManifest)) {
+            Write-Od 'FAILED_instruction_snapshot_helper_manifest_acl'
+            exit 1
+        }
+        $helperSourcePaths = @(
+            (Join-Path $RepoRoot 'tools\InstructionSnapshotHelper'),
+            (Join-Path $RepoRoot 'tools\WriteInterceptor')
+        )
+        $newestHelperSource = Get-ChildItem -Path $helperSourcePaths -Recurse -File |
+            Where-Object { $_.Extension -in '.cs', '.csproj' } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+        if ($null -ne $newestHelperSource -and
+            $newestHelperSource.LastWriteTime -gt (Get-Item -LiteralPath $instructionSnapshotHelper).LastWriteTime) {
+            Write-Od 'FAILED_instruction_snapshot_helper_stale_republish_first'
+            exit 1
+        }
+        try {
+            $instructionSnapshotIdentity = Get-Content -LiteralPath $instructionSnapshotManifest -Raw | ConvertFrom-Json
+        }
+        catch {
+            Write-Od 'FAILED_instruction_snapshot_helper_manifest_invalid'
+            exit 1
+        }
+        $instructionSnapshotHelperSha256 = (Get-FileHash -LiteralPath $instructionSnapshotHelper -Algorithm SHA256).Hash
+        $currentHostExeSha256 = (Get-FileHash -LiteralPath $hostExe -Algorithm SHA256).Hash
+        $currentHostDllSha256 = (Get-FileHash -LiteralPath $hostDll -Algorithm SHA256).Hash
+        if ([string]$instructionSnapshotIdentity.schema -ne 'wotbtreader.instruction-snapshot-helper.identity.v1' -or
+            [string]$instructionSnapshotIdentity.helperFile -ne 'WotBTreader.InstructionSnapshotHelper.exe' -or
+            [string]$instructionSnapshotIdentity.helperSha256 -ne $instructionSnapshotHelperSha256 -or
+            [string]$instructionSnapshotIdentity.coordinatorExeSha256 -ne $currentHostExeSha256 -or
+            [string]$instructionSnapshotIdentity.coordinatorAssemblySha256 -ne $currentHostDllSha256) {
+            Write-Od 'FAILED_instruction_snapshot_helper_manifest_mismatch'
+            exit 1
+        }
+        $verificationNonce = [Guid]::NewGuid().ToString('N')
+        $verificationLines = @(& $instructionSnapshotHelper '--verify-coordinator-file' '-Path' $hostExe `
+            '-AssemblyPath' $hostDll '-Nonce' $verificationNonce 2>&1 | ForEach-Object { "$_" })
+        $verificationExit = $LASTEXITCODE
+        try {
+            $verification = (($verificationLines -join "`n") | ConvertFrom-Json)
+        }
+        catch {
+            $verification = $null
+        }
+        if ($verificationExit -ne 0 -or $null -eq $verification -or
+            [string]$verification.schema -ne 'wotbtreader.instruction-snapshot-helper.verify.v1' -or
+            [string]$verification.nonce -ne $verificationNonce -or
+            -not [bool]$verification.verified) {
+            Write-Od 'FAILED_instruction_snapshot_helper_host_identity_mismatch'
+            exit 1
+        }
+        $instructionSnapshotHelperSha256 = [string]$instructionSnapshotIdentity.helperSha256
     }
     $newestSource = Get-ChildItem -Path (Join-Path $RepoRoot 'src') -Recurse -File |
         Where-Object { $_.Extension -in '.cs', '.csproj' } |
@@ -281,13 +374,20 @@ try {
         Write-Od 'starting_host_research_lease'
         $env:Research__OfflineReplayEvidenceLifetimeSeconds = '120'
         $env:Research__LifecycleEvidenceTimeoutSeconds = '120'
-        $proj = Join-Path $RepoRoot 'src\WotBTreader.Host.Web'
+        if ($EnableInstructionSnapshot) {
+            $env:Research__InstructionSnapshotHelperPath = $instructionSnapshotHelper
+            $env:Research__InstructionSnapshotHelperSha256 = $instructionSnapshotHelperSha256
+        }
+        $hostDirectory = Split-Path -Parent $hostExe
         $hostOut = Join-Path $env:TEMP 'od-launch-host.log'
         $hostErr = Join-Path $env:TEMP 'od-launch-host.err.log'
-        Start-Process -FilePath 'dotnet' -ArgumentList @(
-            'run', '--project', $proj, '-c', 'Release', '--no-build', '--no-launch-profile'
-        ) -WorkingDirectory $proj -RedirectStandardOutput $hostOut -RedirectStandardError $hostErr -WindowStyle Hidden |
+        Start-Process -FilePath $hostExe -WorkingDirectory $hostDirectory `
+            -RedirectStandardOutput $hostOut -RedirectStandardError $hostErr -WindowStyle Hidden |
             Out-Null
+        if ($EnableInstructionSnapshot) {
+            Remove-Item Env:\Research__InstructionSnapshotHelperPath -ErrorAction SilentlyContinue
+            Remove-Item Env:\Research__InstructionSnapshotHelperSha256 -ErrorAction SilentlyContinue
+        }
         if (-not (Wait-Port -Port 9182 -Seconds $HostWaitSeconds)) {
             Write-Od 'FAILED_host_down'
             exit 1
@@ -327,7 +427,7 @@ try {
         $launch = Invoke-RestMethod -Uri "$($api.Base)/api/v1/game/launch" -Method Post -Headers $api.Headers -Body $body
     }
     catch {
-        Write-Od ("FAILED_launch_http=" + $_.Exception.Message)
+        Write-Od 'FAILED_launch_http'
         exit 2
     }
     if (-not $launch.success) {
@@ -430,7 +530,7 @@ try {
             $watchExit = [int](Get-Content -LiteralPath $watchResult -Raw)
         }
         else {
-            Write-Od ("watch_unexpected=" + $msg)
+            Write-Od 'watch_unexpected'
             $watchExit = 4
         }
     }
@@ -451,6 +551,6 @@ try {
     exit 0
 }
 catch {
-    Write-Od ("FAILED_unexpected=" + $_.Exception.Message)
+    Write-Od 'FAILED_unexpected'
     exit 5
 }
