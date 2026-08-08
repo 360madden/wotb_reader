@@ -376,7 +376,7 @@ fit required a 250.832-unit origin shift and 6.26x playback. The matrix row is
 statically real, but it is not identified as the decoded player trajectory.
 Do not repeat or widen this render-transform branch.
 
-### M2.6 — Type-10 position-application path (active pivot, 2026-08-08)
+### M2.6 — Type-10 position-application path (static anchor found, 2026-08-08)
 
 The decoder already proves the 49-byte type-10 position packet end-to-end:
 entity, space, vehicle, XYZ, velocity, and flags reproduce the immutable
@@ -384,18 +384,35 @@ decoded ground truth. The shortest remaining route to a reliable player
 location is to identify where the game consumes or applies that known XYZ,
 rather than infer semantics from a render transform.
 
-`OD-RECOVERY-069` is offline/static-only:
+`OD-RECOVERY-069` completed the offline/static phase:
 
-1. Locate the hash-bound type-10 dispatch/application code and preserve the
-   exact module RVA and instruction bytes.
-2. Prove the owning entity/register relationship and the destination member or
-   fixed contiguous position read without assigning player/viewpoint identity
-   from names or nearby transform structure.
-3. Synthetically validate the bounded execute-snapshot plan, including target
-   fingerprint, entity provenance, cancellation, cleanup, result limits, and
-   privacy-safe projection.
-4. Request one live replay only after that contract is frozen. Match its
-   entity-bound samples to decoded type-10 ground truth at the aligned clock.
+1. `ReplayPlayer` dispatch index 10 resolves to handler RVA `0x00FE31C0`,
+   whose nine reads reproduce the exact `4,4,4,12,12,4,4,4,1` byte layout.
+2. The handler reaches `BWEntities::handleEntityMoveWithError`; entity
+   resolution compares the packet ID to `[entity+0x1C]`.
+3. Entity application RVA `0x022FA780` reaches RVA `0x022FA78D`, bytes
+   `F30F7E00`, with the resolved entity in `ESI` and the packet-derived XYZ
+   pointer in `EAX`.
+4. `BW::AvatarFilterHelper` independently stores the same vector in an
+   8-entry, `0x38`-stride movement ring at record `+0x18`. That buffer is
+   transient and is not a stable offset.
+
+`OD-RECOVERY-070` completed the implementation/synthetic phase. The fixed
+contract reads the int32 replay entity ID at `[ESI+0x1C]` and contiguous XYZ
+at `EAX+0/+4/+8` in one held debug event. The exact
+hash/RVA/bytes/registers remain server-controlled. The synthetic x86 target
+captured entity ID `4242` and four changing finite XYZ samples; fingerprint,
+hit bound, non-Host parent rejection, cleanup, detach, and address-free Host
+projection passed. The two reads share one suspended debug event but are not
+hardware-atomic; same-decoded-clock and local-player identity remain unproven.
+
+`OD-RECOVERY-071` may run once after the full gate and a fresh pinned publish:
+five seconds, at most 64 accepted hits, positively verified offline replay
+only. Match each captured `replayEntityId` only against the decoded type-10
+trajectory for that entity at the aligned clock. Stop after the result; no
+target/displacement changes or scans belong in the same live session. Exact
+entity/XYZ equality proves event-based entity-location reading. Calling it
+player-location reading requires independent local-player entity-ID evidence.
 
 No live budget exists for static exploration. Offset publication still
 requires a stable module-relative resolver/root and the M3 evidence gates.
@@ -419,10 +436,9 @@ The current `VehicleGameLogic` vtable is named at RVA `0x0327DA50`, and slot
 getter is the useful clue. Across 79 virtual methods, 17 getter users access 23
 returned-entity offsets, but none uses the claimed position triple. A full
 generic scan found one exact chained triple, and decompilation refuted it as a
-larger matrix/pose copy. OD-RECOVERY-069 should converge the reader/framer
-trace with this entity getter; returned-entity `+0x1C` is only an identifier
-hypothesis and `+0xB8` only class corroboration until exact data flow proves
-their meaning.
+larger matrix/pose copy. OD-RECOVERY-069 used the naming relationship as a
+bridge and proved returned-entity `+0x1C` is the packet entity ID; it did not
+revive the stale position offsets.
 
 ## Descope gate
 

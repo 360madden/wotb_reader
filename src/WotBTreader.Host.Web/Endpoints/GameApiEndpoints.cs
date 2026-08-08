@@ -804,6 +804,8 @@ internal static class GameApiEndpoints
                 Sequence = hit.Sequence,
                 ObjectKey = hit.ObjectKey,
                 CapturedAtUtc = hit.CapturedAtUtc,
+                ReplayEntityIdReadOk = hit.ReplayEntityIdReadOk,
+                ReplayEntityId = hit.ReplayEntityId,
                 ReadOk = hit.ReadOk,
                 Finite = hit.Finite,
                 X = hit.X,

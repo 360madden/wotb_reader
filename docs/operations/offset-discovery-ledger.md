@@ -31,6 +31,24 @@ getter-using virtual methods accesses the claimed position triple. The only
 complete generic `+0x04`-handoff/triple match is matrix/pose copy code. Use the
 getter as a data-flow anchor only; no live read is authorized.
 
+**OD-RECOVERY-069 amendment (2026-08-08):** the data-flow-first pivot found the
+exact replay-to-entity movement chain. Replay dispatch index 10 installs RVA
+`0x00FE31C0`, whose reads match the verified 49-byte layout. Engine resolution
+compares the packet ID to `[entity+0x1C]`, proving that member is the entity ID.
+At RVA `0x022FA78D` (`F30F7E00`), `ESI` is the resolved entity and `EAX` points
+to the packet-derived XYZ vector. A 40-check hash-bound verifier passes. This
+is an entity-bound instruction-event candidate, not a stable offset. No live
+run is authorized until a fixed two-source helper contract is synthetically
+proven.
+
+**OD-RECOVERY-070 amendment (2026-08-08):** the fixed two-source contract is
+implemented and synthetically proven. Production now pins RVA `0x022FA78D`,
+bytes `F30F7E00`, entity register `ESI`/ID `+0x1C`, and XYZ pointer register
+`EAX`. The synthetic x86 target returned replay entity ID `4242` and four
+changing finite XYZ samples; max-hit stop, non-Host parent rejection, cleanup,
+and detach passed. Host output contains no raw addresses. One bounded live
+equality test is admissible only after the full gate and fresh pinned publish.
+
 This ledger is the durable index of WoT Blitz PC offset-discovery work. It
 records experiments, partial results, failures, and pivots so future sessions do
 not repeat an exhausted approach without a changed hypothesis.
@@ -179,6 +197,8 @@ occurred.
 | `OD-RECOVERY-066` | 2026-08-08 | One live read of the composed world-matrix translation at EBX+`0x90/0x94/0x98` | Fresh helper publish + synthetic pass + one managed offline 5-second capture + UTC-aligned comparison against every decoded participant | `NoSignal` (player identity) / `Complete` (bounded hypothesis) | Fingerprint and cleanup proven; 7 finite hits from one opaque object; all 48 axis/sign mappings and 0.5x-8x playback tested; best coherent absolute fit mean 10.850 / max 12.556 units with 0/7 within 1 unit | Matrix-row arithmetic remains statically proven, but sampled object/coordinate identity is not the decoded player; close transform-fill branch and pivot offline/static to the verified type-10 position-application path; no offset promoted |
 | `OD-RECOVERY-067` | 2026-08-08 | Find a static type-10 replay position consumer/dispatch anchor | Three hash-bound Ghidra heuristics: local/framed displacement use, direct same-base length/type checks, and initialized dispatch-table relationships | `Partial` / `No direct consumer anchor` | 526,935 functions scanned; 3,457 local-layout and 190 framed-layout heuristic candidates classified as noisy; top match refuted as matrix/grid code; zero direct same-base length-49/type-10 pairs; eight table candidates refuted as MSVC EH metadata | Generic/table-driven framing or a recorder-side classification remains possible; next is a data-flow trace from the replay reader/framer into entity/physics state; no live run or offset promotion |
 | `OD-RECOVERY-068` | 2026-08-08 | Re-test the UnknownCheats-derived Vehicle position layout as a current-build candidate family | Hash-bound Ghidra full-function structural scan, current `VehicleGameLogic` RTTI/vtable query, vtable-method dump, and manual decompilation | `NoSignal` (position layout) / `Partial` (entity anchor) | Root `0x03E91978` remains refuted; current VGL vtable RVA `0x0327DA50`; slot `+0x04` getter RVA `0x0031B560` returns `[this+0x04]`; 17/79 getter-using methods touch 23 entity offsets but not `0x68/0x6C/0x70`; sole complete generic chained match is matrix/pose copy code | Does not prove entity member semantics, replay type-10 dispatch, XYZ destination, stable root, or live identity; next is static convergence of reader/framer flow with the proven entity getter; no live run or offset promotion |
+| `OD-RECOVERY-069` | 2026-08-08 | Trace the verified replay type-10 XYZ into a resolved engine entity | Hash-bound Ghidra replay/entity mapper, fixed 40-check semantic verifier, direct-call/vtable/instruction review | `CandidateFound` (entity-bound instruction event) / `Partial` (reliable player read) | Type-10 handler RVA `0x00FE31C0`; engine resolver proves `[entity+0x1C]` is packet entity ID; at RVA `0x022FA78D` bytes `F30F7E00`, `ESI` is resolved entity and `EAX` points to contiguous XYZ; downstream AvatarFilterHelper ring corroborates position semantics | Not a stable polling offset and no player identity/live equality yet; next is fixed two-source synthetic capture of `[ESI+0x1C]` plus 12 bytes at `EAX`, with no live run until review |
+| `OD-RECOVERY-070` | 2026-08-08 | Implement and synthetically prove the fixed type-10 entity/XYZ capture | Re-pinned coordinator/helper policy, v2 private report, replay-entity-ID public projection, x86 owned target, focused tests | `Complete` (synthetic capture) / `CandidateFound` (live plan) | Exact `F30F7E00` hit; entity ID `4242`; 4 changing finite XYZ hits; max-hit stop; non-Host pipe caller rejected; cleanup/detach proven; no raw addresses on Host surface | No live equality or stable polling root yet; after full gate/fresh publish, one 5-second/64-hit positively verified offline capture may compare same-ID XYZ to decoded type-10 |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -4595,3 +4615,149 @@ class corroboration, and trace into the exact entity-bound XYZ application or
 write. A live request remains inadmissible until that path yields frozen
 hash/module/RVA/bytes, register/entity provenance, one fixed contiguous member
 read/write, and a reviewed bounded synthetic plan.
+
+## `OD-RECOVERY-069` result - 2026-08-08 (type-10 entity movement anchor)
+
+```yaml
+sessionId: OD-RECOVERY-069
+status: CandidateFound (entity-bound instruction event) / Partial (reliable player read)
+mode: offline static only
+executableSha256: 1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d
+replayDispatch:
+  typeIndex: 10
+  handlerRva: 0x00FE31C0
+  readLengths: [4, 4, 4, 12, 12, 4, 4, 4, 1]
+  totalPayloadBytes: 49
+enginePath:
+  blitzMoveRva: 0x00F7A610
+  engineForwardRva: 0x022F9710
+  entityResolverRva: 0x022FC850
+  entityApplyRva: 0x022FA780
+entityIdentity:
+  memberDisplacement: 0x1C
+  semantic: type-10 entity id
+captureAnchor:
+  rva: 0x022FA78D
+  bytes: F30F7E00
+  instruction: MOVQ XMM0,[EAX]
+  entityRegister: ESI
+  entityIdRead: ESI+0x1C
+  xyzPointerRegister: EAX
+  xyzRead: EAX+0x0/+0x4/+0x8
+downstreamCorroboration:
+  type: BW::AvatarFilterHelper ring
+  entries: 8
+  stride: 0x38
+  positionDisplacement: 0x18
+verifier:
+  script: tools/ghidra-scripts/TraceType10MovementPosition.java
+  checksPassed: 40
+  checksFailed: 0
+liveAccess: false
+hardwareAtomicReadProven: false
+sameDecodedClockProven: false
+stablePollingOffsetProven: false
+playerIdentityProven: false
+offsetPromoted: false
+```
+
+The broad replay/entity mapper first located `ReplayPlayer`,
+`BlitzServerMessageHandler`, their vtables, construction references, and named
+entity lifecycle handlers. That exposed the normalized replay event table:
+the constructor writes handler RVA `0x00FE31C0` at index 10. The handler reads
+the exact decoded payload shape and calls vtable slot `+0x34`, which resolves
+to the engine movement forwarding path.
+
+The engine resolves the packet entity across its entity maps and directly
+compares `[entity+0x1C]` with the packet entity ID. It then calls entity
+movement application RVA `0x022FA780`. At instruction RVA `0x022FA78D`, the
+prologue has copied the resolved entity from `ECX` into `ESI` and loaded the
+packet-derived position pointer into `EAX`. The four-byte instruction reads the
+first eight XYZ bytes; the following instruction reads the final four bytes.
+This freezes a two-source capture plan with semantic entity provenance rather
+than a guessed position displacement.
+
+The downstream `BW::AvatarFilter` path forwards the same vector to
+`BW::AvatarFilterHelper`. Its store method maintains an 8-entry circular
+buffer; each `0x38`-byte record contains timestamp/IDs, position at `+0x18`, a
+zero vector at `+0x24`, and velocity at `+0x30`. This independently supports
+the position interpretation, but the ring and helper pointer are dynamic, so
+they are not suitable for offset publication.
+
+### Decision and next
+
+The community family was fruitful as a navigation clue, not as a current
+offset. Do not run the old root/member triple, another broad scan, or the
+existing EBX-only helper unchanged. `OD-RECOVERY-070` must first implement and
+synthetically validate a server/helper-fixed capture at RVA `0x022FA78D` that
+reads one int32 at `[ESI+0x1C]` and one contiguous 12-byte vector at `EAX`
+inside the same held debug event. Preserve the existing exact target identity,
+authorization, bounds, cancellation, restoration, cleanup, and privacy
+controls. Only after that review passes may one positively verified offline
+replay be requested to compare the captured entity ID and XYZ against decoded
+type-10 ground truth. A successful match would prove reliable event-based
+player-location reading; stable polling resolution and offset publication
+would remain separate work.
+
+## `OD-RECOVERY-070` result - 2026-08-08 (synthetic two-source capture)
+
+```yaml
+sessionId: OD-RECOVERY-070
+status: Complete (synthetic capture) / CandidateFound (live plan)
+mode: implementation and synthetic only
+target:
+  module: wotblitz.exe
+  rva: 0x022FA78D
+  bytes: F30F7E00
+  captureKind: type10-entity-position
+  entityRegister: ESI
+  entityIdDisplacement: 0x1C
+  vectorRegister: EAX
+  vectorBytes: 12
+synthetic:
+  replayEntityId: 4242
+  acceptedHits: 4
+  distinctX: 4
+  finiteXyz: true
+  maxHitStop: proven
+  nonHostParentRejected: true
+  cleanupProven: true
+  detached: true
+projection:
+  privateSchema: wotbtreader.execute-object-snapshot.v2
+  replayEntityIdExposed: true
+  rawAddressesExposed: false
+  instructionBytesExposed: false
+liveAccess: false
+stablePollingOffsetProven: false
+playerIdentityProven: false
+offsetPromoted: false
+```
+
+The production target policy and helper independently pin the exact version,
+game hash, module, RVA, instruction bytes, capture kind, registers, and entity
+ID displacement. Callers still supply only duration and hit bounds. The helper
+reads the replay entity ID and XYZ as two bounded reads while the same matching
+debug event holds the process. This is not a hardware-atomic read and does not
+yet establish same-decoded-clock or local-player identity. It retains private
+addresses only in its ignored owner-local report; GameIntegration projects an opaque object key,
+`replayEntityId`, UTC, values, and proof flags.
+
+The owned x86 target sets `ESI` to a synthetic entity record, sets `EAX` to a
+changing XYZ vector, and executes the exact four bytes. Four accepted hits all
+returned entity ID `4242` and finite, changing values. The max-hit path restored
+debug-register state and detached. The separate non-Host caller-created pipe
+test was rejected before target access. Existing identity, cancellation,
+bounded-output, crash-containment, and cleanup paths remain unchanged.
+
+### Decision and next
+
+After full repository validation and a fresh helper publish pinned to that
+validated Host build, `OD-RECOVERY-071` may run one five-second/64-hit capture
+in a positively verified offline replay. Compare only successful finite hits,
+and match each `replayEntityId` only to that entity's decoded type-10 XYZ at the
+aligned clock. Stop after the result. Exact equality would prove reliable
+event-based entity-location reading, not local-player identity, a stable polling
+offset, or a publication-ready resolver. Player-location wording requires
+independent evidence that the matched replay entity ID belongs to the local
+player.

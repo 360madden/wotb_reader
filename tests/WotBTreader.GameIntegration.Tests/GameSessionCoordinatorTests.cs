@@ -892,7 +892,7 @@ public sealed class GameSessionCoordinatorTests
                     capturedAt,
                     "completed",
                     "wotblitz.exe",
-                    0x7C39AB,
+                    0x22FA78D,
                     InstructionFingerprintMatched: true,
                     CleanupProven: true,
                     Truncated: false,

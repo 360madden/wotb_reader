@@ -311,20 +311,22 @@ public sealed record OffsetReadResponse
 
 /// <summary>
 /// Bounded instruction-first capture request. The server owns the target
-/// process, module, instruction, register, and displacement.
+/// process, module, instruction, registers, and displacements.
 /// </summary>
 public sealed record InstructionSnapshotRequest
 {
     public int DurationMilliseconds { get; init; } = 5_000;
-    public int MaxHits { get; init; } = 16;
+    public int MaxHits { get; init; } = 64;
 }
 
-/// <summary>One privacy-projected register-derived XYZ snapshot.</summary>
+/// <summary>One privacy-projected entity-bound XYZ snapshot.</summary>
 public sealed record InstructionSnapshotHitResponse
 {
     public int Sequence { get; init; }
     public string ObjectKey { get; init; } = string.Empty;
     public DateTimeOffset CapturedAtUtc { get; init; }
+    public bool ReplayEntityIdReadOk { get; init; }
+    public int? ReplayEntityId { get; init; }
     public bool ReadOk { get; init; }
     public bool Finite { get; init; }
     public float? X { get; init; }

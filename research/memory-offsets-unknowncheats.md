@@ -173,3 +173,28 @@ struct TankVisual {
   data flow; do not scan or capture the stale member triple unchanged.
 - `memory-offsets/*.json` remains unchanged until a stable resolver plus
   entity-bound live values satisfy the evidence and approval gates.
+
+## Current-build semantic result (OD-RECOVERY-069)
+
+Treating the community material as a relationship family was fruitful even
+though its offsets were stale. A hash-bound replay/entity map located the real
+type-10 replay handler at RVA `0x00FE31C0` and followed it through
+`BlitzServerMessageHandler` into the engine entity-movement path. The engine
+resolver compares the type-10 entity ID to `[entity+0x1C]`, which proves the
+identifier member that OD-RECOVERY-068 could only hypothesize.
+
+At movement-application RVA `0x022FA780`, instruction RVA `0x022FA78D`
+(`F30F7E00`) executes with `ESI` holding the resolved entity and `EAX` pointing
+to the packet-derived XYZ vector. This is a useful **candidate family change**:
+the next proof is an entity-bound instruction event, not a stale position
+member. The downstream `BW::AvatarFilterHelper` stores the vector in an
+8-entry ring (`0x38` stride, position at record `+0x18`), confirming position
+semantics but also showing why that storage is unsuitable as a stable polling
+offset.
+
+No current position displacement, stable root, player identity, or publishable
+offset follows from the community post alone. Live work remains gated on a
+two-source capture that reads `[ESI+0x1C]` and 12 bytes from `EAX` within the
+same held debug event. OD-RECOVERY-070 now passes that synthetic proof. The
+next admissible step is one bounded positively verified offline equality test
+after the full repository gate and a fresh pinned helper publish.

@@ -16,9 +16,10 @@ internal sealed record ExecuteSnapshotPlan
     public string ModuleName { get; init; } = string.Empty;
     public uint Rva { get; init; }
     public string ExpectedInstructionHex { get; init; } = string.Empty;
-    public int ObjectDisplacement { get; init; } = 0x90;
+    public string CaptureKind { get; init; } = string.Empty;
+    public int EntityIdDisplacement { get; init; } = 0x1c;
     public int DurationMilliseconds { get; init; } = 5_000;
-    public int MaxHits { get; init; } = 16;
+    public int MaxHits { get; init; } = 64;
     public int MinimumObjectSampleIntervalMilliseconds { get; init; } = 750;
     public bool SyntheticOwnedTarget { get; init; }
     public uint SyntheticTargetAddress { get; init; }
@@ -41,6 +42,8 @@ internal sealed record ExecuteSnapshotHit(
     uint Dr6,
     uint ObjectAddress,
     uint ReadAddress,
+    bool ReplayEntityIdReadOk,
+    int? ReplayEntityId,
     ExecuteSnapshotVector Vector,
     bool SameDebugEvent,
     bool DebugEventProcessSuspended,
@@ -63,7 +66,7 @@ internal sealed record ExecuteSnapshotTarget(
 
 internal sealed record ExecuteSnapshotReport
 {
-    public string Schema { get; init; } = "wotbtreader.execute-object-snapshot.v1";
+    public string Schema { get; init; } = "wotbtreader.execute-object-snapshot.v2";
     public string Mode { get; init; } = "execute-object-snapshot";
     public string Status { get; init; } = "failed";
     public int ExitCode { get; init; } = 5;
@@ -73,8 +76,10 @@ internal sealed record ExecuteSnapshotReport
     public int MaxHits { get; init; }
     public int MaxThreads { get; init; }
     public ExecuteSnapshotTarget? Target { get; init; }
-    public string ObjectRegister { get; init; } = "ebx";
-    public int ObjectDisplacement { get; init; } = 0x90;
+    public string CaptureKind { get; init; } = string.Empty;
+    public string ObjectRegister { get; init; } = "esi";
+    public string VectorRegister { get; init; } = "eax";
+    public int EntityIdDisplacement { get; init; } = 0x1c;
     public int ThreadsSeen { get; init; }
     public int ThreadsArmed { get; init; }
     public int ThreadsFailed { get; init; }

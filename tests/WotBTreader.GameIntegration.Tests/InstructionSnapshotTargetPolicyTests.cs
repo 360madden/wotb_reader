@@ -10,7 +10,7 @@ public sealed class InstructionSnapshotTargetPolicyTests
         "1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d";
 
     [TestMethod]
-    public void ExactVersionAndHashResolveThePinnedTransformFillTarget()
+    public void ExactVersionAndHashResolveThePinnedType10EntityPositionTarget()
     {
         bool resolved = InstructionSnapshotTargetPolicy.TryResolve(
             "11.19.0.10",
@@ -20,9 +20,10 @@ public sealed class InstructionSnapshotTargetPolicyTests
         Assert.IsTrue(resolved);
         Assert.IsNotNull(plan);
         Assert.AreEqual("wotblitz.exe", plan!.ModuleName);
-        Assert.AreEqual(0x007C39ABu, plan.Rva);
-        Assert.AreEqual("8B83A0000000", plan.ExpectedInstructionHex);
-        Assert.AreEqual(0x90, plan.ObjectDisplacement);
+        Assert.AreEqual(0x022FA78Du, plan.Rva);
+        Assert.AreEqual("F30F7E00", plan.ExpectedInstructionHex);
+        Assert.AreEqual("type10-entity-position", plan.CaptureKind);
+        Assert.AreEqual(0x1c, plan.EntityIdDisplacement);
         Assert.AreEqual(750, plan.MinimumObjectSampleIntervalMilliseconds);
     }
 

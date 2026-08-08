@@ -19,10 +19,17 @@
 
 ## Quick Facts
 
-### Version and offset status — current snapshot (2026-07-31)
+### Version and offset status — current snapshot (2026-08-08)
 - **Game installed:** v11.19.0.10
 - **Decoder:** `wotb-11.x-strict` supports normalized 11.18 and 11.19 versions; `EventStreamReader` and `IsSupportedVersion` accept both
 - **Offsets:** executable SHA-256 is recorded; `playerYaw` has static-analysis provenance but is quarantined/Stale (conflicting representations), and seven fields remain unknown
+- **Position discovery:** OD-RECOVERY-069 statically proves the type-10 replay
+  packet's entity-movement path. At `wotblitz.exe+0x22FA78D`, `ESI` is the
+  resolved entity, `[ESI+0x1C]` is its type-10 entity ID, and `EAX` points to
+  the packet-derived XYZ vector. This is an entity-bound event candidate, not
+  a stable polling offset. The fixed two-source helper now passes synthetic
+  validation; one bounded offline live equality test is next after the full
+  repository gate and fresh pinned publish.
 - **11.19 released July 2026** (per community release trackers: Reddit
   r/WorldOfTanksBlitz, Uptodown changelog) — minor rebalances only; replay
   format/log markers unchanged

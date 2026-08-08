@@ -946,7 +946,7 @@ public sealed class GameApiEndpointsTests
                     capturedAt,
                     "completed",
                     "wotblitz.exe",
-                    0x7C39AB,
+                    0x22FA78D,
                     InstructionFingerprintMatched: true,
                     CleanupProven: true,
                     Truncated: false,
@@ -955,6 +955,8 @@ public sealed class GameApiEndpointsTests
                             1,
                             "object-01",
                             capturedAt,
+                            ReplayEntityIdReadOk: true,
+                            ReplayEntityId: 4242,
                             ReadOk: true,
                             Finite: true,
                             1f,
@@ -982,12 +984,17 @@ public sealed class GameApiEndpointsTests
         InstructionSnapshotResponse response = Value<InstructionSnapshotResponse>(result);
         Assert.AreEqual(2_000, scanner.LastInstructionSnapshotRequest!.DurationMilliseconds);
         Assert.AreEqual(8, scanner.LastInstructionSnapshotRequest.MaxHits);
-        Assert.AreEqual("0x7C39AB", response.TargetRva);
+        Assert.AreEqual("0x22FA78D", response.TargetRva);
         Assert.AreEqual(1, response.HitCount);
+        Assert.IsTrue(response.Hits[0].ReplayEntityIdReadOk);
+        Assert.AreEqual(4242, response.Hits[0].ReplayEntityId);
         Assert.IsFalse(response.Hits[0].ViewpointIdentityProven);
         string json = JsonSerializer.Serialize(response, CamelCaseJson);
+        Assert.IsTrue(json.Contains("replayEntityId", StringComparison.Ordinal));
         Assert.IsFalse(json.Contains("processId", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(json.Contains("objectAddress", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(json.Contains("entityAddress", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(json.Contains("readAddress", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(json.Contains("absoluteAddress", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(json.Contains("instructionHex", StringComparison.OrdinalIgnoreCase));
     }

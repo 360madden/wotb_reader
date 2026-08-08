@@ -223,7 +223,7 @@ static async Task<int> CheckGateAsync(
 static async Task<int> InstructionSnapshotAsync(string[] args)
 {
     int durationMilliseconds = 5_000;
-    int maxHits = 16;
+    int maxHits = 64;
     for (int index = 1; index < args.Length; index++)
     {
         if (index + 1 >= args.Length)
@@ -320,11 +320,14 @@ static async Task<int> InstructionSnapshotAsync(string[] args)
                 .ToString("O", CultureInfo.InvariantCulture);
             bool readOk = hit.GetProperty("readOk").GetBoolean();
             bool finite = hit.GetProperty("finite").GetBoolean();
+            bool entityIdReadOk = hit.GetProperty("replayEntityIdReadOk").GetBoolean();
+            string entityId = hit.GetProperty("replayEntityId").ToString();
             string x = hit.GetProperty("x").ToString();
             string y = hit.GetProperty("y").ToString();
             string z = hit.GetProperty("z").ToString();
             Console.WriteLine(
                 $"  hit={sequence} {objectKey} utc={capturedAtUtc} " +
+                $"replay_entity_id_read={entityIdReadOk} replay_entity_id={entityId} " +
                 $"read={readOk} finite={finite} xyz=({x},{y},{z}) " +
                 "identity=unknown stable_root=false");
         }
@@ -1431,10 +1434,10 @@ Commands:
     values, and scanner session ids are suppressed; the session is discarded.
 
   discover-instruction-snapshot [--seconds <1-5>] [--max-hits <1-64>]
-    Capture register-derived XYZ triples at the server-pinned transform-fill
-    instruction. No PID, address, module, register, or displacement is caller
-    controlled. A hit proves only same-debug-event register/displacement
-    provenance; viewpoint identity and a stable root remain separate evidence.
+    Capture a replay-local entity id and XYZ at the server-pinned type-10
+    movement instruction. No PID, address, module, register, or displacement
+    is caller controlled. A hit proves only same-debug-event entity/vector
+    provenance; player identity and a stable root remain separate evidence.
 
 Gate: all discover commands require the web host to have a
       verified offline replay session (launch one via the

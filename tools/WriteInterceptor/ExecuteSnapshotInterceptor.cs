@@ -24,8 +24,10 @@ internal sealed class ExecuteSnapshotInterceptor : IDisposable
     private const string SupportedGameVersion = "11.19.0.10";
     private const string SupportedGameSha256 =
         "1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d";
-    private const uint SupportedRva = 0x007C39AB;
-    private const string SupportedInstructionHex = "8B83A0000000";
+    private const uint SupportedRva = 0x022FA78D;
+    private const string SupportedInstructionHex = "F30F7E00";
+    private const string SupportedCaptureKind = "type10-entity-position";
+    private const int SupportedEntityIdDisplacement = 0x1c;
     private static readonly string ExpectedCoordinatorSha256 =
         Assembly.GetExecutingAssembly()
             .GetCustomAttributes<AssemblyMetadataAttribute>()
@@ -250,7 +252,8 @@ internal sealed class ExecuteSnapshotInterceptor : IDisposable
             MaxHits = _plan.MaxHits,
             MaxThreads = MaximumThreads,
             Target = _target,
-            ObjectDisplacement = _plan.ObjectDisplacement,
+            CaptureKind = _plan.CaptureKind,
+            EntityIdDisplacement = _plan.EntityIdDisplacement,
             ThreadsSeen = _threadsSeen,
             ThreadsArmed = _threadsArmed,
             ThreadsFailed = _threadsFailed,
@@ -293,7 +296,11 @@ internal sealed class ExecuteSnapshotInterceptor : IDisposable
         if (_plan.ProcessId <= 0
             || _plan.DurationMilliseconds is < 1_000 or > 5_000
             || _plan.MaxHits is < 1 or > 64
-            || _plan.ObjectDisplacement != 0x90)
+            || !string.Equals(
+                _plan.CaptureKind,
+                SupportedCaptureKind,
+                StringComparison.Ordinal)
+            || _plan.EntityIdDisplacement != SupportedEntityIdDisplacement)
         {
             AddDiagnostic("plan_bounds_invalid");
             return false;
@@ -1045,7 +1052,7 @@ internal sealed class ExecuteSnapshotInterceptor : IDisposable
 
         _matchingBreakpointEvents++;
         DateTimeOffset now = DateTimeOffset.UtcNow;
-        bool acceptSample = !_lastAcceptedByObject.TryGetValue(context.Ebx, out DateTimeOffset previous)
+        bool acceptSample = !_lastAcceptedByObject.TryGetValue(context.Esi, out DateTimeOffset previous)
             || now - previous >= TimeSpan.FromMilliseconds(
                 _plan.MinimumObjectSampleIntervalMilliseconds);
         if (acceptSample)
@@ -1057,7 +1064,7 @@ internal sealed class ExecuteSnapshotInterceptor : IDisposable
                 context,
                 now);
             _hits.Add(hit);
-            _lastAcceptedByObject[context.Ebx] = now;
+            _lastAcceptedByObject[context.Esi] = now;
         }
         context.Dr6 &= ~Dr0OwnedBit;
         context.EFlags |= ResumeFlag;
@@ -1089,20 +1096,36 @@ internal sealed class ExecuteSnapshotInterceptor : IDisposable
         Context context,
         DateTimeOffset capturedAtUtc)
     {
-        uint readAddress = 0;
-        bool addressOk = true;
+        uint entityIdAddress = 0;
+        bool entityAddressOk = true;
         try
         {
-            readAddress = checked(context.Ebx + checked((uint)_plan.ObjectDisplacement));
+            entityIdAddress = checked(
+                context.Esi + checked((uint)_plan.EntityIdDisplacement));
         }
         catch (OverflowException)
         {
-            addressOk = false;
+            entityAddressOk = false;
         }
 
+        byte[] entityBytes = new byte[sizeof(int)];
+        nuint entityBytesRead = 0;
+        bool entityIdReadOk = entityAddressOk
+            && NativeMethods.ReadProcessMemory(
+                process,
+                (nint)entityIdAddress,
+                entityBytes,
+                checked((nuint)entityBytes.Length),
+                out entityBytesRead)
+            && entityBytesRead == (nuint)entityBytes.Length;
+        int? entityId = entityIdReadOk
+            ? BitConverter.ToInt32(entityBytes, 0)
+            : null;
+
+        uint readAddress = context.Eax;
         byte[] bytes = new byte[SnapshotBytes];
         nuint bytesRead = 0;
-        bool readOk = addressOk
+        bool readOk = readAddress != 0
             && NativeMethods.ReadProcessMemory(
                 process,
                 (nint)readAddress,
@@ -1127,8 +1150,10 @@ internal sealed class ExecuteSnapshotInterceptor : IDisposable
             exceptionAddress,
             context.Eip,
             context.Dr6,
-            context.Ebx,
+            context.Esi,
             readAddress,
+            entityIdReadOk,
+            entityId,
             new ExecuteSnapshotVector(readOk, actualBytes, x, y, z, finite),
             SameDebugEvent: true,
             DebugEventProcessSuspended: true,

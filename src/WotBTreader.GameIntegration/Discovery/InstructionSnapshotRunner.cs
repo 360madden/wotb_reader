@@ -127,7 +127,8 @@ internal sealed class WindowsInstructionSnapshotRunner(GameIntegrationOptions op
             ModuleName = target!.ModuleName,
             Rva = target.Rva,
             ExpectedInstructionHex = target.ExpectedInstructionHex,
-            ObjectDisplacement = target.ObjectDisplacement,
+            CaptureKind = target.CaptureKind,
+            EntityIdDisplacement = target.EntityIdDisplacement,
             DurationMilliseconds = request.DurationMilliseconds,
             MaxHits = request.MaxHits,
             MinimumObjectSampleIntervalMilliseconds = target.MinimumObjectSampleIntervalMilliseconds,
@@ -244,7 +245,7 @@ internal sealed class WindowsInstructionSnapshotRunner(GameIntegrationOptions op
         }
 
         if (report is null
-            || !string.Equals(report.Schema, "wotbtreader.execute-object-snapshot.v1", StringComparison.Ordinal)
+            || !string.Equals(report.Schema, "wotbtreader.execute-object-snapshot.v2", StringComparison.Ordinal)
             || !string.Equals(report.Mode, "execute-object-snapshot", StringComparison.Ordinal)
             || report.Hits is null
             || report.Hits.Count > request.MaxHits
@@ -252,7 +253,11 @@ internal sealed class WindowsInstructionSnapshotRunner(GameIntegrationOptions op
             || !report.CleanupProven
             || !report.Detached
             || !report.CoordinatorIdentityPinned
-            || !report.DebuggerExitTerminatesTarget)
+            || !report.DebuggerExitTerminatesTarget
+            || !string.Equals(report.CaptureKind, target.CaptureKind, StringComparison.Ordinal)
+            || !string.Equals(report.ObjectRegister, "esi", StringComparison.Ordinal)
+            || !string.Equals(report.VectorRegister, "eax", StringComparison.Ordinal)
+            || report.EntityIdDisplacement != target.EntityIdDisplacement)
         {
             return Failure(
                 report?.CleanupProven == true
@@ -275,7 +280,9 @@ internal sealed class WindowsInstructionSnapshotRunner(GameIntegrationOptions op
         Dictionary<uint, string> objectKeys = [];
         foreach (HelperHit hit in report.Hits)
         {
-            if (hit.Vector is null)
+            if (hit.Vector is null
+                || hit.ObjectAddress == 0
+                || hit.ReplayEntityIdReadOk != hit.ReplayEntityId.HasValue)
             {
                 return Failure("discover.instruction_snapshot.invalid_result", cleanupProven: true);
             }
@@ -290,6 +297,8 @@ internal sealed class WindowsInstructionSnapshotRunner(GameIntegrationOptions op
                 hit.Sequence,
                 objectKey,
                 hit.Utc,
+                hit.ReplayEntityIdReadOk,
+                hit.ReplayEntityId,
                 hit.Vector.ReadOk,
                 hit.Vector.Finite,
                 hit.Vector.X,
@@ -394,7 +403,8 @@ internal sealed class WindowsInstructionSnapshotRunner(GameIntegrationOptions op
         public string ModuleName { get; init; } = string.Empty;
         public uint Rva { get; init; }
         public string ExpectedInstructionHex { get; init; } = string.Empty;
-        public int ObjectDisplacement { get; init; }
+        public string CaptureKind { get; init; } = string.Empty;
+        public int EntityIdDisplacement { get; init; }
         public int DurationMilliseconds { get; init; }
         public int MaxHits { get; init; }
         public int MinimumObjectSampleIntervalMilliseconds { get; init; }
@@ -414,6 +424,10 @@ internal sealed class WindowsInstructionSnapshotRunner(GameIntegrationOptions op
         public bool CoordinatorIdentityPinned { get; init; }
         public bool DebuggerExitTerminatesTarget { get; init; }
         public bool Truncated { get; init; }
+        public string CaptureKind { get; init; } = string.Empty;
+        public string ObjectRegister { get; init; } = string.Empty;
+        public string VectorRegister { get; init; } = string.Empty;
+        public int EntityIdDisplacement { get; init; }
         public List<HelperHit> Hits { get; init; } = [];
         public List<string> Diagnostics { get; init; } = [];
     }
@@ -429,6 +443,8 @@ internal sealed class WindowsInstructionSnapshotRunner(GameIntegrationOptions op
         public int Sequence { get; init; }
         public uint ObjectAddress { get; init; }
         public DateTimeOffset Utc { get; init; }
+        public bool ReplayEntityIdReadOk { get; init; }
+        public int? ReplayEntityId { get; init; }
         public HelperVector? Vector { get; init; }
         public bool SameDebugEvent { get; init; }
         public bool DebugEventProcessSuspended { get; init; }
@@ -581,7 +597,8 @@ internal sealed record InstructionSnapshotTargetPlan(
     string ModuleName,
     uint Rva,
     string ExpectedInstructionHex,
-    int ObjectDisplacement,
+    string CaptureKind,
+    int EntityIdDisplacement,
     int MinimumObjectSampleIntervalMilliseconds);
 
 internal static class InstructionSnapshotTargetPolicy
@@ -603,9 +620,10 @@ internal static class InstructionSnapshotTargetPolicy
         {
             plan = new InstructionSnapshotTargetPlan(
                 "wotblitz.exe",
-                0x007C39AB,
-                "8B83A0000000",
-                0x90,
+                0x022FA78D,
+                "F30F7E00",
+                "type10-entity-position",
+                0x1c,
                 750);
             return true;
         }

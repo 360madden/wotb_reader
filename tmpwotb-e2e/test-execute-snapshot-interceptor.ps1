@@ -22,11 +22,14 @@ $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
 $hits = @($report.hits)
 $distinctX = @($hits | ForEach-Object { $_.vector.x } | Select-Object -Unique)
 
-if ([string]$report.schema -ne 'wotbtreader.execute-object-snapshot.v1') { Write-Host 'FAIL_schema'; exit 1 }
+if ([string]$report.schema -ne 'wotbtreader.execute-object-snapshot.v2') { Write-Host 'FAIL_schema'; exit 1 }
 if ([string]$report.mode -ne 'execute-object-snapshot') { Write-Host 'FAIL_mode'; exit 1 }
 if ([string]$report.status -ne 'completed') { Write-Host 'FAIL_status'; exit 1 }
 if (-not [bool]$report.target.instructionMatched) { Write-Host 'FAIL_instruction_match'; exit 1 }
-if ([string]$report.target.expectedInstructionHex -ne '8B83A0000000') { Write-Host 'FAIL_instruction_pin'; exit 1 }
+if ([string]$report.target.expectedInstructionHex -ne 'F30F7E00') { Write-Host 'FAIL_instruction_pin'; exit 1 }
+if ([string]$report.captureKind -ne 'type10-entity-position') { Write-Host 'FAIL_capture_kind'; exit 1 }
+if ([string]$report.objectRegister -ne 'esi' -or [string]$report.vectorRegister -ne 'eax') { Write-Host 'FAIL_register_pin'; exit 1 }
+if ([int]$report.entityIdDisplacement -ne 28) { Write-Host 'FAIL_entity_id_displacement'; exit 1 }
 if ([int]$report.threadsArmed -lt 1) { Write-Host 'FAIL_no_thread_armed'; exit 1 }
 if ([int]$report.maxThreads -ne 256) { Write-Host 'FAIL_thread_bound'; exit 1 }
 if ([int]$report.threadsRestored -lt 1) { Write-Host 'FAIL_no_thread_restored'; exit 1 }
@@ -37,6 +40,7 @@ if ($hits.Count -ne 4 -or -not [bool]$report.truncated) { Write-Host 'FAIL_hit_b
 if ($distinctX.Count -lt 2) { Write-Host 'FAIL_values_static'; exit 1 }
 
 foreach ($hit in $hits) {
+    if (-not [bool]$hit.replayEntityIdReadOk -or [int]$hit.replayEntityId -ne 4242) { Write-Host 'FAIL_entity_id'; exit 1 }
     if (-not [bool]$hit.vector.readOk -or -not [bool]$hit.vector.finite) { Write-Host 'FAIL_vector'; exit 1 }
     if ([int]$hit.vector.bytesRead -ne 12) { Write-Host 'FAIL_read_width'; exit 1 }
     if (-not [bool]$hit.sameDebugEvent -or -not [bool]$hit.debugEventProcessSuspended) { Write-Host 'FAIL_event_provenance'; exit 1 }
@@ -99,9 +103,10 @@ try {
         productVersion = '11.19.0.10'
         executableSha256 = '1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d'
         moduleName = 'wotblitz.exe'
-        rva = 8141227
-        expectedInstructionHex = '8B83A0000000'
-        objectDisplacement = 144
+        rva = 36677517
+        expectedInstructionHex = 'F30F7E00'
+        captureKind = 'type10-entity-position'
+        entityIdDisplacement = 28
         durationMilliseconds = 1000
         maxHits = 1
         minimumObjectSampleIntervalMilliseconds = 750

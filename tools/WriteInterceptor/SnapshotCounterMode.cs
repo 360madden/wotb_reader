@@ -8,8 +8,9 @@ namespace WotBTreader.WriteInterceptor;
 internal static class SnapshotCounterMode
 {
     private const int ObjectBytes = 0x1000;
+    private const int EntityIdOffset = 0x1c;
     private const int PositionOffset = 0x90;
-    private const int SourceOffset = 0xA0;
+    private const int SyntheticEntityId = 4242;
     private const int WriteIntervalMilliseconds = 20;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -17,7 +18,7 @@ internal static class SnapshotCounterMode
     };
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private delegate uint SnapshotStub(nint objectAddress);
+    private delegate uint SnapshotStub(nint entityAddress, nint vectorAddress);
 
     internal static int Run(string stateFile)
     {
@@ -38,17 +39,21 @@ internal static class SnapshotCounterMode
 
         byte[] code =
         [
-            0x53,                         // push ebx
-            0x8B, 0x5C, 0x24, 0x08,       // mov ebx,[esp+8]
-            0x8B, 0x83, 0xA0, 0, 0, 0,    // mov eax,[ebx+0xA0]
-            0x5B,                         // pop ebx
+            0x56,                         // push esi
+            0x8B, 0x74, 0x24, 0x08,       // mov esi,[esp+8]
+            0x8B, 0x44, 0x24, 0x0C,       // mov eax,[esp+0xc]
+            0x57,                         // push edi
+            0xF3, 0x0F, 0x7E, 0x00,       // movq xmm0,[eax]
+            0x8B, 0x40, 0x08,             // mov eax,[eax+8]
+            0x5F,                         // pop edi
+            0x5E,                         // pop esi
             0xC3,                         // ret
         ];
         Marshal.Copy(code, 0, codeAddress, code.Length);
-        WriteUInt32(objectAddress + SourceOffset, 7);
-        WriteVector(objectAddress, 1f);
+        WriteUInt32(objectAddress + EntityIdOffset, SyntheticEntityId);
+        WriteVector(objectAddress + PositionOffset, 1f);
 
-        nint targetAddress = codeAddress + 5;
+        nint targetAddress = codeAddress + 10;
         string partialStateFile = stateFile + ".partial";
         using (FileStream stream = new(partialStateFile, FileMode.CreateNew, FileAccess.Write, FileShare.None))
         {
@@ -64,8 +69,8 @@ internal static class SnapshotCounterMode
         float value = 1f;
         while (true)
         {
-            WriteVector(objectAddress, value);
-            _ = stub(objectAddress);
+            WriteVector(objectAddress + PositionOffset, value);
+            _ = stub(objectAddress, objectAddress + PositionOffset);
             value += 0.5f;
             Thread.Sleep(WriteIntervalMilliseconds);
         }
@@ -137,8 +142,9 @@ internal static class SnapshotCounterMode
                 DurationMilliseconds = 1_500,
                 MaxHits = 4,
                 MinimumObjectSampleIntervalMilliseconds = 0,
-                ExpectedInstructionHex = "8B83A0000000",
-                ObjectDisplacement = PositionOffset,
+                ExpectedInstructionHex = "F30F7E00",
+                CaptureKind = "type10-entity-position",
+                EntityIdDisplacement = EntityIdOffset,
                 SyntheticOwnedTarget = true,
                 SyntheticTargetAddress = targetAddress,
             };
@@ -201,11 +207,11 @@ internal static class SnapshotCounterMode
         }
     }
 
-    private static void WriteVector(nint objectAddress, float x)
+    private static void WriteVector(nint vectorAddress, float x)
     {
-        WriteFloat(objectAddress + PositionOffset, x);
-        WriteFloat(objectAddress + PositionOffset + 4, x + 10f);
-        WriteFloat(objectAddress + PositionOffset + 8, x - 10f);
+        WriteFloat(vectorAddress, x);
+        WriteFloat(vectorAddress + 4, x + 10f);
+        WriteFloat(vectorAddress + 8, x - 10f);
     }
 
     private static void WriteFloat(nint address, float value)

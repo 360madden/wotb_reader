@@ -1,6 +1,7 @@
 # WoT Blitz PC offset-discovery workflow
 
-Last updated: 2026-08-03 (OD-043-STATIC: **`.data 0x03B7E198` reclassified as the DAVA `AnyFn` invoker vtable table** — 34 entries, modal stride 0x2C (44-byte vtables, 24 named `StaticAnyFnInvoker<lambda>` binding `TankComponent`/`AimingPointComponent`/`Scene`/`Entity` = component event subscriptions), all 24 sharing dispatcher fn `0x002C4550`, each with exactly 1 `.data` root = its own array entry (internally-closed set); 3 `.text` refs incl. runtime write `mov [0x03B7E198],imm32` at 0x03104FAB repointing entry[0] — **dispatch infrastructure, NOT a gameplay root**; `tools/find-static-roots.py` gained `--vtable-root CLASS` (class→vtable→data-root query: `GameScene` 0x0319D3C4/COL 0x034A89F0, **0 .data holders** = vtable-singleton negative; `TankComponent` → 19 matches all AnyFn invokers roots=1) and `--table-map BASE[,MAX]` (pointer-array decoder with modal-stride + shared-dispatcher + ref-site analysis); prior milestone OD-042-STATIC: `0x037F3054` identified as the shared RTTI `type_info` vftable; `--vtables` names 17,133/18,721 vtables; OD-041-STATIC: the two 'root candidates' reclassified as repeating-record members, NOT gameplay roots; rolling driver gained `-CompareMode delta`/`-DeltaTarget`/`-DeltaTolerance` pass-through for the Track C2 pilot)
+Last updated: 2026-08-08 (OD-RECOVERY-069 found the exact entity-bound
+type-10 movement anchor; OD-RECOVERY-070 completed synthetic two-source proof)
 
 This is the operational playbook for discovering memory evidence from the
 Windows WoT Blitz client during a **positively verified offline replay**. It is
@@ -340,15 +341,32 @@ The best coherent absolute fit across every participant, 48 axis/sign mappings,
 EBX+`0x90/+0x94/+0x98` is a composed matrix translation; the negative concerns
 the sampled object's semantic identity or coordinate space.
 
-Session ID: `OD-RECOVERY-069`. This session is offline/static-only. Trace the
-verified type-10 replay position layout from its decode/dispatch consumer to the
-game code that applies X/Y/Z to an entity or physics state, while converging on
-the exact current-build `VehicleGameLogic` entity getter (vtable RVA
-`0x0327DA50`, getter RVA `0x0031B560`). Before another live request exists,
-freeze all of the following: exact executable hash, module RVA, instruction
-bytes, owning entity/register provenance, member displacement or one fixed
-contiguous read, and a synthetic target proving hit classification, bounds,
-privacy projection, cancellation, and cleanup.
+OD-RECOVERY-069 completed the offline/static trace. `ReplayPlayer` installs
+type-10 handler RVA `0x00FE31C0`, which reads the exact 49-byte sequence and
+dispatches into `BWEntities::handleEntityMoveWithError`. The resolver proves
+`[entity+0x1C]` is the packet entity ID. The entity-movement function at RVA
+`0x022FA780` reaches instruction RVA `0x022FA78D`, bytes `F30F7E00`, with the
+resolved entity in `ESI` and the packet-derived XYZ pointer in `EAX`.
+`TraceType10MovementPosition.java` verifies 40/40 fixed relationships against
+the exact executable hash.
+
+OD-RECOVERY-070 completed implementation and synthetic validation. The helper
+now reads one int32 at `[ESI+0x1C]` and one contiguous 12-byte vector at `EAX`
+while the matching debug event is held. Target, registers, displacements, and
+schema remain server/helper policy for the exact version/hash. The synthetic
+x86 target executed the exact instruction and produced entity ID `4242` plus
+four changing finite XYZ samples. Fingerprint, hit bound, non-Host parent
+rejection, cleanup, and detach passed; the Host response suppresses all raw
+addresses. The entity-ID and vector reads share a suspended debug event but are
+not hardware-atomic. Same-decoded-clock and local-player identity also remain
+unproven.
+
+Session ID: `OD-RECOVERY-071`. After the full repository gate and a fresh
+identity-pinned helper publish, run one five-second/64-hit capture in a
+positively verified offline replay. Accept evidence only from hits where both
+`replayEntityIdReadOk` and XYZ `readOk/finite` are true. Compare each replay
+entity ID only with that same entity's decoded type-10 XYZ at the aligned
+clock. Stop after this result; do not scan or change the target in the session.
 
 The first static triage did not find a direct consumer anchor. Across 526,935
 executable functions, displacement-layout matches were dominated by matrix,
@@ -366,16 +384,18 @@ layout as a candidate family. The old root remains refuted. The real
 17 getter-using virtual methods accesses the claimed entity position triple at
 `+0x68/+0x6C/+0x70`. The sole exact generic chained match and the strongest
 float fallback both decompile as matrix/pose structures. Do not read that stale
-triple live. For OD-RECOVERY-069, use the getter as an entity data-flow anchor;
-treat returned-entity `+0x1C` only as an identifier hypothesis and health-like
-`+0xB8` only as type corroboration until the type-10 path supplies semantics.
+triple live. Its useful `+0x1C` clue is now resolved: the type-10 application
+path directly compares that entity member with the packet ID. The stale
+position triple remains refuted.
 
 Do not spend a live replay on a broader matrix read, a different displacement at
 the transform-fill instruction, a latency-only retry, or another heap scan. The
-existing instruction-snapshot mechanism remains reusable only after the new
-static target contract is frozen and reviewed. A future live result advances
+instruction-snapshot mechanism is now pinned to the two-source target and has
+passed synthetic review. The next bounded live result advances
 field identity only when its entity-bound samples match decoded type-10 ground
-truth at the aligned clock; stable resolution and offset publication remain
+truth at the aligned clock. That proves entity-location reading; player-location
+reading additionally requires independent evidence that the matched replay
+entity ID is the local player. Stable resolution and offset publication remain
 separate gates. Existing safety contract:
 [`../superpowers/specs/2026-08-08-instruction-first-position-snapshot.md`](../superpowers/specs/2026-08-08-instruction-first-position-snapshot.md).
 

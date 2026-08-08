@@ -130,13 +130,31 @@ full design specification.
   virtual methods, 17 getter-using methods access 23 distinct entity members,
   but none accesses the claimed position triple. This makes the community
   layout a useful naming/relationship clue, not a live-read candidate. The
-  active method remains data-flow-first: converge the generic replay
-  reader/framer path with this proven entity getter, treating frequently used
-  entity member `+0x1C` only as an unproven identifier bridge, until an exact
-  entity-bound XYZ application/write is found.
+  OD-RECOVERY-069 completed that data-flow trace. The `ReplayPlayer`
+  constructor installs type-10 handler RVA `0x00FE31C0`; it reads the exact
+  `4,4,4,12,12,4,4,4,1` byte sequence and dispatches through
+  `BlitzServerMessageHandler` into `BWEntities::handleEntityMoveWithError`.
+  The resolver compares `[entity+0x1C]` with the packet entity ID, proving that
+  member is the entity identifier. At entity-apply RVA `0x022FA780`, the
+  instruction at RVA `0x022FA78D` (bytes `F30F7E00`) executes with `ESI` equal
+  to the resolved entity and `EAX` pointing at the packet-derived XYZ vector.
+  The downstream `BW::AvatarFilterHelper` stores that vector in an 8-entry,
+  `0x38`-stride ring at helper-relative `+0x18`; this is a transient movement
+  sample buffer, not a stable position member. The new candidate family is
+  therefore **entity-bound instruction event**: one held debug event can read
+  `[ESI+0x1C]` and the contiguous 12 bytes at `EAX`, then align the entity ID
+  and XYZ with decoded type-10 ground truth. The hash-bound Ghidra verifier
+  passes 40/40 checks. OD-RECOVERY-070 now implements the fixed two-source
+  helper contract and passes its synthetic x86 proof: entity ID `4242`, four
+  changing finite XYZ samples, exact target fingerprint, hit bound, parent
+  rejection, cleanup, and detach all pass. The public response calls the value
+  `replayEntityId` and suppresses process/entity/vector addresses. After the
+  full repository gate and a fresh pinned publish, one bounded positively
+  verified offline capture is recommended to test exact replay-entity/XYZ
+  equality. No stable polling offset or player identity is yet claimed.
   Detail:
   [`offline/offset-discovery.md`](offline/offset-discovery.md) and
-  [`docs/operations/handoffs/2026-08-08-world-translation-negative-type10-pivot.md`](docs/operations/handoffs/2026-08-08-world-translation-negative-type10-pivot.md).
+  [`docs/operations/handoffs/2026-08-08-type10-entity-movement-anchor.md`](docs/operations/handoffs/2026-08-08-type10-entity-movement-anchor.md).
 
 ## Quickstart
 

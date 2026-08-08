@@ -210,11 +210,9 @@ units with 0/7 samples within 1 unit. A free constant-offset fit required a
 
 This is an honest negative for the transform-fill object's composed translation,
 not for the execute-breakpoint mechanism or the matrix layout. Do not repeat or
-widen this render-transform read. The active work is now offline/static-only:
-locate the code that consumes or applies the verified type-10 replay position
-packet, bind it to an entity identifier and position-member write, then
-synthetically validate a new bounded capture plan before any live session. See
-the [`world-translation negative handoff`](../docs/operations/handoffs/2026-08-08-world-translation-negative-type10-pivot.md).
+widen this render-transform read. OD-RECOVERY-069 has now completed the
+offline/static type-10 application trace; see the
+[`type-10 entity movement handoff`](../docs/operations/handoffs/2026-08-08-type10-entity-movement-anchor.md).
 
 OD-RECOVERY-067's first static pass ruled out the simple signatures. A
 hash-bound Ghidra scan covered 526,935 executable functions: 3,457 functions
@@ -233,11 +231,39 @@ current executable does preserve a real `VehicleGameLogic` vtable at RVA
 `0x0327DA50` and a slot-`+0x04` entity getter at RVA `0x0031B560`, but none of
 17 getter-using virtual methods accesses the claimed returned-entity
 `+0x68/+0x6C/+0x70` triple. The only exact generic chained match and the
-strongest float fallback were matrix/pose false positives. The active
-OD-RECOVERY-069 route is to converge the reader/framer trace with this proven
-entity getter, treating returned-entity `+0x1C` only as an identifier
-hypothesis. Do not run another literal, stale-member, displacement-only, or
-live capture pass unchanged.
+strongest float fallback were matrix/pose false positives.
+
+OD-RECOVERY-069 found the semantic path that the broad scans missed. The
+`ReplayPlayer` handler table assigns type 10 to RVA `0x00FE31C0`. That handler
+reads the exact 49-byte layout as `4,4,4,12,12,4,4,4,1` and dispatches through
+`BlitzServerMessageHandler` RVA `0x00F7A610`, then RVAs `0x022F9710` and
+`0x022FC850`. The resolver compares the packet ID with `[entity+0x1C]`, so the
+old identifier hypothesis is now proven for this build. It then invokes entity
+movement application RVA `0x022FA780`.
+
+The strongest capture anchor is RVA `0x022FA78D`, bytes `F30F7E00`
+(`MOVQ XMM0,[EAX]`). At that instruction, the prologue has preserved the
+resolved entity in `ESI`, while `EAX` points at the packet-derived contiguous
+XYZ vector. A held execute-breakpoint event can therefore read the entity ID at
+`[ESI+0x1C]` and XYZ at `EAX+0/+4/+8` without guessing a position member. The
+downstream `BW::AvatarFilterHelper` confirms the semantic flow by storing the
+same vector in an 8-entry ring with stride `0x38` and position displacement
+`+0x18`; that ring is transient and is not a stable polling offset.
+
+`TraceType10MovementPosition.java` verifies 40/40 hash-bound relationships.
+This advances the candidate class to **entity-bound instruction event**, not a
+publishable offset. OD-RECOVERY-070 extends the fixed helper contract to
+capture `ESI+0x1C` and the 12 bytes at `EAX` in one debug event. Its synthetic
+x86 proof captures entity ID `4242` and four changing finite XYZ samples, with
+the exact fingerprint, max-hit stop, coordinator-parent rejection, cleanup,
+and detach proven. The Host projects only an opaque object key,
+`replayEntityId`, UTC, values, and proof flags; raw addresses remain private.
+The entity-ID and XYZ reads occur while the same debug event holds the process,
+but they are two memory reads: hardware atomicity, same-decoded-clock identity,
+and local-player identity remain unproven.
+After the full repository gate and a fresh identity-pinned helper publish, one
+five-second/64-hit positively verified offline capture is the next admissible
+test. Do not run the old member triples, broad scans, or transform target.
 
 ## Evidence publication
 

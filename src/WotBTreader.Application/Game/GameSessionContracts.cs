@@ -294,16 +294,19 @@ public sealed record MemoryReadResult(
 /// </summary>
 public sealed record InstructionSnapshotRequest(
     int DurationMilliseconds = 5_000,
-    int MaxHits = 16);
+    int MaxHits = 64);
 
 /// <summary>
-/// One privacy-projected XYZ read captured while the matching debug event was
-/// held. Object and absolute process addresses remain inside GameIntegration.
+/// One privacy-projected entity-id and XYZ read captured while the matching
+/// debug event was held. Absolute process addresses remain inside
+/// GameIntegration.
 /// </summary>
 public sealed record InstructionSnapshotHit(
     int Sequence,
     string ObjectKey,
     DateTimeOffset CapturedAtUtc,
+    bool ReplayEntityIdReadOk,
+    int? ReplayEntityId,
     bool ReadOk,
     bool Finite,
     float? X,
@@ -319,7 +322,7 @@ public sealed record InstructionSnapshotHit(
 
 /// <summary>
 /// Aggregate result of the instruction-first position probe. A successful
-/// capture proves register/displacement provenance only; semantic viewpoint
+/// capture proves entity/vector register provenance only; semantic player
 /// identity and a stable resolver require separate evidence.
 /// </summary>
 public sealed record InstructionSnapshotResult(
