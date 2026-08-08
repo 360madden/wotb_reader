@@ -134,8 +134,9 @@ occurred.
 | `OD-RECOVERY-051` | 2026-08-07 | FRESH42 live round: first test of the band-weighted emission floor + `-ArmSourceOnFirstHit` | od-049-autoloop.ps1 proven invocation + `-ArmSourceOnFirstHit` (band-weighted floor = new od-048 defaults) | `NoSignal` | **Floor behaved CORRECTLY; emission not yet observed live**: top survivors were x@0.800 with 0s bands — all below the 0.85 tight-band floor, refused exactly as designed (no floor defect); FRESH42 drew the low tail of the round-top distribution (0.80–0.933 observed), so no candidate ≥ 0.85 existed to emit → auto-trace SKIPPED → source-arm unexercised | **One more roll (FRESH43) is within the changed-hypothesis warrant**: the floor has not yet had a live emission to observe; offline replay proves it converts ~4/8 rounds including FRESH40's 0.857 x/3s class — completing the first live test of the new approach, not repeating an exhausted one |
 | `OD-RECOVERY-052` | 2026-08-07 | FRESH43 live round: second roll of the band-weighted floor (within warrant) + `-ArmSourceOnFirstHit` — **FIRST DURABLE GAME-CODE FILL-SITE HIT** | od-049-autoloop.ps1 proven invocation + band-weighted floor (od-048 defaults) + `-ArmSourceOnFirstHit`; source-arm = dynamic esi-page arming on first hit (FRESH38 design) | `Hit` | **The source-arm CAUGHT the game's fill site**: family emitted at **0.933** (`0x23A4C490` z + `0x22AB0F90` x, band 50.5s, span 177.9/46.8), auto-trace invoked, `source_arm ON`, **6 hits → verdict `family-hit`** (`hit_members=1`, `values_changed=true`): (1) `VCRUNTIME140.dll+0xE8AE` `rep movsb` wrote **into armed member `0x22AB0F90`** with `esi`=**`0x28FFCF10` exactly** (the copy source); (2) `VCRUNTIME140.dll+0xED49` `movdqu` SSE-stored **4 floats into that source buffer** (`0x28FFCF10..1C`: 0.000457/2.574/−0.112/−0.112 = x,y,z,+1); (3) **`wotblitz.exe+0x7C39AB` (game code, base 0x00C30000, RVA math re-verified) wrote a float into the second armed source page `0x2C5C8A90`** — the per-frame fill site; write path = game fills staging buffer → CRT vectorized copy stages 4-float chunks → `memcpy` propagates into the tracked position field | **Write-chain identified**: the member address is a **copy destination**; the *fill* happens at `wotblitz.exe+0x7C39AB` + `VCRUNTIME140.dll+0xED49`; source buffer holds x,y,z consecutively (MOVDQU writes 4 floats) — next: Ghidra-disassemble `wotblitz.exe+0x7C39AB` to identify the function and trace the staging-buffer pointer chain, then evaluate reading x/y/z from the source (or promoting the destination if M3 repeatability met); `independentReplays` still 0 |
 | `OD-RECOVERY-053` | 2026-08-07 | Offline: Ghidra decode of the FRESH43 write-site chain — **the fill is a per-frame tank transform update** | `tools/ghidra-scripts/DumpWriteSite.java` + `DumpChain.java` (headless `-noanalysis`, hash-verified binary 1cda5c31…) | `Complete` (offline) | **Write site = `FUN_00bc3940` (RVA 0x7C3940)**: per-frame entity transform update (called from entity-list `FUN_00bb9b30` when `[entity+0x20] & 0x800`); object = `[entity+0x3C]` via getter `FUN_00d29ea0`; gates on **position triple `[obj+0x1C/0x20/0x24]`**; refills **4×4 world matrix `[obj+0x60..0x9C]`** via 4× `MOVUPS` (the exact FRESH43 SSE pattern) composed by `FUN_00729570` (matrix multiply) from quaternion→matrix `FUN_00d1a0f0` + basis normalizer `FUN_00d155c0`; `MOVDQU` values were a rotation/scale row, not world coords | **Candidate stable layout: `x/y/z = [entity+0x3C] + 0x1C/0x20/0x24`, world matrix `+0x60`** — no promotion (M3 needs live-read matching + cross-battle + `independentReplays`, BLK-0019); next: root the entity container to a global, interceptor-arm the position triple and match to decoded ground truth, import a second replay |
+| `OD-RECOVERY-055` | 2026-08-08 | Offline correction: singleton root **REFUTED** — `DAT_043f516C` is the DAVA logger, not the BattleController | Dump of singleton builders `FUN_008dfaa0` (TagLoggerExternalImpl, 4B) + `FUN_008dfb10` (0x70B alloc → `FUN_008e13e0`) + constructor `FUN_008e13e0` (TagLoggerInstanceImpl vftable + SkipAssert/BreakAssert/ContinueAssert handlers) | `Refuted` | **`FUN_008ee9f0`/`DAT_043f516C` is the DAVA thread-safe logger singleton getter** (vftable `DAVA::TagLoggerInstanceImpl`, assert-handler members); the "BattleResources::LoadGameScene" / "…/Battle/BattleResources.cpp" strings are **log messages** written through it, not object identity proof; the `[X+0x4]` AvatarController hop (thunk `FUN_016673a0`, vtable-dispatched, no static caller) cannot be rooted → **no stable global root for the entity container** | **OD-RECOVERY-053 candidate layout survives** (`[entity+0x3C]+0x1C/20/24` position, `+0x60` matrix — from `chain-disasm.txt` disasm); call-site member offsets `[X+0x154]`/`[X+0x8]`/`[X+0x88]`/`[X+0x30]` remain valid raw facts (object-type labels inferred from log strings, unproven); promotion needs the M3 live-read path (interceptor-arm position triple, match to decoded ground truth) — no static root required; no offset promoted; `independentReplays` still 0 |
 | `OD-RECOVERY-050` | 2026-08-07 | Offline score-distribution analysis (76 survivors across FRESH37/38/39/40/41) + band-weighted emission implemented | `.data/score-distribution-analysis.py` aggregate + od-048 emission harness (4 cases) + end-to-end replay vs real FRESH38/40/41 reports | `Complete` (offline) | **The 0.9 floor is band-blind, not wrong**: both hits were tight-band x (0.5s/6.5s at 0.933); the refused class splits into tight-band x@0.857/3s (FRESH40, same class as hits — should emit) vs wide-band z@0.846–0.857/45–65s (should refuse); band width is the discriminator (score quantizes coarsely: 6/7 = 0.857, 14/15 = 0.933) | **Band-weighted floor implemented in BOTH gates** (od-048 solo emission + family-usable + write-trace Test-FamilyScored, threaded via `TightBandMinScore`/`TightBandMaxSeconds`): tight-band (≤10s) clears at 0.85, wide-band needs strict 0.9; selection order now span → band asc → score; validated offline: FRESH40's 0.857 x/3s would now emit, FRESH38 still emits (0.933 + 2 tight x-siblings), FRESH41's wide z still refused — **2/8 → 4/8 rounds emit, all tight-band x class**; FRESH42 live round is the changed hypothesis |
-| `OD-RECOVERY-054` | 2026-08-08 | Offline: entity container walked to a stable global root — **candidate static pointer chain from the BattleController singleton down to the position triple** | `DumpCallers.java` + `DumpWindow.java` (headless `-noanalysis`, hash-verified binary 1cda5c31…); caller BFS from `FUN_0165247c` (RVA 0x125247C) + window dumps at 0x165DB56 / 0x165192F / 0x12673B0 + singleton constructor `FUN_008e8e90` | `Complete` (offline) | **Static root found**: `DAT_043f516C` (RVA 0x3FF516C) = BattleController singleton (lazy-init getter `FUN_008ee9f0` returns it; built by `FUN_008e8e90`); chain = `[BC+0x4]` AvatarController (UNVERIFIED hop — thunk `FUN_016673a0` vtable-dispatched) → `[AVC+0x154]` BattleResources → `[BR+0x8]` GameScene → `[GS+0x88]` TransformSystem → `[TS+0x30]` entity vector (from world container `[*(TS+0x28)+0xFC]`) → entity (`[e+0x20]&0x800` gate) → `[e+0x3C]` transform obj → **`[obj+0x1C/0x20/0x24]` position triple** (call-site-verified member offsets from `FUN_0165247c` ← `FUN_01651bd0` ← `FUN_01662f00` ← `FUN_01651780` ← `FUN_0165d9b0` ← thunk) | **Candidate static pointer chain exists but AvatarController hop UNVERIFIED** (vtable dispatch, no static caller); remainder call-site-verified; no promotion — M3 still needs live-read matching to decoded ground truth + cross-battle + `independentReplays` (BLK-0019); next: interceptor-arm `[obj+0x1C..0x24]` on next family-hit, verify hop via `FUN_008dfaa0` object build |
+| `OD-RECOVERY-054` | 2026-08-08 | Offline: entity container walked toward a stable global — **root claim later REFUTED (see OD-RECOVERY-055)** | `DumpCallers.java` + `DumpWindow.java` (headless `-noanalysis`, hash-verified binary 1cda5c31…); caller BFS from `FUN_0165247c` (RVA 0x125247C) + window dumps at 0x165DB56 / 0x165192F / 0x12673B0 + singleton builders `FUN_008dfaa0`/`FUN_008dfb10`/`FUN_008e13e0` | `Refuted` (root) / `Partial` (offsets) | **Proposed root `DAT_043f516C` (RVA 0x3FF516C) = BattleController singleton — WRONG**: dumping the singleton builders proves it is the **DAVA logger** (`TagLoggerInstanceImpl` + SkipAssert/BreakAssert/ContinueAssert handlers); `FUN_008ee9f0` is the logger singleton getter and the "BattleResources::LoadGameScene" strings are log messages; the AvatarController hop (`[X+0x4]` thunk `FUN_016673a0`) is vtable-dispatched with no static caller → **no stable global root exists for the entity container** (battle-scoped heap). Call-site member offsets `[X+0x154]`/`[X+0x8]`/`[X+0x88]`/`[X+0x30]` remain valid disasm facts; **OD-RECOVERY-053 candidate layout stands** (`[entity+0x3C]+0x1C/20/24` position, `+0x60` matrix) | **Honest negative**: promotion does NOT need a static root — M3 live-read path arms the position triple via the interceptor on a family hit and matches captured values to decoded ground truth; no offset promoted; `independentReplays` still 0 (BLK-0019) |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -3831,3 +3832,53 @@ commands: analyzeHeadless -noanalysis -postScript DumpCallers.java 0x125247C 2 5
 - **Next**: interceptor-arm `[obj+0x1C..0x24]` on the next family-hit and compare
   captured values to decoded ground truth; verify the AvatarController hop;
   import a second replay for `independentReplays`.
+
+## `OD-RECOVERY-055` result — 2026-08-08 (offline correction: OD-RECOVERY-054 root REFUTED — DAT_043f516C is the DAVA logger)
+
+sessionId: OD-RECOVERY-055
+status: Refuted (root claim)
+type: singleton-constructor decode (Ghidra headless -noanalysis, hash-verified 11.19.0.10 binary 1cda5c31…)
+tools: `DumpCallers.java`
+commands: analyzeHeadless -noanalysis -postScript DumpCallers.java 0x4DFAA0 1 5; 0x4DFB10 1 5; 0x4E13E0 1 5
+
+### Evidence
+
+- `FUN_008dfaa0` — allocates 4 bytes, `*ptr = DAVA::TagLoggerExternalImpl::vftable`.
+- `FUN_008dfb10` — allocates 0x70 bytes, delegates to `FUN_008e13e0`.
+- `FUN_008e13e0` (constructor) — `*param_1 = DAVA::TagLoggerInstanceImpl::vftable`;
+  builds `std::_Ref_count_obj2<DAVA::SkipAssertHandler>` (member 0x38),
+  `DAVA::BreakAssertHandler` (0x54 via param), `DAVA::ContinueAssertHandler`;
+  calls `FUN_008e4680` (handler registration).
+- `FUN_008ee9f0` — thread-safe lazy singleton getter returning `DAT_043f516C`,
+  first-call guard on `DAT_043f5170`, built by `FUN_008e8e90`.
+
+### Why the earlier claim was wrong
+
+OD-RECOVERY-054 saw `FUN_008ee9f0()` calls throughout the caller chain and
+assumed the returned object was a battle object. The strings
+`"BattleResources::LoadGameScene"` + source path `"…/Battle/BattleResources.cpp"`
+are **log payloads** written through that logger (the `FUN_008e1740`-style
+log-write helpers with level/channel/format args). The getter returns the DAVA
+logger, period. Object-type labels in the OD-RECOVERY-054 chain
+(AvatarController/BattleResources/GameScene/TransformSystem) were inferred from
+those log strings — plausible function-naming hints, NOT object identity proof.
+
+### What survives
+
+- **OD-RECOVERY-053 intact** — the write-site function `FUN_00bc3940`,
+  entity DFS `FUN_00bb9b30` (`[e+0x20]&0x800` gate), transform getter
+  `[entity+0x3C]` (`FUN_00d29ea0`), **position triple `[obj+0x1C/0x20/0x24]`,
+  world matrix `[obj+0x60..0x9C]`** — all from `chain-disasm.txt` disassembly.
+- **Call-site member offsets** `[X+0x154]`, `[X+0x8]`, `[X+0x88]`, `[X+0x30]`
+  are raw `MOV ECX,[reg+off]; CALL` disasm facts (window dumps) — valid as
+  offsets, but the labels are unproven and the root object is unknown.
+
+### Conclusion
+
+- **No stable global root for the entity container.** Top of the chain is
+  battle-scoped heap via vtable dispatch. `DAT_043f516C` = DAVA logger.
+- **No offset promoted.** Promotion path is M3 live-read: interceptor-arm
+  `[obj+0x1C..0x24]` on a family hit, capture floats, match to decoded ground
+  truth at the same replay clock. This does NOT require a static root.
+- Ledger rule honored: the failed root hypothesis is recorded as an honest
+  negative with the reasoning that killed it.

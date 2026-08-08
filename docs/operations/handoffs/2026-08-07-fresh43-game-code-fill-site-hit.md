@@ -207,3 +207,52 @@ DAT_043f516C  (BattleController singleton, RVA 0x3FF516C; lazy-init getter
   captured values to decoded ground truth at the same replay clock; optionally
   verify the AvatarController hop by dumping `FUN_008dfaa0` (the object built
   into the singleton) and hunting `MOV [BattleController+0x4], X` writes.
+
+## Correction 2026-08-08: OD-RECOVERY-054 root claim REFUTED — DAT_043f516C is the DAVA logger singleton (OD-RECOVERY-055)
+
+### What was refuted and why
+
+The 2026-08-08 amendment claimed `DAT_043f516C` (RVA 0x3FF516C) is the
+**BattleController singleton** and rooted the entity chain there. **This is
+wrong.** Dumping the singleton builders (`FUN_008dfaa0`, `FUN_008dfb10`,
+constructor `FUN_008e13e0`) proves the object is the **DAVA logger**:
+
+- `FUN_008dfaa0` allocates 4 bytes, sets `DAVA::TagLoggerExternalImpl::vftable`
+- `FUN_008dfb10` allocates 0x70 bytes, delegates to `FUN_008e13e0`
+- `FUN_008e13e0` sets `DAVA::TagLoggerInstanceImpl::vftable` and constructs
+  `DAVA::SkipAssertHandler` / `BreakAssertHandler` / `ContinueAssertHandler`
+  — unambiguous logger internals.
+
+`FUN_008ee9f0` (the getter seen everywhere) is the DAVA thread-safe logger
+singleton getter. The strings I cited (`"BattleResources::LoadGameScene"`,
+`"C:/ba/tc/work/t/client/Classes/Battle/BattleResources.cpp"`) are **log
+messages written through that logger**, not proof that the object the getter
+returns is BattleResources.
+
+### What survives (disasm facts, independent of the root)
+
+- **OD-RECOVERY-053 intact**: write site `FUN_00bc3940` (RVA 0x7C3940) is a
+  per-frame entity transform update; entity DFS `FUN_00bb9b30` gates
+  `[entity+0x20] & 0x800`; transform object = `[entity+0x3C]` (getter
+  `FUN_00d29ea0` = `return [ECX+0x3C]`); **position triple
+  `[obj+0x1C/0x20/0x24]`, world matrix `[obj+0x60..0x9C]`** — these come from
+  `chain-disasm.txt` disassembly, unaffected by the root error.
+- **Call-site member offsets (disasm windows, still valid as facts):**
+  `[X+0x154]` -> the object passed to `FUN_01651780`; `[X+0x8]` -> the object
+  passed to `FUN_00765670`; `[X+0x88]` -> the object passed to `FUN_00bbffb0`;
+  `[X+0x30]` -> entity vector. These are raw `MOV ECX,[reg+off]; CALL` facts.
+  The **object-type labels** (AvatarController/BattleResources/GameScene/
+  TransformSystem) are inferred from log strings — plausible but not proven,
+  and the top-level object (thunk `this` of `FUN_016673a0`) is vtable-dispatched
+  with **no static caller**, so the root identity is unknown.
+
+### Corrected conclusion
+
+- **No stable global root exists for the entity container.** The top of the
+  chain is battle-scoped heap reached through vtable dispatch; `DAT_043f516C`
+  is the logger, not a battle object.
+- **Candidate member layout stands** (`[entity+0x3C]+0x1C/20/24` position,
+  `+0x60` matrix), but promotion requires the M3 live-read path — which does
+  not need a static root: arm the position triple via the interceptor on a
+  family hit and match captured values to decoded ground truth.
+- **No offset promoted; honest negative recorded** (OD-RECOVERY-055).
