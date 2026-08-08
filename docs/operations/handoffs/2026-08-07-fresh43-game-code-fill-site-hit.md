@@ -256,3 +256,35 @@ returns is BattleResources.
   not need a static root: arm the position triple via the interceptor on a
   family hit and match captured values to decoded ground truth.
 - **No offset promoted; honest negative recorded** (OD-RECOVERY-055).
+
+## Amendment 2026-08-08: retroactive M3 check — FRESH43 captured floats vs decoded ground truth (OD-RECOVERY-056)
+
+### What was verified
+
+Cross-checked the FRESH43 capture against the decoded DB ground truth for the
+same replay (session `019fb86c-…`, sha `59c3b92e…`, map Dead Rail, player
+`mrkool1138` / GB08_Churchill_I, 2784 position samples):
+
+| Source | Values |
+|---|---|
+| SSE source quad `0x28FFCF10..1C` | 0.000457 / 2.574 / −0.112 / −0.112 |
+| Game-code fill `0x2C5C8A90` (wotblitz+0x7C39AB) | 0.008281542 |
+| **Ground truth (player x/y/z ranges)** | x [−75.4, 64.4]  y [24.0, 34.8]  z [−169.3, 237.2] |
+
+**Verdict:** the captured floats are ~3 orders of magnitude smaller than world
+coordinates. They are **matrix rows (rotation/scale), NOT positions** — this
+CONFIRMS OD-RECOVERY-053's inference with decoded ground truth. The fill site
+`wotblitz+0x7C39AB` does not write world x/y/z; it refills the 4×4 world-matrix
+block (`[obj+0x60..0x9C]`).
+
+### M3 implication (sharpened)
+
+- Arming the fill site or its SSE staging buffer captures matrix rows, not the
+  position triple — confirmed by this check.
+- The M3 live-read must arm **`[obj+0x1C..0x24]` (the position triple)** on the
+  next family hit and compare captured floats against the 435k-sample ground
+  truth at the same replay clock. The members scored 0.933 by correlating reads
+  against ground truth — so the member addresses ARE position-like; the capture
+  must read the member address (not the fill source) at write time.
+- Position ranges also give the expected sanity band for a successful M3 hit:
+  x/z ∈ ~[−170, +240], y ∈ ~[24, 35] for this replay.
