@@ -136,6 +136,7 @@ occurred.
 | `OD-RECOVERY-053` | 2026-08-07 | Offline: Ghidra decode of the FRESH43 write-site chain — **the fill is a per-frame tank transform update** | `tools/ghidra-scripts/DumpWriteSite.java` + `DumpChain.java` (headless `-noanalysis`, hash-verified binary 1cda5c31…) | `Complete` (offline) | **Write site = `FUN_00bc3940` (RVA 0x7C3940)**: per-frame entity transform update (called from entity-list `FUN_00bb9b30` when `[entity+0x20] & 0x800`); object = `[entity+0x3C]` via getter `FUN_00d29ea0`; gates on **position triple `[obj+0x1C/0x20/0x24]`**; refills **4×4 world matrix `[obj+0x60..0x9C]`** via 4× `MOVUPS` (the exact FRESH43 SSE pattern) composed by `FUN_00729570` (matrix multiply) from quaternion→matrix `FUN_00d1a0f0` + basis normalizer `FUN_00d155c0`; `MOVDQU` values were a rotation/scale row, not world coords | **Candidate stable layout: `x/y/z = [entity+0x3C] + 0x1C/0x20/0x24`, world matrix `+0x60`** — no promotion (M3 needs live-read matching + cross-battle + `independentReplays`, BLK-0019); next: root the entity container to a global, interceptor-arm the position triple and match to decoded ground truth, import a second replay |
 | `OD-RECOVERY-055` | 2026-08-08 | Offline correction: singleton root **REFUTED** — `DAT_043f516C` is the DAVA logger, not the BattleController | Dump of singleton builders `FUN_008dfaa0` (TagLoggerExternalImpl, 4B) + `FUN_008dfb10` (0x70B alloc → `FUN_008e13e0`) + constructor `FUN_008e13e0` (TagLoggerInstanceImpl vftable + SkipAssert/BreakAssert/ContinueAssert handlers) | `Refuted` | **`FUN_008ee9f0`/`DAT_043f516C` is the DAVA thread-safe logger singleton getter** (vftable `DAVA::TagLoggerInstanceImpl`, assert-handler members); the "BattleResources::LoadGameScene" / "…/Battle/BattleResources.cpp" strings are **log messages** written through it, not object identity proof; the `[X+0x4]` AvatarController hop (thunk `FUN_016673a0`, vtable-dispatched, no static caller) cannot be rooted → **no stable global root for the entity container** | **OD-RECOVERY-053 candidate layout survives** (`[entity+0x3C]+0x1C/20/24` position, `+0x60` matrix — from `chain-disasm.txt` disasm); call-site member offsets `[X+0x154]`/`[X+0x8]`/`[X+0x88]`/`[X+0x30]` remain valid raw facts (object-type labels inferred from log strings, unproven); promotion needs the M3 live-read path (interceptor-arm position triple, match to decoded ground truth) — no static root required; no offset promoted; `independentReplays` still 0 |
 | `OD-RECOVERY-056` | 2026-08-08 | Offline retroactive M3 check: FRESH43 captured floats vs decoded ground truth — **fill site writes matrix rows, CONFIRMED** | FRESH43 capture `.data/od-048-autotrace-20260807-123621.json.capture.json` vs decoded DB `treader.db` session 019fb86c-… (sha 59c3b92e…, Dead Rail, player mrkool1138, 2784 samples) | `Complete` (offline) | **Captured floats are NOT world coordinates**: SSE quad 0.000457/2.574/−0.112/−0.112 and game fill 0.008281542 are ~3 orders of magnitude below player ground-truth ranges (x [−75.4,64.4], y [24.0,34.8], z [−169.3,237.2]) → **matrix rows, not positions** — independently confirms OD-RECOVERY-053's inference | **M3 sharpened**: arming the fill site/SSE staging captures matrix rows, useless for position; M3 must arm `[obj+0x1C..0x24]` (position triple) and read the member address at write time; expected M3 sanity band x/z ∈ [−170,+240], y ∈ [24,35]; no offset promoted; `independentReplays` still 0 |
+| `OD-RECOVERY-057` | 2026-08-08 | Offline: FRESH43 arm-snapshot anomaly — member addresses are **transient multi-copy buffers**, not stable position fields | Interceptor arm snapshots (x=274.0174 @ 0x22AB0F90, z=296.2679 @ 0x23A4C490, capture `od-048-autotrace-20260807-123621`) vs whole-session decoded coordinate envelope (max \|coordinate\| = 251) + correlate 0.933 (14/15, tol 0.001) ground-truth provider check (`SqliteTrajectoryGroundTruthProvider.cs` reads same `raw_x/raw_y/raw_z`) | `Complete` (offline) | **Anomaly resolved**: correlate-time reads matched decoded world coordinates within 0.001 (real M3-machinery evidence, same ground-truth columns), but arm-time snapshots ~1s later read 274/296 — **outside the entire battle envelope** (no participant ever reaches them; tank max speed 14.8 m/s ⇒ cannot move ~300 units in 1s) → the member addresses are **transient multi-copy buffers** (FRESH37 class): they hold position data only during the staging window, then get reused for unrelated matrix/pool contents | **M3 stable-read NOT satisfied** — trace-time arm snapshot does not reliably return the player position; the correlate match (14/15 exact) is stronger evidence than any trace-time read; next-hypothesis: arm the position triple IMMEDIATELY at correlate completion (<100ms gap) or use the correlate reads themselves as the M3 read; promotion framing shifts to correlate match + cross-battle repeatability + `independentReplays` (BLK-0019); no offset promoted |
 | `OD-RECOVERY-050` | 2026-08-07 | Offline score-distribution analysis (76 survivors across FRESH37/38/39/40/41) + band-weighted emission implemented | `.data/score-distribution-analysis.py` aggregate + od-048 emission harness (4 cases) + end-to-end replay vs real FRESH38/40/41 reports | `Complete` (offline) | **The 0.9 floor is band-blind, not wrong**: both hits were tight-band x (0.5s/6.5s at 0.933); the refused class splits into tight-band x@0.857/3s (FRESH40, same class as hits — should emit) vs wide-band z@0.846–0.857/45–65s (should refuse); band width is the discriminator (score quantizes coarsely: 6/7 = 0.857, 14/15 = 0.933) | **Band-weighted floor implemented in BOTH gates** (od-048 solo emission + family-usable + write-trace Test-FamilyScored, threaded via `TightBandMinScore`/`TightBandMaxSeconds`): tight-band (≤10s) clears at 0.85, wide-band needs strict 0.9; selection order now span → band asc → score; validated offline: FRESH40's 0.857 x/3s would now emit, FRESH38 still emits (0.933 + 2 tight x-siblings), FRESH41's wide z still refused — **2/8 → 4/8 rounds emit, all tight-band x class**; FRESH42 live round is the changed hypothesis |
 | `OD-RECOVERY-054` | 2026-08-08 | Offline: entity container walked toward a stable global — **root claim later REFUTED (see OD-RECOVERY-055)** | `DumpCallers.java` + `DumpWindow.java` (headless `-noanalysis`, hash-verified binary 1cda5c31…); caller BFS from `FUN_0165247c` (RVA 0x125247C) + window dumps at 0x165DB56 / 0x165192F / 0x12673B0 + singleton builders `FUN_008dfaa0`/`FUN_008dfb10`/`FUN_008e13e0` | `Refuted` (root) / `Partial` (offsets) | **Proposed root `DAT_043f516C` (RVA 0x3FF516C) = BattleController singleton — WRONG**: dumping the singleton builders proves it is the **DAVA logger** (`TagLoggerInstanceImpl` + SkipAssert/BreakAssert/ContinueAssert handlers); `FUN_008ee9f0` is the logger singleton getter and the "BattleResources::LoadGameScene" strings are log messages; the AvatarController hop (`[X+0x4]` thunk `FUN_016673a0`) is vtable-dispatched with no static caller → **no stable global root exists for the entity container** (battle-scoped heap). Call-site member offsets `[X+0x154]`/`[X+0x8]`/`[X+0x88]`/`[X+0x30]` remain valid disasm facts; **OD-RECOVERY-053 candidate layout stands** (`[entity+0x3C]+0x1C/20/24` position, `+0x60` matrix) | **Honest negative**: promotion does NOT need a static root — M3 live-read path arms the position triple via the interceptor on a family hit and matches captured values to decoded ground truth; no offset promoted; `independentReplays` still 0 (BLK-0019) |
 
@@ -3911,4 +3912,59 @@ Ground truth (player mrkool1138 / GB08_Churchill_I, 2784 samples, tick range 512
 - M3 must arm `[obj+0x1C..0x24]` (position triple) and read the member address
   at write time; expected sanity band for this replay: x/z in [-170, +240],
   y in [24, 35].
+- No offset promoted; `independentReplays` still 0 (BLK-0019).
+
+## `OD-RECOVERY-057` result — 2026-08-08 (offline: FRESH43 arm-snapshot anomaly — transient multi-copy buffers)
+
+sessionId: OD-RECOVERY-057
+status: Complete (offline)
+type: arm-snapshot vs session-envelope anomaly resolution
+tools: python sqlite3 against `.data/treader.db` + FRESH43 capture `od-048-autotrace-20260807-123621.json.capture.json`
+data: decoded session `019fb86c-c8e7-7004-9df6-a574f5a7835b` (sha 59c3b92e…, Dead Rail, 435k samples)
+
+### The anomaly
+
+The correlate scored both family members at **0.933 (14/15 samples, tolerance
+0.001)** against the viewpoint trajectory. The ground-truth provider
+(`SqliteTrajectoryGroundTruthProvider.cs:163`) reads the SAME
+`raw_x/raw_y/raw_z` columns I queried, so the staging reads genuinely matched
+decoded world coordinates within 0.001.
+
+But the interceptor's arm-time snapshots (~1s after the last staging read,
+capture start 16:36:21.6 vs correlate complete 16:36:21.19) read:
+
+| Member | Axis | Arm snapshot | Session envelope |
+|---|---|---|---|
+| 0x22AB0F90 | x | 274.0174 | x [-130.0, 120.0] |
+| 0x23A4C490 | z | 296.2679 | z [-235.5, 251.0] |
+
+Both are **outside the entire session's coordinate envelope** — no participant
+ever reaches x=274 or z=296 in this battle (max |coordinate| = 251). The tank
+cannot move ~300 units in 1s (max speed 14.8 m/s).
+
+### Interpretation
+
+- The member addresses are **transient multi-copy buffers** (FRESH37 class),
+  not stable dedicated position fields. During the staging window they held
+  decoded-matching position values (the 0.933 exact match); by trace-arm time
+  they had been **reused for unrelated data** (274/296 could be matrix rows,
+  other tanks, or pooled buffer contents).
+- The FRESH43 `value: 0` member write and the matrix-row source quads are the
+  same story: the write chain moves matrix/struct rows into these buffers.
+- **M3 stable-read NOT satisfied**: a read of the member address at arm time
+  does not reliably return the player position. The correlate-time match is
+  real evidence the address holds positions *during the staging window*, but
+  that lifetime is short.
+
+### Conclusion / next-hypothesis impact
+
+- **Arm the position triple IMMEDIATELY at correlate completion** (shrink the
+  staging→arm gap from ~1s+ to <100ms) so the interceptor's snapshot catches
+  the buffer while it still holds position data — OR read the member addresses
+  DURING staging (the reads already match 0.933) instead of relying on a later
+  trace-time read.
+- The correlate itself is the M3 read: 14/15 exact matches against decoded
+  ground truth is stronger than any trace-time snapshot. Promotion should be
+  framed around the correlate match + cross-battle repeatability +
+  `independentReplays` (BLK-0019), not the write-trace value capture.
 - No offset promoted; `independentReplays` still 0 (BLK-0019).

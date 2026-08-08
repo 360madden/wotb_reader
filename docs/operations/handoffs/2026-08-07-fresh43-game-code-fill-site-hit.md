@@ -288,3 +288,50 @@ block (`[obj+0x60..0x9C]`).
   must read the member address (not the fill source) at write time.
 - Position ranges also give the expected sanity band for a successful M3 hit:
   x/z ∈ ~[−170, +240], y ∈ ~[24, 35] for this replay.
+
+## Amendment 2026-08-08: member-arm snapshot anomaly — staging match vs trace-time value (OD-RECOVERY-057)
+
+### The anomaly
+
+The correlate scored both family members at **0.933 (14/15 samples, tolerance
+0.001)** against the viewpoint trajectory — the ground-truth provider reads the
+SAME `raw_x/raw_y/raw_z` columns (`SqliteTrajectoryGroundTruthProvider.cs:163`),
+so the staging reads genuinely matched decoded world coordinates within 0.001.
+
+But the interceptor's **arm-time snapshots** (~1s after the last staging read,
+capture start 16:36:21.6 vs correlate complete 16:36:21.19) read:
+
+| Member | Axis | Arm snapshot | Session envelope |
+|---|---|---|---|
+| 0x22AB0F90 | x | 274.0174 | x [-130.0, 120.0] |
+| 0x23A4C490 | z | 296.2679 | z [-235.5, 251.0] |
+
+Both are **outside the entire session's coordinate envelope** — no participant
+ever reaches x=274 or z=296 in this battle (max |coordinate| = 251). The tank
+cannot move ~300 units in 1s (max speed 14.8 m/s).
+
+### Interpretation
+
+- The member addresses are **transient multi-copy buffers** (FRESH37 class),
+  not stable dedicated position fields. During the staging window they held
+  decoded-matching position values (the 0.933 exact match); by trace-arm time
+  they had been **reused for unrelated data** (274/296 could be matrix rows,
+  other tanks, or pooled buffer contents).
+- The FRESH43 `value: 0` member write and the matrix-row source quads are the
+  same story: the write chain moves matrix/struct rows into these buffers.
+- **M3 stable-read NOT satisfied**: a read of the member address at arm time
+  does not reliably return the player position. The correlate-time match is
+  real evidence the address holds positions *during the staging window*, but
+  that lifetime is short.
+
+### Next-hypothesis impact (changed hypothesis warrant)
+
+- **Arm the position triple IMMEDIATELY at correlate completion** (shrink the
+  staging→arm gap from ~1s+ to <100ms) so the interceptor's snapshot catches
+  the buffer while it still holds position data — OR read the member addresses
+  DURING staging (the reads already match 0.933) instead of relying on a later
+  trace-time read.
+- The correlate itself is the M3 read: 14/15 exact matches against decoded
+  ground truth is stronger than any trace-time snapshot. Promotion should be
+  framed around the correlate match + cross-battle repeatability +
+  `independentReplays` (BLK-0019), not the write-trace value capture.
