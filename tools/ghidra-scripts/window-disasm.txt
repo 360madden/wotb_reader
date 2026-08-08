@@ -1,0 +1,59 @@
+=== program: wotblitz.exe image_base=00400000 ===
+
+### RVA 0x12673b0 -> address 016673b0  [FUNC FUN_016673a0]
+--- window (-96 .. +32 bytes) ---
+  0166734d: PUSH 0x1630c20
+  01667352: PUSH dword ptr [EAX]
+  01667354: CALL 0x006c6600
+  01667359: PUSH 0x1
+  0166735b: PUSH ESI
+  0166735c: MOV ESI,dword ptr [EBP + 0x8]
+  0166735f: MOV ECX,EAX
+  01667361: PUSH ESI
+  01667362: CALL 0x0162ab20
+  01667367: MOV EAX,ESI
+  01667369: POP ESI
+  0166736a: POP EBP
+  0166736b: RET 0x8
+  01667370: PUSH EBP
+  01667371: MOV EBP,ESP
+  01667373: MOV EAX,dword ptr [EBP + 0xc]
+  01667376: PUSH ESI
+  01667377: LEA ESI,[ECX + 0x8]
+  0166737a: MOV ECX,dword ptr [ESI + 0x28]
+  0166737d: PUSH 0x1630cd0
+  01667382: PUSH dword ptr [EAX]
+  01667384: CALL 0x006c6600
+  01667389: PUSH 0x1
+  0166738b: PUSH ESI
+  0166738c: MOV ESI,dword ptr [EBP + 0x8]
+  0166738f: MOV ECX,EAX
+  01667391: PUSH ESI
+  01667392: CALL 0x0162ade0
+  01667397: MOV EAX,ESI
+  01667399: POP ESI
+  0166739a: POP EBP
+  0166739b: RET 0x8
+  016673a0: MOV EAX,dword ptr [ECX + 0x4]
+  016673a3: MOV dword ptr [EAX + 0x190],0xffffffff
+  016673ad: MOV ECX,dword ptr [ECX + 0x4]
+  016673b0: JMP 0x0165d9b0   <<< TARGET
+  016673c0: PUSH EBP
+  016673c1: MOV EBP,ESP
+  016673c3: PUSH -0x1
+  016673c5: PUSH 0x3203048
+  016673ca: MOV EAX,FS:[0x0]
+  016673d0: PUSH EAX
+--- enclosing function ---
+name: FUN_016673a0  entry: 016673a0  body: 016673a0..016673b4
+--- decompiled (C) ---
+
+void __fastcall FUN_016673a0(int param_1)
+
+{
+  *(undefined4 *)(*(int *)(param_1 + 4) + 400) = 0xffffffff;
+  FUN_0165d9b0();
+  return;
+}
+
+

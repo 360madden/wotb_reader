@@ -747,9 +747,15 @@ tools/compute-exe-hash.ps1
 tools/external/README.md
 tools/external/tools.lock.json
 tools/find-static-roots.py
+tools/ghidra-scripts/DumpChain.java
+tools/ghidra-scripts/DumpFunctions.java
+tools/ghidra-scripts/DumpWriteSite.java
 tools/ghidra-scripts/FindOffsets.java
 tools/ghidra-scripts/FindOffsets.py
+tools/ghidra-scripts/chain-disasm.txt
+tools/ghidra-scripts/functions-disasm.txt
 tools/ghidra-scripts/ghidra-offset-candidates.json
+tools/ghidra-scripts/writesite-disasm.txt
 tools/psscriptanalyzer-custom-rules.psm1
 tools/psscriptanalyzer-settings.psd1
 tools/report-offset-evidence.ps1

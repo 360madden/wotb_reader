@@ -135,6 +135,7 @@ occurred.
 | `OD-RECOVERY-052` | 2026-08-07 | FRESH43 live round: second roll of the band-weighted floor (within warrant) + `-ArmSourceOnFirstHit` — **FIRST DURABLE GAME-CODE FILL-SITE HIT** | od-049-autoloop.ps1 proven invocation + band-weighted floor (od-048 defaults) + `-ArmSourceOnFirstHit`; source-arm = dynamic esi-page arming on first hit (FRESH38 design) | `Hit` | **The source-arm CAUGHT the game's fill site**: family emitted at **0.933** (`0x23A4C490` z + `0x22AB0F90` x, band 50.5s, span 177.9/46.8), auto-trace invoked, `source_arm ON`, **6 hits → verdict `family-hit`** (`hit_members=1`, `values_changed=true`): (1) `VCRUNTIME140.dll+0xE8AE` `rep movsb` wrote **into armed member `0x22AB0F90`** with `esi`=**`0x28FFCF10` exactly** (the copy source); (2) `VCRUNTIME140.dll+0xED49` `movdqu` SSE-stored **4 floats into that source buffer** (`0x28FFCF10..1C`: 0.000457/2.574/−0.112/−0.112 = x,y,z,+1); (3) **`wotblitz.exe+0x7C39AB` (game code, base 0x00C30000, RVA math re-verified) wrote a float into the second armed source page `0x2C5C8A90`** — the per-frame fill site; write path = game fills staging buffer → CRT vectorized copy stages 4-float chunks → `memcpy` propagates into the tracked position field | **Write-chain identified**: the member address is a **copy destination**; the *fill* happens at `wotblitz.exe+0x7C39AB` + `VCRUNTIME140.dll+0xED49`; source buffer holds x,y,z consecutively (MOVDQU writes 4 floats) — next: Ghidra-disassemble `wotblitz.exe+0x7C39AB` to identify the function and trace the staging-buffer pointer chain, then evaluate reading x/y/z from the source (or promoting the destination if M3 repeatability met); `independentReplays` still 0 |
 | `OD-RECOVERY-053` | 2026-08-07 | Offline: Ghidra decode of the FRESH43 write-site chain — **the fill is a per-frame tank transform update** | `tools/ghidra-scripts/DumpWriteSite.java` + `DumpChain.java` (headless `-noanalysis`, hash-verified binary 1cda5c31…) | `Complete` (offline) | **Write site = `FUN_00bc3940` (RVA 0x7C3940)**: per-frame entity transform update (called from entity-list `FUN_00bb9b30` when `[entity+0x20] & 0x800`); object = `[entity+0x3C]` via getter `FUN_00d29ea0`; gates on **position triple `[obj+0x1C/0x20/0x24]`**; refills **4×4 world matrix `[obj+0x60..0x9C]`** via 4× `MOVUPS` (the exact FRESH43 SSE pattern) composed by `FUN_00729570` (matrix multiply) from quaternion→matrix `FUN_00d1a0f0` + basis normalizer `FUN_00d155c0`; `MOVDQU` values were a rotation/scale row, not world coords | **Candidate stable layout: `x/y/z = [entity+0x3C] + 0x1C/0x20/0x24`, world matrix `+0x60`** — no promotion (M3 needs live-read matching + cross-battle + `independentReplays`, BLK-0019); next: root the entity container to a global, interceptor-arm the position triple and match to decoded ground truth, import a second replay |
 | `OD-RECOVERY-050` | 2026-08-07 | Offline score-distribution analysis (76 survivors across FRESH37/38/39/40/41) + band-weighted emission implemented | `.data/score-distribution-analysis.py` aggregate + od-048 emission harness (4 cases) + end-to-end replay vs real FRESH38/40/41 reports | `Complete` (offline) | **The 0.9 floor is band-blind, not wrong**: both hits were tight-band x (0.5s/6.5s at 0.933); the refused class splits into tight-band x@0.857/3s (FRESH40, same class as hits — should emit) vs wide-band z@0.846–0.857/45–65s (should refuse); band width is the discriminator (score quantizes coarsely: 6/7 = 0.857, 14/15 = 0.933) | **Band-weighted floor implemented in BOTH gates** (od-048 solo emission + family-usable + write-trace Test-FamilyScored, threaded via `TightBandMinScore`/`TightBandMaxSeconds`): tight-band (≤10s) clears at 0.85, wide-band needs strict 0.9; selection order now span → band asc → score; validated offline: FRESH40's 0.857 x/3s would now emit, FRESH38 still emits (0.933 + 2 tight x-siblings), FRESH41's wide z still refused — **2/8 → 4/8 rounds emit, all tight-band x class**; FRESH42 live round is the changed hypothesis |
+| `OD-RECOVERY-054` | 2026-08-08 | Offline: entity container walked to a stable global root — **candidate static pointer chain from the BattleController singleton down to the position triple** | `DumpCallers.java` + `DumpWindow.java` (headless `-noanalysis`, hash-verified binary 1cda5c31…); caller BFS from `FUN_0165247c` (RVA 0x125247C) + window dumps at 0x165DB56 / 0x165192F / 0x12673B0 + singleton constructor `FUN_008e8e90` | `Complete` (offline) | **Static root found**: `DAT_043f516C` (RVA 0x3FF516C) = BattleController singleton (lazy-init getter `FUN_008ee9f0` returns it; built by `FUN_008e8e90`); chain = `[BC+0x4]` AvatarController (UNVERIFIED hop — thunk `FUN_016673a0` vtable-dispatched) → `[AVC+0x154]` BattleResources → `[BR+0x8]` GameScene → `[GS+0x88]` TransformSystem → `[TS+0x30]` entity vector (from world container `[*(TS+0x28)+0xFC]`) → entity (`[e+0x20]&0x800` gate) → `[e+0x3C]` transform obj → **`[obj+0x1C/0x20/0x24]` position triple** (call-site-verified member offsets from `FUN_0165247c` ← `FUN_01651bd0` ← `FUN_01662f00` ← `FUN_01651780` ← `FUN_0165d9b0` ← thunk) | **Candidate static pointer chain exists but AvatarController hop UNVERIFIED** (vtable dispatch, no static caller); remainder call-site-verified; no promotion — M3 still needs live-read matching to decoded ground truth + cross-battle + `independentReplays` (BLK-0019); next: interceptor-arm `[obj+0x1C..0x24]` on next family-hit, verify hop via `FUN_008dfaa0` object build |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -3773,3 +3774,60 @@ hypothesis: the armed member address (0x22AB0F90) is a copy DESTINATION of a 64-
    position triple) on the next family-hit and match captured values to
    decoded replay positions at the same clock.
 3. `independentReplays`: import a second replay (BLK-0019).
+
+## `OD-RECOVERY-054` result — 2026-08-08 (offline: entity container walked to a stable global — candidate static pointer chain)
+
+sessionId: OD-RECOVERY-054
+status: Complete (offline)
+type: caller-chain decode (Ghidra headless -noanalysis, hash-verified 11.19.0.10 binary 1cda5c31…)
+tools: `DumpCallers.java` (caller BFS), `DumpWindow.java` (call-site windows)
+commands: analyzeHeadless -noanalysis -postScript DumpCallers.java 0x125247C 2 5; DumpWindow.java 0x125192F / 0x125DB56 / 0x12673B0; DumpCallers.java 0x4E8E90 1 5
+
+### Chain (stable global -> candidate target)
+
+    DAT_043f516C  (BattleController singleton, RVA 0x3FF516C)
+       -> [BC + 0x4]            = AvatarController      (UNVERIFIED: thunk
+           FUN_016673a0 does MOV ECX,[ECX+4]; JMP ReloadScreenForRewind;
+           thunk `this` is vtable-dispatched, no static caller)
+       -> [AVC + 0x154]         = BattleResources       (0x165DB56: MOV ECX,[EDI+0x154];
+           CALL FUN_01651780 = BattleResources::Load)
+       -> [BR + 0x8]            = GameScene             (0x16528D4: MOV ECX,[EDI+0x8];
+           CALL FUN_00765670 = GameScene::OnLoadingFinished)
+       -> [GS + 0x88]           = TransformSystem       (0x765723: MOV ECX,[EBX+0x88];
+           CALL FUN_00bbffb0 = TransformSystem update)
+       -> [TS + 0x30]           = entity vector         (FUN_00bbffb0 feeds the list
+           FUN_00bb9b30 walks; populated from world container [*(TS+0x28)+0xFC])
+       -> entity[i] : gate [entity+0x20] & 0x800        (FUN_00bb9b30 scene-graph DFS,
+           recurses children via [e+0x8] array when [e+0x20] & 0x1000)
+       -> [entity + 0x3C]       = transform object      (getter FUN_00d29ea0
+           = return [ECX+0x3C])
+       -> [obj + 0x1C/0x20/0x24] = position x/y/z        <<< CANDIDATE TARGET
+       -> [obj + 0x60..0x9C]     = 4x4 world matrix      (4x MOVUPS fills)
+
+### Call-site evidence (each hop is a disassembled call site, not decompiler guesswork)
+
+- `FUN_00bc3940` (write site) <- `FUN_00bb9b30` @0x7B9B75: `TEST [entity+0x20],0x800; CALL FUN_00bc3940`
+- `FUN_00bb9b30` <- `FUN_00bbffb0` (TransformSystem) with `this` = [GS+0x88]
+- `FUN_00bbffb0` <- `FUN_00765670` (GameScene) with `this` = [BR+0x8]
+- `FUN_00765670` <- `FUN_0165247c` (BattleResources::LoadGameScene) with `this` = [BR]
+- `FUN_0165247c` <- `FUN_01651bd0` (LoadGameScene wrapper) <- `FUN_01662f00`
+  (TryLoadResources) <- `FUN_01651780` (BattleResources::Load) <- `FUN_0165d9b0`
+  (AvatarControllerBase::ReloadScreenForRewind, `this` = AvatarController) <-
+  thunk `FUN_016673a0` (vtable-dispatched)
+- Singleton: `FUN_008ee9f0` (getter) = thread-safe lazy singleton returning
+  `DAT_043f516C`; built by `FUN_008e8e90` (calls FUN_008dfaa0 + FUN_008dfb10).
+
+### Conclusion
+
+- **Candidate static pointer chain exists** — first time the FRESH43 write site
+  is rooted to a stable global (`DAT_043f516C`). All hops from BattleResources
+  down are call-site-verified member offsets.
+- **One unverified hop**: BattleController -> AvatarController (vtable dispatch).
+  Do NOT rely on `[BC+0x4]` until confirmed (dump `FUN_008dfaa0` — the object
+  built into the singleton — and hunt `MOV [BC+0x4], X` writes).
+- **No promotion** — evidence-first discipline. M3 still requires a live read of
+  the position triple matched to decoded ground truth at the same replay clock,
+  cross-battle repeatability, and `independentReplays >= 1` (BLK-0019).
+- **Next**: interceptor-arm `[obj+0x1C..0x24]` on the next family-hit and compare
+  captured values to decoded ground truth; verify the AvatarController hop;
+  import a second replay for `independentReplays`.

@@ -149,3 +149,61 @@ Structure:
    the same replay clock.
 3. Keep `0x7C39AB` (and the +0x38/+0x60 blocks) as the anchor evidence for
    the transform-object hypothesis.
+
+## Amendment 2026-08-08: entity container walked to a stable global (OD-RECOVERY-054)
+
+### Caller chain decoded (Ghidra headless -noanalysis, hash-verified 11.19.0.10 binary)
+
+The entity-array container for `FUN_00bb9b30` is rooted at a **stable global singleton**:
+
+```
+DAT_043f516C  (BattleController singleton, RVA 0x3FF516C; lazy-init getter
+               FUN_008ee9f0 = return DAT_043f516C; built by FUN_008e8e90)
+   -> [BattleController + 0x4]  = AvatarController        (candidate hop: thunk
+       FUN_016673a0 does MOV ECX,[ECX+4]; JMP ReloadScreenForRewind; the thunk
+       `this` is vtable-dispatched, so this hop is UNVERIFIED)
+   -> [AvatarController + 0x154] = BattleResources         (call site 0x165DB56:
+       MOV ECX,[EDI+0x154]; CALL FUN_01651780 = BattleResources::Load)
+   -> [BattleResources + 0x8]   = GameScene                (call site 0x16528D4:
+       MOV ECX,[EDI+0x8]; CALL FUN_00765670 = GameScene::OnLoadingFinished)
+   -> [GameScene + 0x88]        = TransformSystem          (call site 0x765723:
+       MOV ECX,[EBX+0x88]; CALL FUN_00bbffb0 = TransformSystem update)
+   -> [TransformSystem + 0x30]  = entity vector            (FUN_00bbffb0 feeds the
+       list FUN_00bb9b30 walks; populated from a world container at
+       [*(TS+0x28) + 0xFC])
+   -> entity[i] : gate [entity+0x20] & 0x800               (FUN_00bb9b30 DFS)
+   -> [entity + 0x3C]            = transform object        (getter FUN_00d29ea0
+       = return [ECX+0x3C])
+   -> [transform + 0x1C/0x20/0x24] = position x/y/z         <<< CANDIDATE TARGET
+   -> [transform + 0x60..0x9C]    = 4x4 world matrix        (4x MOVUPS fills)
+```
+
+### How the chain was walked
+
+- `FUN_00bc3940` (write site, RVA 0x7C3940) <- `FUN_00bb9b30` (entity DFS,
+  RVA 0x7B9B30, call @0x7B9B75, gate `[entity+0x20] & 0x800`)
+- `FUN_00bb9b30` <- `FUN_00bbffb0` (TransformSystem::update) with ECX =
+  `[GameScene+0x88]`
+- `FUN_00bbffb0` <- `FUN_00765670` (GameScene::OnLoadingFinished) with ECX =
+  `[BattleResources+0x8]`
+- `FUN_00765670` <- `FUN_0165247c` (BattleResources::LoadGameScene, RVA
+  0x125247C) <- `FUN_01651bd0` (LoadGameScene wrapper) <- `FUN_01662f00`
+  (BattleResources::TryLoadResources) <- `FUN_01651780` (BattleResources::Load)
+  <- `FUN_0165d9b0` (AvatarControllerBase::ReloadScreenForRewind) <- thunk
+  `FUN_016673a0` (vtable-dispatched; AvatarController = [thunk-this + 0x4])
+- BattleController singleton `DAT_043f516C` reached from every function in the
+  chain via `FUN_008ee9f0()` (thread-safe lazy singleton).
+
+### Status
+
+- **Candidate static pointer chain exists** (above), but the
+  `BattleController -> AvatarController` hop is UNVERIFIED (vtable dispatch, no
+  static caller). The remainder from BattleResources down is
+  call-site-verified member offsets.
+- **No promotion.** M3 still requires a live read of the position triple matched
+  to decoded ground truth + cross-battle repeatability + `independentReplays`
+  (BLK-0019).
+- **Next:** interceptor-arm `[obj+0x1C..0x24]` on the next family-hit and compare
+  captured values to decoded ground truth at the same replay clock; optionally
+  verify the AvatarController hop by dumping `FUN_008dfaa0` (the object built
+  into the singleton) and hunting `MOV [BattleController+0x4], X` writes.
