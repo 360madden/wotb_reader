@@ -193,6 +193,7 @@ docs/operations/handoffs/2026-08-07-fresh40-negative-sample-depth-diagnosis.md
 docs/operations/handoffs/2026-08-07-fresh41-sample-grid-refuted.md
 docs/operations/handoffs/2026-08-07-fresh43-game-code-fill-site-hit.md
 docs/operations/handoffs/2026-08-07-write-site-durable-evidence.md
+docs/operations/handoffs/2026-08-08-fresh44-crossbattle-staged.md
 docs/operations/handoffs/README.md
 docs/operations/offset-discovery-guide.md
 docs/operations/offset-discovery-ledger.md
@@ -214,6 +215,7 @@ docs/testing/fixture-policy.md
 doctor.cmd
 everything.cmd
 export.cmd
+fresh44.cmd
 global.json
 import.cmd
 knowledge.md
@@ -254,6 +256,7 @@ scripts/ghidra-scan.py
 scripts/install-psscriptanalyzer.ps1
 scripts/invoke-csharp-write-trace.ps1
 scripts/invoke-cursor-agent.ps1
+scripts/invoke-fresh44-crossbattle.ps1
 scripts/invoke-replay-crosscheck.ps1
 scripts/invoke-scriptanalyzer.ps1
 scripts/launch-offline-replay-for-od.ps1
