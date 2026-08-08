@@ -8,7 +8,7 @@ namespace WotBTreader.WriteInterceptor;
 internal static class SnapshotCounterMode
 {
     private const int ObjectBytes = 0x1000;
-    private const int PositionOffset = 0x1C;
+    private const int PositionOffset = 0x90;
     private const int SourceOffset = 0xA0;
     private const int WriteIntervalMilliseconds = 20;
     private static readonly JsonSerializerOptions JsonOptions = new()

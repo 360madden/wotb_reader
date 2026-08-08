@@ -58,12 +58,13 @@ full design specification.
   hypothesis stays quarantined. See `offline/replay-format.md`.
 - **Discovery workflow:** use [`docs/operations/offset-discovery-workflow.md`](docs/operations/offset-discovery-workflow.md)
   and append every attempt to [`docs/operations/offset-discovery-ledger.md`](docs/operations/offset-discovery-ledger.md).
-- **M2/M3 offset-discovery state (FRESH43-FRESH45):** the C# guard-page
+- **M2/M3 offset-discovery state (FRESH43-OD-RECOVERY-065):** the C# guard-page
   interceptor (`tools/WriteInterceptor`, x86 self-contained publish) is the
   live write-trace path; x64dbg write-BP is closed. FRESH43 captured and
-  module-mapped the game transform fill path, while static analysis identified
-  the candidate position layout `[entity+0x3C]+0x1C/0x20/0x24`; the proposed
-  global root was later refuted. FRESH44 repeated the viewpoint-position
+  module-mapped the game transform fill path. The original static reading
+  misidentified `[entity+0x3C]+0x1C/0x20/0x24` as position; live instruction
+  evidence now proves that triple is scale. The proposed global root was later
+  refuted. FRESH44 repeated the viewpoint-position
   correlation on a second independent replay (`0.9375`, with durable sampled
   series), resolving BLK-0019 and satisfying cross-battle correlation
   repeatability. Its bounded write trace was an honest zero-hit result. The
@@ -78,7 +79,16 @@ full design specification.
   **instruction-first**: the coordinator-authorized x86 helper sets an execute
   breakpoint on the exact hash-bound transform-fill instruction
   (`wotblitz.exe+0x7C39AB`, bytes `8B83A0000000`), captures EBX at the held
-  debug event, and reads one 12-byte XYZ block from EBX+0x1C. Callers cannot
+  debug event. The first live process had 164 threads, so the fail-closed
+  coverage cap was raised from 128 to 256. Seven reads at
+  EBX+0x1C/0x20/0x24 were exactly `(1,1,1)`, proving scale. Seven subsequent
+  reads at EBX+0x10/0x14/0x18 produced a changing local translation but no
+  exact decoded-participant match across all axis/sign conventions (best
+  time-agnostic viewpoint fit: mean 7.374, max 10.272). Hash-verified
+  `FUN_00d1a0f0` copies that local translation into matrix row `+0x30`, and
+  `FUN_00bc3940` stores the composed world matrix at EBX+0x60; therefore the
+  next pinned read is its translation row at EBX+0x90/0x94/0x98. Harness output
+  now includes capture UTC for exact clock alignment. Callers cannot
   supply a PID, address, module, register, or displacement; the helper is
   a separate no-legacy-mode binary, bounded to five seconds/64 accepted hits,
   and hard-pins both the game target and the exact Host.Web EXE+DLL parent.
@@ -88,12 +98,12 @@ full design specification.
   failure revokes the session and terminates the exact managed child even
   across a normal authorization refresh. Synthetic capture, max-hit cleanup,
   timeout cleanup, and non-pinned-parent rejection pass. The next live round
-  may use this path once; it must
+  may test the world-matrix translation once; it must
   correlate the returned privacy-safe object-key trajectories to decoded
   ground truth. No viewpoint identity, stable root, or offset is claimed yet.
   Detail:
   [`offline/offset-discovery.md`](offline/offset-discovery.md) and
-  [`docs/operations/handoffs/2026-08-08-instruction-first-pivot.md`](docs/operations/handoffs/2026-08-08-instruction-first-pivot.md).
+  [`docs/operations/handoffs/2026-08-08-instruction-snapshot-live-correction.md`](docs/operations/handoffs/2026-08-08-instruction-snapshot-live-correction.md).
 
 ## Quickstart
 

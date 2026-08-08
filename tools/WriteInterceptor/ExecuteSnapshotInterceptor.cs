@@ -10,7 +10,10 @@ namespace WotBTreader.WriteInterceptor;
 internal sealed class ExecuteSnapshotInterceptor : IDisposable
 {
     private const uint WaitTimeoutMilliseconds = 100;
-    private const int MaximumThreads = 128;
+    // A verified 11.19.0.10 offline-replay process was observed with 164
+    // threads. Keep complete breakpoint coverage bounded, but above that
+    // measured runtime requirement so a no-hit result remains meaningful.
+    private const int MaximumThreads = 256;
     private const int SnapshotBytes = 12;
     private const uint ResumeFlag = 0x00010000;
     private const uint Dr0OwnedBit = 0x1;
@@ -290,7 +293,7 @@ internal sealed class ExecuteSnapshotInterceptor : IDisposable
         if (_plan.ProcessId <= 0
             || _plan.DurationMilliseconds is < 1_000 or > 5_000
             || _plan.MaxHits is < 1 or > 64
-            || _plan.ObjectDisplacement != 0x1C)
+            || _plan.ObjectDisplacement != 0x90)
         {
             AddDiagnostic("plan_bounds_invalid");
             return false;

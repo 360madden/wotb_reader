@@ -16,7 +16,7 @@ internal sealed record ExecuteSnapshotPlan
     public string ModuleName { get; init; } = string.Empty;
     public uint Rva { get; init; }
     public string ExpectedInstructionHex { get; init; } = string.Empty;
-    public int ObjectDisplacement { get; init; } = 0x1C;
+    public int ObjectDisplacement { get; init; } = 0x90;
     public int DurationMilliseconds { get; init; } = 5_000;
     public int MaxHits { get; init; } = 16;
     public int MinimumObjectSampleIntervalMilliseconds { get; init; } = 750;
@@ -74,7 +74,7 @@ internal sealed record ExecuteSnapshotReport
     public int MaxThreads { get; init; }
     public ExecuteSnapshotTarget? Target { get; init; }
     public string ObjectRegister { get; init; } = "ebx";
-    public int ObjectDisplacement { get; init; } = 0x1C;
+    public int ObjectDisplacement { get; init; } = 0x90;
     public int ThreadsSeen { get; init; }
     public int ThreadsArmed { get; init; }
     public int ThreadsFailed { get; init; }

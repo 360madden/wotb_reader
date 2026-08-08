@@ -331,21 +331,22 @@ entry says what was ruled out.
 > viewpoint correlation; FRESH45 rejected the candidate-derived contiguous
 > layout at the sampled instant. Do not run either path unchanged.
 
-Session ID: `OD-RECOVERY-063`. First publish and pass the synthetic x86 helper
+Session ID: `OD-RECOVERY-066`. First publish and pass the synthetic x86 helper
 test. Then start a **new** Host.Web process via
 `launch-offline-replay-for-od.ps1 -EnableInstructionSnapshot` so the helper
 path and SHA-256 are pinned before the managed replay launch. Run exactly one
 `GameHarness discover-instruction-snapshot --seconds 5 --max-hits 64` capture.
 The server fixes the PID, module, RVA, instruction bytes, EBX register, and
-`+0x1C` member displacement; caller input cannot widen that target.
+`+0x90` world-matrix-translation displacement; caller input cannot widen that target.
 The helper also independently verifies the post-attach process-event identity
 and the build-pinned Host.Web EXE+DLL parent before arming any thread.
 
 Accept a live result only when the gate stayed `OfflineReplayVerified`, the
 instruction fingerprint matched, cleanup/detach are proven, and every retained
 sample carries `sameDebugEvent=true`, `singleRead12Bytes=true`, and an opaque
-object key. Group samples by object key and compare each XYZ trajectory with
-decoded ground truth. A match advances field identity only; it does not prove
+object key and capture UTC. Group samples by object key and compare each XYZ
+trajectory with decoded ground truth at the aligned clock. A match advances
+field identity only; it does not prove
 hardware atomicity, exact decoded clock, viewpoint identity until correlated,
 or a stable resolver. A no-hit or no-match is an honest bounded result.
 

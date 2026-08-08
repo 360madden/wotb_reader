@@ -28,6 +28,7 @@ if ([string]$report.status -ne 'completed') { Write-Host 'FAIL_status'; exit 1 }
 if (-not [bool]$report.target.instructionMatched) { Write-Host 'FAIL_instruction_match'; exit 1 }
 if ([string]$report.target.expectedInstructionHex -ne '8B83A0000000') { Write-Host 'FAIL_instruction_pin'; exit 1 }
 if ([int]$report.threadsArmed -lt 1) { Write-Host 'FAIL_no_thread_armed'; exit 1 }
+if ([int]$report.maxThreads -ne 256) { Write-Host 'FAIL_thread_bound'; exit 1 }
 if ([int]$report.threadsRestored -lt 1) { Write-Host 'FAIL_no_thread_restored'; exit 1 }
 if (-not [bool]$report.cleanupProven -or -not [bool]$report.detached) { Write-Host 'FAIL_cleanup'; exit 1 }
 if (-not [bool]$report.coordinatorIdentityPinned) { Write-Host 'FAIL_coordinator_not_pinned'; exit 1 }
@@ -100,7 +101,7 @@ try {
         moduleName = 'wotblitz.exe'
         rva = 8141227
         expectedInstructionHex = '8B83A0000000'
-        objectDisplacement = 28
+        objectDisplacement = 144
         durationMilliseconds = 1000
         maxHits = 1
         minimumObjectSampleIntervalMilliseconds = 750

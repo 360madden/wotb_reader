@@ -353,18 +353,21 @@ The active implementation starts at the FRESH43 game-code fill instruction:
 - exact target: `11.19.0.10` executable hash, `wotblitz.exe+0x7C39AB`, bytes
   `8B83A0000000` (`MOV EAX,[EBX+0xA0]`);
 - capture: hardware execute breakpoint, EBX from the held event, one 12-byte
-  read from EBX+`0x1C` for X/Y/Z;
+  read from EBX+`0x90` for the composed world-matrix translation;
+  `+0x1C/+0x20/+0x24` is live-proven scale and `+0x10/+0x14/+0x18` is the
+  local translation copied by `FUN_00d1a0f0`;
 - authorization: exact coordinator-owned managed offline child and current
   authorization generation; separate helper with no raw-PID mode; actual
   parent bound to build-pinned Host.Web EXE+DLL hashes;
-- bounds: at most 5 seconds, 64 accepted samples, 128 threads, 64 KiB result;
+- bounds: at most 5 seconds, 64 accepted samples, 256 threads, 64 KiB result;
 - output: opaque per-capture object keys plus values/timestamps, never heap
   addresses on the Host/GameHarness surface;
 - semantics: register/displacement provenance may be proven; viewpoint
   identity, decoded-clock identity, hardware atomicity, and stable root remain
   false until separate evidence establishes them.
 
-Synthetic validation is complete. The next live budget is one capture on one
+Synthetic validation and the live breakpoint/cleanup mechanism are complete.
+The next live budget is one timestamped world-translation capture on one
 positively verified offline replay. Correlate object-key trajectories to
 decoded XYZ ground truth. Only a match justifies repeating the same
 instruction/member relationship on the other replay/fresh process. Offset

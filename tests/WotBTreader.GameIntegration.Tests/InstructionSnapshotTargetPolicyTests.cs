@@ -22,7 +22,7 @@ public sealed class InstructionSnapshotTargetPolicyTests
         Assert.AreEqual("wotblitz.exe", plan!.ModuleName);
         Assert.AreEqual(0x007C39ABu, plan.Rva);
         Assert.AreEqual("8B83A0000000", plan.ExpectedInstructionHex);
-        Assert.AreEqual(0x1C, plan.ObjectDisplacement);
+        Assert.AreEqual(0x90, plan.ObjectDisplacement);
         Assert.AreEqual(750, plan.MinimumObjectSampleIntervalMilliseconds);
     }
 
@@ -37,6 +37,21 @@ public sealed class InstructionSnapshotTargetPolicyTests
             "11.19.0.10",
             new ContentHash(new string('0', 64)),
             out _));
+    }
+
+    [TestMethod]
+    public void HelperDiagnosticProjectionAllowsOnlyStableOwnedCodes()
+    {
+        Assert.AreEqual(
+            "discover.instruction_snapshot.helper_failed.thread_context_read_failed",
+            InstructionSnapshotDiagnosticPolicy.Project(
+                ["thread_context_read_failed", "C:\\private\\not-allowed"]));
+        Assert.AreEqual(
+            "discover.instruction_snapshot.helper_failed",
+            InstructionSnapshotDiagnosticPolicy.Project(["C:\\private\\not-allowed"]));
+        Assert.AreEqual(
+            "discover.instruction_snapshot.helper_failed",
+            InstructionSnapshotDiagnosticPolicy.Project(null));
     }
 
     [TestMethod]

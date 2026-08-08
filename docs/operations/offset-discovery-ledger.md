@@ -2,6 +2,16 @@
 
 Last updated: 2026-08-07 (OD-RECOVERY-052/053: **FIRST DURABLE GAME-CODE FILL-SITE HIT (FRESH43)** — the dynamic source-arm caught `wotblitz.exe+0x7C39AB` writing the memcpy source buffer per-frame, with the CRT propagation copy `VCRUNTIME140.dll+0xE8AE` (`rep movsb`) landing on the armed member `0x22AB0F90` whose `esi` = `0x28FFCF10` exactly, and the SSE 4-float `movdqu` stage `VCRUNTIME140.dll+0xED49` refilling that source — the write chain is now: game fill → CRT vectorized stage → memcpy into tracked field; **Ghidra decode (hash-verified binary)**: the fill is `FUN_00bc3940`, a per-frame tank transform update gating on a **position triple at `[entity+0x3C]+0x1C/0x20/0x24`** and refilling a **4×4 world matrix at `[entity+0x3C]+0x60`** via 4× `MOVUPS` (candidate stable layout, no promotion); OD-RECOVERY-046/047/048/049/050/051: first durable module-mapped write-site hits (M2, FRESH37/38) — the C# guard-page interceptor captured real writes inside live battles and the write sites resolve to **VCRUNTIME140.dll+0xED69 / +0xE8AE**, proving the armed coordinate is a synchronized multi-copy field written by **CRT struct copies**, not a direct `movss`; the real game write is one level up (the memcpy source buffers, held in `esi`, which are **battle-scoped heap allocations** — cross-battle arming ruled out by live evidence; a same-window dynamic source-arm is the changed hypothesis, now implemented in the interceptor and offline-tested); two earlier runs were honest timing negatives (2.4× starved M1, 0.857<0.9 solo floor) that tuned the invocation to `-PlaybackSpeedEstimate 2.4 -StageMinBattleSeconds 30`; earlier milestone OD-RECOVERY-044: **live pipeline proven end-to-end + kernel-clock false positive identified** — rolling collapsed **861399→…→1 survivor in 16 rounds** (campaign record, was OD-020's 5) with the fixed harvest retry + plateau-stop logic; the single survivor was **`0x7FFE0010` = `KUSER_SHARED_DATA.SystemTime`**, the Windows shared kernel clock (FILETIME-style, +100ns ticks) — NOT the game field: the game died mid-roll from the documented replay-start flake, and the always-ticking kernel clock is the last 'increased' Double in a dying process; kernel writes never fire user-mode HW breakpoints so write-BP hits there are 0 by construction (explains the 0 hits — the mechanism was NOT the failure); driver hardened to drop the `0x7FFE0xxx` page from the address file + WARN; **x96dbg launcher bug found & fixed** — it stayed alive without spawning x32dbg (ShellExecute/state-machine brittleness), replaced by direct `x322dbg.exe` launch (game bitness known x86); x32dbg attach, `scriptload`+`scriptrun` injection, and arming all proven live (pid 45256); prior milestones OD-045/046-STATIC: offline delta-filter simulation ranked the **Double replayTime delta marker deterministic (pass-rate 1.0, survival 1.0/15 rounds)** — pilot order flip: delta pilot FIRST); **replay-start flake root-caused & fixed (2026-08-04)** — the ~50% OD-044 launch deaths were two defects: watch_offline's round-2 double-click + SW_RESTORE churn into the live replay HUD (become hidden → OnBackground, 2s/16s/42s deaths), and mid-battle `OfflineReplayEvidenceLifetime` expiry terminating the managed game (~60–105s exits, incl. the dying-process kernel-clock artifact); the click script now stops on the blitz-log `Start replay event` marker and the coordinator keeps verified authorization fresh via a liveness heartbeat while the process identity stays healthy (see `docs/operations/handoffs/2026-08-04-replay-start-flake-fix.md`)
 
+**Current amendment (2026-08-08, OD-RECOVERY-063/064/065):** the live
+instruction-first mechanism is proven. The first game had 164 threads, so the
+fail-closed arming cap moved from 128 to 256. EBX+`0x1C/0x20/0x24` is now
+live-proven scale `(1,1,1)`, not position. EBX+`0x10/0x14/0x18` is a changing
+local translation but did not exactly match any decoded participant under all
+axis/sign conventions. The next bounded target is the composed world-matrix
+translation at EBX+`0x90/0x94/0x98`, with UTC-preserving output for clock
+alignment. Historical entries below retain the inference that was later
+corrected; they are not current policy.
+
 This ledger is the durable index of WoT Blitz PC offset-discovery work. It
 records experiments, partial results, failures, and pivots so future sessions do
 not repeat an exhausted approach without a changed hypothesis.
@@ -49,7 +59,7 @@ Every address must be classified before publication:
 | `playerYaw` | **Quarantined / Ambiguous** until decimal, hexadecimal, raw Ghidra, and address-kind evidence reconcile |
 | Trusted next anchor | `playerPositionX`/`playerPositionZ`, then `replayTime` or HP if the replay makes them observable |
 | Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007); absolute LE pointer AOB across private/all/image + align 1/8 without a changed encoding hypothesis (ruled out by OD-RECOVERY-008); truncated low-32 LE dword AOB of survivor absolutes without a changed encoding hypothesis (ruled out by OD-RECOVERY-009); automated CE `bptAccess`/`bptWrite` on Float position survivors without a field pivot or interactive debugger (0 RIP hits through OD-RECOVERY-011); CE write-BP alone on the single increased `replayTime` Double without interactive debugger or a second independent launch (0 RIP in OD-RECOVERY-012); treating file-association / `Invoke-Item` alone as the OD gate path (playback can succeed while Host stays `Denied` / `lifecycle_evidence_timeout` — amended 2026-08-02); reaching ≤10 RT survivors then starting interactive debugger after the fact under a 120s research lease loses the window to EvidenceStale (OD-RECOVERY-016) — pre-arm debugger / reserve lease margin; requiring the Watch Offline orange-dialog blob to vanish after `OfflineReplayVerified` (the replay HUD renders orange in that ROI, so `dialogGone` never sets, extra clicks hit in-game UI and kill the game — OD-RECOVERY-017) — trust the verified gate; reading compare `retainedCount` as the rolling survivor count (it is unreadable-chunk carryover only; survivors are `increasedCount` — OD-RECOVERY-017); automated CE Windows-debugger write-BPs (`debugProcess(1)` + `debug_setBreakpoint(addr, bptWrite, 1)`) on rolling Double survivors — zero RIP hits across OD-009/010/011 and OD-020/021/022 probes, so the operator-owned interactive Find-what-writes step is required, not a scripting gap to keep probing; rolling from a snapshot taken during the game load transition — the candidate set can be 66M+ (22–87× steady state), convergence cannot fit the 120s lease, and the resulting session discard surfaces as a confusing compare `400` (OD-RECOVERY-025 attempt 1) — wait for a clean steady-state snapshot before rolling; capturing the rendezvous capability once at roll start — the token rotates ~5 min and a 66M-baseline roll outlives it, so a mid-roll compare dies with a confusing 401 (OD-RECOVERY-030 attempt 1; fixed by refresh + retry in the rolling driver); running the separate full-walk sanity probe when round-1 `previousCount` reports the identical snapshot count — the probe's 66M-candidate walk wasted lease inside the 120s budget (OD-RECOVERY-030; gate folded into round 1); requesting `maxCandidates=500` (or any large harvest) on every rolling round when only the final target round's addresses are written — the big early compares (66M→1M) pay candidate serialization for nothing and cost lease; request 1 candidate per round and harvest the full set only on the target round (OD-RECOVERY-031 attempt 1 → fixed in driver, validated attempts 3–5: 10–14 rounds fit the lease vs 6–7 before); overriding the CE autorun's default survivor address-file path (`%TEMP%\od-survivors.txt`) with a custom `-AddressFile` — the autorun polls the default path only, so staged survivors silently never reach CE (OD-RECOVERY-031 attempt 4; use the default path so the staging handoff works); keeping the CE autorun poll window at 90s when a 66M-baseline roll outlives it — the file appears right at the 120s lease edge, so the poll must span the whole lease + margin (OD-RECOVERY-031 attempts 3/4; extended to 300s)  trusting a rolled-down survivor set landing on `0x7FFE0xxx` as a game-field hit — `KUSER_SHARED_DATA.SystemTime` (0x7FFE0010) is a FILETIME-style value that ticks every 100ns, so it survives every 'increased' compare after the game field stops ticking (replay tail / dying game); kernel writes to that page never fire user-mode hardware breakpoints, so a write-BP there returns 0 hits by construction (OD-RECOVERY-044 — drop the page from the address file + WARN, now in the driver); treating the x96dbg launcher as unusable for pre-arm — **re-verified 2026-08-04: in a healthy gated session `release\x96dbg.exe -p <pid>` headlessly dispatched cleanly to `x32\x32dbg.exe -p <pid>` (x86 build attached to wotblitz pid 50724, launcher exited, window title confirmed `wotblitz.exe - PID: 50724`) — the OD-RECOVERY-044 linger was environmental (game already dying that session), not a launcher defect; direct `x32\x32dbg.exe` launch remains the pipeline choice for determinism (removes the ShellExecute/elevation surface entirely), not because the launcher is broken (OD-044 launcher re-verification) |
-| Next planned session | `OD-RECOVERY-063`: one coordinator-authorized, five-second instruction-first snapshot at the hash/byte-pinned FRESH43 transform-fill site; group privacy-safe object-key XYZ trajectories and compare them with decoded ground truth. Stop after one capture. A second replay/fresh-process repeat is admissible only if one object-key trajectory matches. No broad scan, delayed trace, raw-PID attach, latency-only rerun, or offset promotion. |
+| Next planned session | `OD-RECOVERY-066`: one coordinator-authorized, five-second read of the composed world-matrix translation at hash/byte-pinned `wotblitz.exe+0x7C39AB`, EBX+`0x90/0x94/0x98`; preserve capture UTC and compare the opaque-object trajectory at the aligned decoded clock. Stop after one capture. No broad scan, delayed trace, raw-PID attach, latency-only rerun, or offset promotion. |
 
 The current yaw conflict is recorded explicitly:
 
@@ -144,6 +154,9 @@ occurred.
 | `OD-RECOVERY-060` | 2026-08-08 | Formal read-only promotion review after FRESH44 | Promotion checklist + workflow + schema + current offset table + FRESH43/FRESH44 aggregate evidence | `Blocked` (publication only) | M3 cross-battle repeatability is satisfied for the transient viewpoint-position correlation phenomenon; the second independent replay/fresh process and negative heap-copy classification are established | No single module-relative candidate, stable resolver, same-clock `[obj+0x1C/0x20/0x24]` read, all-axis field identity, candidate-bound invariants/provenance, conflict resolution, or approvals; `playerPosition*` correctly remain `0` / `Unknown` |
 | `OD-RECOVERY-061` | 2026-08-08 | FRESH45 live immediate position-triple read | Managed `OfflineReplayVerified` launch → viewpoint correlate → one immediate Float32 batch read for four `candidate-0x1C` layout hypotheses; delayed trace disabled | `NoSignal` (layout hypothesis) / `Partial` (instrumentation) | All 12 requested floats were readable, but none of the four candidates produced a complete XYZ match; the immediate-read choreography and fail-closed reporting worked | Honest negative for those four candidate-derived layouts at that sampled instant only; 102.2 ms completion gap, no proven object base/atomicity/same clock/stable resolver, and no offset promoted |
 | `OD-RECOVERY-062` | 2026-08-08 | Implement the instruction-first player-position pivot | Coordinator-authorized x86 execute-breakpoint helper + parent-bound pipe capability + server-pinned target + privacy-safe Host/GameHarness surface + synthetic owned target | `Complete` (implementation) / `Partial` (discovery) | Separate no-legacy helper; Host EXE+DLL and helper identity manifest pinned; post-attach event reverified; synthetic changing XYZ plus max-hit/timeout cleanup and non-pinned-parent rejection pass; scan-first repeats stopped | No live game hit, viewpoint identity, decoded-clock match, stable resolver, publication candidate, promotion count, or offset change |
+| `OD-RECOVERY-063` | 2026-08-08 | First live instruction-snapshot attempt and fail-closed diagnosis | Fresh helper publish + synthetic pass + managed `OfflineReplayVerified` launch + 5-second capture | `Partial` (instrumentation) | Initial error collapsed to `helper_failed`; privacy-safe diagnostic projection was added and the fresh diagnostic attempt returned `thread_bound_or_target_invalid`; aggregate process inspection measured 164 game threads | No target values accepted; cleanup/detach succeeded; all live processes stopped; 128-thread cap was insufficient and no evidence claim was made |
+| `OD-RECOVERY-064` | 2026-08-08 | Coverage-corrected live read of the originally claimed EBX+`0x1C/0x20/0x24` triple | Same pinned instruction, cap raised to 256, one managed offline 5-second capture | `Complete` (classification) / `NoSignal` (position) | Fingerprint and cleanup proven; 7 finite hits from one opaque object, all exactly `(1,1,1)` | Live evidence plus `FUN_00d1a0f0` proves this is scale, not position; the older static position label is refuted; no offset promoted |
+| `OD-RECOVERY-065` | 2026-08-08 | Static-corrected live read of EBX+`0x10/0x14/0x18` local translation | Hash-verified `FUN_00d1a0f0` layout + one managed offline 5-second capture + offline decoded-position comparison | `Partial` / `No exact participant match` | Fingerprint and cleanup proven; 7 changing finite hits from one opaque object; all 48 axis/sign conventions tested against 26,822 decoded positions; best time-agnostic viewpoint fit mean 7.374 / max 10.272 units | Register/local-translation provenance proven, but viewpoint and decoded-clock identity remain false; next target is composed world-matrix translation EBX+`0x90/0x94/0x98`; no offset promoted |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -4301,3 +4314,108 @@ synthetic pass, and new `OfflineReplayVerified` managed launch. Group XYZ
 samples by object key and compare them with decoded ground truth. Stop after
 the result. Only a matching object-key trajectory permits repeating this exact
 instruction/member relationship on the other replay/fresh process.
+
+## `OD-RECOVERY-063` result — 2026-08-08 (live thread-bound diagnosis)
+
+```yaml
+sessionId: OD-RECOVERY-063
+status: Partial (instrumentation)
+gate: OfflineReplayVerified
+target: wotblitz.exe+0x7C39AB / 8B83A0000000 / EBX
+captureSeconds: 5
+acceptedHitsMax: 64
+result:
+  firstAttempt: cleanup-proven-helper-failure
+  diagnosticAttempt: thread_bound_or_target_invalid
+  observedGameThreadCount: 164
+  configuredThreadBound: 128
+  acceptedHits: 0
+  cleanupDetach: proven
+  postRunProcesses: game=0 host=0 helper=0 debugger=0
+```
+
+The helper already carried stable, privacy-safe diagnostic codes, but the
+managed runner did not deserialize or project them. The runner now allows only
+a fixed diagnostic-code set and keeps arbitrary helper strings private. The
+diagnostic attempt then proved the exact blocker: the real game exceeded the
+128-thread complete-coverage bound. No target value or no-hit claim was
+accepted. The cap is now 256; the one-breakpoint, five-second, 64-hit,
+12-byte-read, and 64 KiB bounds are unchanged.
+
+## `OD-RECOVERY-064` result — 2026-08-08 (live scale classification)
+
+```yaml
+sessionId: OD-RECOVERY-064
+status: Complete (classification) / NoSignal (position)
+gate: OfflineReplayVerified
+objectDisplacement: 0x1C
+threadBound: 256
+fingerprintMatched: true
+cleanupDetach: proven
+acceptedHits: 7
+opaqueObjects: 1
+vectors:
+  distinct: 1
+  value: [1, 1, 1]
+proofFlags:
+  objectRegisterCaptured: true
+  viewpointIdentity: false
+  sameDecodedClock: false
+  stableRoot: false
+offsetPromoted: false
+```
+
+This refutes the historical `+0x1C/+0x20/+0x24 = position` interpretation.
+The hash-verified disassembly explains the result: `FUN_00d1a0f0` consumes
+those three fields as the local scale while copying the preceding
+`+0x10/+0x14/+0x18` triple into matrix translation. Historical OD-053/055/056
+entries retain the earlier inference, but this live result supersedes it.
+
+## `OD-RECOVERY-065` result — 2026-08-08 (local translation captured)
+
+```yaml
+sessionId: OD-RECOVERY-065
+status: Partial / No exact participant match
+gate: OfflineReplayVerified
+objectDisplacement: 0x10
+threadBound: 256
+fingerprintMatched: true
+cleanupDetach: proven
+acceptedHits: 7
+opaqueObjects: 1
+capturedRanges:
+  first: [-230.118, -223.063]
+  second: [-164.172, -163.130]
+  third: [42.642, 43.585]
+decodedComparison:
+  totalPositions: 26822
+  viewpointPositions: 2812
+  axisSignMappingsTested: 48
+  exactParticipantMatches: 0
+  bestViewpointMeanNearestUnits: 7.374
+  bestViewpointMaxNearestUnits: 10.272
+proofFlags:
+  objectRegisterCaptured: true
+  localTranslationLayout: true
+  viewpointIdentity: false
+  sameDecodedClock: false
+  stableRoot: false
+offsetPromoted: false
+```
+
+The live vector changes and has register/member provenance, but a
+time-agnostic comparison across every decoded participant and all axis/sign
+conventions found no exact match. It is therefore a local transform, not yet a
+decoded world-position field. Static matrix flow supplies the next bounded
+hypothesis without guessing: `FUN_00d1a0f0` places local translation at matrix
+row `+0x30`, `FUN_00729570` composes the parent matrix, and
+`FUN_00bc3940` copies the 4x4 result to EBX+`0x60`. The composed translation is
+therefore EBX+`0x90/+0x94/+0x98`.
+
+### Next
+
+`OD-RECOVERY-066` may run one five-second capture at the unchanged pinned
+instruction with the server/helper-fixed displacement `0x90`. GameHarness now
+prints capture UTC for every hit. Align the opaque-object series to decoded
+ground truth before judging identity. Stop after that result; do not scan,
+change the instruction/register, or promote an offset.

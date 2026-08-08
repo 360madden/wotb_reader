@@ -305,20 +305,27 @@ static async Task<int> InstructionSnapshotAsync(string[] args)
         int hitCount = root.GetProperty("hitCount").GetInt32();
         bool cleanupProven = root.GetProperty("cleanupProven").GetBoolean();
         bool fingerprintMatched = root.GetProperty("instructionFingerprintMatched").GetBoolean();
+        string startedUtc = root.GetProperty("startedUtc").GetDateTimeOffset().ToString("O", CultureInfo.InvariantCulture);
+        string finishedUtc = root.GetProperty("finishedUtc").GetDateTimeOffset().ToString("O", CultureInfo.InvariantCulture);
         Console.WriteLine(
             $"instruction-snapshot: status={status} hits={hitCount} " +
-            $"fingerprint={fingerprintMatched} cleanup={cleanupProven}");
+            $"fingerprint={fingerprintMatched} cleanup={cleanupProven} " +
+            $"started_utc={startedUtc} finished_utc={finishedUtc}");
         foreach (JsonElement hit in root.GetProperty("hits").EnumerateArray())
         {
             int sequence = hit.GetProperty("sequence").GetInt32();
             string objectKey = hit.GetProperty("objectKey").GetString() ?? "object-unknown";
+            string capturedAtUtc = hit.GetProperty("capturedAtUtc")
+                .GetDateTimeOffset()
+                .ToString("O", CultureInfo.InvariantCulture);
             bool readOk = hit.GetProperty("readOk").GetBoolean();
             bool finite = hit.GetProperty("finite").GetBoolean();
             string x = hit.GetProperty("x").ToString();
             string y = hit.GetProperty("y").ToString();
             string z = hit.GetProperty("z").ToString();
             Console.WriteLine(
-                $"  hit={sequence} {objectKey} read={readOk} finite={finite} xyz=({x},{y},{z}) " +
+                $"  hit={sequence} {objectKey} utc={capturedAtUtc} " +
+                $"read={readOk} finite={finite} xyz=({x},{y},{z}) " +
                 "identity=unknown stable_root=false");
         }
 

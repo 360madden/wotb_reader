@@ -168,7 +168,7 @@ provenance-changing capture of the actual object pointer from the known
 game-code transform-fill instruction/register path. See the
 [`FRESH45 handoff`](../docs/operations/handoffs/2026-08-08-fresh45-immediate-triple.md).
 
-## Instruction-first position pivot (OD-RECOVERY-062)
+## Instruction-first position pivot (OD-RECOVERY-062 through 065)
 
 Scan-first discovery is closed for the next player-position proof. The new
 path starts from the already evidenced game-code instruction and captures the
@@ -178,8 +178,9 @@ object pointer before reading members:
    child remains `OfflineReplayVerified`; authorization generation and
    cancellation stay live for the entire capture.
 2. The target policy is fixed to executable version/hash `11.19.0.10`, module
-   `wotblitz.exe`, RVA `0x7C39AB`, bytes `8B83A0000000`, register EBX, and one
-   12-byte read at EBX+`0x1C` (X/Y/Z at +0/+4/+8).
+   `wotblitz.exe`, RVA `0x7C39AB`, bytes `8B83A0000000`, and register EBX. The
+   next single read is fixed at EBX+`0x90` (the composed world-matrix
+   translation row; X/Y/Z at +0/+4/+8).
 3. A separate x86 helper receives the sensitive plan through inherited pipes.
    It contains no legacy raw-PID mode, hard-pins the game target, and verifies
    its actual parent against build-pinned Host.Web EXE+DLL hashes before target
@@ -187,17 +188,24 @@ object pointer before reading members:
 4. A hardware execute breakpoint captures registers and the contiguous read
    while the matching debug event holds the process. The helper preserves
    unrelated debug-register state, arms new threads, caps the run at 5 seconds,
-   64 accepted hits, 128 threads, and 64 KiB, then restores and detaches.
+   64 accepted hits, 256 threads, and 64 KiB, then restores and detaches.
 5. Host output projects heap addresses to local `object-NN` keys, which lets a
    later correlation group short XYZ trajectories without exposing addresses.
 
-Synthetic x86 validation proves exact instruction hits, changing finite XYZ
-values, max-hit cleanup, timeout cleanup, raw-PID/legacy-mode rejection, and
-non-pinned parent rejection. This is an implementation milestone, not live
-game evidence. The next live round is one
-bounded capture plus trajectory comparison. Stop after that result; do not
-fall back to candidate scanning or tune latency thresholds. See the
-[`instruction-first handoff`](../docs/operations/handoffs/2026-08-08-instruction-first-pivot.md).
+Synthetic x86 validation proves exact instruction hits, changing finite XYZ,
+max-hit cleanup, timeout cleanup, raw-PID/legacy-mode rejection, and non-pinned
+parent rejection. Live evidence then corrected two assumptions: the first game
+had 164 threads, requiring a still-bounded 256-thread cap, and seven
+EBX+`0x1C` hits were exactly `(1,1,1)`, proving that triple is scale.
+Hash-verified `FUN_00d1a0f0` copies EBX+`0x10/+0x14/+0x18` into local-matrix
+translation; a seven-hit live capture there changed but did not exactly match
+any decoded participant under all axis/sign conventions. The best
+time-agnostic viewpoint fit was mean 7.374 / max 10.272 units, so viewpoint
+identity remains unknown. Because `FUN_00bc3940` copies the composed matrix to
+EBX+`0x60`, the next provenance-bearing hypothesis is the world translation at
+EBX+`0x90/+0x94/+0x98`. Capture UTC is now printed for clock alignment. Stop
+after one such capture; do not fall back to candidate scanning. See the
+[`live correction handoff`](../docs/operations/handoffs/2026-08-08-instruction-snapshot-live-correction.md).
 
 ## Evidence publication
 

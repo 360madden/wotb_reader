@@ -1,6 +1,7 @@
 # Instruction-first player-position snapshot
 
-Status: implemented and synthetically validated; no live game evidence yet.
+Status: live mechanism proven; scale and local-translation hypotheses closed;
+world-matrix translation is the next bounded target.
 
 ## Decision
 
@@ -19,11 +20,11 @@ coordinator owns all sensitive targeting:
 | Module | unique `wotblitz.exe` main image |
 | Instruction | RVA `0x7C39AB`, exact bytes `8B83A0000000` |
 | Object register | EBX |
-| Position read | one 12-byte `ReadProcessMemory` at checked EBX+`0x1C` |
+| Position read | one 12-byte `ReadProcessMemory` at checked EBX+`0x90` |
 | Axes | X/Y/Z at read offsets +0/+4/+8 |
 | Duration | 1-5 seconds |
 | Accepted samples | 1-64 |
-| Threads | at most 128 |
+| Threads | at most 256 (raised from 128 after the first live process was measured at 164) |
 | Result | at most 64 KiB |
 
 ## Authorization boundary
@@ -93,7 +94,7 @@ path, instruction bytes, register dump, replay identity, capability, account,
 player, chat, screenshot, or raw replay bytes.
 
 Even a successful hit proves only that one register-derived object at the
-pinned instruction had readable members at `+0x1C/+0x20/+0x24` during the
+pinned instruction had readable members at `+0x90/+0x94/+0x98` during the
 same suspended debug event. It does not by itself prove:
 
 - hardware atomicity of the three floats;
@@ -121,9 +122,13 @@ restore/detach, rejection of raw-PID/legacy modes, and rejection of a
 caller-created pipe plan from a non-pinned parent before attach. Existing
 guard-page tests remain regression coverage for the separate old binary.
 
-The next live budget is one five-second capture under a newly verified managed
-offline replay. Group samples by object key and compare the short trajectories
-with decoded XYZ ground truth. A no-hit/no-match result closes that bounded
-hypothesis honestly. A match permits one repeat on the other independent
-replay/fresh process; it still does not authorize offset publication without a
+The prior live rounds proved the breakpoint/cleanup path, raised the empirical
+thread bound to 256, classified `+0x1C/+0x20/+0x24` as scale `(1,1,1)`, and
+found no exact decoded-participant match for the changing local translation at
+`+0x10/+0x14/+0x18`. The next live budget is one five-second capture of the
+composed world-matrix translation at `+0x90/+0x94/+0x98` under a newly verified
+managed offline replay. Harness output includes capture UTC. Group by object
+key and compare the timestamped trajectory with decoded XYZ ground truth. A
+no-hit/no-match closes that bounded hypothesis; a match permits one repeat on
+the other replay but still does not authorize offset publication without a
 stable resolver and the normal promotion checklist.

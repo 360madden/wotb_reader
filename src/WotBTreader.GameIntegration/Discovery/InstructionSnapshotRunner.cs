@@ -256,7 +256,7 @@ internal sealed class WindowsInstructionSnapshotRunner(GameIntegrationOptions op
         {
             return Failure(
                 report?.CleanupProven == true
-                    ? "discover.instruction_snapshot.helper_failed"
+                    ? InstructionSnapshotDiagnosticPolicy.Project(report.Diagnostics)
                     : "discover.instruction_snapshot.cleanup_unproven",
                 report?.CleanupProven == true && report.Detached);
         }
@@ -266,7 +266,9 @@ internal sealed class WindowsInstructionSnapshotRunner(GameIntegrationOptions op
             || !report.Target.InstructionMatched
             || !report.Target.ExecutableImageSectionProven)
         {
-            return Failure("discover.instruction_snapshot.helper_failed", cleanupProven: true);
+            return Failure(
+                InstructionSnapshotDiagnosticPolicy.Project(report.Diagnostics),
+                cleanupProven: true);
         }
 
         List<InstructionSnapshotHit> hits = new(report.Hits.Count);
@@ -413,6 +415,7 @@ internal sealed class WindowsInstructionSnapshotRunner(GameIntegrationOptions op
         public bool DebuggerExitTerminatesTarget { get; init; }
         public bool Truncated { get; init; }
         public List<HelperHit> Hits { get; init; } = [];
+        public List<string> Diagnostics { get; init; } = [];
     }
 
     private sealed record HelperTarget
@@ -602,12 +605,93 @@ internal static class InstructionSnapshotTargetPolicy
                 "wotblitz.exe",
                 0x007C39AB,
                 "8B83A0000000",
-                0x1C,
+                0x90,
                 750);
             return true;
         }
 
         plan = null;
         return false;
+    }
+}
+
+internal static class InstructionSnapshotDiagnosticPolicy
+{
+    private const string GenericFailure = "discover.instruction_snapshot.helper_failed";
+
+    private static readonly HashSet<string> AllowedCodes = new(StringComparer.Ordinal)
+    {
+        "cancelled_before_validation",
+        "plan_bounds_invalid",
+        "synthetic_target_invalid",
+        "coordinator_identity_invalid",
+        "coordinator_parent_mismatch",
+        "coordinator_start_mismatch",
+        "coordinator_path_unavailable",
+        "coordinator_path_mismatch",
+        "coordinator_hash_mismatch",
+        "coordinator_assembly_hash_mismatch",
+        "coordinator_hash_unavailable",
+        "production_plan_invalid",
+        "cancelled_before_open",
+        "open_process_failed",
+        "process_start_identity_mismatch",
+        "process_path_query_failed",
+        "process_path_mismatch",
+        "process_version_mismatch",
+        "process_hash_mismatch",
+        "cancelled_before_attach",
+        "debug_attach_failed",
+        "initial_debug_event_wait_failed",
+        "cancelled_before_arm",
+        "initial_debug_event_identity_mismatch",
+        "initial_debug_event_continue_failed",
+        "initial_debug_event_timeout",
+        "module_identity_ambiguous",
+        "target_rva_out_of_range",
+        "target_fingerprint_invalid",
+        "stopped_instruction_mismatch",
+        "thread_snapshot_failed",
+        "thread_snapshot_empty",
+        "cancelled_during_arm",
+        "cancelled_before_thread_arm",
+        "thread_bound_or_target_invalid",
+        "thread_open_failed",
+        "thread_context_read_failed",
+        "thread_dr0_occupied",
+        "cancelled_before_thread_context_write",
+        "thread_context_arm_failed",
+        "wait_for_debug_event_failed",
+        "continue_debug_event_failed",
+        "hit_thread_open_failed",
+        "hit_context_read_failed",
+        "hit_context_update_failed",
+        "cleanup_restore_failed",
+        "cleanup_event_still_pending",
+        "cleanup_debug_break_failed",
+        "cleanup_thread_restore_failed",
+        "cleanup_continue_failed",
+        "restore_thread_open_failed",
+        "restore_thread_context_failed",
+        "restore_thread_verify_failed",
+        "debug_detach_failed",
+    };
+
+    internal static string Project(IReadOnlyList<string>? diagnostics)
+    {
+        if (diagnostics is null)
+        {
+            return GenericFailure;
+        }
+
+        foreach (string diagnostic in diagnostics)
+        {
+            if (AllowedCodes.Contains(diagnostic))
+            {
+                return $"{GenericFailure}.{diagnostic}";
+            }
+        }
+
+        return GenericFailure;
     }
 }
