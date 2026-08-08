@@ -80,10 +80,7 @@ public class DumpCallers extends GhidraScript {
         println("start RVA 0x" + Long.toHexString(startRva) +
                 " maxDepth=" + maxDepth + " maxCallersPerNode=" + maxCallers);
 
-        String outPath =
-            "C:\\work\\wotb_reader\\.freebuff\\worktrees\\" +
-            "ef8b8a29-4baa-44a7-a26a-653c865e8a48\\tools\\ghidra-scripts\\" +
-            "callers-disasm.txt";
+        String outPath = getEvidenceOutputPath("callers-disasm.txt");
         PrintWriter w = new PrintWriter(new File(outPath));
 
         Address imageBase = currentProgram.getImageBase();
@@ -158,6 +155,17 @@ public class DumpCallers extends GhidraScript {
         decomp.dispose();
         w.close();
         println("WROTE " + outPath + " functions=" + total);
+    }
+
+    private String getEvidenceOutputPath(String fileName) throws Exception {
+        String configured = System.getenv("WOTB_READER_GHIDRA_OUTPUT_DIR");
+        File directory = configured == null || configured.trim().isEmpty()
+                ? new File(System.getProperty("user.dir"), ".build\\ghidra-evidence")
+                : new File(configured);
+        if (!directory.isDirectory() && !directory.mkdirs()) {
+            throw new IllegalStateException("Could not create Ghidra evidence directory");
+        }
+        return new File(directory, fileName).getAbsolutePath();
     }
 
     private boolean isExecutable(Address a) {

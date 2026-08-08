@@ -54,6 +54,39 @@ The command emits privacy-safe object keys and XYZ values, not process/object
 addresses. A hit proves register/displacement provenance at the pinned
 instruction; it does not by itself prove viewpoint identity or a stable root.
 
+## Ghidra offset-discovery evidence
+
+Keep headless disassembly and heuristic reports under the ignored build tree.
+The dump scripts use this environment variable instead of a worktree-specific
+path:
+
+```powershell
+$env:WOTB_READER_GHIDRA_OUTPUT_DIR = `
+  (Join-Path $PWD '.build\ghidra-evidence')
+```
+
+Run these scripts only against the already analyzed, hash-verified Ghidra
+project. `FindType10PositionConsumers.java`, `FindType10RecordDispatch.java`,
+and `FindType10DispatchTable.java` are triage tools: their output is not a
+consumer, handler, or offset claim without decompiler/data-flow proof.
+
+```powershell
+& $analyzeHeadless $projectDirectory $projectName `
+  -process wotblitz.exe -noanalysis `
+  -postScript FindType10PositionConsumers.java `
+  -scriptPath (Join-Path $PWD 'tools\ghidra-scripts')
+
+& $analyzeHeadless $projectDirectory $projectName `
+  -process wotblitz.exe -noanalysis `
+  -postScript FindType10RecordDispatch.java `
+  -scriptPath (Join-Path $PWD 'tools\ghidra-scripts')
+
+& $analyzeHeadless $projectDirectory $projectName `
+  -process wotblitz.exe -noanalysis `
+  -postScript FindType10DispatchTable.java `
+  -scriptPath (Join-Path $PWD 'tools\ghidra-scripts')
+```
+
 ## Agent-shell (basher) timeouts — never use the default 30s
 
 | Command | Timeout |

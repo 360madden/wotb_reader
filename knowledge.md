@@ -58,7 +58,7 @@ full design specification.
   hypothesis stays quarantined. See `offline/replay-format.md`.
 - **Discovery workflow:** use [`docs/operations/offset-discovery-workflow.md`](docs/operations/offset-discovery-workflow.md)
   and append every attempt to [`docs/operations/offset-discovery-ledger.md`](docs/operations/offset-discovery-ledger.md).
-- **M2/M3 offset-discovery state (FRESH43-OD-RECOVERY-065):** the C# guard-page
+- **M2/M3 offset-discovery state (FRESH43-OD-RECOVERY-067):** the C# guard-page
   interceptor (`tools/WriteInterceptor`, x86 self-contained publish) is the
   live write-trace path; x64dbg write-BP is closed. FRESH43 captured and
   module-mapped the game transform fill path. The original static reading
@@ -86,9 +86,17 @@ full design specification.
   exact decoded-participant match across all axis/sign conventions (best
   time-agnostic viewpoint fit: mean 7.374, max 10.272). Hash-verified
   `FUN_00d1a0f0` copies that local translation into matrix row `+0x30`, and
-  `FUN_00bc3940` stores the composed world matrix at EBX+0x60; therefore the
-  next pinned read is its translation row at EBX+0x90/0x94/0x98. Harness output
-  now includes capture UTC for exact clock alignment. Callers cannot
+  `FUN_00bc3940` stores the composed world matrix at EBX+0x60. OD-RECOVERY-066
+  then read its translation row at EBX+0x90/0x94/0x98 once: seven finite hits
+  from one opaque object, with the exact fingerprint and cleanup proven. A
+  clock-aligned search over every decoded participant, all 48 axis/sign
+  mappings, playback speeds 0.5x through 8x, and the scene-marker uncertainty
+  found no identity: the best coherent absolute fit missed by mean 10.850 and
+  max 12.556 units, with 0/7 samples within 1 unit. A free constant-offset fit
+  required a 250.832-unit origin shift and 6.26x playback, so it is not identity
+  evidence. The matrix arithmetic is statically correct; the sampled render
+  object or coordinate space is not the decoded player trajectory. This closes
+  unchanged reads at the transform-fill site. Callers cannot
   supply a PID, address, module, register, or displacement; the helper is
   a separate no-legacy-mode binary, bounded to five seconds/64 accepted hits,
   and hard-pins both the game target and the exact Host.Web EXE+DLL parent.
@@ -97,13 +105,26 @@ full design specification.
   The post-attach process event is revalidated before thread arming; cleanup
   failure revokes the session and terminates the exact managed child even
   across a normal authorization refresh. Synthetic capture, max-hit cleanup,
-  timeout cleanup, and non-pinned-parent rejection pass. The next live round
-  may test the world-matrix translation once; it must
-  correlate the returned privacy-safe object-key trajectories to decoded
-  ground truth. No viewpoint identity, stable root, or offset is claimed yet.
+  timeout cleanup, and non-pinned-parent rejection pass. The durable pivot is
+  now offline/static-only: locate the hash-bound code path that consumes or
+  applies the verified type-10 replay position packet, identify its entity and
+  position-member provenance, and synthetically validate a bounded capture plan
+  before requesting another live round. Do not widen the render-transform read
+  or promote an offset. No viewpoint identity, stable root, or offset is claimed.
+  OD-RECOVERY-067's first hash-bound static triage scanned 526,935 executable
+  functions. Displacement-layout ranking produced thousands of noisy matrix,
+  copy, serializer, and destructor matches; its highest-ranked function was
+  manually refuted as local matrix/grid code. No function directly compared a
+  common record base against both length `49` and type `10`. Eight nearby
+  initialized-data `{10,49,code-pointer}` candidates were all MSVC exception
+  metadata (`0x19930522`), not replay dispatch. Do not repeat literal/layout
+  searches unchanged. The active method is now data-flow-first: identify the
+  generic replay event reader/framer through replay/file entry points and trace
+  its dispatched payload into entity/physics state before defining another
+  capture target.
   Detail:
   [`offline/offset-discovery.md`](offline/offset-discovery.md) and
-  [`docs/operations/handoffs/2026-08-08-instruction-snapshot-live-correction.md`](docs/operations/handoffs/2026-08-08-instruction-snapshot-live-correction.md).
+  [`docs/operations/handoffs/2026-08-08-world-translation-negative-type10-pivot.md`](docs/operations/handoffs/2026-08-08-world-translation-negative-type10-pivot.md).
 
 ## Quickstart
 

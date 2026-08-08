@@ -342,7 +342,7 @@ else descope per the archive action.
 
 **Exit:** candidate published; or `Superseded`/`Stale` recorded honestly.
 
-### M2.5 — Instruction-first object snapshot (active pivot, 2026-08-08)
+### M2.5 — Instruction-first object snapshot (closed render-transform branch, 2026-08-08)
 
 FRESH45 closed the candidate-minus-displacement hypothesis: four transient
 correlation candidates produced 12 readable floats but zero complete XYZ
@@ -367,11 +367,49 @@ The active implementation starts at the FRESH43 game-code fill instruction:
   false until separate evidence establishes them.
 
 Synthetic validation and the live breakpoint/cleanup mechanism are complete.
-The next live budget is one timestamped world-translation capture on one
-positively verified offline replay. Correlate object-key trajectories to
-decoded XYZ ground truth. Only a match justifies repeating the same
-instruction/member relationship on the other replay/fresh process. Offset
-publication still requires a stable module-relative resolver/root.
+OD-RECOVERY-066 consumed the one allowed world-translation capture: seven
+finite samples from one opaque object, exact fingerprint and cleanup proven.
+The best coherent clock-aligned comparison across every participant, 48
+axis/sign mappings, 0.5x-8x playback, and scene-marker uncertainty missed by
+mean 10.850 / max 12.556 units, with 0/7 within 1 unit. A free constant-offset
+fit required a 250.832-unit origin shift and 6.26x playback. The matrix row is
+statically real, but it is not identified as the decoded player trajectory.
+Do not repeat or widen this render-transform branch.
+
+### M2.6 — Type-10 position-application path (active pivot, 2026-08-08)
+
+The decoder already proves the 49-byte type-10 position packet end-to-end:
+entity, space, vehicle, XYZ, velocity, and flags reproduce the immutable
+decoded ground truth. The shortest remaining route to a reliable player
+location is to identify where the game consumes or applies that known XYZ,
+rather than infer semantics from a render transform.
+
+`OD-RECOVERY-067` is offline/static-only:
+
+1. Locate the hash-bound type-10 dispatch/application code and preserve the
+   exact module RVA and instruction bytes.
+2. Prove the owning entity/register relationship and the destination member or
+   fixed contiguous position read without assigning player/viewpoint identity
+   from names or nearby transform structure.
+3. Synthetically validate the bounded execute-snapshot plan, including target
+   fingerprint, entity provenance, cancellation, cleanup, result limits, and
+   privacy-safe projection.
+4. Request one live replay only after that contract is frozen. Match its
+   entity-bound samples to decoded type-10 ground truth at the aligned clock.
+
+No live budget exists for static exploration. Offset publication still
+requires a stable module-relative resolver/root and the M3 evidence gates.
+
+First-pass result: `Partial / no direct consumer anchor`. Three hash-bound
+Ghidra scripts scanned 526,935 executable functions and initialized data. The
+position/framed-displacement heuristic returned 3,457/190 noisy candidates;
+manual decompilation refuted the top match as matrix/grid code. No function
+directly checked a common record base for both length `49` and type `10`.
+Eight apparent `{10,49,code-pointer}` table rows were MSVC exception metadata,
+identified by the surrounding `0x19930522` FuncInfo structures. The next step
+is therefore data-flow-first: locate the generic replay event reader/framer
+through replay/file entry points and trace its payload dispatch into an entity
+or physics setter. Do not repeat displacement or literal scans unchanged.
 
 ## Descope gate
 

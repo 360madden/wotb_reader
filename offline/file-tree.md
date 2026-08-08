@@ -199,6 +199,7 @@ docs/operations/handoffs/2026-08-08-fresh45-immediate-triple.md
 docs/operations/handoffs/2026-08-08-instruction-first-pivot.md
 docs/operations/handoffs/2026-08-08-instruction-snapshot-live-correction.md
 docs/operations/handoffs/2026-08-08-instruction-snapshot-push-handoff.md
+docs/operations/handoffs/2026-08-08-world-translation-negative-type10-pivot.md
 docs/operations/handoffs/README.md
 docs/operations/offset-discovery-guide.md
 docs/operations/offset-discovery-ledger.md
@@ -774,6 +775,9 @@ tools/ghidra-scripts/DumpWindow.java
 tools/ghidra-scripts/DumpWriteSite.java
 tools/ghidra-scripts/FindOffsets.java
 tools/ghidra-scripts/FindOffsets.py
+tools/ghidra-scripts/FindType10DispatchTable.java
+tools/ghidra-scripts/FindType10PositionConsumers.java
+tools/ghidra-scripts/FindType10RecordDispatch.java
 tools/ghidra-scripts/callers-disasm.txt
 tools/ghidra-scripts/chain-disasm.txt
 tools/ghidra-scripts/functions-disasm.txt

@@ -325,36 +325,46 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-> **Amended 2026-08-08 (instruction-first policy).** The scan/roll/debugger
+> **Amended 2026-08-08 (type-10 application-path policy).** The scan/roll/debugger
 > material below is retained as historical evidence, but it is superseded for
 > player-position work. FRESH44 satisfied repeatability only for transient
 > viewpoint correlation; FRESH45 rejected the candidate-derived contiguous
 > layout at the sampled instant. Do not run either path unchanged.
 
-Session ID: `OD-RECOVERY-066`. First publish and pass the synthetic x86 helper
-test. Then start a **new** Host.Web process via
-`launch-offline-replay-for-od.ps1 -EnableInstructionSnapshot` so the helper
-path and SHA-256 are pinned before the managed replay launch. Run exactly one
-`GameHarness discover-instruction-snapshot --seconds 5 --max-hits 64` capture.
-The server fixes the PID, module, RVA, instruction bytes, EBX register, and
-`+0x90` world-matrix-translation displacement; caller input cannot widen that target.
-The helper also independently verifies the post-attach process-event identity
-and the build-pinned Host.Web EXE+DLL parent before arming any thread.
+OD-RECOVERY-066 completed the one permitted world-matrix-translation capture.
+The exact instruction fingerprint, bounded seven-hit read, and cleanup were
+valid, but the opaque-object trajectory did not match any decoded participant.
+The best coherent absolute fit across every participant, 48 axis/sign mappings,
+0.5x-8x playback, and scene-marker uncertainty missed by mean 10.850 / max
+12.556 units, with 0/7 samples within 1 unit. Static analysis still proves that
+EBX+`0x90/+0x94/+0x98` is a composed matrix translation; the negative concerns
+the sampled object's semantic identity or coordinate space.
 
-Accept a live result only when the gate stayed `OfflineReplayVerified`, the
-instruction fingerprint matched, cleanup/detach are proven, and every retained
-sample carries `sameDebugEvent=true`, `singleRead12Bytes=true`, and an opaque
-object key and capture UTC. Group samples by object key and compare each XYZ
-trajectory with decoded ground truth at the aligned clock. A match advances
-field identity only; it does not prove
-hardware atomicity, exact decoded clock, viewpoint identity until correlated,
-or a stable resolver. A no-hit or no-match is an honest bounded result.
+Session ID: `OD-RECOVERY-067`. This session is offline/static-only. Trace the
+verified type-10 replay position layout from its decode/dispatch consumer to the
+game code that applies X/Y/Z to an entity or physics state. Before another live
+request exists, freeze all of the following: exact executable hash, module RVA,
+instruction bytes, owning entity/register provenance, member displacement or
+one fixed contiguous read, and a synthetic target proving hit classification,
+bounds, privacy projection, cancellation, and cleanup.
 
-Stop after the single capture. Cleanup failure is terminal: the coordinator
-revokes authorization and terminates the exact managed child. Do not retry by
-passing a raw PID, changing the RVA/register/displacement, shaving latency, or
-falling back to broad scans. A second live replay is admissible only after the
-first capture produces a matching object-key trajectory. Full contract:
+The first static triage did not find a direct consumer anchor. Across 526,935
+executable functions, displacement-layout matches were dominated by matrix,
+copy, serializer, and destructor code; the highest-ranked candidate was
+decompiled and refuted. No same-base direct comparison of record length `49`
+and type `10` exists in the scanned code, and all eight apparent initialized
+dispatch rows were MSVC exception metadata. Continue OD-RECOVERY-067 by finding
+the generic replay event reader/framer from replay/file entry points and
+following payload data flow. Do not rerun the literal/layout heuristics as if a
+higher candidate count supplied semantic evidence.
+
+Do not spend a live replay on a broader matrix read, a different displacement at
+the transform-fill instruction, a latency-only retry, or another heap scan. The
+existing instruction-snapshot mechanism remains reusable only after the new
+static target contract is frozen and reviewed. A future live result advances
+field identity only when its entity-bound samples match decoded type-10 ground
+truth at the aligned clock; stable resolution and offset publication remain
+separate gates. Existing safety contract:
 [`../superpowers/specs/2026-08-08-instruction-first-position-snapshot.md`](../superpowers/specs/2026-08-08-instruction-first-position-snapshot.md).
 
 > **Amended 2026-08-04 (v3 strategy).** The pilot order below is superseded by

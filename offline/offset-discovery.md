@@ -168,7 +168,7 @@ provenance-changing capture of the actual object pointer from the known
 game-code transform-fill instruction/register path. See the
 [`FRESH45 handoff`](../docs/operations/handoffs/2026-08-08-fresh45-immediate-triple.md).
 
-## Instruction-first position pivot (OD-RECOVERY-062 through 065)
+## Instruction-first position pivot (OD-RECOVERY-062 through 066)
 
 Scan-first discovery is closed for the next player-position proof. The new
 path starts from the already evidenced game-code instruction and captures the
@@ -199,13 +199,34 @@ had 164 threads, requiring a still-bounded 256-thread cap, and seven
 EBX+`0x1C` hits were exactly `(1,1,1)`, proving that triple is scale.
 Hash-verified `FUN_00d1a0f0` copies EBX+`0x10/+0x14/+0x18` into local-matrix
 translation; a seven-hit live capture there changed but did not exactly match
-any decoded participant under all axis/sign conventions. The best
-time-agnostic viewpoint fit was mean 7.374 / max 10.272 units, so viewpoint
-identity remains unknown. Because `FUN_00bc3940` copies the composed matrix to
-EBX+`0x60`, the next provenance-bearing hypothesis is the world translation at
-EBX+`0x90/+0x94/+0x98`. Capture UTC is now printed for clock alignment. Stop
-after one such capture; do not fall back to candidate scanning. See the
-[`live correction handoff`](../docs/operations/handoffs/2026-08-08-instruction-snapshot-live-correction.md).
+any decoded participant under all axis/sign conventions. OD-RECOVERY-066 then
+read the statically confirmed composed translation at EBX+`0x90/+0x94/+0x98`.
+The fingerprint, seven finite samples, one opaque object, and cleanup were all
+valid, but a clock-aligned comparison across every participant, 48 axis/sign
+mappings, playback speeds 0.5x through 8x, and scene-marker uncertainty found
+no identity. The best coherent absolute fit missed by mean 10.850 / max 12.556
+units with 0/7 samples within 1 unit. A free constant-offset fit required a
+250.832-unit origin shift and 6.26x playback, which is not identity evidence.
+
+This is an honest negative for the transform-fill object's composed translation,
+not for the execute-breakpoint mechanism or the matrix layout. Do not repeat or
+widen this render-transform read. The active work is now offline/static-only:
+locate the code that consumes or applies the verified type-10 replay position
+packet, bind it to an entity identifier and position-member write, then
+synthetically validate a new bounded capture plan before any live session. See
+the [`world-translation negative handoff`](../docs/operations/handoffs/2026-08-08-world-translation-negative-type10-pivot.md).
+
+OD-RECOVERY-067's first static pass ruled out the simple signatures. A
+hash-bound Ghidra scan covered 526,935 executable functions: 3,457 functions
+matched some position-layout displacements and 190 matched the framed-layout
+heuristic, but the top candidate decompiled as matrix/grid code. No function
+contained a direct same-base pair of record-length `49` and type `10` checks.
+Eight initialized-data candidates that placed `10`, `49`, and a code pointer
+near each other were all MSVC exception metadata. These are useful structural
+negatives, not evidence that the game lacks the data. The next static step is
+to identify the generic replay event reader/framer from replay/file entry
+points, then follow its payload data flow into an entity/physics setter. Do not
+run another literal, displacement-only, or live capture pass unchanged.
 
 ## Evidence publication
 
