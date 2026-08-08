@@ -2297,6 +2297,34 @@ $report = [ordered]@{
     measuredPlaybackSpeed  = if ($null -ne $measuredPlaybackSpeed) { [Math]::Round($measuredPlaybackSpeed, 2) } else { $null }
     playbackSpeedEstimate  = $PlaybackSpeedEstimate
     traceFireByUtc         = if ($null -ne $traceFireByUtc) { $traceFireByUtc.ToString('o') } else { $null }
+    # OD-RECOVERY-057 (FRESH43 post-mortem): persist the raw sampled value
+    # series for every strong-survivor address so the M3 evidence (memory
+    # float + wall time) survives the run and can be re-aligned against the
+    # decoded ground truth offline. The correlate summaries alone discard the
+    # actual values that matched within tolerance 0.001 - the addresses are
+    # transient multi-copy buffers, so a later trace-time snapshot cannot
+    # recover them. Bounded per address (newest 240) to keep the report sane.
+    seriesEvidence         = @($strongSurvivors | ForEach-Object {
+        $addr = [string]$_.address
+        if (-not $series.ContainsKey($addr)) { return }
+        $samples = $series[$addr]
+        if ($null -eq $samples -or $samples.Count -eq 0) { return }
+        $take = [Math]::Min($samples.Count, 240)
+        [ordered]@{
+            address       = $addr
+            participantId = $_.participantId
+            entityId      = $_.entityId
+            axis          = $_.axis
+            sign          = $_.sign
+            shiftSeconds  = $_.shiftSeconds
+            score         = $_.score
+            matchCount    = $_.matchCount
+            totalSamples  = $_.totalSamples
+            samples       = @($samples | Select-Object -Last $take | ForEach-Object {
+                [ordered]@{ wallTimeUtc = $_.wallTimeUtc; value = [double]$_.value }
+            })
+        }
+    })
 }
 
 try {
