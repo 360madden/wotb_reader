@@ -58,6 +58,12 @@ param(
     # FRESH38+ source-arm: arm the esi copy-source page at first hit during
     # the auto write-trace (passed through to od-048 / invoke-csharp).
     [switch]$ArmSourceOnFirstHit,
+    # FRESH45 changed hypothesis: issue the direct candidate-derived
+    # +0x1C/+0x20/+0x24 batch read immediately after final correlation.
+    [switch]$ImmediatePositionTripleRead,
+    # Do not repeat the delayed 25-second trace when the approved round is
+    # testing only the immediate-read hypothesis.
+    [switch]$SkipAutoWriteTrace,
     # Viewpoint-first pivot (passed through to od-048): stage ONLY the
     # viewpoint player and trace its first strong survivor - no top movers,
     # no XYZ family assembly, no alternate-entity decoys.
@@ -85,7 +91,7 @@ function Write-Log([string]$Msg) {
 }
 
 # 1. Launch the replay (managed launch -> gate verified)
-Write-Log "launching replay: $ReplayPath"
+Write-Log 'launching replay: <replay>'
 & (Join-Path $RepoRoot 'scripts\launch-offline-replay-for-od.ps1') -ReplayPath $ReplayPath *>&1 |
     ForEach-Object { Write-Log ("launch: " + $_) }
 $launchExit = $LASTEXITCODE
@@ -152,7 +158,7 @@ foreach ($log in $logs) {
                 if ($asUtc -gt [datetime]::UtcNow.AddSeconds(60)) { $asUtc = $asUtc.AddDays(-1) }
                 if ($asUtc -lt [datetime]::UtcNow.AddSeconds(-120)) { continue }
                 $markerUtc = $asUtc.ToString('o')
-                Write-Log ("marker_found log=" + $log.Name + " line=" + $line.Trim() + " -> utc=" + $markerUtc)
+                Write-Log ("marker_found log=" + $log.Name + " -> utc=" + $markerUtc)
                 break
             }
         }
@@ -237,11 +243,12 @@ for ($attempt = 1; $attempt -le $MaxCampaignAttempts; $attempt++) {
         AttendanceLatencySeconds = $AttendanceLatencySeconds
         PlaybackSpeedEstimate = $PlaybackSpeedEstimate
         TraceStartupSeconds   = $TraceStartupSeconds
-        AutoWriteTraceOnVerdict = $true
         AutoTraceSeconds       = $AutoTraceSeconds
         ResultPath             = $ResultPath
     }
+    if (-not $SkipAutoWriteTrace) { $m1Args.AutoWriteTraceOnVerdict = $true }
     if ($ArmSourceOnFirstHit) { $m1Args.ArmSourceOnFirstHit = $true }
+    if ($ImmediatePositionTripleRead) { $m1Args.ImmediatePositionTripleRead = $true }
     if ($AttachSmokeOnFirstRound) { $m1Args.AttachSmokeOnFirstRound = $true }
     if ($StageViewpointOnly) { $m1Args.StageViewpointOnly = $true }
     $m1Args.MaxTimeShiftSeconds = $MaxTimeShiftSeconds

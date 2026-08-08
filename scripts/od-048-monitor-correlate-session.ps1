@@ -353,7 +353,25 @@ param(
     # verdict + wrapper launch + interceptor attach. The monitor loop stops
     # sampling at (realBattleEnd - TraceStartupSeconds - trace window) so the
     # correlate+verdict+trace all land INSIDE the live battle.
-    [double]$TraceStartupSeconds = 20.0
+    [double]$TraceStartupSeconds = 20.0,
+    # FRESH45 changed hypothesis: immediately after the final correlate
+    # response, treat each selected viewpoint-x address as the +0x1C slot of
+    # a candidate transform layout and batch-read +0x1C/+0x20/+0x24. This is
+    # explicitly a candidate-derived layout hypothesis, NOT proof that the
+    # derived base is the real [entity+0x3C] transform object.
+    [switch]$ImmediatePositionTripleRead,
+    # Keep the direct read small so loopback/auth/process-lease overhead, not
+    # JSON size, dominates the measured correlate-to-read gap.
+    [ValidateRange(1, 16)]
+    [int]$ImmediatePositionCandidateCap = 4,
+    # Empirical completion target measured from the host correlate completion
+    # timestamp to the host read completion timestamp.
+    [ValidateRange(1.0, 5000.0)]
+    [double]$ImmediatePositionMaxGapMilliseconds = 100.0,
+    # All three observed floats must be within this distance of the decoded
+    # viewpoint sample at the candidate's winning time shift.
+    [ValidateRange(0.0, 1000.0)]
+    [double]$ImmediatePositionTolerance = 6.0
 )
 
 Set-StrictMode -Version Latest
@@ -907,6 +925,246 @@ function Get-FamilyNeighborAddresses {
     }
     return $neighbors
 }
+
+# -- Immediate position-triple read helpers (FRESH45) -----------------------
+# Normalize JSON date strings and already-deserialized date values to UTC.
+function Convert-ToUtcDateTimeValue {
+    param([object]$Value)
+    if ($Value -is [datetime]) { return ([datetime]$Value).ToUniversalTime() }
+    if ($Value -is [datetimeoffset]) { return ([datetimeoffset]$Value).UtcDateTime }
+    return [datetimeoffset]::Parse(
+        [string]$Value,
+        [Globalization.CultureInfo]::InvariantCulture,
+        [Globalization.DateTimeStyles]::RoundtripKind).UtcDateTime
+}
+
+# Build a bounded set of candidate transform layouts from strong viewpoint-x
+# correlations. The subtraction is a hypothesis derived from the static
+# +0x1C/+0x20/+0x24 layout; it does not prove that the base is [entity+0x3C].
+function New-ImmediatePositionReadPlan {
+    param(
+        [object[]]$Results,
+        [object]$ViewpointEntityId,
+        [int]$CandidateCap = 4,
+        [double]$MinimumScore = 0.7,
+        [double]$EdgeThresholdSeconds = [double]::MaxValue
+    )
+
+    $eligible = @()
+    foreach ($result in @($Results)) {
+        if ($null -eq $result) { continue }
+        if (-not $result.PSObject.Properties['address'] -or [string]::IsNullOrWhiteSpace([string]$result.address)) { continue }
+        if (-not $result.PSObject.Properties['entityId'] -or [string]$result.entityId -ne [string]$ViewpointEntityId) { continue }
+        if (-not $result.PSObject.Properties['axis'] -or [string]$result.axis -ne 'x') { continue }
+        if (-not $result.PSObject.Properties['sign'] -or [int]$result.sign -ne 1) { continue }
+        if (-not $result.PSObject.Properties['score'] -or $null -eq $result.score -or [double]$result.score -lt $MinimumScore) { continue }
+        if (-not $result.PSObject.Properties['shiftSeconds'] -or $null -eq $result.shiftSeconds) { continue }
+        $shiftMin = [double]$result.shiftSeconds
+        if ($result.PSObject.Properties['shiftMinSeconds'] -and $null -ne $result.shiftMinSeconds) { $shiftMin = [double]$result.shiftMinSeconds }
+        $shiftMax = [double]$result.shiftSeconds
+        if ($result.PSObject.Properties['shiftMaxSeconds'] -and $null -ne $result.shiftMaxSeconds) { $shiftMax = [double]$result.shiftMaxSeconds }
+        if ([Math]::Abs($shiftMin) -ge $EdgeThresholdSeconds -or [Math]::Abs($shiftMax) -ge $EdgeThresholdSeconds) { continue }
+        $eligible += $result
+    }
+
+    $eligible = @($eligible | Sort-Object -Property @(
+        @{ Expression = { if ($_.PSObject.Properties['span'] -and $null -ne $_.span) { [double]$_.span } else { -1.0 } }; Descending = $true },
+        @{ Expression = { [double]$_.score }; Descending = $true },
+        @{ Expression = { [string]$_.address }; Descending = $false }
+    ) | Select-Object -First $CandidateCap)
+
+    $seenBases = @{}
+    $plan = @()
+    foreach ($candidate in $eligible) {
+        $hex = [string]$candidate.address
+        if ($hex.StartsWith('0x', [StringComparison]::OrdinalIgnoreCase)) { $hex = $hex.Substring(2) }
+        if ($hex -notmatch '\A[0-9A-Fa-f]+\z') { continue }
+        try { $xAddress = [Convert]::ToInt64($hex, 16) }
+        catch { continue }
+        if ($xAddress -le 0x1C -or $xAddress -gt ([long]::MaxValue - 8)) { continue }
+
+        $base = $xAddress - 0x1C
+        $baseKey = ('0x{0:X}' -f $base).ToLowerInvariant()
+        if ($seenBases.ContainsKey($baseKey)) { continue }
+        $seenBases[$baseKey] = $true
+
+        $plan += [pscustomobject]@{
+            objectBaseHypothesis = ('0x{0:X}' -f $base)
+            objectBaseProven     = $false
+            provenanceKind       = 'candidate-derived-layout-hypothesis'
+            sourceAddress        = ('0x{0:X}' -f $xAddress)
+            entityId             = [string]$candidate.entityId
+            score                = [double]$candidate.score
+            shiftSeconds         = [double]$candidate.shiftSeconds
+            shiftMinSeconds      = if ($candidate.PSObject.Properties['shiftMinSeconds'] -and $null -ne $candidate.shiftMinSeconds) { [double]$candidate.shiftMinSeconds } else { [double]$candidate.shiftSeconds }
+            shiftMaxSeconds      = if ($candidate.PSObject.Properties['shiftMaxSeconds'] -and $null -ne $candidate.shiftMaxSeconds) { [double]$candidate.shiftMaxSeconds } else { [double]$candidate.shiftSeconds }
+            span                 = if ($candidate.PSObject.Properties['span'] -and $null -ne $candidate.span) { [double]$candidate.span } else { $null }
+            addresses            = @(
+                [pscustomobject]@{ axis = 'x'; displacement = 0x1C; absoluteAddress = ('0x{0:X}' -f $xAddress) }
+                [pscustomobject]@{ axis = 'y'; displacement = 0x20; absoluteAddress = ('0x{0:X}' -f ($xAddress + 4)) }
+                [pscustomobject]@{ axis = 'z'; displacement = 0x24; absoluteAddress = ('0x{0:X}' -f ($xAddress + 8)) }
+            )
+        }
+    }
+    return $plan
+}
+
+# Linearly interpolate the decoded viewpoint trajectory at one replay tick.
+# Out-of-window reads return null instead of clamping to an endpoint.
+function Get-InterpolatedPositionSample {
+    param([object[]]$Samples, [long]$TargetTick)
+
+    $previous = $null
+    foreach ($current in @($Samples)) {
+        if ($null -eq $current -or -not $current.PSObject.Properties['replayTimeTicks']) { continue }
+        $currentTick = [long]$current.replayTimeTicks
+        if ($currentTick -eq $TargetTick) {
+            return [pscustomobject]@{
+                replayTimeTicks = $TargetTick
+                x = [double]$current.x
+                y = [double]$current.y
+                z = [double]$current.z
+            }
+        }
+        if ($currentTick -gt $TargetTick) {
+            if ($null -eq $previous) { return $null }
+            $previousTick = [long]$previous.replayTimeTicks
+            $width = [double]($currentTick - $previousTick)
+            if ($width -le 0) { return $null }
+            $fraction = ([double]$TargetTick - [double]$previousTick) / $width
+            return [pscustomobject]@{
+                replayTimeTicks = $TargetTick
+                x = [double]$previous.x + (($fraction) * ([double]$current.x - [double]$previous.x))
+                y = [double]$previous.y + (($fraction) * ([double]$current.y - [double]$previous.y))
+                z = [double]$previous.z + (($fraction) * ([double]$current.z - [double]$previous.z))
+            }
+        }
+        $previous = $current
+    }
+    return $null
+}
+
+# Join one immediate /discover/read response to the candidate layout and the
+# decoded viewpoint trajectory. Every base remains explicitly hypothesized.
+function New-ImmediatePositionReadEvidence {
+    param(
+        [object[]]$Plan,
+        [object]$ReadResponse,
+        [datetime]$CorrelateCompletedUtc,
+        [datetime]$CorrelateResponseReceivedUtc,
+        [datetime]$ReadRequestStartedUtc,
+        [datetime]$ReadResponseReceivedUtc,
+        [datetime]$ReadCompletedUtc,
+        [datetime]$BattleStartUtc,
+        [object[]]$ViewpointSamples,
+        [double]$Tolerance,
+        [double]$MaxGapMilliseconds,
+        [double]$RoundTripMilliseconds
+    )
+
+    $readMap = @{}
+    foreach ($item in @($ReadResponse.reads)) {
+        if ($null -eq $item -or -not $item.PSObject.Properties['absoluteAddress']) { continue }
+        $readMap[([string]$item.absoluteAddress).ToLowerInvariant()] = $item
+    }
+
+    $completionGapMs = ($ReadCompletedUtc - $CorrelateCompletedUtc).TotalMilliseconds
+    $dispatchGapMs = ($ReadRequestStartedUtc - $CorrelateResponseReceivedUtc).TotalMilliseconds
+    $candidates = @()
+    $matchingCount = 0
+    foreach ($candidate in @($Plan)) {
+        $targetTickDouble = ((($ReadCompletedUtc - $BattleStartUtc).TotalSeconds) + [double]$candidate.shiftSeconds) * 10000000.0
+        if ($targetTickDouble -lt [long]::MinValue -or $targetTickDouble -gt [long]::MaxValue) { continue }
+        $targetTick = [long][Math]::Round($targetTickDouble)
+        $expected = Get-InterpolatedPositionSample -Samples $ViewpointSamples -TargetTick $targetTick
+
+        $axisEvidence = [ordered]@{}
+        $allRead = $true
+        $allMatch = ($null -ne $expected)
+        $maxDelta = 0.0
+        foreach ($address in @($candidate.addresses)) {
+            $axis = [string]$address.axis
+            $key = ([string]$address.absoluteAddress).ToLowerInvariant()
+            $item = if ($readMap.ContainsKey($key)) { $readMap[$key] } else { $null }
+            $readOk = $null -ne $item -and $item.PSObject.Properties['readOk'] -and [bool]$item.readOk
+            $value = $null
+            if ($readOk -and $item.PSObject.Properties['valueSummary']) {
+                $parsed = 0.0
+                if ([double]::TryParse([string]$item.valueSummary, [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$parsed) -and -not [double]::IsNaN($parsed) -and -not [double]::IsInfinity($parsed)) {
+                    $value = $parsed
+                }
+                else { $readOk = $false }
+            }
+            if (-not $readOk) { $allRead = $false; $allMatch = $false }
+
+            $expectedValue = if ($null -eq $expected) { $null } else { [double]$expected.$axis }
+            $delta = if ($null -eq $value -or $null -eq $expectedValue) { $null } else { [Math]::Abs([double]$value - [double]$expectedValue) }
+            if ($null -ne $delta -and $delta -gt $maxDelta) { $maxDelta = $delta }
+            if ($null -eq $delta -or $delta -gt $Tolerance) { $allMatch = $false }
+
+            $axisEvidence[$axis] = [ordered]@{
+                displacement      = [int]$address.displacement
+                displacementHex   = ('0x{0:X}' -f [int]$address.displacement)
+                absoluteAddress   = [string]$address.absoluteAddress
+                readOk            = $readOk
+                observedValue     = $value
+                expectedValue     = $expectedValue
+                absoluteDelta     = $delta
+                withinTolerance   = ($null -ne $delta -and $delta -le $Tolerance)
+            }
+        }
+        if ($allMatch) { $matchingCount += 1 }
+        $candidates += [ordered]@{
+            objectBaseHypothesis = [string]$candidate.objectBaseHypothesis
+            objectBaseProven     = $false
+            provenanceKind       = [string]$candidate.provenanceKind
+            sourceAddress        = [string]$candidate.sourceAddress
+            entityId             = [string]$candidate.entityId
+            score                = [double]$candidate.score
+            shiftSeconds         = [double]$candidate.shiftSeconds
+            shiftMinSeconds      = [double]$candidate.shiftMinSeconds
+            shiftMaxSeconds      = [double]$candidate.shiftMaxSeconds
+            span                 = $candidate.span
+            targetReplayTick     = $targetTick
+            expectedAvailable    = ($null -ne $expected)
+            allAxesRead          = $allRead
+            allAxesWithinTolerance = $allMatch
+            maxAbsoluteDelta     = if ($allRead -and $null -ne $expected) { $maxDelta } else { $null }
+            axes                 = $axisEvidence
+        }
+    }
+
+    $withinGap = $completionGapMs -ge 0 -and $completionGapMs -le $MaxGapMilliseconds
+    $verdict = if ($matchingCount -gt 0 -and $withinGap) { 'hypothesis-match-within-gap' }
+        elseif ($matchingCount -gt 0) { 'hypothesis-match-gap-exceeded' }
+        else { 'no-hypothesis-match' }
+    return [ordered]@{
+        enabled                       = $true
+        status                        = 'complete'
+        provenanceKind                = 'candidate-derived-layout-hypothesis'
+        objectBaseProven              = $false
+        atomicReadProven              = $false
+        sameClockProven               = $false
+        alignmentClock                = 'batch-read-completion'
+        requestedCandidateCount       = @($Plan).Count
+        readCount                     = if ($ReadResponse.PSObject.Properties['readCount']) { [int]$ReadResponse.readCount } else { 0 }
+        correlateCompletedAtUtc        = $CorrelateCompletedUtc.ToString('o')
+        correlateResponseReceivedAtUtc = $CorrelateResponseReceivedUtc.ToString('o')
+        readRequestStartedAtUtc        = $ReadRequestStartedUtc.ToString('o')
+        readCompletedAtUtc             = $ReadCompletedUtc.ToString('o')
+        readResponseReceivedAtUtc      = $ReadResponseReceivedUtc.ToString('o')
+        dispatchGapMilliseconds        = [Math]::Round($dispatchGapMs, 3)
+        completionGapMilliseconds      = [Math]::Round($completionGapMs, 3)
+        roundTripMilliseconds          = [Math]::Round($RoundTripMilliseconds, 3)
+        targetGapMilliseconds          = $MaxGapMilliseconds
+        withinTargetGap               = $withinGap
+        tolerance                     = $Tolerance
+        matchingCandidateCount        = $matchingCount
+        verdict                        = $verdict
+        candidates                     = $candidates
+    }
+}
+# -- End immediate position-triple read helpers -----------------------------
 
 # -- Preflight: rendezvous + verified gate --
 Write-Od048 'preflight_start'
@@ -1650,7 +1908,7 @@ while ($round -lt $MaxReadRounds) {
             ranUtc        = ([DateTime]::UtcNow).ToString('o')
             atRound       = $round
             probeAddress  = $smokeProbe
-            resultPath    = $smokeResultPath
+            resultPath    = if ([string]::IsNullOrWhiteSpace($smokeResultPath)) { '' } else { Split-Path -Leaf $smokeResultPath }
             exitCode      = $smokeExit
             ok            = ($smokeExit -eq 0)
             keptAttached  = $smokeKeptAttached
@@ -1849,7 +2107,7 @@ if ($stoppedReason -eq 'attach-smoke-failed') {
     try {
         $failJson = $failReport | ConvertTo-Json -Depth 8
         [System.IO.File]::WriteAllText($ResultPath, $failJson, (New-Object System.Text.UTF8Encoding($false)))
-        Write-Od048 ('report_written=' + $ResultPath)
+        Write-Od048 ('report_written=' + (Split-Path -Leaf $ResultPath))
     }
     catch {
         Write-Od048 ('FAILED_report_write: ' + $_.Exception.Message)
@@ -1885,12 +2143,83 @@ if ($observationsTotal -gt $observations.Count) {
 # 5-minute lease may have rotated.
 $rendezvous = Refresh-Rendezvous -Current $rendezvous
 $correlated = Invoke-Api -Rendezvous $rendezvous -Method 'Post' -RelativePath '/api/v1/game/discover/correlate' -Body (New-CorrelateBody -Observations $observations -SessionId $battleSessionId -ReplayStartWallTimeUtc $battleStartUtc.ToString('o') -TolerancePerAxis $TolerancePerAxis -MaxTimeShiftSeconds $MaxTimeShiftSeconds -MinMovingSpan $MinMovingSpan)
+$correlateResponseReceivedUtc = [DateTime]::UtcNow
 if ($null -eq $correlated -or $null -eq $correlated.results) {
     Write-Od048 'FAILED_correlate'
     exit 4
 }
 
 $results = @($correlated.results)
+
+# FRESH45: direct same-window read before family synthesis, report JSON, child
+# process startup, or debugger attach. This can test whether a correlated x
+# address is the +0x1C member of a contiguous x/y/z layout, but it CANNOT prove
+# the derived base is the true transform object; the durable shape repeats that
+# limitation on every candidate.
+$immediatePositionRead = [ordered]@{
+    enabled          = [bool]$ImmediatePositionTripleRead
+    status           = if ($ImmediatePositionTripleRead) { 'not-attempted' } else { 'disabled' }
+    provenanceKind   = 'candidate-derived-layout-hypothesis'
+    objectBaseProven = $false
+    atomicReadProven = $false
+    sameClockProven  = $false
+    candidates       = @()
+}
+if ($ImmediatePositionTripleRead) {
+    $immediatePlan = @(New-ImmediatePositionReadPlan -Results $results -ViewpointEntityId $viewpointEntityId -CandidateCap $ImmediatePositionCandidateCap -MinimumScore 0.7 -EdgeThresholdSeconds $edgeThreshold)
+    if ($immediatePlan.Count -eq 0) {
+        $immediatePositionRead.status = 'no-eligible-viewpoint-x-candidate'
+        Write-Od048 'immediate_position_read SKIPPED no_eligible_viewpoint_x_candidate'
+    }
+    else {
+        $immediateAddresses = @()
+        $seenImmediateAddresses = @{}
+        foreach ($candidate in $immediatePlan) {
+            foreach ($address in @($candidate.addresses)) {
+                $key = ([string]$address.absoluteAddress).ToLowerInvariant()
+                if ($seenImmediateAddresses.ContainsKey($key)) { continue }
+                $seenImmediateAddresses[$key] = $true
+                $immediateAddresses += [string]$address.absoluteAddress
+            }
+        }
+
+        try {
+            $correlateCompletedUtc = Convert-ToUtcDateTimeValue -Value $correlated.completedAtUtc
+            $immediateReadStartedUtc = [DateTime]::UtcNow
+            $immediateStopwatch = [Diagnostics.Stopwatch]::StartNew()
+            # CapabilityRetries=0 is intentional: a 2-second token-refresh
+            # sleep would make the <100ms hypothesis impossible. The token was
+            # refreshed immediately before the correlate call; a rotation race
+            # is recorded as a failed immediate read and may be retried only in
+            # a new approved session.
+            $immediateReadResponse = Invoke-Api -Rendezvous $rendezvous -Method 'Post' -RelativePath '/api/v1/game/discover/read' -Body @{
+                Addresses = $immediateAddresses
+                ValueKind = 'Float'
+                ValueSize = 4
+            } -TimeoutSec 10 -CapabilityRetries 0
+            $immediateStopwatch.Stop()
+            $immediateReadResponseReceivedUtc = [DateTime]::UtcNow
+            if ($null -eq $immediateReadResponse -or $null -eq $immediateReadResponse.reads) {
+                $immediatePositionRead.status = 'read-failed'
+                $immediatePositionRead.requestedCandidateCount = $immediatePlan.Count
+                $immediatePositionRead.requestedAddressCount = $immediateAddresses.Count
+                $immediatePositionRead.roundTripMilliseconds = [Math]::Round($immediateStopwatch.Elapsed.TotalMilliseconds, 3)
+                Write-Od048 ('immediate_position_read FAILED candidates=' + $immediatePlan.Count + ' addresses=' + $immediateAddresses.Count)
+            }
+            else {
+                $immediateReadCompletedUtc = Convert-ToUtcDateTimeValue -Value $immediateReadResponse.completedAtUtc
+                $immediatePositionRead = New-ImmediatePositionReadEvidence -Plan $immediatePlan -ReadResponse $immediateReadResponse -CorrelateCompletedUtc $correlateCompletedUtc -CorrelateResponseReceivedUtc $correlateResponseReceivedUtc -ReadRequestStartedUtc $immediateReadStartedUtc -ReadResponseReceivedUtc $immediateReadResponseReceivedUtc -ReadCompletedUtc $immediateReadCompletedUtc -BattleStartUtc $battleStartUtc -ViewpointSamples @($viewpointEntity.Samples) -Tolerance $ImmediatePositionTolerance -MaxGapMilliseconds $ImmediatePositionMaxGapMilliseconds -RoundTripMilliseconds $immediateStopwatch.Elapsed.TotalMilliseconds
+                Write-Od048 ('immediate_position_read status=' + $immediatePositionRead.status + ' candidates=' + $immediatePositionRead.requestedCandidateCount + ' matches=' + $immediatePositionRead.matchingCandidateCount + ' completion_gap_ms=' + $immediatePositionRead.completionGapMilliseconds + ' within_target=' + $immediatePositionRead.withinTargetGap)
+            }
+        }
+        catch {
+            $immediatePositionRead.status = 'analysis-failed'
+            $immediatePositionRead.requestedCandidateCount = $immediatePlan.Count
+            $immediatePositionRead.requestedAddressCount = $immediateAddresses.Count
+            Write-Od048 ('immediate_position_read FAILED analysis_error=' + $_.Exception.GetType().Name)
+        }
+    }
+}
 
 # Viewpoint-first pivot: restrict the scored results to the viewpoint player's
 # entity BEFORE the shift audit, so every downstream gate (strong survivors,
@@ -2130,6 +2459,10 @@ $report = [ordered]@{
     viewpointEntityId      = if ($null -eq $viewpointEntityId) { $null } else { [string]$viewpointEntityId }
     # M2 pre-flight gate result (null when -AttachSmokeOnFirstRound was off).
     attachSmoke            = $attachSmoke
+    # FRESH45 direct read evidence. Candidate bases remain explicitly
+    # hypothesized until independent write/register evidence ties one to the
+    # real transform object.
+    immediatePositionTripleRead = $immediatePositionRead
     staged                 = [ordered]@{
         entities        = $stagedEntitiesReport
         union           = $scanStagedCount
@@ -2207,6 +2540,11 @@ $report = [ordered]@{
             score         = $_.score
         }
     })
+    # Keep the summary array bounded while making the total explicit. FRESH44
+    # produced 21 strong survivors, so the old implicit Select-Object cap made
+    # the live log say 21 while the JSON array appeared to contain only 20.
+    strongSurvivorCount    = $strongSurvivors.Count
+    strongSurvivorsTruncated = ($strongSurvivors.Count -gt 20)
     strongSurvivors        = @($strongSurvivors | Select-Object -First 20 | ForEach-Object {
         [ordered]@{
             address       = $_.address
@@ -2330,7 +2668,7 @@ $report = [ordered]@{
 try {
     $json = $report | ConvertTo-Json -Depth 12
     [System.IO.File]::WriteAllText($ResultPath, $json, (New-Object System.Text.UTF8Encoding($false)))
-    Write-Od048 ("report_written=" + $ResultPath)
+    Write-Od048 ("report_written=" + (Split-Path -Leaf $ResultPath))
 }
 catch {
     Write-Od048 ('FAILED_report_write: ' + $_.Exception.Message)
@@ -2491,7 +2829,7 @@ if ($AutoWriteTraceOnVerdict) {
         $wtScript = if ($TraceEngine -eq 'x64dbg') { Join-Path $PSScriptRoot 'x64dbg-write-trace.ps1' }
             else { Join-Path $PSScriptRoot 'invoke-csharp-write-trace.ps1' }
         if (-not (Test-Path -LiteralPath $wtScript)) {
-            Write-Od048 ('auto_write_trace FAILED script_missing=' + $wtScript)
+            Write-Od048 ('auto_write_trace FAILED script_missing=' + (Split-Path -Leaf $wtScript))
         }
         else {
             if ([string]::IsNullOrWhiteSpace($AutoTraceResultPath)) {
@@ -2602,11 +2940,11 @@ if ($AutoWriteTraceOnVerdict) {
             $autoTrace = [ordered]@{
                 invokedUtc  = ([DateTime]::UtcNow).ToString('o')
                 engine      = $TraceEngine
-                script      = $wtScript
-                familyFile  = $ResultPath
+                script      = (Split-Path -Leaf $wtScript)
+                familyFile  = (Split-Path -Leaf $ResultPath)
                 traceSeconds = $traceSeconds
                 requestedSeconds = $AutoTraceSeconds
-                resultPath  = $AutoTraceResultPath
+                resultPath  = (Split-Path -Leaf $AutoTraceResultPath)
                 exitCode    = $wtExit
                 # 0 clean window; 7 paused (SPACE and rerun); 8 stale family
                 # (never relaunch between M1 and M2). M1 is unaffected either
@@ -2627,7 +2965,7 @@ if ($AutoWriteTraceOnVerdict) {
             try {
                 $atJson = $autoTrace | ConvertTo-Json -Depth 6
                 [System.IO.File]::WriteAllText($AutoTraceResultPath, $atJson, (New-Object System.Text.UTF8Encoding($false)))
-                Write-Od048 ('auto_trace_report_written=' + $AutoTraceResultPath)
+                Write-Od048 ('auto_trace_report_written=' + (Split-Path -Leaf $AutoTraceResultPath))
             }
             catch {
                 Write-Od048 ('auto_trace_report_write_failed: ' + $_.Exception.Message)

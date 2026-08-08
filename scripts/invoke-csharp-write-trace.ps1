@@ -297,7 +297,7 @@ function Get-ReplayPlayState {
 # 1. Load + select the family (same contract as the x64dbg path).
 # ---------------------------------------------------------------------------
 if ([string]::IsNullOrWhiteSpace($FamilyFile) -or -not (Test-Path -LiteralPath $FamilyFile)) {
-    Write-CsWt ("FAILED_family_file_missing=" + $FamilyFile)
+    Write-CsWt ("FAILED_family_file_missing=" + (Split-Path -Leaf $FamilyFile))
     exit 2
 }
 
@@ -346,7 +346,7 @@ if ($playState -eq 'paused') {
 # ---------------------------------------------------------------------------
 $interceptorExe = Join-Path $RepoRoot '.build\publish\write-interceptor\WotBTreader.WriteInterceptor.exe'
 if (-not (Test-Path -LiteralPath $interceptorExe)) {
-    Write-CsWt ('FAILED_interceptor_exe_missing=' + $interceptorExe)
+    Write-CsWt ('FAILED_interceptor_exe_missing=' + (Split-Path -Leaf $interceptorExe))
     Write-CsWt 'BUILD_IT: dotnet publish tools/WriteInterceptor -c Release -r win-x86 --self-contained true -o .build/publish/write-interceptor'
     exit 6
 }
@@ -399,7 +399,7 @@ $durableCapturePath = $ResultPath + '.capture.json'
 if (Test-Path -LiteralPath $captureJson) {
     try {
         Copy-Item -LiteralPath $captureJson -Destination $durableCapturePath -Force
-        Write-CsWt ('durable_capture=' + $durableCapturePath)
+        Write-CsWt ('durable_capture=' + (Split-Path -Leaf $durableCapturePath))
     }
     catch {
         Write-CsWt ('WARN_durable_capture_copy_failed ' + $_.Exception.Message)
@@ -597,7 +597,7 @@ $familyReport = [ordered]@{
     # operator invocation omits it. The value is evidence, not dead state -
     # it also keeps PSReviewUnusedParameter satisfied without a suppression.
     invocationMode     = if ($AutoWriteTrace) { 'auto-write-trace' } else { 'operator' }
-    capturePath        = $durableCapturePath
+    capturePath        = (Split-Path -Leaf $durableCapturePath)
     modules            = $modulesOut
     writeSites         = $writeSitesOut
     members            = $memberEntries
@@ -607,7 +607,7 @@ $familyResultPath = $ResultPath + '.family.json'
 $familyJson = $familyReport | ConvertTo-Json -Depth 10
 [System.IO.File]::WriteAllText($familyResultPath, $familyJson, (New-Object System.Text.UTF8Encoding($false)))
 Write-CsWt ('family_verdict=' + $familyVerdict + ' hit_members=' + $hitMembers.Count + ' liveness=' + $familyReport.windowLiveness + ' values_changed=' + $familyReport.windowValuesChanged)
-Write-CsWt ('family_report=' + $familyResultPath)
+Write-CsWt ('family_report=' + (Split-Path -Leaf $familyResultPath))
 Write-CsWt ('write_sites=' + $writeSitesOut.Count + ' modules=' + $modulesOut.Count)
 
 Write-CsWt 'OK trace_window_completed'

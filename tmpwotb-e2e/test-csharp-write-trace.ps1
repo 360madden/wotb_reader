@@ -112,7 +112,7 @@ if (-not (@($member.rips)[0] -match '^0x[0-9a-fA-F]{4,16}$')) { Write-Host 'FAIL
 # Durable capture + M2-tail enrichment (modules / writeSites / member rvas).
 $captureReport = $resultTxt + '.capture.json'
 if (-not (Test-Path -LiteralPath $captureReport)) { Write-Host 'FAIL_missing_durable_capture'; Cleanup 1 }
-Write-Host ('durable_capture_ok=' + $captureReport)
+Write-Host ('durable_capture_ok=' + (Split-Path -Leaf $captureReport))
 $mods = @()
 if ($fr.PSObject.Properties['modules'] -and $null -ne $fr.modules) { $mods = @($fr.modules) }
 Write-Host ('family_modules=' + $mods.Count)

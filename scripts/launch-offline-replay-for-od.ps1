@@ -29,7 +29,7 @@
   6. Wait for window + settle so WATCH OFFLINE can appear.
   7. Run scripts/click-watch-offline.ps1 (dual: OfflineReplayVerified + dialog gone).
 
-  Never logs private full paths, tokens, or account ids. Basename + sha12 only.
+  Never logs private full paths, replay hashes, tokens, or account ids.
 
 .EXITCODES
   0  OfflineReplayVerified after Watch Offline
@@ -242,7 +242,7 @@ try {
     $sha12 = ((Get-FileHash -Algorithm SHA256 -LiteralPath $replayItem.FullName).Hash).Substring(0, 12)
     Set-Content -Path (Join-Path $env:TEMP 'od-launch-replay.basename') -Value $replayItem.Name -NoNewline
     Set-Content -Path (Join-Path $env:TEMP 'od-launch-replay.sha12') -Value $sha12 -NoNewline
-    Write-Od ("replay=" + $replayItem.Name + " bytes=" + $replayItem.Length + " sha12=" + $sha12)
+    Write-Od ("replay_selected bytes=" + $replayItem.Length)
 
     $cli = Join-Path $RepoRoot 'src\WotBTreader.Host.Cli\bin\Release\net10.0\WotBTreader.Host.Cli.exe'
     if (-not (Test-Path -LiteralPath $cli)) {
@@ -268,7 +268,7 @@ try {
         Sort-Object LastWriteTime -Descending |
         Select-Object -First 1
     if ($null -ne $newestSource -and $newestSource.LastWriteTime -gt (Get-Item -LiteralPath $hostDll).LastWriteTime) {
-        Write-Od ('FAILED_host_stale_build rebuild_release_first newer=' + $newestSource.Name + ' dll=' + $hostDll)
+        Write-Od ('FAILED_host_stale_build rebuild_release_first newer=' + $newestSource.Name)
         exit 1
     }
 

@@ -151,6 +151,23 @@ a module map; promote to `memory-offsets/` before M3 repeatability.
 ephemeral. Always republish the interceptor before the next live round.
 Spec: [`docs/superpowers/specs/2026-08-06-guard-page-write-interceptor.md`](../docs/superpowers/specs/2026-08-06-guard-page-write-interceptor.md).
 
+**Current M3 state (FRESH44/FRESH45):** the viewpoint-position correlation repeated on
+a second independent replay (`0.9375`, with durable sampled series), so
+cross-battle correlation repeatability is satisfied and BLK-0019 is resolved.
+The 25-second trace stayed live but captured zero writes. The matching addresses
+remain transient heap copies, not a stable module RVA or pointer chain; no
+offset is promoted. FRESH45 tested four candidate-derived
+`address-0x1C` base hypotheses with one immediate 12-float batch read. Every
+read succeeded, but no complete XYZ triple matched decoded ground truth; the
+completion gap was 102.2 ms against a 100 ms target. This rejects only those
+four proposed contiguous layouts at that sampled instant. It does not refute
+the static transform layout because the object base, atomicity, and same-clock
+identity remain unproven. Do not repeat either the delayed trace or FRESH45
+unchanged. The next live round requires a synthetically validated,
+provenance-changing capture of the actual object pointer from the known
+game-code transform-fill instruction/register path. See the
+[`FRESH45 handoff`](../docs/operations/handoffs/2026-08-08-fresh45-immediate-triple.md).
+
 ## Evidence publication
 
 1. Discover candidate offsets (Ghidra `FindOffsets.py`/`.java`,

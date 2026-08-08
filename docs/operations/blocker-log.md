@@ -478,7 +478,7 @@ folder for the full numbering convention and document map.
   gameplay, then repeat the same hypothesis and transition protocol in a fresh
   managed launch. Keep all replay artifacts and raw discovery evidence local
   and ignored.
-- Status update `2026-08-08T06:10Z` (OD-RECOVERY-058): resolution path
+  - Status update `2026-08-08T06:10Z` (OD-RECOVERY-058): resolution path
   confirmed. The user replay folder
   (`AppData/Local/wotblitz/DAVAProject/replays/`) holds a second
   independently recorded 11.19.0 replay — the game-named save
@@ -486,9 +486,16 @@ folder for the full numbering convention and document map.
   (sha `0fae5612…`, savanna/Oasis Palms, battle 2026-08-02T21:15:07) — which
   is distinct from the FRESH43 Dead Rail payload (sha `59c3b92e…`). It decoded
   cleanly as session `019fdff7-8dcf-7426-8547-9fb8cc3eb07b` (same player and
-  tank as FRESH43). Cross-battle M3 validation can now run the correlate +
-  interceptor on this second battle in a fresh managed launch.
-- Prevention/follow-up: campaign tooling and summaries must report launch and
+    tank as FRESH43). Cross-battle M3 validation can now run the correlate +
+    interceptor on this second battle in a fresh managed launch.
+  - Status update `2026-08-08T16:32Z` (OD-RECOVERY-059): **resolved**. FRESH44
+    exercised the second content-distinct replay in a fresh managed launch with
+    `OfflineReplayVerified`; the viewpoint-position correlation repeated at
+    `0.9375` (15/16) and the sampled series were preserved durably. This resolves
+    replay availability and independence only. It does not promote an offset:
+    the matching addresses remain transient heap copies and the bounded trace
+    captured no writes.
+  - Prevention/follow-up: campaign tooling and summaries must report launch and
   replay independence separately. Never infer replay independence from file
   count, file name, or repeated launches, and never promote a candidate while
   this blocker remains open.

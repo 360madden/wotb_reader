@@ -58,18 +58,28 @@ full design specification.
   hypothesis stays quarantined. See `offline/replay-format.md`.
 - **Discovery workflow:** use [`docs/operations/offset-discovery-workflow.md`](docs/operations/offset-discovery-workflow.md)
   and append every attempt to [`docs/operations/offset-discovery-ledger.md`](docs/operations/offset-discovery-ledger.md).
-- **M2 write-site path (FRESH36+):** the C# guard-page interceptor
-  (`tools/WriteInterceptor`, x86 self-contained publish) is the live write-trace
-  path; x64dbg write-BP is closed. FRESH36 proved first real game hits (51 writes,
-  4 RIPs) but lost module/RVA/registers because the capture stayed under TEMP —
-  absolute RIPs alone cannot be mapped offline. Durable evidence is now
-  `ResultPath.capture.json` + `.family.json` (`modules`, `writeSites`, member
-  `rvas`) via `scripts/invoke-csharp-write-trace.ps1`. Pure offline analysis:
-  `Core/Discovery/WriteSiteAnalysis` (unit-tested). Next live: republish
-  interceptor, then `od-049-autoloop` with `-StageViewpointOnly` and
-  `-PlaybackSpeedEstimate 2.4`. Detail:
-  [`offline/offset-discovery.md`](offline/offset-discovery.md),
-  [`docs/operations/handoffs/2026-08-07-write-site-durable-evidence.md`](docs/operations/handoffs/2026-08-07-write-site-durable-evidence.md).
+- **M2/M3 offset-discovery state (FRESH43-FRESH45):** the C# guard-page
+  interceptor (`tools/WriteInterceptor`, x86 self-contained publish) is the
+  live write-trace path; x64dbg write-BP is closed. FRESH43 captured and
+  module-mapped the game transform fill path, while static analysis identified
+  the candidate position layout `[entity+0x3C]+0x1C/0x20/0x24`; the proposed
+  global root was later refuted. FRESH44 repeated the viewpoint-position
+  correlation on a second independent replay (`0.9375`, with durable sampled
+  series), resolving BLK-0019 and satisfying cross-battle correlation
+  repeatability. Its bounded write trace was an honest zero-hit result. The
+  matching addresses remain transient heap copies: no stable pointer chain,
+  module-relative field, or same-clock live read of the position triple exists,
+  so no offset is runtime-supported or ready for promotion. FRESH45 then tested
+  the candidate-derived immediate-read hypothesis: all 12 floats for four
+  proposed `candidate-0x1C` layouts were readable, but none matched the complete
+  decoded XYZ triple (102.2 ms completion gap). That is an honest negative for
+  those four layouts at that instant, not a refutation of the static transform
+  layout. Do not repeat it for latency alone. Next is offline/synthetic work to
+  preserve the object pointer from the known game-code transform-fill
+  instruction/register path; only that provenance-changing capture justifies
+  another live round. Detail:
+  [`offline/offset-discovery.md`](offline/offset-discovery.md) and
+  [`docs/operations/handoffs/2026-08-08-fresh45-immediate-triple.md`](docs/operations/handoffs/2026-08-08-fresh45-immediate-triple.md).
 
 ## Quickstart
 

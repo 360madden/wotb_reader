@@ -194,6 +194,8 @@ docs/operations/handoffs/2026-08-07-fresh41-sample-grid-refuted.md
 docs/operations/handoffs/2026-08-07-fresh43-game-code-fill-site-hit.md
 docs/operations/handoffs/2026-08-07-write-site-durable-evidence.md
 docs/operations/handoffs/2026-08-08-fresh44-crossbattle-staged.md
+docs/operations/handoffs/2026-08-08-fresh44-live-crossbattle.md
+docs/operations/handoffs/2026-08-08-fresh45-immediate-triple.md
 docs/operations/handoffs/README.md
 docs/operations/offset-discovery-guide.md
 docs/operations/offset-discovery-ledger.md
@@ -737,6 +739,7 @@ tmpwotb-e2e/test-battle-end-watcher.ps1
 tmpwotb-e2e/test-blitz-real-window.ps1
 tmpwotb-e2e/test-csharp-write-trace.ps1
 tmpwotb-e2e/test-guard-interceptor.ps1
+tmpwotb-e2e/test-immediate-position-triple.ps1
 tmpwotb-e2e/test-solo-emission.ps1
 tmpwotb-e2e/test-viewpoint-filter.ps1
 tmpwotb-e2e/wt-counter-target.cs

@@ -140,6 +140,9 @@ occurred.
 | `OD-RECOVERY-057` | 2026-08-08 | Offline: FRESH43 arm-snapshot anomaly — member addresses are **transient multi-copy buffers**, not stable position fields | Interceptor arm snapshots (x=274.0174 @ 0x22AB0F90, z=296.2679 @ 0x23A4C490, capture `od-048-autotrace-20260807-123621`) vs whole-session decoded coordinate envelope (max \|coordinate\| = 251) + correlate 0.933 (14/15, tol 0.001) ground-truth provider check (`SqliteTrajectoryGroundTruthProvider.cs` reads same `raw_x/raw_y/raw_z`) | `Complete` (offline) | **Anomaly resolved**: correlate-time reads matched decoded world coordinates within 0.001 (real M3-machinery evidence, same ground-truth columns), but arm-time snapshots ~1s later read 274/296 — **outside the entire battle envelope** (no participant ever reaches them; tank max speed 14.8 m/s ⇒ cannot move ~300 units in 1s) → the member addresses are **transient multi-copy buffers** (FRESH37 class): they hold position data only during the staging window, then get reused for unrelated matrix/pool contents | **M3 stable-read NOT satisfied** — trace-time arm snapshot does not reliably return the player position; the correlate match (14/15 exact) is stronger evidence than any trace-time read; next-hypothesis: arm the position triple IMMEDIATELY at correlate completion (<100ms gap) or use the correlate reads themselves as the M3 read; promotion framing shifts to correlate match + cross-battle repeatability + `independentReplays` (BLK-0019); no offset promoted |
 | `OD-RECOVERY-050` | 2026-08-07 | Offline score-distribution analysis (76 survivors across FRESH37/38/39/40/41) + band-weighted emission implemented | `.data/score-distribution-analysis.py` aggregate + od-048 emission harness (4 cases) + end-to-end replay vs real FRESH38/40/41 reports | `Complete` (offline) | **The 0.9 floor is band-blind, not wrong**: both hits were tight-band x (0.5s/6.5s at 0.933); the refused class splits into tight-band x@0.857/3s (FRESH40, same class as hits — should emit) vs wide-band z@0.846–0.857/45–65s (should refuse); band width is the discriminator (score quantizes coarsely: 6/7 = 0.857, 14/15 = 0.933) | **Band-weighted floor implemented in BOTH gates** (od-048 solo emission + family-usable + write-trace Test-FamilyScored, threaded via `TightBandMinScore`/`TightBandMaxSeconds`): tight-band (≤10s) clears at 0.85, wide-band needs strict 0.9; selection order now span → band asc → score; validated offline: FRESH40's 0.857 x/3s would now emit, FRESH38 still emits (0.933 + 2 tight x-siblings), FRESH41's wide z still refused — **2/8 → 4/8 rounds emit, all tight-band x class**; FRESH42 live round is the changed hypothesis |
 | `OD-RECOVERY-054` | 2026-08-08 | Offline: entity container walked toward a stable global — **root claim later REFUTED (see OD-RECOVERY-055)** | `DumpCallers.java` + `DumpWindow.java` (headless `-noanalysis`, hash-verified binary 1cda5c31…); caller BFS from `FUN_0165247c` (RVA 0x125247C) + window dumps at 0x165DB56 / 0x165192F / 0x12673B0 + singleton builders `FUN_008dfaa0`/`FUN_008dfb10`/`FUN_008e13e0` | `Refuted` (root) / `Partial` (offsets) | **Proposed root `DAT_043f516C` (RVA 0x3FF516C) = BattleController singleton — WRONG**: dumping the singleton builders proves it is the **DAVA logger** (`TagLoggerInstanceImpl` + SkipAssert/BreakAssert/ContinueAssert handlers); `FUN_008ee9f0` is the logger singleton getter and the "BattleResources::LoadGameScene" strings are log messages; the AvatarController hop (`[X+0x4]` thunk `FUN_016673a0`) is vtable-dispatched with no static caller → **no stable global root exists for the entity container** (battle-scoped heap). Call-site member offsets `[X+0x154]`/`[X+0x8]`/`[X+0x88]`/`[X+0x30]` remain valid disasm facts; **OD-RECOVERY-053 candidate layout stands** (`[entity+0x3C]+0x1C/20/24` position, `+0x60` matrix) | **Honest negative**: promotion does NOT need a static root — M3 live-read path arms the position triple via the interceptor on a family hit and matches captured values to decoded ground truth; no offset promoted; `independentReplays` still 0 (BLK-0019) |
+| `OD-RECOVERY-059` | 2026-08-08 | FRESH44 live cross-battle M3 correlation on the second independent replay | `invoke-fresh44-crossbattle.ps1` → managed offline launch → OD-048 correlate → C# guard-page interceptor | `Partial` (M3 correlation repeatability) | **BLK-0019 resolved**: a fresh `OfflineReplayVerified` launch on the second content-distinct replay repeated the viewpoint-position phenomenon; selected x family scored **0.9375 (15/16)**, 21 sampled series were preserved, and several survivors matched 16/16 | No stable module RVA, pointer chain, or same-clock live position-triple read; 25-second trace stayed live with 3 pages armed but captured 0 hits/write sites; no offset promoted |
+| `OD-RECOVERY-060` | 2026-08-08 | Formal read-only promotion review after FRESH44 | Promotion checklist + workflow + schema + current offset table + FRESH43/FRESH44 aggregate evidence | `Blocked` (publication only) | M3 cross-battle repeatability is satisfied for the transient viewpoint-position correlation phenomenon; the second independent replay/fresh process and negative heap-copy classification are established | No single module-relative candidate, stable resolver, same-clock `[obj+0x1C/0x20/0x24]` read, all-axis field identity, candidate-bound invariants/provenance, conflict resolution, or approvals; `playerPosition*` correctly remain `0` / `Unknown` |
+| `OD-RECOVERY-061` | 2026-08-08 | FRESH45 live immediate position-triple read | Managed `OfflineReplayVerified` launch → viewpoint correlate → one immediate Float32 batch read for four `candidate-0x1C` layout hypotheses; delayed trace disabled | `NoSignal` (layout hypothesis) / `Partial` (instrumentation) | All 12 requested floats were readable, but none of the four candidates produced a complete XYZ match; the immediate-read choreography and fail-closed reporting worked | Honest negative for those four candidate-derived layouts at that sampled instant only; 102.2 ms completion gap, no proven object base/atomicity/same clock/stable resolver, and no offset promoted |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -4016,3 +4019,212 @@ The savanna replay imported cleanly as session
   satisfiable and promotion (BLK-0019) can proceed.
 - No offset promoted; this unblocks the promotion pipeline rather than
   promoting itself.
+
+## `OD-RECOVERY-059` result — 2026-08-08 (FRESH44 live: cross-battle correlation repeated; trace no-hit)
+
+sessionId: OD-RECOVERY-059
+startedUtc: 2026-08-08T16:30:27Z
+endedUtc: 2026-08-08T16:32:13Z
+status: Partial
+objective: Repeat the FRESH43 viewpoint-position correlation on the second independent replay and capture durable M3 evidence.
+stopCondition: One bounded correlate + 25-second write-trace window, or any offline-gate/artifact failure.
+game:
+  version: 11.19.0.10
+  processStartIdentity: recorded-locally
+replay:
+  replayIdentity: local-redacted-independent-replay-2
+  offlineGate: OfflineReplayVerified
+method:
+  staging: viewpoint-only
+  playbackSpeedEstimate: 2.4
+  traceEngine: csharp-guard-page
+  sourceArmOnFirstHit: true
+result:
+  verdict: evidence-strong
+  addressesScored: 812
+  totalSamples: 12992
+  strongSurvivors: 21
+  durableSeries: 21
+  samplesPerSeries: 16
+  selectedFamily: x-only-solo
+  selectedScore: 0.9375
+  selectedMatches: 15/16
+  selectedSpan: 249.2
+  selectedBandSeconds: 4.0
+  traceVerdict: family-no-hit
+  traceWindowSeconds: 25
+  traceLiveness: running
+  pagesArmed: 3
+  hits: 0
+evidence:
+  independentReplays: 1
+  crossBattleCorrelationRepeatability: satisfied
+  stableAddressKind: not-satisfied
+  sameClockPositionTripleRead: not-satisfied
+artifacts:
+  rawEvidence: private-local-ignored
+  durableSeries: private-local-ignored
+
+### Interpretation
+
+- The transient viewpoint-position correlation repeated cross-battle:
+  FRESH43 scored 0.933 (14/15); FRESH44 selected 0.9375 (15/16), with several
+  additional 16/16 survivors. The actual value/time samples survived in the
+  bounded `seriesEvidence` payload.
+- BLK-0019 is resolved: the second content-distinct replay was exercised in a
+  fresh positively verified offline launch. Resolution establishes replay
+  independence, not offset correctness.
+- The trace is an honest negative: the game stayed live, three pages were
+  armed, and no writes or source pages were observed in the 25-second window.
+  This does not erase FRESH43's game-code matrix-fill evidence, and it does not
+  prove writes are absent outside this window.
+- No offset is promoted. FRESH44 is `evidence-strong`, not `family-complete`;
+  the selected family is x-only, the addresses are transient heap copies, the
+  proposed static root remains refuted, and the position triple has not been
+  read live at the same decoded clock across replays.
+
+### Operational fixes made before the accepted run
+
+- The first launch attempt was stopped and its incomplete log discarded after
+  a preflight audit found a stale published interceptor. No evidence from that
+  attempt is accepted.
+- FRESH44 now fails closed when the interceptor publish is older than its
+  source, redacts private paths and replay identity from its durable log/result,
+  and stops the research host after the bounded run.
+- The report now exposes `strongSurvivorCount` and
+  `strongSurvivorsTruncated`; the prior array was intentionally capped at 20,
+  which made the live count of 21 appear inconsistent with the JSON summary.
+
+### Next
+
+1. Open a read-only promotion review that records M3 cross-battle correlation
+   repeatability as satisfied but publication blocked.
+2. Do not repeat the delayed 25-second trace unchanged.
+3. If another live round is approved, first validate a changed hypothesis that
+   reads `[obj+0x1C..0x24]` immediately (<100 ms) at correlate completion,
+   aligns it to decoded ground truth, preserves object/displacement provenance,
+   and repeats the same addressable candidate on the other replay.
+
+## `OD-RECOVERY-060` result — 2026-08-08 (read-only promotion review)
+
+```yaml
+sessionId: OD-RECOVERY-060
+status: Blocked (publication only)
+type: formal promotion-checklist review
+inputs: workflow + schema + current offset table + FRESH43/FRESH44 aggregate evidence
+result:
+  m3CrossBattleCorrelationRepeatability: satisfied
+  publishableCandidate: not-satisfied
+  verifiedPromotion: not-satisfied
+  currentTableAction: keep-playerPosition-fields-zero-and-Unknown
+```
+
+### Criterion review
+
+| Criterion | Status | Review finding |
+|---|---|---|
+| Offline authorization | Satisfied | FRESH44 ran under `OfflineReplayVerified`. |
+| Independent replay/process repeatability | Satisfied for the phenomenon | A fresh launch on the second content-distinct replay repeated the viewpoint-x correlation. |
+| Address kind | Classified, disqualifying | The correlated addresses are transient heap copies, not publishable module-relative fields. |
+| Decimal/hex candidate agreement | Not satisfied | No numeric offset candidate exists to reconcile. |
+| Intended field type and behavior | Partial | Float viewpoint-x behavior repeated; a live object-position x/y/z triple did not. |
+| Same candidate across launches/replays | Not satisfied | The phenomenon repeated, but no stable displacement, pointer chain, or resolver did. |
+| Static-analysis provenance | Partial | Static disassembly supports `[entity+0x3C]+0x1C/0x20/0x24`; it is not connected to a live addressable candidate. |
+| GameHarness provenance and invariants | Not satisfied | Historical gated scanner evidence exists, but no candidate-specific invariant pass exists. |
+| Conflicts | Not satisfied | The proposed static root is refuted and no replacement resolver is proven. |
+| Lead / decoder approvals | Not satisfied | No promotion approval is recorded. |
+| Schema and evidence report | Not satisfied for promotion | Validation proves the zero-offset placeholder is valid; it does not create missing evidence. |
+
+### Decision
+
+- M3 cross-battle repeatability is accepted only for the transient correlation
+  phenomenon. It does not increment candidate-specific promotion counts.
+- `memory-offsets/11.19.0.10.json` remains unchanged: the position fields stay
+  `0` / `Unknown`, harness invariants and approvals stay false.
+- Publication is blocked until one addressable layout is tied to the actual
+  transform object, read at the same decoded clock, and repeated with the same
+  relative displacements in another fresh process/replay. Even then, the
+  current offset schema still needs a stable module-relative resolver before
+  the field can be published.
+- The next admissible live hypothesis is a synthetically validated immediate
+  batch read: derive a **candidate object-base hypothesis** from a strong
+  viewpoint-x address (`candidate - 0x1C`), read `+0x1C/+0x20/+0x24` in one
+  gated call immediately after correlation, measure the response gap, compare
+  all three floats to decoded viewpoint ground truth, and keep the base marked
+  `hypothesized` unless independent write/register evidence proves it.
+
+## `OD-RECOVERY-061` result — 2026-08-08 (FRESH45 immediate triple: no layout match)
+
+```yaml
+sessionId: OD-RECOVERY-061
+startedUtc: 2026-08-08T17:25:33Z
+endedUtc: 2026-08-08T17:27:22Z
+status: NoSignal (candidate-derived layout) / Partial (instrumentation)
+objective: Test OD-RECOVERY-060's immediate candidate-minus-displacement hypothesis without claiming a proven object base.
+stopCondition: One bounded correlate plus one immediate batch read, with the delayed write trace disabled.
+replay:
+  replayIdentity: local-redacted-independent-replay-2
+  offlineGate: OfflineReplayVerified
+method:
+  staging: viewpoint-only
+  playbackSpeedEstimate: 2.4
+  positionCandidateCap: 4
+  requestedFloatReads: 12
+  targetGapMilliseconds: 100
+  tolerance: 6.0
+  delayedWriteTrace: disabled
+result:
+  correlateVerdict: evidence-strong
+  addressesScored: 866
+  totalSamples: 13856
+  strongSurvivors: 22
+  strongByAxis: { x: 19, y: 0, z: 3 }
+  immediateReadStatus: complete
+  readableFloats: 12/12
+  matchingXyzCandidates: 0/4
+  immediateReadVerdict: no-hypothesis-match
+  dispatchGapMilliseconds: 81.838
+  requestRoundTripMilliseconds: 2.28
+  completionGapMilliseconds: 102.2
+  withinTargetGap: false
+evidence:
+  provenanceKind: candidate-derived-layout-hypothesis
+  objectBaseProven: false
+  atomicReadProven: false
+  sameClockProven: false
+  stableResolverProven: false
+artifacts:
+  rawEvidence: private-local-ignored
+```
+
+### Interpretation
+
+- The immediate-read instrumentation worked end-to-end under the positive
+  offline gate: it selected four strong viewpoint-x candidates, derived the
+  proposed bases, issued one bounded batch, preserved timing/provenance, and
+  rejected instrumentation failures separately from scientific negatives.
+- None of the four proposed contiguous layouts matched the complete decoded XYZ
+  triple. One candidate matched X within tolerance while Y and Z missed by
+  28.6 and 10.5 units; two high-scoring candidates had zero-valued neighbors.
+  This strengthens the existing classification that the correlated x values
+  are transient copies rather than proven transform-object bases.
+- The 2.2 ms target overrun does not explain the substantive Y/Z mismatches.
+  An unchanged latency-only rerun is not warranted.
+- This is not evidence against the static position-member layout globally.
+  Candidate-derived bases are still hypotheses, and no true object pointer,
+  atomic snapshot, same-clock identity, stable resolver, or module-relative
+  offset was established.
+- FRESH44's cross-battle correlation repeatability and BLK-0019 resolution stay
+  accepted. `memory-offsets/11.19.0.10.json` remains unchanged.
+
+### Next
+
+1. Do not repeat FRESH45 unchanged and do not optimize merely to cross the
+   100 ms target.
+2. Offline/static-only, design and synthetically validate a bounded capture
+   anchored at the already evidenced game-code transform-fill instruction and
+   register path. Preserve module/instruction identity and the live
+   register-derived object pointer.
+3. Only after that provenance path passes synthetic validation, use one fresh
+   positively verified offline session to read the actual object base's
+   `+0x1C/+0x20/+0x24` members and compare them with decoded ground truth.
