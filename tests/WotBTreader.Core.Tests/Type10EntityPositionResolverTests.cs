@@ -285,6 +285,113 @@ public sealed class Type10EntityPositionResolverTests
         Assert.AreEqual(0, reads);
     }
 
+    [TestMethod]
+    public void ResolveRecordAddress_CachedEntity_ReturnsRecordAndPage()
+    {
+        MemoryFixture memory = MemoryFixture.CreateCached(EntityId, 12.5f, -3.25f, 44.75f);
+
+        Type10EntityPositionAddressResult result = Type10EntityPositionResolver.ResolveRecordAddress(
+            ModuleBase,
+            EntityId,
+            Type10EntityPositionLayout.WotBlitz1119010,
+            memory.Read);
+
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, result.Status);
+        Assert.AreEqual(memory.Record, result.RecordAddress);
+        Assert.AreEqual(memory.Record & ~0xFFFu, result.PageAddress);
+        Assert.AreEqual(1, result.Attempts);
+        Assert.IsTrue(result.ModuleRooted);
+        Assert.IsNull(result.FailureStage);
+    }
+
+    [TestMethod]
+    public void ResolveRecordAddress_UnstableSnapshot_ReturnsNullAddresses()
+    {
+        MemoryFixture memory = MemoryFixture.CreateCached(EntityId, 1f, 2f, 3f);
+        int recordReads = 0;
+        memory.BeforeRead = (address, length) =>
+        {
+            if (address == memory.Record && length == 0x38 && ++recordReads == 2)
+            {
+                memory.WritePosition(memory.Record, 10f, 20f, 30f);
+            }
+        };
+
+        Type10EntityPositionAddressResult result = Type10EntityPositionResolver.ResolveRecordAddress(
+            ModuleBase,
+            EntityId,
+            Type10EntityPositionLayout.WotBlitz1119010,
+            memory.Read);
+
+        // One retry succeeds (double-collect stabilizes), so the address resolves.
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, result.Status);
+        Assert.AreEqual(2, result.Attempts);
+        Assert.AreEqual(memory.Record, result.RecordAddress);
+    }
+
+    [TestMethod]
+    public void ResolveRecordAddress_NonFinitePosition_NeverReturnsAddress()
+    {
+        MemoryFixture memory = MemoryFixture.CreateCached(EntityId, float.NaN, 2f, 3f);
+
+        Type10EntityPositionAddressResult result = Type10EntityPositionResolver.ResolveRecordAddress(
+            ModuleBase,
+            EntityId,
+            Type10EntityPositionLayout.WotBlitz1119010,
+            memory.Read);
+
+        Assert.AreEqual(Type10EntityPositionStatus.NonFinitePosition, result.Status);
+        Assert.IsNull(result.RecordAddress);
+        Assert.IsNull(result.PageAddress);
+        Assert.AreEqual(3, result.Attempts);
+    }
+
+    [TestMethod]
+    public void ResolveRecordAddress_InvalidModuleBase_IsRejectedBeforeRead()
+    {
+        int reads = 0;
+        EntityPositionMemoryReader reader = (_, _) =>
+        {
+            reads++;
+            return false;
+        };
+
+        Type10EntityPositionAddressResult result = Type10EntityPositionResolver.ResolveRecordAddress(
+            0xff000000,
+            EntityId,
+            Type10EntityPositionLayout.WotBlitz1119010,
+            reader);
+
+        Assert.AreEqual(Type10EntityPositionStatus.InvalidModuleBase, result.Status);
+        Assert.AreEqual(0, reads);
+        Assert.IsNull(result.RecordAddress);
+        Assert.IsNull(result.PageAddress);
+    }
+
+    [TestMethod]
+    public void ResolveRecordAddress_MalformedLayout_IsRejectedBeforeRead()
+    {
+        Type10EntityPositionLayout invalid = Type10EntityPositionLayout.WotBlitz1119010 with
+        {
+            EntityTreeObjectOffsets = [0x1c, 0x40],
+        };
+        int reads = 0;
+
+        Type10EntityPositionAddressResult result = Type10EntityPositionResolver.ResolveRecordAddress(
+            ModuleBase,
+            EntityId,
+            invalid,
+            (_, _) =>
+            {
+                reads++;
+                return false;
+            });
+
+        Assert.AreEqual(Type10EntityPositionStatus.InvalidLayout, result.Status);
+        Assert.AreEqual(0, reads);
+        Assert.IsNull(result.RecordAddress);
+    }
+
     private static Type10EntityPositionResult Resolve(MemoryFixture memory) =>
         Type10EntityPositionResolver.Resolve(
             ModuleBase,

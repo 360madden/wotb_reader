@@ -34,6 +34,7 @@ internal static class GameApiEndpoints
         group.MapPost("/discover/neighborhood", DiscoverNeighborhoodAsync);
         group.MapPost("/discover/read", ReadOffsetsAsync);
         group.MapPost("/discover/entity-position", ReadEntityPositionAsync);
+        group.MapPost("/discover/position-page", ResolveEntityPositionAddressAsync);
         group.MapPost("/discover/clock-segment", AppendClockSegmentAsync);
         group.MapPost("/discover/instruction-snapshot", CaptureInstructionSnapshotAsync);
         group.MapGet("/discover/trajectory/{battleSessionId:guid}", GetTrajectoryAsync);
@@ -874,6 +875,45 @@ internal static class GameApiEndpoints
             ConsistentDoubleRead = read.ConsistentDoubleRead,
             HardwareAtomicReadProven = read.HardwareAtomicReadProven,
             SameDecodedClockProven = read.SameDecodedClockProven,
+        });
+    }
+
+    internal static async Task<IResult> ResolveEntityPositionAddressAsync(
+        IGameMemoryScanner scanner,
+        WotBTreader.ApiContracts.EntityPositionAddressRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(scanner);
+        ArgumentNullException.ThrowIfNull(request);
+
+        OperationResult<EntityPositionAddressResult> result = await scanner
+            .ResolveEntityPositionAddressAsync(
+                new WotBTreader.Application.Game.EntityPositionAddressRequest(
+                    request.EntityId),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!result.IsSuccess || result.Value is null)
+        {
+            return Results.BadRequest(new
+            {
+                error = result.Error?.Code ?? "discover.entity_position.address_read_failed",
+            });
+        }
+
+        EntityPositionAddressResult resolved = result.Value;
+        return Results.Ok(new EntityPositionAddressResponse
+        {
+            Status = resolved.Status.ToString(),
+            RecordAddress = resolved.RecordAddress is uint record
+                ? "0x" + record.ToString("X8", CultureInfo.InvariantCulture)
+                : null,
+            PageAddress = resolved.PageAddress is uint page
+                ? "0x" + page.ToString("X8", CultureInfo.InvariantCulture)
+                : null,
+            FailureStage = resolved.FailureStage,
+            Attempts = resolved.Attempts,
+            NodesVisited = resolved.NodesVisited,
+            ModuleRooted = resolved.ModuleRooted,
         });
     }
 

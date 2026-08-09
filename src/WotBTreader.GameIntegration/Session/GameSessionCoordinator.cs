@@ -1903,6 +1903,92 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         }
     }
 
+    public async ValueTask<OperationResult<EntityPositionAddressResult>> ResolveEntityPositionAddressAsync(
+        EntityPositionAddressRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        (AuthorizedMemoryObservation? observation, long baseAddress, CancellationToken authorizationToken, bool ok) =
+            GetScanAuthorization(cancellationToken);
+        if (!ok)
+        {
+            return GateCheck<EntityPositionAddressResult>(
+                "discover.gate_not_satisfied",
+                "The offline-session gate is not satisfied.");
+        }
+
+        using CancellationTokenSource readCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, authorizationToken);
+        try
+        {
+            Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+            if (!string.Equals(
+                observation!.ProductVersion,
+                layout.GameVersion,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                observation.ExecutableSha256.Value,
+                layout.ExecutableSha256,
+                StringComparison.Ordinal))
+            {
+                return OperationResult.Failure<EntityPositionAddressResult>(
+                    new ApplicationError(
+                        "discover.entity_position.address_unsupported_build",
+                        "The running build does not match the exact-build layout; " +
+                        "the position page cannot be resolved for interceptor arming."));
+            }
+
+            OperationResult<IAuthorizedMemoryReader> readerResult = await _memoryReaderFactory
+                .CreateAsync(observation, readCancellation.Token)
+                .ConfigureAwait(false);
+            if (!readerResult.IsSuccess || readerResult.Value is null)
+            {
+                return OperationResult.Failure<EntityPositionAddressResult>(
+                    new ApplicationError(
+                        "discover.entity_position.read_unavailable",
+                        "The guarded entity-position reader is unavailable."));
+            }
+
+            OperationResult<Type10EntityPositionAddressResult> resolveResult =
+                await readerResult.Value.ResolveEntityPositionAddressAsync(
+                    (nint)baseAddress,
+                    request.EntityId,
+                    layout,
+                    readCancellation.Token).ConfigureAwait(false);
+            if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+            {
+                return GateCheck<EntityPositionAddressResult>(
+                    "discover.gate_not_satisfied",
+                    "The offline-session gate is no longer satisfied.");
+            }
+
+            if (!resolveResult.IsSuccess || resolveResult.Value is null)
+            {
+                return OperationResult.Failure<EntityPositionAddressResult>(
+                    resolveResult.Error ?? new ApplicationError(
+                        "discover.entity_position.address_read_failed",
+                        "The entity-position address read failed."));
+            }
+
+            Type10EntityPositionAddressResult resolved = resolveResult.Value;
+            return OperationResult.Success(new EntityPositionAddressResult(
+                resolved.Status,
+                resolved.RecordAddress,
+                resolved.PageAddress,
+                resolved.FailureStage,
+                resolved.Attempts,
+                resolved.NodesVisited,
+                resolved.ModuleRooted));
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return GateCheck<EntityPositionAddressResult>(
+                "discover.gate_not_satisfied",
+                "The offline-session gate is no longer satisfied.");
+        }
+    }
+
     public async ValueTask<OperationResult<InstructionSnapshotResult>> CaptureInstructionSnapshotAsync(
         InstructionSnapshotRequest request,
         CancellationToken cancellationToken)

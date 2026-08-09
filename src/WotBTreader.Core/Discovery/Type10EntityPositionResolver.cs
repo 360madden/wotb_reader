@@ -115,6 +115,22 @@ public sealed record Type10EntityPositionResult(
     bool HardwareAtomicReadProven);
 
 /// <summary>
+/// Diagnostic projection of a resolver traversal: the ring-record address and
+/// its page for the requested entity, when resolved. Deliberately NOT part of
+/// <see cref="Type10EntityPositionResult"/> so poll results never leak process
+/// locations; only the gate-verified position-page endpoint uses this record,
+/// to arm the guard-page interceptor on the exact page a poll reads.
+/// </summary>
+public sealed record Type10EntityPositionAddressResult(
+    Type10EntityPositionStatus Status,
+    uint? RecordAddress,
+    uint? PageAddress,
+    string? FailureStage,
+    int Attempts,
+    int NodesVisited,
+    bool ModuleRooted);
+
+/// <summary>
 /// Pure x86 resolver for the hash-bound type-10 entity family. It follows a
 /// module root, searches the same three BWEntities maps as the game, validates
 /// the entity/filter/helper identities, and double-collects the newest ring
@@ -142,11 +158,87 @@ public static class Type10EntityPositionResolver
         ArgumentNullException.ThrowIfNull(layout);
         ArgumentNullException.ThrowIfNull(reader);
 
+        AttemptLoopResult loop = RunAttemptLoop(moduleBase, entityId, layout, reader);
+        if (loop.Final.Status == Type10EntityPositionStatus.Resolved)
+        {
+            return new Type10EntityPositionResult(
+                loop.Final.Status,
+                entityId,
+                loop.Final.X,
+                loop.Final.Y,
+                loop.Final.Z,
+                loop.Final.EntitySource,
+                null,
+                loop.Attempts,
+                loop.TotalNodesVisited,
+                ModuleRooted: true,
+                EntityIdentityRevalidated: true,
+                ConsistentDoubleRead: true,
+                HardwareAtomicReadProven: false);
+        }
+
+        return Failure(
+            loop.Final.Status,
+            entityId,
+            loop.Final.FailureStage,
+            loop.Attempts,
+            loop.TotalNodesVisited,
+            loop.Final.EntitySource,
+            loop.Final.ModuleRooted);
+    }
+
+    /// <summary>
+    /// Diagnostic-only entry: runs the same traversal as <see cref="Resolve"/>
+    /// (same module root, same entity/filter/helper identities, same ring
+    /// selection) and returns the ring-record address and its page instead of
+    /// the position bytes. Used by the gate-verified position-page endpoint so
+    /// the guard-page interceptor can arm the exact page a poll reads. The
+    /// address is deliberately NOT part of <see cref="Type10EntityPositionResult"/>
+    /// and never lands in poll results or persisted aggregates.
+    /// </summary>
+    public static Type10EntityPositionAddressResult ResolveRecordAddress(
+        uint moduleBase,
+        int entityId,
+        Type10EntityPositionLayout layout,
+        EntityPositionMemoryReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        ArgumentNullException.ThrowIfNull(reader);
+
+        AttemptLoopResult loop = RunAttemptLoop(moduleBase, entityId, layout, reader);
+        if (loop.Final.Status == Type10EntityPositionStatus.Resolved &&
+            loop.Final.RecordAddress is uint record)
+        {
+            return new Type10EntityPositionAddressResult(
+                Type10EntityPositionStatus.Resolved,
+                record,
+                record & ~0xFFFu,
+                null,
+                loop.Attempts,
+                loop.TotalNodesVisited,
+                ModuleRooted: true);
+        }
+
+        return new Type10EntityPositionAddressResult(
+            loop.Final.Status,
+            null,
+            null,
+            loop.Final.FailureStage,
+            loop.Attempts,
+            loop.TotalNodesVisited,
+            loop.Final.ModuleRooted);
+    }
+
+    private static AttemptLoopResult RunAttemptLoop(
+        uint moduleBase,
+        int entityId,
+        Type10EntityPositionLayout layout,
+        EntityPositionMemoryReader reader)
+    {
         if (!IsValid(layout))
         {
-            return Failure(
+            return AttemptLoopResult.Failed(
                 Type10EntityPositionStatus.InvalidLayout,
-                entityId,
                 "layout",
                 attempts: 0,
                 nodesVisited: 0);
@@ -167,15 +259,15 @@ public static class Type10EntityPositionResolver
                 layout.AvatarHelperVtableRvas,
                 out uint[] expectedHelperVtables))
         {
-            return Failure(
+            return AttemptLoopResult.Failed(
                 Type10EntityPositionStatus.InvalidModuleBase,
-                entityId,
                 "module-base",
                 attempts: 0,
                 nodesVisited: 0);
         }
 
-        Type10EntityPositionResult? lastFailure = null;
+        AttemptResult? last = null;
+        int lastAttempt = 0;
         int totalNodesVisited = 0;
         for (int attempt = 1; attempt <= layout.MaxAttempts; attempt++)
         {
@@ -191,46 +283,42 @@ public static class Type10EntityPositionResolver
                 layout,
                 reader);
             totalNodesVisited += current.NodesVisited;
+            last = current;
+            lastAttempt = attempt;
 
-            if (current.Status == Type10EntityPositionStatus.Resolved)
+            if (current.Status == Type10EntityPositionStatus.Resolved ||
+                !current.Retryable)
             {
-                return new Type10EntityPositionResult(
-                    current.Status,
-                    entityId,
-                    current.X,
-                    current.Y,
-                    current.Z,
-                    current.EntitySource,
-                    null,
-                    attempt,
-                    totalNodesVisited,
-                    ModuleRooted: true,
-                    EntityIdentityRevalidated: true,
-                    ConsistentDoubleRead: true,
-                    HardwareAtomicReadProven: false);
-            }
-
-            lastFailure = Failure(
-                current.Status,
-                entityId,
-                current.FailureStage,
-                attempt,
-                totalNodesVisited,
-                current.EntitySource,
-                current.ModuleRooted);
-
-            if (!current.Retryable)
-            {
-                return lastFailure;
+                break;
             }
         }
 
-        return lastFailure ?? Failure(
-            Type10EntityPositionStatus.UnstableSnapshot,
-            entityId,
-            "attempts",
-            layout.MaxAttempts,
-            totalNodesVisited);
+        if (last is null)
+        {
+            // Defensive: a valid layout always allows at least one attempt.
+            return AttemptLoopResult.Failed(
+                Type10EntityPositionStatus.UnstableSnapshot,
+                "attempts",
+                layout.MaxAttempts,
+                0);
+        }
+
+        return new AttemptLoopResult(last, lastAttempt, totalNodesVisited);
+    }
+
+    private sealed record AttemptLoopResult(
+        AttemptResult Final,
+        int Attempts,
+        int TotalNodesVisited)
+    {
+        public static AttemptLoopResult Failed(
+            Type10EntityPositionStatus status,
+            string stage,
+            int attempts,
+            int nodesVisited) => new(
+                AttemptResult.Stop(status, stage, nodesVisited, moduleRooted: false),
+                attempts,
+                nodesVisited);
     }
 
     private static AttemptResult TryResolveOnce(
@@ -589,7 +677,8 @@ public static class Type10EntityPositionResolver
             y,
             z,
             lookup.NodesVisited,
-            lookup.Source);
+            lookup.Source,
+            recordAddress);
     }
 
     private static EntityLookup FindEntity(
@@ -943,14 +1032,16 @@ public static class Type10EntityPositionResolver
         float? X,
         float? Y,
         float? Z,
-        bool ModuleRooted)
+        bool ModuleRooted,
+        uint? RecordAddress)
     {
         public static AttemptResult Success(
             float x,
             float y,
             float z,
             int nodesVisited,
-            string? source) => new(
+            string? source,
+            uint recordAddress) => new(
                 Type10EntityPositionStatus.Resolved,
                 null,
                 Retryable: false,
@@ -959,7 +1050,8 @@ public static class Type10EntityPositionResolver
                 x,
                 y,
                 z,
-                ModuleRooted: true);
+                ModuleRooted: true,
+                recordAddress);
 
         public static AttemptResult Retry(
             Type10EntityPositionStatus status,
@@ -975,7 +1067,8 @@ public static class Type10EntityPositionResolver
                 null,
                 null,
                 null,
-                moduleRooted);
+                moduleRooted,
+                RecordAddress: null);
 
         public static AttemptResult Stop(
             Type10EntityPositionStatus status,
@@ -991,7 +1084,8 @@ public static class Type10EntityPositionResolver
                 null,
                 null,
                 null,
-                moduleRooted);
+                moduleRooted,
+                RecordAddress: null);
     }
 
     private sealed record EntityLookup(

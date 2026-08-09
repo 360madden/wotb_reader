@@ -34,6 +34,19 @@ internal interface IAuthorizedMemoryReader
         int entityId,
         Type10EntityPositionLayout layout,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Diagnostic-only: runs the same traversal as
+    /// <see cref="ResolveEntityPositionAsync"/> under the same lease but
+    /// returns the ring-record page address (for guard-page interceptor
+    /// arming) instead of the position bytes. Never used by the poll result
+    /// path and never persisted in aggregates.
+    /// </summary>
+    ValueTask<OperationResult<Type10EntityPositionAddressResult>> ResolveEntityPositionAddressAsync(
+        nint moduleBase,
+        int entityId,
+        Type10EntityPositionLayout layout,
+        CancellationToken cancellationToken);
 }
 
 internal interface IGuardedMemoryReaderFactory
@@ -610,6 +623,89 @@ internal sealed class GuardedMemoryReaderFactory(TimeProvider timeProvider)
                         new ApplicationError(
                             "game.memory.unavailable",
                             "The entity-position read is unavailable.",
+                            Retryable: true)));
+            }
+        }
+
+        public ValueTask<OperationResult<Type10EntityPositionAddressResult>> ResolveEntityPositionAddressAsync(
+            nint moduleBase,
+            int entityId,
+            Type10EntityPositionLayout layout,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(layout);
+            cancellationToken.ThrowIfCancellationRequested();
+            long moduleBaseValue = moduleBase.ToInt64();
+            if (moduleBaseValue is < 0x00010000 or > uint.MaxValue)
+            {
+                return ValueTask.FromResult(
+                    OperationResult.Failure<Type10EntityPositionAddressResult>(
+                        new ApplicationError(
+                            "game.memory.invalid_module_base",
+                            "The module base is outside the supported x86 address range.",
+                            Retryable: false)));
+            }
+
+            using AuthorizedProcessLease? lease = AuthorizedProcessLease.Open(
+                observation,
+                timeProvider,
+                cancellationToken);
+            if (lease is null || lease.Architecture != "x86" || lease.PointerSize != sizeof(uint))
+            {
+                return ValueTask.FromResult(
+                    OperationResult.Failure<Type10EntityPositionAddressResult>(
+                        new ApplicationError(
+                            "game.memory.identity_mismatch",
+                            "The process identity or architecture is not authorized.",
+                            Retryable: false)));
+            }
+
+            byte[] scratch = GC.AllocateUninitializedArray<byte>(0x38);
+            bool Read(uint address, Span<byte> destination)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (destination.Length <= 0 || destination.Length > scratch.Length)
+                {
+                    return false;
+                }
+
+                bool readOk = lease.TryRead(
+                    (nint)address,
+                    scratch,
+                    0,
+                    destination.Length,
+                    cancellationToken,
+                    out nuint bytesRead);
+                if (!readOk || bytesRead != (nuint)destination.Length)
+                {
+                    return false;
+                }
+
+                scratch.AsSpan(0, destination.Length).CopyTo(destination);
+                return true;
+            }
+
+            try
+            {
+                Type10EntityPositionAddressResult result =
+                    Type10EntityPositionResolver.ResolveRecordAddress(
+                        checked((uint)moduleBaseValue),
+                        entityId,
+                        layout,
+                        Read);
+                return ValueTask.FromResult(OperationResult.Success(result));
+            }
+            catch (Exception exception) when (
+                exception is Win32Exception
+                    or IOException
+                    or UnauthorizedAccessException
+                    or InvalidOperationException)
+            {
+                return ValueTask.FromResult(
+                    OperationResult.Failure<Type10EntityPositionAddressResult>(
+                        new ApplicationError(
+                            "game.memory.unavailable",
+                            "The entity-position address read is unavailable.",
                             Retryable: true)));
             }
         }

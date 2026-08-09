@@ -267,6 +267,17 @@ public interface IGameMemoryScanner
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Diagnostic-only, gate-verified: runs the same traversal as
+    /// <see cref="ReadEntityPositionAsync"/> and returns the ring-record page
+    /// address so the guard-page interceptor can arm the exact page a poll
+    /// reads. The address is never returned by the read path and never lands
+    /// in poll results or persisted aggregates.
+    /// </summary>
+    ValueTask<OperationResult<EntityPositionAddressResult>> ResolveEntityPositionAddressAsync(
+        EntityPositionAddressRequest request,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Captures bounded register-derived position triples at a version-pinned
     /// game-code instruction. The coordinator, not the caller, supplies the
     /// process identity, module, RVA, register, and member displacement.
@@ -335,6 +346,29 @@ public sealed record EntityPositionReadResult(
     bool ConsistentDoubleRead,
     bool HardwareAtomicReadProven,
     bool SameDecodedClockProven);
+
+/// <summary>
+/// Bounded diagnostic request for the gate-verified position-page endpoint.
+/// Only the decoded entity ID is caller-supplied; the process identity and
+/// the resolved page address are coordinator-owned.
+/// </summary>
+public sealed record EntityPositionAddressRequest(int EntityId);
+
+/// <summary>
+/// Diagnostic result from the gate-verified position-page endpoint: the
+/// ring-record address and its page for the requested entity. Deliberately a
+/// separate record from <see cref="EntityPositionReadResult"/> so the poll
+/// path never carries process locations; used only to arm the guard-page
+/// interceptor on the exact page a poll reads.
+/// </summary>
+public sealed record EntityPositionAddressResult(
+    Type10EntityPositionStatus Status,
+    uint? RecordAddress,
+    uint? PageAddress,
+    string? FailureStage,
+    int Attempts,
+    int NodesVisited,
+    bool ModuleRooted);
 
 /// <summary>
 /// Bounded operator request for the server-owned instruction-first position

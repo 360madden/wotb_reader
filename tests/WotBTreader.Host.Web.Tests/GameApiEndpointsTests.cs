@@ -980,6 +980,56 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task PositionPage_ForwardsEntityIdAndProjectsHexAddresses()
+    {
+        var scanner = new FakeGameMemoryScanner
+        {
+            EntityPositionAddressResult = OperationResult.Success(
+                new WotBTreader.Application.Game.EntityPositionAddressResult(
+                    Type10EntityPositionStatus.Resolved,
+                    RecordAddress: 0x25000038,
+                    PageAddress: 0x25000000,
+                    FailureStage: null,
+                    Attempts: 1,
+                    NodesVisited: 3,
+                    ModuleRooted: true)),
+        };
+
+        IResult result = await GameApiEndpoints.ResolveEntityPositionAddressAsync(
+            scanner,
+            new WotBTreader.ApiContracts.EntityPositionAddressRequest { EntityId = 4242 },
+            TestContext.CancellationToken);
+
+        EntityPositionAddressResponse response = Value<EntityPositionAddressResponse>(result);
+        Assert.AreEqual(4242, scanner.LastEntityPositionAddressRequest?.EntityId);
+        Assert.AreEqual("Resolved", response.Status);
+        Assert.AreEqual("0x25000038", response.RecordAddress);
+        Assert.AreEqual("0x25000000", response.PageAddress);
+        Assert.IsTrue(response.ModuleRooted);
+        string json = JsonSerializer.Serialize(response, CamelCaseJson);
+        Assert.IsTrue(json.Contains("0x25000038", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task PositionPage_FailureReturnsBadRequest()
+    {
+        var scanner = new FakeGameMemoryScanner
+        {
+            EntityPositionAddressResult = OperationResult.Failure<WotBTreader.Application.Game.EntityPositionAddressResult>(
+                new ApplicationError(
+                    "discover.entity_position.address_unsupported_build",
+                    "The running build does not match the exact-build layout.")),
+        };
+
+        IResult result = await GameApiEndpoints.ResolveEntityPositionAddressAsync(
+            scanner,
+            new WotBTreader.ApiContracts.EntityPositionAddressRequest { EntityId = 4242 },
+            TestContext.CancellationToken);
+
+        Assert.AreEqual(StatusCodes.Status400BadRequest, ((IStatusCodeHttpResult)result).StatusCode);
+    }
+
+    [TestMethod]
     public async Task InstructionSnapshotForwardsOnlyBoundsAndProjectsSafeEvidence()
     {
         DateTimeOffset capturedAt = DateTimeOffset.UnixEpoch.AddSeconds(5);
@@ -1676,6 +1726,7 @@ public sealed class GameApiEndpointsTests
         public CancellationToken LastCancellationToken { get; private set; }
         public MemoryReadRequest? LastReadRequest { get; private set; }
         public WotBTreader.Application.Game.EntityPositionReadRequest? LastEntityPositionRequest { get; private set; }
+        public WotBTreader.Application.Game.EntityPositionAddressRequest? LastEntityPositionAddressRequest { get; private set; }
         public WotBTreader.Application.Game.InstructionSnapshotRequest? LastInstructionSnapshotRequest { get; private set; }
         public OperationResult<MemoryReadResult> ReadResult { get; init; } = OperationResult.Success(
             new MemoryReadResult(DateTimeOffset.UnixEpoch,
@@ -1688,6 +1739,9 @@ public sealed class GameApiEndpointsTests
         public OperationResult<EntityPositionReadResult> EntityPositionResult { get; init; } =
             OperationResult.Failure<EntityPositionReadResult>(
                 new ApplicationError("discover.entity_position.not_configured", "Test default."));
+        public OperationResult<WotBTreader.Application.Game.EntityPositionAddressResult> EntityPositionAddressResult { get; init; } =
+            OperationResult.Failure<WotBTreader.Application.Game.EntityPositionAddressResult>(
+                new ApplicationError("discover.entity_position.address_not_configured", "Test default."));
         public OperationResult<MemoryCompareResult> CompareResult { get; init; } = OperationResult.Success(
             new MemoryCompareResult(DateTimeOffset.UnixEpoch, 0, 0, 0, 0, 0, 0, [], false, false, 0));
         public OperationResult<MemoryPointerChainResult> PointerChainResult { get; init; } = OperationResult.Success(
@@ -1761,6 +1815,15 @@ public sealed class GameApiEndpointsTests
             LastEntityPositionRequest = request;
             LastCancellationToken = cancellationToken;
             return ValueTask.FromResult(EntityPositionResult);
+        }
+
+        public ValueTask<OperationResult<WotBTreader.Application.Game.EntityPositionAddressResult>> ResolveEntityPositionAddressAsync(
+            WotBTreader.Application.Game.EntityPositionAddressRequest request,
+            CancellationToken cancellationToken)
+        {
+            LastEntityPositionAddressRequest = request;
+            LastCancellationToken = cancellationToken;
+            return ValueTask.FromResult(EntityPositionAddressResult);
         }
 
         public ValueTask<OperationResult<WotBTreader.Application.Game.InstructionSnapshotResult>> CaptureInstructionSnapshotAsync(

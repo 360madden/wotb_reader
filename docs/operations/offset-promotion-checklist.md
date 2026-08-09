@@ -86,6 +86,38 @@ hardcoding:
   index + a checksum read atomically) — requires a demonstrated invariant, not
   an assertion.
 
+#### G1 live-poll procedure (built 2026-08-09, exercises live)
+
+The position-page capability is **built and tested offline (2026-08-09):**
+`POST /api/v1/game/discover/position-page` (gate-verified, fail-closed on
+unsupported build) returns the ring-record address and its page-aligned
+address via a diagnostic-only resolver entry
+(`Type10EntityPositionResolver.ResolveRecordAddress`, same traversal and
+reads as the poll path — the poll path itself is untouched and never carries
+addresses). Tests: 5 resolver (Core), 3 coordinator (GameIntegration), 2
+endpoint (Host.Web). The live sequence in one new approved session:
+
+1. Gate: launcher reaches `OfflineReplayVerified` (same session the poll
+   runs in; addresses are battle-scoped heap allocations — cross-battle
+   arming is ruled out by live evidence).
+2. Resolve: `POST /discover/position-page { entityId }` → `pageAddress`
+   (page-aligned). Privacy stance: internal diagnostic surface, localhost
+   only, gated, address not bytes — same evidence class as the od-048 family
+   reports; never serialized into poll results or persisted aggregates.
+3. Arm: `WotBTreader.WriteInterceptor.exe --interceptor -Pid <wotblitz pid>
+   -Addresses 0x<pageAddress> -Seconds <window> -Out <report>` (x86 publish
+   at `.build/publish/write-interceptor`).
+4. Poll: run the unchanged bounded od-073 double-read inside the capture
+   window (the interceptor records hit timestamps; the poll records its read
+   window).
+5. Verdict: zero captured hits whose timestamp falls inside the poll read
+   window — or every captured hit in the window shows a byte-identical
+   record. Liveness required on both sides of the window (hits before and
+   after) so a zero-window is a real no-write, not a dead capture (the
+   OD-RECOVERY-077 assertions, applied live).
+6. Evidence: attach the interceptor report + the poll aggregate to the
+   ledger row before claiming the flag.
+
 Evidence artifact must be attached to the ledger row before the flag may be
 claimed.
 
@@ -162,6 +194,7 @@ the prior positive result file(s).
 | ~~G2 anchor caller (gate moment → POST segment)~~ | ~~Offline~~ | **done 2026-08-09** (built into od-073; live exercise pending) |
 | G2 live run: anchor + flag end-to-end | Live (new approved session) | caller + endpoint done |
 | ~~G1 mechanism test (write-observation)~~ | ~~Offline~~ | **done 2026-08-09** (`scripts/test-offline-write-observation.ps1`, OD-RECOVERY-077) |
+| ~~G1 position-page capability (resolver entry + coordinator + endpoint + tests)~~ | ~~Offline~~ | **done 2026-08-09** (`POST /discover/position-page`, diagnostic-only) |
 | G1 live poll + G2 live correlation | Live (new approved session) | G1/G2 offline steps |
 | G0 publication review | Offline | G1 + G2 + G3 closed |
 

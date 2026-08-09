@@ -990,6 +990,73 @@ public sealed class GameSessionCoordinatorTests
         Assert.AreEqual(executableHash, factory.Observation?.ExecutableSha256);
     }
 
+    [TestMethod]
+    public async Task EntityPositionAddress_ExactBuildReturnsRecordAndPage()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        var factory = new TrackingEntityPositionReaderFactory(
+            CreateResolvedEntityPosition(4242));
+        var (coordinator, _) = CreateCoordinator(memoryReaderFactory: factory);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityPositionAddressResult> result = await coordinator
+            .ResolveEntityPositionAddressAsync(
+                new EntityPositionAddressRequest(4242),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, result.Value?.Status);
+        Assert.AreEqual(0x25000038u, result.Value?.RecordAddress);
+        Assert.AreEqual(0x25000000u, result.Value?.PageAddress);
+        Assert.IsTrue(result.Value?.ModuleRooted);
+        Assert.AreEqual(1, factory.CreateCount);
+        Assert.AreEqual(4242, factory.Reader.EntityId);
+        Assert.AreSame(layout, factory.Reader.Layout);
+    }
+
+    [TestMethod]
+    public async Task EntityPositionAddress_MissingOfflineGateNeverCreatesMemoryReader()
+    {
+        var factory = new TrackingEntityPositionReaderFactory(
+            CreateResolvedEntityPosition(4242));
+        var (coordinator, _) = CreateCoordinator(memoryReaderFactory: factory);
+
+        OperationResult<EntityPositionAddressResult> result = await coordinator
+            .ResolveEntityPositionAddressAsync(
+                new EntityPositionAddressRequest(4242),
+                CancellationToken.None);
+
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual("discover.gate_not_satisfied", result.Error?.Code);
+        Assert.AreEqual(0, factory.CreateCount);
+    }
+
+    [TestMethod]
+    public async Task EntityPositionAddress_UnsupportedBuildFailsClosed()
+    {
+        var factory = new TrackingEntityPositionReaderFactory(
+            CreateResolvedEntityPosition(4242));
+        var (coordinator, _) = CreateCoordinator(memoryReaderFactory: factory);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+        coordinator.ApplyEvidence(CreateValidEvidence());
+
+        OperationResult<EntityPositionAddressResult> result = await coordinator
+            .ResolveEntityPositionAddressAsync(
+                new EntityPositionAddressRequest(4242),
+                CancellationToken.None);
+
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual("discover.entity_position.address_unsupported_build", result.Error?.Code);
+        Assert.AreEqual(0, factory.CreateCount);
+    }
+
     private static (GameSessionCoordinator Coordinator, TrackingEntityPositionReaderFactory Factory)
         CreateVerifiedExactBuildCoordinator(
             Type10EntityPositionResult result,
@@ -1509,7 +1576,9 @@ public sealed class GameSessionCoordinatorTests
         }
     }
 
-    private sealed class TrackingEntityPositionReader(Type10EntityPositionResult result)
+    private sealed class TrackingEntityPositionReader(
+        Type10EntityPositionResult result,
+        Type10EntityPositionAddressResult? addressResult = null)
         : IAuthorizedMemoryReader
     {
         public nint ModuleBase { get; private set; }
@@ -1541,6 +1610,28 @@ public sealed class GameSessionCoordinatorTests
             Layout = layout;
             BeforeReturn?.Invoke();
             return ValueTask.FromResult(OperationResult.Success(result));
+        }
+
+        public ValueTask<OperationResult<Type10EntityPositionAddressResult>> ResolveEntityPositionAddressAsync(
+            nint moduleBase,
+            int entityId,
+            Type10EntityPositionLayout layout,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ModuleBase = moduleBase;
+            EntityId = entityId;
+            Layout = layout;
+            BeforeReturn?.Invoke();
+            return ValueTask.FromResult(OperationResult.Success(
+                addressResult ?? new Type10EntityPositionAddressResult(
+                    Type10EntityPositionStatus.Resolved,
+                    RecordAddress: 0x25000038,
+                    PageAddress: 0x25000000,
+                    FailureStage: null,
+                    Attempts: 1,
+                    NodesVisited: 0,
+                    ModuleRooted: true)));
         }
     }
 

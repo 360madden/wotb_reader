@@ -6,12 +6,18 @@ No runtime AI, cloud, Python, Node.js, Rust, Electron, or containers.
 ## Where we are now (2026-08-09)
 
 - **Active workstream:** offset discovery — module-rooted player-position
-  polling. Latest handoff (OD-075 + BLK-0026 resolution, 2026-08-09):
-  continuous polling is positive in **two distinct 11.19.0 replays** (Dead
-  Rail 24/24; Oasis Palms 24/24, stable-resolver-positive) — cross-replay
-  repeatability is proven. The open gates before any offset-table change are
-  hardware-atomic read proof, same-decoded-clock alignment, and numeric-
-  offset publication; none may be skipped.
+  polling. Continuous polling is positive in **two distinct 11.19.0 replays**
+  (Dead Rail 24/24; Oasis Palms 24/24, stable-resolver-positive) — cross-replay
+  repeatability is proven. **All offline promotion-gate work is done
+  (2026-08-09):** G3 runner wiring (`-PriorResultPaths`), G2 clock wiring +
+  append endpoint + gate-anchor caller, and the G1 offline write-observation
+  mechanism test (OD-RECOVERY-077) plus the position-page capability
+  (`POST /discover/position-page`, diagnostic-only, same traversal, poll path
+  untouched). The remaining gates — the G1 live poll with the interceptor
+  armed on the ring-record position page, the G2 live anchor/correlation —
+  all need one new approved live session; see
+  `docs/operations/offset-promotion-checklist.md`. No offset-table change
+  until those close.
 - **BLK-0026 resolved and validated (2026-08-09):** root cause was a launcher
   regression — .NET `Set-Acl` threw `PrivilegeNotHeldException` on the
   persisted owner-only marker ACL, mapped by the catch-all to
@@ -25,7 +31,7 @@ No runtime AI, cloud, Python, Node.js, Rust, Electron, or containers.
   2026-08-09 resolution handoff. Still unproved: hardware atomicity,
   same-decoded-clock proof, numeric-offset publication, and promotion — no
   offset-table change without those.
-- **Last verified gate:** 2026-08-09 — 654 tests passed, 2 local opt-in skips,
+- **Last verified gate:** 2026-08-09 — 675 tests passed, 2 local opt-in skips,
   0 warnings, 0 errors.
 - **Refresh from:** the newest file in `docs/operations/handoffs/`,
   `docs/operations/offset-discovery-ledger.md` (Next planned session row),

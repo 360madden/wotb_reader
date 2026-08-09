@@ -351,6 +351,33 @@ public sealed record EntityPositionReadResponse
 }
 
 /// <summary>
+/// Diagnostic request for the gate-verified position-page endpoint. Only the
+/// decoded entity ID is caller-supplied; the process identity and the
+/// resolved page address are coordinator-owned. Internal diagnostic surface
+/// for guard-page interceptor arming - never returned by the poll read path.
+/// </summary>
+public sealed record EntityPositionAddressRequest
+{
+    public int EntityId { get; init; }
+}
+
+/// <summary>
+/// Diagnostic response carrying the ring-record page address (hex) for
+/// guard-page interceptor arming. Internal-only surface: never returned by
+/// the poll read path and never persisted in poll aggregates.
+/// </summary>
+public sealed record EntityPositionAddressResponse
+{
+    public string Status { get; init; } = string.Empty;
+    public string? RecordAddress { get; init; }
+    public string? PageAddress { get; init; }
+    public string? FailureStage { get; init; }
+    public int Attempts { get; init; }
+    public int NodesVisited { get; init; }
+    public bool ModuleRooted { get; init; }
+}
+
+/// <summary>
 /// One replay-clock synchronization segment to append for a battle session.
 /// The caller supplies the anchor values (wall-clock UTC, replay anchor,
 /// speed, source, uncertainty) and a monotonically increasing sequence; the
