@@ -358,7 +358,7 @@ replay gate; candidate-only offset evidence cannot authorize runtime reads.
 - **Evidence-first:** unknown stays unknown. Reprocess = new immutable decode run. Pickle = data only; never execute opcodes.
 - **Privacy:** never log raw replay bytes, tokens, full paths, account IDs, chat, or screenshots. Player names and bot status are public Wargaming statistics, not private.
 - **Bot status:** may be inferred from a player name; `unknown` remains the no-evidence default.
-- **Game automation:** developer-only, offline-replay-only, denied by default, fully audited.
+- **Game automation:** developer-only, denied by default, fully audited.
 - **Commits:** author as `Codex Agent <codex@local.invalid>` unless user says otherwise. Never force-push. Push only when asked.
 - **Operations docs:** index and numbering convention in `docs/operations/README.md`.
 - **Blockers:** append `docs/operations/blocker-log.md` (immutable UTC).

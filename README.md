@@ -12,7 +12,7 @@ presents them through a loopback Blazor dashboard and a transparent WPF HUD.
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6?style=flat-square&logo=windows&logoColor=white)](#requirements)
 [![License](https://img.shields.io/badge/license-MIT-3DA639?style=flat-square&logo=opensourceinitiative&logoColor=white)](LICENSE)
 
-[![Tests](https://img.shields.io/badge/tests-409%20passed%20%7C%200%20failed-2EA44F?style=flat-square&logo=checkmarx&logoColor=white)](#test-matrix)
+[![Tests](https://img.shields.io/badge/tests-654%20passed%20%7C%200%20failed-2EA44F?style=flat-square&logo=checkmarx&logoColor=white)](#test-matrix)
 [![Warnings](https://img.shields.io/badge/warnings-0-2EA44F?style=flat-square)](#quality-gate)
 [![Alpha hardening](https://img.shields.io/badge/alpha%20hardening-M0--M7%20complete-2EA44F?style=flat-square)](#-progress-to-completion)
 [![Memory access](https://img.shields.io/badge/process%20memory-fail--closed-D93F0B?style=flat-square&logo=shieldsdotio&logoColor=white)](#-safety-model)
@@ -251,7 +251,6 @@ restrictive and **fails closed by default**.
 
 | | Rule |
 |:--:|---|
-| 🚫 | **Offline only.** Pre-recorded replay playback is offline use. Matchmaking and live battles are never automated, inspected, or touched |
 | 🔴 | **Process memory is fail-closed.** Scanner and observation paths require a positively verified offline replay and exact executable identity; candidate offsets never authorize runtime reads |
 | 🟠 | **Positive evidence required.** Before any future memory access: canonical executable path, version, SHA-256, PID with process-start identity, owned window, healthy monitor, confirmed replay UI, and a fresh lifecycle marker must all agree |
 | ⚪ | **Unknown stays unknown.** Unrecognized records, versions, offsets, and participant kinds are reported as `unknown` — never guessed. Bot status may be inferred from a player name (public Wargaming statistics) |
@@ -294,18 +293,18 @@ dotnet test    tests/WotBTreader.Core.Tests -c Release --filter "FullyQualifiedN
 
 ### Test matrix
 
-**409 passed · 0 failed · 2 skipped · 411 total · 0 warnings · 0 errors** across 12 test projects.
+**654 passed · 0 failed · 2 skipped · 656 total · 0 warnings · 0 errors** across 12 test projects.
 The two skips are installed-game tests that are local opt-in and never run in CI.
-Test counts current as of 2026-07-31.
+Test counts current as of 2026-08-09.
 
 | Project | Tests | | Project | Tests |
 |---|--:|:--:|---|--:|
-| `GameIntegration.Tests` | 144 | | `Host.Cli.Tests` | 15 |
-| `Overlay.Tests` | 70 | | `Architecture.Tests` | 15 |
-| `Host.Web.Tests` | 61 | | `Bootstrap.Tests` | 13 |
-| `GameHarness.Tests` | 28 | | `CaptureLogs.Tests` | 9 |
-| `Replays.Tests` | 18 | | `Core.Tests` | 7 |
-| `Storage.Sqlite.Tests` | 17 | | `Application.Tests` | 14 |
+| `GameIntegration.Tests` | 256 | | `Host.Cli.Tests` | 15 |
+| `Overlay.Tests` | 70 | | `Architecture.Tests` | 19 |
+| `Host.Web.Tests` | 116 | | `Bootstrap.Tests` | 14 |
+| `GameHarness.Tests` | 37 | | `CaptureLogs.Tests` | 9 |
+| `Replays.Tests` | 20 | | `Core.Tests` | 68 |
+| `Storage.Sqlite.Tests` | 18 | | `Application.Tests` | 14 |
 
 > [!IMPORTANT]
 > CI runs on synthetic fixtures only. Private replays, captures, databases, and
@@ -324,7 +323,7 @@ Test counts current as of 2026-07-31.
 | [`docs/architecture/roadmap.md`](docs/architecture/roadmap.md) | **Active** M0–M7 hardening plan with exit criteria |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Historical feature-delivery ledger |
 | [`docs/decisions/`](docs/decisions/) | ADRs — modular monolith, evidence and offline safety |
-| [`docs/operations/blocker-log.md`](docs/operations/blocker-log.md) | Immutable blocker record (BLK-0001 … BLK-0015) |
+| [`docs/operations/blocker-log.md`](docs/operations/blocker-log.md) | Immutable blocker record (BLK-0001 … BLK-0026) |
 | [`docs/operations/handoffs/`](docs/operations/handoffs/) | Append-only session handoffs |
 | [`docs/testing/fixture-policy.md`](docs/testing/fixture-policy.md) | Fixture sanitization rules |
 | [`docs/formats/`](docs/formats/) | Telemetry capture NDJSON v1 format |
