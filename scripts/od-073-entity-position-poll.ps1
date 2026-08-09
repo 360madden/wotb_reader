@@ -241,6 +241,7 @@ while ([DateTime]::UtcNow -lt $deadline) {
         if ($state.verificationState -eq 'OfflineReplayVerified' -and
             $state.reasonCode -eq 'session.offline_replay_verified') {
             $verified = $true
+            $gateObservedAtUtc = [DateTime]::UtcNow
             break
         }
     }
@@ -302,6 +303,33 @@ try {
 catch {
     Write-Host 'od073: FAILED_ground_truth_api'
     exit 2
+}
+
+# Record the replay-clock anchor at the verified-gate moment (G2): maps the
+# gate wall-clock to replay time 0 at 1.0 speed with a CaptureLog source and
+# the 1 s gate-observation cadence as uncertainty. Failure is non-fatal - the
+# same-clock flag simply stays false and the poll continues. A monotonicity
+# conflict (another caller already appended) is expected and ignored.
+if ($null -ne $gateObservedAtUtc) {
+    try {
+        $clockBody = @{
+            battleSessionId    = $battleSessionId
+            sequence           = 0
+            sourceAnchorUtc    = $gateObservedAtUtc.ToString('o')
+            replayAnchorTicks  = 0
+            speed              = 1.0
+            source             = 'CaptureLog'
+            uncertaintyTicks   = [TimeSpan]::FromSeconds(1).Ticks
+        }
+        $clockAppended = Invoke-OdApi -Method 'Post' `
+            -RelativePath '/api/v1/game/discover/clock-segment' `
+            -Body $clockBody
+        Write-Host ('od073: clock_anchor appended sequence=' + $clockAppended.sequence +
+            ' uncertainty_s=' + ([TimeSpan]::FromTicks([long]$clockAppended.uncertaintyTicks).TotalSeconds))
+    }
+    catch {
+        Write-Host 'od073: clock_anchor append_failed (flag stays false; poll continues)'
+    }
 }
 
 Write-Host ('od073: stage_delay_s=' + $StageDelaySeconds)
