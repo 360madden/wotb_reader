@@ -785,3 +785,10 @@ folder for the full numbering convention and document map.
 - Prevention/follow-up: keep launch failure distinct from resolver evidence;
   never classify a pre-gate exit as a negative memory read or compensate by
   broadening the resolver/read surface.
+- Diagnosis progress (2026-08-09): hypothesis (b) refuted offline — all three
+  real `.data/launch` replays decode cleanly via the replay crosscheck (exit 0);
+  poll gate order (verified-gate before marker binding), the marker's >20-minute
+  fail-closed staleness window, and the pre-gate launcher exit paths are mapped;
+  the failed attempts' `od_launch:` stream was never persisted (console-only).
+  Full plan: `docs/operations/blk-0026-diagnosis-plan.md`. No live testing
+  performed; execution awaits approval.

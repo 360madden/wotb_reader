@@ -10,9 +10,13 @@ No runtime AI, cloud, Python, Node.js, Rust, Electron, or containers.
   replay/fresh process: 24/24 resolved, 5 exact retained-trajectory matches,
   21/24 within three world units. Cross-replay repeatability is unproved.
 - **Open blocker (BLK-0026):** the content-distinct replay's managed launch
-  exits before the `OfflineReplayVerified` gate. Next planned session: diagnose
-  it **without memory access**, then exactly **one unchanged bounded poll**.
-  Do not change the resolver, broaden reads, or promote the offset table.
+  exits before the `OfflineReplayVerified` gate. Diagnosis plan encoded at
+  `docs/operations/blk-0026-diagnosis-plan.md` (2026-08-09): hypothesis (b)
+  refuted offline (all three real replays decode clean), marker >20-min
+  fail-closed staleness window and pre-gate launcher exit paths mapped. Next:
+  execute the plan **without memory access**, then exactly **one unchanged
+  bounded poll** (within 20 min of a fresh import). Do not change the
+  resolver, broaden reads, or promote the offset table.
 - **Last verified gate:** 2026-08-09 — 654 tests passed, 2 local opt-in skips,
   0 warnings, 0 errors.
 - **Refresh from:** the newest file in `docs/operations/handoffs/`,
