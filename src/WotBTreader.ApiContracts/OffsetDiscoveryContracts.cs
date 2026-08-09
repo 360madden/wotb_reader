@@ -310,6 +310,40 @@ public sealed record OffsetReadResponse
 }
 
 /// <summary>
+/// Requests one server-owned module-rooted lookup by decoded replay entity ID.
+/// The request intentionally contains no process identity or memory address.
+/// </summary>
+public sealed record EntityPositionReadRequest
+{
+    public int EntityId { get; init; }
+}
+
+/// <summary>
+/// Privacy-safe result of one exact-build entity-position lookup. A resolved
+/// double-read is neither hardware atomic nor automatically same-clock with
+/// decoded replay telemetry.
+/// </summary>
+public sealed record EntityPositionReadResponse
+{
+    public DateTimeOffset CompletedAtUtc { get; init; }
+    public string GameVersion { get; init; } = string.Empty;
+    public string Status { get; init; } = string.Empty;
+    public int EntityId { get; init; }
+    public float? X { get; init; }
+    public float? Y { get; init; }
+    public float? Z { get; init; }
+    public string? EntitySource { get; init; }
+    public string? FailureStage { get; init; }
+    public int Attempts { get; init; }
+    public int NodesVisited { get; init; }
+    public bool ModuleRooted { get; init; }
+    public bool EntityIdentityRevalidated { get; init; }
+    public bool ConsistentDoubleRead { get; init; }
+    public bool HardwareAtomicReadProven { get; init; }
+    public bool SameDecodedClockProven { get; init; }
+}
+
+/// <summary>
 /// Bounded instruction-first capture request. The server owns the target
 /// process, module, instruction, registers, and displacements.
 /// </summary>

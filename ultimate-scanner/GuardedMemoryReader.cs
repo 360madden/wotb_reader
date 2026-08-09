@@ -4,6 +4,7 @@ using Microsoft.Win32.SafeHandles;
 using WotBTreader.Application.Game;
 using WotBTreader.Application.Results;
 using WotBTreader.Core;
+using WotBTreader.Core.Discovery;
 
 namespace WotBTreader.UltimateScanner;
 
@@ -22,6 +23,16 @@ internal interface IAuthorizedMemoryReader
     ValueTask<OperationResult<IReadOnlyList<MemoryReadItem>>> ReadBatchAsync(
         IReadOnlyList<nint> addresses,
         int length,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Runs the exact-build entity resolver under one identity-bound process
+    /// lease. The module base and layout are coordinator-owned.
+    /// </summary>
+    ValueTask<OperationResult<Type10EntityPositionResult>> ResolveEntityPositionAsync(
+        nint moduleBase,
+        int entityId,
+        Type10EntityPositionLayout layout,
         CancellationToken cancellationToken);
 }
 
@@ -518,6 +529,88 @@ internal sealed class GuardedMemoryReaderFactory(TimeProvider timeProvider)
                         "game.memory.unavailable",
                         "The batch memory read is unavailable.",
                         Retryable: true));
+            }
+        }
+
+        public ValueTask<OperationResult<Type10EntityPositionResult>> ResolveEntityPositionAsync(
+            nint moduleBase,
+            int entityId,
+            Type10EntityPositionLayout layout,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(layout);
+            cancellationToken.ThrowIfCancellationRequested();
+            long moduleBaseValue = moduleBase.ToInt64();
+            if (moduleBaseValue is < 0x00010000 or > uint.MaxValue)
+            {
+                return ValueTask.FromResult(
+                    OperationResult.Failure<Type10EntityPositionResult>(
+                        new ApplicationError(
+                            "game.memory.invalid_module_base",
+                            "The module base is outside the supported x86 address range.",
+                            Retryable: false)));
+            }
+
+            using AuthorizedProcessLease? lease = AuthorizedProcessLease.Open(
+                observation,
+                timeProvider,
+                cancellationToken);
+            if (lease is null || lease.Architecture != "x86" || lease.PointerSize != sizeof(uint))
+            {
+                return ValueTask.FromResult(
+                    OperationResult.Failure<Type10EntityPositionResult>(
+                        new ApplicationError(
+                            "game.memory.identity_mismatch",
+                            "The process identity or architecture is not authorized.",
+                            Retryable: false)));
+            }
+
+            byte[] scratch = GC.AllocateUninitializedArray<byte>(0x38);
+            bool Read(uint address, Span<byte> destination)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (destination.Length <= 0 || destination.Length > scratch.Length)
+                {
+                    return false;
+                }
+
+                bool readOk = lease.TryRead(
+                    (nint)address,
+                    scratch,
+                    0,
+                    destination.Length,
+                    cancellationToken,
+                    out nuint bytesRead);
+                if (!readOk || bytesRead != (nuint)destination.Length)
+                {
+                    return false;
+                }
+
+                scratch.AsSpan(0, destination.Length).CopyTo(destination);
+                return true;
+            }
+
+            try
+            {
+                Type10EntityPositionResult result = Type10EntityPositionResolver.Resolve(
+                    checked((uint)moduleBaseValue),
+                    entityId,
+                    layout,
+                    Read);
+                return ValueTask.FromResult(OperationResult.Success(result));
+            }
+            catch (Exception exception) when (
+                exception is Win32Exception
+                    or IOException
+                    or UnauthorizedAccessException
+                    or InvalidOperationException)
+            {
+                return ValueTask.FromResult(
+                    OperationResult.Failure<Type10EntityPositionResult>(
+                        new ApplicationError(
+                            "game.memory.unavailable",
+                            "The entity-position read is unavailable.",
+                            Retryable: true)));
             }
         }
     }

@@ -202,6 +202,7 @@ docs/operations/handoffs/2026-08-08-instruction-snapshot-live-correction.md
 docs/operations/handoffs/2026-08-08-instruction-snapshot-push-handoff.md
 docs/operations/handoffs/2026-08-08-od071-type10-live-equality.md
 docs/operations/handoffs/2026-08-08-od072-moving-crossreplay-player-position.md
+docs/operations/handoffs/2026-08-08-od073-module-rooted-entity-position-resolver.md
 docs/operations/handoffs/2026-08-08-type10-entity-movement-anchor.md
 docs/operations/handoffs/2026-08-08-world-translation-negative-type10-pivot.md
 docs/operations/handoffs/README.md
@@ -274,6 +275,7 @@ scripts/launch-offline-replay-for-od.ps1
 scripts/od-018-session.ps1
 scripts/od-047-exact-scan-session.ps1
 scripts/od-048-monitor-correlate-session.ps1
+scripts/od-073-entity-position-poll.ps1
 scripts/od-query-state.ps1
 scripts/play-replay-from-hangar.ps1
 scripts/pre-arm-debugger.ps1
@@ -343,6 +345,7 @@ src/WotBTreader.Core/AffiliationResolver.cs
 src/WotBTreader.Core/ComparisonModels.cs
 src/WotBTreader.Core/Discovery/TrajectoryCorrelation.cs
 src/WotBTreader.Core/Discovery/TrajectoryFamily.cs
+src/WotBTreader.Core/Discovery/Type10EntityPositionResolver.cs
 src/WotBTreader.Core/Discovery/WriteSiteAnalysis.cs
 src/WotBTreader.Core/Identifiers.cs
 src/WotBTreader.Core/OffsetModels.cs
@@ -567,6 +570,7 @@ tests/WotBTreader.Core.Tests/IdentifierTests.cs
 tests/WotBTreader.Core.Tests/MSTestSettings.cs
 tests/WotBTreader.Core.Tests/TrajectoryCorrelationScorerTests.cs
 tests/WotBTreader.Core.Tests/TrajectoryFamilyBuilderTests.cs
+tests/WotBTreader.Core.Tests/Type10EntityPositionResolverTests.cs
 tests/WotBTreader.Core.Tests/WotBTreader.Core.Tests.csproj
 tests/WotBTreader.Core.Tests/WriteSiteAnalysisTests.cs
 tests/WotBTreader.Core.Tests/packages.lock.json
@@ -784,6 +788,7 @@ tools/ghidra-scripts/FindType10DispatchTable.java
 tools/ghidra-scripts/FindType10PositionConsumers.java
 tools/ghidra-scripts/FindType10RecordDispatch.java
 tools/ghidra-scripts/FindVehiclePositionFamily.java
+tools/ghidra-scripts/TraceEntityRegistryPosition.java
 tools/ghidra-scripts/TraceType10MovementPosition.java
 tools/ghidra-scripts/callers-disasm.txt
 tools/ghidra-scripts/chain-disasm.txt

@@ -58,6 +58,26 @@ atomicity, same-decoded-clock identity, local-player identity, or a stable root.
 Compare each ID only to the same decoded type-10 entity trajectory and stop
 after the bounded result.
 
+## Module-rooted entity-position polling (offline replay only)
+
+The exact 11.19.0.10 layout can resolve a decoded replay entity ID through the
+server-owned module root and poll the newest AvatarFilterHelper ring position.
+After publishing the current Host and starting one managed offline replay, run:
+
+```powershell
+powershell -File scripts/od-073-entity-position-poll.ps1
+```
+
+The caller supplies no PID, module, address, pointer, or layout value. The
+coordinator requires the exact executable version and SHA-256, owns the module
+base and layout, and keeps authorization cancellation live for every native
+read. The script writes an ignored aggregate-only result: it persists no
+entity ID, coordinates, process addresses, raw bytes, capability, replay path,
+or player/account data. A first positive result proves the current layout in
+one live process; repeatability on a content-distinct replay remains a separate
+gate. The double-collected record is consistency evidence, not hardware
+atomicity or same-decoded-clock proof.
+
 ## Ghidra offset-discovery evidence
 
 Keep headless disassembly and heuristic reports under the ignored build tree.
@@ -113,6 +133,11 @@ after a post-script compile or runtime error. Every evidence run must also:
   -postScript TraceType10MovementPosition.java `
   -scriptPath (Join-Path $PWD 'tools\ghidra-scripts')
 
+& $analyzeHeadless $projectDirectory $projectName `
+  -process wotblitz.exe -noanalysis `
+  -postScript TraceEntityRegistryPosition.java `
+  -scriptPath (Join-Path $PWD 'tools\ghidra-scripts')
+
 python tools/find-static-roots.py `
   --chain 0x03E91978 `
   --vtable-root VehicleGameLogic
@@ -127,6 +152,10 @@ heuristic. `TraceType10MovementPosition.java` is the hash-bound verifier: its
 fresh report must contain `verdict=semantic-chain-proven` and zero failed
 checks. That verdict proves the static entity/XYZ event anchor only; it does
 not authorize live capture or publish an offset.
+`TraceEntityRegistryPosition.java` is the hash-bound polling-layout verifier:
+its fresh report must contain `verdict=resolver-layout-proven` and zero failed
+checks. It verifies the module root, entity-map traversal, type/vtable checks,
+and ring layout; it still does not prove a live read or promote an offset.
 
 ## Agent-shell (basher) timeouts — never use the default 30s
 

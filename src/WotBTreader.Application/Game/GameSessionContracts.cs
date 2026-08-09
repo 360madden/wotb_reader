@@ -1,5 +1,6 @@
 using WotBTreader.Application.Results;
 using WotBTreader.Core;
+using WotBTreader.Core.Discovery;
 
 namespace WotBTreader.Application.Game;
 
@@ -257,6 +258,15 @@ public interface IGameMemoryScanner
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Resolves one decoded replay entity ID through the server-owned,
+    /// exact-build BWEntities layout and reads its newest retained position.
+    /// No process ID or runtime address is caller-controlled or returned.
+    /// </summary>
+    ValueTask<OperationResult<EntityPositionReadResult>> ReadEntityPositionAsync(
+        EntityPositionReadRequest request,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Captures bounded register-derived position triples at a version-pinned
     /// game-code instruction. The coordinator, not the caller, supplies the
     /// process identity, module, RVA, register, and member displacement.
@@ -287,6 +297,36 @@ public sealed record MemoryReadItem(
 public sealed record MemoryReadResult(
     DateTimeOffset CompletedAtUtc,
     IReadOnlyList<MemoryReadItem> Reads);
+
+/// <summary>
+/// Request for one module-rooted, entity-ID-bound position read. The entity ID
+/// must come from decoded replay evidence; the coordinator owns the process,
+/// module, build layout, and all addresses.
+/// </summary>
+public sealed record EntityPositionReadRequest(int EntityId);
+
+/// <summary>
+/// Privacy-safe result from the exact-build type-10 entity resolver. A
+/// successful consistent double-read is not a hardware-atomic snapshot and is
+/// not automatically aligned to a decoded replay clock.
+/// </summary>
+public sealed record EntityPositionReadResult(
+    DateTimeOffset CompletedAtUtc,
+    string GameVersion,
+    Type10EntityPositionStatus Status,
+    int EntityId,
+    float? X,
+    float? Y,
+    float? Z,
+    string? EntitySource,
+    string? FailureStage,
+    int Attempts,
+    int NodesVisited,
+    bool ModuleRooted,
+    bool EntityIdentityRevalidated,
+    bool ConsistentDoubleRead,
+    bool HardwareAtomicReadProven,
+    bool SameDecodedClockProven);
 
 /// <summary>
 /// Bounded operator request for the server-owned instruction-first position

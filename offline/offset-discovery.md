@@ -285,6 +285,43 @@ offline/static to a stable viewpoint-entity resolver and the verified
 movement-filter ring; do not run old member triples, broad scans, or the
 transform target.
 
+## Module-rooted polling pivot (OD-RECOVERY-073)
+
+The stable resolver is now implemented and statically pinned for exact build
+11.19.0.10. `TraceEntityRegistryPosition.java` verifies 47/47 relationships
+against executable SHA-256
+`1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d`:
+
+1. `[module+0x04054780] -> AppContextImpl`;
+2. `[AppContext+0x4C] -> BWApp`;
+3. `[BWApp+0x24] -> BWServerConnection`;
+4. `connection+0x04` is the embedded `BWEntities` object;
+5. cache `+0x48` and three bounded map trees resolve the replay entity ID;
+6. entity `+0x38` reaches the vtable-checked AvatarFilter and its helper;
+7. helper `+0x1C8` selects one of eight `0x38`-byte records, whose XYZ starts
+   at record `+0x18`.
+
+The pure Core resolver caps traversal at 1,024 nodes and three attempts. It
+double-collects the full current record, checks the ring index before/between/
+after the reads, and revalidates the root chain, entity ID, filter, and helper.
+The guarded adapter performs every read through one identity-bound read-only
+process lease with live authorization cancellation.
+
+`POST /api/v1/game/discover/entity-position` accepts only a decoded replay
+entity ID. The coordinator owns the managed process, module base, exact
+version/hash check, and complete layout. The response omits process addresses
+and raw bytes. `scripts/od-073-entity-position-poll.ps1` compares bounded live
+polls with the retained decoded viewpoint trajectory and persists aggregates
+only.
+
+Static layout and synthetic resolver behavior are proven; live polling is not
+yet proven. One positively verified offline run is now scientifically
+warranted after the full repository gate and a fresh Host publish. A positive
+first run must still be repeated on the content-distinct replay/fresh process
+before calling the stable root repeatable. Double-read consistency is not
+hardware atomicity, and the comparison is not same-decoded-clock evidence.
+Do not update `memory-offsets/11.19.0.10.json` from this milestone.
+
 ## Evidence publication
 
 1. Discover candidate offsets (Ghidra `FindOffsets.py`/`.java`,

@@ -3,6 +3,7 @@ using WotBTreader.Application.Game;
 using WotBTreader.Application.Replay;
 using WotBTreader.Application.Results;
 using WotBTreader.Core;
+using WotBTreader.Core.Discovery;
 using WotBTreader.GameIntegration.Discovery;
 using WotBTreader.GameIntegration.Logs;
 using WotBTreader.GameIntegration.Session;
@@ -918,6 +919,113 @@ public sealed class GameSessionCoordinatorTests
     }
 
     [TestMethod]
+    public async Task EntityPositionRead_UnsupportedBuildDoesNotCreateMemoryReader()
+    {
+        var factory = new TrackingEntityPositionReaderFactory(
+            CreateResolvedEntityPosition(4242));
+        var (coordinator, _) = CreateCoordinator(memoryReaderFactory: factory);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+        coordinator.ApplyEvidence(CreateValidEvidence());
+
+        OperationResult<EntityPositionReadResult> result = await coordinator
+            .ReadEntityPositionAsync(
+                new EntityPositionReadRequest(4242),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.UnsupportedBuild, result.Value?.Status);
+        Assert.AreEqual("build-identity", result.Value?.FailureStage);
+        Assert.AreEqual(0, factory.CreateCount);
+    }
+
+    [TestMethod]
+    public async Task EntityPositionRead_MissingOfflineGateNeverCreatesMemoryReader()
+    {
+        var factory = new TrackingEntityPositionReaderFactory(
+            CreateResolvedEntityPosition(4242));
+        var (coordinator, _) = CreateCoordinator(memoryReaderFactory: factory);
+
+        OperationResult<EntityPositionReadResult> result = await coordinator
+            .ReadEntityPositionAsync(
+                new EntityPositionReadRequest(4242),
+                CancellationToken.None);
+
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual("discover.gate_not_satisfied", result.Error?.Code);
+        Assert.AreEqual(0, factory.CreateCount);
+    }
+
+    [TestMethod]
+    public async Task EntityPositionRead_ExactBuildUsesServerOwnedLayout()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        var factory = new TrackingEntityPositionReaderFactory(
+            CreateResolvedEntityPosition(4242));
+        var (coordinator, _) = CreateCoordinator(memoryReaderFactory: factory);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityPositionReadResult> result = await coordinator
+            .ReadEntityPositionAsync(
+                new EntityPositionReadRequest(4242),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, result.Value?.Status);
+        Assert.AreEqual(12.5f, result.Value?.X);
+        Assert.IsTrue(result.Value?.ModuleRooted);
+        Assert.IsFalse(result.Value?.SameDecodedClockProven);
+        Assert.AreEqual(1, factory.CreateCount);
+        Assert.AreEqual(0x10000000, factory.Reader.ModuleBase.ToInt64());
+        Assert.AreEqual(4242, factory.Reader.EntityId);
+        Assert.AreSame(layout, factory.Reader.Layout);
+        Assert.AreEqual(layout.GameVersion, factory.Observation?.ProductVersion);
+        Assert.AreEqual(executableHash, factory.Observation?.ExecutableSha256);
+    }
+
+    [TestMethod]
+    public async Task EntityPositionRead_RevocationDuringReadDiscardsResult()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        var factory = new TrackingEntityPositionReaderFactory(
+            CreateResolvedEntityPosition(4242));
+        var (coordinator, _) = CreateCoordinator(memoryReaderFactory: factory);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+        factory.Reader.BeforeReturn = () => coordinator.ApplyEvidence(
+            CreateValidEvidence() with
+            {
+                Process = CreateValidProcess(layout.GameVersion, executableHash),
+                Lifecycle = CreateValidLifecycle() with
+                {
+                    State = ReplayLifecycleState.OfflineReplayStopped,
+                    SourceSequence = 12,
+                    SourceByteOffset = 102,
+                },
+            });
+
+        OperationResult<EntityPositionReadResult> result = await coordinator
+            .ReadEntityPositionAsync(
+                new EntityPositionReadRequest(4242),
+                CancellationToken.None);
+
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual("discover.gate_not_satisfied", result.Error?.Code);
+    }
+
+    [TestMethod]
     public async Task InstructionSnapshot_CleanupFailureRevokesVerifiedSession()
     {
         var runner = new RecordingInstructionSnapshotRunner(
@@ -1066,14 +1174,16 @@ public sealed class GameSessionCoordinatorTests
             CreateValidProcess(),
             CreateValidLifecycle());
 
-    private static GameProcessEvidence CreateValidProcess() =>
+    private static GameProcessEvidence CreateValidProcess(
+        string productVersion = "11.18.0.7",
+        ContentHash? executableSha256 = null) =>
         new(
             ProcessId: 1234,
             ProcessStartIdentity: 42,
             IsAlive: true,
             ObservedCanonicalExecutablePath: @"C:\Games\wotblitz.exe",
-            ObservedProductVersion: "11.18.0.7",
-            ObservedExecutableSha256: new ContentHash(new string('a', 64)),
+            ObservedProductVersion: productVersion,
+            ObservedExecutableSha256: executableSha256 ?? new ContentHash(new string('a', 64)),
             WindowHandle: 99,
             WindowOwnerProcessId: 1234);
 
@@ -1093,13 +1203,15 @@ public sealed class GameSessionCoordinatorTests
             LaunchCorrelation);
 
     private static ManagedGameLaunchContext CreateManagedLaunch(
-        IReadOnlyList<LifecycleSourceCursor>? sourceBaselines = null) =>
+        IReadOnlyList<LifecycleSourceCursor>? sourceBaselines = null,
+        string productVersion = "11.18.0.7",
+        ContentHash? executableSha256 = null) =>
         new(
             LaunchCorrelation,
             new InstalledGameIdentity(
                 ExecutablePath: @"C:\Games\wotblitz.exe",
-                ProductVersion: "11.18.0.7",
-                ExecutableSha256: new ContentHash(new string('a', 64)),
+                ProductVersion: productVersion,
+                ExecutableSha256: executableSha256 ?? new ContentHash(new string('a', 64)),
                 ResourceRoot: @"C:\Games",
                 DlcRoots: []),
             processId: 1234,
@@ -1244,6 +1356,74 @@ public sealed class GameSessionCoordinatorTests
             AuthorizedMemoryObservation observation,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException("StubMemoryReaderFactory is not intended for evidence evaluation tests.");
+    }
+
+    private static Type10EntityPositionResult CreateResolvedEntityPosition(int entityId) => new(
+        Type10EntityPositionStatus.Resolved,
+        entityId,
+        12.5f,
+        3.25f,
+        -44.75f,
+        "primary",
+        null,
+        Attempts: 1,
+        NodesVisited: 3,
+        ModuleRooted: true,
+        EntityIdentityRevalidated: true,
+        ConsistentDoubleRead: true,
+        HardwareAtomicReadProven: false);
+
+    private sealed class TrackingEntityPositionReaderFactory(
+        Type10EntityPositionResult result) : IGuardedMemoryReaderFactory
+    {
+        public int CreateCount { get; private set; }
+        public AuthorizedMemoryObservation? Observation { get; private set; }
+        public TrackingEntityPositionReader Reader { get; } = new(result);
+
+        public ValueTask<OperationResult<IAuthorizedMemoryReader>> CreateAsync(
+            AuthorizedMemoryObservation observation,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CreateCount++;
+            Observation = observation;
+            return ValueTask.FromResult(OperationResult.Success<IAuthorizedMemoryReader>(Reader));
+        }
+    }
+
+    private sealed class TrackingEntityPositionReader(Type10EntityPositionResult result)
+        : IAuthorizedMemoryReader
+    {
+        public nint ModuleBase { get; private set; }
+        public int EntityId { get; private set; }
+        public Type10EntityPositionLayout? Layout { get; private set; }
+        public Action? BeforeReturn { get; set; }
+
+        public ValueTask<OperationResult<byte[]>> ReadAsync(
+            nint address,
+            int length,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public ValueTask<OperationResult<IReadOnlyList<MemoryReadItem>>> ReadBatchAsync(
+            IReadOnlyList<nint> addresses,
+            int length,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public ValueTask<OperationResult<Type10EntityPositionResult>> ResolveEntityPositionAsync(
+            nint moduleBase,
+            int entityId,
+            Type10EntityPositionLayout layout,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ModuleBase = moduleBase;
+            EntityId = entityId;
+            Layout = layout;
+            BeforeReturn?.Invoke();
+            return ValueTask.FromResult(OperationResult.Success(result));
+        }
     }
 
     private sealed class StubProcessIdentityObserver : IGameProcessIdentityObserver

@@ -1,7 +1,7 @@
 # WoT Blitz PC offset-discovery workflow
 
-Last updated: 2026-08-08 (OD-RECOVERY-069 found the exact entity-bound
-type-10 movement anchor; OD-RECOVERY-070 completed synthetic two-source proof)
+Last updated: 2026-08-08 (OD-RECOVERY-073 froze the exact-build module-rooted
+entity-position polling family and bounded live validation plan)
 
 This is the operational playbook for discovering memory evidence from the
 Windows WoT Blitz client during a **positively verified offline replay**. It is
@@ -391,6 +391,42 @@ entity back to a stable container/root and validate the already identified
 `[entity+0x38]` movement-filter helper/ring (`0x38` stride, current index at
 helper `+0x1C8`, position at record `+0x18`). Any later live request must test a
 specific stable resolver plan, not reconfirm the type-10 event.
+
+OD-RECOVERY-073 completed that offline/static and implementation gate. The
+current-build resolver is now pinned to executable version `11.19.0.10`, SHA-256
+`1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d`, and
+module root RVA `0x04054780`. It follows `AppContext +0x4C -> BWApp +0x24 ->
+BWServerConnection`, treats connection `+0x04` as embedded `BWEntities`, then
+uses the engine's cache plus three bounded entity-ID trees. The chosen entity,
+AvatarFilter, helper, ring index, full record, and root chain are revalidated.
+`TraceEntityRegistryPosition.java` passes 47/47 fixed static checks.
+
+The production contract is deliberately narrower than the old discovery APIs:
+the caller supplies only the decoded replay entity ID. The coordinator owns the
+verified managed process, module base, exact build identity, and every address
+and displacement. Unsupported builds return an honest status before a memory
+reader is created; gate revocation cancels the identity-bound read and discards
+its result. The public result contains status, bounded diagnostics, and XYZ but
+no process address or raw bytes. The OD-073 runner persists aggregates only.
+
+The full repository gate has passed. The next live session is therefore allowed
+after a fresh Host publish: one bounded OD-073 poll of the decoded viewpoint in
+a positively verified offline replay. A positive result must show all reads
+resolved, at least two distinct positions, retained-trajectory consistency,
+module-root provenance, entity revalidation, and consistent double-collects.
+It must continue to report hardware atomicity and same-decoded-clock proof as
+false. If positive, repeat the unchanged resolver once on the content-distinct
+replay/fresh process. If negative, preserve the aggregate and return offline;
+do not widen to caller-supplied addresses or resume broad scans.
+
+Session ID: `OD-RECOVERY-073`.
+
+This is the durable policy pivot for community-derived clues: use historical
+offsets only to propose relationship families, re-derive all current-build
+addresses and displacements from hash-bound static evidence, implement an
+exact-build server-owned resolver, prove it synthetically, and spend live
+budget only on the remaining semantic question. No historical address is
+carried forward merely because it was recently posted.
 
 The first static triage did not find a direct consumer anchor. Across 526,935
 executable functions, displacement-layout matches were dominated by matrix,

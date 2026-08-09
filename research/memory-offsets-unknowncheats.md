@@ -207,3 +207,33 @@ distinct triples with exact matches in the downsampled decoded trajectory.
 Thus the community family ultimately led to a cross-replay-repeatable
 event-based moving player-position read, but still not to reusable historical
 offsets or a stable polling root.
+
+## Stable-family convergence (OD-RECOVERY-073)
+
+The relationship-first treatment produced a second useful result. Static data
+flow from the proven entity resolver reaches a current-build module root and a
+bounded entity-ID lookup rather than resurrecting any historical absolute
+address:
+
+- `[wotblitz.exe + 0x04054780]` points to `AppContextImpl`;
+- `AppContextImpl +0x4C` points to `BWApp`;
+- `BWApp +0x24` points to `BWServerConnection`;
+- the embedded `BWEntities` object starts at connection `+0x04`;
+- the requested replay entity ID is resolved through the cache and three
+  bounded map trees, with `[entity+0x1C]` revalidated;
+- the AvatarFilter/AvatarFilterHelper vtables identify the supported movement
+  filter before the newest 8-entry ring record is double-collected.
+
+`TraceEntityRegistryPosition.java` pins 47 relationships to executable SHA-256
+`1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d` and
+reports `resolver-layout-proven`. The implementation exposes only a decoded
+replay entity ID to the caller; PID, module base, root, tree layout, vtables,
+and member offsets remain server-owned exact-build policy.
+
+This confirms the right way to use stale community material: preserve object
+names, ownership relations, and likely member roles as search hypotheses, then
+re-derive every current-build address and displacement from hash-bound code.
+The historical root and `+0x68/+0x6C/+0x70` position triple remain refuted.
+The new resolver is a fresh current-build family and still requires bounded
+live validation before it can be called reliable polling or support offset
+publication.

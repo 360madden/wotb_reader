@@ -4,6 +4,7 @@ using WotBTreader.Application.Game;
 using WotBTreader.Application.Replay;
 using WotBTreader.Application.Results;
 using WotBTreader.Core;
+using WotBTreader.Core.Discovery;
 using WotBTreader.GameIntegration.Discovery;
 using WotBTreader.GameIntegration.Logs;
 using WotBTreader.UltimateScanner;
@@ -1734,6 +1735,117 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             return GateCheck<MemoryReadResult>(
+                "discover.gate_not_satisfied",
+                "The offline-session gate is no longer satisfied.");
+        }
+    }
+
+    public async ValueTask<OperationResult<EntityPositionReadResult>> ReadEntityPositionAsync(
+        EntityPositionReadRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        (AuthorizedMemoryObservation? observation, long baseAddress, CancellationToken authorizationToken, bool ok) =
+            GetScanAuthorization(cancellationToken);
+        if (!ok)
+        {
+            return GateCheck<EntityPositionReadResult>(
+                "discover.gate_not_satisfied",
+                "The offline-session gate is not satisfied.");
+        }
+
+        using CancellationTokenSource readCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, authorizationToken);
+        try
+        {
+            Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+            if (!string.Equals(
+                observation!.ProductVersion,
+                layout.GameVersion,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                observation.ExecutableSha256.Value,
+                layout.ExecutableSha256,
+                StringComparison.Ordinal))
+            {
+                return IsScanAuthorizationCurrent(observation, authorizationToken)
+                    ? OperationResult.Success(new EntityPositionReadResult(
+                        _timeProvider.GetUtcNow(),
+                        observation.ProductVersion,
+                        Type10EntityPositionStatus.UnsupportedBuild,
+                        request.EntityId,
+                        null,
+                        null,
+                        null,
+                        null,
+                        "build-identity",
+                        Attempts: 0,
+                        NodesVisited: 0,
+                        ModuleRooted: false,
+                        EntityIdentityRevalidated: false,
+                        ConsistentDoubleRead: false,
+                        HardwareAtomicReadProven: false,
+                        SameDecodedClockProven: false))
+                    : GateCheck<EntityPositionReadResult>(
+                        "discover.gate_not_satisfied",
+                        "The offline-session gate is no longer satisfied.");
+            }
+
+            OperationResult<IAuthorizedMemoryReader> readerResult = await _memoryReaderFactory
+                .CreateAsync(observation, readCancellation.Token)
+                .ConfigureAwait(false);
+            if (!readerResult.IsSuccess || readerResult.Value is null)
+            {
+                return OperationResult.Failure<EntityPositionReadResult>(
+                    new ApplicationError(
+                        "discover.entity_position.read_unavailable",
+                        "The guarded entity-position reader is unavailable."));
+            }
+
+            OperationResult<Type10EntityPositionResult> resolveResult =
+                await readerResult.Value.ResolveEntityPositionAsync(
+                    (nint)baseAddress,
+                    request.EntityId,
+                    layout,
+                    readCancellation.Token).ConfigureAwait(false);
+            if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+            {
+                return GateCheck<EntityPositionReadResult>(
+                    "discover.gate_not_satisfied",
+                    "The offline-session gate is no longer satisfied.");
+            }
+
+            if (!resolveResult.IsSuccess || resolveResult.Value is null)
+            {
+                return OperationResult.Failure<EntityPositionReadResult>(
+                    resolveResult.Error ?? new ApplicationError(
+                        "discover.entity_position.read_failed",
+                        "The entity-position read failed."));
+            }
+
+            Type10EntityPositionResult resolved = resolveResult.Value;
+            return OperationResult.Success(new EntityPositionReadResult(
+                _timeProvider.GetUtcNow(),
+                layout.GameVersion,
+                resolved.Status,
+                resolved.EntityId,
+                resolved.X,
+                resolved.Y,
+                resolved.Z,
+                resolved.EntitySource,
+                resolved.FailureStage,
+                resolved.Attempts,
+                resolved.NodesVisited,
+                resolved.ModuleRooted,
+                resolved.EntityIdentityRevalidated,
+                resolved.ConsistentDoubleRead,
+                resolved.HardwareAtomicReadProven,
+                SameDecodedClockProven: false));
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return GateCheck<EntityPositionReadResult>(
                 "discover.gate_not_satisfied",
                 "The offline-session gate is no longer satisfied.");
         }

@@ -32,6 +32,7 @@ internal static class GameApiEndpoints
         group.MapDelete("/discover/session/{sessionId}", DiscardSessionAsync);
         group.MapPost("/discover/neighborhood", DiscoverNeighborhoodAsync);
         group.MapPost("/discover/read", ReadOffsetsAsync);
+        group.MapPost("/discover/entity-position", ReadEntityPositionAsync);
         group.MapPost("/discover/instruction-snapshot", CaptureInstructionSnapshotAsync);
         group.MapGet("/discover/trajectory/{battleSessionId:guid}", GetTrajectoryAsync);
         group.MapPost("/discover/correlate", CorrelateAsync);
@@ -819,6 +820,49 @@ internal static class GameApiEndpoints
                 ViewpointIdentityProven = hit.ViewpointIdentityProven,
                 StableRootProven = hit.StableRootProven,
             }).ToList(),
+        });
+    }
+
+    internal static async Task<IResult> ReadEntityPositionAsync(
+        IGameMemoryScanner scanner,
+        WotBTreader.ApiContracts.EntityPositionReadRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(scanner);
+        ArgumentNullException.ThrowIfNull(request);
+
+        OperationResult<EntityPositionReadResult> result = await scanner
+            .ReadEntityPositionAsync(
+                new WotBTreader.Application.Game.EntityPositionReadRequest(request.EntityId),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!result.IsSuccess || result.Value is null)
+        {
+            return Results.BadRequest(new
+            {
+                error = result.Error?.Code ?? "discover.entity_position.read_failed",
+            });
+        }
+
+        EntityPositionReadResult read = result.Value;
+        return Results.Ok(new EntityPositionReadResponse
+        {
+            CompletedAtUtc = read.CompletedAtUtc,
+            GameVersion = read.GameVersion,
+            Status = read.Status.ToString(),
+            EntityId = read.EntityId,
+            X = read.X,
+            Y = read.Y,
+            Z = read.Z,
+            EntitySource = read.EntitySource,
+            FailureStage = read.FailureStage,
+            Attempts = read.Attempts,
+            NodesVisited = read.NodesVisited,
+            ModuleRooted = read.ModuleRooted,
+            EntityIdentityRevalidated = read.EntityIdentityRevalidated,
+            ConsistentDoubleRead = read.ConsistentDoubleRead,
+            HardwareAtomicReadProven = read.HardwareAtomicReadProven,
+            SameDecodedClockProven = read.SameDecodedClockProven,
         });
     }
 

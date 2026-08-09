@@ -431,6 +431,24 @@ the movement-filter path. The strongest polling-family clue is the entity's
 `+0x1C8`, position at record `+0x18`). Freeze a bounded stable-read plan before
 requesting another live session.
 
+`OD-RECOVERY-073` completed the frozen polling plan. Hash-bound Ghidra evidence
+passes 47/47 checks for the module root, `AppContext -> BWApp -> connection ->
+BWEntities` ownership chain, cache/three-tree entity lookup, AvatarFilter/helper
+identity, and newest movement-ring record. The Core resolver is bounded to
+1,024 tree nodes and three attempts, double-collects the full record, and
+revalidates the root/entity/filter/helper chain. The guarded adapter keeps one
+read-only identity-bound process lease and the live offline authorization token
+for every native read.
+
+The full repository milestone gate passed. Next: fresh Host publish, then one
+OD-073 live poll.
+The request surface accepts only a decoded replay entity ID; PID, module base,
+root, pointers, vtables, and displacements are server-owned exact-build policy.
+Require movement plus decoded-trajectory consistency and preserve only the
+aggregate result. If the first run is positive, one unchanged content-distinct
+repeat is the next gate for reliable continuous polling. Do not update the
+offset table before that repeat and the remaining publication review.
+
 No live budget exists for static exploration. Offset publication still
 requires a stable module-relative resolver/root and the M3 evidence gates.
 

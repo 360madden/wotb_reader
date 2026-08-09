@@ -35,6 +35,7 @@ overlay endpoint/state implementation was deleted.
 | `/discover/session/{sessionId}` | DELETE | Discard a scanner session |
 | `/discover/neighborhood` | POST | Scan a memory window around a known offset |
 | `/discover/read` | POST | Re-read a bounded staged set of absolute addresses under the offline gate |
+| `/discover/entity-position` | POST | Resolve one decoded replay entity ID through the exact-build, server-owned module root and return a sanitized newest-ring XYZ result |
 | `/discover/instruction-snapshot` | POST | Run the server-pinned instruction-first XYZ capture; caller controls only duration/hit bounds, never PID/module/address/register |
 | `/discover/trajectory/{battleSessionId}` | GET | Return decoded ground-truth trajectories for correlation |
 | `/discover/correlate` | POST | Score staged value series against decoded trajectory ground truth |

@@ -935,6 +935,50 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task EntityPositionReadProjectsOnlySanitizedEvidence()
+    {
+        var scanner = new FakeGameMemoryScanner
+        {
+            EntityPositionResult = OperationResult.Success(
+                new EntityPositionReadResult(
+                    DateTimeOffset.UnixEpoch.AddSeconds(7),
+                    "11.19.0.10",
+                    Type10EntityPositionStatus.Resolved,
+                    4242,
+                    12.5f,
+                    3.25f,
+                    -44.75f,
+                    "primary",
+                    null,
+                    Attempts: 1,
+                    NodesVisited: 3,
+                    ModuleRooted: true,
+                    EntityIdentityRevalidated: true,
+                    ConsistentDoubleRead: true,
+                    HardwareAtomicReadProven: false,
+                    SameDecodedClockProven: false)),
+        };
+
+        IResult result = await GameApiEndpoints.ReadEntityPositionAsync(
+            scanner,
+            new WotBTreader.ApiContracts.EntityPositionReadRequest { EntityId = 4242 },
+            TestContext.CancellationToken);
+
+        EntityPositionReadResponse response = Value<EntityPositionReadResponse>(result);
+        Assert.AreEqual(4242, scanner.LastEntityPositionRequest?.EntityId);
+        Assert.AreEqual("Resolved", response.Status);
+        Assert.AreEqual(12.5f, response.X);
+        Assert.IsTrue(response.ModuleRooted);
+        Assert.IsTrue(response.EntityIdentityRevalidated);
+        Assert.IsTrue(response.ConsistentDoubleRead);
+        Assert.IsFalse(response.HardwareAtomicReadProven);
+        Assert.IsFalse(response.SameDecodedClockProven);
+        string json = JsonSerializer.Serialize(response, CamelCaseJson);
+        Assert.IsFalse(json.Contains("address", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(json.Contains("observedValue", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
     public async Task InstructionSnapshotForwardsOnlyBoundsAndProjectsSafeEvidence()
     {
         DateTimeOffset capturedAt = DateTimeOffset.UnixEpoch.AddSeconds(5);
@@ -1538,6 +1582,7 @@ public sealed class GameApiEndpointsTests
         public double? LastCompareDeltaTolerance { get; private set; }
         public CancellationToken LastCancellationToken { get; private set; }
         public MemoryReadRequest? LastReadRequest { get; private set; }
+        public WotBTreader.Application.Game.EntityPositionReadRequest? LastEntityPositionRequest { get; private set; }
         public WotBTreader.Application.Game.InstructionSnapshotRequest? LastInstructionSnapshotRequest { get; private set; }
         public OperationResult<MemoryReadResult> ReadResult { get; init; } = OperationResult.Success(
             new MemoryReadResult(DateTimeOffset.UnixEpoch,
@@ -1547,6 +1592,9 @@ public sealed class GameApiEndpointsTests
         public OperationResult<WotBTreader.Application.Game.InstructionSnapshotResult> InstructionSnapshotResult { get; init; } =
             OperationResult.Failure<WotBTreader.Application.Game.InstructionSnapshotResult>(
                 new ApplicationError("discover.instruction_snapshot.not_configured", "Test default."));
+        public OperationResult<EntityPositionReadResult> EntityPositionResult { get; init; } =
+            OperationResult.Failure<EntityPositionReadResult>(
+                new ApplicationError("discover.entity_position.not_configured", "Test default."));
         public OperationResult<MemoryCompareResult> CompareResult { get; init; } = OperationResult.Success(
             new MemoryCompareResult(DateTimeOffset.UnixEpoch, 0, 0, 0, 0, 0, 0, [], false, false, 0));
         public OperationResult<MemoryPointerChainResult> PointerChainResult { get; init; } = OperationResult.Success(
@@ -1611,6 +1659,15 @@ public sealed class GameApiEndpointsTests
             LastReadRequest = request;
             LastCancellationToken = cancellationToken;
             return ValueTask.FromResult(ReadResult);
+        }
+
+        public ValueTask<OperationResult<EntityPositionReadResult>> ReadEntityPositionAsync(
+            WotBTreader.Application.Game.EntityPositionReadRequest request,
+            CancellationToken cancellationToken)
+        {
+            LastEntityPositionRequest = request;
+            LastCancellationToken = cancellationToken;
+            return ValueTask.FromResult(EntityPositionResult);
         }
 
         public ValueTask<OperationResult<WotBTreader.Application.Game.InstructionSnapshotResult>> CaptureInstructionSnapshotAsync(
