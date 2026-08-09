@@ -377,6 +377,21 @@ target during a verified movement window on the other content-distinct replay.
 Require a changing viewpoint series plus same-entity decoded matches; do not
 scan or change the target/register/displacement in that session.
 
+OD-RECOVERY-072 completed that motion/repeatability gate. The unchanged target
+reached its 64-hit bound with 64/64 valid reads. Twelve decoded entity IDs
+matched; 13 hits exactly survived the downsampled trajectory, 41 were within
+one unit, and 57 were within three units. Most importantly, the replay
+viewpoint yielded six distinct triples and two exact downsampled matches. The
+same instruction/register contract therefore reads moving player position on
+both content-distinct replays and fresh processes.
+
+Do not spend more live budget repeating this event. The workflow now pivots
+offline/static to continuous-read architecture: trace the resolved viewpoint
+entity back to a stable container/root and validate the already identified
+`[entity+0x38]` movement-filter helper/ring (`0x38` stride, current index at
+helper `+0x1C8`, position at record `+0x18`). Any later live request must test a
+specific stable resolver plan, not reconfirm the type-10 event.
+
 The first static triage did not find a direct consumer anchor. Across 526,935
 executable functions, displacement-layout matches were dominated by matrix,
 copy, serializer, and destructor code; the highest-ranked candidate was
@@ -402,9 +417,9 @@ the transform-fill instruction, a latency-only retry, or another heap scan. The
 instruction-snapshot mechanism is now pinned to the two-source target and has
 passed synthetic and first-live equality review. OD-RECOVERY-071 proves
 entity-location identity and independently matches one exact entity to the
-replay viewpoint. Motion freshness and cross-replay repeatability remain the
-next event-based gates; stable resolution and offset publication remain
-separate work. Existing safety contract:
+replay viewpoint. OD-RECOVERY-072 proves motion freshness and cross-replay
+repeatability for the unchanged event. Stable resolution and offset publication
+remain separate work. Existing safety contract:
 [`../superpowers/specs/2026-08-08-instruction-first-position-snapshot.md`](../superpowers/specs/2026-08-08-instruction-first-position-snapshot.md).
 
 > **Amended 2026-08-04 (v3 strategy).** The pilot order below is superseded by

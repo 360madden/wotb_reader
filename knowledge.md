@@ -157,10 +157,18 @@ full design specification.
   the current instruction event can read the player's replay position in that
   session. The values did not move during the five-second window, so motion
   freshness, same-decoded-clock identity, cross-replay repeatability, and a
-  stable polling offset remain unproven. No offset is promoted.
+  stable polling offset remained unproven. OD-RECOVERY-072 repeated the exact
+  target in the other content-distinct replay during movement. It reached the
+  64-hit bound with 64/64 valid reads; the replay viewpoint produced six
+  distinct triples, including two exact matches retained by the downsampled
+  decoded trajectory. Across the capture, 12 decoded entity IDs matched and 12
+  captured entities changed. Event-based moving player-position reading is now
+  repeatable across both replays/fresh processes. Same-decoded-clock identity,
+  hardware atomicity, and a stable continuously pollable resolver remain open.
+  No offset is promoted.
   Detail:
   [`offline/offset-discovery.md`](offline/offset-discovery.md) and
-  [`docs/operations/handoffs/2026-08-08-od071-type10-live-equality.md`](docs/operations/handoffs/2026-08-08-od071-type10-live-equality.md).
+  [`docs/operations/handoffs/2026-08-08-od072-moving-crossreplay-player-position.md`](docs/operations/handoffs/2026-08-08-od072-moving-crossreplay-player-position.md).
 
 ## Quickstart
 

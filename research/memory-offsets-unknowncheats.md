@@ -201,5 +201,9 @@ offline replay. Seven decoded vehicle entities matched exactly at Float32
 precision, including the replay viewpoint entity. The stale community offsets
 were therefore useful as a relationship clue even though none was reusable.
 The result proves the new event-based player-position path for one static
-window; it does not prove motion freshness, cross-replay repeatability, or a
-stable polling offset.
+window. OD-RECOVERY-072 then repeated the unchanged target on the other
+content-distinct replay during movement. The replay viewpoint produced six
+distinct triples with exact matches in the downsampled decoded trajectory.
+Thus the community family ultimately led to a cross-replay-repeatable
+event-based moving player-position read, but still not to reusable historical
+offsets or a stable polling root.

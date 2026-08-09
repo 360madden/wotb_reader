@@ -201,6 +201,7 @@ docs/operations/handoffs/2026-08-08-instruction-first-pivot.md
 docs/operations/handoffs/2026-08-08-instruction-snapshot-live-correction.md
 docs/operations/handoffs/2026-08-08-instruction-snapshot-push-handoff.md
 docs/operations/handoffs/2026-08-08-od071-type10-live-equality.md
+docs/operations/handoffs/2026-08-08-od072-moving-crossreplay-player-position.md
 docs/operations/handoffs/2026-08-08-type10-entity-movement-anchor.md
 docs/operations/handoffs/2026-08-08-world-translation-negative-type10-pivot.md
 docs/operations/handoffs/README.md

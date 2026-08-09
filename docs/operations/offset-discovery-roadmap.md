@@ -418,6 +418,19 @@ five seconds during verified movement on the other content-distinct replay.
 Require a changing viewpoint series and same-entity decoded matches. Stop after
 the result; no target/displacement changes or scans belong in the session.
 
+`OD-RECOVERY-072` passed. The capture reached the 64-hit bound with every ID and
+XYZ read valid. Twelve decoded entity IDs matched; the replay viewpoint had six
+distinct captured positions, including two exact matches retained by the
+downsampled decoded trajectory. This closes motion freshness and cross-replay
+repeatability for event-based player-position reading.
+
+Next phase: no more unchanged live event captures. Offline/static, derive a
+stable viewpoint-entity resolver from the proven type-10 resolver/container and
+the movement-filter path. The strongest polling-family clue is the entity's
+`+0x38` filter/helper and its 8-entry `0x38`-stride ring (current index
+`+0x1C8`, position at record `+0x18`). Freeze a bounded stable-read plan before
+requesting another live session.
+
 No live budget exists for static exploration. Offset publication still
 requires a stable module-relative resolver/root and the M3 evidence gates.
 

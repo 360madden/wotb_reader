@@ -270,9 +270,20 @@ Float32 normalization, including the replay viewpoint entity. One additional
 zero-vector object had no decoded trajectory and was excluded. This proves
 event-based player-position identity for that session. The captured positions
 did not change, so motion freshness, same-decoded-clock identity, and
-cross-replay repeatability remain open. The next live proof must use the same
-fixed target during a verified movement window on the other content-distinct
-replay; do not run old member triples, broad scans, or the transform target.
+cross-replay repeatability remained open.
+
+OD-RECOVERY-072 repeated the unchanged five-second/64-hit target in the other
+content-distinct replay after movement began. All 64 bounded hits had readable
+IDs and finite XYZ. The replay viewpoint produced six distinct triples; two
+were exact matches even in the 256-sample downsampled decoded trajectory. The
+capture matched 12 decoded entity IDs, with 13 exact downsampled hit matches,
+41 hits within one unit, and 57 within three units. Twelve captured entities
+changed. This establishes motion freshness and cross-replay repeatability for
+event-based player-position reads. Same-decoded-clock and hardware-atomic proof
+remain false, and no stable polling root exists. Stop live repetitions. Pivot
+offline/static to a stable viewpoint-entity resolver and the verified
+movement-filter ring; do not run old member triples, broad scans, or the
+transform target.
 
 ## Evidence publication
 

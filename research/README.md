@@ -30,8 +30,11 @@
   a stable polling offset. The fixed two-source helper now passes synthetic
   validation. OD-RECOVERY-071 live-proved seven exact decoded entity/XYZ
   matches at Float32 precision, including the replay viewpoint entity. The
-  window was position-static, so motion freshness and cross-replay
-  repeatability remain next; no offset is promoted.
+  first window was static. OD-RECOVERY-072 repeated the same target on the
+  other replay during movement: 64/64 valid reads, six distinct viewpoint
+  triples, and exact downsampled viewpoint matches. Event-based moving player
+  position is now cross-replay-repeatable; a stable polling resolver and offset
+  promotion remain open.
 - **11.19 released July 2026** (per community release trackers: Reddit
   r/WorldOfTanksBlitz, Uptodown changelog) — minor rebalances only; replay
   format/log markers unchanged
