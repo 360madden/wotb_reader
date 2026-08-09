@@ -31,7 +31,13 @@ param(
     [int]$StageDelaySeconds = 55,
     [int]$ReadCount = 24,
     [int]$ReadIntervalMilliseconds = 750,
-    [string]$ResultPath = ''
+    [string]$ResultPath = '',
+    # Attest cross-replay repeatability from prior positive aggregate files.
+    # Each path must parse as a positive wotbtreader.od073 aggregate; distinct
+    # artifacts are attested by the operator/ledger (result files carry no
+    # artifact id by privacy design). Fail-closed: any invalid prior keeps the
+    # flag false without aborting the poll.
+    [string[]]$PriorResultPaths = @()
 )
 
 Set-StrictMode -Version Latest
@@ -432,6 +438,35 @@ else {
     'honest-negative-or-inconclusive'
 }
 
+# G3: stable-root live repeatability - attested by this positive run plus at
+# least one operator-supplied prior positive aggregate (ledger-distinct
+# artifacts). Fail-closed: any missing/unparseable/non-positive prior file
+# keeps the flag false; the poll still completes and writes its own result.
+$stableRootLiveRepeatabilityProven = $false
+if ($verdict -eq 'stable-resolver-positive' -and $PriorResultPaths.Count -ge 1) {
+    $priorAllPositive = $true
+    foreach ($priorPath in $PriorResultPaths) {
+        try {
+            if (-not (Test-Path -LiteralPath $priorPath)) {
+                throw 'prior result file not found'
+            }
+            $prior = Get-Content -LiteralPath $priorPath -Raw | ConvertFrom-Json
+            if ([string]$prior.schema -notlike 'wotbtreader.od073*' -or
+                [string]$prior.verdict -ne 'stable-resolver-positive') {
+                throw 'prior result is not a positive od073 aggregate'
+            }
+        }
+        catch {
+            Write-Host ('od073: prior_result_invalid path=' + $priorPath)
+            $priorAllPositive = $false
+            break
+        }
+    }
+    if ($priorAllPositive) {
+        $stableRootLiveRepeatabilityProven = $true
+    }
+}
+
 $aggregate = [ordered]@{
     schema = 'wotbtreader.od073.entity-position-poll.v3'
     campaign = 'od-075-position-ring'
@@ -465,7 +500,7 @@ $aggregate = [ordered]@{
     moduleRootedLayoutStaticEvidence = $true
     replayOwnedRootStaticEvidence = $true
     refutedMainConnectionRootExcluded = $true
-    stableRootLiveRepeatabilityProven = $false
+    stableRootLiveRepeatabilityProven = $stableRootLiveRepeatabilityProven
     offsetTablePromotionReady = $false
     privacy = [ordered]@{
         entityIdsPersisted = $false

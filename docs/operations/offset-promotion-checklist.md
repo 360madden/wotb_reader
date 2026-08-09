@@ -101,23 +101,24 @@ Acceptance — `SameDecodedClockProven` becomes `true` from evidence:
 
 ### G3 — Stable-root live repeatability (framework wiring)
 
-Current: repeatability is **proven at the ledger level** (OD-075 + OD-076) but
-the aggregate flag is hardcoded `false`. The framework has no input that
-reflects prior positive result files.
+Current: repeatability is **proven at the ledger level** (OD-075 + OD-076) and
+the framework wiring is **implemented (2026-08-09)**. The runner now takes
+`-PriorResultPaths` and computes `stableRootLiveRepeatabilityProven` from this
+positive run plus at least one operator-supplied prior positive aggregate;
+fail-closed (any missing/unparseable/non-positive prior keeps the flag false).
+Distinct artifacts are attested by the operator/ledger because result files
+carry no artifact id by privacy design. Flag logic verified against real
+result files (positive, negative, missing, no-prior cases). No product code
+or read-surface change.
 
-Acceptance — `stableRootLiveRepeatabilityProven` reflects reality:
-
-- Wire the flag to a real input — e.g., a campaign registry keyed by
-  campaign + artifact that the runner reads, or a `-PriorResults` parameter
-  pointing at the earlier positive aggregate files — and set it only when two
-  distinct-artifact positive results exist.
-- Runner-only change (scripts), no product code, no read-surface change.
+Remaining: the flag flips to `true` on the next positive poll that supplies
+the prior positive result file(s).
 
 ## Sequencing recommendation
 
 | Step | Type | Dependency |
 |---|---|---|
-| G3 flag wiring | Offline (runner script) | none |
+| ~~G3 flag wiring~~ | ~~Offline (runner script)~~ | **done 2026-08-09** (`-PriorResultPaths` in od-073) |
 | G2 decoder clock recording + validation against `replay_clock_segments` | Offline | none |
 | G1 mechanism test (write-observation) | Offline | tools/WriteInterceptor |
 | G1 live poll + G2 live correlation | Live (new approved session) | G1/G2 offline steps |
