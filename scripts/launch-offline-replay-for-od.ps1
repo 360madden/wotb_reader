@@ -311,7 +311,10 @@ try {
             (Join-Path $RepoRoot 'tools\WriteInterceptor')
         )
         $newestHelperSource = Get-ChildItem -Path $helperSourcePaths -Recurse -File |
-            Where-Object { $_.Extension -in '.cs', '.csproj' } |
+            Where-Object {
+                $_.Extension -in '.cs', '.csproj' -and
+                $_.FullName -notmatch '\\(?:bin|obj)\\'
+            } |
             Sort-Object LastWriteTime -Descending |
             Select-Object -First 1
         if ($null -ne $newestHelperSource -and
@@ -357,7 +360,10 @@ try {
         $instructionSnapshotHelperSha256 = [string]$instructionSnapshotIdentity.helperSha256
     }
     $newestSource = Get-ChildItem -Path (Join-Path $RepoRoot 'src') -Recurse -File |
-        Where-Object { $_.Extension -in '.cs', '.csproj' } |
+        Where-Object {
+            $_.Extension -in '.cs', '.csproj' -and
+            $_.FullName -notmatch '\\(?:bin|obj)\\'
+        } |
         Sort-Object LastWriteTime -Descending |
         Select-Object -First 1
     if ($null -ne $newestSource -and $newestSource.LastWriteTime -gt (Get-Item -LiteralPath $hostDll).LastWriteTime) {

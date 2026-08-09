@@ -1,5 +1,7 @@
 // TraceEntityRegistryPosition.java - verify the current-build module-rooted
-// path from AppContextImpl to BWEntities and the AvatarFilter position ring.
+// path from the published GameCore pointer through AppController,
+// SessionController, and the active PlaybackController to its replay-owned
+// BWEntities and the AvatarFilter position ring.
 //
 // This script is hash-bound static evidence only. It does not authorize a
 // live process read and it does not promote the layout into memory-offsets.
@@ -7,7 +9,8 @@
 //
 // Important headless rule: Ghidra can return exit zero after a script compile
 // or runtime error. Callers must also reject SCRIPT ERROR/error: in the script
-// log, require a fresh report, and require verdict=resolver-layout-proven.
+// log, require a fresh report, and require
+// verdict=replay-resolver-layout-proven.
 
 import java.io.File;
 import java.io.PrintWriter;
@@ -27,18 +30,27 @@ public class TraceEntityRegistryPosition extends GhidraScript {
     private static final String EXPECTED_SHA256 =
             "1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d";
 
-    private static final long APP_CONTEXT_ROOT_RVA = 0x04054780L;
-    private static final long APP_CONTEXT_ROOT_STORE_RVA = 0x00e7f4d9L;
-    private static final long APP_CONTEXT_CONSTRUCTOR_RVA = 0x00e7c890L;
-    private static final long BW_APP_CONSTRUCTOR_RVA = 0x012f3d00L;
+    private static final long GAME_CORE_ROOT_RVA = 0x04095c88L;
+    private static final long GAME_CORE_ROOT_STORE_RVA = 0x00280360L;
+    private static final long APP_CONTROLLER_CONSTRUCTOR_RVA = 0x00e7fc70L;
+    private static final long APP_CONTROLLER_VTABLE_RVA = 0x0323d61cL;
+    private static final long SESSION_CONTROLLER_CONSTRUCTOR_RVA = 0x00e855f0L;
+    private static final long SESSION_CONTROLLER_VTABLE_RVA = 0x0323d9bcL;
+    private static final long ACCOUNT_CONTROLLER_CONSTRUCTOR_RVA = 0x00e7a970L;
+    private static final long PLAYBACK_CONTROLLER_CONSTRUCTOR_RVA = 0x00fbaa40L;
+    private static final long ACCOUNT_CONTROLLER_VTABLE_RVA = 0x0323eae4L;
+    private static final long PLAYBACK_CONTROLLER_VTABLE_RVA = 0x03253aa4L;
     private static final long BW_CONNECTION_CONSTRUCTOR_RVA = 0x022f8ef0L;
     private static final long BW_CONNECTION_BASE_CONSTRUCTOR_RVA = 0x022fd420L;
     private static final long BW_ENTITIES_CONSTRUCTOR_RVA = 0x022fb880L;
     private static final long ENTITY_TREE_FIND_RVA = 0x002cb980L;
     private static final long ENTITY_RESOLVER_RVA = 0x022fc850L;
     private static final long ENTITY_APPLY_RVA = 0x022fa780L;
+    private static final long KINETICS_FILTER_VTABLE_RVA = 0x0325654cL;
+    private static final long VEHICLE_FILTER_VTABLE_RVA = 0x032565acL;
     private static final long AVATAR_FILTER_VTABLE_RVA = 0x03442520L;
     private static final long AVATAR_FILTER_APPLY_RVA = 0x0230e8f0L;
+    private static final long KINETICS_HELPER_VTABLE_RVA = 0x0325656cL;
     private static final long AVATAR_HELPER_VTABLE_RVA = 0x034424a4L;
     private static final long AVATAR_HELPER_STORE_RVA = 0x0230df40L;
 
@@ -53,50 +65,130 @@ public class TraceEntityRegistryPosition extends GhidraScript {
         expectValue("executable_sha256", hash, EXPECTED_SHA256);
 
         MemoryBlock rootBlock = currentProgram.getMemory().getBlock(
-                address(APP_CONTEXT_ROOT_RVA));
-        record("app_context_root_non_executable",
+                address(GAME_CORE_ROOT_RVA));
+        record("game_core_root_non_executable",
                 rootBlock != null && !rootBlock.isExecute(),
-                "root_rva=" + hex(APP_CONTEXT_ROOT_RVA) + " block=" +
+                "root_rva=" + hex(GAME_CORE_ROOT_RVA) + " block=" +
                 (rootBlock == null ? "<missing>" : rootBlock.getName()));
         expectInstruction(
-                "app_context_root_store",
-                APP_CONTEXT_ROOT_STORE_RVA,
-                "MOV dword ptr [0x04454780],ESI",
-                "893580474504");
+                "game_core_root_store",
+                GAME_CORE_ROOT_STORE_RVA,
+                "MOV dword ptr [0x04495c88],EDI",
+                "893d885c4904");
         expectDataReference(
-                "app_context_root_store_reference",
-                APP_CONTEXT_ROOT_STORE_RVA,
-                APP_CONTEXT_ROOT_RVA);
+                "game_core_root_store_reference",
+                GAME_CORE_ROOT_STORE_RVA,
+                GAME_CORE_ROOT_RVA);
+        expectInstruction(
+                "game_core_root_runtime_read",
+                0x00282f23L,
+                "MOV ECX,dword ptr [0x04495c88]",
+                "8b0d885c4904");
+        expectDataReference(
+                "game_core_root_runtime_read_reference",
+                0x00282f23L,
+                GAME_CORE_ROOT_RVA);
+
+        expectDirectCall(
+                "game_core_constructs_app_controller",
+                0x00280eebL,
+                APP_CONTROLLER_CONSTRUCTOR_RVA);
+        expectInstruction(
+                "game_core_app_controller_member",
+                0x00280f27L,
+                "MOV dword ptr [EBX + 0xc],EDI",
+                "897b0c");
+        expectInstruction(
+                "app_controller_vtable",
+                0x00e7fcdfL,
+                "MOV dword ptr [EDI],0x363d61c",
+                "c7071cd66303");
+        expectVtableSlot(
+                "app_controller_session_start_slot",
+                APP_CONTROLLER_VTABLE_RVA,
+                5,
+                0x00e95940L);
+        expectDataReference(
+                "app_controller_registers_session_builder",
+                0x00e95c02L,
+                0x00eb17f0L);
+        expectDirectCall(
+                "app_controller_constructs_session_controller",
+                0x00eb18c1L,
+                SESSION_CONTROLLER_CONSTRUCTOR_RVA);
+        expectInstruction(
+                "app_controller_session_controller_member",
+                0x00eb18f9L,
+                "MOV dword ptr [EDX + 0x124],EAX",
+                "898224010000");
 
         expectInstruction(
-                "app_context_impl_vtable",
-                0x00e7c9beL,
-                "MOV dword ptr [EDI],0x363cc78",
-                "c70778cc6303");
+                "session_controller_vtable",
+                0x00e8564dL,
+                "MOV dword ptr [EBX],0x363d9bc",
+                "c703bcd96303");
+        expectVtableSlot(
+                "session_controller_account_start_slot",
+                SESSION_CONTROLLER_VTABLE_RVA,
+                5,
+                0x00e96e50L);
+        expectDataReference(
+                "session_controller_registers_account_builder",
+                0x00e96efbL,
+                0x00eacf30L);
         expectDirectCall(
-                "app_context_constructs_bw_app",
-                0x00e7d3eeL,
-                BW_APP_CONSTRUCTOR_RVA);
+                "session_controller_constructs_account_controller",
+                0x00ead0ebL,
+                ACCOUNT_CONTROLLER_CONSTRUCTOR_RVA);
         expectInstruction(
-                "app_context_bw_app_member",
-                0x00e7d439L,
-                "MOV dword ptr [EDI + 0x4c],ECX",
-                "894f4c");
+                "session_controller_account_controller_member",
+                0x00ead18fL,
+                "MOV dword ptr [EDI + 0x118],ESI",
+                "89b718010000");
 
         expectInstruction(
-                "bw_app_vtable",
-                0x012f3d47L,
-                "MOV dword ptr [EDI],0x367fdb8",
-                "c707b8fd6703");
+                "account_controller_vtable",
+                0x00e7a9f4L,
+                "MOV dword ptr [EBX],0x363eae4",
+                "c703e4ea6303");
         expectDirectCall(
-                "bw_app_constructs_connection",
-                0x012f3ee9L,
+                "start_replay_constructs_playback_controller",
+                0x00ecd0c2L,
+                PLAYBACK_CONTROLLER_CONSTRUCTOR_RVA);
+        expectInstruction(
+                "account_controller_active_playback_member",
+                0x00ecd13dL,
+                "MOV dword ptr [EBX + 0x128],ECX",
+                "898b28010000");
+
+        expectInstruction(
+                "playback_controller_vtable",
+                0x00fbaa96L,
+                "MOV dword ptr [EDI],0x3653aa4",
+                "c707a43a6503");
+        expectDirectCall(
+                "playback_controller_constructs_connection",
+                0x00fbac3fL,
                 BW_CONNECTION_CONSTRUCTOR_RVA);
         expectInstruction(
-                "bw_app_connection_member",
-                0x012f3ef6L,
-                "MOV dword ptr [EDI + 0x24],EAX",
-                "894724");
+                "playback_controller_connection_member",
+                0x00fbacabL,
+                "MOV dword ptr [EDI + 0x120],ESI",
+                "89b720010000");
+        expectInstruction(
+                "playback_handler_uses_connection",
+                0x00fbaef9L,
+                "MOV ESI,dword ptr [EDI + 0x120]",
+                "8bb720010000");
+        expectInstruction(
+                "playback_handler_uses_embedded_entities",
+                0x00fbaf05L,
+                "ADD ESI,0x4",
+                "83c604");
+        expectDirectCall(
+                "playback_constructs_handler_from_entities",
+                0x00fbaf2dL,
+                0x00f603d0L);
 
         expectDirectCall(
                 "connection_to_base_constructor",
@@ -228,6 +320,16 @@ public class TraceEntityRegistryPosition extends GhidraScript {
                 "MOV ECX,dword ptr [ESI + 0x38]",
                 "8b4e38");
         expectVtableSlot(
+                "kinetics_filter_apply_slot",
+                KINETICS_FILTER_VTABLE_RVA,
+                2,
+                AVATAR_FILTER_APPLY_RVA);
+        expectVtableSlot(
+                "vehicle_filter_apply_slot",
+                VEHICLE_FILTER_VTABLE_RVA,
+                2,
+                AVATAR_FILTER_APPLY_RVA);
+        expectVtableSlot(
                 "avatar_filter_apply_slot",
                 AVATAR_FILTER_VTABLE_RVA,
                 2,
@@ -237,6 +339,11 @@ public class TraceEntityRegistryPosition extends GhidraScript {
                 0x0230e8f6L,
                 "MOV ECX,dword ptr [ECX + 0x8]",
                 "8b4908");
+        expectVtableSlot(
+                "kinetics_helper_store_slot",
+                KINETICS_HELPER_VTABLE_RVA,
+                2,
+                AVATAR_HELPER_STORE_RVA);
         expectVtableSlot(
                 "avatar_helper_store_slot",
                 AVATAR_HELPER_VTABLE_RVA,
@@ -263,7 +370,7 @@ public class TraceEntityRegistryPosition extends GhidraScript {
                 "f30f7e44d618");
 
         String verdict = failed == 0
-                ? "resolver-layout-proven"
+                ? "replay-resolver-layout-proven"
                 : "incomplete";
         String outPath = getEvidenceOutputPath(
                 "entity-registry-position-trace.txt");
@@ -276,9 +383,20 @@ public class TraceEntityRegistryPosition extends GhidraScript {
         writer.println("checks_failed=" + failed);
         writer.println();
         writer.println("## resolver layout");
-        writer.println("app_context_root_rva=" + hex(APP_CONTEXT_ROOT_RVA));
-        writer.println("app_context_bw_app_displacement=0x4c");
-        writer.println("bw_app_connection_displacement=0x24");
+        writer.println("game_core_root_rva=" + hex(GAME_CORE_ROOT_RVA));
+        writer.println("game_core_app_controller_displacement=0xc");
+        writer.println("app_controller_vtable_rva=" +
+                hex(APP_CONTROLLER_VTABLE_RVA));
+        writer.println("app_controller_session_controller_displacement=0x124");
+        writer.println("session_controller_vtable_rva=" +
+                hex(SESSION_CONTROLLER_VTABLE_RVA));
+        writer.println("session_controller_account_controller_displacement=0x118");
+        writer.println("account_controller_vtable_rva=" +
+                hex(ACCOUNT_CONTROLLER_VTABLE_RVA));
+        writer.println("account_controller_active_controller_displacement=0x128");
+        writer.println("playback_controller_vtable_rva=" +
+                hex(PLAYBACK_CONTROLLER_VTABLE_RVA));
+        writer.println("playback_controller_connection_displacement=0x120");
         writer.println("connection_entities_displacement=0x4");
         writer.println("entities_cached_entity_displacement=0x48");
         writer.println("entities_tree_object_displacements=0x1c,0x40,0x34");
@@ -290,13 +408,15 @@ public class TraceEntityRegistryPosition extends GhidraScript {
         writer.println("tree_node_value_displacement=0x14");
         writer.println("entity_id_displacement=0x1c");
         writer.println("entity_movement_filter_displacement=0x38");
+        writer.println("movement_filter_vtable_rvas=0x325654c,0x32565ac,0x3442520");
         writer.println("avatar_filter_helper_displacement=0x8");
+        writer.println("avatar_helper_vtable_rvas=0x325656c,0x34424a4");
         writer.println("avatar_helper_current_index_displacement=0x1c8");
         writer.println("avatar_helper_ring_displacement=0x18");
         writer.println("avatar_helper_ring_stride=0x38");
         writer.println("avatar_helper_ring_entries=8");
         writer.println("position_record_displacement=0x18");
-        writer.println("resolver_kind=module-rooted-entity-id-map");
+        writer.println("resolver_kind=module-rooted-active-replay-entity-id-map");
         writer.println("live_read_proven=false");
         writer.println("hardware_atomic_read_proven=false");
         writer.println("same_decoded_clock_proven=false");

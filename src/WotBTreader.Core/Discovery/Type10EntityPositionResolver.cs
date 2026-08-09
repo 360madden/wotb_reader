@@ -9,23 +9,30 @@ namespace WotBTreader.Core.Discovery;
 public delegate bool EntityPositionMemoryReader(uint address, Span<byte> destination);
 
 /// <summary>
-/// Hash-bound x86 layout for resolving a replay entity by ID and reading the
-/// newest position record retained by its AvatarFilterHelper.
+/// Hash-bound x86 layout for resolving a replay-owned entity by ID and reading
+/// the newest position record retained by its AvatarFilterHelper.
 /// </summary>
 public sealed record Type10EntityPositionLayout(
     string GameVersion,
     string ExecutableSha256,
-    uint AppContextRootRva,
-    uint AppContextBwAppOffset,
-    uint BwAppConnectionOffset,
+    uint GameCoreRootRva,
+    uint GameCoreAppControllerOffset,
+    uint AppControllerVtableRva,
+    uint AppControllerSessionControllerOffset,
+    uint SessionControllerVtableRva,
+    uint SessionControllerAccountControllerOffset,
+    uint AccountControllerVtableRva,
+    uint AccountControllerActiveControllerOffset,
+    uint PlaybackControllerVtableRva,
+    uint PlaybackControllerConnectionOffset,
     uint ConnectionEntitiesOffset,
     uint CachedEntityOffset,
     IReadOnlyList<uint> EntityTreeObjectOffsets,
     uint EntityIdOffset,
     uint EntityMovementFilterOffset,
-    uint AvatarFilterVtableRva,
+    IReadOnlyList<uint> MovementFilterVtableRvas,
     uint AvatarFilterHelperOffset,
-    uint AvatarHelperVtableRva,
+    IReadOnlyList<uint> AvatarHelperVtableRvas,
     uint AvatarHelperCurrentIndexOffset,
     uint AvatarHelperRingOffset,
     uint AvatarHelperRingStride,
@@ -38,17 +45,24 @@ public sealed record Type10EntityPositionLayout(
     public static Type10EntityPositionLayout WotBlitz1119010 { get; } = new(
         GameVersion: "11.19.0.10",
         ExecutableSha256: "1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d",
-        AppContextRootRva: 0x04054780,
-        AppContextBwAppOffset: 0x4c,
-        BwAppConnectionOffset: 0x24,
+        GameCoreRootRva: 0x04095c88,
+        GameCoreAppControllerOffset: 0x0c,
+        AppControllerVtableRva: 0x0323d61c,
+        AppControllerSessionControllerOffset: 0x124,
+        SessionControllerVtableRva: 0x0323d9bc,
+        SessionControllerAccountControllerOffset: 0x118,
+        AccountControllerVtableRva: 0x0323eae4,
+        AccountControllerActiveControllerOffset: 0x128,
+        PlaybackControllerVtableRva: 0x03253aa4,
+        PlaybackControllerConnectionOffset: 0x120,
         ConnectionEntitiesOffset: 0x04,
         CachedEntityOffset: 0x48,
         EntityTreeObjectOffsets: [0x1c, 0x40, 0x34],
         EntityIdOffset: 0x1c,
         EntityMovementFilterOffset: 0x38,
-        AvatarFilterVtableRva: 0x03442520,
+        MovementFilterVtableRvas: [0x0325654c, 0x032565ac, 0x03442520],
         AvatarFilterHelperOffset: 0x08,
-        AvatarHelperVtableRva: 0x034424a4,
+        AvatarHelperVtableRvas: [0x0325656c, 0x034424a4],
         AvatarHelperCurrentIndexOffset: 0x1c8,
         AvatarHelperRingOffset: 0x18,
         AvatarHelperRingStride: 0x38,
@@ -66,6 +80,12 @@ public enum Type10EntityPositionStatus
     InvalidLayout,
     InvalidModuleBase,
     ReadFailed,
+    UnsupportedAppController,
+    ReplaySessionInactive,
+    UnsupportedSessionController,
+    UnsupportedAccountController,
+    ReplayControllerInactive,
+    UnsupportedReplayController,
     EntityNotFound,
     EntityIdentityMismatch,
     UnsupportedMovementFilter,
@@ -133,9 +153,19 @@ public static class Type10EntityPositionResolver
         }
 
         if (!IsPointer(moduleBase) ||
-            !TryAdd(moduleBase, layout.AppContextRootRva, out uint rootAddress) ||
-            !TryAdd(moduleBase, layout.AvatarFilterVtableRva, out uint expectedFilterVtable) ||
-            !TryAdd(moduleBase, layout.AvatarHelperVtableRva, out uint expectedHelperVtable))
+            !TryAdd(moduleBase, layout.GameCoreRootRva, out uint rootAddress) ||
+            !TryAdd(moduleBase, layout.AppControllerVtableRva, out uint expectedAppVtable) ||
+            !TryAdd(moduleBase, layout.SessionControllerVtableRva, out uint expectedSessionVtable) ||
+            !TryAdd(moduleBase, layout.AccountControllerVtableRva, out uint expectedAccountVtable) ||
+            !TryAdd(moduleBase, layout.PlaybackControllerVtableRva, out uint expectedPlaybackVtable) ||
+            !TryResolveModuleAddresses(
+                moduleBase,
+                layout.MovementFilterVtableRvas,
+                out uint[] expectedFilterVtables) ||
+            !TryResolveModuleAddresses(
+                moduleBase,
+                layout.AvatarHelperVtableRvas,
+                out uint[] expectedHelperVtables))
         {
             return Failure(
                 Type10EntityPositionStatus.InvalidModuleBase,
@@ -151,8 +181,12 @@ public static class Type10EntityPositionResolver
         {
             AttemptResult current = TryResolveOnce(
                 rootAddress,
-                expectedFilterVtable,
-                expectedHelperVtable,
+                expectedAppVtable,
+                expectedSessionVtable,
+                expectedAccountVtable,
+                expectedPlaybackVtable,
+                expectedFilterVtables,
+                expectedHelperVtables,
                 entityId,
                 layout,
                 reader);
@@ -201,22 +235,124 @@ public static class Type10EntityPositionResolver
 
     private static AttemptResult TryResolveOnce(
         uint rootAddress,
-        uint expectedFilterVtable,
-        uint expectedHelperVtable,
+        uint expectedAppVtable,
+        uint expectedSessionVtable,
+        uint expectedAccountVtable,
+        uint expectedPlaybackVtable,
+        IReadOnlyList<uint> expectedFilterVtables,
+        IReadOnlyList<uint> expectedHelperVtables,
         int entityId,
         Type10EntityPositionLayout layout,
         EntityPositionMemoryReader reader)
     {
-        if (!TryReadPointer(reader, rootAddress, out uint appContext) ||
-            !TryReadPointerAt(reader, appContext, layout.AppContextBwAppOffset, out uint bwApp) ||
-            !TryReadPointerAt(reader, bwApp, layout.BwAppConnectionOffset, out uint connection) ||
-            !TryAdd(connection, layout.ConnectionEntitiesOffset, out uint entities) ||
-            !IsPointer(entities))
+        if (!TryReadPointer(reader, rootAddress, out uint gameCore) ||
+            !TryReadPointerAt(
+                reader,
+                gameCore,
+                layout.GameCoreAppControllerOffset,
+                out uint appController) ||
+            !TryReadUInt32(reader, appController, out uint appVtable))
         {
             return AttemptResult.Retry(
                 Type10EntityPositionStatus.ReadFailed,
                 "root-chain",
                 moduleRooted: false);
+        }
+
+        if (appVtable != expectedAppVtable)
+        {
+            return AttemptResult.Stop(
+                Type10EntityPositionStatus.UnsupportedAppController,
+                "app-controller-vtable");
+        }
+
+        if (!TryReadPointerAt(
+                reader,
+                appController,
+                layout.AppControllerSessionControllerOffset,
+                out uint sessionController))
+        {
+            return AttemptResult.Retry(
+                Type10EntityPositionStatus.ReplaySessionInactive,
+                "session-controller");
+        }
+
+        if (!TryReadUInt32(reader, sessionController, out uint sessionVtable))
+        {
+            return AttemptResult.Retry(
+                Type10EntityPositionStatus.ReadFailed,
+                "session-controller-vtable");
+        }
+
+        if (sessionVtable != expectedSessionVtable)
+        {
+            return AttemptResult.Stop(
+                Type10EntityPositionStatus.UnsupportedSessionController,
+                "session-controller-vtable");
+        }
+
+        if (!TryReadPointerAt(
+                reader,
+                sessionController,
+                layout.SessionControllerAccountControllerOffset,
+                out uint accountController) ||
+            !TryReadUInt32(reader, accountController, out uint accountVtable))
+        {
+            return AttemptResult.Retry(
+                Type10EntityPositionStatus.ReadFailed,
+                "account-controller");
+        }
+
+        if (accountVtable != expectedAccountVtable)
+        {
+            return AttemptResult.Stop(
+                Type10EntityPositionStatus.UnsupportedAccountController,
+                "account-controller-vtable");
+        }
+
+        if (!TryReadPointerAt(
+                reader,
+                accountController,
+                layout.AccountControllerActiveControllerOffset,
+                out uint playbackController))
+        {
+            return AttemptResult.Retry(
+                Type10EntityPositionStatus.ReadFailed,
+                "active-controller");
+        }
+
+        if (playbackController == 0)
+        {
+            return AttemptResult.Retry(
+                Type10EntityPositionStatus.ReplayControllerInactive,
+                "active-controller");
+        }
+
+        if (!TryReadUInt32(reader, playbackController, out uint playbackVtable))
+        {
+            return AttemptResult.Retry(
+                Type10EntityPositionStatus.ReadFailed,
+                "playback-controller-vtable");
+        }
+
+        if (playbackVtable != expectedPlaybackVtable)
+        {
+            return AttemptResult.Stop(
+                Type10EntityPositionStatus.UnsupportedReplayController,
+                "playback-controller-vtable");
+        }
+
+        if (!TryReadPointerAt(
+                reader,
+                playbackController,
+                layout.PlaybackControllerConnectionOffset,
+                out uint connection) ||
+            !TryAdd(connection, layout.ConnectionEntitiesOffset, out uint entities) ||
+            !IsPointer(entities))
+        {
+            return AttemptResult.Retry(
+                Type10EntityPositionStatus.ReadFailed,
+                "replay-connection");
         }
 
         EntityLookup lookup = FindEntity(reader, entities, entityId, layout);
@@ -268,7 +404,7 @@ public static class Type10EntityPositionResolver
                 lookup.Source);
         }
 
-        if (filterVtable != expectedFilterVtable)
+        if (!expectedFilterVtables.Contains(filterVtable))
         {
             return AttemptResult.Stop(
                 Type10EntityPositionStatus.UnsupportedMovementFilter,
@@ -291,7 +427,7 @@ public static class Type10EntityPositionResolver
                 lookup.Source);
         }
 
-        if (helperVtable != expectedHelperVtable)
+        if (!expectedHelperVtables.Contains(helperVtable))
         {
             return AttemptResult.Stop(
                 Type10EntityPositionStatus.UnsupportedMovementFilter,
@@ -384,11 +520,45 @@ public static class Type10EntityPositionResolver
                 lookup.Source);
         }
 
-        if (!TryReadPointer(reader, rootAddress, out uint appContextAfter) ||
-            appContextAfter != appContext ||
-            !TryReadPointerAt(reader, appContext, layout.AppContextBwAppOffset, out uint bwAppAfter) ||
-            bwAppAfter != bwApp ||
-            !TryReadPointerAt(reader, bwApp, layout.BwAppConnectionOffset, out uint connectionAfter) ||
+        if (!TryReadPointer(reader, rootAddress, out uint gameCoreAfter) ||
+            gameCoreAfter != gameCore ||
+            !TryReadPointerAt(
+                reader,
+                gameCore,
+                layout.GameCoreAppControllerOffset,
+                out uint appControllerAfter) ||
+            appControllerAfter != appController ||
+            !TryReadUInt32(reader, appController, out uint appVtableAfter) ||
+            appVtableAfter != expectedAppVtable ||
+            !TryReadPointerAt(
+                reader,
+                appController,
+                layout.AppControllerSessionControllerOffset,
+                out uint sessionControllerAfter) ||
+            sessionControllerAfter != sessionController ||
+            !TryReadUInt32(reader, sessionController, out uint sessionVtableAfter) ||
+            sessionVtableAfter != expectedSessionVtable ||
+            !TryReadPointerAt(
+                reader,
+                sessionController,
+                layout.SessionControllerAccountControllerOffset,
+                out uint accountControllerAfter) ||
+            accountControllerAfter != accountController ||
+            !TryReadUInt32(reader, accountController, out uint accountVtableAfter) ||
+            accountVtableAfter != expectedAccountVtable ||
+            !TryReadPointerAt(
+                reader,
+                accountController,
+                layout.AccountControllerActiveControllerOffset,
+                out uint playbackControllerAfter) ||
+            playbackControllerAfter != playbackController ||
+            !TryReadUInt32(reader, playbackController, out uint playbackVtableAfter) ||
+            playbackVtableAfter != expectedPlaybackVtable ||
+            !TryReadPointerAt(
+                reader,
+                playbackController,
+                layout.PlaybackControllerConnectionOffset,
+                out uint connectionAfter) ||
             connectionAfter != connection ||
             !TryReadInt32At(reader, entity, layout.EntityIdOffset, out int entityIdAfter) ||
             entityIdAfter != entityId ||
@@ -669,11 +839,24 @@ public static class Type10EntityPositionResolver
     {
         return !string.IsNullOrWhiteSpace(layout.GameVersion) &&
             layout.ExecutableSha256.Length == 64 &&
-            layout.AppContextRootRva != 0 &&
+            layout.GameCoreRootRva != 0 &&
+            layout.GameCoreAppControllerOffset != 0 &&
+            layout.AppControllerVtableRva != 0 &&
+            layout.AppControllerSessionControllerOffset != 0 &&
+            layout.SessionControllerVtableRva != 0 &&
+            layout.SessionControllerAccountControllerOffset != 0 &&
+            layout.AccountControllerVtableRva != 0 &&
+            layout.AccountControllerActiveControllerOffset != 0 &&
+            layout.PlaybackControllerVtableRva != 0 &&
+            layout.PlaybackControllerConnectionOffset != 0 &&
             layout.EntityTreeObjectOffsets.Count == 3 &&
             layout.EntityTreeObjectOffsets.All(offset => offset != 0) &&
-            layout.AvatarFilterVtableRva != 0 &&
-            layout.AvatarHelperVtableRva != 0 &&
+            layout.MovementFilterVtableRvas.Count == 3 &&
+            layout.MovementFilterVtableRvas.Distinct().Count() == 3 &&
+            layout.MovementFilterVtableRvas.All(rva => rva != 0) &&
+            layout.AvatarHelperVtableRvas.Count == 2 &&
+            layout.AvatarHelperVtableRvas.Distinct().Count() == 2 &&
+            layout.AvatarHelperVtableRvas.All(rva => rva != 0) &&
             layout.RingEntryCount == 8 &&
             layout.AvatarHelperRingStride == RingRecordSize &&
             layout.PositionRecordOffset <= (uint)(RingRecordSize - 12) &&
@@ -682,6 +865,24 @@ public static class Type10EntityPositionResolver
     }
 
     private static bool IsPointer(uint value) => value >= 0x00010000;
+
+    private static bool TryResolveModuleAddresses(
+        uint moduleBase,
+        IReadOnlyList<uint> rvas,
+        out uint[] addresses)
+    {
+        addresses = new uint[rvas.Count];
+        for (int index = 0; index < rvas.Count; index++)
+        {
+            if (!TryAdd(moduleBase, rvas[index], out addresses[index]))
+            {
+                addresses = [];
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     private static bool TryAdd(uint left, uint right, out uint value)
     {

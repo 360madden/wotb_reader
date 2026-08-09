@@ -61,8 +61,10 @@ after the bounded result.
 ## Module-rooted entity-position polling (offline replay only)
 
 The exact 11.19.0.10 layout can resolve a decoded replay entity ID through the
-server-owned module root and poll the newest AvatarFilterHelper ring position.
-After publishing the current Host and starting one managed offline replay, run:
+server-owned replay root. The current checkpoint intentionally stops at an
+unverified vehicle-helper subtype before reading the ring. Do not run this
+command again until the helper constructor/vtable/store slot and ring layout
+have exact static checks:
 
 ```powershell
 powershell -File scripts/od-073-entity-position-poll.ps1
@@ -73,10 +75,11 @@ coordinator requires the exact executable version and SHA-256, owns the module
 base and layout, and keeps authorization cancellation live for every native
 read. The script writes an ignored aggregate-only result: it persists no
 entity ID, coordinates, process addresses, raw bytes, capability, replay path,
-or player/account data. A first positive result proves the current layout in
-one live process; repeatability on a content-distinct replay remains a separate
-gate. The double-collected record is consistency evidence, not hardware
-atomicity or same-decoded-clock proof.
+or player/account data. OD-074 proved the corrected root and primary replay
+entity lookup in one live process, but it did not read a position. A future
+positive result must still be repeated on a content-distinct replay. The
+double-collected record is consistency evidence, not hardware atomicity or
+same-decoded-clock proof.
 
 ## Ghidra offset-discovery evidence
 
@@ -138,6 +141,11 @@ after a post-script compile or runtime error. Every evidence run must also:
   -postScript TraceEntityRegistryPosition.java `
   -scriptPath (Join-Path $PWD 'tools\ghidra-scripts')
 
+& $analyzeHeadless $projectDirectory $projectName `
+  -process wotblitz.exe -noanalysis `
+  -postScript FindFunctionReferences.java 0x0325658C `
+  -scriptPath (Join-Path $PWD 'tools\ghidra-scripts')
+
 python tools/find-static-roots.py `
   --chain 0x03E91978 `
   --vtable-root VehicleGameLogic
@@ -153,9 +161,12 @@ fresh report must contain `verdict=semantic-chain-proven` and zero failed
 checks. That verdict proves the static entity/XYZ event anchor only; it does
 not authorize live capture or publish an offset.
 `TraceEntityRegistryPosition.java` is the hash-bound polling-layout verifier:
-its fresh report must contain `verdict=resolver-layout-proven` and zero failed
+its fresh report must contain `verdict=replay-resolver-layout-proven` and zero failed
 checks. It verifies the module root, entity-map traversal, type/vtable checks,
 and ring layout; it still does not prove a live read or promote an offset.
+`FindFunctionReferences.java` is a narrow ownership aid: pass one or more RVAs
+and inspect its fresh ignored report for exact references and nearby symbols.
+Its output is a search lead, not proof of member semantics or layout identity.
 
 ## Agent-shell (basher) timeouts — never use the default 30s
 

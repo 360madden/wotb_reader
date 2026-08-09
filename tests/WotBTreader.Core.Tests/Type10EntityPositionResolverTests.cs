@@ -101,6 +101,48 @@ public sealed class Type10EntityPositionResolverTests
     }
 
     [TestMethod]
+    public void Resolve_NonPlaybackActiveController_FailsClosedBeforeEntityRead()
+    {
+        MemoryFixture memory = MemoryFixture.CreateCached(EntityId, 1f, 2f, 3f);
+        memory.WriteUInt32(memory.PlaybackController, ModuleBase + 0x1234);
+
+        Type10EntityPositionResult result = Resolve(memory);
+
+        Assert.AreEqual(Type10EntityPositionStatus.UnsupportedReplayController, result.Status);
+        Assert.AreEqual("playback-controller-vtable", result.FailureStage);
+        Assert.AreEqual(1, result.Attempts);
+        Assert.IsTrue(result.ModuleRooted);
+    }
+
+    [TestMethod]
+    public void Resolve_UnexpectedAppControllerVtable_FailsClosedBeforeSessionRead()
+    {
+        MemoryFixture memory = MemoryFixture.CreateCached(EntityId, 1f, 2f, 3f);
+        memory.WriteUInt32(memory.AppController, ModuleBase + 0x1234);
+
+        Type10EntityPositionResult result = Resolve(memory);
+
+        Assert.AreEqual(Type10EntityPositionStatus.UnsupportedAppController, result.Status);
+        Assert.AreEqual("app-controller-vtable", result.FailureStage);
+        Assert.AreEqual(1, result.Attempts);
+        Assert.IsTrue(result.ModuleRooted);
+    }
+
+    [TestMethod]
+    public void Resolve_UnexpectedSessionControllerVtable_FailsClosedBeforeAccountRead()
+    {
+        MemoryFixture memory = MemoryFixture.CreateCached(EntityId, 1f, 2f, 3f);
+        memory.WriteUInt32(memory.SessionController, ModuleBase + 0x1234);
+
+        Type10EntityPositionResult result = Resolve(memory);
+
+        Assert.AreEqual(Type10EntityPositionStatus.UnsupportedSessionController, result.Status);
+        Assert.AreEqual("session-controller-vtable", result.FailureStage);
+        Assert.AreEqual(1, result.Attempts);
+        Assert.IsTrue(result.ModuleRooted);
+    }
+
+    [TestMethod]
     public void Resolve_RecordChangesDuringFirstCollect_RetriesAndSucceeds()
     {
         MemoryFixture memory = MemoryFixture.CreateCached(EntityId, 1f, 2f, 3f);
@@ -208,8 +250,11 @@ public sealed class Type10EntityPositionResolverTests
         private readonly Dictionary<uint, byte> _bytes = [];
         private uint _nextTreeAddress = 0x26000000;
 
-        public uint AppContext { get; } = 0x20000000;
-        public uint BwApp { get; } = 0x21000000;
+        public uint GameCore { get; } = 0x20000000;
+        public uint AppController { get; } = 0x20800000;
+        public uint SessionController { get; } = 0x21000000;
+        public uint AccountController { get; } = 0x21800000;
+        public uint PlaybackController { get; } = 0x21c00000;
         public uint Connection { get; } = 0x22000000;
         public uint Entities => Connection + 0x04;
         public uint Entity { get; } = 0x23000000;
@@ -221,20 +266,40 @@ public sealed class Type10EntityPositionResolverTests
         public static MemoryFixture CreateCached(int entityId, float x, float y, float z)
         {
             var memory = new MemoryFixture();
-            uint root = ModuleBase + Type10EntityPositionLayout.WotBlitz1119010.AppContextRootRva;
-            memory.WriteUInt32(root, memory.AppContext);
-            memory.WriteUInt32(memory.AppContext + 0x4c, memory.BwApp);
-            memory.WriteUInt32(memory.BwApp + 0x24, memory.Connection);
+            Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+            uint root = ModuleBase + layout.GameCoreRootRva;
+            memory.WriteUInt32(root, memory.GameCore);
+            memory.WriteUInt32(memory.GameCore + layout.GameCoreAppControllerOffset, memory.AppController);
+            memory.WriteUInt32(memory.AppController, ModuleBase + layout.AppControllerVtableRva);
+            memory.WriteUInt32(
+                memory.AppController + layout.AppControllerSessionControllerOffset,
+                memory.SessionController);
+            memory.WriteUInt32(memory.SessionController, ModuleBase + layout.SessionControllerVtableRva);
+            memory.WriteUInt32(
+                memory.SessionController + layout.SessionControllerAccountControllerOffset,
+                memory.AccountController);
+            memory.WriteUInt32(
+                memory.AccountController,
+                ModuleBase + layout.AccountControllerVtableRva);
+            memory.WriteUInt32(
+                memory.AccountController + layout.AccountControllerActiveControllerOffset,
+                memory.PlaybackController);
+            memory.WriteUInt32(
+                memory.PlaybackController,
+                ModuleBase + layout.PlaybackControllerVtableRva);
+            memory.WriteUInt32(
+                memory.PlaybackController + layout.PlaybackControllerConnectionOffset,
+                memory.Connection);
             memory.WriteUInt32(memory.Entities + 0x48, memory.Entity);
             memory.WriteInt32(memory.Entity + 0x1c, entityId);
             memory.WriteUInt32(memory.Entity + 0x38, memory.Filter);
             memory.WriteUInt32(
                 memory.Filter,
-                ModuleBase + Type10EntityPositionLayout.WotBlitz1119010.AvatarFilterVtableRva);
+                ModuleBase + layout.MovementFilterVtableRvas[1]);
             memory.WriteUInt32(memory.Filter + 0x08, memory.Helper);
             memory.WriteUInt32(
                 memory.Helper,
-                ModuleBase + Type10EntityPositionLayout.WotBlitz1119010.AvatarHelperVtableRva);
+                ModuleBase + layout.AvatarHelperVtableRvas[0]);
             memory.WriteInt32(memory.Helper + 0x1c8, 3);
             memory.WritePosition(memory.Record, x, y, z);
             return memory;

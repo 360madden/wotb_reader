@@ -53,20 +53,46 @@ if (Test-Path -LiteralPath $ResultPath) {
     exit 4
 }
 
-function Test-OwnerOnlyFileAcl([string]$Path) {
+function Test-OwnerOnlyRendezvousFile([string]$Path) {
     try {
         $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
-        $acl = Get-Acl -LiteralPath $Path
-        $observedOwner = (New-Object Security.Principal.NTAccount($acl.Owner)).Translate(
+        $file = Get-Item -LiteralPath $Path
+        $directory = Get-Item -LiteralPath $file.DirectoryName
+        if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+            ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            return $false
+        }
+
+        $directoryAcl = Get-Acl -LiteralPath $directory.FullName
+        $directoryOwner = (New-Object Security.Principal.NTAccount($directoryAcl.Owner)).Translate(
             [Security.Principal.SecurityIdentifier])
-        $rules = @($acl.GetAccessRules(
+        $directoryRules = @($directoryAcl.GetAccessRules(
             $true,
             $false,
             [Security.Principal.SecurityIdentifier]))
-        return $acl.AreAccessRulesProtected -and $observedOwner -eq $owner -and
-            $rules.Count -eq 1 -and $rules[0].IdentityReference -eq $owner -and
-            $rules[0].AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and
-            (($rules[0].FileSystemRights -band [Security.AccessControl.FileSystemRights]::FullControl) -eq
+        if (-not $directoryAcl.AreAccessRulesProtected -or $directoryOwner -ne $owner -or
+            $directoryRules.Count -ne 1 -or
+            $directoryRules[0].IdentityReference -ne $owner -or
+            $directoryRules[0].AccessControlType -ne
+                [Security.AccessControl.AccessControlType]::Allow -or
+            (($directoryRules[0].FileSystemRights -band
+                    [Security.AccessControl.FileSystemRights]::FullControl) -ne
+                [Security.AccessControl.FileSystemRights]::FullControl)) {
+            return $false
+        }
+
+        $fileAcl = Get-Acl -LiteralPath $file.FullName
+        $fileOwner = (New-Object Security.Principal.NTAccount($fileAcl.Owner)).Translate(
+            [Security.Principal.SecurityIdentifier])
+        $fileRules = @($fileAcl.GetAccessRules(
+            $true,
+            $true,
+            [Security.Principal.SecurityIdentifier]))
+        return $fileOwner -eq $owner -and $fileRules.Count -eq 1 -and
+            $fileRules[0].IdentityReference -eq $owner -and
+            $fileRules[0].AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and
+            (($fileRules[0].FileSystemRights -band
+                    [Security.AccessControl.FileSystemRights]::FullControl) -eq
                 [Security.AccessControl.FileSystemRights]::FullControl)
     }
     catch {
@@ -80,7 +106,8 @@ function Get-Rendezvous {
         $file = Get-ChildItem -LiteralPath $directory -File -ErrorAction Stop |
             Sort-Object LastWriteTimeUtc -Descending |
             Select-Object -First 1
-        if ($null -eq $file -or -not (Test-OwnerOnlyFileAcl -Path $file.FullName)) {
+        if ($null -eq $file -or
+            -not (Test-OwnerOnlyRendezvousFile -Path $file.FullName)) {
             return $null
         }
 
@@ -227,6 +254,9 @@ if ($StageDelaySeconds -gt 0) {
 }
 
 $statusCounts = @{}
+$failureStageCounts = @{}
+$entitySourceCounts = @{}
+$attemptCounts = @{}
 $resolvedCount = 0
 $exactMatchCount = 0
 $withinOneCount = 0
@@ -240,6 +270,8 @@ $allIdentityRevalidated = $true
 $allConsistentDoubleRead = $true
 $anyHardwareAtomic = $false
 $anySameDecodedClock = $false
+$minimumNodesVisited = [int]::MaxValue
+$maximumNodesVisited = 0
 
 for ($index = 0; $index -lt $ReadCount; $index++) {
     try {
@@ -258,6 +290,35 @@ for ($index = 0; $index -lt $ReadCount; $index++) {
     }
     $statusCounts[$status] = [int]$statusCounts[$status] + 1
     $buildVersion = [string]$response.gameVersion
+    $failureStage = [string]$response.failureStage
+    if (-not [string]::IsNullOrWhiteSpace($failureStage)) {
+        if (-not $failureStageCounts.ContainsKey($failureStage)) {
+            $failureStageCounts[$failureStage] = 0
+        }
+        $failureStageCounts[$failureStage] = [int]$failureStageCounts[$failureStage] + 1
+    }
+    $entitySource = [string]$response.entitySource
+    if (-not [string]::IsNullOrWhiteSpace($entitySource)) {
+        if (-not $entitySourceCounts.ContainsKey($entitySource)) {
+            $entitySourceCounts[$entitySource] = 0
+        }
+        $entitySourceCounts[$entitySource] = [int]$entitySourceCounts[$entitySource] + 1
+    }
+    $attemptKey = [string][int]$response.attempts
+    if (-not $attemptCounts.ContainsKey($attemptKey)) {
+        $attemptCounts[$attemptKey] = 0
+    }
+    $attemptCounts[$attemptKey] = [int]$attemptCounts[$attemptKey] + 1
+    $nodesVisited = [int]$response.nodesVisited
+    if ($nodesVisited -lt $minimumNodesVisited) { $minimumNodesVisited = $nodesVisited }
+    if ($nodesVisited -gt $maximumNodesVisited) { $maximumNodesVisited = $nodesVisited }
+    $allModuleRooted = $allModuleRooted -and [bool]$response.moduleRooted
+    $allIdentityRevalidated = $allIdentityRevalidated -and
+        [bool]$response.entityIdentityRevalidated
+    $allConsistentDoubleRead = $allConsistentDoubleRead -and
+        [bool]$response.consistentDoubleRead
+    $anyHardwareAtomic = $anyHardwareAtomic -or [bool]$response.hardwareAtomicReadProven
+    $anySameDecodedClock = $anySameDecodedClock -or [bool]$response.sameDecodedClockProven
 
     if ($status -eq 'Resolved' -and $null -ne $response.x -and
         $null -ne $response.y -and $null -ne $response.z) {
@@ -297,13 +358,6 @@ for ($index = 0; $index -lt $ReadCount; $index++) {
         if ($bestDistance -le 3.0) { $withinThreeCount += 1 }
         if ($bestDistance -lt $minimumDistance) { $minimumDistance = $bestDistance }
         if ($bestDistance -gt $maximumDistance) { $maximumDistance = $bestDistance }
-        $allModuleRooted = $allModuleRooted -and [bool]$response.moduleRooted
-        $allIdentityRevalidated = $allIdentityRevalidated -and
-            [bool]$response.entityIdentityRevalidated
-        $allConsistentDoubleRead = $allConsistentDoubleRead -and
-            [bool]$response.consistentDoubleRead
-        $anyHardwareAtomic = $anyHardwareAtomic -or [bool]$response.hardwareAtomicReadProven
-        $anySameDecodedClock = $anySameDecodedClock -or [bool]$response.sameDecodedClockProven
     }
 
     if ($index -lt ($ReadCount - 1)) {
@@ -313,6 +367,7 @@ for ($index = 0; $index -lt $ReadCount; $index++) {
 
 $minimumDistanceValue = if ($resolvedCount -eq 0) { $null } else { $minimumDistance }
 $maximumDistanceValue = if ($resolvedCount -eq 0) { $null } else { $maximumDistance }
+$minimumNodesVisitedValue = if ($ReadCount -eq 0) { $null } else { $minimumNodesVisited }
 $moving = $distinctPositions.Count -ge 2
 $trajectoryConsistent = $resolvedCount -gt 0 -and
     ($exactMatchCount -gt 0 -or $withinOneCount -ge [Math]::Ceiling($resolvedCount / 4.0)) -and
@@ -328,8 +383,8 @@ else {
 }
 
 $aggregate = [ordered]@{
-    schema = 'wotbtreader.od073.entity-position-poll.v1'
-    campaign = 'od-073'
+    schema = 'wotbtreader.od073.entity-position-poll.v2'
+    campaign = 'od-073-replay-root'
     completedAtUtc = [DateTime]::UtcNow.ToString('o')
     verdict = $verdict
     expectedGameVersion = '11.19.0.10'
@@ -337,6 +392,11 @@ $aggregate = [ordered]@{
     requestedReads = $ReadCount
     resolvedReads = $resolvedCount
     statusCounts = $statusCounts
+    failureStageCounts = $failureStageCounts
+    entitySourceCounts = $entitySourceCounts
+    attemptCounts = $attemptCounts
+    minimumNodesVisited = $minimumNodesVisitedValue
+    maximumNodesVisited = $maximumNodesVisited
     distinctPositionCount = $distinctPositions.Count
     moving = $moving
     exactRetainedTrajectoryMatches = $exactMatchCount
@@ -351,6 +411,8 @@ $aggregate = [ordered]@{
     hardwareAtomicReadProven = $anyHardwareAtomic
     sameDecodedClockProven = $anySameDecodedClock
     moduleRootedLayoutStaticEvidence = $true
+    replayOwnedRootStaticEvidence = $true
+    refutedMainConnectionRootExcluded = $true
     stableRootLiveRepeatabilityProven = $false
     offsetTablePromotionReady = $false
     privacy = [ordered]@{

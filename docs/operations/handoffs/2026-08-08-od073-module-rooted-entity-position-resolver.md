@@ -114,3 +114,22 @@ poll during a positively verified offline replay. A positive result requires:
 If positive, repeat the unchanged resolver once on the other content-distinct
 replay and a fresh process. If negative or inconclusive, preserve the aggregate
 and return offline. Do not update `memory-offsets/11.19.0.10.json` yet.
+
+## 2026-08-09 correction
+
+This handoff preserves the original OD-073 hypothesis, but its root and live
+recommendation are superseded by
+[`2026-08-09-od074-replay-root-live-narrowing.md`](2026-08-09-od074-replay-root-live-narrowing.md).
+Live evidence refuted both the main `BWApp` connection as the replay owner and
+the inferred `AppContext+0x118` controller hop. The corrected exact-build chain
+starts at module RVA `0x04095C88`, reaches the replay connection through
+`GameCore -> AppController -> SessionController -> AccountController ->
+PlaybackController`, and found the requested entity in the primary replay map
+for 24/24 requests.
+
+The corrected verifier passes 67/67 strict checks and reports
+`replay-resolver-layout-proven`. Continuous polling remains unproven because
+the live resolver then stopped safely at an unverified vehicle-helper subtype.
+Do not run the OD-073 command unchanged or broaden the helper allowlist. The
+next work is offline proof of that exact helper's constructor, vtable,
+position-store slot, and ring layout.

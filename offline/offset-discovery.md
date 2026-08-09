@@ -285,20 +285,23 @@ offline/static to a stable viewpoint-entity resolver and the verified
 movement-filter ring; do not run old member triples, broad scans, or the
 transform target.
 
-## Module-rooted polling pivot (OD-RECOVERY-073)
+## Module-rooted polling pivot (OD-RECOVERY-073/074)
 
-The stable resolver is now implemented and statically pinned for exact build
-11.19.0.10. `TraceEntityRegistryPosition.java` verifies 47/47 relationships
+The stable resolver is implemented and statically pinned for exact build
+11.19.0.10. `TraceEntityRegistryPosition.java` verifies 67/67 relationships
 against executable SHA-256
 `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d`:
 
-1. `[module+0x04054780] -> AppContextImpl`;
-2. `[AppContext+0x4C] -> BWApp`;
-3. `[BWApp+0x24] -> BWServerConnection`;
-4. `connection+0x04` is the embedded `BWEntities` object;
-5. cache `+0x48` and three bounded map trees resolve the replay entity ID;
-6. entity `+0x38` reaches the vtable-checked AvatarFilter and its helper;
-7. helper `+0x1C8` selects one of eight `0x38`-byte records, whose XYZ starts
+1. `[module+0x04095C88] -> GameCore`;
+2. `[GameCore+0x0C] -> AppController`;
+3. `[AppController+0x124] -> SessionController`;
+4. `[SessionController+0x118] -> AccountController`;
+5. `[AccountController+0x128] -> active PlaybackController`;
+6. `[PlaybackController+0x120] -> replay BWServerConnection`;
+7. connection `+0x04` is the embedded replay `BWEntities` object;
+8. cache `+0x48` and three bounded map trees resolve the replay entity ID;
+9. entity `+0x38` reaches an exact allowlisted movement-filter family;
+10. a verified helper `+0x1C8` selects one of eight `0x38`-byte records, whose XYZ starts
    at record `+0x18`.
 
 The pure Core resolver caps traversal at 1,024 nodes and three attempts. It
@@ -314,13 +317,19 @@ and raw bytes. `scripts/od-073-entity-position-poll.ps1` compares bounded live
 polls with the retained decoded viewpoint trajectory and persists aggregates
 only.
 
-Static layout and synthetic resolver behavior are proven; live polling is not
-yet proven. One positively verified offline run is now scientifically
-warranted after the full repository gate and a fresh Host publish. A positive
-first run must still be repeated on the content-distinct replay/fresh process
-before calling the stable root repeatable. Double-read consistency is not
-hardware atomicity, and the comparison is not same-decoded-clock evidence.
-Do not update `memory-offsets/11.19.0.10.json` from this milestone.
+Live OD-074 narrowing proved the corrected module root, replay ownership, and
+primary-map entity lookup for 24/24 reads in one managed process. The first
+corrected run stopped at the movement-filter vtable; after static proof of the
+three filter subtypes sharing the exact apply slot, the second stopped at an
+unverified vehicle-helper vtable. No position record was read. Return offline
+to prove the exact helper constructor/vtable and ring semantics before another
+bounded live check. The current static lead names RVA `0x0325658C` as
+`WGVehicleFilterHelper::vftable`, finds its constructor store at RVA
+`0x010139F1`, and confirms a factory assignment to `filter+0x08`; its
+position-store slot and ring compatibility remain unknown. Double-read
+consistency is not hardware atomicity, and the comparison is not
+same-decoded-clock evidence. Do not update
+`memory-offsets/11.19.0.10.json` from this milestone.
 
 ## Evidence publication
 

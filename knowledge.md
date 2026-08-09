@@ -165,23 +165,33 @@ full design specification.
   captured entities changed. Event-based moving player-position reading is now
   repeatable across both replays/fresh processes. Same-decoded-clock identity,
   hardware atomicity, and a stable continuously pollable resolver remain open.
-  OD-RECOVERY-073 now supplies the stable resolver candidate. Hash-bound static
-  evidence passes 47/47 checks for
-  `[module+0x04054780] -> AppContext +0x4C -> BWApp +0x24 -> connection`, the
-  embedded `BWEntities` maps, entity-ID revalidation, the AvatarFilter/helper
-  vtables, and the 8-entry movement ring. A pure bounded Core resolver and a
+  OD-RECOVERY-074 corrected the resolver ownership path. Hash-bound static
+  evidence passes 67/67 checks for
+  `[module+0x04095C88] -> GameCore +0x0C -> AppController +0x124 ->
+  SessionController +0x118 -> AccountController +0x128 -> PlaybackController
+  +0x120 -> replay connection`, the embedded `BWEntities` maps, entity-ID
+  revalidation, the exact movement-filter family, and the known helper ring. A
+  pure bounded Core resolver and a
   server-owned `/discover/entity-position` endpoint are implemented. Callers
   provide only the decoded replay entity ID; exact version/hash, process,
   module base, roots, pointers, and layout remain coordinator-owned. The ring
   record is double-collected and the full identity chain is revalidated, but
   this is not hardware-atomic or same-decoded-clock evidence. Static and
-  synthetic proof are complete; the next admissible action is one bounded
-  positively verified offline poll after a fresh Host publish (the full gate
-  has passed), followed by a content-distinct repeat only if the first result
-  is positive. No offset is promoted.
+  synthetic proof are complete. Live narrowing reached the replay-owned primary
+  entity map on 24/24 reads, first stopping at the filter vtable and then, after
+  exact filter-family proof, at an unverified vehicle-helper vtable. Offline
+  reference tracing now names the candidate as
+  `WGVehicleFilterHelper::vftable` at RVA `0x0325658C`, with its constructor
+  vtable store at RVA `0x010139F1` and a factory assignment to `filter+0x08`.
+  The stable root and entity lookup are therefore live-supported in one
+  process, but no ring position was read and the candidate helper's store/ring
+  layout is not proved. Continue that static trace and synthetic proof before
+  another bounded live check. No offset is promoted.
   Detail:
   [`offline/offset-discovery.md`](offline/offset-discovery.md) and
   [`docs/operations/handoffs/2026-08-08-od073-module-rooted-entity-position-resolver.md`](docs/operations/handoffs/2026-08-08-od073-module-rooted-entity-position-resolver.md).
+  Correction and live result:
+  [`docs/operations/handoffs/2026-08-09-od074-replay-root-live-narrowing.md`](docs/operations/handoffs/2026-08-09-od074-replay-root-live-narrowing.md).
 
 ## Quickstart
 
