@@ -316,6 +316,13 @@ public sealed record OffsetReadResponse
 public sealed record EntityPositionReadRequest
 {
     public int EntityId { get; init; }
+
+    /// <summary>
+    /// Optional battle session id (GUID) whose replay-clock segments attest
+    /// same-decoded-clock alignment. Omitted or unparseable ids never claim
+    /// the flag.
+    /// </summary>
+    public string? BattleSessionId { get; init; }
 }
 
 /// <summary>

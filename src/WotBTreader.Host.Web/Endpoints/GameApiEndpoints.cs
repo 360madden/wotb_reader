@@ -831,9 +831,18 @@ internal static class GameApiEndpoints
         ArgumentNullException.ThrowIfNull(scanner);
         ArgumentNullException.ThrowIfNull(request);
 
+        BattleSessionId? battleSessionId = null;
+        if (!string.IsNullOrWhiteSpace(request.BattleSessionId) &&
+            Guid.TryParse(request.BattleSessionId, out Guid parsedBattleSessionId))
+        {
+            battleSessionId = new BattleSessionId(parsedBattleSessionId);
+        }
+
         OperationResult<EntityPositionReadResult> result = await scanner
             .ReadEntityPositionAsync(
-                new WotBTreader.Application.Game.EntityPositionReadRequest(request.EntityId),
+                new WotBTreader.Application.Game.EntityPositionReadRequest(
+                    request.EntityId,
+                    battleSessionId),
                 cancellationToken)
             .ConfigureAwait(false);
         if (!result.IsSuccess || result.Value is null)

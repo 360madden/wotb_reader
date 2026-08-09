@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using WotBTreader.Application.Capture;
 using WotBTreader.Application.Game;
 using WotBTreader.Application.Replay;
 using WotBTreader.Application.Results;
@@ -989,6 +990,121 @@ public sealed class GameSessionCoordinatorTests
         Assert.AreEqual(executableHash, factory.Observation?.ExecutableSha256);
     }
 
+    private static (GameSessionCoordinator Coordinator, TrackingEntityPositionReaderFactory Factory)
+        CreateVerifiedExactBuildCoordinator(
+            Type10EntityPositionResult result,
+            IReplayClockSource replayClockSource)
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        var factory = new TrackingEntityPositionReaderFactory(result);
+        (GameSessionCoordinator coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            replayClockSource: replayClockSource);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+        return (coordinator, factory);
+    }
+
+    [TestMethod]
+    public async Task EntityPositionRead_NullSessionIdNeverClaimsSameClock()
+    {
+        BattleSessionId sessionId = BattleSessionId.New();
+        var clock = new StubReplayClockSource(
+            CreateSnapshotResult(sessionId, ReplayClockQuality.Estimated, TimeSpan.FromMilliseconds(500)));
+        (GameSessionCoordinator coordinator, _) = CreateVerifiedExactBuildCoordinator(
+            CreateResolvedEntityPosition(4242), clock);
+
+        OperationResult<EntityPositionReadResult> result = await coordinator
+            .ReadEntityPositionAsync(
+                new EntityPositionReadRequest(4242),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, result.Value?.Status);
+        Assert.IsFalse(result.Value?.SameDecodedClockProven);
+        Assert.IsNull(clock.LastRequestedSessionId);
+    }
+
+    [TestMethod]
+    public async Task EntityPositionRead_MissingSegmentsDoesNotClaimSameClock()
+    {
+        var clock = new StubReplayClockSource(); // default: clock.anchor.missing
+        (GameSessionCoordinator coordinator, _) = CreateVerifiedExactBuildCoordinator(
+            CreateResolvedEntityPosition(4242), clock);
+        BattleSessionId sessionId = BattleSessionId.New();
+
+        OperationResult<EntityPositionReadResult> result = await coordinator
+            .ReadEntityPositionAsync(
+                new EntityPositionReadRequest(4242, sessionId),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.IsFalse(result.Value?.SameDecodedClockProven);
+        Assert.AreEqual(sessionId, clock.LastRequestedSessionId);
+    }
+
+    [TestMethod]
+    public async Task EntityPositionRead_StaleClockDoesNotClaimSameClock()
+    {
+        BattleSessionId sessionId = BattleSessionId.New();
+        var clock = new StubReplayClockSource(
+            CreateSnapshotResult(sessionId, ReplayClockQuality.Stale, TimeSpan.FromMilliseconds(500)));
+        (GameSessionCoordinator coordinator, _) = CreateVerifiedExactBuildCoordinator(
+            CreateResolvedEntityPosition(4242), clock);
+
+        OperationResult<EntityPositionReadResult> result = await coordinator
+            .ReadEntityPositionAsync(
+                new EntityPositionReadRequest(4242, sessionId),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.IsFalse(result.Value?.SameDecodedClockProven);
+    }
+
+    [TestMethod]
+    public async Task EntityPositionRead_UncertaintyBeyondLimitDoesNotClaimSameClock()
+    {
+        BattleSessionId sessionId = BattleSessionId.New();
+        var clock = new StubReplayClockSource(
+            CreateSnapshotResult(sessionId, ReplayClockQuality.Estimated, TimeSpan.FromSeconds(5)));
+        (GameSessionCoordinator coordinator, _) = CreateVerifiedExactBuildCoordinator(
+            CreateResolvedEntityPosition(4242), clock);
+
+        OperationResult<EntityPositionReadResult> result = await coordinator
+            .ReadEntityPositionAsync(
+                new EntityPositionReadRequest(4242, sessionId),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.IsFalse(result.Value?.SameDecodedClockProven);
+    }
+
+    [TestMethod]
+    public async Task EntityPositionRead_WithinUncertaintyLimitClaimsSameClock()
+    {
+        BattleSessionId sessionId = BattleSessionId.New();
+        var clock = new StubReplayClockSource(
+            CreateSnapshotResult(sessionId, ReplayClockQuality.Estimated, TimeSpan.FromMilliseconds(500)));
+        (GameSessionCoordinator coordinator, _) = CreateVerifiedExactBuildCoordinator(
+            CreateResolvedEntityPosition(4242), clock);
+
+        OperationResult<EntityPositionReadResult> result = await coordinator
+            .ReadEntityPositionAsync(
+                new EntityPositionReadRequest(4242, sessionId),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, result.Value?.Status);
+        Assert.IsTrue(result.Value?.SameDecodedClockProven);
+        Assert.AreEqual(sessionId, clock.LastRequestedSessionId);
+    }
+
     [TestMethod]
     public async Task EntityPositionRead_RevocationDuringReadDiscardsResult()
     {
@@ -1131,6 +1247,7 @@ public sealed class GameSessionCoordinatorTests
             IThreadResumePlatform? threadResumePlatform = null,
             IGameProcessIdentityObserver? processIdentityObserver = null,
             IGuardedMemoryReaderFactory? memoryReaderFactory = null,
+            IReplayClockSource? replayClockSource = null,
             IGameProcessModuleBaseAddressResolver? moduleBaseAddressResolver = null,
             IOffsetTableReader? offsetTableReader = null,
             IBlitzReplayLifecycleFeed? lifecycleFeed = null,
@@ -1146,6 +1263,7 @@ public sealed class GameSessionCoordinatorTests
             artifactStager ?? new StubArtifactStager(),
             suspendedPlatform ?? new StubSuspendedPlatform(),
             correlationRegistrar ?? new StubCorrelationRegistrar(),
+            replayClockSource ?? new StubReplayClockSource(),
             threadResumePlatform ?? new StubThreadResumePlatform(),
             processIdentityObserver ?? new StubProcessIdentityObserver(),
             memoryReaderFactory ?? new StubMemoryReaderFactory(),
@@ -1425,6 +1543,53 @@ public sealed class GameSessionCoordinatorTests
             return ValueTask.FromResult(OperationResult.Success(result));
         }
     }
+
+    private sealed class StubReplayClockSource : IReplayClockSource
+    {
+        private readonly OperationResult<ReplayClockSnapshot> _snapshotResult;
+
+        public StubReplayClockSource(OperationResult<ReplayClockSnapshot>? snapshotResult = null)
+        {
+            _snapshotResult = snapshotResult ?? OperationResult.Failure<ReplayClockSnapshot>(
+                new ApplicationError("clock.anchor.missing", "No replay-clock anchor."));
+        }
+
+        public BattleSessionId? LastRequestedSessionId { get; private set; }
+
+        public ValueTask<OperationResult<ReplayClockSnapshot>> GetSnapshotAsync(
+            BattleSessionId battleSessionId,
+            DateTimeOffset observedAtUtc,
+            CancellationToken cancellationToken)
+        {
+            LastRequestedSessionId = battleSessionId;
+            return ValueTask.FromResult(_snapshotResult);
+        }
+
+        public ValueTask<OperationResult<ReplayClockSegment>> AddSegmentAsync(
+            ReplayClockSegment segment,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public ValueTask<OperationResult<ReplayClockSnapshot>> MarkStaleAsync(
+            BattleSessionId battleSessionId,
+            DateTimeOffset observedAtUtc,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+    }
+
+    private static OperationResult<ReplayClockSnapshot> CreateSnapshotResult(
+        BattleSessionId sessionId,
+        ReplayClockQuality quality,
+        TimeSpan uncertainty) =>
+        OperationResult.Success(new ReplayClockSnapshot(
+            sessionId,
+            EstimatedReplayTime: TimeSpan.Zero,
+            quality,
+            TelemetrySourceKind.CaptureLog,
+            Offset: TimeSpan.Zero,
+            uncertainty,
+            StartTime,
+            LastAnchorUtc: StartTime));
 
     private sealed class StubProcessIdentityObserver : IGameProcessIdentityObserver
     {

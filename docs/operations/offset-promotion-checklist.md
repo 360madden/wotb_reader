@@ -109,11 +109,16 @@ Acceptance — `SameDecodedClockProven` becomes `true` only from evidence:
    `Uncertainty` = measured marker/gate latency. This requires a caller for
    the append path — a Host endpoint or the capture pipeline — plus its own
    tests.
-2. **Wiring (offline-buildable):** the coordinator computes
-   `SameDecodedClockProven` from the clock source — segments exist for the
-   battle session AND the snapshot uncertainty is within a stated bound (e.g.,
-   ≤ 2 s) — otherwise `false`. The poll verdict already requires the flag to
-   flip from evidence.
+2. **Wiring — implemented 2026-08-09.** The request now carries an optional
+   `BattleSessionId` (endpoint parses the GUID; `od-073` sends the session it
+   already selected), and `GameSessionCoordinator` computes
+   `SameDecodedClockProven` from `IReplayClockSource` (injected, registered via
+   `AddCaptureLogs`): segments must exist, the snapshot must not be `Stale`,
+   and uncertainty must be ≤ 2 s (`SameDecodedClockUncertaintyLimit`).
+   Five focused unit tests cover null-session / missing-segments / stale /
+   beyond-bound / within-bound; full gate green (659 tests, architecture +
+   composition intact). The flag still stays `false` until a live anchor
+   populates segments.
 3. **Record:** a ledger row with the correlation bounds (worst-case tick
    error across the poll).
 
@@ -137,8 +142,8 @@ the prior positive result file(s).
 | Step | Type | Dependency |
 |---|---|---|
 | ~~G3 flag wiring~~ | ~~Offline (runner script)~~ | **done 2026-08-09** (`-PriorResultPaths` in od-073) |
-| G2 coordinator wiring + tests (flag from clock source; machinery exists) | Offline | none |
-| G2 live anchor recording (verified-gate moment → segment) | Live (new approved session) | G2 wiring |
+| ~~G2 coordinator wiring + tests~~ | ~~Offline~~ | **done 2026-08-09** (`BattleSessionId` in request; flag from clock source) |
+| G2 live anchor recording (verified-gate moment → segment) | Live (new approved session) | G2 wiring (done) |
 | G1 mechanism test (write-observation) | Offline | tools/WriteInterceptor |
 | G1 live poll + G2 live correlation | Live (new approved session) | G1/G2 offline steps |
 | G0 publication review | Offline | G1 + G2 + G3 closed |

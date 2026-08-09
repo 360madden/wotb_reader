@@ -303,7 +303,15 @@ public sealed record MemoryReadResult(
 /// must come from decoded replay evidence; the coordinator owns the process,
 /// module, build layout, and all addresses.
 /// </summary>
-public sealed record EntityPositionReadRequest(int EntityId);
+/// <summary>
+/// One bounded module-rooted entity-position lookup. When
+/// <paramref name="BattleSessionId"/> is supplied, the coordinator may attest
+/// same-decoded-clock alignment from that session's replay-clock segments;
+/// when null, <c>SameDecodedClockProven</c> is never claimed.
+/// </summary>
+public sealed record EntityPositionReadRequest(
+    int EntityId,
+    BattleSessionId? BattleSessionId = null);
 
 /// <summary>
 /// Privacy-safe result from the exact-build type-10 entity resolver. A

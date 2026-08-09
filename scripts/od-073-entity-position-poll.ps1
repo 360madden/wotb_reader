@@ -333,7 +333,7 @@ for ($index = 0; $index -lt $ReadCount; $index++) {
     try {
         $response = Invoke-OdApi -Method 'Post' `
             -RelativePath '/api/v1/game/discover/entity-position' `
-            -Body @{ entityId = $viewpointEntityId }
+            -Body @{ entityId = $viewpointEntityId; battleSessionId = $battleSessionId }
     }
     catch {
         Write-Host 'od073: FAILED_poll_api'

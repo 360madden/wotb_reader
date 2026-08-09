@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.Extensions.Logging;
+using WotBTreader.Application.Capture;
 using WotBTreader.Application.Game;
 using WotBTreader.Application.Replay;
 using WotBTreader.Application.Results;
@@ -143,6 +144,16 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     private readonly IManagedReplayArtifactStager _artifactStager;
     private readonly ISuspendedProcessPlatform _suspendedPlatform;
     private readonly IManagedLaunchCorrelationRegistrar _correlationRegistrar;
+    private readonly IReplayClockSource _replayClockSource;
+
+    /// <summary>
+    /// Upper bound on replay-clock uncertainty before
+    /// <c>SameDecodedClockProven</c> may be claimed for an entity-position
+    /// read. 2 s is well below the poll's 750 ms read cadence and the battle
+    /// duration, while comfortably above the sub-second gate/log anchor error.
+    /// </summary>
+    private static readonly TimeSpan SameDecodedClockUncertaintyLimit =
+        TimeSpan.FromSeconds(2);
     private readonly IThreadResumePlatform _threadResumePlatform;
     private readonly IGameProcessIdentityObserver _processIdentityObserver;
     private readonly IGuardedMemoryReaderFactory _memoryReaderFactory;
@@ -184,6 +195,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         IManagedReplayArtifactStager artifactStager,
         ISuspendedProcessPlatform suspendedPlatform,
         IManagedLaunchCorrelationRegistrar correlationRegistrar,
+        IReplayClockSource replayClockSource,
         IThreadResumePlatform threadResumePlatform,
         IGameProcessIdentityObserver processIdentityObserver,
         IGuardedMemoryReaderFactory memoryReaderFactory,
@@ -202,6 +214,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         _artifactStager = artifactStager ?? throw new ArgumentNullException(nameof(artifactStager));
         _suspendedPlatform = suspendedPlatform ?? throw new ArgumentNullException(nameof(suspendedPlatform));
         _correlationRegistrar = correlationRegistrar ?? throw new ArgumentNullException(nameof(correlationRegistrar));
+        _replayClockSource = replayClockSource ?? throw new ArgumentNullException(nameof(replayClockSource));
         _threadResumePlatform = threadResumePlatform ?? throw new ArgumentNullException(nameof(threadResumePlatform));
         _processIdentityObserver = processIdentityObserver ?? throw new ArgumentNullException(nameof(processIdentityObserver));
         _memoryReaderFactory = memoryReaderFactory ?? throw new ArgumentNullException(nameof(memoryReaderFactory));
@@ -1740,6 +1753,41 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         }
     }
 
+    /// <summary>
+    /// Attests same-decoded-clock alignment for an entity-position read from
+    /// the battle session's replay-clock segments: the clock source must have
+    /// at least one anchor, the snapshot must not be stale, and the reported
+    /// uncertainty must be within <see cref="SameDecodedClockUncertaintyLimit"/>.
+    /// A null session id never claims the flag.
+    /// </summary>
+    private async ValueTask<bool> IsSameDecodedClockAsync(
+        BattleSessionId? battleSessionId,
+        DateTimeOffset observedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        if (battleSessionId is null)
+        {
+            return false;
+        }
+
+        OperationResult<ReplayClockSnapshot> snapshot = await _replayClockSource
+            .GetSnapshotAsync(battleSessionId.Value, observedAtUtc, cancellationToken)
+            .ConfigureAwait(false);
+        if (!snapshot.IsSuccess || snapshot.Value is null)
+        {
+            return false;
+        }
+
+        if (snapshot.Value.Quality == ReplayClockQuality.Stale ||
+            snapshot.Value.Uncertainty is null ||
+            snapshot.Value.Uncertainty > SameDecodedClockUncertaintyLimit)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
     public async ValueTask<OperationResult<EntityPositionReadResult>> ReadEntityPositionAsync(
         EntityPositionReadRequest request,
         CancellationToken cancellationToken)
@@ -1825,6 +1873,10 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             }
 
             Type10EntityPositionResult resolved = resolveResult.Value;
+            bool sameDecodedClockProven = await IsSameDecodedClockAsync(
+                request.BattleSessionId,
+                _timeProvider.GetUtcNow(),
+                readCancellation.Token).ConfigureAwait(false);
             return OperationResult.Success(new EntityPositionReadResult(
                 _timeProvider.GetUtcNow(),
                 layout.GameVersion,
@@ -1841,7 +1893,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 resolved.EntityIdentityRevalidated,
                 resolved.ConsistentDoubleRead,
                 resolved.HardwareAtomicReadProven,
-                SameDecodedClockProven: false));
+                SameDecodedClockProven: sameDecodedClockProven));
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
