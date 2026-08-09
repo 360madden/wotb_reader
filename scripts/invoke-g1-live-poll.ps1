@@ -1,13 +1,19 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  G1 live write-observation poll (one approved session): arms the guard-page
-  interceptor on the ring-record page the unchanged bounded od-073 poll reads,
-  runs the poll inside the capture window, and computes the write-observation
-  verdict - zero page writes across the poll read window with liveness on
-  both sides (strongest evidence), or the poll's own byte-identical
-  double-read consistency (the per-read byte-identical branch). The poll
-  script is invoked UNCHANGED; this wrapper only brackets it.
+  G1 live poll (one approved session). CORRECTED PROCEDURE (2026-08-09,
+  OD-RECOVERY-080): the guard-page interceptor's PAGE_GUARD on the ring-record
+  page fails the poll's OWN ReadProcessMemory of that page with
+  ERROR_PARTIAL_COPY (299) at the avatar-helper vtable read - the first armed-
+  page touch - so OD-078/079's 19/24 and 22/24 "avatar-helper" failures were
+  harness artifacts, not a game-side pointer race. The per-read byte-identical
+  branch is delivered by the unchanged poll itself (allConsistentDoubleRead;
+  proven 24/24 un-armed in OD-075/076) and the interceptor's clean (zero-
+  write) branch is impossible while the ring is actively rewritten. The
+  corrected run therefore SKIPS the arm (-SkipInterceptorArm) and the G1
+  claim rests on the poll aggregate. The legacy armed write-observation mode
+  remains available (default) for evidence continuity. The poll script is
+  invoked UNCHANGED; this wrapper only brackets it.
 
 .DESCRIPTION
   Sequence (one new approved live session):
@@ -18,14 +24,19 @@
        (battle session + viewpoint entity id, unless -SessionId/-EntityId are
        given) -> POST /api/v1/game/discover/position-page (gate-verified,
        fail-closed) for the ring-record address.
-    3. Arm: WotBTreader.WriteInterceptor.exe --interceptor -Pid <pid>
+    3. Arm (legacy mode only; skip with -SkipInterceptorArm):
+       WotBTreader.WriteInterceptor.exe --interceptor -Pid <pid>
        -Addresses 0x<record> -Seconds <window> -Out <report> (x86 publish at
        .build/publish/write-interceptor; the page holding the record is armed
        and every write is captured with post-write value, RVA, and i386
-       registers).
+       registers). NOTE: arming is known (OD-RECOVERY-080) to fail the poll's
+       own reads of that page - the corrected G1 run passes -SkipInterceptorArm.
     4. Poll: the unchanged od-073 bounded poll (-SessionId passed explicitly)
        runs its stage delay + bounded double-reads inside the capture window.
-    5. Verdict: Test-WriteObservationVerdict over [pollStart + stageDelay,
+    5. Verdict: with -SkipInterceptorArm the verdict records
+       write-observation-skipped and the G1 per-read byte-identical branch is
+       read from the poll aggregate's allConsistentDoubleRead. In legacy
+       armed mode, Test-WriteObservationVerdict over [pollStart + stageDelay,
        pollEnd] - the read window. clean = zero interceptor hits in the
        window with liveness (hits) both sides and interceptor exit 0;
        otherwise the evidence record reports the observed-write counts and
@@ -33,9 +44,10 @@
        byte-identical branch: the resolver only returns Resolved when the two
        56-byte snapshots are identical with a stable ring index).
     6. Evidence: <ResultDir>/g1-evidence.json carries the verdict, the read
-       window, hit counts, the interceptor report path, the poll aggregate
-       path, and the armed addresses (internal evidence - same class as the
-       od-048 family reports; the poll aggregate itself stays privacy-safe).
+       window, hit counts, the interceptor report path (empty in corrected
+       mode), the poll aggregate path, and the armed addresses (internal
+       evidence - same class as the od-048 family reports; the poll aggregate
+       itself stays privacy-safe).
 
   Evidence-chain semantics (the grilling review, 2026-08-09):
     - The per-read atomicity proof comes from the POLL, not the interceptor:
@@ -91,6 +103,18 @@ param(
     [int]$InterceptorMarginSeconds = 20,
     # Override the x86 interceptor publish path.
     [string]$InterceptorExe = '',
+    # SKIP arming the guard-page interceptor on the ring-record page. The
+    # corrected G1 procedure (2026-08-09, OD-RECOVERY-080): the interceptor's
+    # PAGE_GUARD on the ring-record page makes the poll's own ReadProcessMemory
+    # of that page fail with ERROR_PARTIAL_COPY (299) at the avatar-helper
+    # vtable read (first armed-page touch) - the OD-078/079 19/24 and 22/24
+    # failures were harness artifacts, not a game-side pointer race. The
+    # per-read byte-identical branch is delivered by the unchanged poll itself
+    # (allConsistentDoubleRead, proven 24/24 un-armed in OD-075/076) and the
+    # interceptor's clean (zero-write) branch is impossible while the ring is
+    # actively rewritten. Default OFF (arm) preserves the legacy evidence mode;
+    # pass -SkipInterceptorArm for the corrected G1 live run.
+    [switch]$SkipInterceptorArm,
     # Evidence directory (default .data/diagnostics/g1-live-<stamp>).
     [string]$ResultDir = '',
     # Verdict-only mode for offline testing: no game, no launcher, no poll.
@@ -405,15 +429,24 @@ try {
     Write-G1 ('record_address=' + $positionPage.recordAddress +
         ' page=' + $positionPage.pageAddress)
 
-    # 3. Interceptor window covers stage delay + reads + margins.
-    $interceptorSeconds = $StageDelaySeconds + ($ReadCount * 2) +
-        $InterceptorMarginSeconds + 10
-    Write-G1 ('interceptor_seconds=' + $interceptorSeconds)
-    $script:interceptorProc = Start-Process -FilePath $InterceptorExe `
-        -ArgumentList @('--interceptor', '-Pid', ([string]$gamePid), '-Addresses', [string]$positionPage.recordAddress, '-Seconds', ([string]$interceptorSeconds), '-Out', $interceptorReportPath) `
-        -PassThru -WindowStyle Hidden
-    Write-G1 ('interceptor_started pid=' + $script:interceptorProc.Id)
-    Start-Sleep -Seconds 2
+    # 3. Interceptor window covers stage delay + reads + margins. The
+    #    corrected G1 procedure (OD-RECOVERY-080) SKIPS the arm: PAGE_GUARD on
+    #    the ring-record page fails the poll's own reads at the avatar-helper
+    #    vtable hop (ERROR_PARTIAL_COPY 299) - the OD-078/079 failures were
+    #    harness artifacts. The per-read branch is the poll's own
+    #    allConsistentDoubleRead; keep the arm only for the legacy
+    #    write-observation evidence mode.
+    $interceptorSeconds = 0
+    if (-not $SkipInterceptorArm) {
+        $interceptorSeconds = $StageDelaySeconds + ($ReadCount * 2) +
+            $InterceptorMarginSeconds + 10
+        Write-G1 ('interceptor_seconds=' + $interceptorSeconds)
+        $script:interceptorProc = Start-Process -FilePath $InterceptorExe `
+            -ArgumentList @('--interceptor', '-Pid', ([string]$gamePid), '-Addresses', [string]$positionPage.recordAddress, '-Seconds', ([string]$interceptorSeconds), '-Out', $interceptorReportPath) `
+            -PassThru -WindowStyle Hidden
+        Write-G1 ('interceptor_started pid=' + $script:interceptorProc.Id)
+        Start-Sleep -Seconds 2
+    }
 
     # 4. Unchanged bounded poll inside the capture window.
     $pollStartUtc = [DateTimeOffset]::UtcNow
@@ -440,17 +473,36 @@ try {
         }
     }
     $script:interceptorProc = $null
-    if (-not (Test-Path -LiteralPath $interceptorReportPath)) {
+    if (-not $SkipInterceptorArm -and -not (Test-Path -LiteralPath $interceptorReportPath)) {
         Write-Host 'g1live: FAIL_missing_interceptor_report'
         exit 4
     }
 
-    # 6. Verdict over the read window [pollStart + stageDelay, pollEnd].
+    # 6. Verdict over the read window [pollStart + stageDelay, pollEnd]. In
+    #    the corrected mode the interceptor is not armed, so the write-
+    #    observation cannot be claimed; the G1 per-read byte-identical branch
+    #    comes from the poll aggregate's allConsistentDoubleRead instead.
     $readWindowStart = $pollStartUtc.AddSeconds($StageDelaySeconds)
-    $verdict = Test-WriteObservationVerdict `
-        -ReportPath $interceptorReportPath `
-        -WindowStartUtc $readWindowStart `
-        -WindowEndUtc $pollEndUtc
+    if ($SkipInterceptorArm) {
+        $verdict = [ordered]@{
+            verdict    = 'write-observation-skipped (corrected mode: interceptor not armed; G1 per-read branch from the poll aggregate)'
+            clean      = $false
+            inWindow   = 0
+            before     = 0
+            after      = 0
+            reportExit = -1
+            hits       = 0
+            windowStart = $readWindowStart.ToString('o')
+            windowEnd   = $pollEndUtc.ToString('o')
+            reportPath  = ''
+        }
+    }
+    else {
+        $verdict = Test-WriteObservationVerdict `
+            -ReportPath $interceptorReportPath `
+            -WindowStartUtc $readWindowStart `
+            -WindowEndUtc $pollEndUtc
+    }
 
     $pollSucceeded = ($pollExit -eq 0)
 
@@ -461,12 +513,13 @@ try {
         pollExit = $pollExit
         pollSucceeded = $pollSucceeded
         pollAggregatePath = $pollAggregatePath
-        interceptorReportPath = $interceptorReportPath
+        interceptorReportPath = $(if ($SkipInterceptorArm) { '' } else { $interceptorReportPath })
         gamePid = $gamePid
         battleSessionId = $battleSessionId
         entityId = $entityId
         armedRecordAddress = [string]$positionPage.recordAddress
         armedPageAddress = [string]$positionPage.pageAddress
+        interceptorArmed = (-not $SkipInterceptorArm)
         interceptorSeconds = $interceptorSeconds
         pollStartUtc = $pollStartUtc.ToString('o')
         pollEndUtc = $pollEndUtc.ToString('o')

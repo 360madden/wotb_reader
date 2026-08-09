@@ -106,41 +106,39 @@ evidence review, shutdown, failure branching) is in
 `docs/operations/offset-discovery-workflow.md` → “G1/G2 live run”, and the
 pre-staged ledger section + handoff skeleton are in
 `docs/operations/g1-live-evidence-template.md` (static values pre-filled,
-placeholders for the evidence). The live sequence in one new approved
+placeholders for the evidence). **CORRECTED (2026-08-09, OD-RECOVERY-080):**
+the interceptor arm is SKIPPED in the corrected run — arming PAGE_GUARD on
+the ring-record page fails the poll's own reads at the avatar-helper vtable
+hop (ERROR_PARTIAL_COPY 299; the OD-078/079 19/24 and 22/24 failures were
+harness artifacts, not a pointer race). The G1 per-read byte-identical
+branch is delivered by the unchanged poll itself (`allConsistentDoubleRead`,
+proven 24/24 un-armed in OD-075/076). The live sequence in one new approved
 session:
 
-1. Gate: `invoke-g1-live-poll.ps1 -ReplayPath ...` launches and blocks until
-   `OfflineReplayVerified` (same session the poll runs in; addresses are
-   battle-scoped heap allocations — cross-battle arming is ruled out by live
-   evidence). Use `-WindowWaitSeconds 240` for cold boots.
-2. Resolve: position-page → `recordAddress` (the interceptor arms the page
-   holding it). Privacy stance: internal diagnostic surface, localhost only,
-   gated, address not bytes — same evidence class as the od-048 family
-   reports; never serialized into poll results or persisted aggregates (the
-   poll aggregate's `processAddressesPersisted` stays false).
-3. Arm + poll: the interceptor captures every page write from before the
-   stage delay to after the poll; the unchanged bounded od-073 double-reads
-   run inside that window.
-4. Verdict (two branches, computed by the script; grilling review
-   2026-08-09):
-   - **clean**: zero interceptor hits inside the read window
-     `[pollStart + stageDelay, pollEnd]` with liveness (hits) on both sides
-     and interceptor exit 0 — a real no-write across the read window. This
-     is a STRONGER global claim than the acceptance needs.
-   - **observed** (the EXPECTED live outcome for a moving entity whose ring
-     slots are rewritten every few frames): writes landed on the page during
-     the window. The interceptor arms the whole page (PAGE_GUARD granularity)
-     and cannot attribute a hit to the exact position bytes, so the primary
-     per-read atomicity proof comes from the POLL: the resolver only returns
-     `Resolved` with `ConsistentDoubleRead=true` when the two 56-byte
-     ring-record snapshots are identical with a stable ring index (a
-     mid-read write would tear them → `UnstableSnapshot` retry). An observed
-     verdict is therefore NOT a failure — every Resolved poll read already
-     attests the byte-identical branch; the interceptor's role is the
-     complete page write history around the reads.
-5. Evidence: `g1-evidence.json` (verdict, read window, hit counts, armed
-   addresses, report + aggregate paths, poll exit/succeeded) is attached to
-   the ledger row before the flag may be claimed. The marker owner-only ACL
+1. Gate: `invoke-g1-live-poll.ps1 -ReplayPath ... -SkipInterceptorArm`
+   launches and blocks until `OfflineReplayVerified` (same session the poll
+   runs in). Use `-WindowWaitSeconds 240` for cold boots.
+2. Resolve: position-page → `recordAddress` (diagnostic evidence only; NOT
+   armed in the corrected mode). Privacy stance: internal diagnostic
+   surface, localhost only, gated, address not bytes — same evidence class
+   as the od-048 family reports; never serialized into poll results or
+   persisted aggregates (the poll aggregate's `processAddressesPersisted`
+   stays false).
+3. Poll: the unchanged bounded od-073 double-reads run; with
+   `-SkipInterceptorArm` the wrapper records `write-observation-skipped`
+   (the interceptor's clean branch is impossible while the ring is actively
+   rewritten, and arming corrupts the poll — OD-RECOVERY-080).
+4. Verdict: the G1 per-read byte-identical branch is the poll's own
+   `allConsistentDoubleRead` — the resolver only returns `Resolved` with
+   `ConsistentDoubleRead=true` when the two 56-byte ring-record snapshots
+   are identical with a stable ring index (a mid-read write would tear them
+   → `UnstableSnapshot` retry). Acceptance: **24/24 `stable-resolver-positive`
+   with `allConsistentDoubleRead=true`** (already achieved un-armed in
+   OD-075/076; the armed runs could not reach it because the guard page
+   failed the reads).
+5. Evidence: `g1-evidence.json` (verdict, read window, poll exit/succeeded,
+   aggregate path; report path empty in corrected mode) is attached to the
+   ledger row before the flag may be claimed. The marker owner-only ACL
    invariant is enforced by the poll (fails before any read if tampered).
    The same session also exercises G2 live: the poll POSTs the
    `CaptureLog` clock anchor at the gate moment, so a single
@@ -152,19 +150,34 @@ worked end-to-end (position-page 30 ms, interceptor armed, 128 module-mapped
 page writes — `wotblitz.exe+0x1AD2D9D` dominant, verdict `observed` with 18
 in-window / 53 before / 56 after), but the poll resolved 19/24: 5 reads
 failed at the `avatar-helper` hop after exhausting 3 attempts (entity stayed
-in the primary map — a pointer-race/reallocation pattern). The clean branch
-is impossible while the ring is actively rewritten, so the per-read
-byte-identical branch is the operative one and needs a **24/24 positive
-poll**; the next approved session re-runs the same command targeting that.
+in the primary map — originally read as a pointer-race/reallocation pattern;
+**SEE OD-RECOVERY-080: this was the interceptor's PAGE_GUARD corrupting the
+poll's own reads**, not the game).
 
 **Second live run — done 2026-08-09 (OD-RECOVERY-079):** the identical
 command repeated cleanly and the poll improved to **22/24** (2 reads failed
-at the same `avatar-helper` hop; entity stayed in primary map for all 24;
-write-observation `observed` again — 129 module-mapped writes, same two
-dominant copy-loop sites `wotblitz.exe+0x1AD2D9D` 85 / `+0x230E856` 39,
-18 in-window / 53 before / 57 after; G2 anchor re-confirmed
-`sameDecodedClockProven=true`). Acceptance still needs 24/24 — G1/G3 stay
-open, G0 stays gated.
+at the same `avatar-helper` hop; write-observation `observed` again — 129
+module-mapped writes, same two dominant copy-loop sites
+`wotblitz.exe+0x1AD2D9D` 85 / `+0x230E856` 39, 18 in-window / 53 before /
+57 after; G2 anchor re-confirmed `sameDecodedClockProven=true`).
+
+**ROOT CAUSE — done 2026-08-09 (OD-RECOVERY-080, offline):** the avatar-
+helper failures were NOT a game-side pointer race. The guard-page interceptor
+arms PAGE_GUARD on the ring-record page, and the resolver's avatar-helper
+stage reads the helper vtable at `helper+0x00` — the same page as the ring
+(ring at `helper+0x08`, verified from the armed addresses). The interceptor's
+own code documents that ReadProcessMemory on a PAGE_GUARD page fails with
+ERROR_PARTIAL_COPY (299). Natural experiment: the SAME unchanged poll
+UN-ARMED delivered 24/24 twice (OD-075/076, 48/48 reads,
+`allConsistentDoubleRead=true` — the verdict requires it); armed, it failed
+7/48 reads, 7/7 at `avatar-helper`. The interceptor's clean (zero-write)
+branch is impossible while the ring is actively rewritten, and arming
+actively breaks the poll. **Corrected procedure: `invoke-g1-live-poll.ps1
+-SkipInterceptorArm`** — the per-read byte-identical branch is the poll's
+own `allConsistentDoubleRead` (proven 24/24 un-armed); the wrapper's new
+`-SkipInterceptorArm` mode records `write-observation-skipped` and rests the
+G1 claim on the poll aggregate. One corrected session targets 24/24
+`stable-resolver-positive` to close G1 + G3.
 
 Evidence artifact must be attached to the ledger row before the flag may be
 claimed.
@@ -248,7 +261,7 @@ the prior positive result file(s).
 | ~~G1 mechanism test (write-observation)~~ | ~~Offline~~ | **done 2026-08-09** (`scripts/test-offline-write-observation.ps1`, OD-RECOVERY-077) |
 | ~~G1 position-page capability (resolver entry + coordinator + endpoint + tests)~~ | ~~Offline~~ | **done 2026-08-09** (`POST /discover/position-page`, diagnostic-only) |
 | ~~G1 live orchestration (wrapper + verdict)~~ | ~~Offline~~ | **done 2026-08-09** (`scripts/invoke-g1-live-poll.ps1`; verdict validated on OD-077 reports) |
-| G1 live poll (two runs done 2026-08-09: `observed` verdict both times; poll 19/24 then **22/24** — reads still failing at `avatar-helper`; still open, needs a 24/24 positive session) | Live (further approved session) | G1 offline steps + the avatar-helper pattern as the known variable |
+| G1 live poll (two armed runs done 2026-08-09: `observed` verdict both times; poll 19/24 then **22/24** — failures ROOT-CAUSED as harness artifacts, OD-RECOVERY-080; corrected procedure is `-SkipInterceptorArm`, which the un-armed OD-075/076 runs already proved can hit 24/24) | Live (further approved session) | `invoke-g1-live-poll.ps1 -SkipInterceptorArm` — one corrected session targets 24/24 |
 | G0 publication review | Offline | G1 + G2 + G3 closed — checklist pre-staged in `docs/operations/g0-publication-review.md` |
 
 ## Frozen surfaces (unchanged)

@@ -756,46 +756,51 @@ candidate**. Do not promote from aggregate counts alone.
 ### G1/G2 live run — write-observation + clock anchor (2026-08-09)
 
 The current gates (hardware-atomic read proof G1, same-decoded-clock G2) are
-exercised by **one command** — the unchanged bounded od-073 poll bracketed by
-the guard-page interceptor, orchestrated by `scripts/invoke-g1-live-poll.ps1`:
+exercised by **one command** — the unchanged bounded od-073 poll, orchestrated
+by `scripts/invoke-g1-live-poll.ps1`. **CORRECTED (2026-08-09,
+OD-RECOVERY-080):** the guard-page interceptor arm is SKIPPED — arming
+PAGE_GUARD on the ring-record page fails the poll's own reads at the
+avatar-helper vtable hop (ERROR_PARTIAL_COPY 299; the OD-078/079 19/24 and
+22/24 failures were harness artifacts, not a pointer race). The G1 per-read
+byte-identical branch is the poll's own `allConsistentDoubleRead` (proven
+24/24 un-armed in OD-075/076); the interceptor's clean branch is impossible
+while the ring is actively rewritten. Run:
 
 ```text
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-g1-live-poll.ps1 `
-  -ReplayPath <replay> -WindowWaitSeconds 240
+  -ReplayPath <replay> -WindowWaitSeconds 240 -SkipInterceptorArm
 ```
 
 **Pre-flight.** Exact-build binaries present (a `scripts/validate.ps1` green
-run); the x86 interceptor published at
-`.build/publish/write-interceptor/WotBTreader.WriteInterceptor.exe` (the
-wrapper refuses with a build hint if missing); no stale `wotblitz.exe` /
-Host.Web / interceptor processes; the content-distinct replay (Oasis Palms,
-1,045,525 B) in place; disk space for the evidence dir
-(`.data/diagnostics/g1-live-<stamp>/`).
+run); no stale `wotblitz.exe` / Host.Web / interceptor processes; the
+content-distinct replay (Oasis Palms, 1,045,525 B) in place; disk space for
+the evidence dir (`.data/diagnostics/g1-live-<stamp>/`). (The x86
+interceptor publish is not needed in the corrected mode; it is only for the
+legacy armed evidence mode.)
 
 **During.** The launcher blocks until `OK OfflineReplayVerified` — a
 `FAILED_no_window` on a cold boot is covered by `-WindowWaitSeconds 240`;
 marker/ACL failures are the BLK-0026 class (resolved). The wrapper then
-prints: `game_pid`, `battle_session`, `entity_id`, `record_address`,
-`interceptor_started`, and the final `verdict` line. Do not touch the game
-window (the launcher already shrank it and the dialog clicker is done). The
-poll's `clock_anchor appended` line tells whether the G2 anchor POST landed.
+prints: `game_pid`, `battle_session`, `entity_id`, `record_address`, and the
+final `verdict` line (in corrected mode: `write-observation-skipped`). Do
+not touch the game window (the launcher already shrank it and the dialog
+clicker is done). The poll's `clock_anchor appended` line tells whether the
+G2 anchor POST landed.
 
 **After — evidence review (a flag is claimable only when ALL of these hold):**
 
 - `g1-evidence.json` exists with `pollSucceeded=true`.
 - Poll aggregate: `verdict=stable-resolver-positive`, `resolvedReads=24`,
   `allModuleRooted`, `allEntityIdentityRevalidated`,
-  `allConsistentDoubleRead` all true.
-- Interceptor report: `exitCode=0`, hits present, and the read-window counts
-  recorded in the evidence.
-- **G1 claim:** `write-observation-clean` (zero interceptor hits inside the
-  read window `[pollStart + stageDelay, pollEnd]` with liveness on both
-  sides) — the strongest evidence — **or** `observed` with the poll's 24/24
-  byte-identical double-reads, which is the expected live outcome and attests
-  the per-read branch (a mid-read write would tear the double-read into an
-  `UnstableSnapshot` retry, so every `Resolved` read is byte-identical with a
-  stable ring index). Attach the interceptor report + aggregate paths to the
-  ledger row.
+  `allConsistentDoubleRead` all true — the per-read byte-identical branch
+  (a mid-read write would tear the double-read into an `UnstableSnapshot`
+  retry, so every `Resolved` read is byte-identical with a stable ring
+  index). This is the G1 claim in the corrected procedure.
+- **G1 claim:** poll 24/24 `stable-resolver-positive` with
+  `allConsistentDoubleRead=true` (un-armed runs already achieved this in
+  OD-075/076; the armed runs could not because the guard page failed the
+  reads). In corrected mode the write-observation verdict is
+  `write-observation-skipped` by design.
 - **G2 claim:** poll aggregate `sameDecodedClockProven=true` (the anchor
   POST succeeded and its 1 s uncertainty is within the 2 s coordinator
   bound).
@@ -803,12 +808,13 @@ poll's `clock_anchor appended` line tells whether the G2 anchor POST landed.
   review follows.
 
 **Shutdown.** Stop the managed processes after reviewing the evidence:
-`wotblitz.exe`, Host.Web, and the interceptor pid recorded in the evidence;
-verify zero orphans remain (the ledger's shutdown row counts them).
+`wotblitz.exe` and Host.Web (no interceptor in corrected mode); verify zero
+orphans remain (the ledger's shutdown row counts them).
 
 **Failure branching.** Launcher exit != 0 → diagnose by exit code, no poll
 ran. Poll exit != 0 → the wrapper exits non-zero with the evidence written;
 per the exactly-one-unchanged-poll rule, do **not** auto-retry — diagnose
 (the research lease / battle-end classes are known) and re-run only after a
-fresh decision. Interceptor exit != 0 → verdict fails closed and the evidence
-records it; the poll result alone cannot claim G1.
+fresh decision. Legacy armed mode: interceptor exit != 0 → verdict fails
+closed and the evidence records it; the poll result alone cannot claim the
+write-observation branch.

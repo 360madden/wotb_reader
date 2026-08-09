@@ -16,13 +16,18 @@ No runtime AI, cloud, Python, Node.js, Rust, Electron, or containers.
   untouched). **Two G1/G2 live sessions done (2026-08-09):** the one-command
   `scripts/invoke-g1-live-poll.ps1` chain runs end-to-end and **G2 is closed
   live** — `sameDecodedClockProven=true` in the poll aggregate both sessions
-  (CaptureLog anchor, 1 s within the 2 s bound). G1 stays open: the unchanged
-  poll resolved 19/24 then **22/24** (reads failing at the `avatar-helper`
-  hop, a battle-segment-dependent pointer-race pattern), write-observation
-  `observed` both times; acceptance is a **24/24 positive poll**. G3 stays
-  open until a positive poll + prior. See
+  (CaptureLog anchor, 1 s within the 2 s bound). G1's read failures are
+  **root-caused (OD-RECOVERY-080): the guard-page interceptor's PAGE_GUARD on
+  the ring-record page failed the poll's own reads at the avatar-helper vtable
+  hop (ERROR_PARTIAL_COPY 299) — the 19/24 and 22/24 were harness artifacts,
+  not a pointer race**; the corrected procedure is
+  `invoke-g1-live-poll.ps1 -SkipInterceptorArm`, and the unchanged poll
+  un-armed already delivered **24/24 twice (OD-075/076)** with
+  `allConsistentDoubleRead=true`. A corrected session targets 24/24
+  `stable-resolver-positive` to close G1 (per-read byte-identical branch) and
+  G3 (with `-PriorResultPaths`). See
   `docs/operations/offset-promotion-checklist.md` (and ledger
-  `OD-RECOVERY-078/079`). No offset-table change until G1 + G3 close.
+  `OD-RECOVERY-078/079/080`). No offset-table change until G1 + G3 close.
 - **BLK-0026 resolved and validated (2026-08-09):** root cause was a launcher
   regression — .NET `Set-Acl` threw `PrivilegeNotHeldException` on the
   persisted owner-only marker ACL, mapped by the catch-all to
