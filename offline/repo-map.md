@@ -19,7 +19,7 @@ detail lives in the module's own files. Full tree: `src/`, `tests/`, `tools/`,
 | `memory-offsets/` | Versioned offset evidence (`11.18.0.7.json`, …) + `schema.json` |
 | `research/` | Deep-dive research notes on the game's replay loading, IPC, memory layout, community tools (`research/README.md` is the index) |
 | `docs/` | Canonical documentation (architecture, decisions, formats, operations, testing) |
-| `scripts/` | `validate.ps1` (full gate), `scan-repository.ps1` (secrets/ignore scan), `ghidra-scan.py`, `invoke-cursor-agent.ps1`, `python/` smoke tooling |
+| `scripts/` | `validate.ps1` (full gate), `scan-repository.ps1` (secrets/ignore scan), `ghidra-scan.py`, `python/` smoke tooling |
 | `tmpwotb-e2e/` | Local E2E logs (runtime data) |
 
 ## src/ — layered modules

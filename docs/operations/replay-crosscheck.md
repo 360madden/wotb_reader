@@ -166,7 +166,7 @@ re-run `crosscheck.cmd -GoldenVector` before trusting it.
 ## Registry
 
 The oracle and parser are registered in `tools/external/tools.lock.json`
-(11 tools total) under the repo's external-tool policy; the exe is a
+(10 tools total) under the repo's external-tool policy; the exe is a
 hash-pinned dev-time artifact under the gitignored
 `tools/external/installed/` path. No Rust at runtime — the no-Rust-dependency
 rule is unchanged.

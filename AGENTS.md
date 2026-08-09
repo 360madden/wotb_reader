@@ -45,8 +45,6 @@ No runtime AI, cloud, Python, Node.js, Rust, Electron, or containers.
   user-provided background for agents working in the repository; the repository
   remains a personal project unless official status is documented separately.
   Canonical wording: [`docs/project-context.md`](docs/project-context.md).
-- Cursor layout and asset index: [`.cursor/README.md`](.cursor/README.md). Do
-  **not** load `.cursor/reference/*` unless the task needs that catalog.
 - Offline discovery pack: [`offline/README.md`](offline/README.md) — a
   focused, self-contained repo index (repo map, entry points, API surface,
   glossary, commands, replay format, offset discovery, data flow,
@@ -113,12 +111,12 @@ installed-game tests are local opt-in and skip by default.
 | Telemetry data flow (decode → UI / comparison) | [`offline/data-flow.md`](offline/data-flow.md) | trace pipelines | mutating immutable decode runs |
 | Offset / memory evidence | [`offline/memory-offsets.md`](offline/memory-offsets.md), [`offline/offset-discovery.md`](offline/offset-discovery.md), ledger | static/synthetic proof; bounded gated polls per ledger plan | promoting offsets or editing `memory-offsets/11.19.0.10.json` without proof; live polls while BLK-0026 is open |
 | Game internals research | [`research/README.md`](research/README.md) (index) | research | touching the game install |
-| Architecture / project refs | rule `architecture-boundaries` (auto on `src/**/*.cs`) | refactor within boundaries | violating the reference graph |
-| Replay / binary / harness tools | rule `binary-parser`; agent `decoder-auditor` | audits | shipping dynamic decoder DLLs |
-| Loopback / mutation / privacy audit | agent `security-auditor` (readonly) | read-only review | mutating shared contracts |
-| Validate / commit / handoff | skills `validate`, `handoff-amend`, `commit-unit` | per skill | pushing without being asked |
-| UI / DTO / smoke / docs glue | agent `implementer-glue` (fast) | bounded mechanical units | changing shared contracts without proposal |
-| Prove work after a unit | agent `verifier` (fast) | verification | staging or committing |
+| Architecture / project refs | [`docs/architecture/overview.md`](docs/architecture/overview.md), `tests/WotBTreader.Architecture.Tests/` | refactor within boundaries | violating the reference graph |
+| Replay / binary / harness tools | [`offline/replay-format.md`](offline/replay-format.md); Codex `decoder_auditor` | audits | shipping dynamic decoder DLLs |
+| Loopback / mutation / privacy audit | Codex `security_auditor` (read-only) | read-only review | mutating shared contracts |
+| Validate / commit / handoff | this file's *Definition of done + commit checklist*; `scripts/validate.ps1` | per checklist | pushing without being asked |
+| UI / DTO / smoke / docs glue | Codex `implementer_glue` (fast) | bounded mechanical units | changing shared contracts without proposal |
+| Prove work after a unit | Codex `verifier` (fast) | verification | staging or committing |
 | Human setup | [`README.md`](README.md) | — | — |
 
 ## Repo gotchas (each has bitten before)
@@ -143,16 +141,15 @@ files (never broad `git add -A`) → conventional-commit message → author
 `Codex Agent <codex@local.invalid>` unless the user says otherwise → push
 **only when asked**, never force-push.
 
-## Delegation index
+## Delegation index (Codex · OpenCode · Grok)
 
 | Agent | Use for | Config / notes |
 |---|---|---|
-| `explore` / `explorer` | multi-file search/read rounds | built-in; prefer read-heavy parallel work |
-| `general` | mechanical units against frozen contracts (UI/DTO/tests/docs) | built-in |
-| `decoder-auditor` | replay/binary/decoder audits | `.cursor/agents/*.md`, `.codex/agents/*.toml` |
-| `security-auditor` | loopback/mutation/privacy audit (read-only) | same |
-| `implementer-glue` | UI/DTO/smoke/docs glue (fast) | same |
-| `verifier` | prove work after a unit (fast) | same |
+| `explorer` (built-in) | broad read-heavy searches / multi-file rounds | Codex built-in; prefer read-heavy parallel work |
+| `decoder_auditor` | replay/binary/decoder audits | `.codex/agents/decoder_auditor.toml` |
+| `security_auditor` | loopback/mutation/privacy audit (read-only) | `.codex/agents/security_auditor.toml` |
+| `implementer_glue` | UI/DTO/smoke/docs glue (fast) | `.codex/agents/implementer_glue.toml` |
+| `verifier` | prove work after a unit (fast) | `.codex/agents/verifier.toml` |
 | `deepseek-glue` | one bounded mechanical implementation unit | `.opencode/agents/*.md`; DeepSeek V4 Flash at its reliable default reasoning — request `max` only for a hard second opinion |
 | `free-reviewer` | bounded read-only second opinion | pinned to an explicit OpenRouter free model, not the variable `openrouter/free` route |
 | `grok-glue` | one bounded mechanical unit; every non-trivial `.cmd`/`.bat` review | `.grok/agents/*.md`; owner's grok.com subscription login, not an API key |
@@ -163,14 +160,6 @@ files (never broad `git add -A`) → conventional-commit message → author
 - Subagents must not stage, commit, or push.
 - Codex concurrency is capped at three threads (`.codex/config.toml`); keep
   overlapping write units sequential.
-- Cursor CLI: invoke **only** through `scripts/invoke-cursor-agent.ps1`, which
-  runs read-only decoder/security audits in a temporary standalone export of
-  committed `HEAD` with shell and write tools denied. Never bypass the adapter
-  with current-worktree/Git-worktree, force/yolo, MCP-auto-approval, or
-  cloud-handoff flags. Windows sandboxing is not available. Cursor labels
-  Fable 5 `NO ZDR` — never send it private replays, captures, databases,
-  screenshots, memory offsets, tokens, account data, or other
-  game-derived/runtime data.
 - `opencode.json` pins this repository's default OpenCode model to DeepSeek V4
   Flash so an earlier session choice cannot silently select the random free
   router.
@@ -183,13 +172,10 @@ files (never broad `git add -A`) → conventional-commit message → author
   writer on the same worktree.
 - Lead model keeps: replay/binary/decoder decisions, loopback/mutation/privacy
   review, and shared-contract changes.
-- Cursor role briefs (`.cursor/agents/*.md`) are worth pasting into hard
-  delegation prompts; attach `.cursor/rules/binary-parser.mdc` or
-  `.cursor/rules/safety-privacy.mdc` as task rules.
 
 ## Model stance (one line)
 
-Opus/Fable high|xhigh for decoder/security/hard contracts only; Grok/Composer/fast for glue, explore, verify. Details: `.cursor/reference/model-routing.md`.
+Hard decoder/security/contract decisions stay on the lead model; Codex subagents (default `gpt-5.6-terra`), OpenCode DeepSeek V4 Flash, and Grok handle glue, explore, verify. Details: `.codex/config.toml`, `.opencode/agents/*.md`, `.grok/agents/*.md`.
 
 ## Last verified
 
@@ -198,3 +184,5 @@ Opus/Fable high|xhigh for decoder/security/hard contracts only; Grok/Composer/fa
 - 2026-08-09 — AGENTS.md restructured to the table-driven layout; hard
   constraints trimmed (offline-only + Cheat Engine bullets removed), ADR 0002
   amended, README/knowledge.md reconciled.
+- 2026-08-09 — Cursor references removed (subscription ended); delegation
+  index now covers Codex, OpenCode, and Grok only.

@@ -11,9 +11,9 @@ them at application runtime.
 
 ## Registered tools
 
-The authoritative registry is `tools.lock.json` (11 tools: x64dbg, System
-Informer, ReClass.NET, ILSpy, Ghidra, Cursor Agent CLI, OpenCode,
-PSScriptAnalyzer, wotbreplay-inspector, wotbreplay-parser, Grok Build).
+The authoritative registry is `tools.lock.json` (10 tools: x64dbg, System
+Informer, ReClass.NET, ILSpy, Ghidra, OpenCode, PSScriptAnalyzer,
+wotbreplay-inspector, wotbreplay-parser, Grok Build).
 
 Two of the registered tools participate in repo quality gates and are
 documented below: PSScriptAnalyzer (PowerShell static analysis) and the
