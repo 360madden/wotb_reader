@@ -43,6 +43,13 @@ dotnet publish tools/WriteInterceptor -c Release -r win-x86 --self-contained tru
 # G1 offline write-observation mechanism test (capture completeness +
 # no-write-window discrimination; no game, no live poll)
 pwsh -NoProfile -File scripts/test-offline-write-observation.ps1
+
+# G1 live write-observation poll (one approved session): launcher to gate,
+# position-page resolve, interceptor arm, unchanged bounded poll, verdict
+pwsh -NoProfile -File scripts/invoke-g1-live-poll.ps1 -ReplayPath <path> -WindowWaitSeconds 240
+
+# Verdict-only offline check against an existing interceptor report
+pwsh -NoProfile -File scripts/invoke-g1-live-poll.ps1 -DryRun -ReportPath <interceptor-report.json> -WindowStartUtc <utc> -WindowEndUtc <utc>
 ```
 
 ## Type-10 entity-position capture (offline replay only)

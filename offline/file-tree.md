@@ -261,6 +261,7 @@ scripts/ghidra-scan.py
 scripts/install-psscriptanalyzer.ps1
 scripts/invoke-csharp-write-trace.ps1
 scripts/invoke-fresh44-crossbattle.ps1
+scripts/invoke-g1-live-poll.ps1
 scripts/invoke-replay-crosscheck.ps1
 scripts/invoke-scriptanalyzer.ps1
 scripts/launch-offline-replay-for-od.ps1

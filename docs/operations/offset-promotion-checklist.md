@@ -95,28 +95,44 @@ address via a diagnostic-only resolver entry
 (`Type10EntityPositionResolver.ResolveRecordAddress`, same traversal and
 reads as the poll path — the poll path itself is untouched and never carries
 addresses). Tests: 5 resolver (Core), 3 coordinator (GameIntegration), 2
-endpoint (Host.Web). The live sequence in one new approved session:
+endpoint (Host.Web). The one-command orchestration is **built offline
+(2026-08-09):** `scripts/invoke-g1-live-poll.ps1` runs the launcher →
+rendezvous/state → session/trajectory → position-page → interceptor arm →
+**unchanged** od-073 poll (`-SessionId` passed explicitly) → verdict; its
+`Test-WriteObservationVerdict` was validated against the real OD-077
+mechanism-test reports (a window inside the suspended span → clean, exit 0;
+a busy span → observed). The live sequence in one new approved session:
 
-1. Gate: launcher reaches `OfflineReplayVerified` (same session the poll
-   runs in; addresses are battle-scoped heap allocations — cross-battle
-   arming is ruled out by live evidence).
-2. Resolve: `POST /discover/position-page { entityId }` → `pageAddress`
-   (page-aligned). Privacy stance: internal diagnostic surface, localhost
-   only, gated, address not bytes — same evidence class as the od-048 family
-   reports; never serialized into poll results or persisted aggregates.
-3. Arm: `WotBTreader.WriteInterceptor.exe --interceptor -Pid <wotblitz pid>
-   -Addresses 0x<pageAddress> -Seconds <window> -Out <report>` (x86 publish
-   at `.build/publish/write-interceptor`).
-4. Poll: run the unchanged bounded od-073 double-read inside the capture
-   window (the interceptor records hit timestamps; the poll records its read
-   window).
-5. Verdict: zero captured hits whose timestamp falls inside the poll read
-   window — or every captured hit in the window shows a byte-identical
-   record. Liveness required on both sides of the window (hits before and
-   after) so a zero-window is a real no-write, not a dead capture (the
-   OD-RECOVERY-077 assertions, applied live).
-6. Evidence: attach the interceptor report + the poll aggregate to the
-   ledger row before claiming the flag.
+1. Gate: `invoke-g1-live-poll.ps1 -ReplayPath ...` launches and blocks until
+   `OfflineReplayVerified` (same session the poll runs in; addresses are
+   battle-scoped heap allocations — cross-battle arming is ruled out by live
+   evidence). Use `-WindowWaitSeconds 240` for cold boots.
+2. Resolve: position-page → `recordAddress` (the interceptor arms the page
+   holding it). Privacy stance: internal diagnostic surface, localhost only,
+   gated, address not bytes — same evidence class as the od-048 family
+   reports; never serialized into poll results or persisted aggregates (the
+   poll aggregate's `processAddressesPersisted` stays false).
+3. Arm + poll: the interceptor captures every page write from before the
+   stage delay to after the poll; the unchanged bounded od-073 double-reads
+   run inside that window.
+4. Verdict (two branches, computed by the script):
+   - **clean**: zero interceptor hits inside the read window
+     `[pollStart + stageDelay, pollEnd]` with liveness (hits) on both sides
+     and interceptor exit 0 — a real no-write across the read window.
+   - **observed**: writes landed on the page during the window. The
+     interceptor arms the whole page (PAGE_GUARD granularity) and cannot
+     attribute a hit to the exact position bytes, so the per-read
+     byte-identical branch is carried by the poll itself: the resolver only
+     returns `Resolved` with `ConsistentDoubleRead=true` when the two 56-byte
+     ring-record snapshots are identical with a stable ring index (torn
+     reads retry as `UnstableSnapshot`). A ring-slot rewrite that leaves the
+     record byte-identical is therefore already attested by every resolved
+     read.
+5. Evidence: `g1-evidence.json` (verdict, read window, hit counts, armed
+   addresses, report + aggregate paths) is attached to the ledger row before
+   the flag may be claimed. A clean verdict plus the poll's
+   `stable-resolver-positive` is the strongest G1 evidence; an observed
+   verdict defers to the poll's double-read consistency and the review.
 
 Evidence artifact must be attached to the ledger row before the flag may be
 claimed.
@@ -195,6 +211,7 @@ the prior positive result file(s).
 | G2 live run: anchor + flag end-to-end | Live (new approved session) | caller + endpoint done |
 | ~~G1 mechanism test (write-observation)~~ | ~~Offline~~ | **done 2026-08-09** (`scripts/test-offline-write-observation.ps1`, OD-RECOVERY-077) |
 | ~~G1 position-page capability (resolver entry + coordinator + endpoint + tests)~~ | ~~Offline~~ | **done 2026-08-09** (`POST /discover/position-page`, diagnostic-only) |
+| ~~G1 live orchestration (wrapper + verdict)~~ | ~~Offline~~ | **done 2026-08-09** (`scripts/invoke-g1-live-poll.ps1`; verdict validated on OD-077 reports) |
 | G1 live poll + G2 live correlation | Live (new approved session) | G1/G2 offline steps |
 | G0 publication review | Offline | G1 + G2 + G3 closed |
 
