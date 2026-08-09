@@ -116,23 +116,82 @@ function Cleanup([int]$code) {
     exit $code
 }
 
-function Get-Rendezvous {
-    $directory = Join-Path $env:LOCALAPPDATA 'WotBTreader\rendezvous'
-    if (-not (Test-Path -LiteralPath $directory)) {
-        return $null
-    }
-    $file = Get-ChildItem -LiteralPath $directory -Filter 'web.json' -File |
-        Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
-    if ($null -eq $file -or
-        $file.LastWriteTimeUtc -lt [DateTime]::UtcNow.AddMinutes(-10)) {
-        return $null
-    }
+# Owner-only ACL invariant on a rendezvous/marker file. Faithful copy of
+# od-073's Test-OwnerOnlyRendezvousFile (source of truth - keep in sync). The
+# poll re-enforces the same checks before any read; this is defense-in-depth
+# for the wrapper's own pre-poll calls.
+function Test-OwnerOnlyRendezvousFile([string]$Path) {
     try {
-        $value = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json
-        if ([string]::IsNullOrWhiteSpace($value.baseUri) -or
-            [string]::IsNullOrWhiteSpace($value.capability)) {
+        $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
+        $file = Get-Item -LiteralPath $Path
+        $directory = Get-Item -LiteralPath $file.DirectoryName
+        if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+            ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            return $false
+        }
+
+        $directoryAcl = Get-Acl -LiteralPath $directory.FullName
+        $directoryOwner = (New-Object Security.Principal.NTAccount($directoryAcl.Owner)).Translate(
+            [Security.Principal.SecurityIdentifier])
+        $directoryRules = @($directoryAcl.GetAccessRules(
+            $true,
+            $false,
+            [Security.Principal.SecurityIdentifier]))
+        if (-not $directoryAcl.AreAccessRulesProtected -or $directoryOwner -ne $owner -or
+            $directoryRules.Count -ne 1 -or
+            $directoryRules[0].IdentityReference -ne $owner -or
+            $directoryRules[0].AccessControlType -ne
+                [Security.AccessControl.AccessControlType]::Allow -or
+            (($directoryRules[0].FileSystemRights -band
+                    [Security.AccessControl.FileSystemRights]::FullControl) -ne
+                [Security.AccessControl.FileSystemRights]::FullControl)) {
+            return $false
+        }
+
+        $fileAcl = Get-Acl -LiteralPath $file.FullName
+        $fileOwner = (New-Object Security.Principal.NTAccount($fileAcl.Owner)).Translate(
+            [Security.Principal.SecurityIdentifier])
+        $fileRules = @($fileAcl.GetAccessRules(
+            $true,
+            $true,
+            [Security.Principal.SecurityIdentifier]))
+        return $fileOwner -eq $owner -and $fileRules.Count -eq 1 -and
+            $fileRules[0].IdentityReference -eq $owner -and
+            $fileRules[0].AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and
+            (($fileRules[0].FileSystemRights -band
+                    [Security.AccessControl.FileSystemRights]::FullControl) -eq
+                [Security.AccessControl.FileSystemRights]::FullControl)
+    }
+    catch {
+        return $false
+    }
+}
+
+function Get-Rendezvous {
+    try {
+        $directory = Join-Path $env:LOCALAPPDATA 'WotBTreader\rendezvous'
+        $file = Get-ChildItem -LiteralPath $directory -File -ErrorAction Stop |
+            Sort-Object LastWriteTimeUtc -Descending |
+            Select-Object -First 1
+        if ($null -eq $file -or
+            $file.LastWriteTimeUtc -lt [DateTime]::UtcNow.AddMinutes(-10) -or
+            -not (Test-OwnerOnlyRendezvousFile -Path $file.FullName)) {
             return $null
         }
+
+        $value = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json
+        if (-not $value.PSObject.Properties['baseUri'] -or
+            -not $value.PSObject.Properties['capability'] -or
+            [string]::IsNullOrWhiteSpace([string]$value.baseUri) -or
+            [string]::IsNullOrWhiteSpace([string]$value.capability)) {
+            return $null
+        }
+
+        $uri = [Uri][string]$value.baseUri
+        if (-not $uri.IsLoopback -or $uri.Scheme -ne 'http') {
+            return $null
+        }
+
         return $value
     }
     catch {
@@ -170,7 +229,8 @@ function Invoke-OdApi {
 
 function Get-LaunchArtifactId {
     $marker = Join-Path (Join-Path $env:LOCALAPPDATA 'WotBTreader\od-launch') 'artifact.id'
-    if (-not (Test-Path -LiteralPath $marker)) {
+    if (-not (Test-Path -LiteralPath $marker) -or
+        -not (Test-OwnerOnlyRendezvousFile -Path $marker)) {
         return $null
     }
     $file = Get-Item -LiteralPath $marker

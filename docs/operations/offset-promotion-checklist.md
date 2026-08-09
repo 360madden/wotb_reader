@@ -101,7 +101,10 @@ rendezvous/state → session/trajectory → position-page → interceptor arm �
 **unchanged** od-073 poll (`-SessionId` passed explicitly) → verdict; its
 `Test-WriteObservationVerdict` was validated against the real OD-077
 mechanism-test reports (a window inside the suspended span → clean, exit 0;
-a busy span → observed). The live sequence in one new approved session:
+a busy span → observed). The operator runbook (pre-flight, watch items,
+evidence review, shutdown, failure branching) is in
+`docs/operations/offset-discovery-workflow.md` → “G1/G2 live run”. The live
+sequence in one new approved session:
 
 1. Gate: `invoke-g1-live-poll.ps1 -ReplayPath ...` launches and blocks until
    `OfflineReplayVerified` (same session the poll runs in; addresses are

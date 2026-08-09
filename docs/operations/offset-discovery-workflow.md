@@ -752,3 +752,63 @@ File-association remains useful only as a **playback smoke** (“does this
 
 The success criterion remains **one correctly classified, reproducible
 candidate**. Do not promote from aggregate counts alone.
+
+### G1/G2 live run — write-observation + clock anchor (2026-08-09)
+
+The current gates (hardware-atomic read proof G1, same-decoded-clock G2) are
+exercised by **one command** — the unchanged bounded od-073 poll bracketed by
+the guard-page interceptor, orchestrated by `scripts/invoke-g1-live-poll.ps1`:
+
+```text
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-g1-live-poll.ps1 `
+  -ReplayPath <replay> -WindowWaitSeconds 240
+```
+
+**Pre-flight.** Exact-build binaries present (a `scripts/validate.ps1` green
+run); the x86 interceptor published at
+`.build/publish/write-interceptor/WotBTreader.WriteInterceptor.exe` (the
+wrapper refuses with a build hint if missing); no stale `wotblitz.exe` /
+Host.Web / interceptor processes; the content-distinct replay (Oasis Palms,
+1,045,525 B) in place; disk space for the evidence dir
+(`.data/diagnostics/g1-live-<stamp>/`).
+
+**During.** The launcher blocks until `OK OfflineReplayVerified` — a
+`FAILED_no_window` on a cold boot is covered by `-WindowWaitSeconds 240`;
+marker/ACL failures are the BLK-0026 class (resolved). The wrapper then
+prints: `game_pid`, `battle_session`, `entity_id`, `record_address`,
+`interceptor_started`, and the final `verdict` line. Do not touch the game
+window (the launcher already shrank it and the dialog clicker is done). The
+poll's `clock_anchor appended` line tells whether the G2 anchor POST landed.
+
+**After — evidence review (a flag is claimable only when ALL of these hold):**
+
+- `g1-evidence.json` exists with `pollSucceeded=true`.
+- Poll aggregate: `verdict=stable-resolver-positive`, `resolvedReads=24`,
+  `allModuleRooted`, `allEntityIdentityRevalidated`,
+  `allConsistentDoubleRead` all true.
+- Interceptor report: `exitCode=0`, hits present, and the read-window counts
+  recorded in the evidence.
+- **G1 claim:** `write-observation-clean` (zero interceptor hits inside the
+  read window `[pollStart + stageDelay, pollEnd]` with liveness on both
+  sides) — the strongest evidence — **or** `observed` with the poll's 24/24
+  byte-identical double-reads, which is the expected live outcome and attests
+  the per-read branch (a mid-read write would tear the double-read into an
+  `UnstableSnapshot` retry, so every `Resolved` read is byte-identical with a
+  stable ring index). Attach the interceptor report + aggregate paths to the
+  ledger row.
+- **G2 claim:** poll aggregate `sameDecodedClockProven=true` (the anchor
+  POST succeeded and its 1 s uncertainty is within the 2 s coordinator
+  bound).
+- Do **not** promote the offset table on this evidence; G0 publication
+  review follows.
+
+**Shutdown.** Stop the managed processes after reviewing the evidence:
+`wotblitz.exe`, Host.Web, and the interceptor pid recorded in the evidence;
+verify zero orphans remain (the ledger's shutdown row counts them).
+
+**Failure branching.** Launcher exit != 0 → diagnose by exit code, no poll
+ran. Poll exit != 0 → the wrapper exits non-zero with the evidence written;
+per the exactly-one-unchanged-poll rule, do **not** auto-retry — diagnose
+(the research lease / battle-end classes are known) and re-run only after a
+fresh decision. Interceptor exit != 0 → verdict fails closed and the evidence
+records it; the poll result alone cannot claim G1.
