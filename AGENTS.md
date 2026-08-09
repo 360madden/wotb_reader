@@ -6,11 +6,12 @@ No runtime AI, cloud, Python, Node.js, Rust, Electron, or containers.
 ## Where we are now (2026-08-09)
 
 - **Active workstream:** offset discovery — module-rooted player-position
-  polling. Latest handoff (OD-075 + BLK-0026 resolution, 2026-08-09): the
-  content-distinct replay's poll returned positive (24/24 resolved, 12/24
-  within one unit, 21/24 within three; stable-resolver-positive).
-  Cross-replay repeatability is unproved — the same poll on a second
-  content-distinct process remains the open question.
+  polling. Latest handoff (OD-075 + BLK-0026 resolution, 2026-08-09):
+  continuous polling is positive in **two distinct 11.19.0 replays** (Dead
+  Rail 24/24; Oasis Palms 24/24, stable-resolver-positive) — cross-replay
+  repeatability is proven. The open gates before any offset-table change are
+  hardware-atomic read proof, same-decoded-clock alignment, and numeric-
+  offset publication; none may be skipped.
 - **BLK-0026 resolved and validated (2026-08-09):** root cause was a launcher
   regression — .NET `Set-Acl` threw `PrivilegeNotHeldException` on the
   persisted owner-only marker ACL, mapped by the catch-all to
@@ -18,10 +19,12 @@ No runtime AI, cloud, Python, Node.js, Rust, Electron, or containers.
   Fixed with `icacls` in both owner-only ACL functions; the launcher now
   reaches `OfflineReplayVerified` and exactly one unchanged bounded OD-075
   poll returned positive on the content-distinct replay (24/24 resolved,
-  stable-resolver-positive). See `docs/operations/blocker-log.md` BLK-0026 and
-  the 2026-08-09 resolution handoff. Cross-replay repeatability still
-  unproved — a second content-distinct process would be needed; no promotion
-  of the offset table without proof.
+  stable-resolver-positive) — **cross-replay continuous polling is now proven
+  across two distinct 11.19.0 replays** (Dead Rail + Oasis Palms, ledger
+  `OD-RECOVERY-076`). See `docs/operations/blocker-log.md` BLK-0026 and the
+  2026-08-09 resolution handoff. Still unproved: hardware atomicity,
+  same-decoded-clock proof, numeric-offset publication, and promotion — no
+  offset-table change without those.
 - **Last verified gate:** 2026-08-09 — 654 tests passed, 2 local opt-in skips,
   0 warnings, 0 errors.
 - **Refresh from:** the newest file in `docs/operations/handoffs/`,

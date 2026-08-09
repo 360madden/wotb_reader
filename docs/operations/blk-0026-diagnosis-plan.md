@@ -7,7 +7,8 @@
 - Blocker: [`blocker-log.md`](blocker-log.md) `BLK-0026` — a content-distinct replay's
   managed launch exits before the `OfflineReplayVerified` gate; the Host stays
   `Unknown` / `session.initial`; no memory operation runs; no evidence result is
-  created. Cross-replay continuous-polling repeatability remains unproved.
+  created. Cross-replay continuous-polling repeatability was unproved when this
+  plan was written (now proven — see ledger `OD-RECOVERY-076`).
 
 ## Settled decisions (grilled 2026-08-09)
 
