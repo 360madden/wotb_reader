@@ -84,20 +84,38 @@ claimed.
 
 ### G2 — Same-decoded-clock alignment
 
-Current: **the `replay_clock_segments` table is empty** (verified 2026-08-09) —
-the schema exists (`source_anchor_utc`, `replay_anchor_ticks`, `speed`,
-`source`, `uncertainty_ticks`) but nothing populates it. The coordinator
-hardcodes `SameDecodedClockProven: false`, so no poll claim can be made today.
+Current (verified 2026-08-09): the clock machinery **already exists and is
+unit-tested** — `ReplayClockSegment` (`src/WotBTreader.Core/ComparisonModels.cs`),
+`IReplayClockSegmentRepository.AppendAsync/ListAsync` +
+`SqliteReplayClockSegmentRepository` (tested in
+`ReplayClockSegmentRepositoryTests`), `SegmentedReplayClockSource` which
+extrapolates `replayEstimate = ReplayAnchor + (observedAtUtc -
+SourceAnchorUtc) * Speed` with `Estimated`/`Stale` quality (tested in
+`SegmentedReplayClockSourceTests`), and `TrajectoryCorrelation` which already
+anchors wall time to the replay clock (`ReplayClockTicksPerSecond` =
+10,000,000). What is missing: **no production caller ever appends a segment**
+(`AddSegmentAsync` has no caller outside the clock source itself, so
+`replay_clock_segments` stays empty), and `SameDecodedClockProven` is
+hardcoded `false` at both coordinator result sites
+(`GameSessionCoordinator.cs`, passed through by `GameApiEndpoints`).
 
-Acceptance — `SameDecodedClockProven` becomes `true` from evidence:
+Acceptance — `SameDecodedClockProven` becomes `true` only from evidence:
 
-1. The decoder records clock segments per battle session (offline work, no live
-   testing): anchor UTC ↔ replay ticks with speed and uncertainty, as the
-   schema already models.
-2. The coordinator correlates each poll read's wall-clock to replay time
-   through those segments and reports a bounded uncertainty.
-3. A ledger row records the correlation bounds (e.g., worst-case tick error
-   across the poll).
+1. **Live anchor (new approved session):** record one segment at the
+   verified-gate moment — `SourceAnchorUtc` = wall clock when the gate verifies
+   (the blitz-log `Start replay event` marker is the natural anchor, from the
+   replay-start-flake fix), `ReplayAnchor` ≈ 0 + measured watch offset,
+   `Speed` = 1.0 (managed offline playback), `Source` = `CaptureLog`,
+   `Uncertainty` = measured marker/gate latency. This requires a caller for
+   the append path — a Host endpoint or the capture pipeline — plus its own
+   tests.
+2. **Wiring (offline-buildable):** the coordinator computes
+   `SameDecodedClockProven` from the clock source — segments exist for the
+   battle session AND the snapshot uncertainty is within a stated bound (e.g.,
+   ≤ 2 s) — otherwise `false`. The poll verdict already requires the flag to
+   flip from evidence.
+3. **Record:** a ledger row with the correlation bounds (worst-case tick
+   error across the poll).
 
 ### G3 — Stable-root live repeatability (framework wiring)
 
@@ -119,7 +137,8 @@ the prior positive result file(s).
 | Step | Type | Dependency |
 |---|---|---|
 | ~~G3 flag wiring~~ | ~~Offline (runner script)~~ | **done 2026-08-09** (`-PriorResultPaths` in od-073) |
-| G2 decoder clock recording + validation against `replay_clock_segments` | Offline | none |
+| G2 coordinator wiring + tests (flag from clock source; machinery exists) | Offline | none |
+| G2 live anchor recording (verified-gate moment → segment) | Live (new approved session) | G2 wiring |
 | G1 mechanism test (write-observation) | Offline | tools/WriteInterceptor |
 | G1 live poll + G2 live correlation | Live (new approved session) | G1/G2 offline steps |
 | G0 publication review | Offline | G1 + G2 + G3 closed |
