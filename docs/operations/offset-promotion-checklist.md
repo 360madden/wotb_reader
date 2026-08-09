@@ -226,7 +226,7 @@ the prior positive result file(s).
 | ~~G1 position-page capability (resolver entry + coordinator + endpoint + tests)~~ | ~~Offline~~ | **done 2026-08-09** (`POST /discover/position-page`, diagnostic-only) |
 | ~~G1 live orchestration (wrapper + verdict)~~ | ~~Offline~~ | **done 2026-08-09** (`scripts/invoke-g1-live-poll.ps1`; verdict validated on OD-077 reports) |
 | G1 live poll + G2 live correlation | Live (new approved session) | G1/G2 offline steps |
-| G0 publication review | Offline | G1 + G2 + G3 closed |
+| G0 publication review | Offline | G1 + G2 + G3 closed — checklist pre-staged in `docs/operations/g0-publication-review.md` |
 
 ## Frozen surfaces (unchanged)
 
