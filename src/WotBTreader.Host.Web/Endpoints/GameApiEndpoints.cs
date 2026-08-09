@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using WotBTreader.ApiContracts;
+using WotBTreader.Application.Capture;
 using WotBTreader.Application.Game;
 using WotBTreader.Application.Results;
 using WotBTreader.Application.Storage;
@@ -33,6 +34,7 @@ internal static class GameApiEndpoints
         group.MapPost("/discover/neighborhood", DiscoverNeighborhoodAsync);
         group.MapPost("/discover/read", ReadOffsetsAsync);
         group.MapPost("/discover/entity-position", ReadEntityPositionAsync);
+        group.MapPost("/discover/clock-segment", AppendClockSegmentAsync);
         group.MapPost("/discover/instruction-snapshot", CaptureInstructionSnapshotAsync);
         group.MapGet("/discover/trajectory/{battleSessionId:guid}", GetTrajectoryAsync);
         group.MapPost("/discover/correlate", CorrelateAsync);
@@ -872,6 +874,65 @@ internal static class GameApiEndpoints
             ConsistentDoubleRead = read.ConsistentDoubleRead,
             HardwareAtomicReadProven = read.HardwareAtomicReadProven,
             SameDecodedClockProven = read.SameDecodedClockProven,
+        });
+    }
+
+    internal static async Task<IResult> AppendClockSegmentAsync(
+        IReplayClockSource clockSource,
+        AppendClockSegmentRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(clockSource);
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (string.IsNullOrWhiteSpace(request.BattleSessionId) ||
+            !Guid.TryParse(request.BattleSessionId, out Guid parsedSession) ||
+            request.Sequence < 0 ||
+            request.ReplayAnchorTicks < 0 ||
+            request.UncertaintyTicks < 0 ||
+            !double.IsFinite(request.Speed) ||
+            request.Speed <= 0 ||
+            !Enum.TryParse<TelemetrySourceKind>(
+                request.Source,
+                ignoreCase: true,
+                out TelemetrySourceKind source))
+        {
+            return Results.BadRequest(new { error = "clock.segment.invalid" });
+        }
+
+        var segment = new ReplayClockSegment(
+            ReplayClockSegmentId.New(),
+            new BattleSessionId(parsedSession),
+            request.Sequence,
+            request.SourceAnchorUtc,
+            TimeSpan.FromTicks(request.ReplayAnchorTicks),
+            request.Speed,
+            source,
+            TimeSpan.FromTicks(request.UncertaintyTicks),
+            DateTimeOffset.UtcNow);
+
+        OperationResult<ReplayClockSegment> appended = await clockSource
+            .AddSegmentAsync(segment, cancellationToken)
+            .ConfigureAwait(false);
+        if (!appended.IsSuccess || appended.Value is null)
+        {
+            return Results.BadRequest(new
+            {
+                error = appended.Error?.Code ?? "clock.segment.append_failed",
+            });
+        }
+
+        ReplayClockSegment stored = appended.Value;
+        return Results.Ok(new AppendClockSegmentResponse
+        {
+            BattleSessionId = stored.BattleSessionId.ToString(),
+            Sequence = stored.Sequence,
+            SourceAnchorUtc = stored.SourceAnchorUtc,
+            ReplayAnchorTicks = stored.ReplayAnchor.Ticks,
+            Speed = stored.Speed,
+            Source = stored.Source.ToString(),
+            UncertaintyTicks = stored.Uncertainty.Ticks,
+            CreatedAtUtc = stored.CreatedAtUtc,
         });
     }
 

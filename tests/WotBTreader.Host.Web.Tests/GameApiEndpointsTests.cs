@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using WotBTreader.ApiContracts;
+using WotBTreader.Application.Capture;
 using WotBTreader.Application.Game;
 using WotBTreader.Application.Results;
 using WotBTreader.Application.Storage;
@@ -1529,6 +1530,98 @@ public sealed class GameApiEndpointsTests
         return ("0x" + match.Groups[2].Value).ToLowerInvariant();
     }
 
+    [TestMethod]
+    public async Task AppendClockSegment_ValidRequestAppendsAndMapsResponse()
+    {
+        var clock = new FakeReplayClockSource();
+        BattleSessionId sessionId = BattleSessionId.New();
+        DateTimeOffset anchor = DateTimeOffset.UnixEpoch.AddMinutes(5);
+        var request = new AppendClockSegmentRequest
+        {
+            BattleSessionId = sessionId.ToString(),
+            Sequence = 0,
+            SourceAnchorUtc = anchor,
+            ReplayAnchorTicks = TimeSpan.FromSeconds(30).Ticks,
+            Speed = 1.0,
+            Source = "CaptureLog",
+            UncertaintyTicks = TimeSpan.FromMilliseconds(500).Ticks,
+        };
+
+        IResult result = await GameApiEndpoints.AppendClockSegmentAsync(
+            clock, request, TestContext.CancellationToken);
+
+        AppendClockSegmentResponse response = Value<AppendClockSegmentResponse>(result);
+        Assert.AreEqual(sessionId.ToString(), response.BattleSessionId);
+        Assert.AreEqual(0, response.Sequence);
+        Assert.AreEqual(anchor, response.SourceAnchorUtc);
+        Assert.AreEqual(TimeSpan.FromSeconds(30).Ticks, response.ReplayAnchorTicks);
+        Assert.AreEqual(1.0, response.Speed);
+        Assert.AreEqual("CaptureLog", response.Source);
+        Assert.AreEqual(TimeSpan.FromMilliseconds(500).Ticks, response.UncertaintyTicks);
+        Assert.IsNotNull(clock.Appended);
+        Assert.AreEqual(sessionId, clock.Appended!.BattleSessionId);
+        Assert.AreEqual(TimeSpan.FromSeconds(30), clock.Appended!.ReplayAnchor);
+        Assert.AreEqual(TelemetrySourceKind.CaptureLog, clock.Appended!.Source);
+        Assert.IsTrue(clock.Appended!.CreatedAtUtc != default);
+    }
+
+    [TestMethod]
+    [DataRow(null)]
+    [DataRow("")]
+    [DataRow("not-a-guid")]
+    public async Task AppendClockSegment_InvalidSessionIdRejected(string? sessionId)
+    {
+        var clock = new FakeReplayClockSource();
+
+        IResult result = await GameApiEndpoints.AppendClockSegmentAsync(
+            clock,
+            new AppendClockSegmentRequest { BattleSessionId = sessionId },
+            TestContext.CancellationToken);
+
+        Assert.AreEqual(StatusCodes.Status400BadRequest, ((IStatusCodeHttpResult)result).StatusCode);
+        Assert.IsNull(clock.Appended);
+    }
+
+    [TestMethod]
+    public async Task AppendClockSegment_InvalidValuesRejected()
+    {
+        var clock = new FakeReplayClockSource();
+        var request = new AppendClockSegmentRequest
+        {
+            BattleSessionId = BattleSessionId.New().ToString(),
+            ReplayAnchorTicks = -1,
+        };
+
+        IResult result = await GameApiEndpoints.AppendClockSegmentAsync(
+            clock, request, TestContext.CancellationToken);
+
+        Assert.AreEqual(StatusCodes.Status400BadRequest, ((IStatusCodeHttpResult)result).StatusCode);
+        Assert.IsNull(clock.Appended);
+    }
+
+    [TestMethod]
+    public async Task AppendClockSegment_ClockSourceFailureMapsToBadRequest()
+    {
+        var clock = new FakeReplayClockSource(OperationResult.Failure<ReplayClockSegment>(
+            new ApplicationError("clock.speed.invalid", "Replay-clock speed must be finite and greater than zero.")));
+        var request = new AppendClockSegmentRequest
+        {
+            BattleSessionId = BattleSessionId.New().ToString(),
+            Sequence = 0,
+            SourceAnchorUtc = DateTimeOffset.UtcNow,
+            ReplayAnchorTicks = 0,
+            Speed = 1.0,
+            Source = "CaptureLog",
+            UncertaintyTicks = 0,
+        };
+
+        IResult result = await GameApiEndpoints.AppendClockSegmentAsync(
+            clock, request, TestContext.CancellationToken);
+
+        Assert.AreEqual(StatusCodes.Status400BadRequest, ((IStatusCodeHttpResult)result).StatusCode);
+        Assert.IsNotNull(clock.Appended);
+    }
+
     private static T Value<T>(IResult result)
     {
         Assert.IsInstanceOfType<Ok<T>>(result);
@@ -1730,5 +1823,31 @@ public sealed class GameApiEndpointsTests
             LastCancellationToken = cancellationToken;
             return ValueTask.FromResult(outcome);
         }
+    }
+
+    private sealed class FakeReplayClockSource(
+        OperationResult<ReplayClockSegment>? appendResult = null) : IReplayClockSource
+    {
+        public ReplayClockSegment? Appended { get; private set; }
+
+        public ValueTask<OperationResult<ReplayClockSnapshot>> GetSnapshotAsync(
+            BattleSessionId battleSessionId,
+            DateTimeOffset observedAtUtc,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public ValueTask<OperationResult<ReplayClockSegment>> AddSegmentAsync(
+            ReplayClockSegment segment,
+            CancellationToken cancellationToken)
+        {
+            Appended = segment;
+            return ValueTask.FromResult(appendResult ?? OperationResult.Success(segment));
+        }
+
+        public ValueTask<OperationResult<ReplayClockSnapshot>> MarkStaleAsync(
+            BattleSessionId battleSessionId,
+            DateTimeOffset observedAtUtc,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 }

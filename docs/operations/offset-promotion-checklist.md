@@ -106,9 +106,15 @@ Acceptance — `SameDecodedClockProven` becomes `true` only from evidence:
    (the blitz-log `Start replay event` marker is the natural anchor, from the
    replay-start-flake fix), `ReplayAnchor` ≈ 0 + measured watch offset,
    `Speed` = 1.0 (managed offline playback), `Source` = `CaptureLog`,
-   `Uncertainty` = measured marker/gate latency. This requires a caller for
-   the append path — a Host endpoint or the capture pipeline — plus its own
-   tests.
+   `Uncertainty` = measured marker/gate latency. **The append capability is
+   built and tested (2026-08-09):** `POST /api/v1/game/discover/clock-segment`
+   (`AppendClockSegmentRequest` → `IReplayClockSource.AddSegmentAsync`, server
+   assigns id/creation time, enforces monotonicity; 6 endpoint tests cover
+   valid append, bad/missing session id, invalid values, and source failure).
+   Remaining: the live caller — capture the gate wall-clock and battle session
+   id at the verified-gate moment and POST the anchor (launcher or a helper
+   between launcher and poll, using the marker artifact to resolve the
+   session).
 2. **Wiring — implemented 2026-08-09.** The request now carries an optional
    `BattleSessionId` (endpoint parses the GUID; `od-073` sends the session it
    already selected), and `GameSessionCoordinator` computes
@@ -143,7 +149,8 @@ the prior positive result file(s).
 |---|---|---|
 | ~~G3 flag wiring~~ | ~~Offline (runner script)~~ | **done 2026-08-09** (`-PriorResultPaths` in od-073) |
 | ~~G2 coordinator wiring + tests~~ | ~~Offline~~ | **done 2026-08-09** (`BattleSessionId` in request; flag from clock source) |
-| G2 live anchor recording (verified-gate moment → segment) | Live (new approved session) | G2 wiring (done) |
+| G2 anchor endpoint (append capability) | Offline | **done 2026-08-09** (`/discover/clock-segment`, 6 tests) |
+| G2 live anchor caller (gate moment → POST segment) | Live (new approved session) | G2 endpoint (done) |
 | G1 mechanism test (write-observation) | Offline | tools/WriteInterceptor |
 | G1 live poll + G2 live correlation | Live (new approved session) | G1/G2 offline steps |
 | G0 publication review | Offline | G1 + G2 + G3 closed |

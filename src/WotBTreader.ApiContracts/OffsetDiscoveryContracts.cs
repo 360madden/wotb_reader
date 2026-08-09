@@ -351,6 +351,36 @@ public sealed record EntityPositionReadResponse
 }
 
 /// <summary>
+/// One replay-clock synchronization segment to append for a battle session.
+/// The caller supplies the anchor values (wall-clock UTC, replay anchor,
+/// speed, source, uncertainty) and a monotonically increasing sequence; the
+/// server assigns the segment id and creation time and enforces monotonicity.
+/// </summary>
+public sealed record AppendClockSegmentRequest
+{
+    public string? BattleSessionId { get; init; }
+    public long Sequence { get; init; }
+    public DateTimeOffset SourceAnchorUtc { get; init; }
+    public long ReplayAnchorTicks { get; init; }
+    public double Speed { get; init; }
+    public string? Source { get; init; }
+    public long UncertaintyTicks { get; init; }
+}
+
+/// <summary>Privacy-safe confirmation of an appended replay-clock segment.</summary>
+public sealed record AppendClockSegmentResponse
+{
+    public string? BattleSessionId { get; init; }
+    public long Sequence { get; init; }
+    public DateTimeOffset SourceAnchorUtc { get; init; }
+    public long ReplayAnchorTicks { get; init; }
+    public double Speed { get; init; }
+    public string? Source { get; init; }
+    public long UncertaintyTicks { get; init; }
+    public DateTimeOffset CreatedAtUtc { get; init; }
+}
+
+/// <summary>
 /// Bounded instruction-first capture request. The server owns the target
 /// process, module, instruction, registers, and displacements.
 /// </summary>
