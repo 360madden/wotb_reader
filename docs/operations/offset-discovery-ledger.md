@@ -1,16 +1,16 @@
 # Offset-discovery ledger
 
-**Current status (2026-08-09, OD-RECOVERY-074):** OD-073's original main
-`BWApp` connection root and inferred `AppContext+0x118` owner are superseded.
-The corrected exact-build chain begins at module RVA `0x04095C88`, follows
-`GameCore -> AppController -> SessionController -> AccountController ->
-PlaybackController`, and reaches the replay connection. Bounded live evidence
-found the requested entity in the primary replay map for 24/24 requests, then
-stopped safely at an unverified vehicle-helper subtype. Continuous polling and
-offset publication remain unproven. No further live poll is recommended until
-that helper's position-store slot and ring layout are proved offline. The
-current static lead names `WGVehicleFilterHelper::vftable` at RVA `0x0325658C`
-and its constructor/factory ownership edge, but that is not yet layout proof.
+**Current status (2026-08-09, OD-RECOVERY-075):** the exact-build module-rooted
+resolver produced the first positive continuous player-position poll. Static
+evidence proved that the eight-entry ring begins at helper `+0x08`, position is
+record `+0x10`, and velocity is record `+0x28`. OD-073 had double-counted the
+helper-relative position displacement and therefore read velocity. With that
+corrected, one fresh `OfflineReplayVerified` process returned 24/24 resolved
+positions, 24 distinct triples, 5 exact retained-trajectory matches, and 21/24
+within three world units. Ground truth was bound to the exact canonical launch
+artifact. Cross-replay continuous-polling repeatability remains blocked by a
+pre-gate content-distinct replay launch failure (BLK-0026), so offset
+publication remains unproved and no further live retry is recommended yet.
 
 Last updated: 2026-08-08 (OD-RECOVERY-052/053: **FIRST DURABLE GAME-CODE FILL-SITE HIT (FRESH43)** — the dynamic source-arm caught `wotblitz.exe+0x7C39AB` writing the memcpy source buffer per-frame, with the CRT propagation copy `VCRUNTIME140.dll+0xE8AE` (`rep movsb`) landing on the armed member `0x22AB0F90` whose `esi` = `0x28FFCF10` exactly, and the SSE 4-float `movdqu` stage `VCRUNTIME140.dll+0xED49` refilling that source — the write chain is now: game fill → CRT vectorized stage → memcpy into tracked field; **Ghidra decode (hash-verified binary)**: the fill is `FUN_00bc3940`, a per-frame tank transform update gating on a **position triple at `[entity+0x3C]+0x1C/0x20/0x24`** and refilling a **4×4 world matrix at `[entity+0x3C]+0x60`** via 4× `MOVUPS` (candidate stable layout, no promotion); OD-RECOVERY-046/047/048/049/050/051: first durable module-mapped write-site hits (M2, FRESH37/38) — the C# guard-page interceptor captured real writes inside live battles and the write sites resolve to **VCRUNTIME140.dll+0xED69 / +0xE8AE**, proving the armed coordinate is a synchronized multi-copy field written by **CRT struct copies**, not a direct `movss`; the real game write is one level up (the memcpy source buffers, held in `esi`, which are **battle-scoped heap allocations** — cross-battle arming ruled out by live evidence; a same-window dynamic source-arm is the changed hypothesis, now implemented in the interceptor and offline-tested); two earlier runs were honest timing negatives (2.4× starved M1, 0.857<0.9 solo floor) that tuned the invocation to `-PlaybackSpeedEstimate 2.4 -StageMinBattleSeconds 30`; earlier milestone OD-RECOVERY-044: **live pipeline proven end-to-end + kernel-clock false positive identified** — rolling collapsed **861399→…→1 survivor in 16 rounds** (campaign record, was OD-020's 5) with the fixed harvest retry + plateau-stop logic; the single survivor was **`0x7FFE0010` = `KUSER_SHARED_DATA.SystemTime`**, the Windows shared kernel clock (FILETIME-style, +100ns ticks) — NOT the game field: the game died mid-roll from the documented replay-start flake, and the always-ticking kernel clock is the last 'increased' Double in a dying process; kernel writes never fire user-mode HW breakpoints so write-BP hits there are 0 by construction (explains the 0 hits — the mechanism was NOT the failure); driver hardened to drop the `0x7FFE0xxx` page from the address file + WARN; **x96dbg launcher bug found & fixed** — it stayed alive without spawning x32dbg (ShellExecute/state-machine brittleness), replaced by direct `x322dbg.exe` launch (game bitness known x86); x32dbg attach, `scriptload`+`scriptrun` injection, and arming all proven live (pid 45256); prior milestones OD-045/046-STATIC: offline delta-filter simulation ranked the **Double replayTime delta marker deterministic (pass-rate 1.0, survival 1.0/15 rounds)** — pilot order flip: delta pilot FIRST); **replay-start flake root-caused & fixed (2026-08-04)** — the ~50% OD-044 launch deaths were two defects: watch_offline's round-2 double-click + SW_RESTORE churn into the live replay HUD (become hidden → OnBackground, 2s/16s/42s deaths), and mid-battle `OfflineReplayEvidenceLifetime` expiry terminating the managed game (~60–105s exits, incl. the dying-process kernel-clock artifact); the click script now stops on the blitz-log `Start replay event` marker and the coordinator keeps verified authorization fresh via a liveness heartbeat while the process identity stays healthy (see `docs/operations/handoffs/2026-08-04-replay-start-flake-fix.md`)
 
@@ -106,6 +106,19 @@ vtable store at RVA `0x010139F1` and a factory assignment to `filter+0x08`.
 Do not broaden its allowlist or spend another live run until the position-store
 slot and ring layout are proved offline.
 
+**OD-RECOVERY-075 amendment (2026-08-09):** hash-bound analysis proves the
+WGVehicle helper uses the same common store and readback family. The ring base
+is helper `+0x08`; position is record `+0x10/+0x14/+0x18`; velocity is record
+`+0x28/+0x2C/+0x30`; and the current index remains helper `+0x1C8`. The
+verifier passes 82/82 checks, and focused tests distinguish position from
+velocity and reject mismatched filter/helper subtype pairs. A first diagnostic
+live run's 24/24 changing values were velocity, explaining their approximately
+116-unit trajectory error. The corrected run resolved 24/24, moved on every
+sample, matched retained decoded positions exactly 5 times, and placed 21/24
+within three units. This is a strong one-replay/fresh-process continuous-poll
+positive, not cross-replay publication proof. The unchanged content-distinct
+repeat never reached the memory gate and is recorded as BLK-0026.
+
 This ledger is the durable index of WoT Blitz PC offset-discovery work. It
 records experiments, partial results, failures, and pivots so future sessions do
 not repeat an exhausted approach without a changed hypothesis.
@@ -151,9 +164,9 @@ Every address must be classified before publication:
 | Executable identity | Hash recorded in `memory-offsets/11.19.0.10.json`; re-measure before a live session |
 | Runtime-supported fields | None; current table has 0 usable offsets, 1 Stale/quarantined field, and 7 Unknown |
 | `playerYaw` | **Quarantined / Ambiguous** until decimal, hexadecimal, raw Ghidra, and address-kind evidence reconcile |
-| Trusted next anchor | Exact-build replay owner: module RVA `0x04095C88` through `GameCore`, the controller chain, replay `BWServerConnection`, and `BWEntities`; entity lookup is live-supported, but the observed vehicle-helper subtype/ring remains unproved |
+| Trusted next anchor | Exact-build replay owner: module RVA `0x04095C88` through `GameCore`, the controller chain, replay `BWServerConnection`, `BWEntities`, matched movement-filter/helper subtype, eight-entry ring at helper `+0x08`, and position at record `+0x10`; one live process agrees with decoded trajectory |
 | Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007); absolute LE pointer AOB across private/all/image + align 1/8 without a changed encoding hypothesis (ruled out by OD-RECOVERY-008); truncated low-32 LE dword AOB of survivor absolutes without a changed encoding hypothesis (ruled out by OD-RECOVERY-009); automated CE `bptAccess`/`bptWrite` on Float position survivors without a field pivot or interactive debugger (0 RIP hits through OD-RECOVERY-011); CE write-BP alone on the single increased `replayTime` Double without interactive debugger or a second independent launch (0 RIP in OD-RECOVERY-012); treating file-association / `Invoke-Item` alone as the OD gate path (playback can succeed while Host stays `Denied` / `lifecycle_evidence_timeout` — amended 2026-08-02); reaching ≤10 RT survivors then starting interactive debugger after the fact under a 120s research lease loses the window to EvidenceStale (OD-RECOVERY-016) — pre-arm debugger / reserve lease margin; requiring the Watch Offline orange-dialog blob to vanish after `OfflineReplayVerified` (the replay HUD renders orange in that ROI, so `dialogGone` never sets, extra clicks hit in-game UI and kill the game — OD-RECOVERY-017) — trust the verified gate; reading compare `retainedCount` as the rolling survivor count (it is unreadable-chunk carryover only; survivors are `increasedCount` — OD-RECOVERY-017); automated CE Windows-debugger write-BPs (`debugProcess(1)` + `debug_setBreakpoint(addr, bptWrite, 1)`) on rolling Double survivors — zero RIP hits across OD-009/010/011 and OD-020/021/022 probes, so the operator-owned interactive Find-what-writes step is required, not a scripting gap to keep probing; rolling from a snapshot taken during the game load transition — the candidate set can be 66M+ (22–87× steady state), convergence cannot fit the 120s lease, and the resulting session discard surfaces as a confusing compare `400` (OD-RECOVERY-025 attempt 1) — wait for a clean steady-state snapshot before rolling; capturing the rendezvous capability once at roll start — the token rotates ~5 min and a 66M-baseline roll outlives it, so a mid-roll compare dies with a confusing 401 (OD-RECOVERY-030 attempt 1; fixed by refresh + retry in the rolling driver); running the separate full-walk sanity probe when round-1 `previousCount` reports the identical snapshot count — the probe's 66M-candidate walk wasted lease inside the 120s budget (OD-RECOVERY-030; gate folded into round 1); requesting `maxCandidates=500` (or any large harvest) on every rolling round when only the final target round's addresses are written — the big early compares (66M→1M) pay candidate serialization for nothing and cost lease; request 1 candidate per round and harvest the full set only on the target round (OD-RECOVERY-031 attempt 1 → fixed in driver, validated attempts 3–5: 10–14 rounds fit the lease vs 6–7 before); overriding the CE autorun's default survivor address-file path (`%TEMP%\od-survivors.txt`) with a custom `-AddressFile` — the autorun polls the default path only, so staged survivors silently never reach CE (OD-RECOVERY-031 attempt 4; use the default path so the staging handoff works); keeping the CE autorun poll window at 90s when a 66M-baseline roll outlives it — the file appears right at the 120s lease edge, so the poll must span the whole lease + margin (OD-RECOVERY-031 attempts 3/4; extended to 300s)  trusting a rolled-down survivor set landing on `0x7FFE0xxx` as a game-field hit — `KUSER_SHARED_DATA.SystemTime` (0x7FFE0010) is a FILETIME-style value that ticks every 100ns, so it survives every 'increased' compare after the game field stops ticking (replay tail / dying game); kernel writes to that page never fire user-mode hardware breakpoints, so a write-BP there returns 0 hits by construction (OD-RECOVERY-044 — drop the page from the address file + WARN, now in the driver); treating the x96dbg launcher as unusable for pre-arm — **re-verified 2026-08-04: in a healthy gated session `release\x96dbg.exe -p <pid>` headlessly dispatched cleanly to `x32\x32dbg.exe -p <pid>` (x86 build attached to wotblitz pid 50724, launcher exited, window title confirmed `wotblitz.exe - PID: 50724`) — the OD-RECOVERY-044 linger was environmental (game already dying that session), not a launcher defect; direct `x32\x32dbg.exe` launch remains the pipeline choice for determinism (removes the ShellExecute/elevation surface entirely), not because the launcher is broken (OD-044 launcher re-verification) |
-| Next planned session | No live session yet. Offline, continue from the named `WGVehicleFilterHelper` constructor and `filter+0x08` factory assignment to prove its position-store slot and ring index/stride/layout; add strict hash-bound checks and focused synthetic coverage. Only that provenance-changing implementation can justify one further bounded `OfflineReplayVerified` poll. |
+| Next planned session | None until BLK-0026 is diagnosed without memory access. Then permit one unchanged bounded `OfflineReplayVerified` poll on the content-distinct replay; do not change the resolver, broaden reads, or promote the offset table. |
 
 The current yaw conflict is recorded explicitly:
 
@@ -260,6 +273,7 @@ occurred.
 | `OD-RECOVERY-072` | 2026-08-08 | Prove motion freshness and cross-replay repeatability for the fixed player-position event | Other content-distinct replay + fresh managed process + unchanged 5-second/64-hit target + bounded decoded trajectory comparison | `Hit` / `Complete` (event-based player read) | 64/64 reads valid; 12 decoded IDs matched; 12 captured entities changed; viewpoint 6/6 distinct with 2 exact retained matches; fingerprint/cleanup passed | Reliable moving player-position event proven across both replays; no same clock/hardware atomicity/stable polling root/offset promotion; pivot offline to viewpoint resolver + movement-filter ring |
 | `OD-RECOVERY-073` | 2026-08-08 | Freeze and implement a stable module-rooted entity-position polling family | 47-check hash-bound Ghidra verifier + bounded pure Core resolver + guarded exact-build coordinator/API + focused synthetic tests + aggregate-only runner | `Complete` (static/synthetic) / `CandidateFound` (live polling) | Exact module root/ownership/maps/filter/ring layout proven; caller supplies only decoded entity ID; revocation/build mismatch fail closed; no addresses/raw bytes in public result | No live polling result, cross-process stable-root repeatability, hardware atomicity, same decoded clock, or offset promotion yet |
 | `OD-RECOVERY-074` | 2026-08-09 | Correct the replay-owned root and narrow the live polling blocker | 67-check hash-bound verifier + four bounded aggregate-only live checks + corrected pure resolver | `Partial` (continuous polling) / `CandidateFound` (replay entity root) | Corrected root found the requested entity in the primary replay map for 24/24 requests; filter family narrowed exactly; both earlier roots refuted safely | Observed vehicle-helper subtype/ring remains unproved; no position read, movement, decoded agreement, cross-process repeatability, or offset promotion |
+| `OD-RECOVERY-075` | 2026-08-09 | Correct the position-ring layout and prove bounded continuous polling | 82-check hash-bound verifier + strict matched-subtype Core resolver + artifact-bound aggregate runner + one fresh verified replay | `Hit` / `Partial` (continuous polling) | Position/velocity fields separated; corrected poll resolved 24/24 with 24 distinct triples, 5 exact retained matches, and 21/24 within three units; exact launch-artifact binding proved | Cross-replay polling repeat blocked before the memory gate by BLK-0026; no hardware atomicity, same-clock proof, numeric-offset publication, or promotion |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -5128,3 +5142,87 @@ the strict verifier and focused synthetic fixture before requesting one further
 bounded live check.
 Do not rerun the unchanged poll, broaden arbitrary vtables, or modify the
 offset table.
+
+## `OD-RECOVERY-075` result - 2026-08-09 (position-ring correction and live proof)
+
+```yaml
+sessionId: OD-RECOVERY-075
+status: Hit / Partial (continuous polling)
+mode: exact-build static correction plus artifact-bound bounded live polling
+targetBuild:
+  version: 11.19.0.10
+  executableSha256: 1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d
+staticEvidence:
+  replayResolverChecks: 82/82
+  type10MovementChecks: 40/40
+  matchedFilterHelperSubtypes: 3
+  ringBaseFromHelper: 0x08
+  ringStride: 0x38
+  currentIndexFromHelper: 0x1C8
+  positionFromRecord: 0x10/0x14/0x18
+  velocityFromRecord: 0x28/0x2C/0x30
+diagnosticVelocityRun:
+  resolved: 24/24
+  distinct: 21
+  minimumRetainedTrajectoryDistance: 115.686
+  classification: implementation diagnostic; not a position negative
+correctedPositionRun:
+  authorization: OfflineReplayVerified
+  groundTruthBoundToExactLaunchArtifact: true
+  requested: 24
+  resolved: 24
+  distinct: 24
+  exactRetainedTrajectoryMatches: 5
+  withinOneWorldUnit: 8
+  withinThreeWorldUnits: 21
+  minimumRetainedTrajectoryDistance: 0
+  maximumRetainedTrajectoryDistance: 3.57889998332587
+crossReplayRepeat:
+  status: Blocked before evidence gate (BLK-0026)
+  memoryRequestsIssued: 0
+  evidenceResultCreated: false
+proof:
+  moduleRootedResolver: true
+  matchedSubtypeIdentity: true
+  positionRingLayoutStatic: true
+  positionInsteadOfVelocitySynthetic: true
+  oneReplayFreshProcessLivePosition: true
+  movementObserved: true
+  retainedTrajectoryAgreement: true
+  exactLaunchArtifactBinding: true
+  crossReplayContinuousPolling: false
+  hardwareAtomicRead: false
+  sameDecodedClock: false
+  numericOffsetPublication: false
+  offsetPromoted: false
+privacy:
+  publicProcessAddressesOrRawBytes: false
+  aggregatePersistsIdsOrCoordinates: false
+  trackedPrivateArtifactValues: false
+shutdown:
+  gameHostHelperDebuggerProcessesRemaining: 0
+```
+
+The shared helper store at RVA `0x0230DF40` writes position at
+helper-relative `+0x18`, but the ring itself begins at helper `+0x08`.
+Consequently the position is record-relative `+0x10`. OD-073 incorrectly used
+`+0x18` for both coordinate systems and landed at record `+0x28`, which static
+evidence identifies as velocity. The approximately 116-unit live mismatch was
+therefore diagnostic confirmation of the addressing defect rather than a
+refutation of the stable family.
+
+After correcting the layout, the unchanged server-owned chain returned a
+moving sequence that agreed closely with the retained decoded viewpoint
+trajectory. The runner additionally bound that trajectory to the exact
+artifact UUID emitted by the canonical managed launcher, eliminating the
+possibility of silently comparing against the newest unrelated decode.
+
+### Decision and next
+
+This is the first strong positive for continuous module-rooted player-position
+polling, but it covers only one replay/fresh process. The content-distinct
+repeat failed before `OfflineReplayVerified`; no memory read occurred and the
+failure is recorded separately as BLK-0026. Diagnose that launch/evidence
+failure without memory access. Only then run one unchanged bounded poll on the
+other replay. Do not spend discovery budget shaving timing, broaden the
+resolver, or modify `memory-offsets/11.19.0.10.json`.

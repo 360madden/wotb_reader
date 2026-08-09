@@ -208,7 +208,7 @@ Thus the community family ultimately led to a cross-replay-repeatable
 event-based moving player-position read, but still not to reusable historical
 offsets or a stable polling root.
 
-## Stable-family convergence (OD-RECOVERY-073/074)
+## Stable-family convergence (OD-RECOVERY-073/074/075)
 
 The relationship-first treatment produced a second useful result. Static data
 flow from the proven entity resolver reaches a current-build module root and a
@@ -224,10 +224,13 @@ address:
 - the embedded `BWEntities` object starts at connection `+0x04`;
 - the requested replay entity ID is resolved through the cache and three
   bounded map trees, with `[entity+0x1C]` revalidated;
-- the AvatarFilter/AvatarFilterHelper vtables identify the supported movement
-  filter before the newest 8-entry ring record is double-collected.
+- three exact movement-filter/helper vtable pairs identify the supported
+  subtype before the newest 8-entry ring record is double-collected;
+- the ring begins at helper `+0x08`; position is record
+  `+0x10/+0x14/+0x18`, velocity is record `+0x28/+0x2C/+0x30`, and the
+  current index is helper `+0x1C8`.
 
-`TraceEntityRegistryPosition.java` pins 67 relationships to executable SHA-256
+`TraceEntityRegistryPosition.java` pins 82 relationships to executable SHA-256
 `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d` and
 reports `replay-resolver-layout-proven`. The implementation exposes only a decoded
 replay entity ID to the caller; PID, module base, root, tree layout, vtables,
@@ -235,20 +238,20 @@ and member offsets remain server-owned exact-build policy.
 
 Bounded live checks proved that the original main `BWApp` connection does not
 own the replay entity map and refuted an inferred `AppContext+0x118` owner.
-The corrected root found the requested entity in the primary replay map for
-24/24 requests, then stopped safely at an unverified vehicle-helper subtype.
-This proves that the relationship family led to the replay-owned entity map in
-one process, not that the helper ring is readable or that continuous polling
-is reliable.
+Static follow-up proved the observed `WGVehicleFilterHelper` uses the common
+ring store/readback. It also exposed a coordinate-system bug: helper-relative
+position `+0x18` is record-relative `+0x10`, but the first resolver combined
+both as `+0x18` and therefore read velocity at record `+0x28`. After correction,
+one fresh verified replay returned 24/24 moving positions, 5 exact retained
+trajectory matches, and 21/24 within three world units.
 
 This confirms the right way to use stale community material: preserve object
 names, ownership relations, and likely member roles as search hypotheses, then
 re-derive every current-build address and displacement from hash-bound code.
 The historical root and `+0x68/+0x6C/+0x70` position triple remain refuted.
-The corrected resolver is a fresh current-build family. Another live poll is
-not justified merely by broadening its helper allowlist. Current static
-reference tracing names the new candidate as
-`WGVehicleFilterHelper::vftable` at RVA `0x0325658C`, locates the constructor
-vtable store at RVA `0x010139F1`, and finds the factory assignment to
-`filter+0x08`. The position-store slot and ring compatibility remain to be
-proved offline and covered by focused synthetic tests.
+The corrected resolver is a fresh current-build family, not a carried-forward
+community address. Continuous polling now has a strong one-replay/fresh-process
+positive. Its unchanged content-distinct repeat failed before the offline
+evidence gate and performed no memory read, so cross-replay polling remains
+unproved under BLK-0026. Diagnose that launch failure before one unchanged
+repeat; do not broaden the resolver or promote an offset.

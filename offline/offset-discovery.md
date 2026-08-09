@@ -285,10 +285,10 @@ offline/static to a stable viewpoint-entity resolver and the verified
 movement-filter ring; do not run old member triples, broad scans, or the
 transform target.
 
-## Module-rooted polling pivot (OD-RECOVERY-073/074)
+## Module-rooted polling pivot (OD-RECOVERY-073/074/075)
 
 The stable resolver is implemented and statically pinned for exact build
-11.19.0.10. `TraceEntityRegistryPosition.java` verifies 67/67 relationships
+11.19.0.10. `TraceEntityRegistryPosition.java` verifies 82/82 relationships
 against executable SHA-256
 `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d`:
 
@@ -300,9 +300,11 @@ against executable SHA-256
 6. `[PlaybackController+0x120] -> replay BWServerConnection`;
 7. connection `+0x04` is the embedded replay `BWEntities` object;
 8. cache `+0x48` and three bounded map trees resolve the replay entity ID;
-9. entity `+0x38` reaches an exact allowlisted movement-filter family;
-10. a verified helper `+0x1C8` selects one of eight `0x38`-byte records, whose XYZ starts
-   at record `+0x18`.
+9. entity `+0x38` reaches one of three exact movement-filter/helper subtype
+   pairs;
+10. helper `+0x1C8` selects one of eight `0x38`-byte records beginning at
+    helper `+0x08`; position XYZ is record `+0x10/+0x14/+0x18`, while the
+    distinct velocity XYZ is record `+0x28/+0x2C/+0x30`.
 
 The pure Core resolver caps traversal at 1,024 nodes and three attempts. It
 double-collects the full current record, checks the ring index before/between/
@@ -317,19 +319,24 @@ and raw bytes. `scripts/od-073-entity-position-poll.ps1` compares bounded live
 polls with the retained decoded viewpoint trajectory and persists aggregates
 only.
 
-Live OD-074 narrowing proved the corrected module root, replay ownership, and
-primary-map entity lookup for 24/24 reads in one managed process. The first
-corrected run stopped at the movement-filter vtable; after static proof of the
-three filter subtypes sharing the exact apply slot, the second stopped at an
-unverified vehicle-helper vtable. No position record was read. Return offline
-to prove the exact helper constructor/vtable and ring semantics before another
-bounded live check. The current static lead names RVA `0x0325658C` as
-`WGVehicleFilterHelper::vftable`, finds its constructor store at RVA
-`0x010139F1`, and confirms a factory assignment to `filter+0x08`; its
-position-store slot and ring compatibility remain unknown. Double-read
-consistency is not hardware atomicity, and the comparison is not
-same-decoded-clock evidence. Do not update
-`memory-offsets/11.19.0.10.json` from this milestone.
+OD-075 proved the named `WGVehicleFilterHelper` uses the common store/readback
+layout. It also corrected OD-073's coordinate-system error: helper-relative
+position `+0x18` is record-relative `+0x10` because the ring begins at helper
+`+0x08`. The earlier implementation read velocity at record `+0x28`; its first
+24/24 live samples and approximately 116-unit trajectory error are diagnostic,
+not a negative position result.
+
+The corrected artifact-bound live poll reached `OfflineReplayVerified` in one
+fresh process and returned 24/24 positions, 24 distinct triples, 5 exact
+retained-trajectory matches, 8/24 within one unit, and 21/24 within three
+units. Ground truth came only from the exact canonical launch artifact's
+newest decode. The unchanged content-distinct repeat failed before the
+evidence gate, so it made no memory request and remains BLK-0026. Continuous
+polling is therefore strongly supported in one replay/fresh process but not
+yet cross-replay-repeatable or publishable. Double-read consistency is not
+hardware atomicity or same-decoded-clock evidence. Do not update
+`memory-offsets/11.19.0.10.json` from this milestone. Diagnose the separate
+launch failure, then permit one unchanged bounded poll on the other replay.
 
 ## Evidence publication
 

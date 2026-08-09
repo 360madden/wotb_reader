@@ -10,7 +10,7 @@ public delegate bool EntityPositionMemoryReader(uint address, Span<byte> destina
 
 /// <summary>
 /// Hash-bound x86 layout for resolving a replay-owned entity by ID and reading
-/// the newest position record retained by its AvatarFilterHelper.
+/// the newest position record retained by its verified movement-filter helper.
 /// </summary>
 public sealed record Type10EntityPositionLayout(
     string GameVersion,
@@ -62,11 +62,11 @@ public sealed record Type10EntityPositionLayout(
         EntityMovementFilterOffset: 0x38,
         MovementFilterVtableRvas: [0x0325654c, 0x032565ac, 0x03442520],
         AvatarFilterHelperOffset: 0x08,
-        AvatarHelperVtableRvas: [0x0325656c, 0x034424a4],
+        AvatarHelperVtableRvas: [0x0325656c, 0x0325658c, 0x034424a4],
         AvatarHelperCurrentIndexOffset: 0x1c8,
-        AvatarHelperRingOffset: 0x18,
+        AvatarHelperRingOffset: 0x08,
         AvatarHelperRingStride: 0x38,
-        PositionRecordOffset: 0x18,
+        PositionRecordOffset: 0x10,
         RingEntryCount: 8,
         MaxTreeNodes: 1024,
         MaxAttempts: 3);
@@ -239,8 +239,8 @@ public static class Type10EntityPositionResolver
         uint expectedSessionVtable,
         uint expectedAccountVtable,
         uint expectedPlaybackVtable,
-        IReadOnlyList<uint> expectedFilterVtables,
-        IReadOnlyList<uint> expectedHelperVtables,
+        uint[] expectedFilterVtables,
+        uint[] expectedHelperVtables,
         int entityId,
         Type10EntityPositionLayout layout,
         EntityPositionMemoryReader reader)
@@ -404,7 +404,17 @@ public static class Type10EntityPositionResolver
                 lookup.Source);
         }
 
-        if (!expectedFilterVtables.Contains(filterVtable))
+        int filterSubtypeIndex = -1;
+        for (int index = 0; index < expectedFilterVtables.Length; index++)
+        {
+            if (expectedFilterVtables[index] == filterVtable)
+            {
+                filterSubtypeIndex = index;
+                break;
+            }
+        }
+
+        if (filterSubtypeIndex < 0)
         {
             return AttemptResult.Stop(
                 Type10EntityPositionStatus.UnsupportedMovementFilter,
@@ -427,7 +437,7 @@ public static class Type10EntityPositionResolver
                 lookup.Source);
         }
 
-        if (!expectedHelperVtables.Contains(helperVtable))
+        if (helperVtable != expectedHelperVtables[filterSubtypeIndex])
         {
             return AttemptResult.Stop(
                 Type10EntityPositionStatus.UnsupportedMovementFilter,
@@ -854,11 +864,15 @@ public static class Type10EntityPositionResolver
             layout.MovementFilterVtableRvas.Count == 3 &&
             layout.MovementFilterVtableRvas.Distinct().Count() == 3 &&
             layout.MovementFilterVtableRvas.All(rva => rva != 0) &&
-            layout.AvatarHelperVtableRvas.Count == 2 &&
-            layout.AvatarHelperVtableRvas.Distinct().Count() == 2 &&
+            layout.AvatarHelperVtableRvas.Count == 3 &&
+            layout.AvatarHelperVtableRvas.Distinct().Count() == 3 &&
             layout.AvatarHelperVtableRvas.All(rva => rva != 0) &&
             layout.RingEntryCount == 8 &&
             layout.AvatarHelperRingStride == RingRecordSize &&
+            layout.AvatarHelperRingOffset != 0 &&
+            (ulong)layout.AvatarHelperRingOffset +
+                ((ulong)layout.RingEntryCount * layout.AvatarHelperRingStride) ==
+                layout.AvatarHelperCurrentIndexOffset &&
             layout.PositionRecordOffset <= (uint)(RingRecordSize - 12) &&
             layout.MaxTreeNodes is > 0 and <= 4096 &&
             layout.MaxAttempts is > 0 and <= 5;

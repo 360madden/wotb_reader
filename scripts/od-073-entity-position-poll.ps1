@@ -5,8 +5,10 @@
   positively verified offline replay.
 
 .DESCRIPTION
-  The script auto-selects the newest decoded battle and its single viewpoint
-  entity, then sends only that replay entity ID to the server-owned resolver.
+  The script binds ground truth to the exact source artifact recorded by the
+  canonical managed launcher, selects that artifact's newest decoded battle
+  and single viewpoint entity, then sends only that replay entity ID to the
+  server-owned resolver.
   It records aggregate match and movement evidence only: no entity ID,
   coordinates, process addresses, paths, raw bytes, or capability values are
   written to the result or console.
@@ -159,6 +161,33 @@ function Invoke-OdApi {
     return Invoke-RestMethod @arguments
 }
 
+function Get-LaunchArtifactId {
+    try {
+        $marker = Join-Path (Join-Path $env:LOCALAPPDATA 'WotBTreader\od-launch') `
+            'artifact.id'
+        if (-not (Test-Path -LiteralPath $marker) -or
+            -not (Test-OwnerOnlyRendezvousFile -Path $marker)) {
+            return $null
+        }
+
+        $file = Get-Item -LiteralPath $marker
+        if ($file.LastWriteTimeUtc -lt [DateTime]::UtcNow.AddMinutes(-20)) {
+            return $null
+        }
+
+        $value = (Get-Content -LiteralPath $marker -Raw).Trim()
+        $parsed = [Guid]::Empty
+        if (-not [Guid]::TryParse($value, [ref]$parsed) -or $parsed -eq [Guid]::Empty) {
+            return $null
+        }
+
+        return $parsed.ToString('D')
+    }
+    catch {
+        return $null
+    }
+}
+
 function Get-Float32Hex([single]$Value) {
     return ([BitConverter]::ToString([BitConverter]::GetBytes($Value)) -replace '-', '')
 }
@@ -219,15 +248,36 @@ if (-not $verified) {
 Write-Host 'od073: gate=OfflineReplayVerified'
 
 try {
+    $launchArtifactId = Get-LaunchArtifactId
+    if ([string]::IsNullOrWhiteSpace($launchArtifactId)) {
+        Write-Host 'od073: FAILED_launch_artifact_binding'
+        exit 2
+    }
+
     $battleSessionId = $SessionId
+    $groundTruthSelection = 'explicit-session'
     if ([string]::IsNullOrWhiteSpace($battleSessionId)) {
-        $page = Invoke-OdApi -Method 'Get' -RelativePath '/api/v1/sessions?limit=50'
-        if ($null -eq $page -or $null -eq $page.items -or $page.items.Count -eq 0 -or
-            $null -eq $page.items[0].session) {
+        $page = Invoke-OdApi -Method 'Get' -RelativePath '/api/v1/sessions?limit=200'
+        $artifactSessions = @($page.items | Where-Object {
+            $null -ne $_.session -and
+            [string]$_.decodeRun.sourceArtifactId -eq $launchArtifactId
+        })
+        if ($artifactSessions.Count -eq 0) {
             Write-Host 'od073: FAILED_no_decoded_session'
             exit 2
         }
-        $battleSessionId = [string]$page.items[0].session.battleSessionId
+        $battleSessionId = [string]$artifactSessions[0].session.battleSessionId
+        $groundTruthSelection = 'launch-artifact-newest-decode'
+    }
+    else {
+        $detail = Invoke-OdApi -Method 'Get' -RelativePath (
+            '/api/v1/sessions/' + $battleSessionId)
+        if ($null -eq $detail.session -or
+            [string]$detail.session.battleSessionId -ne $battleSessionId -or
+            [string]$detail.decodeRun.sourceArtifactId -ne $launchArtifactId) {
+            Write-Host 'od073: FAILED_session_artifact_mismatch'
+            exit 2
+        }
     }
 
     $trajectory = Invoke-OdApi -Method 'Get' -RelativePath (
@@ -383,8 +433,8 @@ else {
 }
 
 $aggregate = [ordered]@{
-    schema = 'wotbtreader.od073.entity-position-poll.v2'
-    campaign = 'od-073-replay-root'
+    schema = 'wotbtreader.od073.entity-position-poll.v3'
+    campaign = 'od-075-position-ring'
     completedAtUtc = [DateTime]::UtcNow.ToString('o')
     verdict = $verdict
     expectedGameVersion = '11.19.0.10'
@@ -405,6 +455,8 @@ $aggregate = [ordered]@{
     minimumRetainedTrajectoryDistance = $minimumDistanceValue
     maximumRetainedTrajectoryDistance = $maximumDistanceValue
     trajectoryConsistent = $trajectoryConsistent
+    groundTruthBoundToLaunchArtifact = $true
+    groundTruthSelection = $groundTruthSelection
     allModuleRooted = $allModuleRooted
     allEntityIdentityRevalidated = $allIdentityRevalidated
     allConsistentDoubleRead = $allConsistentDoubleRead

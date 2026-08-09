@@ -394,8 +394,9 @@ rather than infer semantics from a render transform.
    `F30F7E00`, with the resolved entity in `ESI` and the packet-derived XYZ
    pointer in `EAX`.
 4. `BW::AvatarFilterHelper` independently stores the same vector in an
-   8-entry, `0x38`-stride movement ring at record `+0x18`. That buffer is
-   transient and is not a stable offset.
+   8-entry, `0x38`-stride movement ring. The ring starts at helper `+0x08`, so
+   position at helper-relative `+0x18` is record-relative `+0x10`. That buffer
+   is transient and is not a stable offset.
 
 `OD-RECOVERY-070` completed the implementation/synthetic phase. The fixed
 contract reads the int32 replay entity ID at `[ESI+0x1C]` and contiguous XYZ
@@ -431,8 +432,8 @@ the movement-filter path. The strongest polling-family clue is the entity's
 `+0x1C8`, position at record `+0x18`). Freeze a bounded stable-read plan before
 requesting another live session.
 
-`OD-RECOVERY-073/074` corrected and narrowed the frozen polling plan.
-Hash-bound Ghidra evidence passes 67/67 checks for the GameCore module root,
+`OD-RECOVERY-073/074/075` corrected and proved the frozen polling plan.
+Hash-bound Ghidra evidence passes 82/82 checks for the GameCore module root,
 `GameCore -> AppController -> SessionController -> AccountController ->
 PlaybackController -> replay connection -> BWEntities` ownership chain,
 cache/three-tree entity lookup, the exact filter family, and the known helper
@@ -442,18 +443,21 @@ revalidates the root/entity/filter/helper chain. The guarded adapter keeps one
 read-only identity-bound process lease and the live offline authorization token
 for every native read.
 
-Live narrowing reached the replay-owned primary entity map for 24/24 reads on
-both corrected-root runs. It first stopped at the filter vtable and, after the
-exact filter-family change, at an unverified vehicle-helper vtable.
-The request surface accepts only a decoded replay entity ID; PID, module base,
-root, pointers, vtables, and displacements are server-owned exact-build policy.
-Offline reference tracing now names `WGVehicleFilterHelper::vftable` at RVA
-`0x0325658C`, its constructor store at RVA `0x010139F1`, and the factory's
-assignment to `filter+0x08`. Next: prove whether its position-store slot and
-ring layout match the known helper family. Do not run again by merely
-broadening the allowlist. Do not
-update the offset table before a successful unchanged cross-replay repeat and
-the remaining publication review.
+Static follow-up proved `WGVehicleFilterHelper::vftable` RVA `0x0325658C`
+uses the common store/readback layout. The ring begins at helper `+0x08`,
+position is record `+0x10`, and velocity is record `+0x28`. OD-073 had used
+helper-relative `+0x18` as a second record-relative displacement and read
+velocity; the approximately 116-unit live mismatch is now an implementation
+diagnostic. With the corrected layout, one artifact-bound fresh verified
+process resolved 24/24 moving positions, matched the retained trajectory
+exactly 5 times, and placed 21/24 within three units.
+
+The request surface still accepts only a decoded replay entity ID; PID, module
+base, root, pointers, vtables, and displacements are server-owned exact-build
+policy. The unchanged content-distinct repeat failed before the memory gate and
+is BLK-0026. Diagnose that launch failure without memory access, then allow one
+unchanged repeat. Do not broaden the resolver or update the offset table before
+cross-replay proof and the remaining publication review.
 
 No live budget exists for static exploration. Offset publication still
 requires a stable module-relative resolver/root and the M3 evidence gates.

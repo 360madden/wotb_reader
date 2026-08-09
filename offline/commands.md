@@ -61,10 +61,11 @@ after the bounded result.
 ## Module-rooted entity-position polling (offline replay only)
 
 The exact 11.19.0.10 layout can resolve a decoded replay entity ID through the
-server-owned replay root. The current checkpoint intentionally stops at an
-unverified vehicle-helper subtype before reading the ring. Do not run this
-command again until the helper constructor/vtable/store slot and ring layout
-have exact static checks:
+server-owned replay root and the exact matched movement-filter/helper subtype.
+The position ring is statically and synthetically proved, and one fresh
+verified replay produced a positive continuous-poll result. The command binds
+decoded ground truth to the exact canonical launch artifact and fails closed
+if that owner-only marker is absent, stale, malformed, or mismatched:
 
 ```powershell
 powershell -File scripts/od-073-entity-position-poll.ps1
@@ -75,11 +76,13 @@ coordinator requires the exact executable version and SHA-256, owns the module
 base and layout, and keeps authorization cancellation live for every native
 read. The script writes an ignored aggregate-only result: it persists no
 entity ID, coordinates, process addresses, raw bytes, capability, replay path,
-or player/account data. OD-074 proved the corrected root and primary replay
-entity lookup in one live process, but it did not read a position. A future
-positive result must still be repeated on a content-distinct replay. The
-double-collected record is consistency evidence, not hardware atomicity or
-same-decoded-clock proof.
+or player/account data. OD-075 resolved 24/24 positions with 24 distinct
+triples, 5 exact retained-trajectory matches, and 21/24 within three units in
+one fresh process. Do not run another discovery retry until BLK-0026's separate
+content-distinct launch failure is diagnosed. After that, one unchanged repeat
+on the other replay is admissible. The double-collected record is consistency
+evidence, not hardware atomicity or same-decoded-clock proof, and no offset is
+promoted.
 
 ## Ghidra offset-discovery evidence
 

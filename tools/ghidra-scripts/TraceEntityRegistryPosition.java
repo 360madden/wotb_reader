@@ -1,7 +1,7 @@
 // TraceEntityRegistryPosition.java - verify the current-build module-rooted
 // path from the published GameCore pointer through AppController,
 // SessionController, and the active PlaybackController to its replay-owned
-// BWEntities and the AvatarFilter position ring.
+// BWEntities and the verified movement-filter-helper position ring.
 //
 // This script is hash-bound static evidence only. It does not authorize a
 // live process read and it does not promote the layout into memory-offsets.
@@ -51,8 +51,15 @@ public class TraceEntityRegistryPosition extends GhidraScript {
     private static final long AVATAR_FILTER_VTABLE_RVA = 0x03442520L;
     private static final long AVATAR_FILTER_APPLY_RVA = 0x0230e8f0L;
     private static final long KINETICS_HELPER_VTABLE_RVA = 0x0325656cL;
+    private static final long VEHICLE_HELPER_VTABLE_RVA = 0x0325658cL;
     private static final long AVATAR_HELPER_VTABLE_RVA = 0x034424a4L;
+    private static final long VEHICLE_FILTER_CONSTRUCTOR_RVA = 0x01013930L;
+    private static final long VEHICLE_HELPER_CONSTRUCTOR_RVA = 0x010139b0L;
+    private static final long BASE_HELPER_CONSTRUCTOR_RVA = 0x0230d000L;
+    private static final long VEHICLE_HELPER_FACTORY_RVA = 0x01069be0L;
+    private static final long VEHICLE_HELPER_STORE_RVA = 0x01069c80L;
     private static final long AVATAR_HELPER_STORE_RVA = 0x0230df40L;
+    private static final long AVATAR_HELPER_READBACK_RVA = 0x0230dba0L;
 
     private final List<String> checks = new ArrayList<String>();
     private int passed;
@@ -350,10 +357,77 @@ public class TraceEntityRegistryPosition extends GhidraScript {
                 2,
                 AVATAR_HELPER_STORE_RVA);
         expectInstruction(
+                "vehicle_filter_constructor_vtable",
+                VEHICLE_FILTER_CONSTRUCTOR_RVA + 0x4dL,
+                "MOV dword ptr [ESI],0x36565ac",
+                "c706ac656503");
+        expectVtableSlot(
+                "vehicle_filter_helper_factory_slot",
+                VEHICLE_FILTER_VTABLE_RVA,
+                6,
+                VEHICLE_HELPER_FACTORY_RVA);
+        expectDirectCall(
+                "vehicle_filter_factory_constructs_helper",
+                VEHICLE_HELPER_FACTORY_RVA + 0x54L,
+                VEHICLE_HELPER_CONSTRUCTOR_RVA);
+        expectInstruction(
+                "vehicle_filter_factory_assigns_helper",
+                VEHICLE_HELPER_FACTORY_RVA + 0x60L,
+                "MOV dword ptr [ESI + 0x8],EAX",
+                "894608");
+        expectDirectCall(
+                "vehicle_helper_constructs_base_helper",
+                VEHICLE_HELPER_CONSTRUCTOR_RVA + 0x33L,
+                BASE_HELPER_CONSTRUCTOR_RVA);
+        expectInstruction(
+                "vehicle_helper_vtable",
+                VEHICLE_HELPER_CONSTRUCTOR_RVA + 0x41L,
+                "MOV dword ptr [EBX],0x365658c",
+                "c7038c656503");
+        expectInstruction(
+                "base_helper_ring_entry_count",
+                BASE_HELPER_CONSTRUCTOR_RVA + 0x3aL,
+                "MOV EDI,0x8",
+                "bf08000000");
+        expectInstruction(
+                "base_helper_position_member_cursor",
+                BASE_HELPER_CONSTRUCTOR_RVA + 0x45L,
+                "LEA ESI,[EBX + 0x24]",
+                "8d7324");
+        expectInstruction(
+                "base_helper_first_position_member",
+                BASE_HELPER_CONSTRUCTOR_RVA + 0x48L,
+                "LEA ECX,[ESI + -0xc]",
+                "8d4ef4");
+        expectInstruction(
+                "base_helper_position_member_stride",
+                BASE_HELPER_CONSTRUCTOR_RVA + 0x57L,
+                "ADD ESI,0x38",
+                "83c638");
+        expectVtableSlot(
+                "vehicle_helper_store_slot",
+                VEHICLE_HELPER_VTABLE_RVA,
+                2,
+                VEHICLE_HELPER_STORE_RVA);
+        expectDirectCall(
+                "vehicle_helper_calls_common_store",
+                VEHICLE_HELPER_STORE_RVA + 0x14dL,
+                AVATAR_HELPER_STORE_RVA);
+        expectVtableSlot(
+                "vehicle_helper_readback_slot",
+                VEHICLE_HELPER_VTABLE_RVA,
+                4,
+                AVATAR_HELPER_READBACK_RVA);
+        expectInstruction(
                 "avatar_helper_current_index",
                 0x0230df7cL,
                 "MOV EDX,dword ptr [ESI + 0x1c8]",
                 "8b96c8010000");
+        expectInstruction(
+                "avatar_helper_current_record_time",
+                0x0230df95L,
+                "MOVSD XMM0,qword ptr [ESI + EAX*0x8 + 0x8]",
+                "f20f1044c608");
         expectInstruction(
                 "avatar_helper_index_store",
                 0x0230dfaaL,
@@ -363,6 +437,10 @@ public class TraceEntityRegistryPosition extends GhidraScript {
                 "avatar_helper_position_copy",
                 0x0230dfd3L,
                 "f30f7e00660fd6018b4008894108");
+        expectInstructionSequence(
+                "avatar_helper_velocity_copy",
+                0x0230dff8L,
+                "f30f7e00660fd644d6308b40088944d638");
         expectInstruction(
                 "avatar_helper_position_readback",
                 0x0230dbe1L,
@@ -410,12 +488,21 @@ public class TraceEntityRegistryPosition extends GhidraScript {
         writer.println("entity_movement_filter_displacement=0x38");
         writer.println("movement_filter_vtable_rvas=0x325654c,0x32565ac,0x3442520");
         writer.println("avatar_filter_helper_displacement=0x8");
-        writer.println("avatar_helper_vtable_rvas=0x325656c,0x34424a4");
+        writer.println("avatar_helper_vtable_rvas=0x325656c,0x325658c,0x34424a4");
+        writer.println("vehicle_helper_factory_rva=" +
+                hex(VEHICLE_HELPER_FACTORY_RVA));
+        writer.println("vehicle_helper_constructor_rva=" +
+                hex(VEHICLE_HELPER_CONSTRUCTOR_RVA));
+        writer.println("vehicle_helper_store_wrapper_rva=" +
+                hex(VEHICLE_HELPER_STORE_RVA));
         writer.println("avatar_helper_current_index_displacement=0x1c8");
-        writer.println("avatar_helper_ring_displacement=0x18");
+        writer.println("avatar_helper_ring_displacement=0x8");
         writer.println("avatar_helper_ring_stride=0x38");
         writer.println("avatar_helper_ring_entries=8");
-        writer.println("position_record_displacement=0x18");
+        writer.println("position_record_displacement=0x10");
+        writer.println("position_helper_displacement=0x18");
+        writer.println("velocity_record_displacement=0x28");
+        writer.println("velocity_helper_displacement=0x30");
         writer.println("resolver_kind=module-rooted-active-replay-entity-id-map");
         writer.println("live_read_proven=false");
         writer.println("hardware_atomic_read_proven=false");

@@ -764,3 +764,24 @@ folder for the full numbering convention and document map.
 - Prevention/follow-up: keep the generic class filter only on the unmanaged
   discovery path; exact managed launches must enumerate by PID and stop at
   ambiguity, never at a fixed desktop cap.
+
+## BLK-0026 — Content-distinct replay exited before the verified polling window
+
+- First observed: `2026-08-09T02:17:00Z`
+- Status: open
+- Impact: the unchanged OD-075 continuous-position poll could not be repeated
+  on the other content-distinct replay/fresh process. This leaves
+  cross-replay repeatability unproved for the stable polling resolver.
+- Evidence: bounded canonical managed-launch attempts ended before
+  `OfflineReplayVerified`; the Host remained `Unknown` with
+  `session.initial`, no game window survived, no position request or other
+  memory operation ran, and no OD result was created. Exact managed processes
+  were stopped afterward.
+- Cause: unknown. The failure is in replay launch/evidence establishment, not
+  in the position resolver, because the memory-capable gate was never reached.
+- Decision: stop unchanged discovery retries. Diagnose the content-distinct
+  launch path separately using non-memory lifecycle evidence. After that
+  diagnosis is validated, permit one unchanged bounded poll on that replay.
+- Prevention/follow-up: keep launch failure distinct from resolver evidence;
+  never classify a pre-gate exit as a negative memory read or compensate by
+  broadening the resolver/read surface.

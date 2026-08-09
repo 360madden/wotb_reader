@@ -206,6 +206,7 @@ docs/operations/handoffs/2026-08-08-od073-module-rooted-entity-position-resolver
 docs/operations/handoffs/2026-08-08-type10-entity-movement-anchor.md
 docs/operations/handoffs/2026-08-08-world-translation-negative-type10-pivot.md
 docs/operations/handoffs/2026-08-09-od074-replay-root-live-narrowing.md
+docs/operations/handoffs/2026-08-09-od075-position-ring-correction-live-proof.md
 docs/operations/handoffs/README.md
 docs/operations/offset-discovery-guide.md
 docs/operations/offset-discovery-ledger.md
@@ -780,6 +781,7 @@ tools/find-static-roots.py
 tools/ghidra-scripts/DumpCallers.java
 tools/ghidra-scripts/DumpChain.java
 tools/ghidra-scripts/DumpFunctions.java
+tools/ghidra-scripts/DumpVtableSlots.java
 tools/ghidra-scripts/DumpWindow.java
 tools/ghidra-scripts/DumpWriteSite.java
 tools/ghidra-scripts/FindFunctionReferences.java

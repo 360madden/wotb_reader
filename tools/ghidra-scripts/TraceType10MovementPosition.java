@@ -209,8 +209,12 @@ public class TraceType10MovementPosition extends GhidraScript {
         writer.println("entity_position_anchor_xyz_pointer_register=eax");
         writer.println("entity_position_anchor_xyz_displacements=0x0,0x4,0x8");
         writer.println("avatar_helper_ring_entries=8");
+        writer.println("avatar_helper_ring_displacement=0x8");
         writer.println("avatar_helper_ring_stride=0x38");
-        writer.println("avatar_helper_ring_position_displacement=0x18");
+        writer.println("avatar_helper_position_record_displacement=0x10");
+        writer.println("avatar_helper_position_displacement=0x18");
+        writer.println("avatar_helper_velocity_record_displacement=0x28");
+        writer.println("avatar_helper_velocity_displacement=0x30");
         writer.println("candidate_kind=entity-bound-instruction-event");
         writer.println("stable_polling_offset_proven=false");
         writer.println("player_identity_proven=false");

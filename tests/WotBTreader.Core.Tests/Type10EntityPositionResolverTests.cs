@@ -31,6 +31,53 @@ public sealed class Type10EntityPositionResolverTests
     }
 
     [TestMethod]
+    [DataRow(0)]
+    [DataRow(1)]
+    [DataRow(2)]
+    public void Resolve_EachProvenFilterHelperPair_ReturnsPosition(int subtypeIndex)
+    {
+        MemoryFixture memory = MemoryFixture.CreateCached(EntityId, 7f, 8f, 9f);
+        memory.UseSubtypePair(subtypeIndex);
+
+        Type10EntityPositionResult result = Resolve(memory);
+
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, result.Status);
+        Assert.AreEqual(7f, result.X);
+        Assert.AreEqual(8f, result.Y);
+        Assert.AreEqual(9f, result.Z);
+    }
+
+    [TestMethod]
+    public void Resolve_ReadsPositionInsteadOfAdjacentVelocity()
+    {
+        MemoryFixture memory = MemoryFixture.CreateCached(EntityId, 7f, 8f, 9f);
+        memory.WriteVelocity(70f, 80f, 90f);
+
+        Type10EntityPositionResult result = Resolve(memory);
+
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, result.Status);
+        Assert.AreEqual(7f, result.X);
+        Assert.AreEqual(8f, result.Y);
+        Assert.AreEqual(9f, result.Z);
+    }
+
+    [TestMethod]
+    public void Resolve_MismatchedProvenFilterAndHelperSubtypes_StopsBeforeRingRead()
+    {
+        MemoryFixture memory = MemoryFixture.CreateCached(EntityId, 7f, 8f, 9f);
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        memory.WriteUInt32(
+            memory.Helper,
+            ModuleBase + layout.AvatarHelperVtableRvas[2]);
+
+        Type10EntityPositionResult result = Resolve(memory);
+
+        Assert.AreEqual(Type10EntityPositionStatus.UnsupportedMovementFilter, result.Status);
+        Assert.AreEqual("avatar-helper-vtable", result.FailureStage);
+        Assert.AreEqual(1, result.Attempts);
+    }
+
+    [TestMethod]
     public void Resolve_PrimaryTree_UsesSignedKeyTraversal()
     {
         MemoryFixture memory = MemoryFixture.CreateCached(EntityId, 1f, 2f, 3f);
@@ -260,7 +307,7 @@ public sealed class Type10EntityPositionResolverTests
         public uint Entity { get; } = 0x23000000;
         public uint Filter { get; } = 0x24000000;
         public uint Helper { get; } = 0x25000000;
-        public uint Record => Helper + 0x18 + (3 * 0x38);
+        public uint Record => Helper + 0x08 + (3 * 0x38);
         public Action<uint, int>? BeforeRead { get; set; }
 
         public static MemoryFixture CreateCached(int entityId, float x, float y, float z)
@@ -293,16 +340,22 @@ public sealed class Type10EntityPositionResolverTests
             memory.WriteUInt32(memory.Entities + 0x48, memory.Entity);
             memory.WriteInt32(memory.Entity + 0x1c, entityId);
             memory.WriteUInt32(memory.Entity + 0x38, memory.Filter);
-            memory.WriteUInt32(
-                memory.Filter,
-                ModuleBase + layout.MovementFilterVtableRvas[1]);
             memory.WriteUInt32(memory.Filter + 0x08, memory.Helper);
-            memory.WriteUInt32(
-                memory.Helper,
-                ModuleBase + layout.AvatarHelperVtableRvas[0]);
+            memory.UseSubtypePair(1);
             memory.WriteInt32(memory.Helper + 0x1c8, 3);
             memory.WritePosition(memory.Record, x, y, z);
             return memory;
+        }
+
+        public void UseSubtypePair(int subtypeIndex)
+        {
+            Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+            WriteUInt32(
+                Filter,
+                ModuleBase + layout.MovementFilterVtableRvas[subtypeIndex]);
+            WriteUInt32(
+                Helper,
+                ModuleBase + layout.AvatarHelperVtableRvas[subtypeIndex]);
         }
 
         public bool Read(uint address, Span<byte> destination)
@@ -369,10 +422,17 @@ public sealed class Type10EntityPositionResolverTests
         {
             Span<byte> bytes = stackalloc byte[0x38];
             BinaryPrimitives.WriteInt64LittleEndian(bytes, BitConverter.DoubleToInt64Bits(100.0));
-            BinaryPrimitives.WriteInt32LittleEndian(bytes[0x18..], BitConverter.SingleToInt32Bits(x));
-            BinaryPrimitives.WriteInt32LittleEndian(bytes[0x1c..], BitConverter.SingleToInt32Bits(y));
-            BinaryPrimitives.WriteInt32LittleEndian(bytes[0x20..], BitConverter.SingleToInt32Bits(z));
+            BinaryPrimitives.WriteInt32LittleEndian(bytes[0x10..], BitConverter.SingleToInt32Bits(x));
+            BinaryPrimitives.WriteInt32LittleEndian(bytes[0x14..], BitConverter.SingleToInt32Bits(y));
+            BinaryPrimitives.WriteInt32LittleEndian(bytes[0x18..], BitConverter.SingleToInt32Bits(z));
             Write(record, bytes);
+        }
+
+        public void WriteVelocity(float x, float y, float z)
+        {
+            WriteSingle(Record + 0x28, x);
+            WriteSingle(Record + 0x2c, y);
+            WriteSingle(Record + 0x30, z);
         }
 
         public void WriteUInt32(uint address, uint value)
@@ -388,6 +448,9 @@ public sealed class Type10EntityPositionResolverTests
             BinaryPrimitives.WriteInt32LittleEndian(bytes, value);
             Write(address, bytes);
         }
+
+        private void WriteSingle(uint address, float value) =>
+            WriteInt32(address, BitConverter.SingleToInt32Bits(value));
 
         private void WriteByte(uint address, byte value) => _bytes[address] = value;
 

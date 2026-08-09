@@ -112,6 +112,61 @@ function Test-OwnerOnlyFileAcl([string]$Path) {
     }
 }
 
+function Test-OwnerOnlyDirectoryAcl([string]$Path) {
+    try {
+        $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
+        $directory = Get-Item -LiteralPath $Path
+        if (($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            return $false
+        }
+
+        $acl = Get-Acl -LiteralPath $directory.FullName
+        $observedOwner = (New-Object Security.Principal.NTAccount($acl.Owner)).Translate(
+            [Security.Principal.SecurityIdentifier])
+        $rules = @($acl.GetAccessRules(
+            $true,
+            $false,
+            [Security.Principal.SecurityIdentifier]))
+        return $acl.AreAccessRulesProtected -and $observedOwner -eq $owner -and
+            $rules.Count -eq 1 -and $rules[0].IdentityReference -eq $owner -and
+            $rules[0].AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and
+            (($rules[0].FileSystemRights -band [Security.AccessControl.FileSystemRights]::FullControl) -eq
+                [Security.AccessControl.FileSystemRights]::FullControl)
+    }
+    catch {
+        return $false
+    }
+}
+
+function Set-OwnerOnlyFileAcl([string]$Path) {
+    $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
+    $acl = New-Object Security.AccessControl.FileSecurity
+    $acl.SetOwner($owner)
+    $acl.SetAccessRuleProtection($true, $false)
+    $rule = New-Object Security.AccessControl.FileSystemAccessRule -ArgumentList @(
+        $owner,
+        [Security.AccessControl.FileSystemRights]::FullControl,
+        [Security.AccessControl.AccessControlType]::Allow)
+    [void]$acl.AddAccessRule($rule)
+    Set-Acl -LiteralPath $Path -AclObject $acl
+}
+
+function Set-OwnerOnlyDirectoryAcl([string]$Path) {
+    $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
+    $acl = New-Object Security.AccessControl.DirectorySecurity
+    $acl.SetOwner($owner)
+    $acl.SetAccessRuleProtection($true, $false)
+    $rule = New-Object Security.AccessControl.FileSystemAccessRule -ArgumentList @(
+        $owner,
+        [Security.AccessControl.FileSystemRights]::FullControl,
+        ([Security.AccessControl.InheritanceFlags]::ContainerInherit -bor
+            [Security.AccessControl.InheritanceFlags]::ObjectInherit),
+        [Security.AccessControl.PropagationFlags]::None,
+        [Security.AccessControl.AccessControlType]::Allow)
+    [void]$acl.AddAccessRule($rule)
+    Set-Acl -LiteralPath $Path -AclObject $acl
+}
+
 function Get-Rendezvous {
     $dir = Join-Path $env:LOCALAPPDATA 'WotBTreader\rendezvous'
     $file = Get-ChildItem $dir -File -ErrorAction Stop |
@@ -422,8 +477,30 @@ try {
     else {
         $artifactId = $Matches[1]
     }
-    Set-Content -Path (Join-Path $env:TEMP 'od-launch-artifact.id') -Value $artifactId -NoNewline
-    Write-Od ("artifact_prefix=" + $artifactId.Substring(0, 8))
+    $legacyMarker = Join-Path $env:TEMP 'od-launch-artifact.id'
+    Remove-Item -LiteralPath $legacyMarker -Force -ErrorAction SilentlyContinue
+    $launchMarkerDirectory = Join-Path $env:LOCALAPPDATA 'WotBTreader\od-launch'
+    if (-not (Test-Path -LiteralPath $launchMarkerDirectory)) {
+        New-Item -ItemType Directory -Path $launchMarkerDirectory | Out-Null
+    }
+    Set-OwnerOnlyDirectoryAcl -Path $launchMarkerDirectory
+    if (-not (Test-OwnerOnlyDirectoryAcl -Path $launchMarkerDirectory)) {
+        Write-Od 'FAILED_launch_marker_directory_acl'
+        exit 1
+    }
+    $launchMarker = Join-Path $launchMarkerDirectory 'artifact.id'
+    Remove-Item -LiteralPath $launchMarker -Force -ErrorAction SilentlyContinue
+    [IO.File]::WriteAllText(
+        $launchMarker,
+        $artifactId,
+        (New-Object Text.UTF8Encoding($false)))
+    Set-OwnerOnlyFileAcl -Path $launchMarker
+    if (-not (Test-OwnerOnlyFileAcl -Path $launchMarker)) {
+        Remove-Item -LiteralPath $launchMarker -Force -ErrorAction SilentlyContinue
+        Write-Od 'FAILED_launch_marker_acl'
+        exit 1
+    }
+    Write-Od 'artifact_imported'
 
     # Always re-read capability immediately before launch (rendezvous rotates ~5 min).
     $api = Get-ApiContext
