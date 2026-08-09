@@ -41,12 +41,6 @@ that adds, renames, or removes files.
 
 ## Hard constraints (always)
 
-- Offline / positively verified offline sessions only. Never automate online matches.
-- Cheat Engine 7.7 is an approved local diagnostic tool for dynamic memory
-  analysis, offset discovery, and other repository tasks where it is a
-  practical fit, but only during positively verified offline replay sessions.
-  Never attach it during an online match, and never commit scan files, memory
-  dumps, pointer maps, or game-derived data.
 - Bot status may be inferred from a name; player names and bot status are public Wargaming statistics.
 - Never log raw replay bytes, tokens, full paths, account IDs, chat, screenshots.
 - Never modify/redistribute the WotB install or game-derived assets.
