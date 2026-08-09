@@ -6,17 +6,22 @@ No runtime AI, cloud, Python, Node.js, Rust, Electron, or containers.
 ## Where we are now (2026-08-09)
 
 - **Active workstream:** offset discovery — module-rooted player-position
-  polling. Latest handoff (OD-075, 2026-08-09) proved a strong positive in one
-  replay/fresh process: 24/24 resolved, 5 exact retained-trajectory matches,
-  21/24 within three world units. Cross-replay repeatability is unproved.
-- **Open blocker (BLK-0026):** the content-distinct replay's managed launch
-  exits before the `OfflineReplayVerified` gate. Diagnosis plan encoded at
-  `docs/operations/blk-0026-diagnosis-plan.md` (2026-08-09): hypothesis (b)
-  refuted offline (all three real replays decode clean), marker >20-min
-  fail-closed staleness window and pre-gate launcher exit paths mapped. Next:
-  execute the plan **without memory access**, then exactly **one unchanged
-  bounded poll** (within 20 min of a fresh import). Do not change the
-  resolver, broaden reads, or promote the offset table.
+  polling. Latest handoff (OD-075 + BLK-0026 resolution, 2026-08-09): the
+  content-distinct replay's poll returned positive (24/24 resolved, 12/24
+  within one unit, 21/24 within three; stable-resolver-positive).
+  Cross-replay repeatability is unproved — the same poll on a second
+  content-distinct process remains the open question.
+- **BLK-0026 resolved and validated (2026-08-09):** root cause was a launcher
+  regression — .NET `Set-Acl` threw `PrivilegeNotHeldException` on the
+  persisted owner-only marker ACL, mapped by the catch-all to
+  `FAILED_unexpected` before the gate (every launch after the ACL code landed).
+  Fixed with `icacls` in both owner-only ACL functions; the launcher now
+  reaches `OfflineReplayVerified` and exactly one unchanged bounded OD-075
+  poll returned positive on the content-distinct replay (24/24 resolved,
+  stable-resolver-positive). See `docs/operations/blocker-log.md` BLK-0026 and
+  the 2026-08-09 resolution handoff. Cross-replay repeatability still
+  unproved — a second content-distinct process would be needed; no promotion
+  of the offset table without proof.
 - **Last verified gate:** 2026-08-09 — 654 tests passed, 2 local opt-in skips,
   0 warnings, 0 errors.
 - **Refresh from:** the newest file in `docs/operations/handoffs/`,

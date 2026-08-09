@@ -1,7 +1,9 @@
 # BLK-0026 launch-diagnosis plan
 
-- Prepared: `2026-08-09` (owner-delegated autonomy; **no live testing performed yet**)
-- Status: plan encoded; hypothesis (b) refuted offline; execution awaits live-testing approval
+- Prepared: `2026-08-09` (owner-delegated autonomy)
+- Status: **executed and resolved** — root cause proven and fixed; launcher reaches
+  `OfflineReplayVerified`; exactly one unchanged bounded OD-075 poll returned a
+  positive verdict on the content-distinct replay. See `blocker-log.md` `BLK-0026`.
 - Blocker: [`blocker-log.md`](blocker-log.md) `BLK-0026` — a content-distinct replay's
   managed launch exits before the `OfflineReplayVerified` gate; the Host stays
   `Unknown` / `session.initial`; no memory operation runs; no evidence result is
@@ -41,32 +43,40 @@
 | 3 | Marker fail-closed rules: **absent / not owner-only / stale (>20 min) / malformed** → `FAILED_launch_artifact_binding` | `Get-LaunchArtifactId` in od-073 | The one unchanged poll must run **within 20 minutes** of a fresh import, or it fails closed at binding (after the gate) |
 | 4 | Marker currently **stale**: present, owner-only, valid GUID, **767.8 min old** (checked via wrapper `-StaticOnly`) | `.data/diagnose-blk0026-launch.ps1` | Any poll against the current marker is refused at binding — a fresh import is a prerequisite for the eventual poll; this is a landmine, not the BLK-0026 cause |
 | 5 | `Write-Od` writes only to the console — the failed attempts' lifecycle stream was **never persisted** | `launch-offline-replay-for-od.ps1` (function `Write-Od`) | The original exit point is unrecoverable; the wrapper must tee the stream for future runs |
-| 6 | Complete launcher exit-path inventory (pre-gate): import — `FAILED_cli_missing_build_release_first`, `FAILED_replay_path_missing`, `FAILED_not_wotbreplay`, `FAILED_no_wotbreplay_in_game_folder`, `FAILED_replay_is_staging_copy_use_original`, `FAILED_import_parse`; marker/ACL — `FAILED_launch_marker_directory_acl`, `FAILED_launch_marker_acl`; launch POST — `FAILED_launch_http`, `FAILED_launch=<msg>`; window — `FAILED_no_window`; host readiness — `FAILED_host_missing_build_release_first`, `FAILED_host_stale_build`, `FAILED_host_down`; post-watch gate — `FAILED_gate_not_verified` (exit 4); other — `FAILED_host_denied_before_watch_restart_required`, `FAILED_game_died_during_settle`, `FAILED_unexpected` | launcher source (`grep -o "FAILED_[a-zA-Z_]*"`) | The wrapper's tee'd `od_launch:` stream will pinpoint which of these paths the next attempt takes |
+| 6 | Complete launcher exit-path inventory (pre-gate): import — `FAILED_cli_missing_build_release_first`, `FAILED_replay_path_missing`, `FAILED_not_wotbreplay`, `FAILED_no_wotbreplay_in_game_folder`, `FAILED_replay_is_staging_copy_use_original`, `FAILED_import_parse`; marker/ACL — `FAILED_launch_marker_directory_acl`, `FAILED_launch_marker_acl`; launch POST — `FAILED_launch_http`, `FAILED_launch=<msg>`; window — `FAILED_no_window`; host readiness — `FAILED_host_missing_build_release_first`, `FAILED_host_stale_build`, `FAILED_host_down`; post-watch gate — `FAILED_gate_not_verified` (exit 4); other — `FAILED_host_denied_before_watch_restart_required`, `FAILED_game_died_during_settle`, `FAILED_unexpected` | launcher source (`grep -o "FAILED_[a-zA-Z_]*"`) | The wrapper's tee'd `od_launch:` stream pinpointed which path the failing attempts took: `FAILED_unexpected` |
+| 7 | **Root cause mechanism (proven):** .NET `Set-Acl` with a fresh security descriptor throws `PrivilegeNotHeldException` (`SeSecurityPrivilege`) when the target **already has a protected owner-only ACL** — the marker dir/file persist between launches, so this hit on every launch after the first. `icacls /inheritance:r /grant:r` succeeds on any prior state. | instrumented launcher run (stack at `Set-OwnerOnlyDirectoryAcl` → `Set-Acl`) + controlled probe (fresh-object `Set-Acl` OK on a fresh target, throws on the same target again; `icacls` always OK) | The launcher's catch-all mapped the throw to `FAILED_unexpected` (exit 5) → no marker rewrite, no game launch, gate never verified — the exact `session.initial` signature. The ACL functions arrived in `1ad5381` (02:38Z), **after** the last successful launch (02:14Z), so no launch worked since |
 
 ## Updated hypothesis space
 
 | # | Hypothesis | Status |
 |---|-----------|--------|
-| (a) | Launcher-side pre-game failure (import/marker/ACL/HTTP/window/post-watch gate) | **Open** — leading; the tee'd `od_launch:` stream will confirm or refute |
+| (a) | Launcher-side pre-game failure (import/marker/ACL/HTTP/window/post-watch gate) | **CONFIRMED and FIXED** — marker-ACL `Set-Acl` throw (fact 7); replaced with `icacls` in both owner-only ACL functions |
 | (b) | Replay archive/version not decodable | **REFUTED** (fact 1) |
-| (c) | Gate/timing: battle boundary or evidence-lifetime expiry revokes the gate before verification | **Open** — Host-state sampler evidence needed |
-| (d) | Host attach/identification failure on the fresh process | **Open** — Host-state sampler evidence needed |
+| (c) | Gate/timing: battle boundary or evidence-lifetime expiry revokes the gate before verification | **Not needed** — the resolved run reached `OfflineReplayVerified`; poll ran during the active battle |
+| (d) | Host attach/identification failure on the fresh process | **Not needed** — Host identified the fresh process and verified the replay |
 
-## Execution steps (live-testing phase only)
+## Execution steps (live-testing phase) — completed 2026-08-09
 
-1. **Wrapper launch** — run `.data/diagnose-blk0026-launch.ps1` (default mode) with
-   the canonical launcher arguments; it tees the `od_launch:` stream, samples Host
-   state every 5 s, and records marker state + launcher exit code. One launch.
-2. **Branch** — from the tee'd stream: a `FAILED_*` exit pinpoints (a); a live window
-   that dies before the gate points to (c)/(d). Reproduce the failing signature
-   (twice if intermittent).
-3. **Resolved run** — fix the specific surviving cause on the diagnosis side only
-   (e.g., fresh import for a stale/mismatched marker; re-export if decode ever
-   regresses), reach `OfflineReplayVerified` once. One cause per run.
-4. **Exactly one unchanged bounded OD-075 poll** — within 20 minutes of the fresh
-   import (fact 3), on the content-distinct replay, resolver/read-surface/offsets
-   untouched.
-5. **Record** — ledger result + dated handoff; then update BLK-0026.
+1. **Wrapper launch** — `.data/diagnose-blk0026-launch.ps1` run in `-StaticOnly`
+   (marker forensics) and in wrapped-launch mode. The wrapped tee reproduced the
+   failing sequence (`replay_selected → … → importing → FAILED_unexpected`).
+2. **Branch** — instrumented launcher copy surfaced the exact throw:
+   `PrivilegeNotHeldException (SeSecurityPrivilege)` at `Set-OwnerOnlyDirectoryAcl`
+   → `Set-Acl` (fact 7). Deterministic — one reproduction sufficed.
+3. **Resolved run** — replaced `Set-Acl` with `icacls` in the launcher's two
+   owner-only ACL functions (and the snapshot helper's identical copy). Launcher
+   now reaches `OK OfflineReplayVerified` (exit 0) repeatedly: import → marker
+   write → `launch.accepted` → window → dialog click → post-watch gate.
+   Cold-boot note: the game can exceed the default 90 s window wait
+   (`FAILED_no_window`); passed `-WindowWaitSeconds 240` for cold boots.
+4. **Exactly one unchanged bounded OD-075 poll** — ran immediately after the gate
+   during the active battle, well inside the 20-minute marker window, on the
+   content-distinct replay (resolver/read-surface/offsets untouched).
+   Result: `verdict=stable-resolver-positive`, `resolved=24/24`, `distinct=24`,
+   `within1=12`, `within3=21`, `allModuleRooted=true`, `trajectoryConsistent=true`;
+   aggregate result in `.data/od-073-entity-position-poll-*.json` (privacy flags
+   all `false`). Managed game/Host processes stopped afterward.
+5. **Record** — ledger result + dated handoff; BLK-0026 updated to resolved.
 
 ## Stop conditions
 
@@ -89,3 +99,5 @@ gitignored `.data/`.
 - Diagnosis wrapper (scratch, gitignored): `.data/diagnose-blk0026-launch.ps1`
 - This plan: `docs/operations/blk-0026-diagnosis-plan.md`
 - Blocker record: `docs/operations/blocker-log.md` `BLK-0026`
+- Poll result (scratch, gitignored): `.data/od-073-entity-position-poll-*.json`
+- Scratch diagnostics/logs (gitignored): `.data/diagnostics/`

@@ -18,15 +18,12 @@ $ErrorActionPreference = 'Stop'
 
 function Set-OwnerOnlyFileAcl([string]$Path) {
     $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
-    $security = New-Object Security.AccessControl.FileSecurity
-    $security.SetOwner($owner)
-    $security.SetAccessRuleProtection($true, $false)
-    $rule = New-Object Security.AccessControl.FileSystemAccessRule(
-        $owner,
-        [Security.AccessControl.FileSystemRights]::FullControl,
-        [Security.AccessControl.AccessControlType]::Allow)
-    [void]$security.AddAccessRule($rule)
-    Set-Acl -LiteralPath $Path -AclObject $security
+    # icacls instead of .NET Set-Acl: Set-Acl with a fresh security descriptor
+    # throws PrivilegeNotHeldException (SeSecurityPrivilege) when the target
+    # already has a protected owner-only ACL (same root cause as BLK-0026 in the
+    # launch launcher). /inheritance:r + /grant:r yields exactly the single
+    # owner FullControl rule; owner is unchanged (current user).
+    & icacls $Path /inheritance:r /grant:r ("*" + $owner + ':F') | Out-Null
 }
 
 if ([string]::IsNullOrWhiteSpace($RepoRoot)) {

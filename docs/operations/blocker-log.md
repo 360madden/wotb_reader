@@ -768,7 +768,7 @@ folder for the full numbering convention and document map.
 ## BLK-0026 — Content-distinct replay exited before the verified polling window
 
 - First observed: `2026-08-09T02:17:00Z`
-- Status: open
+- Status: resolved and validated
 - Impact: the unchanged OD-075 continuous-position poll could not be repeated
   on the other content-distinct replay/fresh process. This leaves
   cross-replay repeatability unproved for the stable polling resolver.
@@ -777,18 +777,43 @@ folder for the full numbering convention and document map.
   `session.initial`, no game window survived, no position request or other
   memory operation ran, and no OD result was created. Exact managed processes
   were stopped afterward.
-- Cause: unknown. The failure is in replay launch/evidence establishment, not
-  in the position resolver, because the memory-capable gate was never reached.
+- Cause: `Set-OwnerOnlyFileAcl`/`Set-OwnerOnlyDirectoryAcl` in
+  `scripts/launch-offline-replay-for-od.ps1` (added 2026-08-09T02:38Z by
+  `1ad5381`) threw `PrivilegeNotHeldException` (`SeSecurityPrivilege`) and the
+  launcher's catch-all turned it into `FAILED_unexpected` (exit 5). The throw
+  occurs in .NET `Set-Acl` when the target already carries a protected
+  owner-only ACL — i.e. on EVERY launch after the first, because the
+  `od-launch` marker directory/file persist between launches. Since the last
+  successful launch (02:14Z) predates `1ad5381`, no launch worked afterward:
+  no marker rewrite, no game launch, gate never verified — the exact observed
+  `session.initial` signature. Proven by an instrumented launcher run
+  (stack: `Set-OwnerOnlyDirectoryAcl` → `Set-Acl`, line 173) and by a
+  controlled probe (T1/T2/T5/T6: fresh-object `Set-Acl` succeeds on a fresh
+  target and throws on the same target a second time; `icacls` always
+  succeeds).
 - Decision: stop unchanged discovery retries. Diagnose the content-distinct
   launch path separately using non-memory lifecycle evidence. After that
   diagnosis is validated, permit one unchanged bounded poll on that replay.
+- Resolution: replace .NET `Set-Acl` with `icacls /inheritance:r /grant:r`
+  in both owner-only ACL functions (launcher + `publish-instruction-snapshot-
+  helper.ps1`, which shared the identical pattern). `icacls` needs no
+  security-descriptor privileges, preserves the current-user owner, and yields
+  exactly the single owner FullControl rule the existing `Test-OwnerOnly*`
+  checks expect. No product code, resolver, or read surface changed.
+- Validation (2026-08-09, live): launcher reaches
+  `OK OfflineReplayVerified` (exit 0) repeatedly after the fix — the managed
+  launch POST is accepted, the game window appears, the offline-replay dialog
+  is clicked, and the post-watch gate check passes with
+  `reason=session.offline_replay_verified`. Then exactly ONE unchanged bounded
+  OD-075 poll ran on the content-distinct replay during the active battle:
+  `verdict=stable-resolver-positive`, `resolved=24/24`,
+  `distinct=24`, `within1=12`, `within3=21`, `allModuleRooted=true`,
+  `trajectoryConsistent=true`, aggregate result written to
+  `.data/od-073-entity-position-poll-*.json` (privacy flags all `false`).
+  Managed game/Host processes were stopped afterward.
 - Prevention/follow-up: keep launch failure distinct from resolver evidence;
   never classify a pre-gate exit as a negative memory read or compensate by
-  broadening the resolver/read surface.
-- Diagnosis progress (2026-08-09): hypothesis (b) refuted offline — all three
-  real `.data/launch` replays decode cleanly via the replay crosscheck (exit 0);
-  poll gate order (verified-gate before marker binding), the marker's >20-minute
-  fail-closed staleness window, and the pre-gate launcher exit paths are mapped;
-  the failed attempts' `od_launch:` stream was never persisted (console-only).
-  Full plan: `docs/operations/blk-0026-diagnosis-plan.md`. No live testing
-  performed; execution awaits approval.
+  broadening the resolver/read surface. Operational note: a cold game boot can
+  exceed the launcher's default 90-second window wait (`FAILED_no_window`);
+  use `-WindowWaitSeconds` for cold boots. Full plan and evidence:
+  `docs/operations/blk-0026-diagnosis-plan.md`.

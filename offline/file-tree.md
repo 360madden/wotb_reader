@@ -194,6 +194,7 @@ docs/operations/handoffs/2026-08-08-od073-module-rooted-entity-position-resolver
 docs/operations/handoffs/2026-08-08-type10-entity-movement-anchor.md
 docs/operations/handoffs/2026-08-08-world-translation-negative-type10-pivot.md
 docs/operations/handoffs/2026-08-09-blk0026-diagnosis-prep-and-tooling.md
+docs/operations/handoffs/2026-08-09-blk0026-resolved-live-validation.md
 docs/operations/handoffs/2026-08-09-od074-replay-root-live-narrowing.md
 docs/operations/handoffs/2026-08-09-od075-position-ring-correction-live-proof.md
 docs/operations/handoffs/README.md

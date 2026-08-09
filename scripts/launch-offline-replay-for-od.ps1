@@ -140,31 +140,21 @@ function Test-OwnerOnlyDirectoryAcl([string]$Path) {
 
 function Set-OwnerOnlyFileAcl([string]$Path) {
     $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
-    $acl = New-Object Security.AccessControl.FileSecurity
-    $acl.SetOwner($owner)
-    $acl.SetAccessRuleProtection($true, $false)
-    $rule = New-Object Security.AccessControl.FileSystemAccessRule -ArgumentList @(
-        $owner,
-        [Security.AccessControl.FileSystemRights]::FullControl,
-        [Security.AccessControl.AccessControlType]::Allow)
-    [void]$acl.AddAccessRule($rule)
-    Set-Acl -LiteralPath $Path -AclObject $acl
+    # icacls instead of .NET Set-Acl: Set-Acl with a fresh security descriptor
+    # throws PrivilegeNotHeldException (SeSecurityPrivilege) when the target
+    # already has a protected owner-only ACL — i.e. on EVERY launch after the
+    # first, since the marker persists between launches (BLK-0026 root cause).
+    # /inheritance:r disables inherited ACEs; /grant:r replaces grants with
+    # exactly the single owner FullControl rule. Owner is unchanged (current
+    # user), so the Test-OwnerOnly* checks below still pass.
+    & icacls $Path /inheritance:r /grant:r ("*" + $owner + ':F') | Out-Null
 }
 
 function Set-OwnerOnlyDirectoryAcl([string]$Path) {
     $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
-    $acl = New-Object Security.AccessControl.DirectorySecurity
-    $acl.SetOwner($owner)
-    $acl.SetAccessRuleProtection($true, $false)
-    $rule = New-Object Security.AccessControl.FileSystemAccessRule -ArgumentList @(
-        $owner,
-        [Security.AccessControl.FileSystemRights]::FullControl,
-        ([Security.AccessControl.InheritanceFlags]::ContainerInherit -bor
-            [Security.AccessControl.InheritanceFlags]::ObjectInherit),
-        [Security.AccessControl.PropagationFlags]::None,
-        [Security.AccessControl.AccessControlType]::Allow)
-    [void]$acl.AddAccessRule($rule)
-    Set-Acl -LiteralPath $Path -AclObject $acl
+    # See Set-OwnerOnlyFileAcl — same icacls approach; (OI)(CI) propagates the
+    # owner-only rule to children so future marker files inherit it.
+    & icacls $Path /inheritance:r /grant:r ("*" + $owner + ':(OI)(CI)F') | Out-Null
 }
 
 function Get-Rendezvous {

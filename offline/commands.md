@@ -78,10 +78,12 @@ read. The script writes an ignored aggregate-only result: it persists no
 entity ID, coordinates, process addresses, raw bytes, capability, replay path,
 or player/account data. OD-075 resolved 24/24 positions with 24 distinct
 triples, 5 exact retained-trajectory matches, and 21/24 within three units in
-one fresh process. Do not run another discovery retry until BLK-0026's separate
-content-distinct launch failure is diagnosed (plan:
-`docs/operations/blk-0026-diagnosis-plan.md`, 2026-08-09). After that, one
-unchanged repeat on the other replay is admissible. The double-collected record is consistency
+one fresh process. BLK-0026 is resolved and validated (2026-08-09: launcher
+`Set-Acl` → `icacls` ACL fix; the content-distinct replay then polled positive
+— 24/24 resolved, stable-resolver-positive — see
+`docs/operations/blk-0026-diagnosis-plan.md`). One unchanged repeat on a second
+content-distinct replay/fresh process is admissible to prove cross-replay
+repeatability. The double-collected record is consistency
 evidence, not hardware atomicity or same-decoded-clock proof, and no offset is
 promoted.
 
