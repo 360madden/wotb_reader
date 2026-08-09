@@ -29,7 +29,8 @@ No runtime AI, cloud, Python, Node.js, Rust, Electron, or containers.
   0 warnings, 0 errors.
 - **Refresh from:** the newest file in `docs/operations/handoffs/`,
   `docs/operations/offset-discovery-ledger.md` (Next planned session row),
-  `docs/operations/blocker-log.md` (open blockers).
+  `docs/operations/blocker-log.md` (open blockers),
+  `docs/operations/offset-promotion-checklist.md` (offset-gate status).
 
 ## Session ritual (start and end every task)
 

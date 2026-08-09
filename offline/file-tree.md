@@ -206,6 +206,7 @@ docs/operations/offset-discovery-strategy-v2.md
 docs/operations/offset-discovery-strategy-v3.md
 docs/operations/offset-discovery-strategy-v4.md
 docs/operations/offset-discovery-workflow.md
+docs/operations/offset-promotion-checklist.md
 docs/operations/replay-crosscheck.md
 docs/project-context.md
 docs/superpowers/plans/2026-07-26-dashboard-read-ui.md
