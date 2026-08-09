@@ -147,6 +147,16 @@ session:
    `invoke-g1-live-poll.ps1` run produces the G1 evidence AND the
    `SameDecodedClockProven` outcome in the poll aggregate.
 
+**First live run — done 2026-08-09 (OD-RECOVERY-078):** the whole chain
+worked end-to-end (position-page 30 ms, interceptor armed, 128 module-mapped
+page writes — `wotblitz.exe+0x1AD2D9D` dominant, verdict `observed` with 18
+in-window / 53 before / 56 after), but the poll resolved 19/24: 5 reads
+failed at the `avatar-helper` hop after exhausting 3 attempts (entity stayed
+in the primary map — a pointer-race/reallocation pattern). The clean branch
+is impossible while the ring is actively rewritten, so the per-read
+byte-identical branch is the operative one and needs a **24/24 positive
+poll**; the next approved session re-runs the same command targeting that.
+
 Evidence artifact must be attached to the ledger row before the flag may be
 claimed.
 
@@ -183,8 +193,12 @@ Acceptance — `SameDecodedClockProven` becomes `true` only from evidence:
    wall-clock on verification and POSTs the anchor (sequence 0,
    replay-anchor 0, speed 1.0, `CaptureLog`, 1 s uncertainty — the gate-loop
    cadence) before its stage delay; a failure is non-fatal (flag stays false)
-   and monotonicity conflicts are ignored. Remaining: exercise it live in a
-   new approved session (parse/PSSA green; no live run yet).
+   and monotonicity conflicts are ignored. **Live exercise — done 2026-08-09
+   (OD-RECOVERY-078):** the poll POSTed the anchor at the gate
+   (`clock_anchor appended sequence=0 uncertainty_s=1`) and the aggregate
+   returned `sameDecodedClockProven=true` — the flag computed from real
+   segments within the 2 s bound. Remaining: the ledger row records the
+   correlation bounds (anchor 1 s + gate cadence 1 s).
 2. **Wiring — implemented 2026-08-09.** The request now carries an optional
    `BattleSessionId` (endpoint parses the GUID; `od-073` sends the session it
    already selected), and `GameSessionCoordinator` computes
@@ -221,11 +235,11 @@ the prior positive result file(s).
 | ~~G2 coordinator wiring + tests~~ | ~~Offline~~ | **done 2026-08-09** (`BattleSessionId` in request; flag from clock source) |
 | ~~G2 anchor endpoint (append capability)~~ | ~~Offline~~ | **done 2026-08-09** (`/discover/clock-segment`, 6 tests) |
 | ~~G2 anchor caller (gate moment → POST segment)~~ | ~~Offline~~ | **done 2026-08-09** (built into od-073; live exercise pending) |
-| G2 live run: anchor + flag end-to-end | Live (new approved session) | caller + endpoint done |
+| ~~G2 live run: anchor + flag end-to-end~~ | ~~Live (approved session)~~ | **done 2026-08-09 (OD-RECOVERY-078): `sameDecodedClockProven=true` in the poll aggregate** — CaptureLog anchor at the gate, 1 s uncertainty within the 2 s bound; correlation bounds (anchor 1 s + gate cadence 1 s) recorded |
 | ~~G1 mechanism test (write-observation)~~ | ~~Offline~~ | **done 2026-08-09** (`scripts/test-offline-write-observation.ps1`, OD-RECOVERY-077) |
 | ~~G1 position-page capability (resolver entry + coordinator + endpoint + tests)~~ | ~~Offline~~ | **done 2026-08-09** (`POST /discover/position-page`, diagnostic-only) |
 | ~~G1 live orchestration (wrapper + verdict)~~ | ~~Offline~~ | **done 2026-08-09** (`scripts/invoke-g1-live-poll.ps1`; verdict validated on OD-077 reports) |
-| G1 live poll + G2 live correlation | Live (new approved session) | G1/G2 offline steps |
+| G1 live poll (first run done 2026-08-09: `observed` verdict, 19/24 — 5 reads failed at `avatar-helper`; still open, needs a 24/24 positive session) | Live (further approved session) | G1 offline steps + the avatar-helper pattern as the known variable |
 | G0 publication review | Offline | G1 + G2 + G3 closed — checklist pre-staged in `docs/operations/g0-publication-review.md` |
 
 ## Frozen surfaces (unchanged)

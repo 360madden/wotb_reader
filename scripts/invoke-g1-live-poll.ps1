@@ -214,7 +214,7 @@ function Invoke-OdApi {
     $arguments = @{
         Uri        = [string]$rendezvous.baseUri + $RelativePath
         Method     = $Method
-        TimeoutSec = 15
+        TimeoutSec = 60
         Headers    = @{
             'X-WotBTreader-Capability' = [string]$rendezvous.capability
         }
@@ -346,9 +346,16 @@ try {
         exit 3
     }
 
-    # 2. Rendezvous -> state -> session -> entity -> position page.
-    $state = Invoke-OdApi -Method 'Get' -RelativePath '/api/v1/game/state'
-    $gamePid = [int]$state.pid
+    # 2. Game pid (the process list - the state endpoint carries no pid),
+    #    then session -> entity -> position page. Prefer the process with the
+    #    game window (the launcher kills stale instances, so one is expected).
+    $gameProcesses = @(Get-Process -Name 'wotblitz' -ErrorAction Stop)
+    $gameProcess = $gameProcesses | Where-Object { $_.MainWindowHandle -ne 0 } |
+        Select-Object -First 1
+    if ($null -eq $gameProcess) {
+        $gameProcess = $gameProcesses | Select-Object -First 1
+    }
+    $gamePid = $gameProcess.Id
     Write-G1 ('game_pid=' + $gamePid)
 
     $launchArtifactId = Get-LaunchArtifactId
