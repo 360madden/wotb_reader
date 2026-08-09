@@ -6,7 +6,7 @@ safe to open; none of it is private or runtime data.
 ## Orient fast (any task)
 
 1. [`knowledge.md`](../knowledge.md) — the single best summary (stack, quickstart, architecture, conventions, gotchas)
-2. [`AGENTS.md`](../AGENTS.md) — agent rules, route-by-task table, delegation
+2. [`AGENTS.md`](../AGENTS.md) — agent rules, task decision tree, delegation index
 3. [`README.md`](../README.md) — human quickstart + startup sequence
 4. [`docs/architecture/overview.md`](../docs/architecture/overview.md) — diagram, evidence lifecycle, HUD design intent
 5. This pack — `repo-map.md` → `entry-points.md` → `api-surface.md`

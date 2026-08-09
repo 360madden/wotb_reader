@@ -1,6 +1,6 @@
 ---
 when_to_load: Need the map of scripts/docs/contracts; onboarding or lost agent.
-do_not_load: Ordinary feature work when AGENTS.md route table already answers.
+do_not_load: Ordinary feature work when AGENTS.md task decision tree already answers.
 ---
 
 # Canonical paths

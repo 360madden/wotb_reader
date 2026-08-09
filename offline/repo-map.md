@@ -10,7 +10,7 @@ detail lives in the module's own files. Full tree: `src/`, `tests/`, `tools/`,
 |------|---------|
 | `WotBTreader.sln` | Solution; 28 projects |
 | `knowledge.md` | Agent knowledge: quickstart, architecture, conventions, gotchas |
-| `AGENTS.md` | Agent entry: rules, route-by-task, delegation |
+| `AGENTS.md` | Agent entry: rules, task routing, delegation |
 | `README.md` | Human quickstart |
 | `*.cmd` | Convenience wrappers (`build`, `test`, `validate`, `serve`, `overlay`, `import`, …) — see [`commands.md`](commands.md) |
 | `Directory.Packages.props` | Central package versions (lock files committed) |
