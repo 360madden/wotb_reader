@@ -73,7 +73,14 @@ hardcoding:
   (OD-RECOVERY-046/047/048 machinery, `tools/WriteInterceptor`) in the same
   battle to prove no write to the ring record's position bytes occurred across
   a poll read window (or that every observed write produced a byte-identical
-  record). Offline mechanism test first, then one live poll.
+  record). **Offline mechanism test — done 2026-08-09 (OD-RECOVERY-077):**
+  `scripts/test-offline-write-observation.ps1` passed — the interceptor
+  captured 185/185 consecutive CRT-memcpy writes with an exact 0.5 value
+  progression (no gaps = no missed writes), zero hits across a suspended 2 s
+  no-write window with liveness on both sides, and 100% of hits attributed to
+  `msvcrt.dll+0x8DD34` with the i386 esi/edi copy ABI. Remaining: one live
+  poll with the interceptor armed on the ring-record position page (new
+  approved session).
 - Mechanism B (interlocked discipline): a documented read discipline where the
   12 bytes are validated against a hardware-atomic guard (e.g., the ring
   index + a checksum read atomically) — requires a demonstrated invariant, not
@@ -154,7 +161,7 @@ the prior positive result file(s).
 | ~~G2 anchor endpoint (append capability)~~ | ~~Offline~~ | **done 2026-08-09** (`/discover/clock-segment`, 6 tests) |
 | ~~G2 anchor caller (gate moment → POST segment)~~ | ~~Offline~~ | **done 2026-08-09** (built into od-073; live exercise pending) |
 | G2 live run: anchor + flag end-to-end | Live (new approved session) | caller + endpoint done |
-| G1 mechanism test (write-observation) | Offline | tools/WriteInterceptor |
+| ~~G1 mechanism test (write-observation)~~ | ~~Offline~~ | **done 2026-08-09** (`scripts/test-offline-write-observation.ps1`, OD-RECOVERY-077) |
 | G1 live poll + G2 live correlation | Live (new approved session) | G1/G2 offline steps |
 | G0 publication review | Offline | G1 + G2 + G3 closed |
 

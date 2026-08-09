@@ -281,6 +281,7 @@ scripts/replay-play-state.ps1
 scripts/roll-replay-time-increased.ps1
 scripts/scan-repository.ps1
 scripts/system-informer-check.ps1
+scripts/test-offline-write-observation.ps1
 scripts/ui-templates/hangar/play-triangle-owner.png
 scripts/ui-templates/hangar/play-triangle.png
 scripts/ui-templates/hangar/profile-hex.png

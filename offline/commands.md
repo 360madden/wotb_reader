@@ -36,7 +36,13 @@ dotnet publish src/WotBTreader.Host.Web -c Release -o .build/publish
 
 # Publish + synthetically validate the x86 instruction-first helper
 pwsh -NoProfile -File scripts/publish-instruction-snapshot-helper.ps1
-pwsh -NoProfile -File tmpwotb-e2e/test-execute-snapshot-interceptor.ps1
+
+# Publish the x86 write interceptor (auto-built by the test if missing)
+dotnet publish tools/WriteInterceptor -c Release -r win-x86 --self-contained true -o .build/publish/write-interceptor
+
+# G1 offline write-observation mechanism test (capture completeness +
+# no-write-window discrimination; no game, no live poll)
+pwsh -NoProfile -File scripts/test-offline-write-observation.ps1
 ```
 
 ## Type-10 entity-position capture (offline replay only)
