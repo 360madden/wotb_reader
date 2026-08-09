@@ -157,6 +157,15 @@ is impossible while the ring is actively rewritten, so the per-read
 byte-identical branch is the operative one and needs a **24/24 positive
 poll**; the next approved session re-runs the same command targeting that.
 
+**Second live run — done 2026-08-09 (OD-RECOVERY-079):** the identical
+command repeated cleanly and the poll improved to **22/24** (2 reads failed
+at the same `avatar-helper` hop; entity stayed in primary map for all 24;
+write-observation `observed` again — 129 module-mapped writes, same two
+dominant copy-loop sites `wotblitz.exe+0x1AD2D9D` 85 / `+0x230E856` 39,
+18 in-window / 53 before / 57 after; G2 anchor re-confirmed
+`sameDecodedClockProven=true`). Acceptance still needs 24/24 — G1/G3 stay
+open, G0 stays gated.
+
 Evidence artifact must be attached to the ledger row before the flag may be
 claimed.
 
@@ -239,7 +248,7 @@ the prior positive result file(s).
 | ~~G1 mechanism test (write-observation)~~ | ~~Offline~~ | **done 2026-08-09** (`scripts/test-offline-write-observation.ps1`, OD-RECOVERY-077) |
 | ~~G1 position-page capability (resolver entry + coordinator + endpoint + tests)~~ | ~~Offline~~ | **done 2026-08-09** (`POST /discover/position-page`, diagnostic-only) |
 | ~~G1 live orchestration (wrapper + verdict)~~ | ~~Offline~~ | **done 2026-08-09** (`scripts/invoke-g1-live-poll.ps1`; verdict validated on OD-077 reports) |
-| G1 live poll (first run done 2026-08-09: `observed` verdict, 19/24 — 5 reads failed at `avatar-helper`; still open, needs a 24/24 positive session) | Live (further approved session) | G1 offline steps + the avatar-helper pattern as the known variable |
+| G1 live poll (two runs done 2026-08-09: `observed` verdict both times; poll 19/24 then **22/24** — reads still failing at `avatar-helper`; still open, needs a 24/24 positive session) | Live (further approved session) | G1 offline steps + the avatar-helper pattern as the known variable |
 | G0 publication review | Offline | G1 + G2 + G3 closed — checklist pre-staged in `docs/operations/g0-publication-review.md` |
 
 ## Frozen surfaces (unchanged)

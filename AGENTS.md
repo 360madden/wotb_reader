@@ -13,11 +13,16 @@ No runtime AI, cloud, Python, Node.js, Rust, Electron, or containers.
   append endpoint + gate-anchor caller, and the G1 offline write-observation
   mechanism test (OD-RECOVERY-077) plus the position-page capability
   (`POST /discover/position-page`, diagnostic-only, same traversal, poll path
-  untouched). The remaining gates — the G1 live poll with the interceptor
-  armed on the ring-record position page, the G2 live anchor/correlation —
-  all need one new approved live session; see
-  `docs/operations/offset-promotion-checklist.md`. No offset-table change
-  until those close.
+  untouched). **Two G1/G2 live sessions done (2026-08-09):** the one-command
+  `scripts/invoke-g1-live-poll.ps1` chain runs end-to-end and **G2 is closed
+  live** — `sameDecodedClockProven=true` in the poll aggregate both sessions
+  (CaptureLog anchor, 1 s within the 2 s bound). G1 stays open: the unchanged
+  poll resolved 19/24 then **22/24** (reads failing at the `avatar-helper`
+  hop, a battle-segment-dependent pointer-race pattern), write-observation
+  `observed` both times; acceptance is a **24/24 positive poll**. G3 stays
+  open until a positive poll + prior. See
+  `docs/operations/offset-promotion-checklist.md` (and ledger
+  `OD-RECOVERY-078/079`). No offset-table change until G1 + G3 close.
 - **BLK-0026 resolved and validated (2026-08-09):** root cause was a launcher
   regression — .NET `Set-Acl` threw `PrivilegeNotHeldException` on the
   persisted owner-only marker ACL, mapped by the catch-all to
