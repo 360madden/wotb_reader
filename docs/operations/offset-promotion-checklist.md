@@ -103,8 +103,11 @@ rendezvous/state → session/trajectory → position-page → interceptor arm �
 mechanism-test reports (a window inside the suspended span → clean, exit 0;
 a busy span → observed). The operator runbook (pre-flight, watch items,
 evidence review, shutdown, failure branching) is in
-`docs/operations/offset-discovery-workflow.md` → “G1/G2 live run”. The live
-sequence in one new approved session:
+`docs/operations/offset-discovery-workflow.md` → “G1/G2 live run”, and the
+pre-staged ledger section + handoff skeleton are in
+`docs/operations/g1-live-evidence-template.md` (static values pre-filled,
+placeholders for the evidence). The live sequence in one new approved
+session:
 
 1. Gate: `invoke-g1-live-poll.ps1 -ReplayPath ...` launches and blocks until
    `OfflineReplayVerified` (same session the poll runs in; addresses are
