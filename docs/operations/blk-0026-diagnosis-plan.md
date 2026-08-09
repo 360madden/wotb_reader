@@ -36,18 +36,18 @@
 
 | # | Finding | Source | Consequence |
 |---|---------|--------|-------------|
-| 1 | **All three real `.data/launch` replays decode cleanly** (`crosscheck` exit 0, 13–17 s each) | `scripts/invoke-replay-crosscheck.ps1` sweep | **Hypothesis (b) refuted** — the content-distinct replay is neither corrupt nor an unsupported version |
-| 2 | The poll waits for `OfflineReplayVerified` (180 s) **before** the marker binding check | `scripts/od-073-entity-position-poll.ps1` (`waiting_for_verified_gate` → `Get-LaunchArtifactId`) | A binding failure alone cannot explain `session.initial`; the original failure was pre-gate, in launch/evidence establishment |
+| 1 | **All three real `.data/launch` replays decode cleanly** (`crosscheck` exit 0, 13–17 s each); the content-addressed store matches the launch folder by exact byte size (1,045,525 / 1,100,265 / 829,216 / 2×990), so the content-distinct replay is **confirmed among the decoded set** | `scripts/invoke-replay-crosscheck.ps1` sweep + `.data/content/` ↔ `.data/launch/` size mapping | **Hypothesis (b) refuted** — the content-distinct replay is neither corrupt nor an unsupported version |
+| 2 | The poll waits for `OfflineReplayVerified` (180 s) **before** the marker binding check; the **launcher also verifies the gate post-watch** (`post_watch_vs` → exit 4 `FAILED_gate_not_verified`) | `scripts/od-073-entity-position-poll.ps1` (`waiting_for_verified_gate` → `Get-LaunchArtifactId`); `scripts/launch-offline-replay-for-od.ps1` (lines ~625–634) | A binding failure alone cannot explain `session.initial`; the original failure was pre-gate, in launch/evidence establishment — the launcher's own `FAILED_gate_not_verified` (exit 4) is the most likely exit for the observed `session.initial` |
 | 3 | Marker fail-closed rules: **absent / not owner-only / stale (>20 min) / malformed** → `FAILED_launch_artifact_binding` | `Get-LaunchArtifactId` in od-073 | The one unchanged poll must run **within 20 minutes** of a fresh import, or it fails closed at binding (after the gate) |
 | 4 | Marker currently **stale**: present, owner-only, valid GUID, **767.8 min old** (checked via wrapper `-StaticOnly`) | `.data/diagnose-blk0026-launch.ps1` | Any poll against the current marker is refused at binding — a fresh import is a prerequisite for the eventual poll; this is a landmine, not the BLK-0026 cause |
 | 5 | `Write-Od` writes only to the console — the failed attempts' lifecycle stream was **never persisted** | `launch-offline-replay-for-od.ps1` (function `Write-Od`) | The original exit point is unrecoverable; the wrapper must tee the stream for future runs |
-| 6 | Launcher exit-path inventory (pre-gate): `FAILED_launch_marker_directory_acl`, `FAILED_launch_marker_acl`, `FAILED_launch_http`, `FAILED_launch=<msg>`, `FAILED_no_window`, `FAILED_host_denied_before_watch_restart_required` | launcher source | The wrapper's tee'd `od_launch:` stream will pinpoint which path the next attempt takes |
+| 6 | Complete launcher exit-path inventory (pre-gate): import — `FAILED_cli_missing_build_release_first`, `FAILED_replay_path_missing`, `FAILED_not_wotbreplay`, `FAILED_no_wotbreplay_in_game_folder`, `FAILED_replay_is_staging_copy_use_original`, `FAILED_import_parse`; marker/ACL — `FAILED_launch_marker_directory_acl`, `FAILED_launch_marker_acl`; launch POST — `FAILED_launch_http`, `FAILED_launch=<msg>`; window — `FAILED_no_window`; host readiness — `FAILED_host_missing_build_release_first`, `FAILED_host_stale_build`, `FAILED_host_down`; post-watch gate — `FAILED_gate_not_verified` (exit 4); other — `FAILED_host_denied_before_watch_restart_required`, `FAILED_game_died_during_settle`, `FAILED_unexpected` | launcher source (`grep -o "FAILED_[a-zA-Z_]*"`) | The wrapper's tee'd `od_launch:` stream will pinpoint which of these paths the next attempt takes |
 
 ## Updated hypothesis space
 
 | # | Hypothesis | Status |
 |---|-----------|--------|
-| (a) | Launcher-side pre-game failure (import/marker/ACL/HTTP/window) | **Open** — leading; the tee'd `od_launch:` stream will confirm or refute |
+| (a) | Launcher-side pre-game failure (import/marker/ACL/HTTP/window/post-watch gate) | **Open** — leading; the tee'd `od_launch:` stream will confirm or refute |
 | (b) | Replay archive/version not decodable | **REFUTED** (fact 1) |
 | (c) | Gate/timing: battle boundary or evidence-lifetime expiry revokes the gate before verification | **Open** — Host-state sampler evidence needed |
 | (d) | Host attach/identification failure on the fresh process | **Open** — Host-state sampler evidence needed |

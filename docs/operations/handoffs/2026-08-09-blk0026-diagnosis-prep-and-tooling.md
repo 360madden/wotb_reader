@@ -29,11 +29,15 @@ offline decode and read-only lifecycle evidence:
 
 1. **Hypothesis (b) refuted.** `scripts/invoke-replay-crosscheck.ps1` on all
    three real `.data/launch` replays: exit 0 for each (13–17 s). The
-   content-distinct replay is neither corrupt nor an unsupported version.
+   content-addressed store matches the launch folder by exact byte size, so
+   the content-distinct replay is confirmed among the decoded set — it is
+   neither corrupt nor an unsupported version.
 2. **Gate-before-binding order confirmed.** `od-073-entity-position-poll.ps1`
-   waits for `OfflineReplayVerified` (180 s) before `Get-LaunchArtifactId`; a
-   binding failure alone cannot explain the observed `session.initial`. The
-   original failure was pre-gate, in launch/evidence establishment.
+   waits for `OfflineReplayVerified` (180 s) before `Get-LaunchArtifactId`;
+   the **launcher also verifies the gate post-watch** (`post_watch_vs` → exit
+   4 `FAILED_gate_not_verified`), the most likely exit for the observed
+   `session.initial`. A binding failure alone cannot explain it; the original
+   failure was pre-gate, in launch/evidence establishment.
 3. **Marker fail-closed rules mapped.** Absent / not-owner-only / stale
    (>20 min) / malformed → `FAILED_launch_artifact_binding`. The current marker
    is structurally valid but **767.8 min stale** (wrapper `-StaticOnly`
@@ -41,9 +45,17 @@ offline decode and read-only lifecycle evidence:
    run within 20 minutes of a fresh import.
 4. **Evidence-loss root cause found.** `Write-Od` is console-only; the failed
    attempts' lifecycle stream was never persisted. The scratch wrapper tees it.
-5. **Launcher exit-path inventory** (pre-gate): `FAILED_launch_marker_directory_acl`,
-   `FAILED_launch_marker_acl`, `FAILED_launch_http`, `FAILED_launch=<msg>`,
-   `FAILED_no_window`, `FAILED_host_denied_before_watch_restart_required`.
+5. **Launcher exit-path inventory** (pre-gate, complete): import —
+   `FAILED_cli_missing_build_release_first`, `FAILED_replay_path_missing`,
+   `FAILED_not_wotbreplay`, `FAILED_no_wotbreplay_in_game_folder`,
+   `FAILED_replay_is_staging_copy_use_original`, `FAILED_import_parse`;
+   marker/ACL — `FAILED_launch_marker_directory_acl`, `FAILED_launch_marker_acl`;
+   launch POST — `FAILED_launch_http`, `FAILED_launch=<msg>`; window —
+   `FAILED_no_window`; host readiness — `FAILED_host_missing_build_release_first`,
+   `FAILED_host_stale_build`, `FAILED_host_down`; post-watch gate —
+   `FAILED_gate_not_verified` (exit 4); other —
+   `FAILED_host_denied_before_watch_restart_required`,
+   `FAILED_game_died_during_settle`, `FAILED_unexpected`.
 
 Surviving hypotheses: (a) launcher-side pre-game failure (leading), (c)
 gate/timing (battle boundary or evidence-lifetime expiry), (d) Host
