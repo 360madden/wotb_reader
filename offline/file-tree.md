@@ -15,6 +15,9 @@ regenerate this file in the same change that adds, renames, or removes files.
 ```text
 %~dp0.data/content/5d/5ddc80f52425057ed01e267bb6e29693a9bab38707460aa4a9d7345952313f29
 %~dp0.data/logs/wotbtreader-20260727.json
+.agents/skills/README.md
+.agents/skills/grill-me/SKILL.md
+.agents/skills/grilling/SKILL.md
 .agents/types/agent-definition.ts
 .agents/types/tools.ts
 .agents/types/util-types.ts

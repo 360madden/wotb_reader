@@ -107,6 +107,7 @@ installed-game tests are local opt-in and skip by default.
 
 | Task | Load | Allowed | STOP if |
 |---|---|---|---|
+| Plan / design sharpening before acting | skill `grill-me` (user-invoked, `.agents/skills/`) | interview until shared understanding; agent may fetch facts but never answer decisions | implementing before the user confirms the understanding is shared |
 | Replay format / decode internals | [`offline/replay-format.md`](offline/replay-format.md) | read-only analysis; decode as data | executing pickle opcodes / importing Python |
 | Telemetry data flow (decode → UI / comparison) | [`offline/data-flow.md`](offline/data-flow.md) | trace pipelines | mutating immutable decode runs |
 | Offset / memory evidence | [`offline/memory-offsets.md`](offline/memory-offsets.md), [`offline/offset-discovery.md`](offline/offset-discovery.md), ledger | static/synthetic proof; bounded gated polls per ledger plan | promoting offsets or editing `memory-offsets/11.19.0.10.json` without proof; live polls while BLK-0026 is open |
