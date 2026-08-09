@@ -115,24 +115,31 @@ a busy span → observed). The live sequence in one new approved session:
 3. Arm + poll: the interceptor captures every page write from before the
    stage delay to after the poll; the unchanged bounded od-073 double-reads
    run inside that window.
-4. Verdict (two branches, computed by the script):
+4. Verdict (two branches, computed by the script; grilling review
+   2026-08-09):
    - **clean**: zero interceptor hits inside the read window
      `[pollStart + stageDelay, pollEnd]` with liveness (hits) on both sides
-     and interceptor exit 0 — a real no-write across the read window.
-   - **observed**: writes landed on the page during the window. The
-     interceptor arms the whole page (PAGE_GUARD granularity) and cannot
-     attribute a hit to the exact position bytes, so the per-read
-     byte-identical branch is carried by the poll itself: the resolver only
-     returns `Resolved` with `ConsistentDoubleRead=true` when the two 56-byte
-     ring-record snapshots are identical with a stable ring index (torn
-     reads retry as `UnstableSnapshot`). A ring-slot rewrite that leaves the
-     record byte-identical is therefore already attested by every resolved
-     read.
+     and interceptor exit 0 — a real no-write across the read window. This
+     is a STRONGER global claim than the acceptance needs.
+   - **observed** (the EXPECTED live outcome for a moving entity whose ring
+     slots are rewritten every few frames): writes landed on the page during
+     the window. The interceptor arms the whole page (PAGE_GUARD granularity)
+     and cannot attribute a hit to the exact position bytes, so the primary
+     per-read atomicity proof comes from the POLL: the resolver only returns
+     `Resolved` with `ConsistentDoubleRead=true` when the two 56-byte
+     ring-record snapshots are identical with a stable ring index (a
+     mid-read write would tear them → `UnstableSnapshot` retry). An observed
+     verdict is therefore NOT a failure — every Resolved poll read already
+     attests the byte-identical branch; the interceptor's role is the
+     complete page write history around the reads.
 5. Evidence: `g1-evidence.json` (verdict, read window, hit counts, armed
-   addresses, report + aggregate paths) is attached to the ledger row before
-   the flag may be claimed. A clean verdict plus the poll's
-   `stable-resolver-positive` is the strongest G1 evidence; an observed
-   verdict defers to the poll's double-read consistency and the review.
+   addresses, report + aggregate paths, poll exit/succeeded) is attached to
+   the ledger row before the flag may be claimed. The marker owner-only ACL
+   invariant is enforced by the poll (fails before any read if tampered).
+   The same session also exercises G2 live: the poll POSTs the
+   `CaptureLog` clock anchor at the gate moment, so a single
+   `invoke-g1-live-poll.ps1` run produces the G1 evidence AND the
+   `SameDecodedClockProven` outcome in the poll aggregate.
 
 Evidence artifact must be attached to the ledger row before the flag may be
 claimed.

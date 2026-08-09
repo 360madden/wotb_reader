@@ -37,6 +37,25 @@
        path, and the armed addresses (internal evidence - same class as the
        od-048 family reports; the poll aggregate itself stays privacy-safe).
 
+  Evidence-chain semantics (the grilling review, 2026-08-09):
+    - The per-read atomicity proof comes from the POLL, not the interceptor:
+      the resolver only returns Resolved when the two 56-byte ring-record
+      snapshots are byte-identical with a stable ring index (a mid-read write
+      would tear them -> UnstableSnapshot retry). The interceptor arms the
+      whole page (PAGE_GUARD granularity) and cannot attribute a hit to the
+      exact position bytes, so its role is the complete page write history
+      plus the clean-window case.
+    - clean (zero page writes across the read window + liveness both sides)
+      is a STRONGER global claim; observed is the EXPECTED live outcome for
+      a moving entity whose ring slots are rewritten every few frames. An
+      observed verdict is not a failure - the per-read byte-identical branch
+      is already attested by every Resolved poll read.
+    - The launcher marker's owner-only ACL invariant is enforced by the poll
+      (Test-OwnerOnlyRendezvousFile inside Get-LaunchArtifactId) and fails
+      the poll before any read if the marker is tampered; this wrapper's
+      pre-poll discovery uses the marker only to select the session and the
+      poll re-validates the binding.
+
   Offline test of the verdict only (-DryRun):
     powershell -NoProfile -File scripts/invoke-g1-live-poll.ps1 -DryRun `
       -ReportPath .data/diagnostics/g1-mechanism-<stamp>/interceptor-report.json `
@@ -269,8 +288,8 @@ try {
 
     # 2. Rendezvous -> state -> session -> entity -> position page.
     $state = Invoke-OdApi -Method 'Get' -RelativePath '/api/v1/game/state'
-    $pid = [int]$state.pid
-    Write-G1 ('game_pid=' + $pid)
+    $gamePid = [int]$state.pid
+    Write-G1 ('game_pid=' + $gamePid)
 
     $launchArtifactId = Get-LaunchArtifactId
     if ([string]::IsNullOrWhiteSpace($launchArtifactId)) {
@@ -324,7 +343,7 @@ try {
         $InterceptorMarginSeconds + 10
     Write-G1 ('interceptor_seconds=' + $interceptorSeconds)
     $script:interceptorProc = Start-Process -FilePath $InterceptorExe `
-        -ArgumentList @('--interceptor', '-Pid', ([string]$pid), '-Addresses', [string]$positionPage.recordAddress, '-Seconds', ([string]$interceptorSeconds), '-Out', $interceptorReportPath) `
+        -ArgumentList @('--interceptor', '-Pid', ([string]$gamePid), '-Addresses', [string]$positionPage.recordAddress, '-Seconds', ([string]$interceptorSeconds), '-Out', $interceptorReportPath) `
         -PassThru -WindowStyle Hidden
     Write-G1 ('interceptor_started pid=' + $script:interceptorProc.Id)
     Start-Sleep -Seconds 2
@@ -366,14 +385,17 @@ try {
         -WindowStartUtc $readWindowStart `
         -WindowEndUtc $pollEndUtc
 
+    $pollSucceeded = ($pollExit -eq 0)
+
     $evidence = [ordered]@{
         schema = 'wotbtreader.g1.write-observation.v1'
         campaign = 'g1-hardware-atomicity'
         createdUtc = [DateTime]::UtcNow.ToString('o')
         pollExit = $pollExit
+        pollSucceeded = $pollSucceeded
         pollAggregatePath = $pollAggregatePath
         interceptorReportPath = $interceptorReportPath
-        gamePid = $pid
+        gamePid = $gamePid
         battleSessionId = $battleSessionId
         entityId = $entityId
         armedRecordAddress = [string]$positionPage.recordAddress
@@ -401,6 +423,10 @@ try {
         ' poll_exit=' + $pollExit +
         ' evidence=' + $evidencePath)
     Write-G1 'runbook: stop the game + Host (managed processes) after reviewing the evidence'
+    if (-not $pollSucceeded) {
+        Write-Host ('g1live: FAIL_poll_exit=' + $pollExit + ' (evidence written; G1 claim requires a successful poll)')
+        exit $pollExit
+    }
     exit 0
 }
 catch {
