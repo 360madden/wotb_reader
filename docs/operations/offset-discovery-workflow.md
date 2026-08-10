@@ -13,15 +13,28 @@ offset.
 
 ## Current decision
 
-The current `11.19.0.10` `playerYaw` evidence is **quarantined as stale and ambiguous**.
-The prior table recorded decimal `51808784` (`0x03168A10`), its notes claimed
-`0x0317A810` (`51882000`), and the raw Ghidra export's top candidate was decimal
-`56085200` (`0x0357CAD0`). The published offset is now cleared to `0` while the
-conflict remains in evidence notes and the ledger. None of these values may be
-used as a trusted scan anchor until the original analysis is reconciled.
+**The position anchor is ESTABLISHED and PUBLISHED (2026-08-10):**
+`playerPositionX/Y/Z` are `Verified` via the module-rooted position-ring chain
+(`OD-RECOVERY-083`) and the chains are mechanically walkable by
+`OffsetChainWalker` since `OD-RECOVERY-084` (see `docs/operations/g0-offset-
+table-draft.md` §7; the walker reads the published table directly, pinned
+resolver-equal by `Walk_PublishedTableChains_*`). The position family met the
+roadmap definition of done (2 launches × 2 replays, pointer-chain
+classification, published). No further live session is needed for position.
 
-The next session must establish one clean dynamic anchor, preferably position,
-replay time, or HP, rather than repeating the unresolved yaw neighborhood scan.
+The `11.19.0.10` `playerYaw` evidence remains **quarantined as stale and
+ambiguous** — the prior table recorded decimal `51808784` (`0x03168A10`), its
+notes claimed `0x0317A810` (`51882000`), and the raw Ghidra export's top
+candidate was decimal `56085200` (`0x0357CAD0`). The published offset stays `0`
+while the conflict remains in evidence notes and the ledger; none of these
+values may be used as a trusted scan anchor until the original analysis is
+reconciled.
+
+Next anchor, in roadmap preference order after position: `replayTime`, then
+`playerHP`. `replayTime` retains its rolling increased-Double evidence
+(OD-012..038); `playerHP` has the query-side ground truth ready
+(`IHpGroundTruthProvider`) and needs the memory-side diffing harness. Do not
+repeat the unresolved yaw neighborhood scan.
 
 ## Why the old workflow was inefficient
 

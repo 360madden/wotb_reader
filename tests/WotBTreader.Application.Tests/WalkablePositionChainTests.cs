@@ -176,6 +176,24 @@ public sealed class WalkablePositionChainTests
     }
 
     [TestMethod]
+    public void Walk_PublishedTableChains_ThirdAlternativeRoot_MatchesResolver()
+    {
+        // The PUBLISHED chain's entityLookup carries three ALTERNATIVE tree
+        // roots [0x1c (primary), 0x40 (tertiary), 0x34 (secondary)]; the
+        // resolver falls through the first two before hitting the third — the
+        // deepest branch of the walkable chain, proven on the published table.
+        var memory = FullSpineFixture.CreateTree(
+            EntityId,
+            primaryRootKey: null,
+            tertiaryKey: null,
+            secondaryKey: EntityId,
+            x: 16f,
+            y: 17f,
+            z: 18f);
+        RunEquivalenceOnPublished("playerPositionX", memory, 16f, 17f, 18f);
+    }
+
+    [TestMethod]
     public void Walk_PublishedTableChains_YAndZ_ReadTheSameRecord()
     {
         // Y/Z share the walkable chain with recordOffset 0x14/0x18. Walking

@@ -53,6 +53,24 @@ public sealed class OffsetChainWalkerEquivalenceTests
     }
 
     [TestMethod]
+    public void Walker_MatchesResolver_ThirdAlternativeRootPath()
+    {
+        // The resolver tries all three ALTERNATIVE roots IN ORDER
+        // [0x1c (primary), 0x40 (tertiary), 0x34 (secondary)]; the entity
+        // living only in the LAST root exercises the deepest fallthrough
+        // (two misses then a hit) and the walker must reproduce it.
+        var memory = FullSpineFixture.CreateTree(
+            EntityId,
+            primaryRootKey: null,
+            tertiaryKey: null,
+            secondaryKey: EntityId,
+            x: 13f,
+            y: 14f,
+            z: 15f);
+        RunEquivalence(memory, 13f, 14f, 15f);
+    }
+
+    [TestMethod]
     public void Walker_MatchesResolver_EntityNotFound_WhenAllTreesEmpty()
     {
         var memory = FullSpineFixture.CreateEmptyMaps();
