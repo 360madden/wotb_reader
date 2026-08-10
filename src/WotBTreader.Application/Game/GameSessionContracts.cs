@@ -104,8 +104,10 @@ public sealed record GameMemoryObservation(
 /// <summary>
 /// Returns safe memory observations without exposing process identity,
 /// handles, authorization leases, offsets, or attachment operations.
-/// Returns <see cref="GameMemoryObservationAvailability.Unsupported"/>
-/// when the offline-session gate is not satisfied.
+/// Returns <see cref="GameMemoryObservationAvailability.Unknown"/> when
+/// the offline-session gate is not satisfied (the coordinator emits
+/// <c>Available</c> or <c>Unknown</c> only; <c>Unsupported</c> is reserved
+/// and not produced today).
 /// </summary>
 public interface IGameMemoryObserver
 {

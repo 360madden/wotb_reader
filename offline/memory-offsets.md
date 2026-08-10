@@ -98,11 +98,16 @@ The directory is resolved by `Application` DI
 ## Runtime gating (`GameSessionCoordinator`)
 
 - `LoadOffsetTable(process)` requires an exact version + executable-hash match.
-- `HasKnownOffsets(table)` is true only for fields promoted to `Verified` with
-  complete evidence; placeholders and candidate-only tables are discovery-only.
-  Otherwise the coordinator **refuses memory reads** (`GET /api/v1/game/memory`
-  returns `Unavailable`).
+- The observation read path (`ReadMemoryAsync`) reads only fields where
+  `Offset != 0 && Status == Verified` (direct module-relative reads:
+  `moduleBase + offset`). Chained fields (offset 0) are excluded **by
+  construction**; `Candidate`/`Unknown`/`Stale` are never read. With no
+  known fields the observation is `Available` with all-null fields — the
+  endpoint never refuses a verified session (`GET /api/v1/game/memory`
+  returns `Availability: Available|Unknown`, HTTP 200).
 - Live observation pushes only happen after the `OfflineReplayVerified` gate.
+
+Full trace: `docs/operations/legacy-observation-surface.md`.
 
 ## Chains (pointer-chain verification)
 

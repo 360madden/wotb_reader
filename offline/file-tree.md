@@ -208,6 +208,7 @@ docs/operations/handoffs/2026-08-09-od074-replay-root-live-narrowing.md
 docs/operations/handoffs/2026-08-09-od075-position-ring-correction-live-proof.md
 docs/operations/handoffs/2026-08-10-g0-offset-publication.md
 docs/operations/handoffs/README.md
+docs/operations/legacy-observation-surface.md
 docs/operations/offset-discovery-guide.md
 docs/operations/offset-discovery-ledger.md
 docs/operations/offset-discovery-m1-m2-choreography.md
