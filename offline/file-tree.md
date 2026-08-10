@@ -219,6 +219,7 @@ docs/operations/handoffs/2026-08-10-hp-victim-qualification.md
 docs/operations/handoffs/2026-08-10-l0-region-read-seam.md
 docs/operations/handoffs/2026-08-10-l1-driver-wired-to-l0-seam.md
 docs/operations/handoffs/2026-08-10-l1-tank-record-anchor-fix.md
+docs/operations/handoffs/2026-08-10-l2-facing-driver-and-deadband-fix.md
 docs/operations/handoffs/2026-08-10-o3-beacons-parallel-guardrails.md
 docs/operations/handoffs/2026-08-10-o4-evidence-o5-heading-delta.md
 docs/operations/handoffs/2026-08-10-phase0-foundations-complete.md
@@ -296,6 +297,7 @@ scripts/click-watch-offline.ps1
 scripts/ghidra-scan.py
 scripts/install-psscriptanalyzer.ps1
 scripts/invoke-csharp-write-trace.ps1
+scripts/invoke-facing-session.ps1
 scripts/invoke-fresh44-crossbattle.ps1
 scripts/invoke-g1-live-poll.ps1
 scripts/invoke-hp-diffing-session.ps1

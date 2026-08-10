@@ -144,7 +144,7 @@ track's static anchor. Evidence: `tools/ghidra-scripts/writesite-ring-disasm.txt
 | L0 | C | ✅ `EntityRecordRegionReadRequest/Result` (≤ 4 KB region, bytes + replay time only, `OfflineReplayVerified` + current auth) — the ONE product addition; shipped 2026-08-10 with the guarded region read + replay-clock label + `RegionAnchor` (ring-record / entity-tank-record — the L1 wiring correction; coordinator derefs `[entity+0x3C]` itself), 8 coordinator tests + 4 web endpoint tests | — |
 | L1 | D | HP live session (Oasis Palms victim 3760578; dump the `[entity+0x3C]` transform-object region and correlate — the `+0x48` from rehearsals is a SYNTHETIC FIXTURE, not a verified location) | 1 |
 | L2 | D | Facing live session (ring-record dump vs `position_samples.yaw`; probe `+0x2C..+0x37` first) | 1 |
-| L3 | D | Damage-dealt live session (viewpoint counter; share the L1 seam) | 1 |
+| L3 | D | Damage-dealt live session (viewpoint counter; `invoke-hp-diffing-session.ps1 -Track damage-dealt` wired + two-replay driver rehearsal HIT `+0x48` 5/5 both) | 1 |
 | L4 | D | replayTime session (OD-044 interceptor, byte-exact Double — fixed) | 1 |
 
 Each session reuses L0; the region dump is multipurpose (one dump yields

@@ -324,7 +324,14 @@ real hit tick, step function):
 | Dead Rail | 2549401 | HIT | `+0x48` | 1.0 / 1.0 | 5/5 |
 
 Both verdicts satisfy the contract and agree on `+0x48` — the Phase-4
-repeatability rule proven for the increment direction too. Construction
+repeatability rule proven for the increment direction too. Re-verified
+through the DRIVER after the L1 tank-record anchor correction
+(2026-08-10): `invoke-hp-diffing-session.ps1 -Track damage-dealt` with
+`-RegionAnchor entity-tank-record` (the default) reproduced both HITs
+(5/5, flatness 1.0) on the real attacker timelines, and the no-host
+(`-LiveAcquire` without a web host → `rendezvous_unavailable`, fail-closed)
+and `-FailOnNoHit` (exit 1) paths both behave.
+Construction
 note (same trap as HP, caught in rehearsal): trailing control dumps must
 carry the step-function value at their time, not the final cumulative —
 a control dump after a hit but before the next must show the value as of
