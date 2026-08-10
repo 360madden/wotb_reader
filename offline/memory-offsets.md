@@ -104,6 +104,30 @@ The directory is resolved by `Application` DI
   returns `Unavailable`).
 - Live observation pushes only happen after the `OfflineReplayVerified` gate.
 
+## Chains (pointer-chain verification)
+
+Since OD-RECOVERY-083 (2026-08-10), version files may carry a top-level
+`chains` object mapping a field name to an ordered array of hops, each
+`{ "kind": "rootRva" | "memberOffset" | "recordOffset", "value": <non-negative int>, "note": <text> }`.
+The chain is the module-relative dereference path the resolver walks to the
+field (verified against `Type10EntityPositionResolver.TryResolveOnce`/
+`FindEntity`); it is documentation + evidence, never a runtime read plan.
+
+Chained fields keep their `offsets` value `0` **by design**: the runtime
+observation path computes `moduleBase + field.Offset` (no chain concept) and
+the ring record is battle-scoped heap (never publishable), so a non-zero
+`offsets` entry would make the legacy observation path read a bogus address.
+The resolver reads position through its own hash-bound layout; chained fields
+are excluded from observation reads (pinned by
+`ChainedFields_AreExcludedFromObservationReads`).
+
+The position family — `playerPositionX/Y/Z` (float32 triple at record
+`+0x10/+0x14/+0x18`) — is `Verified` via the module-rooted chain
+(`GameCoreRootRva 0x04095C88` = 67722376), published in
+`11.19.0.10.json`. `scripts/python/offset_check.py` validates the `chains`
+object (chained field offsets must be 0; hops must be non-empty with valid
+`kind`/non-negative `value`); absent `chains` is a no-op.
+
 ## Validation tooling
 
 - `scripts/python/offset_check.py` — schema compliance: `schemaVersion` = 1,

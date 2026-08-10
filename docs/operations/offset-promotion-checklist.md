@@ -76,8 +76,22 @@ resolved the schema decision: offsets stay 0 — the runtime computes
 observation path must/must not emit, with the exclusion test now
 implemented and passing) is in `docs/operations/g0-post-publication-regression.md`;
 the one-page operator gate (exact commands, values, commit contents) is in
-`docs/operations/g0-operator-checklist.md`; the table stays frozen until
-operator approval.
+`docs/operations/g0-operator-checklist.md`.
+
+**G0 publication APPLIED 2026-08-10 (OD-RECOVERY-083, operator-approved):**
+the table is no longer frozen — `playerPositionX/Y/Z` are `Verified` via
+the module-rooted position-ring chain (additive `chains` section in
+`schema.json` + `11.19.0.10.json`; `offsets` stay 0 by design — the
+runtime computes `moduleBase + offset` and the ring record is battle-scoped
+heap), evidence appended (launches 4 / replays 2), approvals set,
+`numericOffsetPublication: true`. All post-edit gates green:
+`offset_check.py` PASS + `chains validated (3 field(s))`, evidence report
+clean, offline links 112/112, exclusion test passed, `validate.ps1` exit 0.
+What was NOT promoted: velocity, playerYaw, replayTime, playerHP,
+cameraPitch, aliveTankCount; no absolute/heap addresses published. The
+resolver + read surface are untouched; the legacy observation path still
+emits position nulls (chained fields excluded — pinned by
+`ChainedFields_AreExcludedFromObservationReads`).
 
 ### G1 — Hardware-atomic read proof
 
@@ -303,15 +317,18 @@ processes (Dead Rail OD-075 + Oasis Palms OD-076) — is satisfied.
 | ~~G1 position-page capability (resolver entry + coordinator + endpoint + tests)~~ | ~~Offline~~ | **done 2026-08-09** (`POST /discover/position-page`, diagnostic-only) |
 | ~~G1 live orchestration (wrapper + verdict)~~ | ~~Offline~~ | **done 2026-08-09** (`scripts/invoke-g1-live-poll.ps1`; verdict validated on OD-077 reports) |
 | ~~G1 live poll (G1 closed)~~ | ~~Live (done 2026-08-09)~~ | **done — OD-RECOVERY-082:** stored v4 aggregate 24/24 `stable-resolver-positive` with `allConsistentDoubleRead=true` (per-read byte-identical branch). Armed runs 19/24 + 22/24 were harness artifacts (OD-RECOVERY-080); run 081 hit 24/24 clean read evidence but the verdict label was blocked by a verdict-contract conflict (fixed, schema v4); run 082 delivered the stored positive aggregate |
-| G0 publication review | Offline (verdict delivered) | **done 2026-08-09 (OD-RECOVERY-082): PROMOTE-READY (conditional)** — exe identity exact, RVA chain verified, field identity set, repeatability attested, read-only gates PASS; the table edit (playerPositionX/Y/Z → `Verified`, chain-form values + evidence + approvals) is a separate operator-approved change |
-| G0 publication review | Offline | G1 + G2 + G3 closed — checklist pre-staged in `docs/operations/g0-publication-review.md` |
+| G0 publication review | Offline (verdict delivered) | **done 2026-08-09 (OD-RECOVERY-082): PROMOTE-READY (conditional)** — exe identity exact, RVA chain verified, field identity set, repeatability attested, read-only gates PASS; the table edit is a separate operator-approved change |
+| G0 offset-table publication | Offline (operator-approved gate) | **done 2026-08-10 (OD-RECOVERY-083):** `playerPositionX/Y/Z` → `Verified` via the module-rooted position-ring chain (additive `chains` section; offsets stay 0), evidence appended (4 launches / 2 replays), approvals set, `numericOffsetPublication: true`; post-edit gates all green (`offset_check.py` chains-validated 3 fields, `validate.ps1` exit 0). Resolver + read surface untouched; NOT promoted: velocity, playerYaw, replayTime, playerHP, cameraPitch, aliveTankCount |
 
 ## Frozen surfaces (unchanged)
 
 - Resolver read surface stays server-owned and unchanged.
 - No broadening of scans, reads, or the artifact binding.
-- `memory-offsets/11.19.0.10.json` is not edited and no numeric offset is
-  promoted before G0's Phase 5 review.
+- ~~`memory-offsets/11.19.0.10.json` is not edited and no numeric offset is
+  promoted before G0's Phase 5 review~~ — **superseded 2026-08-10
+  (OD-RECOVERY-083): the operator-approved G0 publication edited the table
+  (playerPositionX/Y/Z → `Verified` via the `chains` section; `offsets`
+  stay 0).** The resolver and read surface remain frozen and untouched.
 - Privacy rules: aggregate-only results; no entity ID, coordinates, process
   address, raw byte, capability, replay path, or player/account data in
   tracked docs.

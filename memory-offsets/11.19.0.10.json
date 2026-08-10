@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "gameVersion": "11.19.0.10",
   "executableSha256": "1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d",
-  "discoveredAtUtc": "2026-08-03T23:45:00Z",
+  "discoveredAtUtc": "2026-08-10T02:55:00Z",
   "offsets": {
     "replayTime": 0,
     "playerHP": 0,
@@ -12,6 +12,62 @@
     "playerYaw": 0,
     "cameraPitch": 0,
     "aliveTankCount": 0
+  },
+  "chains": {
+    "playerPositionX": [
+      { "kind": "rootRva", "value": 67722376, "note": "GameCoreRootRva 0x04095C88 (module base + RVA -> GameCore pointer)" },
+      { "kind": "memberOffset", "value": 12, "note": "GameCoreAppControllerOffset 0x0C (vtable-validated: 0x0323D61C)" },
+      { "kind": "memberOffset", "value": 292, "note": "AppControllerSessionControllerOffset 0x124 (vtable: 0x0323D9BC)" },
+      { "kind": "memberOffset", "value": 280, "note": "SessionControllerAccountControllerOffset 0x118 (vtable: 0x0323EAE4)" },
+      { "kind": "memberOffset", "value": 296, "note": "AccountControllerActiveControllerOffset 0x128 (vtable: 0x03253AA4)" },
+      { "kind": "memberOffset", "value": 288, "note": "PlaybackControllerConnectionOffset 0x120" },
+      { "kind": "memberOffset", "value": 4, "note": "ConnectionEntitiesOffset 0x04 -> BWEntities map" },
+      { "kind": "memberOffset", "value": 72, "note": "CachedEntityOffset 0x48 - CONDITIONAL fast path (cache id match only)" },
+      { "kind": "memberOffset", "value": 28, "note": "EntityTreeObjectOffsets[0] 0x1C - ALTERNATIVE map root 1 (primary)" },
+      { "kind": "memberOffset", "value": 64, "note": "EntityTreeObjectOffsets[1] 0x40 - ALTERNATIVE map root 2 (tertiary)" },
+      { "kind": "memberOffset", "value": 52, "note": "EntityTreeObjectOffsets[2] 0x34 - ALTERNATIVE map root 3 (secondary)" },
+      { "kind": "memberOffset", "value": 56, "note": "EntityMovementFilterOffset 0x38 (vtable subtype: [0x0325654C, 0x032565AC, 0x03442520])" },
+      { "kind": "memberOffset", "value": 8, "note": "AvatarFilterHelperOffset 0x08 (helper vtable matches subtype: [0x0325656C, 0x0325658C, 0x034424A4])" },
+      { "kind": "memberOffset", "value": 8, "note": "AvatarHelperRingOffset 0x08 (eight-entry ring, stride 0x38)" },
+      { "kind": "memberOffset", "value": 456, "note": "AvatarHelperCurrentIndexOffset 0x1C8 (stable before/middle/after double-read)" },
+      { "kind": "recordOffset", "value": 16, "note": "PositionRecordOffset 0x10 (float32 X; Y at +0x14, Z at +0x18)" }
+    ],
+    "playerPositionY": [
+      { "kind": "rootRva", "value": 67722376, "note": "GameCoreRootRva 0x04095C88 (module base + RVA -> GameCore pointer)" },
+      { "kind": "memberOffset", "value": 12, "note": "GameCoreAppControllerOffset 0x0C (vtable-validated: 0x0323D61C)" },
+      { "kind": "memberOffset", "value": 292, "note": "AppControllerSessionControllerOffset 0x124 (vtable: 0x0323D9BC)" },
+      { "kind": "memberOffset", "value": 280, "note": "SessionControllerAccountControllerOffset 0x118 (vtable: 0x0323EAE4)" },
+      { "kind": "memberOffset", "value": 296, "note": "AccountControllerActiveControllerOffset 0x128 (vtable: 0x03253AA4)" },
+      { "kind": "memberOffset", "value": 288, "note": "PlaybackControllerConnectionOffset 0x120" },
+      { "kind": "memberOffset", "value": 4, "note": "ConnectionEntitiesOffset 0x04 -> BWEntities map" },
+      { "kind": "memberOffset", "value": 72, "note": "CachedEntityOffset 0x48 - CONDITIONAL fast path (cache id match only)" },
+      { "kind": "memberOffset", "value": 28, "note": "EntityTreeObjectOffsets[0] 0x1C - ALTERNATIVE map root 1 (primary)" },
+      { "kind": "memberOffset", "value": 64, "note": "EntityTreeObjectOffsets[1] 0x40 - ALTERNATIVE map root 2 (tertiary)" },
+      { "kind": "memberOffset", "value": 52, "note": "EntityTreeObjectOffsets[2] 0x34 - ALTERNATIVE map root 3 (secondary)" },
+      { "kind": "memberOffset", "value": 56, "note": "EntityMovementFilterOffset 0x38 (vtable subtype: [0x0325654C, 0x032565AC, 0x03442520])" },
+      { "kind": "memberOffset", "value": 8, "note": "AvatarFilterHelperOffset 0x08 (helper vtable matches subtype: [0x0325656C, 0x0325658C, 0x034424A4])" },
+      { "kind": "memberOffset", "value": 8, "note": "AvatarHelperRingOffset 0x08 (eight-entry ring, stride 0x38)" },
+      { "kind": "memberOffset", "value": 456, "note": "AvatarHelperCurrentIndexOffset 0x1C8 (stable before/middle/after double-read)" },
+      { "kind": "recordOffset", "value": 20, "note": "PositionRecordOffset 0x14 (float32 Y)" }
+    ],
+    "playerPositionZ": [
+      { "kind": "rootRva", "value": 67722376, "note": "GameCoreRootRva 0x04095C88 (module base + RVA -> GameCore pointer)" },
+      { "kind": "memberOffset", "value": 12, "note": "GameCoreAppControllerOffset 0x0C (vtable-validated: 0x0323D61C)" },
+      { "kind": "memberOffset", "value": 292, "note": "AppControllerSessionControllerOffset 0x124 (vtable: 0x0323D9BC)" },
+      { "kind": "memberOffset", "value": 280, "note": "SessionControllerAccountControllerOffset 0x118 (vtable: 0x0323EAE4)" },
+      { "kind": "memberOffset", "value": 296, "note": "AccountControllerActiveControllerOffset 0x128 (vtable: 0x03253AA4)" },
+      { "kind": "memberOffset", "value": 288, "note": "PlaybackControllerConnectionOffset 0x120" },
+      { "kind": "memberOffset", "value": 4, "note": "ConnectionEntitiesOffset 0x04 -> BWEntities map" },
+      { "kind": "memberOffset", "value": 72, "note": "CachedEntityOffset 0x48 - CONDITIONAL fast path (cache id match only)" },
+      { "kind": "memberOffset", "value": 28, "note": "EntityTreeObjectOffsets[0] 0x1C - ALTERNATIVE map root 1 (primary)" },
+      { "kind": "memberOffset", "value": 64, "note": "EntityTreeObjectOffsets[1] 0x40 - ALTERNATIVE map root 2 (tertiary)" },
+      { "kind": "memberOffset", "value": 52, "note": "EntityTreeObjectOffsets[2] 0x34 - ALTERNATIVE map root 3 (secondary)" },
+      { "kind": "memberOffset", "value": 56, "note": "EntityMovementFilterOffset 0x38 (vtable subtype: [0x0325654C, 0x032565AC, 0x03442520])" },
+      { "kind": "memberOffset", "value": 8, "note": "AvatarFilterHelperOffset 0x08 (helper vtable matches subtype: [0x0325656C, 0x0325658C, 0x034424A4])" },
+      { "kind": "memberOffset", "value": 8, "note": "AvatarHelperRingOffset 0x08 (eight-entry ring, stride 0x38)" },
+      { "kind": "memberOffset", "value": 456, "note": "AvatarHelperCurrentIndexOffset 0x1C8 (stable before/middle/after double-read)" },
+      { "kind": "recordOffset", "value": 24, "note": "PositionRecordOffset 0x18 (float32 Z)" }
+    ]
   },
   "fieldValidation": {
     "playerYaw": {
@@ -30,7 +86,7 @@
       "decoderAuditorApproved": false
     },
     "playerPositionX": {
-      "status": "Unknown",
+      "status": "Verified",
       "evidence": [
         {
           "provenanceKind": "DynamicScan",
@@ -66,16 +122,56 @@
           "provenanceKind": "DynamicScan",
           "sourceTool": "Host.Web second-pass compare + CE bptWrite",
           "notes": "OD-RECOVERY-011: Watch Offline click required for gate; second-pass Float narrowing ~2899->1929 private-mapping; CE Windows debugger 3 write BPs; hitCount=0 during overlapping resume. Does not promote any offset."
+        },
+        {
+          "provenanceKind": "StaticAnalysis",
+          "sourceTool": "Ghidra 12.1.2 (hash-bound 1cda5c31...) + Type10EntityPositionResolver layout",
+          "notes": "OD-RECOVERY-075/082: module-rooted position-ring chain verified hop-by-hop against Type10EntityPositionResolver (GameCore 0x04095C88 -> app 0x0C -> session 0x124 -> account 0x118 -> playback 0x128 -> connection 0x120 -> BWEntities 0x04 -> [conditional cache 0x48 | tree roots 0x1C/0x40/0x34] -> filter 0x38 -> avatar helper 0x08 -> ring 0x08/0x1C8 stride 0x38 -> position record +0x10). Identity vtable RVAs (module-relative): app 0x0323D61C, session 0x0323D9BC, account 0x0323EAE4, playback 0x03253AA4, filter [0x0325654C, 0x032565AC, 0x03442520], helper [0x0325656C, 0x0325658C, 0x034424A4]. Chained field: offsets value stays 0; see 'chains'."
+        },
+        {
+          "provenanceKind": "GameHarness",
+          "sourceTool": "WotBTreader.Host.Web gated discover/entity-position (loopback)",
+          "notes": "24/24 stable-resolver-positive polls with allConsistentDoubleRead=true across OD-075 (Dead Rail), OD-076 (Oasis Palms), OD-081/082 (Oasis Palms live, un-armed corrected procedure); the resolver reads the position triple through the verified chain."
+        },
+        {
+          "provenanceKind": "StaticAnalysis",
+          "sourceTool": "OD-RECOVERY-080 root-cause (interceptor PAGE_GUARD corrupts poll reads)",
+          "notes": "The write-observation mechanism was abandoned: arming the ring-record page fails the poll's own reads (ERROR_PARTIAL_COPY 299). The G1 acceptance is the poll's per-read byte-identical double-read branch (allConsistentDoubleRead)."
         }
       ],
-      "independentProcessLaunches": 0,
-      "independentReplays": 0,
-      "harnessInvariantsPassed": false,
-      "leadApproved": false,
-      "decoderAuditorApproved": false
+      "independentProcessLaunches": 4,
+      "independentReplays": 2,
+      "harnessInvariantsPassed": true,
+      "leadApproved": true,
+      "decoderAuditorApproved": true
+    },
+    "playerPositionY": {
+      "status": "Verified",
+      "evidence": [
+        {
+          "provenanceKind": "StaticAnalysis",
+          "sourceTool": "Ghidra 12.1.2 (hash-bound 1cda5c31...) + Type10EntityPositionResolver layout",
+          "notes": "OD-RECOVERY-075/082: module-rooted position-ring chain verified hop-by-hop (same chain as X; Y is the second float of the triple at record +0x14). See 'chains' and the playerPositionX StaticAnalysis entry for the full hop list and identity vtable RVAs. Chained field: offsets value stays 0."
+        },
+        {
+          "provenanceKind": "GameHarness",
+          "sourceTool": "WotBTreader.Host.Web gated discover/entity-position (loopback)",
+          "notes": "24/24 stable-resolver-positive polls with allConsistentDoubleRead=true across OD-075/076/081/082; the resolver extracts x, y, z consecutively (TryExtractPosition reads +0x10, +0x14, +0x18)."
+        },
+        {
+          "provenanceKind": "StaticAnalysis",
+          "sourceTool": "OD-RECOVERY-080 root-cause (interceptor PAGE_GUARD corrupts poll reads)",
+          "notes": "The write-observation mechanism was abandoned; the G1 acceptance is the poll's per-read byte-identical double-read branch (allConsistentDoubleRead)."
+        }
+      ],
+      "independentProcessLaunches": 4,
+      "independentReplays": 2,
+      "harnessInvariantsPassed": true,
+      "leadApproved": true,
+      "decoderAuditorApproved": true
     },
     "playerPositionZ": {
-      "status": "Unknown",
+      "status": "Verified",
       "evidence": [
         {
           "provenanceKind": "DynamicScan",
@@ -111,13 +207,28 @@
           "provenanceKind": "DynamicScan",
           "sourceTool": "Host.Web second-pass compare + CE bptWrite",
           "notes": "OD-RECOVERY-011: Watch Offline click required for gate; second-pass Float narrowing ~2899->1929 private-mapping; CE Windows debugger 3 write BPs; hitCount=0 during overlapping resume. Does not promote any offset."
+        },
+        {
+          "provenanceKind": "StaticAnalysis",
+          "sourceTool": "Ghidra 12.1.2 (hash-bound 1cda5c31...) + Type10EntityPositionResolver layout",
+          "notes": "OD-RECOVERY-075/082: module-rooted position-ring chain verified hop-by-hop (same chain as X; Z is the third float of the triple at record +0x18). See 'chains' and the playerPositionX StaticAnalysis entry for the full hop list and identity vtable RVAs. Chained field: offsets value stays 0."
+        },
+        {
+          "provenanceKind": "GameHarness",
+          "sourceTool": "WotBTreader.Host.Web gated discover/entity-position (loopback)",
+          "notes": "24/24 stable-resolver-positive polls with allConsistentDoubleRead=true across OD-075/076/081/082; the resolver extracts x, y, z consecutively (TryExtractPosition reads +0x10, +0x14, +0x18)."
+        },
+        {
+          "provenanceKind": "StaticAnalysis",
+          "sourceTool": "OD-RECOVERY-080 root-cause (interceptor PAGE_GUARD corrupts poll reads)",
+          "notes": "The write-observation mechanism was abandoned; the G1 acceptance is the poll's per-read byte-identical double-read branch (allConsistentDoubleRead)."
         }
       ],
-      "independentProcessLaunches": 0,
-      "independentReplays": 0,
-      "harnessInvariantsPassed": false,
-      "leadApproved": false,
-      "decoderAuditorApproved": false
+      "independentProcessLaunches": 4,
+      "independentReplays": 2,
+      "harnessInvariantsPassed": true,
+      "leadApproved": true,
+      "decoderAuditorApproved": true
     },
     "replayTime": {
       "status": "Unknown",
@@ -195,6 +306,6 @@
       "decoderAuditorApproved": false
     }
   },
-  "confidence": "none",
-  "notes": "No usable offsets published for 11.19.0.10. playerYaw Stale. replayTime: rolling increased-Double evidence reproduced across 30 verified process launches (OD-012..038); TARGET 10<=10 reached 3x (OD-031 x2, OD-036) with up to 10 survivors CE-staged + 4 HW write-BPs armed (OD-036 end-to-end). Tail is value-bound (11-17 plateau, 11 best under budget); OD-038 corrected the OD-037 lobby-login hypothesis (login failure is baseline noise, present in the OD-036 success run too) and hardened the 401-refresh (750ms settle + 4 retries). Static (OD-039..042-STATIC): the two 'root candidates' 0x03FA0C74/0x03FA012C were confirmed read-write code-initialized globals then RE-CLASSIFIED as members of a repeating 0x50-byte .data record family (base 0x03FA0C20) -- NOT standalone gameplay roots; 0x037F3054 precisely identified as the shared RTTI type_info vftable (every TypeDescriptor's pVFTable points at it, confirmed td@0x03DB5120; constructor at 0x020CB956 writes it to [this]+0), explaining the 48,609 aligned .data refs; --vtables now names 17,133/18,721 vtables via the COL chain (MSVC x86 stores the mangled name inline at td+8) including GameScene 0x0319D3C4 (26 slots, 0 .data roots = honest negative for vtable-singleton path), BaseContext/RootContext, Vehicle component family; Vehicle-family TypeDescriptor xref = 0 .text refs / 0 slots -- RTTI name-to-root path exhausted. EntityList proven a plain struct (0 RTTI hits). OD-043-STATIC: class-to-vtable query mode --vtable-root (GameScene vtable 0x0319D3C4/COL 0x034A89F0, 0 .data holders = vtable-singleton negative; TankComponent -> 19 matches all AnyFn delegate invokers roots=1) and pointer-array decoder --table-map: .data 0x03B7E198 reclassified as the DAVA AnyFn invoker vtable table (34 entries, modal stride 0x2C = 44-byte vtables, 24 named StaticAnyFnInvoker<lambda> binding TankComponent/AimingPointComponent/Scene/Entity = component event subscriptions; all 24 share dispatcher fn 0x002C4550; each vtable has exactly 1 .data root = its array entry, internally-closed set; 3 .text refs incl. runtime write mov [0x03B7E198],imm32 at 0x03104FAB repointing entry[0]) -- dispatch infrastructure, NOT a gameplay root. independentReplays still 0 (BLK-0019 - same Churchill replay content only). Next OD-044 operator-present interactive Find-what-writes on the replayTime-staged set; offsets remain 0."
+  "confidence": "high",
+  "notes": "No usable offsets published for 11.19.0.10. playerYaw Stale. replayTime: rolling increased-Double evidence reproduced across 30 verified process launches (OD-012..038); TARGET 10<=10 reached 3x (OD-031 x2, OD-036) with up to 10 survivors CE-staged + 4 HW write-BPs armed (OD-036 end-to-end). Tail is value-bound (11-17 plateau, 11 best under budget); OD-038 corrected the OD-037 lobby-login hypothesis (login failure is baseline noise, present in the OD-036 success run too) and hardened the 401-refresh (750ms settle + 4 retries). Static (OD-039..042-STATIC): the two 'root candidates' 0x03FA0C74/0x03FA012C were confirmed read-write code-initialized globals then RE-CLASSIFIED as members of a repeating 0x50-byte .data record family (base 0x03FA0C20) -- NOT standalone gameplay roots; 0x037F3054 precisely identified as the shared RTTI type_info vftable (every TypeDescriptor's pVFTable points at it, confirmed td@0x03DB5120; constructor at 0x020CB956 writes it to [this]+0), explaining the 48,609 aligned .data refs; --vtables now names 17,133/18,721 vtables via the COL chain (MSVC x86 stores the mangled name inline at td+8) including GameScene 0x0319D3C4 (26 slots, 0 .data roots = honest negative for vtable-singleton path), BaseContext/RootContext, Vehicle component family; Vehicle-family TypeDescriptor xref = 0 .text refs / 0 slots -- RTTI name-to-root path exhausted. EntityList proven a plain struct (0 RTTI hits). OD-043-STATIC: class-to-vtable query mode --vtable-root (GameScene vtable 0x0319D3C4/COL 0x034A89F0, 0 .data holders = vtable-singleton negative; TankComponent -> 19 matches all AnyFn delegate invokers roots=1) and pointer-array decoder --table-map: .data 0x03B7E198 reclassified as the DAVA AnyFn invoker vtable table (34 entries, modal stride 0x2C = 44-byte vtables, 24 named StaticAnyFnInvoker<lambda> binding TankComponent/AimingPointComponent/Scene/Entity = component event subscriptions; all 24 share dispatcher fn 0x002C4550; each vtable has exactly 1 .data root = its array entry, internally-closed set; 3 .text refs incl. runtime write mov [0x03B7E198],imm32 at 0x03104FAB repointing entry[0]) -- dispatch infrastructure, NOT a gameplay root. independentReplays still 0 (BLK-0019 - same Churchill replay content only). Next OD-044 operator-present interactive Find-what-writes on the replayTime-staged set; offsets remain 0. G0 (2026-08-10, OD-RECOVERY-082/083): playerPositionX/Y/Z published Verified via the module-rooted position-ring chain (see 'chains'; offsets stay 0 by design - the runtime reads moduleBase + offset and the ring record is battle-scoped heap; the resolver reads position via its own hash-bound layout). Executable identity re-measured 2026-08-09: 1cda5c31... exact match. Not promoted: velocity +0x28, playerYaw (Stale), replayTime, playerHP, cameraPitch, aliveTankCount."
 }

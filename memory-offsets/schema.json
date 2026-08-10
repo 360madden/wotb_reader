@@ -40,15 +40,15 @@
         },
         "playerPositionX": {
           "type": "integer",
-          "description": "Base-relative offset for player position X (float, world units). 0 = unknown."
+          "description": "Chained field: see `chains`. The integer stays 0 (the position is reached through the module-relative chain, not a direct base-relative offset). float X at record +0x10."
         },
         "playerPositionY": {
           "type": "integer",
-          "description": "Base-relative offset for player position Y / height (float). 0 = unknown."
+          "description": "Chained field: see `chains`. The integer stays 0 (the position is reached through the module-relative chain, not a direct base-relative offset). float Y at record +0x14."
         },
         "playerPositionZ": {
           "type": "integer",
-          "description": "Base-relative offset for player position Z (float, world units). 0 = unknown."
+          "description": "Chained field: see `chains`. The integer stays 0 (the position is reached through the module-relative chain, not a direct base-relative offset). float Z at record +0x18."
         },
         "playerYaw": {
           "type": "integer",
@@ -64,6 +64,37 @@
         }
       },
       "additionalProperties": false
+    },
+    "chains": {
+      "type": "object",
+      "description": "Module-relative pointer chain for chained fields (position family). offsets.<field> stays 0 for chained fields by design: the runtime observation path computes moduleBase + offset, which cannot represent a chain, and the ring record itself is battle-scoped heap. The resolver reads chained fields via its own hash-bound layout.",
+      "propertyNames": {
+        "enum": [
+          "replayTime", "playerHP", "playerPositionX", "playerPositionY",
+          "playerPositionZ", "playerYaw", "cameraPitch", "aliveTankCount"
+        ]
+      },
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": ["rootRva", "memberOffset", "recordOffset"]
+            },
+            "value": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "note": { "type": ["string", "null"] }
+          },
+          "additionalProperties": false
+        }
+      }
     },
     "fieldValidation": {
       "type": "object",

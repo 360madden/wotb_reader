@@ -46,12 +46,21 @@ No runtime AI, cloud, Python, Node.js, Rust, Electron, or containers.
   re-measured), RVA chain verified hop-by-hop vs the resolver layout, field
   identity (playerPositionX/Y/Z float32 at record `+0x10`; velocity not
   promoted; playerYaw untouched), repeatability attested, read-only gates
-  PASS. What remains: the OPERATOR-APPROVED table edit
-  (`memory-offsets/11.19.0.10.json` → playerPositionX/Y/Z `Verified`,
-  chain-form values + evidence + approvals) + post-edit gates; the table
-  stays frozen until then.** See
+  PASS. **G0 publication applied (2026-08-10, OD-RECOVERY-083,
+  operator-approved):** the table is no longer frozen —
+  `playerPositionX/Y/Z` are `Verified` via the module-rooted position-ring
+  chain (additive `chains` section in `schema.json` + `11.19.0.10.json`;
+  `offsets` stay 0 by design — the runtime computes `moduleBase + offset`
+  and the ring record is battle-scoped heap), evidence appended (4 launches
+  / 2 replays), approvals set, `numericOffsetPublication: true`, all
+  post-edit gates green (`offset_check.py` chains-validated 3 fields,
+  `validate.ps1` exit 0). NOT promoted: velocity, playerYaw, replayTime,
+  playerHP, cameraPitch, aliveTankCount. Resolver + read surface untouched;
+  the legacy observation path still emits position nulls (chained fields
+  excluded — pinned by `ChainedFields_AreExcludedFromObservationReads`).**
+  See
   `docs/operations/offset-promotion-checklist.md` (and ledger
-  `OD-RECOVERY-078/079/080/081/082`).
+  `OD-RECOVERY-078/079/080/081/082/083`).
 - **BLK-0026 resolved and validated (2026-08-09):** root cause was a launcher
   regression — .NET `Set-Acl` threw `PrivilegeNotHeldException` on the
   persisted owner-only marker ACL, mapped by the catch-all to
