@@ -65,6 +65,35 @@ public sealed class TreaderApiClient : IDisposable
         return JsonSerializer.Deserialize<SessionDetailResponse>(json, SerializerOptions);
     }
 
+    /// <summary>
+    /// Fetches one overlay frame (viewpoint camera + tanks projected to
+    /// viewport pixels) at a replay time for the W2S HUD.
+    /// </summary>
+    /// <param name="battleSessionId">The session to render.</param>
+    /// <param name="replayTimeSeconds">Replay time to build the frame at.</param>
+    /// <param name="verticalFovDegrees">Vertical field of view (default 90).</param>
+    /// <param name="viewportWidth">Viewport width in pixels (default 1920).</param>
+    /// <param name="viewportHeight">Viewport height in pixels (default 1080).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The projected frame, or null if deserialization fails.</returns>
+    public async Task<OverlayFrameResponse?> GetOverlayFrameAsync(
+        Guid battleSessionId,
+        double replayTimeSeconds,
+        double verticalFovDegrees = 90.0,
+        double viewportWidth = 1920.0,
+        double viewportHeight = 1080.0,
+        CancellationToken cancellationToken = default)
+    {
+        string json = await _httpClient.GetStringAsync(
+            $"api/v1/sessions/{battleSessionId:D}/frame"
+            + $"?timeSeconds={replayTimeSeconds.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}"
+            + $"&fov={verticalFovDegrees.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}"
+            + $"&width={viewportWidth.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}"
+            + $"&height={viewportHeight.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}",
+            cancellationToken);
+        return JsonSerializer.Deserialize<OverlayFrameResponse>(json, SerializerOptions);
+    }
+
     /// <summary>Fetches the complete map boundary catalogue for minimap projection.</summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>List of map boundaries; empty list on failure.</returns>

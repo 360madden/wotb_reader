@@ -1,7 +1,9 @@
 using WotBTreader.ApiContracts;
 using WotBTreader.Application.Diagnostics;
+using WotBTreader.Application.Replay;
 using WotBTreader.Application.Results;
 using WotBTreader.Application.Storage;
+using WotBTreader.Core.Overlay;
 using WotBTreader.Core;
 using WotBTreader.Host.Web.Contracts;
 using WotBTreader.Host.Web.Infrastructure;
@@ -36,6 +38,7 @@ internal static class ReadApiEndpoints
         group.MapGet("/maps/boundaries", GetMapBoundariesAsync);
         group.MapGet("/maps/{mapId}/minimap", GetMinimapAsync);
         group.MapGet("/decode-runs/{decodeRunId:guid}", GetDecodeRunAsync);
+        group.MapGet("/sessions/{battleSessionId:guid}/frame", GetOverlayFrameAsync);
         return builder;
     }
 
@@ -159,6 +162,106 @@ internal static class ReadApiEndpoints
         }
 
         return Results.File(pngBytes, "image/png");
+    }
+
+    /// <summary>
+    /// Serves one overlay frame for the W2S HUD: the viewpoint camera and
+    /// every roster tank projected to viewport pixels at a replay time.
+    /// Query params: timeSeconds (default 0), fov (vertical degrees, default
+    /// 90), width/height (viewport pixels, default 1920x1080). The projection
+    /// is server-side so every HUD client sees identical pixels.
+    /// </summary>
+    internal static async Task<IResult> GetOverlayFrameAsync(
+        HttpContext context,
+        IOverlayFrameSource frames,
+        Guid battleSessionId,
+        double? timeSeconds,
+        double? fov,
+        double? width,
+        double? height,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(frames);
+
+        double resolvedTime = timeSeconds ?? 0.0;
+        if (!double.IsFinite(resolvedTime) || resolvedTime < 0)
+        {
+            return Problem(
+                context,
+                StatusCodes.Status400BadRequest,
+                "api.frame.time",
+                "timeSeconds must be a finite non-negative number of seconds.",
+                retryable: false);
+        }
+
+        double resolvedFov = fov ?? 90.0;
+        if (!double.IsFinite(resolvedFov) || resolvedFov <= 0 || resolvedFov >= 180)
+        {
+            return Problem(
+                context,
+                StatusCodes.Status400BadRequest,
+                "api.frame.fov",
+                "fov must be a positive number of degrees below 180.",
+                retryable: false);
+        }
+
+        double resolvedWidth = width ?? 1920.0;
+        double resolvedHeight = height ?? 1080.0;
+        if (!double.IsFinite(resolvedWidth) || resolvedWidth <= 0
+            || !double.IsFinite(resolvedHeight) || resolvedHeight <= 0)
+        {
+            return Problem(
+                context,
+                StatusCodes.Status400BadRequest,
+                "api.frame.viewport",
+                "width and height must be positive viewport pixel dimensions.",
+                retryable: false);
+        }
+
+        OperationResult<OverlayFrame> frameResult = await frames.GetFrameAsync(
+            new BattleSessionId(battleSessionId),
+            TimeSpan.FromSeconds(resolvedTime),
+            cancellationToken).ConfigureAwait(false);
+        if (!frameResult.IsSuccess || frameResult.Value is null)
+        {
+            return Problem(
+                context,
+                StatusCodes.Status404NotFound,
+                frameResult.Error?.Code ?? "api.frame.missing",
+                frameResult.Error?.Message ?? "The session has no overlay frame at this time.",
+                retryable: false);
+        }
+
+        OverlayFrameProjection projection = OverlayFrameProjector.Project(
+            frameResult.Value,
+            resolvedFov * Math.PI / 180.0,
+            resolvedWidth,
+            resolvedHeight);
+
+        return Results.Ok(new OverlayFrameResponse
+        {
+            ReplayTimeSeconds = projection.ReplayTime.TotalSeconds,
+            CameraX = projection.CameraX,
+            CameraY = projection.CameraY,
+            CameraZ = projection.CameraZ,
+            CameraYawRadians = projection.CameraYawRadians,
+            CameraPitchRadians = projection.CameraPitchRadians,
+            Tanks = [.. projection.Tanks.Select(tank => new OverlayTankResponse
+            {
+                EntityId = tank.EntityId,
+                PlayerName = tank.PlayerName,
+                TankName = tank.TankName,
+                ClanTag = tank.ClanTag,
+                TeamNumber = tank.TeamNumber,
+                HpFraction = tank.HpFraction,
+                Alive = tank.Alive,
+                DistanceMeters = tank.DistanceMeters,
+                ScreenX = tank.ScreenX,
+                ScreenY = tank.ScreenY,
+                Depth = tank.Depth,
+                InViewport = tank.InViewport,
+            })],
+        });
     }
 
     internal static async Task<IResult> GetDecodeRunAsync(

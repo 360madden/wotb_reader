@@ -41,6 +41,7 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         InitializeComponent();
 
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+        _viewModel.Nameplates.CollectionChanged += OnNameplatesChanged;
         Loaded += OnLoaded;
         Closed += OnClosed;
 
@@ -75,6 +76,7 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         if (_disposed) return;
         _disposed = true;
         _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        _viewModel.Nameplates.CollectionChanged -= OnNameplatesChanged;
         _refreshTimer.Stop();
         _windowTrackTimer.Stop();
         _playbackTimer.Stop();
@@ -115,6 +117,12 @@ public partial class MainWindow : System.Windows.Window, IDisposable
             _ = _viewModel.RefreshSelectedAsync();
     }
 
+    private void OnNameplatesChanged(object? sender,
+        System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        RenderW2sNameplates();
+    }
+
     private void OnViewModelPropertyChanged(object? sender,
         System.ComponentModel.PropertyChangedEventArgs e)
     {
@@ -130,6 +138,11 @@ public partial class MainWindow : System.Windows.Window, IDisposable
                 PlayButton.Content = "▶";
                 _playbackTimer.Stop();
             }
+        }
+        else if (e.PropertyName == nameof(MainViewModel.CurrentTimeSeconds))
+        {
+            // Scrubbing while paused must also move the projected nameplates.
+            RefreshW2sFrame();
         }
         else if (e.PropertyName == nameof(MainViewModel.HasLiveMemoryObservation))
         {
@@ -147,6 +160,29 @@ public partial class MainWindow : System.Windows.Window, IDisposable
     private void OnPlaybackTick(object? sender, EventArgs e)
     {
         _viewModel.AdvancePlayback();
+        RefreshW2sFrame();
+    }
+
+    /// <summary>
+    /// Fetches the overlay frame at the current replay time and renders the
+    /// projected nameplates over the game window. Fire-and-forget: failures
+    /// keep the previous frame on screen, and stale responses are dropped by
+    /// the view model's generation guard.
+    /// </summary>
+    private void RefreshW2sFrame()
+    {
+        if (ActualWidth <= 0 || ActualHeight <= 0)
+        {
+            return;
+        }
+
+        _ = _viewModel.RefreshOverlayFrameAsync(ActualWidth, ActualHeight);
+    }
+
+    /// <summary>Renders the latest view-model nameplates onto the HUD canvas.</summary>
+    private void RenderW2sNameplates()
+    {
+        W2sHudView.Render(_viewModel.Nameplates, ActualWidth, ActualHeight);
     }
 
     private void OnHpPulseTick(object? sender, EventArgs e)

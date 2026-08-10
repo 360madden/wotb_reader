@@ -67,6 +67,13 @@ public class MainViewModel : INotifyPropertyChanged
     private double? _livePlayerYaw;
     private const int MaxLiveTrailPoints = 50;
 
+    // W2S HUD state: the projected nameplates rendered over the game window.
+    private readonly ObservableCollection<NameplateItem> _nameplates = [];
+    private CancellationTokenSource? _frameLoadCts;
+    private long _frameLoadGeneration;
+    private double _hudFovDegrees = 90.0;
+    private double? _lastFrameReplayTimeSeconds;
+
     public MainViewModel()
         : this(new RendezvousLocator(), static (baseUri, capability) => new TreaderApiClient(baseUri, capability: capability), null)
     {
@@ -397,6 +404,113 @@ public class MainViewModel : INotifyPropertyChanged
         {
             _isPlaying = value;
             OnPropertyChanged();
+        }
+    }
+
+    /// <summary>Projected nameplates for the W2S HUD, one per visible tank.</summary>
+    public ObservableCollection<NameplateItem> Nameplates => _nameplates;
+
+    /// <summary>Vertical field of view (degrees) used to project HUD frames.</summary>
+    public double HudFovDegrees
+    {
+        get => _hudFovDegrees;
+        set
+        {
+            if (value == _hudFovDegrees) return;
+            _hudFovDegrees = value;
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>Replay time (seconds) of the last successfully loaded HUD frame.</summary>
+    public double? LastFrameReplayTimeSeconds
+    {
+        get => _lastFrameReplayTimeSeconds;
+        private set
+        {
+            _lastFrameReplayTimeSeconds = value;
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>
+    /// Fetches the overlay frame at the current replay time and refreshes
+    /// <see cref="Nameplates"/>. Called by the playback tick; a stale in-flight
+    /// request is cancelled so a slow response can never clobber a newer one.
+    /// A failed fetch (host down) keeps the previous frame on screen.
+    /// </summary>
+    public async Task RefreshOverlayFrameAsync(
+        double viewportWidth,
+        double viewportHeight,
+        CancellationToken cancellationToken = default)
+    {
+        TreaderApiClient? client = _client;
+        SessionRow? session = _selectedSession;
+        if (client is null || session is null)
+        {
+            return;
+        }
+
+        long generation = Interlocked.Increment(ref _frameLoadGeneration);
+        _frameLoadCts?.Cancel();
+        _frameLoadCts?.Dispose();
+        CancellationTokenSource cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _frameLoadCts = cts;
+        try
+        {
+            OverlayFrameResponse? frame = await client.GetOverlayFrameAsync(
+                session.BattleSessionId,
+                _currentTime.TotalSeconds,
+                _hudFovDegrees,
+                viewportWidth,
+                viewportHeight,
+                cts.Token).ConfigureAwait(true);
+            if (generation != _frameLoadGeneration || frame is null)
+            {
+                return;
+            }
+
+            LastFrameReplayTimeSeconds = frame.ReplayTimeSeconds;
+            _nameplates.Clear();
+            foreach (OverlayTankResponse tank in frame.Tanks)
+            {
+                if (tank.ScreenX is null || tank.ScreenY is null || !tank.InViewport)
+                {
+                    continue;
+                }
+
+                // The player's own tank is the camera: never a nameplate.
+                if (tank.DistanceMeters < 1.0)
+                {
+                    continue;
+                }
+
+                _nameplates.Add(new NameplateItem(
+                    tank.EntityId,
+                    tank.ScreenX.Value,
+                    tank.ScreenY.Value,
+                    tank.PlayerName ?? tank.TankName ?? $"Tank {tank.EntityId}",
+                    tank.TeamNumber,
+                    tank.HpFraction,
+                    tank.Alive,
+                    tank.DistanceMeters));
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded or cancelled: keep the previous frame.
+        }
+        catch (HttpRequestException)
+        {
+            // Host unavailable: keep the previous frame on screen.
+        }
+        finally
+        {
+            if (generation == _frameLoadGeneration)
+            {
+                cts.Dispose();
+                _frameLoadCts = null;
+            }
         }
     }
 

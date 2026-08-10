@@ -528,34 +528,8 @@ public sealed class CliCommandRouter
 
         OverlayFrame frame = frameResult.Value;
         double fovRadians = fovDegrees * Math.PI / 180.0;
-        var projected = frame.Tanks
-            .Select(tank =>
-            {
-                ScreenPoint? point = WorldToScreen.Project(
-                    frame.Camera, fovRadians, viewportWidth, viewportHeight,
-                    tank.X, tank.Y, tank.Z);
-                return new
-                {
-                    tank.EntityId,
-                    tank.PlayerName,
-                    tank.TankName,
-                    tank.ClanTag,
-                    tank.TeamNumber,
-                    tank.HpFraction,
-                    tank.Alive,
-                    tank.DistanceMeters,
-                    screen = point is null
-                        ? null
-                        : new
-                        {
-                            x = point.Value.X,
-                            y = point.Value.Y,
-                            depth = point.Value.Depth,
-                            inViewport = point.Value.IsInsideViewport(viewportWidth, viewportHeight),
-                        },
-                };
-            })
-            .ToList();
+        OverlayFrameProjection projection = OverlayFrameProjector.Project(
+            frame, fovRadians, viewportWidth, viewportHeight);
 
         object data = new
         {
@@ -567,13 +541,32 @@ public sealed class CliCommandRouter
             viewportHeight,
             camera = new
             {
-                frame.Camera.X,
-                frame.Camera.Y,
-                frame.Camera.Z,
-                frame.Camera.YawRadians,
-                frame.Camera.PitchRadians,
+                x = projection.CameraX,
+                y = projection.CameraY,
+                z = projection.CameraZ,
+                yawRadians = projection.CameraYawRadians,
+                pitchRadians = projection.CameraPitchRadians,
             },
-            tanks = projected,
+            tanks = projection.Tanks.Select(tank => new
+            {
+                tank.EntityId,
+                tank.PlayerName,
+                tank.TankName,
+                tank.ClanTag,
+                tank.TeamNumber,
+                tank.HpFraction,
+                tank.Alive,
+                tank.DistanceMeters,
+                screen = tank.ScreenX is null
+                    ? null
+                    : new
+                    {
+                        x = tank.ScreenX,
+                        y = tank.ScreenY,
+                        depth = tank.Depth,
+                        inViewport = tank.InViewport,
+                    },
+            }),
         };
 
         return Success(

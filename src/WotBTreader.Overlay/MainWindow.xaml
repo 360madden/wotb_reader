@@ -97,6 +97,9 @@
                             LivePlayerZ="{Binding LivePlayerPositionZ}"
                             LivePlayerTrail="{Binding LivePlayerTrail}"/>
 
+        <!-- ═══ W2S HUD — projected nameplates over the game view ═══ -->
+        <views:W2sHudView x:Name="W2sHudView" IsHitTestVisible="False"/>
+
         <!-- ═══ Live HP overlay — bottom-left corner of the window ═══ -->
         <Border HorizontalAlignment="Left" VerticalAlignment="Bottom"
                 Margin="16,0,0,16" Padding="10,6" CornerRadius="6"

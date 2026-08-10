@@ -1008,6 +1008,74 @@ public sealed class MainViewModelTests
         File.WriteAllText(_rendezvousPath, json);
     }
 
+    [TestMethod]
+    public async Task RefreshOverlayFrameAsync_PopulatesNameplatesAndExcludesNonVisible()
+    {
+        string frameJson = """
+            {
+              "replayTimeSeconds": 200.0,
+              "cameraX": 0.0, "cameraY": 0.0, "cameraZ": 0.0,
+              "cameraYawRadians": 0.5, "cameraPitchRadians": 0.0,
+              "tanks": [
+                { "entityId": 1, "playerName": "Self", "tankName": null, "clanTag": null, "teamNumber": 1, "hpFraction": 1.0, "alive": true, "distanceMeters": 0.0, "screenX": 960.0, "screenY": 540.0, "depth": 1.0, "inViewport": true },
+                { "entityId": 2, "playerName": "Alpha", "tankName": "TankA", "clanTag": null, "teamNumber": 2, "hpFraction": 0.5, "alive": true, "distanceMeters": 120.0, "screenX": 800.0, "screenY": 400.0, "depth": 80.0, "inViewport": true },
+                { "entityId": 3, "playerName": "Behind", "tankName": null, "clanTag": null, "teamNumber": 2, "hpFraction": 1.0, "alive": true, "distanceMeters": 50.0, "screenX": null, "screenY": null, "depth": null, "inViewport": false },
+                { "entityId": 4, "playerName": "Offscreen", "tankName": null, "clanTag": null, "teamNumber": 1, "hpFraction": 1.0, "alive": true, "distanceMeters": 200.0, "screenX": 5000.0, "screenY": 5000.0, "depth": 10.0, "inViewport": false },
+                { "entityId": 5, "playerName": "Wreck", "tankName": null, "clanTag": null, "teamNumber": 1, "hpFraction": 0.0, "alive": false, "distanceMeters": 90.0, "screenX": 700.0, "screenY": 350.0, "depth": 60.0, "inViewport": true }
+              ]
+            }
+            """;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            string path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/frame", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(JsonResponse(frameJson));
+            }
+
+            if (path.Contains(BattleSessionId.ToString("D"), StringComparison.Ordinal))
+            {
+                return Task.FromResult(JsonResponse("""{"session":null,"participants":[],"positions":[],"events":[]}"""));
+            }
+
+            return Task.FromResult(JsonResponse("""{"offset":0,"limit":200,"count":0,"items":[]}"""));
+        });
+        MainViewModel viewModel = CreateViewModel(handler);
+
+        await viewModel.RefreshSessionsAsync();
+        viewModel.SelectedSession = new SessionRow(
+            BattleSessionId, "Test Map", null, Now, 1, 2);
+
+        await viewModel.RefreshOverlayFrameAsync(1920, 1080);
+
+        // Own tank (distance 0), behind-camera, and off-viewport are excluded.
+        Assert.AreEqual(2, viewModel.Nameplates.Count);
+        NameplateItem alpha = viewModel.Nameplates.Single(item => item.EntityId == 2);
+        Assert.AreEqual("Alpha", alpha.Label);
+        Assert.AreEqual(800.0, alpha.ScreenX, 1e-9);
+        Assert.AreEqual(400.0, alpha.ScreenY, 1e-9);
+        Assert.AreEqual(2, alpha.TeamNumber);
+        Assert.AreEqual(0.5, alpha.HpFraction, 1e-9);
+        Assert.IsTrue(alpha.Alive);
+        Assert.IsTrue(viewModel.Nameplates.Any(item => item.EntityId == 5 && !item.Alive));
+        Assert.AreEqual(200.0, viewModel.LastFrameReplayTimeSeconds!.Value, 1e-9);
+    }
+
+    [TestMethod]
+    public async Task RefreshOverlayFrameAsync_NoSessionSelected_LeavesNameplatesEmpty()
+    {
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((_, _) =>
+            Task.FromResult(JsonResponse("""{"offset":0,"limit":200,"count":0,"items":[]}""")));
+        MainViewModel viewModel = CreateViewModel(handler);
+        await viewModel.RefreshSessionsAsync();
+
+        await viewModel.RefreshOverlayFrameAsync(1920, 1080);
+
+        Assert.AreEqual(0, viewModel.Nameplates.Count);
+    }
+
     private MainViewModel CreateViewModel(FakeHttpMessageHandler? handler = null, MockTelemetryStreamService? streamService = null)
     {
         RendezvousLocator locator = new(new FakeTimeProvider(Now), _rendezvousPath, isProcessAlive: _ => true);

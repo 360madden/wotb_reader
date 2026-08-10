@@ -119,7 +119,7 @@ of the sub-50ms duplicate-packet artifact.
 | Step | WS | Deliverable |
 |---|---|---|
 | O1 | F | ✅ `WorldToScreen` projection module (view matrix from pos+yaw+pitch, perspective from FOV) + tests; `overlay-frame` CLI preview (frame at replay time → screen pixels) |
-| O2 | F | Nameplate layer: every tank's name, team color, HP bar, distance — clock-anchored over the replay window |
+| O2 | F | ✅ Nameplate layer: every tank's name, team color, HP bar, distance — clock-anchored over the game window (`W2sHudView` + `/sessions/{id}/frame` endpoint; runs while the web host serves the replay) |
 | O3 | F | Beacon/POI model (world coords + label + color + replay-time tag) + placement + persistence |
 | O4 | B | Capture-zone/base decode from battle_results.dat (objective markers) |
 | O5 | E | `--heading-delta` extractor mode (movement-gated, wrap-aware) for plan/tooling reuse |

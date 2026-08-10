@@ -306,6 +306,79 @@ public sealed record SessionDetailResponse
     public IReadOnlyList<EventResponse> Events { get; init; } = [];
 }
 
+/// <summary>
+/// One overlay tank projected onto the viewport. Screen coordinates are
+/// null when the tank is at/behind the camera or the camera carries no
+/// rotation evidence — the HUD must not draw it.
+/// </summary>
+public sealed record OverlayTankResponse
+{
+    /// <summary>Game entity identifier for the vehicle.</summary>
+    public long EntityId { get; init; }
+
+    /// <summary>Player name, when decoded.</summary>
+    public string? PlayerName { get; init; }
+
+    /// <summary>Vehicle name, when decoded.</summary>
+    public string? TankName { get; init; }
+
+    /// <summary>Clan tag, when decoded.</summary>
+    public string? ClanTag { get; init; }
+
+    /// <summary>Team number (1 or 2); null when unknown.</summary>
+    public int? TeamNumber { get; init; }
+
+    /// <summary>HP fraction 0..1 from the decoded damage arc.</summary>
+    public double HpFraction { get; init; }
+
+    /// <summary>True while the tank is not destroyed at this replay time.</summary>
+    public bool Alive { get; init; }
+
+    /// <summary>Distance from the camera in world units.</summary>
+    public double DistanceMeters { get; init; }
+
+    /// <summary>Projected viewport X (pixels from the left); null = behind camera.</summary>
+    public double? ScreenX { get; init; }
+
+    /// <summary>Projected viewport Y (pixels from the top); null = behind camera.</summary>
+    public double? ScreenY { get; init; }
+
+    /// <summary>Camera-space depth for painter's-algorithm sorting.</summary>
+    public double? Depth { get; init; }
+
+    /// <summary>True when the projection lies inside the requested viewport.</summary>
+    public bool InViewport { get; init; }
+}
+
+/// <summary>
+/// One renderable instant of the replay overlay at a replay time: the
+/// viewpoint camera plus every roster tank projected to viewport pixels.
+/// The HUD draws these directly over the game window.
+/// </summary>
+public sealed record OverlayFrameResponse
+{
+    /// <summary>Replay time the frame was built at, in seconds.</summary>
+    public double ReplayTimeSeconds { get; init; }
+
+    /// <summary>Camera world X; null when the viewpoint has no evidence.</summary>
+    public double? CameraX { get; init; }
+
+    /// <summary>Camera world Y; null when the viewpoint has no evidence.</summary>
+    public double? CameraY { get; init; }
+
+    /// <summary>Camera world Z; null when the viewpoint has no evidence.</summary>
+    public double? CameraZ { get; init; }
+
+    /// <summary>Camera facing (radians); null without packet rotation evidence.</summary>
+    public double? CameraYawRadians { get; init; }
+
+    /// <summary>Camera pitch (radians); null without packet rotation evidence.</summary>
+    public double? CameraPitchRadians { get; init; }
+
+    /// <summary>Projected tanks, sorted by distance (nearest first).</summary>
+    public IReadOnlyList<OverlayTankResponse> Tanks { get; init; } = [];
+}
+
 /// <summary>Computed map boundary from all observed position samples.</summary>
 public sealed record MapBoundaryResponse
 {

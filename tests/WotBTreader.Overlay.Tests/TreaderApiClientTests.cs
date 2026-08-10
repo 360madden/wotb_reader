@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
+using WotBTreader.ApiContracts;
 using WotBTreader.Overlay.Services;
 
 namespace WotBTreader.Overlay.Tests;
@@ -65,11 +66,59 @@ public sealed class TreaderApiClientTests
         Assert.AreEqual("cap-test-token", headerValue);
     }
 
+    [TestMethod]
+    public async Task GetOverlayFrameAsync_BuildsUrlAndDeserializes()
+    {
+        string frameJson = """
+            {
+              "replayTimeSeconds": 42.5,
+              "cameraX": 1.0, "cameraY": 2.0, "cameraZ": 3.0,
+              "cameraYawRadians": 0.5, "cameraPitchRadians": 0.0,
+              "tanks": [
+                { "entityId": 7, "playerName": "Alpha", "tankName": "TankA", "clanTag": null, "teamNumber": 2, "hpFraction": 0.6, "alive": true, "distanceMeters": 100.0, "screenX": 800.0, "screenY": 400.0, "depth": 90.0, "inViewport": true }
+              ]
+            }
+            """;
+        CapturingHandler handler = new(frameJson);
+        using var client = new TreaderApiClient(new Uri("http://127.0.0.1:8123"), handler);
+
+        OverlayFrameResponse? frame = await client.GetOverlayFrameAsync(
+            Guid.Parse("3fa85f64-5717-4562-b3fc-2c963f66afa6"),
+            replayTimeSeconds: 42.5,
+            verticalFovDegrees: 75,
+            viewportWidth: 1280,
+            viewportHeight: 720);
+
+        Assert.IsNotNull(frame);
+        Assert.AreEqual(42.5, frame.ReplayTimeSeconds, 1e-9);
+        Assert.AreEqual(0.5, frame.CameraYawRadians!.Value, 1e-9);
+        Assert.HasCount(1, frame.Tanks);
+        Assert.AreEqual(7, frame.Tanks[0].EntityId);
+        Assert.AreEqual(800.0, frame.Tanks[0].ScreenX!.Value, 1e-9);
+        Assert.IsTrue(frame.Tanks[0].InViewport);
+        Assert.AreEqual(
+            "/api/v1/sessions/3fa85f64-5717-4562-b3fc-2c963f66afa6/frame",
+            handler.Path);
+        Assert.IsTrue(handler.PathAndQuery!.Contains("timeSeconds=42.5", StringComparison.Ordinal));
+        Assert.IsTrue(handler.PathAndQuery.Contains("fov=75", StringComparison.Ordinal));
+        Assert.IsTrue(handler.PathAndQuery.Contains("width=1280", StringComparison.Ordinal));
+        Assert.IsTrue(handler.PathAndQuery.Contains("height=720", StringComparison.Ordinal));
+    }
+
     private sealed class CapturingHandler : HttpMessageHandler
     {
+        private readonly string? _responseJson;
+
+        public CapturingHandler(string? responseJson = null)
+        {
+            _responseJson = responseJson;
+        }
+
         public HttpMethod? Method { get; private set; }
 
         public string? Path { get; private set; }
+
+        public string? PathAndQuery { get; private set; }
 
         public string Body { get; private set; } = string.Empty;
 
@@ -81,6 +130,7 @@ public sealed class TreaderApiClientTests
         {
             Method = request.Method;
             Path = request.RequestUri?.AbsolutePath;
+            PathAndQuery = request.RequestUri?.PathAndQuery;
             Body = request.Content is null
                 ? string.Empty
                 : await request.Content.ReadAsStringAsync(cancellationToken);
@@ -92,7 +142,9 @@ public sealed class TreaderApiClientTests
 
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent("{\"success\":true,\"message\":\"launch.accepted\"}"),
+                // A benign default so callers that deserialize the response
+                // (e.g. LaunchGameAsync) never see a null/empty body.
+                Content = new StringContent(_responseJson ?? "{}", System.Text.Encoding.UTF8, "application/json"),
             };
         }
     }

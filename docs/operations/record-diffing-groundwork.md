@@ -440,6 +440,40 @@ been updated for migration 5 — its position SELECT/reader now carry
 yaw/pitch/roll, so frames see the packet rotation. 4 CLI tests + 1 new
 frame-source test pin roster filtering and fail-closed omission.
 
+## W2S HUD — projected nameplates over the game window (2026-08-10)
+
+The world-to-screen overlay HUD is wired end-to-end over the loopback host:
+
+- **`OverlayFrameProjector`** (Application/Replay): the single projection
+  path (frame + FOV + viewport → camera + projected tanks) shared by the
+  CLI `overlay-frame` command and the web host — they can never disagree.
+  3 unit tests.
+- **Web endpoint `GET /api/v1/sessions/{id}/frame?timeSeconds&fov&width&height`**
+  (ReadApiEndpoints): serves the projected frame to HUD clients; validates
+  query bounds and maps session failures to 404. 3 endpoint tests
+  (projection incl. behind-camera, bad params, not-found).
+- **`OverlayFrameResponse`/`OverlayTankResponse`** (ApiContracts): the
+  machine contract (world data + screen X/Y/depth + inViewport).
+- **`TreaderApiClient.GetOverlayFrameAsync`**: the overlay's frame fetch
+  with FOV/viewport query params; 1 test (URL + deserialize).
+- **`W2sHudView`** (WPF): renders nameplates (label, team-colored
+  blue/red, HP bar green→red by fraction, distance, greyed when dead) at
+  the projected pixels. The overlay window is resized to exactly the game
+  client rect (existing P/Invoke tracking), so viewport pixels map 1:1.
+  `AnchorRect` is a pure, tested clamp (3 tests).
+- **MainViewModel + MainWindow**: on every 50 ms playback tick (and on
+  scrub), `RefreshOverlayFrameAsync` fetches the frame at the current
+  replay time — a generation guard + CTS drops stale responses, failures
+  keep the previous frame — and `Nameplates` updates the HUD. Own tank
+  (distance < 1), behind-camera, and off-viewport tanks are never drawn.
+  2 view-model tests (visible-tank filtering, no-session guard).
+
+The replay overlay now renders the actual 3D view: run the web host
+(`serve`) with the replay decoded, select the session, and the HUD draws
+nameplates over the game window as the timeline plays. FOV is a view-model
+setting (default 90°); the camera is the viewpoint tank's packet pose — the
+packet rotation makes this fully offline and engine-agnostic.
+
 ## Notes
 
 - Damage events are the highest-value correlation target: HP changes only on

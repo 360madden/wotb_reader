@@ -4,6 +4,7 @@ using WotBTreader.ApiContracts;
 using WotBTreader.Application.Results;
 using WotBTreader.Application.Storage;
 using WotBTreader.Core;
+using WotBTreader.Core.Overlay;
 using WotBTreader.Host.Web.Contracts;
 using WotBTreader.Host.Web.Endpoints;
 
@@ -16,6 +17,76 @@ namespace WotBTreader.Host.Web.Tests;
 [TestClass]
 public sealed class ReadApiEndpointsTests
 {
+    [TestMethod]
+    public async Task OverlayFrame_ProjectsVisibleTanksAndDropsBehindCamera()
+    {
+        // Camera at the origin facing +Z (yaw 0); one tank 100m ahead, one
+        // behind the camera.
+        FakeOverlayFrames frames = new(new OverlayFrame(
+            TimeSpan.FromSeconds(10),
+            new OverlayCamera(0, 0, 0, YawRadians: 0, PitchRadians: 0, RollRadians: 0),
+            new[]
+            {
+                new OverlayTankState(1, 0, 0, 100, 0.1, 1.0, true, 1, "Alpha", null, "TankA", "Heavy", 100),
+                new OverlayTankState(2, 0, 0, -100, 0.1, 0.5, false, 2, "Behind", null, "TankB", "Heavy", 100),
+            }));
+
+        IResult result = await ReadApiEndpoints.GetOverlayFrameAsync(
+            new DefaultHttpContext(),
+            frames,
+            Guid.NewGuid(),
+            timeSeconds: 10,
+            fov: 90,
+            width: 1920,
+            height: 1080,
+            TestContext.CancellationToken);
+
+        OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
+        Assert.AreEqual(10.0, frame.ReplayTimeSeconds, 1e-9);
+        Assert.AreEqual(0.0, frame.CameraYawRadians!.Value, 1e-9);
+        Assert.HasCount(2, frame.Tanks);
+        OverlayTankResponse front = frame.Tanks.Single(tank => tank.EntityId == 1);
+        Assert.AreEqual(960.0, front.ScreenX!.Value, 1e-6);
+        Assert.AreEqual(540.0, front.ScreenY!.Value, 1e-6);
+        Assert.IsTrue(front.InViewport);
+        Assert.AreEqual("Alpha", front.PlayerName);
+        OverlayTankResponse behind = frame.Tanks.Single(tank => tank.EntityId == 2);
+        Assert.IsNull(behind.ScreenX);
+        Assert.IsFalse(behind.InViewport);
+    }
+
+    [TestMethod]
+    public async Task OverlayFrame_RejectsInvalidQueryParameters()
+    {
+        FakeOverlayFrames frames = new();
+
+        IResult badTime = await ReadApiEndpoints.GetOverlayFrameAsync(
+            new DefaultHttpContext(), frames, Guid.NewGuid(),
+            timeSeconds: -1, fov: 90, width: 1920, height: 1080,
+            TestContext.CancellationToken);
+        Assert.AreEqual(StatusCodes.Status400BadRequest, StatusOf(badTime));
+
+        IResult badFov = await ReadApiEndpoints.GetOverlayFrameAsync(
+            new DefaultHttpContext(), frames, Guid.NewGuid(),
+            timeSeconds: 0, fov: 200, width: 1920, height: 1080,
+            TestContext.CancellationToken);
+        Assert.AreEqual(StatusCodes.Status400BadRequest, StatusOf(badFov));
+    }
+
+    [TestMethod]
+    public async Task OverlayFrame_SessionFailureBecomesNotFound()
+    {
+        FakeOverlayFrames frames = new(
+            error: new ApplicationError("storage.session.not_found", "No such session."));
+
+        IResult result = await ReadApiEndpoints.GetOverlayFrameAsync(
+            new DefaultHttpContext(), frames, Guid.NewGuid(),
+            timeSeconds: 0, fov: 90, width: 1920, height: 1080,
+            TestContext.CancellationToken);
+
+        Assert.AreEqual(StatusCodes.Status404NotFound, StatusOf(result));
+    }
+
     [TestMethod]
     public async Task SessionsPageIsReturnedWithItsRequestedWindow()
     {
@@ -349,5 +420,19 @@ public sealed class ReadApiEndpointsTests
                 ? OperationResult.Failure<ReplayDecodeProjection>(
                     error ?? new ApplicationError("storage.session.not_found", "No such session."))
                 : OperationResult.Success(projection));
+    }
+
+    private sealed class FakeOverlayFrames(
+        OverlayFrame? frame = null,
+        ApplicationError? error = null) : IOverlayFrameSource
+    {
+        public ValueTask<OperationResult<OverlayFrame>> GetFrameAsync(
+            BattleSessionId battleSessionId,
+            TimeSpan replayTime,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult(frame is null
+                ? OperationResult.Failure<OverlayFrame>(
+                    error ?? new ApplicationError("storage.session.not_found", "No such session."))
+                : OperationResult.Success(frame));
     }
 }

@@ -217,6 +217,7 @@ docs/operations/handoffs/2026-08-10-hp-discovery-offline-complete.md
 docs/operations/handoffs/2026-08-10-hp-two-replay-rehearsal.md
 docs/operations/handoffs/2026-08-10-hp-victim-qualification.md
 docs/operations/handoffs/2026-08-10-phase0-foundations-complete.md
+docs/operations/handoffs/2026-08-10-replay-overlay-o1-projection.md
 docs/operations/handoffs/2026-08-10-replaytime-live-plan-prestaged.md
 docs/operations/handoffs/2026-08-10-runtime-chain-walker.md
 docs/operations/handoffs/2026-08-10-walkable-position-chain-applied.md
@@ -384,6 +385,7 @@ src/WotBTreader.Core/Discovery/WriteSiteAnalysis.cs
 src/WotBTreader.Core/Identifiers.cs
 src/WotBTreader.Core/OffsetModels.cs
 src/WotBTreader.Core/Overlay/OverlayFrameModels.cs
+src/WotBTreader.Core/Overlay/WorldToScreen.cs
 src/WotBTreader.Core/TelemetryModels.cs
 src/WotBTreader.Core/WotBTreader.Core.csproj
 src/WotBTreader.Core/packages.lock.json
@@ -615,6 +617,7 @@ tests/WotBTreader.Core.Tests/RecordDiffingTests.cs
 tests/WotBTreader.Core.Tests/TrajectoryCorrelationScorerTests.cs
 tests/WotBTreader.Core.Tests/TrajectoryFamilyBuilderTests.cs
 tests/WotBTreader.Core.Tests/Type10EntityPositionResolverTests.cs
+tests/WotBTreader.Core.Tests/WorldToScreenTests.cs
 tests/WotBTreader.Core.Tests/WotBTreader.Core.Tests.csproj
 tests/WotBTreader.Core.Tests/WriteSiteAnalysisTests.cs
 tests/WotBTreader.Core.Tests/packages.lock.json
@@ -649,6 +652,7 @@ tests/WotBTreader.Host.Cli.Tests/CliEntryPointTests.cs
 tests/WotBTreader.Host.Cli.Tests/CliHpDiffTests.cs
 tests/WotBTreader.Host.Cli.Tests/CliInvocationTests.cs
 tests/WotBTreader.Host.Cli.Tests/CliOutputTests.cs
+tests/WotBTreader.Host.Cli.Tests/CliOverlayFrameTests.cs
 tests/WotBTreader.Host.Cli.Tests/CliReplayIngestionTests.cs
 tests/WotBTreader.Host.Cli.Tests/HpDiffSnapshotsFileTests.cs
 tests/WotBTreader.Host.Cli.Tests/MSTestSettings.cs
