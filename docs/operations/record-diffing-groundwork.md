@@ -119,18 +119,20 @@ reader needs ONE bounded, gated product addition:
    same-decoded-clock anchor, ≤ 2 s bound), and returns ONLY the bytes +
    replay time — never an absolute address. Same-decoded-clock attestation
    reuses the existing coordinator path.
-2. **Session script** — gate → **qualify the victim from the decoded replay**
-   (see below — do NOT default to the player's own entity) → resolve the
-   target entity → bounded series of
-   region dumps at replay-clock-labeled times (concentrated on the segments
-   where damage events exist — event-bound windows, not whole-battle
-   watching). The dump schedule is per-hit: `--hp-delta` now emits a
-   `dump_schedule` (a dump just BEFORE and AFTER each damage event, ±0.2 s,
-   so each change window captures exactly one hit) plus flat control dumps
-   in the gap segments → `RecordChangeBucketer` → `HpDamageCorrelator`
-   (Lenient mode first — overkill) → verdict via
-   `hp-diff <snapshots.json> --session <id> --victim <entity> --mode lenient`
-   (the command the extractor prints).
+2. **Session driver** — `scripts/invoke-hp-diffing-session.ps1` runs the
+   whole flow: gate → **qualify the victim from the decoded replay**
+   (see below — do NOT default to the player's own entity) → print the
+   event-bound dump schedule → acquire the bounded series of region dumps
+   at replay-clock-labeled times (the GATED seam — the driver exits 3 with
+   the contract until the region read lands; pass `-SnapshotsPath` to run
+   the verdict against an existing dump file) → `hp-diff
+   <snapshots.json> --session <id> --victim <entity> --mode lenient` for
+   the verdict (with `-FailOnNoHit` for fail-closed automation). The dump
+   schedule is per-hit: the extractor's `--hp-delta` emits a `dump_schedule`
+   (a dump just BEFORE and AFTER each damage event, ±0.2 s, so each change
+   window captures exactly one hit) plus flat control dumps in the gap
+   segments → `RecordChangeBucketer` → `HpDamageCorrelator` (Lenient mode
+   first — overkill) → verdict.
 3. **Verdict contract** — the top candidate offset with score, matched /
    total damage windows, and the matched window list (replay times + deltas
    vs. the provider's events). A candidate is a HIT when it (a) matches ≥ 2
