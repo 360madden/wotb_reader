@@ -29,7 +29,7 @@ legacy observation path and unchanged for the resolver path.
 | Resolver endpoints | still resolve (24/24 in a bounded poll) | resolver uses the C# layout, not the table |
 | `python scripts/python/offset_check.py --check-schema` | PASS | chains validated (offsets 0 for chained fields, hop kinds/values) |
 | `tools/report-offset-evidence.ps1 -GameVersion 11.19.0.10` | runs clean | read-only reporter |
-| `scripts/validate.ps1` | green | full gate; no product-code change expected |
+| `scripts/validate.ps1` | green | full gate — now **includes** `offset_check.py --check-schema` (wired 2026-08-10, with a matching CI step); no product-code change expected |
 
 ## 3. Required verification (executed after the edit, before the commit)
 

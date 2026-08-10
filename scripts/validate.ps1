@@ -64,6 +64,11 @@ Invoke-CheckedNative -FilePath python -ArgumentList @(
 ) -Description 'Offline pack link + file-tree freshness check'
 
 Invoke-CheckedNative -FilePath python -ArgumentList @(
+    (Join-Path $PSScriptRoot 'python\offset_check.py'),
+    '--check-schema'
+) -Description 'Offset-table schema + chains validation'
+
+Invoke-CheckedNative -FilePath python -ArgumentList @(
     '-c',
     "import json,sys; json.load(open(sys.argv[1], encoding='utf-8'))",
     (Join-Path $PSScriptRoot '..\tools\external\tools.lock.json')

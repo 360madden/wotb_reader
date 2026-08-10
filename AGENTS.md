@@ -124,7 +124,7 @@ No runtime AI, cloud, Python, Node.js, Rust, Electron, or containers.
 | Build | `dotnet build WotBTreader.sln -c Release` |
 | One test project | `dotnet test tests/WotBTreader.Core.Tests -c Release` |
 | Focused test | add `--filter "FullyQualifiedName~SomeTest"` |
-| Full gate (milestone) | `scripts/validate.ps1` — locked restore → `dotnet format --verify-no-changes` → Release build → all tests → `scan-repository.ps1` (secret + ignore-policy) → PSScriptAnalyzer hygiene (`install-psscriptanalyzer.ps1` + `invoke-scriptanalyzer.ps1`); add `-AuditPackages` for the transitive vulnerability audit |
+| Full gate (milestone) | `scripts/validate.ps1` — locked restore → `dotnet format --verify-no-changes` → Release build → all tests → `scan-repository.ps1` (secret + ignore-policy) → PSScriptAnalyzer hygiene (`install-psscriptanalyzer.ps1` + `invoke-scriptanalyzer.ps1`) → offline pack (`offline_check.py --check-fresh`) → offset-table schema + chains validation (`offset_check.py --check-schema`); add `-AuditPackages` for the transitive vulnerability audit |
 
 Warnings are errors (`TreatWarningsAsErrors`) and `NuGetAuditMode=all` fails
 restore on vulnerable transitive packages — fix with a central pin, never

@@ -43,6 +43,9 @@ jobs:
       - name: Check offline discovery pack (links + file-tree freshness)
         shell: pwsh
         run: python scripts/python/offline_check.py --check-fresh
+      - name: Offset-table schema + chains validation
+        shell: pwsh
+        run: python scripts/python/offset_check.py --check-schema
       - name: Validate tool registry JSON
         shell: pwsh
         run: python -c "import json,sys; json.load(open('tools/external/tools.lock.json', encoding='utf-8'))"
