@@ -153,6 +153,16 @@ public sealed class CliCommandRouter
                 correlationId);
         }
 
+        DamageCorrelationDirection direction = DamageCorrelationDirection.Decrement;
+        if (invocation.Options.TryGetValue("direction", out string? directionText) &&
+            !Enum.TryParse(directionText, ignoreCase: true, out direction))
+        {
+            return Invalid(
+                "cli.hp-diff.direction",
+                "--direction must be 'decrement' or 'increment' (default: decrement/HP).",
+                correlationId);
+        }
+
         OperationResult<IReadOnlyList<RecordSnapshot>> snapshotsResult =
             HpDiffSnapshotsFile.Load(invocation.Positionals[0]);
         if (!snapshotsResult.IsSuccess || snapshotsResult.Value is null)
@@ -172,9 +182,9 @@ public sealed class CliCommandRouter
             RecordChangeBucketer.Bucket(snapshotsResult.Value);
         IReadOnlyList<HpDamageEvent> events = groundTruthResult.Value.Events;
         IReadOnlyList<DamageCorrelationCandidate> primary = HpDamageCorrelator.Correlate(
-            windows, events, victimEntityId, matchMode);
+            windows, events, victimEntityId, matchMode, direction);
         IReadOnlyList<DamageCorrelationCandidate> confirm = HpDamageCorrelator.Correlate(
-            windows, events, victimEntityId, DamageMatchMode.Strict);
+            windows, events, victimEntityId, DamageMatchMode.Strict, direction);
 
         DamageCorrelationCandidate? top = primary.Count > 0 ? primary[0] : null;
         DamageCorrelationCandidate? strictTop = confirm.Count > 0 ? confirm[0] : null;
@@ -231,6 +241,7 @@ public sealed class CliCommandRouter
             sessionId = sessionGuid,
             victimEntityId,
             mode = matchMode.ToString().ToLowerInvariant(),
+            direction = direction.ToString().ToLowerInvariant(),
             snapshots = snapshotsResult.Value.Count,
             changeWindows = windows.Count,
             damageWindows = top?.TotalDamageWindows ?? 0,

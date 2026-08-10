@@ -252,6 +252,66 @@ All offline halves are proven and green; the approval ask is exactly the
 scope above (one gated region-read addition + one session), with the
 correlation core and ground-truth provider already in place.
 
+## Damage-dealt track (increment direction) — pre-staged 2026-08-10
+
+The scoreboard damage-dealt counter is the mirror image of HP: it RISES by
+the exact damage of each event the target DEALT (attacker-side). The
+correlator now supports a `DamageCorrelationDirection` (Decrement/HP,
+Increment/damage-dealt); the Increment direction keys the event sum on
+`AttackerEntityId` and matches `delta == +Σ` (Strict) / `delta >= +Σ`
+(Lenient). Ground truth verified from `.data/treader.db` (11.19.0): **the
+player's own stat IS a viable target** — unlike HP, the viewpoint entity
+landed hits in both replays:
+
+| Replay | Player entity | Dealt events | Damage | Nonzero 10s windows |
+|---|---|---|---|---|
+| Oasis Palms | 3760577 | 5 | 2184 | 4 (177.8–274.0s) |
+| Dead Rail | 2549401 | 5 | 1569 | 4 (154.5–257.9s) |
+
+Tooling (all offline, verified 2026-08-10):
+
+- Extractor: `--damage-dealt [--attacker-entity <id>]` — the increment
+  mirror of `--hp-delta` (default target = the session's viewpoint entity),
+  emitting the same `dump_schedule` shape + an `hp-diff` command with
+  `--direction increment`. The schedule drops 0/unparseable-damage events
+  (a dump pair around them would waste two lease-bounded dumps).
+- CLI: `hp-diff --direction increment|decrement` (default decrement —
+  existing callers unchanged), echoed in the output envelope.
+- Driver: `invoke-hp-diffing-session.ps1 -Track damage-dealt` (default
+  `hp`) — qualification, schedule print, and the verdict command all
+  switch direction automatically.
+- Unit proofs: 6 new `RecordDiffingTests` — increment field ranked first
+  (score/flatness 1.0), default direction unchanged (increment-only field
+  is NOT a candidate), victim-side events ignored under Increment, Strict
+  excludes magnitude-mismatched risers, flatness demotes monotonic risers,
+  Lenient admits overcap rises while Strict rejects them. Plus 2 CLI tests
+  (end-to-end increment HIT at `+0x48`, unknown `--direction` rejected).
+
+**Two-replay rehearsal (2026-08-10, offline evidence):** the full session
+flow rehearsed on both replays' real attacker timelines (synthetic region
+with the damage-dealt int32 rising by the exact cumulative damage at each
+real hit tick, step function):
+
+| Replay | Target | Verdict | Offset | Score / Flatness | Matched |
+|---|---|---|---|---|---|
+| Oasis Palms | 3760577 | HIT | `+0x48` | 1.0 / 1.0 | 5/5 |
+| Dead Rail | 2549401 | HIT | `+0x48` | 1.0 / 1.0 | 5/5 |
+
+Both verdicts satisfy the contract and agree on `+0x48` — the Phase-4
+repeatability rule proven for the increment direction too. Construction
+note (same trap as HP, caught in rehearsal): trailing control dumps must
+carry the step-function value at their time, not the final cumulative —
+a control dump after a hit but before the next must show the value as of
+that time, or the control window falsely counts as a field change and
+flatness drops to 0 (the first Oasis Palms build failed exactly this way).
+
+Same caveat as HP: the rehearsal proves the machinery on the real event
+timeline; whether the in-memory damage-dealt counter actually lives at
+`+0x48` (or anywhere near the tank record) is exactly what the gated live
+region read discovers. Notably, HP and damage-dealt BOTH rehearsed to
+`+0x48` — if the live read confirms a scoreboard counter near the HP field,
+the tank record layout claim gets a second independent anchor.
+
 ## Notes
 
 - Damage events are the highest-value correlation target: HP changes only on

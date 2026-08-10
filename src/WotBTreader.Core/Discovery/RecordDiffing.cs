@@ -58,7 +58,23 @@ public static class RecordChangeBucketer
 }
 
 /// <summary>
-/// How a candidate field's value drop is matched against the summed damage of
+/// Which direction a candidate field moves when the target's damage events
+/// fire. HP drops by the window's damage sum (Decrement); a scoreboard
+/// damage-dealt counter increments by it (Increment). The correlator matches
+/// the field's little-endian int32 delta against the summed damage with the
+/// sign of this direction.
+/// </summary>
+public enum DamageCorrelationDirection
+{
+    /// <summary>The field decreases by the summed damage (e.g. HP).</summary>
+    Decrement,
+
+    /// <summary>The field increases by the summed damage (e.g. scoreboard damage dealt).</summary>
+    Increment,
+}
+
+/// <summary>
+/// How a candidate field's value move is matched against the summed damage of
 /// a window.
 /// </summary>
 public enum DamageMatchMode
@@ -81,28 +97,38 @@ public enum DamageMatchMode
 /// <summary>
 /// Correlates the target entity's damage events against the bucketed change
 /// windows: a candidate is a 4-byte-aligned int32 field whose little-endian
-/// value drop in a window matches −(Σ damage for the target entity whose event
-/// times fall in that window) per the <see cref="DamageMatchMode"/>. Pure and
-/// offline; the memory side (trusted reader) is a separate approved-session
-/// step. Strict requires the drop to equal the summed damage exactly;
-/// Lenient accepts any drop at least as large (overkill killing blows,
-/// multi-source under-sums). Events whose replay time falls outside the
-/// observed window span are observation gaps and do not inflate the
-/// denominator.
+/// value move in a window matches ±(Σ damage for the target entity whose
+/// event times fall in that window) per the <see cref="DamageMatchMode"/> and
+/// <see cref="DamageCorrelationDirection"/>. Pure and offline; the memory
+/// side (trusted reader) is a separate approved-session step. Decrement
+/// direction (HP): Strict requires the drop to equal the summed damage
+/// exactly; Lenient accepts any drop at least as large (overkill killing
+/// blows, multi-source under-sums). Increment direction (damage dealt):
+/// Strict requires the rise to equal the summed damage exactly; Lenient
+/// accepts any rise at least as large (a multi-hit window where the counter
+/// also absorbed an unobserved sub-event). Events whose replay time falls
+/// outside the observed window span are observation gaps and do not inflate
+/// the denominator.
 /// </summary>
 public static class HpDamageCorrelator
 {
     /// <summary>
-    /// Ranks candidate HP fields for <paramref name="targetEntityId"/>. Only
-    /// offsets that matched at least one damage window are returned, ordered by
-    /// score (matched / damage windows) descending, then precision (matched /
-    /// changed damage-windows) descending, then offset ascending.
+    /// Ranks candidate fields for <paramref name="targetEntityId"/>. In the
+    /// Decrement direction (the default, HP) the target id is matched against
+    /// each event's victim <c>EntityId</c>; in the Increment direction
+    /// (damage dealt) it is matched against the event's
+    /// <c>AttackerEntityId</c> — the events whose damage the scoreboard
+    /// counter accumulates. Only offsets that matched at least one damage
+    /// window are returned, ordered by score (matched / damage windows)
+    /// descending, then precision (matched / changed damage-windows)
+    /// descending, then offset ascending.
     /// </summary>
     public static IReadOnlyList<DamageCorrelationCandidate> Correlate(
         IReadOnlyList<ByteChangeWindow> windows,
         IReadOnlyList<HpDamageEvent> damageEvents,
         long targetEntityId,
-        DamageMatchMode matchMode = DamageMatchMode.Strict)
+        DamageMatchMode matchMode = DamageMatchMode.Strict,
+        DamageCorrelationDirection direction = DamageCorrelationDirection.Decrement)
     {
         ArgumentNullException.ThrowIfNull(windows);
         ArgumentNullException.ThrowIfNull(damageEvents);
@@ -119,13 +145,18 @@ public static class HpDamageCorrelator
         }
 
         // Sum the target entity's damage per window (event time in (From, To]).
+        // Decrement direction keys on the event's victim entity id (HP);
+        // Increment keys on the attacker entity id (damage dealt).
         Dictionary<ByteChangeWindow, long> damageByWindow = [];
         foreach (ByteChangeWindow window in windows)
         {
             long sum = 0;
             foreach (HpDamageEvent damageEvent in damageEvents)
             {
-                if (damageEvent.EntityId != targetEntityId
+                bool belongsToTarget = direction == DamageCorrelationDirection.Increment
+                    ? damageEvent.AttackerEntityId == targetEntityId
+                    : damageEvent.EntityId == targetEntityId;
+                if (!belongsToTarget
                     || damageEvent.Damage is not int amount
                     || amount <= 0)
                 {
@@ -178,8 +209,12 @@ public static class HpDamageCorrelator
 
                 changed++;
                 bool isMatch = matchMode == DamageMatchMode.Lenient
-                    ? delta <= -sum
-                    : delta == -sum;
+                    ? (direction == DamageCorrelationDirection.Increment
+                        ? delta >= sum
+                        : delta <= -sum)
+                    : (direction == DamageCorrelationDirection.Increment
+                        ? delta == sum
+                        : delta == -sum);
                 if (isMatch)
                 {
                     matched++;
@@ -211,8 +246,13 @@ public static class HpDamageCorrelator
                 ? 1.0
                 : (double)(controlWindows.Count - controlChanged) / controlWindows.Count;
             string matchText = matchMode == DamageMatchMode.Lenient
-                ? "drop >= -Σ damage"
-                : "delta == -Σ damage";
+                ? (direction == DamageCorrelationDirection.Increment
+                    ? "rise >= +Σ damage"
+                    : "drop >= -Σ damage")
+                : (direction == DamageCorrelationDirection.Increment
+                    ? "delta == +Σ damage"
+                    : "delta == -Σ damage");
+            string moveWord = direction == DamageCorrelationDirection.Increment ? "rise" : "drop";
             candidates.Add(new DamageCorrelationCandidate(
                 offset,
                 sizeof(int),
@@ -220,7 +260,7 @@ public static class HpDamageCorrelator
                 matched,
                 damageByWindow.Count,
                 changed,
-                $"int32 at +0x{offset:X}: value drop matched {matched}/{damageByWindow.Count} "
+                $"int32 at +0x{offset:X}: value {moveWord} matched {matched}/{damageByWindow.Count} "
                 + $"damage windows (precision {matched}/{changed}); flatness "
                 + $"{flatness:0.##} ({controlWindows.Count - controlChanged}/"
                 + $"{controlWindows.Count} control windows unchanged); {matchText}",

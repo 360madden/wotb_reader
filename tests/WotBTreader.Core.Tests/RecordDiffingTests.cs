@@ -36,6 +36,18 @@ public sealed class RecordDiffingTests
             AttackerEntityId: null,
             ValuesJson: "{}");
 
+    /// <summary>An event the TARGET dealt to some victim (attacker-side — the
+    /// increment/damage-dealt direction keys on this id).</summary>
+    private static HpDamageEvent DealtDamage(TimeSpan replayTime, int amount) =>
+        new(
+            ParticipantId: null,
+            EntityId: 9999,
+            ReplayTime: replayTime,
+            Kind: CanonicalEventKind.Damage,
+            Damage: amount,
+            AttackerEntityId: TargetEntity,
+            ValuesJson: "{}");
+
     [TestMethod]
     public void Bucket_ReturnsNoWindows_WithFewerThanTwoSnapshots()
     {
@@ -474,5 +486,225 @@ public sealed class RecordDiffingTests
         Assert.AreEqual(1.0, candidates[0].Score, 1e-9);
         Assert.AreEqual(2, candidates[0].MatchedDamageWindows);
         Assert.AreEqual(2, candidates[0].TotalDamageWindows);
+    }
+
+    // ---- Increment direction (damage-dealt / scoreboard counter) ---------
+
+    [TestMethod]
+    public void Correlate_Increment_RanksDamageDealtFieldFirst_WhenRisesMatchDamage()
+    {
+        // The mirror of HP: the target's scoreboard damage-dealt counter at
+        // +0x48 RISES by the exact damage of each event the target dealt.
+        // Direction Increment keys the events on AttackerEntityId.
+        var snapshots = new[]
+        {
+            new RecordSnapshot(TimeSpan.Zero, Region(hp: 0)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(1000), Region(hp: 150)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(2000), Region(hp: 225)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(3000), Region(hp: 475)),
+        };
+        var events = new[]
+        {
+            DealtDamage(TimeSpan.FromMilliseconds(1000), 150),
+            DealtDamage(TimeSpan.FromMilliseconds(2000), 75),
+            DealtDamage(TimeSpan.FromMilliseconds(3000), 250),
+        };
+
+        IReadOnlyList<DamageCorrelationCandidate> candidates =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                TargetEntity,
+                DamageMatchMode.Strict,
+                DamageCorrelationDirection.Increment);
+
+        Assert.IsNotEmpty(candidates);
+        Assert.AreEqual(HpOffset, candidates[0].Offset);
+        Assert.AreEqual(1.0, candidates[0].Score, 1e-9);
+        Assert.AreEqual(1.0, candidates[0].Flatness, 1e-9);
+        Assert.AreEqual(3, candidates[0].MatchedDamageWindows);
+    }
+
+    [TestMethod]
+    public void Correlate_Increment_DefaultDirection_StillMatchesDropsOnly()
+    {
+        // The default direction stays Decrement: an increment-only field must
+        // NOT become a candidate just because the direction enum exists —
+        // existing callers are unchanged.
+        var snapshots = new[]
+        {
+            new RecordSnapshot(TimeSpan.Zero, Region(hp: 0)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(1000), Region(hp: 150)),
+        };
+        var events = new[]
+        {
+            DealtDamage(TimeSpan.FromMilliseconds(1000), 150),
+        };
+
+        // Decrement direction: the event keys on EntityId (9999, not the
+        // target) AND the field rises — no candidates either way.
+        IReadOnlyList<DamageCorrelationCandidate> candidates =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                TargetEntity);
+
+        Assert.IsEmpty(candidates);
+    }
+
+    [TestMethod]
+    public void Correlate_Increment_IgnoresVictimSideEvents()
+    {
+        // In Increment mode only the target's ATTACKER-side events are summed:
+        // an event where the target is the victim must not move the counter.
+        var snapshots = new[]
+        {
+            new RecordSnapshot(TimeSpan.Zero, Region(hp: 100)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(1000), Region(hp: 100)),
+        };
+        var events = new[]
+        {
+            // Target is the victim; attacker is someone else.
+            new HpDamageEvent(
+                ParticipantId: null,
+                EntityId: TargetEntity,
+                ReplayTime: TimeSpan.FromMilliseconds(1000),
+                Kind: CanonicalEventKind.Damage,
+                Damage: 150,
+                AttackerEntityId: 1234,
+                ValuesJson: "{}"),
+        };
+
+        IReadOnlyList<DamageCorrelationCandidate> candidates =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                TargetEntity,
+                DamageMatchMode.Strict,
+                DamageCorrelationDirection.Increment);
+
+        Assert.IsEmpty(candidates);
+    }
+
+    [TestMethod]
+    public void Correlate_Increment_StrictExcludesMagnitudeMismatchedRiser()
+    {
+        // The Increment analog of the HP Strict confirmation: a decoy at
+        // +0x30 that rises by LARGE amounts in the damage windows (and is flat
+        // in controls) ties Lenient on score and flatness, but Strict requires
+        // delta == exact sum — the decoy never satisfies it; the real counter
+        // at +0x48 does (2 strict matches).
+        var snapshots = new[]
+        {
+            new RecordSnapshot(TimeSpan.Zero, Region(hp: 0, drain: 1000)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(1000), Region(hp: 150, drain: 2000)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(2000), Region(hp: 225, drain: 3000)),
+            // Control window (2000, 3000]: only the counter changes; the
+            // decoy is FLAT — flatness cannot separate it.
+            new RecordSnapshot(TimeSpan.FromMilliseconds(3000), Region(hp: 225, drain: 3000, counter: 1)),
+        };
+        var events = new[]
+        {
+            DealtDamage(TimeSpan.FromMilliseconds(1000), 150),
+            DealtDamage(TimeSpan.FromMilliseconds(2000), 75),
+        };
+
+        IReadOnlyList<DamageCorrelationCandidate> lenient =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                TargetEntity,
+                DamageMatchMode.Lenient,
+                DamageCorrelationDirection.Increment);
+        Assert.AreEqual(DrainOffset, lenient[0].Offset);
+        Assert.AreEqual(1.0, lenient[0].Flatness, 1e-9);
+
+        IReadOnlyList<DamageCorrelationCandidate> strict =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                TargetEntity,
+                DamageMatchMode.Strict,
+                DamageCorrelationDirection.Increment);
+        Assert.IsFalse(strict.Any(candidate => candidate.Offset == DrainOffset));
+        Assert.IsNotEmpty(strict);
+        Assert.AreEqual(HpOffset, strict[0].Offset);
+        Assert.AreEqual(2, strict[0].MatchedDamageWindows);
+    }
+
+    [TestMethod]
+    public void Correlate_Increment_FlatnessDemotesMonotonicRiser()
+    {
+        // A monotonic riser (e.g. a tick/ammo counter) rises MORE than every
+        // damage window's sum: under Lenient it matches every damage window
+        // (score 1.0) but keeps rising through the no-damage control window —
+        // flatness 0 demotes it below the real counter, which is flat there.
+        var snapshots = new[]
+        {
+            new RecordSnapshot(TimeSpan.Zero, Region(hp: 0, drain: 0)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(1000), Region(hp: 150, drain: 500)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(2000), Region(hp: 225, drain: 1000)),
+            // Control window (2000, 3000]: no damage; the riser keeps climbing.
+            new RecordSnapshot(TimeSpan.FromMilliseconds(3000), Region(hp: 225, drain: 1500)),
+        };
+        var events = new[]
+        {
+            DealtDamage(TimeSpan.FromMilliseconds(1000), 150),
+            DealtDamage(TimeSpan.FromMilliseconds(2000), 75),
+        };
+
+        IReadOnlyList<DamageCorrelationCandidate> candidates =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                TargetEntity,
+                DamageMatchMode.Lenient,
+                DamageCorrelationDirection.Increment);
+
+        Assert.IsNotEmpty(candidates);
+        Assert.AreEqual(HpOffset, candidates[0].Offset);
+        Assert.AreEqual(1.0, candidates[0].Score, 1e-9);
+        Assert.AreEqual(1.0, candidates[0].Flatness, 1e-9);
+        DamageCorrelationCandidate riser = candidates.Single(
+            candidate => candidate.Offset == DrainOffset);
+        Assert.AreEqual(1.0, riser.Score, 1e-9);
+        Assert.AreEqual(0.0, riser.Flatness, 1e-9);
+        Assert.AreNotEqual(DrainOffset, candidates[0].Offset);
+    }
+
+    [TestMethod]
+    public void Correlate_Increment_LenientMatchesOvercapRise()
+    {
+        // Lenient also admits a rise LARGER than the window's sum (the counter
+        // absorbed a sub-event the timeline missed) — the mirror of HP's
+        // overkill admission; Strict still requires the exact sum.
+        var snapshots = new[]
+        {
+            new RecordSnapshot(TimeSpan.Zero, Region(hp: 0)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(1000), Region(hp: 400)),
+        };
+        var events = new[]
+        {
+            DealtDamage(TimeSpan.FromMilliseconds(1000), 150),
+        };
+
+        IReadOnlyList<DamageCorrelationCandidate> lenient =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                TargetEntity,
+                DamageMatchMode.Lenient,
+                DamageCorrelationDirection.Increment);
+        Assert.IsNotEmpty(lenient);
+        Assert.AreEqual(HpOffset, lenient[0].Offset);
+
+        IReadOnlyList<DamageCorrelationCandidate> strict =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                TargetEntity,
+                DamageMatchMode.Strict,
+                DamageCorrelationDirection.Increment);
+        Assert.IsEmpty(strict);
     }
 }

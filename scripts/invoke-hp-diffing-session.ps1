@@ -7,10 +7,11 @@
 .DESCRIPTION
   Sequence:
     1. QUALIFY (offline, real): scripts/python/replay-delta-extractor.py
-       --hp-delta --victim-entity <id> -> the event-bound dump schedule
+       --hp-delta --victim-entity <id> (or --damage-dealt --attacker-entity
+       <id> with -Track damage-dealt) -> the event-bound dump schedule
        (dump_schedule: a dump just before and after each damage event,
        +-0.2s, plus flat control dumps in the gap segments) and the
-       ready-to-paste hp-diff command. Exits 2 unless the victim has >= 2
+       ready-to-paste hp-diff command. Exits 2 unless the target has >= 2
        damage windows (the verdict contract's minimum).
     2. DUMP (live, GATED seam): the trusted reader acquires the region dumps
        at the scheduled replay-clock times - requires the ONE bounded product
@@ -21,11 +22,16 @@
        -SnapshotsPath to skip this seam and run the verdict against an
        already-produced dump file (the offline-replay mode).
     3. VERDICT (offline, real): wotbtreader-cli hp-diff <snapshots.json>
-       --session <id> --victim <entity> --mode lenient -> buckets, correlates
-       (Lenient first - overkill), confirms under Strict, and applies the
-       hardened contract (score 1.0 + flatness 1.0 + >= 2 exact-sum Strict
-       matches). With -FailOnNoHit the driver exits 1 when the verdict is not
-       a HIT.
+       --session <id> --victim <entity> --mode lenient [--direction increment]
+       -> buckets, correlates (Lenient first - overkill), confirms under
+       Strict, and applies the hardened contract (score 1.0 + flatness 1.0
+       + >= 2 exact-sum Strict matches). With -FailOnNoHit the driver exits 1
+       when the verdict is not a HIT.
+
+  Tracks: -Track hp (default) correlates a victim's HP drop (decrement);
+  -Track damage-dealt correlates the target's scoreboard counter rise
+  (increment - the player's own stat; the extractor defaults the attacker to
+  the session's viewpoint entity when -VictimEntityId is 0).
 
   Repeatability: run the identical flow on the second independent replay
   (Dead Rail victim 2549399) and require the matched offsets to agree - the
@@ -41,8 +47,13 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$SessionId,
-    [Parameter(Mandatory = $true)]
-    [long]$VictimEntityId,
+    # The entity to correlate: the HP victim (Track hp) or the damage-dealt
+    # owner (Track damage-dealt; 0 = default to the session's viewpoint
+    # entity - the player's own stat).
+    [long]$VictimEntityId = 0,
+    # Which stat to correlate: 'hp' (decrement) or 'damage-dealt' (increment).
+    [ValidateSet('hp', 'damage-dealt')]
+    [string]$Track = 'hp',
     # App data root that holds the decoded treader DB (hp-diff --data-root).
     [string]$DataRoot = '',
     # Path to the dump file (skip the live seam). Must use the snapshots
@@ -73,30 +84,45 @@ if (-not (Test-Path -LiteralPath $CliDll)) {
 }
 
 # ---- 1. QUALIFY (offline, real) -----------------------------------------
-Write-Step "Qualifying victim $VictimEntityId for session $SessionId..."
+$IsIncrement = ($Track -eq 'damage-dealt')
+$TrackLabel = if ($IsIncrement) { 'damage-dealt' } else { 'HP victim' }
+Write-Step "Qualifying $TrackLabel $VictimEntityId for session $SessionId..."
 # Native tools write informational lines to stderr; under
 # $ErrorActionPreference = 'Stop' (PowerShell 7) those become terminating
 # NativeCommandError, so the calls below run with EAP temporarily Continue.
 $OldErrorActionPreference = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
 try {
-    $QualificationJson = (& $Python (Join-Path $RepoRoot 'scripts\python\replay-delta-extractor.py') `
-        --session $SessionId --hp-delta --victim-entity $VictimEntityId `
-        --window $WindowSeconds 2>$null) | Out-String
+    if ($IsIncrement) {
+        $QualificationJson = (& $Python (Join-Path $RepoRoot 'scripts\python\replay-delta-extractor.py') `
+            --session $SessionId --damage-dealt --attacker-entity $VictimEntityId `
+            --window $WindowSeconds 2>$null) | Out-String
+    } else {
+        if ($VictimEntityId -le 0) {
+            throw "-VictimEntityId is required for -Track hp."
+        }
+        $QualificationJson = (& $Python (Join-Path $RepoRoot 'scripts\python\replay-delta-extractor.py') `
+            --session $SessionId --hp-delta --victim-entity $VictimEntityId `
+            --window $WindowSeconds 2>$null) | Out-String
+    }
 } finally {
     $ErrorActionPreference = $OldErrorActionPreference
 }
 $Qualification = $QualificationJson | ConvertFrom-Json
-if ($null -eq $Qualification -or $null -eq $Qualification.hp_delta) {
+if ($null -eq $Qualification) {
     throw "Qualification failed - is the session decoded in the treader DB (and is the tick unit self-test passing, python scripts/python/replay-delta-extractor.py --self-test)?"
 }
 
-$HpDelta = $Qualification.hp_delta
+$HpDelta = if ($IsIncrement) { $Qualification.damage_dealt } else { $Qualification.hp_delta }
+if ($null -eq $HpDelta) {
+    throw "Qualification failed - no $Track track data for session $SessionId."
+}
+$TargetEntityId = if ($IsIncrement) { $HpDelta.attacker_entity_id } else { $HpDelta.victim_entity_id }
 $HitWindows = $HpDelta.hit_windows
-Write-Step ("Victim {0}: {1} hit window(s), {2} total damage, {3} dump entries." -f `
-    $HpDelta.victim_entity_id, $HitWindows, $HpDelta.total_damage, $HpDelta.dump_schedule.Count)
+Write-Step ("Target {0}: {1} hit window(s), {2} total damage, {3} dump entries." -f `
+    $TargetEntityId, $HitWindows, $HpDelta.total_damage, $HpDelta.dump_schedule.Count)
 if ($HitWindows -lt 2) {
-    Write-Host "hp_session: victim has fewer than 2 damage windows - the verdict contract needs >= 2. Pick a different victim (--top-victims)."
+    Write-Host "hp_session: target has fewer than 2 damage windows - the verdict contract needs >= 2. Pick a different target."
     exit 2
 }
 
@@ -124,13 +150,14 @@ if (-not (Test-Path -LiteralPath $SnapshotsPath)) {
 }
 
 # ---- 3. VERDICT (offline, real) ------------------------------------------
-Write-Step "Running hp-diff verdict..."
+Write-Step "Running hp-diff verdict (direction: $(if ($IsIncrement) { 'increment' } else { 'decrement' }))..."
 $DataRootArgs = if ($DataRoot -ne '') { @('--data-root', $DataRoot) } else { @() }
+$DirectionArgs = if ($IsIncrement) { @('--direction', 'increment') } else { @() }
 $ErrorActionPreference = 'Continue'
 try {
     $VerdictJson = (& dotnet $CliDll hp-diff $SnapshotsPath `
-        --session $SessionId --victim $VictimEntityId --mode lenient `
-        --json @DataRootArgs 2>$null) | Out-String
+        --session $SessionId --victim $TargetEntityId --mode lenient `
+        --json @DataRootArgs @DirectionArgs 2>$null) | Out-String
 } finally {
     $ErrorActionPreference = $OldErrorActionPreference
 }

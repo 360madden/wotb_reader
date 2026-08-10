@@ -26,10 +26,11 @@ public sealed record ByteChangeWindow(
     byte[] After);
 
 /// <summary>
-/// A ranked HP-correlation candidate: a 4-byte-aligned int32 field whose
-/// little-endian value drops match the target entity's damage events in the
+/// A ranked damage-correlation candidate: a 4-byte-aligned int32 field whose
+/// little-endian value move (drop for Decrement/HP, rise for
+/// Increment/damage-dealt) matches the target entity's damage events in the
 /// same replay-time windows per the correlation's <see cref="DamageMatchMode"/>
-/// (Strict: delta == −Σ damage; Lenient: drop ≥ Σ damage). A higher score
+/// (Strict: |delta| == Σ damage; Lenient: |delta| ≥ Σ damage). A higher score
 /// means more damage windows matched. <see cref="Flatness"/> is the fraction
 /// of zero-damage (control) change windows in which the field was UNCHANGED
 /// (1.0 when there are no control windows) — it separates HP (flat except when

@@ -53,6 +53,78 @@ public sealed class CliHpDiffTests
     }
 
     [TestMethod]
+    public async Task HpDiff_IncrementDirection_IdentifiesDamageDealtField_WhenRisesMatchTheTimeline()
+    {
+        using TemporaryDataRoot root = new();
+        await SeedDatabaseAsync(root);
+
+        // Re-point the seeded events at the target as the ATTACKER (the
+        // increment direction keys on attackerEntityId): the target deals 450
+        // at 1s and 120 at 2s; the 3s Destroyed carries no damage.
+        await using (SqliteConnection connection =
+                     new($"Data Source={Path.Combine(root.Path, "treader.db")}"))
+        {
+            await connection.OpenAsync(TestContext.CancellationToken);
+            await using SqliteCommand command = connection.CreateCommand();
+            command.CommandText =
+                """
+                UPDATE canonical_events
+                SET values_json = CASE id
+                    WHEN $event1 THEN '{"attackerEntityId":7001,"victimEntityId":7002,"damage":450}'
+                    WHEN $event2 THEN '{"attackerEntityId":7001,"victimEntityId":7003,"damage":120}'
+                    ELSE values_json
+                END;
+                """;
+            command.Parameters.AddWithValue("$event1", "019fdff7-cccc-0001-8547-9fb8cc3eb07b");
+            command.Parameters.AddWithValue("$event2", "019fdff7-cccc-0002-8547-9fb8cc3eb07b");
+            await command.ExecuteNonQueryAsync(TestContext.CancellationToken);
+        }
+
+        // The scoreboard damage-dealt counter at +0x48 RISES by exactly those
+        // amounts and stays flat through the (2, 3] control window.
+        string snapshotsPath = await WriteSnapshotsAsync(
+            root,
+            (0, 0),
+            (1, 450),
+            (2, 570),
+            (3, 570));
+
+        CliRun run = await RunAsync(root, "hp-diff", snapshotsPath,
+            "--session", SessionId.ToString("D"),
+            "--victim", Victim.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "--direction", "increment");
+
+        Assert.AreEqual(0, run.ExitCode, run.Diagnostic);
+        JsonElement data = run.Data;
+        Assert.AreEqual("increment", data.GetProperty("direction").GetString());
+        Assert.IsTrue(data.GetProperty("verdict").GetProperty("hit").GetBoolean(), run.Diagnostic);
+        Assert.AreEqual(
+            0x48,
+            data.GetProperty("topCandidate").GetProperty("offset").GetInt32());
+        Assert.AreEqual(1.0, data.GetProperty("topCandidate").GetProperty("score").GetDouble(), 1e-9);
+        Assert.AreEqual(1.0, data.GetProperty("topCandidate").GetProperty("flatness").GetDouble(), 1e-9);
+        Assert.AreEqual(
+            2,
+            data.GetProperty("strictConfirmation").GetProperty("matchedDamageWindows").GetInt32());
+    }
+
+    [TestMethod]
+    public async Task HpDiff_IncrementDirection_RejectsUnknownDirectionValue()
+    {
+        using TemporaryDataRoot root = new();
+        await SeedDatabaseAsync(root);
+
+        string snapshotsPath = await WriteSnapshotsAsync(root, (0, 1000), (1, 1000));
+
+        CliRun run = await RunAsync(root, "hp-diff", snapshotsPath,
+            "--session", SessionId.ToString("D"),
+            "--victim", Victim.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "--direction", "sideways");
+
+        Assert.AreEqual((int)CliExitCode.InvalidArguments, run.ExitCode, run.Diagnostic);
+    }
+
+    [TestMethod]
     public async Task HpDiff_ReportsNoHit_WhenNoFieldDropsMatch()
     {
         using TemporaryDataRoot root = new();

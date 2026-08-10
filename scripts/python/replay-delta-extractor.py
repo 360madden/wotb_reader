@@ -45,6 +45,14 @@ Modes:
       (attacker/victim entity + damage amount) for the victim entity and run
       it through the survival simulation. An HP field changes rarely and by
       exact damage amounts — a strong marker when the victim takes hits.
+
+  python scripts/python/replay-delta-extractor.py --damage-dealt [--attacker-entity <id>]
+      The increment-direction mirror: bucket the damage DEALT BY the target
+      (default the session's viewpoint/player entity) into windows and emit
+      the event-bound dump schedule for a scoreboard damage-dealt correlation
+      (hp-diff --direction increment). Verified 2026-08-10: the player dealt
+      damage in both 11.19.0 replays (5 events each, >= 2 windows) — unlike
+      HP, the player's own stat IS a viable correlation target.
 """
 
 from __future__ import annotations
@@ -364,6 +372,80 @@ def hp_damage_series(
     return [buckets.get(i, 0.0) for i in range(max_idx + 1)]
 
 
+def dealt_damage_series(
+    con: sqlite3.Connection,
+    session_id: str,
+    attacker_entity_id: int,
+    window_seconds: float,
+) -> list[float]:
+    """Per-window damage-dealt series from kind-3 damage events.
+
+    The mirror of `hp_damage_series`: bucket the damage DEALT BY
+    `attacker_entity_id` (the scoreboard damage-dealt counter's increments)
+    into replay-time windows. A damage-dealt counter RISES by exactly these
+    amounts when the target lands a hit and is otherwise flat — the same
+    sparse-but-exact marker family as HP, in the increment direction.
+    """
+    rows = con.execute(
+        "SELECT replay_time_ticks, values_json FROM canonical_events "
+        "WHERE battle_session_id=? AND kind=3",
+        (session_id,),
+    ).fetchall()
+    bucket_ticks = int(window_seconds * TICKS_PER_SECOND)
+    buckets: dict[int, float] = {}
+    for r in rows:
+        try:
+            v = json.loads(r[1])
+        except json.JSONDecodeError:
+            continue
+        if int(v.get("attackerEntityId", -1)) != attacker_entity_id:
+            continue
+        ticks = int(r[0])
+        idx = ticks // bucket_ticks
+        buckets[idx] = buckets.get(idx, 0.0) + float(v.get("damage", 0))
+    if not buckets:
+        return []
+    max_idx = max(buckets)
+    return [buckets.get(i, 0.0) for i in range(max_idx + 1)]
+
+
+def dealt_dump_schedule(
+    con: sqlite3.Connection,
+    session_id: str,
+    attacker_entity_id: int,
+    padding_seconds: float = 0.2,
+) -> list[dict]:
+    """Per-hit dump schedule for the damage-dealt (increment) live session.
+
+    Same event-bound shape as `hp_dump_schedule`, keyed on the ATTACKER id:
+    dump just BEFORE and AFTER each hit the target landed so the change
+    window captures exactly that counter increment.
+    """
+    rows = con.execute(
+        "SELECT replay_time_ticks, json_extract(values_json,'$.damage') AS dmg "
+        "FROM canonical_events WHERE battle_session_id=? AND kind=3 AND "
+        "json_extract(values_json,'$.attackerEntityId')=? ORDER BY replay_time_ticks",
+        (session_id, attacker_entity_id),
+    ).fetchall()
+    schedule = []
+    for row in rows:
+        if row[1] is None or float(row[1]) <= 0.0:
+            # A 0/unparseable-damage event cannot move the counter; a dump
+            # pair around it would waste two lease-bounded dumps.
+            continue
+        t = float(row[0]) / TICKS_PER_SECOND
+        damage = float(row[1])
+        schedule.append(
+            {
+                "hit_replay_s": round(t, 2),
+                "damage": round(damage, 2),
+                "dump_before_s": round(t - padding_seconds, 2),
+                "dump_after_s": round(t + padding_seconds, 2),
+            }
+        )
+    return schedule
+
+
 def top_victims(
     con: sqlite3.Connection,
     session_id: str,
@@ -567,6 +649,10 @@ def main(argv: list[str]) -> int:
                         help="build a per-window HP damage-delta series from kind-3 damage events")
     parser.add_argument("--victim-entity", type=int, default=0,
                         help="entity id of the HP victim to track (required with --hp-delta)")
+    parser.add_argument("--damage-dealt", action="store_true",
+                        help="build the scoreboard damage-dealt (increment) series from the target's attacker-side kind-3 events")
+    parser.add_argument("--attacker-entity", type=int, default=0,
+                        help="entity id whose DEALT damage to track (default: the session's viewpoint/player entity)")
     parser.add_argument("--top-victims", type=int, default=0,
                         help="rank the session's damage victims by hit count (N entries) for HP-diffing victim selection; prints and exits")
     parser.add_argument("--self-test", action="store_true",
@@ -690,6 +776,44 @@ def main(argv: list[str]) -> int:
                     f"wotbtreader-cli hp-diff <snapshots.json> "
                     f"--session {session['id']} --victim {victim} "
                     f"--mode lenient"
+                ),
+            },
+        }
+
+    if args.damage_dealt:
+        if args.attacker_entity <= 0:
+            # Default to the viewpoint (player's own) entity: the scoreboard
+            # damage-dealt counter is the PLAYER's stat, so the target is the
+            # entity the viewpoint tank controls.
+            vpid = session.get("viewpoint_participant_id")
+            row = (
+                con.execute(
+                    "SELECT entity_id FROM participants "
+                    "WHERE battle_session_id=? AND id=?",
+                    (session["id"], vpid),
+                ).fetchone()
+                if vpid
+                else None
+            )
+            attacker = row["entity_id"] if row else 0
+        else:
+            attacker = args.attacker_entity
+        dealt_series = dealt_damage_series(con, session["id"], attacker, args.window)
+        result["damage_dealt"] = {
+            "attacker_entity_id": attacker,
+            "windows": len(dealt_series),
+            "hit_windows": sum(1 for d in dealt_series if d > 0),
+            "total_damage": round(sum(dealt_series), 2),
+            "series": [round(d, 2) for d in dealt_series],
+            "simulation": simulate_survival(
+                dealt_series, 0.0, [0.0, 0.5, 1.0, 5.0], rounds
+            ),
+            "dump_schedule": dealt_dump_schedule(con, session["id"], attacker),
+            "commands": {
+                "hp_diff": (
+                    f"wotbtreader-cli hp-diff <snapshots.json> "
+                    f"--session {session['id']} --victim {attacker} "
+                    f"--mode lenient --direction increment"
                 ),
             },
         }

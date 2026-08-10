@@ -70,7 +70,7 @@ public sealed record CliInvocation(
 
     private static bool OptionRequiresValue(string option) =>
         option is "data-root" or "format" or "limit" or "offset" or "output"
-            or "session" or "victim" or "mode";
+            or "session" or "victim" or "mode" or "direction";
 
     private static bool TryAddOption(
         Dictionary<string, string?> options,
