@@ -33,15 +33,17 @@ legacy observation path and unchanged for the resolver path.
 
 ## 3. Required verification (executed after the edit, before the commit)
 
-1. **Unit/regression test (spec):** add a coordinator test that constructs an
-   `OffsetTable` with (a) `playerPositionX` `Status=Verified, Offset=0`
-   (chained) and (b) `replayTime` `Status=Verified, Offset=0x1000`, passes it
-   through `ObserveAsync` with a recording `IAuthorizedMemoryReader`, and
-   asserts the reader is called for `moduleBase + 0x1000` (replayTime) and
-   NEVER for `moduleBase + 0` / the chained field — i.e., the observation's
-   position values stay null. Use the existing `StubOffsetTableReader`
-   (override it to return the fixture table) and the coordinator test
-   harness. This pins the "chained ⇒ excluded" contract against regression.
+1. **Unit/regression test — DONE 2026-08-09:**
+   `ChainedFields_AreExcludedFromObservationReads` in
+   `tests/WotBTreader.GameIntegration.Tests/GameSessionCoordinatorTests.cs`
+   constructs an `OffsetTable` with (a) `playerPositionX`
+   `Status=Verified, Offset=0` (chained) and (b) `replayTime`
+   `Status=Verified, Offset=0x1000`, drives it through `ObserveAsync` with a
+   recording `IAuthorizedMemoryReader`, and asserts the reader is called for
+   `moduleBase + 0x1000` (replayTime) and NEVER for `moduleBase + 0` (the
+   chained field), with the observation's position values null. Passing;
+   full `scripts/validate.ps1` gate green (2026-08-10). This pins the
+   "chained ⇒ excluded" contract against regression.
 2. **Live smoke (optional, next approved session):** one bounded resolver
    poll (or a position-page call) returns `Resolved` while the legacy
    `/api/v1/game/state` observation reports position nulls — proving both

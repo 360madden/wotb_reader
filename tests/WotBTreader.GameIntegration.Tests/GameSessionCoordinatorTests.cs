@@ -1305,6 +1305,43 @@ public sealed class GameSessionCoordinatorTests
         Assert.IsFalse(snapshot.GamePresent);
     }
 
+    [TestMethod]
+    public async Task ChainedFields_AreExcludedFromObservationReads()
+    {
+        // G0 publication contract (2026-08-09): a chained field
+        // (playerPositionX, Verified, offsets value 0) must NEVER be read as
+        // moduleBase + 0 by the legacy observation path — the position chain
+        // lives in the resolver layout, not the table, and the runtime
+        // computes moduleBase + offset. A non-chained Verified field with a
+        // real offset must still be read.
+        var readerFactory = new RecordingObservationReaderFactory();
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: readerFactory,
+            offsetTableReader: new FixedOffsetTableReader(CreateObservationFixtureTable()));
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+        coordinator.ApplyEvidence(CreateValidEvidence());
+
+        GameMemoryObservation observation =
+            await coordinator.ObserveAsync(CancellationToken.None);
+
+        nint moduleBase = (nint)0x10000000;
+        Assert.AreEqual(
+            GameMemoryObservationAvailability.Available,
+            observation.Availability);
+        // The non-chained Verified field (replayTime at +0x1000) is read.
+        CollectionAssert.Contains(
+            readerFactory.Reader.Addresses,
+            moduleBase + 0x1000);
+        // The chained field (offset 0) is never read as moduleBase + 0.
+        CollectionAssert.DoesNotContain(
+            readerFactory.Reader.Addresses,
+            moduleBase,
+            "a chained field with offsets=0 must not be read as moduleBase + 0");
+        // Chained position stays null; the control field is populated.
+        Assert.IsNull(observation.PlayerPositionX);
+        Assert.IsNotNull(observation.ReplayTimeSeconds);
+    }
+
     private static (GameSessionCoordinator Coordinator, ManualTimeProvider TimeProvider)
         CreateCoordinator(
             IManagedLaunchPreparer? preparer = null,
@@ -1633,6 +1670,90 @@ public sealed class GameSessionCoordinatorTests
                     NodesVisited: 0,
                     ModuleRooted: true)));
         }
+    }
+
+    private static OffsetTable CreateObservationFixtureTable() =>
+        new(
+            SchemaVersion: 1,
+            GameVersion: "11.18.0.7",
+            ExecutableSha256: new string('a', 64),
+            DiscoveredAtUtc: StartTime,
+            Confidence: OffsetConfidence.High,
+            Notes: "chained-field exclusion fixture (2026-08-09)",
+            Fields:
+            [
+                new OffsetField(
+                    "playerPositionX",
+                    OffsetFieldType.FloatField,
+                    Offset: 0,
+                    OffsetFieldStatus.Verified,
+                    OffsetConfidence.High,
+                    Array.Empty<OffsetFieldEvidence>()),
+                new OffsetField(
+                    "replayTime",
+                    OffsetFieldType.DoubleField,
+                    Offset: 0x1000,
+                    OffsetFieldStatus.Verified,
+                    OffsetConfidence.High,
+                    Array.Empty<OffsetFieldEvidence>()),
+            ]);
+
+    private sealed class FixedOffsetTableReader(OffsetTable table) : IOffsetTableReader
+    {
+        public OperationResult<OffsetTable?> Load(
+            string gameVersion,
+            string executableSha256,
+            CancellationToken cancellationToken = default) =>
+            OperationResult.Success<OffsetTable?>(table);
+    }
+
+    private sealed class RecordingObservationReaderFactory : IGuardedMemoryReaderFactory
+    {
+        public RecordingObservationReader Reader { get; } = new();
+
+        public ValueTask<OperationResult<IAuthorizedMemoryReader>> CreateAsync(
+            AuthorizedMemoryObservation observation,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(
+                OperationResult.Success<IAuthorizedMemoryReader>(Reader));
+        }
+    }
+
+    private sealed class RecordingObservationReader : IAuthorizedMemoryReader
+    {
+        public List<nint> Addresses { get; } = [];
+
+        public ValueTask<OperationResult<byte[]>> ReadAsync(
+            nint address,
+            int length,
+            CancellationToken cancellationToken)
+        {
+            Addresses.Add(address);
+            return ValueTask.FromResult(
+                OperationResult.Success<byte[]>(new byte[length]));
+        }
+
+        public ValueTask<OperationResult<IReadOnlyList<MemoryReadItem>>> ReadBatchAsync(
+            IReadOnlyList<nint> addresses,
+            int length,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public ValueTask<OperationResult<Type10EntityPositionResult>> ResolveEntityPositionAsync(
+            nint moduleBase,
+            int entityId,
+            Type10EntityPositionLayout layout,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public ValueTask<OperationResult<Type10EntityPositionAddressResult>> ResolveEntityPositionAddressAsync(
+            nint moduleBase,
+            int entityId,
+            Type10EntityPositionLayout layout,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 
     private sealed class StubReplayClockSource : IReplayClockSource
