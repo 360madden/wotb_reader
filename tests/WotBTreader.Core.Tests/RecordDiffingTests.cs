@@ -15,12 +15,14 @@ public sealed class RecordDiffingTests
     private const long TargetEntity = 7001;
     private const int HpOffset = 0x48;
     private const int CounterOffset = 0x20;
+    private const int DrainOffset = 0x30;
 
-    private static byte[] Region(int hp, int counter = 0)
+    private static byte[] Region(int hp, int counter = 0, int drain = 0)
     {
         byte[] bytes = new byte[0x100];
         BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(HpOffset), hp);
         BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(CounterOffset), counter);
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(DrainOffset), drain);
         return bytes;
     }
 
@@ -299,6 +301,100 @@ public sealed class RecordDiffingTests
                 DamageMatchMode.Lenient);
 
         Assert.IsEmpty(candidates);
+    }
+
+    [TestMethod]
+    public void Correlate_Lenient_DrainingDecoy_RanksBelowHp_OnFlatness()
+    {
+        // A monotonic drain (e.g. ammo/fuel/energy) drops MORE than every
+        // window's damage, so under Lenient it matches every damage window
+        // (score 1.0, precision 1.0 — precision counts damage windows only).
+        // Without a discriminator it would TIE with HP and win on offset. The
+        // flatness rank breaks the tie: HP is unchanged in the control (no-
+        // damage) window, the drain keeps dropping through it.
+        var snapshots = new[]
+        {
+            new RecordSnapshot(TimeSpan.Zero, Region(hp: 500, drain: 1000)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(1000), Region(hp: 350, drain: 0)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(2000), Region(hp: 275, drain: -900)),
+            // Control window (2000, 3000]: no damage; only the drain changes.
+            new RecordSnapshot(TimeSpan.FromMilliseconds(3000), Region(hp: 275, drain: -1900)),
+        };
+        var events = new[]
+        {
+            Damage(TimeSpan.FromMilliseconds(1000), 150),
+            Damage(TimeSpan.FromMilliseconds(2000), 75),
+        };
+
+        IReadOnlyList<DamageCorrelationCandidate> candidates =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                TargetEntity,
+                DamageMatchMode.Lenient);
+
+        Assert.IsNotEmpty(candidates);
+        Assert.AreEqual(HpOffset, candidates[0].Offset);
+        Assert.AreEqual(1.0, candidates[0].Score, 1e-9);
+        Assert.AreEqual(1.0, candidates[0].Flatness, 1e-9);
+        // The drain IS a Lenient candidate (drop >= sum in both damage
+        // windows) but its flatness is 0 — it ranks below HP.
+        DamageCorrelationCandidate drain = candidates.Single(
+            candidate => candidate.Offset == DrainOffset);
+        Assert.AreEqual(1.0, drain.Score, 1e-9);
+        Assert.AreEqual(0.0, drain.Flatness, 1e-9);
+        Assert.AreNotEqual(DrainOffset, candidates[0].Offset);
+    }
+
+    [TestMethod]
+    public void Correlate_Strict_ExcludesMagnitudeMismatchedDecoy_ConfirmsHp()
+    {
+        // The residual Lenient risk: a decoy that drops by LARGE amounts (e.g.
+        // another victim's HP, or a heavy drain) in the damage windows is flat
+        // in control windows too, so flatness does NOT separate it — score and
+        // flatness both 1.0, offset decides. The load-bearing confirmation is
+        // STRICT: HP's drops EQUAL the exact sums (non-overkill windows); the
+        // decoy's drops never do. The verdict contract requires >= 2 strict
+        // matches before a HIT.
+        var snapshots = new[]
+        {
+            new RecordSnapshot(TimeSpan.Zero, Region(hp: 500, drain: 5000, counter: 0)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(1000), Region(hp: 350, drain: 4001, counter: 0)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(2000), Region(hp: 275, drain: 3002, counter: 0)),
+            // Control window (2000, 3000]: only the counter changes; the drain
+            // is FLAT here (unlike the previous test's drain) — so flatness
+            // cannot separate it from HP; both are 1.0.
+            new RecordSnapshot(TimeSpan.FromMilliseconds(3000), Region(hp: 275, drain: 3002, counter: 1)),
+        };
+        var events = new[]
+        {
+            Damage(TimeSpan.FromMilliseconds(1000), 150),
+            Damage(TimeSpan.FromMilliseconds(2000), 75),
+        };
+
+        // Lenient: the decoy ties HP (score 1.0, flatness 1.0) and wins on
+        // offset — the risk this contract documents.
+        IReadOnlyList<DamageCorrelationCandidate> lenient =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                TargetEntity,
+                DamageMatchMode.Lenient);
+        Assert.AreEqual(DrainOffset, lenient[0].Offset);
+        Assert.AreEqual(1.0, lenient[0].Flatness, 1e-9);
+
+        // Strict: the decoy never drops by an exact sum -> excluded; HP drops
+        // exactly -> confirmed with 2 strict matches.
+        IReadOnlyList<DamageCorrelationCandidate> strict =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                TargetEntity,
+                DamageMatchMode.Strict);
+        Assert.IsFalse(strict.Any(candidate => candidate.Offset == DrainOffset));
+        Assert.IsNotEmpty(strict);
+        Assert.AreEqual(HpOffset, strict[0].Offset);
+        Assert.AreEqual(2, strict[0].MatchedDamageWindows);
     }
 
     [TestMethod]

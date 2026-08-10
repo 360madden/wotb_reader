@@ -65,17 +65,23 @@ unchanged.
   int32 whose value drop matches −Σ damage per mode: **Strict** (default)
   requires the drop to equal the summed damage exactly; **Lenient** accepts
   any drop ≥ Σ damage (the destroying hit's overkill, multi-source
-  under-sums). Ranked by score (matched / damage windows), then precision
-  (matched / changed damage-windows), then offset.
-
-Proven by synthetic fixtures: HP-at-+0x48 ranks first across three damage
-windows; an unrelated changing counter is never a candidate; sparse
-snapshots sum multiple events in one window; other entities' damage is
-ignored; a damage window with no HP drop yields no candidates; Lenient
+  under-sums). Ranked by score (matched / damage windows), then
+  **flatness** (fraction of zero-damage control windows in which the field
+  was UNCHANGED — separates HP, flat except when hit, from monotonic
+  drains that drop every window), then precision (matched / changed
+  damage-windows), then offset.Proven by synthetic fixtures: HP-at-+0x48 ranks first across three
+damage windows; an unrelated changing counter is never a candidate;
+sparse snapshots sum multiple events in one window; other entities' damage
+is ignored; a damage window with no HP drop yields no candidates; Lenient
 matches the overkill killing blow (HP 500 → 0 vs 150 damage) while still
 rejecting a small coincidental drop and subsuming exact matches; a
 realistic event mix (Damage + Destroyed + unrelated damage) still ranks
-HP first. **End-to-end compose proof** (`SqliteHpGroundTruthProviderTests`):
+HP first; a monotonic drain (drops ≥ every window's sum) ties HP on score
+under Lenient but is demoted by **flatness** (HP unchanged in control
+windows, drain keeps dropping — `Correlate_Lenient_DrainingDecoy_RanksBelowHp_OnFlatness`);
+a magnitude-mismatched decoy that is flat in control windows still ties
+Lenient but is EXCLUDED by the Strict confirmation
+(`Correlate_Strict_ExcludesMagnitudeMismatchedDecoy_ConfirmsHp`). **End-to-end compose proof** (`SqliteHpGroundTruthProviderTests`):
 seeded `canonical_events` → `IHpGroundTruthProvider` (REAL `values_json`
 damage extraction) → `RecordChangeBucketer` → `HpDamageCorrelator` finds
 the HP field 2/2 — the two halves compose with the actual data shape.
@@ -122,9 +128,16 @@ reader needs ONE bounded, gated product addition:
    first — overkill) → verdict.
 3. **Verdict contract** — the top candidate offset with score, matched /
    total damage windows, and the matched window list (replay times + deltas
-   vs. the provider's events). A candidate is a HIT when it matches ≥ 2
-   damage windows with score 1.0 in Lenient mode AND the matched offsets
-   agree across the two independent replays (the Phase-4 repeatability rule).
+   vs. the provider's events). A candidate is a HIT when it (a) matches ≥ 2
+   damage windows with score 1.0 in Lenient mode, (b) has **flatness 1.0**
+   (unchanged in every zero-damage control window — the control dumps are
+   load-bearing), and (c) **confirms under Strict**: ≥ 2 windows where the
+   drop equals the exact damage sum (excludes magnitude-mismatched decoys
+   that Lenient admits — e.g. another victim's HP or a heavy drain that is
+   flat in control windows; proven by
+   `Correlate_Strict_ExcludesMagnitudeMismatchedDecoy_ConfirmsHp`),
+   AND the matched offsets agree across the two independent replays (the
+   Phase-4 repeatability rule).
 4. **Evidence + privacy** — record the session under an OD-RECOVERY id,
    keep `publicProcessAddressesOrRawBytes: false` (raw region bytes are
    session evidence, never published), and publish only the offset + chain

@@ -30,8 +30,11 @@ public sealed record ByteChangeWindow(
 /// little-endian value drops match the target entity's damage events in the
 /// same replay-time windows per the correlation's <see cref="DamageMatchMode"/>
 /// (Strict: delta == −Σ damage; Lenient: drop ≥ Σ damage). A higher score
-/// means more damage windows matched; the precision tiebreak prefers fields
-/// that changed only when damage actually landed.
+/// means more damage windows matched. <see cref="Flatness"/> is the fraction
+/// of zero-damage (control) change windows in which the field was UNCHANGED
+/// (1.0 when there are no control windows) — it separates HP (flat except when
+/// hit) from monotonic drains or other decoys that drop in every window; the
+/// ranking prefers score, then flatness, then precision, then offset.
 /// </summary>
 public sealed record DamageCorrelationCandidate(
     int Offset,
@@ -40,4 +43,7 @@ public sealed record DamageCorrelationCandidate(
     int MatchedDamageWindows,
     int TotalDamageWindows,
     int ChangedWindows,
-    string Explanation);
+    string Explanation,
+    double Flatness = 1.0,
+    int ControlWindows = 0,
+    int ChangedControlWindows = 0);

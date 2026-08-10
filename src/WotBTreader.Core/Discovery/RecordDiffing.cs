@@ -150,6 +150,15 @@ public static class HpDamageCorrelator
             return [];
         }
 
+        // Control windows: change windows in which the target took NO damage.
+        // HP is flat there (no healing in WoTB); a monotonic drain or other
+        // decoy changes in them — flatness separates the two. The bucketer
+        // only emits windows for pairs whose bytes differ, so a "control
+        // change" means OTHER bytes changed while this field stayed put.
+        List<ByteChangeWindow> controlWindows = windows
+            .Where(window => !damageByWindow.ContainsKey(window))
+            .ToList();
+
         List<DamageCorrelationCandidate> candidates = [];
         int maxOffset = regionLength - sizeof(int);
         for (int offset = 0; offset <= maxOffset; offset += sizeof(int))
@@ -181,7 +190,21 @@ public static class HpDamageCorrelator
                 continue;
             }
 
+            int controlChanged = 0;
+            foreach (ByteChangeWindow control in controlWindows)
+            {
+                int before = BinaryPrimitives.ReadInt32LittleEndian(control.Before.AsSpan(offset));
+                int after = BinaryPrimitives.ReadInt32LittleEndian(control.After.AsSpan(offset));
+                if (before != after)
+                {
+                    controlChanged++;
+                }
+            }
+
             double score = (double)matched / damageByWindow.Count;
+            double flatness = controlWindows.Count == 0
+                ? 1.0
+                : (double)(controlWindows.Count - controlChanged) / controlWindows.Count;
             string matchText = matchMode == DamageMatchMode.Lenient
                 ? "drop >= -Σ damage"
                 : "delta == -Σ damage";
@@ -193,11 +216,17 @@ public static class HpDamageCorrelator
                 damageByWindow.Count,
                 changed,
                 $"int32 at +0x{offset:X}: value drop matched {matched}/{damageByWindow.Count} "
-                + $"damage windows (precision {matched}/{changed}); {matchText}"));
+                + $"damage windows (precision {matched}/{changed}); flatness "
+                + $"{flatness:0.##} ({controlWindows.Count - controlChanged}/"
+                + $"{controlWindows.Count} control windows unchanged); {matchText}",
+                flatness,
+                controlWindows.Count,
+                controlChanged));
         }
 
         return candidates
             .OrderByDescending(candidate => candidate.Score)
+            .ThenByDescending(candidate => candidate.Flatness)
             .ThenByDescending(candidate => (double)candidate.MatchedDamageWindows / candidate.ChangedWindows)
             .ThenBy(candidate => candidate.Offset)
             .ToList();
