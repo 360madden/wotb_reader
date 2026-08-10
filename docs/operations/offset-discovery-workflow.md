@@ -313,7 +313,10 @@ resolver-walked (their cached fast path + alternative tree roots are
 branches a linear chain cannot express). The full mechanism, gates, and
 post-publication contract are in `docs/operations/g0-offset-table-draft.md`,
 `docs/operations/g0-operator-checklist.md`, and
-`docs/operations/g0-post-publication-regression.md`.
+`docs/operations/g0-post-publication-regression.md`. The replay-event
+inventory for record-diffing discovery (damage/destroyed canonical events,
+persistence, and the ground-truth gap) is in
+`docs/operations/record-diffing-groundwork.md`.
 
 ## Timeboxed decision tree
 
