@@ -175,6 +175,17 @@ HP harness only needs the entity base + the `[entity+0x3C]` tank-record
 region (Ghidra-candidate layout, test-local until live verification); it
 does not depend on the live-verified viewpoint ring-record path.
 
+**Mechanism proven end-to-end offline** (2026-08-10,
+`Walk_PublishedTable_EntityBase_AnchorsHpRegionDump_CorrelatorFindsHp`):
+walk the published `playerPositionX` chain on full-spine synthetic memory
+→ the walker exposes the found entity base → deref `[entity+0x3C]` to the
+tank record → dump the 0x100-byte region at replay-clock-labeled times
+(HP dropping by the exact damage amounts) → `RecordChangeBucketer` →
+`HpDamageCorrelator` (Lenient) ranks the HP int32 at `+0x48` first with
+score 1.0 across both damage windows. Every stage of the planned session
+flow is now proven on the real published table; only the live read
+remains.
+
 **Simulation reading:** the extractor's `--hp-delta` survival simulation
 at `target=0` measures the flat-window pass rate (3760578: 159/168 =
 0.9464 → survival 0.76 / 0.58 / 0.44 over 5 / 10 / 15 rounds). The honest

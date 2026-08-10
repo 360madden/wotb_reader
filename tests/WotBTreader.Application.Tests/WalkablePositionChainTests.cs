@@ -304,6 +304,89 @@ public sealed class WalkablePositionChainTests
         Assert.IsNull(resolver.RecordAddress);
     }
 
+    [TestMethod]
+    public void Walk_PublishedTable_EntityBase_AnchorsHpRegionDump_CorrelatorFindsHp()
+    {
+        // The full HP-diffing mechanism, offline: walk the PUBLISHED chain to
+        // the FOUND entity base (the region anchor the trusted reader needs),
+        // deref the Ghidra-candidate tank record at [entity+0x3C], dump the
+        // region at replay-clock-labeled times, and prove the correlator ranks
+        // the HP int32 first against the victim's damage events (the exact
+        // session flow from docs/operations/record-diffing-groundwork.md).
+        OperationResult<OffsetTable?> result = LoadPublished();
+        Assert.IsTrue(result.IsSuccess, result.Error?.Message);
+        Assert.IsNotNull(result.Value?.Chains);
+
+        var memory = FullSpineFixture.CreateCached(EntityId, 12.5f, -3.25f, 44.75f);
+
+        OffsetChainWalkResult walker = OffsetChainWalker.Walk(
+            result.Value.Chains["playerPositionX"],
+            ModuleBase,
+            valueLength: 12,
+            memory.Read,
+            entityId: EntityId);
+        Assert.AreEqual(OffsetChainWalkStatus.Resolved, walker.Status);
+        Assert.IsNotNull(walker.ResolvedEntityAddress);
+        Assert.AreEqual(memory.Entity, walker.ResolvedEntityAddress.Value);
+
+        // The trusted reader's region anchor: the tank record at [entity+0x3C]
+        // (FUN_00bc3940 candidate layout — test-local, never published).
+        const uint tankRecord = 0x3a000000;
+        const int hpOffset = 0x48;
+        const int regionLength = 0x100;
+        memory.WriteUInt32(memory.Entity + 0x3c, tankRecord);
+
+        // Dump the region the reader would return (full bytes + replay clock),
+        // with HP dropping by the exact damage amounts between dumps.
+        byte[] Dump(int hp)
+        {
+            for (uint address = tankRecord; address < tankRecord + regionLength; address += 4)
+            {
+                memory.WriteUInt32(address, 0);
+            }
+
+            memory.WriteInt32(tankRecord + hpOffset, hp);
+            byte[] bytes = new byte[regionLength];
+            Assert.IsTrue(memory.Read(tankRecord, bytes));
+            return bytes;
+        }
+
+        var snapshots = new[]
+        {
+            new RecordSnapshot(TimeSpan.FromSeconds(900), Dump(500)),
+            new RecordSnapshot(TimeSpan.FromSeconds(910), Dump(244)),
+            new RecordSnapshot(TimeSpan.FromSeconds(1010), Dump(-267)),
+        };
+        var events = new[]
+        {
+            HpDamage(TimeSpan.FromSeconds(904.5), 256),
+            HpDamage(TimeSpan.FromSeconds(1009.3), 511),
+        };
+
+        IReadOnlyList<DamageCorrelationCandidate> candidates =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                EntityId,
+                DamageMatchMode.Lenient);
+
+        Assert.IsNotEmpty(candidates);
+        Assert.AreEqual(hpOffset, candidates[0].Offset);
+        Assert.AreEqual(1.0, candidates[0].Score, 1e-9);
+        Assert.AreEqual(2, candidates[0].MatchedDamageWindows);
+        Assert.AreEqual(2, candidates[0].TotalDamageWindows);
+    }
+
+    private static HpDamageEvent HpDamage(TimeSpan replayTime, int amount) =>
+        new(
+            ParticipantId: null,
+            EntityId: EntityId,
+            ReplayTime: replayTime,
+            Kind: CanonicalEventKind.Damage,
+            Damage: amount,
+            AttackerEntityId: null,
+            ValuesJson: "{}");
+
     private static void RunEquivalence(FullSpineFixture memory, float x, float y, float z)
     {
         OperationResult<OffsetTable?> result = LoadDraft();
