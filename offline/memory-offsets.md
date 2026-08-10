@@ -113,20 +113,31 @@ Full trace: `docs/operations/legacy-observation-surface.md`.
 
 Since OD-RECOVERY-083 (2026-08-10), version files may carry a top-level
 `chains` object mapping a field name to an ordered array of hops, each
-`{ "kind": "rootRva" | "memberOffset" | "recordOffset" | "ringIndex", "value": <non-negative int>, "note": <text> }`.
-`ringIndex` hops additionally require `indexOffset` (Int32 current-index
-field offset) and `stride` (ring entry stride). The chain is the
-module-relative dereference path the resolver walks to the field (verified
-against `Type10EntityPositionResolver.TryResolveOnce`/`FindEntity`). The
-runtime parses `chains` into the model (`OffsetTableReader`, additive — the
-legacy observation path is unchanged) and `OffsetChainWalker` walks
-STRUCTURAL chains (root RVA + member-pointer dereferences + optional
-`ringIndex` + record offset) fail-closed. The published 11.19.0.10 position
-chains are NOT mechanically walkable end-to-end: their cached fast path and
-three alternative entity-tree map roots are BRANCHES the resolver performs in
-`FindEntity` (no hop kind expresses them), and the ring-record step needs the
-`ringIndex` hop (the published chains still spell it as `memberOffset 0x1C8`
-+ record, so they are documentation + evidence, not a runtime read plan). The
+`{ "kind": "rootRva" | "memberOffset" | "inlineOffset" | "recordOffset" | "ringIndex" | "entityLookup", "value": <non-negative int>, "note": <text> }`.
+Semantics (2026-08-10 walker rework, clean object model): `rootRva`
+dereferences the root slot (`moduleBase + value`); `memberOffset` dereferences
+a pointer at (object + value); `inlineOffset` adds value WITHOUT dereferencing
+(an inline member, e.g. the entities map embedded in the connection object);
+`ringIndex` selects an INLINE ring entry at (object + value + index·stride)
+using the Int32 index field at (object + `indexOffset`) — no ring pointer
+dereference; `entityLookup` resolves an entity-map lookup (cached fast path +
+ALTERNATIVE tree roots, node layout in its descriptor) with the target entity
+id supplied per walk — never carried by the chain. `ringIndex` requires
+`indexOffset` and `stride`; `entityLookup` requires its descriptor fields.
+The chain is the module-relative dereference path the resolver walks to the
+field (verified against
+`Type10EntityPositionResolver.TryResolveOnce`/`FindEntity`). The runtime
+parses `chains` into the model (`OffsetTableReader`, additive — the legacy
+observation path is unchanged) and `OffsetChainWalker` walks chains
+fail-closed. The published 11.19.0.10 position chains are NOT mechanically
+walkable AS PUBLISHED: they spell the inline entities step, the inline ring
+base, and the ring-index read as plain `memberOffset` hops (which would deref
+them), and they encode the cache fast path + three alternative entity-tree
+map roots as sequential member offsets with no rebase semantics. A chain
+re-expressed with `inlineOffset` + `entityLookup` + `ringIndex` IS walkable
+and is proven equivalent to the resolver (`Type10EntityPositionResolver`),
+so the published chains remain documentation + evidence, not a runtime read
+plan, until a walkable form is published through the operator gate. The
 resolver remains the authoritative position reader.
 
 Chained fields keep their `offsets` value `0` **by design**: the runtime

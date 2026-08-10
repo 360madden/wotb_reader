@@ -67,7 +67,7 @@
     },
     "chains": {
       "type": "object",
-      "description": "Module-relative pointer chain for chained fields (position family). offsets.<field> stays 0 for chained fields by design: the runtime observation path computes moduleBase + offset, which cannot represent a chain, and the ring record itself is battle-scoped heap. The resolver reads chained fields via its own hash-bound layout. Hops: rootRva first, recordOffset last, memberOffset/ringIndex in between. ringIndex requires indexOffset (Int32 current-index field offset) and stride (ring entry stride). The 11.19.0.10 position chains document the resolver's traversal but are NOT mechanically walkable end-to-end (cached fast path + alternative tree roots are branches, not sequential derefs; the ring step needs ringIndex).",
+      "description": "Module-relative pointer chain for chained fields (position family). offsets.<field> stays 0 for chained fields by design: the runtime observation path computes moduleBase + offset, which cannot represent a chain, and the ring record itself is battle-scoped heap. The resolver reads chained fields via its own hash-bound layout. Hops: rootRva first, recordOffset last, memberOffset/inlineOffset/ringIndex/entityLookup in between. memberOffset dereferences a pointer at (object + value); inlineOffset adds value WITHOUT dereferencing (an inline member, e.g. the entities map); ringIndex selects an INLINE ring entry at (object + value + index*stride) using the Int32 index field at (object + indexOffset) — no ring pointer dereference; entityLookup resolves an entity-map lookup (cached fast path + alternative tree roots) with its descriptor on the hop, the target entity id supplied per walk. The 11.19.0.10 position chains document the resolver's traversal but are NOT mechanically walkable as published (they spell the inline entities/ring steps and the ring-index read as plain memberOffset hops and encode the cache/tree branching as sequential member offsets with no rebase semantics); a chain re-expressed with inlineOffset + entityLookup + ringIndex IS walkable and is proven equivalent to the resolver.",
       "propertyNames": {
         "enum": [
           "replayTime", "playerHP", "playerPositionX", "playerPositionY",
@@ -83,7 +83,7 @@
           "properties": {
             "kind": {
               "type": "string",
-              "enum": ["rootRva", "memberOffset", "recordOffset", "ringIndex"]
+              "enum": ["rootRva", "memberOffset", "inlineOffset", "recordOffset", "ringIndex", "entityLookup"]
             },
             "value": {
               "type": "integer",
@@ -94,13 +94,79 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 2147483647,
-              "description": "Required for ringIndex: Int32 current-index field offset in the object holding the ring pointer."
+              "description": "Required for ringIndex: Int32 current-index field offset in the object holding the INLINE ring array."
             },
             "stride": {
               "type": "integer",
               "minimum": 0,
               "maximum": 2147483647,
-              "description": "Required for ringIndex: ring entry stride."
+              "description": "Required for ringIndex: INLINE ring entry stride."
+            },
+            "cachedEntityOffset": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647,
+              "description": "Required for entityLookup: member offset of the cached-entity pointer in the entity map."
+            },
+            "entityIdOffset": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647,
+              "description": "Required for entityLookup: member offset of the Int32 entity id in an entity record (cache fast-path match)."
+            },
+            "treeRootOffsets": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+              "description": "Required for entityLookup: ALTERNATIVE tree-map root member offsets, tried in order."
+            },
+            "treeNodeSize": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 256,
+              "description": "Required for entityLookup: id-keyed binary-tree node record size."
+            },
+            "treeNodeNilOffset": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647,
+              "description": "Required for entityLookup: nil-flag byte offset in a tree node (1 = nil)."
+            },
+            "treeNodeKeyOffset": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647,
+              "description": "Required for entityLookup: Int32 key offset in a tree node."
+            },
+            "treeNodeValueOffset": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647,
+              "description": "Required for entityLookup: pointer-to-entity offset in a tree node."
+            },
+            "treeNodeChildLessOffset": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647,
+              "description": "Required for entityLookup: child pointer offset when target < key."
+            },
+            "treeNodeChildGreaterOffset": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647,
+              "description": "Required for entityLookup: child pointer offset when target > key."
+            },
+            "treeSentinelFirstNodeOffset": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647,
+              "description": "Required for entityLookup: first-node pointer offset in the sentinel."
+            },
+            "maxTreeNodes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647,
+              "description": "Required for entityLookup: node-budget guard per tree traversal."
             },
             "note": { "type": ["string", "null"] }
           },

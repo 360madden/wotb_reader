@@ -144,6 +144,44 @@ public sealed class OffsetTableReaderTests
         Assert.AreEqual(456, yHops[2].IndexOffset);
         Assert.AreEqual(56, yHops[2].Stride);
         Assert.AreEqual(OffsetChainHopKind.RecordOffset, yHops[3].Kind);
+
+        Assert.IsTrue(
+            result.Value.Chains!.TryGetValue("playerPositionZ", out IReadOnlyList<OffsetChainHop>? zHops));
+        Assert.HasCount(5, zHops!);
+        Assert.AreEqual(OffsetChainHopKind.InlineOffset, zHops[2].Kind);
+        Assert.AreEqual(4, zHops[2].Value);
+        Assert.AreEqual(OffsetChainHopKind.EntityLookup, zHops[3].Kind);
+        OffsetEntityLookupDescriptor lookup = zHops[3].EntityLookup!;
+        Assert.AreEqual(72, lookup.CachedEntityOffset);
+        Assert.AreEqual(28, lookup.EntityIdOffset);
+        Assert.HasCount(3, lookup.TreeRootOffsets);
+        Assert.AreEqual(24, lookup.TreeNodeSize);
+        Assert.AreEqual(1024, lookup.MaxTreeNodes);
+        Assert.AreEqual(OffsetChainHopKind.RecordOffset, zHops[4].Kind);
+    }
+
+    [TestMethod]
+    public void Load_MalformedEntityLookup_DropsChainButKeepsOthers()
+    {
+        using var directory = new TemporaryDirectory();
+        WriteTable(directory.Path, Hash, withChains: true);
+        string path = System.IO.Path.Combine(directory.Path, $"{Version}.json");
+        string json = File.ReadAllText(path).Replace(
+            "\"maxTreeNodes\": 1024",
+            "\"maxTreeNodes\": 0",
+            StringComparison.Ordinal);
+        File.WriteAllText(path, json);
+
+        OperationResult<OffsetTable?> result =
+            new OffsetTableReader(directory.Path).Load(Version, Hash);
+
+        Assert.IsTrue(result.IsSuccess, result.Error?.Message);
+        Assert.IsNotNull(result.Value);
+        // The malformed entityLookup chain is dropped fail-closed.
+        Assert.IsFalse(result.Value.Chains!.ContainsKey("playerPositionZ"));
+        // The well-formed chains survive.
+        Assert.IsTrue(result.Value.Chains.ContainsKey("playerPositionX"));
+        Assert.IsTrue(result.Value.Chains.ContainsKey("playerPositionY"));
     }
 
     [TestMethod]
@@ -253,6 +291,13 @@ public sealed class OffsetTableReaderTests
         + "    { \"kind\": \"memberOffset\", \"value\": 8, \"note\": \"AvatarFilterHelperOffset 0x08\" },\n"
         + "    { \"kind\": \"ringIndex\", \"value\": 8, \"indexOffset\": 456, \"stride\": 56, \"note\": \"AvatarHelperRingOffset 0x08 (stride 0x38)\" },\n"
         + "    { \"kind\": \"recordOffset\", \"value\": 20, \"note\": \"Y\" }\n"
+        + "  ],\n"
+        + "  \"playerPositionZ\": [\n"
+        + "    { \"kind\": \"rootRva\", \"value\": 67722376, \"note\": \"GameCoreRootRva 0x04095C88\" },\n"
+        + "    { \"kind\": \"memberOffset\", \"value\": 12, \"note\": \"GameCoreAppControllerOffset\" },\n"
+        + "    { \"kind\": \"inlineOffset\", \"value\": 4, \"note\": \"ConnectionEntitiesOffset 0x04\" },\n"
+        + "    { \"kind\": \"entityLookup\", \"value\": 0, \"cachedEntityOffset\": 72, \"entityIdOffset\": 28, \"treeRootOffsets\": [28, 64, 52], \"treeNodeSize\": 24, \"treeNodeNilOffset\": 13, \"treeNodeKeyOffset\": 16, \"treeNodeValueOffset\": 20, \"treeNodeChildLessOffset\": 0, \"treeNodeChildGreaterOffset\": 8, \"treeSentinelFirstNodeOffset\": 4, \"maxTreeNodes\": 1024, \"note\": \"Entity lookup cached 0x48 roots 0x1C/0x40/0x34\" },\n"
+        + "    { \"kind\": \"recordOffset\", \"value\": 24, \"note\": \"Z\" }\n"
         + "  ]\n"
         + "},\n";
 

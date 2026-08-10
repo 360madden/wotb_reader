@@ -45,19 +45,28 @@ what runtime promotion consumes.
 
 Pointer-chain fields (e.g. the position family, published 2026-08-10 via
 OD-RECOVERY-083) are recorded in the additive `chains` object: field →
-array of `{ "kind": "rootRva" | "memberOffset" | "recordOffset" | "ringIndex",
+array of `{ "kind": "rootRva" | "memberOffset" | "inlineOffset" | "recordOffset" | "ringIndex" | "entityLookup",
 "value": <non-negative int>, "note": <text> }` hops — the module-relative
-dereference path the resolver walks. `ringIndex` hops additionally require
-`indexOffset` (Int32 current-index field offset) and `stride` (ring entry
-stride); `OffsetChainWalker` walks structural chains (root + member-pointer
-derefs + optional `ringIndex` + record) fail-closed, and `OffsetTableReader`
+dereference path the resolver walks. `rootRva` dereferences the root slot;
+`memberOffset` dereferences a pointer at (object + value); `inlineOffset`
+adds value WITHOUT dereferencing (an inline member); `ringIndex` selects an
+INLINE ring entry at (object + value + index·stride) using the Int32 index
+field at (object + `indexOffset`) — no ring pointer dereference;
+`entityLookup` resolves an entity-map lookup (cached fast path +
+alternative tree roots, node layout in its descriptor) with the target
+entity id supplied per walk. `ringIndex` requires `indexOffset` and
+`stride`; `entityLookup` requires its descriptor fields;
+`OffsetChainWalker` walks chains fail-closed, and `OffsetTableReader`
 parses `chains` into the model. Chained fields keep their `offsets` value
 `0` **by design**: the runtime observation path computes `moduleBase +
 offset` (no chain concept) and the ring record is battle-scoped heap, so a
 non-zero value would corrupt that path; the resolver reads chained fields
 via its own hash-bound layout. The published 11.19.0.10 position chains
-remain documentation + evidence (their cached fast path and alternative
-tree roots are branches, not sequential derefs), not a runtime read plan.
+remain documentation + evidence, not a runtime read plan (they spell the
+inline entities/ring steps and the ring-index read as plain memberOffset
+hops and encode the cache/tree branching as sequential member offsets); a
+chain re-expressed with `inlineOffset` + `entityLookup` + `ringIndex` IS
+walkable and is proven equivalent to the resolver.
 `schemaVersion` stays 1 — the additive keys are ignored by the legacy
 observation path.
 

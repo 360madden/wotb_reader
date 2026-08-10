@@ -78,22 +78,62 @@ public enum OffsetChainHopKind
     /// <summary>First hop: module base + RVA yields the root pointer.</summary>
     RootRva,
 
-    /// <summary>Intermediate hop: dereference a pointer at the current address + offset.</summary>
+    /// <summary>Intermediate hop: dereference a pointer at (object + value).</summary>
     MemberOffset,
 
-    /// <summary>Final hop: add a fixed record offset to the final pointer (no dereference).</summary>
+    /// <summary>
+    /// Intermediate hop: add <see cref="OffsetChainHop.Value"/> to the current
+    /// object WITHOUT dereferencing (an inline member, e.g. the entities map
+    /// embedded in the connection object).
+    /// </summary>
+    InlineOffset,
+
+    /// <summary>Final hop: add a fixed record offset to the final object (no dereference).</summary>
     RecordOffset,
 
     /// <summary>
-    /// Ring/array-record hop: dereference the ring pointer stored at
-    /// (object + <see cref="OffsetChainHop.Value"/>), read the current index
-    /// Int32 at (object + <see cref="OffsetChainHop.IndexOffset"/>), and move
-    /// to <c>ring + index * <see cref="OffsetChainHop.Stride"/></c>.
-    /// Requires <see cref="OffsetChainHop.IndexOffset"/> and
+    /// Ring/array-record hop: read the current index Int32 at
+    /// (object + <see cref="OffsetChainHop.IndexOffset"/>), then move to
+    /// <c>object + <see cref="OffsetChainHop.Value"/> + index *
+    /// <see cref="OffsetChainHop.Stride"/></c> — the ring array is INLINE in
+    /// the object (no pointer dereference). Requires
+    /// <see cref="OffsetChainHop.IndexOffset"/> and
     /// <see cref="OffsetChainHop.Stride"/>.
     /// </summary>
     RingIndex,
+
+    /// <summary>
+    /// Entity-map lookup hop: locate the entity record for a target entity id
+    /// from the current object (an entity map). Mirrors the resolver's
+    /// <c>FindEntity</c> semantics: try the cached-entity fast path, then each
+    /// ALTERNATIVE tree-map root in order, walking each id-keyed binary tree
+    /// until the target key is found. On success the current object is rebased
+    /// to the found entity record; on failure the walk stops with
+    /// <c>EntityNotFound</c> (or <c>TraversalLimitExceeded</c>).
+    /// Requires <see cref="OffsetChainHop.EntityLookup"/> (the descriptor) and
+    /// a target entity id supplied per walk — the chain never carries it, so
+    /// the published table stays frozen.
+    /// </summary>
+    EntityLookup,
 }
+
+/// <summary>
+/// Descriptor for an <see cref="OffsetChainHopKind.EntityLookup"/> hop: the
+/// cached-entity fast path, the alternative tree-map roots, and the layout of
+/// one id-keyed binary tree node (mirroring the resolver's constants).
+/// </summary>
+public sealed record OffsetEntityLookupDescriptor(
+    int CachedEntityOffset,
+    int EntityIdOffset,
+    IReadOnlyList<int> TreeRootOffsets,
+    int TreeNodeSize,
+    int TreeNodeNilOffset,
+    int TreeNodeKeyOffset,
+    int TreeNodeValueOffset,
+    int TreeNodeChildLessOffset,
+    int TreeNodeChildGreaterOffset,
+    int TreeSentinelFirstNodeOffset,
+    int MaxTreeNodes);
 
 /// <summary>One hop in a published pointer chain (see <c>memory-offsets/schema.json</c>).</summary>
 public sealed record OffsetChainHop(
@@ -101,7 +141,8 @@ public sealed record OffsetChainHop(
     int Value,
     string? Note,
     int? IndexOffset = null,
-    int? Stride = null);
+    int? Stride = null,
+    OffsetEntityLookupDescriptor? EntityLookup = null);
 
 /// <summary>
 /// Immutable offset table for one specific game version and executable hash.

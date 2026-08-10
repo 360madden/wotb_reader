@@ -50,8 +50,21 @@ FIELD_DEFS = [
 FIELD_NAMES = {name for name, _type, _desc in FIELD_DEFS}
 
 # The only chain hop kinds the schema, the pack doc, the validator, and
-# OffsetChainHopKind (Core/OffsetModels.cs) agree on.
-CHAIN_KINDS = {"rootRva", "memberOffset", "recordOffset", "ringIndex"}
+# OffsetChainHopKind (Core/OffsetModels.cs) agree on. Must match
+# schema.json's chains.items.properties.kind enum exactly (the cross-check
+# below enforces this).
+#   rootRva       deref the root slot (moduleBase + value)
+#   memberOffset  deref a pointer at (object + value)
+#   inlineOffset  add value WITHOUT dereferencing (inline member)
+#   ringIndex     INLINE ring entry at (object + value + index*stride)
+#   entityLookup  entity-map lookup (cache fast path + tree roots); its
+#                 descriptor lives on the hop, and the target entity id is
+#                 supplied per walk, never carried by the chain
+#   recordOffset  final: add value without dereferencing
+CHAIN_KINDS = {
+    "rootRva", "memberOffset", "inlineOffset", "recordOffset",
+    "ringIndex", "entityLookup",
+}
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -430,12 +443,51 @@ def validate_offset_file(log_path: Path, path: Path, schema: dict) -> list[str]:
                                 issues.append(
                                     f"{rel}: chains['{field_name}'] ringIndex hop must "
                                     f"have a non-negative integer '{key}'")
+                    if hop.get("kind") == "entityLookup":
+                        if value != 0:
+                            issues.append(
+                                f"{rel}: chains['{field_name}'] entityLookup hop value "
+                                f"must be 0 (the hop operates on the current object)")
+                        for key in (
+                            "cachedEntityOffset", "entityIdOffset", "treeNodeSize",
+                            "treeNodeNilOffset", "treeNodeKeyOffset",
+                            "treeNodeValueOffset", "treeNodeChildLessOffset",
+                            "treeNodeChildGreaterOffset", "treeSentinelFirstNodeOffset",
+                            "maxTreeNodes",
+                        ):
+                            extra = hop.get(key)
+                            if not isinstance(extra, int) or isinstance(extra, bool) or extra < 0:
+                                issues.append(
+                                    f"{rel}: chains['{field_name}'] entityLookup hop must "
+                                    f"have a non-negative integer '{key}'")
+                        roots = hop.get("treeRootOffsets")
+                        if not isinstance(roots, list) or not roots or not all(
+                            isinstance(r, int) and not isinstance(r, bool) and r >= 0
+                            for r in roots
+                        ):
+                            issues.append(
+                                f"{rel}: chains['{field_name}'] entityLookup hop must "
+                                f"have a non-empty treeRootOffsets list of "
+                                f"non-negative integers")
+                        node_size = hop.get("treeNodeSize")
+                        if not isinstance(node_size, int) or isinstance(node_size, bool) or node_size < 1:
+                            issues.append(
+                                f"{rel}: chains['{field_name}'] entityLookup hop must "
+                                f"have treeNodeSize >= 1")
+                        max_nodes = hop.get("maxTreeNodes")
+                        if not isinstance(max_nodes, int) or isinstance(max_nodes, bool) or max_nodes < 1:
+                            issues.append(
+                                f"{rel}: chains['{field_name}'] entityLookup hop must "
+                                f"have maxTreeNodes >= 1")
                     # Note cross-check: the FIRST hex literal in the note is the
                     # canonical form of this hop's value (later hexes are
                     # vtable RVAs / strides). Catches hex<->decimal transcription
                     # drift (e.g. the G0 grill: 0x04095C88 written as 67518856).
+                    # entityLookup hops are exempt: their note describes the
+                    # descriptor offsets (e.g. cached 0x48, roots 0x1C...), not
+                    # the hop's value (always 0).
                     note = hop.get("note")
-                    if isinstance(note, str):
+                    if isinstance(note, str) and hop.get("kind") != "entityLookup":
                         m = re.search(r"0x([0-9A-Fa-f]+)", note)
                         if m and int(m.group(1), 16) != value:
                             issues.append(
@@ -444,16 +496,20 @@ def validate_offset_file(log_path: Path, path: Path, schema: dict) -> list[str]:
                                 f"0x{m.group(1)} (expected "
                                 f"{int(m.group(1), 16)})")
                 # Shape: exactly one rootRva first, exactly one recordOffset
-                # last, and only memberOffset/ringIndex in between.
+                # last, and only memberOffset/inlineOffset/ringIndex/entityLookup
+                # in between.
                 first = hops[0].get("kind")
                 last = hops[-1].get("kind")
                 middle_ok = all(
-                    h.get("kind") in ("memberOffset", "ringIndex")
+                    h.get("kind") in (
+                        "memberOffset", "inlineOffset", "ringIndex", "entityLookup",
+                    )
                     for h in hops[1:-1])
                 if first != "rootRva" or last != "recordOffset" or not middle_ok:
                     issues.append(
                         f"{rel}: chains['{field_name}'] hop shape must be "
-                        f"rootRva -> memberOffset|ringIndex* -> recordOffset")
+                        f"rootRva -> memberOffset|inlineOffset|ringIndex|entityLookup* "
+                        f"-> recordOffset")
         write_log(log_path, f"  {path.name}: chains validated ({len(chains)} field(s))")
 
     return issues

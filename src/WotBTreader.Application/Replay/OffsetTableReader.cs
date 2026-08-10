@@ -244,13 +244,23 @@ internal sealed class OffsetTableReader : IOffsetTableReader
                         && (hop.IndexOffset is not int indexOffset
                             || indexOffset < 0
                             || hop.Stride is not int stride
-                            || stride < 0)))
+                            || stride < 0))
+                    || (kind == OffsetChainHopKind.EntityLookup
+                        && !TryBuildEntityLookup(hop, out OffsetEntityLookupDescriptor? _)))
                 {
                     valid = false;
                     break;
                 }
 
-                built.Add(new OffsetChainHop(kind, hop.Value, hop.Note, hop.IndexOffset, hop.Stride));
+                built.Add(new OffsetChainHop(
+                    kind,
+                    hop.Value,
+                    hop.Note,
+                    hop.IndexOffset,
+                    hop.Stride,
+                    kind == OffsetChainHopKind.EntityLookup
+                        ? BuildEntityLookup(hop)
+                        : null));
             }
 
             if (!valid
@@ -259,7 +269,10 @@ internal sealed class OffsetTableReader : IOffsetTableReader
                 || built[^1].Kind != OffsetChainHopKind.RecordOffset
                 || built.Skip(1).Take(built.Count - 2).Any(
                     hop => hop.Kind is not (
-                        OffsetChainHopKind.MemberOffset or OffsetChainHopKind.RingIndex)))
+                        OffsetChainHopKind.MemberOffset
+                        or OffsetChainHopKind.InlineOffset
+                        or OffsetChainHopKind.RingIndex
+                        or OffsetChainHopKind.EntityLookup)))
             {
                 continue;
             }
@@ -355,6 +368,67 @@ internal sealed class OffsetTableReader : IOffsetTableReader
         public string? Note { get; set; }
         public int? IndexOffset { get; set; }
         public int? Stride { get; set; }
+        public int? CachedEntityOffset { get; set; }
+        public int? EntityIdOffset { get; set; }
+        public List<int>? TreeRootOffsets { get; set; }
+        public int? TreeNodeSize { get; set; }
+        public int? TreeNodeNilOffset { get; set; }
+        public int? TreeNodeKeyOffset { get; set; }
+        public int? TreeNodeValueOffset { get; set; }
+        public int? TreeNodeChildLessOffset { get; set; }
+        public int? TreeNodeChildGreaterOffset { get; set; }
+        public int? TreeSentinelFirstNodeOffset { get; set; }
+        public int? MaxTreeNodes { get; set; }
+    }
+
+    private static bool TryBuildEntityLookup(
+        OffsetChainHopJson hop,
+        out OffsetEntityLookupDescriptor? descriptor)
+    {
+        descriptor = BuildEntityLookup(hop);
+        return descriptor is not null;
+    }
+
+    private static OffsetEntityLookupDescriptor? BuildEntityLookup(OffsetChainHopJson hop)
+    {
+        if (hop.CachedEntityOffset is not int cachedEntityOffset
+            || hop.EntityIdOffset is not int entityIdOffset
+            || hop.TreeRootOffsets is not { Count: > 0 } treeRootOffsets
+            || treeRootOffsets.Any(static offset => offset < 0)
+            || hop.TreeNodeSize is not int nodeSize
+            || hop.TreeNodeNilOffset is not int nodeNilOffset
+            || hop.TreeNodeKeyOffset is not int nodeKeyOffset
+            || hop.TreeNodeValueOffset is not int nodeValueOffset
+            || hop.TreeNodeChildLessOffset is not int childLessOffset
+            || hop.TreeNodeChildGreaterOffset is not int childGreaterOffset
+            || hop.TreeSentinelFirstNodeOffset is not int sentinelFirstNodeOffset
+            || hop.MaxTreeNodes is not int maxTreeNodes
+            || cachedEntityOffset < 0
+            || entityIdOffset < 0
+            || nodeSize < 1
+            || nodeNilOffset < 0
+            || nodeKeyOffset < 0
+            || nodeValueOffset < 0
+            || childLessOffset < 0
+            || childGreaterOffset < 0
+            || sentinelFirstNodeOffset < 0
+            || maxTreeNodes < 1)
+        {
+            return null;
+        }
+
+        return new OffsetEntityLookupDescriptor(
+            cachedEntityOffset,
+            entityIdOffset,
+            treeRootOffsets,
+            nodeSize,
+            nodeNilOffset,
+            nodeKeyOffset,
+            nodeValueOffset,
+            childLessOffset,
+            childGreaterOffset,
+            sentinelFirstNodeOffset,
+            maxTreeNodes);
     }
 
     private sealed class OffsetFieldValidationJson

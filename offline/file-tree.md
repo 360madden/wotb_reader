@@ -579,6 +579,7 @@ tests/WotBTreader.CaptureLogs.Tests/packages.lock.json
 tests/WotBTreader.Core.Tests/AffiliationResolverTests.cs
 tests/WotBTreader.Core.Tests/IdentifierTests.cs
 tests/WotBTreader.Core.Tests/MSTestSettings.cs
+tests/WotBTreader.Core.Tests/OffsetChainWalkerEquivalenceTests.cs
 tests/WotBTreader.Core.Tests/OffsetChainWalkerTests.cs
 tests/WotBTreader.Core.Tests/TrajectoryCorrelationScorerTests.cs
 tests/WotBTreader.Core.Tests/TrajectoryFamilyBuilderTests.cs

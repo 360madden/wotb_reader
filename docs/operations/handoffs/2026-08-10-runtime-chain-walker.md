@@ -62,17 +62,61 @@ real table unchanged (still 16-hop memberOffset chains) and still passes.
 
 **Scope correction:** re-deriving the published chains against the resolver
 showed the position chains are blocked from mechanical walking by BOTH the
-ring step (now expressible as `ringIndex`) AND the cached fast path + three
-alternative entity-tree map roots (`FindEntity` branching — no hop kind
-expresses it). Docs now state both blockers; the resolver remains the
-authoritative position reader.
+ring step AND the cached fast path + three alternative entity-tree map roots
+(`FindEntity` branching — no hop kind expressed them). Docs stated both
+blockers; the resolver remained the authoritative position reader.
+
+## Follow-up (same day): clean object-model rework + `entityLookup` hop
+
+Two corrections and one capability landed together (`OffsetChainWalker`):
+
+1. **Semantic correction (resolver-faithful object model).** Re-deriving the
+   walk against the resolver's actual traversal exposed that the walker's
+   member model was subtly wrong in three places: the root RVA is a POINTER
+   SLOT (the walker now dereferences it), the entities step is an INLINE
+   member (`Connection + 0x04`, no dereference — new `inlineOffset` hop kind),
+   and the ring array is INLINE in the helper (`helper + 0x08 + index·stride`,
+   no ring-pointer dereference). The earlier `ringIndex` implementation
+   (and its tests/docs) incorrectly dereferenced a ring pointer; the published
+   resolver reads the ring record at `helper + AvatarHelperRingOffset +
+   index*AvatarHelperRingStride` — the walker now matches exactly.
+2. **`entityLookup` hop (the branch capability).** A single hop carrying the
+   cached-entity fast path + the three ALTERNATIVE tree-map roots + the
+   id-keyed binary-tree node layout (size, nil flag, key/value/child offsets,
+   sentinel, node budget), mirroring the resolver's `FindEntity` exactly: try
+   the cache, then each root in order, rebasing the walk to the found entity.
+   The target entity id is supplied PER WALK (never carried by the chain), so
+   the frozen published table is untouched. New statuses
+   `EntityNotFound` / `TraversalLimitExceeded`; `valueLength` cap raised to 64
+   (the 12-byte position triple). The sentinel is read directly at the tree
+   root slot (`*(map + rootOffset)`), matching the resolver — an early
+   implementation wrongly dereferenced the root slot first.
+3. **Equivalence proofs.** New `OffsetChainWalkerEquivalenceTests` feed the
+   SAME synthetic memory to `Type10EntityPositionResolver.ResolveRecordAddress`
+   and to the walker with a position chain re-expressed as
+   `rootRva + memberOffset* + inlineOffset + entityLookup + memberOffset* +
+   ringIndex + recordOffset`, asserting identical outcomes and the exact
+   record/field address: cache path, primary tree, alternative tertiary root,
+   signed-key traversal (negative root key), and all-trees-empty
+   (`EntityNotFound` both sides). The walker is now PROVEN to reproduce the
+   resolver's traversal — future hop-semantic drift is caught immediately.
+
+Validator + `schema.json` + pack doc + format README + workflow runbook all
+accept `inlineOffset` + `entityLookup` (descriptor fields enforced; shape rule
+`rootRva -> memberOffset|inlineOffset|ringIndex|entityLookup* -> recordOffset`;
+entityLookup hops must have value 0 and are exempt from the note-hex
+cross-check since their notes describe descriptor offsets). Reader drops
+malformed entityLookup chains fail-closed (proven by a dedicated test). 32
+walker/equivalence tests + 2 new reader tests green.
 
 ## Next steps (gated)
 
-- A branch/alternative hop kind (or a resolver-driven table walk) so the
-  published position chain becomes mechanically walkable — schema addition,
-  operator gated.
+- Publish a WALKABLE position-chain form through the operator gate (the
+  published 11.19.0.10 chains still spell the inline entities/ring steps and
+  the ring-index read as plain `memberOffset` hops, so they remain
+  documentation + evidence; the walker now walks the re-expressed form).
 - Live chain dereference of the published position chain (needs operator
   approval).
 - Entity-record discovery (HP / entity-id member offsets) reusing the spine +
-  this walker.
+  this walker (the `entityLookup` hop is the missing piece that unlocks every
+  entity-record field).
