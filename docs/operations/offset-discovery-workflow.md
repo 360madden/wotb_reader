@@ -372,6 +372,17 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
+> **Amended 2026-08-10 (position closed; HP-discovery live plan pre-staged).**
+> The scan/roll/debugger material below is retained as historical evidence,
+> but it is superseded: the position family is PUBLISHED and walkable
+> (OD-RECOVERY-083/084, `docs/operations/g0-offset-table-draft.md` §7), and
+> HP discovery's offline side is complete with the approved-session live plan
+> pre-staged (`docs/operations/record-diffing-groundwork.md` — one bounded
+> gated region-read addition, session flow, verdict contract). The next
+> approved session runs the HP-diffing live plan (or, per the roadmap
+> preference order, a `replayTime` live attempt); the material below remains
+> valid only as evidence of what was ruled out.
+>
 > **Amended 2026-08-08 (type-10 application-path policy).** The scan/roll/debugger
 > material below is retained as historical evidence, but it is superseded for
 > player-position work. FRESH44 satisfied repeatability only for transient

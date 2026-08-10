@@ -9,6 +9,14 @@
 **Goal:** one runtime-supported offset in preference order `replayTime`,
 `playerPositionX/Z`, `playerHP` — with a correctly classified address kind.
 
+> **STATUS (2026-08-10):** the `playerPositionX/Y/Z` family MET the goal —
+> published `Verified` with pointer-chain classification (OD-RECOVERY-083)
+> and mechanically walkable by `OffsetChainWalker` (OD-RECOVERY-084); the
+> resolver remains the authoritative live reader. Next in preference order:
+> `replayTime` (rolling-survivor candidates OD-012..038, live work needed),
+> then `playerHP` (offline side complete — ground truth + correlation core;
+> live trusted reader pre-staged in `docs/operations/record-diffing-groundwork.md`).
+
 **Definition of done:** the candidate is reproducible across **2 launches × 2
 replays** with member-displacement or pointer-chain classification, and is
 published per `offset-discovery-workflow.md` Phase 5.
