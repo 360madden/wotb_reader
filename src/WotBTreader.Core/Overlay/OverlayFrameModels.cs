@@ -57,12 +57,27 @@ public sealed record OverlayBeacon(
     TimeSpan? VisibleUntil);
 
 /// <summary>
+/// A transient event-feed marker for one overlay frame: a damage hit or a
+/// destruction that landed within the frame's recent window. Pure offline
+/// data — decoded canonical events, never a game process. <see cref="Kind"/>
+/// is <see cref="CanonicalEventKind.Damage"/> (with the amount) or
+/// <see cref="CanonicalEventKind.Destroyed"/>.
+/// </summary>
+public sealed record OverlayEventPip(
+    long EntityId,
+    CanonicalEventKind Kind,
+    int Damage,
+    TimeSpan ReplayTime);
+
+/// <summary>
 /// A complete renderable instant of a replay battle: the camera plus every
-/// tank state that has position evidence at the frame's replay time. Pure
-/// offline data — built entirely from the decoded replay projection, never
-/// from a game process.
+/// tank state that has position evidence at the frame's replay time, and the
+/// recent event-feed pips (damage/death) for the HUD. Pure offline data —
+/// built entirely from the decoded replay projection, never from a game
+/// process.
 /// </summary>
 public sealed record OverlayFrame(
     TimeSpan ReplayTime,
     OverlayCamera Camera,
-    IReadOnlyList<OverlayTankState> Tanks);
+    IReadOnlyList<OverlayTankState> Tanks,
+    IReadOnlyList<OverlayEventPip> Pips);

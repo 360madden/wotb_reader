@@ -415,6 +415,31 @@ public sealed record OverlayFrameResponse
 
     /// <summary>Projected beacons visible at this replay time.</summary>
     public IReadOnlyList<OverlayBeaconResponse> Beacons { get; init; } = [];
+
+    /// <summary>Event-feed pips (damage/death) from the recent replay window,
+    /// anchored at the affected tank's viewport pixel.</summary>
+    public IReadOnlyList<OverlayPipResponse> Pips { get; init; } = [];
+}
+
+/// <summary>One event-feed pip (damage hit or destruction) rendered over the
+/// affected tank's nameplate.</summary>
+public sealed record OverlayPipResponse
+{
+    /// <summary>Affected tank entity id.</summary>
+    public long EntityId { get; init; }
+
+    /// <summary>Pip kind: <c>Damage</c> (with <see cref="Damage"/>) or
+    /// <c>Destroyed</c>.</summary>
+    public string Kind { get; init; } = string.Empty;
+
+    /// <summary>Damage amount for <c>Damage</c> pips; 0 otherwise.</summary>
+    public int Damage { get; init; }
+
+    /// <summary>Viewport X of the affected tank (always in viewport).</summary>
+    public double ScreenX { get; init; }
+
+    /// <summary>Viewport Y of the affected tank (always in viewport).</summary>
+    public double ScreenY { get; init; }
 }
 
 /// <summary>Computed map boundary from all observed position samples.</summary>

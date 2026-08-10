@@ -58,15 +58,15 @@ public sealed partial class W2sHudView : UserControl
         left = Math.Clamp(left, 0, Math.Max(0, viewportWidth - NameplateWidth));
         top = Math.Clamp(top, 0, Math.Max(0, viewportHeight - NameplateHeight));
         return new Rect(left, top, NameplateWidth, NameplateHeight);
-    }
-
-    /// <summary>
+    }    /// <summary>
     /// Replaces the HUD contents with the given beacons (drawn first, under
-    /// the nameplates) and nameplates. Both lists are already filtered to
-    /// in-viewport projections by the view model.
+    /// the nameplates), pips (drawn next, floating above the nameplates), and
+    /// nameplates. All lists are already filtered to in-viewport projections
+    /// by the view model.
     /// </summary>
     public void Render(
         IReadOnlyList<BeaconItem> beacons,
+        IReadOnlyList<PipItem> pips,
         IReadOnlyList<NameplateItem> items,
         double viewportWidth,
         double viewportHeight)
@@ -77,9 +77,15 @@ public sealed partial class W2sHudView : UserControl
             HudCanvas.Children.Add(BuildBeacon(beacon));
         }
 
+        foreach (PipItem pip in pips)
+        {
+            HudCanvas.Children.Add(BuildPip(pip));
+        }
+
         foreach (NameplateItem item in items)
         {
             HudCanvas.Children.Add(BuildNameplate(item, viewportWidth, viewportHeight));
+
         }
     }
 
@@ -204,6 +210,35 @@ public sealed partial class W2sHudView : UserControl
         });
 
         return root;
+    }
+
+    private static Border BuildPip(PipItem pip)
+    {
+        // Damage pips read "+N", death pips read "\u2716" (a dark skull-like
+        // marker); both float just above the affected tank's anchor.
+        bool isDamage = string.Equals(pip.Kind, "Damage", StringComparison.Ordinal);
+        string text = isDamage ? $"+{pip.Damage}" : "\u2716";
+        Brush brush = isDamage
+            ? CreateBrush("#FFB000")
+            : CreateBrush("#FF5A5A");
+
+        var pipBorder = new Border
+        {
+            Background = CreateBrush("#D0101018"),
+            CornerRadius = new CornerRadius(3),
+            Padding = new Thickness(4, 0, 4, 0),
+            Child = new TextBlock
+            {
+                Text = text,
+                FontSize = 12,
+                FontWeight = FontWeights.Bold,
+                Foreground = brush,
+            },
+        };
+        pipBorder.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        Canvas.SetLeft(pipBorder, pip.ScreenX - pipBorder.DesiredSize.Width / 2.0);
+        Canvas.SetTop(pipBorder, pip.ScreenY - pipBorder.DesiredSize.Height - 4);
+        return pipBorder;
     }
 
     private static Canvas BuildHeadingArrow(double headingDegrees)

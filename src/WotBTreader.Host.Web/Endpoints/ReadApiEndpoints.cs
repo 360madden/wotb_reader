@@ -279,6 +279,14 @@ internal static class ReadApiEndpoints
                 Depth = beacon.Depth,
                 InViewport = beacon.InViewport,
             })],
+            Pips = [.. projection.Pips.Select(pip => new OverlayPipResponse
+            {
+                EntityId = pip.EntityId,
+                Kind = pip.Kind.ToString(),
+                Damage = pip.Damage,
+                ScreenX = pip.ScreenX,
+                ScreenY = pip.ScreenY,
+            })],
         });
     }
 

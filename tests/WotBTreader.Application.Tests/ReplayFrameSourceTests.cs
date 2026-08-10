@@ -124,6 +124,69 @@ public sealed class ReplayFrameSourceTests
     }
 
     [TestMethod]
+    public void Frame_BuildsEventPipsFromRecentWindow()
+    {
+        // Damage and destroyed events inside the trailing 2 s window become
+        // pips; older events are not "live" and are dropped.
+        ParticipantId viewpointId = ParticipantId.New();
+        var projection = Projection(
+            viewpointId,
+            new[]
+            {
+                Participant(viewpointId, entityId: 1, "ViewpointTank", team: 1),
+            },
+            new[]
+            {
+                Sample(entityId: 1, seconds: 0, x: 0, y: 0, z: 0, yaw: 0.1),
+            },
+            events: new[]
+            {
+                // 4.5 s before the 10 s frame: outside the 2 s window.
+                DamageEvent(entityId: 1, seconds: 5.5, damage: 30),
+                // 1 s before: inside.
+                DamageEvent(entityId: 1, seconds: 9, damage: 60),
+                // At the frame time itself: inside (the current tick).
+                DamageEvent(entityId: 1, seconds: 10, damage: 40),
+                DestroyedEvent(entityId: 1, seconds: 9.5),
+            });
+
+        OverlayFrame frame = ReplayFrameSource.BuildFrame(projection, TimeSpan.FromSeconds(10));
+
+        Assert.HasCount(3, frame.Pips);
+        OverlayEventPip damage = frame.Pips.Single(pip => pip.Kind == CanonicalEventKind.Damage && pip.Damage == 60);
+        Assert.AreEqual(1, damage.EntityId);
+        OverlayEventPip current = frame.Pips.Single(pip => pip.Damage == 40);
+        Assert.AreEqual(TimeSpan.FromSeconds(10), current.ReplayTime);
+        OverlayEventPip death = frame.Pips.Single(pip => pip.Kind == CanonicalEventKind.Destroyed);
+        Assert.AreEqual(0, death.Damage);
+        Assert.IsFalse(frame.Pips.Any(pip => pip.Damage == 30));
+    }
+
+    [TestMethod]
+    public void Frame_ZeroDamageEventsAreNotPips()
+    {
+        ParticipantId viewpointId = ParticipantId.New();
+        var projection = Projection(
+            viewpointId,
+            new[]
+            {
+                Participant(viewpointId, entityId: 1, "ViewpointTank", team: 1),
+            },
+            new[]
+            {
+                Sample(entityId: 1, seconds: 0, x: 0, y: 0, z: 0, yaw: 0.1),
+            },
+            events: new[]
+            {
+                DamageEvent(entityId: 1, seconds: 9, damage: 0),
+            });
+
+        OverlayFrame frame = ReplayFrameSource.BuildFrame(projection, TimeSpan.FromSeconds(10));
+
+        Assert.IsEmpty(frame.Pips);
+    }
+
+    [TestMethod]
     public void Frame_OmitsNonParticipantEntities()
     {
         // The position stream carries non-tank entities (a duplicate "self"

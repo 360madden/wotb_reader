@@ -70,6 +70,7 @@ public class MainViewModel : INotifyPropertyChanged
     // W2S HUD state: the projected nameplates + beacons rendered over the game window.
     private readonly ObservableCollection<NameplateItem> _nameplates = [];
     private readonly ObservableCollection<BeaconItem> _beacons = [];
+    private readonly ObservableCollection<PipItem> _pips = [];
     private CancellationTokenSource? _frameLoadCts;
     private long _frameLoadGeneration;
     private double _hudFovDegrees = 90.0;
@@ -414,6 +415,9 @@ public class MainViewModel : INotifyPropertyChanged
     /// <summary>Projected beacons for the W2S HUD, one per visible POI.</summary>
     public ObservableCollection<BeaconItem> Beacons => _beacons;
 
+    /// <summary>Event-feed pips (damage/death) for the W2S HUD.</summary>
+    public ObservableCollection<PipItem> Pips => _pips;
+
     /// <summary>Vertical field of view (degrees) used to project HUD frames.</summary>
     public double HudFovDegrees
     {
@@ -477,6 +481,7 @@ public class MainViewModel : INotifyPropertyChanged
             LastFrameReplayTimeSeconds = frame.ReplayTimeSeconds;
             _nameplates.Clear();
             _beacons.Clear();
+            _pips.Clear();
             foreach (OverlayTankResponse tank in frame.Tanks)
             {
                 if (tank.ScreenX is null || tank.ScreenY is null || !tank.InViewport)
@@ -515,6 +520,16 @@ public class MainViewModel : INotifyPropertyChanged
                     beacon.ScreenY.Value,
                     beacon.Color,
                     beacon.DistanceMeters));
+            }
+
+            foreach (OverlayPipResponse pip in frame.Pips)
+            {
+                _pips.Add(new PipItem(
+                    pip.EntityId,
+                    pip.Kind,
+                    pip.Damage,
+                    pip.ScreenX,
+                    pip.ScreenY));
             }
         }
         catch (OperationCanceledException)

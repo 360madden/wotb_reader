@@ -17,6 +17,10 @@ namespace WotBTreader.Application.Replay;
 /// </summary>
 public sealed class ReplayFrameSource : IOverlayFrameSource
 {
+    /// <summary>Replay-time window (seconds) for the event-feed pips: an
+    /// event older than this is no longer "live" on the HUD.</summary>
+    internal static readonly TimeSpan PipWindow = TimeSpan.FromSeconds(2);
+
     private readonly ISessionQueryRepository _sessions;
 
     public ReplayFrameSource(ISessionQueryRepository sessions)
@@ -94,6 +98,11 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
         // Camera: the viewpoint participant's entity.
         OverlayCamera camera = BuildCamera(projection, byEntity, replayTime);
 
+        // Event-feed pips: damage hits and destructions in the recent window.
+        // The window is short so the HUD only shows the live feed; an event
+        // at the frame time itself is the current tick and counts.
+        List<OverlayEventPip> pips = BuildPips(projection, replayTime);
+
         List<OverlayTankState> tanks = [];
         foreach ((long entityId, List<PositionSample> samples) in byEntity)
         {
@@ -144,7 +153,7 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
         }
 
         tanks.Sort(static (left, right) => left.DistanceMeters.CompareTo(right.DistanceMeters));
-        return new OverlayFrame(replayTime, camera, tanks);
+        return new OverlayFrame(replayTime, camera, tanks, pips);
     }
 
     private static OverlayCamera BuildCamera(
@@ -193,6 +202,39 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
         }
 
         return sum;
+    }
+
+    /// <summary>Collects damage/destroyed events from the trailing
+    /// <see cref="PipWindow"/> of replay time — the live feed the HUD floats
+    /// over the affected tank's nameplate.</summary>
+    private static List<OverlayEventPip> BuildPips(
+        ReplayDecodeProjection projection,
+        TimeSpan replayTime)
+    {
+        List<OverlayEventPip> pips = [];
+        foreach (CanonicalEvent canonical in projection.Events)
+        {
+            if (canonical.EntityId is null || canonical.EntityId <= 0
+                || canonical.ReplayTime <= replayTime - PipWindow
+                || canonical.ReplayTime > replayTime)
+            {
+                continue;
+            }
+
+            switch (canonical.Kind)
+            {
+                case CanonicalEventKind.Damage when TryParseDamage(canonical.ValuesJson, out int damage) && damage > 0:
+                    pips.Add(new OverlayEventPip(
+                        canonical.EntityId.Value, canonical.Kind, damage, canonical.ReplayTime));
+                    break;
+                case CanonicalEventKind.Destroyed:
+                    pips.Add(new OverlayEventPip(
+                        canonical.EntityId.Value, canonical.Kind, 0, canonical.ReplayTime));
+                    break;
+            }
+        }
+
+        return pips;
     }
 
     private static PositionSample? FindAtOrBefore(

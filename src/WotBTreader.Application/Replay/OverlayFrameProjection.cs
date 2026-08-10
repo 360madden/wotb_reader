@@ -1,3 +1,4 @@
+using WotBTreader.Core;
 using WotBTreader.Core.Overlay;
 
 namespace WotBTreader.Application.Replay;
@@ -37,8 +38,21 @@ public sealed record ProjectedBeacon(
     bool InViewport);
 
 /// <summary>
+/// One event-feed pip projected onto the viewport: damage/death anchored at
+/// the affected tank's screen position (the HUD floats it over the
+/// nameplate). Only pips whose tank is in viewport produce entries.
+/// </summary>
+public sealed record ProjectedPip(
+    long EntityId,
+    CanonicalEventKind Kind,
+    int Damage,
+    double ScreenX,
+    double ScreenY);
+
+/// <summary>
 /// A renderable instant of the replay overlay: the viewpoint camera, every
-/// roster tank, and every visible beacon projected to viewport pixels.
+/// roster tank, every visible beacon, and the event-feed pips projected to
+/// viewport pixels.
 /// Consumed by the CLI (<c>overlay-frame</c>) and the loopback web host's
 /// frame endpoint; the WPF HUD renders these directly over the game window.
 /// </summary>
@@ -50,7 +64,8 @@ public sealed record OverlayFrameProjection(
     double? CameraYawRadians,
     double? CameraPitchRadians,
     IReadOnlyList<ProjectedTank> Tanks,
-    IReadOnlyList<ProjectedBeacon> Beacons);
+    IReadOnlyList<ProjectedBeacon> Beacons,
+    IReadOnlyList<ProjectedPip> Pips);
 
 /// <summary>
 /// Projects an <see cref="OverlayFrame"/> to viewport pixels via
@@ -134,6 +149,31 @@ public static class OverlayFrameProjector
             .OrderBy(beacon => beacon.DistanceMeters)
             .ToList();
 
+        // Pips: the affected tank's projected pixel (damage/death floats over
+        // the nameplate). Only in-viewport tanks produce pips.
+        var visibleTanks = tanks.Where(tank => tank.InViewport && tank.ScreenX is not null
+            && tank.ScreenY is not null).ToList();
+        var pips = frame.Pips
+            .Select(pip =>
+            {
+                ProjectedTank? affected = visibleTanks.FirstOrDefault(
+                    tank => tank.EntityId == pip.EntityId);
+                if (affected is null)
+                {
+                    return null;
+                }
+
+                return new ProjectedPip(
+                    pip.EntityId,
+                    pip.Kind,
+                    pip.Damage,
+                    affected.ScreenX!.Value,
+                    affected.ScreenY!.Value);
+            })
+            .Where(pip => pip is not null)
+            .Cast<ProjectedPip>()
+            .ToList();
+
         return new OverlayFrameProjection(
             frame.ReplayTime,
             frame.Camera.X,
@@ -142,7 +182,8 @@ public static class OverlayFrameProjector
             frame.Camera.YawRadians,
             frame.Camera.PitchRadians,
             tanks,
-            visibleBeacons);
+            visibleBeacons,
+            pips);
     }
 
     private static double DistanceMeters(OverlayBeacon beacon, OverlayCamera camera)

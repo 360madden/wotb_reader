@@ -227,6 +227,7 @@ docs/operations/handoffs/2026-08-10-phase0-foundations-complete.md
 docs/operations/handoffs/2026-08-10-replay-overlay-o1-projection.md
 docs/operations/handoffs/2026-08-10-replaytime-live-plan-prestaged.md
 docs/operations/handoffs/2026-08-10-runtime-chain-walker.md
+docs/operations/handoffs/2026-08-10-v1-facing-arrows-nameplates.md
 docs/operations/handoffs/2026-08-10-w2s-hud-nameplates.md
 docs/operations/handoffs/2026-08-10-walkable-position-chain-applied.md
 docs/operations/handoffs/2026-08-10-walkable-position-chain-draft.md

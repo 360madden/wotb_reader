@@ -591,6 +591,14 @@ public sealed class CliCommandRouter
                         inViewport = beacon.InViewport,
                     },
             }),
+            pips = projection.Pips.Select(pip => new
+            {
+                pip.EntityId,
+                kind = pip.Kind.ToString(),
+                pip.Damage,
+                pip.ScreenX,
+                pip.ScreenY,
+            }),
         };
 
         return Success(

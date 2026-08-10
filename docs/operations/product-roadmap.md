@@ -172,7 +172,7 @@ honest no-hit and the anchor widens (entity base / ring record).
 | Step | WS | Deliverable |
 |---|---|---|
 | V1 | F | ✅ Facing arrows on nameplates (2026-08-10, replay mode: packet yaw ground truth — `OverlayTankState.YawRadians` was already in the frame; now threaded through projection → API → HUD as `ScreenHeadingDegrees`, perspective-correct two-point probe in `WorldToScreen`, arrow drawn above each nameplate; live mode reuses the same seam once the yaw offset is discovered) |
-| V2 | F | Objective markers (capture zones), event-feed tie-ins (damage pips, death markers) |
+| V2 | F | Objective markers (capture zones) ride the O3 beacon layer; event-feed tie-ins ✅ (2026-08-10): transient damage pips + death markers from the decoded event stream, windowed 2 s, projected over the affected tank's nameplate (`OverlayEventPip` → `Pips` in frame/API/HUD) |
 | V3 | F | Visibility model for replay mode (spotted-reproduction as a documented option; god-view default) |
 
 ### Phase 5 — Live overlay (policy-gated, later)

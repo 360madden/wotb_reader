@@ -1,4 +1,5 @@
 using WotBTreader.Application.Replay;
+using WotBTreader.Core;
 using WotBTreader.Core.Overlay;
 
 namespace WotBTreader.Application.Tests;
@@ -20,7 +21,8 @@ public sealed class OverlayFrameProjectorTests
                 new OverlayTankState(1, 0, 0, 10, 0.1, 1.0, true, 1, "A", null, "TankA", "Heavy", 10),
                 // Behind the camera: never projected.
                 new OverlayTankState(2, 0, 0, -10, 0.1, 0.5, false, 2, "B", null, "TankB", "Heavy", 10),
-            });
+            },
+            []);
 
         OverlayFrameProjection projection = OverlayFrameProjector.Project(frame, Fov, 1920, 1080);
 
@@ -45,7 +47,8 @@ public sealed class OverlayFrameProjectorTests
                 new OverlayTankState(3, 0, 0, 300, null, 1.0, true, 2, "Far", null, "FarTank", "Heavy", 300),
                 new OverlayTankState(1, 0, 0, 10, null, 1.0, true, 1, "Near", null, "NearTank", "Heavy", 10),
                 new OverlayTankState(2, 0, 0, 50, null, 1.0, true, 1, "Mid", null, "MidTank", "Heavy", 50),
-            });
+            },
+            []);
 
         OverlayFrameProjection projection = OverlayFrameProjector.Project(frame, Fov, 1920, 1080);
 
@@ -60,6 +63,7 @@ public sealed class OverlayFrameProjectorTests
         OverlayFrame frame = new(
             TimeSpan.FromSeconds(42),
             new OverlayCamera(1, 2, 3, YawRadians: 0.5, PitchRadians: -0.1, RollRadians: 0),
+            [],
             []);
 
         OverlayFrameProjection projection = OverlayFrameProjector.Project(frame, Fov, 1920, 1080);
@@ -76,6 +80,7 @@ public sealed class OverlayFrameProjectorTests
         OverlayFrame frame = new(
             TimeSpan.FromSeconds(10),
             new OverlayCamera(0, 0, 0, YawRadians: 0, PitchRadians: 0, RollRadians: 0),
+            [],
             []);
 
         OverlayFrameProjection projection = OverlayFrameProjector.Project(
@@ -106,6 +111,7 @@ public sealed class OverlayFrameProjectorTests
         OverlayFrame frame = new(
             TimeSpan.FromSeconds(50),
             new OverlayCamera(0, 0, 0, YawRadians: 0, PitchRadians: 0, RollRadians: 0),
+            [],
             []);
 
         OverlayFrameProjection projection = OverlayFrameProjector.Project(
@@ -129,15 +135,48 @@ public sealed class OverlayFrameProjectorTests
     }
 
     [TestMethod]
-    public void Project_NoBeaconsWhenNoneProvided()
+    public void Project_PipsAnchorAtAffectedTankPixel_OnlyWhenInViewport()
+    {
+        // A damage pip and a death pip for an in-viewport tank anchor at its
+        // pixel; a pip for a behind-camera tank is dropped entirely.
+        OverlayFrame frame = new(
+            TimeSpan.FromSeconds(10),
+            new OverlayCamera(0, 0, 0, YawRadians: 0, PitchRadians: 0, RollRadians: 0),
+            new[]
+            {
+                new OverlayTankState(1, 0, 0, 10, 0.1, 0.6, true, 1, "A", null, "TankA", "Heavy", 10),
+                new OverlayTankState(2, 0, 0, -10, 0.1, 0.0, false, 2, "B", null, "TankB", "Heavy", 10),
+            },
+            new[]
+            {
+                new OverlayEventPip(1, CanonicalEventKind.Damage, 60, TimeSpan.FromSeconds(9.5)),
+                new OverlayEventPip(1, CanonicalEventKind.Destroyed, 0, TimeSpan.FromSeconds(9.8)),
+                new OverlayEventPip(2, CanonicalEventKind.Damage, 90, TimeSpan.FromSeconds(9.5)),
+            });
+
+        OverlayFrameProjection projection = OverlayFrameProjector.Project(frame, Fov, 1920, 1080);
+
+        Assert.HasCount(2, projection.Pips);
+        ProjectedPip damage = projection.Pips.Single(pip => pip.Kind == CanonicalEventKind.Damage);
+        Assert.AreEqual(1, damage.EntityId);
+        Assert.AreEqual(60, damage.Damage);
+        Assert.AreEqual(960, damage.ScreenX, 1e-6);
+        Assert.AreEqual(540, damage.ScreenY, 1e-6);
+        ProjectedPip death = projection.Pips.Single(pip => pip.Kind == CanonicalEventKind.Destroyed);
+        Assert.AreEqual(1, death.EntityId);
+    }
+
+    [TestMethod]
+    public void Project_NoPipsWhenNoneProvided()
     {
         OverlayFrame frame = new(
             TimeSpan.Zero,
             new OverlayCamera(0, 0, 0, YawRadians: 0, PitchRadians: 0, RollRadians: 0),
+            [],
             []);
 
         OverlayFrameProjection projection = OverlayFrameProjector.Project(frame, Fov, 1920, 1080);
 
-        Assert.HasCount(0, projection.Beacons);
+        Assert.HasCount(0, projection.Pips);
     }
 }

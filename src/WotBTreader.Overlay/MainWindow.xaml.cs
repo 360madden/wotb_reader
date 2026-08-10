@@ -184,7 +184,7 @@ public partial class MainWindow : System.Windows.Window, IDisposable
     /// <summary>Renders the latest view-model nameplates + beacons onto the HUD canvas.</summary>
     private void RenderW2sHud()
     {
-        W2sHudView.Render(_viewModel.Beacons, _viewModel.Nameplates, ActualWidth, ActualHeight);
+        W2sHudView.Render(_viewModel.Beacons, _viewModel.Pips, _viewModel.Nameplates, ActualWidth, ActualHeight);
     }
 
     private void OnHpPulseTick(object? sender, EventArgs e)

@@ -1065,6 +1065,50 @@ public sealed class MainViewModelTests
     }
 
     [TestMethod]
+    public async Task RefreshOverlayFrameAsync_PopulatesEventPips()
+    {
+        string frameJson = """
+            {
+              "replayTimeSeconds": 200.0,
+              "cameraX": 0.0, "cameraY": 0.0, "cameraZ": 0.0,
+              "cameraYawRadians": 0.5, "cameraPitchRadians": 0.0,
+              "tanks": [
+                { "entityId": 2, "playerName": "Alpha", "tankName": null, "clanTag": null, "teamNumber": 2, "hpFraction": 0.5, "alive": true, "distanceMeters": 120.0, "screenX": 800.0, "screenY": 400.0, "depth": 80.0, "inViewport": true }
+              ],
+              "beacons": [],
+              "pips": [
+                { "entityId": 2, "kind": "Damage", "damage": 60, "screenX": 800.0, "screenY": 400.0 },
+                { "entityId": 2, "kind": "Destroyed", "damage": 0, "screenX": 800.0, "screenY": 400.0 }
+              ]
+            }
+            """;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/frame", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(JsonResponse(frameJson));
+            }
+
+            return Task.FromResult(JsonResponse("""{"offset":0,"limit":200,"count":0,"items":[]}"""));
+        });
+        MainViewModel viewModel = CreateViewModel(handler);
+
+        await viewModel.RefreshSessionsAsync();
+        viewModel.SelectedSession = new SessionRow(
+            BattleSessionId, "Test Map", null, Now, 1, 2);
+
+        await viewModel.RefreshOverlayFrameAsync(1920, 1080);
+
+        Assert.HasCount(2, viewModel.Pips);
+        PipItem damage = viewModel.Pips.Single(pip => pip.Kind == "Damage");
+        Assert.AreEqual(2, damage.EntityId);
+        Assert.AreEqual(60, damage.Damage);
+        Assert.AreEqual(800.0, damage.ScreenX, 1e-9);
+        Assert.IsTrue(viewModel.Pips.Any(pip => pip.Kind == "Destroyed"));
+    }
+
+    [TestMethod]
     public async Task RefreshOverlayFrameAsync_PopulatesVisibleBeaconsAndSkipsHiddenOnes()
     {
         string frameJson = """

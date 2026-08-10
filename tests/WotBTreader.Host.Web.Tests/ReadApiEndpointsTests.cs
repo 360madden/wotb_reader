@@ -29,7 +29,8 @@ public sealed class ReadApiEndpointsTests
             {
                 new OverlayTankState(1, 0, 0, 100, 0.1, 1.0, true, 1, "Alpha", null, "TankA", "Heavy", 100),
                 new OverlayTankState(2, 0, 0, -100, 0.1, 0.5, false, 2, "Behind", null, "TankB", "Heavy", 100),
-            }));
+            },
+            []));
 
         IResult result = await ReadApiEndpoints.GetOverlayFrameAsync(
             new DefaultHttpContext(),
@@ -70,7 +71,8 @@ public sealed class ReadApiEndpointsTests
             {
                 new OverlayTankState(1, 0, 0, 100, Math.PI / 2, 1.0, true, 1, "Alpha", null, "TankA", "Heavy", 100),
                 new OverlayTankState(2, 0, 0, 100, null, 1.0, true, 2, "NoYaw", null, "TankB", "Heavy", 100),
-            }));
+            },
+            []));
 
         IResult result = await ReadApiEndpoints.GetOverlayFrameAsync(
             new DefaultHttpContext(),
@@ -89,6 +91,46 @@ public sealed class ReadApiEndpointsTests
         Assert.AreEqual(90.0, alpha.ScreenHeadingDegrees!.Value, 1e-6);
         OverlayTankResponse noYaw = frame.Tanks.Single(tank => tank.EntityId == 2);
         Assert.IsNull(noYaw.ScreenHeadingDegrees);
+    }
+
+    [TestMethod]
+    public async Task OverlayFrame_ReturnsEventPipsForVisibleTanks()
+    {
+        // Damage + destroyed pips for an in-viewport tank come through with
+        // the tank's pixel; a pip for a behind-camera tank is dropped.
+        FakeOverlayFrames frames = new(new OverlayFrame(
+            TimeSpan.FromSeconds(10),
+            new OverlayCamera(0, 0, 0, YawRadians: 0, PitchRadians: 0, RollRadians: 0),
+            new[]
+            {
+                new OverlayTankState(1, 0, 0, 100, 0.1, 0.6, true, 1, "Alpha", null, "TankA", "Heavy", 100),
+                new OverlayTankState(2, 0, 0, -100, 0.1, 0.0, false, 2, "Behind", null, "TankB", "Heavy", 100),
+            },
+            new[]
+            {
+                new OverlayEventPip(1, CanonicalEventKind.Damage, 60, TimeSpan.FromSeconds(9.5)),
+                new OverlayEventPip(2, CanonicalEventKind.Damage, 90, TimeSpan.FromSeconds(9.5)),
+            }));
+
+        IResult result = await ReadApiEndpoints.GetOverlayFrameAsync(
+            new DefaultHttpContext(),
+            frames,
+            new FakeBeaconStore(),
+            Guid.NewGuid(),
+            timeSeconds: 10,
+            fov: 90,
+            width: 1920,
+            height: 1080,
+            TestContext.CancellationToken);
+
+        OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
+        Assert.HasCount(1, frame.Pips);
+        OverlayPipResponse pip = frame.Pips.Single();
+        Assert.AreEqual(1, pip.EntityId);
+        Assert.AreEqual("Damage", pip.Kind);
+        Assert.AreEqual(60, pip.Damage);
+        Assert.AreEqual(960.0, pip.ScreenX, 1e-6);
+        Assert.AreEqual(540.0, pip.ScreenY, 1e-6);
     }
 
     [TestMethod]
@@ -464,6 +506,7 @@ public sealed class ReadApiEndpointsTests
         FakeOverlayFrames frames = new(new OverlayFrame(
             TimeSpan.FromSeconds(50),
             new OverlayCamera(0, 0, 0, YawRadians: 0, PitchRadians: 0, RollRadians: 0),
+            [],
             []));
         FakeBeaconStore beacons = new(new[]
         {
