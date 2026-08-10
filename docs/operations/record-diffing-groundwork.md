@@ -37,19 +37,23 @@ timestamps. `ReplayCapability.Damage` is set when damage events decode
 - Participants (`entity_id`, `tank_name`, `account_id`, `clan_tag`) and
   position trajectory samples.
 
-## The gap for HP / entity-record discovery
+## The query path (implemented 2026-08-10)
 
-`SqliteTrajectoryGroundTruthProvider` reads **only** duration, participants,
-and position samples (`ReadPositionsAsync` selects `raw_x/y/z`) — damage and
-destroyed events are stored but **not exposed by any ground-truth query
-path**. The record-diffing correlation for HP therefore needs:
+`IHpGroundTruthProvider` / `SqliteHpGroundTruthProvider` now expose the
+Damage/Destroyed `canonical_events` for a session: replay time, victim entity
+id, victim participant id, best-effort `damage`/`attackerEntityId` parsed
+from `values_json` (null when unparseable — never guessed), plus the session
+duration; fail-closed on an unknown/zero-duration session. Registered in
+`AddSqliteStorage`. `SqliteTrajectoryGroundTruthProvider` (positions) is
+unchanged.
 
-1. A query path (e.g. `IHpGroundTruthProvider` or an event query) returning
-   `canonical_events` of kind Damage/Destroyed joined to participants —
-   `victim entity id → HP-drop event at replay time T`.
-2. The memory-side diffing harness: a trusted reader dumping the entity
-   record around the avatar spine, with byte changes bucketed by replay time
-   so they can be matched to damage events.
+## The remaining gap: the memory-side diffing harness
+
+The record-diffing correlation for HP therefore needs only the memory side:
+a trusted reader dumping the entity record around the avatar spine, with
+byte changes bucketed by replay time so they can be matched to the damage
+events this provider returns (`victim entity id → HP-drop event at replay
+time T`).
 
 ## Notes
 

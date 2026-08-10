@@ -324,6 +324,7 @@ src/WotBTreader.Application/Replay/ReplayDecoderRegistry.cs
 src/WotBTreader.Application/Replay/ReplayIngestionLog.cs
 src/WotBTreader.Application/Replay/ReplayIngestionService.cs
 src/WotBTreader.Application/Results/OperationResult.cs
+src/WotBTreader.Application/Storage/HpGroundTruthContracts.cs
 src/WotBTreader.Application/Storage/StorageContracts.cs
 src/WotBTreader.Application/Storage/TrajectoryGroundTruthContracts.cs
 src/WotBTreader.Application/Streaming/SequencedTelemetryEventPublisher.cs
@@ -350,6 +351,7 @@ src/WotBTreader.CaptureLogs/WotBTreader.CaptureLogs.csproj
 src/WotBTreader.CaptureLogs/packages.lock.json
 src/WotBTreader.Core/AffiliationResolver.cs
 src/WotBTreader.Core/ComparisonModels.cs
+src/WotBTreader.Core/Discovery/HpGroundTruthModels.cs
 src/WotBTreader.Core/Discovery/OffsetChainWalker.cs
 src/WotBTreader.Core/Discovery/TrajectoryCorrelation.cs
 src/WotBTreader.Core/Discovery/TrajectoryFamily.cs
@@ -531,6 +533,7 @@ src/WotBTreader.Storage.Sqlite/ContentAddressedSourceArtifactStore.cs
 src/WotBTreader.Storage.Sqlite/SqliteComparisonRunRepository.cs
 src/WotBTreader.Storage.Sqlite/SqliteDecodeRunRepository.cs
 src/WotBTreader.Storage.Sqlite/SqliteDomainReaders.cs
+src/WotBTreader.Storage.Sqlite/SqliteHpGroundTruthProvider.cs
 src/WotBTreader.Storage.Sqlite/SqliteMigrations.cs
 src/WotBTreader.Storage.Sqlite/SqliteReplayClockSegmentRepository.cs
 src/WotBTreader.Storage.Sqlite/SqliteSessionQueryRepository.cs
@@ -650,6 +653,7 @@ tests/WotBTreader.Storage.Sqlite.Tests/MigrationTests.cs
 tests/WotBTreader.Storage.Sqlite.Tests/ReplayClockSegmentRepositoryTests.cs
 tests/WotBTreader.Storage.Sqlite.Tests/ServiceRegistrationTests.cs
 tests/WotBTreader.Storage.Sqlite.Tests/SourceArtifactStoreTests.cs
+tests/WotBTreader.Storage.Sqlite.Tests/SqliteHpGroundTruthProviderTests.cs
 tests/WotBTreader.Storage.Sqlite.Tests/SqliteTrajectoryGroundTruthProviderTests.cs
 tests/WotBTreader.Storage.Sqlite.Tests/StorageTestScope.cs
 tests/WotBTreader.Storage.Sqlite.Tests/WotBTreader.Storage.Sqlite.Tests.csproj
