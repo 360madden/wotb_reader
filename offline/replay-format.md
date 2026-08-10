@@ -152,23 +152,52 @@ Known packet types (decoded by `WotbReplayDecoder`):
 
 | Packet type | Result |
 |-------------|--------|
-| Arena participants (`updateArena2` wrapper) | `CanonicalEventKind.ParticipantObserved` roster entries |
-| Position | `CanonicalEventKind.Position` → `PositionSample` (raw + normalized coords) |
-| Direct damage | `CanonicalEventKind.Damage` |
-| Entity method / lifecycle | `CanonicalEventKind.Destroyed`, `BattleStarted`, `BattleEnded` |
+| Arena participants (`updateArena2` wrapper, type 8) | `CanonicalEventKind.ParticipantObserved` roster entries |
+| Position (type 10) | `CanonicalEventKind.Position` → `PositionSample` (raw + normalized coords) |
+| Direct damage (type 8/subtype 8) | `CanonicalEventKind.Damage` |
+| Lifecycle (type 14) | `CanonicalEventKind.BattleEnded` |
 
-**Unexplored packet types — structure evidence (2026-08-10, Oasis Palms
-11.19.0, 73 993 packets):**
+**Packet-type inventory — structure evidence (2026-08-10, Oasis Palms
+11.19.0, 73 993 packets; counts are Oasis-only):**
 
 | Type | Count | Structure | Semantics |
 |---|---|---|---|
 | 31 | 6 777 | 4-byte float, **combat-only** (first at t≈71 s = battle start, last at t≈275 s) | unknown; NOT distance-to-nearest-enemy (tested, no correlation); value toggles between ~27.009 (repeated default) and 6.7–8.8 minima; ~30 Hz during combat |
 | 35 | 2 814 | 1 byte, exactly one per 0.1 s tick, values 0x5f→0xbc→0x19→… | **mod-256 tick counter** (wraps every 25.6 s; 10 Hz) |
 | 39 | 16 984 | 28 bytes = 7 float32, **per-frame (~60 Hz)** | **scene point, semantics UNRESOLVED**: smooth drift, matches NO entity position, team centroid, or bbox anchor; NOT a third-person camera (offset 30→507 m, ~38 m below the tank); settles on fixed anchors (spawn corner t≈1.7–68 s, victory point t≈245–281 s on Oasis). Static pass `FindScenePointWriter` (2026-08-10): its bit-exact constant -0.0011081547 (f32 0xBA913F80) has **0 hits** — computed at runtime, writer not locatable by that anchor; Rust oracle also reports type 39 unknown. Not zone geometry; camera/VP-track candidate remains open (see `record-diffing-groundwork.md` triage). |
+| 32 | 258 | entity-id + event flag + payload, 3 layouts (11 B, 25–27 B, 14 B) | **damage/impact event mirror (2026-08-10)**: fires at the same instants as the type-8 direct-damage events for the same victim (81/85 alignment on Oasis, 107/120 on Dead Rail — every miss is an amt=0/no-damage event) and embeds the SAME 6-byte shell signature as its matching type-8 packet (e.g. `a6 a5 e0 a2 a8 b1` at t=69.13, `ff e0 b9 d7 d8 98` at t=69.62). Flag prefixes distinguish the event (`01 11`/`01 12` = damage-with-payload, `01 02`/`01 03` = short companion, `00 10` = state snapshot at spawn and at the end of the victim's event chain); shell/effect entities (0x30xxxx range) carry `01 05`/`01 06`. NOT spotting: no reveal/visibility data in any payload. |
+| 33 | 52 | 8 B = entity-id + 4 zero bytes | per-entity stream-open marker (1× per entity, at spawn t≈0.11) |
+| 5 | 52 | 48–173 B = entity-id + space-id + vehicle-id + x/y/z + tail | per-entity full-state broadcast at spawn (4 per tank); x/y/z float triples match the type-10 coordinates at the same instant |
+| 4 | 4 | 4 B = entity-id | sparse entity marker; does NOT match the destroy timeline (fires mid-battle for entities that keep streaming positions) — semantics unresolved |
+| 23 | 59 | 4 B int32 toggling 0/1 | battle-state toggles (1 at LoadGameScene, 0 at battle start t≈71, then dense 1/0 flips through combat, ~30 pairs) |
+| 26 | 16 | 4 B (all-zero observed) | sparse combat-window marker (t≈119–274) — semantics unresolved |
+| 29 | 4 | 1 B = 0x01 | sparse marker at spawn (t≈0–2.1) |
+| 0 | 1 | 903 B | BasePlayerCreate (decoder `TryReadBasePlayerCreate`) |
+| 1 | 1 | 102 B | entity create with x/y/z floats at spawn |
+| 2 | 1 | 5 B | entity-id + 0x00 |
+| 11 | 2 | 20/97 B | entity create (x/y/z floats at spawn) |
+| 13 | 1 | 4 381 B | battle-end blob at t≈279.3 (post-BattleEnded) |
+| 36 | 1 | 4 B | spawn marker |
+| 17 | 1 | 0 B | empty packet at t≈1.61 |
+| 38 | 1 | 1 B | single byte |
+| 7 | 19 040 | entity-id + packed int32s (13–16 B) | entity-status stream (the `0x02000000` state flag repeats — NOT yaw) |
 
-Type 8 also carries large protobuf blobs (avatar URLs, player skins) — the
-`updateArena2` roster source. Unknown packets remain `RawRecord`s with the
-`UnknownRecordsPreserved` capability — unknown stays unknown.
+**NO spotting/reveal packet exists** — the full type inventory above covers
+100% of the stream and none carries reveal/visibility data. This is the V3
+finding (2026-08-10): spotted-reproduction is not data-possible from replays;
+replay mode renders god-view. Type 8 also carries large protobuf blobs
+(avatar URLs, player skins) — the `updateArena2` roster source.
+
+**Destroyed-events gap (2026-08-10):** the decoder emits NO
+`CanonicalEventKind.Destroyed` events from any current packet type (type 14
+is only BattleEnded; type 4's 4-byte entity markers do not align with the
+destroy timeline; the amt=0 direct-damage events at the end of a victim's
+chain are the last *damage* events, not a destroy signal). The HUD's
+`Alive`/death-pip path is therefore exercised only by synthetic fixtures
+today. Locating the destroy signal (likely an entity-method subtype or the
+type-7 status stream) is an open offline discovery target. Unknown packets
+remain `RawRecord`s with the `UnknownRecordsPreserved` capability — unknown
+stays unknown.
 
 Decoding is **evidence-first**: every decoded fact carries an
 `EvidenceReference` (artifact, entry, offset, length, SHA-256) and a

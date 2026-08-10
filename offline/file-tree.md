@@ -228,6 +228,7 @@ docs/operations/handoffs/2026-08-10-replay-overlay-o1-projection.md
 docs/operations/handoffs/2026-08-10-replaytime-live-plan-prestaged.md
 docs/operations/handoffs/2026-08-10-runtime-chain-walker.md
 docs/operations/handoffs/2026-08-10-v1-facing-arrows-nameplates.md
+docs/operations/handoffs/2026-08-10-v2-event-feed-pips.md
 docs/operations/handoffs/2026-08-10-w2s-hud-nameplates.md
 docs/operations/handoffs/2026-08-10-walkable-position-chain-applied.md
 docs/operations/handoffs/2026-08-10-walkable-position-chain-draft.md
@@ -547,6 +548,7 @@ src/WotBTreader.Overlay/Services/TreaderApiClient.cs
 src/WotBTreader.Overlay/ViewModels/BeaconItem.cs
 src/WotBTreader.Overlay/ViewModels/MainViewModel.cs
 src/WotBTreader.Overlay/ViewModels/NameplateItem.cs
+src/WotBTreader.Overlay/ViewModels/PipItem.cs
 src/WotBTreader.Overlay/ViewModels/PlotPoint.cs
 src/WotBTreader.Overlay/ViewModels/RelayCommand.cs
 src/WotBTreader.Overlay/ViewModels/SessionRow.cs
