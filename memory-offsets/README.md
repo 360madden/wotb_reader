@@ -36,6 +36,25 @@ memory-offsets/
 }
 ```
 
+### `fieldValidation` and `chains` (promotion evidence)
+
+`fieldValidation` carries per-field promotion evidence (`status`:
+`Unknown`/`Candidate`/`Verified`, evidence entries, launch/replay counts,
+approvals). `Verified` requires the schema's complete evidence set and is
+what runtime promotion consumes.
+
+Pointer-chain fields (e.g. the position family, published 2026-08-10 via
+OD-RECOVERY-083) are recorded in the additive `chains` object: field →
+array of `{ "kind": "rootRva" | "memberOffset" | "recordOffset", "value":
+<non-negative int>, "note": <text> }` hops — the module-relative
+dereference path the resolver walks. Chained fields keep their `offsets`
+value `0` **by design**: the runtime observation path computes
+`moduleBase + offset` (no chain concept) and the ring record is
+battle-scoped heap, so a non-zero value would corrupt that path; the
+resolver reads chained fields via its own hash-bound layout. The chain is
+documentation + evidence, never a runtime read plan. `schemaVersion` stays
+1 — the runtime reader ignores the additive keys.
+
 ## Confidence levels
 
 | Level    | Meaning |
