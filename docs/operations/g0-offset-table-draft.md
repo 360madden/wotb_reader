@@ -219,10 +219,19 @@ JSON-Schema validation today):
 - Does NOT publish any absolute/heap address — the chain is module-relative;
   the ring record is resolved at runtime by the resolver.
 
-## 7. Walkable position-chain form (2nd generation, drafted 2026-08-10)
+## 7. Walkable position-chain form (2nd generation, APPLIED 2026-08-10)
 
-> **NOT APPLIED.** This is the draft of the re-expressed position chains for a
-> FUTURE operator gate. The published table is untouched.
+> **APPLIED 2026-08-10 (OD-RECOVERY-084, commit applied with this gate):**
+> the operator approved and the re-expressed walkable chains REPLACED the
+> memberOffset-spelled chains for `playerPositionX/Y/Z` in
+> `memory-offsets/11.19.0.10.json` as ONE commit. Same offsets (all 0), same
+> executable identity, same evidence — the semantics moved from "sequential
+> member offsets" to explicit rebase (`entityLookup`) + inline ring
+> selection. The prior memberOffset-spelled form remains in git history
+> (commit `0e6bdba`) and the ledger (OD-RECOVERY-083) as evidence. The
+> runtime read surface is unchanged (the resolver stays authoritative); the
+> chain walker now reads the published table's chains directly (proven by
+> `Walk_PublishedTableChains_*` tests).
 
 ### 7.1 Why a re-expression
 
@@ -255,26 +264,30 @@ draft JSON and the resolver's layout constants fails), and a malformed
 `OffsetChainWalkerEquivalenceTests` (Core, 32 tests) proves the same
 walk on the programmatic chain.
 
-### 7.3 The change the operator approves
+### 7.3 The change applied
 
-Replace the `chains` section of `playerPositionX/Y/Z` in
-`memory-offsets/11.19.0.10.json` with the walkable form below. Same offsets,
-same executable identity, same evidence — the semantics move from
-"sequential member offsets" to explicit rebase (`entityLookup`) + inline
-ring selection. The prior memberOffset-spelled form remains in git history
-(commit `0e6bdba`) and the ledger (OD-RECOVERY-083) as evidence. The
-runtime read surface is unchanged (the resolver stays authoritative); after
-approval the walker can read the published table's chains directly.
+APPLIED: the `chains` section of `playerPositionX/Y/Z` in
+`memory-offsets/11.19.0.10.json` was REPLACED with the walkable form below
+(OD-RECOVERY-084). Same offsets, same executable identity, same evidence —
+the semantics moved from "sequential member offsets" to explicit rebase
+(`entityLookup`) + inline ring selection. The prior memberOffset-spelled
+form remains in git history (commit `0e6bdba`) and the ledger
+(OD-RECOVERY-083) as evidence. The runtime read surface is unchanged (the
+resolver stays authoritative); the walker now reads the published table's
+chains directly — pinned by the `Walk_PublishedTableChains_*` tests.
 
 ### 7.4 The walkable JSON (`playerPositionX`; Y/Z differ only in the final
 `recordOffset` 0x14/0x18)
 
 > **Canonical source of truth:** `docs/operations/g0-walkable-position-
-> chains.draft.json` (full table shape, all three chains). The block below is
+> chains.draft.json` (full table shape, all three chains) — APPLIED: the
+> published chains in `memory-offsets/11.19.0.10.json` are now structurally
+> identical to this file (the fidelity check enforces it). The block below is
 > the operator-facing rendering of `playerPositionX`; the Python gate
 > (`offset_check.py`) validates the FILE with the same chain rules as the
 > published tables AND fails if this block drifts from it. The C# proof
-> (`WalkablePositionChainTests`) loads the FILE through `OffsetTableReader`.
+> (`WalkablePositionChainTests`) loads the FILE AND the published table
+> through `OffsetTableReader`.
 
 ```json
 [

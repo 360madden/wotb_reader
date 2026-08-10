@@ -4,7 +4,7 @@
   "executableSha256": "1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d",
   "discoveredAtUtc": "2026-08-10T00:00:00Z",
   "confidence": "medium",
-  "notes": "CANONICAL 2nd-generation walkable position-chain form (draft, NOT applied). Single source of truth: tests/WotBTreader.Application.Tests/WalkablePositionChainTests.cs loads this file through OffsetTableReader and proves the parsed chains walk to resolver-equal X/Y/Z floats; scripts/python/offset_check.py validates it against schema.json; docs/operations/g0-offset-table-draft.md \u00a77.4 renders playerPositionX. The operator gate decides whether this replaces the published chains in memory-offsets/11.19.0.10.json.",
+  "notes": "CANONICAL 2nd-generation walkable position-chain form (APPLIED 2026-08-10, OD-RECOVERY-084): the published chains in memory-offsets/11.19.0.10.json are now structurally identical to this file. Single source of truth: tests/WotBTreader.Application.Tests/WalkablePositionChainTests.cs loads this file AND the published table through OffsetTableReader and proves the parsed chains walk to resolver-equal X/Y/Z floats; scripts/python/offset_check.py validates it against schema.json (and enforces file <-> published identity via the fidelity check); docs/operations/g0-offset-table-draft.md §7.4 renders playerPositionX. Prior memberOffset-spelled form: git commit 0e6bdba + ledger OD-RECOVERY-083.",
   "offsets": {
     "replayTime": 0,
     "playerHP": 0,

@@ -31,13 +31,15 @@ LOG_DIR = REPO_ROOT / ".build"
 SCHEMA_PATH = OFFSET_DIR / "schema.json"
 DOC_PACK_PATH = REPO_ROOT / "offline" / "memory-offsets.md"
 
-# Canonical 2nd-generation walkable position-chain form (G0 draft, NOT
-# applied): single source of truth for the walkable chains. The C# test
+# Canonical 2nd-generation walkable position-chain form (APPLIED 2026-08-10,
+# OD-RECOVERY-084 — the published chains in memory-offsets/11.19.0.10.json now
+# ARE this form): single source of truth for the walkable chains. The C# test
 # (WalkablePositionChainTests) loads this file through OffsetTableReader; the
 # validator checks it with the same rules as the published tables; the
 # operator-facing JSON block in g0-offset-table-draft.md §7.4 must match it;
-# and the walkable form must re-express the published evidence chains
-# (memory-offsets/11.19.0.10.json) offset for offset.
+# and the walkable form must match the published chains
+# (memory-offsets/11.19.0.10.json) — identical since OD-RECOVERY-084, or the
+# re-expression of the pre-publication 16-hop evidence form offset for offset.
 WALKABLE_DRAFT_PATH = REPO_ROOT / "docs" / "operations" / "g0-walkable-position-chains.draft.json"
 WALKABLE_DRAFT_DOC_PATH = REPO_ROOT / "docs" / "operations" / "g0-offset-table-draft.md"
 PUBLISHED_POSITION_TABLE = OFFSET_DIR / "11.19.0.10.json"
@@ -224,14 +226,39 @@ def extract_walkable_draft_block(doc_path: Path):
     return None
 
 
+def _hop_signature(h: dict) -> tuple:
+    """Semantic signature of one hop: kind + all numeric fields. Notes are
+    prose and never compared. EntityLookup and ringIndex carry descriptor
+    fields beyond kind/value."""
+    kind = h.get("kind")
+    if kind == "entityLookup":
+        return (
+            kind, h.get("value"), h.get("cachedEntityOffset"),
+            h.get("entityIdOffset"), tuple(h.get("treeRootOffsets") or ()),
+            h.get("treeNodeSize"), h.get("treeNodeNilOffset"),
+            h.get("treeNodeKeyOffset"), h.get("treeNodeValueOffset"),
+            h.get("treeNodeChildLessOffset"), h.get("treeNodeChildGreaterOffset"),
+            h.get("treeSentinelFirstNodeOffset"), h.get("maxTreeNodes"),
+        )
+    if kind == "ringIndex":
+        return (kind, h.get("value"), h.get("indexOffset"), h.get("stride"))
+    return (kind, h.get("value"))
+
+
 def walkable_fidelity_issues(field: str, pub: list, dr: list) -> list[str]:
-    """Verify ONE walkable draft chain re-expresses the published evidence
-    chain for the same field. The published form spells several steps as
-    memberOffset hops where the resolver treats them as inline/lookup/ring —
-    that re-expression is exactly the point of the walkable form, so the check
-    maps OFFSETS, not hop kinds: same root RVA, same controller spine, same
-    entities map, same cache/tree roots, same filter/helper/ring/index
-    offsets, same record offset."""
+    """Verify ONE walkable draft chain against the published chain for the
+    same field. Two generations of the published form are supported:
+
+    - OLD form (16 memberOffset-spelled hops, pre OD-RECOVERY-084): the
+      walkable form re-expresses it — the check maps OFFSETS, not hop kinds
+      (same root RVA, controller spine, entities map, cache/tree roots,
+      filter/helper/ring/index offsets, record offset). The re-expression is
+      the point: the draft must be the SAME walk the live evidence verified.
+    - WALKABLE form (12 hops, published since OD-RECOVERY-084): the published
+      chains must be IDENTICAL to the canonical draft (semantic signature per
+      hop) — the invariant that keeps the published table from drifting from
+      the canonical artifact. The re-expression-vs-original-evidence proof is
+      preserved in git history (commit 0e6bdba) and the ledger."""
     issues: list[str] = []
     tag = f"fidelity[{field}]"
 
@@ -249,6 +276,20 @@ def walkable_fidelity_issues(field: str, pub: list, dr: list) -> list[str]:
     if actual_kinds != expected_kinds:
         issues.append(f"{tag}: unexpected walkable chain shape {actual_kinds} "
                       f"(expected {expected_kinds})")
+        return issues
+
+    pub_kinds = [h.get("kind") for h in pub]
+    if pub_kinds == expected_kinds:
+        # Published is already the walkable form (OD-RECOVERY-084+): identity.
+        if [_hop_signature(h) for h in pub] != [_hop_signature(h) for h in dr]:
+            issues.append(f"{tag}: published walkable chain differs from the "
+                          f"canonical draft (signature per hop)")
+        return issues
+
+    # Old memberOffset-spelled form (16 hops): re-expression mapping.
+    if len(pub) != 16:
+        issues.append(f"{tag}: published chain has unrecognized shape "
+                      f"({len(pub)} hops, kinds {pub_kinds})")
         return issues
 
     if pub[0].get("kind") != "rootRva" or value(pub[0]) != value(dr[0]):
@@ -327,7 +368,7 @@ def check_walkable_fidelity(log_path: Path) -> list[str]:
         issues.extend(walkable_fidelity_issues(field, pub, dr))
 
     write_log(log_path,
-              f"  fidelity: walkable draft re-expresses the published "
+              f"  fidelity: walkable draft matches the published "
               f"position chains ({checked} field(s))")
     return issues
 

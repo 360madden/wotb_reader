@@ -129,16 +129,18 @@ field (verified against
 `Type10EntityPositionResolver.TryResolveOnce`/`FindEntity`). The runtime
 parses `chains` into the model (`OffsetTableReader`, additive — the legacy
 observation path is unchanged) and `OffsetChainWalker` walks chains
-fail-closed. The published 11.19.0.10 position chains are NOT mechanically
-walkable AS PUBLISHED: they spell the inline entities step, the inline ring
-base, and the ring-index read as plain `memberOffset` hops (which would deref
-them), and they encode the cache fast path + three alternative entity-tree
-map roots as sequential member offsets with no rebase semantics. A chain
-re-expressed with `inlineOffset` + `entityLookup` + `ringIndex` IS walkable
-and is proven equivalent to the resolver (`Type10EntityPositionResolver`),
-so the published chains remain documentation + evidence, not a runtime read
-plan, until a walkable form is published through the operator gate. The
-resolver remains the authoritative position reader.
+fail-closed.The published 11.19.0.10 position chains ARE mechanically walkable since
+OD-RECOVERY-084 (2026-08-10): they use `inlineOffset` (entities map, no
+deref), `entityLookup` (cache fast path + three alternative entity-tree map
+roots, node layout in the descriptor, target entity id supplied per walk), and
+INLINE `ringIndex` — the same walk the OD-RECOVERY-083 evidence verified,
+re-expressed with correct semantics. `Walk_PublishedTableChains_*` proves the
+walker's walk of the PUBLISHED chains equals the resolver's traversal on
+identical memory (cache/tree/alternative-root/not-found). The canonical form
+lives in `docs/operations/g0-walkable-position-chains.draft.json`; the
+pre-publication memberOffset-spelled form remains in git history (commit
+`0e6bdba`) and the ledger. The resolver remains the authoritative position
+reader; the walker is a proven-equivalent consumer of the published table.
 
 Chained fields keep their `offsets` value `0` **by design**: the runtime
 observation path computes `moduleBase + field.Offset` (no chain concept) and

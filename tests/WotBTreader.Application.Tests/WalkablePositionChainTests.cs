@@ -136,9 +136,52 @@ public sealed class WalkablePositionChainTests
         Assert.HasCount(2, result.Value.Chains);
     }
 
-    private static void RunEquivalence(FullSpineFixture memory, float x, float y, float z)
+    [TestMethod]
+    public void Walk_PublishedTableChains_CachePath_MatchesResolver()
     {
-        OperationResult<OffsetTable?> result = LoadDraft();
+        // The PUBLISHED table (memory-offsets/11.19.0.10.json) carries the
+        // walkable chains since OD-RECOVERY-084 — the walker must read the
+        // published table directly, not just the canonical draft. Same
+        // full-spine memory, same resolver comparison.
+        var memory = FullSpineFixture.CreateCached(EntityId, 12.5f, -3.25f, 44.75f);
+        RunEquivalenceOnPublished("playerPositionX", memory, 12.5f, -3.25f, 44.75f);
+    }
+
+    [TestMethod]
+    public void Walk_PublishedTableChains_TreePath_MatchesResolver()
+    {
+        var memory = FullSpineFixture.CreateTree(
+            EntityId,
+            primaryRootKey: EntityId,
+            tertiaryKey: null,
+            secondaryKey: null,
+            x: 1f,
+            y: 2f,
+            z: 3f);
+        RunEquivalenceOnPublished("playerPositionX", memory, 1f, 2f, 3f);
+    }
+
+    [TestMethod]
+    public void Walk_PublishedTableChains_AlternativeTertiaryRoot_MatchesResolver()
+    {
+        var memory = FullSpineFixture.CreateTree(
+            EntityId,
+            primaryRootKey: null,
+            tertiaryKey: EntityId,
+            secondaryKey: null,
+            x: 4f,
+            y: 5f,
+            z: 6f);
+        RunEquivalenceOnPublished("playerPositionX", memory, 4f, 5f, 6f);
+    }
+
+    [TestMethod]
+    public void Walk_PublishedTableChains_YAndZ_ReadTheSameRecord()
+    {
+        // Y/Z share the walkable chain with recordOffset 0x14/0x18. Walking
+        // each published chain must land on the exact field addresses.
+        var memory = FullSpineFixture.CreateCached(EntityId, 12.5f, -3.25f, 44.75f);
+        OperationResult<OffsetTable?> result = LoadPublished();
         Assert.IsTrue(result.IsSuccess, result.Error?.Message);
         Assert.IsNotNull(result.Value?.Chains);
 
@@ -148,8 +191,87 @@ public sealed class WalkablePositionChainTests
                 EntityId,
                 Layout,
                 memory.Read);
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, resolver.Status);
+        Assert.IsNotNull(resolver.RecordAddress);
+        nint record = (nint)resolver.RecordAddress.Value;
+
+        foreach ((string field, int recordOffset) in new[]
+                 {
+                     ("playerPositionX", (int)Layout.PositionRecordOffset),
+                     ("playerPositionY", (int)Layout.PositionRecordOffset + 4),
+                     ("playerPositionZ", (int)Layout.PositionRecordOffset + 8),
+                 })
+        {
+            OffsetChainWalkResult walker = OffsetChainWalker.Walk(
+                result.Value.Chains[field],
+                ModuleBase,
+                valueLength: 4,
+                memory.Read,
+                entityId: EntityId);
+            Assert.AreEqual(OffsetChainWalkStatus.Resolved, walker.Status, field);
+            Assert.AreEqual(record + recordOffset, (nint)walker.Address, field);
+            Assert.IsNotNull(walker.Bytes);
+        }
+    }
+
+    [TestMethod]
+    public void Walk_PublishedTableChains_EntityNotFound_WhenAllTreesEmpty()
+    {
+        OperationResult<OffsetTable?> result = LoadPublished();
+        Assert.IsTrue(result.IsSuccess, result.Error?.Message);
+        Assert.IsNotNull(result.Value?.Chains);
+
+        var memory = FullSpineFixture.CreateEmptyMaps();
+
+        Type10EntityPositionAddressResult resolver =
+            Type10EntityPositionResolver.ResolveRecordAddress(
+                ModuleBase,
+                EntityId,
+                Layout,
+                memory.Read);
         OffsetChainWalkResult walker = OffsetChainWalker.Walk(
             result.Value.Chains["playerPositionX"],
+            ModuleBase,
+            valueLength: 12,
+            memory.Read,
+            entityId: EntityId);
+
+        Assert.AreEqual(Type10EntityPositionStatus.EntityNotFound, resolver.Status);
+        Assert.AreEqual(OffsetChainWalkStatus.EntityNotFound, walker.Status);
+        Assert.IsNull(resolver.RecordAddress);
+    }
+
+    private static void RunEquivalence(FullSpineFixture memory, float x, float y, float z)
+    {
+        OperationResult<OffsetTable?> result = LoadDraft();
+        Assert.IsTrue(result.IsSuccess, result.Error?.Message);
+        Assert.IsNotNull(result.Value?.Chains);
+        RunEquivalence(result.Value, memory, x, y, z);
+    }
+
+    private static void RunEquivalenceOnPublished(
+        string field, FullSpineFixture memory, float x, float y, float z)
+    {
+        OperationResult<OffsetTable?> result = LoadPublished();
+        Assert.IsTrue(result.IsSuccess, result.Error?.Message);
+        Assert.IsNotNull(result.Value?.Chains);
+        Assert.AreEqual("playerPositionX", field);
+        RunEquivalence(result.Value, memory, x, y, z);
+    }
+
+    private static void RunEquivalence(
+        OffsetTable table, FullSpineFixture memory, float x, float y, float z)
+    {
+        Assert.IsNotNull(table.Chains);
+
+        Type10EntityPositionAddressResult resolver =
+            Type10EntityPositionResolver.ResolveRecordAddress(
+                ModuleBase,
+                EntityId,
+                Layout,
+                memory.Read);
+        OffsetChainWalkResult walker = OffsetChainWalker.Walk(
+            table.Chains["playerPositionX"],
             ModuleBase,
             valueLength: 12,
             memory.Read,
@@ -263,6 +385,18 @@ public sealed class WalkablePositionChainTests
     {
         string draftDirectory = Path.Combine(RepoRoot(), "docs", "operations");
         return new OffsetTableReader(draftDirectory).Load(DraftVersion, DraftHash);
+    }
+
+    /// <summary>
+    /// Loads the REAL published table (<c>memory-offsets/11.19.0.10.json</c>)
+    /// with its true executable hash — the exact artifact the operator table
+    /// ships. Since OD-RECOVERY-084 its chains are the walkable form, so this
+    /// proves the walker reads the published table directly.
+    /// </summary>
+    private static OperationResult<OffsetTable?> LoadPublished()
+    {
+        string offsetsDirectory = Path.Combine(RepoRoot(), "memory-offsets");
+        return new OffsetTableReader(offsetsDirectory).Load(Version, DraftHash);
     }
 
     private static string RepoRoot()
