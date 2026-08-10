@@ -113,17 +113,21 @@ Full trace: `docs/operations/legacy-observation-surface.md`.
 
 Since OD-RECOVERY-083 (2026-08-10), version files may carry a top-level
 `chains` object mapping a field name to an ordered array of hops, each
-`{ "kind": "rootRva" | "memberOffset" | "recordOffset", "value": <non-negative int>, "note": <text> }`.
-The chain is the module-relative dereference path the resolver walks to the
-field (verified against `Type10EntityPositionResolver.TryResolveOnce`/
-`FindEntity`). The runtime parses `chains` into the model
-(`OffsetTableReader`, additive — the legacy observation path is unchanged)
-and `OffsetChainWalker` walks STRUCTURAL chains (root RVA + member-pointer
-dereferences + record offset) fail-closed. The published position chain's
-final member hop (`AvatarHelperCurrentIndexOffset 0x1C8`) is an integer index
-read multiplied by the ring stride (0x38) — not a pointer dereference — so
-`OffsetChainWalker` cannot yet walk it end-to-end; the resolver remains the
-authoritative position reader.
+`{ "kind": "rootRva" | "memberOffset" | "recordOffset" | "ringIndex", "value": <non-negative int>, "note": <text> }`.
+`ringIndex` hops additionally require `indexOffset` (Int32 current-index
+field offset) and `stride` (ring entry stride). The chain is the
+module-relative dereference path the resolver walks to the field (verified
+against `Type10EntityPositionResolver.TryResolveOnce`/`FindEntity`). The
+runtime parses `chains` into the model (`OffsetTableReader`, additive — the
+legacy observation path is unchanged) and `OffsetChainWalker` walks
+STRUCTURAL chains (root RVA + member-pointer dereferences + optional
+`ringIndex` + record offset) fail-closed. The published 11.19.0.10 position
+chains are NOT mechanically walkable end-to-end: their cached fast path and
+three alternative entity-tree map roots are BRANCHES the resolver performs in
+`FindEntity` (no hop kind expresses them), and the ring-record step needs the
+`ringIndex` hop (the published chains still spell it as `memberOffset 0x1C8`
++ record, so they are documentation + evidence, not a runtime read plan). The
+resolver remains the authoritative position reader.
 
 Chained fields keep their `offsets` value `0` **by design**: the runtime
 observation path computes `moduleBase + field.Offset` (no chain concept) and

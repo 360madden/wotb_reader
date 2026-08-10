@@ -48,9 +48,31 @@ gated — the table stays frozen).
 - Legacy contract pinned: `ChainedFields_AreExcludedFromObservationReads`
   still green (nothing in the legacy read path changed).
 
+## Follow-up (same day): stride-aware ring hop + honest scope correction
+
+Added `OffsetChainHopKind.RingIndex` (requires `indexOffset` Int32 field +
+`stride`): the walker now tracks the last dereferenced object and selects a
+ring entry via `ring = *(object + value)`, `index = *(int32)(object +
+indexOffset)`, `address = ring + index*stride` — fail-closed with a new
+`InvalidRingIndex` status (negative index). Validator + `schema.json` +
+pack doc + format README all accept `ringIndex` (shape rule enforced:
+`rootRva -> memberOffset|ringIndex* -> recordOffset`). 5 new walker tests +
+1 reader test; validator proven across valid/missing-stride/bad-shape cases;
+real table unchanged (still 16-hop memberOffset chains) and still passes.
+
+**Scope correction:** re-deriving the published chains against the resolver
+showed the position chains are blocked from mechanical walking by BOTH the
+ring step (now expressible as `ringIndex`) AND the cached fast path + three
+alternative entity-tree map roots (`FindEntity` branching — no hop kind
+expresses it). Docs now state both blockers; the resolver remains the
+authoritative position reader.
+
 ## Next steps (gated)
 
+- A branch/alternative hop kind (or a resolver-driven table walk) so the
+  published position chain becomes mechanically walkable — schema addition,
+  operator gated.
 - Live chain dereference of the published position chain (needs operator
-  approval + a stride-aware hop or the resolver's own walker).
+  approval).
 - Entity-record discovery (HP / entity-id member offsets) reusing the spine +
   this walker.

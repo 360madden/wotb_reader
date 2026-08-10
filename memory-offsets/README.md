@@ -45,15 +45,21 @@ what runtime promotion consumes.
 
 Pointer-chain fields (e.g. the position family, published 2026-08-10 via
 OD-RECOVERY-083) are recorded in the additive `chains` object: field →
-array of `{ "kind": "rootRva" | "memberOffset" | "recordOffset", "value":
-<non-negative int>, "note": <text> }` hops — the module-relative
-dereference path the resolver walks. Chained fields keep their `offsets`
-value `0` **by design**: the runtime observation path computes
-`moduleBase + offset` (no chain concept) and the ring record is
-battle-scoped heap, so a non-zero value would corrupt that path; the
-resolver reads chained fields via its own hash-bound layout. The chain is
-documentation + evidence, never a runtime read plan. `schemaVersion` stays
-1 — the runtime reader ignores the additive keys.
+array of `{ "kind": "rootRva" | "memberOffset" | "recordOffset" | "ringIndex",
+"value": <non-negative int>, "note": <text> }` hops — the module-relative
+dereference path the resolver walks. `ringIndex` hops additionally require
+`indexOffset` (Int32 current-index field offset) and `stride` (ring entry
+stride); `OffsetChainWalker` walks structural chains (root + member-pointer
+derefs + optional `ringIndex` + record) fail-closed, and `OffsetTableReader`
+parses `chains` into the model. Chained fields keep their `offsets` value
+`0` **by design**: the runtime observation path computes `moduleBase +
+offset` (no chain concept) and the ring record is battle-scoped heap, so a
+non-zero value would corrupt that path; the resolver reads chained fields
+via its own hash-bound layout. The published 11.19.0.10 position chains
+remain documentation + evidence (their cached fast path and alternative
+tree roots are branches, not sequential derefs), not a runtime read plan.
+`schemaVersion` stays 1 — the additive keys are ignored by the legacy
+observation path.
 
 ## Confidence levels
 

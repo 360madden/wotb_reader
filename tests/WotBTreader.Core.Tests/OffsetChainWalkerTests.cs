@@ -182,6 +182,101 @@ public sealed class OffsetChainWalkerTests
     }
 
     [TestMethod]
+    public void Walk_RingIndex_SelectsRingEntry()
+    {
+        var memory = new MemoryFixture();
+        memory.WriteUInt32(ModuleBase + RootRva, memory.Object1);
+        memory.WriteUInt32(memory.Object1 + 0x08, memory.Ring);
+        memory.WriteInt32(memory.Object1 + 0x1C8, 2);
+        memory.WritePosition(memory.Ring + (2 * 0x38) + 0x10, 42.5f, 0f, 0f);
+
+        OffsetChainWalkResult result = OffsetChainWalker.Walk(
+            RingChain(),
+            ModuleBase,
+            valueLength: 4,
+            memory.Read);
+
+        Assert.AreEqual(OffsetChainWalkStatus.Resolved, result.Status);
+        Assert.AreEqual(memory.Ring + (2 * 0x38) + 0x10, result.Address);
+        Assert.AreEqual(42.5f, BinaryPrimitives.ReadSingleLittleEndian(result.Bytes!));
+    }
+
+    [TestMethod]
+    public void Walk_RingIndex_MissingStride_IsInvalidChain()
+    {
+        var memory = new MemoryFixture();
+        memory.WriteUInt32(ModuleBase + RootRva, memory.Object1);
+
+        OffsetChainWalkResult result = OffsetChainWalker.Walk(
+            [
+                new OffsetChainHop(OffsetChainHopKind.RootRva, (int)RootRva, null),
+                new OffsetChainHop(OffsetChainHopKind.MemberOffset, 0x08, null),
+                new OffsetChainHop(OffsetChainHopKind.RingIndex, 0x08, null, IndexOffset: 0x1C8),
+                new OffsetChainHop(OffsetChainHopKind.RecordOffset, 0x10, null),
+            ],
+            ModuleBase,
+            valueLength: 4,
+            memory.Read);
+
+        Assert.AreEqual(OffsetChainWalkStatus.InvalidChain, result.Status);
+        Assert.AreEqual("hop-2", result.FailureStage);
+    }
+
+    [TestMethod]
+    public void Walk_RingIndex_NegativeIndex_ReturnsInvalidRingIndex()
+    {
+        var memory = new MemoryFixture();
+        memory.WriteUInt32(ModuleBase + RootRva, memory.Object1);
+        memory.WriteUInt32(memory.Object1 + 0x08, memory.Ring);
+        memory.WriteInt32(memory.Object1 + 0x1C8, -1);
+
+        OffsetChainWalkResult result = OffsetChainWalker.Walk(
+            RingChain(),
+            ModuleBase,
+            valueLength: 4,
+            memory.Read);
+
+        Assert.AreEqual(OffsetChainWalkStatus.InvalidRingIndex, result.Status);
+        Assert.AreEqual("hop-2", result.FailureStage);
+    }
+
+    [TestMethod]
+    public void Walk_RingIndex_NullRing_ReturnsNullPointer()
+    {
+        var memory = new MemoryFixture();
+        memory.WriteUInt32(ModuleBase + RootRva, memory.Object1);
+        memory.WriteUInt32(memory.Object1 + 0x08, 0);
+        memory.WriteInt32(memory.Object1 + 0x1C8, 2);
+
+        OffsetChainWalkResult result = OffsetChainWalker.Walk(
+            RingChain(),
+            ModuleBase,
+            valueLength: 4,
+            memory.Read);
+
+        Assert.AreEqual(OffsetChainWalkStatus.NullPointer, result.Status);
+        Assert.AreEqual("hop-2", result.FailureStage);
+    }
+
+    [TestMethod]
+    public void Walk_RingIndex_IndexReadFailure_ReturnsReadFailed()
+    {
+        var memory = new MemoryFixture();
+        memory.WriteUInt32(ModuleBase + RootRva, memory.Object1);
+        memory.WriteUInt32(memory.Object1 + 0x08, memory.Ring);
+        // Object1 + 0x1C8 never written -> index read fails.
+
+        OffsetChainWalkResult result = OffsetChainWalker.Walk(
+            RingChain(),
+            ModuleBase,
+            valueLength: 4,
+            memory.Read);
+
+        Assert.AreEqual(OffsetChainWalkStatus.ReadFailed, result.Status);
+        Assert.AreEqual("hop-2", result.FailureStage);
+    }
+
+    [TestMethod]
     [DataRow(0)]
     [DataRow(9)]
     public void Walk_OutOfRangeValueLength_IsInvalid(int valueLength)
@@ -203,6 +298,19 @@ public sealed class OffsetChainWalkerTests
             new OffsetChainHop(OffsetChainHopKind.RecordOffset, 0x30, null),
         ];
 
+    private static IReadOnlyList<OffsetChainHop> RingChain() =>
+        [
+            new OffsetChainHop(OffsetChainHopKind.RootRva, (int)RootRva, null),
+            new OffsetChainHop(OffsetChainHopKind.MemberOffset, 0x08, null),
+            new OffsetChainHop(
+                OffsetChainHopKind.RingIndex,
+                0x08,
+                null,
+                IndexOffset: 0x1C8,
+                Stride: 0x38),
+            new OffsetChainHop(OffsetChainHopKind.RecordOffset, 0x10, null),
+        ];
+
     private sealed class MemoryFixture
     {
         private readonly Dictionary<uint, byte> _bytes = [];
@@ -210,6 +318,7 @@ public sealed class OffsetChainWalkerTests
         public uint Object1 { get; } = 0x20000000;
         public uint Object2 { get; } = 0x21000000;
         public uint Object3 { get; } = 0x22000000;
+        public uint Ring { get; } = 0x23000000;
 
         public bool Read(uint address, Span<byte> destination)
         {
@@ -227,6 +336,9 @@ public sealed class OffsetChainWalkerTests
         }
 
         public void WriteUInt32(uint address, uint value) =>
+            Write(address, BitConverter.GetBytes(value));
+
+        public void WriteInt32(uint address, int value) =>
             Write(address, BitConverter.GetBytes(value));
 
         public void WritePosition(uint address, float x, float y, float z)

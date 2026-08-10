@@ -67,7 +67,7 @@
     },
     "chains": {
       "type": "object",
-      "description": "Module-relative pointer chain for chained fields (position family). offsets.<field> stays 0 for chained fields by design: the runtime observation path computes moduleBase + offset, which cannot represent a chain, and the ring record itself is battle-scoped heap. The resolver reads chained fields via its own hash-bound layout.",
+      "description": "Module-relative pointer chain for chained fields (position family). offsets.<field> stays 0 for chained fields by design: the runtime observation path computes moduleBase + offset, which cannot represent a chain, and the ring record itself is battle-scoped heap. The resolver reads chained fields via its own hash-bound layout. Hops: rootRva first, recordOffset last, memberOffset/ringIndex in between. ringIndex requires indexOffset (Int32 current-index field offset) and stride (ring entry stride). The 11.19.0.10 position chains document the resolver's traversal but are NOT mechanically walkable end-to-end (cached fast path + alternative tree roots are branches, not sequential derefs; the ring step needs ringIndex).",
       "propertyNames": {
         "enum": [
           "replayTime", "playerHP", "playerPositionX", "playerPositionY",
@@ -83,12 +83,24 @@
           "properties": {
             "kind": {
               "type": "string",
-              "enum": ["rootRva", "memberOffset", "recordOffset"]
+              "enum": ["rootRva", "memberOffset", "recordOffset", "ringIndex"]
             },
             "value": {
               "type": "integer",
               "minimum": 0,
               "maximum": 2147483647
+            },
+            "indexOffset": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647,
+              "description": "Required for ringIndex: Int32 current-index field offset in the object holding the ring pointer."
+            },
+            "stride": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647,
+              "description": "Required for ringIndex: ring entry stride."
             },
             "note": { "type": ["string", "null"] }
           },

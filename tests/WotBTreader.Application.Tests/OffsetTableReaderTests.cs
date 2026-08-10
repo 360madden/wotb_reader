@@ -136,6 +136,14 @@ public sealed class OffsetTableReaderTests
         Assert.AreEqual(12, hops[1].Value);
         Assert.AreEqual(OffsetChainHopKind.RecordOffset, hops[2].Kind);
         Assert.AreEqual(16, hops[2].Value);
+
+        Assert.IsTrue(
+            result.Value.Chains!.TryGetValue("playerPositionY", out IReadOnlyList<OffsetChainHop>? yHops));
+        Assert.HasCount(4, yHops!);
+        Assert.AreEqual(OffsetChainHopKind.RingIndex, yHops[2].Kind);
+        Assert.AreEqual(456, yHops[2].IndexOffset);
+        Assert.AreEqual(56, yHops[2].Stride);
+        Assert.AreEqual(OffsetChainHopKind.RecordOffset, yHops[3].Kind);
     }
 
     [TestMethod]
@@ -239,6 +247,12 @@ public sealed class OffsetTableReaderTests
         + "    { \"kind\": \"rootRva\", \"value\": 67722376, \"note\": \"GameCoreRootRva 0x04095C88\" },\n"
         + "    { \"kind\": \"memberOffset\", \"value\": 12, \"note\": \"GameCoreAppControllerOffset\" },\n"
         + "    { \"kind\": \"recordOffset\", \"value\": 16, \"note\": \"X\" }\n"
+        + "  ],\n"
+        + "  \"playerPositionY\": [\n"
+        + "    { \"kind\": \"rootRva\", \"value\": 67722376, \"note\": \"GameCoreRootRva 0x04095C88\" },\n"
+        + "    { \"kind\": \"memberOffset\", \"value\": 8, \"note\": \"AvatarFilterHelperOffset 0x08\" },\n"
+        + "    { \"kind\": \"ringIndex\", \"value\": 8, \"indexOffset\": 456, \"stride\": 56, \"note\": \"AvatarHelperRingOffset 0x08 (stride 0x38)\" },\n"
+        + "    { \"kind\": \"recordOffset\", \"value\": 20, \"note\": \"Y\" }\n"
         + "  ]\n"
         + "},\n";
 

@@ -20,11 +20,14 @@ public enum OffsetChainWalkStatus
     /// <summary>The module base was zero, so no root address could be formed.</summary>
     InvalidModuleBase,
 
-    /// <summary>A required read failed (root, an intermediate pointer, or the value).</summary>
+    /// <summary>A required read failed (root, an intermediate pointer, the ring index, or the value).</summary>
     ReadFailed,
 
     /// <summary>An intermediate pointer resolved to null.</summary>
     NullPointer,
+
+    /// <summary>A ring index read was negative.</summary>
+    InvalidRingIndex,
 }
 
 /// <summary>
@@ -41,18 +44,21 @@ public sealed record OffsetChainWalkResult(
 /// Walks a published pointer chain from a module-rooted RVA through member
 /// offsets to a final record offset. The chain shape is validated fail-closed:
 /// exactly one <see cref="OffsetChainHopKind.RootRva"/> first, zero or more
-/// <see cref="OffsetChainHopKind.MemberOffset"/> dereferences, and exactly one
-/// trailing <see cref="OffsetChainHopKind.RecordOffset"/>.
+/// intermediate <see cref="OffsetChainHopKind.MemberOffset"/> /
+/// <see cref="OffsetChainHopKind.RingIndex"/> hops, and exactly one trailing
+/// <see cref="OffsetChainHopKind.RecordOffset"/>.
 /// </summary>
 /// <remarks>
 /// This is a STRUCTURAL walker: every <see cref="OffsetChainHopKind.MemberOffset"/>
-/// hop dereferences a pointer. It therefore cannot yet walk the published
-/// 11.19.0.10 position chains end-to-end — their final member hop
-/// (<c>AvatarHelperCurrentIndexOffset 0x1C8</c>) is an integer index read
-/// multiplied by the ring stride (0x38), which no current hop kind expresses.
-/// The <see cref="Type10EntityPositionResolver"/> remains the authoritative
-/// reader for that chain. This walker is the foundation for plain pointer
-/// chains (entity-record fields) and for a future stride-aware ring hop.
+/// hop dereferences a pointer, and <see cref="OffsetChainHopKind.RingIndex"/>
+/// selects a ring entry from an index Int32 × stride. It therefore cannot yet
+/// walk the published 11.19.0.10 position chains end-to-end: those chains
+/// contain a cached fast path and three ALTERNATIVE entity-tree map roots
+/// (branching the resolver performs in <c>FindEntity</c>, which no hop kind
+/// expresses), and the ring-record step needs a stride-aware hop. The
+/// <see cref="Type10EntityPositionResolver"/> remains the authoritative reader
+/// for that chain. This walker is the foundation for linear pointer chains
+/// (entity-record fields) and for ring/array records.
 /// </remarks>
 public static class OffsetChainWalker
 {
@@ -87,27 +93,105 @@ public static class OffsetChainWalker
         }
 
         uint address = moduleBase + (uint)chain[0].Value;
-        for (int index = 1; index < chain.Count - 1; index++)
+        uint currentObject = 0;
+        bool hasObject = false;
+
+        for (int hopIndex = 1; hopIndex < chain.Count - 1; hopIndex++)
         {
-            if (!TryReadPointer(memory, address, out uint pointer))
+            OffsetChainHop hop = chain[hopIndex];
+            switch (hop.Kind)
             {
-                return new OffsetChainWalkResult(
-                    OffsetChainWalkStatus.ReadFailed,
-                    address,
-                    null,
-                    $"hop-{index}");
-            }
+                case OffsetChainHopKind.MemberOffset:
+                    if (!TryReadPointer(memory, address, out uint pointer))
+                    {
+                        return new OffsetChainWalkResult(
+                            OffsetChainWalkStatus.ReadFailed,
+                            address,
+                            null,
+                            $"hop-{hopIndex}");
+                    }
 
-            if (pointer == 0)
-            {
-                return new OffsetChainWalkResult(
-                    OffsetChainWalkStatus.NullPointer,
-                    address,
-                    null,
-                    $"hop-{index}");
-            }
+                    if (pointer == 0)
+                    {
+                        return new OffsetChainWalkResult(
+                            OffsetChainWalkStatus.NullPointer,
+                            address,
+                            null,
+                            $"hop-{hopIndex}");
+                    }
 
-            address = pointer + (uint)chain[index].Value;
+                    currentObject = pointer;
+                    hasObject = true;
+                    address = pointer + (uint)hop.Value;
+                    break;
+
+                case OffsetChainHopKind.RingIndex:
+                    if (!hasObject
+                        || hop.IndexOffset is not int indexOffset
+                        || hop.Stride is not int stride
+                        || indexOffset < 0
+                        || stride < 0)
+                    {
+                        return new OffsetChainWalkResult(
+                            OffsetChainWalkStatus.InvalidChain,
+                            address,
+                            null,
+                            $"hop-{hopIndex}");
+                    }
+
+                    if (!TryReadPointer(
+                            memory,
+                            currentObject + (uint)hop.Value,
+                            out uint ring))
+                    {
+                        return new OffsetChainWalkResult(
+                            OffsetChainWalkStatus.ReadFailed,
+                            currentObject + (uint)hop.Value,
+                            null,
+                            $"hop-{hopIndex}");
+                    }
+
+                    if (ring == 0)
+                    {
+                        return new OffsetChainWalkResult(
+                            OffsetChainWalkStatus.NullPointer,
+                            currentObject + (uint)hop.Value,
+                            null,
+                            $"hop-{hopIndex}");
+                    }
+
+                    if (!TryReadInt32(
+                            memory,
+                            currentObject + (uint)indexOffset,
+                            out int ringIndex))
+                    {
+                        return new OffsetChainWalkResult(
+                            OffsetChainWalkStatus.ReadFailed,
+                            currentObject + (uint)indexOffset,
+                            null,
+                            $"hop-{hopIndex}");
+                    }
+
+                    if (ringIndex < 0)
+                    {
+                        return new OffsetChainWalkResult(
+                            OffsetChainWalkStatus.InvalidRingIndex,
+                            currentObject + (uint)indexOffset,
+                            null,
+                            $"hop-{hopIndex}");
+                    }
+
+                    address = ring + ((uint)ringIndex * (uint)stride);
+                    currentObject = ring;
+                    break;
+
+                default:
+                    return new OffsetChainWalkResult(
+                        OffsetChainWalkStatus.InvalidChain,
+                        address,
+                        null,
+                        $"hop-{hopIndex}");
+            }
         }
 
         address += (uint)chain[^1].Value;
@@ -154,7 +238,8 @@ public static class OffsetChainWalker
 
         for (int index = 1; index < chain.Count - 1; index++)
         {
-            if (chain[index].Kind != OffsetChainHopKind.MemberOffset)
+            if (chain[index].Kind is not (
+                OffsetChainHopKind.MemberOffset or OffsetChainHopKind.RingIndex))
             {
                 stage = $"hop-{index}";
                 return false;
@@ -192,6 +277,22 @@ public static class OffsetChainWalker
         }
 
         pointer = BinaryPrimitives.ReadUInt32LittleEndian(bytes);
+        return true;
+    }
+
+    private static bool TryReadInt32(
+        OffsetChainMemoryReader memory,
+        uint address,
+        out int value)
+    {
+        Span<byte> bytes = stackalloc byte[4];
+        if (!memory(address, bytes))
+        {
+            value = 0;
+            return false;
+        }
+
+        value = BinaryPrimitives.ReadInt32LittleEndian(bytes);
         return true;
     }
 }

@@ -360,7 +360,7 @@ def validate_offset_file(log_path: Path, path: Path, schema: dict) -> list[str]:
         if not isinstance(chains, dict) or not chains:
             issues.append(f"{rel}: 'chains' must be a non-empty object")
         else:
-            chain_kinds = {"rootRva", "memberOffset", "recordOffset"}
+            chain_kinds = {"rootRva", "memberOffset", "recordOffset", "ringIndex"}
             for field_name, hops in chains.items():
                 if field_name not in FIELD_NAMES:
                     issues.append(f"{rel}: chains key '{field_name}' is not a known field")
@@ -388,6 +388,13 @@ def validate_offset_file(log_path: Path, path: Path, schema: dict) -> list[str]:
                         issues.append(
                             f"{rel}: chains['{field_name}'] hop value 0x{value:X} "
                             f"exceeds 2GB — likely wrong")
+                    if hop.get("kind") == "ringIndex":
+                        for key in ("indexOffset", "stride"):
+                            extra = hop.get(key)
+                            if not isinstance(extra, int) or isinstance(extra, bool) or extra < 0:
+                                issues.append(
+                                    f"{rel}: chains['{field_name}'] ringIndex hop must "
+                                    f"have a non-negative integer '{key}'")
                     # Note cross-check: the FIRST hex literal in the note is the
                     # canonical form of this hop's value (later hexes are
                     # vtable RVAs / strides). Catches hex<->decimal transcription
@@ -401,6 +408,17 @@ def validate_offset_file(log_path: Path, path: Path, schema: dict) -> list[str]:
                                 f"{value} disagrees with its note hex "
                                 f"0x{m.group(1)} (expected "
                                 f"{int(m.group(1), 16)})")
+                # Shape: exactly one rootRva first, exactly one recordOffset
+                # last, and only memberOffset/ringIndex in between.
+                first = hops[0].get("kind")
+                last = hops[-1].get("kind")
+                middle_ok = all(
+                    h.get("kind") in ("memberOffset", "ringIndex")
+                    for h in hops[1:-1])
+                if first != "rootRva" or last != "recordOffset" or not middle_ok:
+                    issues.append(
+                        f"{rel}: chains['{field_name}'] hop shape must be "
+                        f"rootRva -> memberOffset|ringIndex* -> recordOffset")
         write_log(log_path, f"  {path.name}: chains validated ({len(chains)} field(s))")
 
     return issues

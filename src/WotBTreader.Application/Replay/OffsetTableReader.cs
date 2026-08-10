@@ -239,20 +239,27 @@ internal sealed class OffsetTableReader : IOffsetTableReader
             {
                 OffsetChainHopJson hop = hops[index];
                 if (!Enum.TryParse(hop.Kind, ignoreCase: true, out OffsetChainHopKind kind)
-                    || hop.Value < 0)
+                    || hop.Value < 0
+                    || (kind == OffsetChainHopKind.RingIndex
+                        && (hop.IndexOffset is not int indexOffset
+                            || indexOffset < 0
+                            || hop.Stride is not int stride
+                            || stride < 0)))
                 {
                     valid = false;
                     break;
                 }
 
-                built.Add(new OffsetChainHop(kind, hop.Value, hop.Note));
+                built.Add(new OffsetChainHop(kind, hop.Value, hop.Note, hop.IndexOffset, hop.Stride));
             }
 
             if (!valid
                 || built.Count == 0
                 || built[0].Kind != OffsetChainHopKind.RootRva
                 || built[^1].Kind != OffsetChainHopKind.RecordOffset
-                || built.Skip(1).Take(built.Count - 2).Any(hop => hop.Kind != OffsetChainHopKind.MemberOffset))
+                || built.Skip(1).Take(built.Count - 2).Any(
+                    hop => hop.Kind is not (
+                        OffsetChainHopKind.MemberOffset or OffsetChainHopKind.RingIndex)))
             {
                 continue;
             }
@@ -346,6 +353,8 @@ internal sealed class OffsetTableReader : IOffsetTableReader
         public string? Kind { get; set; }
         public int Value { get; set; }
         public string? Note { get; set; }
+        public int? IndexOffset { get; set; }
+        public int? Stride { get; set; }
     }
 
     private sealed class OffsetFieldValidationJson

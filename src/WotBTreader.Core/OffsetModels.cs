@@ -83,13 +83,25 @@ public enum OffsetChainHopKind
 
     /// <summary>Final hop: add a fixed record offset to the final pointer (no dereference).</summary>
     RecordOffset,
+
+    /// <summary>
+    /// Ring/array-record hop: dereference the ring pointer stored at
+    /// (object + <see cref="OffsetChainHop.Value"/>), read the current index
+    /// Int32 at (object + <see cref="OffsetChainHop.IndexOffset"/>), and move
+    /// to <c>ring + index * <see cref="OffsetChainHop.Stride"/></c>.
+    /// Requires <see cref="OffsetChainHop.IndexOffset"/> and
+    /// <see cref="OffsetChainHop.Stride"/>.
+    /// </summary>
+    RingIndex,
 }
 
 /// <summary>One hop in a published pointer chain (see <c>memory-offsets/schema.json</c>).</summary>
 public sealed record OffsetChainHop(
     OffsetChainHopKind Kind,
     int Value,
-    string? Note);
+    string? Note,
+    int? IndexOffset = null,
+    int? Stride = null);
 
 /// <summary>
 /// Immutable offset table for one specific game version and executable hash.
