@@ -113,7 +113,9 @@ reader needs ONE bounded, gated product addition:
    same-decoded-clock anchor, ≤ 2 s bound), and returns ONLY the bytes +
    replay time — never an absolute address. Same-decoded-clock attestation
    reuses the existing coordinator path.
-2. **Session script** — gate → resolve the target entity → bounded series of
+2. **Session script** — gate → **qualify the victim from the decoded replay**
+   (see below — do NOT default to the player's own entity) → resolve the
+   target entity → bounded series of
    region dumps at replay-clock-labeled times (concentrated on the segments
    where damage events exist — event-bound windows, not whole-battle
    watching) → `RecordChangeBucketer` → `HpDamageCorrelator` (Lenient mode
@@ -127,6 +129,51 @@ reader needs ONE bounded, gated product addition:
    keep `publicProcessAddressesOrRawBytes: false` (raw region bytes are
    session evidence, never published), and publish only the offset + chain
    form through the operator gate if the candidate repeats.
+
+#### Victim selection — verified against decoded replay data (2026-08-10)
+
+The session must track an entity that **actually takes damage**. Verified
+from `.data/treader.db` (11.19.0 decode runs): **the player's own entity
+(`mrkool1138`) took ZERO damage in both 11.19.0 replays** (Oasis Palms 0
+events, Dead Rail 0 events — the viewpoint tank survives unhit), so a
+session tracking the player would hand the correlator an all-flat series
+and zero windows to match. Qualify the victim before the session with one
+command:
+
+```
+python scripts/python/replay-delta-extractor.py --session <id> --top-victims 8 --window 10
+python scripts/python/replay-delta-extractor.py --session <id> --hp-delta --victim-entity <entity_id> --window 10
+```
+
+Require **≥ 2 damage windows** (the verdict contract needs ≥ 2 matched
+windows); otherwise pick the next victim by hit count. The `--hp-delta`
+output's hit-window list is the event-bound dump schedule. (Numbers
+cross-checked against direct SQL on 2026-08-10.)
+
+**Oasis Palms** (session `019fdff7-8dcf-7426-8547-9fb8cc3eb07b`, 11.19.0)
+— victim **3760578** is the strongest candidate: 9 events / 4,028 damage,
+all inside t = 900–1680s of the ~2798s replay, in ten-second windows
+900–910, 1000–1010, 1070–1080, 1360–1370, 1430–1440, 1500–1510,
+1560–1570, 1570–1580, 1670–1680s. The dump series concentrates there,
+plus 2–3 flat-window control dumps (e.g. ~500s and ~2500s) to confirm the
+field is otherwise unchanged. Alternative victims in the same replay:
+3760571 (7 hits), 3760574/3760575 (6 hits each; 3760575's hits are late,
+2454–2740s).
+
+The walker resolves **any** entity id through `entityLookup` (the
+published chain takes the target id per walk and now exposes
+`ResolvedEntityAddress`), so a non-viewpoint enemy is resolvable — the
+HP harness only needs the entity base + the `[entity+0x3C]` tank-record
+region (Ghidra-candidate layout, test-local until live verification); it
+does not depend on the live-verified viewpoint ring-record path.
+
+**Simulation reading:** the extractor's `--hp-delta` survival simulation
+at `target=0` measures the flat-window pass rate (3760578: 159/168 =
+0.9464 → survival 0.76 / 0.58 / 0.44 over 5 / 10 / 15 rounds). The honest
+reading: a single-target rolling delta campaign sheds the true HP field in
+any round whose window contains a hit — the per-window
+`HpDamageCorrelator` (window damage sum vs. per-window drop) is the right
+tool, not the rolling pilot; this is what the session flow already uses.
 
 All offline halves are proven and green; the approval ask is exactly the
 scope above (one gated region-read addition + one session), with the

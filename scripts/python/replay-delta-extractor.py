@@ -356,6 +356,55 @@ def hp_damage_series(
     return [buckets.get(i, 0.0) for i in range(max_idx + 1)]
 
 
+def top_victims(
+    con: sqlite3.Connection,
+    session_id: str,
+    top_n: int = 8,
+    window_seconds: float = 10.0,
+) -> list[dict]:
+    """Rank kind-3 damage victims by hit count for HP-diffing victim selection.
+
+    The HP-diffing session must track an entity that actually takes damage
+    (verified 2026-08-10: the player's own entity took ZERO damage in both
+    11.19.0 replays). This returns the candidates ranked by number of damage
+    events, with the replay-time span and the per-window bucket list at
+    `window_seconds` so the operator can pick a victim with >= 2 damage
+    windows and use the hit-window list as the event-bound dump schedule.
+    """
+    rows = con.execute(
+        "SELECT json_extract(values_json,'$.victimEntityId') AS victim, "
+        "COUNT(*) AS hits, SUM(json_extract(values_json,'$.damage')) AS dmg, "
+        "MIN(replay_time_ticks)/1e6 AS first_s, MAX(replay_time_ticks)/1e6 AS last_s "
+        "FROM canonical_events WHERE battle_session_id=? AND kind=3 "
+        "GROUP BY victim ORDER BY hits DESC, dmg DESC LIMIT ?",
+        (session_id, top_n),
+    ).fetchall()
+    bucket_ticks = int(window_seconds * TICKS_PER_SECOND)
+    out = []
+    for r in rows:
+        victim = r["victim"]
+        tick_rows = con.execute(
+            "SELECT replay_time_ticks FROM canonical_events "
+            "WHERE battle_session_id=? AND kind=3 AND "
+            "json_extract(values_json,'$.victimEntityId')=? ORDER BY replay_time_ticks",
+            (session_id, victim),
+        ).fetchall()
+        windows = sorted({int(t["replay_time_ticks"]) // bucket_ticks for t in tick_rows})
+        out.append(
+            {
+                "victim_entity_id": victim,
+                "hits": r["hits"],
+                "total_damage": round(float(r["dmg"]), 2),
+                "first_hit_s": round(float(r["first_s"]), 1),
+                "last_hit_s": round(float(r["last_s"]), 1),
+                "hit_windows": len(windows),
+                "window_seconds": window_seconds,
+                "windows": windows,
+            }
+        )
+    return out
+
+
 def simulate_survival(
     marker: list[float],
     target: float,
@@ -428,6 +477,8 @@ def main(argv: list[str]) -> int:
                         help="build a per-window HP damage-delta series from kind-3 damage events")
     parser.add_argument("--victim-entity", type=int, default=0,
                         help="entity id of the HP victim to track (required with --hp-delta)")
+    parser.add_argument("--top-victims", type=int, default=0,
+                        help="rank the session's damage victims by hit count (N entries) for HP-diffing victim selection; prints and exits")
     parser.add_argument("--json", default="", help="also write JSON to this path")
     args = parser.parse_args(argv)
 
@@ -567,6 +618,30 @@ def main(argv: list[str]) -> int:
                 ">= 0.9 so the true field survives ~15 rounds."
             ),
         }
+
+    if args.top_victims > 0:
+        victims = top_victims(con, session["id"], args.top_victims, args.window)
+        result = {
+            "scan": "replay-delta-extractor",
+            "mode": "top-victims",
+            "session_id": session["id"],
+            "game_version": session["game_version"],
+            "map_name": session["map_name"],
+            "window_seconds": args.window,
+            "note": (
+                "For HP-diffing victim selection, require an entity with >= 2 "
+                "damage windows; the hit-window list is the event-bound dump "
+                "schedule. (The player's own entity took zero damage in both "
+                "11.19.0 replays - do not default to it.)"
+            ),
+            "victims": victims,
+        }
+        if args.json:
+            Path(args.json).write_text(
+                json.dumps(result, indent=2), encoding="utf-8"
+            )
+        print(json.dumps(result, indent=2))
+        return 0
 
     if args.json:
         Path(args.json).write_text(
