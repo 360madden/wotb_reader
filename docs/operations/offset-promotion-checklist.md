@@ -115,9 +115,11 @@ branch is delivered by the unchanged poll itself (`allConsistentDoubleRead`,
 proven 24/24 un-armed in OD-075/076). The live sequence in one new approved
 session:
 
-1. Gate: `invoke-g1-live-poll.ps1 -ReplayPath ... -SkipInterceptorArm`
+1. Gate: `invoke-g1-live-poll.ps1 -ReplayPath ... -WindowWaitSeconds 240
+   -SkipInterceptorArm -PriorResultPaths <OD-075 + OD-076 aggregates>`
    launches and blocks until `OfflineReplayVerified` (same session the poll
-   runs in). Use `-WindowWaitSeconds 240` for cold boots.
+   runs in). The prior positives arm G3's `stableRootLiveRepeatabilityProven`
+   (see the template for the exact two paths).
 2. Resolve: position-page → `recordAddress` (diagnostic evidence only; NOT
    armed in the corrected mode). Privacy stance: internal diagnostic
    surface, localhost only, gated, address not bytes — same evidence class
