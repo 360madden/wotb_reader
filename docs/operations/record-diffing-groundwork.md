@@ -59,20 +59,26 @@ unchanged.
   `ByteChangeWindow`s: one per consecutive snapshot pair whose bytes
   differ, with the exclusive/inclusive time span (From, To]. Snapshots must
   be strictly increasing (fail-closed); unchanged pairs produce no window.
-- `HpDamageCorrelator.Correlate(windows, damageEvents, targetEntityId)` —
-  for each window, sums the target entity's damage events whose replay time
-  falls in (From, To]; a candidate is a 4-byte-aligned int32 whose value
-  drop equals −Σ damage (strict match). Ranked by score (matched / damage
-  windows), then precision (matched / changed damage-windows), then offset.
+- `HpDamageCorrelator.Correlate(windows, damageEvents, targetEntityId,
+  matchMode)` — for each window, sums the target entity's damage events
+  whose replay time falls in (From, To]; a candidate is a 4-byte-aligned
+  int32 whose value drop matches −Σ damage per mode: **Strict** (default)
+  requires the drop to equal the summed damage exactly; **Lenient** accepts
+  any drop ≥ Σ damage (the destroying hit's overkill, multi-source
+  under-sums). Ranked by score (matched / damage windows), then precision
+  (matched / changed damage-windows), then offset.
 
 Proven by synthetic fixtures: HP-at-+0x48 ranks first across three damage
 windows; an unrelated changing counter is never a candidate; sparse
 snapshots sum multiple events in one window; other entities' damage is
-ignored; a damage window with no HP drop yields no candidates. **v1
-limitations (documented, not bugs):** strict equality only — overkill
-(HP drop > Σ damage, e.g. a killing blow) and healing/multi-source splits
-that don't sum exactly do not match; events outside the observed snapshot
-span are observation gaps and do not inflate the denominator.
+ignored; a damage window with no HP drop yields no candidates; Lenient
+matches the overkill killing blow (HP 500 → 0 vs 150 damage) while still
+rejecting a small coincidental drop and subsuming exact matches; a
+realistic event mix (Damage + Destroyed + unrelated damage) still ranks
+HP first. **Documented limitations:** events outside the observed snapshot
+span are observation gaps and do not inflate the denominator; healing (no
+in-battle healing in WoTB) is not modeled; a non-int32 HP representation
+(wrong field size/alignment) is out of scope for this correlator.
 
 ### Remaining: the live trusted reader (approved-session step)
 

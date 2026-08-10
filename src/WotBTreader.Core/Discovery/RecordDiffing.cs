@@ -58,15 +58,37 @@ public static class RecordChangeBucketer
 }
 
 /// <summary>
+/// How a candidate field's value drop is matched against the summed damage of
+/// a window.
+/// </summary>
+public enum DamageMatchMode
+{
+    /// <summary>
+    /// Exact equality: drop == −Σ damage. The purity check — no overkill, no
+    /// under-sum. Misses the destroying hit when the recorded damage exceeds
+    /// the remaining HP.
+    /// </summary>
+    Strict,
+
+    /// <summary>
+    /// Drop &gt;= Σ damage: the field lost at least as much as the window's
+    /// damage. Matches the destroying hit's overkill and multi-source
+    /// under-sums; still rejects upward moves and small coincidental drops.
+    /// </summary>
+    Lenient,
+}
+
+/// <summary>
 /// Correlates the target entity's damage events against the bucketed change
 /// windows: a candidate is a 4-byte-aligned int32 field whose little-endian
-/// value drop in a window equals −(Σ damage for the target entity whose event
-/// times fall in that window). Pure and offline; the memory side (trusted
-/// reader) is a separate approved-session step. v1 semantics are STRICT — the
-/// drop must equal the summed damage exactly (overkill, healing, and
-/// multi-source splits that don't sum exactly are documented limitations, not
-/// matches). Events whose replay time falls outside the observed window span
-/// are observation gaps and do not inflate the denominator.
+/// value drop in a window matches −(Σ damage for the target entity whose event
+/// times fall in that window) per the <see cref="DamageMatchMode"/>. Pure and
+/// offline; the memory side (trusted reader) is a separate approved-session
+/// step. Strict requires the drop to equal the summed damage exactly;
+/// Lenient accepts any drop at least as large (overkill killing blows,
+/// multi-source under-sums). Events whose replay time falls outside the
+/// observed window span are observation gaps and do not inflate the
+/// denominator.
 /// </summary>
 public static class HpDamageCorrelator
 {
@@ -79,7 +101,8 @@ public static class HpDamageCorrelator
     public static IReadOnlyList<DamageCorrelationCandidate> Correlate(
         IReadOnlyList<ByteChangeWindow> windows,
         IReadOnlyList<HpDamageEvent> damageEvents,
-        long targetEntityId)
+        long targetEntityId,
+        DamageMatchMode matchMode = DamageMatchMode.Strict)
     {
         ArgumentNullException.ThrowIfNull(windows);
         ArgumentNullException.ThrowIfNull(damageEvents);
@@ -144,7 +167,10 @@ public static class HpDamageCorrelator
                 }
 
                 changed++;
-                if (delta == -sum)
+                bool isMatch = matchMode == DamageMatchMode.Lenient
+                    ? delta <= -sum
+                    : delta == -sum;
+                if (isMatch)
                 {
                     matched++;
                 }
@@ -156,6 +182,9 @@ public static class HpDamageCorrelator
             }
 
             double score = (double)matched / damageByWindow.Count;
+            string matchText = matchMode == DamageMatchMode.Lenient
+                ? "drop >= -Σ damage"
+                : "delta == -Σ damage";
             candidates.Add(new DamageCorrelationCandidate(
                 offset,
                 sizeof(int),
@@ -164,7 +193,7 @@ public static class HpDamageCorrelator
                 damageByWindow.Count,
                 changed,
                 $"int32 at +0x{offset:X}: value drop matched {matched}/{damageByWindow.Count} "
-                + $"damage windows (precision {matched}/{changed}); delta == -Σ damage"));
+                + $"damage windows (precision {matched}/{changed}); {matchText}"));
         }
 
         return candidates

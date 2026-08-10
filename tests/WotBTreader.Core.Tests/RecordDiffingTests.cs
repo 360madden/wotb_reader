@@ -247,4 +247,136 @@ public sealed class RecordDiffingTests
         Assert.AreEqual(HpOffset, candidates[0].Offset);
         Assert.AreEqual(1.0, candidates[0].Score, 1e-9);
     }
+
+    [TestMethod]
+    public void Correlate_Lenient_ModeMatchesOverkillKillingBlow()
+    {
+        // The destroying hit overkills: HP 500 -> 0 with only 150 recorded
+        // damage. Strict misses (existing test); Lenient accepts any drop >=
+        // the window's damage, so HP ranks first.
+        var snapshots = new[]
+        {
+            new RecordSnapshot(TimeSpan.Zero, Region(hp: 500)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(1000), Region(hp: 0)),
+        };
+        var events = new[]
+        {
+            Damage(TimeSpan.FromMilliseconds(1000), 150),
+        };
+
+        IReadOnlyList<DamageCorrelationCandidate> candidates =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                TargetEntity,
+                DamageMatchMode.Lenient);
+
+        Assert.HasCount(1, candidates);
+        Assert.AreEqual(HpOffset, candidates[0].Offset);
+        Assert.AreEqual(1.0, candidates[0].Score, 1e-9);
+    }
+
+    [TestMethod]
+    public void Correlate_Lenient_ModeRejectsSmallCoincidentalDrop()
+    {
+        // A drop SMALLER than the window's damage is not a match even in
+        // Lenient mode (-100 > -150).
+        var snapshots = new[]
+        {
+            new RecordSnapshot(TimeSpan.Zero, Region(hp: 500)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(1000), Region(hp: 400)),
+        };
+        var events = new[]
+        {
+            Damage(TimeSpan.FromMilliseconds(1000), 150),
+        };
+
+        IReadOnlyList<DamageCorrelationCandidate> candidates =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                TargetEntity,
+                DamageMatchMode.Lenient);
+
+        Assert.IsEmpty(candidates);
+    }
+
+    [TestMethod]
+    public void Correlate_Lenient_ModeStillMatchesExactDrops()
+    {
+        // Lenient subsumes strict: exact drops still match, across windows.
+        var snapshots = new[]
+        {
+            new RecordSnapshot(TimeSpan.Zero, Region(hp: 500)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(1000), Region(hp: 350)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(2000), Region(hp: 275)),
+        };
+        var events = new[]
+        {
+            Damage(TimeSpan.FromMilliseconds(1000), 150),
+            Damage(TimeSpan.FromMilliseconds(2000), 75),
+        };
+
+        IReadOnlyList<DamageCorrelationCandidate> candidates =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                TargetEntity,
+                DamageMatchMode.Lenient);
+
+        Assert.HasCount(1, candidates);
+        Assert.AreEqual(HpOffset, candidates[0].Offset);
+        Assert.AreEqual(1.0, candidates[0].Score, 1e-9);
+        Assert.AreEqual(2, candidates[0].MatchedDamageWindows);
+    }
+
+    [TestMethod]
+    public void Correlate_RealisticEventMix_FindsHp()
+    {
+        // A realistic timeline: two Damage events with amounts, a Destroyed
+        // event (no damage — must not break the correlation), and damage to an
+        // unrelated entity — the HP field still ranks first across the two
+        // windows that actually carry target damage.
+        var snapshots = new[]
+        {
+            new RecordSnapshot(TimeSpan.Zero, Region(hp: 500)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(1000), Region(hp: 350)),
+            // (1000, 2000] has only the Destroyed event — HP unchanged, no window.
+            new RecordSnapshot(TimeSpan.FromMilliseconds(2000), Region(hp: 350)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(3000), Region(hp: 275)),
+        };
+        var events = new[]
+        {
+            Damage(TimeSpan.FromMilliseconds(1000), 150),
+            new HpDamageEvent(
+                ParticipantId: null,
+                EntityId: TargetEntity,
+                ReplayTime: TimeSpan.FromMilliseconds(2000),
+                Kind: CanonicalEventKind.Destroyed,
+                Damage: null,
+                AttackerEntityId: 123,
+                ValuesJson: "{}"),
+            Damage(TimeSpan.FromMilliseconds(3000), 75),
+            new HpDamageEvent(
+                ParticipantId: null,
+                EntityId: 9999,
+                ReplayTime: TimeSpan.FromMilliseconds(1000),
+                Kind: CanonicalEventKind.Damage,
+                Damage: 999,
+                AttackerEntityId: null,
+                ValuesJson: "{}"),
+        };
+
+        IReadOnlyList<DamageCorrelationCandidate> candidates =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                TargetEntity);
+
+        Assert.HasCount(1, candidates);
+        Assert.AreEqual(HpOffset, candidates[0].Offset);
+        Assert.AreEqual(1.0, candidates[0].Score, 1e-9);
+        Assert.AreEqual(2, candidates[0].MatchedDamageWindows);
+        Assert.AreEqual(2, candidates[0].TotalDamageWindows);
+    }
 }
