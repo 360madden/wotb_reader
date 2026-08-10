@@ -7,6 +7,14 @@ Scope: one approved live session via `scripts/invoke-g1-live-poll.ps1` on the
 content-distinct Oasis Palms replay; resolver, read surface, and offset table
 untouched
 
+> **CORRECTION (2026-08-09, OD-RECOVERY-080):** the `avatar-helper`
+> failures in this session were NOT a pointer race. The guard-page
+> interceptor's PAGE_GUARD on the ring-record page failed the poll's own
+> reads (ERROR_PARTIAL_COPY 299 at the first armed-page touch). The
+> corrected G1 procedure runs the poll un-armed (`-SkipInterceptorArm`);
+> the per-read byte-identical branch is the poll's own
+> `allConsistentDoubleRead` (proven 24/24 in OD-075/076).
+
 ## Session summary
 
 The one-command session ran end-to-end: launcher to `OK
