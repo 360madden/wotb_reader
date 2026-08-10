@@ -49,7 +49,10 @@
 - Remaining step is still the gated live session: one bounded
   `EntityRecordRegionReadRequest` addition + one session on Oasis Palms
   tracking victim **3760578**, dumps concentrated on the nine hit
-  windows above.
+  windows above. Second independent replay for the Phase-4 repeatability
+  rule also qualified: **Dead Rail** victim **2549399** (18 events /
+  4,647 dmg, 12 windows at 1140–1530s). Both victims ≥ 2 damage
+  windows, so the two-replay verdict contract is fully pre-staged.
 - Published tables untouched; resolver + read surface untouched;
   validator unchanged.
 

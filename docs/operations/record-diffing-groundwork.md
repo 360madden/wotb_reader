@@ -160,6 +160,14 @@ field is otherwise unchanged. Alternative victims in the same replay:
 3760571 (7 hits), 3760574/3760575 (6 hits each; 3760575's hits are late,
 2454–2740s).
 
+**Dead Rail** (session `019fb86c-c8e7-7004-9df6-a574f5a7835b`, 11.19.0)
+— the second independent replay for the Phase-4 repeatability rule:
+victim **2549399** — 18 events / 4,647 damage across **12** ten-second
+windows (1140–1530s of the ~2714s replay: 114, 116, 120, 125, 130,
+131, 136, 140, 141, 148, 149, 152). So the two-replay verdict contract
+is fully pre-staged: Oasis Palms victim 3760578 + Dead Rail victim
+2549399, both with ≥ 2 damage windows, schedules above.
+
 The walker resolves **any** entity id through `entityLookup` (the
 published chain takes the target id per walk and now exposes
 `ResolvedEntityAddress`), so a non-viewpoint enemy is resolvable — the
