@@ -33,8 +33,13 @@ caused and fixed in this session (below).
   `allModuleRooted=true`, `allEntityIdentityRevalidated=true`,
   `allConsistentDoubleRead=true`, `moving=true`, `trajectoryConsistent=true`,
   `sameDecodedClockProven=true`
-- Priors supplied via `-PriorResultPaths`: OD-075 + OD-076 aggregates (both
-  accepted by the poll's fail-closed validation)
+- Priors supplied via `-PriorResultPaths`: OD-075 + OD-076 aggregates.
+  **CORRECTION (2026-08-09, OD-RECOVERY-082):** the comma-joined
+  `-PriorResultPaths 'a,b'` form was bound by `-File` as a SINGLE path, so
+  the poll's prior validation never accepted them — and in this run it never
+  exercised the block at all (the verdict was negative). The priors were
+  validated directly against the poll's exact fail-closed check and pass;
+  the wrapper now normalizes comma-joined paths.
 
 ## The verdict-contract conflict (root cause of the honest-negative label)
 

@@ -18,13 +18,44 @@ OD-RECOVERY-075/076/077/078.
   `-PriorResultPaths` wiring is done; the flag flips on a positive poll that
   supplies the prior positive aggregate(s). Verify the ledger rows attest two
   distinct replays (Dead Rail + Oasis Palms) with fresh processes.
-- [ ] **G1 — hardware-atomic read proof** (needs the live session): `clean`
-  verdict, or `observed` with 24/24 `allConsistentDoubleRead` byte-identical
-  double-reads; interceptor report + `g1-evidence.json` attached to
+- [ ] **G1 — hardware-atomic read proof** (CLOSED 2026-08-09,
+  OD-RECOVERY-082): corrected acceptance — poll aggregate
+  `stable-resolver-positive` 24/24 with `allConsistentDoubleRead=true` (the
+  per-read byte-identical branch; the guard-page interceptor arm was
+  abandoned in OD-RECOVERY-080 because it fails the poll's own reads).
+  `g1-evidence.json` + `od073-poll.json` attached to OD-RECOVERY-082.
+- [ ] **G2 — same-decoded-clock alignment** (CLOSED live, 4 confirmations
+  OD-078/079/081/082): `sameDecodedClockProven=true` in the poll aggregate;
+  the correlation bounds (anchor 1 s + gate cadence 1 s) recorded in
   OD-RECOVERY-078.
-- [ ] **G2 — same-decoded-clock alignment** (needs the live session):
-  `sameDecodedClockProven=true` in the poll aggregate; the correlation
-  bounds (worst-case tick error across the poll) recorded in OD-RECOVERY-078.
+
+## Execution record (2026-08-09, OD-RECOVERY-082 — verdict PROMOTE-READY, conditional)
+
+All gate prerequisites closed; every verification step below PASSED:
+
+- Executable identity: `tools/compute-exe-hash.ps1` re-measured the
+  installed `C:\Games\World_of_Tanks_Blitz\wotblitz.exe` (v11.19.0.10) at
+  2026-08-09 ~22:17 local = `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d` —
+  exact match with the table and `Type10EntityPositionLayout.WotBlitz1119010`.
+- RVA chain: every hop re-verified against the resolver layout (root
+  `0x04095c88` → app `0x0c` → session `0x124`/`0x118` → account `0x128` →
+  playback `0x120` → connection `0x04`/`0x48` → entity tree
+  `[0x1c,0x40,0x34]` → filter `0x38` → helper `0x08` (vtable-matched) → ring
+  `0x08`/`0x1c8`/stride `0x38` → position `+0x10`). Ring invariants hold in
+  the live evidence (eight-entry ring, 56-byte double-read).
+- Field identity: playerPositionX/Y/Z (float32 triple at record `+0x10`)
+  are the promotion candidates; velocity `+0x28` NOT promoted (the poll
+  reads position only); playerYaw stays Stale/Quarantined (untouched).
+- Repeatability: 2 launches (Dead Rail + Oasis Palms), 2 content-distinct
+  replays, harness invariants (24/24, all module-rooted, all
+  identity-revalidated, all consistent-double-read), provenance kinds
+  StaticAnalysis (hash-bound Ghidra) + GameHarness (loopback discover) +
+  live od073 aggregate.
+- Read-only gates PASS: `tools/report-offset-evidence.ps1 -GameVersion
+  11.19.0.10` and `python scripts/python/offset_check.py --check-schema`.
+- Pending: `leadApproved` + `decoderAuditorApproved` (human sign-offs at
+  promotion time) and the schema-representation decision (position is a
+  pointer chain, not a single RVA).
 
 ## 1. Executable identity (fail-closed if ANY check fails)
 

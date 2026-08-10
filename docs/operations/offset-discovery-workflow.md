@@ -768,8 +768,15 @@ while the ring is actively rewritten. Run:
 
 ```text
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-g1-live-poll.ps1 `
-  -ReplayPath <replay> -WindowWaitSeconds 240 -SkipInterceptorArm
+  -ReplayPath <replay> -WindowWaitSeconds 240 -SkipInterceptorArm `
+  -PriorResultPaths .data/od-073-entity-position-poll-20260809-021445.json,`
+    .data/od-073-entity-position-poll-20260809-165144.json
 ```
+
+The wrapper normalizes comma-joined `-PriorResultPaths` (2026-08-09,
+OD-RECOVERY-082 — `-File` binds the comma form as a single path, which
+failed the poll's `Test-Path`); both comma-joined and space-separated forms
+work.
 
 **Pre-flight.** Exact-build binaries present (a `scripts/validate.ps1` green
 run); no stale `wotblitz.exe` / Host.Web / interceptor processes; the

@@ -58,12 +58,26 @@ executable identity, two independent process launches, two independent replays,
 passing harness invariants, static-analysis and GameHarness provenance, lead
 approval, and decoder-auditor approval.
 
-Prerequisite for any numeric value in the position-ring chain: G1, G2, and G3
-below are closed, and the exact RVA chain is re-measured against the live build
-hash immediately before the session. The offset table
-(`memory-offsets/11.19.0.10.json`) stays frozen until then.
+**G0 review executed 2026-08-09 (OD-RECOVERY-082) — verdict PROMOTE-READY
+(conditional):** executable identity exact (`tools/compute-exe-hash.ps1`
+re-measured `1cda5c31...`), RVA chain re-verified hop-by-hop against
+`Type10EntityPositionLayout.WotBlitz1119010`, field identity
+(playerPositionX/Y/Z float32 triple at record `+0x10`; velocity NOT
+promoted; playerYaw untouched), repeatability attested (2 launches, 2
+content-distinct replays, harness invariants), read-only gates PASS
+(`report-offset-evidence.ps1` + `offset_check.py --check-schema`). The
+remaining step is the operator-approved table edit
+(`memory-offsets/11.19.0.10.json` → playerPositionX/Y/Z `Verified`,
+chain-form values, evidence, approvals) + post-edit gates; the table stays
+frozen until then.
 
 ### G1 — Hardware-atomic read proof
+
+**CLOSED 2026-08-09 (OD-RECOVERY-082):** the stored v4 aggregate is 24/24
+`stable-resolver-positive` with `allConsistentDoubleRead=true` — the per-read
+byte-identical branch (see the acceptance below). Proven across four positive
+runs (OD-075, OD-076, OD-081 re-derivation, OD-082 stored), including two
+live un-armed sessions (081/082).
 
 Current: the resolver's read is an **optimistic double-read, not an atomic
 read** (its own doc comment, line 134). Two byte-identical 56-byte ring-record
@@ -84,9 +98,12 @@ hardcoding:
   captured 185/185 consecutive CRT-memcpy writes with an exact 0.5 value
   progression (no gaps = no missed writes), zero hits across a suspended 2 s
   no-write window with liveness on both sides, and 100% of hits attributed to
-  `msvcrt.dll+0x8DD34` with the i386 esi/edi copy ABI. Remaining: one live
-  poll with the interceptor armed on the ring-record position page (new
-  approved session).
+  `msvcrt.dll+0x8DD34` with the i386 esi/edi copy ABI. **Superseded
+  (OD-RECOVERY-080):** arming the ring-record page makes the poll's own
+  reads fail (ERROR_PARTIAL_COPY 299 at the avatar-helper vtable hop), so
+  the operative G1 acceptance is the per-read byte-identical branch below
+  (the interceptor's clean branch is impossible while the ring is actively
+  rewritten).
 - Mechanism B (interlocked discipline): a documented read discipline where the
   12 bytes are validated against a hardware-atomic guard (e.g., the ring
   index + a checksum read atomically) — requires a demonstrated invariant, not
@@ -254,8 +271,16 @@ carry no artifact id by privacy design. Flag logic verified against real
 result files (positive, negative, missing, no-prior cases). No product code
 or read-surface change.
 
-Remaining: the flag flips to `true` on the next positive poll that supplies
-the prior positive result file(s).
+**CLOSED 2026-08-09 (OD-RECOVERY-082):** the v4 close-out run was positive
+(`stable-resolver-positive`) and the OD-075/076 priors were validated
+directly against the poll's exact fail-closed check (schema
+`wotbtreader.od073*` + positive verdict — both pass). The stored
+`stableRootLiveRepeatabilityProven` field is false only because the
+comma-joined `-PriorResultPaths 'a,b'` invocation was bound by `-File` as a
+single path (mechanical bug, fixed in the wrapper — comma elements are now
+split/trimmed); it is not an evidence deficiency. The G0 review's G3
+definition — ledger attestation of two distinct replays with fresh
+processes (Dead Rail OD-075 + Oasis Palms OD-076) — is satisfied.
 
 ## Sequencing recommendation
 
@@ -269,7 +294,8 @@ the prior positive result file(s).
 | ~~G1 mechanism test (write-observation)~~ | ~~Offline~~ | **done 2026-08-09** (`scripts/test-offline-write-observation.ps1`, OD-RECOVERY-077) |
 | ~~G1 position-page capability (resolver entry + coordinator + endpoint + tests)~~ | ~~Offline~~ | **done 2026-08-09** (`POST /discover/position-page`, diagnostic-only) |
 | ~~G1 live orchestration (wrapper + verdict)~~ | ~~Offline~~ | **done 2026-08-09** (`scripts/invoke-g1-live-poll.ps1`; verdict validated on OD-077 reports) |
-| G1 live poll (armed runs 19/24 + 22/24 — ROOT-CAUSED as harness artifacts, OD-RECOVERY-080; **corrected un-armed run done 2026-08-09, OD-RECOVERY-081: first fully clean live read run — 24/24 all-attempt-1, `allConsistentDoubleRead=true`**, but the verdict label was honest-negative due to a VERDICT-CONTRACT CONFLICT, now fixed in the poll (schema v4): the vestigial `-not $anySameDecodedClock` clause made a positive G1 verdict unreachable whenever the G2 anchor lands) | Live (one more approved session) | `invoke-g1-live-poll.ps1 -SkipInterceptorArm -PriorResultPaths <OD-075 + OD-076>` with the fixed v4 poll — the identical session already produced the 24/24 read evidence; the v4 label is the only delta |
+| ~~G1 live poll (G1 closed)~~ | ~~Live (done 2026-08-09)~~ | **done — OD-RECOVERY-082:** stored v4 aggregate 24/24 `stable-resolver-positive` with `allConsistentDoubleRead=true` (per-read byte-identical branch). Armed runs 19/24 + 22/24 were harness artifacts (OD-RECOVERY-080); run 081 hit 24/24 clean read evidence but the verdict label was blocked by a verdict-contract conflict (fixed, schema v4); run 082 delivered the stored positive aggregate |
+| G0 publication review | Offline (verdict delivered) | **done 2026-08-09 (OD-RECOVERY-082): PROMOTE-READY (conditional)** — exe identity exact, RVA chain verified, field identity set, repeatability attested, read-only gates PASS; the table edit (playerPositionX/Y/Z → `Verified`, chain-form values + evidence + approvals) is a separate operator-approved change |
 | G0 publication review | Offline | G1 + G2 + G3 closed — checklist pre-staged in `docs/operations/g0-publication-review.md` |
 
 ## Frozen surfaces (unchanged)

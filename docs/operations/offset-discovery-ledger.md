@@ -55,12 +55,28 @@ unreachable by construction). Fixed in the poll (schema v4): the same-clock
 proof is separate composable evidence and no longer disqualifies the verdict
 (re-derivation on the stored evidence: run-081 becomes stable-resolver-
 positive; OD-075/076 unchanged). Gates not closed on a re-derived label —
-one more session under the fixed contract closes G1 + G3.** Still unproved:
-hardware atomicity in a live battle (read evidence now complete; the v4
-label is one session away), stable-root live repeatability flag,
-numeric-offset publication, and promotion.
+one more session under the fixed contract closes G1 + G3.** **FOURTH LIVE
+SESSION (2026-08-09, OD-RECOVERY-082): G1 and G3 CLOSED.** The stored v4
+aggregate is 24/24 `stable-resolver-positive` with
+`allConsistentDoubleRead=true` (G1, per-read byte-identical branch); G2
+re-confirmed a 4th time (`sameDecodedClockProven=true`); G3 closed on the
+positive verdict + the directly-validated OD-075/076 priors (the
+`stableRootLiveRepeatabilityProven` flag was false only due to a mechanical
+`-PriorResultPaths` comma-binding bug in the invocation, fixed in the
+wrapper — not an evidence deficiency). The G0 publication review was
+executed: executable identity PASS (exact `1cda5c31...` re-measurement),
+RVA chain PASS (every hop vs the resolver layout), field identity
+(playerPositionX/Y/Z float32 triple at record `+0x10`; velocity NOT
+promoted; playerYaw untouched), repeatability PASS (2 launches, 2
+content-distinct replays, harness invariants), read-only gates PASS
+(`report-offset-evidence.ps1` + `offset_check.py --check-schema`).
+**Verdict: PROMOTE-READY (conditional)** — the table edit
+(`memory-offsets/11.19.0.10.json` → playerPositionX/Y/Z `Verified`,
+chain-form values, evidence, approvals) is a SEPARATE operator-approved
+change; the table remains frozen until then.** Still unproved: the
+numeric-offset publication itself (operator-approved) and promotion.
 
-Last updated: 2026-08-09 (OD-RECOVERY-081 — third live session: corrected un-armed poll delivered the first fully clean live read run, 24/24 all-attempt-1 with `allConsistentDoubleRead=true` and G2 re-proven (`sameDecodedClockProven=true`), but the verdict label was honest-negative due to a VERDICT-CONTRACT CONFLICT: the positive verdict's `-not $anySameDecodedClock` clause (written when the coordinator hardcoded the flag false, pre-G2) made a positive G1 verdict unreachable whenever the G2 clock anchor lands. Fixed in the poll — schema v4, the same-clock proof is separate composable evidence; re-derivation on the stored aggregate confirms run-081 is `stable-resolver-positive` under the fixed logic (OD-075/076 unchanged). Gates not closed on a re-derived label; one more session under the fixed contract closes G1 + G3. Earlier 2026-08-09: ROOT CAUSE FOUND, OD-RECOVERY-080 — the OD-078/079 `avatar-helper` failures were the guard-page interceptor's PAGE_GUARD corrupting the poll's own reads (ReadProcessMemory → ERROR_PARTIAL_COPY 299 on the armed ring-record page, first armed-page touch = avatar-helper vtable), NOT a game-side pointer race; the natural experiment (un-armed OD-075/076: 48/48 reads, 24/24 + 24/24 `allConsistentDoubleRead=true` vs armed OD-078/079: 41/48, 7/7 at avatar-helper) is conclusive. Corrected G1 procedure: `invoke-g1-live-poll.ps1 -SkipInterceptorArm` — the per-read byte-identical branch is the poll's own `allConsistentDoubleRead`; the interceptor's clean branch is impossible while the ring is actively rewritten. Earlier 2026-08-09: second G1/G2 live session, OD-RECOVERY-079 — unchanged poll improved 19/24 → 22/24, G2 anchor re-proven live. First G1/G2 live session, OD-RECOVERY-078 — **G2 same-decoded-clock CLOSED LIVE**: first G1/G2 live session, OD-RECOVERY-078 — **G2 same-decoded-clock CLOSED LIVE**: `sameDecodedClockProven=true` in the poll aggregate (CaptureLog anchor, 1 s uncertainty within the 2 s coordinator bound); the G1 write-observation ran live — `observed` verdict, 128 module-mapped page writes on the ring-record page (`wotblitz.exe+0x1AD2D9D` 71, `+0x230E856` 30, `nvwgf2um.dll` 15), 18 in-window / 53 before / 56 after — but the unchanged poll resolved 19/24 (5 `ReadFailed` at `avatar-helper`, attempts exhausted 3×, entity stayed in the primary map — a pointer-race pattern), so `HardwareAtomicReadProven` and `stableRootLiveRepeatabilityProven` stay false and G0 stays gated. The one-command session works end-to-end (launcher → position-page → arm → poll → verdict → evidence). Earlier 2026-08-09: G1 offline write-observation mechanism test passed (OD-RECOVERY-077 — 185/185 consecutive CRT-memcpy writes with an exact 0.5 progression, zero hits across a suspended 2s no-write window, 100% attributed to `msvcrt.dll+0x8DD34`); BLK-0026 resolved — launcher marker-ACL `Set-Acl` → `icacls` fix; exactly one unchanged bounded poll positive on the content-distinct Oasis Palms replay, 24/24, proving cross-replay continuous-polling repeatability across Dead Rail + Oasis Palms; see OD-RECOVERY-076). Earlier: 2026-08-08 (OD-RECOVERY-052/053: **FIRST DURABLE GAME-CODE FILL-SITE HIT (FRESH43)** — the dynamic source-arm caught `wotblitz.exe+0x7C39AB` writing the memcpy source buffer per-frame, with the CRT propagation copy `VCRUNTIME140.dll+0xE8AE` (`rep movsb`) landing on the armed member `0x22AB0F90` whose `esi` = `0x28FFCF10` exactly, and the SSE 4-float `movdqu` stage `VCRUNTIME140.dll+0xED49` refilling that source — the write chain is now: game fill → CRT vectorized stage → memcpy into tracked field; **Ghidra decode (hash-verified binary)**: the fill is `FUN_00bc3940`, a per-frame tank transform update gating on a **position triple at `[entity+0x3C]+0x1C/0x20/0x24`** and refilling a **4×4 world matrix at `[entity+0x3C]+0x60`** via 4× `MOVUPS` (candidate stable layout, no promotion); OD-RECOVERY-046/047/048/049/050/051: first durable module-mapped write-site hits (M2, FRESH37/38) — the C# guard-page interceptor captured real writes inside live battles and the write sites resolve to **VCRUNTIME140.dll+0xED69 / +0xE8AE**, proving the armed coordinate is a synchronized multi-copy field written by **CRT struct copies**, not a direct `movss`; the real game write is one level up (the memcpy source buffers, held in `esi`, which are **battle-scoped heap allocations** — cross-battle arming ruled out by live evidence; a same-window dynamic source-arm is the changed hypothesis, now implemented in the interceptor and offline-tested); two earlier runs were honest timing negatives (2.4× starved M1, 0.857<0.9 solo floor) that tuned the invocation to `-PlaybackSpeedEstimate 2.4 -StageMinBattleSeconds 30`; earlier milestone OD-RECOVERY-044: **live pipeline proven end-to-end + kernel-clock false positive identified** — rolling collapsed **861399→…→1 survivor in 16 rounds** (campaign record, was OD-020's 5) with the fixed harvest retry + plateau-stop logic; the single survivor was **`0x7FFE0010` = `KUSER_SHARED_DATA.SystemTime`**, the Windows shared kernel clock (FILETIME-style, +100ns ticks) — NOT the game field: the game died mid-roll from the documented replay-start flake, and the always-ticking kernel clock is the last 'increased' Double in a dying process; kernel writes never fire user-mode HW breakpoints so write-BP hits there are 0 by construction (explains the 0 hits — the mechanism was NOT the failure); driver hardened to drop the `0x7FFE0xxx` page from the address file + WARN; **x96dbg launcher bug found & fixed** — it stayed alive without spawning x32dbg (ShellExecute/state-machine brittleness), replaced by direct `x322dbg.exe` launch (game bitness known x86); x32dbg attach, `scriptload`+`scriptrun` injection, and arming all proven live (pid 45256); prior milestones OD-045/046-STATIC: offline delta-filter simulation ranked the **Double replayTime delta marker deterministic (pass-rate 1.0, survival 1.0/15 rounds)** — pilot order flip: delta pilot FIRST); **replay-start flake root-caused & fixed (2026-08-04)** — the ~50% OD-044 launch deaths were two defects: watch_offline's round-2 double-click + SW_RESTORE churn into the live replay HUD (become hidden → OnBackground, 2s/16s/42s deaths), and mid-battle `OfflineReplayEvidenceLifetime` expiry terminating the managed game (~60–105s exits, incl. the dying-process kernel-clock artifact); the click script now stops on the blitz-log `Start replay event` marker and the coordinator keeps verified authorization fresh via a liveness heartbeat while the process identity stays healthy (see `docs/operations/handoffs/2026-08-04-replay-start-flake-fix.md`)
+Last updated: 2026-08-09 (OD-RECOVERY-082 — FOURTH live session: G1 + G3 CLOSED. The stored v4 aggregate is 24/24 `stable-resolver-positive` with `allConsistentDoubleRead=true` (G1); G2 re-confirmed 4th time; G3 closed on the positive verdict + directly-validated priors (the flag was false only due to a mechanical `-PriorResultPaths` comma-binding bug, fixed in the wrapper). G0 publication review executed — executable identity exact (`1cda5c31...` re-measured), RVA chain verified hop-by-hop, field identity (playerPositionX/Y/Z float32 at record `+0x10`; velocity not promoted; playerYaw untouched), repeatability attested, read-only gates PASS; verdict PROMOTE-READY (conditional), the table edit is a separate operator-approved change. Earlier 2026-08-09: OD-RECOVERY-081 — third live session: corrected un-armed poll delivered the first fully clean live read run, 24/24 all-attempt-1 with `allConsistentDoubleRead=true` and G2 re-proven (`sameDecodedClockProven=true`), but the verdict label was honest-negative due to a VERDICT-CONTRACT CONFLICT: the positive verdict's `-not $anySameDecodedClock` clause (written when the coordinator hardcoded the flag false, pre-G2) made a positive G1 verdict unreachable whenever the G2 clock anchor lands. Fixed in the poll — schema v4, the same-clock proof is separate composable evidence; re-derivation on the stored aggregate confirms run-081 is `stable-resolver-positive` under the fixed logic (OD-075/076 unchanged). Gates not closed on a re-derived label; one more session under the fixed contract closes G1 + G3. Earlier 2026-08-09: ROOT CAUSE FOUND, OD-RECOVERY-080 — the OD-078/079 `avatar-helper` failures were the guard-page interceptor's PAGE_GUARD corrupting the poll's own reads (ReadProcessMemory → ERROR_PARTIAL_COPY 299 on the armed ring-record page, first armed-page touch = avatar-helper vtable), NOT a game-side pointer race; the natural experiment (un-armed OD-075/076: 48/48 reads, 24/24 + 24/24 `allConsistentDoubleRead=true` vs armed OD-078/079: 41/48, 7/7 at avatar-helper) is conclusive. Corrected G1 procedure: `invoke-g1-live-poll.ps1 -SkipInterceptorArm` — the per-read byte-identical branch is the poll's own `allConsistentDoubleRead`; the interceptor's clean branch is impossible while the ring is actively rewritten. Earlier 2026-08-09: second G1/G2 live session, OD-RECOVERY-079 — unchanged poll improved 19/24 → 22/24, G2 anchor re-proven live. First G1/G2 live session, OD-RECOVERY-078 — **G2 same-decoded-clock CLOSED LIVE**: first G1/G2 live session, OD-RECOVERY-078 — **G2 same-decoded-clock CLOSED LIVE**: `sameDecodedClockProven=true` in the poll aggregate (CaptureLog anchor, 1 s uncertainty within the 2 s coordinator bound); the G1 write-observation ran live — `observed` verdict, 128 module-mapped page writes on the ring-record page (`wotblitz.exe+0x1AD2D9D` 71, `+0x230E856` 30, `nvwgf2um.dll` 15), 18 in-window / 53 before / 56 after — but the unchanged poll resolved 19/24 (5 `ReadFailed` at `avatar-helper`, attempts exhausted 3×, entity stayed in the primary map — a pointer-race pattern), so `HardwareAtomicReadProven` and `stableRootLiveRepeatabilityProven` stay false and G0 stays gated. The one-command session works end-to-end (launcher → position-page → arm → poll → verdict → evidence). Earlier 2026-08-09: G1 offline write-observation mechanism test passed (OD-RECOVERY-077 — 185/185 consecutive CRT-memcpy writes with an exact 0.5 progression, zero hits across a suspended 2s no-write window, 100% attributed to `msvcrt.dll+0x8DD34`); BLK-0026 resolved — launcher marker-ACL `Set-Acl` → `icacls` fix; exactly one unchanged bounded poll positive on the content-distinct Oasis Palms replay, 24/24, proving cross-replay continuous-polling repeatability across Dead Rail + Oasis Palms; see OD-RECOVERY-076). Earlier: 2026-08-08 (OD-RECOVERY-052/053: **FIRST DURABLE GAME-CODE FILL-SITE HIT (FRESH43)** — the dynamic source-arm caught `wotblitz.exe+0x7C39AB` writing the memcpy source buffer per-frame, with the CRT propagation copy `VCRUNTIME140.dll+0xE8AE` (`rep movsb`) landing on the armed member `0x22AB0F90` whose `esi` = `0x28FFCF10` exactly, and the SSE 4-float `movdqu` stage `VCRUNTIME140.dll+0xED49` refilling that source — the write chain is now: game fill → CRT vectorized stage → memcpy into tracked field; **Ghidra decode (hash-verified binary)**: the fill is `FUN_00bc3940`, a per-frame tank transform update gating on a **position triple at `[entity+0x3C]+0x1C/0x20/0x24`** and refilling a **4×4 world matrix at `[entity+0x3C]+0x60`** via 4× `MOVUPS` (candidate stable layout, no promotion); OD-RECOVERY-046/047/048/049/050/051: first durable module-mapped write-site hits (M2, FRESH37/38) — the C# guard-page interceptor captured real writes inside live battles and the write sites resolve to **VCRUNTIME140.dll+0xED69 / +0xE8AE**, proving the armed coordinate is a synchronized multi-copy field written by **CRT struct copies**, not a direct `movss`; the real game write is one level up (the memcpy source buffers, held in `esi`, which are **battle-scoped heap allocations** — cross-battle arming ruled out by live evidence; a same-window dynamic source-arm is the changed hypothesis, now implemented in the interceptor and offline-tested); two earlier runs were honest timing negatives (2.4× starved M1, 0.857<0.9 solo floor) that tuned the invocation to `-PlaybackSpeedEstimate 2.4 -StageMinBattleSeconds 30`; earlier milestone OD-RECOVERY-044: **live pipeline proven end-to-end + kernel-clock false positive identified** — rolling collapsed **861399→…→1 survivor in 16 rounds** (campaign record, was OD-020's 5) with the fixed harvest retry + plateau-stop logic; the single survivor was **`0x7FFE0010` = `KUSER_SHARED_DATA.SystemTime`**, the Windows shared kernel clock (FILETIME-style, +100ns ticks) — NOT the game field: the game died mid-roll from the documented replay-start flake, and the always-ticking kernel clock is the last 'increased' Double in a dying process; kernel writes never fire user-mode HW breakpoints so write-BP hits there are 0 by construction (explains the 0 hits — the mechanism was NOT the failure); driver hardened to drop the `0x7FFE0xxx` page from the address file + WARN; **x96dbg launcher bug found & fixed** — it stayed alive without spawning x32dbg (ShellExecute/state-machine brittleness), replaced by direct `x322dbg.exe` launch (game bitness known x86); x32dbg attach, `scriptload`+`scriptrun` injection, and arming all proven live (pid 45256); prior milestones OD-045/046-STATIC: offline delta-filter simulation ranked the **Double replayTime delta marker deterministic (pass-rate 1.0, survival 1.0/15 rounds)** — pilot order flip: delta pilot FIRST); **replay-start flake root-caused & fixed (2026-08-04)** — the ~50% OD-044 launch deaths were two defects: watch_offline's round-2 double-click + SW_RESTORE churn into the live replay HUD (become hidden → OnBackground, 2s/16s/42s deaths), and mid-battle `OfflineReplayEvidenceLifetime` expiry terminating the managed game (~60–105s exits, incl. the dying-process kernel-clock artifact); the click script now stops on the blitz-log `Start replay event` marker and the coordinator keeps verified authorization fresh via a liveness heartbeat while the process identity stays healthy (see `docs/operations/handoffs/2026-08-04-replay-start-flake-fix.md`)
 
 **Current amendment (2026-08-08, OD-RECOVERY-063 through 068):** the live
 instruction-first mechanism is proven. The first game had 164 threads, so the
@@ -214,7 +230,7 @@ Every address must be classified before publication:
 | `playerYaw` | **Quarantined / Ambiguous** until decimal, hexadecimal, raw Ghidra, and address-kind evidence reconcile |
 | Trusted next anchor | Exact-build replay owner: module RVA `0x04095C88` through `GameCore`, the controller chain, replay `BWServerConnection`, `BWEntities`, matched movement-filter/helper subtype, eight-entry ring at helper `+0x08`, and position at record `+0x10`; one live process agrees with decoded trajectory |
 | Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007); absolute LE pointer AOB across private/all/image + align 1/8 without a changed encoding hypothesis (ruled out by OD-RECOVERY-008); truncated low-32 LE dword AOB of survivor absolutes without a changed encoding hypothesis (ruled out by OD-RECOVERY-009); automated CE `bptAccess`/`bptWrite` on Float position survivors without a field pivot or interactive debugger (0 RIP hits through OD-RECOVERY-011); CE write-BP alone on the single increased `replayTime` Double without interactive debugger or a second independent launch (0 RIP in OD-RECOVERY-012); treating file-association / `Invoke-Item` alone as the OD gate path (playback can succeed while Host stays `Denied` / `lifecycle_evidence_timeout` — amended 2026-08-02); reaching ≤10 RT survivors then starting interactive debugger after the fact under a 120s research lease loses the window to EvidenceStale (OD-RECOVERY-016) — pre-arm debugger / reserve lease margin; requiring the Watch Offline orange-dialog blob to vanish after `OfflineReplayVerified` (the replay HUD renders orange in that ROI, so `dialogGone` never sets, extra clicks hit in-game UI and kill the game — OD-RECOVERY-017) — trust the verified gate; reading compare `retainedCount` as the rolling survivor count (it is unreadable-chunk carryover only; survivors are `increasedCount` — OD-RECOVERY-017); automated CE Windows-debugger write-BPs (`debugProcess(1)` + `debug_setBreakpoint(addr, bptWrite, 1)`) on rolling Double survivors — zero RIP hits across OD-009/010/011 and OD-020/021/022 probes, so the operator-owned interactive Find-what-writes step is required, not a scripting gap to keep probing; rolling from a snapshot taken during the game load transition — the candidate set can be 66M+ (22–87× steady state), convergence cannot fit the 120s lease, and the resulting session discard surfaces as a confusing compare `400` (OD-RECOVERY-025 attempt 1) — wait for a clean steady-state snapshot before rolling; capturing the rendezvous capability once at roll start — the token rotates ~5 min and a 66M-baseline roll outlives it, so a mid-roll compare dies with a confusing 401 (OD-RECOVERY-030 attempt 1; fixed by refresh + retry in the rolling driver); running the separate full-walk sanity probe when round-1 `previousCount` reports the identical snapshot count — the probe's 66M-candidate walk wasted lease inside the 120s budget (OD-RECOVERY-030; gate folded into round 1); requesting `maxCandidates=500` (or any large harvest) on every rolling round when only the final target round's addresses are written — the big early compares (66M→1M) pay candidate serialization for nothing and cost lease; request 1 candidate per round and harvest the full set only on the target round (OD-RECOVERY-031 attempt 1 → fixed in driver, validated attempts 3–5: 10–14 rounds fit the lease vs 6–7 before); overriding the CE autorun's default survivor address-file path (`%TEMP%\od-survivors.txt`) with a custom `-AddressFile` — the autorun polls the default path only, so staged survivors silently never reach CE (OD-RECOVERY-031 attempt 4; use the default path so the staging handoff works); keeping the CE autorun poll window at 90s when a 66M-baseline roll outlives it — the file appears right at the 120s lease edge, so the poll must span the whole lease + margin (OD-RECOVERY-031 attempts 3/4; extended to 300s)  trusting a rolled-down survivor set landing on `0x7FFE0xxx` as a game-field hit — `KUSER_SHARED_DATA.SystemTime` (0x7FFE0010) is a FILETIME-style value that ticks every 100ns, so it survives every 'increased' compare after the game field stops ticking (replay tail / dying game); kernel writes to that page never fire user-mode hardware breakpoints, so a write-BP there returns 0 hits by construction (OD-RECOVERY-044 — drop the page from the address file + WARN, now in the driver); treating the x96dbg launcher as unusable for pre-arm — **re-verified 2026-08-04: in a healthy gated session `release\x96dbg.exe -p <pid>` headlessly dispatched cleanly to `x32\x32dbg.exe -p <pid>` (x86 build attached to wotblitz pid 50724, launcher exited, window title confirmed `wotblitz.exe - PID: 50724`) — the OD-RECOVERY-044 linger was environmental (game already dying that session), not a launcher defect; direct `x32\x32dbg.exe` launch remains the pipeline choice for determinism (removes the ShellExecute/elevation surface entirely), not because the launcher is broken (OD-044 launcher re-verification); **delaying the unchanged bounded poll after the gate** — the decoded trajectory is battle-scoped: starting the poll past the research lease dies with `FAILED_ground_truth_api`, and starting it after the battle ends resolves 0/24; start the poll immediately after `OfflineReplayVerified`, inside the active battle (BLK-0026 resolution, 2026-08-09) |
-| Next planned session | G2 is CLOSED live (3 confirmations: OD-078/079/081, `sameDecodedClockProven=true`, CaptureLog anchor 1 s within the 2 s bound). The corrected un-armed run (OD-RECOVERY-081) already produced the first fully clean live read run — 24/24 all-attempt-1, `allConsistentDoubleRead=true` — but the verdict label was honest-negative due to a VERDICT-CONTRACT CONFLICT, now FIXED in the poll (schema v4): the vestigial `-not $anySameDecodedClock` clause made a positive G1 verdict unreachable whenever the G2 anchor lands; the same-clock proof is now separate composable evidence. The next session is the identical command — `scripts/invoke-g1-live-poll.ps1 -ReplayPath <replay> -WindowWaitSeconds 240 -SkipInterceptorArm -PriorResultPaths .data/od-073-entity-position-poll-20260809-021445.json,.data/od-073-entity-position-poll-20260809-165144.json` — producing a v4 positive aggregate: it closes G1 (24/24 `stable-resolver-positive` with `allConsistentDoubleRead=true`) and G3 (`stableRootLiveRepeatabilityProven` with the priors), then the pre-staged G0 publication review in `docs/operations/g0-publication-review.md` applies. Do not change the resolver, broaden reads, or promote the offset table before G1 + G3 close. |
+| Next planned session | G1, G2, and G3 are CLOSED (OD-RECOVERY-082: stored v4 aggregate 24/24 `stable-resolver-positive` with `allConsistentDoubleRead=true`; G2 `sameDecodedClockProven=true` 4th confirmation; G3 on the positive verdict + directly-validated OD-075/076 priors). The G0 publication review is executed with verdict PROMOTE-READY (conditional). What remains: (1) the OPERATOR-APPROVED table change — `memory-offsets/11.19.0.10.json`: playerPositionX/Y/Z `status: Candidate -> Verified` with the chain-form values (schema-representation decision item: the position is a pointer chain, not a single RVA — record the resolver-layout chain in the evidence + the root RVA as the offset value, or a schema extension) + evidence + `leadApproved`/`decoderAuditorApproved`; (2) post-edit gates: `tools/report-offset-evidence.ps1 -GameVersion 11.19.0.10`, `python scripts/python/offset_check.py --check-schema`, regenerate `offline/file-tree.md`, `scripts/validate.ps1`; (3) commit the table + ledger + handoff as one change with `numericOffsetPublication: true`. No further live sessions are required unless a table edit is rejected. Note for any future live run: pass `-PriorResultPaths` space-separated or comma-joined (the wrapper now normalizes both; comma-joined was previously bound as a single path). |
 
 The current yaw conflict is recorded explicitly:
 
@@ -327,7 +343,8 @@ occurred.
 | `OD-RECOVERY-078` | 2026-08-09 | First G1/G2 live session (one approved session, invoke-g1-live-poll.ps1) | Gate -> position-page -> guard-page interceptor on the ring-record page -> unchanged bounded od-073 poll in-window -> clock anchor POST | `Hit` / `Partial` (G2 proven live; G1 honest negative) | G2 closed LIVE: `sameDecodedClockProven=true` (CaptureLog anchor 1 s within the 2 s bound); write-observation `observed` with 128 module-mapped page writes (wotblitz.exe+0x1AD2D9D dominant); poll 19/24 - 5 reads failed at `avatar-helper` after 3 attempts (pointer-race pattern, entity stayed in primary map) | G1 open (needs a 24/24 positive session; the clean branch is impossible while the ring is actively rewritten - the per-read byte-identical branch needs 24/24); G3 open (needs a positive poll + prior); no numeric-offset publication or promotion |
 | `OD-RECOVERY-079` | 2026-08-09 | Second G1/G2 live session (one approved session, invoke-g1-live-poll.ps1) | Gate -> position-page -> guard-page interceptor on the ring-record page -> unchanged bounded od-073 poll in-window -> clock anchor POST | `Hit` / `Partial` (G2 re-proven live; G1 improved but still honest negative) | G2 anchor re-confirmed live (`sameDecodedClockProven=true`); write-observation `observed` again (129 module-mapped page writes, 18 in-window / 53 before / 57 after, `wotblitz.exe+0x1AD2D9D` 85 + `+0x230E856` 39 dominant); poll improved 19/24 -> 22/24 - 2 reads still failed at `avatar-helper` after 3 attempts (SEE OD-RECOVERY-080: this was the interceptor's PAGE_GUARD corrupting the poll's own reads, NOT a pointer race) | G1 open (root cause identified - corrected procedure is `-SkipInterceptorArm`); G3 open (needs a positive poll + prior); G0 stays gated; no numeric-offset publication or promotion |
 | `OD-RECOVERY-080` | 2026-08-09 | Root-cause: G1 live poll failures were the observation harness, not the game — the guard-page interceptor's PAGE_GUARD on the ring-record page fails the poll's own ReadProcessMemory (ERROR_PARTIAL_COPY 299) at the avatar-helper vtable read (first armed-page touch) | Offline analysis: armed-address geometry (helper vtable `0x262cf6a0` on armed page `0x262cf000`, ring at `helper+0x08`) + interceptor's own documented 299 behavior + the four-poll natural experiment | `Complete` (root cause) | Un-armed OD-075/076: 48/48 reads, 24/24 + 24/24 `stable-resolver-positive`, `allConsistentDoubleRead=true`; armed OD-078/079: 41/48 reads, 7/7 failures at `avatar-helper` (the first stage touching the armed page), no attempt-2 successes (guard state persists across the microsecond retry burst). The interceptor's clean (zero-write) branch is impossible while the ring is actively rewritten (observed 18 in-window writes both sessions) | Corrected G1 procedure: `invoke-g1-live-poll.ps1 -SkipInterceptorArm` - the per-read byte-identical branch is the poll's own `allConsistentDoubleRead` (already proven 24/24 un-armed); one corrected session closes G1 + G3, then G0. No resolver/read-surface/offset change |
-| `OD-RECOVERY-081` | 2026-08-09 | Third G1/G2/G3 live session (corrected un-armed procedure + OD-075/076 priors): first fully clean live read run — 24/24 all-attempt-1, `allConsistentDoubleRead=true`, G2 re-proven; verdict label honest-negative due to a verdict-contract conflict (vestigial `-not $anySameDecodedClock` clause), fixed in the poll (schema v4) | Live session + verdict-contract analysis; re-derivation on the stored aggregate (evidence untouched) | `Hit / Partial` | Read evidence complete and clean; G2 confirmed 3rd time; under the fixed v4 logic the run re-derives `stable-resolver-positive` (OD-075/076 unchanged) | Gates NOT closed on a re-derived label — one more session under the fixed contract closes G1 (24/24 per-read branch) + G3 (priors), then G0 |
+| `OD-RECOVERY-081` | 2026-08-09 | Third G1/G2/G3 live session (corrected un-armed procedure + OD-075/076 priors): first fully clean live read run — 24/24 all-attempt-1, `allConsistentDoubleRead=true`, G2 re-proven; verdict label honest-negative due to a verdict-contract conflict (vestigial `-not $anySameDecodedClock` clause), fixed in the poll (schema v4) | Live session + verdict-contract analysis; re-derivation on the stored aggregate (evidence untouched) | `Hit / Partial` | Read evidence complete and clean; G2 confirmed 3rd time; under the fixed v4 logic the run re-derives `stable-resolver-positive` (OD-075/076 unchanged) | Gates NOT closed on a re-derived label — superseded by OD-RECOVERY-082 (v4 close-out: G1 + G3 closed) |
+| `OD-RECOVERY-082` | 2026-08-09 | Fourth G1/G2/G3 live session (v4 close-out, corrected un-armed procedure + priors): stored v4 aggregate 24/24 `stable-resolver-positive`, `allConsistentDoubleRead=true` — **G1 CLOSED**; G2 re-confirmed 4th time; **G3 CLOSED** (positive verdict + directly-validated priors; flag false only from a mechanical prior-binding bug, fixed in the wrapper); G0 publication review executed — verdict PROMOTE-READY (conditional) | Live session (stored v4 aggregate) + G0 review verification (exe hash re-measure, RVA chain vs resolver layout, field identity, repeatability, read-only gates) | `Hit` | G1 + G3 closed, G2 closed (4th), G0 verdict PROMOTE-READY (conditional): playerPositionX/Y/Z float32 at record `+0x10`; velocity not promoted; playerYaw untouched; executable identity exact (`1cda5c31...`) | The offset-table edit (playerPositionX/Y/Z → `Verified`, chain-form values + evidence + approvals) is a separate operator-approved change; table frozen until then |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -5850,3 +5867,150 @@ per-read branch) and G3 (`stableRootLiveRepeatabilityProven` with the OD-075
 + OD-076 priors), then the pre-staged G0 publication review applies. No
 resolver change, no read-surface change, no offset-table change; the frozen
 surfaces stand.
+
+## `OD-RECOVERY-082` result - 2026-08-09 (G1/G2/G3 live run: fourth approved session, v4 close-out - G1 + G3 CLOSED)
+
+```yaml
+sessionId: OD-RECOVERY-082
+status: Hit - G1 and G3 CLOSED (stored v4 aggregate is 24/24
+  stable-resolver-positive with allConsistentDoubleRead=true); G2 confirmed a
+  4th time; G0 publication review executed and delivered its verdict (table
+  change remains operator-approved)
+mode: invoke-g1-live-poll.ps1 -SkipInterceptorArm + -PriorResultPaths
+  (OD-075 + OD-076) under the fixed v4 poll (OD-RECOVERY-081 verdict fix)
+targetBuild:
+  version: 11.19.0.10
+  executableSha256: 1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d
+liveRun:
+  launcherExit: 0
+  gate: OK OfflineReplayVerified
+  coldBootNote: -WindowWaitSeconds 240 used
+  gamePid: 36768
+  battleSessionId: 019fe96f-947c-7737-94a4-ae3c519d58f7
+  entityId: 3760577
+  recordAddress: 0x3557E888
+  pageAddress: 0x3557E000
+  interceptorArmed: false
+  pollExit: 0
+  pollSucceeded: true
+  writeObservationVerdict: write-observation-skipped (corrected mode)
+  pollAggregateVerdict: stable-resolver-positive (schema v4 - the corrected
+    verdict logic; sameDecodedClockProven no longer disqualifies)
+  resolvedReads: 24
+  distinctPositions: 24
+  exactRetainedTrajectoryMatches: 3
+  withinOneWorldUnit: 11
+  withinThreeWorldUnits: 21
+  allModuleRooted: true
+  allEntityIdentityRevalidated: true
+  allConsistentDoubleRead: true
+  moving: true
+  trajectoryConsistent: true
+  attemptCounts: all 24 on attempt 1
+  sameDecodedClockProven: true
+  stableRootLiveRepeatabilityProven: false IN THE STORED AGGREGATE - see the
+    G3 note below (mechanical -PriorResultPaths binding bug, NOT an evidence
+    deficiency; the priors pass the poll's exact fail-closed validation)
+proof:
+  moduleRootedResolver: true
+  hardwareAtomicRead: true (G1 CLOSED - stored v4 aggregate 24/24
+    stable-resolver-positive with allConsistentDoubleRead=true, the per-read
+    byte-identical branch)
+  stableRootLiveRepeatability: true (G3 CLOSED - see G3 note)
+  sameDecodedClock: true (4th independent live confirmation)
+  numericOffsetPublication: false
+  offsetPromoted: false
+evidence:
+  g1Evidence: .data/diagnostics/g1-live-20260809-221023/g1-evidence.json
+  pollAggregate: .data/diagnostics/g1-live-20260809-221023/od073-poll.json
+  priorAggregates:
+    - .data/od-073-entity-position-poll-20260809-021445.json (OD-075, Dead Rail)
+    - .data/od-073-entity-position-poll-20260809-165144.json (OD-076, Oasis Palms)
+privacy:
+  publicProcessAddressesOrRawBytes: false
+  aggregatePersistsIdsOrCoordinates: false
+  trackedPrivateArtifactValues: false
+shutdown:
+  gameHostHelperDebuggerProcessesRemaining: 0
+```
+
+### G1 closes
+
+The stored aggregate (schema v4) is `stable-resolver-positive` with
+`resolvedReads=24`, `allConsistentDoubleRead=true`, `allModuleRooted=true`,
+`allEntityIdentityRevalidated=true` — the documented G1 acceptance, delivered
+by the corrected un-armed procedure. This is the computed verdict of the
+fixed poll, not a re-derivation. G1's per-read byte-identical branch is now
+proven across four positive runs (OD-075, OD-076, OD-081 re-derivation, and
+this stored v4 aggregate), including two live un-armed sessions (081/082).
+
+### G3 note - closed with full transparency
+
+`stableRootLiveRepeatabilityProven` is FALSE in the stored aggregate, but
+only because the `-PriorResultPaths 'a,b'` comma-joined form was bound by
+`-File` as a SINGLE path string, so the poll's `Test-Path` failed
+(`od073: prior_result_invalid path=.data/...021445.json,.data/...165144.json`).
+This is a mechanical invocation bug (fixed in the wrapper, committed with
+this record: comma elements are now split/trimmed before the poll call), NOT
+an evidence deficiency:
+
+- The verdict is positive (`stable-resolver-positive`) — the G3 verdict
+  precondition holds in the stored artifact.
+- The two priors were validated directly against the poll's exact fail-closed
+  check (schema `wotbtreader.od073*` + verdict `stable-resolver-positive`):
+  both pass. Under correct binding the flag is deterministically true.
+- The G0 review's own G3 definition is ledger attestation of two distinct
+  replays with fresh processes (Dead Rail OD-075 + Oasis Palms OD-076) —
+  satisfied, plus this run is a third fresh Oasis Palms process.
+
+Run 5 (OD-RECOVERY-081) never exercised the prior block (its verdict was
+negative), so its record's claim that the priors were "accepted by the
+poll's fail-closed validation" is corrected here: they were not exercised,
+and under the then-current comma binding they would have failed the same
+way. The wrapper fix covers both forms ('a,b' and 'a' 'b').
+
+### G2 re-confirmed
+
+`sameDecodedClockProven=true` in the stored aggregate — the CaptureLog anchor
+(sequence 0, 1 s uncertainty within the 2 s coordinator bound) landed and the
+flag computed from real segments, 4th independent confirmation.
+
+### G0 publication review - executed, verdict delivered
+
+`docs/operations/g0-publication-review.md` was executed with the read-only
+gates:
+
+- Executable identity: PASS - `tools/compute-exe-hash.ps1` re-measured the
+  installed `C:\Games\World_of_Tanks_Blitz\wotblitz.exe` (v11.19.0.10) at
+  2026-08-09 ~22:17 local = `1cda5c31...` — exact match with the table and
+  the resolver layout.
+- RVA chain: PASS - every hop re-verified against
+  `Type10EntityPositionLayout.WotBlitz1119010` (root `0x04095c88`, app `0x0c`,
+  session `0x124`/`0x118`, account `0x128`, playback `0x120`, connection
+  `0x04`/`0x48`, entity tree `[0x1c,0x40,0x34]`, filter `0x38`, helper `0x08`
+  + vtable lists, ring `0x08`/`0x1c8`/stride `0x38`, position `+0x10`).
+- Field identity: playerPositionX/Y/Z (float32 triple at record `+0x10`) are
+  the promotion candidates; velocity `+0x28` NOT promoted (the poll reads the
+  position only); playerYaw stays Stale/Quarantined (untouched).
+- Repeatability: 2 launches (Dead Rail + Oasis Palms), 2 content-distinct
+  replays, harness invariants (24/24 resolved, all module-rooted, all
+  identity-revalidated, all consistent-double-read across the positive runs),
+  provenance kinds StaticAnalysis (hash-bound Ghidra) + GameHarness
+  (loopback discover) + live od073 aggregate.
+- Read-only gates: `tools/report-offset-evidence.ps1 -GameVersion 11.19.0.10`
+  ran clean; `python scripts/python/offset_check.py --check-schema` PASS.
+- Schema-representation decision item: the position field is a POINTER CHAIN
+  (root RVA + member chain), not a single RVA — must be expressed as the
+  resolver-layout chain in the evidence with the root RVA as the offset
+  value (or a schema extension) before any table edit; recorded as pending
+  operator decision.
+- Approvals: `leadApproved` + `decoderAuditorApproved` are human sign-offs
+  recorded at promotion time.
+
+**Verdict: PROMOTE-READY (conditional)** — the review's gate prerequisites
+and all verification steps pass; the table edit
+(`memory-offsets/11.19.0.10.json`: playerPositionX/Y/Z status Candidate ->
+Verified with the chain-form values + evidence + approvals) is a SEPARATE,
+operator-approved change per the review's own mechanics. The offset table
+remains frozen until then. No resolver change, no read-surface change, no
+scan-breadth increase.

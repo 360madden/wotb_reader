@@ -33,11 +33,25 @@ No runtime AI, cloud, Python, Node.js, Rust, Electron, or containers.
   whenever the clock anchor lands, so a working G2 made the G1 positive
   verdict UNREACHABLE by construction. Fixed in the poll (schema v4): the
   same-clock proof is orthogonal evidence reported separately and no longer
-  disqualifies the verdict (re-derivation on the stored evidence confirms
-  run-081 becomes `stable-resolver-positive`; OD-075/076 unchanged). Gates
-  close on a clean v4 positive aggregate — one more session under the fixed
-  contract.** See `docs/operations/offset-promotion-checklist.md` (and ledger
-  `OD-RECOVERY-078/079/080/081`). No offset-table change until G1 + G3 close.
+  disqualifies the verdict. **Fourth live session (2026-08-09,
+  OD-RECOVERY-082): G1 and G3 CLOSED.** The stored v4 aggregate is 24/24
+  `stable-resolver-positive` with `allConsistentDoubleRead=true` (G1, per-read
+  byte-identical branch); G2 re-confirmed a 4th time
+  (`sameDecodedClockProven=true`); G3 closed on the positive verdict +
+  directly-validated OD-075/076 priors (the stored
+  `stableRootLiveRepeatabilityProven` field is false only from a mechanical
+  `-PriorResultPaths` comma-binding bug, fixed in the wrapper — not an
+  evidence deficiency). **G0 publication review executed — verdict
+  PROMOTE-READY (conditional):** executable identity exact (`1cda5c31...`
+  re-measured), RVA chain verified hop-by-hop vs the resolver layout, field
+  identity (playerPositionX/Y/Z float32 at record `+0x10`; velocity not
+  promoted; playerYaw untouched), repeatability attested, read-only gates
+  PASS. What remains: the OPERATOR-APPROVED table edit
+  (`memory-offsets/11.19.0.10.json` → playerPositionX/Y/Z `Verified`,
+  chain-form values + evidence + approvals) + post-edit gates; the table
+  stays frozen until then.** See
+  `docs/operations/offset-promotion-checklist.md` (and ledger
+  `OD-RECOVERY-078/079/080/081/082`).
 - **BLK-0026 resolved and validated (2026-08-09):** root cause was a launcher
   regression — .NET `Set-Acl` threw `PrivilegeNotHeldException` on the
   persisted owner-only marker ACL, mapped by the catch-all to

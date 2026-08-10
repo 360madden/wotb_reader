@@ -17,6 +17,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-g1-live-poll.
     .data/od-073-entity-position-poll-20260809-165144.json
 ```
 
+(2026-08-09, OD-RECOVERY-082: the wrapper now normalizes comma-joined
+`-PriorResultPaths` — `-File` binds the comma form as a single path, which
+previously made the poll's `Test-Path` fail; both comma-joined and
+space-separated forms work.)
+
 Evidence lands in `.data/diagnostics/g1-live-<stamp>/`:
 `g1-evidence.json` (schema `wotbtreader.g1.write-observation.v1`,
 `interceptorArmed=false`, verdict `write-observation-skipped`) and

@@ -103,6 +103,11 @@ param(
     [int]$InterceptorMarginSeconds = 20,
     # Override the x86 interceptor publish path.
     [string]$InterceptorExe = '',
+    # -File binds a comma-joined string as a SINGLE element, so a comma-
+    # separated -PriorResultPaths 'a,b' arrives as one path and the poll's
+    # Test-Path fails (observed 2026-08-09, OD-RECOVERY-082). Normalized in
+    # the poll call below: split every element on commas and trim, so both
+    # 'a,b' and 'a' 'b' forms bind correctly.
     # SKIP arming the guard-page interceptor on the ring-record page. The
     # corrected G1 procedure (2026-08-09, OD-RECOVERY-080): the interceptor's
     # PAGE_GUARD on the ring-record page makes the poll's own ReadProcessMemory
@@ -457,7 +462,10 @@ try {
         -ReadCount $ReadCount `
         -ReadIntervalMilliseconds $ReadIntervalMilliseconds `
         -ResultPath $pollAggregatePath `
-        -PriorResultPaths $PriorResultPaths
+        -PriorResultPaths @($PriorResultPaths | ForEach-Object {
+            $_ -split ',' | ForEach-Object { $_.Trim() } |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+        })
     $pollExit = $LASTEXITCODE
     $pollEndUtc = [DateTimeOffset]::UtcNow
     Write-G1 ('poll_exit=' + $pollExit)
