@@ -6068,7 +6068,10 @@ postEditGates:
     (3 field(s))"
   report-offset-evidence: clean (position fields still report offset 0 /
     Unknown there - the report counts non-zero offsets as known; the
-    verification lives in fieldValidation + chains)
+    verification lives in fieldValidation + chains; AMENDED 2026-08-10:
+    report-offset-evidence.ps1 now consults fieldValidation for chained
+    fields, so the position fields report Verified/0 — see the tool's
+    Get-FieldStatus)
   offline_check: 112/112 links, file-tree regenerated
   exclusionTest: ChainedFields_AreExcludedFromObservationReads - Passed
   validate: exit 0 (all test projects, repository scan 828 files,

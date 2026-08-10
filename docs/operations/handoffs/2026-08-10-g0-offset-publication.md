@@ -42,9 +42,11 @@ record OD-RECOVERY-083, ONE commit. No live session in this record.
 1. `python scripts/python/offset_check.py --check-schema` — **PASS** "All
    offset files are valid" + `chains validated (3 field(s))`.
 2. `tools/report-offset-evidence.ps1 -GameVersion 11.19.0.10` — ran clean
-   (position fields still report offset 0 / Unknown there — the report
-   counts non-zero offsets as known; the verification lives in
-   `fieldValidation` + `chains`, as the draft documented).
+   (at the time the position fields reported offset 0 / Unknown — the
+   report counted non-zero offsets as known. AMENDED later the same day:
+   the tool now consults `fieldValidation` for chained fields, so
+   `playerPositionX/Y/Z` report `Verified` / offset 0; self-test pins both
+   the chained and plain paths).
 3. `python scripts/python/offline_check.py --refresh` — 112/112 links,
    file-tree up to date.
 4. `dotnet test … --filter "FullyQualifiedName~ChainedFields"` —

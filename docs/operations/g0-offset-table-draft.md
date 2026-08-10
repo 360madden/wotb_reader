@@ -196,10 +196,10 @@ JSON-Schema validation today):
 ## 5. Post-edit gates (after the operator approves)
 
 1. `python scripts/python/offset_check.py --check-schema` — PASS expected.
-2. `tools/report-offset-evidence.ps1 -GameVersion 11.19.0.10` — runs clean
-   (note: the report counts non-zero `offsets` as "known", so the chained
-   position fields still report offset 0 / unknown there; the verification
-   lives in `fieldValidation` + `chains`).
+2. `tools/report-offset-evidence.ps1 -GameVersion 11.19.0.10` — runs clean;
+   the chained position fields report `Verified` (offset 0 — the tool
+   consults `fieldValidation` for chained fields since their `offsets` stay
+   0 by design; plain offset-0 fields remain `Unknown`).
 3. Regenerate `offline/file-tree.md` (`python scripts/python/offline_check.py
    --refresh`).
 4. `scripts/validate.ps1` — full gate (build identity validation against the

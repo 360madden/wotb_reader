@@ -56,7 +56,13 @@ function Get-FieldStatus {
             $decimal -lt 0 -or $decimal -gt 0x7FFFFFFF) {
             return 'Invalid'
         }
-        if ($decimal -eq 0) { return 'Unknown' }
+        # Chained fields (see the `chains` section) keep their offsets value 0
+        # by design; their status comes from fieldValidation. Only plain offset-0
+        # fields are Unknown.
+        $isChainedVerified = $decimal -eq 0 -and
+            $null -ne $ValidationObject -and
+            [string]$ValidationObject.status -eq 'Verified'
+        if ($decimal -eq 0 -and -not $isChainedVerified) { return 'Unknown' }
     } catch {
         return 'Invalid'
     }
@@ -252,6 +258,29 @@ if ($SelfTest) {
             $script:InvalidReport = $true
         }
         if (-not $script:InvalidReport) { throw 'Self-test failed: incomplete Verified evidence did not fail closed' }
+
+        # Chained Verified field (offset 0, complete evidence) must report
+        # 'Verified'; a plain offset-0 field stays 'Unknown'.
+        $chainedValidation = [pscustomobject]@{
+            status = 'Verified'
+            evidence = @(
+                [pscustomobject]@{ provenanceKind = 'StaticAnalysis'; sourceTool = 'synthetic' },
+                [pscustomobject]@{ provenanceKind = 'GameHarness'; sourceTool = 'synthetic' }
+            )
+            independentProcessLaunches = 2
+            independentReplays = 2
+            harnessInvariantsPassed = $true
+            leadApproved = $true
+            decoderAuditorApproved = $true
+        }
+        $chainedStatus = Get-FieldStatus 0 $chainedValidation
+        if ($chainedStatus -ne 'Verified') {
+            throw "Self-test failed: chained Verified field (offset 0) reported as '$chainedStatus'"
+        }
+        $plainStatus = Get-FieldStatus 0 $null
+        if ($plainStatus -ne 'Unknown') {
+            throw "Self-test failed: plain offset-0 field reported as '$plainStatus'"
+        }
 
         $pwsh = Get-Command pwsh -ErrorAction SilentlyContinue
         if ($null -eq $pwsh) { throw 'Self-test failed: pwsh is required for subprocess exit validation' }
