@@ -804,6 +804,14 @@ G2 anchor POST landed.
 - **G2 claim:** poll aggregate `sameDecodedClockProven=true` (the anchor
   POST succeeded and its 1 s uncertainty is within the 2 s coordinator
   bound).
+- **Composability (CORRECTED 2026-08-09, OD-RECOVERY-081, schema v4):** a
+  working G2 (`sameDecodedClockProven=true`) does **not** disqualify the
+  G1 verdict. The old `-not $anySameDecodedClock` clause (written when the
+  flag was hardcoded false, pre-G2) made a positive G1 verdict unreachable
+  whenever the clock anchor landed; the same-clock proof is separate
+  composable evidence. If a stored aggregate shows
+  `honest-negative-or-inconclusive` despite 24/24 clean reads, check the
+  poll schema — v3 predates the fix, v4 is current.
 - Do **not** promote the offset table on this evidence; G0 publication
   review follows.
 

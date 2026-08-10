@@ -23,11 +23,21 @@ No runtime AI, cloud, Python, Node.js, Rust, Electron, or containers.
   not a pointer race**; the corrected procedure is
   `invoke-g1-live-poll.ps1 -SkipInterceptorArm`, and the unchanged poll
   un-armed already delivered **24/24 twice (OD-075/076)** with
-  `allConsistentDoubleRead=true`. A corrected session targets 24/24
-  `stable-resolver-positive` to close G1 (per-read byte-identical branch) and
-  G3 (with `-PriorResultPaths`). See
-  `docs/operations/offset-promotion-checklist.md` (and ledger
-  `OD-RECOVERY-078/079/080`). No offset-table change until G1 + G3 close.
+  `allConsistentDoubleRead=true`. **Third live session done (2026-08-09,
+  OD-RECOVERY-081): the corrected un-armed poll resolved 24/24 (all attempt-1,
+  byte-identical double-reads, `allConsistentDoubleRead=true`) and re-proved
+  G2 (`sameDecodedClockProven=true`), but the verdict came back
+  honest-negative — root cause: a verdict-contract conflict. The positive
+  verdict's `-not $anySameDecodedClock` clause was written when the
+  coordinator hardcoded that flag false (pre-G2); the G2 wiring made it true
+  whenever the clock anchor lands, so a working G2 made the G1 positive
+  verdict UNREACHABLE by construction. Fixed in the poll (schema v4): the
+  same-clock proof is orthogonal evidence reported separately and no longer
+  disqualifies the verdict (re-derivation on the stored evidence confirms
+  run-081 becomes `stable-resolver-positive`; OD-075/076 unchanged). Gates
+  close on a clean v4 positive aggregate — one more session under the fixed
+  contract.** See `docs/operations/offset-promotion-checklist.md` (and ledger
+  `OD-RECOVERY-078/079/080/081`). No offset-table change until G1 + G3 close.
 - **BLK-0026 resolved and validated (2026-08-09):** root cause was a launcher
   regression — .NET `Set-Acl` threw `PrivilegeNotHeldException` on the
   persisted owner-only marker ACL, mapped by the catch-all to

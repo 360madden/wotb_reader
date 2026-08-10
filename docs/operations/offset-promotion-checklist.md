@@ -30,15 +30,21 @@ continuous-polling repeatability is therefore proven at the ledger level.**
 |---|---|---|---|
 | `allConsistentDoubleRead` | `true` (computed) | Resolver double-collects the 56-byte ring record twice with the ring index stable before/middle/after, then re-validates the full root chain (`src/WotBTreader.Core/Discovery/Type10EntityPositionResolver.cs` ~482–541) | Required for the positive verdict |
 | `hardwareAtomicReadProven` | `false` (hardcoded) | Resolver success path returns `HardwareAtomicReadProven: false` (`Type10EntityPositionResolver.cs` line 210); endpoint passes through | Positive verdict **requires it false** |
-| `sameDecodedClockProven` | `false` (hardcoded) | `GameSessionCoordinator.cs` lines 1789/1844 return `false` | Positive verdict **requires it false** |
+| `sameDecodedClockProven` | `true` when the clock anchor landed (computed from replay-clock segments since the G2 wiring, 2026-08-09) | `GameSessionCoordinator.IsSameDecodedClockAsync` (segment uncertainty within the coordinator bound) | **Not part of the G1 verdict** — reported separately as the G2 claim (CORRECTED OD-RECOVERY-081: the old "requires it false" clause made a positive G1 verdict unreachable whenever G2 worked) |
 | `stableRootLiveRepeatabilityProven` | `false` (hardcoded) | `scripts/od-073-entity-position-poll.ps1` line 468 — not wired to any input | Not part of the verdict |
 | `offsetTablePromotionReady` | `false` (hardcoded) | `scripts/od-073-entity-position-poll.ps1` line 469 | Not part of the verdict |
-| Verdict `stable-resolver-positive` | — | Requires resolved == requested, moving, trajectory consistent, all module-rooted, all identity-revalidated, all double-read consistent, **and** atomic + same-clock both false (`od-073` ~lines 426–433) | — |
+| Verdict `stable-resolver-positive` | — | Requires resolved == requested, moving, trajectory consistent, all module-rooted, all identity-revalidated, all double-read consistent, and `hardwareAtomicReadProven` false (the resolver never claims it) — `sameDecodedClockProven` is NOT a disqualifier since OD-RECOVERY-081 (schema v4) | — |
 
-Key consequence: the framework deliberately refuses to claim atomicity or
-same-clock alignment until the coordinator/resolver return those flags from
-real evidence. Hardcoding either flag to `true` would be a false claim and
-would not change the verdict logic's intent.
+Key consequence (amended 2026-08-09, OD-RECOVERY-081): the framework
+refuses to claim atomicity until the resolver returns that flag from real
+evidence (it never does — the G1 claim rests on the poll's own
+`allConsistentDoubleRead` byte-identical double-read branch). The
+same-decoded-clock proof is computed from real segments (G2 wiring) and is
+a separate, composable claim — a working G2 no longer disqualifies the G1
+stability verdict. Prior to this correction, the poll's `-not
+$anySameDecodedClock` clause (written when the flag was hardcoded false)
+made a positive G1 verdict UNREACHABLE in any session where the G2 clock
+anchor landed.
 
 ## Gates and acceptance criteria
 
@@ -263,7 +269,7 @@ the prior positive result file(s).
 | ~~G1 mechanism test (write-observation)~~ | ~~Offline~~ | **done 2026-08-09** (`scripts/test-offline-write-observation.ps1`, OD-RECOVERY-077) |
 | ~~G1 position-page capability (resolver entry + coordinator + endpoint + tests)~~ | ~~Offline~~ | **done 2026-08-09** (`POST /discover/position-page`, diagnostic-only) |
 | ~~G1 live orchestration (wrapper + verdict)~~ | ~~Offline~~ | **done 2026-08-09** (`scripts/invoke-g1-live-poll.ps1`; verdict validated on OD-077 reports) |
-| G1 live poll (two armed runs done 2026-08-09: `observed` verdict both times; poll 19/24 then **22/24** — failures ROOT-CAUSED as harness artifacts, OD-RECOVERY-080; corrected procedure is `-SkipInterceptorArm`, which the un-armed OD-075/076 runs already proved can hit 24/24) | Live (further approved session) | `invoke-g1-live-poll.ps1 -SkipInterceptorArm` — one corrected session targets 24/24 |
+| G1 live poll (armed runs 19/24 + 22/24 — ROOT-CAUSED as harness artifacts, OD-RECOVERY-080; **corrected un-armed run done 2026-08-09, OD-RECOVERY-081: first fully clean live read run — 24/24 all-attempt-1, `allConsistentDoubleRead=true`**, but the verdict label was honest-negative due to a VERDICT-CONTRACT CONFLICT, now fixed in the poll (schema v4): the vestigial `-not $anySameDecodedClock` clause made a positive G1 verdict unreachable whenever the G2 anchor lands) | Live (one more approved session) | `invoke-g1-live-poll.ps1 -SkipInterceptorArm -PriorResultPaths <OD-075 + OD-076>` with the fixed v4 poll — the identical session already produced the 24/24 read evidence; the v4 label is the only delta |
 | G0 publication review | Offline | G1 + G2 + G3 closed — checklist pre-staged in `docs/operations/g0-publication-review.md` |
 
 ## Frozen surfaces (unchanged)

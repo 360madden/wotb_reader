@@ -20,7 +20,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-g1-live-poll.
 Evidence lands in `.data/diagnostics/g1-live-<stamp>/`:
 `g1-evidence.json` (schema `wotbtreader.g1.write-observation.v1`,
 `interceptorArmed=false`, verdict `write-observation-skipped`) and
-`od073-poll.json` (schema `wotbtreader.od073.entity-position-poll.v3`).
+`od073-poll.json` (schema `wotbtreader.od073.entity-position-poll.v4` —
+since OD-RECOVERY-081 the verdict no longer disqualifies runs where the G2
+same-decoded-clock proof fired).
 There is **no interceptor-report.json** in the corrected mode (the
 interceptor is not launched); the legacy armed mode remains available only
 for evidence continuity.

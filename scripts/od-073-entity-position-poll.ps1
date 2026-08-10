@@ -17,6 +17,12 @@
   build and replay window. It does not prove hardware atomicity, exact decoded
   clock alignment, a single numeric offset, or offset-table promotion.
 
+  CORRECTED 2026-08-09 (OD-RECOVERY-081): a positive verdict is composable
+  with a working G2 same-decoded-clock proof - SameDecodedClockProven is
+  reported separately in the aggregate and no longer disqualifies the
+  verdict (the old -not $anySameDecodedClock clause made a positive G1
+  verdict unreachable whenever the G2 clock anchor landed).
+
 .EXITCODES
   0  Bounded campaign completed and a fresh aggregate result was written.
   1  Invalid options, missing rendezvous, or gate not verified.
@@ -459,7 +465,18 @@ $trajectoryConsistent = $resolvedCount -gt 0 -and
 $verdict = if ($resolvedCount -eq $ReadCount -and $moving -and
     $trajectoryConsistent -and $allModuleRooted -and
     $allIdentityRevalidated -and $allConsistentDoubleRead -and
-    -not $anyHardwareAtomic -and -not $anySameDecodedClock) {
+    -not $anyHardwareAtomic) {
+    # CORRECTED 2026-08-09 (OD-RECOVERY-081): the previous condition also
+    # required -not $anySameDecodedClock. That clause was written when
+    # SameDecodedClockProven was hardcoded false in the coordinator (pre-G2);
+    # the G2 wiring (compute SameDecodedClockProven from replay-clock
+    # segments) made it true whenever the clock anchor lands, so a working G2
+    # made the G1 positive verdict UNREACHABLE by construction. The
+    # same-decoded-clock proof is orthogonal evidence (reported separately in
+    # the aggregate as the G2 claim) and does not weaken the byte-identical
+    # double-read stability claim, so it no longer disqualifies the verdict.
+    # hardwareAtomicReadProven stays required false (the resolver never
+    # claims it; keep the guard as defensive fail-closed).
     'stable-resolver-positive'
 }
 else {
@@ -496,7 +513,7 @@ if ($verdict -eq 'stable-resolver-positive' -and $PriorResultPaths.Count -ge 1) 
 }
 
 $aggregate = [ordered]@{
-    schema = 'wotbtreader.od073.entity-position-poll.v3'
+    schema = 'wotbtreader.od073.entity-position-poll.v4'
     campaign = 'od-075-position-ring'
     completedAtUtc = [DateTime]::UtcNow.ToString('o')
     verdict = $verdict
