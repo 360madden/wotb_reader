@@ -105,6 +105,20 @@ and no doc still claims the position is unpublished. Chain shape is also
 enforced by `offset_check.py` (chained ⇒ `offsets` 0, note-hex cross-check)
 on every `validate.ps1`/CI run.
 
+**Gate-closure evidence review (2026-08-10): sound.** Re-derived the stored
+verdict of every positive-run aggregate with the poll's exact schema-v4
+condition (evidence untouched): OD-075 (v2), OD-076 (v3), and OD-082 (v4)
+stored `stable-resolver-positive` re-derive positive; OD-081 (v3) stored
+`honest-negative-or-inconclusive` re-derives positive — the **documented**
+verdict-contract case (its label is historical under the old v3 logic; the
+gates were deliberately NOT closed on it). G2: `sameDecodedClockProven`
+true in the four live runs (OD-078/079/081/082 stored aggregates), false
+pre-G2 (OD-075/076) — the 4x confirmation claim holds. G3: OD-075/076 pass
+the poll's exact fail-closed prior check (schema `wotbtreader.od073*` +
+positive verdict); the stored `stableRootLiveRepeatabilityProven` is false
+in 081 (never exercised — verdict negative) and 082 (mechanical
+comma-binding, documented), both consistent with the ledger.
+
 ### G1 — Hardware-atomic read proof
 
 **CLOSED 2026-08-09 (OD-RECOVERY-082):** the stored v4 aggregate is 24/24
