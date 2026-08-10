@@ -7,19 +7,34 @@ using WotBTreader.Core.Discovery;
 namespace WotBTreader.Application.Tests;
 
 /// <summary>
-/// End-to-end proof of the 2nd-generation walkable position-chain form
-/// (drafted in <c>docs/operations/g0-offset-table-draft.md</c> §6): the exact
-/// JSON that would be published is deserialized through the REAL parse path
-/// (<c>OffsetTableReader</c>), then the parsed chains are walked on full-spine
-/// synthetic memory and must produce the same record address and X/Y/Z floats
-/// as the resolver's own traversal over the SAME memory. Any drift between the
-/// draft JSON and the resolver's layout constants fails here.
+/// End-to-end proof of the 2nd-generation walkable position-chain form. The
+/// SINGLE source of truth is the canonical draft file
+/// <c>docs/operations/g0-walkable-position-chains.draft.json</c> (rendered in
+/// <c>docs/operations/g0-offset-table-draft.md</c> §7 and validated by
+/// <c>scripts/python/offset_check.py</c>). This test loads THAT file through
+/// the real parse path (<c>OffsetTableReader</c>), then walks the parsed
+/// chains on full-spine synthetic memory and requires the same record address
+/// and X/Y/Z floats as the resolver's own traversal over the SAME memory. Any
+/// drift between the canonical file and the resolver's layout constants — or
+/// between the file and the operator-facing doc block (checked by the Python
+/// gate) — fails here.
 /// </summary>
 [TestClass]
 public sealed class WalkablePositionChainTests
 {
     private const string Version = "11.19.0.10";
     private static readonly string Hash = new('a', ContentHash.Sha256HexLength);
+
+    // The canonical draft file: gameVersion + the real 11.19.0.10 executable
+    // hash it declares. Loading through OffsetTableReader pins the file's
+    // identity to the exact analyzed binary. The version string matches the
+    // filename (g0-walkable-position-chains.draft.json) — required by both
+    // OffsetTableReader's {gameVersion}.json lookup and offset_check.py's
+    // filename rule.
+    private const string DraftVersion = "g0-walkable-position-chains.draft";
+    private const string DraftHash =
+        "1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d";
+
     private const uint ModuleBase = 0x10000000;
     private const int EntityId = 4242;
 
@@ -28,11 +43,7 @@ public sealed class WalkablePositionChainTests
     [TestMethod]
     public void Load_ParsesWalkableChains_ToResolverConstants()
     {
-        using var directory = new TemporaryDirectory();
-        WriteWalkableTable(directory.Path);
-
-        OperationResult<OffsetTable?> result =
-            new OffsetTableReader(directory.Path).Load(Version, Hash);
+        OperationResult<OffsetTable?> result = LoadDraft();
 
         Assert.IsTrue(result.IsSuccess, result.Error?.Message);
         Assert.IsNotNull(result.Value);
@@ -83,10 +94,7 @@ public sealed class WalkablePositionChainTests
     [TestMethod]
     public void Walk_ParsedWalkableChains_EntityNotFound_WhenAllTreesEmpty()
     {
-        using var directory = new TemporaryDirectory();
-        WriteWalkableTable(directory.Path);
-        OperationResult<OffsetTable?> result =
-            new OffsetTableReader(directory.Path).Load(Version, Hash);
+        OperationResult<OffsetTable?> result = LoadDraft();
         Assert.IsTrue(result.IsSuccess, result.Error?.Message);
         Assert.IsNotNull(result.Value?.Chains);
 
@@ -130,10 +138,7 @@ public sealed class WalkablePositionChainTests
 
     private static void RunEquivalence(FullSpineFixture memory, float x, float y, float z)
     {
-        using var directory = new TemporaryDirectory();
-        WriteWalkableTable(directory.Path);
-        OperationResult<OffsetTable?> result =
-            new OffsetTableReader(directory.Path).Load(Version, Hash);
+        OperationResult<OffsetTable?> result = LoadDraft();
         Assert.IsTrue(result.IsSuccess, result.Error?.Message);
         Assert.IsNotNull(result.Value?.Chains);
 
@@ -249,8 +254,33 @@ public sealed class WalkablePositionChainTests
         }
     }
 
-    private static void WriteWalkableTable(string directory)
-        => WriteTable(directory, WalkableChainsJson);
+    /// <summary>
+    /// Loads the CANONICAL draft file through the real parse path. The file's
+    /// gameVersion and hash are fixed inputs, so any edit to the file that
+    /// breaks identity or shape fails here.
+    /// </summary>
+    private static OperationResult<OffsetTable?> LoadDraft()
+    {
+        string draftDirectory = Path.Combine(RepoRoot(), "docs", "operations");
+        return new OffsetTableReader(draftDirectory).Load(DraftVersion, DraftHash);
+    }
+
+    private static string RepoRoot()
+    {
+        for (DirectoryInfo? directory = new(AppContext.BaseDirectory);
+             directory is not null;
+             directory = directory.Parent)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "WotBTreader.sln")) &&
+                File.Exists(Path.Combine(directory.FullName, "Directory.Build.props")))
+            {
+                return directory.FullName;
+            }
+        }
+
+        throw new DirectoryNotFoundException(
+            "Could not locate the repository root from " + AppContext.BaseDirectory);
+    }
 
     private static void WriteTable(string directory, string chainsJson)
     {
@@ -280,59 +310,6 @@ public sealed class WalkablePositionChainTests
             """;
         File.WriteAllText(Path.Combine(directory, $"{Version}.json"), json);
     }
-
-    /// <summary>
-    /// The 2nd-generation walkable position-chain form — the exact JSON the
-    /// operator gate would publish (g0-offset-table-draft.md §6). X full; Y/Z
-    /// differ only in the final recordOffset (0x14 / 0x18).
-    /// </summary>
-    private const string WalkableChainsJson =
-        """
-        "chains": {
-          "playerPositionX": [
-            { "kind": "rootRva", "value": 67722376, "note": "GameCoreRootRva 0x04095C88 - root slot dereferences to the GameCore pointer" },
-            { "kind": "memberOffset", "value": 12, "note": "GameCore->AppController 0x0C" },
-            { "kind": "memberOffset", "value": 292, "note": "AppController->SessionController 0x124" },
-            { "kind": "memberOffset", "value": 280, "note": "SessionController->AccountController 0x118" },
-            { "kind": "memberOffset", "value": 296, "note": "AccountController->Active playback controller 0x128" },
-            { "kind": "memberOffset", "value": 288, "note": "PlaybackController->Connection 0x120" },
-            { "kind": "inlineOffset", "value": 4, "note": "Connection->BWEntities map - INLINE member (no deref) 0x04" },
-            { "kind": "entityLookup", "value": 0, "cachedEntityOffset": 72, "entityIdOffset": 28, "treeRootOffsets": [28, 64, 52], "treeNodeSize": 24, "treeNodeNilOffset": 13, "treeNodeKeyOffset": 16, "treeNodeValueOffset": 20, "treeNodeChildLessOffset": 0, "treeNodeChildGreaterOffset": 8, "treeSentinelFirstNodeOffset": 4, "maxTreeNodes": 1024, "note": "Entity lookup (resolver constants): cache fast path 0x48 + ALTERNATIVE tree roots 0x1C/0x40/0x34, node 0x18 layout; target entity id supplied per walk" },
-            { "kind": "memberOffset", "value": 56, "note": "Found entity->movement filter 0x38" },
-            { "kind": "memberOffset", "value": 8, "note": "Filter->avatar helper 0x08" },
-            { "kind": "ringIndex", "value": 8, "indexOffset": 456, "stride": 56, "note": "Helper->ring entry - INLINE ring 0x08 + index(0x1C8)*0x38, stride 0x38" },
-            { "kind": "recordOffset", "value": 16, "note": "float32 X at +0x10 (Y +0x14, Z +0x18)" }
-          ],
-          "playerPositionY": [
-            { "kind": "rootRva", "value": 67722376, "note": "GameCoreRootRva 0x04095C88 - root slot dereferences to the GameCore pointer" },
-            { "kind": "memberOffset", "value": 12, "note": "GameCore->AppController 0x0C" },
-            { "kind": "memberOffset", "value": 292, "note": "AppController->SessionController 0x124" },
-            { "kind": "memberOffset", "value": 280, "note": "SessionController->AccountController 0x118" },
-            { "kind": "memberOffset", "value": 296, "note": "AccountController->Active playback controller 0x128" },
-            { "kind": "memberOffset", "value": 288, "note": "PlaybackController->Connection 0x120" },
-            { "kind": "inlineOffset", "value": 4, "note": "Connection->BWEntities map - INLINE member (no deref) 0x04" },
-            { "kind": "entityLookup", "value": 0, "cachedEntityOffset": 72, "entityIdOffset": 28, "treeRootOffsets": [28, 64, 52], "treeNodeSize": 24, "treeNodeNilOffset": 13, "treeNodeKeyOffset": 16, "treeNodeValueOffset": 20, "treeNodeChildLessOffset": 0, "treeNodeChildGreaterOffset": 8, "treeSentinelFirstNodeOffset": 4, "maxTreeNodes": 1024, "note": "Entity lookup (resolver constants): cache fast path 0x48 + ALTERNATIVE tree roots 0x1C/0x40/0x34, node 0x18 layout; target entity id supplied per walk" },
-            { "kind": "memberOffset", "value": 56, "note": "Found entity->movement filter 0x38" },
-            { "kind": "memberOffset", "value": 8, "note": "Filter->avatar helper 0x08" },
-            { "kind": "ringIndex", "value": 8, "indexOffset": 456, "stride": 56, "note": "Helper->ring entry - INLINE ring 0x08 + index(0x1C8)*0x38, stride 0x38" },
-            { "kind": "recordOffset", "value": 20, "note": "float32 Y at +0x14" }
-          ],
-          "playerPositionZ": [
-            { "kind": "rootRva", "value": 67722376, "note": "GameCoreRootRva 0x04095C88 - root slot dereferences to the GameCore pointer" },
-            { "kind": "memberOffset", "value": 12, "note": "GameCore->AppController 0x0C" },
-            { "kind": "memberOffset", "value": 292, "note": "AppController->SessionController 0x124" },
-            { "kind": "memberOffset", "value": 280, "note": "SessionController->AccountController 0x118" },
-            { "kind": "memberOffset", "value": 296, "note": "AccountController->Active playback controller 0x128" },
-            { "kind": "memberOffset", "value": 288, "note": "PlaybackController->Connection 0x120" },
-            { "kind": "inlineOffset", "value": 4, "note": "Connection->BWEntities map - INLINE member (no deref) 0x04" },
-            { "kind": "entityLookup", "value": 0, "cachedEntityOffset": 72, "entityIdOffset": 28, "treeRootOffsets": [28, 64, 52], "treeNodeSize": 24, "treeNodeNilOffset": 13, "treeNodeKeyOffset": 16, "treeNodeValueOffset": 20, "treeNodeChildLessOffset": 0, "treeNodeChildGreaterOffset": 8, "treeSentinelFirstNodeOffset": 4, "maxTreeNodes": 1024, "note": "Entity lookup (resolver constants): cache fast path 0x48 + ALTERNATIVE tree roots 0x1C/0x40/0x34, node 0x18 layout; target entity id supplied per walk" },
-            { "kind": "memberOffset", "value": 56, "note": "Found entity->movement filter 0x38" },
-            { "kind": "memberOffset", "value": 8, "note": "Filter->avatar helper 0x08" },
-            { "kind": "ringIndex", "value": 8, "indexOffset": 456, "stride": 56, "note": "Helper->ring entry - INLINE ring 0x08 + index(0x1C8)*0x38, stride 0x38" },
-            { "kind": "recordOffset", "value": 24, "note": "float32 Z at +0x18" }
-          ]
-        }
-        """;
 
     /// <summary>Same table but with the X chain's entityLookup missing its
     /// required descriptor fields — the chain must be dropped fail-closed.</summary>

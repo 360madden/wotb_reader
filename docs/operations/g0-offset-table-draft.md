@@ -269,6 +269,13 @@ approval the walker can read the published table's chains directly.
 ### 7.4 The walkable JSON (`playerPositionX`; Y/Z differ only in the final
 `recordOffset` 0x14/0x18)
 
+> **Canonical source of truth:** `docs/operations/g0-walkable-position-
+> chains.draft.json` (full table shape, all three chains). The block below is
+> the operator-facing rendering of `playerPositionX`; the Python gate
+> (`offset_check.py`) validates the FILE with the same chain rules as the
+> published tables AND fails if this block drifts from it. The C# proof
+> (`WalkablePositionChainTests`) loads the FILE through `OffsetTableReader`.
+
 ```json
 [
   { "kind": "rootRva", "value": 67722376, "note": "GameCoreRootRva 0x04095C88 - root slot dereferences to the GameCore pointer" },

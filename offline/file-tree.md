@@ -65,6 +65,7 @@ docs/operations/g0-offset-table-draft.md
 docs/operations/g0-operator-checklist.md
 docs/operations/g0-post-publication-regression.md
 docs/operations/g0-publication-review.md
+docs/operations/g0-walkable-position-chains.draft.json
 docs/operations/g1-live-evidence-template.md
 docs/operations/handoffs/2026-07-26-overlay-mvvm-buildout.md
 docs/operations/handoffs/2026-07-26-validated-integration-milestone.md

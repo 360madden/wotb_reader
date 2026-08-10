@@ -31,6 +31,14 @@ LOG_DIR = REPO_ROOT / ".build"
 SCHEMA_PATH = OFFSET_DIR / "schema.json"
 DOC_PACK_PATH = REPO_ROOT / "offline" / "memory-offsets.md"
 
+# Canonical 2nd-generation walkable position-chain form (G0 draft, NOT
+# applied): single source of truth for the walkable chains. The C# test
+# (WalkablePositionChainTests) loads this file through OffsetTableReader; the
+# validator checks it with the same rules as the published tables; the
+# operator-facing JSON block in g0-offset-table-draft.md §7.4 must match it.
+WALKABLE_DRAFT_PATH = REPO_ROOT / "docs" / "operations" / "g0-walkable-position-chains.draft.json"
+WALKABLE_DRAFT_DOC_PATH = REPO_ROOT / "docs" / "operations" / "g0-offset-table-draft.md"
+
 # The only confidence values the schema, the pack doc, and OffsetConfidence
 # (Core/OffsetModels.cs) agree on. Never add "verified" here — it is not a
 # file-level confidence level anywhere in the contract.
@@ -193,6 +201,64 @@ def extract_documented_schema(doc_path: Path) -> dict[str, set[str]]:
         "required": required_fields,
         "chain_kinds": chain_kinds,
     }
+
+
+def extract_walkable_draft_block(doc_path: Path):
+    """Parse the §7.4 walkable-chain JSON block out of g0-offset-table-draft.md.
+
+    The operator-facing block is the playerPositionX hop ARRAY (the last
+    ```json block in the doc that parses to a list of hops). Returns the
+    parsed array, or None if it cannot be extracted.
+    """
+    text = doc_path.read_text(encoding="utf-8")
+    for block in reversed(re.findall(r"```json\s*\n(.*?)```", text, re.DOTALL)):
+        try:
+            data = json.loads(block)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, list) and data and isinstance(data[0], dict):
+            return data
+    return None
+
+
+def check_walkable_draft(log_path: Path) -> list[str]:
+    """Validate the canonical walkable draft file (docs/operations/
+    g0-walkable-position-chains.draft.json) with the same chain rules as the
+    published tables, and cross-check the operator-facing §7.4 JSON block in
+    g0-offset-table-draft.md against the file's playerPositionX chain — the
+    file is authoritative; any doc/file drift fails the gate."""
+    issues: list[str] = []
+
+    if not WALKABLE_DRAFT_PATH.is_file():
+        issues.append(
+            f"walkable draft not found: "
+            f"{WALKABLE_DRAFT_PATH.relative_to(REPO_ROOT)}")
+        return issues
+
+    try:
+        schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        return [f"schema.json is invalid JSON — {e}"]
+
+    issues.extend(validate_offset_file(log_path, WALKABLE_DRAFT_PATH, schema))
+
+    if WALKABLE_DRAFT_DOC_PATH.is_file():
+        block = extract_walkable_draft_block(WALKABLE_DRAFT_DOC_PATH)
+        if block is None:
+            issues.append(
+                "g0-offset-table-draft.md §7.4 walkable JSON block not found")
+        else:
+            try:
+                data = json.loads(WALKABLE_DRAFT_PATH.read_text(encoding="utf-8"))
+                x = data.get("chains", {}).get("playerPositionX")
+                if x != block:
+                    issues.append(
+                        "walkable draft drift: g0-offset-table-draft.md §7.4 block "
+                        "does not match the canonical file's playerPositionX chain "
+                        "(file is authoritative)")
+            except json.JSONDecodeError as e:
+                issues.append(f"walkable draft file is invalid JSON — {e}")
+    return issues
 
 
 def check_documented_schema(log_path: Path, doc: dict[str, set[str]]) -> list[str]:
@@ -594,6 +660,14 @@ def main() -> int:
             for issue in doc_issues:
                 write_log(log_path, f"  DOC-CHECK ISSUE: {issue}")
 
+    # Walkable draft (canonical 2nd-generation chain form, G0 draft §7).
+    write_log(log_path, "")
+    write_log(log_path,
+              "Validating walkable draft (docs/operations/g0-walkable-position-chains.draft.json):")
+    draft_issues = check_walkable_draft(log_path)
+    all_issues.extend(draft_issues)
+    for issue in draft_issues:
+        write_log(log_path, f"  ISSUE: {issue}")
     write_log(log_path, "")
     if all_issues:
         write_log(log_path, f"FAIL: {len(all_issues)} issue(s) found.")

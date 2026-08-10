@@ -1,0 +1,257 @@
+{
+  "schemaVersion": 1,
+  "gameVersion": "g0-walkable-position-chains.draft",
+  "executableSha256": "1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d",
+  "discoveredAtUtc": "2026-08-10T00:00:00Z",
+  "confidence": "medium",
+  "notes": "CANONICAL 2nd-generation walkable position-chain form (draft, NOT applied). Single source of truth: tests/WotBTreader.Application.Tests/WalkablePositionChainTests.cs loads this file through OffsetTableReader and proves the parsed chains walk to resolver-equal X/Y/Z floats; scripts/python/offset_check.py validates it against schema.json; docs/operations/g0-offset-table-draft.md \u00a77.4 renders playerPositionX. The operator gate decides whether this replaces the published chains in memory-offsets/11.19.0.10.json.",
+  "offsets": {
+    "replayTime": 0,
+    "playerHP": 0,
+    "playerPositionX": 0,
+    "playerPositionY": 0,
+    "playerPositionZ": 0,
+    "playerYaw": 0,
+    "cameraPitch": 0,
+    "aliveTankCount": 0
+  },
+  "chains": {
+    "playerPositionX": [
+      {
+        "kind": "rootRva",
+        "value": 67722376,
+        "note": "GameCoreRootRva 0x04095C88 - root slot dereferences to the GameCore pointer"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 12,
+        "note": "GameCore->AppController 0x0C"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 292,
+        "note": "AppController->SessionController 0x124"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 280,
+        "note": "SessionController->AccountController 0x118"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 296,
+        "note": "AccountController->Active playback controller 0x128"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 288,
+        "note": "PlaybackController->Connection 0x120"
+      },
+      {
+        "kind": "inlineOffset",
+        "value": 4,
+        "note": "Connection->BWEntities map - INLINE member (no deref) 0x04"
+      },
+      {
+        "kind": "entityLookup",
+        "value": 0,
+        "cachedEntityOffset": 72,
+        "entityIdOffset": 28,
+        "treeRootOffsets": [
+          28,
+          64,
+          52
+        ],
+        "treeNodeSize": 24,
+        "treeNodeNilOffset": 13,
+        "treeNodeKeyOffset": 16,
+        "treeNodeValueOffset": 20,
+        "treeNodeChildLessOffset": 0,
+        "treeNodeChildGreaterOffset": 8,
+        "treeSentinelFirstNodeOffset": 4,
+        "maxTreeNodes": 1024,
+        "note": "Entity lookup (resolver constants): cache fast path 0x48 + ALTERNATIVE tree roots 0x1C/0x40/0x34, node 0x18 layout; target entity id supplied per walk"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 56,
+        "note": "Found entity->movement filter 0x38"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 8,
+        "note": "Filter->avatar helper 0x08"
+      },
+      {
+        "kind": "ringIndex",
+        "value": 8,
+        "indexOffset": 456,
+        "stride": 56,
+        "note": "Helper->ring entry - INLINE ring 0x08 + index(0x1C8)*0x38, stride 0x38"
+      },
+      {
+        "kind": "recordOffset",
+        "value": 16,
+        "note": "float32 X at +0x10 (Y +0x14, Z +0x18)"
+      }
+    ],
+    "playerPositionY": [
+      {
+        "kind": "rootRva",
+        "value": 67722376,
+        "note": "GameCoreRootRva 0x04095C88 - root slot dereferences to the GameCore pointer"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 12,
+        "note": "GameCore->AppController 0x0C"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 292,
+        "note": "AppController->SessionController 0x124"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 280,
+        "note": "SessionController->AccountController 0x118"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 296,
+        "note": "AccountController->Active playback controller 0x128"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 288,
+        "note": "PlaybackController->Connection 0x120"
+      },
+      {
+        "kind": "inlineOffset",
+        "value": 4,
+        "note": "Connection->BWEntities map - INLINE member (no deref) 0x04"
+      },
+      {
+        "kind": "entityLookup",
+        "value": 0,
+        "cachedEntityOffset": 72,
+        "entityIdOffset": 28,
+        "treeRootOffsets": [
+          28,
+          64,
+          52
+        ],
+        "treeNodeSize": 24,
+        "treeNodeNilOffset": 13,
+        "treeNodeKeyOffset": 16,
+        "treeNodeValueOffset": 20,
+        "treeNodeChildLessOffset": 0,
+        "treeNodeChildGreaterOffset": 8,
+        "treeSentinelFirstNodeOffset": 4,
+        "maxTreeNodes": 1024,
+        "note": "Entity lookup (resolver constants): cache fast path 0x48 + ALTERNATIVE tree roots 0x1C/0x40/0x34, node 0x18 layout; target entity id supplied per walk"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 56,
+        "note": "Found entity->movement filter 0x38"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 8,
+        "note": "Filter->avatar helper 0x08"
+      },
+      {
+        "kind": "ringIndex",
+        "value": 8,
+        "indexOffset": 456,
+        "stride": 56,
+        "note": "Helper->ring entry - INLINE ring 0x08 + index(0x1C8)*0x38, stride 0x38"
+      },
+      {
+        "kind": "recordOffset",
+        "value": 20,
+        "note": "float32 Y at +0x14"
+      }
+    ],
+    "playerPositionZ": [
+      {
+        "kind": "rootRva",
+        "value": 67722376,
+        "note": "GameCoreRootRva 0x04095C88 - root slot dereferences to the GameCore pointer"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 12,
+        "note": "GameCore->AppController 0x0C"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 292,
+        "note": "AppController->SessionController 0x124"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 280,
+        "note": "SessionController->AccountController 0x118"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 296,
+        "note": "AccountController->Active playback controller 0x128"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 288,
+        "note": "PlaybackController->Connection 0x120"
+      },
+      {
+        "kind": "inlineOffset",
+        "value": 4,
+        "note": "Connection->BWEntities map - INLINE member (no deref) 0x04"
+      },
+      {
+        "kind": "entityLookup",
+        "value": 0,
+        "cachedEntityOffset": 72,
+        "entityIdOffset": 28,
+        "treeRootOffsets": [
+          28,
+          64,
+          52
+        ],
+        "treeNodeSize": 24,
+        "treeNodeNilOffset": 13,
+        "treeNodeKeyOffset": 16,
+        "treeNodeValueOffset": 20,
+        "treeNodeChildLessOffset": 0,
+        "treeNodeChildGreaterOffset": 8,
+        "treeSentinelFirstNodeOffset": 4,
+        "maxTreeNodes": 1024,
+        "note": "Entity lookup (resolver constants): cache fast path 0x48 + ALTERNATIVE tree roots 0x1C/0x40/0x34, node 0x18 layout; target entity id supplied per walk"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 56,
+        "note": "Found entity->movement filter 0x38"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 8,
+        "note": "Filter->avatar helper 0x08"
+      },
+      {
+        "kind": "ringIndex",
+        "value": 8,
+        "indexOffset": 456,
+        "stride": 56,
+        "note": "Helper->ring entry - INLINE ring 0x08 + index(0x1C8)*0x38, stride 0x38"
+      },
+      {
+        "kind": "recordOffset",
+        "value": 24,
+        "note": "float32 Z at +0x18"
+      }
+    ]
+  }
+}

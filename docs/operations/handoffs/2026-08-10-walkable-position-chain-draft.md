@@ -34,17 +34,41 @@ capability into a concrete, operator-ready artifact:
 4. **Docs** — the runbook's chain paragraph now points at the draft §7 and the
    new proof.
 
+## Follow-up (same day): closed the two-copy drift gap
+
+The walkable JSON originally existed in two places (the draft doc §7.4 block
+and the test's embedded constant) with nothing enforcing they matched — the
+repo's #1 failure mode. Now there is exactly ONE canonical copy:
+
+- **`docs/operations/g0-walkable-position-chains.draft.json`** — full table
+  shape (`gameVersion: g0-walkable-position-chains.draft`, real executable
+  hash, all 8 offsets 0, the three walkable chains).
+- **The C# test loads the FILE** through `OffsetTableReader` (via a
+  repo-root finder, mirroring `ProjectCatalog`), so the canonical file is
+  pinned to the resolver's constants + walk equivalence; the embedded JSON
+  constant is gone.
+- **`offset_check.py` now validates the draft file** with the same chain
+  rules as the published tables (shape, descriptor requirements, note-hex
+  cross-check) and — in `--check-schema` mode — **compares the doc §7.4
+  block to the file's `playerPositionX`**; the file is authoritative, any
+  drift fails the gate. Proven both ways: a mutated file fires the note-hex
+  check and the drift check.
+
 ## Files
 
 - `tests/WotBTreader.Application.Tests/WalkablePositionChainTests.cs` (new)
 - `docs/operations/g0-offset-table-draft.md` (§7 added)
+- `docs/operations/g0-walkable-position-chains.draft.json` (new — canonical)
+- `scripts/python/offset_check.py` (draft-file validation + doc-block drift
+  check)
 - `docs/operations/offset-discovery-workflow.md` (chain paragraph updated)
 
 ## Gates
 
 `scripts/validate.ps1` exit 0 — all 12 test projects green (Application.Tests
 18 → 24), chains validated, pack-doc ↔ schema ↔ validator cross-check
-consistent, file-tree/links/ledger clean, PSSA baseline 86.
+consistent, file-tree/links/ledger clean, PSSA baseline 86. `offset_check.py
+--check-schema` now also reports "Validating walkable draft" and passes.
 
 ## Not done (operator decision pending)
 
