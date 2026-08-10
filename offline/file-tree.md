@@ -209,6 +209,7 @@ docs/operations/handoffs/2026-08-09-od074-replay-root-live-narrowing.md
 docs/operations/handoffs/2026-08-09-od075-position-ring-correction-live-proof.md
 docs/operations/handoffs/2026-08-10-g0-offset-publication.md
 docs/operations/handoffs/2026-08-10-hp-correlator-flatness.md
+docs/operations/handoffs/2026-08-10-hp-diff-cli-and-tick-unit-fix.md
 docs/operations/handoffs/2026-08-10-hp-discovery-offline-complete.md
 docs/operations/handoffs/2026-08-10-hp-victim-qualification.md
 docs/operations/handoffs/2026-08-10-runtime-chain-walker.md
