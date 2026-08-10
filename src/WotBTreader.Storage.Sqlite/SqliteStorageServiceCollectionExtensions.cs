@@ -23,6 +23,7 @@ public static class SqliteStorageServiceCollectionExtensions
         services.AddSingleton<ISessionQueryRepository, SqliteSessionQueryRepository>();
         services.AddSingleton<ITrajectoryGroundTruthProvider, SqliteTrajectoryGroundTruthProvider>();
         services.AddSingleton<IHpGroundTruthProvider, SqliteHpGroundTruthProvider>();
+        services.AddSingleton<IYawGroundTruthProvider, SqliteYawGroundTruthProvider>();
         services.AddSingleton<IComparisonRunRepository, SqliteComparisonRunRepository>();
         services.AddSingleton<IReplayClockSegmentRepository, SqliteReplayClockSegmentRepository>();
         return services;

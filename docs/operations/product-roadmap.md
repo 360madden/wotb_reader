@@ -103,12 +103,16 @@ touch what.
 
 | Step | WS | Deliverable | Unlocks |
 |---|---|---|---|
-| F1 | A | Wrap-aware float32 `HeadingCorrelator` + facing rehearsal on both replays (packet-yaw ground truth) | Facing live session |
-| F2 | F | `OverlayFrame`/`TankState` contract + `ReplayFrameSource` (DB → frames at replay time t, HP step function) | Nameplates, beacons, live swap-in |
-| F3 | E | Velocity series from replay (finite difference) + pitch/roll validation script | `+0x28` semantics, pitch/roll tracks |
-| F4 | G | This roadmap + workstream registry | All parallel work |
+| F1 | A | ✅ Wrap-aware float32 `HeadingCorrelator` + facing rehearsal on both replays (packet-yaw ground truth) | Facing live session |
+| F2 | F | ✅ `OverlayFrame`/`TankState` contract + `ReplayFrameSource` (DB → frames at replay time t, HP step function) | Nameplates, beacons, live swap-in |
+| F3 | E | ✅ Velocity series from replay (finite difference) + pitch/roll validation script | `+0x28` semantics, pitch/roll tracks |
+| F4 | G | ✅ This roadmap + workstream registry | All parallel work |
 
-All four are independent, file-disjoint, and gate-green alone.
+Phase 0 is complete (2026-08-10): the facing correlator rehearses to `+0x2C` on
+both replays (8/8 turn windows, flatness 1.0), the overlay frame contract and
+`ReplayFrameSource` are tested, and the velocity/pitch/roll tool validates
+pitch = −slope (155/155 and 113/113 windows) with the velocity series freed
+of the sub-50ms duplicate-packet artifact.
 
 ### Phase 1 — Replay overlay offline (parallel with Phase 2 prep)
 

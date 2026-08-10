@@ -38,6 +38,7 @@ public sealed class CliCommandRouter
         "sessions",
         "watch",
         "hp-diff",
+        "yaw-diff",
         "serve",
     ];
 
@@ -48,6 +49,7 @@ public sealed class CliCommandRouter
     private readonly IComparisonRunRepository _comparisons;
     private readonly ITelemetryComparator _comparator;
     private readonly IHpGroundTruthProvider _hpGroundTruth;
+    private readonly IYawGroundTruthProvider _yawGroundTruth;
     private readonly ILogger<CliCommandRouter> _logger;
 
     /// <summary>Creates a command router with all application ports resolved by DI.</summary>
@@ -59,6 +61,7 @@ public sealed class CliCommandRouter
         IComparisonRunRepository comparisons,
         ITelemetryComparator comparator,
         IHpGroundTruthProvider hpGroundTruth,
+        IYawGroundTruthProvider yawGroundTruth,
         ILogger<CliCommandRouter> logger)
     {
         _doctor = doctor;
@@ -68,6 +71,7 @@ public sealed class CliCommandRouter
         _comparisons = comparisons;
         _comparator = comparator;
         _hpGroundTruth = hpGroundTruth;
+        _yawGroundTruth = yawGroundTruth;
         _logger = logger;
     }
 
@@ -94,6 +98,7 @@ public sealed class CliCommandRouter
             "export" => await ExportAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "watch" => await WatchAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "hp-diff" => await HpDiffAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
+            "yaw-diff" => await YawDiffAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "serve" => Unsupported(invocation.Command, correlationId),
             _ => Invalid(
                 "cli.command.unknown",
@@ -287,6 +292,157 @@ public sealed class CliCommandRouter
             hit
                 ? "HP field identified (candidate offset matches the damage timeline)."
                 : "No HP field confirmed.",
+            correlationId);
+    }
+
+    /// <summary>
+    /// Facing (yaw) verdict command — the mirror of <c>hp-diff</c> for the
+    /// packet-derived rotation ground truth: buckets the trusted-reader region
+    /// dumps (same snapshots schema), correlates a wrap-aware float32 field
+    /// against the target entity's <c>position_samples.yaw</c> deltas, and
+    /// emits the hardened contract (score 1.0 + flatness 1.0 + ≥ 2 matched
+    /// turn windows; stationary control windows must be unchanged).
+    /// </summary>
+    private async ValueTask<CliExecution> YawDiffAsync(
+        CliInvocation invocation,
+        Guid correlationId,
+        CancellationToken cancellationToken)
+    {
+        if (invocation.Positionals.Count != 1)
+        {
+            return Invalid(
+                "cli.yaw-diff.arguments",
+                "yaw-diff requires one positional: the snapshots JSON file path.",
+                correlationId);
+        }
+
+        if (!invocation.Options.TryGetValue("session", out string? sessionText) ||
+            !Guid.TryParse(sessionText, out Guid sessionGuid))
+        {
+            return Invalid(
+                "cli.yaw-diff.session",
+                "yaw-diff requires --session &lt;battle-session-guid&gt;.",
+                correlationId);
+        }
+
+        if (!invocation.Options.TryGetValue("victim", out string? victimText) ||
+            !long.TryParse(victimText, out long entityId) ||
+            entityId <= 0)
+        {
+            return Invalid(
+                "cli.yaw-diff.victim",
+                "yaw-diff requires --victim &lt;entity-id&gt; (a positive integer).",
+                correlationId);
+        }
+
+        double tolerance = HeadingCorrelator.DefaultToleranceRadians;
+        if (invocation.Options.TryGetValue("tolerance", out string? toleranceText) &&
+            (!double.TryParse(toleranceText, out tolerance) ||
+             !double.IsFinite(tolerance) ||
+             tolerance <= 0))
+        {
+            return Invalid(
+                "cli.yaw-diff.tolerance",
+                "--tolerance must be a positive finite number of radians.",
+                correlationId);
+        }
+
+        OperationResult<IReadOnlyList<RecordSnapshot>> snapshotsResult =
+            HpDiffSnapshotsFile.Load(invocation.Positionals[0]);
+        if (!snapshotsResult.IsSuccess || snapshotsResult.Value is null)
+        {
+            return FromResult(snapshotsResult, correlationId, "Snapshots loaded.");
+        }
+
+        OperationResult<YawGroundTruth> groundTruthResult = await _yawGroundTruth
+            .GetAsync(new BattleSessionId(sessionGuid), cancellationToken)
+            .ConfigureAwait(false);
+        if (!groundTruthResult.IsSuccess || groundTruthResult.Value is null)
+        {
+            return FromResult(groundTruthResult, correlationId, "Ground truth loaded.");
+        }
+
+        IReadOnlyList<ByteChangeWindow> windows =
+            RecordChangeBucketer.Bucket(snapshotsResult.Value);
+        IReadOnlyList<HeadingCorrelationCandidate> candidates =
+            HeadingCorrelator.Correlate(
+                windows,
+                groundTruthResult.Value.Samples,
+                entityId,
+                tolerance);
+
+        HeadingCorrelationCandidate? top = candidates.Count > 0 ? candidates[0] : null;
+        bool hit = top is not null
+            && top.Score >= 1.0 - 1e-9
+            && top.MatchedWindows >= 2
+            && top.Flatness >= 1.0 - 1e-9;
+
+        string reason;
+        if (hit)
+        {
+            reason = "HIT: score 1.0, flatness 1.0, >= 2 matched turn windows";
+        }
+        else if (top is null)
+        {
+            reason = "no candidate matched any turn window";
+        }
+        else if (top.Score < 1.0 - 1e-9)
+        {
+            reason = $"top candidate score {top.Score:0.###} < 1.0";
+        }
+        else if (top.MatchedWindows < 2)
+        {
+            reason = $"only {top.MatchedWindows} matched window(s); need >= 2";
+        }
+        else
+        {
+            reason = $"top candidate flatness {top.Flatness:0.###} < 1.0 (changed in stationary control windows)";
+        }
+
+        object data = new
+        {
+            command = "yaw-diff",
+            sessionId = sessionGuid,
+            entityId,
+            tolerance,
+            snapshots = snapshotsResult.Value.Count,
+            changeWindows = windows.Count,
+            yawSamples = groundTruthResult.Value.Samples.Count,
+            turnWindows = top?.TotalWindows ?? 0,
+            topCandidate = top is null
+                ? null
+                : new
+                {
+                    offset = top.Offset,
+                    score = top.Score,
+                    matchedWindows = top.MatchedWindows,
+                    totalWindows = top.TotalWindows,
+                    changedWindows = top.ChangedWindows,
+                    flatness = top.Flatness,
+                    controlWindows = top.ControlWindows,
+                    changedControlWindows = top.ChangedControlWindows,
+                    matchedWindowList = top.MatchedWindowList?
+                        .Select(matched => new
+                        {
+                            fromSeconds = matched.FromReplayTime.TotalSeconds,
+                            toSeconds = matched.ToReplayTime.TotalSeconds,
+                            expectedDeltaRadians = matched.ExpectedDeltaRadians,
+                        })
+                        .ToList(),
+                    explanation = top.Explanation,
+                },
+            verdict = new
+            {
+                hit,
+                reason,
+            },
+        };
+
+        return Success(
+            data,
+            hit
+                ? "Yaw field identified (candidate offset matches the packet-derived rotation timeline)."
+                : "No yaw field confirmed.",
             correlationId);
     }
 

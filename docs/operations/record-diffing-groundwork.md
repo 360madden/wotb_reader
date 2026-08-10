@@ -346,6 +346,74 @@ bytes (position +0x10/+0x14/+0x18, velocity +0x28); the unaccounted tail
 (+0x2C..+0x37) is the first place to look for the rotation floats. The
 live read is the remaining input; the offline ground truth is complete.
 
+## Facing correlator — rehearsal proven (2026-08-10)
+
+The `HeadingCorrelator` (Core/Discovery) ranks 4-byte-aligned float32 fields
+whose wrap-aware delta matches the packet yaw delta per replay-time window:
+TURN windows (expected |delta| > 0.02 rad) form the score denominator, and
+stationary CONTROL windows (|delta| ≤ 0.02) form the flatness denominator —
+the packet yaw is exactly constant when stationary, so flatness separates the
+yaw field from drifting decoys. The lookup is nearest-sample (the dump's
+replay clock lands on the packet the state was sent at), fail-closed outside
+the sample span, with ties resolving to the earlier sample. 8 unit tests pin
+wrap-across-π, decoy demotion, entity filtering, and fail-closed behavior.
+
+`yaw-diff <snapshots> --session <guid> --victim <entity>` (mirror of `hp-diff`)
+ran the full rehearsal on BOTH 11.19.0 replays: synthetic region dumps whose
+float32 at the predicted ring-record yaw offset **+0x2C** carry the real
+packet yaw, with a time-drifting decoy at +0x20:
+
+| Replay | Verdict | Offset | Score | Flatness | Matched / Controls |
+|---|---|---|---|---|---|
+| Oasis Palms | HIT | `+0x2C` | 1.0 | 1.0 | 8/8 turns, 0/9 control changed |
+| Dead Rail | HIT | `+0x2C` | 1.0 | 1.0 | 8/8 turns, 0/9 control changed |
+
+Construction rule caught in rehearsal (same class as the HP flatness trap): a
+TURN window whose expected delta is BELOW the 0.05 rad match tolerance is
+skipped as "unchanged" by design — rehearsal windows must be selected well
+above tolerance (|expected| > 0.1 rad), which the live session's dump-pair
+picker must mirror. The memory side is the remaining input: the gated live
+region read dumps the ring record at replay-clock-labeled times and the same
+correlator confirms whether the rotation floats live in the +0x2C..+0x37 tail.
+
+## Overlay frame contract — ReplayFrameSource (2026-08-10)
+
+The replay overlay's data seam is in place: `Core/Overlay` defines
+`OverlayCamera` (viewpoint position + yaw/pitch/roll), `OverlayTankState`
+(world pos, facing, HP fraction 0..1, alive, team, name/clan/tank/class,
+distance), and `OverlayFrame` (time + camera + tanks). `IOverlayFrameSource`
+(Application/Storage) + `ReplayFrameSource` (Application/Replay) build frames
+from `ISessionQueryRepository.GetProjectionAsync` — nearest-sample per entity
+(fail-closed: no sample at/before frame time means the tank is omitted), HP
+fraction from the canonical damage events (1.0 when the tank took no damage;
+exact max HP is not in the decoded data), alive from the Destroyed event,
+camera from the viewpoint entity. The overlay renders only `OverlayFrame`, so
+a future live source behind the same interface is a data-source swap, not a
+rewrite. 5 unit tests cover nearest-sample selection, fail-closed omission,
+the HP arc + destroy, origin camera, and the missing-session guard.
+
+## Velocity + pitch/roll — offline validation (2026-08-10)
+
+`scripts/python/velocity-pitch-validation.py` validates the rotation axes
+against geometry on both replays (viewpoint entity):
+
+| Metric | Oasis Palms | Dead Rail |
+|---|---|---|
+| Yaw vs motion heading (incl. reversals) | 1634/1634 (100%) | 1307/1307 (100%) |
+| Pitch = −slope (multi-second moving windows) | 155/155, residual −0.001 ± 1.3° | 113/113, residual −0.002 ± 0.8° |
+| Max speed (finite difference, dt ≥ 50 ms) | 13.0 m/s | 11.0 m/s |
+| Roll range (stationary-constant) | [−0.401, +0.264] | [−0.166, +0.088] |
+
+Findings: (1) the packet **pitch is the vertical facing with a flipped sign**
+relative to atan2(dY, dH) — pitch ≈ −slope, validated to ~1° — so the ring
+record's rotation floats can be correlated with the flipped-sign delta. (2)
+Velocity must be computed on dt ≥ 50 ms pairs only: the replay carries
+sub-ms duplicate packets whose tiny-dt finite difference fabricates ~22 m/s
+spikes (the 13.0/11.0 m/s figures above are the honest top speeds). (3) Roll
+is exactly constant when stationary and dynamic during movement — the third
+rotation axis, consistent with banking. `--self-test` pins the forward/reversal
+and pitch=−slope semantics with a synthetic fixture.
+
 ## Notes
 
 - Damage events are the highest-value correlation target: HP changes only on
