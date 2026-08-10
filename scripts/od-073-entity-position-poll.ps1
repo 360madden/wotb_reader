@@ -43,6 +43,10 @@ param(
     # artifacts are attested by the operator/ledger (result files carry no
     # artifact id by privacy design). Fail-closed: any invalid prior keeps the
     # flag false without aborting the poll.
+    # NOTE (2026-08-09, OD-RECOVERY-082): invoke-g1-live-poll.ps1 normalizes
+    # comma-joined values before calling this script; a DIRECT -File invocation
+    # with the comma form ('a,b') binds one path and fails Test-Path - pass the
+    # paths space-separated ('a' 'b') when calling this script directly.
     [string[]]$PriorResultPaths = @()
 )
 

@@ -54,8 +54,12 @@ All gate prerequisites closed; every verification step below PASSED:
 - Read-only gates PASS: `tools/report-offset-evidence.ps1 -GameVersion
   11.19.0.10` and `python scripts/python/offset_check.py --check-schema`.
 - Pending: `leadApproved` + `decoderAuditorApproved` (human sign-offs at
-  promotion time) and the schema-representation decision (position is a
-  pointer chain, not a single RVA).
+  promotion time). The schema-representation decision is RESOLVED (additive
+  `chains` section; offsets stay 0) — drafted in
+  `docs/operations/g0-offset-table-draft.md`, applied only on operator
+  approval. A comma-binding audit (2026-08-09) confirmed the wrapper's
+  `-PriorResultPaths` normalization covers the only `-File`-bound array
+  parameter; the poll's param help now documents direct-invocation usage.
 
 ## 1. Executable identity (fail-closed if ANY check fails)
 
@@ -135,12 +139,16 @@ For each field promoted, the table's `fieldValidation` requires:
 1. Update `memory-offsets/11.19.0.10.json`: set the promoted fields' offset
    values (module-relative chain form) + `fieldValidation.<field>.status =
    "Verified"` + the evidence/approval fields above.
-2. **Schema decision item:** the current table stores a single integer per
-   field — a pointer-CHAIN field (position at the end of the root→…→ring
-   chain) is not a single RVA. Decide and record how the chain is expressed
-   (e.g., the resolver layout values in the evidence + the root RVA in the
-   offset field, or a schema extension) BEFORE editing; do not overload a
-   value that would mislead a reader into treating it as an absolute RVA.
+2. **Schema decision item — RESOLVED 2026-08-09 (grill + draft):** the
+   position is a pointer chain, not a single RVA, and the runtime
+   observation path computes `moduleBase + field.Offset`, so a non-zero
+   `offsets` value would corrupt reads (and the ring record is battle-scoped
+   heap — never publishable). Decision: `offsets.playerPositionX/Y/Z` stay 0;
+   `fieldValidation` → `Verified` with evidence; the chain is expressed in a
+   new additive `chains` section (schema.json extended; `schemaVersion`
+   stays 1). The exact operator-ready change is drafted in
+   `docs/operations/g0-offset-table-draft.md`; apply it only on operator
+   approval.
 3. Run the read-only gates: `tools/report-offset-evidence.ps1
    -GameVersion 11.19.0.10` and `python scripts/python/offset_check.py
    --check-schema`.

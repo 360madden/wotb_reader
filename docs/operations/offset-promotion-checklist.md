@@ -68,8 +68,11 @@ content-distinct replays, harness invariants), read-only gates PASS
 (`report-offset-evidence.ps1` + `offset_check.py --check-schema`). The
 remaining step is the operator-approved table edit
 (`memory-offsets/11.19.0.10.json` → playerPositionX/Y/Z `Verified`,
-chain-form values, evidence, approvals) + post-edit gates; the table stays
-frozen until then.
+chain-form values, evidence, approvals) + post-edit gates; the exact
+change is drafted in `docs/operations/g0-offset-table-draft.md` (grill
+resolved the schema decision: offsets stay 0 — the runtime computes
+`moduleBase + offset` — and the chain is recorded in a new additive
+`chains` section); the table stays frozen until operator approval.
 
 ### G1 — Hardware-atomic read proof
 
