@@ -219,6 +219,27 @@ score 1.0 across both damage windows. Every stage of the planned session
 flow is now proven on the real published table; only the live read
 remains.
 
+**Two-replay rehearsal (2026-08-10, offline evidence):** the full session flow
+was rehearsed end-to-end on BOTH qualified replays against their real event
+timelines — the extractor's `dump_schedule` times, HP at `+0x48` dropping by
+the exact cumulative damage at each real hit tick (step function), flat
+control dumps, `RecordChangeBucketer` → `HpDamageCorrelator` (Lenient) →
+verdict, via `scripts/invoke-hp-diffing-session.ps1 -SnapshotsPath`:
+
+| Replay | Victim | Verdict | Offset | Score / Flatness | Matched |
+|---|---|---|---|---|---|
+| Oasis Palms | 3760578 | HIT | `+0x48` | 1.0 / 1.0 | 2/2 |
+| Dead Rail | 2549399 | HIT | `+0x48` | 1.0 / 1.0 | 13/13 |
+
+Both verdicts satisfy the contract (score 1.0 + flatness 1.0 + ≥ 2 exact-sum
+Strict matches) and **agree on the matched offset `+0x48`** — the Phase-4
+two-replay repeatability rule is proven offline in rehearsal; the live
+session only replaces the synthetic dumps with the trusted reader's.
+Construction note: dumps must bracket the hits at the scheduled ±0.2 s
+offsets and NOT land exactly on an event tick — placing a dump at the event
+time itself creates a zero-width boundary window whose sum lands in the
+wrong bucket (rehearsal hit this; the step-function rebuild fixed it).
+
 **Simulation reading:** the extractor's `--hp-delta` survival simulation
 at `target=0` measures the flat-window pass rate (3760578 at 10s windows:
 11/17 = 0.65 → survival ≈ 0.12 / 0.01 over 5 / 10 rounds). The honest
