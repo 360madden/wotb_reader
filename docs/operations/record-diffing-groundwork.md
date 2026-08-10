@@ -47,13 +47,41 @@ duration; fail-closed on an unknown/zero-duration session. Registered in
 `AddSqliteStorage`. `SqliteTrajectoryGroundTruthProvider` (positions) is
 unchanged.
 
-## The remaining gap: the memory-side diffing harness
+## The memory-side diffing harness
 
-The record-diffing correlation for HP therefore needs only the memory side:
-a trusted reader dumping the entity record around the avatar spine, with
-byte changes bucketed by replay time so they can be matched to the damage
-events this provider returns (`victim entity id → HP-drop event at replay
-time T`).
+### Implemented (2026-08-10, offline core)
+
+`WotBTreader.Core.Discovery` now carries the pure, synthetic-tested core
+(`RecordDiffingTests`, 9 tests):
+
+- `RecordChangeBucketer.Bucket(snapshots)` — time-buckets trusted-reader
+  region dumps (full-region bytes + replay clock label) into
+  `ByteChangeWindow`s: one per consecutive snapshot pair whose bytes
+  differ, with the exclusive/inclusive time span (From, To]. Snapshots must
+  be strictly increasing (fail-closed); unchanged pairs produce no window.
+- `HpDamageCorrelator.Correlate(windows, damageEvents, targetEntityId)` —
+  for each window, sums the target entity's damage events whose replay time
+  falls in (From, To]; a candidate is a 4-byte-aligned int32 whose value
+  drop equals −Σ damage (strict match). Ranked by score (matched / damage
+  windows), then precision (matched / changed damage-windows), then offset.
+
+Proven by synthetic fixtures: HP-at-+0x48 ranks first across three damage
+windows; an unrelated changing counter is never a candidate; sparse
+snapshots sum multiple events in one window; other entities' damage is
+ignored; a damage window with no HP drop yields no candidates. **v1
+limitations (documented, not bugs):** strict equality only — overkill
+(HP drop > Σ damage, e.g. a killing blow) and healing/multi-source splits
+that don't sum exactly do not match; events outside the observed snapshot
+span are observation gaps and do not inflate the denominator.
+
+### Remaining: the live trusted reader (approved-session step)
+
+The correlation core needs only the memory side fed in: a trusted reader
+dumping the entity record around the avatar spine (via the walkable
+position chain / `entityLookup`) at replay-clock-labeled times, bucketed by
+the core above and matched against the damage events this provider returns
+(`victim entity id → HP-drop event at replay time T`). No live session has
+run; the reader is the next approved-session step.
 
 ## Notes
 
