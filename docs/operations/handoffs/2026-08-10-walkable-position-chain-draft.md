@@ -53,6 +53,14 @@ repo's #1 failure mode. Now there is exactly ONE canonical copy:
   block to the file's `playerPositionX`**; the file is authoritative, any
   drift fails the gate. Proven both ways: a mutated file fires the note-hex
   check and the drift check.
+- **Re-expression fidelity check** (same pass): the validator now also
+  proves the walkable draft is the SAME walk as the published evidence
+  chains (`memory-offsets/11.19.0.10.json`), offset for offset — root RVA,
+  controller spine, entities map, cache fast path, ALTERNATIVE tree roots
+  (order-sensitive), filter/helper, ring base/index/stride, record offset.
+  Kinds may differ by design (published spells inline/lookup/ring steps as
+  memberOffset hops); offsets must not. Proven: swapping the tree-root order
+  fires `fidelity[playerPositionX]: tree roots differ`.
 
 ## Files
 

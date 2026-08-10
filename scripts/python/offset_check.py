@@ -35,9 +35,12 @@ DOC_PACK_PATH = REPO_ROOT / "offline" / "memory-offsets.md"
 # applied): single source of truth for the walkable chains. The C# test
 # (WalkablePositionChainTests) loads this file through OffsetTableReader; the
 # validator checks it with the same rules as the published tables; the
-# operator-facing JSON block in g0-offset-table-draft.md §7.4 must match it.
+# operator-facing JSON block in g0-offset-table-draft.md §7.4 must match it;
+# and the walkable form must re-express the published evidence chains
+# (memory-offsets/11.19.0.10.json) offset for offset.
 WALKABLE_DRAFT_PATH = REPO_ROOT / "docs" / "operations" / "g0-walkable-position-chains.draft.json"
 WALKABLE_DRAFT_DOC_PATH = REPO_ROOT / "docs" / "operations" / "g0-offset-table-draft.md"
+PUBLISHED_POSITION_TABLE = OFFSET_DIR / "11.19.0.10.json"
 
 # The only confidence values the schema, the pack doc, and OffsetConfidence
 # (Core/OffsetModels.cs) agree on. Never add "verified" here — it is not a
@@ -221,6 +224,114 @@ def extract_walkable_draft_block(doc_path: Path):
     return None
 
 
+def walkable_fidelity_issues(field: str, pub: list, dr: list) -> list[str]:
+    """Verify ONE walkable draft chain re-expresses the published evidence
+    chain for the same field. The published form spells several steps as
+    memberOffset hops where the resolver treats them as inline/lookup/ring —
+    that re-expression is exactly the point of the walkable form, so the check
+    maps OFFSETS, not hop kinds: same root RVA, same controller spine, same
+    entities map, same cache/tree roots, same filter/helper/ring/index
+    offsets, same record offset."""
+    issues: list[str] = []
+    tag = f"fidelity[{field}]"
+
+    def value(h):
+        return h.get("value")
+
+    # The walkable form's shape is pinned by schema.json; guard before
+    # indexing (a shape change must fail, not index-panic).
+    expected_kinds = [
+        "rootRva", "memberOffset", "memberOffset", "memberOffset",
+        "memberOffset", "memberOffset", "inlineOffset", "entityLookup",
+        "memberOffset", "memberOffset", "ringIndex", "recordOffset",
+    ]
+    actual_kinds = [h.get("kind") for h in dr]
+    if actual_kinds != expected_kinds:
+        issues.append(f"{tag}: unexpected walkable chain shape {actual_kinds} "
+                      f"(expected {expected_kinds})")
+        return issues
+
+    if pub[0].get("kind") != "rootRva" or value(pub[0]) != value(dr[0]):
+        issues.append(f"{tag}: root RVA differs — published={value(pub[0])} "
+                      f"draft={value(dr[0])}")
+
+    # Controller spine + entities map. The published memberOffset 0x04 is the
+    # BWEntities map; the walkable form corrects it to inlineOffset (the
+    # resolver treats the map as INLINE) — same offset, kind differs by design.
+    pub_spine = [value(h) for h in pub[1:7]]
+    dr_spine = [value(h) for h in dr[1:7]]
+    if pub_spine != dr_spine:
+        issues.append(f"{tag}: controller spine differs — published={pub_spine} "
+                      f"draft={dr_spine}")
+
+    # Cached fast path + ALTERNATIVE tree roots (order-sensitive).
+    if value(dr[7]) != 0:
+        issues.append(f"{tag}: entityLookup hop value must be 0 (the descriptor "
+                      f"carries the offsets)")
+    if dr[7].get("cachedEntityOffset") != value(pub[7]):
+        issues.append(f"{tag}: cache offset differs — published={value(pub[7])} "
+                      f"draft={dr[7].get('cachedEntityOffset')}")
+    pub_trees = [value(h) for h in pub[8:11]]
+    if dr[7].get("treeRootOffsets") != pub_trees:
+        issues.append(f"{tag}: tree roots differ — published={pub_trees} "
+                      f"draft={dr[7].get('treeRootOffsets')}")
+
+    # Movement filter + avatar helper.
+    if value(dr[8]) != value(pub[11]) or value(dr[9]) != value(pub[12]):
+        issues.append(f"{tag}: filter/helper offsets differ — published="
+                      f"{value(pub[11])}/{value(pub[12])} draft="
+                      f"{value(dr[8])}/{value(dr[9])}")
+
+    # Ring: base + index offset + stride (stride from the published note hex).
+    if value(dr[10]) != value(pub[13]):
+        issues.append(f"{tag}: ring base differs — published={value(pub[13])} "
+                      f"draft={value(dr[10])}")
+    if dr[10].get("indexOffset") != value(pub[14]):
+        issues.append(f"{tag}: ring index offset differs — published={value(pub[14])} "
+                      f"draft={dr[10].get('indexOffset')}")
+    m = re.search(r"stride 0x([0-9A-Fa-f]+)", pub[13].get("note", ""))
+    if m and dr[10].get("stride") != int(m.group(1), 16):
+        issues.append(f"{tag}: ring stride differs — published note 0x{m.group(1)} "
+                      f"draft={dr[10].get('stride')}")
+
+    # Record offset.
+    if value(dr[11]) != value(pub[15]):
+        issues.append(f"{tag}: record offset differs — published={value(pub[15])} "
+                      f"draft={value(dr[11])}")
+
+    return issues
+
+
+def check_walkable_fidelity(log_path: Path) -> list[str]:
+    """Verify the canonical walkable draft re-expresses the PUBLISHED
+    evidence chains (memory-offsets/11.19.0.10.json) for every position field
+    present in both: the walkable form must be the same walk the live evidence
+    (OD-RECOVERY-083) verified, offset for offset."""
+    issues: list[str] = []
+
+    try:
+        published = json.loads(PUBLISHED_POSITION_TABLE.read_text(encoding="utf-8"))
+        draft = json.loads(WALKABLE_DRAFT_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        return [f"fidelity check: invalid JSON — {e}"]
+
+    pub_chains = published.get("chains", {})
+    draft_chains = draft.get("chains", {})
+    checked = 0
+    for field in ("playerPositionX", "playerPositionY", "playerPositionZ"):
+        pub = pub_chains.get(field)
+        dr = draft_chains.get(field)
+        if pub is None or dr is None:
+            continue
+        checked += 1
+        issues.extend(walkable_fidelity_issues(field, pub, dr))
+
+    write_log(log_path,
+              f"  fidelity: walkable draft re-expresses the published "
+              f"position chains ({checked} field(s))")
+    return issues
+
+
 def check_walkable_draft(log_path: Path) -> list[str]:
     """Validate the canonical walkable draft file (docs/operations/
     g0-walkable-position-chains.draft.json) with the same chain rules as the
@@ -241,6 +352,7 @@ def check_walkable_draft(log_path: Path) -> list[str]:
         return [f"schema.json is invalid JSON — {e}"]
 
     issues.extend(validate_offset_file(log_path, WALKABLE_DRAFT_PATH, schema))
+    issues.extend(check_walkable_fidelity(log_path))
 
     if WALKABLE_DRAFT_DOC_PATH.is_file():
         block = extract_walkable_draft_block(WALKABLE_DRAFT_DOC_PATH)
