@@ -103,21 +103,36 @@ run; the reader is the next approved-session step.
 
 The L0 seam is now IMPLEMENTED (2026-08-10):
 
-1. **`EntityRecordRegionReadRequest(EntityId, RegionLength)` /
+1. **`EntityRecordRegionReadRequest(EntityId, RegionLength, RegionAnchor)` /
    `EntityRecordRegionReadResult(...)`** — shipped end-to-end: the caller
    supplies only the decoded entity id + a bounded region length (≤ 4096
-   bytes, enforced fail-closed); the coordinator owns process identity,
-   resolves the entity address via the exact-build resolver
+   bytes, enforced fail-closed) + the region anchor; the coordinator owns
+   process identity, resolves the entity address via the exact-build resolver
    (`ResolveEntityPositionAddressAsync` under the same lease), requires
    `OfflineReplayVerified` + current authorization, reads the region through
    the guarded reader (`ReadAsync`), labels the dump with the replay clock
    from the G2 same-decoded-clock snapshot (≤ 2 s bound, `EstimatedReplayTime`
    becomes `ReplayTimeSeconds`), and returns ONLY the bytes + replay time —
    never an absolute address. Exposed as `POST
-   /api/v1/game/discover/entity-region` (base64 bytes). Verified by 6
+   /api/v1/game/discover/entity-region` (base64 bytes). Verified by 8
    coordinator tests (gate, length clamp, build identity, unresolved entity,
-   clock attestation, bytes-only) + 2 web endpoint tests. The remaining
-   session-driver wiring below is what the live session consumes.
+   clock attestation, bytes-only, tank-record anchor deref + fail-closed)
+   + 4 web endpoint tests (base64 bytes, failure, anchor forwarding, invalid
+   anchor). The remaining session-driver wiring below is what the live
+   session consumes.
+
+   **Region anchor (CORRECTED 2026-08-10 — the L1 wiring originally pointed
+   at the wrong object).** The HP / damage-dealt harness anchors the dump at
+   the per-entity TANK record `[entity+0x3C]` (Ghidra-candidate layout),
+   NOT the movement ring record the position resolver reads. The ring
+   record is 0x38 bytes (position +0x10, velocity +0x28, stride 0x38) — a
+   `+0x48` offset there would land 0x10 bytes past its end, i.e. unrelated
+   memory. The seam now carries `RegionAnchor: ring-record |
+   entity-tank-record`; for the tank-record anchor the coordinator
+   dereferences `[entity + 0x3C]` itself under the same guarded lease
+   (validating the pointer before any read) so the caller still only
+   receives bytes. The resolver now also exposes the resolved entity base in
+   `Type10EntityPositionAddressResult` to make that dereference possible.
 2. **Session driver** — `scripts/invoke-hp-diffing-session.ps1` runs the
    whole flow: gate → **qualify the victim from the decoded replay**
    (see below — do NOT default to the player's own entity) → print the

@@ -894,12 +894,20 @@ internal static class GameApiEndpoints
             battleSessionId = new BattleSessionId(parsedBattleSessionId);
         }
 
+        EntityRecordRegionAnchor anchor = EntityRecordRegionAnchor.RingRecord;
+        if (!string.IsNullOrWhiteSpace(request.RegionAnchor) &&
+            !TryParseRegionAnchor(request.RegionAnchor, out anchor))
+        {
+            return Results.BadRequest(new { error = "discover.entity_region.invalid_anchor" });
+        }
+
         OperationResult<EntityRecordRegionReadResult> result = await scanner
             .ReadEntityRegionAsync(
                 new WotBTreader.Application.Game.EntityRecordRegionReadRequest(
                     request.EntityId,
                     request.RegionLength,
-                    battleSessionId),
+                    battleSessionId,
+                    anchor),
                 cancellationToken)
             .ConfigureAwait(false);
         if (!result.IsSuccess || result.Value is null)
@@ -966,6 +974,22 @@ internal static class GameApiEndpoints
             NodesVisited = resolved.NodesVisited,
             ModuleRooted = resolved.ModuleRooted,
         });
+    }
+
+    private static bool TryParseRegionAnchor(string value, out EntityRecordRegionAnchor anchor)
+    {
+        switch (value.Trim().ToLowerInvariant())
+        {
+            case "ring-record":
+                anchor = EntityRecordRegionAnchor.RingRecord;
+                return true;
+            case "entity-tank-record":
+                anchor = EntityRecordRegionAnchor.EntityTankRecord;
+                return true;
+            default:
+                anchor = EntityRecordRegionAnchor.RingRecord;
+                return false;
+        }
     }
 
     internal static async Task<IResult> AppendClockSegmentAsync(

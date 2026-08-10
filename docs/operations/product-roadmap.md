@@ -140,7 +140,7 @@ track's static anchor. Evidence: `tools/ghidra-scripts/writesite-ring-disasm.txt
 
 | Step | WS | Deliverable | Session cap |
 |---|---|---|---|
-| L0 | C | ✅ `EntityRecordRegionReadRequest/Result` (≤ 4 KB region, bytes + replay time only, `OfflineReplayVerified` + current auth) — the ONE product addition; shipped 2026-08-10 with the guarded region read + replay-clock label, 6 coordinator tests + 2 web endpoint tests | — |
+| L0 | C | ✅ `EntityRecordRegionReadRequest/Result` (≤ 4 KB region, bytes + replay time only, `OfflineReplayVerified` + current auth) — the ONE product addition; shipped 2026-08-10 with the guarded region read + replay-clock label + `RegionAnchor` (ring-record / entity-tank-record — the L1 wiring correction; coordinator derefs `[entity+0x3C]` itself), 8 coordinator tests + 4 web endpoint tests | — |
 | L1 | D | HP live session (Oasis Palms victim 3760578 → verify `+0x48` live) | 1 |
 | L2 | D | Facing live session (ring-record dump vs `position_samples.yaw`; probe `+0x2C..+0x37` first) | 1 |
 | L3 | D | Damage-dealt live session (viewpoint counter; share the L1 seam) | 1 |

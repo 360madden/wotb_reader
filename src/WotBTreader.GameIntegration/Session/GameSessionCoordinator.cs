@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Globalization;
 using Microsoft.Extensions.Logging;
 using WotBTreader.Application.Capture;
@@ -2036,8 +2037,30 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 }
             }
 
+            // Anchor the dump: the movement ring record (the resolver's
+            // target) or the per-entity tank record at [entity+0x3C]. The
+            // coordinator performs the tank-record dereference itself under
+            // the same guarded lease; only the resulting bytes leave.
+            uint? regionBaseAddress = request.RegionAnchor switch
+            {
+                EntityRecordRegionAnchor.RingRecord => resolved.RecordAddress,
+                EntityRecordRegionAnchor.EntityTankRecord => await ResolveTankRecordAddressAsync(
+                    readerResult.Value,
+                    resolved.EntityAddress,
+                    readCancellation.Token).ConfigureAwait(false),
+                _ => null,
+            };
+            if (regionBaseAddress is null)
+            {
+                return OperationResult.Failure<EntityRecordRegionReadResult>(
+                    new ApplicationError(
+                        "discover.entity_region.tank_record_unresolved",
+                        "The region anchor could not be resolved (missing entity base or invalid tank-record pointer).",
+                        Retryable: false));
+            }
+
             OperationResult<byte[]> regionResult = await readerResult.Value.ReadAsync(
-                (nint)resolved.RecordAddress.Value,
+                (nint)regionBaseAddress.Value,
                 request.RegionLength,
                 readCancellation.Token).ConfigureAwait(false);
             if (!IsScanAuthorizationCurrent(observation, authorizationToken))
@@ -2078,6 +2101,49 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 "discover.gate_not_satisfied",
                 "The offline-session gate is no longer satisfied.");
         }
+    }
+
+    /// <summary>
+    /// Reads the tank-record pointer at <c>[entity + 0x3C]</c> through the
+    /// same guarded reader/lease and validates it before any region read.
+    /// The pointer value is coordinator-owned and never returned; only bytes
+    /// read FROM it may leave. Fails closed on a missing entity base, a
+    /// short/invalid pointer read, or a non-plausible pointer (null,
+    /// misaligned, or outside the x86 process range).
+    /// </summary>
+    private static async ValueTask<uint?> ResolveTankRecordAddressAsync(
+        IAuthorizedMemoryReader reader,
+        uint? entityAddress,
+        CancellationToken cancellationToken)
+    {
+        if (entityAddress is not uint entity)
+        {
+            return null;
+        }
+
+        ulong pointerAddress = (ulong)entity + EntityRecordRegionReadRequest.EntityTankRecordOffset;
+        if (pointerAddress > uint.MaxValue)
+        {
+            return null;
+        }
+
+        OperationResult<byte[]> pointerRead = await reader.ReadAsync(
+            (nint)pointerAddress,
+            sizeof(uint),
+            cancellationToken).ConfigureAwait(false);
+        if (!pointerRead.IsSuccess || pointerRead.Value is null ||
+            pointerRead.Value.Length != sizeof(uint))
+        {
+            return null;
+        }
+
+        uint tankRecord = BinaryPrimitives.ReadUInt32LittleEndian(pointerRead.Value);
+        if (tankRecord == 0 || (tankRecord & 0x3) != 0)
+        {
+            return null;
+        }
+
+        return tankRecord;
     }
 
     public async ValueTask<OperationResult<EntityPositionAddressResult>> ResolveEntityPositionAddressAsync(

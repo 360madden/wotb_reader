@@ -18,10 +18,13 @@
        (EntityRecordRegionReadRequest/Result - <= 4 KB region, bytes + replay
        time only, OfflineReplayVerified + current authorization) at each
        scheduled replay-clock time (before/after each hit from the extractor's
-       dump_schedule plus -ControlTimes for the flat controls), requires
-       sameDecodedClockProven on every dump (fail-closed), and writes the
-       snapshots file (schema wotbtreader.od.hp-diff.snapshots.v1) with
-       strictly increasing replay times. Without a reachable web host the
+       dump_schedule plus -ControlTimes for the flat controls), anchored on
+       the per-entity TANK record at [entity+0x3C] (-RegionAnchor
+       'entity-tank-record', the HP / damage-dealt region; the coordinator
+       dereferences the pointer itself under the guarded lease),
+       requires sameDecodedClockProven on every dump (fail-closed), and
+       writes the snapshots file (schema wotbtreader.od.hp-diff.snapshots.v1)
+       with strictly increasing replay times. Without a reachable web host the
        driver exits 3 with the contract. Offline-replay mode: pass
        -SnapshotsPath to run the verdict against an already-produced dump
        file.
@@ -78,10 +81,17 @@ param(
     # reachable host the driver exits 3 with the contract.
     [switch]$LiveAcquire,
     # Region length in bytes for each dump (>= 4, multiple of 4, <= 4096).
-    # 256 covers the ring record (0x38) plus the +0x48 HP candidate and
-    # neighboring fields in one dump.
+    # 256 covers the tank record (the +0x48 HP / damage-dealt candidate)
+    # plus neighboring fields in one dump.
     [ValidateRange(4, 4096)]
     [int]$RegionLength = 256,
+    # Which object the dump anchors on: 'ring-record' (the movement ring
+    # record the position resolver reads) or 'entity-tank-record' (the
+    # per-entity tank record at [entity+0x3C] - the Ghidra-candidate HP /
+    # damage-dealt region). HP and damage-dealt live in the TANK record, so
+    # this driver defaults to 'entity-tank-record'.
+    [ValidateSet('ring-record', 'entity-tank-record')]
+    [string]$RegionAnchor = 'entity-tank-record',
     # Comma-separated replay-clock seconds for flat CONTROL dumps in the
     # no-damage segments (e.g. '30,230' for Oasis Palms). Optional in live
     # mode; the verdict's flatness check needs >= 2 control windows.
@@ -263,6 +273,7 @@ if (-not $OfflineDumpExists) {
                 entityId        = $TargetEntityId
                 regionLength    = $RegionLength
                 battleSessionId = $SessionId
+                regionAnchor    = $RegionAnchor
             }
         if ($null -eq $response -or $response.status -ne 'Resolved') {
             throw ("entity-region failed at {0}s: status='{1}' stage='{2}'" -f `

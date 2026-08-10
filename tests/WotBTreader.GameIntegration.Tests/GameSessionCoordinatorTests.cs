@@ -1131,6 +1131,91 @@ public sealed class GameSessionCoordinatorTests
     }
 
     [TestMethod]
+    public async Task EntityRegionRead_TankRecordAnchor_DerefsEntityPlus0x3CAndReadsThere()
+    {
+        // The HP / damage-dealt harness anchors the dump at the per-entity
+        // tank record [entity+0x3C], NOT the movement ring record. The
+        // coordinator must dereference the pointer itself under the lease and
+        // read the region from the tank record.
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        byte[] expectedRegion = [9, 8, 7, 6, 5, 4, 3, 2];
+        const uint tankRecord = 0x3a100000;
+        var factory = new TrackingEntityPositionReaderFactory(
+            CreateResolvedEntityPosition(4242),
+            regionBytes: expectedRegion,
+            tankRecordAddress: tankRecord);
+        var (coordinator, _) = CreateCoordinator(memoryReaderFactory: factory);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: expectedRegion.Length,
+                    RegionAnchor: EntityRecordRegionAnchor.EntityTankRecord),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess, result.Error?.Message);
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, result.Value?.Status);
+        CollectionAssert.AreEqual(expectedRegion, result.Value?.RegionBytes);
+        // Two reads under the lease: the 4-byte pointer probe at
+        // [entity + 0x3C] then the region read AT the tank record address.
+        Assert.HasCount(2, factory.Reader.RegionReads);
+        Assert.AreEqual(0x25000064, factory.Reader.RegionReads[0].Address.ToInt64());
+        Assert.AreEqual(4, factory.Reader.RegionReads[0].Length);
+        Assert.AreEqual(tankRecord, factory.Reader.RegionReads[1].Address.ToInt64());
+        Assert.AreEqual(expectedRegion.Length, factory.Reader.RegionReads[1].Length);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_TankRecordAnchor_MissingEntityBaseFailsClosed()
+    {
+        // Resolver status Resolved but no entity base -> the tank-record
+        // anchor cannot deref; fail closed without a region read.
+        var factory = new TrackingEntityPositionReaderFactory(
+            CreateResolvedEntityPosition(4242),
+            addressResult: new Type10EntityPositionAddressResult(
+                Type10EntityPositionStatus.Resolved,
+                RecordAddress: 0x25000038,
+                PageAddress: 0x25000000,
+                EntityAddress: null,
+                FailureStage: null,
+                Attempts: 1,
+                NodesVisited: 0,
+                ModuleRooted: true));
+        var (coordinator, _) = CreateCoordinator(memoryReaderFactory: factory);
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 8,
+                    RegionAnchor: EntityRecordRegionAnchor.EntityTankRecord),
+                CancellationToken.None);
+
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual("discover.entity_region.tank_record_unresolved", result.Error?.Code);
+        // No entity base -> the coordinator never even probes; no reads at all.
+        Assert.IsEmpty(factory.Reader.RegionReads);
+    }
+
+    [TestMethod]
     public async Task EntityRegionRead_InvalidLengthFailsClosedBeforeGate()
     {
         var factory = new TrackingEntityPositionReaderFactory(
@@ -1201,6 +1286,7 @@ public sealed class GameSessionCoordinatorTests
                 Type10EntityPositionStatus.EntityNotFound,
                 RecordAddress: null,
                 PageAddress: null,
+                EntityAddress: null,
                 FailureStage: "entity-lookup",
                 Attempts: 3,
                 NodesVisited: 5,
@@ -1770,12 +1856,13 @@ public sealed class GameSessionCoordinatorTests
     private sealed class TrackingEntityPositionReaderFactory(
         Type10EntityPositionResult result,
         Type10EntityPositionAddressResult? addressResult = null,
-        byte[]? regionBytes = null) : IGuardedMemoryReaderFactory
+        byte[]? regionBytes = null,
+        uint? tankRecordAddress = null) : IGuardedMemoryReaderFactory
     {
         public int CreateCount { get; private set; }
         public AuthorizedMemoryObservation? Observation { get; private set; }
         public TrackingEntityPositionReader Reader { get; } =
-            new(result, addressResult, regionBytes);
+            new(result, addressResult, regionBytes, tankRecordAddress);
 
         public ValueTask<OperationResult<IAuthorizedMemoryReader>> CreateAsync(
             AuthorizedMemoryObservation observation,
@@ -1791,7 +1878,8 @@ public sealed class GameSessionCoordinatorTests
     private sealed class TrackingEntityPositionReader(
         Type10EntityPositionResult result,
         Type10EntityPositionAddressResult? addressResult = null,
-        byte[]? regionBytes = null)
+        byte[]? regionBytes = null,
+        uint? tankRecordAddress = null)
         : IAuthorizedMemoryReader
     {
         public nint ModuleBase { get; private set; }
@@ -1800,12 +1888,27 @@ public sealed class GameSessionCoordinatorTests
         public Action? BeforeReturn { get; set; }
         public List<(nint Address, int Length)> RegionReads { get; } = [];
 
+        // The L0 seam's tank-record anchor probes [entity + 0x3C]; the
+        // entity base comes from the resolved address result.
+        private nint ProbeAddress =>
+            (nint)((addressResult?.EntityAddress ?? 0x25000028) + 0x3C);
+
         public ValueTask<OperationResult<byte[]>> ReadAsync(
             nint address,
             int length,
             CancellationToken cancellationToken)
         {
             RegionReads.Add((address, length));
+            if (tankRecordAddress is uint tankRecord &&
+                length == sizeof(uint) &&
+                address == ProbeAddress)
+            {
+                // The L0 seam's tank-record anchor dereferences
+                // [entity + 0x3C] under the same lease: return the tank-record
+                // pointer for the 4-byte probe at entity+0x3C.
+                return ValueTask.FromResult(OperationResult.Success(
+                    BitConverter.GetBytes(tankRecord)));
+            }
             if (regionBytes is null)
             {
                 throw new NotSupportedException();
@@ -1849,6 +1952,7 @@ public sealed class GameSessionCoordinatorTests
                     Type10EntityPositionStatus.Resolved,
                     RecordAddress: 0x25000038,
                     PageAddress: 0x25000000,
+                    EntityAddress: 0x25000028,
                     FailureStage: null,
                     Attempts: 1,
                     NodesVisited: 0,

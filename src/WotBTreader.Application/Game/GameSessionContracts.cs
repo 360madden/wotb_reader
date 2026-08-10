@@ -361,11 +361,32 @@ public sealed record EntityPositionReadResult(
     bool SameDecodedClockProven);
 
 /// <summary>
-/// Bounded request for one entity ring-record region dump (the L0 seam the
+/// Which object a region dump anchors on: the movement ring record the
+/// position resolver reads (position +0x10, velocity +0x28, ring stride
+/// 0x38) or the per-entity tank record reached by dereferencing
+/// <c>[entity + 0x3C]</c> (the Ghidra-candidate layout the HP/damage-dealt
+/// harness targets; test-local until live verification). The coordinator
+/// owns both addresses; the caller only picks the anchor.
+/// </summary>
+public enum EntityRecordRegionAnchor
+{
+    /// <summary>The movement ring record (the position resolver's target).</summary>
+    RingRecord = 0,
+
+    /// <summary>
+    /// The tank record at <c>[entity + 0x3C]</c> — the Ghidra-candidate HP /
+    /// damage-dealt region. The coordinator dereferences the pointer itself
+    /// under the same guarded lease; only bytes leave.
+    /// </summary>
+    EntityTankRecord = 1,
+}
+
+/// <summary>
+/// Bounded request for one entity record region dump (the L0 seam the
 /// HP / facing / damage-dealt / replayTime live plans all consume). Only the
-/// decoded entity id and a bounded region length (≤ 4096 bytes) are
-/// caller-supplied; the coordinator owns process identity, module, build
-/// layout, and the resolved record address. When
+/// decoded entity id, a bounded region length (≤ 4096 bytes), and the
+/// region anchor are caller-supplied; the coordinator owns process identity,
+/// module, build layout, and the resolved record address. When
 /// <paramref name="BattleSessionId"/> is supplied, the coordinator may
 /// attest same-decoded-clock alignment from that session's replay-clock
 /// segments; when null, <c>SameDecodedClockProven</c> is never claimed.
@@ -373,7 +394,8 @@ public sealed record EntityPositionReadResult(
 public sealed record EntityRecordRegionReadRequest(
     int EntityId,
     int RegionLength,
-    BattleSessionId? BattleSessionId = null)
+    BattleSessionId? BattleSessionId = null,
+    EntityRecordRegionAnchor RegionAnchor = EntityRecordRegionAnchor.RingRecord)
 {
     /// <summary>
     /// Maximum region size the L0 seam will read. 4 KB bounds the dump to a
@@ -383,6 +405,13 @@ public sealed record EntityRecordRegionReadRequest(
     /// position/velocity/rotation candidates in one dump).
     /// </summary>
     public const int MaxLength = 4096;
+
+    /// <summary>
+    /// The entity-member offset to the tank record for
+    /// <see cref="EntityRecordRegionAnchor.EntityTankRecord"/> dumps
+    /// (Ghidra-candidate, test-local until live verification).
+    /// </summary>
+    public const int EntityTankRecordOffset = 0x3C;
 }
 
 /// <summary>

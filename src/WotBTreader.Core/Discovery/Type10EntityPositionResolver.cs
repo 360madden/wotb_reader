@@ -116,15 +116,19 @@ public sealed record Type10EntityPositionResult(
 
 /// <summary>
 /// Diagnostic projection of a resolver traversal: the ring-record address and
-/// its page for the requested entity, when resolved. Deliberately NOT part of
+/// its page for the requested entity, when resolved, plus the resolved entity
+/// base (the region anchor the record-diffing harness needs to reach sibling
+/// per-entity records like the tank record). Deliberately NOT part of
 /// <see cref="Type10EntityPositionResult"/> so poll results never leak process
-/// locations; only the gate-verified position-page endpoint uses this record,
-/// to arm the guard-page interceptor on the exact page a poll reads.
+/// locations; only the gate-verified position-page endpoint and the L0
+/// region-read seam use this record, to arm the guard-page interceptor on the
+/// exact page a poll reads and to anchor a bounded region dump.
 /// </summary>
 public sealed record Type10EntityPositionAddressResult(
     Type10EntityPositionStatus Status,
     uint? RecordAddress,
     uint? PageAddress,
+    uint? EntityAddress,
     string? FailureStage,
     int Attempts,
     int NodesVisited,
@@ -213,6 +217,7 @@ public static class Type10EntityPositionResolver
                 Type10EntityPositionStatus.Resolved,
                 record,
                 record & ~0xFFFu,
+                loop.Final.EntityAddress,
                 null,
                 loop.Attempts,
                 loop.TotalNodesVisited,
@@ -221,6 +226,7 @@ public static class Type10EntityPositionResolver
 
         return new Type10EntityPositionAddressResult(
             loop.Final.Status,
+            null,
             null,
             null,
             loop.Final.FailureStage,
@@ -678,7 +684,8 @@ public static class Type10EntityPositionResolver
             z,
             lookup.NodesVisited,
             lookup.Source,
-            recordAddress);
+            recordAddress,
+            entity);
     }
 
     private static EntityLookup FindEntity(
@@ -1033,7 +1040,8 @@ public static class Type10EntityPositionResolver
         float? Y,
         float? Z,
         bool ModuleRooted,
-        uint? RecordAddress)
+        uint? RecordAddress,
+        uint? EntityAddress)
     {
         public static AttemptResult Success(
             float x,
@@ -1041,7 +1049,8 @@ public static class Type10EntityPositionResolver
             float z,
             int nodesVisited,
             string? source,
-            uint recordAddress) => new(
+            uint recordAddress,
+            uint entityAddress) => new(
                 Type10EntityPositionStatus.Resolved,
                 null,
                 Retryable: false,
@@ -1051,7 +1060,8 @@ public static class Type10EntityPositionResolver
                 y,
                 z,
                 ModuleRooted: true,
-                recordAddress);
+                recordAddress,
+                entityAddress);
 
         public static AttemptResult Retry(
             Type10EntityPositionStatus status,
@@ -1068,7 +1078,8 @@ public static class Type10EntityPositionResolver
                 null,
                 null,
                 moduleRooted,
-                RecordAddress: null);
+                RecordAddress: null,
+                EntityAddress: null);
 
         public static AttemptResult Stop(
             Type10EntityPositionStatus status,
@@ -1085,7 +1096,8 @@ public static class Type10EntityPositionResolver
                 null,
                 null,
                 moduleRooted,
-                RecordAddress: null);
+                RecordAddress: null,
+                EntityAddress: null);
     }
 
     private sealed record EntityLookup(

@@ -370,6 +370,15 @@ public sealed record EntityRecordRegionReadRequest
     /// Omitted or unparseable ids never claim the flag.
     /// </summary>
     public string? BattleSessionId { get; init; }
+
+    /// <summary>
+    /// Which object the dump anchors on: <c>ring-record</c> (the movement
+    /// ring record the position resolver reads — the default) or
+    /// <c>entity-tank-record</c> (the per-entity tank record at
+    /// <c>[entity+0x3C]</c>, the Ghidra-candidate HP / damage-dealt region).
+    /// Unknown values fail closed (no dump).
+    /// </summary>
+    public string? RegionAnchor { get; init; }
 }
 
 /// <summary>
