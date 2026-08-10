@@ -35,6 +35,9 @@ public sealed record ByteChangeWindow(
 /// (1.0 when there are no control windows) — it separates HP (flat except when
 /// hit) from monotonic drains or other decoys that drop in every window; the
 /// ranking prefers score, then flatness, then precision, then offset.
+/// <see cref="MatchedWindows"/> lists the per-window replay span and summed
+/// damage for every matched window (the verdict contract's matched-window
+/// list, replay times + deltas vs. the provider's events).
 /// </summary>
 public sealed record DamageCorrelationCandidate(
     int Offset,
@@ -46,4 +49,13 @@ public sealed record DamageCorrelationCandidate(
     string Explanation,
     double Flatness = 1.0,
     int ControlWindows = 0,
-    int ChangedControlWindows = 0);
+    int ChangedControlWindows = 0,
+    IReadOnlyList<MatchedDamageWindow>? MatchedWindows = null);
+
+/// <summary>One damage window a candidate matched: its replay span and the
+/// summed damage of the target's events inside it (the exact drop the
+/// field's value matched).</summary>
+public sealed record MatchedDamageWindow(
+    TimeSpan FromReplayTime,
+    TimeSpan ToReplayTime,
+    long DamageSum);

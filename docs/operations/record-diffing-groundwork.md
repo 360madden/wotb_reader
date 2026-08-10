@@ -163,23 +163,36 @@ windows); otherwise pick the next victim by hit count. The `--hp-delta`
 output's hit-window list is the event-bound dump schedule. (Numbers
 cross-checked against direct SQL on 2026-08-10.)
 
-**Oasis Palms** (session `019fdff7-8dcf-7426-8547-9fb8cc3eb07b`, 11.19.0)
-— victim **3760578** is the strongest candidate: 9 events / 4,028 damage,
-all inside t = 900–1680s of the ~2798s replay, in ten-second windows
-900–910, 1000–1010, 1070–1080, 1360–1370, 1430–1440, 1500–1510,
-1560–1570, 1570–1580, 1670–1680s. The dump series concentrates there,
-plus 2–3 flat-window control dumps (e.g. ~500s and ~2500s) to confirm the
-field is otherwise unchanged. Alternative victims in the same replay:
-3760571 (7 hits), 3760574/3760575 (6 hits each; 3760575's hits are late,
-2454–2740s).
+> **2026-08-10 correction — replay-tick unit:** an earlier draft of this
+> plan quoted 10×-too-large times (e.g. "900–1680s of a ~2798s replay").
+> The decoded DB stores replay ticks as .NET ticks (10⁷/s —
+> `position_samples` max tick ≈ `battle_sessions.duration_ticks` and the
+> Oasis Palms battle is 279.9s, not 2798s), but the extractor's
+> `TICKS_PER_SECOND` was 10⁶. Fixed to 10⁷; all schedules above are in
+> real replay seconds, and the hit-window bucketing now uses true 10s
+> windows (verified window-by-window against the raw event ticks). The
+> movement-proxy participant ranking (a separate dead-code bug — it only
+> compared consecutive samples) was also fixed to scan ~1s-apart pairs.
 
-**Dead Rail** (session `019fb86c-c8e7-7004-9df6-a574f5a7835b`, 11.19.0)
-— the second independent replay for the Phase-4 repeatability rule:
-victim **2549399** — 18 events / 4,647 damage across **12** ten-second
-windows (1140–1530s of the ~2714s replay: 114, 116, 120, 125, 130,
-131, 136, 140, 141, 148, 149, 152). So the two-replay verdict contract
-is fully pre-staged: Oasis Palms victim 3760578 + Dead Rail victim
-2549399, both with ≥ 2 damage windows, schedules above.
+**Oasis Palms** (session `019fdff7-8dcf-7426-8547-9fb8cc3eb07b`, 11.19.0,
+battle ≈ 280s) — victim **3760578** is the strongest candidate: 9 events /
+4,028 damage, hits at t = 90.4–167.4s, in six ten-second windows
+**90–100, 100–110, 130–140, 140–150, 150–160, 160–170s** (window sums
+256 / 1278 / 664 / 386 / 933 / 511 — verified against the raw
+events: 90.45, 100.93, 107.81, 136.52, 143.42, 150.31, 156.62, 157.23,
+167.42s). The dump series concentrates there, plus 2–3 flat-window
+control dumps (e.g. ~30s and ~230s) to confirm the field is otherwise
+unchanged. Alternative victims in the same replay: 3760571 (7 hits,
+118.8–175.4s), 3760574 (6 hits, 114.3–157.5s), 3760575 (6 hits, late,
+245.4–274.0s).
+
+**Dead Rail** (session `019fb86c-c8e7-7004-9df6-a574f5a7835b`, 11.19.0,
+battle ≈ 271s) — the second independent replay for the Phase-4
+repeatability rule: victim **2549399** — 18 events / 4,647 damage,
+hits at t = 114.4–152.4s, in five ten-second windows **110–120,
+120–130, 130–140, 140–150, 150–160s**. So the two-replay verdict
+contract is fully pre-staged: Oasis Palms victim 3760578 + Dead Rail
+victim 2549399, both with ≥ 2 damage windows, schedules above.
 
 The walker resolves **any** entity id through `entityLookup` (the
 published chain takes the target id per walk and now exposes
@@ -200,8 +213,8 @@ flow is now proven on the real published table; only the live read
 remains.
 
 **Simulation reading:** the extractor's `--hp-delta` survival simulation
-at `target=0` measures the flat-window pass rate (3760578: 159/168 =
-0.9464 → survival 0.76 / 0.58 / 0.44 over 5 / 10 / 15 rounds). The honest
+at `target=0` measures the flat-window pass rate (3760578 at 10s windows:
+11/17 = 0.65 → survival ≈ 0.12 / 0.01 over 5 / 10 rounds). The honest
 reading: a single-target rolling delta campaign sheds the true HP field in
 any round whose window contains a hit — the per-window
 `HpDamageCorrelator` (window damage sum vs. per-window drop) is the right

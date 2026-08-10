@@ -58,7 +58,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_DB = REPO_ROOT / ".data" / "treader.db"
-TICKS_PER_SECOND = 1_000_000
+TICKS_PER_SECOND = 10_000_000  # .NET TimeSpan ticks per second (replay_time_ticks are stored as TimeSpan.Ticks)
 
 
 def pick_session(con: sqlite3.Connection, version_hint: str = "11.19") -> dict:
@@ -119,14 +119,21 @@ def moving_participants(
     scored = []
     for pid, count in rows:
         samples = participant_samples(con, session_id, pid)
-        # median 1s-spaced 2D displacement as a movement proxy
+        # median ~1s-spaced 2D displacement as a movement proxy. Samples arrive
+        # at ~100/s, so the 1s-apart pair is NOT the consecutive pair - scan a
+        # sliding second pointer instead of comparing adjacent samples (a dead
+        # proxy under the old consecutive-only scan).
         displacements = []
-        for i in range(len(samples) - 1):
-            dt = samples[i + 1][0] - samples[i][0]
-            if 0.9 * TICKS_PER_SECOND <= dt <= 1.1 * TICKS_PER_SECOND:
-                dx = samples[i + 1][1] - samples[i][1]
-                dz = samples[i + 1][3] - samples[i][3]
-                displacements.append(math.hypot(dx, dz))
+        second = 0
+        for first in range(len(samples)):
+            while second < len(samples) and samples[second][0] - samples[first][0] < 0.9 * TICKS_PER_SECOND:
+                second += 1
+            if second < len(samples):
+                dt = samples[second][0] - samples[first][0]
+                if dt <= 1.1 * TICKS_PER_SECOND:
+                    dx = samples[second][1] - samples[first][1]
+                    dz = samples[second][3] - samples[first][3]
+                    displacements.append(math.hypot(dx, dz))
         median_disp = statistics.median(displacements) if displacements else 0.0
         scored.append((pid, count, median_disp))
     # Sort by movement first (moving participants are the useful pilot target),
@@ -374,7 +381,7 @@ def top_victims(
     rows = con.execute(
         "SELECT json_extract(values_json,'$.victimEntityId') AS victim, "
         "COUNT(*) AS hits, SUM(json_extract(values_json,'$.damage')) AS dmg, "
-        "MIN(replay_time_ticks)/1e6 AS first_s, MAX(replay_time_ticks)/1e6 AS last_s "
+        "MIN(replay_time_ticks) AS first_ticks, MAX(replay_time_ticks) AS last_ticks "
         "FROM canonical_events WHERE battle_session_id=? AND kind=3 "
         "GROUP BY victim ORDER BY hits DESC, dmg DESC LIMIT ?",
         (session_id, top_n),
@@ -395,8 +402,8 @@ def top_victims(
                 "victim_entity_id": victim,
                 "hits": r["hits"],
                 "total_damage": round(float(r["dmg"]), 2),
-                "first_hit_s": round(float(r["first_s"]), 1),
-                "last_hit_s": round(float(r["last_s"]), 1),
+                "first_hit_s": round(float(r["first_ticks"]) / TICKS_PER_SECOND, 1),
+                "last_hit_s": round(float(r["last_ticks"]) / TICKS_PER_SECOND, 1),
                 "hit_windows": len(windows),
                 "window_seconds": window_seconds,
                 "windows": windows,

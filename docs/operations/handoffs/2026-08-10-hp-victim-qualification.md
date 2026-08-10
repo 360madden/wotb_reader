@@ -18,9 +18,9 @@
    session's damage victims by hit count (hits, total damage, first/last
    hit replay-seconds, per-window bucket list at the given window size)
    so victim selection is one command. Verified against direct SQL on
-   2026-08-10: all 9 hit windows for victim 3760578 (t = 904.5, 1009.3,
-   1078.1, 1365.2, 1434.2, 1503.1, 1566.2, 1572.3, 1674.2 s) bucket
-   exactly into the reported ten-second windows.
+   2026-08-10: all 9 hit events for victim 3760578 (t = 90.45, 100.93,
+   107.81, 136.52, 143.42, 150.31, 156.62, 157.23, 167.42 s) bucket
+   exactly into the six reported ten-second windows.
 
 3. **Live plan amended** (`docs/operations/record-diffing-groundwork.md`):
    - Session flow step 2 now qualifies the victim from the decoded replay
@@ -28,18 +28,31 @@
    - New "Victim selection" subsection: the two-command qualification
      (top-victims → hp-delta), the ≥ 2 damage-window requirement, and the
      concrete Oasis Palms schedule.
-   - **Oasis Palms victim 3760578** — 9 events / 4,028 damage across
-     windows 900–910, 1000–1010, 1070–1080, 1360–1370, 1430–1440,
-     1500–1510, 1560–1570, 1570–1580, 1670–1680 s (of the ~2798 s
-     replay), plus 2–3 flat-window control dumps (~500 s, ~2500 s).
-     Alternatives: 3760571 (7 hits), 3760574/3760575 (6 hits each;
-     3760575 late, 2454–2740 s).
+   - **Oasis Palms victim 3760578** — 9 events / 4,028 damage in six
+     ten-second windows **90–100, 100–110, 130–140, 140–150, 150–160,
+     160–170 s** of the ~280 s battle (hits at 90.4–167.4 s), plus 2–3
+     flat-window control dumps (~30 s, ~230 s). Alternatives: 3760571
+     (7 hits), 3760574 (6 hits), 3760575 (6 hits, late 245–274 s).
+   - **Dead Rail victim 2549399** — 18 events / 4,647 damage in five
+     ten-second windows **110–120, 120–130, 130–140, 140–150,
+     150–160 s** of the ~271 s battle (hits at 114.4–152.4 s).
    - **Simulation reading:** the extractor's `--hp-delta` survival sim at
-     `target=0` is the flat-window pass rate (0.9464 → 0.76/0.58/0.44
-     survival over 5/10/15 rounds) — a single-target rolling delta
+     `target=0` is the flat-window pass rate (11/17 = 0.65 → survival
+     ≈ 0.12 / 0.01 over 5 / 10 rounds) — a single-target rolling delta
      campaign sheds the true HP field in any round whose window contains
      a hit. The per-window `HpDamageCorrelator` (already built, tested,
      Lenient mode) is the right tool; the plan already uses it.
+
+3. **Replay-tick unit bug found and fixed (2026-08-10, same pass).** The
+   first draft quoted 10×-too-large times ("~2798 s replay", windows
+   900–1680 s) because `replay-delta-extractor.py`'s `TICKS_PER_SECOND`
+   was 10⁶ while the decoded DB stores .NET ticks (10⁷/s — proven by
+   `position_samples` max tick ≈ `duration_ticks` and the 279.9 s Oasis
+   Palms battle). Fixed to 10⁷ (hit-window bucketing + all seconds
+   outputs), and the movement-proxy ranking (consecutive-only scan, dead
+   at ~100 samples/s) now scans ~1s-apart pairs. All schedules above are
+   in real replay seconds, verified window-by-window against raw event
+   ticks.
 
 ## Status
 
@@ -48,11 +61,11 @@
   chain mechanism) and now with a **real-data-qualified live plan**.
 - Remaining step is still the gated live session: one bounded
   `EntityRecordRegionReadRequest` addition + one session on Oasis Palms
-  tracking victim **3760578**, dumps concentrated on the nine hit
-  windows above. Second independent replay for the Phase-4 repeatability
-  rule also qualified: **Dead Rail** victim **2549399** (18 events /
-  4,647 dmg, 12 windows at 1140–1530s). Both victims ≥ 2 damage
-  windows, so the two-replay verdict contract is fully pre-staged.
+  tracking victim **3760578**, dumps concentrated on the six hit
+  windows (90–170 s) above. Second independent replay for the Phase-4
+  repeatability rule also qualified: **Dead Rail** victim **2549399**
+  (18 events / 4,647 dmg, five windows at 110–160 s). Both victims ≥ 2
+  damage windows, so the two-replay verdict contract is fully pre-staged.
 - Published tables untouched; resolver + read surface untouched;
   validator unchanged.
 

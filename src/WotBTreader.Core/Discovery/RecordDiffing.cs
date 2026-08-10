@@ -165,6 +165,7 @@ public static class HpDamageCorrelator
         {
             int matched = 0;
             int changed = 0;
+            List<MatchedDamageWindow> matchedWindows = [];
             foreach ((ByteChangeWindow window, long sum) in damageByWindow)
             {
                 int before = BinaryPrimitives.ReadInt32LittleEndian(window.Before.AsSpan(offset));
@@ -182,6 +183,10 @@ public static class HpDamageCorrelator
                 if (isMatch)
                 {
                     matched++;
+                    matchedWindows.Add(new MatchedDamageWindow(
+                        window.FromReplayTime,
+                        window.ToReplayTime,
+                        sum));
                 }
             }
 
@@ -221,7 +226,8 @@ public static class HpDamageCorrelator
                 + $"{controlWindows.Count} control windows unchanged); {matchText}",
                 flatness,
                 controlWindows.Count,
-                controlChanged));
+                controlChanged,
+                matchedWindows));
         }
 
         return candidates

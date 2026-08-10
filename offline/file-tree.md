@@ -410,6 +410,7 @@ src/WotBTreader.Host.Cli/Cli/CliContracts.cs
 src/WotBTreader.Host.Cli/Cli/CliEntryPoint.cs
 src/WotBTreader.Host.Cli/Cli/CliInvocation.cs
 src/WotBTreader.Host.Cli/Cli/CliOutput.cs
+src/WotBTreader.Host.Cli/Cli/HpDiffSnapshotsFile.cs
 src/WotBTreader.Host.Cli/Program.cs
 src/WotBTreader.Host.Cli/WotBTreader.Host.Cli.csproj
 src/WotBTreader.Host.Cli/packages.lock.json
@@ -625,9 +626,11 @@ tests/WotBTreader.GameIntegration.Tests/WindowsTrustedExecutableLaunchLeaseTests
 tests/WotBTreader.GameIntegration.Tests/WotBTreader.GameIntegration.Tests.csproj
 tests/WotBTreader.GameIntegration.Tests/packages.lock.json
 tests/WotBTreader.Host.Cli.Tests/CliEntryPointTests.cs
+tests/WotBTreader.Host.Cli.Tests/CliHpDiffTests.cs
 tests/WotBTreader.Host.Cli.Tests/CliInvocationTests.cs
 tests/WotBTreader.Host.Cli.Tests/CliOutputTests.cs
 tests/WotBTreader.Host.Cli.Tests/CliReplayIngestionTests.cs
+tests/WotBTreader.Host.Cli.Tests/HpDiffSnapshotsFileTests.cs
 tests/WotBTreader.Host.Cli.Tests/MSTestSettings.cs
 tests/WotBTreader.Host.Cli.Tests/TemporaryDataRoot.cs
 tests/WotBTreader.Host.Cli.Tests/WotBTreader.Host.Cli.Tests.csproj

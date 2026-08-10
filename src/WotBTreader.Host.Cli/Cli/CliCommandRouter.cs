@@ -7,6 +7,7 @@ using WotBTreader.Application.Replay;
 using WotBTreader.Application.Results;
 using WotBTreader.Application.Storage;
 using WotBTreader.Core;
+using WotBTreader.Core.Discovery;
 
 namespace WotBTreader.Host.Cli.Cli;
 
@@ -36,6 +37,7 @@ public sealed class CliCommandRouter
         "export",
         "sessions",
         "watch",
+        "hp-diff",
         "serve",
     ];
 
@@ -45,6 +47,7 @@ public sealed class CliCommandRouter
     private readonly ISessionQueryRepository _sessions;
     private readonly IComparisonRunRepository _comparisons;
     private readonly ITelemetryComparator _comparator;
+    private readonly IHpGroundTruthProvider _hpGroundTruth;
     private readonly ILogger<CliCommandRouter> _logger;
 
     /// <summary>Creates a command router with all application ports resolved by DI.</summary>
@@ -55,6 +58,7 @@ public sealed class CliCommandRouter
         ISessionQueryRepository sessions,
         IComparisonRunRepository comparisons,
         ITelemetryComparator comparator,
+        IHpGroundTruthProvider hpGroundTruth,
         ILogger<CliCommandRouter> logger)
     {
         _doctor = doctor;
@@ -63,6 +67,7 @@ public sealed class CliCommandRouter
         _sessions = sessions;
         _comparisons = comparisons;
         _comparator = comparator;
+        _hpGroundTruth = hpGroundTruth;
         _logger = logger;
     }
 
@@ -88,12 +93,190 @@ public sealed class CliCommandRouter
             "compare" => await CompareAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "export" => await ExportAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "watch" => await WatchAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
+            "hp-diff" => await HpDiffAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "serve" => Unsupported(invocation.Command, correlationId),
             _ => Invalid(
                 "cli.command.unknown",
                 $"Unknown command '{invocation.Command}'. Available commands: {string.Join(", ", CommandNames)}.",
                 correlationId),
         };
+    }
+
+    /// <summary>
+    /// Runs the HP-diffing verdict against trusted-reader region dumps: loads
+    /// the snapshots file (the pre-staged dump contract), queries the decoded
+    /// session's damage ground truth, buckets the dumps, correlates in the
+    /// requested mode (Lenient first — overkill), confirms under Strict, and
+    /// emits the verdict per the record-diffing contract (score 1.0 +
+    /// flatness 1.0 + ≥ 2 exact-sum strict matches; cross-replay agreement
+    /// stays the operator-level repeatability step).
+    /// </summary>
+    private async ValueTask<CliExecution> HpDiffAsync(
+        CliInvocation invocation,
+        Guid correlationId,
+        CancellationToken cancellationToken)
+    {
+        if (invocation.Positionals.Count != 1)
+        {
+            return Invalid(
+                "cli.hp-diff.arguments",
+                "hp-diff requires one positional: the snapshots JSON file path.",
+                correlationId);
+        }
+
+        if (!invocation.Options.TryGetValue("session", out string? sessionText) ||
+            !Guid.TryParse(sessionText, out Guid sessionGuid))
+        {
+            return Invalid(
+                "cli.hp-diff.session",
+                "hp-diff requires --session &lt;battle-session-guid&gt;.",
+                correlationId);
+        }
+
+        if (!invocation.Options.TryGetValue("victim", out string? victimText) ||
+            !long.TryParse(victimText, out long victimEntityId) ||
+            victimEntityId <= 0)
+        {
+            return Invalid(
+                "cli.hp-diff.victim",
+                "hp-diff requires --victim &lt;entity-id&gt; (a positive integer).",
+                correlationId);
+        }
+
+        DamageMatchMode matchMode = DamageMatchMode.Lenient;
+        if (invocation.Options.TryGetValue("mode", out string? modeText) &&
+            !Enum.TryParse(modeText, ignoreCase: true, out matchMode))
+        {
+            return Invalid(
+                "cli.hp-diff.mode",
+                "--mode must be 'strict' or 'lenient'.",
+                correlationId);
+        }
+
+        OperationResult<IReadOnlyList<RecordSnapshot>> snapshotsResult =
+            HpDiffSnapshotsFile.Load(invocation.Positionals[0]);
+        if (!snapshotsResult.IsSuccess || snapshotsResult.Value is null)
+        {
+            return FromResult(snapshotsResult, correlationId, "Snapshots loaded.");
+        }
+
+        OperationResult<HpGroundTruth> groundTruthResult = await _hpGroundTruth
+            .GetAsync(new BattleSessionId(sessionGuid), cancellationToken)
+            .ConfigureAwait(false);
+        if (!groundTruthResult.IsSuccess || groundTruthResult.Value is null)
+        {
+            return FromResult(groundTruthResult, correlationId, "Ground truth loaded.");
+        }
+
+        IReadOnlyList<ByteChangeWindow> windows =
+            RecordChangeBucketer.Bucket(snapshotsResult.Value);
+        IReadOnlyList<HpDamageEvent> events = groundTruthResult.Value.Events;
+        IReadOnlyList<DamageCorrelationCandidate> primary = HpDamageCorrelator.Correlate(
+            windows, events, victimEntityId, matchMode);
+        IReadOnlyList<DamageCorrelationCandidate> confirm = HpDamageCorrelator.Correlate(
+            windows, events, victimEntityId, DamageMatchMode.Strict);
+
+        DamageCorrelationCandidate? top = primary.Count > 0 ? primary[0] : null;
+        DamageCorrelationCandidate? strictTop = confirm.Count > 0 ? confirm[0] : null;
+
+        bool hit = top is not null
+            && top.Score >= 1.0 - 1e-9
+            && top.MatchedDamageWindows >= 2
+            && top.Flatness >= 1.0 - 1e-9
+            && strictTop is not null
+            && strictTop.Offset == top.Offset
+            && strictTop.MatchedDamageWindows >= 2;
+
+        string reason;
+        if (hit)
+        {
+            reason = "HIT: score 1.0, flatness 1.0, >= 2 exact-sum Strict matches";
+        }
+        else if (top is null)
+        {
+            reason = "no candidate matched any damage window";
+        }
+        else if (top.Score < 1.0 - 1e-9)
+        {
+            reason = $"top candidate score {top.Score:0.###} < 1.0";
+        }
+        else if (top.MatchedDamageWindows < 2)
+        {
+            reason = $"only {top.MatchedDamageWindows} matched window(s); need >= 2";
+        }
+        else if (top.Flatness < 1.0 - 1e-9)
+        {
+            reason = $"top candidate flatness {top.Flatness:0.###} < 1.0 (changed in control windows)";
+        }
+        else if (strictTop is null)
+        {
+            reason = "no Strict confirmation (no exact-sum matches)";
+        }
+        else if (strictTop.Offset != top.Offset)
+        {
+            reason = $"Strict top candidate is a different offset (0x{strictTop.Offset:X} vs 0x{top.Offset:X})";
+        }
+        else if (strictTop.MatchedDamageWindows < 2)
+        {
+            reason = $"Strict confirmation has only {strictTop.MatchedDamageWindows} exact match(es); need >= 2";
+        }
+        else
+        {
+            reason = "HIT: score 1.0, flatness 1.0, >= 2 exact-sum Strict matches";
+        }
+
+        object data = new
+        {
+            command = "hp-diff",
+            sessionId = sessionGuid,
+            victimEntityId,
+            mode = matchMode.ToString().ToLowerInvariant(),
+            snapshots = snapshotsResult.Value.Count,
+            changeWindows = windows.Count,
+            damageWindows = top?.TotalDamageWindows ?? 0,
+            topCandidate = top is null
+                ? null
+                : new
+                {
+                    offset = top.Offset,
+                    score = top.Score,
+                    matchedDamageWindows = top.MatchedDamageWindows,
+                    totalDamageWindows = top.TotalDamageWindows,
+                    changedWindows = top.ChangedWindows,
+                    flatness = top.Flatness,
+                    controlWindows = top.ControlWindows,
+                    changedControlWindows = top.ChangedControlWindows,
+                    matchedWindows = top.MatchedWindows?
+                        .Select(matched => new
+                        {
+                            fromSeconds = matched.FromReplayTime.TotalSeconds,
+                            toSeconds = matched.ToReplayTime.TotalSeconds,
+                            damageSum = matched.DamageSum,
+                        })
+                        .ToList(),
+                    explanation = top.Explanation,
+                },
+            strictConfirmation = strictTop is null
+                ? null
+                : new
+                {
+                    offset = strictTop.Offset,
+                    matchedDamageWindows = strictTop.MatchedDamageWindows,
+                    totalDamageWindows = strictTop.TotalDamageWindows,
+                },
+            verdict = new
+            {
+                hit,
+                reason,
+            },
+        };
+
+        return Success(
+            data,
+            hit
+                ? "HP field identified (candidate offset matches the damage timeline)."
+                : "No HP field confirmed.",
+            correlationId);
     }
 
     /// <summary>Runs non-mutating health checks and returns the report.</summary>
