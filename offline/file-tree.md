@@ -211,7 +211,9 @@ docs/operations/handoffs/2026-08-10-g0-offset-publication.md
 docs/operations/handoffs/2026-08-10-hp-correlator-flatness.md
 docs/operations/handoffs/2026-08-10-hp-diff-cli-and-tick-unit-fix.md
 docs/operations/handoffs/2026-08-10-hp-discovery-offline-complete.md
+docs/operations/handoffs/2026-08-10-hp-two-replay-rehearsal.md
 docs/operations/handoffs/2026-08-10-hp-victim-qualification.md
+docs/operations/handoffs/2026-08-10-replaytime-live-plan-prestaged.md
 docs/operations/handoffs/2026-08-10-runtime-chain-walker.md
 docs/operations/handoffs/2026-08-10-walkable-position-chain-applied.md
 docs/operations/handoffs/2026-08-10-walkable-position-chain-draft.md
@@ -228,6 +230,7 @@ docs/operations/offset-discovery-workflow.md
 docs/operations/offset-promotion-checklist.md
 docs/operations/record-diffing-groundwork.md
 docs/operations/replay-crosscheck.md
+docs/operations/replaytime-live-attempt-plan.md
 docs/project-context.md
 docs/superpowers/plans/2026-07-26-dashboard-read-ui.md
 docs/superpowers/specs/2026-08-02-hangar-replays-play.md
@@ -283,6 +286,7 @@ scripts/invoke-csharp-write-trace.ps1
 scripts/invoke-fresh44-crossbattle.ps1
 scripts/invoke-g1-live-poll.ps1
 scripts/invoke-hp-diffing-session.ps1
+scripts/invoke-od-044-replaytime-session.ps1
 scripts/invoke-replay-crosscheck.ps1
 scripts/invoke-scriptanalyzer.ps1
 scripts/launch-offline-replay-for-od.ps1
@@ -786,6 +790,7 @@ tmpwotb-e2e/test-csharp-write-trace.ps1
 tmpwotb-e2e/test-execute-snapshot-interceptor.ps1
 tmpwotb-e2e/test-guard-interceptor.ps1
 tmpwotb-e2e/test-immediate-position-triple.ps1
+tmpwotb-e2e/test-od-044-driver-logic.ps1
 tmpwotb-e2e/test-solo-emission.ps1
 tmpwotb-e2e/test-viewpoint-filter.ps1
 tmpwotb-e2e/wt-counter-target.cs
