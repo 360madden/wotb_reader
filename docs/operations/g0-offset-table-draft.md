@@ -1,5 +1,10 @@
 # G0 — Offset-table publication draft (operator-approved change, ready to apply)
 
+> **APPLIED 2026-08-10 (OD-RECOVERY-083, commit `0e6bdba`):** the operator
+> approved and the change below was applied for the position family as ONE
+> commit with `numericOffsetPublication: true`; all post-edit gates green.
+> Kept as the reference spec for future field publications.
+
 Prepared 2026-08-09 after OD-RECOVERY-082 (G1 + G3 closed, G2 closed) and the
 G0 review verdict **PROMOTE-READY (conditional)**. This document is the
 **draft** — nothing here is applied. The operator approves, then the change

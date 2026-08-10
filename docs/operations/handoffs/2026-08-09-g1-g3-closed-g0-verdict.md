@@ -1,5 +1,12 @@
 # Handoff — 2026-08-09: Fourth G1/G2/G3 live session (OD-RECOVERY-082) — G1 + G3 closed, G0 verdict delivered
 
+> **CORRECTED (2026-08-10, OD-RECOVERY-083):** the "table remains frozen
+> until that change" statements below are superseded — the operator approved
+> and the G0 publication was applied as commit `0e6bdba`
+> (`playerPositionX/Y/Z` → `Verified` via the `chains` section,
+> `numericOffsetPublication: true`). See
+> `2026-08-10-g0-offset-publication.md`.
+
 Date: 2026-08-09
 Status: milestone — **G1 and G3 CLOSED**; G2 re-confirmed (4th); G0
 publication review executed with verdict **PROMOTE-READY (conditional)**;

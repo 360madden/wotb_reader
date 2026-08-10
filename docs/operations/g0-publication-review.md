@@ -1,5 +1,11 @@
 # G0 — Offset-table publication review (pre-staged 2026-08-09)
 
+> **COMPLETED 2026-08-09 (OD-RECOVERY-082) with verdict PROMOTE-READY
+> (conditional); the publication was applied 2026-08-10 (OD-RECOVERY-083,
+> commit `0e6bdba`)** — `playerPositionX/Y/Z` are now `Verified` via the
+> `chains` section. The procedure below remains the canonical review for
+> future fields.
+
 Run this review the moment G1 + G2 close (G3 is already closed). It decides
 whether any numeric value in the position-ring chain may move from
 `Candidate` to `Verified` in `memory-offsets/11.19.0.10.json`. Until this

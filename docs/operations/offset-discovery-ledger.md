@@ -6027,6 +6027,13 @@ Verified with the chain-form values + evidence + approvals) is a SEPARATE,
 operator-approved change per the review's own mechanics. The offset table
 remains frozen until then. No resolver change, no read-surface change, no
 scan-breadth increase.
+
+> **AMENDED 2026-08-10 (OD-RECOVERY-083):** the operator approved and the
+> table edit above was applied as commit `0e6bdba` — `playerPositionX/Y/Z`
+> are `Verified` via the `chains` section, `offsets` stay 0,
+> `numericOffsetPublication: true`; the table is no longer frozen. See the
+> OD-RECOVERY-083 result section below.
+
 ## `OD-RECOVERY-083` result - 2026-08-10 (G0 offset-table publication - playerPositionX/Y/Z published Verified)
 
 ```yaml

@@ -1,5 +1,11 @@
 # G0 — Operator-approval gate (one page)
 
+> **EXECUTED 2026-08-10 (OD-RECOVERY-083, commit `0e6bdba`):** the operator
+> approved and this gate was run for the position family
+> (`playerPositionX/Y/Z` → `Verified` via the `chains` section). The
+> procedure below remains the canonical gate for any FUTURE field
+> publication.
+
 Everything below is ready. The offset table is frozen until you run this
 gate. Sources: `docs/operations/g0-offset-table-draft.md` (the change),
 `docs/operations/g0-post-publication-regression.md` (the contract + test),

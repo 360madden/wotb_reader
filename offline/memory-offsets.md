@@ -126,7 +126,9 @@ The position family — `playerPositionX/Y/Z` (float32 triple at record
 (`GameCoreRootRva 0x04095C88` = 67722376), published in
 `11.19.0.10.json`. `scripts/python/offset_check.py` validates the `chains`
 object (chained field offsets must be 0; hops must be non-empty with valid
-`kind`/non-negative `value`); absent `chains` is a no-op.
+`kind`/non-negative `value`; the first hex literal in each hop's `note` must
+match its decimal `value` — catches hex↔decimal transcription drift, e.g.
+the G0 grill's `0x04095C88` ≠ 67518856 error); absent `chains` is a no-op.
 
 ## Validation tooling
 

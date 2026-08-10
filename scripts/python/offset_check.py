@@ -388,6 +388,19 @@ def validate_offset_file(log_path: Path, path: Path, schema: dict) -> list[str]:
                         issues.append(
                             f"{rel}: chains['{field_name}'] hop value 0x{value:X} "
                             f"exceeds 2GB — likely wrong")
+                    # Note cross-check: the FIRST hex literal in the note is the
+                    # canonical form of this hop's value (later hexes are
+                    # vtable RVAs / strides). Catches hex<->decimal transcription
+                    # drift (e.g. the G0 grill: 0x04095C88 written as 67518856).
+                    note = hop.get("note")
+                    if isinstance(note, str):
+                        m = re.search(r"0x([0-9A-Fa-f]+)", note)
+                        if m and int(m.group(1), 16) != value:
+                            issues.append(
+                                f"{rel}: chains['{field_name}'] hop value "
+                                f"{value} disagrees with its note hex "
+                                f"0x{m.group(1)} (expected "
+                                f"{int(m.group(1), 16)})")
         write_log(log_path, f"  {path.name}: chains validated ({len(chains)} field(s))")
 
     return issues
