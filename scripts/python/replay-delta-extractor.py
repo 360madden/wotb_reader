@@ -412,6 +412,42 @@ def top_victims(
     return out
 
 
+def hp_dump_schedule(
+    con: sqlite3.Connection,
+    session_id: str,
+    victim_entity_id: int,
+    padding_seconds: float = 0.2,
+) -> list[dict]:
+    """Per-hit dump schedule for the HP-diffing live session.
+
+    Event-bound observation: for every damage event against the victim, emit a
+    dump time just BEFORE and just AFTER the hit so the trusted reader's two
+    dumps bracket exactly that event - the resulting change window captures
+    the drop, and the correlator sums only that event's damage. Plus a note
+    that flat control dumps belong in the gap segments (no damage). Times are
+    real replay seconds (replay_time_ticks / 10^7).
+    """
+    rows = con.execute(
+        "SELECT replay_time_ticks, json_extract(values_json,'$.damage') AS dmg "
+        "FROM canonical_events WHERE battle_session_id=? AND kind=3 AND "
+        "json_extract(values_json,'$.victimEntityId')=? ORDER BY replay_time_ticks",
+        (session_id, victim_entity_id),
+    ).fetchall()
+    schedule = []
+    for row in rows:
+        t = float(row[0]) / TICKS_PER_SECOND
+        damage = float(row[1]) if row[1] is not None else 0.0
+        schedule.append(
+            {
+                "hit_replay_s": round(t, 2),
+                "damage": round(damage, 2),
+                "dump_before_s": round(t - padding_seconds, 2),
+                "dump_after_s": round(t + padding_seconds, 2),
+            }
+        )
+    return schedule
+
+
 def simulate_survival(
     marker: list[float],
     target: float,
@@ -599,6 +635,14 @@ def main(argv: list[str]) -> int:
             "simulation": simulate_survival(
                 hp_series, 0.0, [0.0, 0.5, 1.0, 5.0], rounds
             ),
+            "dump_schedule": hp_dump_schedule(con, session["id"], victim),
+            "commands": {
+                "hp_diff": (
+                    f"wotbtreader-cli hp-diff <snapshots.json> "
+                    f"--session {session['id']} --victim {victim} "
+                    f"--mode lenient"
+                ),
+            },
         }
 
     if args.simulate:
