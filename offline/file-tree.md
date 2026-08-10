@@ -209,6 +209,7 @@ docs/operations/handoffs/2026-08-09-od074-replay-root-live-narrowing.md
 docs/operations/handoffs/2026-08-09-od075-position-ring-correction-live-proof.md
 docs/operations/handoffs/2026-08-10-g0-offset-publication.md
 docs/operations/handoffs/2026-08-10-runtime-chain-walker.md
+docs/operations/handoffs/2026-08-10-walkable-position-chain-applied.md
 docs/operations/handoffs/2026-08-10-walkable-position-chain-draft.md
 docs/operations/handoffs/README.md
 docs/operations/legacy-observation-surface.md

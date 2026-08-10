@@ -311,19 +311,21 @@ walk), and the shape must be
 with their `offsets` value kept 0 — the runtime observation path computes
 `moduleBase + offset` and cannot represent a chain, so a non-zero value
 would corrupt reads; the resolver reads chained fields via its own
-hash-bound layout. `OffsetChainWalker` walks chains fail-closed and can
-express the position walk (inline entities + entityLookup + INLINE ringIndex)
-— proven equivalent to the resolver. The published 11.19.0.10 position
-chains remain documentation + evidence, not a runtime read plan: they spell
-the inline entities/ring steps and the ring-index read as plain
-`memberOffset` hops and encode the cache/tree branching as sequential member
-offsets, so the resolver remains their authoritative reader until a walkable
-form is published through the operator gate. The walkable re-expression
-(`inlineOffset` + `entityLookup` + INLINE `ringIndex`) is drafted in
-`docs/operations/g0-offset-table-draft.md` §7 and proven end-to-end — the
-draft JSON parses through `OffsetTableReader` and walks to resolver-equal
-X/Y/Z floats (`WalkablePositionChainTests`, plus the Core equivalence
-suite). The full mechanism, gates, and post-publication contract are in
+hash-bound layout. `OffsetChainWalker` walks chains fail-closed and
+expresses the position walk (inline entities + entityLookup + INLINE
+ringIndex) — proven equivalent to the resolver. The published 11.19.0.10
+position chains ARE mechanically walkable since OD-RECOVERY-084
+(2026-08-10): the walkable re-expression (`inlineOffset` +
+`entityLookup` + INLINE `ringIndex`) was applied through the operator gate
+(`docs/operations/g0-offset-table-draft.md` §7) — the same walk the
+OD-RECOVERY-083 evidence verified, now read directly by `OffsetChainWalker`
+and pinned resolver-equal by `Walk_PublishedTableChains_*` (published table
+→ `OffsetTableReader` → walker → X/Y/Z floats, plus the Core equivalence
+suite). The pre-publication memberOffset-spelled form remains in git
+history (commit `0e6bdba`) and the ledger. The resolver remains the
+authoritative position reader; the walker is a proven-equivalent consumer
+of the published table. The full mechanism, gates, and post-publication
+contract are in
 `docs/operations/g0-offset-table-draft.md`,
 `docs/operations/g0-operator-checklist.md`, and
 `docs/operations/g0-post-publication-regression.md`. The replay-event

@@ -62,11 +62,18 @@ parses `chains` into the model. Chained fields keep their `offsets` value
 offset` (no chain concept) and the ring record is battle-scoped heap, so a
 non-zero value would corrupt that path; the resolver reads chained fields
 via its own hash-bound layout. The published 11.19.0.10 position chains
-remain documentation + evidence, not a runtime read plan (they spell the
-inline entities/ring steps and the ring-index read as plain memberOffset
-hops and encode the cache/tree branching as sequential member offsets); a
-chain re-expressed with `inlineOffset` + `entityLookup` + `ringIndex` IS
-walkable and is proven equivalent to the resolver.
+are mechanically walkable since OD-RECOVERY-084 (2026-08-10): they use
+`inlineOffset` (entities map, no deref), `entityLookup` (cache fast path +
+alternative tree roots, node layout in the descriptor, target entity id
+supplied per walk) and INLINE `ringIndex` — the same walk the
+OD-RECOVERY-083 evidence verified, re-expressed with correct semantics.
+`Walk_PublishedTableChains_*` proves the walker's walk of the PUBLISHED
+chains equals the resolver's traversal on identical memory. The canonical
+form lives in `docs/operations/g0-walkable-position-chains.draft.json`;
+the pre-publication memberOffset-spelled form remains in git history
+(commit `0e6bdba`) and the ledger. The resolver remains the authoritative
+position reader; `OffsetChainWalker` is a proven-equivalent consumer of
+the published table.
 `schemaVersion` stays 1 — the additive keys are ignored by the legacy
 observation path.
 
