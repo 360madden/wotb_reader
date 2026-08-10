@@ -312,6 +312,40 @@ region read discovers. Notably, HP and damage-dealt BOTH rehearsed to
 `+0x48` — if the live read confirms a scoreboard counter near the HP field,
 the tank record layout claim gets a second independent anchor.
 
+## Facing/yaw track — packet-derived ground truth (2026-08-10)
+
+**The type-10 position packet's tail carries the entity's rotation.** The
+49-byte packet (entityId, spaceId, vehicleId, x/y/z, + 25-byte tail) was
+re-scanned from the stored artifacts at decode time (the persisted evidence
+is ciphertext; the plaintext tail is only visible during decoding) and the
+tail decoded: **yaw float32 at payload +36, pitch +40, roll +44** (all
+radians). The yaw is validated 1:1 against the position-derived heading on
+BOTH 11.19.0 replays while moving forward (Oasis Palms 144/157 moving
+windows within 15°, Dead Rail 109/122), is exactly constant through long
+stationary stretches, and stays unchanged during reversals (the tank's
+facing, not its velocity — the velocity-vector reading matches only 14% of
+moving windows vs 79% for yaw). This corrects the earlier replay-format
+claim that the +36–47 triple was a physics velocity with no orientation
+field anywhere in the stream.
+
+**Durably persisted:** the decoder now extracts yaw/pitch/roll and stores
+them as `position_samples.yaw/pitch/roll` (migration 5, added 2026-08-10;
+re-decoded both replays — 2812/2812 and 2784/2784 viewpoint samples carry
+yaw). The ground truth is now DB-queryable, exactly like x/y/z.
+
+**What this unlocks for the memory side:** the facing track no longer
+suffers the pivot-turn blindness of position-derived heading (the packet IS
+the authoritative rotation), and the record-diffing playbook becomes viable:
+dump the ring record region at replay-clock-labeled times (the same
+`EntityRecordRegionReadRequest` seam the HP/damage-dealt plans need), and
+correlate a float32 candidate whose per-window delta matches the packet
+`yaw` delta (radians, wrap-aware). Control windows are the stationary
+segments — the packet yaw is exactly constant there (proven), so flatness
+separates the yaw field from drifting decoys. The ring record is 0x38
+bytes (position +0x10/+0x14/+0x18, velocity +0x28); the unaccounted tail
+(+0x2C..+0x37) is the first place to look for the rotation floats. The
+live read is the remaining input; the offline ground truth is complete.
+
 ## Notes
 
 - Damage events are the highest-value correlation target: HP changes only on

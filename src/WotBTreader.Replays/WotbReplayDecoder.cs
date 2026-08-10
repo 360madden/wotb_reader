@@ -772,7 +772,10 @@ public sealed class WotbReplayDecoder : IReplayDecoder
                 NormalizedY: null,
                 CoordinateSpace.ReplayRaw,
                 NormalizedCoordinateSpace: null,
-                ToEvidence(request, observation.Evidence)));
+                ToEvidence(request, observation.Evidence),
+                Yaw: observation.Yaw,
+                Pitch: observation.Pitch,
+                Roll: observation.Roll));
         }
 
         return positions;

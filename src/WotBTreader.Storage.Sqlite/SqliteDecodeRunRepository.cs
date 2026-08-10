@@ -561,12 +561,14 @@ internal sealed class SqliteDecodeRunRepository : IDecodeRunRepository
                     id, battle_session_id, participant_id, entity_id, sequence,
                     replay_time_ticks, raw_x, raw_y, raw_z, normalized_x, normalized_y,
                     raw_coordinate_space, normalized_coordinate_space,
+                    yaw, pitch, roll,
                     evidence_source_artifact_id, evidence_archive_entry,
                     evidence_offset, evidence_length, evidence_sha256)
                 VALUES(
                     $id, $battleSessionId, $participantId, $entityId, $sequence,
                     $replayTimeTicks, $rawX, $rawY, $rawZ, $normalizedX, $normalizedY,
                     $rawCoordinateSpace, $normalizedCoordinateSpace,
+                    $yaw, $pitch, $roll,
                     $evidenceSourceArtifactId, $evidenceArchiveEntry,
                     $evidenceOffset, $evidenceLength, $evidenceSha256);
                 """;
@@ -589,6 +591,9 @@ internal sealed class SqliteDecodeRunRepository : IDecodeRunRepository
             command.Parameters.AddWithValue("$rawZ", position.RawZ);
             SqliteValueConversions.AddNullable(command.Parameters, "$normalizedX", position.NormalizedX);
             SqliteValueConversions.AddNullable(command.Parameters, "$normalizedY", position.NormalizedY);
+            SqliteValueConversions.AddNullable(command.Parameters, "$yaw", position.Yaw);
+            SqliteValueConversions.AddNullable(command.Parameters, "$pitch", position.Pitch);
+            SqliteValueConversions.AddNullable(command.Parameters, "$roll", position.Roll);
             command.Parameters.AddWithValue(
                 "$rawCoordinateSpace",
                 (int)position.RawCoordinateSpace);

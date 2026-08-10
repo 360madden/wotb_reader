@@ -66,6 +66,15 @@ public sealed class ReplayDecoderTests
             "A participant without player-results evidence must carry no stats.");
         Assert.AreEqual(2, projection.Positions.Count(
             sample => sample.ParticipantId is not null));
+        // The type-10 packet tail's rotation is persisted: the factory wrote
+        // yaw 0.75f (radians) on the first packet's payload +36.
+        PositionSample? firstPosition = projection.Positions
+            .OrderBy(sample => sample.Sequence)
+            .FirstOrDefault();
+        Assert.IsNotNull(firstPosition);
+        Assert.AreEqual(0.75, firstPosition!.Yaw!.Value, 1e-6);
+        Assert.AreEqual(0.0, firstPosition!.Pitch!.Value, 1e-6);
+        Assert.AreEqual(0.0, firstPosition!.Roll!.Value, 1e-6);
         Assert.IsTrue(projection.RawRecords.Any(
             record => record.RecordKind == "event-stream.packet"));
         Assert.IsFalse(projection.Warnings.Any(

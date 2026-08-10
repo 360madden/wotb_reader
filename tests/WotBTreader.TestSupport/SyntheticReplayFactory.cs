@@ -116,7 +116,7 @@ public static class SyntheticReplayFactory
 
         WritePacket(output, 0, 0.1f, CreateBasePlayerCreatePayload(basePlayerCreateArenaId));
         WritePacket(output, 8, 0.2f, CreateUpdateArenaPayload());
-        WritePacket(output, 10, 1.0f, CreatePositionPayload(100, 10, 20, 30));
+        WritePacket(output, 10, 1.0f, CreatePositionPayload(100, 10, 20, 30, yaw: 0.75f));
         if (insertMalformedGap)
         {
             output.Write(new byte[] { 0xde, 0xad, 0xbe });
@@ -260,7 +260,10 @@ public static class SyntheticReplayFactory
         int entityId,
         float x,
         float y,
-        float z)
+        float z,
+        float yaw = 0f,
+        float pitch = 0f,
+        float roll = 0f)
     {
         byte[] payload = new byte[49];
         BinaryPrimitives.WriteInt32LittleEndian(payload, entityId);
@@ -269,6 +272,10 @@ public static class SyntheticReplayFactory
         WriteSingle(payload, 12, x);
         WriteSingle(payload, 16, y);
         WriteSingle(payload, 20, z);
+        // Rotation tail: yaw/pitch/roll float32 at payload +36/+40/+44.
+        WriteSingle(payload, 36, yaw);
+        WriteSingle(payload, 40, pitch);
+        WriteSingle(payload, 44, roll);
         return payload;
     }
 

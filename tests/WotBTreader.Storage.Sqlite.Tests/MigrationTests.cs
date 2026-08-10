@@ -15,11 +15,11 @@ public sealed class MigrationTests
                 .Select(_ => scope.Initializer.InitializeAsync(CancellationToken.None).AsTask()));
 
         Assert.IsTrue(results.All(result => result.IsSuccess));
-        Assert.IsTrue(results.All(result => result.Value == 4));
+        Assert.IsTrue(results.All(result => result.Value == 5));
 
         await using SqliteConnection connection =
             await scope.Context.OpenConnectionAsync(CancellationToken.None);
-        Assert.AreEqual(4L, await ScalarAsync(connection, "SELECT count(*) FROM schema_migrations;"));
+        Assert.AreEqual(5L, await ScalarAsync(connection, "SELECT count(*) FROM schema_migrations;"));
         Assert.AreEqual("wal", await ScalarAsync(connection, "PRAGMA journal_mode;"));
         Assert.AreEqual(1L, await ScalarAsync(connection, "PRAGMA foreign_keys;"));
         long busyTimeout =
@@ -46,7 +46,7 @@ public sealed class MigrationTests
 
         OperationResult<int> result =
             await scope.Initializer.InitializeAsync(CancellationToken.None);
-        Assert.AreEqual(4, StorageTestScope.Success(result));
+        Assert.AreEqual(5, StorageTestScope.Success(result));
 
         string[] backups = Directory.GetFiles(scope.Paths.BackupRoot, "*.sqlite3");
         Assert.HasCount(1, backups);

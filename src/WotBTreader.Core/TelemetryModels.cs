@@ -194,7 +194,13 @@ public sealed record PositionSample(
     double? NormalizedY,
     CoordinateSpace RawCoordinateSpace,
     CoordinateSpace? NormalizedCoordinateSpace,
-    EvidenceReference Evidence);
+    EvidenceReference Evidence,
+    // The entity's rotation in radians from the type-10 packet tail
+    // (yaw at payload +36, pitch +40, roll +44); null for samples decoded
+    // before migration 5 (2026-08-10) persisted the fields.
+    double? Yaw = null,
+    double? Pitch = null,
+    double? Roll = null);
 
 public sealed record ReplayDecodeProjection(
     DecodeRun DecodeRun,

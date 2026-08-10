@@ -263,5 +263,62 @@ internal static class SqliteMigrations
             CREATE INDEX IF NOT EXISTS ix_participants_session
                 ON participants(battle_session_id);
             """),
+        // Same idempotent table-rebuild pattern as migration 4: SQLite has no
+        // ALTER TABLE ... ADD COLUMN IF NOT EXISTS, so a column add must
+        // survive partial-migration re-apply whether or not the column exists.
+        // The 49-byte type-10 position packet carries the entity's rotation
+        // (yaw/pitch/roll float32 at payload +36/+40/+44, verified 2026-08-10
+        // against both 11.19 replays); the decoder now persists it. Existing
+        // rows copy with NULL rotation (pre-migration decodes).
+        new(
+            5,
+            "position_packet_rotation",
+            """
+            CREATE TABLE position_samples_rebuilt (
+                id TEXT PRIMARY KEY,
+                battle_session_id TEXT NOT NULL REFERENCES battle_sessions(id),
+                participant_id TEXT,
+                entity_id INTEGER,
+                sequence INTEGER NOT NULL,
+                replay_time_ticks INTEGER NOT NULL,
+                raw_x REAL NOT NULL,
+                raw_y REAL NOT NULL,
+                raw_z REAL NOT NULL,
+                normalized_x REAL,
+                normalized_y REAL,
+                raw_coordinate_space INTEGER NOT NULL,
+                normalized_coordinate_space INTEGER,
+                yaw REAL,
+                pitch REAL,
+                roll REAL,
+                evidence_source_artifact_id TEXT NOT NULL REFERENCES source_artifacts(id),
+                evidence_archive_entry TEXT,
+                evidence_offset INTEGER NOT NULL,
+                evidence_length INTEGER NOT NULL,
+                evidence_sha256 TEXT NOT NULL CHECK(length(evidence_sha256) = 64),
+                UNIQUE(battle_session_id, sequence)
+            ) STRICT;
+
+            INSERT INTO position_samples_rebuilt(
+                id, battle_session_id, participant_id, entity_id, sequence,
+                replay_time_ticks, raw_x, raw_y, raw_z, normalized_x, normalized_y,
+                raw_coordinate_space, normalized_coordinate_space,
+                evidence_source_artifact_id, evidence_archive_entry,
+                evidence_offset, evidence_length, evidence_sha256)
+            SELECT
+                id, battle_session_id, participant_id, entity_id, sequence,
+                replay_time_ticks, raw_x, raw_y, raw_z, normalized_x, normalized_y,
+                raw_coordinate_space, normalized_coordinate_space,
+                evidence_source_artifact_id, evidence_archive_entry,
+                evidence_offset, evidence_length, evidence_sha256
+            FROM position_samples;
+
+            DROP TABLE position_samples;
+
+            ALTER TABLE position_samples_rebuilt RENAME TO position_samples;
+
+            CREATE INDEX IF NOT EXISTS ix_positions_session_time
+                ON position_samples(battle_session_id, replay_time_ticks, sequence);
+            """),
     ];
 }

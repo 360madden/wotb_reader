@@ -86,23 +86,28 @@ replay, 33 281 packets, all 49 bytes):**
 | 12 | 4 | x (float32 LE) | world coordinate, byte-identical to `position_samples.raw_x` |
 | 16 | 4 | y (float32 LE) | same for `raw_y` |
 | 20 | 4 | z (float32 LE) | same for `raw_z` |
-| 24 | 12 | padding (all zero) | verified across the whole stream (`0x00000000` x3) |
-| 36 | 4 | velocity x (float32 LE) | physics velocity; eases to 0 over ~1 s after a stop while position freezes |
-| 40 | 4 | velocity y (float32 LE) | |
-| 44 | 4 | velocity z (float32 LE) | |
+| 24 | 12 | per-entity constant (NOT zero) | entity-specific bytes, constant per entity across the stream (e.g. `3679FB37 00000036 3679FB37`); one observed entity all-zero. Unclassified — not padding. |
+| 36 | 4 | **yaw (float32 LE, radians)** | the entity's facing. Validated 2026-08-10 on both 11.19.0 replays: matches the position-derived heading 1:1 in radians while moving forward (Oasis Palms 144/157 moving windows within 15°, Dead Rail 109/122), is EXACTLY constant during stationary stretches (spawn `+0.1270` unchanged for 10 s — a velocity would ease to 0), and stays unchanged during off-axis reversals (motion heading flips 180° while the tank faces the same way) — the facing, not the velocity. Persisted as `position_samples.yaw` (migration 5). |
+| 40 | 4 | pitch (float32 LE, radians) | small residual (observed ±0.24); persisted as `position_samples.pitch`. |
+| 44 | 4 | roll (float32 LE, radians) | small residual (observed ±0.40); persisted as `position_samples.roll`. |
 | 48 | 1 | flags byte | 1 for the observed stream |
 
-**Orientation:** no yaw/pitch/quaternion triple exists in the type-10
-payload. The velocity triple at 36–47 is a physics velocity (eases to 0 over
-~1 s after a stop while position freezes; NOT the finite-difference
-derivative — the median per-second direction match is only ~0.3). The
+**Orientation — CORRECTION (2026-08-10):** the +36–47 triple is the
+entity's **rotation (yaw/pitch/roll)**, NOT a physics velocity as an earlier
+draft concluded. The decisive evidence: (a) the +36 value tracks the
+position-derived heading 1:1 in radians across both replays (the earlier
+"~0.3 direction match" was measured without the movement gate — stationary
+stretches and reversals make a velocity's direction meaningless noise); (b)
+it is exactly constant through long stationary stretches (a physics velocity
+eases to 0 over ~1 s); (c) it stays unchanged when the tank reverses
+(motion heading +180° — a velocity vector would flip direction): the
+velocity-vector reading matches only 14% of moving windows vs 79% for the
+yaw reading. The decoder now persists all three (migration 5). The
 28-byte type-39 packet (16 313 on this replay) is a fixed-size scene point
 (two float32 pairs + a float triple) that does NOT align to any type-10
 entity — a camera/marker coordinate, not per-tank orientation. Type-7
 (19 378) is an entity-status packet (varint entity + packed int32s; the
-value `0x02000000` repeats as a state flag — NOT yaw). **No orientation
-field has been located in any packet type; the known-conflict yaw hypothesis
-stands.**
+value `0x02000000` repeats as a state flag — NOT yaw).
 
 **Replay clock:** each frame header carries `float clockSeconds` (non-
 decreasing). Position packets are emitted at ~10 Hz per entity and are NOT

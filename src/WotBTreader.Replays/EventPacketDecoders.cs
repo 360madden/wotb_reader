@@ -38,6 +38,9 @@ internal sealed record PositionObservation(
     double X,
     double Y,
     double Z,
+    double Yaw,
+    double Pitch,
+    double Roll,
     BinaryEvidence Evidence);
 
 internal sealed record DamageObservation(
@@ -279,9 +282,19 @@ internal static class EventPacketDecoders
         float x = ReadFiniteSingle(payload, 12);
         float y = ReadFiniteSingle(payload, 16);
         float z = ReadFiniteSingle(payload, 20);
-        if (!float.IsFinite(x) || !float.IsFinite(y) || !float.IsFinite(z))
+        // The 49-byte layout's tail carries the entity's rotation as three
+        // float32 values (payload +36 yaw, +40 pitch, +44 roll — verified
+        // 2026-08-10: the viewpoint yaw tracks the replay-derived heading
+        // 1:1 in radians across both 11.19 replays, sign-correct; pitch/roll
+        // are the small residual components). They are evidence-backed fields
+        // like the coordinates: non-finite values fail the packet closed.
+        float yaw = ReadFiniteSingle(payload, 36);
+        float pitch = ReadFiniteSingle(payload, 40);
+        float roll = ReadFiniteSingle(payload, 44);
+        if (!float.IsFinite(x) || !float.IsFinite(y) || !float.IsFinite(z)
+            || !float.IsFinite(yaw) || !float.IsFinite(pitch) || !float.IsFinite(roll))
         {
-            warning = "A type 10 packet contained non-finite coordinates.";
+            warning = "A type 10 packet contained non-finite coordinates or rotation.";
             return false;
         }
 
@@ -294,6 +307,9 @@ internal static class EventPacketDecoders
             x,
             y,
             z,
+            yaw,
+            pitch,
+            roll,
             EvidenceForPacket(packet));
         return true;
     }
