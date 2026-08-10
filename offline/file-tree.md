@@ -356,6 +356,8 @@ src/WotBTreader.Core/AffiliationResolver.cs
 src/WotBTreader.Core/ComparisonModels.cs
 src/WotBTreader.Core/Discovery/HpGroundTruthModels.cs
 src/WotBTreader.Core/Discovery/OffsetChainWalker.cs
+src/WotBTreader.Core/Discovery/RecordDiffing.cs
+src/WotBTreader.Core/Discovery/RecordDiffingModels.cs
 src/WotBTreader.Core/Discovery/TrajectoryCorrelation.cs
 src/WotBTreader.Core/Discovery/TrajectoryFamily.cs
 src/WotBTreader.Core/Discovery/Type10EntityPositionResolver.cs
@@ -585,6 +587,7 @@ tests/WotBTreader.Core.Tests/IdentifierTests.cs
 tests/WotBTreader.Core.Tests/MSTestSettings.cs
 tests/WotBTreader.Core.Tests/OffsetChainWalkerEquivalenceTests.cs
 tests/WotBTreader.Core.Tests/OffsetChainWalkerTests.cs
+tests/WotBTreader.Core.Tests/RecordDiffingTests.cs
 tests/WotBTreader.Core.Tests/TrajectoryCorrelationScorerTests.cs
 tests/WotBTreader.Core.Tests/TrajectoryFamilyBuilderTests.cs
 tests/WotBTreader.Core.Tests/Type10EntityPositionResolverTests.cs
