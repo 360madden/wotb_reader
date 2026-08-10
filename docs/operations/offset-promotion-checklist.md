@@ -93,6 +93,18 @@ resolver + read surface are untouched; the legacy observation path still
 emits position nulls (chained fields excluded — pinned by
 `ChainedFields_AreExcludedFromObservationReads`).
 
+**Independent review (2026-08-10): zero defects found.** A fresh-eyes pass
+cross-checked the whole package against source of truth: all 16 hops of
+each published chain equal the `Type10EntityPositionLayout.WotBlitz1119010`
+constants (root `0x04095C88` = 67722376; member offsets 12/292/280/296/
+288/4/72/28/64/52/56/8/8/456; record offsets 16/20/24), the
+primary/tertiary/secondary entity-map labels match `FindEntity`'s `sources`
+array, the draft §2b chain equals the published table exactly, the wrong
+decimal `67518856` appears nowhere (only as the documented caught error),
+and no doc still claims the position is unpublished. Chain shape is also
+enforced by `offset_check.py` (chained ⇒ `offsets` 0, note-hex cross-check)
+on every `validate.ps1`/CI run.
+
 ### G1 — Hardware-atomic read proof
 
 **CLOSED 2026-08-09 (OD-RECOVERY-082):** the stored v4 aggregate is 24/24
