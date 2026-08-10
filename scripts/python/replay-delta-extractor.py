@@ -661,6 +661,156 @@ def dealt_dump_schedule(
     return schedule
 
 
+def yaw_dump_schedule(
+    con: sqlite3.Connection,
+    session_id: str,
+    entity_id: int,
+    turn_threshold_rad: float = 0.1,
+    padding_seconds: float = 0.2,
+    min_turn_span_ticks: int = 1,
+) -> list[dict]:
+    """Dump-pair schedule for the facing/yaw (L2) live session.
+
+    Mirrors `hp_dump_schedule` for the yaw track: emit one dump pair per
+    TURN SEGMENT whose cumulative packet-yaw change exceeds
+    `turn_threshold_rad` (the L2 picker rule: > 0.1 rad = 2x the 0.05 rad
+    match tolerance), bracketing the segment at +/- `padding_seconds` so the
+    change window captures exactly that turn. The correlator's TURN windows
+    (|expected| > the match tolerance) form the score denominator; the driver adds
+    stationary CONTROL dump pairs (packet yaw exactly constant) for the
+    flatness denominator.
+
+    The yaw series is ~1 sample/s, so a turn usually spans several samples:
+    consecutive samples whose wrapped yaw change stays >= the threshold are
+    merged into ONE segment (one dump pair per segment, not per sample),
+    which keeps the change window cleanly bounded to the actual rotation.
+    """
+    rows = con.execute(
+        "SELECT replay_time_ticks, yaw FROM position_samples "
+        "WHERE battle_session_id=? AND entity_id=? AND yaw IS NOT NULL "
+        "ORDER BY replay_time_ticks",
+        (session_id, entity_id),
+    ).fetchall()
+    if not rows:
+        return []
+
+    # Accumulate a turn segment while consecutive steps keep the SAME sign
+    # (a slow turn spanning several ~1s samples is still one turn); close the
+    # segment when the direction reverses or a gap occurs, and emit a dump
+    # pair when the segment's cumulative |delta| reaches the threshold.
+    schedule: list[dict] = []
+    seg_start_ticks: int | None = None
+    seg_start_yaw: float | None = None
+    prev_ticks: int | None = None
+    prev_yaw: float | None = None
+    seg_sign: float = 0.0
+
+    def close_segment(end_ticks: int, end_yaw: float) -> None:
+        nonlocal seg_start_ticks, seg_start_yaw, seg_sign
+        if seg_start_ticks is None or seg_start_yaw is None:
+            return
+        delta = wrap_pi(end_yaw - seg_start_yaw)
+        if abs(delta) >= turn_threshold_rad and (
+            end_ticks - seg_start_ticks >= min_turn_span_ticks
+        ):
+            start_s = seg_start_ticks / TICKS_PER_SECOND
+            end_s = end_ticks / TICKS_PER_SECOND
+            schedule.append(
+                {
+                    "turn_replay_s": round((start_s + end_s) / 2.0, 2),
+                    "expected_delta_rad": round(delta, 4),
+                    "expected_delta_deg": round(math.degrees(delta), 2),
+                    "dump_before_s": round(start_s - padding_seconds, 2),
+                    "dump_after_s": round(end_s + padding_seconds, 2),
+                }
+            )
+        seg_start_ticks = None
+        seg_start_yaw = None
+        seg_sign = 0.0
+
+    for row in rows:
+        t = row["replay_time_ticks"]
+        y = float(row["yaw"])
+        if prev_ticks is None:
+            prev_ticks, prev_yaw = t, y
+            seg_start_ticks, seg_start_yaw = t, y
+            continue
+        step = wrap_pi(y - prev_yaw)
+        step_sign = math.copysign(1.0, step) if abs(step) > 1e-6 else 0.0
+        if step_sign != 0.0 and seg_sign != 0.0 and step_sign != seg_sign:
+            # Direction reversal ends the turn segment.
+            close_segment(prev_ticks, prev_yaw)
+            seg_start_ticks, seg_start_yaw = t, y
+        elif t - prev_ticks > 2 * TICKS_PER_SECOND:
+            # A sample gap ends the segment (a turn across a gap is two
+            # observations, not one continuous rotation).
+            close_segment(prev_ticks, prev_yaw)
+            seg_start_ticks, seg_start_yaw = t, y
+        seg_sign = step_sign if step_sign != 0.0 else seg_sign
+        prev_ticks, prev_yaw = t, y
+    close_segment(prev_ticks, prev_yaw)
+
+    # Post-process: the driver dumps at every distinct time and windows form
+    # between consecutive dumps. Overlapping pairs (close adjacent turns)
+    # would split into a RESIDUAL window whose |expected| sits in the dead
+    # band between the control threshold and the 0.05 rad match tolerance —
+    # the correlator classifies such windows as CONTROL (the field's delta
+    # <= tolerance reads as "unchanged"), so they cannot contribute turn
+    # evidence and must not dilute the score. So merge overlapping pairs into
+    # one window
+    # (min dump_before .. max dump_after) and recompute the expected delta
+    # from the actual packet yaw at those endpoints; then drop any merged
+    # window whose |expected| stays below the picker threshold (a wiggle, not
+    # a usable turn).
+    if not schedule:
+        return schedule
+
+    def yaw_nearest(ticks: int) -> float | None:
+        """Nearest-sample packet yaw (the correlator's YawLookup semantics)."""
+        if ticks <= sample_ticks[0] or ticks >= sample_ticks[-1]:
+            return None
+        lo, hi = 0, len(sample_ticks) - 1
+        while hi - lo > 1:
+            mid = (lo + hi) // 2
+            if sample_ticks[mid] <= ticks:
+                lo = mid
+            else:
+                hi = mid
+        if abs(ticks - sample_ticks[lo]) <= abs(ticks - sample_ticks[hi]):
+            return sample_yaws[lo]
+        return sample_yaws[hi]
+
+    sample_ticks = [r["replay_time_ticks"] for r in rows]
+    sample_yaws = [float(r["yaw"]) for r in rows]
+    merged: list[dict] = []
+    for entry in schedule:
+        before_s = entry["dump_before_s"]
+        after_s = entry["dump_after_s"]
+        if merged and before_s < merged[-1]["dump_after_s"]:
+            merged[-1]["dump_after_s"] = max(merged[-1]["dump_after_s"], after_s)
+        else:
+            merged.append({"turn_replay_s": entry["turn_replay_s"],
+                           "dump_before_s": before_s, "dump_after_s": after_s})
+
+    out: list[dict] = []
+    for entry in merged:
+        start_ticks = int(entry["dump_before_s"] * TICKS_PER_SECOND)
+        end_ticks = int(entry["dump_after_s"] * TICKS_PER_SECOND)
+        start_yaw = yaw_nearest(start_ticks)
+        end_yaw = yaw_nearest(end_ticks)
+        if start_yaw is None or end_yaw is None:
+            continue
+        delta = wrap_pi(end_yaw - start_yaw)
+        if abs(delta) < turn_threshold_rad:
+            continue
+        entry["expected_delta_rad"] = round(delta, 4)
+        entry["expected_delta_deg"] = round(math.degrees(delta), 2)
+        entry["turn_replay_s"] = round(
+            (entry["dump_before_s"] + entry["dump_after_s"]) / 2.0, 2)
+        out.append(entry)
+    return out
+
+
 def top_victims(
     con: sqlite3.Connection,
     session_id: str,
@@ -860,6 +1010,10 @@ def main(argv: list[str]) -> int:
                         help="segment the participant replay into moving/stationary phases")
     parser.add_argument("--heading-delta", action="store_true",
                         help="movement-gated, wrap-aware per-window heading/turn series (motion heading + packet yaw deltas)")
+    parser.add_argument("--yaw-dump", action="store_true",
+                        help="emit the dump-pair schedule for the facing (L2) live session: one pair per turn segment with |packet yaw delta| >= threshold (0.1 rad default), plus the stationary control times")
+    parser.add_argument("--turn-threshold", type=float, default=0.1,
+                        help="radians threshold for a turn segment in --yaw-dump (default 0.1 = 2x the 0.05 rad match tolerance)")
     parser.add_argument("--speed-threshold", type=float, default=0.5,
                         help="m/s threshold for the moving phase (default 0.5)")
     parser.add_argument("--hp-delta", action="store_true",
@@ -998,6 +1152,50 @@ def main(argv: list[str]) -> int:
             heading["recommended"]["yaw_delta_target_deg"],
             heading["recommended"]["yaw_delta_tolerance_deg"],
             args.window,
+        )
+
+    if args.yaw_dump:
+        # The facing dump schedule needs packet yaw (migration 5+).
+        session = pick_yaw_session(con)
+        if args.session:
+            found = con.execute(
+                "SELECT id, game_version, map_name, duration_ticks, "
+                "viewpoint_participant_id FROM battle_sessions WHERE id=?",
+                (args.session,),
+            ).fetchone()
+            if found is None:
+                raise SystemExit(f"session not found: {args.session}")
+            session = dict(found)
+        participants = moving_participants(con, session["id"])
+        if not participants:
+            raise SystemExit("no participants with samples for this session")
+        participant_id = args.participant or participants[0][0]
+        entity_row = con.execute(
+            "SELECT entity_id FROM position_samples WHERE battle_session_id=? "
+            "AND participant_id=? AND entity_id IS NOT NULL LIMIT 1",
+            (session["id"], participant_id),
+        ).fetchone()
+        target_entity = entity_row["entity_id"] if entity_row else participant_id
+        schedule = yaw_dump_schedule(
+            con,
+            session["id"],
+            target_entity,
+            turn_threshold_rad=args.turn_threshold,
+        )
+        result["session_id"] = session["id"]
+        result["map_name"] = session["map_name"]
+        result["participant_id"] = participant_id
+        result["entity_id"] = target_entity
+        result["yaw_dump"] = {
+            "turn_threshold_rad": args.turn_threshold,
+            "turn_segments": len(schedule),
+            "schedule": schedule,
+        }
+        if "commands" not in result:
+            result["commands"] = {}
+        result["commands"]["yaw_diff"] = (
+            "wotbtreader-cli yaw-diff <snapshots.json> "
+            f"--session {session['id']} --victim {target_entity}"
         )
 
     if args.hp_delta:

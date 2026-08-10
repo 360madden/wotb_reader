@@ -109,7 +109,8 @@ touch what.
 | F4 | G | ✅ This roadmap + workstream registry | All parallel work |
 
 Phase 0 is complete (2026-08-10): the facing correlator rehearses to `+0x2C` on
-both replays (8/8 turn windows, flatness 1.0), the overlay frame contract and
+both replays (27/27 Oasis, 35/35 Dead Rail, flatness 1.0 — with the L2 driver's
+real `--yaw-dump` schedule), the overlay frame contract and
 `ReplayFrameSource` are tested, and the velocity/pitch/roll tool validates
 pitch = −slope (155/155 and 113/113 windows) with the velocity series freed
 of the sub-50ms duplicate-packet artifact.
@@ -141,21 +142,28 @@ track's static anchor. Evidence: `tools/ghidra-scripts/writesite-ring-disasm.txt
 | Step | WS | Deliverable | Session cap |
 |---|---|---|---|
 | L0 | C | ✅ `EntityRecordRegionReadRequest/Result` (≤ 4 KB region, bytes + replay time only, `OfflineReplayVerified` + current auth) — the ONE product addition; shipped 2026-08-10 with the guarded region read + replay-clock label + `RegionAnchor` (ring-record / entity-tank-record — the L1 wiring correction; coordinator derefs `[entity+0x3C]` itself), 8 coordinator tests + 4 web endpoint tests | — |
-| L1 | D | HP live session (Oasis Palms victim 3760578 → verify `+0x48` live) | 1 |
+| L1 | D | HP live session (Oasis Palms victim 3760578; dump the `[entity+0x3C]` transform-object region and correlate — the `+0x48` from rehearsals is a SYNTHETIC FIXTURE, not a verified location) | 1 |
 | L2 | D | Facing live session (ring-record dump vs `position_samples.yaw`; probe `+0x2C..+0x37` first) | 1 |
 | L3 | D | Damage-dealt live session (viewpoint counter; share the L1 seam) | 1 |
 | L4 | D | replayTime session (OD-044 interceptor, byte-exact Double — fixed) | 1 |
 
 Each session reuses L0; the region dump is multipurpose (one dump yields
 position + velocity + rotation + HP candidates), so later sessions are
-cheaper than the first.
+cheaper than the first. NOTE (2026-08-10 cross-check): `[entity+0x3C]` is
+static evidence for the TRANSFORM OBJECT (getter `FUN_00d29ea0 = return
+[ECX+0x3C]`; position `+0x1C/20/24`, world matrix `+0x60..0x9C`, rotation
+`+0x38..0x5C` per FRESH43). HP's actual location is UNKNOWN — the
+record-diffing playbook scans the dumped region for whichever int32 drops
+with damage; `+0x48` was the test fixture's planted offset. If the
+transform region contains no HP-like field, the live session returns an
+honest no-hit and the anchor widens (entity base / ring record).
 
 ### Phase 3 — Publications (serial, operator-gated)
 
 | Step | WS | Deliverable |
 |---|---|---|
 | P1 | H | Velocity `+0x28` promotion (live-verified semantics) |
-| P2 | H | HP publication (2-replay live agreement at `+0x48`) |
+| P2 | H | HP publication (2-replay live agreement at the correlator-found offset — `+0x48` was the synthetic fixture) |
 | P3 | H | Facing/yaw publication (replaces the quarantined candidate; reconciled against packet ground truth) |
 | P4 | H | Pitch/roll publication (if the ring record holds them) |
 

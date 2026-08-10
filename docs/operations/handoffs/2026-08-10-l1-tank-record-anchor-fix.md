@@ -64,6 +64,18 @@ correlator machinery on real event timelines; whether the in-memory HP /
 damage-dealt counter actually lives at tank-record `+0x48` is exactly what
 the gated live region read discovers.)
 
+**Follow-up cross-check (same day): `+0x48` is a SYNTHETIC FIXTURE, not a
+verified candidate.** Tracing the claim to its source shows the mechanism
+proof planted HP at `+0x48` to prove the correlator; the only static
+evidence is `[entity+0x3C]` as the TRANSFORM OBJECT (getter
+`FUN_00d29ea0 = return [ECX+0x3C]`, position `+0x1C/20/24`, matrix
+`+0x60..0x9C`, per-frame rotation `+0x38..0x5C` — FRESH43). `+0x48` would
+land inside that rotation block, an unlikely HP home. The live L1 session
+must be framed as DISCOVERY: dump the transform-object region and let the
+correlator rank whichever int32 actually drops with damage; an honest
+no-hit widens the anchor. Docs corrected accordingly (roadmap L1/P2 +
+groundwork rehearsal notes).
+
 ## Files changed
 
 - `src/WotBTreader.Core/Discovery/Type10EntityPositionResolver.cs` —

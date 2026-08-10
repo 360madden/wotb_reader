@@ -58,20 +58,20 @@ public sealed record HeadingCorrelationCandidate(
 /// little-endian value delta (wrapped to [-pi, pi]) equals the yaw delta
 /// (also wrapped) between the window's snapshots. Pure and offline; the
 /// memory side (trusted reader) is a separate approved-session step. Windows
-/// whose expected |delta| exceeds <see cref="ControlDeltaThresholdRadians"/>
-/// are TURN windows (score denominator); the rest are CONTROL windows
-/// (flatness denominator — the yaw field must be unchanged there). Windows
-/// whose From/To replay times fall outside the yaw sample span have no
-/// ground truth and are excluded from both denominators.
+/// whose expected |delta| exceeds the match tolerance are TURN windows
+/// (score denominator); the rest are CONTROL windows (flatness denominator
+/// — the yaw field must be unchanged there). The turn boundary is the match
+/// tolerance itself: a window whose expected |delta| is at or below it can
+/// never be verified (its observed delta reads as "unchanged" and is
+/// skipped), so counting it in the score denominator would make a perfect
+/// field score below 1.0. Windows whose From/To replay times fall outside
+/// the yaw sample span have no ground truth and are excluded from both
+/// denominators.
 /// </summary>
 public static class HeadingCorrelator
 {
     /// <summary>Default match tolerance in radians (~2.9 degrees).</summary>
     public const double DefaultToleranceRadians = 0.05;
-
-    /// <summary>Expected |delta| at or below this is a stationary control
-    /// window (~1.1 degrees).</summary>
-    public const double ControlDeltaThresholdRadians = 0.02;
 
     /// <summary>
     /// Ranks candidate yaw fields for <paramref name="targetEntityId"/>. Only
@@ -125,7 +125,7 @@ public static class HeadingCorrelator
             }
 
             double expected = WrapPi(toYaw - fromYaw);
-            if (Math.Abs(expected) > ControlDeltaThresholdRadians)
+            if (Math.Abs(expected) > toleranceRadians)
             {
                 expectedByWindow[window] = expected;
             }

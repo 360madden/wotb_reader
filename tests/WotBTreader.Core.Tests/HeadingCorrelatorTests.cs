@@ -240,6 +240,48 @@ public sealed class HeadingCorrelatorTests
     }
 
     [TestMethod]
+    public void Correlate_DeadBandWindow_IsControlNotUnmatchableTurn()
+    {
+        // A window whose expected |delta| sits between the old 0.02 rad
+        // control threshold and the 0.05 rad match tolerance (e.g. a residual
+        // rotation between two adjacent turns) can NEVER be matched: its
+        // observed delta reads as "unchanged" (<= tolerance) and is skipped,
+        // but counting it in the score denominator would cap a perfect field
+        // below 1.0. Such windows must be CONTROL windows (flatness), so the
+        // score denominator only holds provable turns.
+        var snapshots = new[]
+        {
+            // Turn 1: 0.4 rad (clearly matchable).
+            new RecordSnapshot(TimeSpan.FromSeconds(0), Region(yaw: 0.1f)),
+            new RecordSnapshot(TimeSpan.FromSeconds(1), Region(yaw: 0.5f)),
+            // Dead-band gap: 0.03 rad residual rotation between the turns.
+            new RecordSnapshot(TimeSpan.FromSeconds(2), Region(yaw: 0.53f)),
+            // Turn 2: 0.4 rad (clearly matchable).
+            new RecordSnapshot(TimeSpan.FromSeconds(3), Region(yaw: 0.93f)),
+        };
+        var yaw = new[]
+        {
+            Yaw(TimeSpan.FromSeconds(0), 0.1),
+            Yaw(TimeSpan.FromSeconds(1), 0.5),
+            Yaw(TimeSpan.FromSeconds(2), 0.53),
+            Yaw(TimeSpan.FromSeconds(3), 0.93),
+        };
+
+        IReadOnlyList<HeadingCorrelationCandidate> candidates =
+            HeadingCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                yaw,
+                TargetEntity);
+
+        Assert.IsNotEmpty(candidates);
+        Assert.AreEqual(YawOffset, candidates[0].Offset);
+        Assert.AreEqual(1.0, candidates[0].Score, 1e-9);
+        Assert.AreEqual(1.0, candidates[0].Flatness, 1e-9);
+        Assert.AreEqual(2, candidates[0].MatchedWindows);
+        Assert.AreEqual(2, candidates[0].TotalWindows);
+    }
+
+    [TestMethod]
     public void Correlate_NoSamplesForEntity_ReturnsEmpty()
     {
         var snapshots = new[]

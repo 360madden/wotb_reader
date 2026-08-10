@@ -254,6 +254,18 @@ offsets and NOT land exactly on an event tick — placing a dump at the event
 time itself creates a zero-width boundary window whose sum lands in the
 wrong bucket (rehearsal hit this; the step-function rebuild fixed it).
 
+**IMPORTANT (2026-08-10 cross-check): `+0x48` is a SYNTHETIC FIXTURE offset**
+— the mechanism-proof test planted the HP int32 at `+0x48` to prove the
+correlator machinery; it is NOT Ghidra-derived. The only static evidence is
+for `[entity+0x3C]` as the TRANSFORM OBJECT (getter `FUN_00d29ea0 = return
+[ECX+0x3C]`; position `+0x1C/20/24`, world matrix `+0x60..0x9C`, rotation
+`+0x38..0x5C` per FRESH43) — so `+0x48` inside that layout would land in the
+per-frame rotation block, an unlikely HP home. The live session therefore
+DISCOVERS the offset: it dumps the region and the correlator ranks whichever
+int32 actually drops with damage. If the transform region contains no
+HP-like field, the verdict is an honest no-hit and the anchor widens (entity
+base / ring record).
+
 **Simulation reading:** the extractor's `--hp-delta` survival simulation
 at `target=0` measures the flat-window pass rate (3760578 at 10s windows:
 11/17 = 0.65 → survival ≈ 0.12 / 0.01 over 5 / 10 rounds). The honest
@@ -319,12 +331,12 @@ a control dump after a hit but before the next must show the value as of
 that time, or the control window falsely counts as a field change and
 flatness drops to 0 (the first Oasis Palms build failed exactly this way).
 
-Same caveat as HP: the rehearsal proves the machinery on the real event
-timeline; whether the in-memory damage-dealt counter actually lives at
-`+0x48` (or anywhere near the tank record) is exactly what the gated live
-region read discovers. Notably, HP and damage-dealt BOTH rehearsed to
-`+0x48` — if the live read confirms a scoreboard counter near the HP field,
-the tank record layout claim gets a second independent anchor.
+Same caveat as HP — and the same fixture caution (see the HP rehearsal note
+above): `+0x48` is the planted test offset, not a verified location; the
+live session discovers whichever int32 actually moves with the target's
+scoreboard damage. HP and damage-dealt both rehearsed to the same planted
+offset purely because both fixtures used it; a live confirmation of either
+would give the transform-object layout its first stat-field anchor.
 
 ## Facing/yaw track — packet-derived ground truth (2026-08-10)
 
@@ -364,8 +376,9 @@ live read is the remaining input; the offline ground truth is complete.
 
 The `HeadingCorrelator` (Core/Discovery) ranks 4-byte-aligned float32 fields
 whose wrap-aware delta matches the packet yaw delta per replay-time window:
-TURN windows (expected |delta| > 0.02 rad) form the score denominator, and
-stationary CONTROL windows (|delta| ≤ 0.02) form the flatness denominator —
+TURN windows (expected |delta| > the 0.05 rad match tolerance) form the
+score denominator, and stationary CONTROL windows (|delta| ≤ tolerance)
+form the flatness denominator —
 the packet yaw is exactly constant when stationary, so flatness separates the
 yaw field from drifting decoys. The lookup is nearest-sample (the dump's
 replay clock lands on the packet the state was sent at), fail-closed outside
@@ -373,20 +386,33 @@ the sample span, with ties resolving to the earlier sample. 8 unit tests pin
 wrap-across-π, decoy demotion, entity filtering, and fail-closed behavior.
 
 `yaw-diff <snapshots> --session <guid> --victim <entity>` (mirror of `hp-diff`)
-ran the full rehearsal on BOTH 11.19.0 replays: synthetic region dumps whose
-float32 at the predicted ring-record yaw offset **+0x2C** carry the real
-packet yaw, with a time-drifting decoy at +0x20:
+ran the full rehearsal on BOTH 11.19.0 replays with the L2 driver's real
+dump schedule (`--yaw-dump` emits one dump pair per turn segment): synthetic
+ring-record region dumps whose float32 at the predicted yaw offset **+0x2C**
+carry the real packet yaw (nearest-sample, the correlator's lookup
+semantics), with a constant decoy at +0x20:
 
 | Replay | Verdict | Offset | Score | Flatness | Matched / Controls |
 |---|---|---|---|---|---|
-| Oasis Palms | HIT | `+0x2C` | 1.0 | 1.0 | 8/8 turns, 0/9 control changed |
-| Dead Rail | HIT | `+0x2C` | 1.0 | 1.0 | 8/8 turns, 0/9 control changed |
+| Oasis Palms | HIT | `+0x2C` | 1.0 | 1.0 | 27/27 turns, 0 control changed |
+| Dead Rail | HIT | `+0x2C` | 1.0 | 1.0 | 35/35 turns, 0 control changed |
 
-Construction rule caught in rehearsal (same class as the HP flatness trap): a
-TURN window whose expected delta is BELOW the 0.05 rad match tolerance is
-skipped as "unchanged" by design — rehearsal windows must be selected well
-above tolerance (|expected| > 0.1 rad), which the live session's dump-pair
-picker must mirror. The memory side is the remaining input: the gated live
+(Decoy note: a decoy that is a CONSTANT OFFSET of the real yaw — e.g. yaw +
+1.7 — reproduces every delta and legitimately ties the true field; the
+correlator then breaks the tie by offset ascending. A rehearsal decoy must
+NOT track yaw to prove discrimination; the live session needs no decoy at
+all.)
+
+Construction rule fixed in correlator (2026-08-10, same class as the HP
+flatness trap): a window whose expected delta sits in the dead band between
+0.02 rad and the 0.05 rad match tolerance is skipped as "unchanged" by the
+matcher (observed |delta| ≤ tolerance) yet previously counted in the score
+denominator — a perfect field capped at 27/30. The correlator now classifies
+such windows as CONTROL windows (|expected| ≤ match tolerance), so the score
+denominator holds only provable turns and a true yaw field reaches 1.0/1.0.
+Rehearsal windows are still selected well above tolerance (|expected| >
+0.1 rad) by the dump-pair picker, but the classifier no longer depends on
+that discipline. The memory side is the remaining input: the gated live
 region read dumps the ring record at replay-clock-labeled times and the same
 correlator confirms whether the rotation floats live in the +0x2C..+0x37 tail.
 
@@ -405,6 +431,15 @@ G2) and shares the O5 rehearsed target:
    |---|---|---|---|---|---|
    | Oasis Palms | 1 644 | 0.011° | 24.4° | 47.1° | 0 |
    | Dead Rail | 1 728 | 2.92° | 48.5° | 118.2° | **5** |
+
+   The live driver is `scripts/invoke-facing-session.ps1` (2026-08-10):
+   step 1 runs `--yaw-dump` (the dump-pair schedule, one pair per turn
+   segment ≥ 0.1 rad), step 2 POSTs `/discover/entity-region` with
+   `regionAnchor=ring-record` at every scheduled replay-clock time (plus
+   `-ControlTimes`) and fail-closes on `sameDecodedClockProven=false`, step
+   3 runs `wotbtreader-cli yaw-diff` with `-FailOnNoHit` support. The
+   full-schedule rehearsal on both replays is in the correlator section
+   above (27/27 and 35/35, both HIT at `+0x2C`).
 
    The seam-crossing count is the wrap-awareness evidence: Dead Rail's 5
    crossings are windows where a naive (non-wrap-aware) delta would read
