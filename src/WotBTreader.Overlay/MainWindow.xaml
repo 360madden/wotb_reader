@@ -167,6 +167,16 @@
                                 Command="{Binding CycleSpeedCommand}" Width="30" Height="24" FontSize="9"
                                 Foreground="#AAFFAA" Margin="2,0,0,0"/>
 
+                        <!-- HUD field of view (vertical degrees) -->
+                        <StackPanel Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="FOV" FontSize="9" Foreground="#88FFFFFF"
+                                       VerticalAlignment="Center" Margin="0,0,3,0"/>
+                            <Slider Width="80" Minimum="40" Maximum="120"
+                                    Value="{Binding HudFovDegrees, Mode=TwoWay}"
+                                    ToolTip="Vertical field of view used to project the HUD"
+                                    Height="18" VerticalAlignment="Center" Cursor="Hand"/>
+                        </StackPanel>
+
                         <!-- Primary action: Refresh -->
                         <Button Content="↻" ToolTip="Refresh sessions" Style="{StaticResource ToolbarButton}"
                                 Command="{Binding RefreshCommand}" Width="24" Height="24" Margin="6,0,0,0"/>

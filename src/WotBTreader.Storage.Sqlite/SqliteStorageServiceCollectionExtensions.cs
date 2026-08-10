@@ -26,6 +26,7 @@ public static class SqliteStorageServiceCollectionExtensions
         services.AddSingleton<IYawGroundTruthProvider, SqliteYawGroundTruthProvider>();
         services.AddSingleton<IComparisonRunRepository, SqliteComparisonRunRepository>();
         services.AddSingleton<IReplayClockSegmentRepository, SqliteReplayClockSegmentRepository>();
+        services.AddSingleton<IBeaconStore, SqliteBeaconStore>();
         return services;
     }
 }

@@ -40,6 +40,23 @@ public sealed record OverlayTankState(
     double DistanceMeters);
 
 /// <summary>
+/// A persistent point of interest anchored in world space, rendered as a
+/// labeled marker over the game window. Color is an HTML-style hex string
+/// ("#FFD700"). The replay-time tag makes a beacon visible only inside an
+/// optional window — null bounds mean always visible. Pure offline data:
+/// beacons are placed against decoded replay coordinates and persisted per
+/// session.
+/// </summary>
+public sealed record OverlayBeacon(
+    string Name,
+    double X,
+    double Y,
+    double Z,
+    string Color,
+    TimeSpan? VisibleFrom,
+    TimeSpan? VisibleUntil);
+
+/// <summary>
 /// A complete renderable instant of a replay battle: the camera plus every
 /// tank state that has position evidence at the frame's replay time. Pure
 /// offline data — built entirely from the decoded replay projection, never

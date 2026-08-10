@@ -320,5 +320,30 @@ internal static class SqliteMigrations
             CREATE INDEX IF NOT EXISTS ix_positions_session_time
                 ON position_samples(battle_session_id, replay_time_ticks, sequence);
             """),
+        // Overlay POIs: world-space beacons placed against decoded replay
+        // coordinates and rendered as labeled markers by the W2S HUD. They are
+        // keyed by (session, name) — replacing a beacon is an upsert, and a
+        // session's beacons are independent of decode runs (created offline,
+        // never from a game process).
+        new(
+            6,
+            "overlay_beacons",
+            """
+            CREATE TABLE IF NOT EXISTS beacons (
+                battle_session_id TEXT NOT NULL REFERENCES battle_sessions(id),
+                name TEXT NOT NULL,
+                x REAL NOT NULL,
+                y REAL NOT NULL,
+                z REAL NOT NULL,
+                color TEXT NOT NULL,
+                visible_from_ticks INTEGER,
+                visible_until_ticks INTEGER,
+                created_at_utc TEXT NOT NULL,
+                PRIMARY KEY (battle_session_id, name)
+            ) STRICT;
+
+            CREATE INDEX IF NOT EXISTS ix_beacons_session
+                ON beacons(battle_session_id);
+            """),
     ];
 }

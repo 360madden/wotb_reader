@@ -1063,6 +1063,55 @@ public sealed class MainViewModelTests
     }
 
     [TestMethod]
+    public async Task RefreshOverlayFrameAsync_PopulatesVisibleBeaconsAndSkipsHiddenOnes()
+    {
+        string frameJson = """
+            {
+              "replayTimeSeconds": 200.0,
+              "cameraX": 0.0, "cameraY": 0.0, "cameraZ": 0.0,
+              "cameraYawRadians": 0.5, "cameraPitchRadians": 0.0,
+              "tanks": [],
+              "beacons": [
+                { "name": "Flag", "color": "#FFD700", "distanceMeters": 100.0, "screenX": 960.0, "screenY": 540.0, "depth": 90.0, "inViewport": true },
+                { "name": "Rear", "color": "#FF0000", "distanceMeters": 50.0, "screenX": null, "screenY": null, "depth": null, "inViewport": false },
+                { "name": "Off", "color": "#00FF00", "distanceMeters": 200.0, "screenX": 5000.0, "screenY": 5000.0, "depth": 10.0, "inViewport": false }
+              ]
+            }
+            """;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            string path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/frame", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(JsonResponse(frameJson));
+            }
+
+            if (path.Contains(BattleSessionId.ToString("D"), StringComparison.Ordinal))
+            {
+                return Task.FromResult(JsonResponse("""{"session":null,"participants":[],"positions":[],"events":[]}"""));
+            }
+
+            return Task.FromResult(JsonResponse("""{"offset":0,"limit":200,"count":0,"items":[]}"""));
+        });
+        MainViewModel viewModel = CreateViewModel(handler);
+
+        await viewModel.RefreshSessionsAsync();
+        viewModel.SelectedSession = new SessionRow(
+            BattleSessionId, "Test Map", null, Now, 1, 2);
+
+        await viewModel.RefreshOverlayFrameAsync(1920, 1080);
+
+        // Behind-camera and off-viewport beacons are never drawn.
+        Assert.AreEqual(1, viewModel.Beacons.Count);
+        BeaconItem flag = viewModel.Beacons.Single(beacon => beacon.Name == "Flag");
+        Assert.AreEqual("#FFD700", flag.Color);
+        Assert.AreEqual(960.0, flag.ScreenX, 1e-9);
+        Assert.AreEqual(540.0, flag.ScreenY, 1e-9);
+        Assert.AreEqual(100.0, flag.DistanceMeters, 1e-9);
+    }
+
+    [TestMethod]
     public async Task RefreshOverlayFrameAsync_NoSessionSelected_LeavesNameplatesEmpty()
     {
         WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));

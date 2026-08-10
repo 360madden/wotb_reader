@@ -41,6 +41,7 @@ public sealed class CliCommandRouter
         "hp-diff",
         "yaw-diff",
         "overlay-frame",
+        "beacon",
         "serve",
     ];
 
@@ -53,6 +54,7 @@ public sealed class CliCommandRouter
     private readonly IHpGroundTruthProvider _hpGroundTruth;
     private readonly IYawGroundTruthProvider _yawGroundTruth;
     private readonly IOverlayFrameSource _overlayFrames;
+    private readonly IBeaconStore _beacons;
     private readonly ILogger<CliCommandRouter> _logger;
 
     /// <summary>Creates a command router with all application ports resolved by DI.</summary>
@@ -66,6 +68,7 @@ public sealed class CliCommandRouter
         IHpGroundTruthProvider hpGroundTruth,
         IYawGroundTruthProvider yawGroundTruth,
         IOverlayFrameSource overlayFrames,
+        IBeaconStore beacons,
         ILogger<CliCommandRouter> logger)
     {
         _doctor = doctor;
@@ -77,6 +80,7 @@ public sealed class CliCommandRouter
         _hpGroundTruth = hpGroundTruth;
         _yawGroundTruth = yawGroundTruth;
         _overlayFrames = overlayFrames;
+        _beacons = beacons;
         _logger = logger;
     }
 
@@ -105,6 +109,7 @@ public sealed class CliCommandRouter
             "hp-diff" => await HpDiffAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "yaw-diff" => await YawDiffAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "overlay-frame" => await OverlayFrameAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
+            "beacon" => await BeaconAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "serve" => Unsupported(invocation.Command, correlationId),
             _ => Invalid(
                 "cli.command.unknown",
@@ -527,9 +532,12 @@ public sealed class CliCommandRouter
         }
 
         OverlayFrame frame = frameResult.Value;
+        IReadOnlyList<OverlayBeacon> beacons = await _beacons.GetBeaconsAsync(
+            new BattleSessionId(sessionGuid),
+            cancellationToken).ConfigureAwait(false);
         double fovRadians = fovDegrees * Math.PI / 180.0;
         OverlayFrameProjection projection = OverlayFrameProjector.Project(
-            frame, fovRadians, viewportWidth, viewportHeight);
+            frame, fovRadians, viewportWidth, viewportHeight, beacons);
 
         object data = new
         {
@@ -567,12 +575,205 @@ public sealed class CliCommandRouter
                         inViewport = tank.InViewport,
                     },
             }),
+            beacons = projection.Beacons.Select(beacon => new
+            {
+                beacon.Name,
+                beacon.Color,
+                beacon.DistanceMeters,
+                screen = beacon.ScreenX is null
+                    ? null
+                    : new
+                    {
+                        x = beacon.ScreenX,
+                        y = beacon.ScreenY,
+                        depth = beacon.Depth,
+                        inViewport = beacon.InViewport,
+                    },
+            }),
         };
 
         return Success(
             data,
-            $"Overlay frame at {replayTimeSeconds:0.###}s: {frame.Tanks.Count} tank(s) projected.",
+            $"Overlay frame at {replayTimeSeconds:0.###}s: {frame.Tanks.Count} tank(s), {projection.Beacons.Count} beacon(s) projected.",
             correlationId);
+    }
+
+    /// <summary>
+    /// Manages persistent overlay beacons (world-space POIs) for a session.
+    /// Subcommands: <c>beacon list --session &lt;guid&gt;</c>,
+    /// <c>beacon add &lt;name&gt; &lt;x&gt; &lt;y&gt; &lt;z&gt; --session &lt;guid&gt;
+    /// [--color #RRGGBB] [--from &lt;seconds&gt;] [--until &lt;seconds&gt;]</c>,
+    /// and <c>beacon remove &lt;name&gt; --session &lt;guid&gt;</c>. Coordinates are
+    /// decoded-replay world units — read them from <c>overlay-frame</c> or the
+    /// session's position data. Beacons are offline data: placed against the
+    /// replay, never read from a game process.
+    /// </summary>
+    private async ValueTask<CliExecution> BeaconAsync(
+        CliInvocation invocation,
+        Guid correlationId,
+        CancellationToken cancellationToken)
+    {
+        if (invocation.Positionals.Count < 1)
+        {
+            return Invalid(
+                "cli.beacon.subcommand",
+                "beacon requires a subcommand: list, add, or remove.",
+                correlationId);
+        }
+
+        if (!invocation.Options.TryGetValue("session", out string? sessionText) ||
+            !Guid.TryParse(sessionText, out Guid sessionGuid))
+        {
+            return Invalid(
+                "cli.beacon.session",
+                "beacon requires --session &lt;battle-session-guid&gt;.",
+                correlationId);
+        }
+
+        BattleSessionId sessionId = new(sessionGuid);
+        string subcommand = invocation.Positionals[0].ToLowerInvariant();
+        switch (subcommand)
+        {
+            case "list":
+                return await BeaconListAsync(sessionId, invocation, correlationId, cancellationToken).ConfigureAwait(false);
+            case "add":
+                return await BeaconAddAsync(sessionId, invocation, correlationId, cancellationToken).ConfigureAwait(false);
+            case "remove":
+                return await BeaconRemoveAsync(sessionId, invocation, correlationId, cancellationToken).ConfigureAwait(false);
+            default:
+                return Invalid(
+                    "cli.beacon.subcommand.unknown",
+                    $"Unknown beacon subcommand '{invocation.Positionals[0]}'. Expected list, add, or remove.",
+                    correlationId);
+        }
+    }
+
+    private async ValueTask<CliExecution> BeaconListAsync(
+        BattleSessionId sessionId,
+        CliInvocation invocation,
+        Guid correlationId,
+        CancellationToken cancellationToken)
+    {
+        if (invocation.Positionals.Count != 1)
+        {
+            return Invalid("cli.beacon.list.arguments", "beacon list accepts no positional arguments.", correlationId);
+        }
+
+        IReadOnlyList<OverlayBeacon> beacons = await _beacons.GetBeaconsAsync(
+            sessionId, cancellationToken).ConfigureAwait(false);
+        object data = new
+        {
+            command = "beacon list",
+            sessionId = sessionId.Value,
+            count = beacons.Count,
+            beacons = beacons.Select(beacon => new
+            {
+                beacon.Name,
+                beacon.X,
+                beacon.Y,
+                beacon.Z,
+                beacon.Color,
+                visibleFromSeconds = beacon.VisibleFrom?.TotalSeconds,
+                visibleUntilSeconds = beacon.VisibleUntil?.TotalSeconds,
+            }),
+        };
+        return Success(data, $"{beacons.Count} beacon(s) for session {sessionId.Value}.", correlationId);
+    }
+
+    private async ValueTask<CliExecution> BeaconAddAsync(
+        BattleSessionId sessionId,
+        CliInvocation invocation,
+        Guid correlationId,
+        CancellationToken cancellationToken)
+    {
+        if (invocation.Positionals.Count != 5
+            || !double.TryParse(invocation.Positionals[2], NumberStyles.Float, CultureInfo.InvariantCulture, out double x)
+            || !double.TryParse(invocation.Positionals[3], NumberStyles.Float, CultureInfo.InvariantCulture, out double y)
+            || !double.TryParse(invocation.Positionals[4], NumberStyles.Float, CultureInfo.InvariantCulture, out double z))
+        {
+            return Invalid(
+                "cli.beacon.add.arguments",
+                "beacon add requires: <name> <x> <y> <z> --session <guid> [--color #RRGGBB] [--from <s>] [--until <s>].",
+                correlationId);
+        }
+
+        string name = invocation.Positionals[1];
+        string color = invocation.Options.TryGetValue("color", out string? colorText) && colorText is not null
+            ? colorText
+            : "#FFD700";
+        TimeSpan? visibleFrom = null;
+        TimeSpan? visibleUntil = null;
+        if (invocation.Options.TryGetValue("from", out string? fromText) && fromText is not null)
+        {
+            if (!double.TryParse(fromText, NumberStyles.Float, CultureInfo.InvariantCulture, out double fromSeconds)
+                || fromSeconds < 0)
+            {
+                return Invalid("cli.beacon.add.from", "--from must be a non-negative number of seconds.", correlationId);
+            }
+
+            visibleFrom = TimeSpan.FromSeconds(fromSeconds);
+        }
+
+        if (invocation.Options.TryGetValue("until", out string? untilText) && untilText is not null)
+        {
+            if (!double.TryParse(untilText, NumberStyles.Float, CultureInfo.InvariantCulture, out double untilSeconds)
+                || untilSeconds < 0)
+            {
+                return Invalid("cli.beacon.add.until", "--until must be a non-negative number of seconds.", correlationId);
+            }
+
+            visibleUntil = TimeSpan.FromSeconds(untilSeconds);
+        }
+
+        await _beacons.AddBeaconAsync(
+            sessionId,
+            new OverlayBeacon(name, x, y, z, color, visibleFrom, visibleUntil),
+            cancellationToken).ConfigureAwait(false);
+
+        object data = new
+        {
+            command = "beacon add",
+            sessionId = sessionId.Value,
+            name,
+            x,
+            y,
+            z,
+            color,
+            visibleFromSeconds = visibleFrom?.TotalSeconds,
+            visibleUntilSeconds = visibleUntil?.TotalSeconds,
+        };
+        return Success(data, $"Beacon '{name}' saved for session {sessionId.Value}.", correlationId);
+    }
+
+    private async ValueTask<CliExecution> BeaconRemoveAsync(
+        BattleSessionId sessionId,
+        CliInvocation invocation,
+        Guid correlationId,
+        CancellationToken cancellationToken)
+    {
+        if (invocation.Positionals.Count != 2)
+        {
+            return Invalid(
+                "cli.beacon.remove.arguments",
+                "beacon remove requires: <name> --session <guid>.",
+                correlationId);
+        }
+
+        string name = invocation.Positionals[1];
+        bool removed = await _beacons.RemoveBeaconAsync(
+            sessionId, name, cancellationToken).ConfigureAwait(false);
+        if (!removed)
+        {
+            return Invalid("cli.beacon.remove.missing", $"No beacon named '{name}' for this session.", correlationId);
+        }
+
+        object data = new
+        {
+            command = "beacon remove",
+            sessionId = sessionId.Value,
+            name,
+        };
+        return Success(data, $"Beacon '{name}' removed.", correlationId);
     }
 
     /// <summary>Runs non-mutating health checks and returns the report.</summary>

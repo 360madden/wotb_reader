@@ -351,9 +351,38 @@ public sealed record OverlayTankResponse
 }
 
 /// <summary>
+/// One beacon projected onto the viewport. Screen coordinates are null when
+/// the beacon is at/behind the camera or the camera carries no rotation
+/// evidence — the HUD must not draw it.
+/// </summary>
+public sealed record OverlayBeaconResponse
+{
+    /// <summary>Beacon label.</summary>
+    public string Name { get; init; } = string.Empty;
+
+    /// <summary>Marker color as an HTML-style hex string.</summary>
+    public string Color { get; init; } = string.Empty;
+
+    /// <summary>Distance from the camera in world units.</summary>
+    public double DistanceMeters { get; init; }
+
+    /// <summary>Projected viewport X (pixels from the left); null = behind camera.</summary>
+    public double? ScreenX { get; init; }
+
+    /// <summary>Projected viewport Y (pixels from the top); null = behind camera.</summary>
+    public double? ScreenY { get; init; }
+
+    /// <summary>Camera-space depth for painter's-algorithm sorting.</summary>
+    public double? Depth { get; init; }
+
+    /// <summary>True when the projection lies inside the requested viewport.</summary>
+    public bool InViewport { get; init; }
+}
+
+/// <summary>
 /// One renderable instant of the replay overlay at a replay time: the
-/// viewpoint camera plus every roster tank projected to viewport pixels.
-/// The HUD draws these directly over the game window.
+/// viewpoint camera, every roster tank, and every visible beacon projected
+/// to viewport pixels. The HUD draws these directly over the game window.
 /// </summary>
 public sealed record OverlayFrameResponse
 {
@@ -377,6 +406,9 @@ public sealed record OverlayFrameResponse
 
     /// <summary>Projected tanks, sorted by distance (nearest first).</summary>
     public IReadOnlyList<OverlayTankResponse> Tanks { get; init; } = [];
+
+    /// <summary>Projected beacons visible at this replay time.</summary>
+    public IReadOnlyList<OverlayBeaconResponse> Beacons { get; init; } = [];
 }
 
 /// <summary>Computed map boundary from all observed position samples.</summary>

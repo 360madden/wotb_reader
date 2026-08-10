@@ -120,9 +120,18 @@ of the sub-50ms duplicate-packet artifact.
 |---|---|---|
 | O1 | F | ✅ `WorldToScreen` projection module (view matrix from pos+yaw+pitch, perspective from FOV) + tests; `overlay-frame` CLI preview (frame at replay time → screen pixels) |
 | O2 | F | ✅ Nameplate layer: every tank's name, team color, HP bar, distance — clock-anchored over the game window (`W2sHudView` + `/sessions/{id}/frame` endpoint; runs while the web host serves the replay) |
-| O3 | F | Beacon/POI model (world coords + label + color + replay-time tag) + placement + persistence |
+| O3 | F | ✅ Beacon/POI model (world coords + label + color + replay-time tag) + placement + persistence: `beacons` table (migration 6), `IBeaconStore`, `beacon add/list/remove` CLI, projected in `/sessions/{id}/frame` + `overlay-frame` + HUD pins; FOV slider added to the toolbar |
 | O4 | B | Capture-zone/base decode from battle_results.dat (objective markers) |
 | O5 | E | `--heading-delta` extractor mode (movement-gated, wrap-aware) for plan/tooling reuse |
+
+**Discovery sidecar (parallel, offline):** the parallel-workstreams runbook
+(`docs/operations/parallel-workstreams.md`) + `scripts/workstream-lock.py`
+serialize the Ghidra project DB, docs, and the live queue; the first targeted
+Ghidra pass decompiled the FRESH43 write site `FUN_00bc3940` and pinned a
+per-frame transform object with **position `+0x38`, 3×3 rotation `+0x44..+0x5c`,
+and a 16-float 4×4 matrix at `+0x60`** (evidence:
+`tools/ghidra-scripts/writesite-ring-disasm.txt`) — the live camera/VP track's
+static anchor.
 
 ### Phase 2 — The live seam + first live sessions (serialized)
 

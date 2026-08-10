@@ -29,6 +29,7 @@ public sealed class ServiceRegistrationTests
         AssertSingleton<IHpGroundTruthProvider>(services);
         AssertSingleton<IComparisonRunRepository>(services);
         AssertSingleton<IReplayClockSegmentRepository>(services);
+        AssertSingleton<IBeaconStore>(services);
         AssertSingleton<ISqliteStoragePathProvider>(services);
     }
 

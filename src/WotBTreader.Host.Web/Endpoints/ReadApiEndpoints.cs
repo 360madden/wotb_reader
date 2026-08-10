@@ -174,6 +174,7 @@ internal static class ReadApiEndpoints
     internal static async Task<IResult> GetOverlayFrameAsync(
         HttpContext context,
         IOverlayFrameSource frames,
+        IBeaconStore beacons,
         Guid battleSessionId,
         double? timeSeconds,
         double? fov,
@@ -182,6 +183,7 @@ internal static class ReadApiEndpoints
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(frames);
+        ArgumentNullException.ThrowIfNull(beacons);
 
         double resolvedTime = timeSeconds ?? 0.0;
         if (!double.IsFinite(resolvedTime) || resolvedTime < 0)
@@ -232,11 +234,16 @@ internal static class ReadApiEndpoints
                 retryable: false);
         }
 
+        IReadOnlyList<OverlayBeacon> sessionBeacons = await beacons.GetBeaconsAsync(
+            new BattleSessionId(battleSessionId),
+            cancellationToken).ConfigureAwait(false);
+
         OverlayFrameProjection projection = OverlayFrameProjector.Project(
             frameResult.Value,
             resolvedFov * Math.PI / 180.0,
             resolvedWidth,
-            resolvedHeight);
+            resolvedHeight,
+            sessionBeacons);
 
         return Results.Ok(new OverlayFrameResponse
         {
@@ -260,6 +267,16 @@ internal static class ReadApiEndpoints
                 ScreenY = tank.ScreenY,
                 Depth = tank.Depth,
                 InViewport = tank.InViewport,
+            })],
+            Beacons = [.. projection.Beacons.Select(beacon => new OverlayBeaconResponse
+            {
+                Name = beacon.Name,
+                Color = beacon.Color,
+                DistanceMeters = beacon.DistanceMeters,
+                ScreenX = beacon.ScreenX,
+                ScreenY = beacon.ScreenY,
+                Depth = beacon.Depth,
+                InViewport = beacon.InViewport,
             })],
         });
     }

@@ -41,7 +41,8 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         InitializeComponent();
 
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
-        _viewModel.Nameplates.CollectionChanged += OnNameplatesChanged;
+        _viewModel.Nameplates.CollectionChanged += OnHudItemsChanged;
+        _viewModel.Beacons.CollectionChanged += OnHudItemsChanged;
         Loaded += OnLoaded;
         Closed += OnClosed;
 
@@ -76,7 +77,8 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         if (_disposed) return;
         _disposed = true;
         _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
-        _viewModel.Nameplates.CollectionChanged -= OnNameplatesChanged;
+        _viewModel.Nameplates.CollectionChanged -= OnHudItemsChanged;
+        _viewModel.Beacons.CollectionChanged -= OnHudItemsChanged;
         _refreshTimer.Stop();
         _windowTrackTimer.Stop();
         _playbackTimer.Stop();
@@ -117,10 +119,10 @@ public partial class MainWindow : System.Windows.Window, IDisposable
             _ = _viewModel.RefreshSelectedAsync();
     }
 
-    private void OnNameplatesChanged(object? sender,
+    private void OnHudItemsChanged(object? sender,
         System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
     {
-        RenderW2sNameplates();
+        RenderW2sHud();
     }
 
     private void OnViewModelPropertyChanged(object? sender,
@@ -179,10 +181,10 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         _ = _viewModel.RefreshOverlayFrameAsync(ActualWidth, ActualHeight);
     }
 
-    /// <summary>Renders the latest view-model nameplates onto the HUD canvas.</summary>
-    private void RenderW2sNameplates()
+    /// <summary>Renders the latest view-model nameplates + beacons onto the HUD canvas.</summary>
+    private void RenderW2sHud()
     {
-        W2sHudView.Render(_viewModel.Nameplates, ActualWidth, ActualHeight);
+        W2sHudView.Render(_viewModel.Beacons, _viewModel.Nameplates, ActualWidth, ActualHeight);
     }
 
     private void OnHpPulseTick(object? sender, EventArgs e)

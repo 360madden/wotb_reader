@@ -69,4 +69,75 @@ public sealed class OverlayFrameProjectorTests
         Assert.AreEqual(0.5, projection.CameraYawRadians!.Value, 1e-9);
         Assert.AreEqual(-0.1, projection.CameraPitchRadians!.Value, 1e-9);
     }
+
+    [TestMethod]
+    public void Project_ProjectsVisibleBeaconsAndDropsBehindCamera()
+    {
+        OverlayFrame frame = new(
+            TimeSpan.FromSeconds(10),
+            new OverlayCamera(0, 0, 0, YawRadians: 0, PitchRadians: 0, RollRadians: 0),
+            []);
+
+        OverlayFrameProjection projection = OverlayFrameProjector.Project(
+            frame,
+            Fov,
+            1920,
+            1080,
+            new[]
+            {
+                new OverlayBeacon("Front", 0, 0, 100, "#FFD700", null, null),
+                new OverlayBeacon("Behind", 0, 0, -100, "#FF0000", null, null),
+            });
+
+        Assert.HasCount(2, projection.Beacons);
+        ProjectedBeacon front = projection.Beacons.Single(beacon => beacon.Name == "Front");
+        Assert.AreEqual(960, front.ScreenX!.Value, 1e-6);
+        Assert.AreEqual(540, front.ScreenY!.Value, 1e-6);
+        Assert.IsTrue(front.InViewport);
+        Assert.AreEqual(100, front.DistanceMeters, 1e-9);
+        ProjectedBeacon behind = projection.Beacons.Single(beacon => beacon.Name == "Behind");
+        Assert.IsNull(behind.ScreenX);
+        Assert.IsFalse(behind.InViewport);
+    }
+
+    [TestMethod]
+    public void Project_FiltersBeaconsByReplayTimeWindow()
+    {
+        OverlayFrame frame = new(
+            TimeSpan.FromSeconds(50),
+            new OverlayCamera(0, 0, 0, YawRadians: 0, PitchRadians: 0, RollRadians: 0),
+            []);
+
+        OverlayFrameProjection projection = OverlayFrameProjector.Project(
+            frame,
+            Fov,
+            1920,
+            1080,
+            new[]
+            {
+                new OverlayBeacon("Always", 0, 0, 100, "#FFD700", null, null),
+                new OverlayBeacon("EarlyOnly", 0, 0, 100, "#FFD700", null, TimeSpan.FromSeconds(10)),
+                new OverlayBeacon("NotYet", 0, 0, 100, "#FFD700", TimeSpan.FromSeconds(60), null),
+                new OverlayBeacon("MidWindow", 0, 0, 100, "#FFD700", TimeSpan.FromSeconds(40), TimeSpan.FromSeconds(60)),
+            });
+
+        Assert.HasCount(2, projection.Beacons);
+        Assert.IsTrue(projection.Beacons.Any(beacon => beacon.Name == "Always"));
+        Assert.IsFalse(projection.Beacons.Any(beacon => beacon.Name == "EarlyOnly"));
+        Assert.IsFalse(projection.Beacons.Any(beacon => beacon.Name == "NotYet"));
+        Assert.IsTrue(projection.Beacons.Any(beacon => beacon.Name == "MidWindow"));
+    }
+
+    [TestMethod]
+    public void Project_NoBeaconsWhenNoneProvided()
+    {
+        OverlayFrame frame = new(
+            TimeSpan.Zero,
+            new OverlayCamera(0, 0, 0, YawRadians: 0, PitchRadians: 0, RollRadians: 0),
+            []);
+
+        OverlayFrameProjection projection = OverlayFrameProjector.Project(frame, Fov, 1920, 1080);
+
+        Assert.HasCount(0, projection.Beacons);
+    }
 }

@@ -24,6 +24,7 @@ internal sealed class StorageTestScope : IAsyncDisposable
         Sessions = new SqliteSessionQueryRepository(Context);
         Comparisons = new SqliteComparisonRunRepository(Context);
         ClockSegments = new SqliteReplayClockSegmentRepository(Context);
+        Beacons = new SqliteBeaconStore(Context);
     }
 
     public string Root { get; }
@@ -46,9 +47,11 @@ internal sealed class StorageTestScope : IAsyncDisposable
 
     public SqliteReplayClockSegmentRepository ClockSegments { get; }
 
-    public static async ValueTask<StorageTestScope> CreateAsync(bool initialize = true)
+    public SqliteBeaconStore Beacons { get; }
+
+    public static async ValueTask<StorageTestScope> CreateAsync(bool initialize = true, string? root = null)
     {
-        string root = Path.Combine(
+        root ??= Path.Combine(
             Path.GetTempPath(),
             "WotBTreader.Storage.Tests",
             Guid.NewGuid().ToString("N"));

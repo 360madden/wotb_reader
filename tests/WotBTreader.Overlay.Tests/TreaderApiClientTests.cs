@@ -76,6 +76,9 @@ public sealed class TreaderApiClientTests
               "cameraYawRadians": 0.5, "cameraPitchRadians": 0.0,
               "tanks": [
                 { "entityId": 7, "playerName": "Alpha", "tankName": "TankA", "clanTag": null, "teamNumber": 2, "hpFraction": 0.6, "alive": true, "distanceMeters": 100.0, "screenX": 800.0, "screenY": 400.0, "depth": 90.0, "inViewport": true }
+              ],
+              "beacons": [
+                { "name": "Flag", "color": "#FFD700", "distanceMeters": 100.0, "screenX": 900.0, "screenY": 450.0, "depth": 80.0, "inViewport": true }
               ]
             }
             """;
@@ -96,6 +99,10 @@ public sealed class TreaderApiClientTests
         Assert.AreEqual(7, frame.Tanks[0].EntityId);
         Assert.AreEqual(800.0, frame.Tanks[0].ScreenX!.Value, 1e-9);
         Assert.IsTrue(frame.Tanks[0].InViewport);
+        Assert.HasCount(1, frame.Beacons);
+        Assert.AreEqual("Flag", frame.Beacons[0].Name);
+        Assert.AreEqual("#FFD700", frame.Beacons[0].Color);
+        Assert.AreEqual(900.0, frame.Beacons[0].ScreenX!.Value, 1e-9);
         Assert.AreEqual(
             "/api/v1/sessions/3fa85f64-5717-4562-b3fc-2c963f66afa6/frame",
             handler.Path);

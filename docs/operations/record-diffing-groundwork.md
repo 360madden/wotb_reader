@@ -483,3 +483,26 @@ packet rotation makes this fully offline and engine-agnostic.
 - Entity-id binding (which entity record is the player/enemies) reuses the
   same join: `CanonicalEvent.EntityId` ↔ `participant.entity_id` ↔ the
   memory resolver's entity ids.
+
+## O3 — Beacon/POI layer (2026-08-10)
+
+The overlay gained persistent world-space POIs ("beacons"):
+
+- **Model**: `OverlayBeacon` (name, x/y/z, HTML color, optional replay-time
+  visibility window) in Core/Overlay.
+- **Persistence**: `beacons` table (migration 6, keyed `(battle_session_id,
+  name)`, upsert on re-add), `IBeaconStore` + `SqliteBeaconStore`.
+- **Projection**: `OverlayFrameProjector` now projects beacons with the same
+  camera as tanks — one path shared by CLI + web + HUD, so the preview and
+  the live HUD can never disagree. Time-tagged beacons are filtered by the
+  frame's replay time; behind-camera beacons are never drawn.
+- **Placement**: `beacon add <name> <x> <y> <z> --session <guid> [--color]
+  [--from <s>] [--until <s>]`, `beacon list`, `beacon remove`. Coordinates are
+  decoded-replay world units (read them from `overlay-frame` or position data).
+- **HUD**: `W2sHudView` renders colored pins + labels (beacons under
+  nameplates); a FOV slider was added to the toolbar, feeding the existing
+  `HudFovDegrees` property into the frame request.
+
+Verified end-to-end on the real Oasis Palms session (add → projected in
+`overlay-frame` → remove) plus 13 new tests across Application/Web/CLI/
+Storage/Overlay.

@@ -220,6 +220,7 @@ docs/operations/handoffs/2026-08-10-phase0-foundations-complete.md
 docs/operations/handoffs/2026-08-10-replay-overlay-o1-projection.md
 docs/operations/handoffs/2026-08-10-replaytime-live-plan-prestaged.md
 docs/operations/handoffs/2026-08-10-runtime-chain-walker.md
+docs/operations/handoffs/2026-08-10-w2s-hud-nameplates.md
 docs/operations/handoffs/2026-08-10-walkable-position-chain-applied.md
 docs/operations/handoffs/2026-08-10-walkable-position-chain-draft.md
 docs/operations/handoffs/README.md
@@ -338,6 +339,7 @@ src/WotBTreader.Application/Game/GameMetadataContracts.cs
 src/WotBTreader.Application/Game/GameSessionContracts.cs
 src/WotBTreader.Application/Properties/AssemblyInfo.cs
 src/WotBTreader.Application/Replay/OffsetTableReader.cs
+src/WotBTreader.Application/Replay/OverlayFrameProjection.cs
 src/WotBTreader.Application/Replay/ReplayContracts.cs
 src/WotBTreader.Application/Replay/ReplayDecoderRegistry.cs
 src/WotBTreader.Application/Replay/ReplayFrameSource.cs
@@ -531,6 +533,7 @@ src/WotBTreader.Overlay/MainWindow.xaml.cs
 src/WotBTreader.Overlay/Services/TelemetryStreamService.cs
 src/WotBTreader.Overlay/Services/TreaderApiClient.cs
 src/WotBTreader.Overlay/ViewModels/MainViewModel.cs
+src/WotBTreader.Overlay/ViewModels/NameplateItem.cs
 src/WotBTreader.Overlay/ViewModels/PlotPoint.cs
 src/WotBTreader.Overlay/ViewModels/RelayCommand.cs
 src/WotBTreader.Overlay/ViewModels/SessionRow.cs
@@ -538,6 +541,8 @@ src/WotBTreader.Overlay/Views/FastPlotRenderer.cs
 src/WotBTreader.Overlay/Views/PlotTransform.cs
 src/WotBTreader.Overlay/Views/PositionPlot.xaml
 src/WotBTreader.Overlay/Views/PositionPlot.xaml.cs
+src/WotBTreader.Overlay/Views/W2sHudView.xaml
+src/WotBTreader.Overlay/Views/W2sHudView.xaml.cs
 src/WotBTreader.Overlay/WotBTreader.Overlay.csproj
 src/WotBTreader.Overlay/packages.lock.json
 src/WotBTreader.Replays/BattleResultsReader.cs
@@ -580,6 +585,7 @@ src/WotBTreader.Storage.Sqlite/packages.lock.json
 test.cmd
 tests/WotBTreader.Application.Tests/MSTestSettings.cs
 tests/WotBTreader.Application.Tests/OffsetTableReaderTests.cs
+tests/WotBTreader.Application.Tests/OverlayFrameProjectorTests.cs
 tests/WotBTreader.Application.Tests/ReplayDecoderRegistryTests.cs
 tests/WotBTreader.Application.Tests/ReplayFrameSourceTests.cs
 tests/WotBTreader.Application.Tests/ReplayIngestionServiceTests.cs
@@ -676,6 +682,7 @@ tests/WotBTreader.Overlay.Tests/RendezvousLocatorTests.cs
 tests/WotBTreader.Overlay.Tests/TelemetryStreamServiceTests.cs
 tests/WotBTreader.Overlay.Tests/TreaderApiClientTests.cs
 tests/WotBTreader.Overlay.Tests/ValueConvertersTests.cs
+tests/WotBTreader.Overlay.Tests/W2sHudViewTests.cs
 tests/WotBTreader.Overlay.Tests/WotBTreader.Overlay.Tests.csproj
 tests/WotBTreader.Overlay.Tests/packages.lock.json
 tests/WotBTreader.Replays.Tests/BinaryReaderSecurityTests.cs

@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Shapes;
 using WotBTreader.Overlay.ViewModels;
 
 namespace WotBTreader.Overlay.Views;
@@ -21,6 +22,8 @@ public sealed partial class W2sHudView : UserControl
     private const double HpBarHeight = 4;
     private const double LabelFontSize = 11;
     private const double AnchorGap = 6;
+    private const double BeaconDotRadius = 5;
+    private const double BeaconLabelFontSize = 10;
 
     private static readonly Brush Team1Brush = CreateBrush("#33A2FF");
     private static readonly Brush Team2Brush = CreateBrush("#FF5A5A");
@@ -55,14 +58,71 @@ public sealed partial class W2sHudView : UserControl
         return new Rect(left, top, NameplateWidth, NameplateHeight);
     }
 
-    /// <summary>Replaces the HUD contents with the given nameplates.</summary>
-    public void Render(IReadOnlyList<NameplateItem> items, double viewportWidth, double viewportHeight)
+    /// <summary>
+    /// Replaces the HUD contents with the given beacons (drawn first, under
+    /// the nameplates) and nameplates. Both lists are already filtered to
+    /// in-viewport projections by the view model.
+    /// </summary>
+    public void Render(
+        IReadOnlyList<BeaconItem> beacons,
+        IReadOnlyList<NameplateItem> items,
+        double viewportWidth,
+        double viewportHeight)
     {
         HudCanvas.Children.Clear();
+        foreach (BeaconItem beacon in beacons)
+        {
+            HudCanvas.Children.Add(BuildBeacon(beacon));
+        }
+
         foreach (NameplateItem item in items)
         {
             HudCanvas.Children.Add(BuildNameplate(item, viewportWidth, viewportHeight));
         }
+    }
+
+    private static Canvas BuildBeacon(BeaconItem beacon)
+    {
+        Brush markerBrush = CreateBrush(beacon.Color);
+
+        var root = new Canvas();
+        Canvas.SetLeft(root, beacon.ScreenX);
+        Canvas.SetTop(root, beacon.ScreenY);
+
+        // Pin: a filled circle with a dark outline, centered on the anchor.
+        root.Children.Add(new Ellipse
+        {
+            Width = BeaconDotRadius * 2,
+            Height = BeaconDotRadius * 2,
+            Fill = markerBrush,
+            Stroke = CreateBrush("#CC000000"),
+            StrokeThickness = 1,
+            RenderTransform = new TranslateTransform(-BeaconDotRadius, -BeaconDotRadius),
+        });
+
+        // Label above the pin.
+        var label = new Border
+        {
+            Background = CreateBrush("#B0101018"),
+            CornerRadius = new CornerRadius(3),
+            Padding = new Thickness(3, 0, 3, 0),
+            Margin = new Thickness(0, -2, 0, 0),
+            Child = new TextBlock
+            {
+                Text = beacon.Name,
+                FontSize = BeaconLabelFontSize,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = markerBrush,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                MaxWidth = 140,
+            },
+        };
+        label.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        Canvas.SetLeft(label, -label.DesiredSize.Width / 2.0);
+        Canvas.SetTop(label, -BeaconDotRadius - 16);
+        root.Children.Add(label);
+
+        return root;
     }
 
     private static StackPanel BuildNameplate(

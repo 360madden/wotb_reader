@@ -67,8 +67,9 @@ public class MainViewModel : INotifyPropertyChanged
     private double? _livePlayerYaw;
     private const int MaxLiveTrailPoints = 50;
 
-    // W2S HUD state: the projected nameplates rendered over the game window.
+    // W2S HUD state: the projected nameplates + beacons rendered over the game window.
     private readonly ObservableCollection<NameplateItem> _nameplates = [];
+    private readonly ObservableCollection<BeaconItem> _beacons = [];
     private CancellationTokenSource? _frameLoadCts;
     private long _frameLoadGeneration;
     private double _hudFovDegrees = 90.0;
@@ -410,6 +411,9 @@ public class MainViewModel : INotifyPropertyChanged
     /// <summary>Projected nameplates for the W2S HUD, one per visible tank.</summary>
     public ObservableCollection<NameplateItem> Nameplates => _nameplates;
 
+    /// <summary>Projected beacons for the W2S HUD, one per visible POI.</summary>
+    public ObservableCollection<BeaconItem> Beacons => _beacons;
+
     /// <summary>Vertical field of view (degrees) used to project HUD frames.</summary>
     public double HudFovDegrees
     {
@@ -472,6 +476,7 @@ public class MainViewModel : INotifyPropertyChanged
 
             LastFrameReplayTimeSeconds = frame.ReplayTimeSeconds;
             _nameplates.Clear();
+            _beacons.Clear();
             foreach (OverlayTankResponse tank in frame.Tanks)
             {
                 if (tank.ScreenX is null || tank.ScreenY is null || !tank.InViewport)
@@ -494,6 +499,21 @@ public class MainViewModel : INotifyPropertyChanged
                     tank.HpFraction,
                     tank.Alive,
                     tank.DistanceMeters));
+            }
+
+            foreach (OverlayBeaconResponse beacon in frame.Beacons)
+            {
+                if (beacon.ScreenX is null || beacon.ScreenY is null || !beacon.InViewport)
+                {
+                    continue;
+                }
+
+                _beacons.Add(new BeaconItem(
+                    beacon.Name,
+                    beacon.ScreenX.Value,
+                    beacon.ScreenY.Value,
+                    beacon.Color,
+                    beacon.DistanceMeters));
             }
         }
         catch (OperationCanceledException)

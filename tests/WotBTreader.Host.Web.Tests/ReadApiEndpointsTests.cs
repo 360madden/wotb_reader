@@ -34,6 +34,7 @@ public sealed class ReadApiEndpointsTests
         IResult result = await ReadApiEndpoints.GetOverlayFrameAsync(
             new DefaultHttpContext(),
             frames,
+            new FakeBeaconStore(),
             Guid.NewGuid(),
             timeSeconds: 10,
             fov: 90,
@@ -61,13 +62,13 @@ public sealed class ReadApiEndpointsTests
         FakeOverlayFrames frames = new();
 
         IResult badTime = await ReadApiEndpoints.GetOverlayFrameAsync(
-            new DefaultHttpContext(), frames, Guid.NewGuid(),
+            new DefaultHttpContext(), frames, new FakeBeaconStore(), Guid.NewGuid(),
             timeSeconds: -1, fov: 90, width: 1920, height: 1080,
             TestContext.CancellationToken);
         Assert.AreEqual(StatusCodes.Status400BadRequest, StatusOf(badTime));
 
         IResult badFov = await ReadApiEndpoints.GetOverlayFrameAsync(
-            new DefaultHttpContext(), frames, Guid.NewGuid(),
+            new DefaultHttpContext(), frames, new FakeBeaconStore(), Guid.NewGuid(),
             timeSeconds: 0, fov: 200, width: 1920, height: 1080,
             TestContext.CancellationToken);
         Assert.AreEqual(StatusCodes.Status400BadRequest, StatusOf(badFov));
@@ -80,7 +81,7 @@ public sealed class ReadApiEndpointsTests
             error: new ApplicationError("storage.session.not_found", "No such session."));
 
         IResult result = await ReadApiEndpoints.GetOverlayFrameAsync(
-            new DefaultHttpContext(), frames, Guid.NewGuid(),
+            new DefaultHttpContext(), frames, new FakeBeaconStore(), Guid.NewGuid(),
             timeSeconds: 0, fov: 90, width: 1920, height: 1080,
             TestContext.CancellationToken);
 
@@ -420,6 +421,57 @@ public sealed class ReadApiEndpointsTests
                 ? OperationResult.Failure<ReplayDecodeProjection>(
                     error ?? new ApplicationError("storage.session.not_found", "No such session."))
                 : OperationResult.Success(projection));
+    }
+
+    [TestMethod]
+    public async Task OverlayFrame_ProjectsVisibleBeaconsAndFiltersByTimeWindow()
+    {
+        FakeOverlayFrames frames = new(new OverlayFrame(
+            TimeSpan.FromSeconds(50),
+            new OverlayCamera(0, 0, 0, YawRadians: 0, PitchRadians: 0, RollRadians: 0),
+            []));
+        FakeBeaconStore beacons = new(new[]
+        {
+            new OverlayBeacon("Flag", 0, 0, 100, "#FFD700", null, null),
+            new OverlayBeacon("Gone", 0, 0, 100, "#FF0000", null, TimeSpan.FromSeconds(10)),
+        });
+
+        IResult result = await ReadApiEndpoints.GetOverlayFrameAsync(
+            new DefaultHttpContext(),
+            frames,
+            beacons,
+            Guid.NewGuid(),
+            timeSeconds: 50,
+            fov: 90,
+            width: 1920,
+            height: 1080,
+            TestContext.CancellationToken);
+
+        OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
+        Assert.HasCount(1, frame.Beacons);
+        OverlayBeaconResponse flag = frame.Beacons.Single(beacon => beacon.Name == "Flag");
+        Assert.AreEqual("#FFD700", flag.Color);
+        Assert.AreEqual(960.0, flag.ScreenX!.Value, 1e-6);
+        Assert.AreEqual(540.0, flag.ScreenY!.Value, 1e-6);
+        Assert.IsTrue(flag.InViewport);
+    }
+
+    private sealed class FakeBeaconStore(IReadOnlyList<OverlayBeacon>? beacons = null) : IBeaconStore
+    {
+        public Task<IReadOnlyList<OverlayBeacon>> GetBeaconsAsync(
+            BattleSessionId battleSessionId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<OverlayBeacon>>(beacons ?? []);
+
+        public Task AddBeaconAsync(
+            BattleSessionId battleSessionId,
+            OverlayBeacon beacon,
+            CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task<bool> RemoveBeaconAsync(
+            BattleSessionId battleSessionId,
+            string name,
+            CancellationToken cancellationToken) => Task.FromResult(true);
     }
 
     private sealed class FakeOverlayFrames(
