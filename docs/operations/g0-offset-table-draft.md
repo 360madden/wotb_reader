@@ -82,10 +82,20 @@ offset)."
 
 ### 2a. Target `fieldValidation.playerPositionX` (Y/Z same shape, offsets +0x14/+0x18)
 
+**Append, do not replace:** the target keeps the existing OD-004…011 scan
+history (7 evidence entries documenting the non-promoted candidate paths)
+and ADDS the three verification entries below. Second-opinion pass
+(2026-08-09) corrected the draft: a replace would discard valuable
+negative-scan provenance. `independentProcessLaunches` is 4 (OD-075 Dead
+Rail + OD-076/081/082 Oasis Palms — four fresh processes with positive
+polls), `independentReplays` 2 (the two content-distinct replays).
+
 ```json
 "playerPositionX": {
   "status": "Verified",
   "evidence": [
+    << existing OD-004..011 entries (7), unchanged >>
+
     {
       "provenanceKind": "StaticAnalysis",
       "sourceTool": "Ghidra 12.1.2 (hash-bound 1cda5c31...) + Type10EntityPositionResolver layout",
@@ -102,7 +112,7 @@ offset)."
       "notes": "The write-observation mechanism was abandoned: arming the ring-record page fails the poll's own reads (ERROR_PARTIAL_COPY 299). The G1 acceptance is the poll's per-read byte-identical double-read branch (allConsistentDoubleRead)."
     }
   ],
-  "independentProcessLaunches": 2,
+  "independentProcessLaunches": 4,
   "independentReplays": 2,
   "harnessInvariantsPassed": true,
   "leadApproved": false,
@@ -148,7 +158,12 @@ hops) are listed in the fieldValidation StaticAnalysis evidence.
 }
 ```
 
-Y and Z share the same chain with `recordOffset` 0x14 / 0x18 respectively.
+Y and Z share the same chain with `recordOffset` 0x14 / 0x18 respectively —
+the published JSON carries three chain entries, `playerPositionX` (above),
+`playerPositionY` (same hops, final hop `{ "kind": "recordOffset", "value":
+20, "note": "PositionRecordOffset 0x14 (float32 Y)" }`), and
+`playerPositionZ` (final hop `{ "kind": "recordOffset", "value": 24,
+"note": "PositionRecordOffset 0x18 (float32 Z)" }`).
 
 ## 3. `offline/memory-offsets.md` — document `chains`
 

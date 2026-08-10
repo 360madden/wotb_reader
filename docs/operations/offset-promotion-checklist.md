@@ -73,9 +73,11 @@ change is drafted in `docs/operations/g0-offset-table-draft.md` (grill
 resolved the schema decision: offsets stay 0 — the runtime computes
 `moduleBase + offset` — and the chain is recorded in a new additive
 `chains` section); the post-publication regression plan (what the legacy
-observation path must/must not emit, with a test spec) is in
-`docs/operations/g0-post-publication-regression.md`; the table stays
-frozen until operator approval.
+observation path must/must not emit, with the exclusion test now
+implemented and passing) is in `docs/operations/g0-post-publication-regression.md`;
+the one-page operator gate (exact commands, values, commit contents) is in
+`docs/operations/g0-operator-checklist.md`; the table stays frozen until
+operator approval.
 
 ### G1 — Hardware-atomic read proof
 
