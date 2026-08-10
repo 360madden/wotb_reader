@@ -1,0 +1,152 @@
+=== program: wotblitz.exe image_base=00400000 ===
+
+### RVA 0x329570 -> address 00729570
+--- disassembly window ---
+00729560: RET
+00729570: PUSH EBP  <<< RIP
+00729571: MOV EBP,ESP
+00729573: MOV EDX,dword ptr [EBP + 0xc]
+00729576: MOVSS XMM5,dword ptr [ECX + 0x4]
+0072957b: MOVSS XMM2,dword ptr [ECX]
+0072957f: MOVAPS XMM0,XMM5
+00729582: MOVSS XMM4,dword ptr [ECX + 0x8]
+00729587: MOVAPS XMM1,XMM2
+0072958a: MULSS XMM0,dword ptr [EDX + 0x10]
+0072958f: MOV EAX,dword ptr [EBP + 0x8]
+00729592: MULSS XMM1,dword ptr [EDX]
+00729596: MOVSS XMM3,dword ptr [ECX + 0xc]
+0072959b: MOVSS XMM6,dword ptr [EDX + 0xc]
+007295a0: ADDSS XMM1,XMM0
+--- enclosing function ---
+name: FUN_00729570
+entry: 00729570  body: 00729570..007298be
+--- decompiled (C) ---
+
+void __thiscall FUN_00729570(float *param_1,float *param_2,float *param_3)
+
+{
+  float fVar1;
+  float fVar2;
+  float fVar3;
+  float fVar4;
+  float fVar5;
+  float fVar6;
+  float fVar7;
+  float fVar8;
+  float fVar9;
+  float fVar10;
+  float fVar11;
+  float fVar12;
+  float fVar13;
+  
+  fVar1 = param_1[1];
+  fVar2 = *param_1;
+  fVar3 = param_1[2];
+  fVar4 = param_1[3];
+  fVar5 = param_3[3];
+  fVar6 = param_3[0xb];
+  fVar7 = param_3[5];
+  *param_2 = fVar2 * *param_3 + fVar1 * param_3[4] + fVar3 * param_3[8] + fVar4 * param_3[0xc];
+  fVar8 = param_3[6];
+  param_2[1] = param_3[1] * fVar2 + fVar7 * fVar1 + param_3[9] * fVar3 + param_3[0xd] * fVar4;
+  fVar7 = param_3[7];
+  fVar9 = param_1[4];
+  param_2[2] = param_3[2] * fVar2 + fVar8 * fVar1 + param_3[10] * fVar3 + param_3[0xe] * fVar4;
+  fVar8 = param_1[6];
+  fVar10 = param_1[7];
+  fVar11 = param_1[5];
+  fVar12 = param_3[4];
+  param_2[3] = fVar5 * fVar2 + fVar7 * fVar1 + fVar6 * fVar3 + param_3[0xf] * fVar4;
+  fVar1 = param_3[5];
+  param_2[4] = fVar9 * *param_3 + fVar11 * fVar12 + fVar8 * param_3[8] + fVar10 * param_3[0xc];
+  fVar2 = param_3[6];
+  fVar3 = param_3[7];
+  param_2[5] = fVar9 * param_3[1] + fVar11 * fVar1 + fVar8 * param_3[9] + fVar10 * param_3[0xd];
+  fVar1 = param_1[9];
+  fVar4 = param_3[0xf];
+  fVar7 = param_1[10];
+  fVar12 = param_3[4];
+  fVar13 = param_1[0xb];
+  param_2[6] = fVar9 * param_3[2] + fVar11 * fVar2 + fVar8 * param_3[10] + fVar10 * param_3[0xe];
+  param_2[7] = fVar9 * fVar5 + fVar11 * fVar3 + fVar8 * fVar6 + fVar10 * fVar4;
+  fVar2 = param_1[8];
+  fVar3 = param_3[5];
+  param_2[8] = fVar2 * *param_3 + fVar1 * fVar12 + fVar7 * param_3[8] + fVar13 * param_3[0xc];
+  fVar4 = param_3[6];
+  fVar8 = param_3[7];
+  param_2[9] = fVar2 * param_3[1] + fVar1 * fVar3 + fVar7 * param_3[9] + fVar13 * param_3[0xd];
+  fVar3 = param_1[0xd];
+  fVar9 = param_3[0xf];
+  fVar10 = param_1[0xe];
+  fVar11 = param_3[4];
+  fVar12 = param_1[0xf];
+  param_2[10] = fVar2 * param_3[2] + fVar1 * fVar4 + fVar7 * param_3[10] + fVar13 * param_3[0xe];
+  param_2[0xb] = fVar2 * fVar5 + fVar1 * fVar8 + fVar7 * fVar6 + fVar13 * fVar9;
+  fVar1 = param_1[0xc];
+  fVar2 = param_3[5];
+  param_2[0xc] = fVar1 * *param_3 + fVar3 * fVar11 + fVar10 * param_3[8] + fVar12 * param_3[0xc];
+  fVar4 = param_3[6];
+  fVar7 = param_3[7];
+  param_2[0xd] = fVar1 * param_3[1] + fVar3 * fVar2 + fVar10 * param_3[9] + fVar12 * param_3[0xd];
+  fVar2 = param_3[0xf];
+  param_2[0xe] = fVar1 * param_3[2] + fVar3 * fVar4 + fVar10 * param_3[10] + fVar12 * param_3[0xe];
+  param_2[0xf] = fVar1 * fVar5 + fVar3 * fVar7 + fVar10 * fVar6 + fVar12 * fVar2;
+  return;
+}
+
+
+--- callers ---
+  00d1a140 UNCONDITIONAL_CALL
+  00a6b1fb UNCONDITIONAL_CALL
+  00a6b211 UNCONDITIONAL_CALL
+  00a4479b UNCONDITIONAL_CALL
+  00a29d33 UNCONDITIONAL_CALL
+  00a29df3 UNCONDITIONAL_CALL
+  00a62e06 UNCONDITIONAL_CALL
+  00a4a838 UNCONDITIONAL_CALL
+  00a5a2e5 UNCONDITIONAL_CALL
+  00d33d94 UNCONDITIONAL_CALL
+  00d33cdf UNCONDITIONAL_CALL
+  0072c089 UNCONDITIONAL_CALL
+  ... (more callers)
+--- function head (first 40 instrs) ---
+  00729570: PUSH EBP
+  00729571: MOV EBP,ESP
+  00729573: MOV EDX,dword ptr [EBP + 0xc]
+  00729576: MOVSS XMM5,dword ptr [ECX + 0x4]
+  0072957b: MOVSS XMM2,dword ptr [ECX]
+  0072957f: MOVAPS XMM0,XMM5
+  00729582: MOVSS XMM4,dword ptr [ECX + 0x8]
+  00729587: MOVAPS XMM1,XMM2
+  0072958a: MULSS XMM0,dword ptr [EDX + 0x10]
+  0072958f: MOV EAX,dword ptr [EBP + 0x8]
+  00729592: MULSS XMM1,dword ptr [EDX]
+  00729596: MOVSS XMM3,dword ptr [ECX + 0xc]
+  0072959b: MOVSS XMM6,dword ptr [EDX + 0xc]
+  007295a0: ADDSS XMM1,XMM0
+  007295a4: MOVSS XMM7,dword ptr [EDX + 0x2c]
+  007295a9: MOVAPS XMM0,XMM4
+  007295ac: MULSS XMM0,dword ptr [EDX + 0x20]
+  007295b1: ADDSS XMM1,XMM0
+  007295b5: MOVAPS XMM0,XMM3
+  007295b8: MULSS XMM0,dword ptr [EDX + 0x30]
+  007295bd: ADDSS XMM1,XMM0
+  007295c1: MOVSS XMM0,dword ptr [EDX + 0x14]
+  007295c6: MULSS XMM0,XMM5
+  007295ca: MOVSS dword ptr [EAX],XMM1
+  007295ce: MOVSS XMM1,dword ptr [EDX + 0x4]
+  007295d3: MULSS XMM1,XMM2
+  007295d7: ADDSS XMM1,XMM0
+  007295db: MOVSS XMM0,dword ptr [EDX + 0x24]
+  007295e0: MULSS XMM0,XMM4
+  007295e4: ADDSS XMM1,XMM0
+  007295e8: MOVSS XMM0,dword ptr [EDX + 0x34]
+  007295ed: MULSS XMM0,XMM3
+  007295f1: ADDSS XMM1,XMM0
+  007295f5: MOVSS XMM0,dword ptr [EDX + 0x18]
+  007295fa: MULSS XMM0,XMM5
+  007295fe: MOVSS dword ptr [EAX + 0x4],XMM1
+  00729603: MOVSS XMM1,dword ptr [EDX + 0x8]
+  00729608: MULSS XMM1,XMM2
+  0072960c: ADDSS XMM1,XMM0
+  00729610: MOVSS XMM0,dword ptr [EDX + 0x28]

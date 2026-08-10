@@ -216,6 +216,7 @@ docs/operations/handoffs/2026-08-10-hp-diff-cli-and-tick-unit-fix.md
 docs/operations/handoffs/2026-08-10-hp-discovery-offline-complete.md
 docs/operations/handoffs/2026-08-10-hp-two-replay-rehearsal.md
 docs/operations/handoffs/2026-08-10-hp-victim-qualification.md
+docs/operations/handoffs/2026-08-10-o3-beacons-parallel-guardrails.md
 docs/operations/handoffs/2026-08-10-phase0-foundations-complete.md
 docs/operations/handoffs/2026-08-10-replay-overlay-o1-projection.md
 docs/operations/handoffs/2026-08-10-replaytime-live-plan-prestaged.md
@@ -234,6 +235,7 @@ docs/operations/offset-discovery-strategy-v3.md
 docs/operations/offset-discovery-strategy-v4.md
 docs/operations/offset-discovery-workflow.md
 docs/operations/offset-promotion-checklist.md
+docs/operations/parallel-workstreams.md
 docs/operations/product-roadmap.md
 docs/operations/record-diffing-groundwork.md
 docs/operations/replay-crosscheck.md
@@ -321,6 +323,7 @@ scripts/ui-templates/hangar/play-triangle.png
 scripts/ui-templates/hangar/profile-hex.png
 scripts/ui-templates/hangar/replays-label.png
 scripts/validate.ps1
+scripts/workstream-lock.py
 scripts/x64dbg-write-trace.ps1
 serve.cmd
 sessions.cmd
@@ -346,6 +349,7 @@ src/WotBTreader.Application/Replay/ReplayFrameSource.cs
 src/WotBTreader.Application/Replay/ReplayIngestionLog.cs
 src/WotBTreader.Application/Replay/ReplayIngestionService.cs
 src/WotBTreader.Application/Results/OperationResult.cs
+src/WotBTreader.Application/Storage/BeaconStoreContracts.cs
 src/WotBTreader.Application/Storage/HpGroundTruthContracts.cs
 src/WotBTreader.Application/Storage/OverlayFrameContracts.cs
 src/WotBTreader.Application/Storage/StorageContracts.cs
@@ -532,6 +536,7 @@ src/WotBTreader.Overlay/MainWindow.xaml
 src/WotBTreader.Overlay/MainWindow.xaml.cs
 src/WotBTreader.Overlay/Services/TelemetryStreamService.cs
 src/WotBTreader.Overlay/Services/TreaderApiClient.cs
+src/WotBTreader.Overlay/ViewModels/BeaconItem.cs
 src/WotBTreader.Overlay/ViewModels/MainViewModel.cs
 src/WotBTreader.Overlay/ViewModels/NameplateItem.cs
 src/WotBTreader.Overlay/ViewModels/PlotPoint.cs
@@ -563,6 +568,7 @@ src/WotBTreader.Replays/WotbReplayProbe.cs
 src/WotBTreader.Replays/packages.lock.json
 src/WotBTreader.Storage.Sqlite/AssemblyInfo.cs
 src/WotBTreader.Storage.Sqlite/ContentAddressedSourceArtifactStore.cs
+src/WotBTreader.Storage.Sqlite/SqliteBeaconStore.cs
 src/WotBTreader.Storage.Sqlite/SqliteComparisonRunRepository.cs
 src/WotBTreader.Storage.Sqlite/SqliteDecodeRunRepository.cs
 src/WotBTreader.Storage.Sqlite/SqliteDomainReaders.cs
@@ -654,6 +660,7 @@ tests/WotBTreader.GameIntegration.Tests/WindowsReplayLaunchStagingPlatformTests.
 tests/WotBTreader.GameIntegration.Tests/WindowsTrustedExecutableLaunchLeaseTests.cs
 tests/WotBTreader.GameIntegration.Tests/WotBTreader.GameIntegration.Tests.csproj
 tests/WotBTreader.GameIntegration.Tests/packages.lock.json
+tests/WotBTreader.Host.Cli.Tests/CliBeaconTests.cs
 tests/WotBTreader.Host.Cli.Tests/CliEntryPointTests.cs
 tests/WotBTreader.Host.Cli.Tests/CliHpDiffTests.cs
 tests/WotBTreader.Host.Cli.Tests/CliInvocationTests.cs
@@ -699,6 +706,7 @@ tests/WotBTreader.Storage.Sqlite.Tests/MigrationTests.cs
 tests/WotBTreader.Storage.Sqlite.Tests/ReplayClockSegmentRepositoryTests.cs
 tests/WotBTreader.Storage.Sqlite.Tests/ServiceRegistrationTests.cs
 tests/WotBTreader.Storage.Sqlite.Tests/SourceArtifactStoreTests.cs
+tests/WotBTreader.Storage.Sqlite.Tests/SqliteBeaconStoreTests.cs
 tests/WotBTreader.Storage.Sqlite.Tests/SqliteHpGroundTruthProviderTests.cs
 tests/WotBTreader.Storage.Sqlite.Tests/SqliteTrajectoryGroundTruthProviderTests.cs
 tests/WotBTreader.Storage.Sqlite.Tests/StorageTestScope.cs
@@ -858,6 +866,7 @@ tools/ghidra-scripts/functions-disasm.txt
 tools/ghidra-scripts/ghidra-offset-candidates.json
 tools/ghidra-scripts/window-disasm.txt
 tools/ghidra-scripts/writesite-disasm.txt
+tools/ghidra-scripts/writesite-ring-disasm.txt
 tools/psscriptanalyzer-custom-rules.psm1
 tools/psscriptanalyzer-settings.psd1
 tools/report-offset-evidence.ps1

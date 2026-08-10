@@ -52,15 +52,26 @@ camera path) should watch this object instead of blind scanning. Honest
 limits: this is a *write-site* hypothesis; which camera/entity the object is
 still needs the gated live confirmation.
 
+### 4. Workstream C — the matrix helper is a 4×4 matmul (completed same day)
+Second targeted pass decompiled `FUN_00729570` (RVA `0x329570`): it is the
+engine's **generic 4×4 matrix multiply** — every output element is the
+row-column dot product over 16 floats, the second operand read with
+column-major stride, and it has 20+ call sites across the binary. So the
+`+0x60` matrix written by `FUN_00bc3940` is a per-frame **composited 4×4
+matrix** (world/view-style), not a raw copy. Evidence:
+`tools/ghidra-scripts/writesite-matrix-helper-disasm.txt`.
+
+**Consequence for the live validation:** the in-game-replay scan should watch
+the `+0x60` matrix of the `FUN_00d29ea0(0)` object and compare it against the
+replay's packet camera path; a match confirms both the object identity and the
+row/column-major convention in one session.
+
 ## Next session queue
-1. **Workstream C** — decompile `FUN_00729570` (RVA `0x329570`) to pin what
-   the `+0x60` matrix operation is (world×view? world×projection?), then
-   commit the evidence. Holds `ghidra-project`.
-2. **O4** — capture-zone/base decode from battle_results.dat (objective
+1. **O4** — capture-zone/base decode from battle_results.dat (objective
    markers on the HUD beacon layer).
-3. **L2** — the facing live session (ring-record dump vs
-   `position_samples.yaw`) stays behind the approval gate; the static find
-   does not change its scope.
+2. **L2** — the facing live session (ring-record dump vs
+   `position_samples.yaw`) stays behind the approval gate; the static finds
+   do not change its scope.
 
 ## Rules reaffirmed
 - One Ghidra headless session at a time (`ghidra-project` lock).

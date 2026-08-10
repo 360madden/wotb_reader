@@ -126,12 +126,15 @@ of the sub-50ms duplicate-packet artifact.
 
 **Discovery sidecar (parallel, offline):** the parallel-workstreams runbook
 (`docs/operations/parallel-workstreams.md`) + `scripts/workstream-lock.py`
-serialize the Ghidra project DB, docs, and the live queue; the first targeted
-Ghidra pass decompiled the FRESH43 write site `FUN_00bc3940` and pinned a
-per-frame transform object with **position `+0x38`, 3×3 rotation `+0x44..+0x5c`,
-and a 16-float 4×4 matrix at `+0x60`** (evidence:
-`tools/ghidra-scripts/writesite-ring-disasm.txt`) — the live camera/VP track's
-static anchor.
+serialize the Ghidra project DB, docs, and the live queue; two targeted Ghidra
+passes landed. Pass 1 decompiled the FRESH43 write site `FUN_00bc3940` and
+pinned a per-frame transform object with **position `+0x38`, 3×3 rotation
+`+0x44..+0x5c`, and a 16-float 4×4 matrix at `+0x60`**. Pass 2 decompiled
+`FUN_00729570` (RVA `0x329570`): it is the engine's **generic 4×4 matrix
+multiply** (20+ call sites; second operand read column-major), so the `+0x60`
+matrix is a per-frame composited world/view-style matrix — the live camera/VP
+track's static anchor. Evidence: `tools/ghidra-scripts/writesite-ring-disasm.txt`
++ `writesite-matrix-helper-disasm.txt`.
 
 ### Phase 2 — The live seam + first live sessions (serialized)
 
