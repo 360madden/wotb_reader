@@ -218,3 +218,87 @@ JSON-Schema validation today):
   `cameraPitch`, or `aliveTankCount`.
 - Does NOT publish any absolute/heap address — the chain is module-relative;
   the ring record is resolved at runtime by the resolver.
+
+## 7. Walkable position-chain form (2nd generation, drafted 2026-08-10)
+
+> **NOT APPLIED.** This is the draft of the re-expressed position chains for a
+> FUTURE operator gate. The published table is untouched.
+
+### 7.1 Why a re-expression
+
+The published 11.19.0.10 chains (§2) are a faithful transcription of the
+resolver's traversal, but they spell every step as a plain `memberOffset`
+hop: the CONDITIONAL cached-entity fast path and the three ALTERNATIVE tree
+roots are sequential offsets with no rebase semantics, the inline entities
+map and inline ring are deref hops, and the ring-index read is a plain
+member offset — so the published form is documentation + evidence, not a
+mechanically walkable read plan.
+
+Since then the chain walker grew the hop kinds that express the same walk
+with correct semantics (commits `f401e69` → `7ef94d6`): `inlineOffset`
+(no deref), `entityLookup` (cached fast path + ALTERNATIVE tree roots +
+id-keyed node layout, with the target entity id supplied per walk — never
+in the chain), and the INLINE `ringIndex` (index field + stride). The
+re-expressed form below is therefore walkable end-to-end.
+
+### 7.2 The proof (already green)
+
+`tests/WotBTreader.Application.Tests/WalkablePositionChainTests.cs` — the
+exact JSON below is deserialized through the REAL parse path
+(`OffsetTableReader`), the parsed chains are walked on full-spine synthetic
+memory, and the record address + X/Y/Z floats must equal the resolver's own
+traversal over the SAME memory. Covered: cache path, primary tree,
+alternative tertiary root, all-trees-empty (both readers return
+`EntityNotFound`), the parse-to-constants equality (any drift between the
+draft JSON and the resolver's layout constants fails), and a malformed
+`entityLookup` descriptor dropping its chain fail-closed. 6/6 green;
+`OffsetChainWalkerEquivalenceTests` (Core, 32 tests) proves the same
+walk on the programmatic chain.
+
+### 7.3 The change the operator approves
+
+Replace the `chains` section of `playerPositionX/Y/Z` in
+`memory-offsets/11.19.0.10.json` with the walkable form below. Same offsets,
+same executable identity, same evidence — the semantics move from
+"sequential member offsets" to explicit rebase (`entityLookup`) + inline
+ring selection. The prior memberOffset-spelled form remains in git history
+(commit `0e6bdba`) and the ledger (OD-RECOVERY-083) as evidence. The
+runtime read surface is unchanged (the resolver stays authoritative); after
+approval the walker can read the published table's chains directly.
+
+### 7.4 The walkable JSON (`playerPositionX`; Y/Z differ only in the final
+`recordOffset` 0x14/0x18)
+
+```json
+[
+  { "kind": "rootRva", "value": 67722376, "note": "GameCoreRootRva 0x04095C88 - root slot dereferences to the GameCore pointer" },
+  { "kind": "memberOffset", "value": 12, "note": "GameCore->AppController 0x0C" },
+  { "kind": "memberOffset", "value": 292, "note": "AppController->SessionController 0x124" },
+  { "kind": "memberOffset", "value": 280, "note": "SessionController->AccountController 0x118" },
+  { "kind": "memberOffset", "value": 296, "note": "AccountController->Active playback controller 0x128" },
+  { "kind": "memberOffset", "value": 288, "note": "PlaybackController->Connection 0x120" },
+  { "kind": "inlineOffset", "value": 4, "note": "Connection->BWEntities map - INLINE member (no deref) 0x04" },
+  { "kind": "entityLookup", "value": 0, "cachedEntityOffset": 72, "entityIdOffset": 28, "treeRootOffsets": [28, 64, 52], "treeNodeSize": 24, "treeNodeNilOffset": 13, "treeNodeKeyOffset": 16, "treeNodeValueOffset": 20, "treeNodeChildLessOffset": 0, "treeNodeChildGreaterOffset": 8, "treeSentinelFirstNodeOffset": 4, "maxTreeNodes": 1024, "note": "Entity lookup (resolver constants): cache fast path 0x48 + ALTERNATIVE tree roots 0x1C/0x40/0x34, node 0x18 layout; target entity id supplied per walk" },
+  { "kind": "memberOffset", "value": 56, "note": "Found entity->movement filter 0x38" },
+  { "kind": "memberOffset", "value": 8, "note": "Filter->avatar helper 0x08" },
+  { "kind": "ringIndex", "value": 8, "indexOffset": 456, "stride": 56, "note": "Helper->ring entry - INLINE ring 0x08 + index(0x1C8)*0x38, stride 0x38" },
+  { "kind": "recordOffset", "value": 16, "note": "float32 X at +0x10 (Y +0x14, Z +0x18)" }
+]
+```
+
+`playerPositionY`: identical hops, final hop `recordOffset` 20 (float32 Y at
++0x14). `playerPositionZ`: identical hops, final hop `recordOffset` 24
+(float32 Z at +0x18). The `entityLookup` descriptor values are the resolver's
+constants (`CachedEntityOffset 0x48`, `EntityIdOffset 0x1c`, tree roots
+0x1C/0x40/0x34 in primary/tertiary/secondary order, node 0x18 layout,
+sentinel-first-node +0x04, `MaxTreeNodes 1024`) — pinned by the parse test.
+
+### 7.5 Gate (identical to §5)
+
+`offset_check.py --check-schema` (chains validated — the walkable shape
+`rootRva → memberOffset|inlineOffset|ringIndex|entityLookup* → recordOffset`
+passes), `report-offset-evidence.ps1`, `offline_check.py --refresh`,
+`ChainedFields_AreExcludedFromObservationReads`, `validate.ps1` exit 0, and
+`WalkablePositionChainTests` + `OffsetChainWalkerEquivalenceTests` stay
+green. ONE commit: table `chains` replacement + draft §7 moved to applied +
+ledger row + handoff.

@@ -318,8 +318,13 @@ chains remain documentation + evidence, not a runtime read plan: they spell
 the inline entities/ring steps and the ring-index read as plain
 `memberOffset` hops and encode the cache/tree branching as sequential member
 offsets, so the resolver remains their authoritative reader until a walkable
-form is published through the operator gate. The full mechanism, gates, and
-post-publication contract are in `docs/operations/g0-offset-table-draft.md`,
+form is published through the operator gate. The walkable re-expression
+(`inlineOffset` + `entityLookup` + INLINE `ringIndex`) is drafted in
+`docs/operations/g0-offset-table-draft.md` §7 and proven end-to-end — the
+draft JSON parses through `OffsetTableReader` and walks to resolver-equal
+X/Y/Z floats (`WalkablePositionChainTests`, plus the Core equivalence
+suite). The full mechanism, gates, and post-publication contract are in
+`docs/operations/g0-offset-table-draft.md`,
 `docs/operations/g0-operator-checklist.md`, and
 `docs/operations/g0-post-publication-regression.md`. The replay-event
 inventory for record-diffing discovery (damage/destroyed canonical events,
