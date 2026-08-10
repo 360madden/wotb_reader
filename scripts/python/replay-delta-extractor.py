@@ -412,6 +412,52 @@ def top_victims(
     return out
 
 
+def self_test(con: sqlite3.Connection) -> list[dict]:
+    """Pin TICKS_PER_SECOND against the decoded DB (regression guard).
+
+    The 2026-08-10 10x unit bug (TICKS_PER_SECOND was 10^6 while the DB
+    stores .NET ticks at 10^7/s) silently scaled every seconds output and
+    the hit-window bucketing. This check fails loudly if the constant ever
+    drifts again: for the newest sessions, duration_ticks / TICKS_PER_SECOND
+    must be a plausible WoTB battle length (120-900 s), the position sample
+    span must land within the duration, and no event may exceed it.
+    """
+    checks: list[dict] = []
+    sessions = con.execute(
+        "SELECT id, map_name, duration_ticks FROM battle_sessions "
+        "ORDER BY battle_time_utc DESC LIMIT 3"
+    ).fetchall()
+    for sid, map_name, duration_ticks in sessions:
+        duration_s = duration_ticks / TICKS_PER_SECOND
+        ok_duration = 120.0 <= duration_s <= 900.0
+        max_pos = con.execute(
+            "SELECT MAX(replay_time_ticks) FROM position_samples "
+            "WHERE battle_session_id=?", (sid,)
+        ).fetchone()[0]
+        max_event = con.execute(
+            "SELECT MAX(replay_time_ticks) FROM canonical_events "
+            "WHERE battle_session_id=?", (sid,)
+        ).fetchone()[0]
+        pos_s = (max_pos or 0) / TICKS_PER_SECOND
+        event_s = (max_event or 0) / TICKS_PER_SECOND
+        ok_span = pos_s > 0 and abs(pos_s - duration_s) / duration_s < 0.25
+        ok_events = event_s <= duration_s * 1.05 + 5.0
+        checks.append(
+            {
+                "session_id": sid,
+                "map_name": map_name,
+                "duration_s": round(duration_s, 1),
+                "ok_duration_120_900s": ok_duration,
+                "position_max_s": round(pos_s, 1),
+                "ok_position_span": ok_span,
+                "event_max_s": round(event_s, 1),
+                "ok_events_within_duration": ok_events,
+                "pass": ok_duration and ok_span and ok_events,
+            }
+        )
+    return checks
+
+
 def hp_dump_schedule(
     con: sqlite3.Connection,
     session_id: str,
@@ -522,6 +568,8 @@ def main(argv: list[str]) -> int:
                         help="entity id of the HP victim to track (required with --hp-delta)")
     parser.add_argument("--top-victims", type=int, default=0,
                         help="rank the session's damage victims by hit count (N entries) for HP-diffing victim selection; prints and exits")
+    parser.add_argument("--self-test", action="store_true",
+                        help="pin TICKS_PER_SECOND against the decoded DB (battle-length sanity + position/event spans); exits non-zero on drift")
     parser.add_argument("--json", default="", help="also write JSON to this path")
     args = parser.parse_args(argv)
 
@@ -669,6 +717,18 @@ def main(argv: list[str]) -> int:
                 ">= 0.9 so the true field survives ~15 rounds."
             ),
         }
+
+    if args.self_test:
+        checks = self_test(con)
+        result = {
+            "scan": "replay-delta-extractor",
+            "mode": "self-test",
+            "ticks_per_second": TICKS_PER_SECOND,
+            "checks": checks,
+            "pass": all(check["pass"] for check in checks),
+        }
+        print(json.dumps(result, indent=2))
+        return 0 if result["pass"] else 2
 
     if args.top_victims > 0:
         victims = top_victims(con, session["id"], args.top_victims, args.window)
