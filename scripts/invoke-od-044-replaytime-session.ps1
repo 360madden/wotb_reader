@@ -39,6 +39,7 @@
   4  Roll failed (see roll exit; gate diagnosis printed)
   5  Interceptor missing / stale / attach failed / capture unparseable
   6  Unexpected error
+  7  Replay paused at arm time (window not spent)
 #>
 [CmdletBinding()]
 param(
@@ -50,6 +51,12 @@ param(
     [string]$AddressFile = '',
     # Capture window ceiling in seconds; budgeted against the battle tail.
     [int]$TraceSeconds = 60,
+    # Tracked field width for the interceptor discriminator: replayTime is an
+    # 8-byte Double, so 8 is the correct default (the interceptor compares the
+    # tracked bytes BYTE-EXACTLY; a float-epsilon compare would miss a
+    # monotonic Double's writes - see tools/WriteInterceptor/Interceptor.cs).
+    [ValidateSet(4, 8)]
+    [int]$ValueSize = 8,
     # Result path for the verdict JSON (default .data\od-044-<stamp>.json).
     [string]$ResultPath = '',
     # FRESH43 dynamic source-arm: on first hit, arm the esi copy-source page
@@ -192,6 +199,29 @@ if (-not $pre -or $pre.verificationState -ne 'OfflineReplayVerified') {
     exit 3
 }
 
+# Play-state gate (mirrors invoke-csharp-write-trace.ps1 exit 7): a PAUSED
+# replay writes no clock field, so a capture window on it is wasted by
+# construction - refuse early instead of spending the lease.
+$probe = Join-Path $RepoRoot 'scripts\replay-play-state.ps1'
+if (Test-Path -LiteralPath $probe) {
+    $playState = 'unknown'
+    try {
+        $line = (& $probe | Select-Object -First 1)
+        if ($null -ne $line -and $line -match '^replay_state=(paused|playing|unknown)$') {
+            $playState = $Matches[1]
+        }
+    }
+    catch { }
+    Write-Session ('play_state=' + $playState)
+    if ($playState -eq 'paused') {
+        Write-Session 'FAILED_replay_paused (press SPACE and rerun) - window not spent'
+        exit 7
+    }
+}
+else {
+    Write-Session 'WARN play-state probe missing - arming without a pause check'
+}
+
 $game = Get-Process -Name wotblitz -ErrorAction SilentlyContinue |
     Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } |
     Select-Object -First 1
@@ -213,12 +243,12 @@ if ([string]::IsNullOrWhiteSpace($ResultPath)) {
 # the host monitor revoking mid-window.
 $captureJson = Join-Path $env:TEMP ('od-044-capture-' + [Guid]::NewGuid().ToString('N') + '.json')
 $addressCsv = ($tokens -join ',')
-Write-Session ('invoking_interceptor pid=' + $game.Id + ' seconds=' + $TraceSeconds + ' armed=' + $tokens.Count)
-$interceptorArgs = @('--interceptor', '-Pid', ([string]$game.Id), '-Addresses', $addressCsv, '-Seconds', ([string]$TraceSeconds), '-Out', $captureJson)
-if ($ArmSourceOnFirstHit) {
-    $interceptorArgs += '-ArmSourceOnFirstHit'
-    Write-Session 'source_arm ON (arm esi copy-source page at first hit)'
-}
+Write-Session ('invoking_interceptor pid=' + $game.Id + ' seconds=' + $TraceSeconds + ' armed=' + $tokens.Count)    $interceptorArgs = @('--interceptor', '-Pid', ([string]$game.Id), '-Addresses', $addressCsv, '-Seconds', ([string]$TraceSeconds), '-ValueSize', ([string]$ValueSize), '-Out', $captureJson)
+    if ($ArmSourceOnFirstHit) {
+        $interceptorArgs += '-ArmSourceOnFirstHit'
+        Write-Session 'source_arm ON (arm esi copy-source page at first hit)'
+    }
+    Write-Session ('value_size=' + $ValueSize + ' (byte-exact discriminator)')
 $interceptorExit = -1
 try {
     & $interceptorExe @interceptorArgs

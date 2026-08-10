@@ -96,6 +96,16 @@ A `replayTime` HIT requires:
    survivor (or a CRT copy landing on it — the synchronized-multi-copy
    reality FRESH37/38/43 proved for position; `movsd`/`fld`+`fstp`/`rep
    movsd` are all consistent).
+
+   **Discriminator (2026-08-10 fix, load-bearing):** the interceptor must be
+   armed with `-ValueSize 8`, and its write discriminator is **byte-exact on
+   the tracked 8 bytes** (each hit carries `valueHex`, the exact bytes). A
+   float-epsilon compare would miss every replayTime write: the low dword of
+   a monotonic Double reinterpreted as float is a ~1e-38 denormal (60.0 →
+   60.016 changes `0x00000000` → `0x9374BC6A`), far below any epsilon — and
+   can be NaN/Infinity, which JSON refuses. Proven offline by
+   `test-offline-write-observation.ps1`'s `--double` phase (126/126 distinct
+   8-byte patterns on a 0.016 s/frame replayTime-mimic).
 3. Repeatability **across the 2-launch × 2-replay rule** only after the first
    HIT: the matched offset/RVA repeats on the second content-distinct replay
    (BLK-0019 is resolved — both Churchill and Oasis Palms decode).

@@ -3,6 +3,8 @@
 # from scripts/invoke-od-044-replaytime-session.ps1): ConvertTo-HexToken, the
 # KUSER clock drop, the raw-vs-token mismatch warning, and the write-site
 # RIP -> module RVA computation. No live game, no host, no interceptor.
+# The interceptor's own Double discriminator is proven separately by
+# scripts/test-offline-write-observation.ps1 (--double phase).
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 

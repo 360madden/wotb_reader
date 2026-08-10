@@ -8,14 +8,21 @@ internal static class Program
         WotBTreader.WriteInterceptor - C# guard-page write interceptor (M2 successor)
 
         Modes:
-          --counter -AddrFile <path> -ProgressFile <path>
+          --counter -AddrFile <path> -ProgressFile <path> [--double]
               Synthetic target: publishes a static float's address, writes it
               in a loop, reports progress. For offline mechanism tests only.
+              --double publishes an 8-byte Double replayTime-mimic instead
+              (advances 0.016s/frame) - the -ValueSize 8 discriminator proof.
 
           --interceptor -Pid <n> -Addresses <0x..,0x..> -Seconds <n> -Out <path>
-              [-ArmSourceOnFirstHit]
+              [-ValueSize 4|8] [-ArmSourceOnFirstHit]
               Attach to the process, arm PAGE_GUARD on the pages holding the
               addresses, and capture every write (RIP, value, registers, RVA).
+              -ValueSize selects the tracked field width (4 = float, the
+              position default; 8 = Double, e.g. replayTime). The write
+              discriminator is BYTE-EXACT on the tracked bytes - never a
+              float-epsilon compare (a monotonic Double's low dword is a
+              tiny denormal as float and would read as unchanged).
               -ArmSourceOnFirstHit arms the page holding the esi copy-source
               pointer captured at hit time, so the game's own fill write site
               (one level above a VCRUNTIME memcpy) can trap in the same window.
@@ -44,7 +51,8 @@ internal static class Program
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"unexpected_error:{ex.GetType().Name}");
+            Console.Error.WriteLine($"unexpected_error:{ex.GetType().Name}:{ex.Message}");
+            Console.Error.WriteLine(ex.StackTrace);
             return 5;
         }
     }
@@ -65,7 +73,7 @@ internal static class Program
             return 2;
         }
 
-        return CounterMode.Run(addrFile, progressFile);
+        return CounterMode.Run(addrFile, progressFile, HasArg(args, "--double"));
     }
 
     private static int RunInterceptor(string[] args)
@@ -97,7 +105,21 @@ internal static class Program
             return 2;
         }
 
-        return new WriteInterceptor(pid, addresses, seconds, outPath, HasArg(args, "-ArmSourceOnFirstHit")).Run();
+        int valueSize = 4;
+        if (GetArg(args, "-ValueSize") is { } valueSizeText
+            && (!int.TryParse(valueSizeText, out valueSize) || valueSize is not (4 or 8)))
+        {
+            Console.Error.WriteLine("--interceptor -ValueSize must be 4 or 8");
+            return 2;
+        }
+
+        return new WriteInterceptor(
+            pid,
+            addresses,
+            seconds,
+            outPath,
+            valueSize,
+            HasArg(args, "-ArmSourceOnFirstHit")).Run();
     }
 
     private static string? GetArg(string[] args, string name)

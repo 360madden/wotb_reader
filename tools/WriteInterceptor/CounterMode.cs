@@ -45,6 +45,13 @@ internal static class CounterMode
 {
     private const int WriteIntervalMs = 25;
     private const int CopyBytes = 16; // 4 floats - same stride as the game copy
+    // replayTime-mimic: the game's replay clock is an 8-byte Double that
+    // advances ~0.016s per frame (60 fps playback). The DOUBLE mode writes
+    // exactly that shape - a small monotonic double increment - so the
+    // interceptor's -ValueSize 8 + byte-exact discriminator is proven
+    // against the actual replayTime failure class (a float-epsilon compare
+    // sees the low dword as a ~1e-38 denormal delta and misses every write).
+    private const double DoubleStepSeconds = 0.016;
 
     // Page-aligned separate allocations: PAGE_GUARD traps on ANY access (read
     // OR write), so if Source and Dest shared a 4KB page the memcpy READ of
@@ -53,6 +60,7 @@ internal static class CounterMode
     // page - exactly the game's layout (coordinate page vs copy-source page).
     private static readonly nint Source = AllocateOwnPage();
     private static readonly nint Dest = AllocateOwnPage();
+    private static readonly nint DoubleDest = AllocateOwnPage();
 
     private static nint AllocateOwnPage()
     {
@@ -65,22 +73,35 @@ internal static class CounterMode
         return ptr;
     }
 
-    public static int Run(string addrFile, string progressFile)
+    public static int Run(string addrFile, string progressFile, bool doubleMode = false)
     {
-        File.WriteAllText(addrFile, ((nuint)Dest).ToString("X8", CultureInfo.InvariantCulture));
+        nuint target = doubleMode ? (nuint)DoubleDest : (nuint)Dest;
+        File.WriteAllText(addrFile, target.ToString("X8", CultureInfo.InvariantCulture));
         long iterations = 0;
+        double replaySeconds = 60.0; // start mid-battle, like a real replay
         while (true)
         {
-            // Fill site: the game's own write to the copy source buffer.
-            float next = ReadFloat(Source) + 0.5f;
-            WriteFloat(Source, next);
+            if (doubleMode)
+            {
+                // replayTime-mimic: an 8-byte double advancing 0.016s per
+                // frame. The value hex is stable-verifiable: each step must
+                // produce a distinct 8-byte pattern.
+                replaySeconds += DoubleStepSeconds;
+                WriteDouble(DoubleDest, replaySeconds);
+            }
+            else
+            {
+                // Fill site: the game's own write to the copy source buffer.
+                float next = ReadFloat(Source) + 0.5f;
+                WriteFloat(Source, next);
 
-            // Copy site: the memcpy-style store the interceptor arms on. The
-            // CRT memcpy faults inside msvcrt's copy loop with esi = source /
-            // edi = destination, faithfully mimicking the game's VCRUNTIME
-            // memcpy and giving the source-arm step the source pointer in the
-            // captured registers.
-            _ = CounterNative.memcpy(Dest, Source, (nuint)CopyBytes);
+                // Copy site: the memcpy-style store the interceptor arms on. The
+                // CRT memcpy faults inside msvcrt's copy loop with esi = source /
+                // edi = destination, faithfully mimicking the game's VCRUNTIME
+                // memcpy and giving the source-arm step the source pointer in the
+                // captured registers.
+                _ = CounterNative.memcpy(Dest, Source, (nuint)CopyBytes);
+            }
 
             iterations++;
             if (iterations % 8 == 0)
@@ -112,6 +133,14 @@ internal static class CounterMode
         unsafe
         {
             *(float*)address = value;
+        }
+    }
+
+    private static void WriteDouble(nint address, double value)
+    {
+        unsafe
+        {
+            *(double*)address = value;
         }
     }
 }

@@ -9,8 +9,9 @@ replay-derived delta values the rolling campaign's CompareMode='delta' needs:
     it is unit-consistent (meters) and directly comparable to in-memory Float
     position fields.
   - replayTime delta (Double): the replay-time advance per window, in both
-    raw ticks (1e6 ticks/sec) and seconds, so an operator can try scale
-    hypotheses against the in-memory Double.
+    raw ticks (.NET TimeSpan ticks, 1e7/sec - replay_time_ticks are stored
+    as TimeSpan.Ticks; see --self-test) and seconds, so an operator can try
+    scale hypotheses against the in-memory Double.
 
 Output is JSON on stdout (or --json PATH). It also prints a ready-to-paste
 rolling-driver command line for both the Float-position and Double-replayTime
@@ -643,7 +644,7 @@ def main(argv: list[str]) -> int:
             "replay_time_delta_unit_variants": {
                 "seconds": round(args.window * args.speed, 4),
                 "milliseconds": round(args.window * args.speed * 1000.0, 4),
-                "ticks_1e6": dt_ticks,
+                "ticks_1e7": dt_ticks,
             },
         },
         "commands": {

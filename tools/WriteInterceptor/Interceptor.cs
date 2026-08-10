@@ -20,7 +20,8 @@ internal sealed record WriteHit(
     uint ThreadId,
     DateTimeOffset Utc,
     IReadOnlyDictionary<string, uint>? Registers,
-    string Kind);
+    string Kind,
+    string? ValueHex = null);
 
 /// <summary>
 /// The C#-native replacement for the (dead) x64dbg write-BP capture:
@@ -43,12 +44,13 @@ internal sealed class WriteInterceptor
     private readonly nuint[] _addresses;
     private readonly double _seconds;
     private readonly string _outPath;
+    private readonly int _valueSize;
     private readonly bool _armSourceOnFirstHit;
 
     private readonly List<WriteHit> _hits = [];
     private readonly List<string> _diagnostics = [];
     private readonly Dictionary<nuint, uint> _originalProtects = [];
-    private readonly Dictionary<nuint, float> _snapshots = [];
+    private readonly Dictionary<nuint, byte[]> _snapshots = [];
     private readonly List<nuint> _armedPages = [];
     private readonly List<ModuleEntry32> _modules = [];
     private readonly Dictionary<nuint, string?> _instructionHexByRip = [];
@@ -68,12 +70,19 @@ internal sealed class WriteInterceptor
     private const int MaxDiagnostics = 400;
     private const int InstructionBytesToRead = 16;
 
-    public WriteInterceptor(uint pid, nuint[] addresses, double seconds, string outPath, bool armSourceOnFirstHit = false)
+    public WriteInterceptor(
+        uint pid,
+        nuint[] addresses,
+        double seconds,
+        string outPath,
+        int valueSize = 4,
+        bool armSourceOnFirstHit = false)
     {
         _pid = pid;
         _addresses = addresses;
         _seconds = seconds;
         _outPath = outPath;
+        _valueSize = valueSize is 4 or 8 ? valueSize : 4;
         _armSourceOnFirstHit = armSourceOnFirstHit;
     }
 
@@ -187,12 +196,17 @@ internal sealed class WriteInterceptor
         // PAGE_GUARD page fails with ERROR_PARTIAL_COPY (299) and/or consumes
         // the one-shot guard bit, silently disarming the trap - the snapshot
         // must always precede the arm.
+        // Byte-exact snapshot (4 or 8 bytes per -ValueSize). NEVER a float
+        // epsilon compare: a monotonic Double's low dword reinterpreted as
+        // float is a tiny denormal (60.0 -> 60.016 changes 0x00000000 ->
+        // 0x9374BC6A, a ~3e-38 float delta far below any epsilon), so the
+        // write discriminator must compare the tracked bytes, not values.
         foreach (nuint address in _addresses)
         {
-            if (TryReadFloat(process, address, out float value))
+            if (TryReadBytes(process, address, _valueSize, out byte[] snapshot))
             {
-                _snapshots[address] = value;
-                AddDiagnostic($"snapshot addr=0x{address:X8} value={value:F4}");
+                _snapshots[address] = snapshot;
+                AddDiagnostic($"snapshot addr=0x{address:X8} size={_valueSize} bytes={Convert.ToHexString(snapshot)}");
             }
             else
             {
@@ -302,30 +316,31 @@ internal sealed class WriteInterceptor
             _ = NativeMethods.ContinueDebugEvent(de.ProcessId, de.ThreadId, NativeMethods.DbgContinue);
             Thread.Sleep(ContinueSettleMs);
 
-            // Post-access: reads leave the value unchanged, writes change it -
-            // the read/write discriminator (PAGE_GUARD traps on ANY access).
-            // The write lands asynchronously after the thread resumes, so retry
-            // the read briefly rather than trusting a single settle sleep.
-            // Scan the original member addresses FIRST (kind=member), then any
-            // dynamically-armed source addresses (kind=source).
+            // Post-access: reads leave the tracked bytes unchanged, writes
+            // change them - the read/write discriminator (PAGE_GUARD traps on
+            // ANY access). The write lands asynchronously after the thread
+            // resumes, so retry the read briefly rather than trusting a single
+            // settle sleep. Scan the original member addresses FIRST
+            // (kind=member), then any dynamically-armed source addresses
+            // (kind=source).
             bool anyChanged = false;
             foreach ((nuint address, string kind) in EnumerateTrackedAddresses())
             {
-                if (!_snapshots.ContainsKey(address))
+                if (!_snapshots.TryGetValue(address, out byte[]? previousBytes))
                 {
                     continue;
                 }
 
-                float previous = _snapshots[address];
-                float value = 0f;
-                bool readOk = false;
+                bool changed = false;
+                byte[]? current = null;
                 for (int attempt = 0; attempt < PostWriteReadRetries; attempt++)
                 {
-                    if (TryReadFloat(process, address, out value))
+                    if (TryReadBytes(process, address, previousBytes.Length, out byte[] read))
                     {
-                        readOk = true;
-                        if (MathF.Abs(value - previous) > 0.0001f)
+                        current = read;
+                        if (!read.AsSpan().SequenceEqual(previousBytes))
                         {
+                            changed = true;
                             break;
                         }
                     }
@@ -333,11 +348,14 @@ internal sealed class WriteInterceptor
                     Thread.Sleep(1);
                 }
 
-                if (readOk && MathF.Abs(value - previous) > 0.0001f)
+                if (changed && current is not null)
                 {
-                    _snapshots[address] = value;
+                    _snapshots[address] = current;
                     anyChanged = true;
                     string? instructionHex = TryReadInstructionHex(process, rip);
+                    float value = current.Length >= 4
+                        ? BitConverter.ToSingle(current, 0)
+                        : 0f;
                     _hits.Add(new WriteHit(
                         address,
                         value,
@@ -347,8 +365,9 @@ internal sealed class WriteInterceptor
                         de.ThreadId,
                         DateTimeOffset.UtcNow,
                         registers,
-                        kind));
-                    AddDiagnostic($"write_captured kind={kind} addr=0x{address:X8} value={value:F4} rip=0x{rip:X8} numParams={numParams}");
+                        kind,
+                        Convert.ToHexString(current)));
+                    AddDiagnostic($"write_captured kind={kind} addr=0x{address:X8} bytes={Convert.ToHexString(current)} rip=0x{rip:X8} numParams={numParams}");
                 }
             }
 
@@ -426,15 +445,18 @@ internal sealed class WriteInterceptor
         // game's source buffer drifts every frame, so a tracked-but-unarmed
         // address would emit false source-kind hits attributed to whatever
         // member RIP fired the current guard event).
+        // Source slots are copied as 4-byte floats (the memcpy moves 16
+        // bytes = 4 floats), so snapshot each 4-byte slot byte-exactly - the
+        // same discriminator the member scan uses.
         var pending = new List<nuint>();
         for (int i = 0; i < SourceSnapshotFloats; i++)
         {
             nuint addr = source + (nuint)(i * 4);
-            if (TryReadFloat(process, addr, out float value))
+            if (TryReadBytes(process, addr, sizeof(float), out byte[] snapshot))
             {
                 pending.Add(addr);
-                _snapshots[addr] = value;
-                AddDiagnostic($"source_snapshot addr=0x{addr:X8} value={value:F4}");
+                _snapshots[addr] = snapshot;
+                AddDiagnostic($"source_snapshot addr=0x{addr:X8} bytes={Convert.ToHexString(snapshot)}");
             }
             else
             {
@@ -508,16 +530,21 @@ internal sealed class WriteInterceptor
         }
     }
 
-    private static bool TryReadFloat(SafeProcessHandle process, nuint address, out float value)
+    private static bool TryReadBytes(
+        SafeProcessHandle process,
+        nuint address,
+        int length,
+        out byte[] bytes)
     {
-        byte[] buffer = new byte[4];
-        if (NativeMethods.ReadProcessMemory(process, (nint)address, buffer, 4, out nuint read) && read == 4)
+        byte[] buffer = new byte[length];
+        if (NativeMethods.ReadProcessMemory(process, (nint)address, buffer, (nuint)length, out nuint read)
+            && read == (nuint)length)
         {
-            value = BitConverter.ToSingle(buffer, 0);
+            bytes = buffer;
             return true;
         }
 
-        value = 0f;
+        bytes = [];
         return false;
     }
 
@@ -730,7 +757,14 @@ internal sealed class WriteInterceptor
             hits = _hits.Select(h => new
             {
                 address = $"0x{h.Address:X8}",
-                value = h.Value,
+                // value stays the float32 read of the low 4 bytes for the
+                // legacy float consumers; valueHex is the exact tracked bytes
+                // (authoritative for 8-byte Double fields like replayTime -
+                // the float interpretation of a Double's low dword is a
+                // meaningless denormal, and can even be NaN/Infinity, which
+                // JsonSerializer refuses - emit null then, valueHex is exact).
+                value = float.IsFinite(h.Value) ? h.Value : (float?)null,
+                valueHex = h.ValueHex,
                 rip = $"0x{h.Rip:X8}",
                 rva = h.Rva ?? "jit",
                 instructionHex = h.InstructionHex,

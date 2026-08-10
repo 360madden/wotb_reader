@@ -25,6 +25,13 @@
     4. Attribution - hits are kind=member, resolve to a module RVA (the CRT
        memcpy copy loop), and carry the i386 esi/edi registers of the copy
        ABI (the game's coordinate is copied by the same VCRUNTIME memcpy).
+    5. Double discriminator (2026-08-10 regression) - a second counter in
+       --double mode publishes an 8-byte Double replayTime-mimic (advances
+       0.016s/frame); the interceptor with -ValueSize 8 must capture a
+       stream of DISTINCT 8-byte valueHex patterns. A float-epsilon
+       discriminator would miss every write (the low dword as float is a
+       ~1e-38 denormal), so this phase pins the byte-exact compare that the
+       OD-044 replayTime plan depends on.
 
   Offline only: no game, no live poll, no product code touched. The G1 live
   poll (one new approved session) applies the same machinery to the
@@ -231,6 +238,49 @@ public static class G1SuspendNative
     if ($hits.Count -gt 0 -and ($attributed / $hits.Count) -lt 0.8) {
         $failures.Add('attribution_below_80pct=' + [math]::Round(100.0 * $attributed / $hits.Count, 1))
     }
+
+    # 5. Double (replayTime-mimic) capture - the -ValueSize 8 discriminator
+    #    regression (2026-08-10). A monotonic 8-byte Double advances 0.016s/
+    #    frame; its low dword reinterpreted as float is a ~1e-38 denormal, so
+    #    a float-epsilon discriminator misses EVERY write. The byte-exact
+    #    compare must capture a stream of DISTINCT 8-byte patterns (a missed
+    #    write would collapse two steps onto one distinct value).
+    Write-Test 'double_mode_capture start'
+    $doubleCounter = Start-Process -FilePath $ExePath -ArgumentList @('--counter', '-AddrFile', (Join-Path $OutDir 'double-addr.txt'), '-ProgressFile', (Join-Path $OutDir 'double-prog.txt'), '--double') -PassThru -WindowStyle Hidden
+    Start-Sleep -Seconds 2
+    $doubleAddr = (Get-Content -LiteralPath (Join-Path $OutDir 'double-addr.txt') -Raw).Trim()
+    if (-not $doubleAddr) {
+        Stop-Process -Id $doubleCounter.Id -Force -ErrorAction SilentlyContinue
+        $failures.Add('double_no_published_address')
+    }
+    else {
+        $doubleReport = Join-Path $OutDir 'interceptor-double-report.json'
+        $doubleInterceptor = Start-Process -FilePath $ExePath -ArgumentList @('--interceptor', '-Pid', ([string]$doubleCounter.Id), '-Addresses', ('0x' + $doubleAddr), '-Seconds', '4', '-ValueSize', '8', '-Out', $doubleReport) -PassThru -WindowStyle Hidden
+        try {
+            Wait-Process -Id $doubleInterceptor.Id -Timeout 60 -ErrorAction Stop
+        }
+        catch {
+            $failures.Add('double_interceptor_timeout')
+        }
+        Stop-Process -Id $doubleCounter.Id -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $doubleReport) {
+            $doubleReportDoc = Get-Content -LiteralPath $doubleReport -Raw | ConvertFrom-Json
+            $doubleHits = @()
+            if ($null -ne $doubleReportDoc.hits) { $doubleHits = @($doubleReportDoc.hits) }
+            $distinctHex = @($doubleHits | ForEach-Object { [string]$_.valueHex } | Sort-Object -Unique).Count
+            Write-Test ('double_hits=' + $doubleHits.Count + ' distinct_hex=' + $distinctHex)
+            if ($doubleHits.Count -lt 20) { $failures.Add('double_hits_too_low=' + $doubleHits.Count) }
+            if ($distinctHex -lt 20) { $failures.Add('double_distinct_values_too_low=' + $distinctHex) }
+            # Every hit must carry the exact 8-byte hex (16 chars) - the
+            # byte-exact discriminator's output contract.
+            $badHex = @($doubleHits | Where-Object { [string]$_.valueHex -notmatch '^[0-9A-Fa-f]{16}$' }).Count
+            if ($badHex -gt 0) { $failures.Add('double_bad_valueHex=' + $badHex) }
+        }
+        else {
+            $failures.Add('double_missing_report')
+        }
+    }
+    Write-Test 'double_mode_capture end'
 
     # 6. Summary + verdict.
     $progressionOk = $failures.Count -eq 0
