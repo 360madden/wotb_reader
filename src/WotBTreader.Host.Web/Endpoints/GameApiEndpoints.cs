@@ -34,6 +34,7 @@ internal static class GameApiEndpoints
         group.MapPost("/discover/neighborhood", DiscoverNeighborhoodAsync);
         group.MapPost("/discover/read", ReadOffsetsAsync);
         group.MapPost("/discover/entity-position", ReadEntityPositionAsync);
+        group.MapPost("/discover/entity-region", ReadEntityRegionAsync);
         group.MapPost("/discover/position-page", ResolveEntityPositionAddressAsync);
         group.MapPost("/discover/clock-segment", AppendClockSegmentAsync);
         group.MapPost("/discover/instruction-snapshot", CaptureInstructionSnapshotAsync);
@@ -874,6 +875,56 @@ internal static class GameApiEndpoints
             EntityIdentityRevalidated = read.EntityIdentityRevalidated,
             ConsistentDoubleRead = read.ConsistentDoubleRead,
             HardwareAtomicReadProven = read.HardwareAtomicReadProven,
+            SameDecodedClockProven = read.SameDecodedClockProven,
+        });
+    }
+
+    internal static async Task<IResult> ReadEntityRegionAsync(
+        IGameMemoryScanner scanner,
+        WotBTreader.ApiContracts.EntityRecordRegionReadRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(scanner);
+        ArgumentNullException.ThrowIfNull(request);
+
+        BattleSessionId? battleSessionId = null;
+        if (!string.IsNullOrWhiteSpace(request.BattleSessionId) &&
+            Guid.TryParse(request.BattleSessionId, out Guid parsedBattleSessionId))
+        {
+            battleSessionId = new BattleSessionId(parsedBattleSessionId);
+        }
+
+        OperationResult<EntityRecordRegionReadResult> result = await scanner
+            .ReadEntityRegionAsync(
+                new WotBTreader.Application.Game.EntityRecordRegionReadRequest(
+                    request.EntityId,
+                    request.RegionLength,
+                    battleSessionId),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!result.IsSuccess || result.Value is null)
+        {
+            return Results.BadRequest(new
+            {
+                error = result.Error?.Code ?? "discover.entity_region.read_failed",
+            });
+        }
+
+        EntityRecordRegionReadResult read = result.Value;
+        return Results.Ok(new EntityRecordRegionReadResponse
+        {
+            CompletedAtUtc = read.CompletedAtUtc,
+            GameVersion = read.GameVersion,
+            Status = read.Status.ToString(),
+            EntityId = read.EntityId,
+            ReplayTimeSeconds = read.ReplayTimeSeconds,
+            RegionBase64 = read.RegionBytes is null
+                ? null
+                : Convert.ToBase64String(read.RegionBytes),
+            FailureStage = read.FailureStage,
+            Attempts = read.Attempts,
+            NodesVisited = read.NodesVisited,
+            ModuleRooted = read.ModuleRooted,
             SameDecodedClockProven = read.SameDecodedClockProven,
         });
     }

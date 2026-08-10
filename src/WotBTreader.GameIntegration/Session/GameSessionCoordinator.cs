@@ -1903,6 +1903,183 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         }
     }
 
+    public async ValueTask<OperationResult<EntityRecordRegionReadResult>> ReadEntityRegionAsync(
+        EntityRecordRegionReadRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (request.RegionLength < 1 ||
+            request.RegionLength > EntityRecordRegionReadRequest.MaxLength)
+        {
+            return OperationResult.Failure<EntityRecordRegionReadResult>(
+                new ApplicationError(
+                    "discover.entity_region.invalid_length",
+                    "The region length must be within 1..4096 bytes."));
+        }
+
+        (AuthorizedMemoryObservation? observation, long baseAddress, CancellationToken authorizationToken, bool ok) =
+            GetScanAuthorization(cancellationToken);
+        if (!ok)
+        {
+            return GateCheck<EntityRecordRegionReadResult>(
+                "discover.gate_not_satisfied",
+                "The offline-session gate is not satisfied.");
+        }
+
+        using CancellationTokenSource readCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, authorizationToken);
+        try
+        {
+            Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+            if (!string.Equals(
+                observation!.ProductVersion,
+                layout.GameVersion,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                observation.ExecutableSha256.Value,
+                layout.ExecutableSha256,
+                StringComparison.Ordinal))
+            {
+                return IsScanAuthorizationCurrent(observation, authorizationToken)
+                    ? OperationResult.Success(new EntityRecordRegionReadResult(
+                        _timeProvider.GetUtcNow(),
+                        observation.ProductVersion,
+                        Type10EntityPositionStatus.UnsupportedBuild,
+                        request.EntityId,
+                        null,
+                        null,
+                        "build-identity",
+                        Attempts: 0,
+                        NodesVisited: 0,
+                        ModuleRooted: false,
+                        EntityIdentityRevalidated: false,
+                        ConsistentDoubleRead: false,
+                        SameDecodedClockProven: false))
+                    : GateCheck<EntityRecordRegionReadResult>(
+                        "discover.gate_not_satisfied",
+                        "The offline-session gate is no longer satisfied.");
+            }
+
+            OperationResult<IAuthorizedMemoryReader> readerResult = await _memoryReaderFactory
+                .CreateAsync(observation, readCancellation.Token)
+                .ConfigureAwait(false);
+            if (!readerResult.IsSuccess || readerResult.Value is null)
+            {
+                return OperationResult.Failure<EntityRecordRegionReadResult>(
+                    new ApplicationError(
+                        "discover.entity_region.read_unavailable",
+                        "The guarded entity-region reader is unavailable."));
+            }
+
+            // Resolve the entity's ring-record address under the same lease
+            // (the address stays coordinator-owned; only bytes leave).
+            OperationResult<Type10EntityPositionAddressResult> resolveResult =
+                await readerResult.Value.ResolveEntityPositionAddressAsync(
+                    (nint)baseAddress,
+                    request.EntityId,
+                    layout,
+                    readCancellation.Token).ConfigureAwait(false);
+            if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+            {
+                return GateCheck<EntityRecordRegionReadResult>(
+                    "discover.gate_not_satisfied",
+                    "The offline-session gate is no longer satisfied.");
+            }
+
+            if (!resolveResult.IsSuccess || resolveResult.Value is null)
+            {
+                return OperationResult.Failure<EntityRecordRegionReadResult>(
+                    resolveResult.Error ?? new ApplicationError(
+                        "discover.entity_region.resolve_failed",
+                        "The entity ring-record address resolution failed."));
+            }
+
+            Type10EntityPositionAddressResult resolved = resolveResult.Value;
+            if (resolved.Status != Type10EntityPositionStatus.Resolved ||
+                resolved.RecordAddress is null)
+            {
+                return OperationResult.Success(new EntityRecordRegionReadResult(
+                    _timeProvider.GetUtcNow(),
+                    layout.GameVersion,
+                    resolved.Status,
+                    request.EntityId,
+                    null,
+                    null,
+                    resolved.FailureStage,
+                    resolved.Attempts,
+                    resolved.NodesVisited,
+                    resolved.ModuleRooted,
+                    EntityIdentityRevalidated: false,
+                    ConsistentDoubleRead: false,
+                    SameDecodedClockProven: false));
+            }
+
+            // Replay-clock label + same-decoded-clock attestation (one call).
+            double? replayTimeSeconds = null;
+            bool sameDecodedClockProven = false;
+            if (request.BattleSessionId is not null)
+            {
+                OperationResult<ReplayClockSnapshot> clock = await _replayClockSource
+                    .GetSnapshotAsync(
+                        request.BattleSessionId.Value,
+                        _timeProvider.GetUtcNow(),
+                        readCancellation.Token)
+                    .ConfigureAwait(false);
+                if (clock.IsSuccess && clock.Value is not null &&
+                    clock.Value.Quality != ReplayClockQuality.Stale &&
+                    clock.Value.Uncertainty is not null &&
+                    clock.Value.Uncertainty <= SameDecodedClockUncertaintyLimit)
+                {
+                    sameDecodedClockProven = true;
+                    replayTimeSeconds = clock.Value.EstimatedReplayTime.TotalSeconds;
+                }
+            }
+
+            OperationResult<byte[]> regionResult = await readerResult.Value.ReadAsync(
+                (nint)resolved.RecordAddress.Value,
+                request.RegionLength,
+                readCancellation.Token).ConfigureAwait(false);
+            if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+            {
+                return GateCheck<EntityRecordRegionReadResult>(
+                    "discover.gate_not_satisfied",
+                    "The offline-session gate is no longer satisfied.");
+            }
+
+            if (!regionResult.IsSuccess || regionResult.Value is null)
+            {
+                return OperationResult.Failure<EntityRecordRegionReadResult>(
+                    regionResult.Error ?? new ApplicationError(
+                        "discover.entity_region.read_failed",
+                        "The entity region read failed."));
+            }
+
+            return OperationResult.Success(new EntityRecordRegionReadResult(
+                _timeProvider.GetUtcNow(),
+                layout.GameVersion,
+                Type10EntityPositionStatus.Resolved,
+                request.EntityId,
+                replayTimeSeconds,
+                regionResult.Value,
+                resolved.FailureStage,
+                resolved.Attempts,
+                resolved.NodesVisited,
+                resolved.ModuleRooted,
+                // The address path does not double-collect position bytes, so
+                // these evidence flags are not claimable from a region dump.
+                EntityIdentityRevalidated: false,
+                ConsistentDoubleRead: false,
+                SameDecodedClockProven: sameDecodedClockProven));
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return GateCheck<EntityRecordRegionReadResult>(
+                "discover.gate_not_satisfied",
+                "The offline-session gate is no longer satisfied.");
+        }
+    }
+
     public async ValueTask<OperationResult<EntityPositionAddressResult>> ResolveEntityPositionAddressAsync(
         EntityPositionAddressRequest request,
         CancellationToken cancellationToken)

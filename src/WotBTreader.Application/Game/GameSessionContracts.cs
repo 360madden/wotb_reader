@@ -269,6 +269,17 @@ public interface IGameMemoryScanner
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Reads a bounded region of the entity's ring record (≤ 4 KB) and labels
+    /// it with the replay clock. The caller supplies only the decoded entity
+    /// id and the region length; the coordinator owns process identity and the
+    /// resolved record address. Returns ONLY the bytes + replay time — never
+    /// an absolute address.
+    /// </summary>
+    ValueTask<OperationResult<EntityRecordRegionReadResult>> ReadEntityRegionAsync(
+        EntityRecordRegionReadRequest request,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Diagnostic-only, gate-verified: runs the same traversal as
     /// <see cref="ReadEntityPositionAsync"/> and returns the ring-record page
     /// address so the guard-page interceptor can arm the exact page a poll
@@ -347,6 +358,51 @@ public sealed record EntityPositionReadResult(
     bool EntityIdentityRevalidated,
     bool ConsistentDoubleRead,
     bool HardwareAtomicReadProven,
+    bool SameDecodedClockProven);
+
+/// <summary>
+/// Bounded request for one entity ring-record region dump (the L0 seam the
+/// HP / facing / damage-dealt / replayTime live plans all consume). Only the
+/// decoded entity id and a bounded region length (≤ 4096 bytes) are
+/// caller-supplied; the coordinator owns process identity, module, build
+/// layout, and the resolved record address. When
+/// <paramref name="BattleSessionId"/> is supplied, the coordinator may
+/// attest same-decoded-clock alignment from that session's replay-clock
+/// segments; when null, <c>SameDecodedClockProven</c> is never claimed.
+/// </summary>
+public sealed record EntityRecordRegionReadRequest(
+    int EntityId,
+    int RegionLength,
+    BattleSessionId? BattleSessionId = null)
+{
+    /// <summary>
+    /// Maximum region size the L0 seam will read. 4 KB bounds the dump to a
+    /// few entity records while keeping the guarded read atomic-enough for
+    /// the correlators (the ring record itself is 0x38 bytes; the extra
+    /// headroom covers adjacent per-entity records and the
+    /// position/velocity/rotation candidates in one dump).
+    /// </summary>
+    public const int MaxLength = 4096;
+}
+
+/// <summary>
+/// Privacy-safe result from one entity ring-record region dump: the raw
+/// bytes + replay time ONLY. No absolute address, process id, or module
+/// base ever leaves the coordinator.
+/// </summary>
+public sealed record EntityRecordRegionReadResult(
+    DateTimeOffset CompletedAtUtc,
+    string GameVersion,
+    Type10EntityPositionStatus Status,
+    int EntityId,
+    double? ReplayTimeSeconds,
+    byte[]? RegionBytes,
+    string? FailureStage,
+    int Attempts,
+    int NodesVisited,
+    bool ModuleRooted,
+    bool EntityIdentityRevalidated,
+    bool ConsistentDoubleRead,
     bool SameDecodedClockProven);
 
 /// <summary>

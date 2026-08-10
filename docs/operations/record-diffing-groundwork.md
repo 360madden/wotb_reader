@@ -101,24 +101,23 @@ run; the reader is the next approved-session step.
 
 #### Live session plan (pre-staged for the approval gate)
 
-The read surface today exposes ONLY the gate-verified position read and the
-diagnostic position-page endpoint (`/discover/entity-position`,
-`/discover/position-page`) — there is no generic region read, so the trusted
-reader needs ONE bounded, gated product addition:
+The L0 seam is now IMPLEMENTED (2026-08-10):
 
 1. **`EntityRecordRegionReadRequest(EntityId, RegionLength)` /
-   `EntityRecordRegionReadResult(...)`** — mirrors the existing
-   `EntityPositionReadRequest`/`EntityPositionReadResult` shape: the caller
-   supplies only the decoded entity id + a bounded region length (≤ 4 KB);
-   the coordinator owns process identity, resolves the entity address via the
-   resolver (or the walker on the published walkable chain — the walker now
-   exposes the FOUND ENTITY BASE in `OffsetChainWalkResult.ResolvedEntityAddress`,
-   the region anchor for the dump), requires
+   `EntityRecordRegionReadResult(...)`** — shipped end-to-end: the caller
+   supplies only the decoded entity id + a bounded region length (≤ 4096
+   bytes, enforced fail-closed); the coordinator owns process identity,
+   resolves the entity address via the exact-build resolver
+   (`ResolveEntityPositionAddressAsync` under the same lease), requires
    `OfflineReplayVerified` + current authorization, reads the region through
-   the guarded reader, labels the dump with the replay clock (the G2
-   same-decoded-clock anchor, ≤ 2 s bound), and returns ONLY the bytes +
-   replay time — never an absolute address. Same-decoded-clock attestation
-   reuses the existing coordinator path.
+   the guarded reader (`ReadAsync`), labels the dump with the replay clock
+   from the G2 same-decoded-clock snapshot (≤ 2 s bound, `EstimatedReplayTime`
+   becomes `ReplayTimeSeconds`), and returns ONLY the bytes + replay time —
+   never an absolute address. Exposed as `POST
+   /api/v1/game/discover/entity-region` (base64 bytes). Verified by 6
+   coordinator tests (gate, length clamp, build identity, unresolved entity,
+   clock attestation, bytes-only) + 2 web endpoint tests. The remaining
+   session-driver wiring below is what the live session consumes.
 2. **Session driver** — `scripts/invoke-hp-diffing-session.ps1` runs the
    whole flow: gate → **qualify the victim from the decoded replay**
    (see below — do NOT default to the player's own entity) → print the

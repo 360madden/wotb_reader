@@ -351,6 +351,49 @@ public sealed record EntityPositionReadResponse
 }
 
 /// <summary>
+/// Requests one bounded entity ring-record region dump (the L0 seam the
+/// HP / facing / damage-dealt / replayTime live plans all consume). Only the
+/// decoded entity id and a bounded region length (≤ 4096 bytes) are
+/// caller-supplied; the coordinator owns the process identity and the
+/// resolved record address.
+/// </summary>
+public sealed record EntityRecordRegionReadRequest
+{
+    public int EntityId { get; init; }
+
+    /// <summary>Bounded region length in bytes (1..4096).</summary>
+    public int RegionLength { get; init; }
+
+    /// <summary>
+    /// Optional battle session id (GUID) whose replay-clock segments attest
+    /// same-decoded-clock alignment and label the dump with replay time.
+    /// Omitted or unparseable ids never claim the flag.
+    /// </summary>
+    public string? BattleSessionId { get; init; }
+}
+
+/// <summary>
+/// Privacy-safe result of one entity ring-record region dump: the raw bytes
+/// (base64) + replay time ONLY. No absolute address, process id, or module
+/// base ever leaves the coordinator. Raw region bytes are session evidence,
+/// never published in aggregates.
+/// </summary>
+public sealed record EntityRecordRegionReadResponse
+{
+    public DateTimeOffset CompletedAtUtc { get; init; }
+    public string GameVersion { get; init; } = string.Empty;
+    public string Status { get; init; } = string.Empty;
+    public int EntityId { get; init; }
+    public double? ReplayTimeSeconds { get; init; }
+    public string? RegionBase64 { get; init; }
+    public string? FailureStage { get; init; }
+    public int Attempts { get; init; }
+    public int NodesVisited { get; init; }
+    public bool ModuleRooted { get; init; }
+    public bool SameDecodedClockProven { get; init; }
+}
+
+/// <summary>
 /// Diagnostic request for the gate-verified position-page endpoint. Only the
 /// decoded entity ID is caller-supplied; the process identity and the
 /// resolved page address are coordinator-owned. Internal diagnostic surface

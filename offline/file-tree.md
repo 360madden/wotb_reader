@@ -855,6 +855,7 @@ tools/ghidra-scripts/FindFunctionReferences.java
 tools/ghidra-scripts/FindOffsets.java
 tools/ghidra-scripts/FindOffsets.py
 tools/ghidra-scripts/FindReplayEntityBridges.java
+tools/ghidra-scripts/FindScenePointWriter.java
 tools/ghidra-scripts/FindType10DispatchTable.java
 tools/ghidra-scripts/FindType10PositionConsumers.java
 tools/ghidra-scripts/FindType10RecordDispatch.java
