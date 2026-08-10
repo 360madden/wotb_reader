@@ -94,6 +94,48 @@ public sealed class OffsetChainWalkerEquivalenceTests
     }
 
     [TestMethod]
+    public void Walker_MatchesResolver_TraversalBudget_WhenTreeExhausted()
+    {
+        // The resolver trips FindEntityInTree when nodesVisited >=
+        // MaxTreeNodes (1024); the walker's entityLookup must trip at the
+        // SAME node on the same memory. A 1025-node degenerate greater-chain
+        // with the target absent forces both readers to exhaust the budget at
+        // node 1025 (keys 1..1025 all < 4242, so the walk descends greater
+        // every step).
+        var memory = FullSpineFixture.CreateEmptyMaps();
+        const uint chainStart = 0x27000000;
+        const uint sentinel = 0x26000000;
+        memory.WriteUInt32(memory.Entities + 0x1c, sentinel);
+        memory.WriteUInt32(sentinel + 0x04, chainStart);
+        const int nodeCount = 1025;
+        for (int index = 0; index < nodeCount; index++)
+        {
+            uint node = chainStart + (uint)(index * 0x18);
+            uint greater = index == nodeCount - 1
+                ? sentinel
+                : chainStart + (uint)((index + 1) * 0x18);
+            memory.WriteTreeNode(node, sentinel, greater, key: index + 1, value: memory.Entity);
+        }
+
+        Type10EntityPositionAddressResult resolver =
+            Type10EntityPositionResolver.ResolveRecordAddress(
+                ModuleBase,
+                EntityId,
+                Layout,
+                memory.Read);
+        OffsetChainWalkResult walker = OffsetChainWalker.Walk(
+            PositionChain(),
+            ModuleBase,
+            valueLength: 12,
+            memory.Read,
+            entityId: EntityId);
+
+        Assert.AreEqual(Type10EntityPositionStatus.TraversalLimitExceeded, resolver.Status);
+        Assert.AreEqual(OffsetChainWalkStatus.TraversalLimitExceeded, walker.Status);
+        Assert.IsNull(resolver.RecordAddress);
+    }
+
+    [TestMethod]
     public void Walker_MatchesResolver_SignedKeyTraversal()
     {
         // A negative key on the greater side must still traverse correctly

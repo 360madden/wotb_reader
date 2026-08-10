@@ -259,6 +259,50 @@ public sealed class WalkablePositionChainTests
         Assert.IsNull(resolver.RecordAddress);
     }
 
+    [TestMethod]
+    public void Walk_PublishedTableChains_TraversalBudget_WhenTreeExhausted()
+    {
+        // The published chain's entityLookup carries maxTreeNodes 1024 (the
+        // resolver's budget). A 1025-node degenerate greater-chain with the
+        // target absent must trip BOTH the resolver and the published-chain
+        // walker at node 1025.
+        var memory = FullSpineFixture.CreateEmptyMaps();
+        const uint chainStart = 0x27000000;
+        const uint sentinel = 0x26000000;
+        memory.WriteUInt32(memory.Entities + 0x1c, sentinel);
+        memory.WriteUInt32(sentinel + 0x04, chainStart);
+        const int nodeCount = 1025;
+        for (int index = 0; index < nodeCount; index++)
+        {
+            uint node = chainStart + (uint)(index * 0x18);
+            uint greater = index == nodeCount - 1
+                ? sentinel
+                : chainStart + (uint)((index + 1) * 0x18);
+            memory.WriteTreeNode(node, sentinel, greater, key: index + 1);
+        }
+
+        OperationResult<OffsetTable?> result = LoadPublished();
+        Assert.IsTrue(result.IsSuccess, result.Error?.Message);
+        Assert.IsNotNull(result.Value?.Chains);
+
+        Type10EntityPositionAddressResult resolver =
+            Type10EntityPositionResolver.ResolveRecordAddress(
+                ModuleBase,
+                EntityId,
+                Layout,
+                memory.Read);
+        OffsetChainWalkResult walker = OffsetChainWalker.Walk(
+            result.Value.Chains["playerPositionX"],
+            ModuleBase,
+            valueLength: 12,
+            memory.Read,
+            entityId: EntityId);
+
+        Assert.AreEqual(Type10EntityPositionStatus.TraversalLimitExceeded, resolver.Status);
+        Assert.AreEqual(OffsetChainWalkStatus.TraversalLimitExceeded, walker.Status);
+        Assert.IsNull(resolver.RecordAddress);
+    }
+
     private static void RunEquivalence(FullSpineFixture memory, float x, float y, float z)
     {
         OperationResult<OffsetTable?> result = LoadDraft();
