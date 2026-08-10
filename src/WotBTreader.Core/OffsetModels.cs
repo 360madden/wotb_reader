@@ -72,11 +72,36 @@ public sealed record OffsetField(
     OffsetConfidence Confidence,
     IReadOnlyList<OffsetFieldEvidence> Evidence);
 
+/// <summary>Kind of one hop in a published pointer chain.</summary>
+public enum OffsetChainHopKind
+{
+    /// <summary>First hop: module base + RVA yields the root pointer.</summary>
+    RootRva,
+
+    /// <summary>Intermediate hop: dereference a pointer at the current address + offset.</summary>
+    MemberOffset,
+
+    /// <summary>Final hop: add a fixed record offset to the final pointer (no dereference).</summary>
+    RecordOffset,
+}
+
+/// <summary>One hop in a published pointer chain (see <c>memory-offsets/schema.json</c>).</summary>
+public sealed record OffsetChainHop(
+    OffsetChainHopKind Kind,
+    int Value,
+    string? Note);
+
 /// <summary>
 /// Immutable offset table for one specific game version and executable hash.
 /// Loaded from a <c>memory-offsets/&lt;version&gt;.json</c> file and validated
 /// against the observed executable identity before use.
 /// </summary>
+/// <remarks>
+/// <para><c>Chains</c> carries the published pointer chains keyed by field name.
+/// Chained fields keep <c>Offset</c> 0 by design — the legacy observation path
+/// computes <c>moduleBase + offset</c> and cannot represent a chain — so chain
+/// resolution is a separate capability (<see cref="Discovery.OffsetChainWalker"/>).</para>
+/// </remarks>
 public sealed record OffsetTable(
     int SchemaVersion,
     string GameVersion,
@@ -84,4 +109,5 @@ public sealed record OffsetTable(
     DateTimeOffset? DiscoveredAtUtc,
     OffsetConfidence Confidence,
     string? Notes,
-    IReadOnlyList<OffsetField> Fields);
+    IReadOnlyList<OffsetField> Fields,
+    IReadOnlyDictionary<string, IReadOnlyList<OffsetChainHop>>? Chains = null);

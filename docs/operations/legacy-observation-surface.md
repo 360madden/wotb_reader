@@ -78,3 +78,6 @@ Source of truth: `GameSessionCoordinator.ReadMemoryAsync`
 - The resolver path (authoritative for position):
   `src/WotBTreader.Core/Discovery/Type10EntityPositionResolver.cs` +
   `Type10EntityPositionLayout`.
+- Structural chain resolution (root RVA + member derefs + record offset,
+  fail-closed; cannot yet express the position chain's ring-index step):
+  `src/WotBTreader.Core/Discovery/OffsetChainWalker.cs`.

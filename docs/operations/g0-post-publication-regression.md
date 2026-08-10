@@ -23,7 +23,7 @@ legacy observation path and unchanged for the resolver path.
 
 | Check | Expected | Why |
 |---|---|---|
-| `OffsetTableReader.Load` succeeds | no `offset.read_failed` | `schemaVersion` stays 1; System.Text.Json ignores the new `chains` key |
+| `OffsetTableReader.Load` succeeds | no `offset.read_failed` | `schemaVersion` stays 1; the reader parses `chains` into the model (additive since 2026-08-10 — malformed chains are dropped, the legacy path is unchanged) |
 | Legacy observation: position fields | **null** (excluded) | offset 0 ⇒ not a known field ⇒ no bogus `moduleBase + value` read (full read-path trace: `docs/operations/legacy-observation-surface.md`) |
 | Legacy observation: non-position fields (replayTime/playerHP...) | unchanged (still excluded today — all offsets 0) | no behavior change |
 | Resolver endpoints | still resolve (24/24 in a bounded poll) | resolver uses the C# layout, not the table |

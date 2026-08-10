@@ -207,6 +207,7 @@ docs/operations/handoffs/2026-08-09-g1-live-third-session.md
 docs/operations/handoffs/2026-08-09-od074-replay-root-live-narrowing.md
 docs/operations/handoffs/2026-08-09-od075-position-ring-correction-live-proof.md
 docs/operations/handoffs/2026-08-10-g0-offset-publication.md
+docs/operations/handoffs/2026-08-10-runtime-chain-walker.md
 docs/operations/handoffs/README.md
 docs/operations/legacy-observation-surface.md
 docs/operations/offset-discovery-guide.md
@@ -348,6 +349,7 @@ src/WotBTreader.CaptureLogs/WotBTreader.CaptureLogs.csproj
 src/WotBTreader.CaptureLogs/packages.lock.json
 src/WotBTreader.Core/AffiliationResolver.cs
 src/WotBTreader.Core/ComparisonModels.cs
+src/WotBTreader.Core/Discovery/OffsetChainWalker.cs
 src/WotBTreader.Core/Discovery/TrajectoryCorrelation.cs
 src/WotBTreader.Core/Discovery/TrajectoryFamily.cs
 src/WotBTreader.Core/Discovery/Type10EntityPositionResolver.cs
@@ -573,6 +575,7 @@ tests/WotBTreader.CaptureLogs.Tests/packages.lock.json
 tests/WotBTreader.Core.Tests/AffiliationResolverTests.cs
 tests/WotBTreader.Core.Tests/IdentifierTests.cs
 tests/WotBTreader.Core.Tests/MSTestSettings.cs
+tests/WotBTreader.Core.Tests/OffsetChainWalkerTests.cs
 tests/WotBTreader.Core.Tests/TrajectoryCorrelationScorerTests.cs
 tests/WotBTreader.Core.Tests/TrajectoryFamilyBuilderTests.cs
 tests/WotBTreader.Core.Tests/Type10EntityPositionResolverTests.cs

@@ -116,7 +116,14 @@ Since OD-RECOVERY-083 (2026-08-10), version files may carry a top-level
 `{ "kind": "rootRva" | "memberOffset" | "recordOffset", "value": <non-negative int>, "note": <text> }`.
 The chain is the module-relative dereference path the resolver walks to the
 field (verified against `Type10EntityPositionResolver.TryResolveOnce`/
-`FindEntity`); it is documentation + evidence, never a runtime read plan.
+`FindEntity`). The runtime parses `chains` into the model
+(`OffsetTableReader`, additive — the legacy observation path is unchanged)
+and `OffsetChainWalker` walks STRUCTURAL chains (root RVA + member-pointer
+dereferences + record offset) fail-closed. The published position chain's
+final member hop (`AvatarHelperCurrentIndexOffset 0x1C8`) is an integer index
+read multiplied by the ring stride (0x38) — not a pointer dereference — so
+`OffsetChainWalker` cannot yet walk it end-to-end; the resolver remains the
+authoritative position reader.
 
 Chained fields keep their `offsets` value `0` **by design**: the runtime
 observation path computes `moduleBase + field.Offset` (no chain concept) and

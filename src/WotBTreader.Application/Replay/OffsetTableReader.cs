@@ -204,9 +204,63 @@ internal sealed class OffsetTableReader : IOffsetTableReader
             DiscoveredAtUtc: discoveredAt,
             Confidence: confidence,
             Notes: raw.Notes,
-            Fields: fields);
+            Fields: fields,
+            Chains: BuildChains(raw.Chains));
 
         return OperationResult.Success<OffsetTable?>(table);
+    }
+
+    /// <summary>
+    /// Builds the published pointer chains, dropping any malformed chain
+    /// (unknown hop kind, bad shape, or negative value) so a defective chain
+    /// can never be walked. Chained fields keep offsets 0, so the legacy
+    /// observation path is unaffected either way; the schema gate
+    /// (<c>offset_check.py</c>) catches malformed chains before publication.
+    /// </summary>
+    private static Dictionary<string, IReadOnlyList<OffsetChainHop>> BuildChains(
+        IReadOnlyDictionary<string, List<OffsetChainHopJson>>? raw)
+    {
+        Dictionary<string, IReadOnlyList<OffsetChainHop>> chains = [];
+        if (raw is null)
+        {
+            return chains;
+        }
+
+        foreach ((string fieldName, List<OffsetChainHopJson>? hops) in raw)
+        {
+            if (string.IsNullOrWhiteSpace(fieldName) || hops is null || hops.Count == 0)
+            {
+                continue;
+            }
+
+            List<OffsetChainHop> built = [];
+            bool valid = true;
+            for (int index = 0; index < hops.Count; index++)
+            {
+                OffsetChainHopJson hop = hops[index];
+                if (!Enum.TryParse(hop.Kind, ignoreCase: true, out OffsetChainHopKind kind)
+                    || hop.Value < 0)
+                {
+                    valid = false;
+                    break;
+                }
+
+                built.Add(new OffsetChainHop(kind, hop.Value, hop.Note));
+            }
+
+            if (!valid
+                || built.Count == 0
+                || built[0].Kind != OffsetChainHopKind.RootRva
+                || built[^1].Kind != OffsetChainHopKind.RecordOffset
+                || built.Skip(1).Take(built.Count - 2).Any(hop => hop.Kind != OffsetChainHopKind.MemberOffset))
+            {
+                continue;
+            }
+
+            chains[fieldName] = built;
+        }
+
+        return chains;
     }
 
     private static bool IsSha256(string? value) =>
@@ -283,7 +337,15 @@ internal sealed class OffsetTableReader : IOffsetTableReader
         public string? Confidence { get; set; }
         public string? Notes { get; set; }
         public Dictionary<string, OffsetFieldValidationJson>? FieldValidation { get; set; }
+        public Dictionary<string, List<OffsetChainHopJson>>? Chains { get; set; }
         public OffsetFieldsJson? Offsets { get; set; }
+    }
+
+    private sealed class OffsetChainHopJson
+    {
+        public string? Kind { get; set; }
+        public int Value { get; set; }
+        public string? Note { get; set; }
     }
 
     private sealed class OffsetFieldValidationJson
