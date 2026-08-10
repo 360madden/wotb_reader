@@ -91,6 +91,7 @@ public sealed class OffsetChainWalkerEquivalenceTests
         Assert.AreEqual(Type10EntityPositionStatus.EntityNotFound, resolver.Status);
         Assert.AreEqual(OffsetChainWalkStatus.EntityNotFound, walker.Status);
         Assert.IsNull(resolver.RecordAddress);
+        Assert.IsNull(walker.ResolvedEntityAddress);
     }
 
     [TestMethod]
@@ -191,7 +192,57 @@ public sealed class OffsetChainWalkerEquivalenceTests
             Assert.AreEqual(x, BinaryPrimitives.ReadSingleLittleEndian(walker.Bytes.AsSpan(0)));
             Assert.AreEqual(y, BinaryPrimitives.ReadSingleLittleEndian(walker.Bytes.AsSpan(4)));
             Assert.AreEqual(z, BinaryPrimitives.ReadSingleLittleEndian(walker.Bytes.AsSpan(8)));
+            // The entityLookup hop must expose the FOUND entity base — the
+            // region a record-diffing reader dumps around.
+            Assert.AreEqual(memory.Entity, walker.ResolvedEntityAddress);
         }
+    }
+
+    [TestMethod]
+    public void Walker_ResolvesEntityRecordPositionTriple_MatchingRingRecord()
+    {
+        // Mechanism proof for the entity-record form the record-diffing
+        // harness will dump: entityLookup -> [entity+0x3C] transform ->
+        // position triple at +0x1C. The +0x3C/+0x1C offsets are the
+        // Ghidra-verified CANDIDATE layout (FUN_00bc3940, ledger
+        // OD-RECOVERY-052/053) — not live-verified — so they live only here,
+        // never in the layout record or any published table. Both the ring
+        // record (the published position chain) and the entity-record triple
+        // hold the same transform; the walker must reach both and agree.
+        var memory = FullSpineFixture.CreateCached(EntityId, 12.5f, -3.25f, 44.75f);
+        const uint transform = 0x27000000;
+        memory.WriteUInt32(memory.Entity + 0x3c, transform);
+        memory.WriteFloats(transform + 0x1c, 12.5f, -3.25f, 44.75f);
+
+        OffsetChainWalkResult ring = OffsetChainWalker.Walk(
+            PositionChain(),
+            ModuleBase,
+            valueLength: 12,
+            memory.Read,
+            entityId: EntityId);
+        OffsetChainWalkResult entityRecord = OffsetChainWalker.Walk(
+            EntityRecordPositionChain(),
+            ModuleBase,
+            valueLength: 12,
+            memory.Read,
+            entityId: EntityId);
+
+        Assert.AreEqual(OffsetChainWalkStatus.Resolved, ring.Status);
+        Assert.AreEqual(OffsetChainWalkStatus.Resolved, entityRecord.Status);
+        Assert.AreEqual(memory.Entity, entityRecord.ResolvedEntityAddress);
+        Assert.AreEqual(transform + 0x1c, entityRecord.Address);
+        // The two position copies agree (cross-check in synthetic memory).
+        CollectionAssert.AreEqual(ring.Bytes, entityRecord.Bytes);
+        Assert.IsNotNull(entityRecord.Bytes);
+        Assert.AreEqual(
+            12.5f,
+            BinaryPrimitives.ReadSingleLittleEndian(entityRecord.Bytes.AsSpan(0)));
+        Assert.AreEqual(
+            -3.25f,
+            BinaryPrimitives.ReadSingleLittleEndian(entityRecord.Bytes.AsSpan(4)));
+        Assert.AreEqual(
+            44.75f,
+            BinaryPrimitives.ReadSingleLittleEndian(entityRecord.Bytes.AsSpan(8)));
     }
 
     private static Type10EntityPositionLayout Layout => Type10EntityPositionLayout.WotBlitz1119010;
@@ -208,23 +259,7 @@ public sealed class OffsetChainWalkerEquivalenceTests
             new OffsetChainHop(OffsetChainHopKind.MemberOffset, (int)layout.AccountControllerActiveControllerOffset, null),
             new OffsetChainHop(OffsetChainHopKind.MemberOffset, (int)layout.PlaybackControllerConnectionOffset, null),
             new OffsetChainHop(OffsetChainHopKind.InlineOffset, (int)layout.ConnectionEntitiesOffset, null),
-            new OffsetChainHop(
-                OffsetChainHopKind.EntityLookup,
-                0,
-                null,
-                EntityLookup: new OffsetEntityLookupDescriptor(
-                    CachedEntityOffset: (int)layout.CachedEntityOffset,
-                    EntityIdOffset: (int)layout.EntityIdOffset,
-                    TreeRootOffsets: layout.EntityTreeObjectOffsets
-                        .Select(static offset => (int)offset).ToArray(),
-                    TreeNodeSize: 0x18,
-                    TreeNodeNilOffset: 0x0d,
-                    TreeNodeKeyOffset: 0x10,
-                    TreeNodeValueOffset: 0x14,
-                    TreeNodeChildLessOffset: 0x00,
-                    TreeNodeChildGreaterOffset: 0x08,
-                    TreeSentinelFirstNodeOffset: 0x04,
-                    MaxTreeNodes: layout.MaxTreeNodes)),
+            EntityLookupHop(),
             new OffsetChainHop(OffsetChainHopKind.MemberOffset, (int)layout.EntityMovementFilterOffset, null),
             new OffsetChainHop(OffsetChainHopKind.MemberOffset, (int)layout.AvatarFilterHelperOffset, null),
             new OffsetChainHop(
@@ -235,6 +270,53 @@ public sealed class OffsetChainWalkerEquivalenceTests
                 Stride: (int)layout.AvatarHelperRingStride),
             new OffsetChainHop(OffsetChainHopKind.RecordOffset, (int)layout.PositionRecordOffset, null),
         ];
+    }
+
+    /// <summary>
+    /// The entity-record chain form: after entityLookup resolves the entity
+    /// base, [entity+0x3C] is the transform object and the position triple is
+    /// at transform+0x1C. The +0x3C/+0x1C hops use the Ghidra-verified
+    /// CANDIDATE offsets (FUN_00bc3940) — deliberately test-local constants,
+    /// never published, until live verification.
+    /// </summary>
+    private static IReadOnlyList<OffsetChainHop> EntityRecordPositionChain()
+    {
+        Type10EntityPositionLayout layout = Layout;
+        return
+        [
+            new OffsetChainHop(OffsetChainHopKind.RootRva, (int)layout.GameCoreRootRva, null),
+            new OffsetChainHop(OffsetChainHopKind.MemberOffset, (int)layout.GameCoreAppControllerOffset, null),
+            new OffsetChainHop(OffsetChainHopKind.MemberOffset, (int)layout.AppControllerSessionControllerOffset, null),
+            new OffsetChainHop(OffsetChainHopKind.MemberOffset, (int)layout.SessionControllerAccountControllerOffset, null),
+            new OffsetChainHop(OffsetChainHopKind.MemberOffset, (int)layout.AccountControllerActiveControllerOffset, null),
+            new OffsetChainHop(OffsetChainHopKind.MemberOffset, (int)layout.PlaybackControllerConnectionOffset, null),
+            new OffsetChainHop(OffsetChainHopKind.InlineOffset, (int)layout.ConnectionEntitiesOffset, null),
+            EntityLookupHop(),
+            new OffsetChainHop(OffsetChainHopKind.MemberOffset, 0x3c, null),
+            new OffsetChainHop(OffsetChainHopKind.RecordOffset, 0x1c, null),
+        ];
+    }
+
+    private static OffsetChainHop EntityLookupHop()
+    {
+        Type10EntityPositionLayout layout = Layout;
+        return new OffsetChainHop(
+            OffsetChainHopKind.EntityLookup,
+            0,
+            null,
+            EntityLookup: new OffsetEntityLookupDescriptor(
+                CachedEntityOffset: (int)layout.CachedEntityOffset,
+                EntityIdOffset: (int)layout.EntityIdOffset,
+                TreeRootOffsets: layout.EntityTreeObjectOffsets
+                    .Select(static offset => (int)offset).ToArray(),
+                TreeNodeSize: 0x18,
+                TreeNodeNilOffset: 0x0d,
+                TreeNodeKeyOffset: 0x10,
+                TreeNodeValueOffset: 0x14,
+                TreeNodeChildLessOffset: 0x00,
+                TreeNodeChildGreaterOffset: 0x08,
+                TreeSentinelFirstNodeOffset: 0x04,
+                MaxTreeNodes: layout.MaxTreeNodes));
     }
 
     /// <summary>
@@ -380,6 +462,15 @@ public sealed class OffsetChainWalkerEquivalenceTests
             BinaryPrimitives.WriteInt32LittleEndian(bytes[0x14..], BitConverter.SingleToInt32Bits(y));
             BinaryPrimitives.WriteInt32LittleEndian(bytes[0x18..], BitConverter.SingleToInt32Bits(z));
             Write(record, bytes);
+        }
+
+        public void WriteFloats(uint address, float x, float y, float z)
+        {
+            Span<byte> bytes = stackalloc byte[0x0c];
+            BinaryPrimitives.WriteInt32LittleEndian(bytes[0x00..], BitConverter.SingleToInt32Bits(x));
+            BinaryPrimitives.WriteInt32LittleEndian(bytes[0x04..], BitConverter.SingleToInt32Bits(y));
+            BinaryPrimitives.WriteInt32LittleEndian(bytes[0x08..], BitConverter.SingleToInt32Bits(z));
+            Write(address, bytes);
         }
 
         public bool Read(uint address, Span<byte> destination)

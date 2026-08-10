@@ -257,6 +257,7 @@ public sealed class WalkablePositionChainTests
         Assert.AreEqual(Type10EntityPositionStatus.EntityNotFound, resolver.Status);
         Assert.AreEqual(OffsetChainWalkStatus.EntityNotFound, walker.Status);
         Assert.IsNull(resolver.RecordAddress);
+        Assert.IsNull(walker.ResolvedEntityAddress);
     }
 
     [TestMethod]
@@ -356,6 +357,9 @@ public sealed class WalkablePositionChainTests
             Assert.AreEqual(x, BinaryPrimitives.ReadSingleLittleEndian(walker.Bytes.AsSpan(0)));
             Assert.AreEqual(y, BinaryPrimitives.ReadSingleLittleEndian(walker.Bytes.AsSpan(4)));
             Assert.AreEqual(z, BinaryPrimitives.ReadSingleLittleEndian(walker.Bytes.AsSpan(8)));
+            // The PUBLISHED chain's entityLookup must expose the found entity
+            // base — the region the record-diffing reader dumps around.
+            Assert.AreEqual(memory.Entity, walker.ResolvedEntityAddress);
         }
     }
 

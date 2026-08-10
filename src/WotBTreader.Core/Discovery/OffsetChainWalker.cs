@@ -44,7 +44,8 @@ public sealed record OffsetChainWalkResult(
     OffsetChainWalkStatus Status,
     uint Address,
     byte[]? Bytes,
-    string? FailureStage);
+    string? FailureStage,
+    uint? ResolvedEntityAddress = null);
 
 /// <summary>
 /// Walks a published pointer chain from a module-rooted RVA through member
@@ -68,15 +69,14 @@ public sealed record OffsetChainWalkResult(
 /// carried by the chain. The final <c>recordOffset</c> adds value without
 /// dereferencing and reads the value bytes.
 ///
-/// The published 11.19.0.10 position chains are still NOT walkable as
-/// published: they spell the inline entities step, the inline ring base, and
-/// the ring-index read as plain <c>memberOffset</c> hops (which would deref
-/// them), and they encode the cache/tree branching as sequential member
-/// offsets with no rebase semantics. A chain re-expressed with
-/// <c>inlineOffset</c> + <c>entityLookup</c> + <c>ringIndex</c> IS walkable and
-/// is proven equivalent to the resolver (see the walker tests). The
-/// <see cref="Type10EntityPositionResolver"/> remains the authoritative reader
-/// for the published table.
+/// The published 11.19.0.10 position chains ARE walkable since
+/// OD-RECOVERY-084 (2026-08-10): they use <c>inlineOffset</c> +
+/// <c>entityLookup</c> + INLINE <c>ringIndex</c> and are proven equivalent to
+/// the resolver (see the walker equivalence tests); the pre-publication
+/// memberOffset-spelled form remains in git history (commit <c>0e6bdba</c>).
+/// The <see cref="Type10EntityPositionResolver"/> remains the authoritative
+/// live reader; the walker is a proven-equivalent consumer of the published
+/// table.
 /// </remarks>
 public static class OffsetChainWalker
 {
@@ -88,7 +88,11 @@ public static class OffsetChainWalker
     /// Walks <paramref name="chain"/> and reads <paramref name="valueLength"/>
     /// bytes at the final record address. <paramref name="entityId"/> is the
     /// runtime target for any <see cref="OffsetChainHopKind.EntityLookup"/> hop
-    /// (required if the chain contains one; the chain never carries it).
+    /// (required if the chain contains one; the chain never carries it). When
+    /// an <c>entityLookup</c> hop resolves the entity, the result's
+    /// <see cref="OffsetChainWalkResult.ResolvedEntityAddress"/> carries the
+    /// found entity base (the region a record-diffing reader dumps around);
+    /// null when the entity was not found.
     /// </summary>
     public static OffsetChainWalkResult Walk(
         IReadOnlyList<OffsetChainHop> chain,
@@ -114,6 +118,8 @@ public static class OffsetChainWalker
                 null,
                 "module-base");
         }
+
+        uint? entityBase = null;
 
         // Root slot dereference: moduleBase + RVA holds the root pointer.
         if (!TryReadPointer(memory, moduleBase + (uint)chain[0].Value, out uint currentObject))
@@ -252,6 +258,7 @@ public static class OffsetChainWalker
                             if (cachedEntityId == targetId)
                             {
                                 currentObject = cachedEntity;
+                                entityBase = cachedEntity;
                                 break;
                             }
                         }
@@ -354,6 +361,7 @@ public static class OffsetChainWalker
                                     }
 
                                     currentObject = value;
+                                    entityBase = value;
                                     found = true;
                                     break;
                                 }
@@ -407,7 +415,8 @@ public static class OffsetChainWalker
             OffsetChainWalkStatus.Resolved,
             recordAddress,
             bytes.ToArray(),
-            null);
+            null,
+            entityBase);
     }
 
     private static bool TryValidate(

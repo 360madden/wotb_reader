@@ -105,7 +105,9 @@ reader needs ONE bounded, gated product addition:
    `EntityPositionReadRequest`/`EntityPositionReadResult` shape: the caller
    supplies only the decoded entity id + a bounded region length (≤ 4 KB);
    the coordinator owns process identity, resolves the entity address via the
-   resolver (or the walker on the published walkable chain), requires
+   resolver (or the walker on the published walkable chain — the walker now
+   exposes the FOUND ENTITY BASE in `OffsetChainWalkResult.ResolvedEntityAddress`,
+   the region anchor for the dump), requires
    `OfflineReplayVerified` + current authorization, reads the region through
    the guarded reader, labels the dump with the replay clock (the G2
    same-decoded-clock anchor, ≤ 2 s bound), and returns ONLY the bytes +
