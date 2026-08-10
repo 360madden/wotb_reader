@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using WotBTreader.Application.Results;
 using WotBTreader.Core;
 using WotBTreader.Core.Discovery;
@@ -52,6 +53,59 @@ public sealed class SqliteHpGroundTruthProviderTests
         Assert.IsNull(destroyed.Damage);
         // The attacker key IS present -> parsed.
         Assert.AreEqual(7002L, destroyed.AttackerEntityId);
+    }
+
+    [TestMethod]
+    public async Task GetAsync_FeedsRecordDiffingCorrelator_FindsHp()
+    {
+        // End-to-end offline pipeline proof: canonical_events ->
+        // IHpGroundTruthProvider (REAL values_json damage extraction) ->
+        // RecordChangeBucketer -> HpDamageCorrelator -> HP field found. The
+        // victim (7001) takes 450 at 1s and 120 at 2s; the 3s Destroyed event
+        // carries no damage. Trusted-reader dumps mirror those drops.
+        await using StorageTestScope scope = await StorageTestScope.CreateAsync();
+        SourceArtifact artifact = await scope.ImportAsync(
+            "damage-battle.wotbreplay",
+            "damage event synthetic evidence payload"u8.ToArray());
+        DecodeRun running = CreateRunningRun(artifact.Id);
+        StorageTestScope.Success(
+            await scope.DecodeRuns.StartAsync(running, CancellationToken.None));
+        ReplayDecodeProjection projection = CreateDamageProjection(running, artifact);
+        StorageTestScope.Success(
+            await scope.DecodeRuns.CommitAsync(projection, CancellationToken.None));
+
+        var provider = new SqliteHpGroundTruthProvider(scope.Context);
+        HpGroundTruth groundTruth = StorageTestScope.Success(
+            await provider.GetAsync(projection.Session!.Id, CancellationToken.None));
+
+        const long victim = 7001;
+        const int hpOffset = 0x48;
+        var snapshots = new[]
+        {
+            new RecordSnapshot(TimeSpan.Zero, Region(1000)),
+            new RecordSnapshot(TimeSpan.FromSeconds(1), Region(550)),
+            new RecordSnapshot(TimeSpan.FromSeconds(2), Region(430)),
+            new RecordSnapshot(TimeSpan.FromSeconds(3), Region(430)),
+        };
+
+        IReadOnlyList<DamageCorrelationCandidate> candidates =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                groundTruth.Events,
+                victim);
+
+        Assert.HasCount(1, candidates);
+        Assert.AreEqual(hpOffset, candidates[0].Offset);
+        Assert.AreEqual(1.0, candidates[0].Score, 1e-9);
+        Assert.AreEqual(2, candidates[0].MatchedDamageWindows);
+    }
+
+    /// <summary>A 0x100-byte region dump with an int32 "HP" field at +0x48.</summary>
+    private static byte[] Region(int hp)
+    {
+        byte[] bytes = new byte[0x100];
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(0x48), hp);
+        return bytes;
     }
 
     [TestMethod]

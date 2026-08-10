@@ -75,7 +75,11 @@ ignored; a damage window with no HP drop yields no candidates; Lenient
 matches the overkill killing blow (HP 500 → 0 vs 150 damage) while still
 rejecting a small coincidental drop and subsuming exact matches; a
 realistic event mix (Damage + Destroyed + unrelated damage) still ranks
-HP first. **Documented limitations:** events outside the observed snapshot
+HP first. **End-to-end compose proof** (`SqliteHpGroundTruthProviderTests`):
+seeded `canonical_events` → `IHpGroundTruthProvider` (REAL `values_json`
+damage extraction) → `RecordChangeBucketer` → `HpDamageCorrelator` finds
+the HP field 2/2 — the two halves compose with the actual data shape.
+**Documented limitations:** events outside the observed snapshot
 span are observation gaps and do not inflate the denominator; healing (no
 in-battle healing in WoTB) is not modeled; a non-int32 HP representation
 (wrong field size/alignment) is out of scope for this correlator.
