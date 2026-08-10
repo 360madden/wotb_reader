@@ -209,6 +209,7 @@ docs/operations/handoffs/2026-08-09-od074-replay-root-live-narrowing.md
 docs/operations/handoffs/2026-08-09-od075-position-ring-correction-live-proof.md
 docs/operations/handoffs/2026-08-10-damage-dealt-track-prestaged.md
 docs/operations/handoffs/2026-08-10-deep-bug-hunt-interceptor-double.md
+docs/operations/handoffs/2026-08-10-facing-yaw-packet-discovery.md
 docs/operations/handoffs/2026-08-10-g0-offset-publication.md
 docs/operations/handoffs/2026-08-10-hp-correlator-flatness.md
 docs/operations/handoffs/2026-08-10-hp-diff-cli-and-tick-unit-fix.md
@@ -664,6 +665,7 @@ tests/WotBTreader.Overlay.Tests/WotBTreader.Overlay.Tests.csproj
 tests/WotBTreader.Overlay.Tests/packages.lock.json
 tests/WotBTreader.Replays.Tests/BinaryReaderSecurityTests.cs
 tests/WotBTreader.Replays.Tests/MSTestSettings.cs
+tests/WotBTreader.Replays.Tests/PositionPacketTailProbeTests.cs
 tests/WotBTreader.Replays.Tests/ReplayDecoderTests.cs
 tests/WotBTreader.Replays.Tests/ReplayProbeSecurityTests.cs
 tests/WotBTreader.Replays.Tests/WotBTreader.Replays.Tests.csproj
