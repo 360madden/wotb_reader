@@ -216,6 +216,7 @@ docs/operations/handoffs/2026-08-10-hp-diff-cli-and-tick-unit-fix.md
 docs/operations/handoffs/2026-08-10-hp-discovery-offline-complete.md
 docs/operations/handoffs/2026-08-10-hp-two-replay-rehearsal.md
 docs/operations/handoffs/2026-08-10-hp-victim-qualification.md
+docs/operations/handoffs/2026-08-10-l0-region-read-seam.md
 docs/operations/handoffs/2026-08-10-o3-beacons-parallel-guardrails.md
 docs/operations/handoffs/2026-08-10-o4-evidence-o5-heading-delta.md
 docs/operations/handoffs/2026-08-10-phase0-foundations-complete.md
