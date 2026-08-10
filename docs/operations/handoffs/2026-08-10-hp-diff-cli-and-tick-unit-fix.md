@@ -50,6 +50,30 @@
   `EntityRecordRegionReadRequest`), which feed the `hp-diff` contract
   directly.
 
+## Tick-unit sweep (same pass, after the fix)
+
+Every other consumer of `replay_time_ticks` / `duration_ticks` was checked
+and is consistent at 10⁷/s — no other offenders:
+
+- `scripts/od-048-monitor-correlate-session.ps1` — uses `10000000.0` for
+  every tick↔second conversion (target-tick estimate, speed, duration);
+  comment already said "duration_ticks / 10MHz".
+- `scripts/od-047-exact-scan-session.ps1` — comment-only reference; the M1
+  scan uses in-memory unit variants (seconds/ms/µs), no DB conversion.
+- `scripts/roll-replay-time-increased.ps1` — `-DeltaTarget` is in field
+  seconds, independent of DB ticks.
+- C# product code — `TrajectoryCorrelation.ReplayClockTicksPerSecond =
+  10_000_000.0`; the replay-clock source is TimeSpan-based; the trajectory
+  provider's downsampling is unit-agnostic (tick deltas);
+  `SqliteHpGroundTruthProvider` reads `TimeSpan.FromTicks` matching the
+  repository's `.Ticks` writes.
+
+Re-verified under the corrected constant: the README's "Double replayTime
+**delta marker deterministic (pass-rate 1.0, survival 1.0/15 rounds)**"
+(OD-045-STATIC) still holds — `--simulate` reports pass-rate 1.0 at every
+swept tolerance for the Oasis Palms session, so the delta-pilot-first
+ordering conclusion is not invalidated.
+
 ## Gates
 
 - `scripts/validate.ps1` exit 0 — all 12 projects green (Host.Cli.Tests
