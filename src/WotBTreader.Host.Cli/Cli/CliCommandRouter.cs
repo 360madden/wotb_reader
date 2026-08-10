@@ -8,6 +8,7 @@ using WotBTreader.Application.Results;
 using WotBTreader.Application.Storage;
 using WotBTreader.Core;
 using WotBTreader.Core.Discovery;
+using WotBTreader.Core.Overlay;
 
 namespace WotBTreader.Host.Cli.Cli;
 
@@ -39,6 +40,7 @@ public sealed class CliCommandRouter
         "watch",
         "hp-diff",
         "yaw-diff",
+        "overlay-frame",
         "serve",
     ];
 
@@ -50,6 +52,7 @@ public sealed class CliCommandRouter
     private readonly ITelemetryComparator _comparator;
     private readonly IHpGroundTruthProvider _hpGroundTruth;
     private readonly IYawGroundTruthProvider _yawGroundTruth;
+    private readonly IOverlayFrameSource _overlayFrames;
     private readonly ILogger<CliCommandRouter> _logger;
 
     /// <summary>Creates a command router with all application ports resolved by DI.</summary>
@@ -62,6 +65,7 @@ public sealed class CliCommandRouter
         ITelemetryComparator comparator,
         IHpGroundTruthProvider hpGroundTruth,
         IYawGroundTruthProvider yawGroundTruth,
+        IOverlayFrameSource overlayFrames,
         ILogger<CliCommandRouter> logger)
     {
         _doctor = doctor;
@@ -72,6 +76,7 @@ public sealed class CliCommandRouter
         _comparator = comparator;
         _hpGroundTruth = hpGroundTruth;
         _yawGroundTruth = yawGroundTruth;
+        _overlayFrames = overlayFrames;
         _logger = logger;
     }
 
@@ -99,6 +104,7 @@ public sealed class CliCommandRouter
             "watch" => await WatchAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "hp-diff" => await HpDiffAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "yaw-diff" => await YawDiffAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
+            "overlay-frame" => await OverlayFrameAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "serve" => Unsupported(invocation.Command, correlationId),
             _ => Invalid(
                 "cli.command.unknown",
@@ -443,6 +449,136 @@ public sealed class CliCommandRouter
             hit
                 ? "Yaw field identified (candidate offset matches the packet-derived rotation timeline)."
                 : "No yaw field confirmed.",
+            correlationId);
+    }
+
+    /// <summary>
+    /// Renders one overlay frame from decoded replay data at a replay time:
+    /// the viewpoint camera plus every tank with position evidence, each
+    /// projected to viewport pixels via <see cref="WorldToScreen"/>. Pure
+    /// offline preview of the replay-overlay data seam — no UI, no process
+    /// access. Options: --fov (vertical degrees, default 90), --width,
+    /// --height (viewport pixels, default 1920x1080).
+    /// </summary>
+    private async ValueTask<CliExecution> OverlayFrameAsync(
+        CliInvocation invocation,
+        Guid correlationId,
+        CancellationToken cancellationToken)
+    {
+        if (invocation.Positionals.Count != 1
+            || !double.TryParse(invocation.Positionals[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double replayTimeSeconds)
+            || replayTimeSeconds < 0)
+        {
+            return Invalid(
+                "cli.overlay-frame.time",
+                "overlay-frame requires one positional: the replay time in seconds (>= 0).",
+                correlationId);
+        }
+
+        if (!invocation.Options.TryGetValue("session", out string? sessionText) ||
+            !Guid.TryParse(sessionText, out Guid sessionGuid))
+        {
+            return Invalid(
+                "cli.overlay-frame.session",
+                "overlay-frame requires --session &lt;battle-session-guid&gt;.",
+                correlationId);
+        }
+
+        double fovDegrees = 90.0;
+        if (invocation.Options.TryGetValue("fov", out string? fovText) &&
+            (!double.TryParse(fovText, NumberStyles.Float, CultureInfo.InvariantCulture, out fovDegrees)
+             || fovDegrees <= 0 || fovDegrees >= 180))
+        {
+            return Invalid(
+                "cli.overlay-frame.fov",
+                "--fov must be a positive number of degrees below 180.",
+                correlationId);
+        }
+
+        double viewportWidth = 1920.0;
+        if (invocation.Options.TryGetValue("width", out string? widthText) &&
+            (!double.TryParse(widthText, NumberStyles.Float, CultureInfo.InvariantCulture, out viewportWidth)
+             || viewportWidth <= 0))
+        {
+            return Invalid(
+                "cli.overlay-frame.width",
+                "--width must be a positive viewport width in pixels.",
+                correlationId);
+        }
+
+        double viewportHeight = 1080.0;
+        if (invocation.Options.TryGetValue("height", out string? heightText) &&
+            (!double.TryParse(heightText, NumberStyles.Float, CultureInfo.InvariantCulture, out viewportHeight)
+             || viewportHeight <= 0))
+        {
+            return Invalid(
+                "cli.overlay-frame.height",
+                "--height must be a positive viewport height in pixels.",
+                correlationId);
+        }
+
+        OperationResult<OverlayFrame> frameResult = await _overlayFrames.GetFrameAsync(
+            new BattleSessionId(sessionGuid),
+            TimeSpan.FromSeconds(replayTimeSeconds),
+            cancellationToken).ConfigureAwait(false);
+        if (!frameResult.IsSuccess || frameResult.Value is null)
+        {
+            return FromResult(frameResult, correlationId, "Overlay frame built.");
+        }
+
+        OverlayFrame frame = frameResult.Value;
+        double fovRadians = fovDegrees * Math.PI / 180.0;
+        var projected = frame.Tanks
+            .Select(tank =>
+            {
+                ScreenPoint? point = WorldToScreen.Project(
+                    frame.Camera, fovRadians, viewportWidth, viewportHeight,
+                    tank.X, tank.Y, tank.Z);
+                return new
+                {
+                    tank.EntityId,
+                    tank.PlayerName,
+                    tank.TankName,
+                    tank.ClanTag,
+                    tank.TeamNumber,
+                    tank.HpFraction,
+                    tank.Alive,
+                    tank.DistanceMeters,
+                    screen = point is null
+                        ? null
+                        : new
+                        {
+                            x = point.Value.X,
+                            y = point.Value.Y,
+                            depth = point.Value.Depth,
+                            inViewport = point.Value.IsInsideViewport(viewportWidth, viewportHeight),
+                        },
+                };
+            })
+            .ToList();
+
+        object data = new
+        {
+            command = "overlay-frame",
+            sessionId = sessionGuid,
+            replayTimeSeconds,
+            fovDegrees,
+            viewportWidth,
+            viewportHeight,
+            camera = new
+            {
+                frame.Camera.X,
+                frame.Camera.Y,
+                frame.Camera.Z,
+                frame.Camera.YawRadians,
+                frame.Camera.PitchRadians,
+            },
+            tanks = projected,
+        };
+
+        return Success(
+            data,
+            $"Overlay frame at {replayTimeSeconds:0.###}s: {frame.Tanks.Count} tank(s) projected.",
             correlationId);
     }
 

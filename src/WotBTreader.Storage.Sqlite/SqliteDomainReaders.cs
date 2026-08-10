@@ -71,7 +71,10 @@ internal static class SqliteDomainReaders
             SqliteValueConversions.ReadNullableDouble(reader, 10),
             (CoordinateSpace)reader.GetInt32(11),
             reader.IsDBNull(12) ? null : (CoordinateSpace)reader.GetInt32(12),
-            SqliteValueConversions.ReadEvidence(reader, 13));
+            SqliteValueConversions.ReadEvidence(reader, 16),
+            SqliteValueConversions.ReadNullableDouble(reader, 13),
+            SqliteValueConversions.ReadNullableDouble(reader, 14),
+            SqliteValueConversions.ReadNullableDouble(reader, 15));
 
     public static CanonicalEvent ReadCanonicalEvent(SqliteDataReader reader) =>
         new(

@@ -414,6 +414,32 @@ is exactly constant when stationary and dynamic during movement — the third
 rotation axis, consistent with banking. `--self-test` pins the forward/reversal
 and pitch=−slope semantics with a synthetic fixture.
 
+## WorldToScreen projection + overlay-frame preview (2026-08-10)
+
+Phase 1 O1 is in place: `Core/Overlay/WorldToScreen` projects a world point
+to viewport pixels given the camera pose (pos + packet yaw/pitch) and a
+vertical FOV. Conventions match the decoded telemetry: yaw 0 faces +Z
+(yaw ≈ atan2(dx, dz)), camera-space +X right / +Y up / +Z forward, pinhole
+perspective with focal = (h/2)/tan(fov/2), screen origin top-left. Two
+conventions were pinned by tests: world +X is on the camera's RIGHT when
+facing +Z, and the up vector is cross(forward, right) so a pitched-up
+camera drops the horizon below center (how a real camera renders). Points
+at/behind the camera return null (fail-closed); a camera without rotation
+evidence (pre-migration-5 samples) returns null. 9 unit tests.
+
+The `overlay-frame <time> --session <guid> [--fov --width --height]` CLI
+command renders one frame through `ReplayFrameSource` + `WorldToScreen`:
+viewpoint camera with rotation, every roster tank with name/team/HP/distance
+plus projected screen X/Y/depth (or behind-camera), sorted by distance. Two
+real-data findings while previewing Oasis Palms: (1) the position stream
+carries non-participant entities (a duplicate "self" stream that starts at
+the viewpoint's spawn then teleports to origin, plus projectiles/debris) —
+the frame source now renders ONLY roster entities, so nameplates never
+target non-tanks; (2) `ISessionQueryRepository.GetProjectionAsync` had not
+been updated for migration 5 — its position SELECT/reader now carry
+yaw/pitch/roll, so frames see the packet rotation. 4 CLI tests + 1 new
+frame-source test pin roster filtering and fail-closed omission.
+
 ## Notes
 
 - Damage events are the highest-value correlation target: HP changes only on

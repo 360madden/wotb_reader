@@ -209,6 +209,7 @@ internal sealed class SqliteSessionQueryRepository : ISessionQueryRepository
             SELECT id, battle_session_id, participant_id, entity_id, sequence,
                    replay_time_ticks, raw_x, raw_y, raw_z, normalized_x, normalized_y,
                    raw_coordinate_space, normalized_coordinate_space,
+                   yaw, pitch, roll,
                    evidence_source_artifact_id, evidence_archive_entry,
                    evidence_offset, evidence_length, evidence_sha256
             FROM position_samples

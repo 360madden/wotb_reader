@@ -124,6 +124,32 @@ public sealed class ReplayFrameSourceTests
     }
 
     [TestMethod]
+    public void Frame_OmitsNonParticipantEntities()
+    {
+        // The position stream carries non-tank entities (a duplicate "self"
+        // stream, projectiles) that must never render as nameplates.
+        ParticipantId viewpointId = ParticipantId.New();
+        var projection = Projection(
+            viewpointId,
+            new[]
+            {
+                Participant(viewpointId, entityId: 1, "ViewpointTank", team: 1),
+            },
+            new[]
+            {
+                Sample(entityId: 1, seconds: 0, x: 0, y: 0, z: 0, yaw: 0.1),
+                // Entity 9999 has full position evidence but no roster entry.
+                Sample(entityId: 9999, seconds: 0, x: 50, y: 0, z: 0, yaw: null),
+            },
+            events: []);
+
+        OverlayFrame frame = ReplayFrameSource.BuildFrame(projection, TimeSpan.Zero);
+
+        Assert.HasCount(1, frame.Tanks);
+        Assert.AreEqual(1, frame.Tanks[0].EntityId);
+    }
+
+    [TestMethod]
     public void Frame_NoViewpointParticipant_ReturnsOriginCamera()
     {
         var projection = Projection(

@@ -216,6 +216,7 @@ docs/operations/handoffs/2026-08-10-hp-diff-cli-and-tick-unit-fix.md
 docs/operations/handoffs/2026-08-10-hp-discovery-offline-complete.md
 docs/operations/handoffs/2026-08-10-hp-two-replay-rehearsal.md
 docs/operations/handoffs/2026-08-10-hp-victim-qualification.md
+docs/operations/handoffs/2026-08-10-phase0-foundations-complete.md
 docs/operations/handoffs/2026-08-10-replaytime-live-plan-prestaged.md
 docs/operations/handoffs/2026-08-10-runtime-chain-walker.md
 docs/operations/handoffs/2026-08-10-walkable-position-chain-applied.md
@@ -307,6 +308,7 @@ scripts/python/e2e_smoke.py
 scripts/python/offline_check.py
 scripts/python/offset_check.py
 scripts/python/replay-delta-extractor.py
+scripts/python/velocity-pitch-validation.py
 scripts/replay-play-state.ps1
 scripts/roll-replay-time-increased.ps1
 scripts/scan-repository.ps1
@@ -337,12 +339,15 @@ src/WotBTreader.Application/Properties/AssemblyInfo.cs
 src/WotBTreader.Application/Replay/OffsetTableReader.cs
 src/WotBTreader.Application/Replay/ReplayContracts.cs
 src/WotBTreader.Application/Replay/ReplayDecoderRegistry.cs
+src/WotBTreader.Application/Replay/ReplayFrameSource.cs
 src/WotBTreader.Application/Replay/ReplayIngestionLog.cs
 src/WotBTreader.Application/Replay/ReplayIngestionService.cs
 src/WotBTreader.Application/Results/OperationResult.cs
 src/WotBTreader.Application/Storage/HpGroundTruthContracts.cs
+src/WotBTreader.Application/Storage/OverlayFrameContracts.cs
 src/WotBTreader.Application/Storage/StorageContracts.cs
 src/WotBTreader.Application/Storage/TrajectoryGroundTruthContracts.cs
+src/WotBTreader.Application/Storage/YawGroundTruthContracts.cs
 src/WotBTreader.Application/Streaming/SequencedTelemetryEventPublisher.cs
 src/WotBTreader.Application/Streaming/StreamingContracts.cs
 src/WotBTreader.Application/WotBTreader.Application.csproj
@@ -367,6 +372,7 @@ src/WotBTreader.CaptureLogs/WotBTreader.CaptureLogs.csproj
 src/WotBTreader.CaptureLogs/packages.lock.json
 src/WotBTreader.Core/AffiliationResolver.cs
 src/WotBTreader.Core/ComparisonModels.cs
+src/WotBTreader.Core/Discovery/HeadingCorrelator.cs
 src/WotBTreader.Core/Discovery/HpGroundTruthModels.cs
 src/WotBTreader.Core/Discovery/OffsetChainWalker.cs
 src/WotBTreader.Core/Discovery/RecordDiffing.cs
@@ -377,6 +383,7 @@ src/WotBTreader.Core/Discovery/Type10EntityPositionResolver.cs
 src/WotBTreader.Core/Discovery/WriteSiteAnalysis.cs
 src/WotBTreader.Core/Identifiers.cs
 src/WotBTreader.Core/OffsetModels.cs
+src/WotBTreader.Core/Overlay/OverlayFrameModels.cs
 src/WotBTreader.Core/TelemetryModels.cs
 src/WotBTreader.Core/WotBTreader.Core.csproj
 src/WotBTreader.Core/packages.lock.json
@@ -563,6 +570,7 @@ src/WotBTreader.Storage.Sqlite/SqliteStoragePaths.cs
 src/WotBTreader.Storage.Sqlite/SqliteStorageServiceCollectionExtensions.cs
 src/WotBTreader.Storage.Sqlite/SqliteTrajectoryGroundTruthProvider.cs
 src/WotBTreader.Storage.Sqlite/SqliteValueConversions.cs
+src/WotBTreader.Storage.Sqlite/SqliteYawGroundTruthProvider.cs
 src/WotBTreader.Storage.Sqlite/StorageErrors.cs
 src/WotBTreader.Storage.Sqlite/StorageLog.cs
 src/WotBTreader.Storage.Sqlite/WotBTreader.Storage.Sqlite.csproj
@@ -571,6 +579,7 @@ test.cmd
 tests/WotBTreader.Application.Tests/MSTestSettings.cs
 tests/WotBTreader.Application.Tests/OffsetTableReaderTests.cs
 tests/WotBTreader.Application.Tests/ReplayDecoderRegistryTests.cs
+tests/WotBTreader.Application.Tests/ReplayFrameSourceTests.cs
 tests/WotBTreader.Application.Tests/ReplayIngestionServiceTests.cs
 tests/WotBTreader.Application.Tests/SequencedTelemetryEventPublisherTests.cs
 tests/WotBTreader.Application.Tests/WalkablePositionChainTests.cs
@@ -597,6 +606,7 @@ tests/WotBTreader.CaptureLogs.Tests/TelemetryComparatorTests.cs
 tests/WotBTreader.CaptureLogs.Tests/WotBTreader.CaptureLogs.Tests.csproj
 tests/WotBTreader.CaptureLogs.Tests/packages.lock.json
 tests/WotBTreader.Core.Tests/AffiliationResolverTests.cs
+tests/WotBTreader.Core.Tests/HeadingCorrelatorTests.cs
 tests/WotBTreader.Core.Tests/IdentifierTests.cs
 tests/WotBTreader.Core.Tests/MSTestSettings.cs
 tests/WotBTreader.Core.Tests/OffsetChainWalkerEquivalenceTests.cs

@@ -97,14 +97,20 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
         List<OverlayTankState> tanks = [];
         foreach ((long entityId, List<PositionSample> samples) in byEntity)
         {
+            // Only roster entities are tanks. The position stream also carries
+            // non-participant entities (a duplicate "self" stream, projectiles,
+            // debris) that must not render as nameplates.
+            if (!roster.TryGetValue(entityId, out Participant? participant))
+            {
+                continue;
+            }
+
             PositionSample? nearest = FindAtOrBefore(samples, replayTime);
             if (nearest is null)
             {
                 // No position evidence at or before the frame time: omit.
                 continue;
             }
-
-            Participant? participant = roster.GetValueOrDefault(entityId);
             long received = totalDamage.GetValueOrDefault(entityId);
             bool alive = !destroyedAt.TryGetValue(entityId, out TimeSpan destroyed)
                 || destroyed > replayTime;
