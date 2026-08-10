@@ -350,6 +350,46 @@ def validate_offset_file(log_path: Path, path: Path, schema: dict) -> list[str]:
     elif not disc:
         issues.append(f"{rel}: missing discoveredAtUtc")
 
+    # chains: the additive pointer-chain section (2026-08-09, G0 draft -
+    # memory-offsets schema extension). A chained field MUST keep its offsets
+    # value 0 (the runtime observation path computes moduleBase + offset and
+    # cannot represent a chain; a non-zero value would corrupt reads), and
+    # each hop must be well-formed. Absent chains = no-op (current files).
+    chains = data.get("chains")
+    if chains is not None:
+        if not isinstance(chains, dict) or not chains:
+            issues.append(f"{rel}: 'chains' must be a non-empty object")
+        else:
+            chain_kinds = {"rootRva", "memberOffset", "recordOffset"}
+            for field_name, hops in chains.items():
+                if field_name not in FIELD_NAMES:
+                    issues.append(f"{rel}: chains key '{field_name}' is not a known field")
+                offset_value = offsets.get(field_name, 0)
+                if offset_value != 0:
+                    issues.append(
+                        f"{rel}: chained field '{field_name}' has non-zero offsets "
+                        f"value {offset_value} — chained fields must stay 0 "
+                        f"(runtime reads moduleBase + offset)")
+                if not isinstance(hops, list) or not hops:
+                    issues.append(f"{rel}: chains['{field_name}'] must be a non-empty array")
+                    continue
+                for hop in hops:
+                    if not isinstance(hop, dict) or hop.get("kind") not in chain_kinds:
+                        issues.append(
+                            f"{rel}: chains['{field_name}'] hop has invalid kind "
+                            f"(expected one of {sorted(chain_kinds)})")
+                        continue
+                    value = hop.get("value")
+                    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                        issues.append(
+                            f"{rel}: chains['{field_name}'] hop value must be a "
+                            f"non-negative integer")
+                    elif value > 0x7FFFFFFF:
+                        issues.append(
+                            f"{rel}: chains['{field_name}'] hop value 0x{value:X} "
+                            f"exceeds 2GB — likely wrong")
+        write_log(log_path, f"  {path.name}: chains validated ({len(chains)} field(s))")
+
     return issues
 
 

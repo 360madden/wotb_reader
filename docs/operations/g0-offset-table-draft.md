@@ -89,7 +89,7 @@ offset)."
     {
       "provenanceKind": "StaticAnalysis",
       "sourceTool": "Ghidra 12.1.2 (hash-bound 1cda5c31...) + Type10EntityPositionResolver layout",
-      "notes": "OD-RECOVERY-075/082: module-rooted position-ring chain verified hop-by-hop (GameCore 0x04095C88 -> app 0x0C -> session -> account -> playback 0x120 -> connection 0x04/0x48 -> entity tree [0x1C,0x40,0x34] -> filter 0x38 -> avatar helper 0x08 (vtable-matched) -> ring 0x08/0x1C8 stride 0x38 -> position record +0x10). Chained field: offsets value stays 0; see 'chains'."
+      "notes": "OD-RECOVERY-075/082: module-rooted position-ring chain verified hop-by-hop against Type10EntityPositionResolver (GameCore 0x04095C88 -> app 0x0C -> session 0x124 -> account 0x118 -> playback 0x128 -> connection 0x120 -> BWEntities 0x04 -> [conditional cache 0x48 | tree roots 0x1C/0x40/0x34] -> filter 0x38 -> avatar helper 0x08 -> ring 0x08/0x1C8 stride 0x38 -> position record +0x10). Identity vtable RVAs (module-relative): app 0x0323D61C, session 0x0323D9BC, account 0x0323EAE4, playback 0x03253AA4, filter [0x0325654C, 0x032565AC, 0x03442520], helper [0x0325656C, 0x0325658C, 0x034424A4]. Chained field: offsets value stays 0; see 'chains'."
     },
     {
       "provenanceKind": "GameHarness",
@@ -116,31 +116,39 @@ are already present with `false`.)
 
 ### 2b. New `chains` section
 
+The chain is the resolver's dereference path (verified 2026-08-09 against
+`Type10EntityPositionResolver.TryResolveOnce`/`FindEntity`). The walk is
+linear through the controllers, then **branches** at the entities map:
+`CachedEntityOffset 0x48` is a CONDITIONAL fast path (used only when its id
+matches), and the three `EntityTreeObjectOffsets` are ALTERNATIVE map roots
+tried in order (primary → tertiary → secondary). The notes carry that
+semantics; the vtable identity RVAs (validation constants, not dereference
+hops) are listed in the fieldValidation StaticAnalysis evidence.
+
 ```json
 "chains": {
   "playerPositionX": [
-    { "kind": "rootRva",   "value": 67722376, "note": "GameCoreRootRva 0x04095C88" },
-    { "kind": "memberOffset", "value": 12,    "note": "GameCoreAppControllerOffset 0x0C" },
-    { "kind": "memberOffset", "value": 292,   "note": "AppControllerSessionControllerOffset 0x124" },
-    { "kind": "memberOffset", "value": 280,   "note": "SessionControllerAccountControllerOffset 0x118" },
-    { "kind": "memberOffset", "value": 296,   "note": "AccountControllerActiveControllerOffset 0x128" },
+    { "kind": "rootRva",   "value": 67722376, "note": "GameCoreRootRva 0x04095C88 (module base + RVA -> GameCore pointer)" },
+    { "kind": "memberOffset", "value": 12,    "note": "GameCoreAppControllerOffset 0x0C (vtable-validated: 0x0323D61C)" },
+    { "kind": "memberOffset", "value": 292,   "note": "AppControllerSessionControllerOffset 0x124 (vtable: 0x0323D9BC)" },
+    { "kind": "memberOffset", "value": 280,   "note": "SessionControllerAccountControllerOffset 0x118 (vtable: 0x0323EAE4)" },
+    { "kind": "memberOffset", "value": 296,   "note": "AccountControllerActiveControllerOffset 0x128 (vtable: 0x03253AA4)" },
     { "kind": "memberOffset", "value": 288,   "note": "PlaybackControllerConnectionOffset 0x120" },
-    { "kind": "memberOffset", "value": 4,     "note": "ConnectionEntitiesOffset 0x04" },
-    { "kind": "memberOffset", "value": 72,    "note": "CachedEntityOffset 0x48" },
-    { "kind": "memberOffset", "value": 28,    "note": "EntityTreeObjectOffsets[0] 0x1C" },
-    { "kind": "memberOffset", "value": 64,    "note": "EntityTreeObjectOffsets[1] 0x40" },
-    { "kind": "memberOffset", "value": 52,    "note": "EntityTreeObjectOffsets[2] 0x34" },
-    { "kind": "memberOffset", "value": 56,    "note": "EntityMovementFilterOffset 0x38" },
-    { "kind": "memberOffset", "value": 8,     "note": "AvatarFilterHelperOffset 0x08 (vtable-matched)" },
-    { "kind": "memberOffset", "value": 8,     "note": "AvatarHelperRingOffset 0x08 (eight-entry ring)" },
-    { "kind": "memberOffset", "value": 456,   "note": "AvatarHelperCurrentIndexOffset 0x1C8" },
-    { "kind": "recordOffset", "value": 16,    "note": "PositionRecordOffset 0x10 (float32 X; Y at +0x14, Z at +0x18); ring stride 0x38" }
+    { "kind": "memberOffset", "value": 4,     "note": "ConnectionEntitiesOffset 0x04 -> BWEntities map" },
+    { "kind": "memberOffset", "value": 72,    "note": "CachedEntityOffset 0x48 - CONDITIONAL fast path (used only when its entity id matches; otherwise fall through)" },
+    { "kind": "memberOffset", "value": 28,    "note": "EntityTreeObjectOffsets[0] 0x1C - ALTERNATIVE map root 1 (primary)" },
+    { "kind": "memberOffset", "value": 64,    "note": "EntityTreeObjectOffsets[1] 0x40 - ALTERNATIVE map root 2 (tertiary)" },
+    { "kind": "memberOffset", "value": 52,    "note": "EntityTreeObjectOffsets[2] 0x34 - ALTERNATIVE map root 3 (secondary)" },
+    { "kind": "memberOffset", "value": 56,    "note": "EntityMovementFilterOffset 0x38 (vtable subtype: [0x0325654C, 0x032565AC, 0x03442520])" },
+    { "kind": "memberOffset", "value": 8,     "note": "AvatarFilterHelperOffset 0x08 (helper vtable matches the filter subtype: [0x0325656C, 0x0325658C, 0x034424A4])" },
+    { "kind": "memberOffset", "value": 8,     "note": "AvatarHelperRingOffset 0x08 (eight-entry ring, stride 0x38; record = helper + ring + index*stride)" },
+    { "kind": "memberOffset", "value": 456,   "note": "AvatarHelperCurrentIndexOffset 0x1C8 (stable before/middle/after the double-read)" },
+    { "kind": "recordOffset", "value": 16,    "note": "PositionRecordOffset 0x10 (float32 X; Y at +0x14, Z at +0x18; read consecutively - TryExtractPosition reads x, x+4, x+8)" }
   ]
 }
 ```
 
-Y and Z share the same chain with `recordOffset` 0x14 / 0x18 respectively
-(the triple is read consecutively — `TryExtractPosition` reads x, x+4, x+8).
+Y and Z share the same chain with `recordOffset` 0x14 / 0x18 respectively.
 
 ## 3. `offline/memory-offsets.md` — document `chains`
 

@@ -72,7 +72,10 @@ chain-form values, evidence, approvals) + post-edit gates; the exact
 change is drafted in `docs/operations/g0-offset-table-draft.md` (grill
 resolved the schema decision: offsets stay 0 — the runtime computes
 `moduleBase + offset` — and the chain is recorded in a new additive
-`chains` section); the table stays frozen until operator approval.
+`chains` section); the post-publication regression plan (what the legacy
+observation path must/must not emit, with a test spec) is in
+`docs/operations/g0-post-publication-regression.md`; the table stays
+frozen until operator approval.
 
 ### G1 — Hardware-atomic read proof
 
