@@ -164,7 +164,7 @@ Known packet types (decoded by `WotbReplayDecoder`):
 |---|---|---|---|
 | 31 | 6 777 | 4-byte float, **combat-only** (first at t≈71 s = battle start, last at t≈275 s) | unknown; NOT distance-to-nearest-enemy (tested, no correlation); value toggles between ~27.009 (repeated default) and 6.7–8.8 minima; ~30 Hz during combat |
 | 35 | 2 814 | 1 byte, exactly one per 0.1 s tick, values 0x5f→0xbc→0x19→… | **mod-256 tick counter** (wraps every 25.6 s; 10 Hz) |
-| 39 | 16 984 | 28 bytes = 7 float32, **per-frame (~60 Hz)** | **camera/attention point**: smooth drift, NOT matching any entity position; settles on fixed anchors — spawn corner (t≈1.7–68 s) then a victory point (t≈245–281 s) on Oasis. Not capture-zone geometry. Candidate for the live camera/VP track: the packet camera may be cross-validable against the `FUN_00d29ea0(0)` object's `+0x60` matrix. |
+| 39 | 16 984 | 28 bytes = 7 float32, **per-frame (~60 Hz)** | **scene point, semantics UNRESOLVED**: smooth drift, matches NO entity position, team centroid, or bbox anchor; NOT a third-person camera (offset 30→507 m, ~38 m below the tank); settles on fixed anchors (spawn corner t≈1.7–68 s, victory point t≈245–281 s on Oasis). Static pass `FindScenePointWriter` (2026-08-10): its bit-exact constant -0.0011081547 (f32 0xBA913F80) has **0 hits** — computed at runtime, writer not locatable by that anchor; Rust oracle also reports type 39 unknown. Not zone geometry; camera/VP-track candidate remains open (see `record-diffing-groundwork.md` triage). |
 
 Type 8 also carries large protobuf blobs (avatar URLs, player skins) — the
 `updateArena2` roster source. Unknown packets remain `RawRecord`s with the

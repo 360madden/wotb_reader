@@ -376,6 +376,63 @@ picker must mirror. The memory side is the remaining input: the gated live
 region read dumps the ring record at replay-clock-labeled times and the same
 correlator confirms whether the rotation floats live in the +0x2C..+0x37 tail.
 
+### L2 live-session plan — facing/yaw (pre-staged for the approval gate, 2026-08-10)
+
+The facing live session consumes the SAME region-read seam as L1/L3/L4
+(`EntityRecordRegionReadRequest/Result`, ≤ 4 KB, replay-clock-labeled via
+G2) and shares the O5 rehearsed target:
+
+1. **Rehearsed pilot target (new 2026-08-10).** `replay-delta-extractor.py
+   --heading-delta` emits the per-window packet-yaw delta series
+   (wrap-aware, movement-gated) for the exact participant the live session
+   will dump. Two-replay rehearsal:
+
+   | Replay | Windows | Yaw Δ median | Yaw Δ p90 | Yaw Δ max | Seam crossings |
+   |---|---|---|---|---|---|
+   | Oasis Palms | 1 644 | 0.011° | 24.4° | 47.1° | 0 |
+   | Dead Rail | 1 728 | 2.92° | 48.5° | 118.2° | **5** |
+
+   The seam-crossing count is the wrap-awareness evidence: Dead Rail's 5
+   crossings are windows where a naive (non-wrap-aware) delta would read
+   ~2π wrong, and the correlator's wrap-aware matcher is exactly what
+   handles them.
+2. **Dump-pair picker rule (mirrors the rehearsal construction rule).**
+   TURN windows must have |expected yaw Δ| > 0.1 rad (0.05 rad match
+   tolerance × 2) — the O5 p90 column (24–48°) already confirms such
+   windows exist on both replays. CONTROL windows are the stationary
+   segments: the packet yaw is exactly constant there (proven 1:1), so
+   flatness 1.0 separates the yaw field from drifting decoys.
+3. **Verdict contract** — same shape as the HP plan: top candidate offset
+   with score, matched / total turn windows, flatness over control windows,
+   AND repeatability: the same offset must hit on both 11.19.0 replays
+   (the ring record is 0x38 bytes; the +0x2C..+0x37 tail is the first
+   place to look — the predicted +0x2C rehearsal HIT already scored 1.0/1.0
+   on both).
+4. **Evidence + privacy** — record under an OD-RECOVERY id,
+   `publicProcessAddressesOrRawBytes: false`; publish only the offset via
+   the operator gate (P3 facing/yaw publication).
+
+### Type-39 scene-point packet — static + behavioral triage (2026-08-10)
+
+Behavioral evidence (Oasis Palms, both replays consistent): per-frame
+(~60 Hz) 28-byte / 7-float32 record; smooth drift; NEVER matches the
+viewpoint tank, any entity, the team centroid, or the bounding-box anchor;
+NOT a third-person camera (offset from the tank varies 30→507 m and sits
+~38 m BELOW the tank — no camera sits there); settles on fixed anchors
+(spawn corner at battle start, a victory point at battle end); altitude
+stays below terrain (y −4..+15 vs terrain 33–42).
+
+Static pass (`FindScenePointWriter.java`, 2026-08-10): the bit-exact
+constant -0.0011081547 (f32 0xBA913F80, present in many packets) has ZERO
+hits in the binary — it is computed at runtime, not an immediate, so the
+writer is not locatable by that anchor. The Rust oracle (wotbreplay-parser)
+also reports type 39 as `Unknown`. **Status: structure fully
+characterized, semantics + writer unresolved.** Next anchors (future
+passes): the f64 representation of the constant, the event-stream
+serializer call sites around the type byte 0x27, or a live capture of the
+writer. Do NOT treat type-39 as zone geometry or as a confirmed camera
+until one of those lands.
+
 ## Overlay frame contract — ReplayFrameSource (2026-08-10)
 
 The replay overlay's data seam is in place: `Core/Overlay` defines
