@@ -143,4 +143,90 @@ public static class WorldToScreen
             worldY,
             worldZ);
     }
+
+    /// <summary>
+    /// Screen-space heading of an entity's facing, in degrees, clockwise from
+    /// screen-up (0 = pointing away from the viewer, 90 = screen-right,
+    /// 180 = toward the viewer). Projects the entity position and a probe
+    /// point a short distance along its facing, so the direction is exactly
+    /// the one the perspective viewport renders (off-center tanks point
+    /// toward/away from the vanishing point, not a screen-constant vector).
+    ///
+    /// Fail-closed: null when the camera carries no rotation evidence, the
+    /// entity or its probe is at/behind the camera, or the facing projects to
+    /// a single pixel (facing exactly along the view axis).
+    /// </summary>
+    /// <param name="camera">The camera pose.</param>
+    /// <param name="verticalFovRadians">Vertical field of view (&gt; 0, &lt; π).</param>
+    /// <param name="viewportWidth">Viewport width in pixels (&gt; 0).</param>
+    /// <param name="viewportHeight">Viewport height in pixels (&gt; 0).</param>
+    /// <param name="worldX">Entity world X.</param>
+    /// <param name="worldY">Entity world Y.</param>
+    /// <param name="worldZ">Entity world Z.</param>
+    /// <param name="yawRadians">Entity hull facing in radians (packet
+    /// convention: 0 faces +Z, +π/2 faces +X).</param>
+    /// <param name="probeDistance">World-space distance along the facing used
+    /// for the second projection; small enough to stay local to the entity,
+    /// large enough to stay numerically stable at range.</param>
+    public static double? ScreenHeadingDegrees(
+        OverlayCamera camera,
+        double verticalFovRadians,
+        double viewportWidth,
+        double viewportHeight,
+        double worldX,
+        double worldY,
+        double worldZ,
+        double yawRadians,
+        double probeDistance = 8.0)
+    {
+        if (camera.YawRadians is null || camera.PitchRadians is null
+            || !double.IsFinite(yawRadians) || probeDistance <= 0)
+        {
+            return null;
+        }
+
+        ScreenPoint? here = Project(
+            camera,
+            verticalFovRadians,
+            viewportWidth,
+            viewportHeight,
+            worldX,
+            worldY,
+            worldZ);
+        if (here is null)
+        {
+            return null;
+        }
+
+        // Facing convention: yaw 0 faces +Z, +pi/2 faces +X (the packet
+        // convention WorldToScreen.Project already uses). The probe sits on
+        // the horizontal plane so a tank's hull heading is what rotates.
+        double probeX = worldX + Math.Sin(yawRadians) * probeDistance;
+        double probeZ = worldZ + Math.Cos(yawRadians) * probeDistance;
+        ScreenPoint? ahead = Project(
+            camera,
+            verticalFovRadians,
+            viewportWidth,
+            viewportHeight,
+            probeX,
+            worldY,
+            probeZ);
+        if (ahead is null)
+        {
+            return null;
+        }
+
+        double dx = ahead.Value.X - here.Value.X;
+        double dy = ahead.Value.Y - here.Value.Y;
+        if (Math.Abs(dx) < 1e-6 && Math.Abs(dy) < 1e-6)
+        {
+            // Facing exactly along the view axis: the nose is a single
+            // pixel. The heading is genuinely unobservable — no arrow.
+            return null;
+        }
+
+        // Screen Y grows DOWN, so the clockwise-from-up angle is
+        // atan2(screen-right component, screen-up component).
+        return Math.Atan2(dx, -dy) * 180.0 / Math.PI;
+    }
 }

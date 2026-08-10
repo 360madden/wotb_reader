@@ -24,6 +24,8 @@ public sealed partial class W2sHudView : UserControl
     private const double AnchorGap = 6;
     private const double BeaconDotRadius = 5;
     private const double BeaconLabelFontSize = 10;
+    private const double HeadingArrowLength = 10;
+    private const double HeadingArrowHalfWidth = 5;
 
     private static readonly Brush Team1Brush = CreateBrush("#33A2FF");
     private static readonly Brush Team2Brush = CreateBrush("#FF5A5A");
@@ -140,6 +142,15 @@ public sealed partial class W2sHudView : UserControl
         Canvas.SetLeft(root, rect.Left);
         Canvas.SetTop(root, rect.Top);
 
+        // Facing arrow: a screen-space heading (0 = away from the viewer)
+        // drawn above the label, rotated to the tank's hull direction. No
+        // arrow when the heading is unknown (no packet rotation evidence or
+        // a facing that projects to a single pixel).
+        if (item.ScreenHeadingDegrees is double heading && double.IsFinite(heading))
+        {
+            root.Children.Add(BuildHeadingArrow(heading));
+        }
+
         var label = new Border
         {
             Background = LabelBackground,
@@ -193,6 +204,34 @@ public sealed partial class W2sHudView : UserControl
         });
 
         return root;
+    }
+
+    private static Canvas BuildHeadingArrow(double headingDegrees)
+    {
+        // Arrow drawn pointing UP (away from the viewer) at 0 degrees;
+        // RotateTransform turns it to the tank's screen-space hull heading
+        // (positive = clockwise, matching the packet's yaw convention).
+        var canvas = new Canvas
+        {
+            Width = NameplateWidth,
+            Height = HeadingArrowLength + 2,
+            RenderTransformOrigin = new Point(0.5, 0.5),
+            RenderTransform = new RotateTransform(headingDegrees),
+        };
+        var arrow = new Polygon
+        {
+            Points = new PointCollection
+            {
+                new Point(NameplateWidth / 2.0, 0),
+                new Point(NameplateWidth / 2.0 - HeadingArrowHalfWidth, HeadingArrowLength),
+                new Point(NameplateWidth / 2.0 + HeadingArrowHalfWidth, HeadingArrowLength),
+            },
+            Fill = NeutralBrush,
+            Stroke = CreateBrush("#CC000000"),
+            StrokeThickness = 0.75,
+        };
+        canvas.Children.Add(arrow);
+        return canvas;
     }
 
     private static Brush HpColor(double fraction) =>

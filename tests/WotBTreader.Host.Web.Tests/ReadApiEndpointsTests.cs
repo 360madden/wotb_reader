@@ -57,6 +57,41 @@ public sealed class ReadApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task OverlayFrame_TankHeadingIsProjectedWhenRotationKnown()
+    {
+        // Camera at the origin facing +Z; a tank 100m ahead facing +X (yaw
+        // pi/2): its nose points screen-right, so the heading is +90 degrees
+        // (clockwise from screen-up). A tank with no yaw evidence carries
+        // null.
+        FakeOverlayFrames frames = new(new OverlayFrame(
+            TimeSpan.FromSeconds(10),
+            new OverlayCamera(0, 0, 0, YawRadians: 0, PitchRadians: 0, RollRadians: 0),
+            new[]
+            {
+                new OverlayTankState(1, 0, 0, 100, Math.PI / 2, 1.0, true, 1, "Alpha", null, "TankA", "Heavy", 100),
+                new OverlayTankState(2, 0, 0, 100, null, 1.0, true, 2, "NoYaw", null, "TankB", "Heavy", 100),
+            }));
+
+        IResult result = await ReadApiEndpoints.GetOverlayFrameAsync(
+            new DefaultHttpContext(),
+            frames,
+            new FakeBeaconStore(),
+            Guid.NewGuid(),
+            timeSeconds: 10,
+            fov: 90,
+            width: 1920,
+            height: 1080,
+            TestContext.CancellationToken);
+
+        OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
+        OverlayTankResponse alpha = frame.Tanks.Single(tank => tank.EntityId == 1);
+        Assert.IsNotNull(alpha.ScreenHeadingDegrees);
+        Assert.AreEqual(90.0, alpha.ScreenHeadingDegrees!.Value, 1e-6);
+        OverlayTankResponse noYaw = frame.Tanks.Single(tank => tank.EntityId == 2);
+        Assert.IsNull(noYaw.ScreenHeadingDegrees);
+    }
+
+    [TestMethod]
     public async Task OverlayFrame_RejectsInvalidQueryParameters()
     {
         FakeOverlayFrames frames = new();

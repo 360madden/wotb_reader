@@ -14,4 +14,5 @@ public sealed record NameplateItem(
     int? TeamNumber,
     double HpFraction,
     bool Alive,
-    double DistanceMeters);
+    double DistanceMeters,
+    double? ScreenHeadingDegrees);

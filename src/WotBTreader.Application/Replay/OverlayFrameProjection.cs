@@ -19,7 +19,8 @@ public sealed record ProjectedTank(
     double? ScreenX,
     double? ScreenY,
     double? Depth,
-    bool InViewport);
+    bool InViewport,
+    double? ScreenHeadingDegrees);
 
 /// <summary>
 /// One beacon projected onto the viewport. Screen coordinates are null when
@@ -91,7 +92,18 @@ public static class OverlayFrameProjector
                     point is null ? null : point.Value.X,
                     point is null ? null : point.Value.Y,
                     point is null ? null : point.Value.Depth,
-                    point is not null && point.Value.IsInsideViewport(viewportWidth, viewportHeight));
+                    point is not null && point.Value.IsInsideViewport(viewportWidth, viewportHeight),
+                    tank.YawRadians is null
+                        ? null
+                        : WorldToScreen.ScreenHeadingDegrees(
+                            frame.Camera,
+                            verticalFovRadians,
+                            viewportWidth,
+                            viewportHeight,
+                            tank.X,
+                            tank.Y,
+                            tank.Z,
+                            tank.YawRadians.Value));
             })
             .OrderBy(tank => tank.DistanceMeters)
             .ToList();

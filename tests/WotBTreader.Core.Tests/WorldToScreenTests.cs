@@ -129,4 +129,83 @@ public sealed class WorldToScreenTests
         Assert.IsTrue(inside.IsInsideViewport(Width, Height));
         Assert.IsFalse(outside.IsInsideViewport(Width, Height));
     }
+
+    [TestMethod]
+    public void ScreenHeading_TankFacingRight_PointsScreenRight()
+    {
+        // Camera at origin facing +Z; tank ahead at (0,0,10) facing +X. The
+        // probe 8m along +X projects right of the tank's center projection:
+        // heading 90 degrees = clockwise from screen-up = screen-right.
+        OverlayCamera camera = new(0, 0, 0, YawRadians: 0, PitchRadians: 0, RollRadians: null);
+
+        double? heading = WorldToScreen.ScreenHeadingDegrees(
+            camera, Fov, Width, Height, worldX: 0, worldY: 0, worldZ: 10,
+            yawRadians: Math.PI / 2);
+
+        Assert.IsNotNull(heading);
+        Assert.AreEqual(90.0, heading.Value, 1e-6);
+    }
+
+    [TestMethod]
+    public void ScreenHeading_OffCenterTankFacingAway_PointsToVanishingPoint()
+    {
+        // Tank offset to the RIGHT of the view axis (x=5, z=10) facing +Z
+        // (away): its nose converges on the vanishing point, which on screen
+        // lies LEFT of the tank's projection — heading -90 (screen-left).
+        // This is the perspective-correct behavior the two-point probe
+        // produces (a screen-constant vector would instead point straight up).
+        OverlayCamera camera = new(0, 0, 0, YawRadians: 0, PitchRadians: 0, RollRadians: null);
+
+        double? heading = WorldToScreen.ScreenHeadingDegrees(
+            camera, Fov, Width, Height, worldX: 5, worldY: 0, worldZ: 10,
+            yawRadians: 0);
+
+        Assert.IsNotNull(heading);
+        Assert.AreEqual(-90.0, heading.Value, 1e-6);
+    }
+
+    [TestMethod]
+    public void ScreenHeading_OffCenterTankFacingCamera_PointsAwayFromVanishingPoint()
+    {
+        // Tank offset to the RIGHT (x=5, z=10) facing -Z (toward the
+        // camera): its nose comes at the viewer, so on screen it converges
+        // AWAY from the vanishing point — the probe lands between the tank
+        // and the camera and projects further from center (screen-right, +90).
+        // The mirror of the facing-away case above.
+        OverlayCamera camera = new(0, 0, 0, YawRadians: 0, PitchRadians: 0, RollRadians: null);
+
+        double? heading = WorldToScreen.ScreenHeadingDegrees(
+            camera, Fov, Width, Height, worldX: 5, worldY: 0, worldZ: 10,
+            yawRadians: Math.PI);
+
+        Assert.IsNotNull(heading);
+        Assert.AreEqual(90.0, heading.Value, 1e-6);
+    }
+
+    [TestMethod]
+    public void ScreenHeading_FacingAlongViewAxis_ReturnsNull()
+    {
+        // Tank dead-ahead facing exactly +Z (the view axis): the probe
+        // projects to the SAME pixel as the tank, so the heading is
+        // unobservable — fail closed with no arrow.
+        OverlayCamera camera = new(0, 0, 0, YawRadians: 0, PitchRadians: 0, RollRadians: null);
+
+        double? heading = WorldToScreen.ScreenHeadingDegrees(
+            camera, Fov, Width, Height, worldX: 0, worldY: 0, worldZ: 10,
+            yawRadians: 0);
+
+        Assert.IsNull(heading);
+    }
+
+    [TestMethod]
+    public void ScreenHeading_NoCameraRotationEvidence_ReturnsNull()
+    {
+        OverlayCamera camera = new(0, 0, 0, YawRadians: null, PitchRadians: null, RollRadians: null);
+
+        double? heading = WorldToScreen.ScreenHeadingDegrees(
+            camera, Fov, Width, Height, worldX: 0, worldY: 0, worldZ: 10,
+            yawRadians: 0.5);
+
+        Assert.IsNull(heading);
+    }
 }

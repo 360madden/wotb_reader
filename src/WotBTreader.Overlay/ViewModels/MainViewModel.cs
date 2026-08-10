@@ -498,7 +498,8 @@ public class MainViewModel : INotifyPropertyChanged
                     tank.TeamNumber,
                     tank.HpFraction,
                     tank.Alive,
-                    tank.DistanceMeters));
+                    tank.DistanceMeters,
+                    tank.ScreenHeadingDegrees));
             }
 
             foreach (OverlayBeaconResponse beacon in frame.Beacons)

@@ -171,7 +171,7 @@ honest no-hit and the anchor widens (entity base / ring record).
 
 | Step | WS | Deliverable |
 |---|---|---|
-| V1 | F | Facing arrows / heading glyphs on nameplates (uses the discovered yaw offset OR the packet ground truth in replay mode) |
+| V1 | F | ✅ Facing arrows on nameplates (2026-08-10, replay mode: packet yaw ground truth — `OverlayTankState.YawRadians` was already in the frame; now threaded through projection → API → HUD as `ScreenHeadingDegrees`, perspective-correct two-point probe in `WorldToScreen`, arrow drawn above each nameplate; live mode reuses the same seam once the yaw offset is discovered) |
 | V2 | F | Objective markers (capture zones), event-feed tie-ins (damage pips, death markers) |
 | V3 | F | Visibility model for replay mode (spotted-reproduction as a documented option; god-view default) |
 

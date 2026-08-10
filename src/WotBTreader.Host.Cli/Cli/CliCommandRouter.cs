@@ -573,6 +573,7 @@ public sealed class CliCommandRouter
                         y = tank.ScreenY,
                         depth = tank.Depth,
                         inViewport = tank.InViewport,
+                        screenHeadingDegrees = tank.ScreenHeadingDegrees,
                     },
             }),
             beacons = projection.Beacons.Select(beacon => new

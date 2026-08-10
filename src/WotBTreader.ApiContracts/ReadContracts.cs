@@ -348,6 +348,12 @@ public sealed record OverlayTankResponse
 
     /// <summary>True when the projection lies inside the requested viewport.</summary>
     public bool InViewport { get; init; }
+
+    /// <summary>Screen-space hull heading in degrees, clockwise from screen-up
+    /// (0 = facing away from the viewer); null when the tank has no packet
+    /// rotation evidence or its facing projects to a single pixel. Drives the
+    /// nameplate facing arrow.</summary>
+    public double? ScreenHeadingDegrees { get; init; }
 }
 
 /// <summary>

@@ -1018,7 +1018,7 @@ public sealed class MainViewModelTests
               "cameraYawRadians": 0.5, "cameraPitchRadians": 0.0,
               "tanks": [
                 { "entityId": 1, "playerName": "Self", "tankName": null, "clanTag": null, "teamNumber": 1, "hpFraction": 1.0, "alive": true, "distanceMeters": 0.0, "screenX": 960.0, "screenY": 540.0, "depth": 1.0, "inViewport": true },
-                { "entityId": 2, "playerName": "Alpha", "tankName": "TankA", "clanTag": null, "teamNumber": 2, "hpFraction": 0.5, "alive": true, "distanceMeters": 120.0, "screenX": 800.0, "screenY": 400.0, "depth": 80.0, "inViewport": true },
+                { "entityId": 2, "playerName": "Alpha", "tankName": "TankA", "clanTag": null, "teamNumber": 2, "hpFraction": 0.5, "alive": true, "distanceMeters": 120.0, "screenX": 800.0, "screenY": 400.0, "depth": 80.0, "inViewport": true, "screenHeadingDegrees": -35.0 },
                 { "entityId": 3, "playerName": "Behind", "tankName": null, "clanTag": null, "teamNumber": 2, "hpFraction": 1.0, "alive": true, "distanceMeters": 50.0, "screenX": null, "screenY": null, "depth": null, "inViewport": false },
                 { "entityId": 4, "playerName": "Offscreen", "tankName": null, "clanTag": null, "teamNumber": 1, "hpFraction": 1.0, "alive": true, "distanceMeters": 200.0, "screenX": 5000.0, "screenY": 5000.0, "depth": 10.0, "inViewport": false },
                 { "entityId": 5, "playerName": "Wreck", "tankName": null, "clanTag": null, "teamNumber": 1, "hpFraction": 0.0, "alive": false, "distanceMeters": 90.0, "screenX": 700.0, "screenY": 350.0, "depth": 60.0, "inViewport": true }
@@ -1058,6 +1058,8 @@ public sealed class MainViewModelTests
         Assert.AreEqual(2, alpha.TeamNumber);
         Assert.AreEqual(0.5, alpha.HpFraction, 1e-9);
         Assert.IsTrue(alpha.Alive);
+        Assert.IsNotNull(alpha.ScreenHeadingDegrees);
+        Assert.AreEqual(-35.0, alpha.ScreenHeadingDegrees!.Value, 1e-9);
         Assert.IsTrue(viewModel.Nameplates.Any(item => item.EntityId == 5 && !item.Alive));
         Assert.AreEqual(200.0, viewModel.LastFrameReplayTimeSeconds!.Value, 1e-9);
     }
