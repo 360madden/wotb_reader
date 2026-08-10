@@ -10,7 +10,10 @@ record OD-RECOVERY-083, ONE commit. No live session in this record.
 ## What was applied
 
 - `memory-offsets/schema.json` — new top-level `chains` property (field →
-  array of `{kind: rootRva|memberOffset|recordOffset, value, note}` hops);
+  array of `{kind: rootRva|memberOffset|recordOffset, value, note}` hops —
+  format amended 2026-08-10: `ringIndex` (with `indexOffset`/`stride`) added
+  and a `rootRva → memberOffset|ringIndex* → recordOffset` shape rule
+  enforced; see `offline/memory-offsets.md`);
   `schemaVersion` stays 1 (the runtime reader ignores the additive key).
 - `memory-offsets/11.19.0.10.json`:
   - `confidence: "high"`, `discoveredAtUtc` = 2026-08-10T02:55:00Z, `notes`

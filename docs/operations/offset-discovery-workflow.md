@@ -302,12 +302,16 @@ GameHarness provenance, lead approval, and decoder-auditor approval.
 
 Pointer-chain fields (e.g. the position family, published 2026-08-10 via
 OD-RECOVERY-083) are recorded in the table's additive `chains` section
-(field → array of `{kind: rootRva|memberOffset|recordOffset, value, note}`
-hops) with their `offsets` value kept 0 — the runtime observation path
-computes `moduleBase + offset` and cannot represent a chain, so a non-zero
-value would corrupt reads; the resolver reads chained fields via its own
-hash-bound layout. The full mechanism, gates, and post-publication contract
-are in `docs/operations/g0-offset-table-draft.md`,
+(field → array of `{kind: rootRva|memberOffset|recordOffset|ringIndex,
+value, note}` hops; `ringIndex` also requires `indexOffset` and `stride`,
+and the shape must be `rootRva → memberOffset|ringIndex* → recordOffset`)
+with their `offsets` value kept 0 — the runtime observation path computes
+`moduleBase + offset` and cannot represent a chain, so a non-zero value
+would corrupt reads; the resolver reads chained fields via its own
+hash-bound layout. The published 11.19.0.10 position chains remain
+resolver-walked (their cached fast path + alternative tree roots are
+branches a linear chain cannot express). The full mechanism, gates, and
+post-publication contract are in `docs/operations/g0-offset-table-draft.md`,
 `docs/operations/g0-operator-checklist.md`, and
 `docs/operations/g0-post-publication-regression.md`.
 

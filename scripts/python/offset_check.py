@@ -49,6 +49,10 @@ FIELD_DEFS = [
 
 FIELD_NAMES = {name for name, _type, _desc in FIELD_DEFS}
 
+# The only chain hop kinds the schema, the pack doc, the validator, and
+# OffsetChainHopKind (Core/OffsetModels.cs) agree on.
+CHAIN_KINDS = {"rootRva", "memberOffset", "recordOffset", "ringIndex"}
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def now_iso() -> str:
@@ -162,10 +166,19 @@ def extract_documented_schema(doc_path: Path) -> dict[str, set[str]]:
             required_fields |= set(
                 re.findall(r"`([A-Za-z][A-Za-z0-9]*)`", line))
 
+    # Chain hop kinds from the Chains section's hop template:
+    # `{ "kind": "rootRva" | "memberOffset" | ... , "value": ... }`.
+    chain_kinds: set[str] = set()
+    kind_alternation = re.search(
+        r'"kind":\s*((?:"[A-Za-z]+"\s*\|\s*)+"[A-Za-z]+")', text)
+    if kind_alternation:
+        chain_kinds |= set(re.findall(r'"([A-Za-z]+)"', kind_alternation.group(1)))
+
     return {
         "offset_fields": offset_fields,
         "confidence": confidence_levels,
         "required": required_fields,
+        "chain_kinds": chain_kinds,
     }
 
 
@@ -187,6 +200,14 @@ def check_documented_schema(log_path: Path, doc: dict[str, set[str]]) -> list[st
     schema_fields = set(schema_offsets.get("properties", {}).keys())
     schema_required = set(schema.get("required", []))
     schema_conf = set(schema.get("properties", {}).get("confidence", {}).get("enum", []))
+    chain_items = (
+        schema.get("properties", {})
+        .get("chains", {})
+        .get("additionalProperties", {})
+        .get("items", {})
+    )
+    schema_chain_kinds = set(
+        (chain_items.get("properties", {}) or {}).get("kind", {}).get("enum", []))
 
     # doc <-> schema.json
     if doc["offset_fields"] and schema_fields and doc["offset_fields"] != schema_fields:
@@ -223,6 +244,20 @@ def check_documented_schema(log_path: Path, doc: dict[str, set[str]]) -> list[st
             "CONFIDENCE_VALUES drift vs schema.json: validator="
             + ",".join(sorted(CONFIDENCE_VALUES))
             + " schema=" + ",".join(sorted(schema_conf)))
+
+    # chain hop kinds across all three sources
+    if doc["chain_kinds"] and schema_chain_kinds and doc["chain_kinds"] != schema_chain_kinds:
+        issues.append(
+            "chain-kinds drift: pack doc=" + ",".join(sorted(doc["chain_kinds"]))
+            + " schema.json=" + ",".join(sorted(schema_chain_kinds)))
+    if doc["chain_kinds"] and CHAIN_KINDS != doc["chain_kinds"]:
+        issues.append(
+            "CHAIN_KINDS drift vs pack doc: validator=" + ",".join(sorted(CHAIN_KINDS))
+            + " doc=" + ",".join(sorted(doc["chain_kinds"])))
+    if schema_chain_kinds and CHAIN_KINDS != schema_chain_kinds:
+        issues.append(
+            "CHAIN_KINDS drift vs schema.json: validator=" + ",".join(sorted(CHAIN_KINDS))
+            + " schema=" + ",".join(sorted(schema_chain_kinds)))
 
     if not issues:
         write_log(log_path,
@@ -360,7 +395,7 @@ def validate_offset_file(log_path: Path, path: Path, schema: dict) -> list[str]:
         if not isinstance(chains, dict) or not chains:
             issues.append(f"{rel}: 'chains' must be a non-empty object")
         else:
-            chain_kinds = {"rootRva", "memberOffset", "recordOffset", "ringIndex"}
+            chain_kinds = CHAIN_KINDS
             for field_name, hops in chains.items():
                 if field_name not in FIELD_NAMES:
                     issues.append(f"{rel}: chains key '{field_name}' is not a known field")
