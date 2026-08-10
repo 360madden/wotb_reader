@@ -72,6 +72,36 @@ decoder; errors are `ReplayFormatException` with `replay.*` codes.
   - roster entries: field 1 = varint, field 2 = name, etc.
   - Unknown fields → `UnknownProtobufEvidence` (recorded, never fatal by itself).
 
+**Full top-level walk (2026-08-10, both 11.19.0 replays, pickle unwrapped):**
+
+| Field | Wire | Observed | Notes |
+|---|---|---|---|
+| 1 | varint | 65547 (Oasis) / 7 (Dead Rail) | arena id (matches root.2 in the packet header) |
+| 2 | varint | 1785705303 / 1785346505 | arena unique id |
+| 3, 4 | varint | 1 / 1 | constant across both replays |
+| 5 | varint | 244 / 209 | battle-length-ish counter (seconds?) |
+| 8 | len | 92 / 91 B | arena descriptor: fields 3 = 3235 / 2277 (**client map-config id** — NOT the DB `map_id` 11/7), 101 = player mmr-ish, 105 = uint64 sentinel |
+| 11 | len | 63 B | coordinate pairs with a constant 3:2 aspect (e.g. 3235×4853 Oasis, 2277×3416 Dead Rail) — map-space descriptors |
+| 137 | varint | 160 / 111 | matches roster count × map scale (160 = 10 × 16?) |
+| 150 | len | 4.3 KB | per-team arena data (fields 20–23 are large blobs, 27 = `(tank_id, count)` pairs, 114 = per-entity records) |
+| 181, 182, 183 | varint | 647/32/8404 vs 759/37/13220 | battle-specific counters |
+| 184 | len ×10 | 19–39 B | per-player compact record (field 1 = identity, field 2 = team mini-stats) |
+| 185 | len | 34 B | team result record (field 2.27 = `(tank_id, count)` pairs) |
+| 201 | len ×14 | 29–242 B | roster entries (field 1 = account id or sentinel) |
+| 301 | len ×14 | 58–199 B | per-player stats (field 1 = entity id, field 2 = stats) |
+| 302 | len | 53 B | team records: `.1` repeats per team (2 on Oasis, 4 on Dead Rail), field 1 = top player entity id, field 2 = team mini-stats |
+| 303 | len | 8 B | team-level varints (32759/29118 Oasis, 29736/26593 Dead Rail) — semantics unproven; NOT scores/victory points |
+| 999 | varint | 3 | rare |
+
+**Negative finding (O4):** the replay contains **no capture-zone / base
+geometry**. `battle_results.dat` holds per-player stats, roster, and
+map/arena descriptors only; the packet stream has no static zone
+coordinates (see type-31/35/39 below). Capture zones in WoTB are
+**map-static game data**, not replay data — objective markers must come from
+map-static coordinates or manual beacon placement (the O3 beacon layer), not
+from any replay file. 302/303 are team records but their semantics are
+unproven; they are recorded as unknown-field evidence, never guessed.
+
 ## Event packets → canonical events (`EventPacketDecoders`)
 
 **Position packet (type 10, `0x0A`) — 49-byte fixed layout (cross-validated
@@ -126,6 +156,19 @@ Known packet types (decoded by `WotbReplayDecoder`):
 | Position | `CanonicalEventKind.Position` → `PositionSample` (raw + normalized coords) |
 | Direct damage | `CanonicalEventKind.Damage` |
 | Entity method / lifecycle | `CanonicalEventKind.Destroyed`, `BattleStarted`, `BattleEnded` |
+
+**Unexplored packet types — structure evidence (2026-08-10, Oasis Palms
+11.19.0, 73 993 packets):**
+
+| Type | Count | Structure | Semantics |
+|---|---|---|---|
+| 31 | 6 777 | 4-byte float, **combat-only** (first at t≈71 s = battle start, last at t≈275 s) | unknown; NOT distance-to-nearest-enemy (tested, no correlation); value toggles between ~27.009 (repeated default) and 6.7–8.8 minima; ~30 Hz during combat |
+| 35 | 2 814 | 1 byte, exactly one per 0.1 s tick, values 0x5f→0xbc→0x19→… | **mod-256 tick counter** (wraps every 25.6 s; 10 Hz) |
+| 39 | 16 984 | 28 bytes = 7 float32, **per-frame (~60 Hz)** | **camera/attention point**: smooth drift, NOT matching any entity position; settles on fixed anchors — spawn corner (t≈1.7–68 s) then a victory point (t≈245–281 s) on Oasis. Not capture-zone geometry. Candidate for the live camera/VP track: the packet camera may be cross-validable against the `FUN_00d29ea0(0)` object's `+0x60` matrix. |
+
+Type 8 also carries large protobuf blobs (avatar URLs, player skins) — the
+`updateArena2` roster source. Unknown packets remain `RawRecord`s with the
+`UnknownRecordsPreserved` capability — unknown stays unknown.
 
 Decoding is **evidence-first**: every decoded fact carries an
 `EvidenceReference` (artifact, entry, offset, length, SHA-256) and a

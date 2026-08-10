@@ -121,8 +121,8 @@ of the sub-50ms duplicate-packet artifact.
 | O1 | F | ✅ `WorldToScreen` projection module (view matrix from pos+yaw+pitch, perspective from FOV) + tests; `overlay-frame` CLI preview (frame at replay time → screen pixels) |
 | O2 | F | ✅ Nameplate layer: every tank's name, team color, HP bar, distance — clock-anchored over the game window (`W2sHudView` + `/sessions/{id}/frame` endpoint; runs while the web host serves the replay) |
 | O3 | F | ✅ Beacon/POI model (world coords + label + color + replay-time tag) + placement + persistence: `beacons` table (migration 6), `IBeaconStore`, `beacon add/list/remove` CLI, projected in `/sessions/{id}/frame` + `overlay-frame` + HUD pins; FOV slider added to the toolbar |
-| O4 | B | Capture-zone/base decode from battle_results.dat (objective markers) |
-| O5 | E | `--heading-delta` extractor mode (movement-gated, wrap-aware) for plan/tooling reuse |
+| O4 | B | ✅ **Reframed with evidence**: capture-zone geometry does NOT exist in any replay file — full walk of `battle_results.dat` + packet types 31/35/39 (2026-08-10) proves zones are map-static game data. Delivered: complete battle_results top-level structure table, type-31/35/39 structure evidence, team-record (302/303) negative semantics, and the type-39 camera/attention-point finding as the live camera-track candidate (`offline/replay-format.md`). Objective markers therefore ride the O3 beacon layer + future map-static data |
+| O5 | E | ✅ `--heading-delta` extractor mode (movement-gated, wrap-aware): motion-heading + packet-yaw per-window deltas, seam-crossing count (5 on Dead Rail, 0 on Oasis), recommended live pilot target; `pick_yaw_session` selects the yaw-bearing decode |
 
 **Discovery sidecar (parallel, offline):** the parallel-workstreams runbook
 (`docs/operations/parallel-workstreams.md`) + `scripts/workstream-lock.py`

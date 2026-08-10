@@ -53,6 +53,18 @@ Modes:
       (hp-diff --direction increment). Verified 2026-08-10: the player dealt
       damage in both 11.19.0 replays (5 events each, >= 2 windows) — unlike
       HP, the player's own stat IS a viable correlation target.
+
+  python scripts/python/replay-delta-extractor.py --heading-delta
+      Heading-change (turn) series for the facing campaign: per-window delta
+      of BOTH the position-derived motion heading and the packet yaw
+      (position_samples.yaw, migration 5), movement-gated (a stationary tank
+      has no meaningful heading) and wrap-aware (deltas normalized to
+      [-pi, pi], so a 359->1 deg turn is +2 deg, not -358 deg). Reports the
+      per-window turn distribution (radians + degrees), how often the wrap
+      normalization actually mattered, and a recommended yaw-delta target for
+      the live pilot. Verified 2026-08-10 on both 11.19.0 replays: yaw and
+      motion heading agree while moving forward, so their per-window deltas
+      must match too.
 """
 
 from __future__ import annotations
@@ -103,15 +115,60 @@ def pick_session(con: sqlite3.Connection, version_hint: str = "11.19") -> dict:
     }
 
 
+def pick_yaw_session(con: sqlite3.Connection) -> dict:
+    """Most recent 11.19 session WITH packet-yaw samples (migration 5).
+
+    `pick_session` selects by battle_time alone and can land on an older
+    duplicate decode whose yaw column is NULL (the yaw decoder shipped after
+    the first import). The facing/heading modes need the yaw series, so they
+    select from the subset that actually has it.
+    """
+    cur = con.execute(
+        "SELECT s.id, s.game_version, s.map_name, s.duration_ticks, "
+        "s.viewpoint_participant_id, COUNT(p.id) AS sample_count "
+        "FROM battle_sessions s "
+        "JOIN position_samples p ON p.battle_session_id = s.id "
+        "WHERE s.game_version LIKE '11.19%' AND p.yaw IS NOT NULL "
+        "GROUP BY s.id ORDER BY s.battle_time_utc DESC LIMIT 1"
+    )
+    row = cur.fetchone()
+    if row is None:
+        raise SystemExit(
+            "no 11.19 session with packet-yaw samples found; "
+            "re-decode a replay with the migration-5 yaw decoder"
+        )
+    return {
+        "id": row[0],
+        "game_version": row[1],
+        "map_name": row[2],
+        "duration_ticks": row[3],
+        "viewpoint_participant_id": row[4],
+        "sample_count": row[5],
+    }
+
+
 def participant_samples(
-    con: sqlite3.Connection, session_id: str, participant_id: str
-) -> list[tuple[int, float, float, float]]:
-    """(replay_time_ticks, raw_x, raw_y, raw_z) ordered by sequence."""
+    con: sqlite3.Connection,
+    session_id: str,
+    participant_id: str,
+    with_yaw: bool = False,
+) -> list[tuple[int, float, float, float, float | None]]:
+    """(replay_time_ticks, raw_x, raw_y, raw_z[, yaw]) ordered by sequence.
+
+    `yaw` is the packet-derived facing (position_samples.yaw, migration 5)
+    and is None when `with_yaw` is False or the sample predates the column.
+    """
+    yaw_col = ", yaw" if with_yaw else ""
     rows = con.execute(
-        "SELECT replay_time_ticks, raw_x, raw_y, raw_z FROM position_samples "
+        f"SELECT replay_time_ticks, raw_x, raw_y, raw_z{yaw_col} FROM position_samples "
         "WHERE battle_session_id=? AND participant_id=? ORDER BY sequence",
         (session_id, participant_id),
     ).fetchall()
+    if with_yaw:
+        return [
+            (int(r[0]), float(r[1]), float(r[2]), float(r[3]), None if r[4] is None else float(r[4]))
+            for r in rows
+        ]
     return [(int(r[0]), float(r[1]), float(r[2]), float(r[3])) for r in rows]
 
 
@@ -330,6 +387,164 @@ def movement_phases(
         "moving_windows": n_moving,
         "stationary_windows": len(moving_1s) - n_moving,
         "moving_disp_1s": summarize(moving_disp),
+    }
+
+
+def wrap_pi(angle: float) -> float:
+    """Normalize an angle (radians) to [-pi, pi] — the wrap-aware convention
+    used by velocity-pitch-validation.py for yaw-vs-heading diffs."""
+    while angle > math.pi:
+        angle -= 2.0 * math.pi
+    while angle < -math.pi:
+        angle += 2.0 * math.pi
+    return angle
+
+
+def unwrap_radians(values: list[float]) -> list[float]:
+    """Unwrap a wrapped angle series (radians) so consecutive values differ
+    by less than pi. Used to detect ±pi seam crossings that the wrapped
+    deltas alone would hide (a 359->1 deg turn wraps to +2 deg, not -358)."""
+    if not values:
+        return []
+    out = [values[0]]
+    for v in values[1:]:
+        prev = out[-1]
+        while v - prev > math.pi:
+            v -= 2.0 * math.pi
+        while v - prev < -math.pi:
+            v += 2.0 * math.pi
+        out.append(v)
+    return out
+
+
+def heading_delta_series(
+    samples: list[tuple[int, float, float, float, float | None]],
+    window_seconds: float,
+    speed: float = 1.0,
+    speed_threshold: float = 0.5,
+) -> dict:
+    """Movement-gated, wrap-aware per-window heading-change series.
+
+    For every consecutive-sample pair whose 1s-window speed exceeds
+    `speed_threshold` (a stationary tank has no meaningful heading), compute:
+      - motion heading delta: atan2(dx,dz) change across the window
+      - packet yaw delta: yaw[t+window] - yaw[t] when yaw is available
+    Deltas are normalized to [-pi, pi] (wrap-aware), so a 359->1 deg turn
+    reads +2 deg, not -358 deg. `wrap_crossings` counts the windows where
+    the unwrapped delta differs from the wrapped one — i.e. where the
+    ±pi seam actually mattered.
+    Returns the turn distribution (radians + degrees), the crossing count,
+    and a recommended yaw-delta target/tolerance for the live pilot.
+    """
+    window_ticks = int(window_seconds * speed * TICKS_PER_SECOND)
+    motion_deltas: list[float] = []
+    yaw_deltas: list[float] = []
+    moving_windows = 0
+    # Seam crossings: adjacent RAW yaw pairs with |y - x| > pi. Both values
+    # live in [-pi, pi], so the raw difference can only exceed pi when the
+    # ±pi seam lies between the two samples on the shorter arc — the case a
+    # naive (non-wrap-aware) delta gets wrong by ~2*pi. The wrapped deltas
+    # below are the corrected values.
+    yaw_raw = [s[4] for s in samples if s[4] is not None]
+    wrap_crossings = sum(
+        1 for x, y in zip(yaw_raw, yaw_raw[1:]) if abs(y - x) > math.pi
+    )
+    # Unwrap the packet yaw series so endpoint yaw can be INTERPOLATED
+    # across the ±pi seam instead of losing the window when the exact tick
+    # has no sample (samples are ~1s apart; exact 4s-aligned ticks are rare).
+    yaw_t: list[int] = [s[0] for s in samples if s[4] is not None]
+    yaw_uw: list[float] = unwrap_radians(yaw_raw)
+    # unwrapped yaw per sample index (None where the sample has no yaw)
+    uw_by_sample: list[float | None] = []
+    yi = 0
+    for s in samples:
+        if s[4] is not None:
+            uw_by_sample.append(yaw_uw[yi])
+            yi += 1
+        else:
+            uw_by_sample.append(None)
+
+    def yaw_uw_at(target_ticks: int) -> float | None:
+        """UNWRAPPED yaw interpolated at a target tick; None outside the yaw
+        sample range. The wrapped value is wrap_pi() of this."""
+        if not yaw_uw or target_ticks <= yaw_t[0] or target_ticks >= yaw_t[-1]:
+            return None
+        lo, hi = 0, len(yaw_t) - 1
+        while hi - lo > 1:
+            mid = (lo + hi) // 2
+            if yaw_t[mid] <= target_ticks:
+                lo = mid
+            else:
+                hi = mid
+        f = (target_ticks - yaw_t[lo]) / (yaw_t[hi] - yaw_t[lo])
+        return yaw_uw[lo] + (yaw_uw[hi] - yaw_uw[lo]) * f
+
+    # Build the moving-window endpoint list first (interpolated x/z when the
+    # exact target tick has no sample, exactly like marker_series).
+    ends: list[tuple[float, float]] = []
+    for a in samples:
+        target = a[0] + window_ticks
+        if target >= samples[-1][0]:
+            break
+        pos = _interp_at([(s[0], s[1], s[2], s[3]) for s in samples], target)
+        if pos is None:
+            # Exactly on a sample: use it directly.
+            exact = next((s for s in samples if s[0] == target), None)
+            ends.append((exact[1], exact[3]) if exact else (samples[-1][1], samples[-1][3]))
+        else:
+            ends.append((pos[0], pos[2]))
+
+    for i in range(len(samples) - 1):
+        a = samples[i]
+        b = samples[i + 1]
+        dt = b[0] - a[0]
+        if dt <= 0:
+            continue
+        dt_sec = dt / TICKS_PER_SECOND
+        speed_mps = math.hypot(b[1] - a[1], b[3] - a[3]) / dt_sec
+        if speed_mps <= speed_threshold:
+            continue
+        if i >= len(ends):
+            break
+        end_x, end_z = ends[i]
+        h1 = wrap_pi(math.atan2(b[1] - a[1], b[3] - a[3])) if math.hypot(b[1] - a[1], b[3] - a[3]) >= 0.01 else None
+        h2 = wrap_pi(math.atan2(end_x - a[1], end_z - a[3])) if math.hypot(end_x - a[1], end_z - a[3]) >= 0.01 else None
+        moving_windows += 1
+        if h1 is not None and h2 is not None:
+            motion_deltas.append(wrap_pi(h2 - h1))
+        if a[4] is not None:
+            uw_end = yaw_uw_at(a[0] + window_ticks)
+            if uw_end is not None:
+                wrapped = wrap_pi(wrap_pi(uw_end) - a[4])
+                yaw_deltas.append(wrapped)
+
+    def deg(vals: list[float]) -> dict:
+        return summarize([math.degrees(v) for v in vals])
+
+    yaw_deg = [math.degrees(v) for v in yaw_deltas]
+    return {
+        "window_seconds": window_seconds,
+        "speed_threshold_mps": speed_threshold,
+        "moving_windows": moving_windows,
+        "seam_crossings": wrap_crossings,
+        "motion_heading_delta_rad": summarize(motion_deltas) if motion_deltas else {"n": 0},
+        "motion_heading_delta_deg": deg(motion_deltas) if motion_deltas else {"n": 0},
+        "packet_yaw_delta_deg": deg(yaw_deltas) if yaw_deltas else {"n": 0},
+        "recommended": {
+            # The live yaw-delta pilot compares per-window in-memory facing
+            # change against the packet yaw delta; the target is the median
+            # turn (usually ~0 deg over a short window with occasional
+            # maneuvers) so tolerance comes from the observed spread.
+            "yaw_delta_target_deg": round(statistics.median(yaw_deg), 4) if yaw_deg else 0.0,
+            "yaw_delta_tolerance_deg": round(
+                max(
+                    (sum(1 for v in yaw_deg if abs(v) > 1.0) / len(yaw_deg))
+                    * max((abs(v) for v in yaw_deg), default=0.0),
+                    1.0,
+                ),
+                4,
+            ) if yaw_deg else 1.0,
+        },
     }
 
 
@@ -643,6 +858,8 @@ def main(argv: list[str]) -> int:
                         help="rolling round counts for survival projection (default 5,10,15)")
     parser.add_argument("--movement", action="store_true",
                         help="segment the participant replay into moving/stationary phases")
+    parser.add_argument("--heading-delta", action="store_true",
+                        help="movement-gated, wrap-aware per-window heading/turn series (motion heading + packet yaw deltas)")
     parser.add_argument("--speed-threshold", type=float, default=0.5,
                         help="m/s threshold for the moving phase (default 0.5)")
     parser.add_argument("--hp-delta", action="store_true",
@@ -748,6 +965,40 @@ def main(argv: list[str]) -> int:
 
     if args.movement:
         result["movement"] = movement_phases(samples, args.speed_threshold)
+
+    if args.heading_delta:
+        # The facing series needs packet yaw, which the default pick may not
+        # have (older duplicate decodes predate migration 5).
+        session = pick_yaw_session(con)
+        if args.session:
+            found = con.execute(
+                "SELECT id, game_version, map_name, duration_ticks, "
+                "viewpoint_participant_id FROM battle_sessions WHERE id=?",
+                (args.session,),
+            ).fetchone()
+            if found is None:
+                raise SystemExit(f"session not found: {args.session}")
+            session = dict(found)
+        participants = moving_participants(con, session["id"])
+        if not participants:
+            raise SystemExit("no participants with samples for this session")
+        participant_id = args.participant or participants[0][0]
+        yaw_samples = participant_samples(con, session["id"], participant_id, with_yaw=True)
+        heading = heading_delta_series(yaw_samples, args.window, args.speed, args.speed_threshold)
+        result["session_id"] = session["id"]
+        result["map_name"] = session["map_name"]
+        result["participant_id"] = participant_id
+        result["heading_delta"] = heading
+        result["heading_delta"] = heading
+        if "commands" not in result:
+            result["commands"] = {}
+        result["commands"]["facing_yaw_delta_pilot"] = build_command(
+            session["id"],
+            "Float",
+            heading["recommended"]["yaw_delta_target_deg"],
+            heading["recommended"]["yaw_delta_tolerance_deg"],
+            args.window,
+        )
 
     if args.hp_delta:
         if args.victim_entity <= 0:

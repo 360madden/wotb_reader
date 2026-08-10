@@ -866,6 +866,7 @@ tools/ghidra-scripts/functions-disasm.txt
 tools/ghidra-scripts/ghidra-offset-candidates.json
 tools/ghidra-scripts/window-disasm.txt
 tools/ghidra-scripts/writesite-disasm.txt
+tools/ghidra-scripts/writesite-matrix-helper-disasm.txt
 tools/ghidra-scripts/writesite-ring-disasm.txt
 tools/psscriptanalyzer-custom-rules.psm1
 tools/psscriptanalyzer-settings.psd1
