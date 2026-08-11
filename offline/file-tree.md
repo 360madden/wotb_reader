@@ -303,6 +303,7 @@ docs/operations/record-diffing-groundwork.md
 docs/operations/replay-crosscheck.md
 docs/operations/replaytime-live-attempt-plan.md
 docs/operations/resolver-path-consolidation.md
+docs/operations/t1-turret-traversal-design.md
 docs/operations/x1-live-game-policy-memo.md
 docs/project-context.md
 docs/superpowers/plans/2026-07-26-dashboard-read-ui.md

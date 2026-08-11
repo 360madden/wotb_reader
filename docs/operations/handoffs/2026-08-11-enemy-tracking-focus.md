@@ -603,6 +603,22 @@ type-10 ground truth:
   (id + position + rotation + HP in one 0xB8-byte window) is a candidate
   one-read-per-tank overlay surface, unproven as canonical.
 
+## T1 turret-traversal session design pre-staged (2026-08-11)
+
+Turret/lock-on discovery is LIVE-BEHAVIORAL only (no replay ground truth,
+three-way negative), so the session design is now scripted end-to-end:
+`docs/operations/t1-turret-traversal-design.md`. The key insight: in replay
+playback the viewed tank's turret tracks the CAMERA aim, and the live-frame
+surface already reads camera pose + entity-base regions under one G2 clock
+attestation — so the session is a pure script composition (user rotates the
+camera while the hull stays put; driver captures camera pose + viewpoint
+entity base + decoded hull rotation at ~1 Hz). The discriminator: a turret
+candidate must track the camera yaw (wrap-aware, per-dump bounded lag,
+088/089 machinery) while the known hull copies (+0x48/4C/50) stay constant;
+target-id candidates join against the roster. Includes the branch table
+(turret HIT / pitch-only / honest negative / lock-on) and the open questions
+(replay lock-on simulation, turret-relative offset, entity-base residency).
+
 ## Files touched
 
 - `src/WotBTreader.Core/Discovery/RingRecordRegion.cs` (pure ring-region
@@ -745,5 +761,7 @@ type-10 ground truth:
 - `offline/replay-format.md` (type-5 row corrected: x/y/z claim did not
   reproduce; tail unclassified, no rotation)
 - `docs/operations/product-roadmap.md` (T1 row: turret/lock-on
-  live-behavioral workstream, three-way established)
+  live-behavioral workstream, three-way established; design-doc pointer)
+- `docs/operations/t1-turret-traversal-design.md` (T1 session design:
+  camera-as-turret-driver, camera-yaw discriminator, branch table)
 - `docs/operations/handoffs/2026-08-11-enemy-tracking-focus.md` (this file)
