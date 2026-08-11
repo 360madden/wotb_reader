@@ -230,6 +230,17 @@ memory-space offset is the third-person proof). Session script is now
 **v5** (GameCamera pose + memory-space correlation + decoded-yaw
 timeline). Handoff:
 `docs/operations/handoffs/2026-08-11-cam002-live-pose-layout.md`.
+✅ **CAM-001 verdict: `camera-state-consistent` (2026-08-11, CAM-004)**:
+GameCamera posA `+0x38` is the true world camera — **23.57 m** from the
+viewpoint tank (7/8 rounds within 1-30 m, memory-space, same wall time),
+identity gates pass, posC `+0xB0` is a different quantity (368.8 m). The
+CAM-003 resolver gate is **phase-dependent, now resolved**: the
+session-controller vftable flips between launches (`base+0x325ad2c` →
+resolver rejects; `base+0x323d9bc` → resolver resolves), and v6's
+gate-free direct walk is the fallback for the rejected phase. Next: wire
+the verified pose through the `cameraOverride` seam (host exposes the
+memory camera during the gate-verified session). Handoff:
+`docs/operations/handoffs/2026-08-11-cam004-camera-state-consistent.md`.
 
 ### Phase 2 — The live seam + first live sessions (serialized)
 

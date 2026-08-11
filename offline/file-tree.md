@@ -247,6 +247,7 @@ docs/operations/handoffs/2026-08-10-walkable-position-chain-draft.md
 docs/operations/handoffs/2026-08-11-cam001-pre-staged-aslr-correction.md
 docs/operations/handoffs/2026-08-11-cam002-live-pose-layout.md
 docs/operations/handoffs/2026-08-11-cam003-session-controller-phase-drift.md
+docs/operations/handoffs/2026-08-11-cam004-camera-state-consistent.md
 docs/operations/handoffs/2026-08-11-camera-family-hierarchy-factory.md
 docs/operations/handoffs/2026-08-11-camera-family-rtti.md
 docs/operations/handoffs/2026-08-11-camera-ownership-root.md

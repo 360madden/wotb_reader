@@ -12,13 +12,15 @@ No runtime AI, cloud, Python, Node.js, Rust, Electron, or containers.
   pass (ReplayCameraController `base+0x326dd0c` / GameCamera
   `base+0x32dafa0`), and the live pose lives on the **GameCamera**
   (position `+0x38`, yaw cos/sin `+0x50/+0x54`, pitch `+0x58`, basis
-  `+0x80..0xA8`). **Known blocker (CAM-003):** the game currently runs a
-  third session-controller vftable (`base+0x325ad2c`) whose member layout
-  the resolver's hard-coded gates reject — `/discover/entity-position` and
-  `/discover/position-page` return `UnsupportedSessionController` this
-  phase (unchanged od-073 poll 0/12 today vs 24/24 on 2026-08-09; likely
-  the 08-11 DLC update). Mitigation: the CAM-001 v6 gate-free direct walk.
-  The 08-09 offset-promotion history below is complete and retained.
+  `+0x80..0xA8`). **CAM-001 verdict: `camera-state-consistent` (2026-08-11,
+  CAM-004)** — GameCamera posA `+0x38` is the true world camera (23.57 m
+  third-person offset from the viewpoint tank, 7/8 rounds). **Known caveat
+  (CAM-003):** the session-controller vftable FLIPS between launches
+  (`base+0x325ad2c` — resolver's hard-coded gates reject it and
+  `/discover/entity-position` + `/position-page` return
+  `UnsupportedSessionController` — vs `base+0x323d9bc`, where they
+  resolve). Mitigation: the CAM-001 v6 gate-free direct walk. The 08-09
+  offset-promotion history below is complete and retained.
 - **Offset-promotion history (2026-08-09):** offset discovery — module-rooted player-position
   polling. Continuous polling is positive in **two distinct 11.19.0 replays**
   (Dead Rail 24/24; Oasis Palms 24/24, stable-resolver-positive) — cross-replay
