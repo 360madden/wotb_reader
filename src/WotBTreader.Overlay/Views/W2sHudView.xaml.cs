@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -78,6 +79,7 @@ public sealed partial class W2sHudView : UserControl
         double? cameraZ,
         double? cameraYawRadians,
         IReadOnlyList<KillItem> killFeed,
+        IReadOnlyList<ScoreboardItem> scoreboard,
         ImageSource? minimapImage,
         double? playbackProgress,
         string? playbackLabel,
@@ -111,10 +113,88 @@ public sealed partial class W2sHudView : UserControl
             HudCanvas.Children.Add(BuildKillFeed(killFeed));
         }
 
+        if (scoreboard.Count > 0)
+        {
+            HudCanvas.Children.Add(BuildScoreboard(scoreboard));
+        }
+
         if (playbackProgress is not null)
         {
             HudCanvas.Children.Add(BuildPlaybackBar(playbackProgress.Value, playbackLabel, viewportWidth));
         }
+    }
+
+    /// <summary>
+    /// Builds the scoreboard panel: every roster tank's cumulative damage
+    /// dealt and kills at the current frame time, pinned to the top-right
+    /// corner, sorted by the view model (damage dealt, highest first). Rows
+    /// are team-colored (blue/red), greyed when the tank is destroyed.
+    /// </summary>
+    private static Canvas BuildScoreboard(IReadOnlyList<ScoreboardItem> scoreboard)
+    {
+        const double margin = 12;
+        const double rowHeight = 16;
+        const double panelWidth = 240;
+        const double maxRows = 14;
+
+        var panel = new Canvas
+        {
+            Background = CreateBrush("#80101820"),
+        };
+        Canvas.SetRight(panel, margin);
+        Canvas.SetTop(panel, margin);
+
+        int shown = 0;
+        foreach (ScoreboardItem row in scoreboard)
+        {
+            if (shown >= maxRows)
+            {
+                break;
+            }
+
+            Brush brush = row.Alive
+                ? (row.TeamNumber == 1 ? Team1Brush : row.TeamNumber == 2 ? Team2Brush : NeutralBrush)
+                : DeadBrush;
+
+            var line = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Margin = new Thickness(6, 1, 6, 1),
+            };
+            line.Children.Add(new TextBlock
+            {
+                Text = row.PlayerName,
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = brush,
+                Width = 128,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            });
+            line.Children.Add(new TextBlock
+            {
+                Text = row.DamageDealt.ToString(CultureInfo.InvariantCulture),
+                FontSize = 11,
+                Foreground = brush,
+                Width = 52,
+                TextAlignment = TextAlignment.Right,
+            });
+            line.Children.Add(new TextBlock
+            {
+                Text = row.Kills.ToString(CultureInfo.InvariantCulture),
+                FontSize = 11,
+                Foreground = brush,
+                Width = 32,
+                TextAlignment = TextAlignment.Right,
+            });
+
+            Canvas.SetTop(line, shown * rowHeight);
+            panel.Children.Add(line);
+            shown++;
+        }
+
+        panel.Width = panelWidth;
+        panel.Height = shown * rowHeight + 4;
+        return panel;
     }
 
     /// <summary>

@@ -62,6 +62,9 @@ public sealed class ReadApiEndpointsTests
         Assert.IsFalse(behind.InViewport);
         Assert.AreEqual(0.0, behind.WorldX, 1e-9);
         Assert.AreEqual(-100.0, behind.WorldZ, 1e-9);
+        // Scoreboard totals ride through (0 is the default in this fixture).
+        Assert.AreEqual(0, front.DamageDealt);
+        Assert.AreEqual(0, front.Kills);
     }
 
     [TestMethod]

@@ -363,6 +363,15 @@ public sealed record OverlayTankResponse
     /// rotation evidence or its facing projects to a single pixel. Drives the
     /// nameplate facing arrow.</summary>
     public double? ScreenHeadingDegrees { get; init; }
+
+    /// <summary>Cumulative damage this tank has dealt up to the frame time
+    /// (sum of damage events attributed to it as attacker; 0 when no
+    /// evidence). Scoreboard column.</summary>
+    public long DamageDealt { get; init; }
+
+    /// <summary>Destroy kills this tank has scored up to the frame time.
+    /// Scoreboard column.</summary>
+    public long Kills { get; init; }
 }
 
 /// <summary>

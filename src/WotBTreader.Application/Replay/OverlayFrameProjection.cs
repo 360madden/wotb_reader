@@ -23,7 +23,10 @@ public sealed record ProjectedTank(
     double? ScreenY,
     double? Depth,
     bool InViewport,
-    double? ScreenHeadingDegrees);
+    double? ScreenHeadingDegrees,
+    // Cumulative battle statistics at the frame time (scoreboard columns).
+    long DamageDealt,
+    long Kills);
 
 /// <summary>
 /// One beacon projected onto the viewport. Screen coordinates are null when
@@ -125,7 +128,9 @@ public static class OverlayFrameProjector
                             tank.X,
                             tank.Y,
                             tank.Z,
-                            tank.YawRadians.Value));
+                            tank.YawRadians.Value),
+                    tank.DamageDealt,
+                    tank.Kills);
             })
             .OrderBy(tank => tank.DistanceMeters)
             .ToList();

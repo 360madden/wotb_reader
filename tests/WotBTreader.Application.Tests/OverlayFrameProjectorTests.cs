@@ -63,6 +63,31 @@ public sealed class OverlayFrameProjectorTests
     }
 
     [TestMethod]
+    public void Project_CarriesScoreboardTotalsThrough()
+    {
+        OverlayFrame frame = new(
+            TimeSpan.FromSeconds(10),
+            new OverlayCamera(0, 0, 0, YawRadians: 0, PitchRadians: 0, RollRadians: 0),
+            new[]
+            {
+                new OverlayTankState(1, 0, 0, 10, 0.1, 1.0, true, 1, "A", null, "TankA", "Heavy", 10,
+                    DamageDealt: 1200, Kills: 2),
+                new OverlayTankState(2, 0, 0, 50, 0.1, 0.0, false, 2, "B", null, "TankB", "Heavy", 50,
+                    DamageDealt: 800, Kills: 0),
+            },
+            []);
+
+        OverlayFrameProjection projection = OverlayFrameProjector.Project(frame, Fov, 1920, 1080);
+
+        ProjectedTank leader = projection.Tanks.Single(tank => tank.EntityId == 1);
+        Assert.AreEqual(1200, leader.DamageDealt);
+        Assert.AreEqual(2, leader.Kills);
+        ProjectedTank behind = projection.Tanks.Single(tank => tank.EntityId == 2);
+        Assert.AreEqual(800, behind.DamageDealt);
+        Assert.AreEqual(0, behind.Kills);
+    }
+
+    [TestMethod]
     public void Project_CarriesKillFeedThrough()
     {
         OverlayFrame frame = new(

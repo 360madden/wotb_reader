@@ -37,7 +37,14 @@ public sealed record OverlayTankState(
     string? ClanTag,
     string? TankName,
     string? TankClass,
-    double DistanceMeters);
+    double DistanceMeters,
+    // Cumulative battle statistics at the frame time: damage this tank has
+    // dealt to other roster entities (sum of damage events attributed to it
+    // as attacker, 0 when no evidence) and destroy kills it has scored. Both
+    // drive the overlay scoreboard; 0 is the fail-closed default for samples
+    // that predate the fields.
+    long DamageDealt = 0,
+    long Kills = 0);
 
 /// <summary>
 /// A persistent point of interest anchored in world space, rendered as a

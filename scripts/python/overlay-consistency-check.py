@@ -94,6 +94,18 @@ def check_session(
             break
 
         max_roster = max(max_roster, len(frame.get("tanks", [])))
+        # Scoreboard invariants: damage dealt is cumulative and non-negative;
+        # the kills column sums to the kill-feed size (same attribution).
+        for tank in frame.get("tanks", []):
+            damage = tank.get("damageDealt")
+            if not isinstance(damage, int) or damage < 0:
+                errors.append(f"t={t:.0f}: tank {tank.get('entityId')} damageDealt invalid: {damage!r}")
+            if not isinstance(tank.get("kills"), int) or tank.get("kills") < 0:
+                errors.append(f"t={t:.0f}: tank {tank.get('entityId')} kills invalid: {tank.get('kills')!r}")
+        scored = sum(t.get("kills") or 0 for t in frame.get("tanks", []))
+        if scored != len(frame.get("kills", [])):
+            errors.append(f"t={t:.0f}: kills scored ({scored}) != kill feed size ({len(frame.get('kills', []))})")
+
         for key in ("cameraX", "cameraY", "cameraZ", "cameraYawRadians", "cameraPitchRadians"):
             value = frame.get(key)
             if value is not None and not finite(value):

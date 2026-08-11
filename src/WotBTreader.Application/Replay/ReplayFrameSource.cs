@@ -94,6 +94,9 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
         // HP arc: cumulative damage and destroyed flags per victim entity.
         Dictionary<long, long> totalDamage = [];
         Dictionary<long, TimeSpan> destroyedAt = [];
+        // Cumulative damage each entity has DEALT up to the frame time (the
+        // scoreboard's damage-dealt column). One pass, like the HP arc.
+        Dictionary<long, long> damageDealt = [];
         foreach (CanonicalEvent canonical in projection.Events)
         {
             if (canonical.EntityId is null || canonical.EntityId <= 0)
@@ -106,6 +109,12 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
             {
                 case CanonicalEventKind.Damage when TryParseDamage(canonical.ValuesJson, out int damage):
                     totalDamage[entityId] = totalDamage.GetValueOrDefault(entityId) + damage;
+                    if (canonical.ReplayTime <= replayTime
+                        && TryParseAttacker(canonical.ValuesJson, out long attacker))
+                    {
+                        damageDealt[attacker] = damageDealt.GetValueOrDefault(attacker) + damage;
+                    }
+
                     break;
                 case CanonicalEventKind.Destroyed:
                     destroyedAt.TryAdd(entityId, canonical.ReplayTime);
@@ -120,6 +129,18 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
         // The window is short so the HUD only shows the live feed; an event
         // at the frame time itself is the current tick and counts.
         List<OverlayEventPip> pips = BuildPips(projection, replayTime);
+
+        // Kill log + per-killer counts for the scoreboard. Built once here so
+        // the tank loop and the frame share the same attribution.
+        List<OverlayKill> kills = BuildKills(projection, replayTime);
+        Dictionary<long, long> killsByKiller = [];
+        foreach (OverlayKill kill in kills)
+        {
+            if (kill.KillerEntityId is long killer)
+            {
+                killsByKiller[killer] = killsByKiller.GetValueOrDefault(killer) + 1;
+            }
+        }
 
         List<OverlayTankState> tanks = [];
         foreach ((long entityId, List<PositionSample> samples) in byEntity)
@@ -167,11 +188,13 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
                 participant?.ClanTag,
                 participant?.TankName,
                 participant?.TankClass.ToString(),
-                distance));
+                distance,
+                damageDealt.GetValueOrDefault(entityId),
+                killsByKiller.GetValueOrDefault(entityId)));
         }
 
         tanks.Sort(static (left, right) => left.DistanceMeters.CompareTo(right.DistanceMeters));
-        return new OverlayFrame(replayTime, camera, tanks, pips, BuildKills(projection, replayTime));
+        return new OverlayFrame(replayTime, camera, tanks, pips, kills);
     }
 
     /// <summary>

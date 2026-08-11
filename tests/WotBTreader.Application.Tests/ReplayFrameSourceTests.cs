@@ -124,6 +124,56 @@ public sealed class ReplayFrameSourceTests
     }
 
     [TestMethod]
+    public void Frame_DamageDealtAndKills_CumulativeAtFrameTime()
+    {
+        ParticipantId viewpointId = ParticipantId.New();
+        var projection = Projection(
+            viewpointId,
+            new[]
+            {
+                Participant(viewpointId, entityId: 1, "ViewpointTank", team: 1),
+                Participant(ParticipantId.New(), entityId: 2, "VictimTank", team: 2),
+                Participant(ParticipantId.New(), entityId: 3, "AttackerTank", team: 1),
+            },
+            new[]
+            {
+                Sample(entityId: 1, seconds: 0, x: 0, y: 0, z: 0, yaw: 0.1),
+                Sample(entityId: 2, seconds: 0, x: 10, y: 0, z: 0, yaw: null),
+                Sample(entityId: 3, seconds: 0, x: 20, y: 0, z: 0, yaw: null),
+            },
+            events: new[]
+            {
+                DamageWithAttackerEvent(victimEntityId: 2, attackerEntityId: 3, seconds: 2, damage: 60),
+                DamageWithAttackerEvent(victimEntityId: 2, attackerEntityId: 3, seconds: 4, damage: 40),
+                DamageWithAttackerEvent(victimEntityId: 1, attackerEntityId: 3, seconds: 5, damage: 100),
+                DestroyedEvent(entityId: 2, seconds: 4.5),
+            });
+
+        // Before any damage: zero totals.
+        OverlayFrame early = ReplayFrameSource.BuildFrame(projection, TimeSpan.FromSeconds(1));
+        OverlayTankState earlyAttacker = early.Tanks.Single(tank => tank.EntityId == 3);
+        Assert.AreEqual(0, earlyAttacker.DamageDealt);
+        Assert.AreEqual(0, earlyAttacker.Kills);
+
+        // Mid-battle: only the damage landed so far counts, no kill yet.
+        OverlayFrame mid = ReplayFrameSource.BuildFrame(projection, TimeSpan.FromSeconds(3));
+        OverlayTankState midAttacker = mid.Tanks.Single(tank => tank.EntityId == 3);
+        Assert.AreEqual(60, midAttacker.DamageDealt);
+        Assert.AreEqual(0, midAttacker.Kills);
+
+        // After the destroy: all three damage hits + the attributed kill.
+        OverlayFrame after = ReplayFrameSource.BuildFrame(projection, TimeSpan.FromSeconds(6));
+        OverlayTankState attacker = after.Tanks.Single(tank => tank.EntityId == 3);
+        Assert.AreEqual(200, attacker.DamageDealt);
+        Assert.AreEqual(1, attacker.Kills);
+        Assert.IsFalse(after.Tanks.Single(tank => tank.EntityId == 2).Alive);
+        // The kill attribution flows into the kill feed too.
+        OverlayKill kill = after.Kills.Single();
+        Assert.AreEqual(2, kill.VictimEntityId);
+        Assert.AreEqual(3, kill.KillerEntityId);
+    }
+
+    [TestMethod]
     public void Frame_BuildsEventPipsFromRecentWindow()
     {
         // Damage and destroyed events inside the trailing 2 s window become

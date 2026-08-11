@@ -1207,6 +1207,63 @@ public sealed class MainViewModelTests
     }
 
     [TestMethod]
+    public async Task RefreshOverlayFrameAsync_PopulatesScoreboardSortedByDamage()
+    {
+        string frameJson = """
+            {
+              "replayTimeSeconds": 200.0,
+              "cameraX": 0.0, "cameraY": 0.0, "cameraZ": 0.0,
+              "cameraYawRadians": 0.5, "cameraPitchRadians": 0.0,
+              "tanks": [
+                { "entityId": 2, "playerName": "Alpha", "tankName": null, "clanTag": null, "teamNumber": 2, "hpFraction": 0.5, "alive": true, "distanceMeters": 120.0, "worldX": 0.0, "worldZ": 0.0, "screenX": 800.0, "screenY": 400.0, "depth": 80.0, "inViewport": true, "damageDealt": 1200, "kills": 2 },
+                { "entityId": 3, "playerName": "Bravo", "tankName": null, "clanTag": null, "teamNumber": 1, "hpFraction": 0.0, "alive": false, "distanceMeters": 90.0, "worldX": 10.0, "worldZ": 10.0, "screenX": 700.0, "screenY": 350.0, "depth": 60.0, "inViewport": true, "damageDealt": 2500, "kills": 3 },
+                { "entityId": 4, "playerName": "Charlie", "tankName": null, "clanTag": null, "teamNumber": 1, "hpFraction": 1.0, "alive": true, "distanceMeters": 300.0, "worldX": 50.0, "worldZ": 0.0, "screenX": 500.0, "screenY": 300.0, "depth": 200.0, "inViewport": true, "damageDealt": 800, "kills": 0 }
+              ]
+            }
+            """;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            string path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/frame", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(JsonResponse(frameJson));
+            }
+
+            if (path.Contains(BattleSessionId.ToString("D"), StringComparison.Ordinal))
+            {
+                return Task.FromResult(JsonResponse("""{"session":null,"participants":[],"positions":[],"events":[]}"""));
+            }
+
+            return Task.FromResult(JsonResponse("""{"offset":0,"limit":200,"count":0,"items":[]}"""));
+        });
+        MainViewModel viewModel = CreateViewModel(handler);
+
+        await viewModel.RefreshSessionsAsync();
+        viewModel.SelectedSession = new SessionRow(
+            BattleSessionId, "Test Map", null, Now, 1, 2);
+
+        await viewModel.RefreshOverlayFrameAsync(1920, 1080);
+
+        // Sorted by damage dealt desc; names resolved; dead tanks listed greyed.
+        Assert.HasCount(3, viewModel.Scoreboard);
+        ScoreboardItem top = viewModel.Scoreboard[0];
+        Assert.AreEqual(3, top.EntityId);
+        Assert.AreEqual("Bravo", top.PlayerName);
+        Assert.AreEqual(2500, top.DamageDealt);
+        Assert.AreEqual(3, top.Kills);
+        Assert.IsFalse(top.Alive);
+        ScoreboardItem second = viewModel.Scoreboard[1];
+        Assert.AreEqual("Alpha", second.PlayerName);
+        Assert.AreEqual(1200, second.DamageDealt);
+        Assert.AreEqual(2, second.Kills);
+        ScoreboardItem last = viewModel.Scoreboard[2];
+        Assert.AreEqual("Charlie", last.PlayerName);
+        Assert.AreEqual(800, last.DamageDealt);
+        Assert.AreEqual(0, last.Kills);
+    }
+
+    [TestMethod]
     public async Task RefreshOverlayFrameAsync_PopulatesEventPips()
     {
         string frameJson = """

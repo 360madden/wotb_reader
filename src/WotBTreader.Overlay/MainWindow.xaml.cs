@@ -202,6 +202,7 @@ public partial class MainWindow : System.Windows.Window, IDisposable
             _viewModel.MinimapCameraZ,
             _viewModel.MinimapCameraYawRadians,
             _viewModel.KillFeed,
+            _viewModel.Scoreboard,
             _viewModel.MinimapImageSource,
             progress,
             label,

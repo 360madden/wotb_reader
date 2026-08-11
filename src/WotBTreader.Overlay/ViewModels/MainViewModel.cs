@@ -74,6 +74,7 @@ public class MainViewModel : INotifyPropertyChanged
     private readonly ObservableCollection<MinimapItem> _minimapItems = [];
     private readonly ObservableCollection<MinimapBeaconItem> _minimapBeacons = [];
     private readonly ObservableCollection<KillItem> _killFeed = [];
+    private readonly ObservableCollection<ScoreboardItem> _scoreboard = [];
     private CancellationTokenSource? _frameLoadCts;
     private long _frameLoadGeneration;
     private double _hudFovDegrees = 90.0;
@@ -450,6 +451,11 @@ public class MainViewModel : INotifyPropertyChanged
     /// frame, newest first, with names resolved from the frame's roster.</summary>
     public ObservableCollection<KillItem> KillFeed => _killFeed;
 
+    /// <summary>Scoreboard for the HUD: every roster tank's cumulative damage
+    /// dealt and kills at the current frame time, sorted by damage dealt
+    /// (highest first).</summary>
+    public ObservableCollection<ScoreboardItem> Scoreboard => _scoreboard;
+
     /// <summary>Vertical field of view (degrees) used to project HUD frames.</summary>
     public double HudFovDegrees
     {
@@ -516,11 +522,13 @@ public class MainViewModel : INotifyPropertyChanged
             _pips.Clear();
             _minimapItems.Clear();
             _minimapBeacons.Clear();
+            _scoreboard.Clear();
             _minimapCameraX = frame.CameraX;
             _minimapCameraZ = frame.CameraZ;
             _minimapCameraYaw = frame.CameraYawRadians;
             BuildMinimap(frame);
             BuildKillFeed(frame);
+            BuildScoreboard(frame);
             foreach (OverlayTankResponse tank in frame.Tanks)
             {
                 if (tank.ScreenX is null || tank.ScreenY is null || !tank.InViewport)
@@ -659,6 +667,30 @@ public class MainViewModel : INotifyPropertyChanged
                 victim,
                 killer,
                 kill.ReplayTimeSeconds));
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds <see cref="Scoreboard"/> from the frame's tanks, sorted by
+    /// damage dealt (highest first, then kills, then entity id for a stable
+    /// order). Every roster tank that produced a position sample appears;
+    /// dead tanks stay listed greyed with their final totals.
+    /// </summary>
+    private void BuildScoreboard(OverlayFrameResponse frame)
+    {
+        foreach (OverlayTankResponse tank in frame.Tanks
+                     .OrderByDescending(t => t.DamageDealt)
+                     .ThenByDescending(t => t.Kills)
+                     .ThenBy(t => t.EntityId))
+        {
+            _scoreboard.Add(new ScoreboardItem(
+                tank.EntityId,
+                tank.PlayerName ?? $"Tank {tank.EntityId}",
+                tank.TeamNumber,
+                tank.DamageDealt,
+                tank.Kills,
+                tank.HpFraction,
+                tank.Alive));
         }
     }
 
