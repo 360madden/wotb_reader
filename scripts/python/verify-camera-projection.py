@@ -250,11 +250,31 @@ def self_test():
         check("no-pitch expected pitch diagnostic", no_pitch["expectedPitchDeg"] is not None
               and abs(no_pitch["expectedPitchDeg"] - math.degrees(math.atan2(-5.0, 20.0))) < 0.01, no_pitch)
 
+    # 4. Concrete-pixel mirror of the C# WorldToScreenTests fixtures. The
+    #    validator claims an exact mirror of WorldToScreen.Project; these
+    #    assertions pin that claim to the C# implementation, so a drift in
+    #    either side fails here instead of silently misjudging a live
+    #    session.
+    #    PointStraightAhead_ProjectsToCenter: (0,0,0), yaw 0, pitch 0,
+    #    fov 90 deg, 1920x1080, world (0,0,10) -> (960, 540), depth 10.
+    center_px = project((0.0, 0.0, 0.0), 0.0, 0.0, 90.0, 1920.0, 1080.0, (0.0, 0.0, 10.0))
+    check("C# mirror fixture projects", center_px is not None, center_px)
+    if center_px:
+        check("C# mirror X == 960", abs(center_px[0] - 960.0) < 1e-6, center_px)
+        check("C# mirror Y == 540", abs(center_px[1] - 540.0) < 1e-6, center_px)
+        check("C# mirror depth == 10", abs(center_px[2] - 10.0) < 1e-6, center_px)
+    #    YawQuarterTurn_FacesPositiveX: yaw +pi/2, world (10,0,0) -> center.
+    quarter = project((0.0, 0.0, 0.0), math.pi / 2.0, 0.0, 90.0, 1920.0, 1080.0, (10.0, 0.0, 0.0))
+    check("C# yaw-quarter-turn fixture projects", quarter is not None, quarter)
+    if quarter:
+        check("C# yaw-quarter X == 960", abs(quarter[0] - 960.0) < 1e-6, quarter)
+        check("C# yaw-quarter Y == 540", abs(quarter[1] - 540.0) < 1e-6, quarter)
+
     if failures:
         for name, detail in failures:
             print(f"self-test FAIL: {name}: {json.dumps(detail, default=str)}")
         return 1
-    print("self-test PASS: look-at, wrong-yaw, and no-pitch fixtures behave as expected.")
+    print("self-test PASS: look-at, wrong-yaw, no-pitch, and C# mirror fixtures behave as expected.")
     return 0
 
 

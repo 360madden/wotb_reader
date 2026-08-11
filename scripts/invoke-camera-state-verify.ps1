@@ -111,9 +111,11 @@
   /discover/entity-position (same-wall-time, no decoded-clock alignment
   needed), plus a yaw alignment against the decoded frame yaw timeline.
 
-  Privacy: only aggregate correlation statistics are written (booleans,
-  counts, one yaw delta, one offset norm). No entity id, coordinates,
-  process addresses, raw bytes, paths, or capability values are persisted.
+  Privacy: aggregate correlation statistics + the per-round camera/tank
+  WORLD POSITIONS that feed verify-camera-projection.py (flagged
+  coordinatesPersisted = true in the privacy block - the W2S validator
+  needs them). No entity id, process addresses, raw bytes, paths, or
+  capability values are persisted.
 
 .EXITCODES
   0  Campaign completed and a fresh aggregate result was written.
@@ -1097,7 +1099,10 @@ $aggregate = [ordered]@{
     offsetTablePromotionReady = $false
     privacy = [ordered]@{
         entityIdsPersisted    = $false
-        coordinatesPersisted  = $false
+        # roundSamples carry the per-round camera + decoded-tank world
+        # positions by design (the W2S projection validator consumes them),
+        # so coordinates ARE persisted - flagged honestly (v7, 2026-08-11).
+        coordinatesPersisted  = $true
         processAddressesPersisted = $false
         rawBytesPersisted     = $false
         capabilityPersisted   = $false

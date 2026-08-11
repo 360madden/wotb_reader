@@ -72,6 +72,30 @@ Continued the audit across the remaining live drivers.
   `FAIL_unexpected` (exit 5) rather than a clean diagnostic — non-issue
   because the launcher just proved the gate.
 
+## Round 6 (same session) — CAM-001 v7 privacy honesty + W2S mirror pins
+
+Audit of the W2S projection path found two fixes:
+
+- **v7 privacy block lied.** The v7 camera aggregate emits per-round camera
+  + decoded-tank WORLD POSITIONS in `roundSamples` (the W2S validator's
+  input) while the privacy block claimed `coordinatesPersisted = $false`
+  — a false statement in the evidence record. Fixed: the flag is now
+  honestly `$true` with a comment explaining why, and the docstring's
+  stale privacy claim is corrected. No real v7 aggregate exists yet (all
+  8 real sessions ran v1–v6), so the validator has never seen real data —
+  that stays live-gated on the v7 session.
+- **The "exact mirror of WorldToScreen.Project" claim was unenforced.**
+  Direct comparison confirmed the math is identical (basis construction,
+  depth cutoff, focal/pixel math; Python additionally fail-closed on
+  eye/world finiteness). But the Python self-test only checked pass/fail
+  relationships, never concrete pixels — a drift would silently misjudge
+  a live session. Added concrete-pixel mirror pins to the self-test using
+  the C# fixtures verbatim: `PointStraightAhead_ProjectsToCenter`
+  ((0,0,0) yaw0 pitch0 fov90 1920x1080 world (0,0,10) -> 960,540,10) and
+  `YawQuarterTurn_FacesPositiveX` (yaw pi/2 world (10,0,0) -> 960,540).
+  Self-test passes; the quarter-turn was cross-checked manually (960.0,
+  540.0, 10.0).
+
 ## Round 5 (same session) — PSBanUninitializedVariableReads custom rule
 
 The camera StrictMode finding became a durable repo-wide pin: a new custom
