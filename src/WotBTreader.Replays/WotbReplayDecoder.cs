@@ -211,6 +211,7 @@ public sealed class WotbReplayDecoder : IReplayDecoder
             Dictionary<long, ArenaParticipantObservation> arenaByEntity = [];
             List<PositionObservation> positions = [];
             List<DamageObservation> damageEvents = [];
+            List<SpawnHealthObservation> spawnHealths = [];
             List<EventPacket> battleEndPackets = [];
             foreach (EventPacket packet in eventStream.Packets)
             {
@@ -258,6 +259,37 @@ public sealed class WotbReplayDecoder : IReplayDecoder
                 else if (damageWarning is not null)
                 {
                     warnings.Add(damageWarning);
+                }
+
+                string? spawnHealthWarning = null;
+                if (!decoded &&
+                    EventPacketDecoders.TryReadSpawnHealth(
+                        packet,
+                        out SpawnHealthObservation? spawnHealth,
+                        out spawnHealthWarning))
+                {
+                    decoded = true;
+                    spawnHealths.Add(spawnHealth!);
+                    AddRaw(
+                        rawRecords,
+                        request,
+                        ref rawOrdinal,
+                        "event-stream.packet",
+                        spawnHealth!.ReplayTime,
+                        EventPacketDecoders.EvidenceForPacket(packet),
+                        new
+                        {
+                            packetType = packet.Type,
+                            spawnHealth = new
+                            {
+                                entityId = spawnHealth.EntityId,
+                                health = spawnHealth.Health,
+                            },
+                        });
+                }
+                else if (spawnHealthWarning is not null)
+                {
+                    warnings.Add(spawnHealthWarning);
                 }
 
                 string? basePlayerCreateWarning = null;
@@ -377,6 +409,7 @@ public sealed class WotbReplayDecoder : IReplayDecoder
                 positionSamples,
                 positions,
                 damageEvents,
+                spawnHealths,
                 battleEndPackets);
 
             ReplayCapability capabilities =
@@ -789,6 +822,7 @@ public sealed class WotbReplayDecoder : IReplayDecoder
         IReadOnlyList<PositionSample> positions,
         IReadOnlyList<PositionObservation> positionObservations,
         IReadOnlyList<DamageObservation> damageEvents,
+        IReadOnlyList<SpawnHealthObservation> spawnHealths,
         IReadOnlyList<EventPacket> battleEndPackets)
     {
         List<EventDraft> drafts = [];
@@ -883,6 +917,45 @@ public sealed class WotbReplayDecoder : IReplayDecoder
                 "{}",
                 EvidenceConfidence.Exact,
                 ToEvidence(request, marker.Evidence)));
+        }
+
+        // Max health: the FIRST type-5 spawn broadcast per roster entity.
+        // Verified 2026-08-11: the first broadcast always precedes any damage
+        // packet for that entity (28/28 tanks across both replays), so its
+        // health value is the tank's max HP; later broadcasts carry the
+        // current HP (monotonic non-increasing) and are not re-emitted.
+        HashSet<long> maxHealthEntities = [];
+        foreach (SpawnHealthObservation spawnHealth in spawnHealths
+                     .OrderBy(observation => observation.Sequence))
+        {
+            if (!maxHealthEntities.Add(spawnHealth.EntityId))
+            {
+                continue;
+            }
+
+            participantProjection.ParticipantByEntity.TryGetValue(
+                spawnHealth.EntityId,
+                out ParticipantId participantId);
+            if (participantId == default)
+            {
+                // Non-roster entities (duplicate "self" stream, debris) carry
+                // type-5 broadcasts too; only roster tanks get max-HP events,
+                // mirroring the Destroyed dedupe.
+                continue;
+            }
+
+            drafts.Add(new EventDraft(
+                spawnHealth.ReplayTime,
+                spawnHealth.Sequence,
+                CanonicalEventKind.MaxHealthObserved,
+                participantId,
+                spawnHealth.EntityId,
+                JsonSerializer.Serialize(new
+                {
+                    maxHealth = spawnHealth.Health,
+                }),
+                EvidenceConfidence.Exact,
+                ToEvidence(request, spawnHealth.Evidence)));
         }
 
         foreach (EventPacket packet in battleEndPackets)

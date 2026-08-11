@@ -66,6 +66,16 @@ public enum CanonicalEventKind
     Destroyed,
     BattleStarted,
     BattleEnded,
+    /// <summary>
+    /// The tank's maximum health, read from the type-5 spawn full-state
+    /// broadcast (u16 current HP at payload +0x33). The first broadcast per
+    /// entity fires before any damage and equals max HP (verified 2026-08-11
+    /// on both 11.19 replays: author 700 == battle_results hitpoints_left,
+    /// 28/28 tanks monotonic non-increasing, first-broadcast-before-damage
+    /// 28/28, total damage_dealt &lt;= total pool on both replays). Values
+    /// json: {"maxHealth": n}.
+    /// </summary>
+    MaxHealthObserved,
 }
 
 public enum CoordinateSpace

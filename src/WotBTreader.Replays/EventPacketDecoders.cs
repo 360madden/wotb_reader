@@ -72,6 +72,20 @@ internal sealed record DamageObservation(
     int Damage,
     BinaryEvidence Evidence);
 
+/// <summary>
+/// A decoded type-5 spawn full-state broadcast. The payload leads with the
+/// entity id (u32 LE at +0x00) and carries the tank's current health as a
+/// u16 LE at +0x33. Broadcasts fire at spawn and periodically; the first
+/// broadcast per entity precedes any damage (verified 2026-08-11 on both
+/// 11.19 replays), so its health value is the tank's max HP.
+/// </summary>
+internal sealed record SpawnHealthObservation(
+    long Sequence,
+    TimeSpan ReplayTime,
+    long EntityId,
+    int Health,
+    BinaryEvidence Evidence);
+
 internal static class EventPacketDecoders
 {
     public static bool TryReadArenaParticipants(
@@ -350,6 +364,45 @@ internal static class EventPacketDecoders
             pitch,
             roll,
             isDestroyMarker,
+            EvidenceForPacket(packet));
+        return true;
+    }
+
+    /// <summary>
+    /// Decodes a type-5 spawn full-state broadcast: entity id (u32 LE at
+    /// +0x00) and current health (u16 LE at +0x33). The layout was pinned
+    /// from live replay evidence — the author's value (700) equals
+    /// battle_results hitpoints_left exactly, the value is monotonic
+    /// non-increasing per tank across broadcasts (first broadcast = max HP),
+    /// and the same tank_id reads the same value across replays.
+    /// </summary>
+    public static bool TryReadSpawnHealth(
+        EventPacket packet,
+        out SpawnHealthObservation? spawnHealth,
+        out string? warning)
+    {
+        spawnHealth = null;
+        warning = null;
+        const int minimumLength = 0x35; // u16 health at +0x33 needs 0x35 bytes
+        if (packet.Type != 5 || packet.Payload.Length < minimumLength)
+        {
+            return false;
+        }
+
+        ReadOnlySpan<byte> payload = packet.Payload.Span;
+        int entity = BinaryPrimitives.ReadInt32LittleEndian(payload);
+        int health = BinaryPrimitives.ReadUInt16LittleEndian(payload[0x33..]);
+        if (entity <= 0 || health <= 0)
+        {
+            warning = "A type-5 spawn broadcast carried a non-positive entity or health.";
+            return false;
+        }
+
+        spawnHealth = new SpawnHealthObservation(
+            packet.Ordinal,
+            TimeSpan.FromSeconds(packet.ClockSeconds),
+            entity,
+            health,
             EvidenceForPacket(packet));
         return true;
     }

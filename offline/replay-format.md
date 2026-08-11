@@ -155,6 +155,7 @@ Known packet types (decoded by `WotbReplayDecoder`):
 | Arena participants (`updateArena2` wrapper, type 8) | `CanonicalEventKind.ParticipantObserved` roster entries |
 | Position (type 10) | `CanonicalEventKind.Position` → `PositionSample` (raw + normalized coords) |
 | Direct damage (type 8/subtype 8) | `CanonicalEventKind.Damage` |
+| Spawn full-state (type 5) | `CanonicalEventKind.MaxHealthObserved` (first broadcast per roster entity; u32 eid at +0x00, u16 current HP at +0x33 — the first broadcast precedes any damage, so it equals max HP) |
 | Lifecycle (type 14) | `CanonicalEventKind.BattleEnded` |
 
 **Packet-type inventory — structure evidence (2026-08-10, Oasis Palms

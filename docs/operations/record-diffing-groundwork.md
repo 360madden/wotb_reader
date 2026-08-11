@@ -550,9 +550,22 @@ distance), and `OverlayFrame` (time + camera + tanks). `IOverlayFrameSource`
 (Application/Storage) + `ReplayFrameSource` (Application/Replay) build frames
 from `ISessionQueryRepository.GetProjectionAsync` — nearest-sample per entity
 (fail-closed: no sample at/before frame time means the tank is omitted), HP
-fraction from the canonical damage events (1.0 when the tank took no damage;
-exact max HP is not in the decoded data), alive from the Destroyed event,
-camera from the viewpoint entity. The overlay renders only `OverlayFrame`, so
+fraction from the canonical damage events (1.0 when the tank took no damage),
+alive from the Destroyed event, camera from the viewpoint entity.
+
+**2026-08-11 — max HP is IN the replay after all (type-5 spawn broadcast).**
+`wotbreplay-inspector dump-data` on both replays shows the type-5
+full-state broadcast carries `u32 eid @ +0x00` and `u16 currentHP @ +0x33`
+(LE), fired 1–3× per tank at spawn. Validated four ways: (1) the author's
+value (700) equals `battle_results.hitpoints_left` exactly on both replays
+(Churchill I, tank_id 2897, same account); (2) the value is monotonic
+non-increasing per tank across its broadcasts (Dead Rail 2549397: 540 → 501
+after damage), so the **first broadcast per tank = max HP**; (3) aggregate
+bounds hold — total `damage_dealt` ≤ Σ first-broadcast values (8964 ≤ 12140
+Oasis, 6227 ≤ 8500 Dead Rail); (4) the same tank_id reads the same value
+across replays. So `ReplayFrameSource` can emit a true HP fraction:
+maxHP from the tank's first type-5 broadcast, current HP from the damage
+ledger, instead of clamping to 1.0. The overlay renders only `OverlayFrame`, so
 a future live source behind the same interface is a data-source swap, not a
 rewrite. 5 unit tests cover nearest-sample selection, fail-closed omission,
 the HP arc + destroy, origin camera, and the missing-session guard.

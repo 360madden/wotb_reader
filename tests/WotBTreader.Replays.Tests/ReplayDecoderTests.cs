@@ -82,6 +82,53 @@ public sealed class ReplayDecoderTests
     }
 
     [TestMethod]
+    public async Task SpawnHealthFirstBroadcastPerEntityEmitsMaxHealthObserved()
+    {
+        ReplayInput input = SyntheticReplayFactory.CreateInput(
+            SyntheticReplayFactory.CreateReplay(includeSpawnHealth: true));
+        WotbReplayProbe probe = new();
+        var probeResult = await probe.ProbeAsync(
+            input,
+            DecoderLimits.Default,
+            CancellationToken.None);
+        Assert.IsTrue(probeResult.IsSuccess, probeResult.Error?.Message);
+
+        WotbReplayDecoder decoder = new();
+        var decodeResult = await decoder.DecodeAsync(
+            new ReplayDecodeRequest(
+                input,
+                DecodeRunId.New(),
+                probeResult.Value!,
+                DecoderLimits.Default),
+            CancellationToken.None);
+        Assert.IsTrue(decodeResult.IsSuccess, decodeResult.Error?.Message);
+        ReplayDecodeProjection projection = decodeResult.Value!;
+
+        // First broadcast per roster entity = max HP; the later lower-health
+        // re-broadcast (650) and the non-roster entity (999) must not emit.
+        CanonicalEvent[] maxHealthEvents = projection.Events
+            .Where(ev => ev.Kind == CanonicalEventKind.MaxHealthObserved)
+            .OrderBy(ev => ev.EntityId)
+            .ToArray();
+        Assert.HasCount(2, maxHealthEvents);
+        Assert.AreEqual(100, maxHealthEvents[0].EntityId);
+        Assert.AreEqual(700, JsonDocument.Parse(maxHealthEvents[0].ValuesJson)
+            .RootElement.GetProperty("maxHealth").GetInt32());
+        Assert.AreEqual(200, maxHealthEvents[1].EntityId);
+        Assert.AreEqual(500, JsonDocument.Parse(maxHealthEvents[1].ValuesJson)
+            .RootElement.GetProperty("maxHealth").GetInt32());
+
+        // The type-5 packets are also preserved as typed raw records.
+        Assert.IsTrue(projection.RawRecords.Any(
+            record => record.RecordKind == "event-stream.packet" &&
+                      record.PropertiesJson?.Contains(
+                          "spawnHealth",
+                          StringComparison.Ordinal) == true));
+        Assert.IsFalse(projection.Warnings.Any(
+            warning => warning.Contains("malformed", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [TestMethod]
     public async Task BasePlayerCreatePacketDecodesAsTypedRawRecordWithArenaIdentity()
     {
         ReplayInput input = SyntheticReplayFactory.CreateInput(

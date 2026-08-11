@@ -21,7 +21,8 @@ public static class SyntheticReplayFactory
         bool insertMalformedGap = false,
         bool includeEndSentinel = true,
         ulong? basePlayerCreateArenaId = null,
-        bool includeDestroyMarker = false)
+        bool includeDestroyMarker = false,
+        bool includeSpawnHealth = false)
     {
         byte[] metadata = JsonSerializer.SerializeToUtf8Bytes(new
         {
@@ -45,7 +46,8 @@ public static class SyntheticReplayFactory
             insertMalformedGap,
             includeEndSentinel,
             basePlayerCreateArenaId,
-            includeDestroyMarker);
+            includeDestroyMarker,
+            includeSpawnHealth);
         return CreateArchive(
             (ReplayFormatConstants.MetadataEntry, metadata),
             (ReplayFormatConstants.BattleResultsEntry, battleResults),
@@ -108,7 +110,8 @@ public static class SyntheticReplayFactory
         bool insertMalformedGap,
         bool includeEndSentinel,
         ulong? basePlayerCreateArenaId = null,
-        bool includeDestroyMarker = false)
+        bool includeDestroyMarker = false,
+        bool includeSpawnHealth = false)
     {
         using MemoryStream output = new();
         WriteUInt32(output, ReplayFormatConstants.EventStreamMagic);
@@ -119,6 +122,18 @@ public static class SyntheticReplayFactory
 
         WritePacket(output, 0, 0.1f, CreateBasePlayerCreatePayload(basePlayerCreateArenaId));
         WritePacket(output, 8, 0.2f, CreateUpdateArenaPayload());
+        if (includeSpawnHealth)
+        {
+            // Type-5 spawn full-state broadcasts: a first broadcast per roster
+            // entity (max HP), then a later lower-health re-broadcast that
+            // must NOT emit a second MaxHealthObserved event, plus a
+            // non-roster entity (999) that must not emit one either.
+            WritePacket(output, 5, 0.5f, CreateSpawnHealthPayload(100, 700));
+            WritePacket(output, 5, 0.6f, CreateSpawnHealthPayload(200, 500));
+            WritePacket(output, 5, 0.7f, CreateSpawnHealthPayload(100, 650));
+            WritePacket(output, 5, 0.8f, CreateSpawnHealthPayload(999, 400));
+        }
+
         WritePacket(output, 10, 1.0f, CreatePositionPayload(100, 10, 20, 30, yaw: 0.75f));
         if (insertMalformedGap)
         {
@@ -268,6 +283,17 @@ public static class SyntheticReplayFactory
         }
 
         return player.ToArray();
+    }
+
+    private static byte[] CreateSpawnHealthPayload(int entityId, int health)
+    {
+        // Type-5 spawn broadcast layout (pinned from real 11.19 replays):
+        // entity id u32 LE at +0x00, current health u16 LE at +0x33. The
+        // payload must be at least 0x35 bytes for the health read.
+        byte[] payload = new byte[0x40];
+        BinaryPrimitives.WriteInt32LittleEndian(payload, entityId);
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(0x33), checked((ushort)health));
+        return payload;
     }
 
     private static byte[] CreatePositionPayload(
