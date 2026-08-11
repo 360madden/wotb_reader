@@ -47,6 +47,13 @@ pass. The gate (`scripts/validate.ps1`) and CI run with `--check-fresh`, so a
 stale `file-tree.md` fails the build — run `--refresh` in the same change that
 adds, renames, or removes files, then commit the regenerated snapshot.
 
+> **Staging order matters (2026-08-11, bit the batch-rehearsal workstream).**
+> `--refresh` reads `git ls-files`, so a **newly created file is invisible
+> until it is staged** — refresh → gate → `git add` in that order silently
+> drops the new file from the snapshot, and the gate's `--check-fresh` still
+> passes because it compares against the index at the time it ran. Sequence:
+> `git add` the new/changed files FIRST, then `--refresh`, then the gate.
+
 ## Maintenance rules
 
 - **Keep it focused.** One small file per concern; no wall-of-text sections.

@@ -248,6 +248,7 @@ docs/operations/handoffs/2026-08-10-walkable-position-chain-draft.md
 docs/operations/handoffs/2026-08-11-batch-entity-read-design.md
 docs/operations/handoffs/2026-08-11-batch-entity-read-implemented.md
 docs/operations/handoffs/2026-08-11-batch-read-window-measurement.md
+docs/operations/handoffs/2026-08-11-batch-rehearsal-bughunt.md
 docs/operations/handoffs/2026-08-11-batch-rehearsal-prestaged.md
 docs/operations/handoffs/2026-08-11-cam001-pre-staged-aslr-correction.md
 docs/operations/handoffs/2026-08-11-cam002-live-pose-layout.md
