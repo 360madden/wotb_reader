@@ -117,6 +117,27 @@ the full 4×4 view composition (the remaining rows, and the other camera
 modes' stores) remain open — the last pieces before a full world→screen
 projection can be assembled from static evidence.
 
+## DAVA::Camera resolution (projection path)
+
+WoTB renders through the DAVA engine. Reverse-RTTI resolves
+`.?AVCamera@DAVA@@` (name abs `0x3fd238c`, COL abs `0x38bf8c0`):
+
+- **`DAVA::Camera::vftable = RVA 0x31c6ec4`** (forward-verifiable; 8 slots,
+  lifecycle/component methods `FUN_00a1e630`/`00a069f0`/`00a61ff0`/
+  `00a52a10`/`00a63e10`/`00a62fe0`/`00a45190`/`00a44670` — none is the
+  projection builder).
+- The projection is DAVA's non-virtual `Matrix4::BuildPerspective(fov,
+  aspect, zNear, zFar)` (inlined; not an import — no D3DX/Direct3D strings
+  in the binary).
+- **Practical conclusion for the overlay**: the repo's `WorldToScreen`
+  already implements the exact pinhole projection with an explicit vertical
+  FOV parameter (CLI `--fov`, HUD slider, API `fov`, default 90°). The
+  projection matrix does not need reverse-engineering — the two unknowns
+  are the game's true per-mode FOV and the true camera pose, both
+  measurable in the offline verification session (the `+0xAC` basis
+  cross-check will reveal whether the stored rows are view-space (FOV-free)
+  or already projection-scaled).
+
 ## Files touched
 
 `tools/ghidra-scripts/camera-family-disasm.txt` (committed evidence: the six
@@ -136,9 +157,12 @@ track; ledger OD-RECOVERY-085.
   discovery — offline verification plan". Deliverable: the true camera for
   `ReplayFrameSource.BuildCamera` (replacing the viewpoint-tank
   approximation).
-- **Projection matrix**: find where FOV builds the projection (perspective)
-  matrix — likely multiplied with the view basis in the renderer; completes
-  world→screen.
+- **FOV measurement (offline session)**: measure the game's vertical FOV
+  per camera mode (battle vs sniper vs free-cam) from the offline
+  verification session's camera-state read; tune the overlay's FOV
+  parameter. The projection math itself is already exact in
+  `WorldToScreen` (DAVA builds the same pinhole via inlined
+  `Matrix4::BuildPerspective`).
 - Resolve the camera's **global root** (who owns the battle manager holding
   `[mgr+0x2C]`) so a live/offline read plan can name a fixed address chain
   instead of a signature scan.
