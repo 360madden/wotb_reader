@@ -1224,7 +1224,7 @@ def main(argv: list[str]) -> int:
                 "hp_diff": (
                     f"wotbtreader-cli hp-diff <snapshots.json> "
                     f"--session {session['id']} --victim {victim} "
-                    f"--mode lenient"
+                    f"--mode lenient --int16 true"
                 ),
             },
         }

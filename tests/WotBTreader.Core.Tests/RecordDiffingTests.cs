@@ -707,4 +707,163 @@ public sealed class RecordDiffingTests
                 DamageCorrelationDirection.Increment);
         Assert.IsEmpty(strict);
     }
+
+    // ---- int16 candidate mode (static playerHP evidence, 2026-08-11) ----
+    // VerifyPlayerHpChain pins the 11.19.0.10 current-health field as a
+    // SIGNED int16 at [entity+0xB8] on the entity base record (alive byte
+    // at +0xBA, healing int16 at +0x11E). The correlator's int32-only
+    // default folds that field into garbage (health + alive byte + padding)
+    // or misses it entirely, so the int16 pass is the HP path.
+
+    private const int Int16HpOffset = 0xB8;
+    private const int Int16AliveOffset = 0xBA;
+
+    private static byte[] Int16Region(short hp, byte alive = 1)
+    {
+        byte[] bytes = new byte[0x100];
+        BinaryPrimitives.WriteInt16LittleEndian(bytes.AsSpan(Int16HpOffset), hp);
+        bytes[Int16AliveOffset] = alive;
+        return bytes;
+    }
+
+    [TestMethod]
+    public void Correlate_Int16ModeOff_DoesNotEmitInt16Candidates()
+    {
+        // The int32-only default must never report an int16-sized candidate.
+        // The destroy-window fixture (HP drops to 0 and the alive byte at
+        // +0xBA flips 0) is the discriminator: the coincidental int32 read
+        // at +0xB8 (health + alive<<16) matches only the non-destroy
+        // windows under Strict, while the int16 field matches all — but with
+        // the flag OFF the scan cannot even see the int16 field.
+        var snapshots = new[]
+        {
+            new RecordSnapshot(TimeSpan.Zero, Int16Region(500)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(1000), Int16Region(350)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(2000), Int16Region(275)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(3000), Int16Region(0, alive: 0)),
+        };
+        var events = new[]
+        {
+            Damage(TimeSpan.FromMilliseconds(1000), 150),
+            Damage(TimeSpan.FromMilliseconds(2000), 75),
+            Damage(TimeSpan.FromMilliseconds(3000), 275),
+        };
+
+        IReadOnlyList<DamageCorrelationCandidate> candidates =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                TargetEntity);
+
+        Assert.IsTrue(candidates.All(c => c.Length == sizeof(int)),
+            "int32-only scan must never emit an int16 candidate");
+    }
+
+    [TestMethod]
+    public void Correlate_Int16ModeOn_RanksInt16HpFieldFirst_UnderStrict()
+    {
+        // With the int16 pass enabled, the true int16 HP at +0xB8 matches
+        // all three windows exactly (150/75/275) and ranks first with
+        // length 2; the coincidental int32 read at the same offset (health +
+        // alive<<16) drops 2^16 extra in the destroy window, so it cannot
+        // confirm under Strict (the verdict contract's confirmation pass).
+        var snapshots = new[]
+        {
+            new RecordSnapshot(TimeSpan.Zero, Int16Region(500)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(1000), Int16Region(350)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(2000), Int16Region(275)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(3000), Int16Region(0, alive: 0)),
+        };
+        var events = new[]
+        {
+            Damage(TimeSpan.FromMilliseconds(1000), 150),
+            Damage(TimeSpan.FromMilliseconds(2000), 75),
+            Damage(TimeSpan.FromMilliseconds(3000), 275),
+        };
+
+        IReadOnlyList<DamageCorrelationCandidate> candidates =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                TargetEntity,
+                DamageMatchMode.Strict,
+                DamageCorrelationDirection.Decrement,
+                includeInt16Candidates: true);
+
+        Assert.IsNotEmpty(candidates);
+        Assert.AreEqual(Int16HpOffset, candidates[0].Offset);
+        Assert.AreEqual(sizeof(short), candidates[0].Length);
+        Assert.AreEqual(1.0, candidates[0].Score, 1e-9);
+        Assert.AreEqual(3, candidates[0].MatchedDamageWindows);
+        Assert.AreEqual(1.0, candidates[0].Flatness, 1e-9);
+    }
+
+    [TestMethod]
+    public void Correlate_Int16Mode_StrictConfirmsExactDrops()
+    {
+        // The verdict contract's Strict confirmation also works on int16:
+        // exact-sum drops rank, and a magnitude-mismatched int16 decoy
+        // (drops 90 vs 150 damage in the same window) is excluded.
+        byte[] RegionWithDecoy(short hp, short decoy)
+        {
+            byte[] bytes = Int16Region(hp);
+            BinaryPrimitives.WriteInt16LittleEndian(bytes.AsSpan(0x40), decoy);
+            return bytes;
+        }
+
+        var snapshots = new[]
+        {
+            new RecordSnapshot(TimeSpan.Zero, RegionWithDecoy(500, 500)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(1000), RegionWithDecoy(350, 410)),
+        };
+        var events = new[]
+        {
+            Damage(TimeSpan.FromMilliseconds(1000), 150),
+        };
+
+        IReadOnlyList<DamageCorrelationCandidate> candidates =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                TargetEntity,
+                DamageMatchMode.Strict,
+                DamageCorrelationDirection.Decrement,
+                includeInt16Candidates: true);
+
+        Assert.IsNotEmpty(candidates);
+        Assert.AreEqual(Int16HpOffset, candidates[0].Offset);
+        Assert.IsFalse(candidates.Any(c => c.Offset == 0x40),
+            "magnitude-mismatched int16 decoy must be excluded under Strict");
+    }
+
+    [TestMethod]
+    public void Correlate_Int16Mode_IncrementCounterStillRanksFirst()
+    {
+        // Damage-dealt (Increment, int32 counter) with the int16 pass also
+        // enabled: the int32 counter still ranks first — the int16 pass
+        // only ADDS candidates, never demotes the true counter.
+        var snapshots = new[]
+        {
+            new RecordSnapshot(TimeSpan.Zero, Region(hp: 0, counter: 100)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(1000), Region(hp: 0, counter: 250)),
+        };
+        var events = new[]
+        {
+            DealtDamage(TimeSpan.FromMilliseconds(1000), 150),
+        };
+
+        IReadOnlyList<DamageCorrelationCandidate> candidates =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                TargetEntity,
+                DamageMatchMode.Lenient,
+                DamageCorrelationDirection.Increment,
+                includeInt16Candidates: true);
+
+        Assert.IsNotEmpty(candidates);
+        Assert.AreEqual(CounterOffset, candidates[0].Offset);
+        Assert.AreEqual(4, candidates[0].Length);
+        Assert.AreEqual(1.0, candidates[0].Score, 1e-9);
+    }
 }

@@ -87,8 +87,14 @@ damage extraction) → `RecordChangeBucketer` → `HpDamageCorrelator` finds
 the HP field 2/2 — the two halves compose with the actual data shape.
 **Documented limitations:** events outside the observed snapshot
 span are observation gaps and do not inflate the denominator; healing (no
-in-battle healing in WoTB) is not modeled; a non-int32 HP representation
-(wrong field size/alignment) is out of scope for this correlator.
+in-battle healing in WoTB) is not modeled. The int32-only scan is the
+historic default; the int16 candidate pass (added 2026-08-11 — the static
+playerHP evidence pins HP as int16 at [entity+0xB8]) is opt-in per call and
+on by default for the HP (`decrement`) direction in `hp-diff`.
+`Correlate_Int16ModeOn_RanksInt16HpFieldFirst_UnderStrict` proves the
+int16 field ranks first under Strict while the coincidental int32 read at
+the same offset (health + alive<<16) cannot confirm through the destroy
+window.
 
 ### Remaining: the live trusted reader (approved-session step)
 
@@ -122,17 +128,38 @@ The L0 seam is now IMPLEMENTED (2026-08-10):
    session consumes.
 
    **Region anchor (CORRECTED 2026-08-10 — the L1 wiring originally pointed
-   at the wrong object).** The HP / damage-dealt harness anchors the dump at
-   the per-entity TANK record `[entity+0x3C]` (Ghidra-candidate layout),
+   at the wrong object; CORRECTED AGAIN 2026-08-11 with static HP
+   evidence).** The HP / damage-dealt harness anchors the dump at the
+   per-entity TANK record `[entity+0x3C]` (Ghidra-candidate layout),
    NOT the movement ring record the position resolver reads. The ring
    record is 0x38 bytes (position +0x10, velocity +0x28, stride 0x38) — a
    `+0x48` offset there would land 0x10 bytes past its end, i.e. unrelated
    memory. The seam now carries `RegionAnchor: ring-record |
-   entity-tank-record`; for the tank-record anchor the coordinator
-   dereferences `[entity + 0x3C]` itself under the same guarded lease
-   (validating the pointer before any read) so the caller still only
-   receives bytes. The resolver now also exposes the resolved entity base in
-   `Type10EntityPositionAddressResult` to make that dereference possible.
+   entity-tank-record | entity-base`; for the tank-record anchor the
+   coordinator dereferences `[entity + 0x3C]` itself under the same
+   guarded lease (validating the pointer before any read) so the caller
+   still only receives bytes. The resolver now also exposes the resolved
+   entity base in `Type10EntityPositionAddressResult` to make that
+   dereference possible.
+
+   **2026-08-11 static correction — HP lives on the ENTITY BASE, not the
+   tank record.** `VerifyPlayerHpChain.java` (hash-bound, 11/11 checks,
+   sha256 `1cda5c31…1760307d`, verdict `player-hp-chain-verified`) pins the
+   current-health field as a SIGNED int16 at `[entity+0xB8]` on the entity
+   base record itself, with the alive byte at `[entity+0xBA]` and the
+   healing int16 at `[entity+0x11E]`. The evidence chain: VehicleGameLogic
+   vftable slot 1 (0x31b560) is the byte-verified entity getter
+   `MOV EAX,[ECX+0x4]; RET`; `set_health`
+   (`FUN_016ee450`) reads the OLD value through it
+   (`MOVSX EDI,word ptr [EAX+0xb8]`) and `set_healingHealth`
+   (`FUN_016ee350`) reads `[EAX+0x11e]`; the state-sync writer
+   `FUN_0166b9f0` stores int16→`+0xB8`, byte→`+0xBA`, int16→`+0x11E`;
+   the diff-notify twin `FUN_01675f60` does the same with
+   property-changed listener dispatch (vtable +0x68). So the HP session
+   anchors at **entity-base** with a region length ≥ 0x120 and correlates
+   **int16** candidates (`hp-diff --int16 true`, on by default for the
+   decrement/HP direction). The tank-record anchor remains correct for the
+   facing/rotation work (the +0x2C tail of the transform layout).
 2. **Session driver** — `scripts/invoke-hp-diffing-session.ps1` runs the
    whole flow: gate → **qualify the victim from the decoded replay**
    (see below — do NOT default to the player's own entity) → print the
@@ -146,7 +173,11 @@ The L0 seam is now IMPLEMENTED (2026-08-10):
    (a dump just BEFORE and AFTER each damage event, ±0.2 s, so each change
    window captures exactly one hit) plus flat control dumps in the gap
    segments → `RecordChangeBucketer` → `HpDamageCorrelator` (Lenient mode
-   first — overkill) → verdict.
+   first — overkill) → verdict. Since the 2026-08-11 static correction the
+   driver defaults to `-RegionAnchor entity-base` (HP lives on the entity
+   base record at +0xB8, not the tank record at [entity+0x3C]) with a
+   default `-RegionLength 320` (≥ 0x120 covers +0x11E healing), and the
+   HP/decrement verdict path passes `--int16 true` automatically.
 3. **Verdict contract** — the top candidate offset with score, matched /
    total damage windows, and the matched window list (replay times + deltas
    vs. the provider's events). A candidate is a HIT when it (a) matches ≥ 2
@@ -254,17 +285,21 @@ offsets and NOT land exactly on an event tick — placing a dump at the event
 time itself creates a zero-width boundary window whose sum lands in the
 wrong bucket (rehearsal hit this; the step-function rebuild fixed it).
 
-**IMPORTANT (2026-08-10 cross-check): `+0x48` is a SYNTHETIC FIXTURE offset**
-— the mechanism-proof test planted the HP int32 at `+0x48` to prove the
-correlator machinery; it is NOT Ghidra-derived. The only static evidence is
-for `[entity+0x3C]` as the TRANSFORM OBJECT (getter `FUN_00d29ea0 = return
-[ECX+0x3C]`; position `+0x1C/20/24`, world matrix `+0x60..0x9C`, rotation
-`+0x38..0x5C` per FRESH43) — so `+0x48` inside that layout would land in the
-per-frame rotation block, an unlikely HP home. The live session therefore
-DISCOVERS the offset: it dumps the region and the correlator ranks whichever
-int32 actually drops with damage. If the transform region contains no
-HP-like field, the verdict is an honest no-hit and the anchor widens (entity
-base / ring record).
+**IMPORTANT (2026-08-10 cross-check, SUPERSEDED 2026-08-11): `+0x48` is a
+SYNTHETIC FIXTURE offset** — the mechanism-proof test planted the HP int32
+at `+0x48` to prove the correlator machinery; it is NOT Ghidra-derived. The
+static evidence has now LANDED (2026-08-11): `VerifyPlayerHpChain` pins
+current HP as a signed int16 at `[entity+0xB8]` on the entity BASE record
+(alive byte +0xBA, healing int16 +0x11E), with the read/write site pair
+byte-verified (set_health / set_healingHealth reads, state-sync + diff-notify
+writers). The old expectation — an int32 HP inside the transform object at
+`[entity+0x3C]` — is refuted: the field is int16 and lives 0x7C bytes past
+the transform pointer, on the entity record itself. The live session still
+DISCOVERS the offset empirically (dumps the entity-base region, the
+correlator ranks the field), but the plan now expects int16 at +0xB8 and the
+correlator's int16 pass (`--int16 true`, default for HP) makes that
+findable — an int32-only scan would fold health + alive byte + padding into
+garbage and miss it.
 
 **Simulation reading:** the extractor's `--hp-delta` survival simulation
 at `target=0` measures the flat-window pass rate (3760578 at 10s windows:

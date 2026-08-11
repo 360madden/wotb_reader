@@ -179,6 +179,18 @@ public sealed class CliCommandRouter
                 correlationId);
         }
 
+        // Static evidence (VerifyPlayerHpChain, 11.19.0.10) pins HP as a
+        // SIGNED int16 at [entity+0xB8] on the entity base record, so the
+        // HP path must scan int16 candidates or it can never find the field.
+        // Off by default so damage-dealt (int32 counter) callers are
+        // unchanged.
+        bool includeInt16 = direction == DamageCorrelationDirection.Decrement;
+        if (invocation.Options.TryGetValue("int16", out string? int16Text) &&
+            bool.TryParse(int16Text, out bool parsedInt16))
+        {
+            includeInt16 = parsedInt16;
+        }
+
         OperationResult<IReadOnlyList<RecordSnapshot>> snapshotsResult =
             HpDiffSnapshotsFile.Load(invocation.Positionals[0]);
         if (!snapshotsResult.IsSuccess || snapshotsResult.Value is null)
@@ -198,9 +210,9 @@ public sealed class CliCommandRouter
             RecordChangeBucketer.Bucket(snapshotsResult.Value);
         IReadOnlyList<HpDamageEvent> events = groundTruthResult.Value.Events;
         IReadOnlyList<DamageCorrelationCandidate> primary = HpDamageCorrelator.Correlate(
-            windows, events, victimEntityId, matchMode, direction);
+            windows, events, victimEntityId, matchMode, direction, includeInt16);
         IReadOnlyList<DamageCorrelationCandidate> confirm = HpDamageCorrelator.Correlate(
-            windows, events, victimEntityId, DamageMatchMode.Strict, direction);
+            windows, events, victimEntityId, DamageMatchMode.Strict, direction, includeInt16);
 
         DamageCorrelationCandidate? top = primary.Count > 0 ? primary[0] : null;
         DamageCorrelationCandidate? strictTop = confirm.Count > 0 ? confirm[0] : null;

@@ -885,6 +885,7 @@ tools/ghidra-scripts/DumpRawBytes.java
 tools/ghidra-scripts/DumpVtableSlots.java
 tools/ghidra-scripts/DumpWindow.java
 tools/ghidra-scripts/DumpWriteSite.java
+tools/ghidra-scripts/FindClockCopySites.java
 tools/ghidra-scripts/FindFunctionReferences.java
 tools/ghidra-scripts/FindOffsets.java
 tools/ghidra-scripts/FindOffsets.py

@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using Microsoft.Extensions.Logging.Abstractions;
 using WotBTreader.Application.Capture;
 using WotBTreader.Application.Game;
@@ -1172,6 +1173,52 @@ public sealed class GameSessionCoordinatorTests
         Assert.AreEqual(4, factory.Reader.RegionReads[0].Length);
         Assert.AreEqual(tankRecord, factory.Reader.RegionReads[1].Address.ToInt64());
         Assert.AreEqual(expectedRegion.Length, factory.Reader.RegionReads[1].Length);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_EntityBaseAnchor_ReadsEntityRecordDirectly()
+    {
+        // The static playerHP evidence (VerifyPlayerHpChain, 11.19.0.10)
+        // pins current health as a SIGNED int16 at [entity+0xB8] on the
+        // ENTITY BASE record (alive byte +0xBA, healing int16 +0x11E) — not
+        // inside the tank record at [entity+0x3C]. The entity-base anchor
+        // reads the region directly at the resolved entity address with a
+        // single guarded read (no pointer deref).
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        byte[] expectedRegion = new byte[0x120];
+        // Plant the statically-verified layout: health int16 at +0xB8.
+        BinaryPrimitives.WriteInt16LittleEndian(
+            expectedRegion.AsSpan(0xB8), (short)500);
+        expectedRegion[0xBA] = 1;
+        var factory = new TrackingEntityPositionReaderFactory(
+            CreateResolvedEntityPosition(4242),
+            regionBytes: expectedRegion);
+        var (coordinator, _) = CreateCoordinator(memoryReaderFactory: factory);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: expectedRegion.Length,
+                    RegionAnchor: EntityRecordRegionAnchor.EntityBase),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess, result.Error?.Message);
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, result.Value?.Status);
+        CollectionAssert.AreEqual(expectedRegion, result.Value?.RegionBytes);
+        // Exactly one read under the lease, AT the entity base (no pointer
+        // probe — the anchor IS the record).
+        Assert.HasCount(1, factory.Reader.RegionReads);
+        Assert.AreEqual(0x25000028, factory.Reader.RegionReads[0].Address.ToInt64());
+        Assert.AreEqual(expectedRegion.Length, factory.Reader.RegionReads[0].Length);
     }
 
     [TestMethod]

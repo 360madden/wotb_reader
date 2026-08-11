@@ -2048,6 +2048,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     readerResult.Value,
                     resolved.EntityAddress,
                     readCancellation.Token).ConfigureAwait(false),
+                // The entity base record itself: the statically-verified HP
+                // fields ([entity+0xB8] int16 current health, +0xBA alive
+                // byte, +0x11E healing int16) live on this record, not the
+                // tank record at [entity+0x3C].
+                EntityRecordRegionAnchor.EntityBase => resolved.EntityAddress,
                 _ => null,
             };
             if (regionBaseAddress is null)

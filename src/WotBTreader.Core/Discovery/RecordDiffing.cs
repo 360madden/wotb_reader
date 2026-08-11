@@ -96,9 +96,12 @@ public enum DamageMatchMode
 
 /// <summary>
 /// Correlates the target entity's damage events against the bucketed change
-/// windows: a candidate is a 4-byte-aligned int32 field whose little-endian
-/// value move in a window matches ±(Σ damage for the target entity whose
-/// event times fall in that window) per the <see cref="DamageMatchMode"/> and
+/// windows: a candidate is a 4-byte-aligned int32 field (plus 2-byte-aligned
+/// int16 fields when <c>includeInt16Candidates</c> is set — the static
+/// playerHP evidence pins current health as int16 at [entity+0xB8]) whose
+/// little-endian value move in a window matches ±(Σ damage for the target
+/// entity whose event times fall in that window) per the
+/// <see cref="DamageMatchMode"/> and
 /// <see cref="DamageCorrelationDirection"/>. Pure and offline; the memory
 /// side (trusted reader) is a separate approved-session step. Decrement
 /// direction (HP): Strict requires the drop to equal the summed damage
@@ -123,12 +126,22 @@ public static class HpDamageCorrelator
     /// descending, then precision (matched / changed damage-windows)
     /// descending, then offset ascending.
     /// </summary>
+    /// <summary>
+    /// Whether to also score 2-byte-aligned int16 candidates. The default
+    /// (false) scans only 4-byte-aligned int32 fields. Static evidence for
+    /// the 11.19.0.10 build (VerifyPlayerHpChain, 2026-08-11) pins the
+    /// vehicle current-health field as a SIGNED int16 at <c>[entity+0xB8]</c>
+    /// (alive byte at +0xBA, healing int16 at +0x11E) — the entity base's
+    /// own record, not the tank record at <c>[entity+0x3C]</c> — so an HP
+    /// session must scan int16 candidates or it will never find the field.
+    /// </summary>
     public static IReadOnlyList<DamageCorrelationCandidate> Correlate(
         IReadOnlyList<ByteChangeWindow> windows,
         IReadOnlyList<HpDamageEvent> damageEvents,
         long targetEntityId,
         DamageMatchMode matchMode = DamageMatchMode.Strict,
-        DamageCorrelationDirection direction = DamageCorrelationDirection.Decrement)
+        DamageCorrelationDirection direction = DamageCorrelationDirection.Decrement,
+        bool includeInt16Candidates = false)
     {
         ArgumentNullException.ThrowIfNull(windows);
         ArgumentNullException.ThrowIfNull(damageEvents);
@@ -191,83 +204,110 @@ public static class HpDamageCorrelator
             .ToList();
 
         List<DamageCorrelationCandidate> candidates = [];
-        int maxOffset = regionLength - sizeof(int);
-        for (int offset = 0; offset <= maxOffset; offset += sizeof(int))
+
+        // Int32 pass: every 4-byte-aligned offset (the historic candidate
+        // grid). Int16 pass (opt-in): every 2-byte-aligned offset — the
+        // static playerHP evidence pins current health as int16 at
+        // [entity+0xB8], which an int32-only scan would fold into garbage
+        // (health + alive byte + padding) or miss entirely.
+        var passes = new List<(int Width, int Stride)>
         {
-            int matched = 0;
-            int changed = 0;
-            List<MatchedDamageWindow> matchedWindows = [];
-            foreach ((ByteChangeWindow window, long sum) in damageByWindow)
+            (sizeof(int), sizeof(int)),
+        };
+        if (includeInt16Candidates)
+        {
+            passes.Add((sizeof(short), sizeof(short)));
+        }
+
+        foreach ((int width, int stride) in passes)
+        {
+            int maxOffset = regionLength - width;
+            for (int offset = 0; offset <= maxOffset; offset += stride)
             {
-                int before = BinaryPrimitives.ReadInt32LittleEndian(window.Before.AsSpan(offset));
-                int after = BinaryPrimitives.ReadInt32LittleEndian(window.After.AsSpan(offset));
-                long delta = (long)after - before;
-                if (delta == 0)
+                int matched = 0;
+                int changed = 0;
+                List<MatchedDamageWindow> matchedWindows = [];
+                foreach ((ByteChangeWindow window, long sum) in damageByWindow)
+                {
+                    long before = width == sizeof(int)
+                        ? BinaryPrimitives.ReadInt32LittleEndian(window.Before.AsSpan(offset))
+                        : BinaryPrimitives.ReadInt16LittleEndian(window.Before.AsSpan(offset));
+                    long after = width == sizeof(int)
+                        ? BinaryPrimitives.ReadInt32LittleEndian(window.After.AsSpan(offset))
+                        : BinaryPrimitives.ReadInt16LittleEndian(window.After.AsSpan(offset));
+                    long delta = after - before;
+                    if (delta == 0)
+                    {
+                        continue;
+                    }
+
+                    changed++;
+                    bool isMatch = matchMode == DamageMatchMode.Lenient
+                        ? (direction == DamageCorrelationDirection.Increment
+                            ? delta >= sum
+                            : delta <= -sum)
+                        : (direction == DamageCorrelationDirection.Increment
+                            ? delta == sum
+                            : delta == -sum);
+                    if (isMatch)
+                    {
+                        matched++;
+                        matchedWindows.Add(new MatchedDamageWindow(
+                            window.FromReplayTime,
+                            window.ToReplayTime,
+                            sum));
+                    }
+                }
+
+                if (matched == 0)
                 {
                     continue;
                 }
 
-                changed++;
-                bool isMatch = matchMode == DamageMatchMode.Lenient
+                int controlChanged = 0;
+                foreach (ByteChangeWindow control in controlWindows)
+                {
+                    long before = width == sizeof(int)
+                        ? BinaryPrimitives.ReadInt32LittleEndian(control.Before.AsSpan(offset))
+                        : BinaryPrimitives.ReadInt16LittleEndian(control.Before.AsSpan(offset));
+                    long after = width == sizeof(int)
+                        ? BinaryPrimitives.ReadInt32LittleEndian(control.After.AsSpan(offset))
+                        : BinaryPrimitives.ReadInt16LittleEndian(control.After.AsSpan(offset));
+                    if (before != after)
+                    {
+                        controlChanged++;
+                    }
+                }
+
+                double score = (double)matched / damageByWindow.Count;
+                double flatness = controlWindows.Count == 0
+                    ? 1.0
+                    : (double)(controlWindows.Count - controlChanged) / controlWindows.Count;
+                string matchText = matchMode == DamageMatchMode.Lenient
                     ? (direction == DamageCorrelationDirection.Increment
-                        ? delta >= sum
-                        : delta <= -sum)
+                        ? "rise >= +Σ damage"
+                        : "drop >= -Σ damage")
                     : (direction == DamageCorrelationDirection.Increment
-                        ? delta == sum
-                        : delta == -sum);
-                if (isMatch)
-                {
-                    matched++;
-                    matchedWindows.Add(new MatchedDamageWindow(
-                        window.FromReplayTime,
-                        window.ToReplayTime,
-                        sum));
-                }
+                        ? "delta == +Σ damage"
+                        : "delta == -Σ damage");
+                string moveWord = direction == DamageCorrelationDirection.Increment ? "rise" : "drop";
+                string typeWord = width == sizeof(int) ? "int32" : "int16";
+                candidates.Add(new DamageCorrelationCandidate(
+                    offset,
+                    width,
+                    score,
+                    matched,
+                    damageByWindow.Count,
+                    changed,
+                    $"{typeWord} at +0x{offset:X}: value {moveWord} matched {matched}/{damageByWindow.Count} "
+                    + $"damage windows (precision {matched}/{changed}); flatness "
+                    + $"{flatness:0.##} ({controlWindows.Count - controlChanged}/"
+                    + $"{controlWindows.Count} control windows unchanged); {matchText}",
+                    flatness,
+                    controlWindows.Count,
+                    controlChanged,
+                    matchedWindows));
             }
-
-            if (matched == 0)
-            {
-                continue;
-            }
-
-            int controlChanged = 0;
-            foreach (ByteChangeWindow control in controlWindows)
-            {
-                int before = BinaryPrimitives.ReadInt32LittleEndian(control.Before.AsSpan(offset));
-                int after = BinaryPrimitives.ReadInt32LittleEndian(control.After.AsSpan(offset));
-                if (before != after)
-                {
-                    controlChanged++;
-                }
-            }
-
-            double score = (double)matched / damageByWindow.Count;
-            double flatness = controlWindows.Count == 0
-                ? 1.0
-                : (double)(controlWindows.Count - controlChanged) / controlWindows.Count;
-            string matchText = matchMode == DamageMatchMode.Lenient
-                ? (direction == DamageCorrelationDirection.Increment
-                    ? "rise >= +Σ damage"
-                    : "drop >= -Σ damage")
-                : (direction == DamageCorrelationDirection.Increment
-                    ? "delta == +Σ damage"
-                    : "delta == -Σ damage");
-            string moveWord = direction == DamageCorrelationDirection.Increment ? "rise" : "drop";
-            candidates.Add(new DamageCorrelationCandidate(
-                offset,
-                sizeof(int),
-                score,
-                matched,
-                damageByWindow.Count,
-                changed,
-                $"int32 at +0x{offset:X}: value {moveWord} matched {matched}/{damageByWindow.Count} "
-                + $"damage windows (precision {matched}/{changed}); flatness "
-                + $"{flatness:0.##} ({controlWindows.Count - controlChanged}/"
-                + $"{controlWindows.Count} control windows unchanged); {matchText}",
-                flatness,
-                controlWindows.Count,
-                controlChanged,
-                matchedWindows));
         }
 
         return candidates

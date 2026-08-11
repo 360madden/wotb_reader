@@ -373,9 +373,12 @@ public sealed record EntityRecordRegionReadRequest
 
     /// <summary>
     /// Which object the dump anchors on: <c>ring-record</c> (the movement
-    /// ring record the position resolver reads — the default) or
+    /// ring record the position resolver reads — the default),
     /// <c>entity-tank-record</c> (the per-entity tank record at
-    /// <c>[entity+0x3C]</c>, the Ghidra-candidate HP / damage-dealt region).
+    /// <c>[entity+0x3C]</c>), or <c>entity-base</c> (the entity base record
+    /// itself — the statically-verified HP fields live at
+    /// <c>[entity+0xB8]</c> int16 current health, +0xBA alive byte,
+    /// +0x11E healing, per VerifyPlayerHpChain on the 11.19.0.10 build).
     /// Unknown values fail closed (no dump).
     /// </summary>
     public string? RegionAnchor { get; init; }

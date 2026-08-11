@@ -1118,6 +1118,49 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task EntityRegion_EntityBaseAnchor_ForwardsToCoordinator()
+    {
+        // The entity-base anchor (the statically-verified HP home at
+        // [entity+0xB8] int16) parses and forwards to the coordinator.
+        byte[] region = [0x11, 0x22, 0x33, 0x44];
+        var scanner = new FakeGameMemoryScanner
+        {
+            EntityRegionResult = OperationResult.Success(
+                new EntityRecordRegionReadResult(
+                    DateTimeOffset.UnixEpoch.AddSeconds(1),
+                    "11.19.0.10",
+                    Type10EntityPositionStatus.Resolved,
+                    4242,
+                    ReplayTimeSeconds: 1.5,
+                    RegionBytes: region,
+                    FailureStage: null,
+                    Attempts: 1,
+                    NodesVisited: 0,
+                    ModuleRooted: true,
+                    EntityIdentityRevalidated: false,
+                    ConsistentDoubleRead: false,
+                    SameDecodedClockProven: false)),
+        };
+
+        IResult result = await GameApiEndpoints.ReadEntityRegionAsync(
+            scanner,
+            new WotBTreader.ApiContracts.EntityRecordRegionReadRequest
+            {
+                EntityId = 4242,
+                RegionLength = 4,
+                RegionAnchor = "entity-base",
+            },
+            TestContext.CancellationToken);
+
+        EntityRecordRegionReadResponse response = Value<EntityRecordRegionReadResponse>(result);
+        Assert.AreEqual("Resolved", response.Status);
+        Assert.AreEqual(
+            EntityRecordRegionAnchor.EntityBase,
+            scanner.LastEntityRegionRequest?.RegionAnchor);
+        Assert.AreEqual(Convert.ToBase64String(region), response.RegionBase64);
+    }
+
+    [TestMethod]
     public async Task EntityRegion_InvalidAnchorFailsClosed()
     {
         var scanner = new FakeGameMemoryScanner

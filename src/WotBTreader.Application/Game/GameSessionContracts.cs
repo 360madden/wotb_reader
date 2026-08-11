@@ -363,10 +363,12 @@ public sealed record EntityPositionReadResult(
 /// <summary>
 /// Which object a region dump anchors on: the movement ring record the
 /// position resolver reads (position +0x10, velocity +0x28, ring stride
-/// 0x38) or the per-entity tank record reached by dereferencing
-/// <c>[entity + 0x3C]</c> (the Ghidra-candidate layout the HP/damage-dealt
-/// harness targets; test-local until live verification). The coordinator
-/// owns both addresses; the caller only picks the anchor.
+/// 0x38), the per-entity tank record reached by dereferencing
+/// <c>[entity + 0x3C]</c>, or the entity base record itself (the
+/// statically-verified health fields: current HP as signed int16 at
+/// [entity+0xB8], alive byte at +0xBA, healing int16 at +0x11E per
+/// VerifyPlayerHpChain on the 11.19.0.10 build). The coordinator owns all
+/// addresses; the caller only picks the anchor.
 /// </summary>
 public enum EntityRecordRegionAnchor
 {
@@ -374,11 +376,20 @@ public enum EntityRecordRegionAnchor
     RingRecord = 0,
 
     /// <summary>
-    /// The tank record at <c>[entity + 0x3C]</c> — the Ghidra-candidate HP /
-    /// damage-dealt region. The coordinator dereferences the pointer itself
-    /// under the same guarded lease; only bytes leave.
+    /// The tank record at <c>[entity + 0x3C]</c> — the Ghidra-candidate
+    /// position/rotation region. The coordinator dereferences the pointer
+    /// itself under the same guarded lease; only bytes leave.
     /// </summary>
     EntityTankRecord = 1,
+
+    /// <summary>
+    /// The entity base record itself (offset 0 of the resolved entity). The
+    /// static playerHP evidence pins current health at <c>[entity+0xB8]</c>
+    /// (signed int16), the alive byte at <c>[entity+0xBA]</c>, and the
+    /// healing int16 at <c>[entity+0x11E]</c> — so an HP session anchors
+    /// here (region length ≥ 0x120) and correlates int16 candidates.
+    /// </summary>
+    EntityBase = 2,
 }
 
 /// <summary>

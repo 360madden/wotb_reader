@@ -986,6 +986,9 @@ internal static class GameApiEndpoints
             case "entity-tank-record":
                 anchor = EntityRecordRegionAnchor.EntityTankRecord;
                 return true;
+            case "entity-base":
+                anchor = EntityRecordRegionAnchor.EntityBase;
+                return true;
             default:
                 anchor = EntityRecordRegionAnchor.RingRecord;
                 return false;

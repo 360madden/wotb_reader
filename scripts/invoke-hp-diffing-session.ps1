@@ -19,10 +19,11 @@
        time only, OfflineReplayVerified + current authorization) at each
        scheduled replay-clock time (before/after each hit from the extractor's
        dump_schedule plus -ControlTimes for the flat controls), anchored on
-       the per-entity TANK record at [entity+0x3C] (-RegionAnchor
-       'entity-tank-record', the HP / damage-dealt region; the coordinator
-       dereferences the pointer itself under the guarded lease),
-       requires sameDecodedClockProven on every dump (fail-closed), and
+       the ENTITY BASE record (-RegionAnchor 'entity-base', the statically-
+       verified HP home: signed int16 at [entity+0xB8], alive byte +0xBA,
+       healing int16 at +0x11E per VerifyPlayerHpChain 2026-08-11; region
+       length >= 0x120), requires sameDecodedClockProven on every dump
+       (fail-closed), and
        writes the snapshots file (schema wotbtreader.od.hp-diff.snapshots.v1)
        with strictly increasing replay times. Without a reachable web host the
        driver exits 3 with the contract. Offline-replay mode: pass
@@ -81,17 +82,19 @@ param(
     # reachable host the driver exits 3 with the contract.
     [switch]$LiveAcquire,
     # Region length in bytes for each dump (>= 4, multiple of 4, <= 4096).
-    # 256 covers the tank record (the +0x48 HP / damage-dealt candidate)
-    # plus neighboring fields in one dump.
+    # 320 covers the statically-verified entity-base HP fields (current
+    # health int16 at +0xB8, alive byte +0xBA, healing int16 at +0x11E)
+    # plus neighboring entity fields in one dump.
     [ValidateRange(4, 4096)]
-    [int]$RegionLength = 256,
+    [int]$RegionLength = 320,
     # Which object the dump anchors on: 'ring-record' (the movement ring
-    # record the position resolver reads) or 'entity-tank-record' (the
-    # per-entity tank record at [entity+0x3C] - the Ghidra-candidate HP /
-    # damage-dealt region). HP and damage-dealt live in the TANK record, so
-    # this driver defaults to 'entity-tank-record'.
-    [ValidateSet('ring-record', 'entity-tank-record')]
-    [string]$RegionAnchor = 'entity-tank-record',
+    # record the position resolver reads), 'entity-tank-record' (the
+    # per-entity tank record at [entity+0x3C]), or 'entity-base' (the entity
+    # base record itself). Static evidence (VerifyPlayerHpChain, 11.19.0.10)
+    # pins HP as int16 at [entity+0xB8] on the ENTITY BASE record, so this
+    # driver defaults to 'entity-base'.
+    [ValidateSet('ring-record', 'entity-tank-record', 'entity-base')]
+    [string]$RegionAnchor = 'entity-base',
     # Comma-separated replay-clock seconds for flat CONTROL dumps in the
     # no-damage segments (e.g. '30,230' for Oasis Palms). Optional in live
     # mode; the verdict's flatness check needs >= 2 control windows.
@@ -327,11 +330,15 @@ else {
 Write-Step "Running hp-diff verdict (direction: $(if ($IsIncrement) { 'increment' } else { 'decrement' }))..."
 $DataRootArgs = if ($DataRoot -ne '') { @('--data-root', $DataRoot) } else { @() }
 $DirectionArgs = if ($IsIncrement) { @('--direction', 'increment') } else { @() }
+# HP is statically pinned as a signed int16 at [entity+0xB8] (VerifyPlayerHpChain,
+# 11.19.0.10), so the decrement/HP path scans int16 candidates; the increment
+# (damage-dealt, int32 counter) path stays int32-only.
+$Int16Args = if (-not $IsIncrement) { @('--int16', 'true') } else { @() }
 $ErrorActionPreference = 'Continue'
 try {
     $VerdictJson = (& dotnet $CliDll hp-diff $SnapshotsPath `
         --session $SessionId --victim $TargetEntityId --mode lenient `
-        --json @DataRootArgs @DirectionArgs 2>$null) | Out-String
+        --json @DataRootArgs @DirectionArgs @Int16Args 2>$null) | Out-String
 } finally {
     $ErrorActionPreference = $OldErrorActionPreference
 }
