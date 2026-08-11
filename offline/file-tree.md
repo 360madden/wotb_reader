@@ -61,6 +61,7 @@ docs/operations/blocker-log.md
 docs/operations/blockers/2026-07-26-command-execution-gate.md
 docs/operations/blockers/2026-07-26-replay-decoder.md
 docs/operations/blockers/README.md
+docs/operations/cam001-v7-evidence-template.md
 docs/operations/cmd-wrapper-gotchas.md
 docs/operations/g0-offset-table-draft.md
 docs/operations/g0-operator-checklist.md
@@ -759,6 +760,7 @@ tests/WotBTreader.Host.Cli.Tests/CliInvocationTests.cs
 tests/WotBTreader.Host.Cli.Tests/CliOutputTests.cs
 tests/WotBTreader.Host.Cli.Tests/CliOverlayFrameTests.cs
 tests/WotBTreader.Host.Cli.Tests/CliReplayIngestionTests.cs
+tests/WotBTreader.Host.Cli.Tests/CliYawDiffTests.cs
 tests/WotBTreader.Host.Cli.Tests/HpDiffSnapshotsFileTests.cs
 tests/WotBTreader.Host.Cli.Tests/MSTestSettings.cs
 tests/WotBTreader.Host.Cli.Tests/Rendering/FrameRasterizerTests.cs

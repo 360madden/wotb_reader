@@ -65,7 +65,13 @@ demotion under per-dump lag.
   bounded shift is allowed.
 - A zero/constant-filled field cannot fake this: the fixture discipline
   (fill decoys with a value the packet timeline never contains) and the
-  control-dump flatness both demote drifters.
+  control-dump flatness both demote drifters. **Uniqueness audit (2026-08-11,
+  independent Python scan of the SAME immutable dumps): `+0x30` is the
+  UNIQUE 4-byte offset matching all dumps at ≤ 0.05 rad on BOTH replays;
+  the nearest competitor is > 0.5 rad off on at least one dump, despite
+  7.8 % (Oasis) / 14.1 % (Dead Rail) zero-filled float32 slots in the raw
+  evidence — the degenerate zero-fill decoy cannot occur because the
+  tank's yaw never sits at 0.0 in the stationary stretches.**
 
 ## Ledger section — OD-RECOVERY-089 (filled)
 

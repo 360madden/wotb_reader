@@ -521,6 +521,36 @@ label-skew finding. Next live gates in order: CAM-001 v7 → OD-RECOVERY-090
 (L3 damage-dealt) + its Dead Rail repeat; HP Phase-4 rule (victim
 2549399) separate; item 7 LAST.
 
+## Post-089 hardening: yaw-diff CLI tests + uniqueness audit + CAM-001 v7 pre-stage (2026-08-11)
+
+**1. CLI coverage for the new flags.** `tests/WotBTreader.Host.Cli.Tests/CliYawDiffTests.cs`
+(new): end-to-end `yaw-diff` with a seeded `position_samples` yaw timeline
+(dead-reliable step ground truth) proves the memory-LEADING per-dump path
+lands HIT at `+0x30` with a negative median lag + reported spread — the
+Dead Rail sign, end-to-end through the real CLI. Plus the validation
+branches (`--memory-lead-seconds -1` / non-numeric → InvalidArguments) and
+`CliInvocation` flag-vs-value semantics (`--per-dump-lag` must NOT consume
+the next token).
+
+**2. Uniqueness audit of the REAL evidence (zero-fill decoy risk).**
+Independent Python replica of the per-dump lag scan over ALL 4-byte offsets
+of the stored 088/089 dumps against the decoded per-entity yaw:
+**`+0x30` is the UNIQUE offset matching all dumps at ≤ 0.05 rad on both
+replays; nearest competitor > 0.5 rad off on at least one dump** — despite
+7.8 % (Oasis) / 14.1 % (Dead Rail) zero-filled float32 slots. The
+unit-test lesson (a zero-filled field can degenerate-match a stationary
+0.0 yaw by sliding its lag) cannot occur here: the tank's yaw never sits
+at 0.0 in the stationary stretches. Recorded in the 089 evidence template.
+
+**3. CAM-001 v7 evidence template pre-staged.**
+`docs/operations/cam001-v7-evidence-template.md` — the fill-in contract for
+the approved camera session: one command + the offline validator, the
+v7-aggregate schema, expected outcome (look-at ≈ 0, center distance small
+across the FOV band, pitch diagnostic coherent), and the branch table
+(verified / pitch-convention failure → re-derive `+0x58` / nonzero look-at
+→ label offset / CAM-003 flip → one relaunch). Ledger Next-planned row
+references it.
+
 ## Files touched
 
 - `src/WotBTreader.Core/Discovery/RingRecordRegion.cs` (pure ring-region
