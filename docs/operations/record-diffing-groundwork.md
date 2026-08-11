@@ -565,6 +565,49 @@ serializer call sites around the type byte 0x27, or a live capture of the
 writer. Do NOT treat type-39 as zone geometry or as a confirmed camera
 until one of those lands.
 
+## Camera family static discovery — offline verification plan (2026-08-11)
+
+Static pass (hash `1cda5c31…1760307d`; see
+`docs/operations/handoffs/2026-08-11-camera-family-hierarchy-factory.md` +
+`tools/ghidra-scripts/camera-family-disasm.txt`) pinned the **camera-state
+object** — the replay overlay's missing true camera:
+
+| offset | field |
+|---|---|
+| `+0x58/+0x5C` | camera yaw/pitch (rad) |
+| `+0x60/+0x64` | smoothed yaw/pitch |
+| `+0xAC..0xC4` | composed view-basis rows 0-1 (6 floats; yaw×pitch rotation × the hash-bound transform world matrix `[t+0x60..0x90]` + camera position, by `FUN_01dde860`) |
+| `+0x11C/+0x120/+0x124` | camera world position (per-frame integrated in `FUN_01ddb130`) |
+| `+0x320` | ring index (800) |
+| `+0x360/0x364 + idx*0x10` | per-frame ring entries (2 floats) |
+
+Reachability: `cameraState = [[mgr+0x2C]+0x28]`; the camera factory
+(`FUN_0165fe40`) stores the controller at `[mgr+0x2C]` (mode 2 =
+ReplayCameraController). The manager's global root is NOT yet resolved, so
+an approved offline session locates cameraState by **signature scan** in the
+replay-launched process instead:
+
+1. Scan for the ring signature: a buffer whose `+0x320` dword is a small
+   monotonic index with 2-float entries at `0x360/0x364 + idx*0x10` updated
+   per frame (same cadence pattern as the entity position ring).
+2. Require finite floats at `+0x58/+0x5C` (yaw/pitch) and a plausible world
+   position at `+0x11C/+0x120/+0x124`.
+3. Correlate `+0x58` (camera yaw) against the decoded type-10 viewpoint yaw:
+   expect ~1:1 (the replay camera tracks the author tank).
+4. Correlate `+0x11C` (camera position) against the viewpoint tank position:
+   the delta is the **third-person offset** the overlay currently lacks
+   (camera ≈ 5-10 m behind + 2-5 m above the tank) — the exact correction
+   for W2S nameplate alignment.
+5. Cross-check the `+0xAC` rows against a recomputed yaw×pitch basis
+   (consistency, ± small residual).
+
+**Deliverable:** the true per-frame camera pose for the overlay, replacing
+the viewpoint-tank approximation in `ReplayFrameSource.BuildCamera`
+(`OverlayCamera` from cameraState instead of the author tank) — validated
+against replay-derived tank positions before any HUD change. Type-39 remains
+unresolved and is NOT treated as the camera (offset 30→507 m below the
+tank); the static camera-state object is the evidence-backed path.
+
 ## Overlay frame contract — ReplayFrameSource (2026-08-10)
 
 The replay overlay's data seam is in place: `Core/Overlay` defines

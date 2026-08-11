@@ -127,10 +127,18 @@ track; ledger OD-RECOVERY-085.
 
 ## Next steps
 
-- **Projection matrix**: find where FOV (`DAT_035cd11c` / `DAT_035cd128`)
-  builds the projection (perspective) matrix — likely multiplied with the
-  `+0xAC` view matrix in the renderer; completes world→screen.
+- **Offline verification session** (pre-staged, no game code changes):
+  signature-scan the launched replay process for the cameraState ring,
+  correlate camera yaw `+0x58` vs the type-10 viewpoint yaw and camera
+  position `+0x11C` vs the tank position (the third-person offset), and
+  cross-check the `+0xAC` basis — full plan in
+  `docs/operations/record-diffing-groundwork.md` → "Camera family static
+  discovery — offline verification plan". Deliverable: the true camera for
+  `ReplayFrameSource.BuildCamera` (replacing the viewpoint-tank
+  approximation).
+- **Projection matrix**: find where FOV builds the projection (perspective)
+  matrix — likely multiplied with the view basis in the renderer; completes
+  world→screen.
 - Resolve the camera's **global root** (who owns the battle manager holding
-  `[mgr+0x2C]`) so a live/offline read plan can name a fixed address chain.
-- Verify the `+0x11C` position triple against replay-derived camera ground
-  truth (the replay's own camera path) in a future offline session.
+  `[mgr+0x2C]`) so a live/offline read plan can name a fixed address chain
+  instead of a signature scan.

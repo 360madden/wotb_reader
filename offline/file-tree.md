@@ -921,6 +921,7 @@ tools/ghidra-scripts/TraceType10MovementPosition.java
 tools/ghidra-scripts/VerifyPlayerHpChain.java
 tools/ghidra-scripts/VerifyTransformRecord.java
 tools/ghidra-scripts/callers-disasm.txt
+tools/ghidra-scripts/camera-family-disasm.txt
 tools/ghidra-scripts/chain-disasm.txt
 tools/ghidra-scripts/functions-disasm.txt
 tools/ghidra-scripts/ghidra-offset-candidates.json
