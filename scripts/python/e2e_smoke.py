@@ -75,6 +75,26 @@ def http_get(url: str, timeout: float = 10, parse_json: bool = True) -> tuple[in
         return -1, str(e)
 
 
+def http_post_json(url: str, payload: dict, timeout: float = 10) -> tuple[int, Any]:
+    """POST JSON, returning (status_code, parsed_json_body). Parses the body
+    even on error statuses so fail-closed endpoints can be asserted."""
+    headers = {"Accept": "application/json", "Content-Type": "application/json"}
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8")
+            return resp.status, json.loads(body) if body else None
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", "replace")
+        try:
+            return e.code, json.loads(body) if body else None
+        except json.JSONDecodeError:
+            return e.code, None
+    except Exception as e:
+        return -1, str(e)
+
+
 # ── Assertions ───────────────────────────────────────────────────────────────
 
 class CheckFailed(Exception):
@@ -284,6 +304,25 @@ def run_api_tests(log_path: Path, host: HostRunner) -> int:
               f"type={type(body).__name__}")
 
     test("GET /api/v1/maps/boundaries", t_boundaries)
+
+    # ── CAM-005/006 surface: the new routes exist and fail closed ──
+    def t_camera_pose_unverified():
+        # The camera-pose POST is a mutation: without a capability it must be
+        # rejected (401) by the middleware — proving the route is registered
+        # and cannot be reached without the local auth.
+        code, body = http_post_json(host.url("/api/v1/game/discover/camera-pose"), {})
+        check_status(log_path, "POST /discover/camera-pose 401 without capability", code, expected=401)
+
+    test("POST /api/v1/game/discover/camera-pose (capability-gated)", t_camera_pose_unverified)
+
+    def t_frame_missing_session():
+        # A random session id must 404, proving the CAM-006 frame route is
+        # registered and fail-closed without a decoded session.
+        import uuid
+        code, _ = http_get(host.url(f"/api/v1/sessions/{uuid.uuid4()}/frame"))
+        check_status(log_path, "GET /sessions/{id}/frame 404 without session", code, expected=404)
+
+    test("GET /api/v1/sessions/{id}/frame (fail-closed)", t_frame_missing_session)
 
     # ── Dashboard pages ──
     for page, path in [("dashboard", "/"), ("comparisons", "/comparisons"),
