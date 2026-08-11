@@ -318,6 +318,18 @@ if (-not $OfflineDumpExists) {
 
     $Snapshots = [System.Collections.Generic.List[object]]::new()
     $ControlCount = 0
+    # End-of-replay protection (OD-RECOVERY-090 re-attempt, 2026-08-11): the
+    # last dump target can sit past the replay end (the entity is torn down
+    # and the entity-region seam returns a teardown status). Skip those
+    # targets instead of aborting the whole session and losing the captured
+    # dumps. Teardown statuses only count as end-of-replay when the target is
+    # within 40 s of the LAST scheduled dump; anything earlier is a genuine
+    # failure and still aborts fail-closed.
+    $LastDumpTarget = [double](($DumpTimes | Sort-Object -Unique |
+        Measure-Object -Maximum).Maximum)
+    $TeardownStatuses = @('UnsupportedReplayController', 'EntityNotFound',
+        'ReplaySessionInactive')
+    $SkippedEndOfReplay = $false
     foreach ($t in ($DumpTimes | Sort-Object -Unique)) {
         # Wait for the game's replay clock to reach the target time before
         # dumping (same class of fix as the batch driver, OD-RECOVERY-086:
@@ -343,8 +355,16 @@ if (-not $OfflineDumpExists) {
                     "{0:0.0}s." -f $t)
             }
             if ($probe.status -ne 'Resolved') {
-                throw ("clock probe failed while waiting for {0:0.0}s: " +
-                    "status='{1}'." -f $t, $probe.status)
+                if ($TeardownStatuses -contains $probe.status -and
+                    $t -ge ($LastDumpTarget - 40)) {
+                    Write-Step (("  replay ended before target {0:0.0}s " +
+                        "(status='{1}') - skipping end-of-replay dump.") -f `
+                        $t, $probe.status)
+                    $SkippedEndOfReplay = $true
+                    break
+                }
+                throw (("clock probe failed while waiting for {0:0.0}s: " +
+                    "status='{1}'.") -f $t, $probe.status)
             }
             if (-not $probe.sameDecodedClockProven) {
                 throw ("clock probe at {0:0.0}s did not attest the decoded " +
@@ -372,6 +392,10 @@ if (-not $OfflineDumpExists) {
             throw ("clock never reached {0:0.0}s within the bounded wait " +
                 "(last probe {1:0.0}s) - the replay may have ended; fail-closed." -f `
                 $t, $probeLabel)
+        }
+        if ($SkippedEndOfReplay) {
+            $SkippedEndOfReplay = $false
+            continue
         }
         Write-Step ("  region dump at replay {0,7}s (entity {1})..." -f $t, $TargetEntityId)
         $response = Invoke-HpApi -Method 'Post' -RelativePath '/api/v1/game/discover/entity-region' `

@@ -2208,7 +2208,11 @@ public sealed class GameSessionCoordinatorTests
         Assert.AreEqual(-3.5f, pose.Z);
         Assert.AreEqual(0.7f, pose.YawRadians, 0.001f);
         Assert.AreEqual(-0.2f, pose.PitchRadians);
-        Assert.AreEqual(1f, pose.Basis[0]);
+        // The stride-4 3x4 view matrix is compacted to the three rows:
+        // row0 = basis[0..2], row1 = basis[3..5], row2 = basis[6..8]
+        // (CAM-001 v7b layout: pads at +0x8C/+0x9C/+0xAC are dropped).
+        float[] identityBasis = [1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f];
+        CollectionAssert.AreEqual(identityBasis, pose.Basis);
         Assert.IsTrue(pose.AvatarIdentityVerified);
         Assert.IsTrue(pose.CameraIdentityVerified);
         Assert.IsTrue(pose.CameraStateIdentityVerified);
@@ -3192,15 +3196,22 @@ public sealed class GameSessionCoordinatorTests
         BitConverter.GetBytes((float)Math.Cos(yaw)).CopyTo(region, 0x18);
         BitConverter.GetBytes((float)Math.Sin(yaw)).CopyTo(region, 0x1C);
         BitConverter.GetBytes(-0.2f).CopyTo(region, 0x20);
-        BitConverter.GetBytes(1f).CopyTo(region, 0x48);
-        BitConverter.GetBytes(0f).CopyTo(region, 0x4C);
-        BitConverter.GetBytes(0f).CopyTo(region, 0x50);
-        BitConverter.GetBytes(0f).CopyTo(region, 0x54);
-        BitConverter.GetBytes(1f).CopyTo(region, 0x58);
-        BitConverter.GetBytes(0f).CopyTo(region, 0x5C);
-        BitConverter.GetBytes(0f).CopyTo(region, 0x60);
-        BitConverter.GetBytes(0f).CopyTo(region, 0x64);
-        BitConverter.GetBytes(1f).CopyTo(region, 0x68);
+        // The view-basis region is a row-major stride-4 3x4 matrix (CAM-001
+        // v7b, verified on real dumps): row0 at +0x80 (region 0x48), pad at
+        // +0x8C (0x54), row1 at +0x90 (0x58), pad at +0x9C (0x64), row2 at
+        // +0xA0 (0x68), pad at +0xAC (0x74). Identity with stride pads.
+        BitConverter.GetBytes(1f).CopyTo(region, 0x48); // row0.x
+        BitConverter.GetBytes(0f).CopyTo(region, 0x4C); // row0.y
+        BitConverter.GetBytes(0f).CopyTo(region, 0x50); // row0.z
+        BitConverter.GetBytes(0f).CopyTo(region, 0x54); // pad
+        BitConverter.GetBytes(0f).CopyTo(region, 0x58); // row1.x
+        BitConverter.GetBytes(1f).CopyTo(region, 0x5C); // row1.y
+        BitConverter.GetBytes(0f).CopyTo(region, 0x60); // row1.z
+        BitConverter.GetBytes(0f).CopyTo(region, 0x64); // pad
+        BitConverter.GetBytes(0f).CopyTo(region, 0x68); // row2.x
+        BitConverter.GetBytes(0f).CopyTo(region, 0x6C); // row2.y
+        BitConverter.GetBytes(1f).CopyTo(region, 0x70); // row2.z
+        BitConverter.GetBytes(0f).CopyTo(region, 0x74); // pad
         return region;
     }
 

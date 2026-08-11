@@ -3172,10 +3172,25 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         float pitch = BitConverter.ToSingle(pose, pitchOffset);
         float yaw = (float)Math.Atan2(yawSin, yawCos);
 
-        float[] basis = new float[9];
-        for (int i = 0; i < 9; i++)
+        // The view-basis region (+0x80..0xB0) is a row-major stride-4 3x4
+        // view matrix (CAM-001 v7b, verified 2026-08-11 on real dumps):
+        // row0 at +0x80 (indices 0..2), pad at index 3 (+0x8C), row1 at
+        // +0x90 (indices 4..6), pad at index 7 (+0x9C), row2 at +0xA0
+        // (indices 8..10), pad at index 11 (+0xAC). Read all 12 floats so
+        // row2.z (+0xA8) is covered, then expose the three rows contiguously
+        // for the W2S consumption seam (forward = -row1, up = row2).
+        float[] basisRaw = new float[12];
+        for (int i = 0; i < 12; i++)
         {
-            basis[i] = BitConverter.ToSingle(pose, basisOffset + i * sizeof(float));
+            basisRaw[i] = BitConverter.ToSingle(pose, basisOffset + i * sizeof(float));
+        }
+
+        float[] basis = new float[9];
+        for (int i = 0; i < 3; i++)
+        {
+            basis[i] = basisRaw[i];
+            basis[3 + i] = basisRaw[4 + i];
+            basis[6 + i] = basisRaw[8 + i];
         }
 
         return OperationResult.Success(new CameraPoseReadResult(

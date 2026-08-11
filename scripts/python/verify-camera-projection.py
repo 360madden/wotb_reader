@@ -101,6 +101,41 @@ def forward(yaw, pitch):
     return (sin_yaw * cos_pitch, sin_pitch, cos_yaw * cos_pitch)
 
 
+def _orientation_from_basis(basis, raw_yaw, raw_pitch):
+    """Mirrors the C# W2S seam (LiveFrameProjector.BuildCamera): the
+    camera's world orientation is authoritative from the view-basis rows —
+    forward = -row1, up = row2 (CAM-012, look-at 0.4-6.7 deg at the
+    turret-level aim point). Row1 of the COMPACTED basis is indices
+    [3:6] (the PS1 persists the raw stride-4 12-float region; the C#
+    coordinator compacts row0=[0:3], row1=[3:6], row2=[6:9]). This
+    function accepts either layout: for a 12-float stride-4 array row1 is
+    indices [4:7], for the compacted 9-float it is [3:6].
+
+    Converts the world forward into the packet yaw/pitch convention
+    (fy = sin pitch, yaw 0 -> +Z, +pi/2 -> +X). Falls back to the raw
+    yaw/pitch fields (DAVA, documented best-effort) when the basis is
+    missing or non-finite. Returns (yaw, pitch).
+    """
+    row1 = None
+    if basis and len(basis) >= 9:
+        # Stride-4 (12 floats, pads at 3/7/11) vs compacted (9 floats).
+        idx = 4 if len(basis) >= 12 else 3
+        candidate = [basis[idx], basis[idx + 1], basis[idx + 2]]
+        if all(isinstance(v, (int, float)) and math.isfinite(v)
+               for v in candidate):
+            row1 = candidate
+    if row1 is not None:
+        fx, fy, fz = -row1[0], -row1[1], -row1[2]
+        length = math.sqrt(fx * fx + fy * fy + fz * fz)
+        if length > 1e-6:
+            fx, fy, fz = fx / length, fy / length, fz / length
+            pitch = math.asin(max(-1.0, min(1.0, fy)))
+            yaw = math.atan2(fx, fz)
+            if math.isfinite(yaw) and math.isfinite(pitch):
+                return yaw, pitch
+    return raw_yaw, raw_pitch
+
+
 def look_at_angle_deg(eye, yaw, pitch, world):
     """Angle between the camera forward and the camera->tank direction."""
     f = forward(yaw, pitch)
@@ -305,8 +340,16 @@ def evaluate_round(round_sample, width, height):
     # fields (yaw/pitch/basis) keep their stored convention. So the world
     # eye is the yz-swap of the stored position.
     eye = (camera["x"], camera["z"], camera["y"])
-    yaw = camera["yawRadians"]
-    pitch = camera["pitchRadians"]
+    # CAM-012 (2026-08-11): the authoritative camera orientation is the
+    # basis — forward = -row1, up = row2 (look-at collapsed to 0.4-6.7 deg,
+    # avg 1.7 deg, at the turret-level aim point). The raw yaw/pitch fields
+    # are DAVA left-handed, NOT the packet convention WorldToScreen uses
+    # (no yaw/pitch sign combo reproduces the aim direction). Mirror the
+    # C# W2S seam: derive packet-convention yaw/pitch from forward = -row1
+    # (row1 = compacted basis[3..5]), falling back to the raw fields when
+    # the basis is missing or non-finite.
+    yaw, pitch = _orientation_from_basis(
+        round_sample.get("basis"), camera["yawRadians"], camera["pitchRadians"])
     # Primary projection target: the memory tank (same wall time / memory
     # space as the camera). The decoded tank is the cross-check.
     world = (memory_tank["x"], memory_tank["y"], memory_tank["z"]) if memory_tank else (
@@ -511,6 +554,35 @@ def self_test():
     check("basis NOT coherent when rows not orthonormal", not bad_basis, detail_bad)
     missing_basis, detail_missing = basis_coherent(None, yaw0, pitch0)
     check("basis NOT coherent when missing", not missing_basis, detail_missing)
+
+    # 5b. Orientation from basis (CAM-012 mirror of the C# W2S seam):
+    #    forward = -row1 of the stride-4 view matrix; row1 = (0,0,-1) must
+    #    give yaw 0 / pitch 0 in the packet convention REGARDLESS of the raw
+    #    yaw/pitch fields (DAVA). Both the 12-float stride-4 layout and the
+    #    C#-compacted 9-float layout must agree; a non-finite/missing basis
+    #    falls back to the raw fields.
+    stride4_row1_forward_z = [1.0, 0.0, 0.0, 0.0,
+                              0.0, 0.0, -1.0, 0.0,
+                              0.0, 1.0, 0.0, 0.0]
+    y, p = _orientation_from_basis(stride4_row1_forward_z, 1.2345, 0.7)
+    check("basis row1 (stride-4) forward +Z -> yaw 0", abs(y) < 1e-9, y)
+    check("basis row1 (stride-4) forward +Z -> pitch 0", abs(p) < 1e-9, p)
+    compacted = [1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0]
+    y2, p2 = _orientation_from_basis(compacted, 1.2345, 0.7)
+    check("basis row1 (compacted) forward +Z -> yaw 0", abs(y2) < 1e-9, y2)
+    check("basis row1 (compacted) forward +Z -> pitch 0", abs(p2) < 1e-9, p2)
+    # Forward = +X (row1 = (-1,0,0)) -> yaw +pi/2.
+    forward_x = [0.0, 0.0, -1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+    y3, p3 = _orientation_from_basis(forward_x, 0.0, 0.0)
+    check("basis row1 forward +X -> yaw +pi/2", abs(y3 - math.pi / 2.0) < 1e-9, y3)
+    # Missing / non-finite basis -> raw fields fallback.
+    y4, p4 = _orientation_from_basis(None, 0.5, -0.25)
+    check("missing basis falls back to raw yaw", abs(y4 - 0.5) < 1e-12, y4)
+    check("missing basis falls back to raw pitch", abs(p4 + 0.25) < 1e-12, p4)
+    bad = [float("nan"), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    y5, p5 = _orientation_from_basis(bad, 0.5, -0.25)
+    check("non-finite basis falls back to raw yaw", abs(y5 - 0.5) < 1e-12, y5)
+    check("non-finite basis falls back to raw pitch", abs(p5 + 0.25) < 1e-12, p5)
 
     # 6. Mode classification: high sky + mid horizon => high camera; tiny
     #    look-at => chase; level camera far from pitch-to-tank => non-chase

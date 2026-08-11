@@ -69,17 +69,67 @@ public static class LiveFrameProjector
         if (pose is { Status: CameraPoseStatus.Resolved }
             && double.IsFinite(pose.X)
             && double.IsFinite(pose.Y)
-            && double.IsFinite(pose.Z)
-            && double.IsFinite(pose.YawRadians)
-            && double.IsFinite(pose.PitchRadians))
+            && double.IsFinite(pose.Z))
         {
-            return new OverlayCamera(
-                pose.X,
-                pose.Y,
-                pose.Z,
-                pose.YawRadians,
-                pose.PitchRadians,
-                RollRadians: null);
+            // CAM-010 (2026-08-11): GameCamera posA (+0x38) is stored
+            // (x, z, y) — world Y and Z are swapped in memory. The W2S seam
+            // MUST yz-swap world→camera space: eye = (X, Z, Y). Without the
+            // swap the eye lands `sqrt(dx^2 + 2*(tank.z - tank.y)^2)` from
+            // the tank (the old "23.57 m third-person offset" artifact).
+            double eyeX = pose.X;
+            double eyeY = pose.Z;
+            double eyeZ = pose.Y;
+
+            // CAM-012 (2026-08-11): the basis rows are the camera's world
+            // axes — forward = -row1, up = row2 (verified: look-at collapses
+            // to 0.4-6.7 deg, avg 1.7 deg, at the turret-level aim point).
+            // Convert the world forward into the packet yaw/pitch convention
+            // WorldToScreen.Project expects (yaw 0 -> +Z, +pi/2 -> +X).
+            // The memory yaw/pitch fields (+0x50/+0x54/+0x58) are NOT in that
+            // convention (DAVA left-handed) — no yaw/pitch sign combo from
+            // them reproduces the aim direction (CAM-012 sweep), so the
+            // authoritative orientation source is the basis.
+            if (pose.Basis is { Length: >= 9 } basis
+                && double.IsFinite(basis[3]) && double.IsFinite(basis[4])
+                && double.IsFinite(basis[5]))
+            {
+                // forward = -row1 = (-basis[3], -basis[4], -basis[5]).
+                double fx = -basis[3];
+                double fy = -basis[4];
+                double fz = -basis[5];
+                double forwardLength = Math.Sqrt(fx * fx + fy * fy + fz * fz);
+                if (forwardLength > 1e-6)
+                {
+                    fx /= forwardLength;
+                    fy /= forwardLength;
+                    fz /= forwardLength;
+                }
+
+                // Packet convention: fy = sin(pitch), fx/fz = tan(yaw) with
+                // yaw 0 -> +Z, +pi/2 -> +X.
+                double pitch = Math.Asin(Math.Clamp(fy, -1.0, 1.0));
+                double yaw = Math.Atan2(fx, fz);
+                if (double.IsFinite(yaw) && double.IsFinite(pitch))
+                {
+                    return new OverlayCamera(
+                        eyeX, eyeY, eyeZ,
+                        yaw,
+                        pitch,
+                        RollRadians: null);
+                }
+            }
+
+            // Legacy fallback (no basis persisted): the raw pose yaw/pitch
+            // fields. Documented best-effort — the DAVA-vs-packet mismatch
+            // means the orientation may be off; the basis path is preferred.
+            if (double.IsFinite(pose.YawRadians) && double.IsFinite(pose.PitchRadians))
+            {
+                return new OverlayCamera(
+                    eyeX, eyeY, eyeZ,
+                    pose.YawRadians,
+                    pose.PitchRadians,
+                    RollRadians: null);
+            }
         }
 
         // No usable live pose: the origin fallback (same shape as the replay

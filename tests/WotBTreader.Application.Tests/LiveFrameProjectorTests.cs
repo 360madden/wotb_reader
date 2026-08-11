@@ -17,7 +17,8 @@ public sealed class LiveFrameProjectorTests
         float z,
         float yaw = 0f,
         float pitch = 0f,
-        CameraPoseStatus status = CameraPoseStatus.Resolved) => new(
+        CameraPoseStatus status = CameraPoseStatus.Resolved,
+        float[]? basis = null) => new(
         CompletedAtUtc: DateTimeOffset.UtcNow,
         GameVersion: "11.19.0.10",
         status,
@@ -30,7 +31,7 @@ public sealed class LiveFrameProjectorTests
         z,
         yaw,
         pitch,
-        Basis: [],
+        Basis: basis ?? [],
         AvatarIdentityVerified: status == CameraPoseStatus.Resolved,
         CameraIdentityVerified: status == CameraPoseStatus.Resolved,
         CameraStateIdentityVerified: status == CameraPoseStatus.Resolved,
@@ -180,6 +181,74 @@ public sealed class LiveFrameProjectorTests
 
         Assert.HasCount(1, projection.Tanks);
         Assert.AreEqual(1, projection.Tanks[0].EntityId);
+    }
+
+    [TestMethod]
+    public void Project_AppliesCameraYzSwap_StoredPosAConvention()
+    {
+        // CAM-010: GameCamera posA is stored (x, z, y) — the W2S seam must
+        // yz-swap world->camera space. A stored (5, 3, 7) is world (5, 7, 3).
+        OverlayFrameProjection projection = LiveFrameProjector.Project(
+            Frame([Tank(1, 0, 0, 10)], Pose(5f, 3f, 7f)),
+            Fov,
+            1920,
+            1080);
+
+        Assert.AreEqual(5.0, projection.CameraX);
+        Assert.AreEqual(7.0, projection.CameraY);
+        Assert.AreEqual(3.0, projection.CameraZ);
+
+        // A tank at the swapped eye's world position projects with the
+        // expected distance (10 m along +Z from the swapped eye).
+        ProjectedTank tank = projection.Tanks.Single();
+        Assert.IsNotNull(tank.ScreenX);
+        Assert.IsTrue(tank.InViewport);
+    }
+
+    [TestMethod]
+    public void Project_UsesBasisForwardForOrientation_NotRawYawPitch()
+    {
+        // CAM-012: forward = -row1 of the stride-4 basis. Basis row1 = (0,0,-1)
+        // => forward = (0,0,1) (yaw 0, pitch 0), regardless of the raw
+        // yaw/pitch fields (DAVA left-handed — not the packet convention).
+        CameraPoseReadResult pose = Pose(
+            2f, 3f, 4f, yaw: 1.2345f, pitch: 0.7f,
+            basis: [1f, 0f, 0f, 0f, 0f, -1f, 0f, 1f, 0f]);
+        OverlayFrameProjection projection = LiveFrameProjector.Project(
+            Frame([Tank(1, 2f, 4f, 14f)], pose),
+            Fov,
+            1920,
+            1080);
+
+        // Camera: swapped eye (2, 4, 3) with yaw/pitch derived from the
+        // basis forward (0,0,1) — the raw (1.2345, 0.7) must NOT leak.
+        Assert.AreEqual(2.0, projection.CameraX);
+        Assert.AreEqual(4.0, projection.CameraY);
+        Assert.AreEqual(3.0, projection.CameraZ);
+        Assert.AreEqual(0.0, projection.CameraYawRadians!.Value, 1e-9);
+        Assert.AreEqual(0.0, projection.CameraPitchRadians!.Value, 1e-9);
+
+        // The tank sits 10 m along the camera forward from the swapped eye:
+        // it must project to the screen CENTER (960, 540).
+        ProjectedTank tank = projection.Tanks.Single();
+        Assert.IsNotNull(tank.ScreenX);
+        Assert.AreEqual(960.0, tank.ScreenX!.Value, 1e-6);
+        Assert.AreEqual(540.0, tank.ScreenY!.Value, 1e-6);
+    }
+
+    [TestMethod]
+    public void Project_FallsBackToRawYawPitch_WhenBasisMissing()
+    {
+        // Legacy pose without a persisted basis: the raw yaw/pitch fields are
+        // the documented best-effort fallback (documented DAVA-vs-packet risk).
+        OverlayFrameProjection projection = LiveFrameProjector.Project(
+            Frame([Tank(1, 0, 0, 10)], Pose(0f, 0f, 0f, yaw: 0.5f, pitch: -0.25f)),
+            Fov,
+            1920,
+            1080);
+
+        Assert.AreEqual(0.5, projection.CameraYawRadians!.Value, 1e-9);
+        Assert.AreEqual(-0.25, projection.CameraPitchRadians!.Value, 1e-9);
     }
 
     [TestMethod]
