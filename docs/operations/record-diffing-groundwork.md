@@ -915,14 +915,20 @@ the decoded type-10 payload layout:
 **No turret rotation field and no lock-on / target-id state** were found in
 either structure: the ring record has no room past the triple (+0x34
 padding, +0x38 = next record), and the entity base's remaining int fields
-are constants/pointers. The type-10 packet carries hull rotation only, so
-**turret facing and lock-on have NO replay ground truth** — the
-replay-ground-truth playbooks (087/088/089-style lag correlation) cannot
-prove a turret field. Discovery must be LIVE-BEHAVIORAL: capture the entity
-base (or a sibling) region while the player traverses the turret WITHOUT
-moving the hull; a candidate field responds to turret input while hull
-yaw/pitch/roll stay put. The overlay's hull-aim-line ("is an enemy's hull
-pointed at me") is already computable from hull yaw + positions.
+are constants/pointers. The negative is now THREE-WAY (2026-08-11,
+scratch scan of the Oasis stream, 73 994 packets): the type-10 packet
+carries hull rotation only (cross-validated), the type-5 spawn broadcasts
+(52) carry no rotation floats (short variants are packed ints/zeros — not
+even a position triple reproduces the doc's x/y/z row; long variants are
+name/id serialized blobs), and the memory structures carry hull rotation
+only. So **turret facing and lock-on have NO replay ground truth anywhere
+in the stream** — the replay-ground-truth playbooks (087/088/089-style lag
+correlation) cannot prove a turret field. Discovery must be
+LIVE-BEHAVIORAL: capture the entity base (or a sibling) region while the
+player traverses the turret WITHOUT moving the hull; a candidate field
+responds to turret input while hull yaw/pitch/roll stay put. The overlay's
+hull-aim-line ("is an enemy's hull pointed at me") is already computable
+from hull yaw + positions.
 
 **Single-region read candidate (observed, NOT canonical):** the entity-base
 window `+0x1C..+0x50` carries id + position + full rotation in one region
