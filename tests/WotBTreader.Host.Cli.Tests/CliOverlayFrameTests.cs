@@ -104,6 +104,51 @@ public sealed class CliOverlayFrameTests
     }
 
     [TestMethod]
+    public async Task OverlayStrip_WritesContactSheetPng()
+    {
+        using TemporaryDataRoot root = new();
+        await SeedDatabaseAsync(root);
+
+        string pngPath = Path.Combine(root.Path, "strip.png");
+        CliRun run = await RunAsync(root, "overlay-strip", "0", "100", "4",
+            "--session", SessionId.ToString("D"),
+            "--png", pngPath);
+
+        Assert.AreEqual(0, run.ExitCode, run.Diagnostic);
+        Assert.IsTrue(File.Exists(pngPath), "--png should write the contact sheet.");
+        byte[] png = await File.ReadAllBytesAsync(pngPath, TestContext.CancellationToken);
+        CollectionAssert.AreEqual(
+            new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A },
+            png.Take(8).ToArray());
+        // 2x2 grid of 640x360 cells + margins/gutters.
+        Assert.AreEqual(1320u, ReadBe(png, 8 + 8));
+        Assert.AreEqual(760u, ReadBe(png, 8 + 12));
+        Assert.AreEqual(4, run.Data.GetProperty("count").GetInt32());
+        Assert.AreEqual(2, run.Data.GetProperty("columns").GetInt32());
+    }
+
+    [TestMethod]
+    public async Task OverlayStrip_RejectsBadArguments()
+    {
+        using TemporaryDataRoot root = new();
+        await SeedDatabaseAsync(root);
+
+        CliRun noPng = await RunAsync(root, "overlay-strip", "0", "100", "4",
+            "--session", SessionId.ToString("D"));
+        Assert.AreEqual((int)CliExitCode.InvalidArguments, noPng.ExitCode, noPng.Diagnostic);
+
+        CliRun badCount = await RunAsync(root, "overlay-strip", "0", "100", "0",
+            "--session", SessionId.ToString("D"), "--png", "x.png");
+        Assert.AreEqual((int)CliExitCode.InvalidArguments, badCount.ExitCode, badCount.Diagnostic);
+    }
+
+    private static uint ReadBe(byte[] buffer, int offset) =>
+        ((uint)buffer[offset] << 24)
+        | ((uint)buffer[offset + 1] << 16)
+        | ((uint)buffer[offset + 2] << 8)
+        | buffer[offset + 3];
+
+    [TestMethod]
     public async Task OverlayFrame_RejectsEmptyPngPath()
     {
         using TemporaryDataRoot root = new();

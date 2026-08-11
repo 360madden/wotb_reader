@@ -78,6 +78,82 @@ public static class FrameRasterizer
         return rgba;
     }
 
+    /// <summary>Contact-sheet grid columns: as square as possible.</summary>
+    public static int ContactSheetColumns(int frameCount)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(frameCount, 1);
+        return (int)Math.Ceiling(Math.Sqrt(frameCount));
+    }
+
+    /// <summary>Contact-sheet grid rows for the column count.</summary>
+    public static int ContactSheetRows(int frameCount)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(frameCount, 1);
+        return (int)Math.Ceiling((double)frameCount / ContactSheetColumns(frameCount));
+    }
+
+    /// <summary>Contact-sheet pixel width (cells + margins + gutters).</summary>
+    public static int ContactSheetWidth(int frameCount, int cellWidth)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(frameCount, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(cellWidth, 1);
+        int columns = ContactSheetColumns(frameCount);
+        return ContactSheetMargin * 2 + columns * cellWidth + ContactSheetGutter * (columns - 1);
+    }
+
+    /// <summary>Contact-sheet pixel height (cells + margins + gutters).</summary>
+    public static int ContactSheetHeight(int frameCount, int cellHeight)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(frameCount, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(cellHeight, 1);
+        int rows = ContactSheetRows(frameCount);
+        return ContactSheetMargin * 2 + rows * cellHeight + ContactSheetGutter * (rows - 1);
+    }
+
+    /// <summary>Renders evenly spaced frame projections into one contact-sheet
+    /// RGBA buffer (dark background, cells tiled left-to-right, top-to-bottom
+    /// with a gutter, each cell rendered with the shared boundary).</summary>
+    public static byte[] RenderContactSheet(
+        IReadOnlyList<OverlayFrameProjection> projections,
+        MapBoundary? boundary = null,
+        int cellWidth = 640,
+        int cellHeight = 360)
+    {
+        ArgumentNullException.ThrowIfNull(projections);
+        if (projections.Count == 0)
+        {
+            throw new ArgumentException("At least one projection is required.", nameof(projections));
+        }
+
+        int columns = ContactSheetColumns(projections.Count);
+        int rows = ContactSheetRows(projections.Count);
+        int width = ContactSheetWidth(projections.Count, cellWidth);
+        int height = ContactSheetHeight(projections.Count, cellHeight);
+        byte[] sheet = new byte[width * height * 4];
+        Fill(sheet, width, height, Background);
+
+        for (int index = 0; index < projections.Count; index++)
+        {
+            byte[] cell = Render(projections[index], cellWidth, cellHeight, boundary);
+            int column = index % columns;
+            int row = index / columns;
+            int dstX = ContactSheetMargin + column * (cellWidth + ContactSheetGutter);
+            int dstY = ContactSheetMargin + row * (cellHeight + ContactSheetGutter);
+            for (int y = 0; y < cellHeight; y++)
+            {
+                Array.Copy(
+                    cell, y * cellWidth * 4,
+                    sheet, ((dstY + y) * width + dstX) * 4,
+                    cellWidth * 4);
+            }
+        }
+
+        return sheet;
+    }
+
+    private const int ContactSheetMargin = 16;
+    private const int ContactSheetGutter = 8;
+
     private static bool IsUsableBoundary(MapBoundary? boundary) =>
         boundary is not null
         && boundary.MaxX > boundary.MinX

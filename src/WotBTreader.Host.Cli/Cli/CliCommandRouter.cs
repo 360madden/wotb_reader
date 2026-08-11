@@ -42,6 +42,7 @@ public sealed class CliCommandRouter
         "hp-diff",
         "yaw-diff",
         "overlay-frame",
+        "overlay-strip",
         "beacon",
         "serve",
     ];
@@ -110,6 +111,7 @@ public sealed class CliCommandRouter
             "hp-diff" => await HpDiffAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "yaw-diff" => await YawDiffAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "overlay-frame" => await OverlayFrameAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
+            "overlay-strip" => await OverlayStripAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "beacon" => await BeaconAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "serve" => Unsupported(invocation.Command, correlationId),
             _ => Invalid(
@@ -550,40 +552,32 @@ public sealed class CliCommandRouter
             pngPath = Path.GetFullPath(pngText);
         }
 
-        OperationResult<OverlayFrame> frameResult = await _overlayFrames.GetFrameAsync(
-            new BattleSessionId(sessionGuid),
-            TimeSpan.FromSeconds(replayTimeSeconds),
+        OperationResult<OverlayFrameProjection> projectionResult = await BuildOverlayProjectionAsync(
+            sessionGuid,
+            replayTimeSeconds,
+            fovDegrees,
+            viewportWidth,
+            viewportHeight,
             cancellationToken).ConfigureAwait(false);
-        if (!frameResult.IsSuccess || frameResult.Value is null)
+        if (!projectionResult.IsSuccess || projectionResult.Value is null)
         {
-            return FromResult(frameResult, correlationId, "Overlay frame built.");
+            return FromResult(projectionResult, correlationId, "Overlay frame built.");
         }
 
-        OverlayFrame frame = frameResult.Value;
-        IReadOnlyList<OverlayBeacon> beacons = await _beacons.GetBeaconsAsync(
-            new BattleSessionId(sessionGuid),
-            cancellationToken).ConfigureAwait(false);
-        double fovRadians = fovDegrees * Math.PI / 180.0;
-        OverlayFrameProjection projection = OverlayFrameProjector.Project(
-            frame, fovRadians, viewportWidth, viewportHeight, beacons);
-
+        OverlayFrameProjection projection = projectionResult.Value;
         if (pngPath is not null)
         {
-            MapBoundary? boundary = await ResolveMapBoundaryAsync(sessionGuid, cancellationToken)
-                .ConfigureAwait(false);
-            byte[] rgba = FrameRasterizer.Render(
-                projection, (int)viewportWidth, (int)viewportHeight, boundary);
-            byte[] png = PngEncoder.Encode((int)viewportWidth, (int)viewportHeight, rgba);
-            try
+            CliExecution? writeFailure = await WritePngAsync(
+                pngPath,
+                projection,
+                (int)viewportWidth,
+                (int)viewportHeight,
+                sessionGuid,
+                correlationId,
+                cancellationToken).ConfigureAwait(false);
+            if (writeFailure is not null)
             {
-                await File.WriteAllBytesAsync(pngPath, png, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-            {
-                return Invalid(
-                    "cli.overlay-frame.png_write",
-                    $"--png could not write {pngPath}: {exception.Message}",
-                    correlationId);
+                return writeFailure;
             }
         }
 
@@ -667,7 +661,173 @@ public sealed class CliCommandRouter
 
         return Success(
             data,
-            $"Overlay frame at {replayTimeSeconds:0.###}s: {frame.Tanks.Count} tank(s), {projection.Beacons.Count} beacon(s) projected.",
+            $"Overlay frame at {replayTimeSeconds:0.###}s: {projection.Tanks.Count} tank(s), {projection.Beacons.Count} beacon(s) projected.",
+            correlationId);
+    }
+
+    /// <summary>Builds one projected overlay frame at a replay time (frame
+    /// source → beacons → <see cref="OverlayFrameProjector"/>).</summary>
+    private async ValueTask<OperationResult<OverlayFrameProjection>> BuildOverlayProjectionAsync(
+        Guid sessionGuid,
+        double replayTimeSeconds,
+        double fovDegrees,
+        double viewportWidth,
+        double viewportHeight,
+        CancellationToken cancellationToken)
+    {
+        OperationResult<OverlayFrame> frameResult = await _overlayFrames.GetFrameAsync(
+            new BattleSessionId(sessionGuid),
+            TimeSpan.FromSeconds(replayTimeSeconds),
+            cancellationToken).ConfigureAwait(false);
+        if (!frameResult.IsSuccess || frameResult.Value is null)
+        {
+            return OperationResult.Failure<OverlayFrameProjection>(
+                frameResult.Error ?? new ApplicationError(
+                    "cli.overlay-frame.missing",
+                    "The session has no overlay frame at this time."));
+        }
+
+        IReadOnlyList<OverlayBeacon> beacons = await _beacons.GetBeaconsAsync(
+            new BattleSessionId(sessionGuid),
+            cancellationToken).ConfigureAwait(false);
+        double fovRadians = fovDegrees * Math.PI / 180.0;
+        return OperationResult.Success(OverlayFrameProjector.Project(
+            frameResult.Value, fovRadians, viewportWidth, viewportHeight, beacons));
+    }
+
+    /// <summary>Renders one projection to a PNG at <paramref name="pngPath"/>
+    /// (with the session's minimap boundary when resolvable). Returns a
+    /// <see cref="CliExecution"/> failure on write errors, else null.</summary>
+    private async ValueTask<CliExecution?> WritePngAsync(
+        string pngPath,
+        OverlayFrameProjection projection,
+        int width,
+        int height,
+        Guid sessionGuid,
+        Guid correlationId,
+        CancellationToken cancellationToken)
+    {
+        MapBoundary? boundary = await ResolveMapBoundaryAsync(sessionGuid, cancellationToken)
+            .ConfigureAwait(false);
+        byte[] rgba = FrameRasterizer.Render(projection, width, height, boundary);
+        byte[] png = PngEncoder.Encode(width, height, rgba);
+        try
+        {
+            await File.WriteAllBytesAsync(pngPath, png, cancellationToken).ConfigureAwait(false);
+            return null;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return Invalid(
+                "cli.overlay-frame.png_write",
+                $"--png could not write {pngPath}: {exception.Message}",
+                correlationId);
+        }
+    }
+
+    /// <summary>
+    /// Renders a contact sheet of <c>count</c> evenly spaced overlay frames
+    /// from <c>start</c> to <c>end</c> seconds into one PNG: the W2S view of
+    /// the whole battle in a single image for offline motion/occlusion
+    /// review. Cells are fixed 640x360 (16:9); the grid is as square as
+    /// possible (columns = ceil(sqrt(count))). Requires --session and --png.
+    /// </summary>
+    private async ValueTask<CliExecution> OverlayStripAsync(
+        CliInvocation invocation,
+        Guid correlationId,
+        CancellationToken cancellationToken)
+    {
+        if (invocation.Positionals.Count != 3
+            || !double.TryParse(invocation.Positionals[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double startSeconds)
+            || startSeconds < 0
+            || !double.TryParse(invocation.Positionals[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double endSeconds)
+            || endSeconds <= startSeconds
+            || !int.TryParse(invocation.Positionals[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out int count)
+            || count < 1 || count > 64)
+        {
+            return Invalid(
+                "cli.overlay-strip.args",
+                "overlay-strip requires: <start> <end> <count> (count 1..64, end > start >= 0).",
+                correlationId);
+        }
+
+        if (!invocation.Options.TryGetValue("session", out string? sessionText) ||
+            !Guid.TryParse(sessionText, out Guid sessionGuid))
+        {
+            return Invalid(
+                "cli.overlay-strip.session",
+                "overlay-strip requires --session <battle-session-guid>.",
+                correlationId);
+        }
+
+        if (!invocation.Options.TryGetValue("png", out string? pngText)
+            || string.IsNullOrWhiteSpace(pngText))
+        {
+            return Invalid(
+                "cli.overlay-strip.png",
+                "overlay-strip requires --png <destination-file-path>.",
+                correlationId);
+        }
+
+        string pngPath = Path.GetFullPath(pngText);
+        const double cellWidth = 640;
+        const double cellHeight = 360;
+        var projections = new List<OverlayFrameProjection>(count);
+        for (int index = 0; index < count; index++)
+        {
+            double timeSeconds = count == 1
+                ? startSeconds
+                : startSeconds + (endSeconds - startSeconds) * index / (count - 1);
+            OperationResult<OverlayFrameProjection> projectionResult = await BuildOverlayProjectionAsync(
+                sessionGuid,
+                timeSeconds,
+                fovDegrees: 90.0,
+                cellWidth,
+                cellHeight,
+                cancellationToken).ConfigureAwait(false);
+            if (!projectionResult.IsSuccess || projectionResult.Value is null)
+            {
+                return FromResult(projectionResult, correlationId, "Overlay strip built.");
+            }
+
+            projections.Add(projectionResult.Value);
+        }
+
+        MapBoundary? boundary = await ResolveMapBoundaryAsync(sessionGuid, cancellationToken)
+            .ConfigureAwait(false);
+        byte[] sheet = FrameRasterizer.RenderContactSheet(
+            projections, boundary, (int)cellWidth, (int)cellHeight);
+        byte[] png = PngEncoder.Encode(
+            FrameRasterizer.ContactSheetWidth(projections.Count, (int)cellWidth),
+            FrameRasterizer.ContactSheetHeight(projections.Count, (int)cellHeight),
+            sheet);
+        try
+        {
+            await File.WriteAllBytesAsync(pngPath, png, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return Invalid(
+                "cli.overlay-strip.png_write",
+                $"--png could not write {pngPath}: {exception.Message}",
+                correlationId);
+        }
+
+        return Success(
+            new
+            {
+                command = "overlay-strip",
+                sessionId = sessionGuid,
+                startSeconds,
+                endSeconds,
+                count,
+                pngPath,
+                columns = FrameRasterizer.ContactSheetColumns(projections.Count),
+                rows = FrameRasterizer.ContactSheetRows(projections.Count),
+                cellWidth,
+                cellHeight,
+            },
+            $"Overlay strip: {count} frame(s) from {startSeconds:0.###}s to {endSeconds:0.###}s written to {pngPath}.",
             correlationId);
     }
 

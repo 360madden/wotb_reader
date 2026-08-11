@@ -144,6 +144,53 @@ public sealed class FrameRasterizerTests
     }
 
     [TestMethod]
+    public void ContactSheet_GridMath_IsSquareish()
+    {
+        Assert.AreEqual(1, FrameRasterizer.ContactSheetColumns(1));
+        Assert.AreEqual(1, FrameRasterizer.ContactSheetRows(1));
+        Assert.AreEqual(2, FrameRasterizer.ContactSheetColumns(2));
+        Assert.AreEqual(1, FrameRasterizer.ContactSheetRows(2));
+        Assert.AreEqual(2, FrameRasterizer.ContactSheetColumns(3));
+        Assert.AreEqual(2, FrameRasterizer.ContactSheetRows(3));
+        Assert.AreEqual(2, FrameRasterizer.ContactSheetColumns(4));
+        Assert.AreEqual(2, FrameRasterizer.ContactSheetRows(4));
+        Assert.AreEqual(3, FrameRasterizer.ContactSheetColumns(5));
+        Assert.AreEqual(2, FrameRasterizer.ContactSheetRows(5));
+        Assert.AreEqual(3, FrameRasterizer.ContactSheetColumns(8));
+        Assert.AreEqual(3, FrameRasterizer.ContactSheetRows(8));
+    }
+
+    [TestMethod]
+    public void RenderContactSheet_TilesFourFramesIntoGrid()
+    {
+        var projections = new[]
+        {
+            EmptyProjection(),
+            EmptyProjection(),
+            EmptyProjection(),
+            EmptyProjection(),
+        };
+
+        byte[] sheet = FrameRasterizer.RenderContactSheet(projections);
+
+        int width = FrameRasterizer.ContactSheetWidth(4, 640);
+        int height = FrameRasterizer.ContactSheetHeight(4, 360);
+        Assert.AreEqual(1320, width);
+        Assert.AreEqual(760, height);
+        Assert.HasCount(width * height * 4, sheet);
+
+        // Cell 0 (top-left, margin 16): its center crosshair is drawn.
+        int cell0CenterX = 16 + 640 / 2;
+        int cell0CenterY = 16 + 360 / 2;
+        byte[] cell0Pixel = Pixel(sheet, width, cell0CenterX, cell0CenterY);
+        CollectionAssert.AreEqual(new byte[] { 40, 44, 56, 255 }, cell0Pixel);
+
+        // Gutter between cell 0 and cell 1 stays background.
+        byte[] gutterPixel = Pixel(sheet, width, 16 + 640 + 4, cell0CenterY);
+        CollectionAssert.AreEqual(new byte[] { 12, 14, 20, 255 }, gutterPixel);
+    }
+
+    [TestMethod]
     public void Render_DegenerateBoundarySkipsMinimap()
     {
         var boundary = new MapBoundary("maps/test", MinX: 0, MaxX: 0, MinZ: 0, MaxZ: 0);
@@ -193,6 +240,12 @@ public sealed class FrameRasterizerTests
         Kills: []);
 
     private static OverlayFrameProjection EmptyProjection() => Projection();
+
+    private static byte[] Pixel(byte[] rgba, int width, int x, int y)
+    {
+        int offset = (y * width + x) * 4;
+        return [rgba[offset], rgba[offset + 1], rgba[offset + 2], rgba[offset + 3]];
+    }
 
     private static void AssertPixel(
         byte[] rgba, int x, int y, byte r, byte g, byte b)
