@@ -96,6 +96,19 @@ until the L1 live session confirms the field empirically on both 11.19.0
 replays; the `entity-base` region anchor + int16 correlator pass
 (2026-08-11) are the session's tools.
 
+**Transform record `[entity+0x3C]` (2026-08-11, static-only, not
+promoted):** `VerifyTransformRecord.java` (hash-bound, **20/20 checks**,
+verdict `transform-record-verified`) pins the per-frame transform fill
+`FUN_00bc3940` (called from the entity list when `[entity+0x20] & 0x800`
+set): getter `FUN_00d29ea0` = `MOV EAX,[ECX+0x3C]; RET 0x4` (bytes
+`8b 41 3c c2 04 00`); position float32 triple `[t+0x1C/0x20/0x24]`;
+4×4 world matrix `[t+0x60..0x9C]` (4× `MOVUPS`, composed by
+`FUN_00729570` from quaternion→matrix `FUN_00d1a0f0` + basis normalizer
+`FUN_00d155c0`); rotation region `[t+0x38..0x58]`. This upgrades the
+FRESH43/OD-RECOVERY-053 write-chain decode to a hash-bound verdict. Not
+promoted — the published position chains stay resolver-bound, and no
+live read occurred.
+
 **Entity-base record map beyond HP (2026-08-11, static-only, not
 promoted):** the full VehicleGameLogic setter family extends the map for
 future discovery — strafing byte `[entity+0x7C]`, engine-mode object ptr

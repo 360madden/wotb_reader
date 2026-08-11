@@ -188,6 +188,19 @@ The L0 seam is now IMPLEMENTED (2026-08-10):
    layout). The fields beyond the health block (`+0xBC`…`+0x110`) are
    static-only evidence, not promoted — future discovery work can re-use the
    map instead of re-scanning the entity record.
+
+   **The transform record (`[entity+0x3C]`, statically verified 20/20 by
+   `VerifyTransformRecord`, 2026-08-11):** the per-frame fill
+   `FUN_00bc3940` (called from the entity list `FUN_00bb9b30` when
+   `[entity+0x20] & 0x800`) reads the transform via getter
+   `FUN_00d29ea0` (`MOV EAX,[ECX+0x3C]; RET 0x4`, bytes `8b 41 3c c2 04
+   00`), gates on a non-zero **position float32 triple at
+   `[transform+0x1C/0x20/0x24]`**, composes the **4×4 world matrix at
+   `[transform+0x60..0x9C]`** via quaternion→matrix `FUN_00d1a0f0` +
+   matrix multiply `FUN_00729570` (4× `MOVUPS` stores), and writes the
+   rotation region `[transform+0x38..0x58]`. This is the FRESH43
+   write-chain decode now under a hash-bound verdict — the layout is
+   evidence, not promoted (no live read).
 2. **Session driver** — `scripts/invoke-hp-diffing-session.ps1` runs the
    whole flow: gate → **qualify the victim from the decoded replay**
    (see below — do NOT default to the player's own entity) → print the

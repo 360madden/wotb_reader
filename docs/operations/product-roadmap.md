@@ -131,8 +131,11 @@ of the sub-50ms duplicate-packet artifact.
 (`docs/operations/parallel-workstreams.md`) + `scripts/workstream-lock.py`
 serialize the Ghidra project DB, docs, and the live queue; two targeted Ghidra
 passes landed. Pass 1 decompiled the FRESH43 write site `FUN_00bc3940` and
-pinned a per-frame transform object with **position `+0x38`, 3×3 rotation
-`+0x44..+0x5c`, and a 16-float 4×4 matrix at `+0x60`**. Pass 2 decompiled
+pinned a per-frame transform object — the corrected decode (verified
+20/20 by `VerifyTransformRecord`, 2026-08-11) is **position float32
+triple `+0x1C/0x20/0x24`** (the earlier `+0x38` candidate was the
+pre-correction read), rotation region `+0x38..0x58`, and a **16-float 4×4
+world matrix at `+0x60..0x9C`**. Pass 2 decompiled
 `FUN_00729570` (RVA `0x329570`): it is the engine's **generic 4×4 matrix
 multiply** (20+ call sites; second operand read column-major), so the `+0x60`
 matrix is a per-frame composited world/view-style matrix — the live camera/VP
@@ -151,14 +154,16 @@ track's static anchor. Evidence: `tools/ghidra-scripts/writesite-ring-disasm.txt
 
 Each session reuses L0; the region dump is multipurpose (one dump yields
 position + velocity + rotation + HP candidates), so later sessions are
-cheaper than the first. NOTE (2026-08-10 cross-check): `[entity+0x3C]` is
-static evidence for the TRANSFORM OBJECT (getter `FUN_00d29ea0 = return
-[ECX+0x3C]`; position `+0x1C/20/24`, world matrix `+0x60..0x9C`, rotation
-`+0x38..0x5C` per FRESH43). HP's actual location is UNKNOWN — the
-record-diffing playbook scans the dumped region for whichever int32 drops
-with damage; `+0x48` was the test fixture's planted offset. If the
-transform region contains no HP-like field, the live session returns an
-honest no-hit and the anchor widens (entity base / ring record).
+cheaper than the first. NOTE (2026-08-11): `[entity+0x3C]` is the
+TRANSFORM OBJECT under a **hash-bound verdict** — `VerifyTransformRecord`
+20/20 (`transform-record-verified`): getter `FUN_00d29ea0 = return
+[ECX+0x3C]` (bytes `8b 41 3c c2 04 00`); position float32
+`+0x1C/20/24`, world matrix `+0x60..0x9C`, rotation `+0x38..0x58`.
+HP's actual location is UNKNOWN — the record-diffing playbook scans the
+dumped region for whichever int16 drops with damage; `+0x48` was the
+test fixture's planted offset. If the transform region contains no
+HP-like field, the live session returns an honest no-hit and the anchor
+widens (entity base / ring record).
 
 ### Phase 3 — Publications (serial, operator-gated)
 

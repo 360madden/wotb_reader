@@ -249,6 +249,7 @@ docs/operations/handoffs/2026-08-11-entity-base-record-map.md
 docs/operations/handoffs/2026-08-11-exact-overlay-hp-wired.md
 docs/operations/handoffs/2026-08-11-playerhp-static-chain.md
 docs/operations/handoffs/2026-08-11-replay-clock-write-site-negative.md
+docs/operations/handoffs/2026-08-11-transform-record-verified.md
 docs/operations/handoffs/2026-08-11-type5-maxhp-in-replay.md
 docs/operations/handoffs/README.md
 docs/operations/legacy-observation-surface.md
