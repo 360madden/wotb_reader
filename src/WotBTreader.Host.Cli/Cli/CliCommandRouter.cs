@@ -601,6 +601,12 @@ public sealed class CliCommandRouter
                 pip.ScreenX,
                 pip.ScreenY,
             }),
+            kills = projection.Kills.Select(kill => new
+            {
+                kill.VictimEntityId,
+                kill.KillerEntityId,
+                replayTimeSeconds = kill.ReplayTime.TotalSeconds,
+            }),
         };
 
         return Success(

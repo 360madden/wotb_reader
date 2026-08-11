@@ -63,6 +63,28 @@ public sealed class OverlayFrameProjectorTests
     }
 
     [TestMethod]
+    public void Project_CarriesKillFeedThrough()
+    {
+        OverlayFrame frame = new(
+            TimeSpan.FromSeconds(20),
+            new OverlayCamera(0, 0, 0, YawRadians: 0, PitchRadians: 0, RollRadians: 0),
+            [],
+            [],
+            new[]
+            {
+                new OverlayKill(50, 70, TimeSpan.FromSeconds(20)),
+                new OverlayKill(51, null, TimeSpan.FromSeconds(30)),
+            });
+
+        OverlayFrameProjection projection = OverlayFrameProjector.Project(frame, Fov, 1920, 1080);
+
+        Assert.HasCount(2, projection.Kills);
+        Assert.AreEqual(50, projection.Kills[0].VictimEntityId);
+        Assert.AreEqual(70, projection.Kills[0].KillerEntityId);
+        Assert.IsNull(projection.Kills[1].KillerEntityId);
+    }
+
+    [TestMethod]
     public void Project_SortsByDistanceNearestFirst()
     {
         OverlayFrame frame = new(

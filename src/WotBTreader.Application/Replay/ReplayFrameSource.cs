@@ -153,7 +153,87 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
         }
 
         tanks.Sort(static (left, right) => left.DistanceMeters.CompareTo(right.DistanceMeters));
-        return new OverlayFrame(replayTime, camera, tanks, pips);
+        return new OverlayFrame(replayTime, camera, tanks, pips, BuildKills(projection, replayTime));
+    }
+
+    /// <summary>
+    /// Builds the kill feed: every destroy that has landed at or before the
+    /// frame time, with killer attribution from the last damage event the
+    /// victim received (allowing the small posthumous window observed on real
+    /// replays, e.g. 3760571's kill hit ~1.7 s after its destroy marker). The
+    /// killer is null when no damage evidence exists (environmental kill).
+    /// Kills are ordered oldest first; the HUD renders newest first.
+    /// </summary>
+    private static List<OverlayKill> BuildKills(
+        ReplayDecodeProjection projection,
+        TimeSpan replayTime)
+    {
+        const double posthumousWindowSeconds = 3.0;
+        List<CanonicalEvent> damageEvents = projection.Events
+            .Where(ev => ev.Kind == CanonicalEventKind.Damage)
+            .ToList();
+
+        List<OverlayKill> kills = [];
+        foreach (CanonicalEvent destroyed in projection.Events
+                     .Where(ev => ev.Kind == CanonicalEventKind.Destroyed)
+                     .Where(ev => ev.ReplayTime <= replayTime)
+                     .OrderBy(ev => ev.ReplayTime))
+        {
+            if (destroyed.EntityId is null)
+            {
+                continue;
+            }
+
+            long victim = destroyed.EntityId.Value;
+            // Most recent damage the victim received at or just after its
+            // destroy instant: that attacker is the killer.
+            CanonicalEvent? killShot = damageEvents
+                .Where(ev => ev.EntityId == victim
+                    && ev.ReplayTime <= destroyed.ReplayTime
+                        + TimeSpan.FromSeconds(posthumousWindowSeconds))
+                .OrderByDescending(ev => ev.ReplayTime)
+                .FirstOrDefault();
+
+            long? killer = null;
+            if (killShot is not null
+                && TryParseAttacker(killShot.ValuesJson, out long attacker))
+            {
+                killer = attacker;
+            }
+
+            kills.Add(new OverlayKill(victim, killer, destroyed.ReplayTime));
+        }
+
+        return kills;
+    }
+
+    private static bool TryParseAttacker(string? valuesJson, out long attacker)
+    {
+        attacker = 0;
+        if (string.IsNullOrWhiteSpace(valuesJson))
+        {
+            return false;
+        }
+
+        try
+        {
+            using System.Text.Json.JsonDocument document =
+                System.Text.Json.JsonDocument.Parse(valuesJson);
+            if (document.RootElement.TryGetProperty(
+                    "attackerEntityId",
+                    out System.Text.Json.JsonElement value)
+                && value.TryGetInt64(out long parsed))
+            {
+                attacker = parsed;
+                return true;
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // Unparseable values stay unknown — never guessed.
+        }
+
+        return false;
     }
 
     private static OverlayCamera BuildCamera(

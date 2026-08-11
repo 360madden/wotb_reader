@@ -71,13 +71,37 @@ public sealed record OverlayEventPip(
 
 /// <summary>
 /// A complete renderable instant of a replay battle: the camera plus every
-/// tank state that has position evidence at the frame's replay time, and the
-/// recent event-feed pips (damage/death) for the HUD. Pure offline data —
-/// built entirely from the decoded replay projection, never from a game
-/// process.
+/// tank state that has position evidence at the frame's replay time, the
+/// recent event-feed pips (damage/death), and the persistent kill feed for
+/// the HUD. Pure offline data — built entirely from the decoded replay
+/// projection, never from a game process.
 /// </summary>
 public sealed record OverlayFrame(
     TimeSpan ReplayTime,
     OverlayCamera Camera,
     IReadOnlyList<OverlayTankState> Tanks,
-    IReadOnlyList<OverlayEventPip> Pips);
+    IReadOnlyList<OverlayEventPip> Pips,
+    IReadOnlyList<OverlayKill> Kills)
+{
+    /// <summary>Frame with an empty kill feed — for fixtures that only
+    /// exercise the nameplate/pip layers.</summary>
+    public OverlayFrame(
+        TimeSpan replayTime,
+        OverlayCamera camera,
+        IReadOnlyList<OverlayTankState> tanks,
+        IReadOnlyList<OverlayEventPip> pips)
+        : this(replayTime, camera, tanks, pips, []) { }
+}
+
+/// <summary>
+/// One kill for the HUD kill feed: the destroyed tank's entity and the
+/// killer's entity when attribution is possible (the attacker of the last
+/// damage event received before the destroy marker, allowing the small
+/// posthumous window observed on real replays). Killer is null for
+/// environmental kills (no damage evidence). Pure offline data — decoded
+/// canonical Destroyed + Damage events, never a game process.
+/// </summary>
+public sealed record OverlayKill(
+    long VictimEntityId,
+    long? KillerEntityId,
+    TimeSpan ReplayTime);

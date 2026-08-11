@@ -289,6 +289,12 @@ internal static class ReadApiEndpoints
                 ScreenX = pip.ScreenX,
                 ScreenY = pip.ScreenY,
             })],
+            Kills = [.. projection.Kills.Select(kill => new OverlayKillResponse
+            {
+                VictimEntityId = kill.VictimEntityId,
+                KillerEntityId = kill.KillerEntityId,
+                ReplayTimeSeconds = kill.ReplayTime.TotalSeconds,
+            })],
         });
     }
 

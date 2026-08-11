@@ -428,6 +428,26 @@ public sealed record OverlayFrameResponse
     /// <summary>Event-feed pips (damage/death) from the recent replay window,
     /// anchored at the affected tank's viewport pixel.</summary>
     public IReadOnlyList<OverlayPipResponse> Pips { get; init; } = [];
+
+    /// <summary>Kill feed: every destroy landed at or before this frame's
+    /// replay time, ordered oldest first (the HUD renders newest first).
+    /// Killer is null when attribution is impossible (environmental kill).</summary>
+    public IReadOnlyList<OverlayKillResponse> Kills { get; init; } = [];
+}
+
+/// <summary>One kill-feed entry: the destroyed tank and, when attributable,
+/// the killer (attacker of the victim's last damage event before the destroy
+/// marker).</summary>
+public sealed record OverlayKillResponse
+{
+    /// <summary>Destroyed tank entity id.</summary>
+    public long VictimEntityId { get; init; }
+
+    /// <summary>Killer entity id; null for environmental kills.</summary>
+    public long? KillerEntityId { get; init; }
+
+    /// <summary>Replay time of the destroy.</summary>
+    public double ReplayTimeSeconds { get; init; }
 }
 
 /// <summary>One event-feed pip (damage hit or destruction) rendered over the

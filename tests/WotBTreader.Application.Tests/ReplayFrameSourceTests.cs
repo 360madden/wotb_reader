@@ -163,6 +163,120 @@ public sealed class ReplayFrameSourceTests
     }
 
     [TestMethod]
+    public void Frame_BuildKillsAttributedToLastDamageAttacker()
+    {
+        ParticipantId viewpointId = ParticipantId.New();
+        var projection = Projection(
+            viewpointId,
+            new[]
+            {
+                Participant(viewpointId, entityId: 1, "ViewpointTank", team: 1),
+            },
+            new[]
+            {
+                Sample(entityId: 1, seconds: 0, x: 0, y: 0, z: 0, yaw: 0.1),
+            },
+            events: new[]
+            {
+                // Victim 50 takes two hits; the destroy lands at 20s and the
+                // final (killing) hit at 19s -> attacker 70 is the killer.
+                DamageWithAttackerEvent(50, 60, seconds: 10, damage: 100),
+                DamageWithAttackerEvent(50, 70, seconds: 19, damage: 200),
+                DestroyedEvent(50, seconds: 20),
+            });
+
+        OverlayFrame frame = ReplayFrameSource.BuildFrame(projection, TimeSpan.FromSeconds(25));
+
+        OverlayKill kill = frame.Kills.Single();
+        Assert.AreEqual(50, kill.VictimEntityId);
+        Assert.AreEqual(70, kill.KillerEntityId);
+        Assert.AreEqual(TimeSpan.FromSeconds(20), kill.ReplayTime);
+    }
+
+    [TestMethod]
+    public void Frame_KillAttributionAllowsPosthumousHitWindow()
+    {
+        // Real replay: 3760571's kill hit lands ~1.7 s AFTER its destroy
+        // marker. The 3 s window must still attribute that attacker.
+        ParticipantId viewpointId = ParticipantId.New();
+        var projection = Projection(
+            viewpointId,
+            new[]
+            {
+                Participant(viewpointId, entityId: 1, "ViewpointTank", team: 1),
+            },
+            new[]
+            {
+                Sample(entityId: 1, seconds: 0, x: 0, y: 0, z: 0, yaw: 0.1),
+            },
+            events: new[]
+            {
+                DamageWithAttackerEvent(50, 70, seconds: 18, damage: 100),
+                DestroyedEvent(50, seconds: 20),
+                DamageWithAttackerEvent(50, 80, seconds: 21.5, damage: 50),
+            });
+
+        OverlayFrame frame = ReplayFrameSource.BuildFrame(projection, TimeSpan.FromSeconds(25));
+
+        OverlayKill kill = frame.Kills.Single();
+        Assert.AreEqual(80, kill.KillerEntityId);
+    }
+
+    [TestMethod]
+    public void Frame_KillWithoutDamageEvidenceIsEnvironmental()
+    {
+        ParticipantId viewpointId = ParticipantId.New();
+        var projection = Projection(
+            viewpointId,
+            new[]
+            {
+                Participant(viewpointId, entityId: 1, "ViewpointTank", team: 1),
+            },
+            new[]
+            {
+                Sample(entityId: 1, seconds: 0, x: 0, y: 0, z: 0, yaw: 0.1),
+            },
+            events: new[]
+            {
+                DestroyedEvent(50, seconds: 20),
+            });
+
+        OverlayFrame frame = ReplayFrameSource.BuildFrame(projection, TimeSpan.FromSeconds(25));
+
+        OverlayKill kill = frame.Kills.Single();
+        Assert.AreEqual(50, kill.VictimEntityId);
+        Assert.IsNull(kill.KillerEntityId);
+    }
+
+    [TestMethod]
+    public void Frame_KillsOnlyIncludeDestroysAtOrBeforeFrameTime()
+    {
+        ParticipantId viewpointId = ParticipantId.New();
+        var projection = Projection(
+            viewpointId,
+            new[]
+            {
+                Participant(viewpointId, entityId: 1, "ViewpointTank", team: 1),
+            },
+            new[]
+            {
+                Sample(entityId: 1, seconds: 0, x: 0, y: 0, z: 0, yaw: 0.1),
+            },
+            events: new[]
+            {
+                DestroyedEvent(50, seconds: 10),
+                DestroyedEvent(51, seconds: 30),
+            });
+
+        OverlayFrame at20 = ReplayFrameSource.BuildFrame(projection, TimeSpan.FromSeconds(20));
+        Assert.HasCount(1, at20.Kills);
+        Assert.AreEqual(50, at20.Kills[0].VictimEntityId);
+
+        OverlayFrame at40 = ReplayFrameSource.BuildFrame(projection, TimeSpan.FromSeconds(40));
+        Assert.HasCount(2, at40.Kills);
+    }
+
+    [TestMethod]
     public void Frame_ZeroDamageEventsAreNotPips()
     {
         ParticipantId viewpointId = ParticipantId.New();
@@ -352,6 +466,25 @@ public sealed class ReplayFrameSourceTests
             ParticipantId: null,
             EntityId: entityId,
             ValuesJson: $"{{\"damage\":{damage}}}",
+            EvidenceConfidence.Exact,
+            Evidence);
+
+    private static CanonicalEvent DamageWithAttackerEvent(
+        long victimEntityId,
+        long attackerEntityId,
+        double seconds,
+        int damage) =>
+        new(
+            CanonicalEventId.New(),
+            RunId,
+            SessionId,
+            Sequence: 1500 + (long)(seconds * 10),
+            CanonicalEventKind.Damage,
+            TimeSpan.FromSeconds(seconds),
+            ParticipantId: null,
+            EntityId: victimEntityId,
+            ValuesJson:
+                $"{{\"attackerEntityId\":{attackerEntityId},\"victimEntityId\":{victimEntityId},\"damage\":{damage}}}",
             EvidenceConfidence.Exact,
             Evidence);
 

@@ -62,9 +62,9 @@ public sealed partial class W2sHudView : UserControl
     /// Replaces the HUD contents with the given beacons (drawn first, under
     /// the nameplates), pips (drawn next, floating above the nameplates), and
     /// nameplates. All lists are already filtered to in-viewport projections
-    /// by the view model. The minimap panel (god-view dots) is drawn last,
-    /// pinned to the bottom-right corner; it is skipped when no tank has a
-    /// normalized position or the camera position is unknown.
+    /// by the view model. The minimap panel (god-view dots) is drawn pinned
+    /// to the bottom-right corner, and the kill feed to the bottom-left;
+    /// each is skipped when it has no entries.
     /// </summary>
     public void Render(
         IReadOnlyList<BeaconItem> beacons,
@@ -73,6 +73,7 @@ public sealed partial class W2sHudView : UserControl
         IReadOnlyList<MinimapItem> minimap,
         double? cameraX,
         double? cameraZ,
+        IReadOnlyList<KillItem> killFeed,
         double viewportWidth,
         double viewportHeight)
     {
@@ -96,6 +97,56 @@ public sealed partial class W2sHudView : UserControl
         {
             HudCanvas.Children.Add(BuildMinimap(minimap, cameraX, cameraZ, viewportWidth, viewportHeight));
         }
+
+        if (killFeed.Count > 0)
+        {
+            HudCanvas.Children.Add(BuildKillFeed(killFeed));
+        }
+    }
+
+    /// <summary>
+    /// Builds the kill-feed panel: the most recent entries as a stacked list
+    /// pinned to the bottom-left corner, "Killer → Victim" with a time tag,
+    /// newest first (the view model already orders it). Environmental kills
+    /// render the victim with an em-dash killer label.
+    /// </summary>
+    private static Canvas BuildKillFeed(IReadOnlyList<KillItem> killFeed)
+    {
+        const int maxEntries = 8;
+        const double margin = 12;
+        const double entryHeight = 18;
+
+        var panel = new Canvas
+        {
+            Background = CreateBrush("#80101820"),
+        };
+        Canvas.SetLeft(panel, margin);
+        Canvas.SetBottom(panel, margin);
+
+        int shown = 0;
+        foreach (KillItem kill in killFeed)
+        {
+            if (shown >= maxEntries)
+            {
+                break;
+            }
+
+            var text = new TextBlock
+            {
+                Text = $"{kill.KillerLabel} → {kill.VictimLabel}  {kill.ReplayTimeSeconds:F0}s",
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = CreateBrush("#E8E8E8"),
+                Margin = new Thickness(6, 1, 6, 1),
+            };
+            Canvas.SetTop(text, shown * entryHeight);
+            panel.Children.Add(text);
+            shown++;
+        }
+
+        panel.Width = 240;
+        panel.Height = shown * entryHeight + 6;
+        return panel;
     }
 
     /// <summary>

@@ -1138,6 +1138,63 @@ public sealed class MainViewModelTests
     }
 
     [TestMethod]
+    public async Task RefreshOverlayFrameAsync_PopulatesKillFeedNewestFirst()
+    {
+        string frameJson = """
+            {
+              "replayTimeSeconds": 200.0,
+              "cameraX": 0.0, "cameraY": 0.0, "cameraZ": 0.0,
+              "cameraYawRadians": 0.5, "cameraPitchRadians": 0.0,
+              "tanks": [
+                { "entityId": 2, "playerName": "Alpha", "tankName": "TankA", "clanTag": null, "teamNumber": 2, "hpFraction": 1.0, "alive": true, "distanceMeters": 120.0, "worldX": 0.0, "worldZ": 0.0, "screenX": 800.0, "screenY": 400.0, "depth": 80.0, "inViewport": true },
+                { "entityId": 3, "playerName": "Bravo", "tankName": null, "clanTag": null, "teamNumber": 1, "hpFraction": 0.0, "alive": false, "distanceMeters": 90.0, "worldX": 10.0, "worldZ": 10.0, "screenX": 700.0, "screenY": 350.0, "depth": 60.0, "inViewport": true }
+              ],
+              "kills": [
+                { "victimEntityId": 3, "killerEntityId": 2, "replayTimeSeconds": 100.0 },
+                { "victimEntityId": 4, "killerEntityId": null, "replayTimeSeconds": 150.0 }
+              ]
+            }
+            """;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            string path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/frame", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(JsonResponse(frameJson));
+            }
+
+            if (path.Contains(BattleSessionId.ToString("D"), StringComparison.Ordinal))
+            {
+                return Task.FromResult(JsonResponse("""{"session":null,"participants":[],"positions":[],"events":[]}"""));
+            }
+
+            return Task.FromResult(JsonResponse("""{"offset":0,"limit":200,"count":0,"items":[]}"""));
+        });
+        MainViewModel viewModel = CreateViewModel(handler);
+
+        await viewModel.RefreshSessionsAsync();
+        viewModel.SelectedSession = new SessionRow(
+            BattleSessionId, "Test Map", null, Now, 1, 2);
+
+        await viewModel.RefreshOverlayFrameAsync(1920, 1080);
+
+        // Newest first; names resolved from the frame's tanks; the
+        // environmental kill (no attacker in roster) falls back to "—".
+        Assert.HasCount(2, viewModel.KillFeed);
+        KillItem newest = viewModel.KillFeed[0];
+        Assert.AreEqual(4, newest.VictimEntityId);
+        Assert.AreEqual("—", newest.KillerLabel);
+        Assert.AreEqual("Tank 4", newest.VictimLabel);
+        Assert.AreEqual(150.0, newest.ReplayTimeSeconds, 1e-9);
+        KillItem older = viewModel.KillFeed[1];
+        Assert.AreEqual(3, older.VictimEntityId);
+        Assert.AreEqual("Bravo", older.VictimLabel);
+        Assert.AreEqual("Alpha", older.KillerLabel);
+        Assert.AreEqual(100.0, older.ReplayTimeSeconds, 1e-9);
+    }
+
+    [TestMethod]
     public async Task RefreshOverlayFrameAsync_PopulatesEventPips()
     {
         string frameJson = """

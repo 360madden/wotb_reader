@@ -72,6 +72,7 @@ public class MainViewModel : INotifyPropertyChanged
     private readonly ObservableCollection<BeaconItem> _beacons = [];
     private readonly ObservableCollection<PipItem> _pips = [];
     private readonly ObservableCollection<MinimapItem> _minimapItems = [];
+    private readonly ObservableCollection<KillItem> _killFeed = [];
     private CancellationTokenSource? _frameLoadCts;
     private long _frameLoadGeneration;
     private double _hudFovDegrees = 90.0;
@@ -434,6 +435,10 @@ public class MainViewModel : INotifyPropertyChanged
     /// viewpoint has no position evidence.</summary>
     public double? MinimapCameraZ => _minimapCameraZ;
 
+    /// <summary>Kill feed for the HUD: every destroy landed up to the current
+    /// frame, newest first, with names resolved from the frame's roster.</summary>
+    public ObservableCollection<KillItem> KillFeed => _killFeed;
+
     /// <summary>Vertical field of view (degrees) used to project HUD frames.</summary>
     public double HudFovDegrees
     {
@@ -502,6 +507,7 @@ public class MainViewModel : INotifyPropertyChanged
             _minimapCameraX = frame.CameraX;
             _minimapCameraZ = frame.CameraZ;
             BuildMinimap(frame);
+            BuildKillFeed(frame);
             foreach (OverlayTankResponse tank in frame.Tanks)
             {
                 if (tank.ScreenX is null || tank.ScreenY is null || !tank.InViewport)
@@ -594,6 +600,35 @@ public class MainViewModel : INotifyPropertyChanged
                 normalized.Value.V,
                 tank.TeamNumber,
                 tank.Alive));
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds <see cref="KillFeed"/> from the frame's kill list, newest
+    /// first, resolving entity ids to player names from the same frame's
+    /// tanks. Environmental kills (no killer) render as "—".
+    /// </summary>
+    private void BuildKillFeed(OverlayFrameResponse frame)
+    {
+        _killFeed.Clear();
+        Dictionary<long, string> nameByEntity = frame.Tanks
+            .Where(tank => tank.PlayerName is not null)
+            .GroupBy(tank => tank.EntityId)
+            .ToDictionary(group => group.Key, group => group.First().PlayerName!);
+
+        foreach (OverlayKillResponse kill in frame.Kills.OrderByDescending(k => k.ReplayTimeSeconds))
+        {
+            string victim = nameByEntity.GetValueOrDefault(kill.VictimEntityId)
+                ?? $"Tank {kill.VictimEntityId}";
+            string killer = kill.KillerEntityId is long killerId
+                ? nameByEntity.GetValueOrDefault(killerId) ?? $"Tank {killerId}"
+                : "—";
+            _killFeed.Add(new KillItem(
+                kill.VictimEntityId,
+                kill.KillerEntityId,
+                victim,
+                killer,
+                kill.ReplayTimeSeconds));
         }
     }
 

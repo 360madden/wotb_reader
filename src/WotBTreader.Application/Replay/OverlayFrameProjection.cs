@@ -67,7 +67,8 @@ public sealed record OverlayFrameProjection(
     double? CameraPitchRadians,
     IReadOnlyList<ProjectedTank> Tanks,
     IReadOnlyList<ProjectedBeacon> Beacons,
-    IReadOnlyList<ProjectedPip> Pips);
+    IReadOnlyList<ProjectedPip> Pips,
+    IReadOnlyList<OverlayKill> Kills);
 
 /// <summary>
 /// Projects an <see cref="OverlayFrame"/> to viewport pixels via
@@ -187,7 +188,8 @@ public static class OverlayFrameProjector
             frame.Camera.PitchRadians,
             tanks,
             visibleBeacons,
-            pips);
+            pips,
+            frame.Kills);
     }
 
     private static double DistanceMeters(OverlayBeacon beacon, OverlayCamera camera)
