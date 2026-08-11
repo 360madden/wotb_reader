@@ -180,6 +180,23 @@ camera anchor is one object: `[[mgr+0x2C]+0x28]`; the projection matrix
 and the full 4×4 view composition remain before a full static
 world→screen pipeline. Handoff:
 `docs/operations/handoffs/2026-08-11-camera-family-hierarchy-factory.md`.
+✅ **Camera ownership root resolved (2026-08-11)**: the camera factory's
+`this` is the **BattleResources** object (raw-byte verified: `MOV EBX,ECX`
+in `TryLoadResources` prologue → `MOV ECX,EBX; CALL FUN_0165fe40`). The
+full chain is now a fixed member-path, not a signature scan:
+`SessionController` (vftable `0x323d9bc`/`0x323d9f0`, ctor
+`FUN_012855f0`) → `avatar = [session+0x11C]` (AvatarControllerBattle
+live / AvatarControllerReplay replay, created in
+`SessionController::OnAvatarBecomePlayer` `FUN_012afab0`, ctors
+`FUN_016368d0`/`FUN_0163dcc0` vftable `0x3277da4`) →
+`battleResources = [avatar+0x154]` (`BattleResources::Load`
+`FUN_01651780`/`TryLoadResources` `FUN_01662f00` this) →
+`camera = [battleResources+0x2C]` (factory `FUN_0165fe40`, mode==2 →
+ReplayCameraController) → `cameraState = [camera+0x28]` (yaw/pitch
+`+0x58/+0x5C`, view basis `+0xAC..0xC4`, position `+0x11C/+0x120/+0x124`).
+BattleResources is embedded in the avatar controller hierarchy; the
+replay variant is reachable through the same member offsets. Handoff:
+`docs/operations/handoffs/2026-08-11-camera-ownership-root.md`.
 
 ### Phase 2 — The live seam + first live sessions (serialized)
 
