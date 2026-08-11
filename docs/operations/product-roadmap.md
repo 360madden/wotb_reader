@@ -308,11 +308,12 @@ TRANSFORM OBJECT under a **hash-bound verdict** — `VerifyTransformRecord`
 20/20 (`transform-record-verified`): getter `FUN_00d29ea0 = return
 [ECX+0x3C]` (bytes `8b 41 3c c2 04 00`); position float32
 `+0x1C/20/24`, world matrix `+0x60..0x9C`, rotation `+0x38..0x58`.
-HP's actual location is UNKNOWN — the record-diffing playbook scans the
-dumped region for whichever int16 drops with damage; `+0x48` was the
-test fixture's planted offset. If the transform region contains no
-HP-like field, the live session returns an honest no-hit and the anchor
-widens (entity base / ring record).
+SUPERSEDED for HP (2026-08-11, same day): `VerifyPlayerHpChain` **26/26**
+pins the HP map at the ENTITY BASE, not the transform — current int16
+`+0xB8`, alive `+0xBA`, max int16 `+0x11C`, healing int16 `+0x11E` (see
+the L1 row above); the transform region is the movement/rotation home,
+and `+0x48` was the test fixture's planted offset, refuted. The
+entity-base anchor is the L1 live-session default.
 
 ### Phase 3 — Publications (serial, operator-gated)
 
@@ -340,7 +341,7 @@ widens (entity base / ring record).
 | X2 | C | Batch N-entity read surface (positions + yaw + HP per frame; walker already resolves any entity id) — rehearsal half fully staged 2026-08-11 (design `docs/operations/batch-entity-read-design.md`, coordinator + endpoint + tests, `invoke-batch-rehearsal.ps1`, composed with the roster enumeration below in the one-command `OD-RECOVERY-086` session) | X1 |
 | X2b | C | **Live roster enumeration** (2026-08-11 design `docs/operations/live-roster-read-design.md`): where the per-frame ids come from in live mode — `/discover/entity-roster` full-tree walk over the game's own BWEntities maps, movement-filter gate → avatar family, ids only; rehearsal `-EnumerateLive` measures the filter precision against the decoded roster in the same `OD-RECOVERY-086` session | X1 |
 | X3 | C/D | Camera offset track (the LIVE game's camera — a new discovery target) | X1 |
-| X4 | F | `LiveFrameSource` behind the same `OverlayFrame` contract — **no overlay rewrite**; per-frame loop design 2026-08-11 (`docs/operations/live-frame-loop-design.md`): coordinator-composed `POST /discover/live-frame` (roster → batch regions → camera pose, ONE lease + ONE clock label, `hp: null` until L1) | X2 + X2b + X3 |
+| X4 | F | ✅ **LiveFrameSource — IMPLEMENTED 2026-08-11** (design `docs/operations/live-frame-loop-design.md`): coordinator-composed `POST /discover/live-frame` (roster → batch regions → camera pose, ONE guarded reader lease + ONE G2 clock label, `hp: null` until L1) → pure `LiveFrameProjector` → `GET /api/v1/live/frame` serving the SAME `OverlayFrameResponse` the replay path uses (shared `ToOverlayFrameResponse`, no overlay rewrite) → overlay `IsLiveMode` toggle → `LiveFrameReadMeasurement` read-pass window (item-7 budget). Remaining live-gated: the OD-RECOVERY-086 rehearsal, L1/L2, then the id→name join (`docs/operations/live-roster-name-join-design.md`, gated on X2b's exact-set proof) | X2 + X2b + X3 |
 | X5 | F | Spotting model (only spotted tanks rendered; wall-hack god-view explicitly out) | X1 |
 
 **Label note (2026-08-11):** the rehearsal design docs use `X2`/`X3`/`X4`
