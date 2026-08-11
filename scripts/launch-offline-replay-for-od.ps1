@@ -620,6 +620,88 @@ try {
         exit 4
     }
 
+    # G2 clock anchor. The anchor's SourceAnchorUtc must be the wall-clock
+    # moment when the replay CLOCK reached replay-time 0 - the blitz-log
+    # 'Start replay event' marker the watch stops on - NOT the gate moment
+    # observed here (~5 s later). Live rehearsal (OD-RECOVERY-086) measured the
+    # consequence: anchoring at the gate put every batch label ~4.9 s ahead of
+    # the true replay time (constant skew), which failed the 2 m position
+    # cross-check for every MOVING tank while stationary tanks matched to
+    # 0.00 m. Every downstream caller (od-073 poll, batch rehearsal, live
+    # frame) attests sameDecodedClockProven from this segment; without it the
+    # flag stays false and gated reads fail closed. Non-fatal by design: an
+    # anchor failure leaves the flag false and the session continues (the
+    # caller records the honest negative). A monotonicity conflict (a caller
+    # already appended) is ignored.
+    try {
+        $sessions = Invoke-RestMethod -Uri "$($api.Base)/api/v1/sessions?limit=200" -Headers $api.Headers
+        $artifactSessions = @($sessions.items | Where-Object {
+            $null -ne $_.session -and
+            [string]$_.decodeRun.sourceArtifactId -eq $artifactId
+        })
+        if ($artifactSessions.Count -gt 0) {
+            $battleSessionId = [string]$artifactSessions[0].session.battleSessionId
+
+            # Resolve the replay-start wall-clock from the current blitz log
+            # (same log the watch stops on): the last 'Start replay event'
+            # line, whose leading HH:MM:SS is the replay-start wall-clock in
+            # UTC (verified live: the line reads 15:23:22 while the machine's
+            # local time was 11:23:22 at UTC-4). Date comes from the log
+            # filename (blitz-logs_YYYYMMDD...). Fall back to UtcNow (the old
+            # gate moment) if the marker cannot be parsed - the anchor then
+            # carries the known ~5 s skew, but a session still gets a clock
+            # rather than none.
+            $replayStartUtc = $null
+            try {
+                $davaDir = Join-Path $env:LOCALAPPDATA 'wotblitz\DAVAProject'
+                $blitzLog = Get-ChildItem -LiteralPath $davaDir -Filter 'blitz-logs_*.txt' -ErrorAction SilentlyContinue |
+                    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+                if ($blitzLog -and $blitzLog.Name -match 'blitz-logs_(\d{8})') {
+                    $logDate = [datetime]::ParseExact(
+                        $Matches[1], 'yyyyMMdd', [Globalization.CultureInfo]::InvariantCulture)
+                    $markerLine = Select-String -LiteralPath $blitzLog.FullName `
+                        -Pattern 'START_REPLAY_LOCAL|Start replay event' |
+                        Select-Object -Last 1
+                    if ($markerLine -and $markerLine.Line -match '^(\d{2}):(\d{2}):(\d{2})') {
+                        $markerTime = New-Object DateTime(
+                            $logDate.Year, $logDate.Month, $logDate.Day,
+                            [int]$Matches[1], [int]$Matches[2], [int]$Matches[3],
+                            [DateTimeKind]::Utc)
+                        $replayStartUtc = $markerTime
+                    }
+                }
+            }
+            catch {
+                $replayStartUtc = $null
+            }
+            if ($null -eq $replayStartUtc) {
+                Write-Od 'clock_anchor marker_unparsed_falling_back_to_gate_moment'
+                $replayStartUtc = [DateTime]::UtcNow
+            }
+
+            $clockBody = @{
+                battleSessionId    = $battleSessionId
+                sequence           = 0
+                sourceAnchorUtc    = $replayStartUtc.ToString('o')
+                replayAnchorTicks  = 0
+                speed              = 1.0
+                source             = 'CaptureLog'
+                uncertaintyTicks   = [TimeSpan]::FromSeconds(1).Ticks
+            } | ConvertTo-Json
+            $clock = Invoke-RestMethod -Uri "$($api.Base)/api/v1/game/discover/clock-segment" -Method Post -Headers $api.Headers -Body $clockBody
+            Write-Od ('clock_anchor appended sequence=' + $clock.sequence +
+                ' uncertainty_s=' + ([TimeSpan]::FromTicks([long]$clock.uncertaintyTicks).TotalSeconds) +
+                ' battleSession=' + $battleSessionId +
+                ' sourceAnchorUtc=' + $replayStartUtc.ToString('o'))
+        }
+        else {
+            Write-Od 'clock_anchor no_decoded_session_for_artifact (flag stays false)'
+        }
+    }
+    catch {
+        Write-Od 'clock_anchor append_failed (flag stays false; launch continues)'
+    }
+
     Write-Od 'OK OfflineReplayVerified'
     exit 0
 }

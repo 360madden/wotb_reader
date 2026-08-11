@@ -116,11 +116,15 @@ player must share the file.
    evidence (schema `...roster-enum.v1`), and verdicts it against the
    decoded roster via the new `--enumeration` mode of
    `batch-rehearsal-crosscheck.py` (matched/missing/extra + precision/
-   recall; self-test extended); with `-LiveAcquire` the ENUMERATED ids
-   drive the batch dumps (full X3 rehearsal in one command). It
-   **measures the movement-filter precision** against the decoded roster
-   on the next approved session. Turret/target/lock fields ride on that
-   per-entity surface.
+   recall; self-test extended); with `-LiveAcquire`  the ENUMERATED ids
+  drive the batch dumps (full X3 rehearsal in one command). **DONE
+  2026-08-11 (OD-RECOVERY-086):** it measured the movement-filter
+  precision live — the gate separates the player's OWN team's avatar
+  family only (7/14, precision 1.000, recall 0.500, 0 extra; all found =
+  team 1, all missing = team 2/enemies). The X4 loop must re-enumerate
+  per tick or add a second discriminator for enemy avatars.
+  Turret/target/lock fields ride on that
+  per-entity surface.
 
 ## Coordinator extraction audit (2026-08-11, PASS)
 
@@ -236,6 +240,56 @@ records that it authorizes NO live testing and changes NO code-enforced
 gate; it only clears the Phase-5 design track if approved. Roadmap X1 row
 updated to reference the draft.
 
+## OD-RECOVERY-086 live session — X2 PASS live + X3 team-based partial (2026-08-11)
+
+Approved live session on Oasis Palms (the content-distinct 11.19.0.10
+replay). Full evidence: `docs/operations/od-recovery-086-evidence-template.md`
+(filled) + ledger section. Verdicts:
+
+- **X3 enumeration: Partial, repeatable** — 7/14 ids (precision 1.000,
+  recall 0.500, 0 extra), and the split is **team-based**: all 7 found =
+  team 1 (the player's own team), all 7 missing = team 2 (enemies). The
+  movement-filter vtable gate separates the own-team avatar family, not
+  the full roster — the X4 loop must re-enumerate per tick or add a
+  second discriminator for enemy avatars.
+- **X2 batch surface: PASS** — full-roster (14, incl. enemies) dumps
+  through `/discover/entity-regions` at 89.3/149.6/221.9 s, every batch
+  `sameDecodedClockProven=true`; cross-check **34/34 compared pairs align
+  to decoded ground truth within the 2 s G2 window** (stationary 0.00 m;
+  moving tanks align at 0.00 m at a −0.8 s implied offset = the batch
+  read-pass window, the item-7 prerequisite measurement). 8 pairs honest
+  `EntityNotFound` skips.
+
+Four harness fixes shipped by this session (all committed):
+
+1. **Launcher-owned G2 clock anchor at the blitz-log `Start replay event`
+   marker moment** — before this session only od-073 appended a segment
+   (seconds late, G1 chain only); a batch driver running minutes after
+   the gate cannot self-anchor, so every batch failed
+   `sameDecodedClockProven=false` (correctly fail-closed). The gate
+   moment lags the true replay start by ~4.9 s (measured constant skew);
+   the marker wall-clock is the G2 design's named anchor. The launcher
+   logs `battleSession=` so the caller passes the launch-matched session.
+2. **Driver per-target clock wait** — the driver probed the clock label
+   and waited (bounded, fail-closed) until each target time instead of
+   firing all three dumps at the current game clock (they had landed at
+   the battle end, ~267 s).
+3. **BOM-less evidence writes** — PS 5.1 `Set-Content -Encoding UTF8`
+   writes a BOM that Python `json.load` rejects; both evidence writers
+   use `UTF8Encoding($false)`.
+4. **Cross-check 2 s window matching** — on an at-label miss the
+   cross-check re-matches within ±2 s (the G2 uncertainty limit) and
+   reports the implied offset, so the read-pass window is measured rather
+   than recorded as a position error. Self-test green.
+
+Also found live: the driver's default `-DbPath .data\treader.db` + the
+pre-staged `-SessionId 019fdff7-…` (repo-local decode) 404 in the host
+store — the launch-matched decode lives in `%LOCALAPPDATA%\WotBTreader\
+treader.db` under the session the launcher logs; the driver must be
+passed that session + the host DB path. No offsets, resolver, or read
+surface changed. Next live gates in pre-staged order: OD-RECOVERY-087
+(L1 HP) → 088 (L2 facing) → CAM-001 v7.
+
 ## Files touched
 
 - `src/WotBTreader.Core/Discovery/RingRecordRegion.cs` (pure ring-region
@@ -268,5 +322,12 @@ updated to reference the draft.
 - `docs/operations/od-recovery-086-evidence-template.md` (pre-staged
   evidence template for the composed X2+X3 session — ledger row +
   workflow next-session rows updated to the `-EnumerateLive -LiveAcquire`
-  command)
+  command; **filled 2026-08-11 with the session evidence**)
+- `docs/operations/offset-discovery-ledger.md` (OD-RECOVERY-086 section +
+  index row + Next-planned row → 087; header refreshed)
+- `scripts/launch-offline-replay-for-od.ps1` (G2 clock anchor at the
+  blitz-log `Start replay event` marker moment, logs `battleSession=`)
+- `scripts/invoke-batch-rehearsal.ps1` (per-target clock wait, BOM-less
+  evidence writes)
+- `scripts/python/batch-rehearsal-crosscheck.py` (2 s G2-window matching)
 - `docs/operations/handoffs/2026-08-11-enemy-tracking-focus.md` (this file)

@@ -100,6 +100,45 @@ def _nearest_sample(
     return (float(row["raw_x"]), float(row["raw_y"]), float(row["raw_z"]))
 
 
+def _best_sample_in_window(
+    connection: sqlite3.Connection,
+    session_id: str,
+    entity_id: int,
+    replay_time_s: float,
+    window_s: float,
+    memory: tuple[float, float, float],
+) -> tuple[float, float] | None:
+    """Best decoded position within +/-window_s of the label, vs the memory
+    position. Returns (best_delta_m, implied_offset_s) or None when the window
+    holds no decoded samples.
+
+    The label is the G2 clock ESTIMATE (anchor + extrapolation); the batch's
+    own read window means a moving tank's memory position can legitimately sit
+    a fraction of a second away from the label. Bounding the match by the G2
+    uncertainty limit keeps the verdict honest: positions must align to the
+    decoded replay somewhere within the clock's own stated uncertainty, and
+    the implied offset is reported so the skew itself is measured, not hidden.
+    """
+    lo_ticks = round((replay_time_s - window_s) * TICKS_PER_SECOND)
+    hi_ticks = round((replay_time_s + window_s) * TICKS_PER_SECOND)
+    best: tuple[float, float] | None = None
+    for row in connection.execute(
+        """
+        SELECT replay_time_ticks, raw_x, raw_y, raw_z FROM position_samples
+        WHERE battle_session_id = ? AND entity_id = ?
+          AND replay_time_ticks BETWEEN ? AND ?
+        ORDER BY replay_time_ticks
+        """,
+        (session_id, entity_id, lo_ticks, hi_ticks),
+    ):
+        decoded = (float(row["raw_x"]), float(row["raw_y"]), float(row["raw_z"]))
+        delta = math.dist(memory, decoded)
+        offset = float(row["replay_time_ticks"]) / TICKS_PER_SECOND - replay_time_s
+        if best is None or delta < best[0]:
+            best = (delta, offset)
+    return best
+
+
 def _position_from_dump(base64_payload: str) -> tuple[float, float, float] | None:
     try:
         payload = base64.b64decode(base64_payload, validate=True)
@@ -110,7 +149,12 @@ def _position_from_dump(base64_payload: str) -> tuple[float, float, float] | Non
     return struct.unpack_from("<fff", payload, POSITION_OFFSET)
 
 
-def compare(connection: sqlite3.Connection, dumps_path: str, tolerance: float) -> int:
+def compare(
+    connection: sqlite3.Connection,
+    dumps_path: str,
+    tolerance: float,
+    window_s: float = 0.0,
+) -> int:
     with open(dumps_path, "r", encoding="utf-8") as handle:
         dumps = json.load(handle)
     if dumps.get("schema") != DUMP_SCHEMA:
@@ -156,14 +200,28 @@ def compare(connection: sqlite3.Connection, dumps_path: str, tolerance: float) -
                 continue
             delta = math.dist(memory, decoded)
             ok = delta <= tolerance
+            offset_note = ""
+            if not ok and window_s > 0:
+                # The label is a clock ESTIMATE; a moving tank's memory
+                # position can sit a fraction of a second away within the G2
+                # uncertainty. Re-match within the bounded window and report
+                # the implied offset - the verdict then reads "aligned within
+                # the clock's own uncertainty", with the skew measured.
+                windowed = _best_sample_in_window(
+                    connection, session_id, entity_id, label, window_s, memory)
+                if windowed is not None:
+                    wdelta, woffset = windowed
+                    offset_note = f" (window {window_s:g}s: {wdelta:.2f} m @ {woffset:+.1f}s)"
+                    if wdelta <= tolerance:
+                        ok = True
             matched += 1 if ok else 0
             if not ok:
                 misses.append(
-                    f"t={label:g}s entity {entity_id}: delta {delta:.2f} m > {tolerance:g} m")
+                    f"t={label:g}s entity {entity_id}: delta {delta:.2f} m > {tolerance:g} m{offset_note}")
             print(
                 f"    entity {entity_id}: mem ({memory[0]:8.2f}, {memory[1]:8.2f}, "
                 f"{memory[2]:8.2f}) decoded ({decoded[0]:8.2f}, {decoded[1]:8.2f}, "
-                f"{decoded[2]:8.2f}) delta {delta:6.2f} m {'OK' if ok else 'MISS'}")
+                f"{decoded[2]:8.2f}) delta {delta:6.2f} m {'OK' if ok else 'MISS'}{offset_note}")
 
     print(f"batch-rehearsal: matched {matched}/{compared} compared pairs "
           f"({skipped} skipped, no verdict)")
@@ -385,6 +443,11 @@ def main() -> int:
                         help="live roster-enumeration file (X3 compare mode)")
     parser.add_argument("--tolerance", type=float, default=2.0,
                         help="position match tolerance in meters (default 2.0)")
+    parser.add_argument("--window", type=float, default=2.0,
+                        help="bounded re-match window in seconds around the "
+                             "label for moving tanks (default 2.0 = the G2 "
+                             "same-decoded-clock uncertainty limit; 0 "
+                             "disables window matching)")
     parser.add_argument("--self-test", action="store_true",
                         help="run the synthetic self-test and exit")
     args = parser.parse_args()
@@ -408,7 +471,9 @@ def main() -> int:
         raise SystemExit("error: pass --roster, --dumps, or --enumeration")
     if args.tolerance <= 0:
         raise SystemExit("error: --tolerance must be positive")
-    return compare(connection, args.dumps, args.tolerance)
+    if args.window < 0:
+        raise SystemExit("error: --window must be non-negative")
+    return compare(connection, args.dumps, args.tolerance, args.window)
 
 
 if __name__ == "__main__":

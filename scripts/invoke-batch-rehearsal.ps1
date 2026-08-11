@@ -264,7 +264,13 @@ web host, verify the offline replay, then re-run with -EnumerateLive.
         traversalLimited = [bool]$enumResponse.traversalLimited
         entityIds        = $EnumeratedIds
     }
-    $EnumEvidence | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $EnumPath -Encoding UTF8
+    # BOM-less UTF-8: PS 5.1 Set-Content -Encoding UTF8 writes a BOM that
+    # Python json.load rejects (JSONDecodeError 'Unexpected UTF-8 BOM').
+    $enumJson = $EnumEvidence | ConvertTo-Json -Depth 6
+    [System.IO.File]::WriteAllText(
+        $EnumPath,
+        [string]$enumJson,
+        (New-Object System.Text.UTF8Encoding($false)))
     Write-Step ("Enumeration: {0} avatar id(s) from {1} candidates " +
         "({2} filtered out) -> " + $EnumPath -f $EnumeratedIds.Count, `
         [int]$enumResponse.candidatesSeen, [int]$enumResponse.filteredOut)
@@ -326,6 +332,66 @@ if (-not $DumpsExist) {
         "(region=$RegionLength, anchor=$RegionAnchor)...")
     $DumpTimesOut = [System.Collections.Generic.List[object]]::new()
     foreach ($t in $DumpTimes) {
+        # Wait for the game's replay clock to reach the target time before
+        # dumping. The endpoint labels each batch with the CURRENT game clock
+        # (the G2 anchor estimate), so firing all dumps back-to-back would put
+        # every dump at the same instant (live lesson, OD-RECOVERY-086: all
+        # three landed at t=267.6s, the battle end, freezing the clock and
+        # missing the moving tanks). A 1-entity probe reads the label cheaply;
+        # the loop is bounded and fail-closed (no attestation / no advance ->
+        # throw, same class as the dump checks below).
+        $probeEntity = $EntityIds[0]
+        $waitIterations = 0
+        $maxWaitIterations = [int]((180 + $t) / 3)  # ~3s per iteration; allow
+        # reaching any target within the battle duration plus margin.
+        while ($waitIterations -lt $maxWaitIterations) {
+            $probeBody = @{
+                entities        = @(@{
+                    entityId     = $probeEntity
+                    regionLength = $RegionLength
+                    regionAnchor = $RegionAnchor
+                })
+                battleSessionId = $SessionId
+            }
+            $probe = Invoke-RehearsalApi -Method 'Post' `
+                -RelativePath '/api/v1/game/discover/entity-regions' `
+                -Body $probeBody
+            if ($null -eq $probe) {
+                throw ("clock probe returned no response while waiting for " +
+                    "{0:0.0}s." -f $t)
+            }
+            if ($probe.status -ne 'Resolved') {
+                throw ("clock probe failed while waiting for {0:0.0}s: " +
+                    "status='{1}'." -f $t, $probe.status)
+            }
+            if (-not $probe.sameDecodedClockProven) {
+                throw ("clock probe at {0:0.0}s did not attest the decoded " +
+                    "clock (sameDecodedClockProven=false) - cannot label a " +
+                    "wait target safely." -f $t)
+            }
+            if ($null -eq $probe.replayTimeSeconds) {
+                throw ("clock probe while waiting for {0:0.0}s returned no " +
+                    "replay-time label." -f $t)
+            }
+            $probeLabel = [double]$probe.replayTimeSeconds
+            if ($probeLabel -ge ($t - 1.0)) {
+                Write-Step ("  clock at {0:0.0}s >= target {1:0.0}s " +
+                    "(probes {2}) - dumping." -f $probeLabel, $t, $waitIterations)
+                break
+            }
+            if ($waitIterations -eq 0) {
+                Write-Step ("  waiting for replay {0:0.0}s (clock now " +
+                    "{1:0.0}s)..." -f $t, $probeLabel)
+            }
+            $waitIterations++
+            Start-Sleep -Seconds 3
+        }
+        if ($waitIterations -ge $maxWaitIterations) {
+            throw ("clock never reached {0:0.0}s within the bounded wait " +
+                "(last probe {1:0.0}s) - the replay may have ended; fail-closed." -f `
+                $t, $probeLabel)
+        }
+
         $entitiesBody = [System.Collections.Generic.List[object]]::new()
         foreach ($entityId in $EntityIds) {
             $entitiesBody.Add(@{
@@ -393,7 +459,12 @@ if (-not $DumpsExist) {
         regionLength = $RegionLength
         times        = $DumpTimesOut
     }
-    $Dumps | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $DumpsPath -Encoding UTF8
+    # BOM-less UTF-8 (see the enum evidence note above).
+    $dumpsJson = $Dumps | ConvertTo-Json -Depth 8
+    [System.IO.File]::WriteAllText(
+        $DumpsPath,
+        [string]$dumpsJson,
+        (New-Object System.Text.UTF8Encoding($false)))
     Write-Step ("Wrote dumps: " + $DumpsPath)
 }
 

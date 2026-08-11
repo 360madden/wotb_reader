@@ -1,7 +1,8 @@
 # WoT Blitz PC offset-discovery workflow
 
-Last updated: 2026-08-09 (OD-RECOVERY-075 corrected the position-ring layout
-and produced the first positive module-rooted continuous poll)
+Last updated: 2026-08-11 (OD-RECOVERY-086 closed the composed X2 batch +
+X3 enumeration rehearsal: X2 batch surface PASS live, X3 team-based
+enumeration evidenced)
 
 This is the operational playbook for discovering memory evidence from the
 Windows WoT Blitz client during a **positively verified offline replay**. It is
@@ -13,23 +14,32 @@ offset.
 
 ## Current decision
 
-Session ID: `OD-RECOVERY-086`.
+Session ID: `OD-RECOVERY-087`.
 
-**Next planned session (2026-08-11, OD-RECOVERY-086): the composed X2 batch
-+ X3 enumeration rehearsal** — `scripts/invoke-batch-rehearsal.ps1
--EnumerateLive -LiveAcquire -Times 90,150,220 -FailOnMiss` on Oasis Palms
-(`019fdff7-…`) — (1) X3: `/discover/entity-roster` enumerated avatar-family
-ids verdict against the decoded participants roster (matched/missing/extra
-+ movement-filter precision, `--enumeration` mode, fail-closed on
-TraversalLimited); (2) X2: the ENUMERATED ids drive full-roster batch
-dumps through `/discover/entity-regions` per replay time (one clock
-attestation per batch), cross-checked against decoded positions
-(42/42 rehearsal proven), measuring the read-pass window (item 4). Closes
-X2 + X3 rehearsals + the item-7 verification-window measurement. Evidence
-template: `docs/operations/od-recovery-086-evidence-template.md`. The L1 HP
-session is likewise pre-staged: driver `scripts/invoke-hp-diffing-session.ps1`
-(entity-base anchor, int16 correlate, flatness + Strict contract) and
-evidence template `docs/operations/od-recovery-087-evidence-template.md`.
+**OD-RECOVERY-086 is DONE (2026-08-11)** — composed X2 batch + X3
+enumeration rehearsal closed: X2 `/discover/entity-regions` full-roster
+batch surface **PASS live** (3/3 batches Resolved + clock-attested, 34/34
+compared positions align to decoded ground truth within the 2 s G2 window;
+stationary 0.00 m, moving at the −0.8 s read-pass window); X3
+`/discover/entity-roster` enumeration answered live — the movement-filter
+vtable gate separates the player's OWN team only (7/14, precision 1.000,
+recall 0.500, 0 extra; all found = team 1, all missing = team 2/enemies).
+Harness fixes shipped: launcher-owned G2 anchor at the blitz-log marker
+moment (logs `battleSession=`), driver per-target clock wait, BOM-less
+writes, cross-check 2 s window matching. Evidence:
+`docs/operations/od-recovery-086-evidence-template.md` (filled) + ledger
+`OD-RECOVERY-086` result section.
+
+**Next planned session (2026-08-11, OD-RECOVERY-087): L1 HP** — the first
+enemy-facing live gate. Drive `scripts/invoke-hp-diffing-session.ps1`
+(entity-base anchor, victim 3760578, signed-int16 correlate, flatness +
+Strict contract) live on Oasis Palms with the **launch-matched host-store
+session + `-DbPath "$env:LOCALAPPDATA\WotBTreader\treader.db"`** (the 086
+session proved the repo-local `.data/treader.db` + pre-staged session 404
+in the host store; the launcher logs `battleSession=` at the gate). Branch:
+hit at `+0xB8` → live-frame HP becomes real; different offset → the live
+finding wins; no-hit → widen the anchor. Evidence template:
+`docs/operations/od-recovery-087-evidence-template.md`.
 
 **The position anchor is ESTABLISHED and PUBLISHED (2026-08-10):**
 `playerPositionX/Y/Z` are `Verified` via the module-rooted position-ring chain
@@ -61,10 +71,11 @@ against packet yaw ground truth, pending the live L2 facing session. The
 published table keeps yaw at `0`/Stale; a future publication would be a
 `chains` entry.
 
-Next anchors after position: the **batch rehearsal** (OD-RECOVERY-086, staged
-above), then the pre-staged live gates — **L1 HP** (entity-base anchor,
-victim 3760578; `invoke-hp-diffing-session.ps1`), **L2 facing** (ring-record
-`+0x2C`; `invoke-facing-session.ps1`), and CAM-001 v7. `replayTime` retains
+Next anchors after position: the pre-staged live gates in order — **L1 HP**
+(OD-RECOVERY-087, entity-base anchor, victim 3760578;
+`invoke-hp-diffing-session.ps1`), **L2 facing** (OD-RECOVERY-088,
+ring-record `+0x2C`; `invoke-facing-session.ps1`), and CAM-001 v7.
+`replayTime` retains
 its rolling increased-Double evidence (OD-012..038) and `playerHP` has the
 query-side ground truth ready (`IHpGroundTruthProvider`); both ride the same
 `entity-region` seam. Do not repeat the unresolved yaw neighborhood scan

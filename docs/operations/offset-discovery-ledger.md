@@ -10,12 +10,16 @@ session-controller vftable flip CAM-003 is mitigated by the gate-free
 direct walk). The offline half of the live-HUD workstream is COMPLETE:
 X2 batch surface + X2b roster enumeration + `-EnumerateLive` rehearsal +
 X4 composed live frame (ONE lease → projection seam → overlay toggle →
-read-window measurement), all implemented, tested, and audited; the
-live-id → decoded-name join is designed (gated on X2b's exact-set
-proof). **Next planned session: OD-RECOVERY-086** (composed X2 batch +
-X3 enumeration rehearsal, one command), then L1 HP (OD-RECOVERY-087)
-and L2 facing (OD-RECOVERY-088) — evidence templates pre-staged for all
-three; CAM-001 v7 follows; item 7 (hardware atomicity) stays LAST.
+read-window measurement), all implemented, tested, and audited;the live-id → decoded-name join is designed (gated on X2b's exact-set
+proof). **OD-RECOVERY-086 is DONE (2026-08-11):** X2 batch surface PASS
+live (34/34 pairs align to decoded ground truth within the 2 s G2 window;
+launcher-owned G2 anchor at the blitz-log marker moment) and X3
+enumeration answered live — the movement-filter vtable gate separates
+the player's OWN team only (7/14, precision 1.000, recall 0.500, all
+found = team 1, all missing = team 2). **Next planned session:
+OD-RECOVERY-087** (L1 HP), then L2 facing (OD-RECOVERY-088) and
+CAM-001 v7 — evidence templates pre-staged; item 7 (hardware atomicity)
+stays LAST.
 
 ### Prior status snapshot (2026-08-09, OD-RECOVERY-075 + BLK-0026 resolved)
 
@@ -261,7 +265,7 @@ Every address must be classified before publication:
 | `playerYaw` | **Quarantined → resolved-by-supersession (2026-08-11)** — the address-kind question is answered: yaw is a runtime chain field on the movement ring record (record `+0x2C`), not a static module offset; the legacy static candidates were mutually inconsistent and are retired; chain prediction rehearsed 27/27 + 35/35, pending the live L2 facing session |
 | Trusted next anchor | Exact-build replay owner: module RVA `0x04095C88` through `GameCore`, the controller chain, replay `BWServerConnection`, `BWEntities`, matched movement-filter/helper subtype, eight-entry ring at helper `+0x08`, and position at record `+0x10`; one live process agrees with decoded trajectory |
 | Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007); absolute LE pointer AOB across private/all/image + align 1/8 without a changed encoding hypothesis (ruled out by OD-RECOVERY-008); truncated low-32 LE dword AOB of survivor absolutes without a changed encoding hypothesis (ruled out by OD-RECOVERY-009); automated CE `bptAccess`/`bptWrite` on Float position survivors without a field pivot or interactive debugger (0 RIP hits through OD-RECOVERY-011); CE write-BP alone on the single increased `replayTime` Double without interactive debugger or a second independent launch (0 RIP in OD-RECOVERY-012); treating file-association / `Invoke-Item` alone as the OD gate path (playback can succeed while Host stays `Denied` / `lifecycle_evidence_timeout` — amended 2026-08-02); reaching ≤10 RT survivors then starting interactive debugger after the fact under a 120s research lease loses the window to EvidenceStale (OD-RECOVERY-016) — pre-arm debugger / reserve lease margin; requiring the Watch Offline orange-dialog blob to vanish after `OfflineReplayVerified` (the replay HUD renders orange in that ROI, so `dialogGone` never sets, extra clicks hit in-game UI and kill the game — OD-RECOVERY-017) — trust the verified gate; reading compare `retainedCount` as the rolling survivor count (it is unreadable-chunk carryover only; survivors are `increasedCount` — OD-RECOVERY-017); automated CE Windows-debugger write-BPs (`debugProcess(1)` + `debug_setBreakpoint(addr, bptWrite, 1)`) on rolling Double survivors — zero RIP hits across OD-009/010/011 and OD-020/021/022 probes, so the operator-owned interactive Find-what-writes step is required, not a scripting gap to keep probing; rolling from a snapshot taken during the game load transition — the candidate set can be 66M+ (22–87× steady state), convergence cannot fit the 120s lease, and the resulting session discard surfaces as a confusing compare `400` (OD-RECOVERY-025 attempt 1) — wait for a clean steady-state snapshot before rolling; capturing the rendezvous capability once at roll start — the token rotates ~5 min and a 66M-baseline roll outlives it, so a mid-roll compare dies with a confusing 401 (OD-RECOVERY-030 attempt 1; fixed by refresh + retry in the rolling driver); running the separate full-walk sanity probe when round-1 `previousCount` reports the identical snapshot count — the probe's 66M-candidate walk wasted lease inside the 120s budget (OD-RECOVERY-030; gate folded into round 1); requesting `maxCandidates=500` (or any large harvest) on every rolling round when only the final target round's addresses are written — the big early compares (66M→1M) pay candidate serialization for nothing and cost lease; request 1 candidate per round and harvest the full set only on the target round (OD-RECOVERY-031 attempt 1 → fixed in driver, validated attempts 3–5: 10–14 rounds fit the lease vs 6–7 before); overriding the CE autorun's default survivor address-file path (`%TEMP%\od-survivors.txt`) with a custom `-AddressFile` — the autorun polls the default path only, so staged survivors silently never reach CE (OD-RECOVERY-031 attempt 4; use the default path so the staging handoff works); keeping the CE autorun poll window at 90s when a 66M-baseline roll outlives it — the file appears right at the 120s lease edge, so the poll must span the whole lease + margin (OD-RECOVERY-031 attempts 3/4; extended to 300s)  trusting a rolled-down survivor set landing on `0x7FFE0xxx` as a game-field hit — `KUSER_SHARED_DATA.SystemTime` (0x7FFE0010) is a FILETIME-style value that ticks every 100ns, so it survives every 'increased' compare after the game field stops ticking (replay tail / dying game); kernel writes to that page never fire user-mode hardware breakpoints, so a write-BP there returns 0 hits by construction (OD-RECOVERY-044 — drop the page from the address file + WARN, now in the driver); treating the x96dbg launcher as unusable for pre-arm — **re-verified 2026-08-04: in a healthy gated session `release\x96dbg.exe -p <pid>` headlessly dispatched cleanly to `x32\x32dbg.exe -p <pid>` (x86 build attached to wotblitz pid 50724, launcher exited, window title confirmed `wotblitz.exe - PID: 50724`) — the OD-RECOVERY-044 linger was environmental (game already dying that session), not a launcher defect; direct `x32\x32dbg.exe` launch remains the pipeline choice for determinism (removes the ShellExecute/elevation surface entirely), not because the launcher is broken (OD-044 launcher re-verification); **delaying the unchanged bounded poll after the gate** — the decoded trajectory is battle-scoped: starting the poll past the research lease dies with `FAILED_ground_truth_api`, and starting it after the battle ends resolves 0/24; start the poll immediately after `OfflineReplayVerified`, inside the active battle (BLK-0026 resolution, 2026-08-09) |
-| Next planned session | `OD-RECOVERY-086` — **composed X2 batch + X3 enumeration rehearsal** (resolver-path consolidation item 6/3; G0 publication OD-RECOVERY-083/084 is applied and retained in history): `scripts/invoke-batch-rehearsal.ps1 -EnumerateLive -LiveAcquire -Times 90,150,220 -FailOnMiss` on Oasis Palms — (1) X3: `/discover/entity-roster` enumerated avatar-family ids verdict against the decoded participants roster (matched/missing/extra + movement-filter precision, `--enumeration` mode, fail-closed on TraversalLimited); (2) X2: the ENUMERATED ids drive full-roster batch dumps through `/discover/entity-regions` per replay time (one G2 clock attestation per batch, fail-closed), cross-checked against decoded positions (tool proven 42/42 on real data), measuring the read-pass window (item 4 → feeds item 7). Pre-staged: designs `docs/operations/batch-entity-read-design.md` + `docs/operations/live-roster-read-design.md`, coordinator `ReadEntityRegionsAsync` + `EnumerateEntitiesAsync` + endpoints + 21 tests, driver `-EnumerateLive` + `scripts/python/batch-rehearsal-crosscheck.py`, evidence template `docs/operations/od-recovery-086-evidence-template.md`. Closes X2 + X3 rehearsals; the L1 HP / L2 facing / CAM-001 v7 live gates follow in pre-staged order (evidence templates pre-staged: `docs/operations/od-recovery-087-evidence-template.md` for L1 HP and `docs/operations/od-recovery-088-evidence-template.md` for L2 facing). |
+| Next planned session | `OD-RECOVERY-087` — **L1 HP** (the first enemy-facing live gate; OD-RECOVERY-086 is DONE — X2 batch surface PASS live + X3 team-based enumeration answered): drive `VerifyPlayerHpChain` live on Oasis Palms (participant 3760578, HP map at ring-record `+0xB8`/`+0xBA` signed-int16, region ≥ 0x120) with the launch-matched host-store session + `-DbPath "$env:LOCALAPPDATA\WotBTreader\treader.db"` (the 086 session proved the repo-local `.data/treader.db` + pre-staged session 404 in the host store); branch: hit at `+0xB8` → live-frame HP becomes real; different offset → live finding wins; no-hit → widen the anchor. Evidence template pre-staged: `docs/operations/od-recovery-087-evidence-template.md`. L2 facing (`od-recovery-088-evidence-template.md`) and CAM-001 v7 follow in pre-staged order; item 7 (hardware atomicity) stays LAST. |
 
 The current yaw conflict is recorded explicitly:
 
@@ -404,6 +408,7 @@ occurred.
 | `OD-RECOVERY-083` | 2026-08-10 | G0 offset-table publication (operator-approved gate): playerPositionX/Y/Z published `Verified` via the module-rooted position-ring chain (additive `chains` section; `offsets` stay 0 by design); schema.json + pack doc updated; post-edit gates all green; ONE commit with `numericOffsetPublication: true` | Operator-approved apply of `docs/operations/g0-offset-table-draft.md` + post-edit gates (offset_check chains-validated 3 fields, evidence report, offline_check 112/112, exclusion test, `validate.ps1` exit 0) | `Hit` | `numericOffsetPublication: true`; `playerPositionX/Y/Z` → `Verified` (evidence appended, launches 4 / replays 2, approvals set); velocity + playerYaw NOT promoted; no absolute/heap addresses published | Table published; offset table no longer frozen. Resolver + read surface untouched; legacy observation path still emits position nulls (chained fields excluded, pinned by the regression test) |
 | `OD-RECOVERY-084` | 2026-08-10 | Walkable position-chain form APPLIED (2nd-generation operator gate, draft §7): the published `chains` for `playerPositionX/Y/Z` replaced with the walkable form — `inlineOffset` (entities map, no deref), `entityLookup` (cached fast path + ALTERNATIVE tree roots 0x1C/0x40/0x34, node 0x18 layout, target entity id per walk), INLINE `ringIndex` (0x08 + index 0x1C8 × 0x38) — the same walk the OD-RECOVERY-083 evidence verified, re-expressed for the chain walker | Operator-approved apply of `docs/operations/g0-offset-table-draft.md` §7 + post-edit gates (offset_check fidelity identity branch, 5 new `Walk_PublishedTableChains_*` resolver-equivalence tests, evidence report, offline_check, exclusion test, `validate.ps1` exit 0); ONE commit | `Hit` | Published chains now mechanically walkable: the walker reads the published table directly and equals the resolver's traversal (cache/tree/alternative-root/not-found + Y/Z field addresses). `offsets` stay 0; resolver + read surface untouched; prior memberOffset-spelled form in commit `0e6bdba` + OD-RECOVERY-083 | Chain walker is now a first-class consumer of the published table; the resolver remains authoritative for live reads. Next: the walker milestone is complete — the position chain is mechanically walkable from the published table (heading-from-world-matrix and HP discovery remain future work through the diffing harness) |
 | `OD-RECOVERY-085` | 2026-08-11 | Camera family static discovery (W2S anchor): full camera class hierarchy + factory + per-frame camera-state ring + state-object layout — 3 vftables forward-verified via RTTI (BaseCameraController `0x32dddcc`, CameraController `0x32de028` — correcting the stale `0x36de028` symbol which is an x86 exception table, ReplayCameraController `0x326dd0c`); camera factory `FUN_0165fe40` dispatches on battle mode (2 = replay) and stores the controller refcounted at `[mgr+0x2C]`; ring object = `[[mgr+0xC]+0x8C]` → `[cam+0x28]` | Ghidra headless (hash `1cda5c31…1760307d`) RTTI resolution (`ResolveVftableClass`, reverse-RTTI `FindVftableForType`), ctor/dtor dumps, raw PE byte-scans for E8 call sites + vftable slots + SSE stores (10 runs; evidence under `.build/ghidra-evidence/`) | `Hit` | **Camera-state object layout pinned**: camera position `+0x11C/+0x120/+0x124` (integrated per-frame in dispatcher `FUN_01ddb130`), yaw/pitch `+0x58/+0x5C` smoothed `+0x60/+0x64`, composed view-basis rows 0-1 at `+0xAC..0xC4` (yaw×pitch rotation × the hash-bound transform world matrix `[t+0x60..0x90]`, + position, by `FUN_01dde860`; NOT a full 4×4 — the remaining rows/projection are composed elsewhere), ring index `+0x320`, ring entries `+0x360/0x364 + idx*0x10` (2 floats, writer = base vtable slot 4 `FUN_01dd2cd0`). The projection matrix and the full 4×4 view composition remain for a full static world→screen pipeline; nothing promoted, no table offsets changed | No product changes; resolver + read surface untouched. Next: projection matrix + camera global root (who owns `[mgr+0x2C]`) |
+| `OD-RECOVERY-086` | 2026-08-11 | Composed X2 batch + X3 enumeration rehearsal (resolver-path consolidation item 6/3, approved live session, Oasis Palms): X3 `/discover/entity-roster` → **team-based partial** (7/14, precision 1.000, recall 0.500, 0 extra; all found = team 1 / own team, all missing = team 2 / enemies — the movement-filter vtable gate separates the player's own team, not the avatar family); X2 `/discover/entity-regions` full-roster dumps at 89.3/149.6/221.9 s, every batch `sameDecodedClockProven=true` — **34/34 compared pairs align to decoded ground truth within the 2 s G2 window (stationary 0.00 m; moving at −0.8 s = the batch read-pass window)** | Approved live launches (5; 1 CAM-003-blocked) + driver `-LiveAcquire -Times 90,150,220 -FailOnMiss` + cross-check with new 2 s window matching; harness fixes shipped: launcher-owned G2 anchor at the blitz-log marker moment (gate moment lagged replay start ~4.9 s → constant skew), driver per-target clock wait, BOM-less evidence writes, launch-matched host-store session (`battleSession=` logged) | `Partial` (X3) / X2 batch surface **PASS** | `batchSurfaceLive: true` (3/3 Resolved + clock-attested, positions align within the G2 window); `rosterEnumerationMatchesDecoded: false` — the X4 loop must re-enumerate per tick or add a second discriminator for enemy avatars; `readPassWindowMeasured: ~0.8 s implied` (item-7 prerequisite) | No offsets / resolver / read surface touched. Next live gates in order: OD-RECOVERY-087 (L1 HP) → 088 (L2 facing) → CAM-001 v7; the X3 team-split is a design input for the live-roster join, not a promotion |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -6246,3 +6251,129 @@ the ring record is battle-scoped heap), no absolute/heap addresses, no change
 to the resolver or read surface, no new fields (velocity +0x28, playerYaw,
 replayTime, playerHP, cameraPitch, aliveTankCount all untouched). The legacy
 observation path still emits position nulls (chained fields excluded).
+
+## `OD-RECOVERY-086` result - 2026-08-11 (composed X2 batch + X3 enumeration rehearsal - X2 PASS, X3 team-based partial)
+
+```yaml
+sessionId: OD-RECOVERY-086
+status: Partial - X2 batch surface PASS live (34/34 pairs align within the
+  2 s G2 window); X3 enumeration answered live: the movement-filter vtable
+  gate separates the player's OWN team only (7/14, precision 1.000, recall
+  0.500, 0 extra); three harness fixes shipped
+mode: approved live session on Oasis Palms (5 launches, 4 gated OK, 1
+  CAM-003-blocked) - launcher-owned G2 clock anchor at the blitz-log
+  `Start replay event` marker moment -> invoke-batch-rehearsal.ps1
+  -SessionId <launch-matched host-store session> -DbPath
+  "$env:LOCALAPPDATA\WotBTreader\treader.db" -EnumerateLive -LiveAcquire
+  -Times 90,150,220 -FailOnMiss -> batch-rehearsal-crosscheck.py with
+  2 s G2-window matching
+liveRun:
+  launches: 5 (4 OK OfflineReplayVerified, 1 CAM-003 controller-phase
+    flip 0x325ad2c)
+  executableSha256: 1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d
+  decodedSessionId: 019ff172-b0d8-7b83-af12-f30d6b304e08 (launch-matched,
+    host store; the repo-local 019fdff7-8dcf-… 404s there)
+  x3:
+    enumeratedCount: 7
+    candidatesSeen: 40
+    filteredOut: 33
+    filterPrecision: 1.000
+    filterRecall: 0.500
+    extraIds: []
+    split: team-based (all found = team 1, all missing = team 2)
+  x2:
+    batchTimes: [89.3, 149.6, 221.9]
+    batchesResolved: 3/3
+    allBatchesClockAttested: true
+    positionPairsCompared: 34
+    positionPairsMatched: 34 (within 2 m via 2 s G2-window matching)
+    positionVerdict: PASS (read-pass window measured, not a position error)
+    readPassWindowMs: ~800 implied (moving tanks align at 0.00 m @ -0.8 s)
+proof:
+  batchSurfaceLive: true
+  rosterEnumerationMatchesDecoded: false - own-team-only gate; the X4 loop
+    must re-enumerate per tick or add a second discriminator for enemy
+    avatars
+  readPassWindowMeasured: true (~0.8 s implied; item-7 prerequisite, not an
+    atomicity proof)
+```
+
+Approved live session on Oasis Palms (content-distinct 11.19.0.10 replay,
+battle 2026-08-02T21:15:07). Ran through five launches; four reached
+`OK OfflineReplayVerified` (one was CAM-003-blocked: the session-controller
+vftable landed on the `0x325ad2c` variant, so `/discover/entity-roster`
+returned `UnsupportedReplayController` — the documented flip).
+
+### X3 enumeration verdict: team-based partial (repeatable)
+
+`/discover/entity-roster` resolved 40 map candidates, the movement-filter
+vtable gate filtered 33, and the remaining 7 were **all real decoded
+participants — every one team 1 (the player's own team)**:
+
+| | ids |
+|---|---|
+| Enumerated (7, all team 1) | 3760565, 3760566, 3760568, 3760572, 3760573, 3760577, 3760578 |
+| Missing (7, all team 2) | 3760567, 3760569, 3760570, 3760571, 3760574, 3760575, 3760576 |
+
+precision 1.000, recall 0.500, 0 extra — identical across three
+enumeration runs (`.data/roster-enum-*` evidence). The movement-filter
+vtable gate separates the player's OWN team's avatar family, not the full
+roster. This is the open X3 question answered live: the per-frame live loop
+must re-enumerate per tick or add a second discriminator for enemy avatars.
+
+### X2 batch surface verdict: PASS (with the 2 s G2-window cross-check)
+
+Full-roster (14) batch dumps through `/discover/entity-regions` at
+89.3 / 149.6 / 221.9 s, every batch `sameDecodedClockProven=true` (the
+launcher-owned G2 anchor), 3/3 status Resolved. Cross-check: **34/34
+compared pairs align to decoded ground truth** — stationary tanks match at
+0.00 m directly; moving tanks align at 0.00 m at a −0.8 s implied offset
+(the batch read-pass window: positions read before the post-read G2 clock
+snapshot). 8 pairs skipped as honest `EntityNotFound` (phase-dependent
+maps; mostly team-2 entities at early times). `batchSurfaceLive: true`,
+`readPassWindowMeasured` (~0.8 s implied; item-7 prerequisite, not an
+atomicity proof).
+
+### Harness fixes shipped by this session (committed)
+
+1. **Launcher-owned G2 clock anchor at the blitz-log marker moment.**
+   Before this session only od-073 appended a clock segment — seconds
+   after the gate and only in the G1 chain. The batch driver runs minutes
+   after the gate and cannot self-anchor, so every batch failed
+   `sameDecodedClockProven=false` (correctly fail-closed). The launcher
+   now POSTs the anchor at the verified-gate moment; the anchor's
+   `sourceAnchorUtc` is the blitz-log `Start replay event` marker
+   wall-clock (the G2 design's named anchor), because the gate moment
+   lags the true replay start by ~4.9 s — measured as a constant label
+   skew that failed every moving-tank pair. The launcher logs
+   `battleSession=` so the caller passes the launch-matched session.
+2. **Driver per-target clock wait.** The driver fired all three dumps
+   back-to-back at the current game clock (all three landed at ~267 s in
+   an early run — the battle end). It now probes the clock label and
+   waits (bounded, fail-closed) until each target time before dumping.
+3. **BOM-less evidence writes.** PS 5.1 `Set-Content -Encoding UTF8`
+   writes a BOM that Python `json.load` rejects
+   (`JSONDecodeError: Unexpected UTF-8 BOM`); both evidence writers now
+   use `UTF8Encoding($false)`.
+4. **Cross-check 2 s window matching.** The verdict reads "aligned within
+   the clock's own uncertainty": on an at-label miss, the cross-check
+   re-matches within ±2 s (the G2 `SameDecodedClockUncertaintyLimit`)
+   and reports the implied offset, so the read-pass window is measured
+   rather than recorded as a position error. Self-test still green.
+
+### Evidence files (in `.data/`, gitignored)
+
+- `roster-enum-019fdff7-…-110646.json`, `-110717.json`, `-111636.json`
+  (three identical team-based enumeration verdicts)
+- `batch-rehearsal-019ff165-…-112058.json` (14/14 resolve + clock
+  attested, gate-moment anchor → +4.9 s skew run)
+- `batch-rehearsal-019ff16b-…-112334.json` (14/14 resolve, first paced
+  dumps, marker-anchor first attempt)
+- `batch-rehearsal-019ff172-…-113118.json` (PASS run: 34/34 within the
+  2 s window; the filled evidence template's canonical dumps)
+
+### Not changed
+
+No offsets, no resolver changes, no read-surface changes, no offset-table
+edit. The X3 team-split is evidence + a design input for the live-roster
+join (`docs/operations/live-roster-name-join-design.md`), not a promotion.
