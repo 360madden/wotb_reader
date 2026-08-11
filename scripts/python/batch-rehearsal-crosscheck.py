@@ -1,19 +1,28 @@
 #!/usr/bin/env python3
 """Batch rehearsal cross-check (stdlib only).
 
-Two modes for the X2 batch N-entity rehearsal
-(docs/operations/batch-entity-read-design.md):
+Three modes for the X2/X3 batch N-entity rehearsal
+(docs/operations/batch-entity-read-design.md,
+docs/operations/live-roster-read-design.md):
 
-  --roster   print the decoded roster (participant entity ids in team order)
-             + session duration, as JSON on stdout.
-  --compare  read a batch dumps file (schema
-             wotbtreader.od.batch-rehearsal.dumps.v1, written by
-             scripts/invoke-batch-rehearsal.ps1), decode each ring-record
-             dump's position float32 triple at +0x10, and compare it against
-             the decoded position sample nearest the batch's replay-clock
-             label. Prints the verdict table; exit 0 = all compared pairs
-             match within the tolerance, 1 = at least one miss, 2 = nothing
-             comparable (no verdict).
+  --roster      print the decoded roster (participant entity ids in team
+                order) + session duration, as JSON on stdout.
+  --compare     read a batch dumps file (schema
+                wotbtreader.od.batch-rehearsal.dumps.v1, written by
+                scripts/invoke-batch-rehearsal.ps1), decode each ring-record
+                dump's position float32 triple at +0x10, and compare it
+                against the decoded position sample nearest the batch's
+                replay-clock label. Prints the verdict table; exit 0 = all
+                compared pairs match within the tolerance, 1 = at least one
+                miss, 2 = nothing comparable (no verdict).
+  --enumeration read a live roster-enumeration file (schema
+                wotbtreader.od.batch-rehearsal.roster-enum.v1, written by
+                scripts/invoke-batch-rehearsal.ps1 -EnumerateLive) and
+                compare the enumerated avatar-family ids against the decoded
+                participants roster: matched / missing (decoded but not
+                enumerated) / extra (enumerated but not decoded) + filter
+                precision. Exit 0 = EXACT SET MATCH (no missing, no extra),
+                1 = any mismatch, 2 = nothing comparable.
 
 The published position chain reads the float32 triple at ring-record
 [record + 0x10] (PositionRecordOffset 0x10, ring stride 0x38), so a dump
@@ -37,6 +46,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DB = REPO_ROOT / ".data" / "treader.db"
 
 DUMP_SCHEMA = "wotbtreader.od.batch-rehearsal.dumps.v1"
+ENUM_SCHEMA = "wotbtreader.od.batch-rehearsal.roster-enum.v1"
 POSITION_OFFSET = 0x10  # float32 x/y/z triple on the ring record
 TICKS_PER_SECOND = 10_000_000  # .NET TimeSpan ticks; see record-diffing-groundwork
 
@@ -168,6 +178,66 @@ def compare(connection: sqlite3.Connection, dumps_path: str, tolerance: float) -
     return 0
 
 
+def enumeration_compare(connection: sqlite3.Connection, enum_path: str) -> int:
+    """Compare a live roster enumeration against the decoded participants.
+
+    The enumeration (schema ENUM_SCHEMA, written by
+    invoke-batch-rehearsal.ps1 -EnumerateLive) carries the avatar-family ids
+    enumerated from the game's own BWEntities maps plus the movement-filter
+    precision counters. This measures the X3 filter precision: an EXACT SET
+    MATCH (every decoded participant enumerated, nothing extra) is the
+    strongest possible agreement; missing ids mean the enumeration missed
+    participants; extra ids mean the movement-filter vtable gate admitted
+    non-avatar entities. Fail-closed: an enumeration that claims
+    TraversalLimitExceeded or a non-Resolved status is never compared.
+    """
+    with open(enum_path, "r", encoding="utf-8") as handle:
+        enum = json.load(handle)
+    if enum.get("schema") != ENUM_SCHEMA:
+        raise SystemExit(f"error: {enum_path} is not a {ENUM_SCHEMA} file")
+    session_id = enum.get("sessionId")
+    if not session_id:
+        raise SystemExit("error: enumeration file has no sessionId")
+    if enum.get("status") != "Resolved":
+        print(f"batch-rehearsal: enumeration status '{enum.get('status')}' "
+              f"is not Resolved - fail-closed, no comparison")
+        return 1
+    if enum.get("traversalLimited"):
+        print("batch-rehearsal: enumeration TraversalLimited - fail-closed, "
+              "a partial roster is never compared")
+        return 1
+
+    decoded = set(roster(connection, session_id)["entityIds"])
+    enumerated = set(int(entry) for entry in enum.get("entityIds", []))
+    matched = sorted(decoded & enumerated)
+    missing = sorted(decoded - enumerated)
+    extra = sorted(enumerated - decoded)
+    precision = (
+        len(matched) / len(enumerated) if enumerated else 0.0
+    )
+    recall = len(matched) / len(decoded) if decoded else 0.0
+
+    print(f"batch-rehearsal: enumeration {session_id}")
+    print(f"  decoded roster: {len(decoded)} entities, "
+          f"enumerated: {len(enumerated)} (candidatesSeen "
+          f"{enum.get('candidatesSeen')}, filteredOut {enum.get('filteredOut')})")
+    print(f"  matched {len(matched)}, missing {len(missing)}, extra {len(extra)}")
+    print(f"  filter precision {precision:.3f}, recall {recall:.3f}")
+    for entity_id in missing:
+        print(f"  MISSING decoded participant {entity_id}")
+    for entity_id in extra:
+        print(f"  EXTRA enumerated id {entity_id}")
+
+    if not decoded and not enumerated:
+        print("batch-rehearsal: NO-VERDICT - nothing comparable")
+        return 2
+    if not missing and not extra:
+        print("batch-rehearsal: PASS - enumeration matches the decoded roster")
+        return 0
+    print("batch-rehearsal: FAIL - enumeration does not match the decoded roster")
+    return 1
+
+
 def _self_test_compare() -> int:
     """Verdict-level check on an in-memory DB (no repo files touched)."""
     import tempfile
@@ -234,6 +304,60 @@ def _self_test_compare() -> int:
     return 0
 
 
+def _self_test_enumeration() -> int:
+    """Verdict-level check of the X3 enumeration comparison (in-memory DB)."""
+    import tempfile
+
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    connection.executescript(
+        """
+        CREATE TABLE battle_sessions (id TEXT PRIMARY KEY, duration_ticks INTEGER);
+        CREATE TABLE participants (
+            id TEXT PRIMARY KEY, battle_session_id TEXT NOT NULL,
+            entity_id INTEGER, team_number INTEGER);
+        INSERT INTO battle_sessions (id, duration_ticks) VALUES ('s', 100000000);
+        INSERT INTO participants VALUES
+            ('p1', 's', 101, 1), ('p2', 's', 102, 1), ('p3', 's', 103, 2);
+        """
+    )
+
+    def enum_file(entity_ids: list, status: str = "Resolved",
+                  traversal_limited: bool = False, candidates_seen: int = 3,
+                  filtered_out: int = 0) -> str:
+        path = Path(tempfile.gettempdir()) / "batch-rehearsal-enum-self-test.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "schema": ENUM_SCHEMA,
+                    "sessionId": "s",
+                    "status": status,
+                    "candidatesSeen": candidates_seen,
+                    "filteredOut": filtered_out,
+                    "moduleRooted": True,
+                    "traversalLimited": traversal_limited,
+                    "entityIds": entity_ids,
+                }
+            ),
+            encoding="utf-8",
+        )
+        return str(path)
+
+    # Exact set match -> PASS.
+    assert enumeration_compare(
+        connection, enum_file([101, 102, 103], candidates_seen=5, filtered_out=2)
+    ) == 0
+    # Missing a decoded participant -> FAIL.
+    assert enumeration_compare(connection, enum_file([101, 102])) == 1
+    # Extra enumerated id -> FAIL.
+    assert enumeration_compare(connection, enum_file([101, 102, 103, 999])) == 1
+    # Fail-closed: TraversalLimited is never compared.
+    assert enumeration_compare(
+        connection, enum_file([101, 102, 103], traversal_limited=True)
+    ) == 1
+    return 0
+
+
 def self_test() -> int:
     """Synthetic fixture tests of the decode + tolerance + verdict logic."""
     payload = bytearray(0x38)
@@ -245,6 +369,7 @@ def self_test() -> int:
     # Tolerance math sanity.
     assert math.dist((0.0, 0.0, 0.0), (3.0, 4.0, 0.0)) == 5.0
     assert _self_test_compare() == 0
+    assert _self_test_enumeration() == 0
     print("batch-rehearsal-crosscheck: self-test PASS")
     return 0
 
@@ -256,6 +381,8 @@ def main() -> int:
     parser.add_argument("--roster", action="store_true",
                         help="print the decoded roster + duration as JSON")
     parser.add_argument("--dumps", default="", help="batch dumps file (compare mode)")
+    parser.add_argument("--enumeration", default="",
+                        help="live roster-enumeration file (X3 compare mode)")
     parser.add_argument("--tolerance", type=float, default=2.0,
                         help="position match tolerance in meters (default 2.0)")
     parser.add_argument("--self-test", action="store_true",
@@ -264,8 +391,10 @@ def main() -> int:
 
     if args.self_test:
         return self_test()
-    if args.roster and args.dumps:
-        raise SystemExit("error: --roster and --dumps are mutually exclusive")
+    modes = sum(bool(flag) for flag in (args.roster, args.dumps, args.enumeration))
+    if modes > 1:
+        raise SystemExit("error: --roster, --dumps, and --enumeration are "
+                         "mutually exclusive")
     if not args.session:
         raise SystemExit("error: --session is required (or pass --self-test)")
 
@@ -273,8 +402,10 @@ def main() -> int:
     if args.roster:
         print(json.dumps(roster(connection, args.session)))
         return 0
+    if args.enumeration:
+        return enumeration_compare(connection, args.enumeration)
     if not args.dumps:
-        raise SystemExit("error: pass --roster or --dumps <file>")
+        raise SystemExit("error: pass --roster, --dumps, or --enumeration")
     if args.tolerance <= 0:
         raise SystemExit("error: --tolerance must be positive")
     return compare(connection, args.dumps, args.tolerance)

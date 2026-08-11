@@ -7,18 +7,27 @@
 
 .DESCRIPTION
   Sequence:
-    1. QUALIFY (offline, real): scripts/python/batch-rehearsal-crosscheck.py
+    0. QUALIFY (offline, real): scripts/python/batch-rehearsal-crosscheck.py
        --roster -> the decoded roster (participant entity ids, team order)
        + session duration. With -Times the operator pins the replay-clock
        dump times; otherwise 5 evenly spaced times are derived from the
        duration.
+    1. ENUMERATE (optional, live, GATED seam, X3): with -EnumerateLive,
+       POST /api/v1/game/discover/entity-roster -> the avatar-family ids
+       enumerated from the game's own entity maps + the movement-filter
+       precision counters. Verdict against the decoded roster (matched /
+       missing / extra, fail-closed on TraversalLimited). With -LiveAcquire
+       the ENUMERATED ids drive the batch dumps instead of the decoded
+       roster ids (the X3 rehearsal: enumerate -> filter -> batch-read ->
+       cross-check). Writes the enumeration evidence file (schema
+       wotbtreader.od.batch-rehearsal.roster-enum.v1).
     2. DUMP (live, GATED seam): POST /api/v1/game/discover/entity-regions
-       with the WHOLE roster in one batch per time (ring-record anchor; the
-       published position chain reads the float32 triple at record +0x10),
-       requiring status 'Resolved' AND sameDecodedClockProven on every
-       batch (fail-closed). Writes the dumps file (schema
-       wotbtreader.od.batch-rehearsal.dumps.v1). Without a reachable web
-       host the driver exits 3 with the contract.
+       with the WHOLE roster (decoded or enumerated) in one batch per time
+       (ring-record anchor; the published position chain reads the float32
+       triple at record +0x10), requiring status 'Resolved' AND
+       sameDecodedClockProven on every batch (fail-closed). Writes the
+       dumps file (schema wotbtreader.od.batch-rehearsal.dumps.v1).
+       Without a reachable web host the driver exits 3 with the contract.
     3. VERDICT (offline, real): python --compare reads the dumps + the
        decoded position_samples (nearest-sample at the batch's replay
        label) and reports per-entity deltas. Exit 0 = every compared pair
@@ -30,10 +39,20 @@
   memory positions aligned to decoded ground truth.
 
 .EXAMPLE
+  # Enumerate the live roster and verdict it against the decoded roster:
+  powershell -File scripts/invoke-batch-rehearsal.ps1 `
+      -SessionId 019fdff7-8dcf-7426-8547-9fb8cc3eb07b -EnumerateLive `
+      -FailOnMiss
+
   # Live acquisition through the gated seam, then the verdict:
   powershell -File scripts/invoke-batch-rehearsal.ps1 `
       -SessionId 019fdff7-8dcf-7426-8547-9fb8cc3eb07b -LiveAcquire `
       -Times 90,150,220 -FailOnMiss
+
+  # The full X3 rehearsal: enumerate live, then dump the ENUMERATED ids:
+  powershell -File scripts/invoke-batch-rehearsal.ps1 `
+      -SessionId 019fdff7-8dcf-7426-8547-9fb8cc3eb07b `
+      -EnumerateLive -LiveAcquire -Times 90,150,220 -FailOnMiss
 
   # Offline verdict against an existing dumps file:
   powershell -File scripts/invoke-batch-rehearsal.ps1 `
@@ -66,12 +85,25 @@ param(
     # be serving (rendezvous) with the offline replay verified; without a
     # reachable host the driver exits 3 with the contract.
     [switch]$LiveAcquire,
+    # Enumerate the live avatar-family roster first
+    # (POST /api/v1/game/discover/entity-roster, X3) and verdict it against
+    # the decoded participants roster (matched/missing/extra + filter
+    # precision). With -LiveAcquire the ENUMERATED ids drive the batch dumps
+    # (the X3 rehearsal: enumerate -> filter -> batch-read -> cross-check).
+    # Writes the enumeration evidence file (schema
+    # wotbtreader.od.batch-rehearsal.roster-enum.v1).
+    [switch]$EnumerateLive,
+    # Path to the enumeration evidence file. With -EnumerateLive it is the
+    # OUTPUT path (defaults to
+    # .data/roster-enum-<session>-<stamp>.json); it is never read as input.
+    [string]$EnumPath = '',
     # Path to the dumps file. In OFFLINE verdict mode this must exist; in
     # live acquisition mode (-LiveAcquire) it is the OUTPUT path (defaults
     # to .data/batch-rehearsal-<session>-<stamp>.json).
     [string]$DumpsPath = '',
     [string]$Python = 'python',
-    # Exit 1 when the cross-check verdict is not a clean PASS.
+    # Exit 1 when a verdict is not a clean PASS (enumeration and/or
+    # position cross-check).
     [switch]$FailOnMiss
 )
 
@@ -88,7 +120,7 @@ if ($DbPath -eq '') {
 }
 $CrossCheck = Join-Path $RepoRoot 'scripts\python\batch-rehearsal-crosscheck.py'
 
-# ---- 1. QUALIFY (offline, real) -----------------------------------------
+# ---- 0. QUALIFY (offline, real) -----------------------------------------
 $RosterJson = & $Python $CrossCheck --db $DbPath --session $SessionId --roster
 if ($LASTEXITCODE -ne 0) {
     throw "roster qualification failed (exit $LASTEXITCODE): $RosterJson"
@@ -131,7 +163,7 @@ else {
 }
 Write-Step ("Dump times: " + (($DumpTimes | ForEach-Object { "{0:0.0}s" -f $_ }) -join ', '))
 
-# ---- 2. DUMP (live, gated seam) -----------------------------------------
+# ---- Live API helpers (rendezvous + gated call) -------------------------
 function Get-RehearsalRendezvous {
     try {
         $directory = Join-Path $env:LOCALAPPDATA 'WotBTreader\rendezvous'
@@ -185,17 +217,99 @@ function Invoke-RehearsalApi {
     return Invoke-RestMethod @arguments
 }
 
+# ---- 1. ENUMERATE (optional, live, gated seam, X3) ----------------------
+$EnumVerdict = $null
+if ($EnumerateLive) {
+    if ($EnumPath -eq '') {
+        $Stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+        $EnumPath = Join-Path $RepoRoot ('.data\roster-enum-{0}-{1}.json' -f `
+            $SessionId, $Stamp)
+    }
+    Write-Step "Enumerating the live avatar-family roster via /discover/entity-roster..."
+    $enumResponse = $null
+    try {
+        $enumResponse = Invoke-RehearsalApi -Method 'Post' `
+            -RelativePath '/api/v1/game/discover/entity-roster'
+    }
+    catch [InvalidOperationException] {
+        Write-Host @"
+batch_rehearsal: no reachable web host for the enumeration; start the
+web host, verify the offline replay, then re-run with -EnumerateLive.
+"@
+        exit 3
+    }
+    if ($null -eq $enumResponse) {
+        throw "entity-roster returned no response."
+    }
+    if ($enumResponse.status -ne 'Resolved') {
+        throw ("entity-roster failed: status='{0}' (stage '{1}')." -f `
+            $enumResponse.status, $enumResponse.failureStage)
+    }
+    if ($enumResponse.traversalLimited) {
+        throw "entity-roster returned TraversalLimited - the roster is " +
+            "partial and cannot be used (fail-closed)."
+    }
+    $EnumeratedIds = @($enumResponse.entityIds)
+    if ($EnumeratedIds.Count -lt 1) {
+        throw "entity-roster enumerated 0 avatar ids - wrong phase/session?"
+    }
+    $EnumEvidence = @{
+        schema           = 'wotbtreader.od.batch-rehearsal.roster-enum.v1'
+        sessionId        = $SessionId
+        status           = [string]$enumResponse.status
+        failureStage     = $enumResponse.failureStage
+        candidatesSeen   = [int]$enumResponse.candidatesSeen
+        filteredOut      = [int]$enumResponse.filteredOut
+        moduleRooted     = [bool]$enumResponse.moduleRooted
+        traversalLimited = [bool]$enumResponse.traversalLimited
+        entityIds        = $EnumeratedIds
+    }
+    $EnumEvidence | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $EnumPath -Encoding UTF8
+    Write-Step ("Enumeration: {0} avatar id(s) from {1} candidates " +
+        "({2} filtered out) -> " + $EnumPath -f $EnumeratedIds.Count, `
+        [int]$enumResponse.candidatesSeen, [int]$enumResponse.filteredOut)
+
+    # Verdict: enumerated ids vs the decoded participants roster.
+    Write-Step "Cross-checking the enumeration against the decoded roster..."
+    & $Python $CrossCheck --db $DbPath --session $SessionId `
+        --enumeration $EnumPath
+    $EnumVerdict = $LASTEXITCODE
+    if ($EnumVerdict -ne 0 -and $FailOnMiss) {
+        Write-Host (("batch_rehearsal: enumeration verdict exit {0} with " +
+            "-FailOnMiss - exiting 1.") -f $EnumVerdict)
+        exit 1
+    }
+
+    # With -LiveAcquire the ENUMERATED ids drive the batch dumps (the X3
+    # rehearsal composes enumeration -> filter -> batch read -> cross-check).
+    if ($LiveAcquire) {
+        Write-Step ("Using the enumerated ids ({0}) for the batch dumps " +
+            "instead of the decoded roster." -f $EnumeratedIds.Count)
+        $EntityIds = $EnumeratedIds
+    }
+}
+
+# ---- 2. DUMP (live, gated seam) -----------------------------------------
 $DumpsExist = ($DumpsPath -ne '' -and (Test-Path -LiteralPath $DumpsPath))
-if (-not $DumpsExist -and -not $LiveAcquire) {
+$EnumOnly = ($EnumerateLive -and -not $LiveAcquire -and -not $DumpsExist)
+if (-not $DumpsExist -and -not $LiveAcquire -and -not $EnumOnly) {
     Write-Host @"
-batch_rehearsal: no dumps file and no -LiveAcquire; the live dump
-acquisition is the GATED seam (POST /api/v1/game/discover/entity-regions -
+batch_rehearsal: no dumps file and no -LiveAcquire/-EnumerateLive; the live
+dump acquisition is the GATED seam (POST /api/v1/game/discover/entity-regions -
 one batch per replay time for the whole roster, bytes + one replay-time
 label, OfflineReplayVerified + current authorization). Start the web host,
 verify the offline replay, then re-run with -LiveAcquire (or pass
 -DumpsPath to run the verdict against an existing dumps file).
 "@
     exit 3
+}
+
+# Enumeration-only mode (-EnumerateLive without -LiveAcquire): the verdict
+# is the enumeration cross-check; exit with its code (FailOnMiss already
+# short-circuits on a non-zero verdict).
+if ($EnumOnly -and $null -ne $EnumVerdict) {
+    Write-Host ("batch_rehearsal: enumeration verdict exit {0}." -f $EnumVerdict)
+    exit $EnumVerdict
 }
 
 if (-not $DumpsExist) {

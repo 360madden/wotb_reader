@@ -1,11 +1,10 @@
 # Live enemy-roster read — design proposal (X3 pre-design)
 
 **Date:** 2026-08-11
-**Status:** DESIGN ADOPTED — items 1–2 IMPLEMENTED and test-pinned
+**Status:** DESIGN ADOPTED — items 1–3 IMPLEMENTED and test-pinned
 (`Type10EntityPositionResolver.EnumerateEntities` + coordinator
-`EnumerateEntitiesAsync` + endpoint `POST /discover/entity-roster` + 10 new
-tests: 7 resolver, 4 coordinator, 3 endpoint); item 3 (rehearsal
-`-EnumerateLive` mode) PRE-STAGED; item 4 (live session) rides the next
+`EnumerateEntitiesAsync` + endpoint `POST /discover/entity-roster` + the
+rehearsal `-EnumerateLive` mode); item 4 (live session) rides the next
 approved session. Follows the adopted batch surface
 (`docs/operations/batch-entity-read-design.md`); closes the one gap between
 "replay rehearsal works" and "live frame works": **where do the entity ids
@@ -149,11 +148,18 @@ Mirrors the batch surface's trust boundary exactly:
    member-path was extracted into one shared
    `TryResolveEntitiesAddress` helper so the targeted search and the
    enumeration cannot drift apart (single sanctioned walker).
-3. **PRE-STAGED — Extend the rehearsal driver**
-   (`invoke-batch-rehearsal.ps1`) with an `-EnumerateLive` mode: enumerate
-   → filter → batch-read the enumerated ids → cross-check against the
-   decoded roster. This **measures the movement-filter precision** on real
-   data and validates the full enumeration against the participants table.
+3. ✅ **DONE 2026-08-11 — Rehearsal `-EnumerateLive` mode.**
+   `invoke-batch-rehearsal.ps1 -EnumerateLive` calls
+   `POST /discover/entity-roster` (status must be `Resolved`, fail-closed on
+   `TraversalLimited`), writes the enumeration evidence (schema
+   `wotbtreader.od.batch-rehearsal.roster-enum.v1`), and verdicts it against
+   the decoded roster via a new `--enumeration` mode in
+   `batch-rehearsal-crosscheck.py`: matched / missing / extra + filter
+   precision and recall, exit 0 = exact set match, 1 = any mismatch, 2 =
+   nothing comparable (self-test extended with exact-match, missing,
+   extra, and TraversalLimited fail-closed controls). With `-LiveAcquire`
+   the ENUMERATED ids drive the batch dumps — the full X3 rehearsal
+   (enumerate → filter → batch-read → cross-check) in one command.
 4. **Live session** (approved, pre-staged order): the enumeration rehearsal
    rides the next approved session after OD-RECOVERY-086; it does not need a
    new gate, it composes with the batch rehearsal.

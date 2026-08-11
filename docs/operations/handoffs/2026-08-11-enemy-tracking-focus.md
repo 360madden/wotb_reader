@@ -111,9 +111,16 @@ player must share the file.
    coordinator `EnumerateEntitiesAsync` (gate → build identity → guarded
    reader; addresses die inside, ids only out), endpoint + contract, and 14
    new tests (7 resolver, 4 coordinator, 3 endpoint). The `-EnumerateLive`
-   rehearsal mode is PRE-STAGED — it **measures the movement-filter
-   precision** against the decoded roster on the next approved session.
-   Turret/target/lock fields ride on that per-entity surface.
+   rehearsal mode is IMPLEMENTED too — `invoke-batch-rehearsal.ps1
+   -EnumerateLive` calls `/discover/entity-roster`, writes the enumeration
+   evidence (schema `...roster-enum.v1`), and verdicts it against the
+   decoded roster via the new `--enumeration` mode of
+   `batch-rehearsal-crosscheck.py` (matched/missing/extra + precision/
+   recall; self-test extended); with `-LiveAcquire` the ENUMERATED ids
+   drive the batch dumps (full X3 rehearsal in one command). It
+   **measures the movement-filter precision** against the decoded roster
+   on the next approved session. Turret/target/lock fields ride on that
+   per-entity surface.
 
 ## Files touched
 
