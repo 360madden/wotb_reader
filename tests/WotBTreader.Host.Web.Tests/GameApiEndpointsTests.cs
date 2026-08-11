@@ -1296,6 +1296,96 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task EntityRoster_ReturnsAvatarIdsOnly()
+    {
+        var scanner = new FakeGameMemoryScanner
+        {
+            EntityRosterResult = OperationResult.Success(
+                new EntityRosterReadResult(
+                    DateTimeOffset.UnixEpoch.AddSeconds(5),
+                    "11.19.0.10",
+                    Type10EntityPositionStatus.Resolved,
+                    FailureStage: null,
+                    CandidatesSeen: 18,
+                    FilteredOut: 4,
+                    ModuleRooted: true,
+                    TraversalLimited: false,
+                    EntityIds: [3760578, 3760577, 3760579])),
+        };
+
+        IResult result = await GameApiEndpoints.DiscoverEntityRosterAsync(
+            scanner,
+            TestContext.CancellationToken);
+
+        WotBTreader.ApiContracts.EntityRosterReadResponse response =
+            Value<WotBTreader.ApiContracts.EntityRosterReadResponse>(result);
+        Assert.AreEqual("Resolved", response.Status);
+        Assert.AreEqual(18, response.CandidatesSeen);
+        Assert.AreEqual(4, response.FilteredOut);
+        Assert.IsTrue(response.ModuleRooted);
+        Assert.IsFalse(response.TraversalLimited);
+        int[] expected = [3760578, 3760577, 3760579];
+        CollectionAssert.AreEqual(expected, response.EntityIds.ToArray());
+        Assert.AreEqual(1, scanner.EntityRosterCallCount);
+        // No absolute address or process id may leak in the serialized body.
+        string json = JsonSerializer.Serialize(response, CamelCaseJson);
+        Assert.IsFalse(json.Contains("address", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(json.Contains("base64", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
+    public async Task EntityRoster_TraversalLimitedFailsClosed()
+    {
+        var scanner = new FakeGameMemoryScanner
+        {
+            EntityRosterResult = OperationResult.Success(
+                new EntityRosterReadResult(
+                    DateTimeOffset.UnixEpoch,
+                    "11.19.0.10",
+                    Type10EntityPositionStatus.TraversalLimitExceeded,
+                    FailureStage: "tree-traversal",
+                    CandidatesSeen: 0,
+                    FilteredOut: 0,
+                    ModuleRooted: false,
+                    TraversalLimited: true,
+                    EntityIds: [])),
+        };
+
+        IResult result = await GameApiEndpoints.DiscoverEntityRosterAsync(
+            scanner,
+            TestContext.CancellationToken);
+
+        WotBTreader.ApiContracts.EntityRosterReadResponse response =
+            Value<WotBTreader.ApiContracts.EntityRosterReadResponse>(result);
+        Assert.AreEqual("TraversalLimitExceeded", response.Status);
+        Assert.AreEqual("tree-traversal", response.FailureStage);
+        Assert.IsTrue(response.TraversalLimited);
+        Assert.IsEmpty(response.EntityIds);
+    }
+
+    [TestMethod]
+    public async Task EntityRoster_FailureReturnsBadRequest()
+    {
+        var scanner = new FakeGameMemoryScanner
+        {
+            EntityRosterResult = OperationResult.Failure<EntityRosterReadResult>(
+                new ApplicationError(
+                    "discover.entity_roster.read_unavailable",
+                    "The guarded roster reader is unavailable.")),
+        };
+
+        IResult result = await GameApiEndpoints.DiscoverEntityRosterAsync(
+            scanner,
+            TestContext.CancellationToken);
+
+        Assert.AreEqual(StatusCodes.Status400BadRequest, ((IStatusCodeHttpResult)result).StatusCode);
+        JsonElement body = BadRequestAnonymous(result);
+        Assert.AreEqual(
+            "discover.entity_roster.read_unavailable",
+            body.GetProperty("error").GetString());
+    }
+
+    [TestMethod]
     public async Task EntityRegions_ReturnsBatchResponseWithBase64Bytes()
     {
         byte[] first = [0x10, 0x20, 0x30, 0x40];
@@ -2307,6 +2397,19 @@ public sealed class GameApiEndpointsTests
             LastEntityRegionRequest = request;
             LastCancellationToken = cancellationToken;
             return ValueTask.FromResult(EntityRegionResult);
+        }
+
+        public OperationResult<EntityRosterReadResult> EntityRosterResult { get; init; } =
+            OperationResult.Failure<EntityRosterReadResult>(
+                new ApplicationError("discover.entity_roster.not_configured", "Test default."));
+        public int EntityRosterCallCount { get; private set; }
+
+        public ValueTask<OperationResult<EntityRosterReadResult>> EnumerateEntitiesAsync(
+            CancellationToken cancellationToken)
+        {
+            EntityRosterCallCount++;
+            LastCancellationToken = cancellationToken;
+            return ValueTask.FromResult(EntityRosterResult);
         }
 
         public ValueTask<OperationResult<EntityRegionsReadResult>> ReadEntityRegionsAsync(

@@ -38,6 +38,7 @@ overlay endpoint/state implementation was deleted.
 | `/discover/entity-position` | POST | Resolve one decoded replay entity ID through the exact-build, server-owned module root and return a sanitized newest-ring XYZ result |
 | `/discover/entity-region` | POST | One bounded region dump (≤ 4 KB) of a decoded entity — bytes + replay-clock label only; anchors: `ring-record` / `entity-tank-record` / `entity-base` (the L1–L4 seam) |
 | `/discover/entity-regions` | POST | **Batch** region dumps (≤ 16 entities, ≤ 16 KB total) in one round trip with ONE replay-clock attestation — the per-frame live read surface (design: `docs/operations/batch-entity-read-design.md`); response carries the read-pass measurement window |
+| `/discover/entity-roster` | POST | **Live roster enumeration** — avatar-family entity ids ONLY (ids feed the unchanged `entity-regions` batch), plus the filter-precision counters (`candidatesSeen`/`filteredOut`) the rehearsal cross-checks against the decoded roster; addresses die inside the coordinator (design: `docs/operations/live-roster-read-design.md`) |
 | `/discover/position-page` | POST | Resolve the entity address + region page (diagnostic-only; feeds the guarded poll) |
 | `/discover/camera-pose` | POST | Gate-verified GameCamera world pose (CAM-001 chain, live-verified 2026-08-11) |
 | `/discover/clock-segment` | POST | Append a replay-clock segment (G2 same-decoded-clock anchor) |

@@ -471,6 +471,26 @@ public sealed record EntityRegionsReadMeasurementResponse
 }
 
 /// <summary>
+/// Privacy-safe response of the live roster enumeration endpoint: the
+/// avatar-family entity ids ONLY, plus the filter-precision counters the
+/// live rehearsal cross-checks against the decoded roster. No absolute
+/// address, process id, or module base is ever returned (design:
+/// docs/operations/live-roster-read-design.md).
+/// </summary>
+public sealed record EntityRosterReadResponse
+{
+    public DateTimeOffset CompletedAtUtc { get; init; }
+    public string GameVersion { get; init; } = string.Empty;
+    public string Status { get; init; } = string.Empty;
+    public string? FailureStage { get; init; }
+    public int CandidatesSeen { get; init; }
+    public int FilteredOut { get; init; }
+    public bool ModuleRooted { get; init; }
+    public bool TraversalLimited { get; init; }
+    public IReadOnlyList<int> EntityIds { get; init; } = [];
+}
+
+/// <summary>
 /// Response of the gate-verified camera-pose endpoint (CAM-001 chain): the
 /// GameCamera world pose plus per-hop identity flags. Addresses are
 /// diagnostic evidence formatted as hex, never runtime read offsets.

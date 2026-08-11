@@ -94,18 +94,24 @@ player must share the file.
    the aim-line is now a tested Core utility.
 2. Multi-perspective comparison via `comparison_runs` when a second
    player's file is obtainable.
-3. ~~Live enemy-roster read design~~ — DESIGNED 2026-08-11:
-   `docs/operations/live-roster-read-design.md` (X3). Closes the one gap
-   between the batch rehearsal and live frames: the batch surface takes
-   entity ids, but live mode has no decoded participants table, so the ids
-   are enumerated from the game's own entity maps via a **full-tree walk**
-   (both children per node, vs the resolver's branch-pruned search), deduped
-   across cache + three maps, filtered by the movement-filter vtable set,
-   and returned **ids only** through a new `POST /discover/entity-roster`
-   endpoint that feeds the unchanged `entity-regions` batch. Design is
-   PROPOSAL (no code yet); the first implementation unit is the pure
-   resolver enumeration + coordinator/endpoint/tests, and the rehearsal
-   driver gains an `-EnumerateLive` mode that **measures the movement-filter
+3. ~~Live enemy-roster read design~~ — DESIGNED AND IMPLEMENTED 2026-08-11:
+   `docs/operations/live-roster-read-design.md` (X3, status ADOPTED).
+   Closes the one gap between the batch rehearsal and live frames: the
+   batch surface takes entity ids, but live mode has no decoded participants
+   table, so the ids are enumerated from the game's own entity maps via a
+   **full-tree walk** (both children per node, vs the resolver's
+   branch-pruned search), deduped across cache + three maps, filtered by the
+   movement-filter vtable set, and returned **ids only** through a new
+   `POST /discover/entity-roster` endpoint that feeds the unchanged
+   `entity-regions` batch. Shipped: `Type10EntityPositionResolver
+   .EnumerateEntities` (the resolver's gated member-path extracted into a
+   shared `TryResolveEntitiesAddress` so search + enumeration share one
+   walker; per-tree MaxTreeNodes bound fails closed as
+   `TraversalLimitExceeded`; movement-filter gate → avatar family),
+   coordinator `EnumerateEntitiesAsync` (gate → build identity → guarded
+   reader; addresses die inside, ids only out), endpoint + contract, and 14
+   new tests (7 resolver, 4 coordinator, 3 endpoint). The `-EnumerateLive`
+   rehearsal mode is PRE-STAGED — it **measures the movement-filter
    precision** against the decoded roster on the next approved session.
    Turret/target/lock fields ride on that per-entity surface.
 

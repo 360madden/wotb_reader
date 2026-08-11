@@ -2407,6 +2407,100 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         }
     }
 
+    public async ValueTask<OperationResult<EntityRosterReadResult>> EnumerateEntitiesAsync(
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        (AuthorizedMemoryObservation? observation, long baseAddress, CancellationToken authorizationToken, bool ok) =
+            GetScanAuthorization(cancellationToken);
+        if (!ok)
+        {
+            return GateCheck<EntityRosterReadResult>(
+                "discover.gate_not_satisfied",
+                "The offline-session gate is not satisfied.");
+        }
+
+        using CancellationTokenSource readCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, authorizationToken);
+        try
+        {
+            Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+            if (!string.Equals(
+                observation!.ProductVersion,
+                layout.GameVersion,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                observation.ExecutableSha256.Value,
+                layout.ExecutableSha256,
+                StringComparison.Ordinal))
+            {
+                return OperationResult.Success(new EntityRosterReadResult(
+                    _timeProvider.GetUtcNow(),
+                    layout.GameVersion,
+                    Type10EntityPositionStatus.UnsupportedBuild,
+                    "build-identity",
+                    CandidatesSeen: 0,
+                    FilteredOut: 0,
+                    ModuleRooted: false,
+                    TraversalLimited: false,
+                    EntityIds: []));
+            }
+
+            OperationResult<IAuthorizedMemoryReader> readerResult = await _memoryReaderFactory
+                .CreateAsync(observation, readCancellation.Token)
+                .ConfigureAwait(false);
+            if (!readerResult.IsSuccess || readerResult.Value is null)
+            {
+                return OperationResult.Failure<EntityRosterReadResult>(
+                    new ApplicationError(
+                        "discover.entity_roster.read_unavailable",
+                        "The guarded roster reader is unavailable."));
+            }
+
+            OperationResult<EntityRosterResult> enumerateResult = await readerResult.Value
+                .EnumerateEntitiesAsync(
+                    (nint)baseAddress,
+                    layout,
+                    readCancellation.Token)
+                .ConfigureAwait(false);
+            if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+            {
+                return GateCheck<EntityRosterReadResult>(
+                    "discover.gate_not_satisfied",
+                    "The offline-session gate is no longer satisfied.");
+            }
+
+            if (!enumerateResult.IsSuccess || enumerateResult.Value is null)
+            {
+                return OperationResult.Failure<EntityRosterReadResult>(
+                    enumerateResult.Error ?? new ApplicationError(
+                        "discover.entity_roster.read_failed",
+                        "The roster enumeration read failed."));
+            }
+
+            EntityRosterResult roster = enumerateResult.Value;
+            // Privacy boundary: addresses stay inside the coordinator — the
+            // result carries ids ONLY (plus the filter-precision counters
+            // the live rehearsal cross-checks against the decoded roster).
+            return OperationResult.Success(new EntityRosterReadResult(
+                _timeProvider.GetUtcNow(),
+                layout.GameVersion,
+                roster.Status,
+                roster.FailureStage,
+                roster.CandidatesSeen,
+                roster.FilteredOut,
+                roster.ModuleRooted,
+                roster.TraversalLimited,
+                roster.Entities?.Select(entry => entry.EntityId).ToList() ?? []));
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return GateCheck<EntityRosterReadResult>(
+                "discover.gate_not_satisfied",
+                "The offline-session gate is no longer satisfied.");
+        }
+    }
+
     /// <summary>
     /// Builds a whole-batch result where every requested entity carries the
     /// same gate-level status (build mismatch, inactive phase) and no bytes.

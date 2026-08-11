@@ -36,6 +36,7 @@ internal static class GameApiEndpoints
         group.MapPost("/discover/entity-position", ReadEntityPositionAsync);
         group.MapPost("/discover/entity-region", ReadEntityRegionAsync);
         group.MapPost("/discover/entity-regions", ReadEntityRegionsAsync);
+        group.MapPost("/discover/entity-roster", DiscoverEntityRosterAsync);
         group.MapPost("/discover/position-page", ResolveEntityPositionAddressAsync);
         group.MapPost("/discover/camera-pose", DiscoverCameraPoseAsync);
         group.MapPost("/discover/clock-segment", AppendClockSegmentAsync);
@@ -936,6 +937,38 @@ internal static class GameApiEndpoints
             NodesVisited = read.NodesVisited,
             ModuleRooted = read.ModuleRooted,
             SameDecodedClockProven = read.SameDecodedClockProven,
+        });
+    }
+
+    internal static async Task<IResult> DiscoverEntityRosterAsync(
+        IGameMemoryScanner scanner,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(scanner);
+
+        OperationResult<EntityRosterReadResult> result = await scanner
+            .EnumerateEntitiesAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (!result.IsSuccess || result.Value is null)
+        {
+            return Results.BadRequest(new
+            {
+                error = result.Error?.Code ?? "discover.entity_roster.read_failed",
+            });
+        }
+
+        EntityRosterReadResult roster = result.Value;
+        return Results.Ok(new WotBTreader.ApiContracts.EntityRosterReadResponse
+        {
+            CompletedAtUtc = roster.CompletedAtUtc,
+            GameVersion = roster.GameVersion,
+            Status = roster.Status.ToString(),
+            FailureStage = roster.FailureStage,
+            CandidatesSeen = roster.CandidatesSeen,
+            FilteredOut = roster.FilteredOut,
+            ModuleRooted = roster.ModuleRooted,
+            TraversalLimited = roster.TraversalLimited,
+            EntityIds = roster.EntityIds,
         });
     }
 

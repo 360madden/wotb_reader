@@ -1,7 +1,12 @@
 # Live enemy-roster read — design proposal (X3 pre-design)
 
 **Date:** 2026-08-11
-**Status:** DESIGN — no code yet. Follows the adopted batch surface
+**Status:** DESIGN ADOPTED — items 1–2 IMPLEMENTED and test-pinned
+(`Type10EntityPositionResolver.EnumerateEntities` + coordinator
+`EnumerateEntitiesAsync` + endpoint `POST /discover/entity-roster` + 10 new
+tests: 7 resolver, 4 coordinator, 3 endpoint); item 3 (rehearsal
+`-EnumerateLive` mode) PRE-STAGED; item 4 (live session) rides the next
+approved session. Follows the adopted batch surface
 (`docs/operations/batch-entity-read-design.md`); closes the one gap between
 "replay rehearsal works" and "live frame works": **where do the entity ids
 come from in live mode?**
@@ -129,16 +134,26 @@ Mirrors the batch surface's trust boundary exactly:
 
 ## Sequencing
 
-1. **This design** (this doc) — the shape above is a PROPOSAL.
-2. **Implement** `EnumerateEntities` + coordinator method + endpoint + tests
-   (pure resolver tests first: tree walk visits both branches, dedupe, bounds;
-   coordinator tests mirror the batch's gate matrix). No live code before the
-   measurement below.
-3. **Extend the rehearsal driver** (`invoke-batch-rehearsal.ps1`) with an
-   `-EnumerateLive` mode: enumerate → filter → batch-read the enumerated ids
-   → cross-check against the decoded roster. This **measures the
-   movement-filter precision** on real data and validates the full
-   enumeration against the participants table.
+1. ✅ **This design** (this doc).
+2. ✅ **DONE 2026-08-11 — Implemented.** `EnumerateEntities` (pure resolver,
+   full-tree walk visits both children, dedupe across cache + three maps,
+   per-tree MaxTreeNodes bound → `TraversalLimitExceeded` fails closed,
+   movement-filter vtable gate → avatar family) + coordinator
+   `EnumerateEntitiesAsync` (gate → build identity → guarded reader → ids
+   only out, addresses die inside) + `POST /discover/entity-roster`.
+   Tests: 7 resolver (cache slot, both-branches walk, dedupe, filter,
+   empty maps, pre-login phase, traversal limit, malformed layout, non-
+   pointer value), 4 coordinator (missing gate, unsupported build, exact
+   build ids-only, pre-login retryable), 3 endpoint (ids-only response,
+   traversal-limit fail-closed, failure mapping). The resolver's gated
+   member-path was extracted into one shared
+   `TryResolveEntitiesAddress` helper so the targeted search and the
+   enumeration cannot drift apart (single sanctioned walker).
+3. **PRE-STAGED — Extend the rehearsal driver**
+   (`invoke-batch-rehearsal.ps1`) with an `-EnumerateLive` mode: enumerate
+   → filter → batch-read the enumerated ids → cross-check against the
+   decoded roster. This **measures the movement-filter precision** on real
+   data and validates the full enumeration against the participants table.
 4. **Live session** (approved, pre-staged order): the enumeration rehearsal
    rides the next approved session after OD-RECOVERY-086; it does not need a
    new gate, it composes with the batch rehearsal.

@@ -1683,6 +1683,130 @@ public sealed class GameSessionCoordinatorTests
     }
 
     [TestMethod]
+    public async Task EnumerateEntities_MissingOfflineGateNeverCreatesMemoryReader()
+    {
+        var factory = new TrackingEntityPositionReaderFactory(
+            CreateResolvedEntityPosition(4242));
+        var scan = new FakeScanDiscoverer(CreateAvatarScanResult());
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+
+        OperationResult<EntityRosterReadResult> result = await coordinator
+            .EnumerateEntitiesAsync(CancellationToken.None);
+
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual("discover.gate_not_satisfied", result.Error?.Code);
+        Assert.AreEqual(0, factory.CreateCount);
+        Assert.AreEqual(0, scan.ScanCount);
+    }
+
+    [TestMethod]
+    public async Task EnumerateEntities_UnsupportedBuildFailsClosed()
+    {
+        var factory = new TrackingEntityPositionReaderFactory(
+            CreateResolvedEntityPosition(4242));
+        var (coordinator, _) = CreateCoordinator(memoryReaderFactory: factory);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+        coordinator.ApplyEvidence(CreateValidEvidence());
+
+        OperationResult<EntityRosterReadResult> result = await coordinator
+            .EnumerateEntitiesAsync(CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        EntityRosterReadResult roster = result.Value!;
+        Assert.AreEqual(Type10EntityPositionStatus.UnsupportedBuild, roster.Status);
+        Assert.AreEqual("build-identity", roster.FailureStage);
+        Assert.AreEqual(0, roster.CandidatesSeen);
+        Assert.IsEmpty(roster.EntityIds);
+        Assert.AreEqual(0, factory.CreateCount);
+    }
+
+    [TestMethod]
+    public async Task EnumerateEntities_ExactBuildReturnsAvatarIdsOnly()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        var factory = new TrackingEntityPositionReaderFactory(
+            CreateResolvedEntityPosition(4242));
+        factory.Reader.RosterResult = new EntityRosterResult(
+            Type10EntityPositionStatus.Resolved,
+            FailureStage: null,
+            ModuleRooted: true,
+            NodesVisited: 12,
+            CandidatesSeen: 18,
+            FilteredOut: 4,
+            Entities:
+            [
+                new EntityRosterEntry(3760578, 0x25000028),
+                new EntityRosterEntry(3760577, 0x25000100),
+                new EntityRosterEntry(3760579, 0x25000200),
+            ],
+            TraversalLimited: false);
+        var (coordinator, _) = CreateCoordinator(memoryReaderFactory: factory);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRosterReadResult> result = await coordinator
+            .EnumerateEntitiesAsync(CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess, result.Error?.Message);
+        EntityRosterReadResult roster = result.Value!;
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, roster.Status);
+        Assert.AreEqual(18, roster.CandidatesSeen);
+        Assert.AreEqual(4, roster.FilteredOut);
+        Assert.IsTrue(roster.ModuleRooted);
+        Assert.IsFalse(roster.TraversalLimited);
+        // Ids only — the resolved addresses never leave the coordinator.
+        int[] ids = roster.EntityIds.Order().ToArray();
+        int[] expected = [3760577, 3760578, 3760579];
+        CollectionAssert.AreEqual(expected, ids);
+        // The enumeration ran through the one guarded reader under the lease.
+        Assert.AreEqual(1, factory.CreateCount);
+        Assert.AreEqual(layout, factory.Reader.Layout);
+    }
+
+    [TestMethod]
+    public async Task EnumerateEntities_PreLoginPhaseSurfacesRetryableStatus()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        var factory = new TrackingEntityPositionReaderFactory(
+            CreateResolvedEntityPosition(4242));
+        factory.Reader.RosterResult = new EntityRosterResult(
+            Type10EntityPositionStatus.ReplaySessionInactive,
+            "session-controller-vtable",
+            ModuleRooted: true,
+            NodesVisited: 0,
+            CandidatesSeen: 0,
+            FilteredOut: 0,
+            Entities: null,
+            TraversalLimited: false);
+        var (coordinator, _) = CreateCoordinator(memoryReaderFactory: factory);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRosterReadResult> result = await coordinator
+            .EnumerateEntitiesAsync(CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess, result.Error?.Message);
+        EntityRosterReadResult roster = result.Value!;
+        Assert.AreEqual(Type10EntityPositionStatus.ReplaySessionInactive, roster.Status);
+        Assert.AreEqual("session-controller-vtable", roster.FailureStage);
+        Assert.IsEmpty(roster.EntityIds);
+    }
+
+    [TestMethod]
     public async Task CameraPoseRead_MissingOfflineGateNeverCreatesMemoryReader()
     {
         var factory = new ScriptedCameraReaderFactory(CreateCameraChainPages());
@@ -2497,6 +2621,28 @@ public sealed class GameSessionCoordinatorTests
                     NodesVisited: 0,
                     ModuleRooted: true)));
         }
+
+        public EntityRosterResult? RosterResult { get; set; }
+
+        public ValueTask<OperationResult<EntityRosterResult>> EnumerateEntitiesAsync(
+            nint moduleBase,
+            Type10EntityPositionLayout layout,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ModuleBase = moduleBase;
+            Layout = layout;
+            return ValueTask.FromResult(OperationResult.Success(
+                RosterResult ?? new EntityRosterResult(
+                    Type10EntityPositionStatus.Resolved,
+                    FailureStage: null,
+                    ModuleRooted: true,
+                    NodesVisited: 0,
+                    CandidatesSeen: 0,
+                    FilteredOut: 0,
+                    Entities: [],
+                    TraversalLimited: false)));
+        }
     }
 
     private sealed class FakeScanDiscoverer(MemoryScanResult result) : IMemoryScanDiscoverer
@@ -2590,6 +2736,12 @@ public sealed class GameSessionCoordinatorTests
         public ValueTask<OperationResult<Type10EntityPositionAddressResult>> ResolveEntityPositionAddressAsync(
             nint moduleBase,
             int entityId,
+            Type10EntityPositionLayout layout,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public ValueTask<OperationResult<EntityRosterResult>> EnumerateEntitiesAsync(
+            nint moduleBase,
             Type10EntityPositionLayout layout,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
@@ -2733,6 +2885,12 @@ public sealed class GameSessionCoordinatorTests
         public ValueTask<OperationResult<Type10EntityPositionAddressResult>> ResolveEntityPositionAddressAsync(
             nint moduleBase,
             int entityId,
+            Type10EntityPositionLayout layout,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public ValueTask<OperationResult<EntityRosterResult>> EnumerateEntitiesAsync(
+            nint moduleBase,
             Type10EntityPositionLayout layout,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();

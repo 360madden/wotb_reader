@@ -294,6 +294,21 @@ public interface IGameMemoryScanner
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Enumerates the live avatar-family roster (entity ids ONLY) through the
+    /// module-rooted BWEntities maps — the live counterpart to a decoded
+    /// participants roster (design: docs/operations/live-roster-read-design.md).
+    /// Diagnostic-only: the returned ids feed the existing
+    /// <see cref="ReadEntityRegionsAsync"/> batch surface unchanged. No
+    /// absolute address, process id, or module base ever leaves the
+    /// coordinator — enumeration addresses are consumed inside it and the
+    /// result carries ids plus the filter precision counters
+    /// (<see cref="EntityRosterReadResult.CandidatesSeen"/> /
+    /// <see cref="EntityRosterReadResult.FilteredOut"/>).
+    /// </summary>
+    ValueTask<OperationResult<EntityRosterReadResult>> EnumerateEntitiesAsync(
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Diagnostic-only, gate-verified: runs the same traversal as
     /// <see cref="ReadEntityPositionAsync"/> and returns the ring-record page
     /// address so the guard-page interceptor can arm the exact page a poll
@@ -539,6 +554,28 @@ public sealed record EntityRegionsReadResult(
     bool SameDecodedClockProven,
     IReadOnlyList<EntityRegionReadResultItem> Regions,
     EntityRegionsReadMeasurement? Measurement = null);
+
+/// <summary>
+/// Privacy-safe result of a live roster enumeration (design:
+/// docs/operations/live-roster-read-design.md): the avatar-family entity ids
+/// ONLY — the coordinator consumes the resolved addresses internally and the
+/// result carries ids plus the filter-precision counters so the live
+/// rehearsal can cross-check the enumeration against the decoded roster.
+/// <see cref="Status"/> is the gate-level outcome: <c>Resolved</c> when the
+/// enumeration pass completed; <c>ReplaySessionInactive</c> is the retryable
+/// pre-battle phase; <c>TraversalLimitExceeded</c> fails closed (a partial
+/// roster is never served as the roster).
+/// </summary>
+public sealed record EntityRosterReadResult(
+    DateTimeOffset CompletedAtUtc,
+    string GameVersion,
+    Type10EntityPositionStatus Status,
+    string? FailureStage,
+    int CandidatesSeen,
+    int FilteredOut,
+    bool ModuleRooted,
+    bool TraversalLimited,
+    IReadOnlyList<int> EntityIds);
 
 /// <summary>Outcome of one CAM-001 gate-free camera-pose walk.</summary>
 public enum CameraPoseStatus

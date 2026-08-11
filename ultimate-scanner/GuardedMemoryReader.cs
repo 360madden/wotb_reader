@@ -47,6 +47,18 @@ internal interface IAuthorizedMemoryReader
         int entityId,
         Type10EntityPositionLayout layout,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Enumerates every avatar-family entity reachable through the
+    /// module-rooted BWEntities maps under one identity-bound process lease
+    /// (the live roster — see docs/operations/live-roster-read-design.md).
+    /// The returned entries carry the resolved entity addresses, which the
+    /// coordinator consumes internally and never serializes.
+    /// </summary>
+    ValueTask<OperationResult<EntityRosterResult>> EnumerateEntitiesAsync(
+        nint moduleBase,
+        Type10EntityPositionLayout layout,
+        CancellationToken cancellationToken);
 }
 
 internal interface IGuardedMemoryReaderFactory
@@ -706,6 +718,87 @@ internal sealed class GuardedMemoryReaderFactory(TimeProvider timeProvider)
                         new ApplicationError(
                             "game.memory.unavailable",
                             "The entity-position address read is unavailable.",
+                            Retryable: true)));
+            }
+        }
+
+        public ValueTask<OperationResult<EntityRosterResult>> EnumerateEntitiesAsync(
+            nint moduleBase,
+            Type10EntityPositionLayout layout,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(layout);
+            cancellationToken.ThrowIfCancellationRequested();
+            long moduleBaseValue = moduleBase.ToInt64();
+            if (moduleBaseValue is < 0x00010000 or > uint.MaxValue)
+            {
+                return ValueTask.FromResult(
+                    OperationResult.Failure<EntityRosterResult>(
+                        new ApplicationError(
+                            "game.memory.invalid_module_base",
+                            "The module base is outside the supported x86 address range.",
+                            Retryable: false)));
+            }
+
+            using AuthorizedProcessLease? lease = AuthorizedProcessLease.Open(
+                observation,
+                timeProvider,
+                cancellationToken);
+            if (lease is null || lease.Architecture != "x86" || lease.PointerSize != sizeof(uint))
+            {
+                return ValueTask.FromResult(
+                    OperationResult.Failure<EntityRosterResult>(
+                        new ApplicationError(
+                            "game.memory.identity_mismatch",
+                            "The process identity or architecture is not authorized.",
+                            Retryable: false)));
+            }
+
+            byte[] scratch = GC.AllocateUninitializedArray<byte>(0x18);
+            bool Read(uint address, Span<byte> destination)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (destination.Length <= 0 || destination.Length > scratch.Length)
+                {
+                    return false;
+                }
+
+                bool readOk = lease.TryRead(
+                    (nint)address,
+                    scratch,
+                    0,
+                    destination.Length,
+                    cancellationToken,
+                    out nuint bytesRead);
+                if (!readOk || bytesRead != (nuint)destination.Length)
+                {
+                    return false;
+                }
+
+                scratch.AsSpan(0, destination.Length).CopyTo(destination);
+                return true;
+            }
+
+            try
+            {
+                EntityRosterResult result =
+                    Type10EntityPositionResolver.EnumerateEntities(
+                        checked((uint)moduleBaseValue),
+                        layout,
+                        Read);
+                return ValueTask.FromResult(OperationResult.Success(result));
+            }
+            catch (Exception exception) when (
+                exception is Win32Exception
+                    or IOException
+                    or UnauthorizedAccessException
+                    or InvalidOperationException)
+            {
+                return ValueTask.FromResult(
+                    OperationResult.Failure<EntityRosterResult>(
+                        new ApplicationError(
+                            "game.memory.unavailable",
+                            "The roster enumeration is unavailable.",
                             Retryable: true)));
             }
         }

@@ -137,6 +137,48 @@ public sealed record Type10EntityPositionAddressResult(
     bool ModuleRooted);
 
 /// <summary>
+/// One enumerated entity: the logical entity id and its resolved address.
+/// The address is coordinator-internal — the roster endpoint must project
+/// ids only, never serializing this address (same privacy contract as every
+/// read surface).
+/// </summary>
+public sealed record EntityRosterEntry(int EntityId, uint EntityAddress);
+
+/// <summary>
+/// Outcome of one bounded module-rooted roster enumeration (see
+/// docs/operations/live-roster-read-design.md). <see cref="Entities"/> is
+/// null on failure; on success it holds the avatar-family entries after the
+/// movement-filter vtable gate. <see cref="CandidatesSeen"/> is the pre-
+/// filter count (deduped across cache + trees) and <see cref="FilteredOut"/>
+/// is how many candidates failed the gate — the precision measurement the
+/// live rehearsal cross-checks against the decoded roster. Addresses inside
+/// <see cref="EntityRosterEntry.EntityAddress"/> are coordinator-internal.
+/// </summary>
+public sealed record EntityRosterResult(
+    Type10EntityPositionStatus Status,
+    string? FailureStage,
+    bool ModuleRooted,
+    int NodesVisited,
+    int CandidatesSeen,
+    int FilteredOut,
+    IReadOnlyList<EntityRosterEntry>? Entities,
+    bool TraversalLimited)
+{
+    public static EntityRosterResult Failed(
+        Type10EntityPositionStatus status,
+        string? stage,
+        int nodesVisited) => new(
+            status,
+            stage,
+            ModuleRooted: false,
+            nodesVisited,
+            CandidatesSeen: 0,
+            FilteredOut: 0,
+            Entities: null,
+            TraversalLimited: false);
+}
+
+/// <summary>
 /// Pure x86 resolver for the hash-bound type-10 entity family. It follows a
 /// module root, searches the same three BWEntities maps as the game, validates
 /// the entity/filter/helper identities, and double-collects the newest ring
@@ -344,129 +386,39 @@ public static class Type10EntityPositionResolver
         Type10EntityPositionLayout layout,
         EntityPositionMemoryReader reader)
     {
-        if (!TryReadPointer(reader, rootAddress, out uint gameCore) ||
-            !TryReadPointerAt(
+        if (!TryResolveEntitiesAddress(
                 reader,
-                gameCore,
-                layout.GameCoreAppControllerOffset,
-                out uint appController) ||
-            !TryReadUInt32(reader, appController, out uint appVtable))
+                rootAddress,
+                expectedAppVtable,
+                expectedSessionVtable,
+                expectedPreLoginVtable,
+                expectedAccountVtable,
+                expectedPlaybackVtable,
+                layout,
+                out Type10EntityPositionStatus chainStatus,
+                out string? chainStage,
+                out bool chainRetryable,
+                out bool chainModuleRooted,
+                out ResolvedChain? chain))
         {
-            return AttemptResult.Retry(
-                Type10EntityPositionStatus.ReadFailed,
-                "root-chain",
-                moduleRooted: false);
+            return chainRetryable
+                ? AttemptResult.Retry(
+                    chainStatus,
+                    chainStage,
+                    moduleRooted: chainModuleRooted)
+                : AttemptResult.Stop(
+                    chainStatus,
+                    chainStage,
+                    moduleRooted: chainModuleRooted);
         }
 
-        if (appVtable != expectedAppVtable)
-        {
-            return AttemptResult.Stop(
-                Type10EntityPositionStatus.UnsupportedAppController,
-                "app-controller-vtable");
-        }
-
-        if (!TryReadPointerAt(
-                reader,
-                appController,
-                layout.AppControllerSessionControllerOffset,
-                out uint sessionController))
-        {
-            return AttemptResult.Retry(
-                Type10EntityPositionStatus.ReplaySessionInactive,
-                "session-controller");
-        }
-
-        if (!TryReadUInt32(reader, sessionController, out uint sessionVtable))
-        {
-            return AttemptResult.Retry(
-                Type10EntityPositionStatus.ReadFailed,
-                "session-controller-vtable");
-        }
-
-        if (sessionVtable != expectedSessionVtable)
-        {
-            // CAM-008 (2026-08-11, RTTI-verified): the app's session slot
-            // holds a PreLoginController (vftable 0x0325ad2c) until replay
-            // playback starts. That is not an unsupported layout — the battle
-            // session simply is not active yet — so report the retryable
-            // inactive status and let the caller wait for playback instead of
-            // failing the build.
-            if (sessionVtable == expectedPreLoginVtable)
-            {
-                return AttemptResult.Retry(
-                    Type10EntityPositionStatus.ReplaySessionInactive,
-                    "session-controller-vtable");
-            }
-
-            return AttemptResult.Stop(
-                Type10EntityPositionStatus.UnsupportedSessionController,
-                "session-controller-vtable");
-        }
-
-        if (!TryReadPointerAt(
-                reader,
-                sessionController,
-                layout.SessionControllerAccountControllerOffset,
-                out uint accountController) ||
-            !TryReadUInt32(reader, accountController, out uint accountVtable))
-        {
-            return AttemptResult.Retry(
-                Type10EntityPositionStatus.ReadFailed,
-                "account-controller");
-        }
-
-        if (accountVtable != expectedAccountVtable)
-        {
-            return AttemptResult.Stop(
-                Type10EntityPositionStatus.UnsupportedAccountController,
-                "account-controller-vtable");
-        }
-
-        if (!TryReadPointerAt(
-                reader,
-                accountController,
-                layout.AccountControllerActiveControllerOffset,
-                out uint playbackController))
-        {
-            return AttemptResult.Retry(
-                Type10EntityPositionStatus.ReadFailed,
-                "active-controller");
-        }
-
-        if (playbackController == 0)
-        {
-            return AttemptResult.Retry(
-                Type10EntityPositionStatus.ReplayControllerInactive,
-                "active-controller");
-        }
-
-        if (!TryReadUInt32(reader, playbackController, out uint playbackVtable))
-        {
-            return AttemptResult.Retry(
-                Type10EntityPositionStatus.ReadFailed,
-                "playback-controller-vtable");
-        }
-
-        if (playbackVtable != expectedPlaybackVtable)
-        {
-            return AttemptResult.Stop(
-                Type10EntityPositionStatus.UnsupportedReplayController,
-                "playback-controller-vtable");
-        }
-
-        if (!TryReadPointerAt(
-                reader,
-                playbackController,
-                layout.PlaybackControllerConnectionOffset,
-                out uint connection) ||
-            !TryAdd(connection, layout.ConnectionEntitiesOffset, out uint entities) ||
-            !IsPointer(entities))
-        {
-            return AttemptResult.Retry(
-                Type10EntityPositionStatus.ReadFailed,
-                "replay-connection");
-        }
-
+        uint gameCore = chain!.GameCore;
+        uint appController = chain.AppController;
+        uint sessionController = chain.SessionController;
+        uint accountController = chain.AccountController;
+        uint playbackController = chain.PlaybackController;
+        uint connection = chain.Connection;
+        uint entities = chain.Entities;
         EntityLookup lookup = FindEntity(reader, entities, entityId, layout);
         if (lookup.Status != Type10EntityPositionStatus.Resolved)
         {
@@ -704,6 +656,417 @@ public static class Type10EntityPositionResolver
             lookup.Source,
             recordAddress,
             entity);
+    }
+
+    /// <summary>
+    /// Walks the fixed member-path from the module root to the BWEntities
+    /// map, gating each hop's vtable identity exactly as the targeted
+    /// resolution does. Shared by <see cref="TryResolveOnce"/> and
+    /// <see cref="EnumerateEntities"/> so both use the single sanctioned
+    /// chain. Returns false with a status/stage/retryable/module-rooted
+    /// descriptor when the chain cannot be established (callers map the
+    /// descriptor onto their own result shape).
+    /// </summary>
+    /// <summary>
+    /// The fully-resolved member path from module root to the BWEntities map,
+    /// captured so a later double-read can re-verify every hop.
+    /// </summary>
+    private sealed record ResolvedChain(
+        uint GameCore,
+        uint AppController,
+        uint SessionController,
+        uint AccountController,
+        uint PlaybackController,
+        uint Connection,
+        uint Entities);
+
+    private static bool TryResolveEntitiesAddress(
+        EntityPositionMemoryReader reader,
+        uint rootAddress,
+        uint expectedAppVtable,
+        uint expectedSessionVtable,
+        uint expectedPreLoginVtable,
+        uint expectedAccountVtable,
+        uint expectedPlaybackVtable,
+        Type10EntityPositionLayout layout,
+        out Type10EntityPositionStatus status,
+        out string? stage,
+        out bool retryable,
+        out bool moduleRooted,
+        out ResolvedChain? chain)
+    {
+        status = Type10EntityPositionStatus.ReadFailed;
+        stage = null;
+        retryable = false;
+        moduleRooted = false;
+        chain = null;
+
+        if (!TryReadPointer(reader, rootAddress, out uint gameCore) ||
+            !TryReadPointerAt(
+                reader,
+                gameCore,
+                layout.GameCoreAppControllerOffset,
+                out uint appController) ||
+            !TryReadUInt32(reader, appController, out uint appVtable))
+        {
+            status = Type10EntityPositionStatus.ReadFailed;
+            stage = "root-chain";
+            retryable = true;
+            return false;
+        }
+
+        if (appVtable != expectedAppVtable)
+        {
+            status = Type10EntityPositionStatus.UnsupportedAppController;
+            stage = "app-controller-vtable";
+            moduleRooted = true;
+            return false;
+        }
+
+        if (!TryReadPointerAt(
+                reader,
+                appController,
+                layout.AppControllerSessionControllerOffset,
+                out uint sessionController))
+        {
+            status = Type10EntityPositionStatus.ReplaySessionInactive;
+            stage = "session-controller";
+            retryable = true;
+            moduleRooted = true;
+            return false;
+        }
+
+        if (!TryReadUInt32(reader, sessionController, out uint sessionVtable))
+        {
+            status = Type10EntityPositionStatus.ReadFailed;
+            stage = "session-controller-vtable";
+            retryable = true;
+            moduleRooted = true;
+            return false;
+        }
+
+        if (sessionVtable != expectedSessionVtable)
+        {
+            // CAM-008 (2026-08-11, RTTI-verified): the app's session slot
+            // holds a PreLoginController (vftable 0x0325ad2c) until replay
+            // playback starts. That is not an unsupported layout — the battle
+            // session simply is not active yet — so report the retryable
+            // inactive status and let the caller wait for playback instead of
+            // failing the build.
+            if (sessionVtable == expectedPreLoginVtable)
+            {
+                status = Type10EntityPositionStatus.ReplaySessionInactive;
+                stage = "session-controller-vtable";
+                retryable = true;
+                moduleRooted = true;
+                return false;
+            }
+
+            status = Type10EntityPositionStatus.UnsupportedSessionController;
+            stage = "session-controller-vtable";
+            moduleRooted = true;
+            return false;
+        }
+
+        if (!TryReadPointerAt(
+                reader,
+                sessionController,
+                layout.SessionControllerAccountControllerOffset,
+                out uint accountController) ||
+            !TryReadUInt32(reader, accountController, out uint accountVtable))
+        {
+            status = Type10EntityPositionStatus.ReadFailed;
+            stage = "account-controller";
+            retryable = true;
+            moduleRooted = true;
+            return false;
+        }
+
+        if (accountVtable != expectedAccountVtable)
+        {
+            status = Type10EntityPositionStatus.UnsupportedAccountController;
+            stage = "account-controller-vtable";
+            moduleRooted = true;
+            return false;
+        }
+
+        if (!TryReadPointerAt(
+                reader,
+                accountController,
+                layout.AccountControllerActiveControllerOffset,
+                out uint playbackController))
+        {
+            status = Type10EntityPositionStatus.ReadFailed;
+            stage = "active-controller";
+            retryable = true;
+            moduleRooted = true;
+            return false;
+        }
+
+        if (playbackController == 0)
+        {
+            status = Type10EntityPositionStatus.ReplayControllerInactive;
+            stage = "active-controller";
+            retryable = true;
+            moduleRooted = true;
+            return false;
+        }
+
+        if (!TryReadUInt32(reader, playbackController, out uint playbackVtable))
+        {
+            status = Type10EntityPositionStatus.ReadFailed;
+            stage = "playback-controller-vtable";
+            retryable = true;
+            moduleRooted = true;
+            return false;
+        }
+
+        if (playbackVtable != expectedPlaybackVtable)
+        {
+            status = Type10EntityPositionStatus.UnsupportedReplayController;
+            stage = "playback-controller-vtable";
+            moduleRooted = true;
+            return false;
+        }
+
+        if (!TryReadPointerAt(
+                reader,
+                playbackController,
+                layout.PlaybackControllerConnectionOffset,
+                out uint connection) ||
+            !TryAdd(connection, layout.ConnectionEntitiesOffset, out uint entities) ||
+            !IsPointer(entities))
+        {
+            status = Type10EntityPositionStatus.ReadFailed;
+            stage = "replay-connection";
+            retryable = true;
+            moduleRooted = true;
+            return false;
+        }
+
+        chain = new ResolvedChain(
+            gameCore,
+            appController,
+            sessionController,
+            accountController,
+            playbackController,
+            connection,
+            entities);
+        moduleRooted = true;
+        return true;
+    }
+
+    /// <summary>
+    /// Enumerates every entity reachable through the same module-rooted
+    /// BWEntities maps the targeted resolution searches (cached slot first,
+    /// then the three map trees, deduped by entity id) and filters the result
+    /// to the avatar family via the movement-filter vtable identity gate — the
+    /// live counterpart to a decoded participants roster. Diagnostic-only;
+    /// the returned entity addresses are intended to stay inside the
+    /// coordinator (never serialized). Bounded by the same traversal limits as
+    /// the targeted search. See docs/operations/live-roster-read-design.md.
+    /// </summary>
+    public static EntityRosterResult EnumerateEntities(
+        uint moduleBase,
+        Type10EntityPositionLayout layout,
+        EntityPositionMemoryReader reader)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        ArgumentNullException.ThrowIfNull(reader);
+
+        if (!IsValid(layout))
+        {
+            return EntityRosterResult.Failed(
+                Type10EntityPositionStatus.InvalidLayout,
+                "layout",
+                nodesVisited: 0);
+        }
+
+        if (!IsPointer(moduleBase) ||
+            !TryAdd(moduleBase, layout.GameCoreRootRva, out uint rootAddress) ||
+            !TryAdd(moduleBase, layout.AppControllerVtableRva, out uint expectedAppVtable) ||
+            !TryAdd(moduleBase, layout.SessionControllerVtableRva, out uint expectedSessionVtable) ||
+            !TryAdd(moduleBase, layout.PreLoginControllerVtableRva, out uint expectedPreLoginVtable) ||
+            !TryAdd(moduleBase, layout.AccountControllerVtableRva, out uint expectedAccountVtable) ||
+            !TryAdd(moduleBase, layout.PlaybackControllerVtableRva, out uint expectedPlaybackVtable) ||
+            !TryResolveModuleAddresses(
+                moduleBase,
+                layout.MovementFilterVtableRvas,
+                out uint[] expectedFilterVtables))
+        {
+            return EntityRosterResult.Failed(
+                Type10EntityPositionStatus.InvalidModuleBase,
+                "module-base",
+                nodesVisited: 0);
+        }
+
+        if (!TryResolveEntitiesAddress(
+                reader,
+                rootAddress,
+                expectedAppVtable,
+                expectedSessionVtable,
+                expectedPreLoginVtable,
+                expectedAccountVtable,
+                expectedPlaybackVtable,
+                layout,
+                out Type10EntityPositionStatus chainStatus,
+                out string? chainStage,
+                out bool chainRetryable,
+                out bool chainModuleRooted,
+                out ResolvedChain? chain))
+        {
+            return new EntityRosterResult(
+                chainStatus,
+                chainStage,
+                ModuleRooted: chainModuleRooted,
+                NodesVisited: 0,
+                CandidatesSeen: 0,
+                FilteredOut: 0,
+                Entities: null,
+                TraversalLimited: chainStatus == Type10EntityPositionStatus.TraversalLimitExceeded);
+        }
+
+        uint entities = chain!.Entities;
+        var byId = new Dictionary<int, uint>();
+        int nodesVisited = 0;
+        bool traversalLimited = false;
+
+        // Cached slot first (same fast path as FindEntity).
+        if (TryReadPointerAt(reader, entities, layout.CachedEntityOffset, out uint cachedEntity) &&
+            cachedEntity != 0 &&
+            TryReadInt32At(reader, cachedEntity, layout.EntityIdOffset, out int cachedId))
+        {
+            byId[cachedId] = cachedEntity;
+        }
+
+        // Then each map tree in the resolver's search order. Per-tree node
+        // budget mirrors the targeted search's MaxTreeNodes cap: a tree that
+        // exceeds the bound trips TraversalLimitExceeded for the whole
+        // enumeration (fail-closed — a partial roster must never be served
+        // as the roster).
+        Span<byte> bytes = stackalloc byte[TreeNodeSize];
+        for (int treeIndex = 0; treeIndex < layout.EntityTreeObjectOffsets.Count && !traversalLimited; treeIndex++)
+        {
+            uint treeOffset = layout.EntityTreeObjectOffsets[treeIndex];
+            if (!TryReadPointerAt(reader, entities, treeOffset, out uint sentinel) ||
+                !IsPointer(sentinel))
+            {
+                continue;
+            }
+
+            if (!TryReadPointerAt(reader, sentinel, 0x04, out uint firstNode) ||
+                !IsPointer(firstNode))
+            {
+                continue;
+            }
+
+            // Stack-based full traversal: visit BOTH children per node
+            // (the search only descends one branch).
+            var stack = new Stack<uint>();
+            stack.Push(firstNode);
+            var treeVisited = new HashSet<uint>();
+            int treeNodes = 0;
+            while (stack.Count > 0)
+            {
+                uint node = stack.Pop();
+                if (node == sentinel || !IsPointer(node) || !treeVisited.Add(node))
+                {
+                    continue;
+                }
+
+                treeNodes++;
+                nodesVisited++;
+                if (treeNodes > layout.MaxTreeNodes)
+                {
+                    traversalLimited = true;
+                    break;
+                }
+
+                bytes.Clear();
+                if (!reader(node, bytes))
+                {
+                    continue;
+                }
+
+                if (bytes[TreeNodeNilOffset] == 1)
+                {
+                    continue;
+                }
+
+                int key = BinaryPrimitives.ReadInt32LittleEndian(bytes[TreeNodeKeyOffset..]);
+                uint value = BinaryPrimitives.ReadUInt32LittleEndian(bytes[TreeNodeValueOffset..]);
+                if (IsPointer(value))
+                {
+                    byId.TryAdd(key, value);
+                }
+
+                uint less = BinaryPrimitives.ReadUInt32LittleEndian(bytes[0x00..]);
+                uint greater = BinaryPrimitives.ReadUInt32LittleEndian(bytes[0x08..]);
+                if (IsPointer(less))
+                {
+                    stack.Push(less);
+                }
+
+                if (IsPointer(greater))
+                {
+                    stack.Push(greater);
+                }
+            }
+        }
+
+        if (traversalLimited)
+        {
+            return EntityRosterResult.Failed(
+                Type10EntityPositionStatus.TraversalLimitExceeded,
+                "tree-traversal",
+                nodesVisited);
+        }
+
+        // Filter to the avatar family: movement-filter vtable identity gate.
+        int filteredOut = 0;
+        var roster = new List<EntityRosterEntry>(byId.Count);
+        foreach (KeyValuePair<int, uint> pair in byId)
+        {
+            if (!TryReadPointerAt(
+                    reader,
+                    pair.Value,
+                    layout.EntityMovementFilterOffset,
+                    out uint movementFilter) ||
+                !TryReadUInt32(reader, movementFilter, out uint filterVtable))
+            {
+                filteredOut++;
+                continue;
+            }
+
+            bool matched = false;
+            for (int index = 0; index < expectedFilterVtables.Length; index++)
+            {
+                if (expectedFilterVtables[index] == filterVtable)
+                {
+                    matched = true;
+                    break;
+                }
+            }
+
+            if (matched)
+            {
+                roster.Add(new EntityRosterEntry(pair.Key, pair.Value));
+            }
+            else
+            {
+                filteredOut++;
+            }
+        }
+
+        return new EntityRosterResult(
+            Type10EntityPositionStatus.Resolved,
+            null,
+            ModuleRooted: true,
+            NodesVisited: nodesVisited,
+            CandidatesSeen: byId.Count,
+            FilteredOut: filteredOut,
+            Entities: roster,
+            TraversalLimited: traversalLimited);
     }
 
     private static EntityLookup FindEntity(

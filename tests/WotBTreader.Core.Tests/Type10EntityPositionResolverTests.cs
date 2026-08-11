@@ -9,6 +9,8 @@ public sealed class Type10EntityPositionResolverTests
     private const uint ModuleBase = 0x10000000;
     private const int EntityId = 4242;
 
+    private static readonly (int Key, uint Value)[] SingleValidEntry = [(1000, 0x23000000)];
+
     [TestMethod]
     public void Resolve_CachedEntity_ReturnsDoubleCollectedPosition()
     {
@@ -418,6 +420,201 @@ public sealed class Type10EntityPositionResolverTests
             Type10EntityPositionLayout.WotBlitz1119010,
             memory.Read);
 
+    private static EntityRosterResult Enumerate(MemoryFixture memory) =>
+        Type10EntityPositionResolver.EnumerateEntities(
+            ModuleBase,
+            Type10EntityPositionLayout.WotBlitz1119010,
+            memory.Read);
+
+    [TestMethod]
+    public void Enumerate_CachedSlot_IsIncluded()
+    {
+        MemoryFixture memory = MemoryFixture.CreateCached(EntityId, 1f, 2f, 3f);
+
+        EntityRosterResult result = Enumerate(memory);
+
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, result.Status);
+        Assert.AreEqual(1, result.CandidatesSeen);
+        Assert.AreEqual(0, result.FilteredOut);
+        Assert.HasCount(1, result.Entities!);
+        Assert.AreEqual(EntityId, result.Entities![0].EntityId);
+        Assert.IsTrue(result.ModuleRooted);
+        Assert.IsFalse(result.TraversalLimited);
+    }
+
+    [TestMethod]
+    public void Enumerate_TreeWalk_VisitsBothBranches()
+    {
+        MemoryFixture memory = MemoryFixture.CreateCached(EntityId, 1f, 2f, 3f);
+        memory.WriteUInt32(memory.Entities + 0x48, 0);
+        uint left = memory.AddRosterEntity(1001, filterSubtype: 0);
+        uint right = memory.AddRosterEntity(1002, filterSubtype: 1);
+        uint root = memory.AddRosterEntity(1000, filterSubtype: 2);
+        memory.AddTreeWithValues(
+            treeObject: memory.Entities + 0x1c,
+            entries: [(1000, root), (1001, left), (1002, right)]);
+        memory.AddEmptyTree(memory.Entities + 0x40);
+        memory.AddEmptyTree(memory.Entities + 0x34);
+
+        EntityRosterResult result = Enumerate(memory);
+
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, result.Status);
+        Assert.AreEqual(3, result.CandidatesSeen);
+        Assert.AreEqual(0, result.FilteredOut);
+        int[] ids = result.Entities!.Select(e => e.EntityId).Order().ToArray();
+        int[] expected = [1000, 1001, 1002];
+        CollectionAssert.AreEqual(expected, ids);
+        Assert.AreEqual(3, result.NodesVisited);
+    }
+
+    [TestMethod]
+    public void Enumerate_NonPointerTreeValue_IsSkippedNotFatal()
+    {
+        MemoryFixture memory = MemoryFixture.CreateCached(EntityId, 1f, 2f, 3f);
+        memory.WriteUInt32(memory.Entities + 0x48, 0);
+        uint valid = memory.AddRosterEntity(1000, filterSubtype: 0);
+        // A single-node tree whose value is a non-pointer: the node is
+        // visited but skipped, and the enumeration continues.
+        uint sentinel = memory.AllocateNode();
+        uint node = memory.AllocateNode();
+        memory.WriteUInt32(memory.Entities + 0x1c, sentinel);
+        memory.WriteUInt32(sentinel + 0x04, node);
+        memory.WriteTreeNode(node, sentinel, sentinel, key: 999, value: 0x100);
+        memory.AddTreeWithValues(
+            treeObject: memory.Entities + 0x40,
+            entries: SingleValidEntry);
+        memory.AddEmptyTree(memory.Entities + 0x34);
+
+        EntityRosterResult result = Enumerate(memory);
+
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, result.Status);
+        Assert.AreEqual(1, result.CandidatesSeen);
+        Assert.AreEqual(0, result.FilteredOut);
+        Assert.HasCount(1, result.Entities!);
+        Assert.AreEqual(1000, result.Entities![0].EntityId);
+    }
+
+    [TestMethod]
+    public void Enumerate_DedupesAcrossCacheAndTrees()
+    {
+        MemoryFixture memory = MemoryFixture.CreateCached(EntityId, 1f, 2f, 3f);
+        // Same id in the primary tree as the cached slot.
+        memory.AddTreeWithValues(
+            treeObject: memory.Entities + 0x1c,
+            entries: [(EntityId, memory.Entity)]);
+        memory.AddEmptyTree(memory.Entities + 0x40);
+        memory.AddEmptyTree(memory.Entities + 0x34);
+
+        EntityRosterResult result = Enumerate(memory);
+
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, result.Status);
+        Assert.AreEqual(1, result.CandidatesSeen);
+        Assert.HasCount(1, result.Entities!);
+        Assert.AreEqual(EntityId, result.Entities![0].EntityId);
+    }
+
+    [TestMethod]
+    public void Enumerate_FiltersToAvatarFamily()
+    {
+        MemoryFixture memory = MemoryFixture.CreateCached(EntityId, 1f, 2f, 3f);
+        uint shell = memory.AddRosterEntity(777, filterSubtype: -1); // non-avatar vtable
+        memory.AddTreeWithValues(
+            treeObject: memory.Entities + 0x1c,
+            entries: [(777, shell)]);
+        memory.AddEmptyTree(memory.Entities + 0x40);
+        memory.AddEmptyTree(memory.Entities + 0x34);
+
+        EntityRosterResult result = Enumerate(memory);
+
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, result.Status);
+        Assert.AreEqual(2, result.CandidatesSeen);
+        Assert.AreEqual(1, result.FilteredOut);
+        Assert.HasCount(1, result.Entities!);
+        Assert.AreEqual(EntityId, result.Entities![0].EntityId);
+    }
+
+    [TestMethod]
+    public void Enumerate_EmptyTrees_ReturnsEmptyRoster()
+    {
+        MemoryFixture memory = MemoryFixture.CreateCached(EntityId, 1f, 2f, 3f);
+        memory.WriteUInt32(memory.Entities + 0x48, 0);
+        memory.AddEmptyTree(memory.Entities + 0x1c);
+        memory.AddEmptyTree(memory.Entities + 0x40);
+        memory.AddEmptyTree(memory.Entities + 0x34);
+
+        EntityRosterResult result = Enumerate(memory);
+
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, result.Status);
+        Assert.AreEqual(0, result.CandidatesSeen);
+        Assert.AreEqual(0, result.FilteredOut);
+        Assert.IsNotNull(result.Entities);
+        Assert.IsEmpty(result.Entities);
+    }
+
+    [TestMethod]
+    public void Enumerate_PreLoginPhase_ReturnsReplaySessionInactive()
+    {
+        MemoryFixture memory = MemoryFixture.CreateCached(EntityId, 1f, 2f, 3f);
+        memory.WriteUInt32(
+            memory.SessionController,
+            ModuleBase + Type10EntityPositionLayout.WotBlitz1119010.PreLoginControllerVtableRva);
+
+        EntityRosterResult result = Enumerate(memory);
+
+        Assert.AreEqual(Type10EntityPositionStatus.ReplaySessionInactive, result.Status);
+        Assert.AreEqual("session-controller-vtable", result.FailureStage);
+        Assert.IsNull(result.Entities);
+    }
+
+    [TestMethod]
+    public void Enumerate_TraversalLimit_FailsClosed()
+    {
+        MemoryFixture memory = MemoryFixture.CreateCached(EntityId, 1f, 2f, 3f);
+        memory.WriteUInt32(memory.Entities + 0x48, 0);
+        uint a = memory.AddRosterEntity(1, filterSubtype: 0);
+        uint b = memory.AddRosterEntity(2, filterSubtype: 0);
+        uint c = memory.AddRosterEntity(3, filterSubtype: 0);
+        memory.AddTreeWithValues(
+            treeObject: memory.Entities + 0x1c,
+            entries: [(1, a), (2, b), (3, c)]);
+        memory.AddEmptyTree(memory.Entities + 0x40);
+        memory.AddEmptyTree(memory.Entities + 0x34);
+        Type10EntityPositionLayout smallBudget =
+            Type10EntityPositionLayout.WotBlitz1119010 with { MaxTreeNodes = 2 };
+
+        EntityRosterResult result = Type10EntityPositionResolver.EnumerateEntities(
+            ModuleBase,
+            smallBudget,
+            memory.Read);
+
+        Assert.AreEqual(Type10EntityPositionStatus.TraversalLimitExceeded, result.Status);
+        Assert.AreEqual("tree-traversal", result.FailureStage);
+        Assert.IsNull(result.Entities);
+    }
+
+    [TestMethod]
+    public void Enumerate_MalformedLayout_IsRejectedBeforeRead()
+    {
+        Type10EntityPositionLayout invalid = Type10EntityPositionLayout.WotBlitz1119010 with
+        {
+            EntityTreeObjectOffsets = [0x1c, 0x40],
+        };
+        int reads = 0;
+
+        EntityRosterResult result = Type10EntityPositionResolver.EnumerateEntities(
+            ModuleBase,
+            invalid,
+            (_, _) =>
+            {
+                reads++;
+                return false;
+            });
+
+        Assert.AreEqual(Type10EntityPositionStatus.InvalidLayout, result.Status);
+        Assert.AreEqual(0, reads);
+        Assert.IsNull(result.Entities);
+    }
+
     private sealed class MemoryFixture
     {
         private readonly Dictionary<uint, byte> _bytes = [];
@@ -542,6 +739,85 @@ public sealed class Type10EntityPositionResolverTests
             WriteByte(address + 0x0d, 0);
             WriteInt32(address + 0x10, key);
             WriteUInt32(address + 0x14, value);
+        }
+
+        /// <summary>
+        /// Allocates a standalone entity: id at +0x1c, a movement filter at
+        /// +0x38 whose vtable is either a proven avatar subtype (>= 0) or a
+        /// non-avatar vtable (filterSubtype == -1). Returns the entity address.
+        /// </summary>
+        public uint AllocateNode() => Allocate(0x100);
+
+        public uint AddRosterEntity(int entityId, int filterSubtype)
+        {
+            uint entity = Allocate(0x100);
+            uint filter = Allocate(0x100);
+            WriteInt32(entity + 0x1c, entityId);
+            WriteUInt32(entity + 0x38, filter);
+            Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+            uint vtable = filterSubtype >= 0
+                ? ModuleBase + layout.MovementFilterVtableRvas[filterSubtype]
+                : 0x40000000;
+            WriteUInt32(filter, vtable);
+            return entity;
+        }
+
+        /// <summary>
+        /// Builds a tree over the given (key, value) entries: the middle entry
+        /// is the root and the remaining entries hang as a left or right
+        /// subtree, so both child links of the root are exercised for 3+
+        /// entries. All nodes are reachable by a full traversal.
+        /// </summary>
+        public void AddTreeWithValues(uint treeObject, (int Key, uint Value)[] entries)
+        {
+            uint sentinel = Allocate(0x100);
+            WriteUInt32(treeObject, sentinel);
+            if (entries.Length == 0)
+            {
+                WriteUInt32(sentinel + 0x04, sentinel);
+                return;
+            }
+
+            WriteUInt32(sentinel + 0x04, Allocate(0x100));
+            uint root = ReadUInt32(sentinel + 0x04);
+            WriteTreeSubtree(root, sentinel, entries);
+        }
+
+        private void WriteTreeSubtree(uint address, uint sentinel, (int Key, uint Value)[] entries)
+        {
+            if (entries.Length == 1)
+            {
+                WriteTreeNode(address, sentinel, sentinel, entries[0].Key, entries[0].Value);
+                return;
+            }
+
+            int middle = entries.Length / 2;
+            WriteTreeNode(
+                address,
+                left: sentinel,
+                right: sentinel,
+                key: entries[middle].Key,
+                value: entries[middle].Value);
+            if (middle > 0)
+            {
+                uint left = Allocate(0x100);
+                WriteUInt32(address, left);
+                WriteTreeSubtree(left, sentinel, entries[..middle]);
+            }
+
+            if (middle + 1 < entries.Length)
+            {
+                uint right = Allocate(0x100);
+                WriteUInt32(address + 0x08, right);
+                WriteTreeSubtree(right, sentinel, entries[(middle + 1)..]);
+            }
+        }
+
+        public uint ReadUInt32(uint address)
+        {
+            Span<byte> bytes = stackalloc byte[4];
+            Read(address, bytes);
+            return BinaryPrimitives.ReadUInt32LittleEndian(bytes);
         }
 
         public void WritePosition(uint record, float x, float y, float z)
