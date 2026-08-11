@@ -71,6 +71,34 @@ Continued the audit across the remaining live drivers.
   evidence. One cosmetic note: a missing `wotblitz` process throws to
   `FAIL_unexpected` (exit 5) rather than a clean diagnostic — non-issue
   because the launcher just proved the gate.
+
+## Round 4 (same session) — od-073 poll + CAM-001 camera verifier
+
+Completed the audit across the last two un-audited scripts.
+
+- **od-073 poll (`od-073-entity-position-poll.ps1`) — no defects.** Exit
+  contract honored (0/1/2/3/4); the positive verdict requires ALL of
+  `resolvedCount == ReadCount`, moving, trajectory-consistent, module-rooted,
+  identity-revalidated, byte-identical double-read, and the defensive
+  `-not $anyHardwareAtomic`; G3 priors invalid keep the flag false without
+  aborting; result write is `CreateNew + FileShare.None`; privacy block
+  all-false. Notes only: `ReadCount -eq 0` dead code (validated ≥ 3 at the
+  top) and a mixed-run `nodesVisited=0` from a null field — both visible
+  via `statusCounts` in the aggregate, neither affects the positive verdict.
+- **CAM-001 verifier (`invoke-camera-state-verify.ps1`) — one real
+  StrictMode defect fixed.** `$calSample` was assigned only inside
+  `if ($null -ne $tankX)` + yaw-alignment branches but READ every round in
+  the round-sample construction — with `Set-StrictMode -Version Latest`, a
+  first-round tank read failure (position page refused + direct walk
+  failing, the CAM-003 degraded condition the v6 fallback exists to
+  survive) threw `The variable '$calSample' cannot be retrieved…`, caught
+  as `FAILED_memory_walk_api` exit 3, aborting a run that could recover on
+  a later round. Fixed with the one-line pre-loop init (`$calSample =
+  $null`); the throw/recovery behavior is proven with a minimal StrictMode
+  repro (unset-read throws, init-read null-ok).
+- Verified: parse OK, analyzer gate green (5 pre-existing style warnings on
+  the camera file — unused vars from the od-073 pattern copy, BOM, empty
+  catch — unchanged; errors-only gate passes).
 - **L4 replayTime driver (`invoke-od-044-replaytime-session.ps1`) — one
   real defect fixed.** The verdict built `$writeSites` only from hits whose
   address AND rip both parsed (`if ($addr -and $rip)`), so a captured hit

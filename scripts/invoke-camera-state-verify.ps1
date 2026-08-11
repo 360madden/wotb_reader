@@ -643,6 +643,7 @@ $cameraStateVftableHex = $null
 $cameraStateIdentityMatches = $false
 $memYaw = $null
 $memPitch = $null
+$calSample = $null
 
 for ($round = 0; $round -lt $ReadCount; $round++) {
     try {
