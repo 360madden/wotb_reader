@@ -13,6 +13,16 @@ offset.
 
 ## Current decision
 
+Session ID: `OD-RECOVERY-086`.
+
+**Next planned session (2026-08-11, OD-RECOVERY-086): the batch N-entity
+rehearsal** — `scripts/invoke-batch-rehearsal.ps1 -LiveAcquire -Times
+90,150,220 -FailOnMiss` on Oasis Palms (`019fdff7-…`) — full-roster batch
+dumps through `/discover/entity-regions` per replay time (one clock
+attestation per batch), cross-checked against decoded positions
+(42/42 rehearsal proven), measuring the read-pass window (item 4). Closes
+the X2 rehearsal + the item-7 verification-window measurement.
+
 **The position anchor is ESTABLISHED and PUBLISHED (2026-08-10):**
 `playerPositionX/Y/Z` are `Verified` via the module-rooted position-ring chain
 (`OD-RECOVERY-083`) and the chains are mechanically walkable by
@@ -43,11 +53,14 @@ against packet yaw ground truth, pending the live L2 facing session. The
 published table keeps yaw at `0`/Stale; a future publication would be a
 `chains` entry.
 
-Next anchor, in roadmap preference order after position: `replayTime`, then
-`playerHP`. `replayTime` retains its rolling increased-Double evidence
-(OD-012..038); `playerHP` has the query-side ground truth ready
-(`IHpGroundTruthProvider`) and needs the memory-side diffing harness. Do not
-repeat the unresolved yaw neighborhood scan.
+Next anchors after position: the **batch rehearsal** (OD-RECOVERY-086, staged
+above), then the pre-staged live gates — **L1 HP** (entity-base anchor,
+victim 3760578; `invoke-hp-diffing-session.ps1`), **L2 facing** (ring-record
+`+0x2C`; `invoke-facing-session.ps1`), and CAM-001 v7. `replayTime` retains
+its rolling increased-Double evidence (OD-012..038) and `playerHP` has the
+query-side ground truth ready (`IHpGroundTruthProvider`); both ride the same
+`entity-region` seam. Do not repeat the unresolved yaw neighborhood scan
+(quarantine resolved-by-supersession 2026-08-11).
 
 ## Why the old workflow was inefficient
 
@@ -385,6 +398,18 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
+> **Amended 2026-08-11 (batch rehearsal is next; OD-RECOVERY-086).** The
+> next approved session runs `scripts/invoke-batch-rehearsal.ps1 -LiveAcquire
+> -Times 90,150,220 -FailOnMiss` on Oasis Palms — the full-roster batch read
+> through `/discover/entity-regions` (design
+> `docs/operations/batch-entity-read-design.md`, consolidation item 6),
+> cross-checked against decoded positions and measuring the read-pass
+> window. Pre-staged: coordinator + endpoint + tests shipped, driver +
+> cross-check tool proven (42/42 on real decoded data). It closes the X2
+> rehearsal and feeds the item-7 measurement; the L1/L2/CAM-001 live gates
+> follow in their pre-staged order. The scan/roll/debugger material below is
+> retained as historical evidence only.
+>
 > **Amended 2026-08-10 (position closed; HP-discovery live plan pre-staged).**
 > The scan/roll/debugger material below is retained as historical evidence,
 > but it is superseded: the position family is PUBLISHED and walkable
