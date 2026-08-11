@@ -1,9 +1,16 @@
 # Live roster → decoded-name join — design (X2b follow-up)
 
 **Date:** 2026-08-11
-**Status:** DESIGN — no code. Pre-staged so the moment X2b's
-`-EnumerateLive` rehearsal proves the id mapping, the join is ready to
-implement. Nothing here may be coded before that proof (evidence-first).
+**Status:** DESIGN — no code. **X2b rehearsal outcome recorded 2026-08-11
+(OD-RECOVERY-086): PARTIAL, team-based** — 7/14 ids (precision 1.000,
+recall 0.500, 0 extra), all found = team 1 (the player's own team), all
+missing = team 2 (enemies). Per this design's own gate, the result is NOT
+an exact set match, so the **blanket join is invalidated**: the per-id
+best-effort join remains VALID for the own-team ids the enumeration DOES
+return (they map exactly, 0 extras) — enemy ids stay unnamed until the X4
+loop re-enumerates per tick or adds a second discriminator for enemy
+avatars. Nothing may be coded beyond the per-id best-effort join before
+that enemy-id proof (evidence-first).
 
 ## Problem
 
@@ -75,8 +82,12 @@ duplicate the roster lookup and break the boundary.
 ## Sequencing
 
 1. **X2b `-EnumerateLive` rehearsal** (OD-RECOVERY-086): proves the id
-   mapping. Exact set match → proceed. Mismatch → this design is
-   invalidated; record honestly, do not code.
+   mapping. Result (2026-08-11): **team-based PARTIAL** — own-team ids map
+   exactly (7/7 found, precision 1.000, 0 extras); enemy ids are NOT
+   enumerated. Per the fail-closed rules the per-id join may be
+   implemented for the ids the frame carries (own team only today); the
+   full/enemy join stays blocked on an enemy discriminator (the X4
+   re-enumerate-per-tick or second vtable gate).
 2. `LiveFrameProjector.Project` gains the optional participant map
    (pure, testable: named tanks, unnamed fail-closed, no-map fallback).
 3. `GET /api/v1/live/frame?sessionId=` handler: load participants,

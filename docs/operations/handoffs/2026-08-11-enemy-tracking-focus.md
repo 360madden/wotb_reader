@@ -399,6 +399,20 @@ discovers the counter empirically, with the template's different-offset /
 no-hit branch. Phase-4 Dead Rail agreement (attacker 2549401) gates any
 publication; HP publication keeps its own rule (victim 2549399).
 
+## Docs freshness + X2b join-gate outcome recorded (2026-08-11)
+
+- **AGENTS.md test count refreshed** 925 → **1009** (the verified-gate rows;
+  both the "Last verified gate" line and the Last-verified section).
+- **Name-join design gate recorded:** the X2b rehearsal was a team-based
+  PARTIAL (7/14, precision 1.000, recall 0.500, 0 extras — own team only),
+  so per the design's own rule the BLANKET join is invalidated; the per-id
+  best-effort join for the ids the enumeration returns stays valid, and
+  enemy ids stay unnamed until an enemy discriminator lands. No join code
+  written (evidence-first).
+- **Ledger Next-planned row completed:** 089 → CAM-001 v7 → OD-RECOVERY-090
+  (L3) + its Dead Rail repeat; yaw publication package referenced as
+  PENDING.
+
 ## OD-RECOVERY-086 live session — X2 PASS live + X3 team-based partial (2026-08-11)
 
 Approved live session on Oasis Palms (the content-distinct 11.19.0.10
@@ -553,4 +567,9 @@ surface changed. Next live gates in pre-staged order: OD-RECOVERY-087
   L3 damage-dealt fill-in contract; synthetic +0x48 flagged as fixture)
 - `docs/operations/product-roadmap.md` (L3 row references the template +
   the fixture caveat)
+- `AGENTS.md` (verified-gate test count 925 → 1009)
+- `docs/operations/live-roster-name-join-design.md` (X2b partial outcome
+  recorded: per-id join valid for own-team ids, enemy join blocked)
+- `docs/operations/offset-discovery-ledger.md` (Next-planned row →
+  includes OD-RECOVERY-090 + yaw-draft reference)
 - `docs/operations/handoffs/2026-08-11-enemy-tracking-focus.md` (this file)

@@ -109,7 +109,7 @@ repeat, CAM-001 v7) plus the Phase-4 two-replay HP rule (Dead Rail victim
   hardware atomicity, same-decoded-clock proof, numeric-offset publication,
   promotion. **Superseded 2026-08-10** by the operator-approved G0
   publication (below); hardware atomicity remains unproved.
-- **Last verified gate:** 2026-08-11 — 925 tests passed, 3 local opt-in skips,
+- **Last verified gate:** 2026-08-11 — 1009 tests passed, 3 local opt-in skips,
   0 warnings, 0 errors.
 - **Refresh from:** the newest file in `docs/operations/handoffs/`,
   `docs/operations/product-roadmap.md` (forward plan / workstreams),
@@ -279,7 +279,7 @@ Hard decoder/security/contract decisions stay on the lead model; Codex subagents
 
 ## Last verified
 
-- 2026-08-11 — full gate green: 925 tests passed, 3 local opt-in skips,
+- 2026-08-11 — full gate green: 1009 tests passed, 3 local opt-in skips,
   0 warnings, 0 errors (fresh run).
 - 2026-08-09 — AGENTS.md restructured to the table-driven layout; hard
   constraints trimmed (offline-only + Cheat Engine bullets removed), ADR 0002
