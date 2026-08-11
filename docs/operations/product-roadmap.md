@@ -173,10 +173,12 @@ world→camera seam and the VP-matrix writer's entry point. ✅ **Camera
 state object pinned (2026-08-11)**: the per-frame dispatcher
 `FUN_01ddb130` integrates camera position `+0x11C/+0x120/+0x124`
 (`pos += delta`) and dispatches the angle/matrix builders by mode;
-**view matrix `+0xAC..0xC4`**, yaw/pitch `+0x58/+0x5C` (smoothed
-`+0x60/+0x64`), ring index `+0x320`. The W2S camera anchor is one object:
-`[[mgr+0x2C]+0x28]`; only the projection matrix (FOV `DAT_035cd11c`)
-remains before a full static world→screen pipeline. Handoff:
+composed view basis rows 0-1 at `+0xAC..0xC4` (yaw×pitch rotation ×
+transform world matrix + position, by `FUN_01dde860`), yaw/pitch
+`+0x58/+0x5C` (smoothed `+0x60/+0x64`), ring index `+0x320`. The W2S
+camera anchor is one object: `[[mgr+0x2C]+0x28]`; the projection matrix
+and the full 4×4 view composition remain before a full static
+world→screen pipeline. Handoff:
 `docs/operations/handoffs/2026-08-11-camera-family-hierarchy-factory.md`.
 
 ### Phase 2 — The live seam + first live sessions (serialized)

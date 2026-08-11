@@ -106,21 +106,24 @@ verified:
 | `+0x58/+0x5C` | current yaw/pitch (rad) |
 | `+0x60/+0x64` | smoothed yaw/pitch |
 | `+0x80/+0x84` | yaw/pitch deltas |
-| `+0xAC..0xC4` | **view matrix (4×4, 16 floats)** — composed by `FUN_01dde860` as yaw×pitch rotation × the transform-record world matrix, translation subtracted |
-| `+0x11C/+0x120/+0x124` | **camera world position (3 floats)** — integrated per frame (`pos += delta` at `0x19db433..0x19db45d` in `FUN_01ddb130`) |
+| `+0xAC..0xC4` | **composed view basis (6 floats = rows 0-1 of the world→camera transform)** — `FUN_01dde860` builds yaw×pitch rotation, multiplies by the transform-record world matrix (`FUN_00729570`), adds the camera position read from `+0x11C` triple, and stores rows at `+0xAC` (2 floats), `+0xB4`, `+0xB8`, `+0xC0` (raw-byte verified: `SUBSS … [ESI+0xAC/0xB0/0xB4]` translation reads at `0x19ddeXX`). NOT a full 4×4 — the full matrix composition / projection rows are composed elsewhere (other camera modes or the renderer) |
+| `+0x11C/+0x120/+0x124` | **camera world position (3 floats)** — integrated per frame (`pos += delta` at `0x19db433..0x19db45d` in `FUN_01ddb130`); consumed as the translation input by `FUN_01dde860` (`local_4c/50/48` = the `+0x11C` triple) |
 | `+0x320` | ring index (800) |
 | `+0x360/0x364 + idx*0x10` | per-frame ring entries (2 floats each) |
 
-This is the **W2S camera anchor**: view matrix + position + angles all live in
-one object reached as `[[mgr+0x2C]+0x28]`. The projection matrix (FOV
-`DAT_035cd11c`/`DAT_035cd128`) remains the last piece before a full
-world→screen projection can be assembled from static evidence.
+This is the **W2S camera anchor**: position + yaw/pitch + view basis all live
+in one object reached as `[[mgr+0x2C]+0x28]`. The projection matrix (FOV) and
+the full 4×4 view composition (the remaining rows, and the other camera
+modes' stores) remain open — the last pieces before a full world→screen
+projection can be assembled from static evidence.
 
 ## Files touched
 
-`.build/ghidra-evidence/` (ignored): `find-vftable-refs.txt`,
-`functions-disasm.txt`, `window-disasm.txt`, `run-cam-*.log`,
-`resolve-vftable-class.txt`; this handoff; roadmap camera track.
+`tools/ghidra-scripts/camera-family-disasm.txt` (committed evidence: the six
+core camera decompiles), `.build/ghidra-evidence/` (ignored):
+`find-vftable-refs.txt`, `functions-disasm.txt`, `window-disasm.txt`,
+`run-cam-*.log`, `resolve-vftable-class.txt`; this handoff; roadmap camera
+track; ledger OD-RECOVERY-085.
 
 ## Next steps
 
