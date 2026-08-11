@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\WotBTreader.ApiContracts\WotBTreader.ApiContracts.csproj" />
     <ProjectReference Include="..\WotBTreader.Application\WotBTreader.Application.csproj" />
     <ProjectReference Include="..\WotBTreader.Bootstrap\WotBTreader.Bootstrap.csproj" />
     <ProjectReference Include="..\WotBTreader.Core\WotBTreader.Core.csproj" />

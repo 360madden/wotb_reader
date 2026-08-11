@@ -375,6 +375,7 @@ sessions.cmd
 setup.cmd
 src/WotBTreader.ApiContracts/GameContracts.cs
 src/WotBTreader.ApiContracts/HudContracts.cs
+src/WotBTreader.ApiContracts/MinimapNormalizer.cs
 src/WotBTreader.ApiContracts/OffsetDiscoveryContracts.cs
 src/WotBTreader.ApiContracts/ReadContracts.cs
 src/WotBTreader.ApiContracts/WotBTreader.ApiContracts.csproj
@@ -744,6 +745,7 @@ tests/WotBTreader.Host.Web.Tests/packages.lock.json
 tests/WotBTreader.Overlay.Tests/MSTestSettings.cs
 tests/WotBTreader.Overlay.Tests/MainViewModelTests.cs
 tests/WotBTreader.Overlay.Tests/MinimapMathTests.cs
+tests/WotBTreader.Overlay.Tests/MinimapNormalizerTests.cs
 tests/WotBTreader.Overlay.Tests/OverlayControlPlaneContainmentTests.cs
 tests/WotBTreader.Overlay.Tests/PlotTransformTests.cs
 tests/WotBTreader.Overlay.Tests/ReadApiDtoTests.cs

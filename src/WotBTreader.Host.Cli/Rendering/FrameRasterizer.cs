@@ -1,3 +1,4 @@
+using WotBTreader.ApiContracts;
 using WotBTreader.Application.Replay;
 using WotBTreader.Core;
 
@@ -228,10 +229,13 @@ public static class FrameRasterizer
     private static (int X, int Y) Normalize(
         MapBoundary boundary, int panelLeft, int panelTop, double worldX, double worldZ)
     {
-        double fx = (worldX - boundary.MinX) / (boundary.MaxX - boundary.MinX);
-        double fz = (worldZ - boundary.MinZ) / (boundary.MaxZ - boundary.MinZ);
-        int x = panelLeft + 1 + (int)Math.Round(Math.Clamp(fx, 0, 1) * (MinimapSize - 2 - MinimapDot));
-        int y = panelTop + 1 + (int)Math.Round(Math.Clamp(fz, 0, 1) * (MinimapSize - 2 - MinimapDot));
+        // Shared world→minimap contract (same as the HUD's MinimapMath):
+        // u from west→east, v from north (min-z)→south; clamped + 1px inset
+        // because the schematic panel is fixed-size.
+        (double U, double V) normalized = MinimapNormalizer.Normalize(
+            worldX, worldZ, boundary.MinX, boundary.MaxX, boundary.MinZ, boundary.MaxZ)!.Value;
+        int x = panelLeft + 1 + (int)Math.Round(Math.Clamp(normalized.U, 0, 1) * (MinimapSize - 2 - MinimapDot));
+        int y = panelTop + 1 + (int)Math.Round(Math.Clamp(normalized.V, 0, 1) * (MinimapSize - 2 - MinimapDot));
         return (x, y);
     }
 

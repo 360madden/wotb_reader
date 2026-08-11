@@ -1,9 +1,13 @@
+using WotBTreader.ApiContracts;
+
 namespace WotBTreader.Overlay.ViewModels;
 
 /// <summary>
 /// Maps a replay-raw world position into normalized 0..1 minimap panel
 /// coordinates against the session's map boundary. Pure and unit-testable —
 /// the HUD scales the normalized point onto its fixed-size minimap panel.
+/// Delegates to the shared <see cref="MinimapNormalizer"/> contract so the
+/// real HUD and the offline CLI preview can never disagree.
 /// </summary>
 public static class MinimapMath
 {
@@ -19,15 +23,6 @@ public static class MinimapMath
         double minX,
         double maxX,
         double minZ,
-        double maxZ)
-    {
-        double extentX = maxX - minX;
-        double extentZ = maxZ - minZ;
-        if (extentX <= 0 || extentZ <= 0)
-        {
-            return null;
-        }
-
-        return ((worldX - minX) / extentX, (worldZ - minZ) / extentZ);
-    }
+        double maxZ) =>
+        MinimapNormalizer.Normalize(worldX, worldZ, minX, maxX, minZ, maxZ);
 }
