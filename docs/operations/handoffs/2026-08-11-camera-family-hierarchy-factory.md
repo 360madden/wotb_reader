@@ -72,6 +72,24 @@ position/view-projection matrix are NOT in this ring; they remain the open
 VP-matrix lead (next: the per-frame camera update consumer of this ring, and
 the 16-float matrix writer reachable from the camera update path).
 
+## Camera math functions identified (matrix-composition pipeline)
+
+Six call sites of the verified 4×4 matrix multiply `FUN_00729570` land in the
+camera region — the view-rotation builders:
+
+| RVA | role |
+|---|---|
+| `0x19b3bf0` | yaw/pitch → rotation matrix: cos/sin of both angles, 3×3 basis assembled, `FUN_00729570` multiply, 4× MOVUPS copy (16 floats) |
+| `0x19dc9c0` | camera-state update: integrates `[+0x58]/[+0x5c]` (yaw/pitch) + deltas `[+0x80]/[+0x84]`, clamps (`DAT_035cd128`, `DAT_035cd11c` = FOV-ish limits), builds rotation from cos/sin (`DAT_03fa2878`/`DAT_03fa2880` quaternion components), writes `[+0x60]/[+0x64]` smoothed |
+| `0x19dce80` | same with exponential smoothing: `smoothed += (target - smoothed) * dt * DAT_035919dc` |
+| `0x19de860` | combines the **world/transform matrix `[t+0x60..0x90]`** (the hash-bound transform record!) with camera orientation — reads 4× MOVUPS from the transform, `FUN_012a2fb0`, `FUN_00d29ea0` (transform getter) — the world→camera composition seam |
+
+These run on the ring object's header fields (`+0x58..+0x64` yaw/pitch +
+smoothed, `+0x80/+0x84` deltas), i.e. the camera-state object at
+`[cam+0x28]` holds both the live angles AND the ring entries (`+0x320` index,
+`+0x360/0x364` entries). The 2 floats pushed per frame by `FUN_01dd2cd0` are
+camera angles/state, not world position.
+
 ## Files touched
 
 `.build/ghidra-evidence/` (ignored): `find-vftable-refs.txt`,
@@ -80,10 +98,12 @@ the 16-float matrix writer reachable from the camera update path).
 
 ## Next steps
 
+- **VP/view matrix**: `FUN_01dde860` is the world→camera composition seam
+  (reads `[t+0x60..0x90]` + camera orientation); trace where its output
+  4×4 lands (per-frame VP target) and where FOV (`DAT_035cd11c`) applies —
+  the W2S projection matrix.
 - Resolve the camera's **global root** (who owns the battle manager holding
   `[mgr+0x2C]`) so a live/offline read plan can name a fixed address chain.
-- Find the **VP/view-matrix writer**: scan for 16-float (4× MOVUPS) matrix
-  writes reachable from the camera update path (same shape as the transform
-  record's `+0x60` fill) — the missing piece for W2S projection.
-- Determine the ring's two floats concretely (screen-space offset vs world
-  target) via the `FUN_01dd9100`/`FUN_01dd8530` consumers.
+- Pin the camera **world position** source (the angles at `+0x58/+0x5c`
+  imply a position elsewhere in the camera-state object; the ring's
+  `+0x60`-region matrix may be the view basis).

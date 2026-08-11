@@ -163,7 +163,13 @@ CameraController slots decoded: drag accumulator (`FUN_01dc51d0`, sens
 `[cam+0x40]`), drag→ring handler (`FUN_01dc5440`, point-in-rect + ring write),
 state machine (`FUN_01dc5310`). The ring's two floats are camera
 screen-space/input state — the world position/VP matrix remain the open
-W2S lead. Handoff:
+W2S lead. ✅ **Camera math pipeline (2026-08-11)**: the camera-state object
+holds live yaw/pitch `+0x58/+0x5c`, smoothed `+0x60/+0x64`, deltas
+`+0x80/+0x84`; `FUN_01ddc9c0`/`FUN_01ddce80` integrate them and build
+rotation matrices via the verified 4×4 multiply `FUN_00729570`;
+`FUN_01dde860` reads the hash-bound transform world matrix
+`[t+0x60..0x90]` and composes it with camera orientation — the
+world→camera seam and the VP-matrix writer's entry point. Handoff:
 `docs/operations/handoffs/2026-08-11-camera-family-hierarchy-factory.md`.
 
 ### Phase 2 — The live seam + first live sessions (serialized)
