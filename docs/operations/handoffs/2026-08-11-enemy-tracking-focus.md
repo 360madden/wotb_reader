@@ -66,14 +66,37 @@ reveal the other player's lock state (same absence reason). Sourcing is
 the constraint: WoTB saves each player's own perspective only; the other
 player must share the file.
 
+## Round 2 (same session) — AimGeometry + real-data hull-aim validation
+
+- **`AimGeometry` shipped** (`src/WotBTreader.Core/Overlay/AimGeometry.cs`,
+  9 synthetic tests): `HullAimErrorRadians` + `HullAimsAt` — the hull-arc
+  check in the proven packet yaw convention (yaw 0 = +Z, heading =
+  atan2(dx, dz)), fail-closed on non-finite/zero-distance/out-of-range
+  tolerance. The enemy-track frame ALREADY carried position + hull yaw +
+  HP per tank (`OverlayTankState`), so the aim-line was the only missing
+  piece; it stays client-computable (no shared-contract change).
+- **Real-data validation (78 shots, Oasis Palms):** at fire instants the
+  attacker's hull is 48–68° off the bearing to the victim on average
+  (moving attackers med 48°, static med 68°); only 15–20% of shots land
+  within a 15° hull arc. Convention itself re-verified (hull yaw vs motion
+  heading med 0.0° moving forward; the p90 180° is the known reversal
+  case). **Conclusion: the turret fires independently of the hull — hull-
+  only "aims at" is a WEAK proxy and must not be presented as aim
+  detection.** The utility stays as the honest necessary-condition layer
+  (a hull pointed at you is a real, weak threat signal; a hull pointing
+  away means the turret cannot be on you within the hull arc). True aim
+  detection needs turret data — absent from the replay, a live-memory
+  discovery target.
+
 ## Next units (offline, ready to start)
 
-1. Enemy-track overlay frame (position/HP/hull-yaw/alive/aim-line per
-   enemy) — pure offline code on already-proven data.
+1. ~~Enemy-track overlay frame~~ — already present in the frame contract;
+   the aim-line is now a tested Core utility.
 2. Multi-perspective comparison via `comparison_runs` when a second
    player's file is obtainable.
 3. Live enemy-roster read design (entity-regions serving all enemy ring
-   records) — pre-staged for the next approved session.
+   records) — pre-staged for the next approved session; turret/target
+   fields ride on that discovery.
 
 ## Files touched
 

@@ -452,6 +452,7 @@ src/WotBTreader.Core/Discovery/Type10EntityPositionResolver.cs
 src/WotBTreader.Core/Discovery/WriteSiteAnalysis.cs
 src/WotBTreader.Core/Identifiers.cs
 src/WotBTreader.Core/OffsetModels.cs
+src/WotBTreader.Core/Overlay/AimGeometry.cs
 src/WotBTreader.Core/Overlay/OverlayFrameModels.cs
 src/WotBTreader.Core/Overlay/WorldToScreen.cs
 src/WotBTreader.Core/TelemetryModels.cs
@@ -693,6 +694,7 @@ tests/WotBTreader.CaptureLogs.Tests/TelemetryComparatorTests.cs
 tests/WotBTreader.CaptureLogs.Tests/WotBTreader.CaptureLogs.Tests.csproj
 tests/WotBTreader.CaptureLogs.Tests/packages.lock.json
 tests/WotBTreader.Core.Tests/AffiliationResolverTests.cs
+tests/WotBTreader.Core.Tests/AimGeometryTests.cs
 tests/WotBTreader.Core.Tests/HeadingCorrelatorTests.cs
 tests/WotBTreader.Core.Tests/IdentifierTests.cs
 tests/WotBTreader.Core.Tests/MSTestSettings.cs
