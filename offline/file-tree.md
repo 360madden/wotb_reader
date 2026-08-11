@@ -264,6 +264,7 @@ docs/operations/handoffs/2026-08-11-camera-family-rtti.md
 docs/operations/handoffs/2026-08-11-camera-ownership-root.md
 docs/operations/handoffs/2026-08-11-cli-frame-png-preview.md
 docs/operations/handoffs/2026-08-11-damage-ledger-subtype1.md
+docs/operations/handoffs/2026-08-11-enemy-tracking-focus.md
 docs/operations/handoffs/2026-08-11-entity-base-record-map.md
 docs/operations/handoffs/2026-08-11-exact-overlay-hp-wired.md
 docs/operations/handoffs/2026-08-11-minimap-correctness-unification.md
