@@ -385,6 +385,20 @@ repeat, 5 seam crossings) gates facing/yaw publication.
   applies ONLY after OD-RECOVERY-089 closes HIT at +0x30 AND the operator
   approves — the table stays frozen until then.
 
+## L3 damage-dealt session pre-staged (2026-08-11)
+
+`docs/operations/od-recovery-090-evidence-template.md` PRE-STAGED (the
+roadmap L3 fill-in contract): `invoke-hp-diffing-session.ps1 -Track
+damage-dealt -VictimEntityId 3760577 -LiveAcquire` on Oasis Palms
+(viewpoint attacker; 5 dealt events / 2184 damage / 4 nonzero windows),
+entity-base anchor (320 B — the driver default), increment direction, lag
+0 (counter rises synchronously with the packets). **Honest framing: the
+rehearsal's `+0x48` is a synthetic fixture, NOT a prediction** (same class
+as the yaw +0x2C — it proved the correlator machinery); the live session
+discovers the counter empirically, with the template's different-offset /
+no-hit branch. Phase-4 Dead Rail agreement (attacker 2549401) gates any
+publication; HP publication keeps its own rule (victim 2549399).
+
 ## OD-RECOVERY-086 live session — X2 PASS live + X3 team-based partial (2026-08-11)
 
 Approved live session on Oasis Palms (the content-distinct 11.19.0.10
@@ -535,4 +549,8 @@ surface changed. Next live gates in pre-staged order: OD-RECOVERY-087
   publication operator checklist + chain spec, PENDING until 089 + approval)
 - `docs/operations/offset-discovery-workflow.md` (089 paragraph references
   the yaw draft)
+- `docs/operations/od-recovery-090-evidence-template.md` (NEW — pre-staged
+  L3 damage-dealt fill-in contract; synthetic +0x48 flagged as fixture)
+- `docs/operations/product-roadmap.md` (L3 row references the template +
+  the fixture caveat)
 - `docs/operations/handoffs/2026-08-11-enemy-tracking-focus.md` (this file)
