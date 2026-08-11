@@ -59,6 +59,34 @@ Applied the same fail-closed audit to the other pre-staged live drivers:
 - Verified: both parse; both QUALIFY on real data and reach the exit-3
   contract cleanly.
 
+## Round 3 (same session) — G1 poll + L4 replayTime driver
+
+Continued the audit across the remaining live drivers.
+
+- **G1 poll (`invoke-g1-live-poll.ps1`) — no defects.** Exit-code contract
+  (0/2/3/4/5) documented and honored; pre-login retry loop bounded exactly
+  (attempts 1–3 retry, 4th breaks = `MaxPreLoginRetries`); verdict window
+  uses the per-attempt `pollStartUtc`; each run writes to a fresh
+  `ResultDir`, so a stale aggregate cannot be mistaken for this run's
+  evidence. One cosmetic note: a missing `wotblitz` process throws to
+  `FAIL_unexpected` (exit 5) rather than a clean diagnostic — non-issue
+  because the launcher just proved the gate.
+- **L4 replayTime driver (`invoke-od-044-replaytime-session.ps1`) — one
+  real defect fixed.** The verdict built `$writeSites` only from hits whose
+  address AND rip both parsed (`if ($addr -and $rip)`), so a captured hit
+  whose RIP failed module resolution — e.g. a capture with a missing/empty
+  `modules` list — was silently DROPPED: the summary could report `hits=3`
+  with `verdict=no-write`, an honest negative from partial evidence (the
+  same contradiction class as the cross-check PASS-with-FAIL-line bug).
+  Fixed: `$unresolvedHits = hits − writeSites`; any hits present but
+  unresolved now fails closed with exit 5 (`FAILED_unresolved_hits`) —
+  never a clean negative. `unresolvedHits` added to the summary; exit-code
+  docs updated (5 covers unresolvable captures; 1 documented as default
+  negative, not only `-FailOnNoWrite`).
+- Verified: parse OK, PSScriptAnalyzer gate green (3 pre-existing warnings
+  on the file — empty catch blocks in the play-state probe/module loop,
+  positional `Write-Session` — unchanged; the gate is errors-only).
+
 ## Remaining
 
 - Unchanged: the OD-RECOVERY-086 batch rehearsal session (one approved live

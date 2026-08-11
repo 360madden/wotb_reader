@@ -33,11 +33,14 @@
 
 .EXITCODES
   0  HIT (captured write(s)) or clean no-write with -AllowNoWrite
-  1  Verdict negative (no writes) and -FailOnNoWrite
+  1  Verdict negative (no writes) - default and with -FailOnNoWrite;
+     pass -AllowNoWrite to accept a clean no-write as a session result
   2  Rendezvous / host missing, or staging precondition failed
   3  Gate not OfflineReplayVerified (never verified / lost)
   4  Roll failed (see roll exit; gate diagnosis printed)
-  5  Interceptor missing / stale / attach failed / capture unparseable
+  5  Interceptor missing / stale / attach failed / capture unparseable /
+     hits present but unresolvable (fail-closed: never an honest negative
+     from partial evidence)
   6  Unexpected error
   7  Replay paused at arm time (window not spent)
 #>
@@ -330,8 +333,22 @@ foreach ($h in $hits) {
     }
 }
 
+# Fail-closed on partial resolution: every captured hit MUST resolve to a
+# module RVA before a no-write verdict is allowed. A hit whose address/rip
+# token fails to parse (or the capture's module list is missing/empty) is
+# unresolved evidence - emitting an honest negative from it would be the
+# same contradiction as a PASS with a FAIL line in the table.
+$unresolvedHits = $hits.Count - $writeSites.Count
+if ($hits.Count -gt 0 -and $unresolvedHits -gt 0) {
+    Write-Session ('FAILED_unresolved_hits hits=' + $hits.Count +
+        ' write_sites=' + $writeSites.Count +
+        ' (every captured hit must resolve to a module RVA before a no-write verdict; inspect the durable capture)')
+    exit 5
+}
+
 $hit = $writeSites.Count -gt 0
 $summary = [ordered]@{
+    unresolvedHits      = $unresolvedHits
     session             = 'od-044-replaytime'
     timestampUtc        = (Get-Date).ToUniversalTime().ToString('o')
     targetSurvivors     = $TargetSurvivors
