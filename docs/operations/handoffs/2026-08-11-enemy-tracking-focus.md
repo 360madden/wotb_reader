@@ -766,6 +766,38 @@ target-id candidates join against the roster. Includes the branch table
   camera-as-turret-driver, camera-yaw discriminator, branch table)
 - `docs/operations/handoffs/2026-08-11-enemy-tracking-focus.md` (this file)
 
+## CAM-001 v7 mode discriminator wired into the validator (2026-08-11)
+
+After the root-cause isolation (single GameCamera, class-OK, live pose in a
+non-chase state), the validator now answers the mode-vs-pose question in
+ONE launch:
+
+1. **Memory-space projection correction** (`verify-camera-projection.py`):
+   the W2S projection is inherently memory-space, so the PRIMARY target is
+   now the **memory tank** (same wall time as the camera); the decoded tank
+   at the yaw-aligned time is a cross-check only. This fixes a real
+   validator bug: the yaw-alignment can be wrong by the replay-clock skew
+   (the 2026-08-11 runs aligned to 30–40 s while the reads were at
+   ~180 s), which silently corrupted look-at/center. Verified on the real
+   aggregate: look-at 87–124° → 51–73°, expected pitch now −46 to −52°
+   (matches the root-cause geometry).
+2. **Basis coherence** (`basisCoherent` + `basisDetail`): the validator
+   persists the view-basis floats (+0x80..0xA8) per round and checks
+   orthonormal rows with one row matching yaw/pitch — the memory-side
+   discriminator, independent of the chase-view assumption.
+3. **`-CaptureWindow` switch** (`invoke-camera-state-verify.ps1`):
+   captures the shrunk wotblitz window in-memory each round (PrintWindow,
+   mirrors the launcher's machinery) and persists ONLY derived sky/terrain
+   scalars (skyFraction / horizonRow / mean luminances) — never raw
+   pixels; privacy flags updated (`basisRowsPersisted`, `screenScalarsPersisted`).
+4. **`renderMode` classification** (chase / high / unknown) from screen
+   scalars + look-at; self-test extended (basis coherence + mode
+   classifier fixtures, 6 suites PASS).
+
+Next CAM session: run with `-CaptureWindow`; the validator will report
+`cameraCoherent` + `renderMode` so the mode-vs-pose question closes on the
+first launch. Full gate green (1019 tests, 3 local opt-in skips).
+
 ## CAM-001 v7 root cause ISOLATED — wrong-instance/wrong-field falsified (2026-08-11)
 
 Session `019ff25b` (third approved launch of the day) ran three read-only

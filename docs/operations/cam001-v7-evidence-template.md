@@ -99,9 +99,12 @@ screen center under the overlay's analytic pinhole model, and the existing
 
 ```text
 # Launch the Oasis Palms replay to OK OfflineReplayVerified (launcher,
-# battleSession= anchored), then mid-replay:
+# battleSession= anchored), then mid-replay. Add -CaptureWindow to also
+# capture the shrunk game window in-memory each round and persist ONLY
+# derived sky/terrain scalars (never raw pixels) — the render-mode hint
+# for the mode-vs-pose discriminator:
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-camera-state-verify.ps1 `
-  -SessionId <decoded-session-guid> -ResultPath .data/cam001-v7-aggregate.json
+  -SessionId <decoded-session-guid> -ResultPath .data/cam001-v7-aggregate.json -CaptureWindow
 
 python scripts/python/verify-camera-projection.py .data/cam001-v7-aggregate.json
 ```
@@ -129,10 +132,27 @@ Preconditions (same class as 087/088/089):
 
 `verify-camera-projection.py` exits 0 with per-round **look-at ≈ 0** (the
 camera aims at the tank), **center distance small** (projected tank near
-viewport center across 70/90/110°), and the **pitch diagnostic coherent**
+viewport center across the FOV band), and the **pitch diagnostic coherent**
 (memory pitch ≈ pitch required to aim at the tank). The CAM-001 script
 verdict is `camera-state-consistent` (chain length 3 + identity + finite
 rounds + ≥ 1 yaw- and position-correlated round).
+
+**Validator corrections (2026-08-11, root-cause follow-up):**
+
+1. The projection now uses the **MEMORY tank** (same wall time / memory
+   space as the camera — the W2S overlay is inherently memory-space) as the
+   PRIMARY target; the decoded tank at the yaw-aligned time is a
+   cross-check only (`crossDecodedCenterByFov`). The old code projected the
+   decoded tank, whose yaw-aligned time can be WRONG by the replay-clock
+   skew (the 2026-08-11 runs aligned to 30–40 s while the reads were at
+   ~180 s), which silently corrupted the look-at/center check.
+2. Per-round `basis` (view-basis +0x80..0xA8 floats) is persisted and the
+   validator reports `cameraCoherent` (orthonormal rows, one row matching
+   yaw/pitch) — the memory-side half of the mode-vs-pose discriminator,
+   independent of the chase-view assumption.
+3. With `-CaptureWindow`, per-round `screen` scalars (skyFraction /
+   horizonRow / mean luminances) feed `renderMode` (chase / high /
+   unknown).
 
 ## Known static values (do not change without re-verifying)
 
@@ -151,6 +171,7 @@ rounds + ≥ 1 yaw- and position-correlated round).
 | Outcome | Action |
 |---|---|
 | **verified** (exit 0, look-at ≈ 0, pitch coherent) | W2S path proven: the overlay can render nameplates/beacons/POIs through the memory camera with the analytic pinhole model. Record `w2sProjectionVerified = true`; the overlay consumption seam (CAM-006 frame endpoint already serves the memory camera) is acceptance-tested. |
+| **coherent but not aimed** (`cameraCoherent=true`, look-at large, `renderMode=high`) | The walked GameCamera IS a real coherent camera in a NON-chase state (the 2026-08-11 shape). W2S still works — consume posA as-is, the tank simply projects off-center. If `renderMode` confirms the screen shows the high view, posA is right; record the mode and treat the W2S seam as valid for the high state. If the screen shows the chase view while posA is high, re-derive the pose field. |
 | **pitch convention fails** (`expectedPitchDeg` vs `memoryPitchDeg` consistently off / sign flipped) | The memory pitch `+0x58` needs a re-derivation or sign flip BEFORE the overlay swap — record the observed mapping, do NOT change the read surface without a new identity gate. |
 | **look-at small but nonzero** (camera aims slightly above tank center) | Nameplate label offset input: record the offset magnitude; no surface change (rendering-only). |
 | **CAM-003 flip** (identity fails on first launch) | Relaunch once (088/089 precedent); if it flips twice in a row, record and stop — do not broaden scanning. |

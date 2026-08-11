@@ -5,9 +5,16 @@ viewpoint tank through the live memory camera (CAM-001 v7 round evidence).
 Consumes a CAM-001 aggregate JSON (schema v7, `roundSamples[]`). Each round
 carries the memory camera pose (GameCamera posA + yaw/pitch), the memory tank
 position (when the resolver was up), and the decoded tank at the yaw-aligned
-time. The validator projects the DECODED tank through the MEMORY camera using
-the exact `WorldToScreen.Project` math (src/WotBTreader.Core/Overlay/
-WorldToScreen.cs) and checks the third-person look-at property:
+time. The validator projects the tank through the MEMORY camera using the
+exact `WorldToScreen.Project` math (src/WotBTreader.Core/Overlay/
+WorldToScreen.cs) and checks the third-person look-at property. The PRIMARY
+projection target is the MEMORY tank (same wall time / memory space as the
+camera — the W2S overlay is inherently memory-space); the decoded tank at the
+yaw-aligned time is a cross-check only, because the replay-clock label skew
+can put the yaw-aligned time far from the actual read time (corrected
+2026-08-11). It also reports the camera-basis coherence (memory-side
+mode-vs-pose discriminator) and, when `-CaptureWindow` was used, the derived
+sky/terrain scalars as a render-mode hint:
 
   - Look-at angle: the angle between the camera forward (yaw/pitch, roll 0)
     and the camera->tank direction. A third-person camera aims at the tank,
@@ -113,19 +120,114 @@ def center_distance(screen, width, height):
     return math.sqrt(ndc_x * ndc_x + ndc_y * ndc_y)
 
 
+def basis_coherent(basis, yaw, pitch, tol_deg=15.0):
+    """Checks the persisted view-basis floats (+0x80..0xA8) are a coherent
+    camera basis: the 3x3 rows are orthonormal and one row is the camera
+    forward direction consistent with (yaw, pitch).
+
+    The region is row-major with the diff-scan-verified subset at
+    indices [0,1,2] (+0x80/84/88) and [4,5,6] (+0x90/94/98), plus the
+    full 10-float window (index 3 = +0x8C gap). We try the contiguous
+    3x3 starting at index 0 (rows 0..2 over +0x80..0xA0) first, then the
+    verified subset [0,1,2],[4,5,6],[7,8,9]. A row matches the forward
+    direction forward(yaw, pitch) up to sign.
+
+    Returns (coherent, details) where details explains the verdict.
+    """
+    if not basis or len(basis) < 9 or not all(
+        isinstance(v, (int, float)) and math.isfinite(v) for v in basis[:9]
+    ):
+        return False, "basis missing or non-finite"
+
+    candidates = []
+    # Full-window contiguous 3x3: rows [0..2],[3..5],[6..8] over +0x80..0xA0.
+    candidates.append([basis[i : i + 3] for i in (0, 3, 6)])
+    # Diff-scan verified subset: rows [0,1,2], [4,5,6], [7,8,9] (0x8C gap).
+    candidates.append([basis[0:3], basis[4:7], basis[7:10]])
+
+    fwd = forward(yaw, pitch)
+    best = None
+    for rows in candidates:
+        lengths = [math.sqrt(sum(v * v for v in r)) for r in rows]
+        if any(abs(l - 1.0) > 0.02 for l in lengths):
+            continue
+        ortho = True
+        for i in range(3):
+            for j in range(i + 1, 3):
+                dot = sum(rows[i][k] * rows[j][k] for k in range(3))
+                if abs(dot) > 0.02:
+                    ortho = False
+        if not ortho:
+            continue
+        for row_idx in (1, 2):
+            r = rows[row_idx]
+            dot_abs = abs(sum(r[k] * fwd[k] for k in range(3)))
+            if dot_abs >= math.cos(math.radians(tol_deg)):
+                best = (row_idx, math.degrees(math.acos(min(1.0, dot_abs))))
+                break
+        if best:
+            break
+    if best is None:
+        return False, "no orthonormal row set whose forward row matches yaw/pitch"
+    return True, f"orthonormal rows, forward=row{best[0]}, angle {best[1]:.2f} deg"
+
+
+def classify_mode(screen, look_at, expected_pitch, memory_pitch):
+    """Uses the captured-window derived scalars (when present) to classify
+    the camera state: chase (tank-centered third-person), high (elevated,
+    level pitch), or unknown. Returns (mode, hint) — hint is diagnostic
+    text, never a verdict."""
+    if not screen:
+        return None, "no screen scalars (run with -CaptureWindow)"
+    sky = screen.get("skyFraction")
+    horizon = screen.get("horizonRow")
+    if not isinstance(sky, (int, float)) or not isinstance(horizon, (int, float)):
+        return None, "screen scalars incomplete"
+    # A level/high camera sees sky above the horizon and terrain below; a
+    # chase camera is low to the ground (sky thin or absent).
+    if look_at <= 8.0:
+        return "chase", f"look-at {look_at:.1f} deg, sky {sky:.2f}, horizon {horizon:.2f}"
+    if sky > 0.15 and 0.3 < horizon < 0.8:
+        return "high", f"look-at {look_at:.1f} deg, sky {sky:.2f}, horizon {horizon:.2f}"
+    return "unknown", f"look-at {look_at:.1f} deg, sky {sky:.2f}, horizon {horizon:.2f}"
+
+
 def evaluate_round(round_sample, width, height):
-    """Returns a diagnostic dict, or None when the round is not evaluable."""
+    """Returns a diagnostic dict, or None when the round is not evaluable.
+
+    CORRECTED 2026-08-11 (CAM-001 v7 root-cause follow-up): the W2S
+    projection is inherently MEMORY-space — the overlay consumes the
+    memory camera pose and memory tank/entity positions at the same wall
+    time. The memory tank (module-rooted, same wall time as the camera) is
+    therefore the PRIMARY projection target; the decoded tank at the
+    yaw-aligned time is only a cross-check. The old code projected the
+    decoded tank, whose yaw-aligned time can be WRONG by the replay-clock
+    skew (e.g. 30-40 s aligned while the reads were at ~180 s), which
+    silently corrupted the look-at/center check."""
     camera = round_sample.get("camera")
+    memory_tank = round_sample.get("memoryTank")
     decoded = round_sample.get("decodedTank")
-    if not camera or not decoded or not all(
+    if not camera or not all(
         k in camera for k in ("x", "y", "z", "yawRadians", "pitchRadians")
-    ) or not all(k in decoded for k in ("x", "y", "z")):
+    ):
+        return None
+    if not memory_tank and not decoded:
+        return None
+    if memory_tank and not all(k in memory_tank for k in ("x", "y", "z")):
+        memory_tank = None
+    if decoded and not all(k in decoded for k in ("x", "y", "z")):
+        decoded = None
+    if not memory_tank and not decoded:
         return None
 
     eye = (camera["x"], camera["y"], camera["z"])
     yaw = camera["yawRadians"]
     pitch = camera["pitchRadians"]
-    world = (decoded["x"], decoded["y"], decoded["z"])
+    # Primary projection target: the memory tank (same wall time / memory
+    # space as the camera). The decoded tank is the cross-check.
+    world = (memory_tank["x"], memory_tank["y"], memory_tank["z"]) if memory_tank else (
+        decoded["x"], decoded["y"], decoded["z"])
+    cross_world = (decoded["x"], decoded["y"], decoded["z"]) if decoded and memory_tank else None
 
     look_at = look_at_angle_deg(eye, yaw, pitch, world)
 
@@ -145,22 +247,50 @@ def evaluate_round(round_sample, width, height):
             behind = True
             continue
         projections[fov] = center_distance(point, width, height)
+    # Cross-check: decoded-tank projection (only meaningful when the
+    # yaw-alignment is trusted; reported, not gating).
+    cross_projections = {}
+    if cross_world is not None:
+        for fov in FOV_BAND_DEG:
+            point = project(eye, yaw, pitch, fov, width, height, cross_world)
+            if point is None:
+                continue
+            cross_projections[fov] = center_distance(point, width, height)
 
     passed = (
         look_at <= LOOK_AT_TOLERANCE_DEG
         and not behind
         and all(distance <= CENTER_TOLERANCE for distance in projections.values())
     )
+    # CAM-001 v7 root-cause follow-up: the walked object is a coherent
+    # camera iff its basis rows are orthonormal and one row matches
+    # yaw/pitch — this is the memory-side half of the mode-vs-pose
+    # discriminator and does NOT assume the chase view (the look-at check
+    # only passes in the chase state, so a high-state camera is reported
+    # coherent-but-not-aimed, which is exactly the honest-negative shape
+    # seen on 2026-08-11).
+    coherent, basis_detail = basis_coherent(
+        round_sample.get("basis"), yaw, pitch)
+    mode, mode_hint = classify_mode(
+        round_sample.get("screen"), look_at, expected_pitch, pitch)
     return {
         "alignedDecodedSeconds": round_sample.get("alignedDecodedSeconds"),
         "memoryTankSource": round_sample.get("memoryTankSource"),
         "cameraPosition": [round(x, 3) for x in eye],
-        "decodedTank": [round(x, 3) for x in world],
+        "decodedTank": [round(x, 3) for x in (
+            (decoded["x"], decoded["y"], decoded["z"]) if decoded else world)],
+        "projectionTankSource": "memory" if memory_tank else "decoded",
+        "crossDecodedCenterByFov": {str(k): round(v, 4) for k, v in sorted(cross_projections.items())},
         "lookAtAngleDeg": round(look_at, 3),
         "memoryPitchDeg": round(math.degrees(pitch), 3),
         "expectedPitchDeg": round(expected_pitch, 3) if expected_pitch is not None else None,
         "tankBehindCamera": behind,
         "centerDistanceByFov": {str(k): round(v, 4) for k, v in sorted(projections.items())},
+        "cameraCoherent": coherent,
+        "basisDetail": basis_detail,
+        "renderMode": mode,
+        "modeHint": mode_hint,
+        "screen": round_sample.get("screen"),
         "passed": passed,
     }
 
@@ -270,11 +400,37 @@ def self_test():
         check("C# yaw-quarter X == 960", abs(quarter[0] - 960.0) < 1e-6, quarter)
         check("C# yaw-quarter Y == 540", abs(quarter[1] - 540.0) < 1e-6, quarter)
 
+    # 5. Basis coherence: an orthonormal basis whose forward row matches
+    #    yaw/pitch is coherent; a scrambled matrix is not.
+    yaw0, pitch0 = 0.0, 0.0  # forward = +Z
+    fwd = forward(yaw0, pitch0)
+    right = (1.0, 0.0, 0.0)
+    up = (0.0, 1.0, 0.0)
+    coherent_basis = list(right) + list(up) + list(fwd)
+    ok_basis, detail_basis = basis_coherent(coherent_basis, yaw0, pitch0)
+    check("basis coherent when orthonormal + forward row matches", ok_basis, detail_basis)
+    scrambled = [0.9, 0.0, 0.0, 0.0, 0.9, 0.0, 0.0, 0.0, 0.9]
+    bad_basis, detail_bad = basis_coherent(scrambled, yaw0, pitch0)
+    check("basis NOT coherent when rows not orthonormal", not bad_basis, detail_bad)
+    missing_basis, detail_missing = basis_coherent(None, yaw0, pitch0)
+    check("basis NOT coherent when missing", not missing_basis, detail_missing)
+
+    # 6. Mode classification: high sky + mid horizon => high camera; tiny
+    #    look-at => chase; no screen scalars => unknown.
+    mode_high, hint_high = classify_mode(
+        {"skyFraction": 0.4, "horizonRow": 0.5}, 30.0, None, None)
+    check("mode classifies high camera", mode_high == "high", (mode_high, hint_high))
+    mode_chase, hint_chase = classify_mode(
+        {"skyFraction": 0.05, "horizonRow": 0.4}, 2.0, None, None)
+    check("mode classifies chase camera", mode_chase == "chase", (mode_chase, hint_chase))
+    mode_unknown, hint_unknown = classify_mode(None, 30.0, None, None)
+    check("mode unknown without screen scalars", mode_unknown is None, (mode_unknown, hint_unknown))
+
     if failures:
         for name, detail in failures:
             print(f"self-test FAIL: {name}: {json.dumps(detail, default=str)}")
         return 1
-    print("self-test PASS: look-at, wrong-yaw, no-pitch, and C# mirror fixtures behave as expected.")
+    print("self-test PASS: look-at, wrong-yaw, no-pitch, C# mirror, basis-coherence, and mode-classifier fixtures behave as expected.")
     return 0
 
 
@@ -318,9 +474,13 @@ def main(argv):
           f"passed={report['roundsPassed']} ratio={report['passRatio']} "
           f"status={report['status']}")
     for r in report.get("rounds", []):
+        coherent = r.get("cameraCoherent")
+        mode = r.get("renderMode") or "n/a"
         print(f"  t={r['alignedDecodedSeconds']} lookAt={r['lookAtAngleDeg']} deg "
               f"pitch(mem/exp)={r['memoryPitchDeg']}/{r['expectedPitchDeg']} "
-              f"center={r['centerDistanceByFov']} {'PASS' if r['passed'] else 'FAIL'}")
+              f"center={r['centerDistanceByFov']} "
+              f"coherent={coherent} mode={mode} "
+              f"{'PASS' if r['passed'] else 'FAIL'}")
 
     if report["status"] == "verified":
         return 0

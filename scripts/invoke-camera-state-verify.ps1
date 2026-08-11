@@ -132,7 +132,13 @@ param(
     [int]$ReadCount = 6,
     [int]$ReadIntervalMilliseconds = 750,
     [int]$MaxCandidates = 20,
-    [string]$ResultPath = ''
+    [string]$ResultPath = '',
+    # CAM-001 v7 root-cause follow-up (2026-08-11): capture the wotblitz
+    # window in-memory each round and persist ONLY derived sky/terrain
+    # scalars (never raw pixels) so the offline validator can discriminate
+    # a non-chase camera STATE (high above/behind, level pitch) from a
+    # wrong-pose read. Off by default; existing runs unchanged.
+    [switch]$CaptureWindow
 )
 
 Set-StrictMode -Version Latest
@@ -167,6 +173,143 @@ function Test-Finite([object]$Value) {
         return $false
     }
     return -not ([double]::IsNaN($d) -or [double]::IsInfinity($d))
+}
+
+# ---- CAM-001 v7 root-cause follow-up: in-memory window capture -------
+# The mode-vs-pose discriminator needs to know what the game actually
+# renders. Capturing the shrunk wotblitz window and persisting derived
+# scalars (sky fraction / horizon row / mean luminance) — NEVER raw
+# pixels — lets the offline validator classify the camera state. The C#
+# helper mirrors the launcher's PrintWindow capture (click-watch-offline),
+# scaled down to just capture + luminance analysis.
+function Initialize-CamCaptureHelper {
+    if ('CamCaptureV1' -in ([AppDomain]::CurrentDomain.GetAssemblies() |
+            ForEach-Object { try { $_.GetType('CamCaptureV1') } catch { $null } } |
+            Where-Object { $null -ne $_ })) {
+        return
+    }
+    try { Add-Type -AssemblyName System.Drawing -ErrorAction Stop } catch { }
+    try { Add-Type -AssemblyName System.Drawing.Common -ErrorAction Stop } catch { }
+    $source = @'
+using System;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
+
+public static class CamCaptureV1 {
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
+  [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
+  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+  public const uint PW_RENDERFULLCONTENT = 0x00000002;
+  static bool _dpiAware;
+
+  [StructLayout(LayoutKind.Sequential)]
+  public struct RECT { public int Left, Top, Right, Bottom; }
+
+  public static void EnsureDpiAware() {
+    if (_dpiAware) return;
+    try { SetProcessDPIAware(); } catch { }
+    _dpiAware = true;
+  }
+
+  // Returns a 32bpp bitmap of the window, or null when the window is too
+  // small / not capturable. Caller must dispose.
+  public static Bitmap CaptureWindow(IntPtr hWnd) {
+    EnsureDpiAware();
+    RECT r;
+    if (!GetWindowRect(hWnd, out r)) return null;
+    int w = r.Right - r.Left;
+    int h = r.Bottom - r.Top;
+    if (w < 64 || h < 64) return null;
+    var bmp = new Bitmap(w, h, PixelFormat.Format32bppArgb);
+    using (var g = Graphics.FromImage(bmp)) {
+      IntPtr hdc = g.GetHdc();
+      bool ok = PrintWindow(hWnd, hdc, PW_RENDERFULLCONTENT);
+      g.ReleaseHdc(hdc);
+      if (!ok) { g.Dispose(); bmp.Dispose(); return null; }
+    }
+    return bmp;
+  }
+
+  // Derived sky/terrain scalars only. Downsample to a 16x9 luminance grid
+  // and return: skyFraction (rows above the horizon line, mean >= sky
+  // threshold), horizonRow (the row where the vertical luminance gradient
+  // is largest, 0..1 from the top), topMean / bottomMean luminance.
+  public static string Analyze(Bitmap bmp) {
+    int gw = 16, gh = 9;
+    double[] grid = new double[gw * gh];
+    using (var small = new Bitmap(bmp, gw, gh)) {
+      for (int y = 0; y < gh; y++) {
+        for (int x = 0; x < gw; x++) {
+          Color c = small.GetPixel(x, y);
+          grid[y * gw + x] = (0.299 * c.R + 0.587 * c.G + 0.114 * c.B) / 255.0;
+        }
+      }
+    }
+    double topMean = 0, bottomMean = 0;
+    int half = gh / 2;
+    for (int y = 0; y < gh; y++) {
+      double rowSum = 0;
+      for (int x = 0; x < gw; x++) rowSum += grid[y * gw + x];
+      double rowMean = rowSum / gw;
+      if (y < half) topMean += rowMean; else bottomMean += rowMean;
+    }
+    topMean /= half;
+    bottomMean /= (gh - half);
+    // horizon row = argmax of |rowMean(y+1) - rowMean(y)|
+    double bestGrad = -1; double horizonRow = 0.5;
+    for (int y = 0; y < gh - 1; y++) {
+      double m0 = 0, m1 = 0;
+      for (int x = 0; x < gw; x++) { m0 += grid[y * gw + x]; m1 += grid[(y + 1) * gw + x]; }
+      m0 /= gw; m1 /= gw;
+      double grad = Math.Abs(m1 - m0);
+      if (grad > bestGrad) { bestGrad = grad; horizonRow = (y + 0.5) / gh; }
+    }
+    double skyFraction = 0;
+    for (int y = 0; y < gh; y++) {
+      double rowMean = 0;
+      for (int x = 0; x < gw; x++) rowMean += grid[y * gw + x];
+      rowMean /= gw;
+      // A level/high camera: bright sky occupies the rows above the
+      // horizon; use mean+0.15 as the sky threshold.
+      if (rowMean >= (topMean + bottomMean) / 2.0 + 0.15 && rowMean > 0.5) skyFraction++;
+    }
+    skyFraction /= gh;
+    return string.Format("{0:F4}|{1:F4}|{2:F4}|{3:F4}", skyFraction, horizonRow, topMean, bottomMean);
+  }
+}
+'@
+    Add-Type -TypeDefinition $source -ReferencedAssemblies @(
+        'System.Drawing', 'System.Drawing.Primitives', 'System.Runtime.InteropServices')
+}
+
+function Get-CamWindowScalars {
+    # Returns a hashtable of derived scalars or $null when the game window
+    # is unavailable. NEVER persists raw pixels.
+    try {
+        Initialize-CamCaptureHelper
+        $game = Get-Process -Name wotblitz -ErrorAction SilentlyContinue |
+            Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } |
+            Select-Object -First 1
+        if ($null -eq $game) { return $null }
+        $bmp = [CamCaptureV1]::CaptureWindow($game.MainWindowHandle)
+        if ($null -eq $bmp) { return $null }
+        try {
+            $parts = ([string][CamCaptureV1]::Analyze($bmp)).Split('|')
+            return [ordered]@{
+                skyFraction   = [double]$parts[0]
+                horizonRow    = [double]$parts[1]
+                topMeanLum    = [double]$parts[2]
+                bottomMeanLum = [double]$parts[3]
+            }
+        }
+        finally {
+            $bmp.Dispose()
+        }
+    }
+    catch {
+        return $null
+    }
 }
 
 function Test-OwnerOnlyRendezvousFile([string]$Path) {
@@ -827,6 +970,12 @@ for ($round = 0; $round -lt $ReadCount; $round++) {
         $readAddresses = @($fieldSpecs | ForEach-Object {
             ('0x' + ($cameraStateAddress + $_.Off).ToString('X'))
         })
+        # CAM-001 v7 follow-up: full view-basis region +0x80..0xA8 (10 floats,
+        # row-major 3x3 with the 0x8C gap) for the offline coherence check.
+        $basisReadAddresses = @()
+        for ($bo = 0x80; $bo -lt 0xA8; $bo += 4) {
+            $basisReadAddresses += ('0x' + ($cameraStateAddress + $bo).ToString('X'))
+        }
         $fieldRead = Invoke-OdApi -Method 'Post' `
             -RelativePath '/api/v1/game/discover/read' `
             -Body @{
@@ -1020,6 +1169,40 @@ for ($round = 0; $round -lt $ReadCount; $round++) {
             alignedDecodedSeconds = $alignedDecodedSeconds
             memoryTankSource  = $memoryTankSource
         }
+        # CAM-001 v7 root-cause follow-up: persist the full view-basis region
+        # (+0x80..0xA8, 10 floats) so the offline validator can check the
+        # walked object is a COHERENT camera (orthonormal rows consistent
+        # with yaw/pitch) — the memory-side half of the mode-vs-pose
+        # discriminator. Additive; older consumers ignore unknown keys.
+        $basisFloats = @()
+        $basisRead = Invoke-OdApi -Method 'Post' `
+            -RelativePath '/api/v1/game/discover/read' `
+            -Body @{
+                addresses = @($basisReadAddresses)
+                valueKind = 'Float'
+                valueSize = 4
+            }
+        foreach ($item in $basisRead.reads) {
+            if ($null -ne $item -and [bool]$item.readOk -and
+                -not [string]::IsNullOrWhiteSpace([string]$item.observedValueHex)) {
+                $bytes = Convert-HexToBytes -Hex ([string]$item.observedValueHex)
+                if ($bytes.Length -eq 4) {
+                    $basisFloats += [double][single][BitConverter]::ToSingle($bytes, 0)
+                    continue
+                }
+            }
+            $basisFloats += [double]::NaN
+        }
+        $roundSample['basis'] = $basisFloats
+
+        # CAM-001 v7 root-cause follow-up: when -CaptureWindow, capture the
+        # game window in-memory and persist ONLY derived sky/terrain scalars.
+        if ($CaptureWindow) {
+            $screen = Get-CamWindowScalars
+            if ($null -ne $screen) {
+                $roundSample['screen'] = $screen
+            }
+        }
         $roundSamples += , $roundSample
 
         if ($roundPosition) {
@@ -1103,6 +1286,11 @@ $aggregate = [ordered]@{
         # positions by design (the W2S projection validator consumes them),
         # so coordinates ARE persisted - flagged honestly (v7, 2026-08-11).
         coordinatesPersisted  = $true
+        # v7 follow-up: per-round view-basis floats (+0x80..0xA8) are
+        # persisted for the offline coherence check; derived sky/terrain
+        # scalars only when -CaptureWindow (never raw pixels).
+        basisRowsPersisted    = $true
+        screenScalarsPersisted = ([bool]$CaptureWindow)
         processAddressesPersisted = $false
         rawBytesPersisted     = $false
         capabilityPersisted   = $false
