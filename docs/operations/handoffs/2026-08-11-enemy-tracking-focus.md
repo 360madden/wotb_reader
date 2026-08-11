@@ -958,3 +958,29 @@ dump the ReplayCameraController `+0x28` per-frame ring + controller
 region on one launch (any phase) and search for a non-tank position
 triple consistent with a chase eye ~5–30 m behind the tank along the
 camera forward, or with the actual render view.
+
+## Turn 5 — CAM-011: the render eye is located (posA yz-swapped IS the eye)
+
+Gate-timed eye-probe session (`019ff28a`) answered the CAM-010 open
+question:
+
+- **The controller `+0x28` "ring" IS the GameCamera** (`ringAddr ==
+  cameraStateAddr`) — CAM-002's layout confirmed; there is no separate
+  per-frame ring to search.
+- **Exactly ONE camera-family instance** (vftable scan across
+  BaseCameraController / CameraController / ReplayCameraController) —
+  nowhere else a render eye could live; the "eye elsewhere" hypothesis
+  is FALSIFIED.
+- **posA yz-swapped is the live render eye; eye-to-tank distance is
+  camera-STATE-dependent:** at the battle-intro orbit (read right at the
+  gate) the eye was **20.3 m** from the decoded tank (as-read 274.9 m =
+  the yz artifact); mid-battle on the flipped phase it rides 2.1–3.6 m.
+  posB trails ~1 m (previous-frame interpolation).
+- The intro basis was mid-blend (rotation about X — camera transition),
+  so the orientation convention is NOT yet locked; the discriminator is
+  a two-sample orbit sweep (eye, yaw) ~1 s apart during the intro — the
+  camera yaw must rotate with the eye→tank direction in the correct
+  convention — or a chase-state launch.
+
+W2S seam = yz-swap(posA) + basis/yaw/pitch; the convention is the only
+remaining camera question. Ledger Next-planned = CAM-012.

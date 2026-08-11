@@ -64,18 +64,16 @@ eye 23.57 m behind the tank.**
    tank) was only ever seen on CAM-004's good-phase launch; the real chase
    eye distance was never actually measured (23.57 m was the artifact).
 
-## Open question (next live unit)
+## Open question (next live unit) — CLOSED by CAM-011 (same day)
 
-Where is the true render eye, and what is the orientation convention?
-Candidates: (a) posA is the eye and the replay camera genuinely rides the
-tank in these sessions (then W2S = yz-swap(posA) + basis as stored);
-(b) the true eye lives in the ReplayCameraController `+0x28` ring or
-another controller field (the ring entries are per-frame 16-byte records
-written by vtable slot 4). Discriminator probe: dump the controller region
-+ ring on one launch (any phase) and search for a position triple that
-(1) is not the tank, and (2) is consistent with a chase eye ~5–30 m behind
-the tank along the camera forward, or with the game's actual render view.
-The `-CaptureWindow` screen scalars stay diagnostic-only (no raw pixels).
+**The eye is located: posA yz-swapped IS the render eye** (session
+`019ff28a`). The controller `+0x28` "ring" is the GameCamera itself
+(`ringAddr == cameraStateAddr`), exactly ONE camera-family instance
+exists, and the eye-to-tank distance is camera-STATE-dependent (20.3 m at
+the battle-intro orbit vs 2.1–3.6 m attached mid-battle on the flipped
+phase). The remaining question is only the orientation convention
+(yaw/pitch/basis → world space); the discriminator is a two-sample
+intro-orbit sweep or a chase-state launch. See the ledger CAM-011 row.
 
 ## Files touched
 
