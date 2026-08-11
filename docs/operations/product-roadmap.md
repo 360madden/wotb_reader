@@ -198,6 +198,21 @@ BattleResources is embedded in the avatar controller hierarchy; the
 replay variant (`AvatarControllerReplay`, vftable `0x3277e8c`, created at
 `[replayCtrl+0x158]`) is reachable through the same member offsets.
 Handoff: `docs/operations/handoffs/2026-08-11-camera-ownership-root.md`.
+✅ **CAM-001 pre-staged + ASLR correction (2026-08-11)**: PE headers of
+the hash-pinned binary: `ImageBase=0x400000`, `DllCharacteristics=0x8140`
+→ **ASLR enabled**, so the runtime vftable pointer is (module base + RVA),
+not the preferred-base constant; RVAs confirmed `0x3277e8c` (replay) /
+`0x3277da4` (live). Pre-staged read-only session script
+`scripts/invoke-camera-state-verify.ps1` (CAM-001): gate-waits, binds
+launch-artifact ground truth like od-073, learns the runtime module base
+from the scan response, scans `base+0x3277e8c` (LE) → walks
+`[avatar+0x154]→[br+0x2C]→[cam+0x28]` → reads yaw/pitch/basis/position →
+correlates camera yaw vs the decoded frame yaw (timeSeconds) and position
+vs the nearest trajectory sample (third-person offset norm 1-30 m);
+privacy-safe aggregate (`cam001.camera-state-verify.v1`, no raw
+coordinates/addresses/bytes). Next: one approved replay launch + this
+script → wire the true camera into `ReplayFrameSource.BuildCamera`.
+Handoff: `docs/operations/handoffs/2026-08-11-cam001-pre-staged-aslr-correction.md`.
 
 ### Phase 2 — The live seam + first live sessions (serialized)
 

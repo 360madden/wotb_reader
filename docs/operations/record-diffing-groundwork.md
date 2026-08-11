@@ -594,26 +594,46 @@ avatar      = [session + 0x11C]         (AvatarControllerBattle / Replay)
 Replay variant: `AvatarControllerReplay` main vftable `0x3277e8c` (ctor
 `FUN_016369f0`, created by `FUN_013d59a0`, stored at
 `[replayCtrl+0x158]`); live variant `AvatarControllerBattle` vftable
-`0x3277da4`. The SessionController instance itself is created by the
-by-name controller registry, so an approved offline session locates the
-anchor by scanning for the **avatar vftable pointer** (a distinctive
-`0x3677e8c`/`0x3677da4` dword in the replay-launched process) and then
-walks the fixed offsets — no blind ring scan:
+`0x3277da4` (both RVAs; the Ghidra "abs" values `0x3677e8c`/`0x3677da4`
+are preferred-base 0x400000 + RVA). **ASLR is enabled on this build**
+(DllCharacteristics 0x8140, DYNAMIC_BASE set), so the runtime vftable
+pointer is (runtime module base + RVA), NOT the preferred-base constant.
+The SessionController instance itself is created by the by-name
+controller registry, so an approved offline session locates the anchor by
+scanning for the **avatar vftable pointer** and then walks the fixed
+offsets — no blind ring scan:
 
-1. Scan for dword `0x3677e8c` (replay) or `0x3677da4` (live) → the avatar
-   controller instance (first vftable slot of the object).
-2. `battleResources = [avatar+0x154]`; `camera = [br+0x2C]`;
+1. Probe scan learns the runtime module base from the pattern-scan
+   response's `baseAddress` (the response reports the main-module base at
+   scan time even with zero candidates).
+2. Scan for dword `base + 0x3277e8c` (replay) or `base + 0x3277da4` (live),
+   little-endian → the avatar controller instance (first vftable slot of
+   the object).
+3. `battleResources = [avatar+0x154]`; `camera = [br+0x2C]`;
    `cameraState = [camera+0x28]`.
-3. Require finite floats at `+0x58/+0x5C` (yaw/pitch) and a plausible world
-   position at `+0x11C/+0x120/+0x124`.
-4. Correlate `+0x58` (camera yaw) against the decoded type-10 viewpoint yaw:
-   expect ~1:1 (the replay camera tracks the author tank).
-5. Correlate `+0x11C` (camera position) against the viewpoint tank position:
-   the delta is the **third-person offset** the overlay currently lacks
-   (camera ≈ 5-10 m behind + 2-5 m above the tank) — the exact correction
-   for W2S nameplate alignment.
-6. Cross-check the `+0xAC` rows against a recomputed yaw×pitch basis
-   (consistency, ± small residual).
+4. Require finite floats at `+0x58/+0x5C` (yaw/pitch), the `+0xAC` basis
+   rows, and a plausible world position at `+0x11C/+0x120/+0x124` across
+   all rounds.
+5. Correlate `+0x58` (camera yaw) against the decoded frame camera yaw at
+   the same replay time (timeSeconds): expect ~1:1 (the replay camera
+   tracks the author viewpoint).
+6. Correlate `+0x11C` (camera position) against the nearest trajectory
+   sample at that replay time: the delta norm is the **third-person
+   offset** the overlay currently lacks (expect ~1-30 m) — the exact
+   correction for W2S nameplate alignment.
+7. Cross-check the `+0xAC` rows against a recomputed yaw×pitch basis
+   (consistency, ± small residual) — deferred to a follow-up session; the
+   first session only requires the six rows to be finite.
+
+The pre-staged session script `scripts/invoke-camera-state-verify.ps1`
+(CAM-001) implements 1-6 read-only against the server-owned endpoints
+(pattern scan + bounded reads + decoded frame), requires the
+`OfflineReplayVerified` gate, binds ground truth to the launch artifact
+like od-073, and writes a privacy-safe aggregate
+(`wotbtreader.cam001.camera-state-verify.v1`: booleans, counts, one yaw
+delta, one offset norm — no raw coordinates/addresses/bytes). Run:
+`pwsh -File scripts/invoke-camera-state-verify.ps1 -WaitVerifiedSeconds 240`
+after one approved replay launch.
 
 **Deliverable:** the true per-frame camera pose for the overlay, replacing
 the viewpoint-tank approximation in `ReplayFrameSource.BuildCamera`

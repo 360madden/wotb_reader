@@ -244,6 +244,7 @@ docs/operations/handoffs/2026-08-10-v4-minimap-texture.md
 docs/operations/handoffs/2026-08-10-w2s-hud-nameplates.md
 docs/operations/handoffs/2026-08-10-walkable-position-chain-applied.md
 docs/operations/handoffs/2026-08-10-walkable-position-chain-draft.md
+docs/operations/handoffs/2026-08-11-cam001-pre-staged-aslr-correction.md
 docs/operations/handoffs/2026-08-11-camera-family-hierarchy-factory.md
 docs/operations/handoffs/2026-08-11-camera-family-rtti.md
 docs/operations/handoffs/2026-08-11-camera-ownership-root.md
@@ -321,6 +322,7 @@ scripts/click-hangar-replay.ps1
 scripts/click-watch-offline.ps1
 scripts/ghidra-scan.py
 scripts/install-psscriptanalyzer.ps1
+scripts/invoke-camera-state-verify.ps1
 scripts/invoke-csharp-write-trace.ps1
 scripts/invoke-facing-session.ps1
 scripts/invoke-fresh44-crossbattle.ps1
