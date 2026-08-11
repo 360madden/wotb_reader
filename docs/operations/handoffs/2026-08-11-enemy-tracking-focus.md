@@ -551,6 +551,29 @@ across the FOV band, pitch diagnostic coherent), and the branch table
 → label offset / CAM-003 flip → one relaunch). Ledger Next-planned row
 references it.
 
+## G1 yaw publication dry-run — apply is validator-clean; tooling pre-staged (2026-08-11)
+
+Ran the g1-yaw-publication-draft.md checklist against a SCRATCH copy of the
+published table (the exact apply: `chains.playerYaw` = the canonical
+walkable position prefix + `recordOffset 48`, `fieldValidation.playerYaw` →
+`Verified` with the 088/089 evidence, `offsets.playerYaw` stays 0):
+
+- `validate_offset_file` → **chains validated (4 field(s))**, zero issues
+  (the only flag was my scratch filename, not the content).
+- `walkable_fidelity_issues("playerYaw", …)` → **NONE** (walkable shape +
+  identity hold).
+- The 3 existing position fields: identity still PASS (no regression).
+- Confirmed the observation exclusion is field-agnostic (`field.Offset != 0
+  && Verified` in GameSessionCoordinator) — publishing yaw as chained
+  auto-excludes it; NO C# change needed. `RingRecordRegion` already reads
+  `+0x30`.
+
+Pre-staged the two apply-tooling pieces so the operator-approved commit is
+minimal: (1) `offset_check.py` fidelity now iterates `playerYaw` (skips it
+until the published table gains the chain — the live gate still shows 3
+fields); (2) the walkable draft gains the canonical `chains.playerYaw`.
+The g1 draft records the dry-run verdict + reduced apply scope.
+
 ## Files touched
 
 - `src/WotBTreader.Core/Discovery/RingRecordRegion.cs` (pure ring-region

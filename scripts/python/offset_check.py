@@ -359,7 +359,11 @@ def check_walkable_fidelity(log_path: Path) -> list[str]:
     pub_chains = published.get("chains", {})
     draft_chains = draft.get("chains", {})
     checked = 0
-    for field in ("playerPositionX", "playerPositionY", "playerPositionZ"):
+    # playerYaw joined the walkable family 2026-08-11 (G1 pre-stage): the
+    # SAME position prefix with recordOffset 48 (+0x30), OD-RECOVERY-088/089
+    # live-verified. Fields present in only ONE side are skipped (the yaw
+    # fidelity check goes active the moment the published table gains it).
+    for field in ("playerPositionX", "playerPositionY", "playerPositionZ", "playerYaw"):
         pub = pub_chains.get(field)
         dr = draft_chains.get(field)
         if pub is None or dr is None:
@@ -369,7 +373,7 @@ def check_walkable_fidelity(log_path: Path) -> list[str]:
 
     write_log(log_path,
               f"  fidelity: walkable draft matches the published "
-              f"position chains ({checked} field(s))")
+              f"chains ({checked} field(s))")
     return issues
 
 

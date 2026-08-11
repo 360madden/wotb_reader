@@ -252,6 +252,85 @@
         "value": 24,
         "note": "float32 Z at +0x18"
       }
+    ],
+    "playerYaw": [
+      {
+        "kind": "rootRva",
+        "value": 67722376,
+        "note": "GameCoreRootRva 0x04095C88 - root slot dereferences to the GameCore pointer"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 12,
+        "note": "GameCore->AppController 0x0C"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 292,
+        "note": "AppController->SessionController 0x124"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 280,
+        "note": "SessionController->AccountController 0x118"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 296,
+        "note": "AccountController->Active playback controller 0x128"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 288,
+        "note": "PlaybackController->Connection 0x120"
+      },
+      {
+        "kind": "inlineOffset",
+        "value": 4,
+        "note": "Connection->BWEntities map - INLINE member (no deref) 0x04"
+      },
+      {
+        "kind": "entityLookup",
+        "value": 0,
+        "cachedEntityOffset": 72,
+        "entityIdOffset": 28,
+        "treeRootOffsets": [
+          28,
+          64,
+          52
+        ],
+        "treeNodeSize": 24,
+        "treeNodeNilOffset": 13,
+        "treeNodeKeyOffset": 16,
+        "treeNodeValueOffset": 20,
+        "treeNodeChildLessOffset": 0,
+        "treeNodeChildGreaterOffset": 8,
+        "treeSentinelFirstNodeOffset": 4,
+        "maxTreeNodes": 1024,
+        "note": "Entity lookup (resolver constants): cache fast path 0x48 + ALTERNATIVE tree roots 0x1C/0x40/0x34, node 0x18 layout; target entity id supplied per walk"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 56,
+        "note": "Found entity->movement filter 0x38"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 8,
+        "note": "Filter->avatar helper 0x08"
+      },
+      {
+        "kind": "ringIndex",
+        "value": 8,
+        "indexOffset": 456,
+        "stride": 56,
+        "note": "Helper->ring entry - INLINE ring 0x08 + index(0x1C8)*0x38, stride 0x38"
+      },
+      {
+        "kind": "recordOffset",
+        "value": 48,
+        "note": "float32 hull yaw at +0x30 (OD-RECOVERY-088/089 live-verified rotation triple roll +0x28 / pitch +0x2C / yaw +0x30)"
+      }
     ]
   }
 }

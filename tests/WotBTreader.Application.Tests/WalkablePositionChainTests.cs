@@ -48,12 +48,16 @@ public sealed class WalkablePositionChainTests
         Assert.IsTrue(result.IsSuccess, result.Error?.Message);
         Assert.IsNotNull(result.Value);
         Assert.IsNotNull(result.Value.Chains);
-        Assert.HasCount(3, result.Value.Chains);
+        Assert.HasCount(4, result.Value.Chains);
 
         Type10EntityPositionLayout layout = Layout;
         AssertChainEqual(ExpectedChain((int)layout.PositionRecordOffset), result.Value.Chains["playerPositionX"]);
         AssertChainEqual(ExpectedChain((int)layout.PositionRecordOffset + 4), result.Value.Chains["playerPositionY"]);
         AssertChainEqual(ExpectedChain((int)layout.PositionRecordOffset + 8), result.Value.Chains["playerPositionZ"]);
+        // G1 (2026-08-11): the yaw chain is the SAME walk with the final
+        // recordOffset 0x30 (OD-RECOVERY-088/089 live-verified rotation
+        // triple) — pinned to the resolver's ring-record yaw constant.
+        AssertChainEqual(ExpectedChain(RingRecordRegion.YawOffset), result.Value.Chains["playerYaw"]);
     }
 
     [TestMethod]

@@ -41,6 +41,16 @@ the resolver's ring-record record.
 
 ## 3. Apply steps (ONLY after operator approval)
 
+> **Pre-staged 2026-08-11 (dry-run validator-clean):** step 2's checker
+> extension and step 4's canonical draft chain are ALREADY staged —
+> `offset_check.py` fidelity now iterates `playerYaw` (skips it until the
+> published table gains the chain), and the walkable draft carries
+> `chains.playerYaw` (position prefix + `recordOffset 48`). A scratch
+> dry-run of the full table edit passed `validate_offset_file` (chains
+> validated 4 field(s)) with zero fidelity issues and no regression on the
+> 3 position fields. The apply commit is therefore: the table edit below +
+> `offline/memory-offsets.md` + evidence; nothing else.
+
 1. `memory-offsets/11.19.0.10.json`:
    - `fieldValidation.playerYaw` → `status: "Verified"`, APPEND the
      OD-RECOVERY-088 + 089 evidence entries (live dumps, scores, lag,
