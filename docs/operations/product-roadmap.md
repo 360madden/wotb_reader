@@ -250,7 +250,19 @@ timeline). Handoff:
 ✅ **CAM-001 verdict: `camera-state-consistent` (2026-08-11, CAM-004)**:
 GameCamera posA `+0x38` is the true world camera — **23.57 m** from the
 viewpoint tank (7/8 rounds within 1-30 m, memory-space, same wall time),
-identity gates pass, posC `+0xB0` is a different quantity (368.8 m). The
+identity gates pass, posC `+0xB0` is a different quantity (368.8 m).
+⚠️ **CAM-001 v7 look-at check HONEST-NEGATIVE + root cause ISOLATED
+(2026-08-11)**: two v7 launches read posA ~120 m from the tank with level
+pitch — the memory camera was NOT aimed at the tank. Three probes on
+session `019ff25b` falsified wrong-instance (the GameCamera is UNIQUE in
+the process and the chain reaches it), wrong-class (same RVA 0x32dafa0
+under ASLR bases 0x380000 vs 0xAB0000), and wrong-field (no near-tank
+pose anywhere in +0x00..0x200): posA is a real live pose that tracks the
+tank x exactly but sits ~50 m above/behind — a NON-chase camera STATE on
+that launch (CAM-004's launch had the chase state). Remaining
+discriminator (rendering-only): capture the game window and compare the
+screen view against posA. See `cam001-v7-evidence-template.md`.
+The
 CAM-003 resolver gate is **REFRAMED by CAM-008 (2026-08-11)**: the
 "variant" `base+0x325ad2c` is RTTI-verified to be **PreLoginController**
 — the game was simply not in a battle session yet during those reads (the

@@ -57,6 +57,35 @@ pointers in the GameCamera region to fingerprint the instance, and (2)
 checks whether CAM-004's launch had a different session-controller
 variant. Only then re-attempt the v7 look-at check.
 
+## Root-cause isolation DONE (2026-08-11, session `019ff25b`, 3 probes)
+
+A fingerprint session ran three read-only probes against the live walk.
+**Result: the wrong-instance and wrong-field hypotheses are FALSIFIED;
+the failure is a camera-MODE/state artifact of this launch.**
+
+| Probe | Evidence | Conclusion |
+|---|---|---|
+| 1. GameCamera instance enumeration | process-wide vftable pattern scan (`base+0x32dafa0`, 10k-candidate cap) found **exactly ONE GameCamera instance** — and the walked chain reaches it (walked cameraState == the instance, class-OK) | **wrong-instance FALSIFIED** — there is no second/alt instance to land on |
+| 2. Class identity cross-launch | CAM-004 verified run `cameraStateVftableHex 0x0365AFA0` vs today `0x03D8AFA0` — both = module base + RVA `0x32dafa0` (bases 0x380000 vs 0xAB0000 are pure ASLR) | class identity airtight; the read surface + offsets are the same object layout |
+| 3. GameCamera object-window scan (`+0x00..0x200`, 128 floats) | posA `+0x38` = (−77.0, 92.2, 47.4) with tank at (−76.3, 40.9, 99.6): camera tracks the tank x exactly (−77 vs −76) but sits **51 m above / 52 m behind**; yaw 0.122 rad vs direction-to-tank 0.013 rad; pitch −5.8° vs pitch-to-tank −44.5°. No float triple in the whole window sits in the 1–50 m third-person band (only `+0x174` at 49.4 m, marginally outside) | **wrong-field FALSIFIED** — no near-tank pose exists anywhere in the object; posA/posB (+0x44) are the chase-interpolated pair but hold the HIGH pose |
+
+**What this means:** the GameCamera object the chain reaches is real and
+live (posA changes as the tank drives, tracks x exactly) but it holds a
+NON-chase camera pose this launch — high above and behind the tank,
+looking level. CAM-004's 23.57 m chase offset was measured on a launch
+where the camera was in the chase state. The flipped-phase launch puts the
+camera in a different state (orbit/spectator/high), so the v7 look-at
+check correctly reports that the memory camera is NOT aimed at the tank.
+
+The remaining discriminator (MODE vs wrong-pose, not yet run): capture the
+rendered game window (the launcher shrinks it to a known size) and compare
+the screen view against posA. If the screen shows the tank from high
+above, posA is RIGHT and the mode is the cause — the W2S must consume the
+high-camera pose as-is (the overlay still projects correctly; the tank is
+just off-center). If the screen shows the chase view, posA is wrong for
+this state and a field re-derivation is needed. Either way this is a
+rendering-only decision; no resolver/offset-table change.
+
 
 The session turns the CAM-004 `camera-state-consistent` verdict (GameCamera
 posA `+0x38` is the true world camera; yaw cos/sin `+0x50/+0x54`, pitch

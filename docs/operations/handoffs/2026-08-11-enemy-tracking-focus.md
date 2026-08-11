@@ -766,6 +766,38 @@ target-id candidates join against the roster. Includes the branch table
   camera-as-turret-driver, camera-yaw discriminator, branch table)
 - `docs/operations/handoffs/2026-08-11-enemy-tracking-focus.md` (this file)
 
+## CAM-001 v7 root cause ISOLATED — wrong-instance/wrong-field falsified (2026-08-11)
+
+Session `019ff25b` (third approved launch of the day) ran three read-only
+probes against the live walk and pinned the honest-negative's cause:
+
+1. **GameCamera instance enumeration** (process-wide vftable pattern scan
+   of `base+0x32dafa0`, 10k-cap): exactly ONE GameCamera instance exists
+   and the walked chain reaches it — **wrong-instance FALSIFIED**. There
+   is no second/alt camera to land on.
+2. **Class identity cross-launch**: CAM-004's verified `0x0365AFA0` vs
+   today's `0x03D8AFA0` both equal module base + RVA `0x32dafa0` (ASLR
+   bases 0x380000 vs 0xAB0000) — **wrong-class FALSIFIED**; the read
+   surface sees the same object layout as CAM-004.
+3. **GameCamera object-window scan** (`+0x00..0x200`, 128 floats): posA
+   `+0x38` = (−77.0, 92.2, 47.4) with tank (−76.3, 40.9, 99.6) — camera
+   tracks the tank x EXACTLY but sits 51 m above / 52 m behind, yaw
+   0.122 vs direction-to-tank 0.013, pitch −5.8° vs −44.5° to tank. NO
+   float triple in the window is within 1–50 m of the tank —
+   **wrong-field FALSIFIED**.
+
+**Conclusion:** the walked GameCamera is real and live but holds a
+NON-chase camera STATE this launch (high above/behind, level pitch) — the
+v7 look-at check correctly reports "not aimed at the tank". CAM-004's
+23.57 m was measured on a launch whose camera was in the chase state.
+
+**Remaining discriminator (rendering-only, no resolver/offset change):**
+capture the shrunk game window and compare the screen view against posA —
+high view on screen ⇒ posA right and W2S consumes the pose as-is (tank
+simply off-center); chase view on screen ⇒ field re-derivation needed.
+Recorded in `cam001-v7-evidence-template.md` (Root-cause isolation DONE
+section), the ledger Next-planned row, and the roadmap CAM-001 entry.
+
 ## OD-RECOVERY-090 — L3 damage-dealt HONEST-NEGATIVE (2026-08-11)
 
 Two launches (session `019ff249` then the one-relaunch allowance
