@@ -278,6 +278,7 @@ docs/operations/handoffs/2026-08-11-yaw-quarantine-reconciled.md
 docs/operations/handoffs/README.md
 docs/operations/legacy-observation-surface.md
 docs/operations/live-frame-loop-design.md
+docs/operations/live-roster-name-join-design.md
 docs/operations/live-roster-read-design.md
 docs/operations/od-recovery-086-evidence-template.md
 docs/operations/offset-discovery-guide.md

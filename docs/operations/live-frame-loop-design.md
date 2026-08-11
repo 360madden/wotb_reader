@@ -155,10 +155,13 @@ open question, not silently decided.
    `GetOverlayFrameAsync` and `GetLiveFrameAsync`; the render path is
    unchanged, the kill feed / scoreboard stay empty (decode-projection
    features), and a non-resolved/failed live read keeps last-good.
-   Remaining: joining live ids to decoded roster names once X2b proves the
-   id mapping (also the "own nameplate" refinement — live mode renders the
-   viewpoint tank at its ~23.57 m third-person camera offset, so the
-   self-filter needs the id join, not distance).
+   The name join is DESIGNED (pre-staged, no code until X2b proves the id
+   mapping): `docs/operations/live-roster-name-join-design.md` — a
+   server-side entity-id → decoded-participant join feeding
+   `LiveFrameProjector` (names/clan/team/tank), fail-closed per id, plus
+   the own-nameplate suppression that rides the same join (live mode
+   renders the viewpoint tank at its ~23.57 m third-person camera offset,
+   so the self-filter needs the id join, not distance).
 4. **Measure the frame window** on the approved session; record it as the
    loop's budget (feeds item 7). The measurement is IMPLEMENTED: the frame
    result carries `LiveFrameReadMeasurement` (anchor-scan start →

@@ -156,10 +156,12 @@ checkbox in the HUD toolbar flips `RefreshOverlayFrameAsync` between the
 replay fetch and `GetLiveFrameAsync`; the render path is unchanged, the
 kill feed / scoreboard stay empty in live mode (decode-projection
 features), and a non-resolved/failed live read keeps last-good.
-Remaining: the live-ids → decoded-name join once X2b proves the id
-mapping (also the "own nameplate" refinement — live mode renders the
-viewpoint tank at its ~23.57 m third-person camera offset, so the
-self-filter needs the id join, not distance). The frame read-window
+Remaining: the live-ids → decoded-name join — now DESIGNED (pre-staged,
+`docs/operations/live-roster-name-join-design.md`: server-side
+entity-id → decoded-participant join feeding `LiveFrameProjector`, honest
+fail-closed per id, own-nameplate suppression riding the same join). No
+code until X2b's `-EnumerateLive` rehearsal proves the id mapping
+(exact set match). The frame read-window
 measurement is IMPLEMENTED: `LiveFrameReadMeasurement` (anchor-scan start
 → camera-pose read end + the ONE G2 snapshot moment from the batch) flows
 through `LiveFrameReadResult` → the `/discover/live-frame` DTO; the loop's
