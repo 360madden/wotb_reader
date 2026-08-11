@@ -148,7 +148,23 @@ RTTI (`ResolveVftableClass`); `BaseCameraController` slot 4
 `(idx+0x36)*0x10` and `0x364+idx*0x10`, 0x10-byte stride, ringIndex at
 `[ring+0x320]`) — the same bounded-ring pattern as the G0 position ring,
 the anchor for the VP-matrix hunt. New tools: `FindVftableForType.java`
-(reverse RTTI name→vftable) + `DumpHierarchy.java` (RTTI base walk).
+(reverse RTTI name→vftable) + `DumpHierarchy.java` (RTTI base walk). ✅ **Camera
+family: full hierarchy + factory + ring mechanics (2026-08-11)**: the three
+camera vftables are forward-verified — BaseCameraController `0x32dddcc`,
+**CameraController `0x32de028`** (RTTI `.?AVCameraController@@`; NOT the
+stale `0x36de028`, which is an exception table), ReplayCameraController
+`0x326dd0c`. Camera factory `FUN_0165fe40` dispatches on battle mode
+(2 = replay → ReplayCameraController 0x60; else CameraController 0x98) and
+stores the camera refcounted at `[mgr+0x2C]`; the camera-state ring object
+comes from `[[mgr+0xC]+0x8C]` → `[cam+0x28]`. Ring writer = base vtable slot 4
+(`FUN_01dd2cd0`): two floats per frame into 16-byte entries at
+`0x360/0x364 + idx*0x10`, index at `[ring+0x320]`, mirrors `+0x324/+0x328`.
+CameraController slots decoded: drag accumulator (`FUN_01dc51d0`, sens
+`[cam+0x40]`), drag→ring handler (`FUN_01dc5440`, point-in-rect + ring write),
+state machine (`FUN_01dc5310`). The ring's two floats are camera
+screen-space/input state — the world position/VP matrix remain the open
+W2S lead. Handoff:
+`docs/operations/handoffs/2026-08-11-camera-family-hierarchy-factory.md`.
 
 ### Phase 2 — The live seam + first live sessions (serialized)
 
