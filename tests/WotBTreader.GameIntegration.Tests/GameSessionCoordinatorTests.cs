@@ -1678,6 +1678,30 @@ public sealed class GameSessionCoordinatorTests
         Assert.IsFalse(tooManyBytes.IsSuccess);
         Assert.AreEqual("discover.entity_regions.invalid_request", tooManyBytes.Error?.Code);
 
+        // The L1 entity-base length is validated too (bounds, and it counts
+        // toward the total-byte cap).
+        OperationResult<EntityRegionsReadResult> zeroEntityBaseLength = await coordinator
+            .ReadEntityRegionsAsync(
+                new EntityRegionsReadRequest(
+                    [new EntityRegionReadRequestItem(
+                        4242,
+                        RegionLength: 8,
+                        EntityBaseRegionLength: 0)]),
+                CancellationToken.None);
+        Assert.IsFalse(zeroEntityBaseLength.IsSuccess);
+        Assert.AreEqual("discover.entity_regions.invalid_request", zeroEntityBaseLength.Error?.Code);
+
+        OperationResult<EntityRegionsReadResult> tooLongEntityBase = await coordinator
+            .ReadEntityRegionsAsync(
+                new EntityRegionsReadRequest(
+                    [new EntityRegionReadRequestItem(
+                        4242,
+                        RegionLength: 8,
+                        EntityBaseRegionLength: 4097)]),
+                CancellationToken.None);
+        Assert.IsFalse(tooLongEntityBase.IsSuccess);
+        Assert.AreEqual("discover.entity_regions.invalid_request", tooLongEntityBase.Error?.Code);
+
         // No validation failure ever creates a memory reader.
         Assert.AreEqual(0, factory.CreateCount);
     }
