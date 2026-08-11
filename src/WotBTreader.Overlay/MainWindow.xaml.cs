@@ -193,6 +193,7 @@ public partial class MainWindow : System.Windows.Window, IDisposable
             _viewModel.MinimapCameraX,
             _viewModel.MinimapCameraZ,
             _viewModel.KillFeed,
+            _viewModel.MinimapImageSource,
             ActualWidth,
             ActualHeight);
     }

@@ -62,9 +62,11 @@ public sealed partial class W2sHudView : UserControl
     /// Replaces the HUD contents with the given beacons (drawn first, under
     /// the nameplates), pips (drawn next, floating above the nameplates), and
     /// nameplates. All lists are already filtered to in-viewport projections
-    /// by the view model. The minimap panel (god-view dots) is drawn pinned
-    /// to the bottom-right corner, and the kill feed to the bottom-left;
-    /// each is skipped when it has no entries.
+    /// by the view model. The minimap panel (god-view dots over the map
+    /// texture) is drawn pinned to the bottom-right corner, and the kill feed
+    /// to the bottom-left; each is skipped when it has no entries. The
+    /// <paramref name="minimapImage"/> is the current map's texture, aligned
+    /// to the same normalized coordinate space as the dots.
     /// </summary>
     public void Render(
         IReadOnlyList<BeaconItem> beacons,
@@ -75,6 +77,7 @@ public sealed partial class W2sHudView : UserControl
         double? cameraX,
         double? cameraZ,
         IReadOnlyList<KillItem> killFeed,
+        ImageSource? minimapImage,
         double viewportWidth,
         double viewportHeight)
     {
@@ -97,7 +100,7 @@ public sealed partial class W2sHudView : UserControl
         if (minimap.Count > 0 || minimapBeacons.Count > 0)
         {
             HudCanvas.Children.Add(
-                BuildMinimap(minimap, minimapBeacons, cameraX, cameraZ, viewportWidth, viewportHeight));
+                BuildMinimap(minimap, minimapBeacons, cameraX, cameraZ, viewportWidth, viewportHeight, minimapImage));
         }
 
         if (killFeed.Count > 0)
@@ -153,11 +156,15 @@ public sealed partial class W2sHudView : UserControl
 
     /// <summary>
     /// Builds the god-view minimap panel: a fixed-size square pinned to the
-    /// bottom-right corner, with one dot per tank at its normalized position
-    /// (team-colored; grey when destroyed) and a white ring for the camera.
-    /// The camera marker is only drawn when the viewpoint position is known.
-    /// Pure layout math is unit-tested via <see cref="MinimapMath"/> and
-    /// <see cref="MinimapDotRect"/>.
+    /// bottom-right corner, with the map texture as background, one dot per
+    /// tank at its normalized position (team-colored; grey when destroyed)
+    /// and a white ring for the camera. The camera marker is only drawn when
+    /// the viewpoint position is known. The texture is stretched to the panel
+    /// so dots in normalized coordinates align with terrain features; a
+    /// non-square boundary therefore distorts the texture rather than the
+    /// dots (dot alignment is the invariant that matters). Pure layout math is
+    /// unit-tested via <see cref="MinimapMath"/>, <see cref="MinimapDotRect"/>
+    /// and <see cref="MinimapImageRect"/>.
     /// </summary>
     private static Canvas BuildMinimap(
         IReadOnlyList<MinimapItem> minimap,
@@ -165,7 +172,8 @@ public sealed partial class W2sHudView : UserControl
         double? cameraX,
         double? cameraZ,
         double viewportWidth,
-        double viewportHeight)
+        double viewportHeight,
+        ImageSource? minimapImage)
     {
         const double panelSize = 150;
         const double margin = 12;
@@ -180,7 +188,21 @@ public sealed partial class W2sHudView : UserControl
         Canvas.SetRight(panel, margin);
         Canvas.SetBottom(panel, margin);
 
-        // Beacons first (under the tank dots): small diamonds in their own
+        // Map texture under the dots: stretched to the panel square, matching
+        // the 0..1 normalized coordinate space the dots and beacons share.
+        if (minimapImage is not null)
+        {
+            panel.Children.Add(new Image
+            {
+                Source = minimapImage,
+                Width = panelSize,
+                Height = panelSize,
+                Opacity = 0.55,
+                Stretch = Stretch.Fill,
+            });
+        }
+
+        // Beacons next (under the tank dots): small diamonds in their own
         // marker color, so POIs read even where they overlap tanks.
         foreach (MinimapBeaconItem beacon in minimapBeacons)
         {
@@ -244,6 +266,15 @@ public sealed partial class W2sHudView : UserControl
     /// </summary>
     public static Rect MinimapDotRect(double normalizedX, double normalizedZ, double panelSize, double dotRadius) =>
         new(normalizedX * panelSize - dotRadius, normalizedZ * panelSize - dotRadius, dotRadius * 2, dotRadius * 2);
+
+    /// <summary>
+    /// Computes the minimap texture image rect for a given panel size, for
+    /// unit tests (no WPF rendering required). Mirrors the layout used by
+    /// <see cref="BuildMinimap"/>: the texture fills the panel so normalized
+    /// dot coordinates align with terrain features.
+    /// </summary>
+    public static Rect MinimapImageRect(double panelSize) =>
+        new(0, 0, panelSize, panelSize);
 
     private static Canvas BuildBeacon(BeaconItem beacon)
     {

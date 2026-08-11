@@ -67,4 +67,17 @@ public sealed class W2sHudViewTests
         Assert.AreEqual(150 - 4, se.Left, 1e-9);
         Assert.AreEqual(150 - 4, se.Top, 1e-9);
     }
+
+    [TestMethod]
+    public void MinimapImageRect_FillsPanelSquare()
+    {
+        // The texture is stretched to the panel so normalized coordinates
+        // (which map 0..1 onto 0..panelSize) align with terrain features.
+        Rect rect = W2sHudView.MinimapImageRect(panelSize: 150);
+
+        Assert.AreEqual(0, rect.Left, 1e-9);
+        Assert.AreEqual(0, rect.Top, 1e-9);
+        Assert.AreEqual(150, rect.Width, 1e-9);
+        Assert.AreEqual(150, rect.Height, 1e-9);
+    }
 }
