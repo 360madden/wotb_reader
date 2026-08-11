@@ -204,6 +204,25 @@ and branch-on-evidence rules (hit at `+0x2C` → live frame yaw
 live-verified; different offset → live finding wins; no-hit → widen the
 probe; Dead Rail's 5 seam crossings exercise the wrap-aware matcher).
 
+## X1 policy memo APPROVED (2026-08-11)
+
+The owner approved the X1 memo **Option A** (read-only live overlay,
+replay-proven fields only) on 2026-08-11: the memo is ticked and dated,
+the roadmap X1 row shows the gate passed, and the Phase-5 design track is
+unlocked (live-mode gate relaxation design, live session drivers). The
+approval authorizes NO live testing — every live session remains
+separately gated, and the code-enforced `OfflineReplayVerified` gate is
+unchanged until a subsequent operator-approved change. The first unlocked
+deliverable is DESIGNED: `docs/operations/live-match-gate-design.md` — a
+new `LiveMatchVerified` state whose evidence is the unchanged
+process/build identity PLUS a single-flight, time-bounded, launch-correlated
+user live assertion (no replay lifecycle marker exists for live play, so
+none is fabricated); the replay gate and every existing surface stay
+untouched, live mode is read-only by state-machine construction,
+and a field is only readable live after its own live session passes
+(086/087/088). Implementation + the online-match session remain separately
+gated.
+
 ## X1 policy memo drafted (2026-08-11)
 
 `docs/operations/x1-live-game-policy-memo.md` is the Phase-5 gate document

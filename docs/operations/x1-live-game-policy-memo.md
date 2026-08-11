@@ -1,8 +1,14 @@
-# X1 policy memo — live-game overlay track (DRAFT for explicit approval)
+# X1 policy memo — live-game overlay track (APPROVED — Option A)
 
 **Date:** 2026-08-11
-**Status:** DRAFT — nothing in this memo is in effect until the operator
-(project owner) explicitly approves it. It is the Phase-5 gate document the
+**Decision date:** 2026-08-11
+**Status:** APPROVED — Option A (read-only live overlay, replay-proven
+fields only), by the project owner. Approval unlocks the Phase-5 design
+track (live-mode gate relaxation design, live session drivers). It
+authorizes **no** live testing: every live session remains separately
+gated, and the code-enforced `OfflineReplayVerified` gate on scanner and
+observation paths is unchanged until a subsequent operator-approved
+change. It is the Phase-5 gate document the
 roadmap requires before any live-online work (roadmap X1: "Policy memo:
 ADR-0002 relaxation decision, ToS risk, scope — gate: explicit user
 approval").
@@ -107,8 +113,8 @@ memo records the decision either way.
 
 ## Approval
 
-- [ ] **Approved — Option A** (read-only live overlay, replay-proven fields only)
-- [ ] **Approved — Option A+B** (read-only + local-only live record)
-- [ ] **Rejected — Option C** (replays only, live ambition dropped)
-- Decision date: ____
+- [x] **Approved — Option A** (read-only live overlay, replay-proven fields only) — **2026-08-11, project owner**
+- [ ] **Approved — Option A+B** (read-only + local-only live record) — not chosen; may be revisited
+- [ ] **Rejected — Option C** (replays only, live ambition dropped) — not chosen
+- Decision date: 2026-08-11
 - Approver: project owner
