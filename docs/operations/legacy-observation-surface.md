@@ -1,5 +1,16 @@
 # Legacy observation surface — what the runtime memory path can actually read
 
+> **DEPRECATED (frozen, 2026-08-11)** — per the resolver-path consolidation
+> plan (`docs/operations/resolver-path-consolidation.md`), this surface is
+> the historical offset-table read path and is **never extended**: it reads
+> `moduleBase + offset` for fields with a non-zero `Verified` offset, and
+> chained fields (position) are deliberately excluded (offsets 0) so it
+> emits position nulls — pinned by
+> `ChainedFields_AreExcludedFromObservationReads`. The **resolver path**
+> (module-rooted chain resolution) is the canonical read surface for new
+> and existing live reads; this doc is retained as the authoritative trace
+> of why the old path behaves as it does.
+
 Authoritative trace (2026-08-10) of the runtime **observation** read path —
 the one that consumes `memory-offsets/<version>.json` through
 `OffsetTableReader`. The **resolver** path

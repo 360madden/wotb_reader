@@ -50,11 +50,23 @@ cross-link, and the planning handoff.
 - Every chain read returns the retryable `ReplaySessionInactive` for the
   pre-battle phase (CAM-008) and callers retry through it (G1 poll pattern).
   Unknown vftables fail closed. Never dereference garbage.
+- **✅ AUDITED 2026-08-11 (no gaps found):** Core resolver (PreLogin vftable
+  → `ReplaySessionInactive` retry; unknown → `UnsupportedSessionController`
+  stop); coordinator `entity-position` + `position-page`/`entity-region`
+  both pass the status through (never a terminal error for inactive);
+  camera-pose is gate-free by design and reports `AnchorNotFound` during
+  pre-battle (honest; the frame endpoint fails closed to the viewpoint, the
+  CAM-001 script polls on); the CAM-001 direct walk bails on the PreLogin
+  vftable and the round loop keeps polling (`+direct-walk-failed`); the G1
+  poll retries explicitly (3 attempts, corrected mode). Standard holds.
 
 ### 4. Freeze + deprecate the legacy observation surface
 - No code changes (already frozen + test-pinned); add a deprecation note so
   nobody extends it. The observation keeps emitting nulls for chained fields;
   the resolver endpoints are the sanctioned API.
+- **✅ DONE 2026-08-11:** deprecation banner added to
+  `docs/operations/legacy-observation-surface.md` (frozen, never extended,
+  resolver path canonical).
 
 ### 5. L1–L4 mapping onto the pipeline
 | Track | Anchor | Region / correlate | Published form | Live session cap |
