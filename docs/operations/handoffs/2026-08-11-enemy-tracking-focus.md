@@ -766,6 +766,36 @@ target-id candidates join against the roster. Includes the branch table
   camera-as-turret-driver, camera-yaw discriminator, branch table)
 - `docs/operations/handoffs/2026-08-11-enemy-tracking-focus.md` (this file)
 
+## OD-RECOVERY-090 — L3 damage-dealt HONEST-NEGATIVE (2026-08-11)
+
+Two launches (session `019ff249` then the one-relaunch allowance
+`019ff250`): launch 1 aborted at 269.3 s with `EntityNotFound` (memory-walk
+flake on the flipped CAM-003 phase — the viewpoint tank was never
+destroyed, decoded alive to 281 s). Launch 2 captured all 6 event windows
++ controls (50 dumps, 320 B entity-base, every dump
+`sameDecodedClockProven=true`) and returned **`hit=False`**:
+
+- Top candidate `+0x3C` at score 0.833 / matched 5/6, but **flatness
+  0.091** — demoted. Verified in the dumps: `+0x3C` is the entity-base
+  position-copy x float (turret survey); as int32 it varies by millions as
+  the tank drives, and the lenient `delta >= +Σ` rule coincidentally
+  matched; the flat controls correctly demoted it. The flatness control
+  worked exactly as designed.
+- **Reading:** no int32 in the 320-byte entity-base region rises exactly by
+  dealt damage and stays flat otherwise. The counter either lives beyond
+  `+0x140`, on a sibling record, or isn't a plain per-event int32 here. No
+  guess made; nothing promoted.
+- **Corrections:** the pre-staged ground truth was stale — current decode
+  shows **6 events / 752 damage** (not 5/2184) for Oasis 3760577; the
+  template + ledger now carry the measured numbers.
+- **Re-attempt path (if pursued):** wider region (~0x1000 cap) and/or
+  sibling-record sweep with the same increment-correlator contract; Dead
+  Rail repeat (attacker 2549401) remains the Phase-4 gate for any future
+  hit. HP publication keeps its own Phase-4 rule (victim 2549399).
+
+Evidence recorded in `od-recovery-090-evidence-template.md` (filled),
+ledger 090 section + Next-planned, and the roadmap L3 row.
+
 ## CAM-001 v7 live session — HONEST-NEGATIVE, camera not aimed at tank (2026-08-11)
 
 Two approved launches (Oasis Palms; `019ff23a` then the one-relaunch
