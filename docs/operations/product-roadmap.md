@@ -250,12 +250,20 @@ extracted for testability.
 through the tested `cameraOverride` seam, and the frame endpoint pulls
 the pose from the scanner port when a gate-verified session is live
 (fail-closed: any read/status problem → viewpoint). 2 new endpoint
-tests. Remaining: the live session (frame response carries the memory
-pose) + the projection cross-check (viewpoint tank lands near screen
-center through the memory camera). Handoffs:
+tests.
+✅ **CAM-007 (2026-08-11): the W2S projection cross-check is ready** —
+`verify-camera-projection.py` projects the decoded tank through the
+memory camera with the exact `WorldToScreen.Project` math and asserts
+the third-person look-at property (tank near screen center across the
+70–110° FOV band, look-at angle small), with a pitch-convention
+diagnostic; the CAM-001 script now persists per-round pose + decoded
+tank (schema v7). Self-tested with synthetic fixtures; needs one live
+session for real evidence. Remaining: the live session (frame response
+carries the memory pose; validator verdict on v7 evidence). Handoffs:
 `docs/operations/handoffs/2026-08-11-cam004-camera-state-consistent.md`,
 `docs/operations/handoffs/2026-08-11-cam005-host-camera-pose-endpoint.md`,
-`docs/operations/handoffs/2026-08-11-cam006-camera-wired-into-frame-endpoint.md`.
+`docs/operations/handoffs/2026-08-11-cam006-camera-wired-into-frame-endpoint.md`,
+`docs/operations/handoffs/2026-08-11-cam007-projection-cross-check.md`.
 
 ### Phase 2 — The live seam + first live sessions (serialized)
 

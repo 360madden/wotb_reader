@@ -250,6 +250,7 @@ docs/operations/handoffs/2026-08-11-cam003-session-controller-phase-drift.md
 docs/operations/handoffs/2026-08-11-cam004-camera-state-consistent.md
 docs/operations/handoffs/2026-08-11-cam005-host-camera-pose-endpoint.md
 docs/operations/handoffs/2026-08-11-cam006-camera-wired-into-frame-endpoint.md
+docs/operations/handoffs/2026-08-11-cam007-projection-cross-check.md
 docs/operations/handoffs/2026-08-11-camera-family-hierarchy-factory.md
 docs/operations/handoffs/2026-08-11-camera-family-rtti.md
 docs/operations/handoffs/2026-08-11-camera-ownership-root.md
@@ -352,6 +353,7 @@ scripts/python/offset_check.py
 scripts/python/overlay-consistency-check.py
 scripts/python/replay-delta-extractor.py
 scripts/python/velocity-pitch-validation.py
+scripts/python/verify-camera-projection.py
 scripts/python/verify-hp-ledger.py
 scripts/replay-play-state.ps1
 scripts/roll-replay-time-increased.ps1

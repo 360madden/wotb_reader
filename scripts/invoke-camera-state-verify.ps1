@@ -614,6 +614,7 @@ $candidates = @()
 $anchorAddress = 0L
 $chain = @()
 $cameraFields = @{}
+$roundSamples = @()
 $scanAttempts = 0
 $roundsFiniteAllFields = 0
 $roundsYawCorrelated = 0
@@ -631,6 +632,8 @@ $memoryDecodedDelta = $null
 $cameraVftableMatches = $false
 $cameraStateVftableHex = $null
 $cameraStateIdentityMatches = $false
+$memYaw = $null
+$memPitch = $null
 
 for ($round = 0; $round -lt $ReadCount; $round++) {
     try {
@@ -852,11 +855,15 @@ for ($round = 0; $round -lt $ReadCount; $round++) {
         # decoded time the camera corresponds to (the bridge into decoded
         # space for the W2S path).
         $roundYaw = $false
+        $memYaw = $null
+        $memPitch = $null
         if ((Test-Finite -Value $fieldMap['yawCos']) -and
-            (Test-Finite -Value $fieldMap['yawSin']) -and
-            $decodedYawTimeline.Count -gt 0) {
+            (Test-Finite -Value $fieldMap['yawSin'])) {
             $memYaw = [Math]::Atan2(
                 [double]$fieldMap['yawSin'], [double]$fieldMap['yawCos'])
+            $memPitch = [double]$fieldMap['pitch']
+        }
+        if ($null -ne $memYaw -and $decodedYawTimeline.Count -gt 0) {
             $bestDelta = [double]::MaxValue
             $bestT = $null
             foreach ($entry in $decodedYawTimeline) {
@@ -959,6 +966,50 @@ for ($round = 0; $round -lt $ReadCount; $round++) {
                 }
             }
         }
+
+        # Per-round evidence for the W2S projection validator (v7): the
+        # memory camera pose (posA + yaw/pitch), the memory tank (when
+        # resolved), and the decoded tank at the yaw-aligned time. The
+        # validator projects the decoded tank through the camera and
+        # checks it lands near screen center (the third-person look-at
+        # property).
+        $roundDecodedTank = $null
+        if ($null -ne $calSample) {
+            $roundDecodedTank = @{
+                x              = [double]$calSample.x
+                y              = [double]$calSample.y
+                z              = [double]$calSample.z
+                replayTimeTicks = [long]$calSample.replayTimeTicks
+            }
+        }
+        $roundSample = [ordered]@{
+            camera = if ($null -ne $memYaw -and
+                    (Test-Finite -Value $fieldMap['posAX']) -and
+                    (Test-Finite -Value $fieldMap['posAY']) -and
+                    (Test-Finite -Value $fieldMap['posAZ'])) {
+                @{
+                    x = [double]$fieldMap['posAX']
+                    y = [double]$fieldMap['posAY']
+                    z = [double]$fieldMap['posAZ']
+                    yawRadians   = $memYaw
+                    pitchRadians = $memPitch
+                }
+            }
+            else {
+                $null
+            }
+            memoryTank = if ($null -ne $tankX) {
+                @{ x = [double]$tankX; y = [double]$tankY; z = [double]$tankZ }
+            }
+            else {
+                $null
+            }
+            decodedTank       = $roundDecodedTank
+            alignedDecodedSeconds = $alignedDecodedSeconds
+            memoryTankSource  = $memoryTankSource
+        }
+        $roundSamples += , $roundSample
+
         if ($roundPosition) {
             $roundsPositionCorrelated += 1
         }
@@ -1002,7 +1053,8 @@ else {
 }
 
 $aggregate = [ordered]@{
-    schema                = 'wotbtreader.cam001.camera-state-verify.v6'
+    schema                = 'wotbtreader.cam001.camera-state-verify.v7'
+    roundSamples          = $roundSamples
     campaign              = 'cam-001-camera-state'
     completedAtUtc        = [DateTime]::UtcNow.ToString('o')
     verdict               = $verdict

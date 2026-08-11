@@ -59,6 +59,25 @@ python scripts/python/offline_check.py --check-fresh  # fail if file-tree.md is 
 
 **Exit code:** 0 = all checks pass, 1 = broken links or a stale file-tree snapshot.
 
+### `verify-camera-projection.py` — W2S Projection Validator (CAM-001 v7)
+
+Validates the world-to-screen math end-to-end: projects the decoded
+viewpoint tank through the LIVE memory camera (GameCamera pose from a
+CAM-001 v7 aggregate) using the exact `WorldToScreen.Project` formula and
+checks the third-person look-at property — the camera aims at the tank, so
+the tank must land near viewport center across the 70–110° FOV band, with a
+small look-at angle. Also reports the pitch diagnostic (memory pitch vs the
+pitch required to aim at the tank) so a wrong pitch convention is visible.
+
+```powershell
+python scripts/python/verify-camera-projection.py            # newest .data aggregate
+python scripts/python/verify-camera-projection.py path.json  # specific aggregate
+python scripts/python/verify-camera-projection.py --self-test  # synthetic fixture, CI-safe
+```
+
+**Exit code:** 0 = verified, 1 = validation failed, 2 = evidence missing
+(no evaluable rounds — the session never resolved the tank).
+
 ### `offset_check.py` — Offset File Validator
 
 Validates all `memory-offsets/*.json` files for schema compliance, SHA256
