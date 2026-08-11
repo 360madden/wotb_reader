@@ -574,12 +574,21 @@ object** — the replay overlay's missing true camera:
 
 | offset | field |
 |---|---|
-| `+0x58/+0x5C` | camera yaw/pitch (rad) |
-| `+0x60/+0x64` | smoothed yaw/pitch |
-| `+0xAC..0xC4` | composed view-basis rows 0-1 (6 floats; yaw×pitch rotation × the hash-bound transform world matrix `[t+0x60..0x90]` + camera position, by `FUN_01dde860`) |
-| `+0x11C/+0x120/+0x124` | camera world position (per-frame integrated in `FUN_01ddb130`) |
-| `+0x320` | ring index (800) |
-| `+0x360/0x364 + idx*0x10` | per-frame ring entries (2 floats) |
+| `+0x38/+0x3C/+0x40` | camera world position (primary) |
+| `+0x44/+0x48/+0x4C` | interpolated previous position copy |
+| `+0x50/+0x54` | camera yaw as cos/sin pair (yaw = atan2(sin, cos)) |
+| `+0x58` | camera pitch |
+| `+0x80..0xA8` | view-basis rows (rotation matrix) |
+| `+0xB0/+0xB4/+0xB8` | extra position copy |
+
+> **Live-verified 2026-08-11 (CAM-002, handoff
+> `2026-08-11-cam002-live-pose-layout.md`).** The earlier static table
+> (yaw/pitch raw radians at `+0x58/+0x5C`, basis at `+0xAC..0xC4`, position
+> at `+0x11C`) is SUPERSEDED: the pose lives on the GameCamera, and a
+> diff-scan of the live object located every field (position `+0x38`,
+> yaw cos/sin `+0x50/+0x54`, pitch `+0x58`, basis `+0x80..0xA8`). The
+> ReplayCameraController itself is a frozen shell (no live fields); the
+> per-frame dispatcher writes the pose into the GameCamera.
 
 Reachability is now a **fixed member-path** (resolved 2026-08-11;
 handoff `docs/operations/handoffs/2026-08-11-camera-ownership-root.md`):
@@ -611,27 +620,34 @@ offsets — no blind ring scan:
    the object).
 3. `battleResources = [avatar+0x154]`; `camera = [br+0x2C]`;
    `cameraState = [camera+0x28]`.
-4. Require finite floats at `+0x58/+0x5C` (yaw/pitch), the `+0xAC` basis
-   rows, and a plausible world position at `+0x11C/+0x120/+0x124` across
+4. Require finite floats for the GameCamera pose block (`+0x38` position,
+   `+0x50/+0x54` yaw cos/sin, `+0x58` pitch, `+0x80..0xA8` basis) across
    all rounds.
-5. Correlate `+0x58` (camera yaw) against the decoded frame camera yaw at
-   the same replay time (timeSeconds): expect ~1:1 (the replay camera
-   tracks the author viewpoint).
-6. Correlate `+0x11C` (camera position) against the nearest trajectory
-   sample at that replay time: the delta norm is the **third-person
-   offset** the overlay currently lacks (expect ~1-30 m) — the exact
-   correction for W2S nameplate alignment.
+5. Align the memory camera yaw (atan2 of the cos/sin pair) against the
+   decoded frame camera yaw timeline: expect a tight best match (~0.05
+   rad) with the SAME sign convention (measured 0.0027 rad live) — this
+   bridges the memory clock into decoded time.
+6. Correlate the memory camera position against the viewpoint tank read
+   IN MEMORY SPACE via `/discover/entity-position` at the same wall time
+   (no decoded-clock alignment needed): the delta norm is the
+   **third-person offset** the overlay currently lacks (expect ~1-30 m) —
+   the exact correction for W2S nameplate alignment.
+7. Coordinate-space calibration (open item): compare the memory tank
+   position vs the decoded trajectory at the yaw-aligned time. If they
+   differ by a constant translation/axis swap, that transform maps the
+   memory camera into decoded space for the W2S path.
 7. Cross-check the `+0xAC` rows against a recomputed yaw×pitch basis
    (consistency, ± small residual) — deferred to a follow-up session; the
    first session only requires the six rows to be finite.
 
 The pre-staged session script `scripts/invoke-camera-state-verify.ps1`
-(CAM-001) implements 1-6 read-only against the server-owned endpoints
-(pattern scan + bounded reads + decoded frame), requires the
+(CAM-001, currently v5) implements 1-7 read-only against the
+server-owned endpoints (pattern scan + bounded reads +
+`/discover/entity-position` + decoded-frame yaw timeline), requires the
 `OfflineReplayVerified` gate, binds ground truth to the launch artifact
 like od-073, and writes a privacy-safe aggregate
-(`wotbtreader.cam001.camera-state-verify.v1`: booleans, counts, one yaw
-delta, one offset norm — no raw coordinates/addresses/bytes). Run:
+(`wotbtreader.cam001.camera-state-verify.v5`: booleans, counts, one yaw
+delta, two offset norms — no raw coordinates/addresses/bytes). Run:
 `pwsh -File scripts/invoke-camera-state-verify.ps1 -WaitVerifiedSeconds 240`
 after one approved replay launch.
 

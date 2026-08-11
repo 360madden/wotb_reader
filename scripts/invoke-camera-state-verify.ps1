@@ -12,11 +12,26 @@
 
       avatar (vftable RVA 0x3277e8c replay / 0x3277da4 live)
         [avatar+0x154] -> BattleResources
-        [br+0x2C]      -> camera        (factory FUN_0165fe40; mode 2 = replay)
-        [cam+0x28]     -> cameraState
-          yaw/pitch       +0x58/+0x5C
-          view basis      +0xAC..0xC4
-          world position  +0x11C/+0x120/+0x124
+        [br+0x2C]      -> camera (ReplayCameraController RVA 0x326dd0c /
+                                   CameraController RVA 0x32de028 live)
+        [cam+0x28]     -> cameraState (GameCamera, RVA 0x32dafa0)
+
+  v5 (live-verified 2026-08-11): the POSE lives on the GameCamera, NOT the
+  ReplayCameraController (which is a frozen shell — no live fields). The
+  GameCamera pose layout (diff-scan verified):
+
+      position        +0x38/+0x3C/+0x40   (interpolated prev copy +0x44..)
+      yaw cos/sin     +0x50/+0x54         (yaw = atan2(sin, cos))
+      pitch           +0x58
+      view basis      +0x80..0xA8
+      extra pos copy  +0xB0/+0xB4/+0xB8
+
+  Correlation is now done in MEMORY space: the viewpoint tank position is
+  read via /discover/entity-position at the same wall time as the camera,
+  so the camera-to-tank offset needs no decoded-clock alignment. The yaw is
+  additionally aligned to the decoded frame yaw over the timeline (same
+  convention confirmed: 0.0027 rad best match) to bridge into decoded
+  space for the W2S path.
 
   ASLR note (verified 2026-08-11 on the hash-pinned binary): wotblitz.exe
   has DllCharacteristics 0x8140 (DYNAMIC_BASE set), so the runtime vftable
@@ -42,7 +57,41 @@
           overlay currently lacks (expect 1..30 m).
        c. finite-value + view-basis sanity checks on the +0xAC rows.
     6. Writes a fresh CAM-001 aggregate (schema
-       wotbtreader.cam001.camera-state-verify.v1).
+       wotbtreader.cam001.camera-state-verify.v2).
+
+  CORRECTED 2026-08-11 (first live run): the chain walk reads at
+  (current + displacement) and advances to the pointer VALUE — the v1 walk
+  added the displacement to the pointer value, dereferencing .rdata text
+  instead of the object chain (the first run's 3/3 was garbage). v2 also
+  records yawDeltaRadians / thirdPersonOffsetNorm whenever the comparison
+  runs (not only when in range), keeping the aggregate diagnosable.
+
+  CORRECTED v3 (same session, branch on evidence): the POSE fields live on
+  the camera CONTROLLER object (the chain's hop 2), not on the GameCamera
+  ring object at [cam+0x28]. The per-frame dispatcher FUN_01ddb130
+  integrates position at param_1[0x47..0x49] = [controller+0x11C..0x124]
+  and updates +0xAC..0xB4 (param_1[0x2b..0x2d]) — param_1 is the
+  polymorphic camera controller (virtual calls through *param_1). Live
+  identity probe confirmed the walked hop-2 object's vftable is
+  ReplayCameraController (runtime base+0x326dd0c). v3 therefore reads the
+  pose fields from the camera controller and verifies its vftable as an
+  integrity gate; the GameCamera ring ([cam+0x28], class GameCamera) is
+  read for ring liveness only.
+
+  CORRECTED v3.1: position correlation is now nearest-in-time (min norm
+  over the subsampled trajectory) instead of a fixed t=30 sample, so the
+  load-time skew between the memory clock and the decoded clock cannot
+  manufacture a miss. The recorded norm is the min over all samples; the
+  matched sample index/seconds are also recorded.
+
+  CORRECTED v5 (same session, decisive branch): v3 read the pose from the
+  camera controller — WRONG, that object is frozen. Live diff-scan showed
+  all pose fields on the GameCamera (vftable base+0x32dafa0): position at
+  +0x38/+0x3C/+0x40 (prev-frame copy +0x44), yaw as cos/sin at
+  +0x50/+0x54, pitch +0x58, basis +0x80..0xA8. v5 reads those fields and
+  correlates the camera-to-tank offset IN MEMORY SPACE via
+  /discover/entity-position (same-wall-time, no decoded-clock alignment
+  needed), plus a yaw alignment against the decoded frame yaw timeline.
 
   Privacy: only aggregate correlation statistics are written (booleans,
   counts, one yaw delta, one offset norm). No entity id, coordinates,
@@ -357,28 +406,28 @@ catch {
 Write-Host ('cam001: ground_truth_selection=' + $groundTruthSelection +
     ' viewpoint_entity_bound=true samples=' + $viewpoint.samples.Count)
 
-# Correlation anchor replay time: min(30 s, half the trajectory) - the
-# replay plays at 1x from the verified gate, so wall-now maps to ~30 s in.
-$correlationTimeSeconds = [Math]::Min(
-    30,
-    [int]($trajectory.durationTicks / 10000000 / 2.0))
-$targetTicks = [long]($correlationTimeSeconds * 10000000)
-$nearestSample = $viewpoint.samples |
-    Sort-Object { [Math]::Abs([long]$_.replayTimeTicks - $targetTicks) } |
-    Select-Object -First 1
-
-$decodedCameraYawRadians = $null
+# Pre-fetch the decoded camera-yaw timeline (step 10 s) for the v5 yaw
+# alignment. The memory camera yaw is matched against this timeline to find
+# the decoded time it corresponds to (the bridge into decoded space for the
+# W2S path). The position correlation itself is done in memory space via
+# /discover/entity-position and needs no decoded-clock alignment.
+$decodedYawTimeline = @()
 try {
-    $decodedFrame = Invoke-OdApi -Method 'Get' -RelativePath (
-        '/api/v1/sessions/' + $battleSessionId + '/frame?timeSeconds=' +
-        $correlationTimeSeconds)
-    if ($null -ne $decodedFrame -and
-        $null -ne $decodedFrame.cameraYawRadians) {
-        $decodedCameraYawRadians = [double]$decodedFrame.cameraYawRadians
+    $decodedDuration = [int]($trajectory.durationTicks / 10000000)
+    for ($t = 0; $t -le $decodedDuration; $t += 10) {
+        $frame = Invoke-OdApi -Method 'Get' -RelativePath (
+            '/api/v1/sessions/' + $battleSessionId + '/frame?timeSeconds=' + $t)
+        if ($null -ne $frame -and $null -ne $frame.cameraYawRadians) {
+            $decodedYawTimeline += @{
+                t   = $t
+                yaw = [double]$frame.cameraYawRadians
+            }
+        }
     }
+    Write-Host ('cam001: decoded_yaw_timeline samples=' + $decodedYawTimeline.Count)
 }
 catch {
-    Write-Host 'cam001: decoded_frame_unavailable (yaw correlation will be skipped)'
+    Write-Host 'cam001: decoded_yaw_timeline_unavailable (yaw alignment will be skipped)'
 }
 
 if ($StageDelaySeconds -gt 0) {
@@ -391,8 +440,11 @@ if ($StageDelaySeconds -gt 0) {
 # vftable RVA (0x3277e8c replay / 0x3277da4 live). The pattern scan response
 # carries the main-module base address; compute the base-relative pattern
 # and rescan if the preferred-base probe found nothing.
-$replayVftableRva = 0x3277e8c
-$liveVftableRva = 0x3277da4
+$replayVftableRva = 0x3277e8c        # avatar controller (replay mode)
+$liveVftableRva = 0x3277da4           # avatar controller (live mode)
+$cameraReplayVftableRva = 0x326dd0c   # ReplayCameraController (replay mode)
+$cameraLiveVftableRva = 0x32de028     # CameraController (live mode)
+$cameraStateVftableRva = 0x32dafa0    # GameCamera (pose owner)
 $preferredImageBase = 0x400000
 
 $chainOffsets = @(
@@ -413,7 +465,12 @@ $basisFinite = $false
 $yawCorrelated = $false
 $positionCorrelated = $false
 $yawDeltaRadians = $null
+$alignedDecodedSeconds = $null
 $offsetNorm = $null
+$offsetNormC = $null
+$cameraVftableMatches = $false
+$cameraStateVftableHex = $null
+$cameraStateIdentityMatches = $false
 
 for ($round = 0; $round -lt $ReadCount; $round++) {
     try {
@@ -463,6 +520,16 @@ for ($round = 0; $round -lt $ReadCount; $round++) {
             }
         }
 
+        # The scan response carries the main-module base even when ASLR is
+        # on (probe round). Hoist it once; the identity gate below compares
+        # the camera vftable against (runtime base + RVA).
+        $runtimeBase = if ([string]::IsNullOrWhiteSpace([string]$scan.baseAddress)) {
+            $preferredImageBase
+        }
+        else {
+            [long][string]$scan.baseAddress
+        }
+
         if ($candidates.Count -lt 1) {
             Write-Host 'cam001: FAILED_anchor_not_found'
             exit 3
@@ -475,10 +542,16 @@ for ($round = 0; $round -lt $ReadCount; $round++) {
         $chain = @()
         $chainValid = $true
         foreach ($hop in $chainOffsets) {
+            # Chain walk: read at (current + displacement); the pointer VALUE
+            # becomes the next base (CORRECTED 2026-08-11 — the first live run
+            # read at the bare current address and added the displacement to
+            # the pointer value, dereferencing .rdata text instead of walking
+            # the object chain).
+            $readAddress = $currentAddress + $hop.Displacement
             $read = Invoke-OdApi -Method 'Post' `
                 -RelativePath '/api/v1/game/discover/read' `
                 -Body @{
-                    addresses = @(('0x' + $currentAddress.ToString('X')))
+                    addresses = @(('0x' + $readAddress.ToString('X')))
                     valueKind = $hop.Kind
                     valueSize = 4
                 }
@@ -498,10 +571,10 @@ for ($round = 0; $round -lt $ReadCount; $round++) {
             }
             $ptr = [BitConverter]::ToUInt32($ptrBytes, 0)
             $chain += [ordered]@{
-                name    = $hop.Name
-                value   = $ptr
+                name  = $hop.Name
+                value = $ptr
             }
-            $currentAddress = [long]$ptr + $hop.Displacement
+            $currentAddress = [long]$ptr
         }
 
         if (-not $chainValid) {
@@ -509,21 +582,72 @@ for ($round = 0; $round -lt $ReadCount; $round++) {
             exit 3
         }
 
-        $cameraStateAddress = [long]$chain[$chain.Count - 1].value
+        $cameraAddress = [long]$chain[1].value      # hop 2: camera controller
+        $cameraStateAddress = [long]$chain[2].value # hop 3: GameCamera ring
 
-        # 2. Camera-state field reads.
+        # 1b. Identity gates: the camera controller must be the
+        #     ReplayCameraController (or live CameraController) and the
+        #     pose object must be the GameCamera (base+0x32dafa0) for the
+        #     walk to be trustworthy.
+        $identityRead = Invoke-OdApi -Method 'Post' `
+            -RelativePath '/api/v1/game/discover/read' `
+            -Body @{
+                addresses = @(
+                    ('0x' + $cameraAddress.ToString('X')),
+                    ('0x' + $cameraStateAddress.ToString('X')))
+                valueKind = 'UInt32'
+                valueSize = 4
+            }
+        $cameraVftable = $null
+        $cameraStateVftable = $null
+        if ($null -ne $identityRead.reads[0] -and [bool]$identityRead.reads[0].readOk) {
+            $b = Convert-HexToBytes -Hex ([string]$identityRead.reads[0].observedValueHex)
+            if ($b.Length -eq 4) { $cameraVftable = [BitConverter]::ToUInt32($b, 0) }
+        }
+        if ($null -ne $identityRead.reads[1] -and [bool]$identityRead.reads[1].readOk) {
+            $b = Convert-HexToBytes -Hex ([string]$identityRead.reads[1].observedValueHex)
+            if ($b.Length -eq 4) { $cameraStateVftable = [BitConverter]::ToUInt32($b, 0) }
+        }
+        if ($null -eq $cameraVftable) {
+            Write-Host 'cam001: FAILED_camera_identity_read'
+            exit 3
+        }
+        $cameraVftableMatches = ($cameraVftable -eq [uint32]($runtimeBase + $cameraReplayVftableRva)) -or
+            ($cameraVftable -eq [uint32]($runtimeBase + $cameraLiveVftableRva))
+        $cameraStateVftableHex = if ($null -eq $cameraStateVftable) {
+            $null
+        }
+        else {
+            ('0x' + $cameraStateVftable.ToString('X8'))
+        }
+        $cameraStateIdentityMatches = $null -ne $cameraStateVftable -and
+            ($cameraStateVftable -eq [uint32]($runtimeBase + $cameraStateVftableRva))
+        if (-not $cameraVftableMatches) {
+            Write-Host 'cam001: FAILED_camera_identity_mismatch'
+            exit 3
+        }
+
+        # 2. GameCamera pose reads (v5): the live pose fields all sit on
+        #    the GameCamera object at the diff-scan-verified offsets.
         $fieldSpecs = @(
-            @{ Name = 'yaw';   Off = 0x58;  Kind = 'Float' },
-            @{ Name = 'pitch'; Off = 0x5C;  Kind = 'Float' },
-            @{ Name = 'posX';  Off = 0x11C; Kind = 'Float' },
-            @{ Name = 'posY';  Off = 0x120; Kind = 'Float' },
-            @{ Name = 'posZ';  Off = 0x124; Kind = 'Float' },
-            @{ Name = 'basisA'; Off = 0xAC; Kind = 'Float' },
-            @{ Name = 'basisB'; Off = 0xB0; Kind = 'Float' },
-            @{ Name = 'basisC'; Off = 0xB4; Kind = 'Float' },
-            @{ Name = 'basisD'; Off = 0xB8; Kind = 'Float' },
-            @{ Name = 'basisE'; Off = 0xBC; Kind = 'Float' },
-            @{ Name = 'basisF'; Off = 0xC0; Kind = 'Float' }
+            @{ Name = 'posAX';  Off = 0x38 },  # primary position
+            @{ Name = 'posAY';  Off = 0x3C },
+            @{ Name = 'posAZ';  Off = 0x40 },
+            @{ Name = 'posBX';  Off = 0x44 },  # interpolated prev copy
+            @{ Name = 'posBY';  Off = 0x48 },
+            @{ Name = 'posBZ';  Off = 0x4C },
+            @{ Name = 'yawCos'; Off = 0x50 },  # yaw = atan2(sin, cos)
+            @{ Name = 'yawSin'; Off = 0x54 },
+            @{ Name = 'pitch';  Off = 0x58 },
+            @{ Name = 'basisA'; Off = 0x80 },  # view basis rows
+            @{ Name = 'basisB'; Off = 0x84 },
+            @{ Name = 'basisC'; Off = 0x88 },
+            @{ Name = 'basisD'; Off = 0x90 },
+            @{ Name = 'basisE'; Off = 0x94 },
+            @{ Name = 'basisF'; Off = 0x98 },
+            @{ Name = 'posCX';  Off = 0xB0 },  # extra position copy
+            @{ Name = 'posCY';  Off = 0xB4 },
+            @{ Name = 'posCZ';  Off = 0xB8 }
         )
         $readAddresses = @($fieldSpecs | ForEach-Object {
             ('0x' + ($cameraStateAddress + $_.Off).ToString('X'))
@@ -550,10 +674,12 @@ for ($round = 0; $round -lt $ReadCount; $round++) {
         }
         $cameraFields = $fieldMap
 
-        # 3. Correlate against decoded ground truth.
+        # 3. Correlate against ground truth.
         $roundFinite = $true
-        foreach ($spec in $fieldSpecs) {
-            if (-not (Test-Finite -Value $fieldMap[$spec.Name])) {
+        foreach ($name in @('posAX', 'posAY', 'posAZ', 'posBX', 'posBY', 'posBZ',
+                'yawCos', 'yawSin', 'pitch',
+                'basisA', 'basisB', 'basisC', 'basisD', 'basisE', 'basisF')) {
+            if (-not (Test-Finite -Value $fieldMap[$name])) {
                 $roundFinite = $false
             }
         }
@@ -561,35 +687,74 @@ for ($round = 0; $round -lt $ReadCount; $round++) {
             $roundsFiniteAllFields += 1
         }
 
+        # Yaw: align the memory camera yaw (atan2 of the cos/sin pair)
+        # against the pre-fetched decoded yaw timeline. This finds the
+        # decoded time the camera corresponds to (the bridge into decoded
+        # space for the W2S path).
         $roundYaw = $false
-        if ($null -ne $decodedCameraYawRadians -and
-            (Test-Finite -Value $fieldMap['yaw'])) {
-            $delta = [Math]::Abs(
-                [double]$fieldMap['yaw'] - $decodedCameraYawRadians)
-            if ($delta -le 0.05) {
-                $roundYaw = $true
-                $yawDeltaRadians = $delta
+        if ((Test-Finite -Value $fieldMap['yawCos']) -and
+            (Test-Finite -Value $fieldMap['yawSin']) -and
+            $decodedYawTimeline.Count -gt 0) {
+            $memYaw = [Math]::Atan2(
+                [double]$fieldMap['yawSin'], [double]$fieldMap['yawCos'])
+            $bestDelta = [double]::MaxValue
+            $bestT = $null
+            foreach ($entry in $decodedYawTimeline) {
+                $d = [Math]::Abs(([Math]::Atan2(
+                    [Math]::Sin($memYaw - $entry.yaw),
+                    [Math]::Cos($memYaw - $entry.yaw))))
+                if ($d -lt $bestDelta) {
+                    $bestDelta = $d
+                    $bestT = $entry.t
+                }
+            }
+            if ($null -ne $bestT) {
+                # Record whenever the alignment runs (evidence stays
+                # diagnosable even when out of range).
+                $yawDeltaRadians = $bestDelta
+                $alignedDecodedSeconds = $bestT
+                if ($bestDelta -le 0.05) {
+                    $roundYaw = $true
+                }
             }
         }
         if ($roundYaw) {
             $roundsYawCorrelated += 1
         }
 
+        # Position: camera-to-tank offset IN MEMORY SPACE. The viewpoint
+        # tank position is read via /discover/entity-position at the same
+        # wall time as the camera, so no decoded-clock alignment is needed.
+        # A third-person camera sits ~1-30 m from the tank.
         $roundPosition = $false
-        if ($null -ne $nearestSample -and
-            (Test-Finite -Value $fieldMap['posX']) -and
-            (Test-Finite -Value $fieldMap['posY']) -and
-            (Test-Finite -Value $fieldMap['posZ'])) {
-            $dx = [double]$fieldMap['posX'] - [double]$nearestSample.x
-            $dy = [double]$fieldMap['posY'] - [double]$nearestSample.y
-            $dz = [double]$fieldMap['posZ'] - [double]$nearestSample.z
-            $norm = [Math]::Sqrt(($dx * $dx) + ($dy * $dy) + ($dz * $dz))
-            # Third-person camera sits ~1-30 m from the viewpoint tank.
-            if ($norm -ge 1.0 -and $norm -le 30.0) {
-                $roundPosition = $true
-                $offsetNorm = $norm
+        try {
+            $entityPos = Invoke-OdApi -Method 'Post' `
+                -RelativePath '/api/v1/game/discover/entity-position' `
+                -Body @{
+                    entityId = $viewpointEntityId
+                    battleSessionId = $battleSessionId
+                }
+            if ([string]$entityPos.status -eq 'Resolved' -and
+                $null -ne $entityPos.x -and $null -ne $entityPos.y -and
+                $null -ne $entityPos.z) {
+                $tx = [double]$entityPos.x
+                $ty = [double]$entityPos.y
+                $tz = [double]$entityPos.z
+                $dx = [double]$fieldMap['posAX'] - $tx
+                $dy = [double]$fieldMap['posAY'] - $ty
+                $dz = [double]$fieldMap['posAZ'] - $tz
+                $offsetNorm = [Math]::Sqrt(($dx * $dx) + ($dy * $dy) + ($dz * $dz))
+                $dxc = [double]$fieldMap['posCX'] - $tx
+                $dyc = [double]$fieldMap['posCY'] - $ty
+                $dzc = [double]$fieldMap['posCZ'] - $tz
+                $offsetNormC = [Math]::Sqrt(($dxc * $dxc) + ($dyc * $dyc) + ($dzc * $dzc))
+                if (($offsetNorm -ge 1.0 -and $offsetNorm -le 30.0) -or
+                    ($offsetNormC -ge 1.0 -and $offsetNormC -le 30.0)) {
+                    $roundPosition = $true
+                }
             }
         }
+        catch { }
         if ($roundPosition) {
             $roundsPositionCorrelated += 1
         }
@@ -616,7 +781,8 @@ for ($round = 0; $round -lt $ReadCount; $round++) {
     }
 }
 
-$cameraStateVerified = $chain.Count -eq 3 -and
+$cameraIdentityVerified = $cameraVftableMatches -and $cameraStateIdentityMatches
+$cameraStateVerified = $chain.Count -eq 3 -and $cameraIdentityVerified -and
     $roundsFiniteAllFields -eq $ReadCount -and $basisFinite
 $yawCorrelated = $roundsYawCorrelated -ge 1
 $positionCorrelated = $roundsPositionCorrelated -ge 1
@@ -632,7 +798,7 @@ else {
 }
 
 $aggregate = [ordered]@{
-    schema                = 'wotbtreader.cam001.camera-state-verify.v1'
+    schema                = 'wotbtreader.cam001.camera-state-verify.v5'
     campaign              = 'cam-001-camera-state'
     completedAtUtc        = [DateTime]::UtcNow.ToString('o')
     verdict               = $verdict
@@ -648,10 +814,14 @@ $aggregate = [ordered]@{
     roundsPositionCorrelated = $roundsPositionCorrelated
     yawCorrelated         = $yawCorrelated
     positionCorrelated    = $positionCorrelated
-    yawDeltaRadians       = $yawDeltaRadians
-    thirdPersonOffsetNorm = $offsetNorm
     basisRowsFinite       = $basisFinite
-    correlationTimeSeconds = $correlationTimeSeconds
+    cameraVftableMatches  = $cameraVftableMatches
+    cameraStateVftableHex = $cameraStateVftableHex
+    cameraStateIdentityMatches = $cameraStateIdentityMatches
+    yawDeltaRadians       = $yawDeltaRadians
+    alignedDecodedSeconds = $alignedDecodedSeconds
+    thirdPersonOffsetNorm = $offsetNorm
+    extraPositionOffsetNorm = $offsetNormC
     groundTruthBoundToLaunchArtifact = $true
     groundTruthSelection  = $groundTruthSelection
     cameraStateVerified   = $cameraStateVerified
@@ -669,7 +839,11 @@ Write-AggregateResult -Aggregate $aggregate
 Write-Host ('cam001: verdict=' + $verdict +
     ' anchor_candidates=' + $candidates.Count +
     ' chain=' + $chain.Count + '/3' +
+    ' camera_identity=' + $cameraIdentityVerified +
     ' finite=' + $roundsFiniteAllFields + '/' + $ReadCount +
     ' yaw_correlated_rounds=' + $roundsYawCorrelated +
-    ' pos_correlated_rounds=' + $roundsPositionCorrelated)
+    ' pos_correlated_rounds=' + $roundsPositionCorrelated +
+    ' offset_norm=' + [string]$offsetNorm +
+    ' extra_offset_norm=' + [string]$offsetNormC +
+    ' aligned_s=' + [string]$alignedDecodedSeconds)
 exit 0

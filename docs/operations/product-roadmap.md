@@ -213,6 +213,23 @@ privacy-safe aggregate (`cam001.camera-state-verify.v1`, no raw
 coordinates/addresses/bytes). Next: one approved replay launch + this
 script → wire the true camera into `ReplayFrameSource.BuildCamera`.
 Handoff: `docs/operations/handoffs/2026-08-11-cam001-pre-staged-aslr-correction.md`.
+✅ **CAM-002 live pose layout (2026-08-11, two approved launches)**: the
+CAM-001 chain walks live and both identity gates pass (avatar scan → 1
+candidate; `[br+0x2C]` vftable = ReplayCameraController `base+0x326dd0c`;
+`[cam+0x28]` = GameCamera `base+0x32dafa0`). The ReplayCameraController is
+a **frozen shell** (no live fields); ALL live pose fields sit on the
+**GameCamera**: position `+0x38/+0x3C/+0x40` (prev copy `+0x44..`),
+yaw **cos/sin pair `+0x50/+0x54`** (yaw = atan2(sin,cos)), pitch `+0x58`,
+basis `+0x80..0xA8`, extra pos copy `+0xB0/B4/B8` (diff-scan verified).
+Memory camera yaw aligns to the decoded frame yaw at **0.0027 rad** with
+the same sign convention — the memory object is the live replay camera.
+Open item: camera position is 363-440 m from the decoded tank at the
+aligned time → memory↔decoded **coordinate-space calibration** (read the
+memory tank via `/discover/entity-position` at the same wall time; the
+memory-space offset is the third-person proof). Session script is now
+**v5** (GameCamera pose + memory-space correlation + decoded-yaw
+timeline). Handoff:
+`docs/operations/handoffs/2026-08-11-cam002-live-pose-layout.md`.
 
 ### Phase 2 — The live seam + first live sessions (serialized)
 
