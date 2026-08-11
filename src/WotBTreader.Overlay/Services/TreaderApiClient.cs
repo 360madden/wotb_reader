@@ -96,11 +96,12 @@ public sealed class TreaderApiClient : IDisposable
 
     /// <summary>
     /// Fetches one composed LIVE frame (gated memory read: roster -> batch
-    /// ring records -> CAM-001 camera pose) projected to viewport pixels —
-    /// the LiveFrameSource seam. Same <see cref="OverlayFrameResponse"/>
-    /// shape as the replay frame, so the HUD renders live nameplates without
-    /// touching its render path. HP is honestly unknown (empty bar) until
-    /// the L1 live session lands; pips/kills/scoreboard are absent.
+    /// ring + entity-base records -> CAM-001 camera pose) projected to
+    /// viewport pixels — the LiveFrameSource seam. Same
+    /// <see cref="OverlayFrameResponse"/> shape as the replay frame, so the
+    /// HUD renders live nameplates without touching its render path. HP
+    /// bars/readouts carry the L1 entity-base values when the read
+    /// resolved; pips/kills/scoreboard are absent.
     /// </summary>
     /// <param name="verticalFovDegrees">Vertical field of view (default 90).</param>
     /// <param name="viewportWidth">Viewport width in pixels (default 1920).</param>

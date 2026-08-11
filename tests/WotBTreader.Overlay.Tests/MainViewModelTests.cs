@@ -1065,6 +1065,50 @@ public sealed class MainViewModelTests
     }
 
     [TestMethod]
+    public async Task RefreshOverlayFrameAsync_LiveModeCarriesL1HealthIntoNameplate()
+    {
+        string frameJson = """
+            {
+              "replayTimeSeconds": 150.5,
+              "cameraX": 0.0, "cameraY": 0.0, "cameraZ": 0.0,
+              "cameraYawRadians": 0.5, "cameraPitchRadians": 0.0,
+              "tanks": [
+                { "entityId": 3760578, "playerName": null, "tankName": null, "clanTag": null, "teamNumber": null, "hpFraction": 0.792, "alive": true, "distanceMeters": 120.0, "screenX": 800.0, "screenY": 400.0, "depth": 80.0, "inViewport": true, "maxHealth": 1550, "currentHealth": 1228 }
+              ]
+            }
+            """;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            string path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/live/frame", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(JsonResponse(frameJson));
+            }
+
+            return Task.FromResult(JsonResponse("""{"offset":0,"limit":200,"count":0,"items":[]}"""));
+        });
+        MainViewModel viewModel = CreateViewModel(handler);
+
+        await viewModel.RefreshSessionsAsync();
+        viewModel.IsLiveMode = true;
+
+        await viewModel.RefreshOverlayFrameAsync(1920, 1080);
+
+        // The L1 entity-base HP flows through the projected live frame into
+        // the nameplate: exact readout values, fraction, and the alive byte.
+        NameplateItem tank = viewModel.Nameplates.Single();
+        Assert.AreEqual(3760578, tank.EntityId);
+        Assert.AreEqual(1228L, tank.CurrentHealth);
+        Assert.AreEqual(1550L, tank.MaxHealth);
+        Assert.AreEqual(0.792, tank.HpFraction, 1e-6);
+        Assert.IsTrue(tank.Alive);
+        // Live mode keeps the decode feed empty.
+        Assert.AreEqual(0, viewModel.KillFeed.Count);
+        Assert.AreEqual(0, viewModel.Scoreboard.Count);
+    }
+
+    [TestMethod]
     public async Task RefreshOverlayFrameAsync_SortsNameplatesFarToNear()
     {
         // Depth = distance along the view axis; larger = farther from the

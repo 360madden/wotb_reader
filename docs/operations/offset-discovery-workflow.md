@@ -2,7 +2,9 @@
 
 Last updated: 2026-08-11 (OD-RECOVERY-087 closed L1 HP: the entity-base
 current-health int16 is confirmed live at `+0xB8` — HIT, score 1.0,
-flatness 1.0, Strict 8/8)
+flatness 1.0, Strict 8/8; OD-RECOVERY-088 closed L2 facing at `+0x30`;
+X4 L1 wiring shipped — the live frame's HP is real; OD-RECOVERY-089
+template pre-staged for the Phase-4 Dead Rail repeat)
 
 This is the operational playbook for discovering memory evidence from the
 Windows WoT Blitz client during a **positively verified offline replay**. It is
@@ -27,8 +29,11 @@ flatness 1.0, Strict 8/8** via the new subset-sum lag attribution
 decoded damage events to the health field with a **variable ~1–3.4 s
 memory-apply lag** (measured with the dense span) — the driver now dumps a
 dense span around each hit and the correlator matches drops against event
-subsets (`--lag-tolerance`, default 0 = exact). The X4 live frame's
-`hp: null` can become real (additive change). Evidence:
+subsets (`--lag-tolerance`, default 0 = exact). **The X4 L1 wiring shipped
+(2026-08-11):** the frame batch reads each entity's entity-base region
+(0x120) under the same resolve + ONE attestation, and `LiveFrameTankState`
+carries `hpCurrent`/`hpMax`/`alive` — the live frame's HP is real (see
+`docs/operations/handoffs/2026-08-11-enemy-tracking-focus.md`). Evidence:
 `docs/operations/od-recovery-087-evidence-template.md` (filled) + ledger
 `OD-RECOVERY-087` result section.
 
@@ -53,8 +58,10 @@ crossings exercise the wrap-aware matcher). Drive
 `scripts/invoke-facing-session.ps1` with the **launch-matched host-store
 session + `-DataRoot "$env:LOCALAPPDATA\WotBTreader"` + `-MaxLagSeconds 8`**
 (the launcher logs `battleSession=` at the gate; both 086 and 087 proved the
-repo-local `.data/treader.db` 404s in the host store). The Phase-4 rule
-requires the offset to agree before any facing/yaw publication.
+repo-local `.data/treader.db` 404s in the host store). Evidence template
+PRE-STAGED: `docs/operations/od-recovery-089-evidence-template.md` — fill
+it in after the session. The Phase-4 rule requires the offset to agree
+before any facing/yaw publication.
 
 **The position anchor is ESTABLISHED and PUBLISHED (2026-08-10):**
 `playerPositionX/Y/Z` are `Verified` via the module-rooted position-ring chain

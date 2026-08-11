@@ -284,6 +284,7 @@ docs/operations/live-roster-read-design.md
 docs/operations/od-recovery-086-evidence-template.md
 docs/operations/od-recovery-087-evidence-template.md
 docs/operations/od-recovery-088-evidence-template.md
+docs/operations/od-recovery-089-evidence-template.md
 docs/operations/offset-discovery-guide.md
 docs/operations/offset-discovery-ledger.md
 docs/operations/offset-discovery-m1-m2-choreography.md

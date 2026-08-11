@@ -485,7 +485,8 @@ public class MainViewModel : INotifyPropertyChanged
     /// replay projection to the gated composed live frame
     /// (<c>GET /api/v1/live/frame</c> — the LiveFrameSource seam). The render
     /// path is unchanged (same <see cref="OverlayFrameResponse"/> shape);
-    /// hp is honestly unknown (empty bar) until the L1 live session lands,
+    /// HP bars/readouts render the L1 entity-base values whenever the live
+    /// frame carried them (honest empty bar only when that read failed),
     /// and the kill feed / scoreboard stay empty (decode-projection
     /// features). A non-resolved or failed live read returns null and the
     /// previous frame stays on screen.
