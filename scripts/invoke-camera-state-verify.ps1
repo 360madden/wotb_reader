@@ -239,6 +239,20 @@ function Get-LittleEndianHex([uint32]$Value) {
     }) -join '')
 }
 
+function Convert-HexToBytes([string]$Hex) {
+    # PS 5.1-compatible hex decode ([Convert]::FromHexString is .NET Core 3.0+).
+    $clean = ([string]$Hex) -replace '-', ''
+    if ($clean.Length -lt 2 -or ($clean.Length % 2) -ne 0) {
+        return @()
+    }
+    $count = $clean.Length / 2
+    $bytes = New-Object 'byte[]' $count
+    for ($i = 0; $i -lt $count; $i++) {
+        $bytes[$i] = [Convert]::ToByte($clean.Substring($i * 2, 2), 16)
+    }
+    return $bytes
+}
+
 function Write-AggregateResult([hashtable]$Aggregate) {
     try {
         $parent = Split-Path -Parent $ResultPath
@@ -476,8 +490,13 @@ for ($round = 0; $round -lt $ReadCount; $round++) {
                 break
             }
             # observedValueHex is memory-order (little-endian) raw bytes.
-            $ptr = [BitConverter]::ToUInt32(
-                [Convert]::FromHexString([string]$item.observedValueHex), 0)
+            $ptrBytes = Convert-HexToBytes -Hex ([string]$item.observedValueHex)
+            if ($ptrBytes.Length -ne 4) {
+                $chainValid = $false
+                Write-Host ('cam001: chain_hop_bad_hex ' + $hop.Name)
+                break
+            }
+            $ptr = [BitConverter]::ToUInt32($ptrBytes, 0)
             $chain += [ordered]@{
                 name    = $hop.Name
                 value   = $ptr
@@ -522,7 +541,7 @@ for ($round = 0; $round -lt $ReadCount; $round++) {
             $floatValue = [double]::NaN
             if ($null -ne $item -and [bool]$item.readOk -and
                 -not [string]::IsNullOrWhiteSpace([string]$item.observedValueHex)) {
-                $bytes = [Convert]::FromHexString([string]$item.observedValueHex)
+                $bytes = Convert-HexToBytes -Hex ([string]$item.observedValueHex)
                 if ($bytes.Length -eq 4) {
                     $floatValue = [double][single][BitConverter]::ToSingle($bytes, 0)
                 }
