@@ -582,6 +582,8 @@ public sealed class CliCommandRouter
                 tank.DamageDealt,
                 tank.DamageTaken,
                 tank.Kills,
+                tank.MaxHealth,
+                tank.CurrentHealth,
                 screen = tank.ScreenX is null
                     ? null
                     : new

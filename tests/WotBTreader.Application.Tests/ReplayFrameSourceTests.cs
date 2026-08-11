@@ -124,6 +124,59 @@ public sealed class ReplayFrameSourceTests
     }
 
     [TestMethod]
+    public void Frame_HpFractionUsesExactMaxHealth_AndExposesCurrentHealth()
+    {
+        ParticipantId viewpointId = ParticipantId.New();
+        var projection = Projection(
+            viewpointId,
+            new[]
+            {
+                Participant(viewpointId, entityId: 1, "ViewpointTank", team: 1),
+                Participant(ParticipantId.New(), entityId: 2, "SurvivorTank", team: 2),
+                Participant(ParticipantId.New(), entityId: 3, "DeadTank", team: 2),
+            },
+            new[]
+            {
+                Sample(entityId: 1, seconds: 0, x: 0, y: 0, z: 0, yaw: 0.1),
+                Sample(entityId: 2, seconds: 0, x: 10, y: 0, z: 0, yaw: null),
+                Sample(entityId: 3, seconds: 0, x: 20, y: 0, z: 0, yaw: null),
+            },
+            events: new[]
+            {
+                MaxHealthEvent(entityId: 2, maxHealth: 700),
+                MaxHealthEvent(entityId: 3, maxHealth: 500),
+                DamageEvent(entityId: 2, seconds: 2, damage: 100),
+                DamageEvent(entityId: 3, seconds: 2, damage: 400),
+                // Destroy credit: the killer is credited with the victim's
+                // remaining 100 HP, so taken reaches max and the fraction 0.
+                DamageEvent(entityId: 3, seconds: 4, damage: 100),
+                DestroyedEvent(entityId: 3, seconds: 4.5),
+            });
+
+        // Survivor at t=3: 100 of 700 taken -> exact 600/700, current 600.
+        OverlayFrame mid = ReplayFrameSource.BuildFrame(projection, TimeSpan.FromSeconds(3));
+        OverlayTankState survivor = mid.Tanks.Single(tank => tank.EntityId == 2);
+        Assert.AreEqual(600.0 / 700.0, survivor.HpFraction, 1e-9);
+        Assert.AreEqual(600, survivor.CurrentHealth);
+        Assert.AreEqual(700, survivor.MaxHealth);
+        Assert.IsTrue(survivor.Alive);
+
+        // Dead tank at t=5: all 500 taken (incl. destroy credit) -> 0 hp.
+        OverlayFrame end = ReplayFrameSource.BuildFrame(projection, TimeSpan.FromSeconds(5));
+        OverlayTankState dead = end.Tanks.Single(tank => tank.EntityId == 3);
+        Assert.AreEqual(0.0, dead.HpFraction, 1e-9);
+        Assert.AreEqual(0, dead.CurrentHealth);
+        Assert.AreEqual(500, dead.MaxHealth);
+        Assert.IsFalse(dead.Alive);
+
+        // The survivor at the end is still at 600/700 — the old arc logic
+        // would have shown 0.0 here (its only damage event is the 100 taken).
+        OverlayTankState survivorEnd = end.Tanks.Single(tank => tank.EntityId == 2);
+        Assert.AreEqual(600.0 / 700.0, survivorEnd.HpFraction, 1e-9);
+        Assert.AreEqual(600, survivorEnd.CurrentHealth);
+    }
+
+    [TestMethod]
     public void Frame_DamageDealtAndKills_CumulativeAtFrameTime()
     {
         ParticipantId viewpointId = ParticipantId.New();
@@ -513,6 +566,20 @@ public sealed class ReplayFrameSourceTests
             yaw,
             Pitch: null,
             Roll: null);
+
+    private static CanonicalEvent MaxHealthEvent(long entityId, long maxHealth) =>
+        new(
+            CanonicalEventId.New(),
+            RunId,
+            SessionId,
+            Sequence: 900 + entityId * 10,
+            CanonicalEventKind.MaxHealthObserved,
+            TimeSpan.FromSeconds(0.1),
+            ParticipantId: null,
+            EntityId: entityId,
+            ValuesJson: $"{{\"maxHealth\":{maxHealth}}}",
+            EvidenceConfidence.Exact,
+            Evidence);
 
     private static CanonicalEvent DamageEvent(long entityId, double seconds, int damage) =>
         new(

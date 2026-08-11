@@ -18,11 +18,15 @@ public sealed record OverlayCamera(
 /// One tank rendered in an overlay frame. World position and facing come
 /// from the NEAREST decoded position sample at the frame's replay time
 /// (fail-closed: no sample at or before the frame time means the tank is
-/// omitted from that frame). HP is expressed as a 0..1 fraction of the
-/// tank's observed damage arc: cumulative damage received up to the frame
-/// time over the total damage the tank ever received — 1.0 when the tank
-/// took no damage (exact max HP is not in the decoded data). Alive is false
-/// once a Destroyed event lands for the entity.
+/// omitted from that frame). HP is a 0..1 fraction of the tank's exact
+/// health: `1 − damageReceived/maxHealth`, where maxHealth comes from the
+/// type-5 spawn broadcast (first broadcast per tank, verified equal to max
+/// HP) and damageReceived from the subtype-1 health-change ledger — both
+/// decoded from the replay, no memory reads. When max health is unknown
+/// (0) the fraction falls back to the observed damage arc: cumulative
+/// damage received up to the frame time over the total damage the tank
+/// ever received — 1.0 when the tank took no damage. Alive is false once a
+/// Destroyed event lands for the entity.
 /// </summary>
 public sealed record OverlayTankState(
     long EntityId,
@@ -45,7 +49,14 @@ public sealed record OverlayTankState(
     // 0 is the fail-closed default for samples that predate the fields.
     long DamageDealt = 0,
     long DamageTaken = 0,
-    long Kills = 0);
+    long Kills = 0,
+    // Exact health from the decoded ledger: maxHealth is the type-5 spawn
+    // broadcast value (0 when the broadcast never decoded for this tank),
+    // currentHealth = maxHealth − damageReceived clamped to ≥ 0 (0 when max
+    // health is unknown). Drives the nameplate's exact "current / max" HP
+    // readout next to the fraction bar.
+    long MaxHealth = 0,
+    long CurrentHealth = 0);
 
 /// <summary>
 /// A persistent point of interest anchored in world space, rendered as a

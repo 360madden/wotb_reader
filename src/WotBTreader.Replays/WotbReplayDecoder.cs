@@ -899,6 +899,16 @@ public sealed class WotbReplayDecoder : IReplayDecoder
             healthByEntity.TryAdd(spawnHealth.EntityId, spawnHealth.Health);
         }
 
+        // Destroyed: one event per destroyed roster entity. Two independent
+        // signals fire at the death instant — the subtype-1 health-change
+        // destroy marker (post-hit HP 0xFFFD, carries the killer) and the
+        // position destroy-marker packet — and a wreck can re-broadcast
+        // either, so the FIRST occurrence per entity (by sequence) wins and
+        // both feeds share one dedupe set. Verified on both replays: the
+        // ledger is the more complete signal (Dead Rail 2549397 died per its
+        // HP ledger at t=183.8 but carried no position destroy marker).
+        HashSet<long> destroyedEntities = [];
+
         foreach (HealthChangeObservation healthChange in healthChanges
                      .OrderBy(observation => observation.Sequence))
         {
@@ -913,11 +923,11 @@ public sealed class WotbReplayDecoder : IReplayDecoder
                 // Destroy marker: credit the killer with the victim's
                 // remaining HP, mirroring battle_results damage accounting.
                 int remaining = Math.Max(previous, 0);
+                participantProjection.ParticipantByEntity.TryGetValue(
+                    healthChange.VictimEntityId,
+                    out ParticipantId victim);
                 if (remaining > 0)
                 {
-                    participantProjection.ParticipantByEntity.TryGetValue(
-                        healthChange.VictimEntityId,
-                        out ParticipantId victim);
                     drafts.Add(new EventDraft(
                         healthChange.ReplayTime,
                         healthChange.Sequence,
@@ -930,6 +940,19 @@ public sealed class WotbReplayDecoder : IReplayDecoder
                             victimEntityId = healthChange.VictimEntityId,
                             damage = remaining,
                         }),
+                        EvidenceConfidence.Exact,
+                        ToEvidence(request, healthChange.Evidence)));
+                }
+
+                if (victim != default && destroyedEntities.Add(healthChange.VictimEntityId))
+                {
+                    drafts.Add(new EventDraft(
+                        healthChange.ReplayTime,
+                        healthChange.Sequence,
+                        CanonicalEventKind.Destroyed,
+                        victim,
+                        healthChange.VictimEntityId,
+                        "{}",
                         EvidenceConfidence.Exact,
                         ToEvidence(request, healthChange.Evidence)));
                 }
@@ -967,13 +990,11 @@ public sealed class WotbReplayDecoder : IReplayDecoder
             healthByEntity[healthChange.VictimEntityId] = healthChange.PostHitHealth;
         }
 
-        // Destroyed: the first destroy-marker position packet per roster
-        // entity. The marker fires at the death instant (verified on both
-        // 11.19 replays: 15/15 destroyed tanks, 0/13 survivors). Wrecks can
-        // re-broadcast the marker, so only the first occurrence per entity
-        // emits an event; non-roster entities (viewpoint, debris) are
-        // ignored even though they can carry the marker byte pattern.
-        HashSet<long> destroyedEntities = [];
+        // Position destroy-marker packets: same dedupe set as the
+        // health-change destroy markers above, so whichever fires first (by
+        // sequence) emits the Destroyed event and re-broadcasts (wrecks) are
+        // ignored. Non-roster entities (viewpoint, debris) are ignored even
+        // though they can carry the marker byte pattern.
         foreach (PositionObservation marker in positionObservations
                      .Where(observation => observation.IsDestroyMarker)
                      .OrderBy(observation => observation.Sequence))

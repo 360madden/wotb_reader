@@ -627,6 +627,20 @@ public sealed partial class W2sHudView : UserControl
         };
         root.Children.Add(hpTrack);
 
+        // Exact HP readout ("438 / 700") from the decoded ledger, shown under
+        // the bar when the type-5 max-HP broadcast decoded for this tank.
+        if (item.MaxHealth > 0)
+        {
+            root.Children.Add(new TextBlock
+            {
+                Text = $"{Math.Max(item.CurrentHealth, 0)} / {item.MaxHealth}",
+                FontSize = 8,
+                Foreground = item.Alive ? CreateBrush("#CCFFFFFF") : DeadBrush,
+                TextAlignment = TextAlignment.Center,
+                Margin = new Thickness(0, 1, 0, 0),
+            });
+        }
+
         // Distance label under the bar.
         root.Children.Add(new TextBlock
         {

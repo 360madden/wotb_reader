@@ -273,6 +273,8 @@ internal static class ReadApiEndpoints
                 DamageDealt = tank.DamageDealt,
                 DamageTaken = tank.DamageTaken,
                 Kills = tank.Kills,
+                MaxHealth = tank.MaxHealth,
+                CurrentHealth = tank.CurrentHealth,
             })],
             Beacons = [.. projection.Beacons.Select(beacon => new OverlayBeaconResponse
             {

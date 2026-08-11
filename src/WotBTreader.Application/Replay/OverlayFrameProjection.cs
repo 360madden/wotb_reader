@@ -27,7 +27,11 @@ public sealed record ProjectedTank(
     // Cumulative battle statistics at the frame time (scoreboard columns).
     long DamageDealt,
     long DamageTaken,
-    long Kills);
+    long Kills,
+    // Exact health from the decoded ledger (0 when unknown): max health
+    // from the type-5 spawn broadcast, current = max − damage received.
+    long MaxHealth = 0,
+    long CurrentHealth = 0);
 
 /// <summary>
 /// One beacon projected onto the viewport. Screen coordinates are null when
@@ -132,7 +136,9 @@ public static class OverlayFrameProjector
                             tank.YawRadians.Value),
                     tank.DamageDealt,
                     tank.DamageTaken,
-                    tank.Kills);
+                    tank.Kills,
+                    tank.MaxHealth,
+                    tank.CurrentHealth);
             })
             .OrderBy(tank => tank.DistanceMeters)
             .ToList();

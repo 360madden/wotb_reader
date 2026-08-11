@@ -69,6 +69,51 @@ public sealed class ReadApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task OverlayFrame_ExactHealthRidesThrough()
+    {
+        // The decoded ledger's exact health (max from the type-5 spawn
+        // broadcast, current = max − damage received) must reach the API
+        // contract for the HUD nameplate readout.
+        FakeOverlayFrames frames = new(new OverlayFrame(
+            TimeSpan.FromSeconds(10),
+            new OverlayCamera(0, 0, 0, YawRadians: 0, PitchRadians: 0, RollRadians: 0),
+            new[]
+            {
+                new OverlayTankState(
+                    1, 0, 0, 100, 0.1, HpFraction: 0.6, true, 1, "Alpha", null,
+                    "TankA", "Heavy", 100,
+                    DamageDealt: 1200, DamageTaken: 280, Kills: 2,
+                    MaxHealth: 700, CurrentHealth: 420),
+                new OverlayTankState(
+                    2, 0, 0, -100, 0.1, HpFraction: 1.0, true, 2, "NoMax", null,
+                    "TankB", "Heavy", 100),
+            },
+            [],
+            []));
+
+        IResult result = await ReadApiEndpoints.GetOverlayFrameAsync(
+            new DefaultHttpContext(),
+            frames,
+            new FakeBeaconStore(),
+            Guid.NewGuid(),
+            timeSeconds: 10,
+            fov: 90,
+            width: 1920,
+            height: 1080,
+            TestContext.CancellationToken);
+
+        OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
+        OverlayTankResponse alpha = frame.Tanks.Single(tank => tank.EntityId == 1);
+        Assert.AreEqual(700, alpha.MaxHealth);
+        Assert.AreEqual(420, alpha.CurrentHealth);
+        Assert.AreEqual(0.6, alpha.HpFraction, 1e-9);
+        // Unknown max health fails closed to 0 (never guessed).
+        OverlayTankResponse noMax = frame.Tanks.Single(tank => tank.EntityId == 2);
+        Assert.AreEqual(0, noMax.MaxHealth);
+        Assert.AreEqual(0, noMax.CurrentHealth);
+    }
+
+    [TestMethod]
     public async Task OverlayFrame_TankHeadingIsProjectedWhenRotationKnown()
     {
         // Camera at the origin facing +Z; a tank 100m ahead facing +X (yaw

@@ -189,6 +189,15 @@ public sealed class ReplayDecoderTests
             .Sum(doc => doc.RootElement.GetProperty("damage").GetInt32());
         Assert.AreEqual(700, attacker200Total);
 
+        // The 0xFFFD destroy marker also emits a Destroyed event for the
+        // victim (the ledger destroy signal is the primary death instant).
+        CanonicalEvent[] destroyed = projection.Events
+            .Where(ev => ev.Kind == CanonicalEventKind.Destroyed)
+            .ToArray();
+        Assert.HasCount(1, destroyed);
+        Assert.AreEqual(100, destroyed[0].EntityId);
+        Assert.AreEqual(TimeSpan.FromSeconds(3.0), destroyed[0].ReplayTime);
+
         // The health-change packets are preserved as typed raw records.
         Assert.IsTrue(projection.RawRecords.Any(
             record => record.RecordKind == "event-stream.packet" &&

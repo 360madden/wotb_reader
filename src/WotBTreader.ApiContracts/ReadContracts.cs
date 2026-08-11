@@ -328,8 +328,17 @@ public sealed record OverlayTankResponse
     /// <summary>Team number (1 or 2); null when unknown.</summary>
     public int? TeamNumber { get; init; }
 
-    /// <summary>HP fraction 0..1 from the decoded damage arc.</summary>
+    /// <summary>HP fraction 0..1: exact health (1 − taken/maxHealth) when the
+    /// type-5 max-HP broadcast decoded for this tank, otherwise the observed
+    /// damage arc.</summary>
     public double HpFraction { get; init; }
+
+    /// <summary>Exact max HP from the type-5 spawn broadcast; 0 when unknown.</summary>
+    public long MaxHealth { get; init; }
+
+    /// <summary>Current HP = maxHealth − damage received (clamped ≥ 0); 0 when
+    /// max health is unknown.</summary>
+    public long CurrentHealth { get; init; }
 
     /// <summary>True while the tank is not destroyed at this replay time.</summary>
     public bool Alive { get; init; }

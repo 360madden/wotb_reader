@@ -19,4 +19,9 @@ public sealed record NameplateItem(
     // Cumulative battle statistics at the frame time, shown as a compact
     // totals line under the HP bar (damage dealt + kills).
     long DamageDealt = 0,
-    long Kills = 0);
+    long Kills = 0,
+    // Exact health from the decoded ledger: max from the type-5 spawn
+    // broadcast, current = max − damage received (0 when max is unknown) —
+    // rendered as a "current / max" readout next to the HP bar.
+    long MaxHealth = 0,
+    long CurrentHealth = 0);

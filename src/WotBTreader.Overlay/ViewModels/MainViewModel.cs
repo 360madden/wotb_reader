@@ -553,7 +553,9 @@ public class MainViewModel : INotifyPropertyChanged
                     tank.DistanceMeters,
                     tank.ScreenHeadingDegrees,
                     tank.DamageDealt,
-                    tank.Kills));
+                    tank.Kills,
+                    tank.MaxHealth,
+                    tank.CurrentHealth));
             }
 
             foreach (OverlayBeaconResponse beacon in frame.Beacons)

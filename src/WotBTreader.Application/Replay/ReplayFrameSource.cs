@@ -94,6 +94,9 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
         // HP arc: cumulative damage and destroyed flags per victim entity.
         Dictionary<long, long> totalDamage = [];
         Dictionary<long, TimeSpan> destroyedAt = [];
+        // Exact max health per entity from the type-5 spawn broadcast (first
+        // broadcast per roster entity = max HP, verified on both replays).
+        Dictionary<long, long> maxHealthByEntity = [];
         // Cumulative damage each entity has DEALT up to the frame time (the
         // scoreboard's damage-dealt column). One pass, like the HP arc.
         Dictionary<long, long> damageDealt = [];
@@ -115,6 +118,10 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
                         damageDealt[attacker] = damageDealt.GetValueOrDefault(attacker) + damage;
                     }
 
+                    break;
+                case CanonicalEventKind.MaxHealthObserved when TryParseMaxHealth(
+                    canonical.ValuesJson, out long maxHealth):
+                    maxHealthByEntity.TryAdd(entityId, maxHealth);
                     break;
                 case CanonicalEventKind.Destroyed:
                     destroyedAt.TryAdd(entityId, canonical.ReplayTime);
@@ -163,11 +170,20 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
             long damageTaken = CumulativeDamageBefore(projection.Events, entityId, replayTime);
             bool alive = !destroyedAt.TryGetValue(entityId, out TimeSpan destroyed)
                 || destroyed > replayTime;
-            // 1.0 when the tank took no damage; otherwise the fraction of its
-            // observed damage arc NOT yet received at this frame time.
-            double hpFraction = received <= 0
-                ? 1.0
-                : Math.Clamp(1.0 - (double)damageTaken / received, 0.0, 1.0);
+            long maxHealth = maxHealthByEntity.GetValueOrDefault(entityId);
+            // Exact health fraction when the type-5 max HP decoded for this
+            // tank (1 − taken/max); otherwise fall back to the observed
+            // damage arc (1.0 when the tank took no damage). A destroyed tank
+            // ends at 0 because the ledger credits its remaining HP at the
+            // destroy marker, so taken reaches max.
+            double hpFraction = maxHealth > 0
+                ? Math.Clamp(1.0 - (double)damageTaken / maxHealth, 0.0, 1.0)
+                : received <= 0
+                    ? 1.0
+                    : Math.Clamp(1.0 - (double)damageTaken / received, 0.0, 1.0);
+            long currentHealth = maxHealth > 0
+                ? Math.Max(maxHealth - damageTaken, 0)
+                : 0;
 
             // Distance from the camera position.
             double distance = Math.Sqrt(
@@ -191,7 +207,9 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
                 distance,
                 damageDealt.GetValueOrDefault(entityId),
                 damageTaken,
-                killsByKiller.GetValueOrDefault(entityId)));
+                killsByKiller.GetValueOrDefault(entityId),
+                maxHealth,
+                currentHealth));
         }
 
         tanks.Sort(static (left, right) => left.DistanceMeters.CompareTo(right.DistanceMeters));
@@ -396,6 +414,33 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
                 && value.TryGetInt32(out int parsed))
             {
                 damage = parsed;
+                return true;
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // Unparseable values stay unknown — never guessed.
+        }
+
+        return false;
+    }
+
+    private static bool TryParseMaxHealth(string? valuesJson, out long maxHealth)
+    {
+        maxHealth = 0;
+        if (string.IsNullOrWhiteSpace(valuesJson))
+        {
+            return false;
+        }
+
+        try
+        {
+            using System.Text.Json.JsonDocument document =
+                System.Text.Json.JsonDocument.Parse(valuesJson);
+            if (document.RootElement.TryGetProperty("maxHealth", out System.Text.Json.JsonElement value)
+                && value.TryGetInt64(out long parsed))
+            {
+                maxHealth = parsed;
                 return true;
             }
         }
