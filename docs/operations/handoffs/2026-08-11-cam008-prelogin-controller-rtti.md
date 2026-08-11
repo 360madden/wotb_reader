@@ -67,5 +67,12 @@ explains, with one fact:
 
 - The `verify-camera-projection.py` live session (CAM-007) is unaffected
   and is still the next live gate.
-- Optionally: teach the G1 poll wrapper to treat `ReplaySessionInactive`
-  as "wait and retry" so a poll that starts early doesn't fail the run.
+- ✅ (same commit) the G1 poll wrapper now treats the pre-login phase as
+  "wait and retry": `invoke-g1-live-poll.ps1 -SkipInterceptorArm` re-runs
+  the unchanged od-073 poll (up to `-MaxPreLoginRetries 3`, 12 s apart)
+  when ALL reads report `ReplaySessionInactive`/
+  `UnsupportedSessionController` (`Test-PollInPreLoginPhase`, smoke-tested:
+  all-pre-login → retry, mixed-pre-login → retry, resolved → no retry,
+  missing aggregate → no retry). Armed mode is excluded — the
+  interceptor's PAGE_GUARD forbids a second pass (OD-RECOVERY-080).
+  `preLoginRetries`/`pollAttempts` land in the evidence JSON.

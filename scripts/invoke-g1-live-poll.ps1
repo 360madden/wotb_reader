@@ -98,6 +98,15 @@ param(
     [int]$StageDelaySeconds = 55,
     [int]$ReadCount = 24,
     [int]$ReadIntervalMilliseconds = 750,
+    # CAM-008 (2026-08-11): the app's session slot holds a PreLoginController
+    # until replay playback starts, so a poll that lands early reads
+    # ReplaySessionInactive/UnsupportedSessionController. When ALL reads are
+    # in that phase, wait and re-run the unchanged poll instead of failing
+    # the run. Only valid with -SkipInterceptorArm: the interceptor's
+    # PAGE_GUARD makes a second pass over the ring page fail with
+    # ERROR_PARTIAL_COPY (OD-RECOVERY-080).
+    [int]$MaxPreLoginRetries = 3,
+    [int]$PreLoginRetryDelaySeconds = 12,
     [string[]]$PriorResultPaths = @(),
     # Extra capture after the poll ends (post-window liveness).
     [int]$InterceptorMarginSeconds = 20,
@@ -267,6 +276,47 @@ function Get-LaunchArtifactId {
         return $null
     }
     return (Get-Content -LiteralPath $marker -Raw).Trim()
+}
+
+function Test-PollInPreLoginPhase {
+    <#
+    CAM-008 (2026-08-11): returns $true when the od-073 poll aggregate shows
+    ALL reads in the pre-login phase (status ReplaySessionInactive or
+    UnsupportedSessionController) — the app's session slot holds a
+    PreLoginController until replay playback starts, so the poll landed
+    early. The caller re-runs the unchanged poll after a delay instead of
+    failing the run. Returns $false for a missing/unreadable aggregate, an
+    aggregate without statusCounts, or any resolved/mixed read outcome.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$AggregatePath,
+        [int]$ReadCount = 24
+    )
+
+    if (-not (Test-Path -LiteralPath $AggregatePath)) {
+        return $false
+    }
+
+    $agg = $null
+    try {
+        $agg = Get-Content -LiteralPath $AggregatePath -Raw | ConvertFrom-Json
+    }
+    catch {
+        return $false
+    }
+
+    if ($null -eq $agg -or $null -eq $agg.statusCounts) {
+        return $false
+    }
+
+    $preLoginReads = 0
+    foreach ($status in @('ReplaySessionInactive', 'UnsupportedSessionController')) {
+        if ($null -ne $agg.statusCounts.$status) {
+            $preLoginReads += [int]$agg.statusCounts.$status
+        }
+    }
+
+    return $preLoginReads -ge $ReadCount
 }
 
 function Test-WriteObservationVerdict {
@@ -453,22 +503,47 @@ try {
         Start-Sleep -Seconds 2
     }
 
-    # 4. Unchanged bounded poll inside the capture window.
+    # 4. Unchanged bounded poll inside the capture window. CAM-008: when the
+    #    reads all land in the pre-login phase (PreLoginController until
+    #    playback starts), wait and re-run the unchanged poll (corrected mode
+    #    only — the interceptor's PAGE_GUARD forbids a second pass).
+    $pollAttempt = 1
+    $preLoginRetries = 0
     $pollStartUtc = [DateTimeOffset]::UtcNow
-    Write-G1 'starting unchanged od073 poll'
-    & (Join-Path $scriptDir 'od-073-entity-position-poll.ps1') `
-        -SessionId $battleSessionId `
-        -StageDelaySeconds $StageDelaySeconds `
-        -ReadCount $ReadCount `
-        -ReadIntervalMilliseconds $ReadIntervalMilliseconds `
-        -ResultPath $pollAggregatePath `
-        -PriorResultPaths @($PriorResultPaths | ForEach-Object {
-            $_ -split ',' | ForEach-Object { $_.Trim() } |
-                Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-        })
-    $pollExit = $LASTEXITCODE
-    $pollEndUtc = [DateTimeOffset]::UtcNow
-    Write-G1 ('poll_exit=' + $pollExit)
+    while ($true) {
+        Write-G1 ('starting unchanged od073 poll (attempt ' + $pollAttempt + ')')
+        & (Join-Path $scriptDir 'od-073-entity-position-poll.ps1') `
+            -SessionId $battleSessionId `
+            -StageDelaySeconds $StageDelaySeconds `
+            -ReadCount $ReadCount `
+            -ReadIntervalMilliseconds $ReadIntervalMilliseconds `
+            -ResultPath $pollAggregatePath `
+            -PriorResultPaths @($PriorResultPaths | ForEach-Object {
+                $_ -split ',' | ForEach-Object { $_.Trim() } |
+                    Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+            })
+        $pollExit = $LASTEXITCODE
+        $pollEndUtc = [DateTimeOffset]::UtcNow
+        Write-G1 ('poll_exit=' + $pollExit)
+
+        $retryable = $false
+        if ($pollExit -eq 0 -and $SkipInterceptorArm -and
+            $pollAttempt -le $MaxPreLoginRetries -and
+            (Test-PollInPreLoginPhase -AggregatePath $pollAggregatePath -ReadCount $ReadCount)) {
+            $retryable = $true
+        }
+        if (-not $retryable) {
+            break
+        }
+
+        $preLoginRetries += 1
+        Write-G1 ('prelogin_phase detected (retry ' + $preLoginRetries + '/' +
+            $MaxPreLoginRetries + ') waiting ' + $PreLoginRetryDelaySeconds +
+            's for replay playback')
+        Start-Sleep -Seconds $PreLoginRetryDelaySeconds
+        $pollAttempt += 1
+        $pollStartUtc = [DateTimeOffset]::UtcNow
+    }
 
     # 5. Let the interceptor finish its post-poll margin, then collect.
     if ($null -ne $script:interceptorProc -and -not $script:interceptorProc.HasExited) {
@@ -532,6 +607,8 @@ try {
         pollStartUtc = $pollStartUtc.ToString('o')
         pollEndUtc = $pollEndUtc.ToString('o')
         readWindowStartUtc = $readWindowStart.ToString('o')
+        pollAttempts = $pollAttempt
+        preLoginRetries = $preLoginRetries
         verdict = $verdict
         privacy = [ordered]@{
             entityIdsPersisted = $false
