@@ -75,7 +75,8 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
 
     internal static OverlayFrame BuildFrame(
         ReplayDecodeProjection projection,
-        TimeSpan replayTime)
+        TimeSpan replayTime,
+        OverlayCamera? cameraOverride = null)
     {
         // Per-entity nearest-sample lookup over the decoded position stream.
         Dictionary<long, List<PositionSample>> byEntity = projection.Positions
@@ -129,8 +130,9 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
             }
         }
 
-        // Camera: the viewpoint participant's entity.
-        OverlayCamera camera = BuildCamera(projection, byEntity, replayTime);
+        // Camera: the verified memory camera when provided (the CAM-001
+        // seam), else the viewpoint participant's entity (replay default).
+        OverlayCamera camera = BuildCamera(projection, byEntity, replayTime, cameraOverride);
 
         // Event-feed pips: damage hits and destructions in the recent window.
         // The window is short so the HUD only shows the live feed; an event
@@ -299,8 +301,21 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
     private static OverlayCamera BuildCamera(
         ReplayDecodeProjection projection,
         Dictionary<long, List<PositionSample>> byEntity,
-        TimeSpan replayTime)
+        TimeSpan replayTime,
+        OverlayCamera? cameraOverride = null)
     {
+        // CAM-001 seam: a caller-supplied camera (e.g. the verified live
+        // cameraState pose) replaces the viewpoint approximation. Fail-closed:
+        // a non-finite position is never rendered — it falls through to the
+        // replay viewpoint fallback below instead of fabricating a pose.
+        if (cameraOverride is { } overrideCamera
+            && double.IsFinite(overrideCamera.X)
+            && double.IsFinite(overrideCamera.Y)
+            && double.IsFinite(overrideCamera.Z))
+        {
+            return overrideCamera;
+        }
+
         Participant? viewpoint = projection.Session?.ViewpointParticipantId is null
             ? null
             : projection.Participants.FirstOrDefault(

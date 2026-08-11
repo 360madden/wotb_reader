@@ -461,6 +461,73 @@ public sealed class ReplayFrameSourceTests
     }
 
     [TestMethod]
+    public void Frame_CameraOverride_ReplacesViewpointCamera()
+    {
+        // The CAM-001 seam: a verified memory camera pose replaces the
+        // viewpoint-tank approximation; the frame camera is exactly the
+        // override and tank distances use the override position.
+        ParticipantId viewpointId = ParticipantId.New();
+        var projection = Projection(
+            viewpointId,
+            new[]
+            {
+                Participant(viewpointId, entityId: 1, "ViewpointTank", team: 1),
+                Participant(ParticipantId.New(), entityId: 2, "EnemyTank", team: 2),
+            },
+            new[]
+            {
+                Sample(entityId: 1, seconds: 0, x: 0, y: 0, z: 0, yaw: 0.1),
+                Sample(entityId: 2, seconds: 0, x: 10, y: 0, z: 0, yaw: null),
+            },
+            events: []);
+
+        // The real camera sits behind/above the viewpoint tank (third-person
+        // offset ~1-30 m), e.g. 6 m behind at +2 m elevation.
+        var overrideCamera = new OverlayCamera(
+            6, 2, 0, YawRadians: 0.5, PitchRadians: -0.2, RollRadians: null);
+        OverlayFrame frame = ReplayFrameSource.BuildFrame(
+            projection, TimeSpan.FromSeconds(5), overrideCamera);
+
+        Assert.AreEqual(overrideCamera, frame.Camera);
+        // Distance is measured from the override camera position, not the
+        // viewpoint tank: enemy at (10,0,0) -> sqrt(4^2 + 2^2) = sqrt(20).
+        OverlayTankState enemy = frame.Tanks.Single(tank => tank.EntityId == 2);
+        Assert.AreEqual(Math.Sqrt(20), enemy.DistanceMeters, 1e-9);
+        // The viewpoint tank is now sqrt(40) m from the camera, not 0.
+        Assert.AreEqual(
+            Math.Sqrt(40),
+            frame.Tanks.Single(tank => tank.EntityId == 1).DistanceMeters,
+            1e-9);
+    }
+
+    [TestMethod]
+    public void Frame_NonFiniteCameraOverride_FallsBackToViewpoint()
+    {
+        // Fail-closed: a non-finite override position is never rendered — the
+        // viewpoint camera is used instead (never a fabricated pose).
+        ParticipantId viewpointId = ParticipantId.New();
+        var projection = Projection(
+            viewpointId,
+            new[]
+            {
+                Participant(viewpointId, entityId: 1, "ViewpointTank", team: 1),
+            },
+            new[]
+            {
+                Sample(entityId: 1, seconds: 0, x: 3, y: 4, z: 0, yaw: 0.1),
+            },
+            events: []);
+
+        var invalid = new OverlayCamera(
+            double.NaN, 0, 0, YawRadians: 0.5, PitchRadians: null, RollRadians: null);
+        OverlayFrame frame = ReplayFrameSource.BuildFrame(
+            projection, TimeSpan.Zero, invalid);
+
+        Assert.AreEqual(3, frame.Camera.X);
+        Assert.AreEqual(0.1, frame.Camera.YawRadians!.Value, 1e-9);
+    }
+
+    [TestMethod]
     public async Task GetFrameAsync_SessionMissing_ReturnsFailure()
     {
         // Projection with a null session record triggers the explicit guard.
