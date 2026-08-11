@@ -33,6 +33,19 @@ fresh session id), so the reload was pure waste.
 - `scripts/python/offline_check.py`: all links resolve, blocker numbering
   contiguous, ledger consistent.
 
+## Playback-speed rehearsal (2026-08-10, appended)
+
+Full-battle walk of the Oasis Palms session against the live endpoint at the
+HUD's real 20 fps tick (t step 0.05 s, 252 s battle → 5040 frames):
+
+- **5040/5040 frames resolved, 0 failures.**
+- Latency: p50 7 ms, p95 31 ms, p99 34 ms, max 39 ms.
+- **0/5040 frames exceeded the 50 ms tick budget** — the HUD's
+  fire-and-forget refresh now keeps up with playback by a wide margin.
+
+This closes the loop on F5's "playback-speed HUD" unlock: the data path is
+no longer the bottleneck.
+
 ## Notes for next
 
 - The cold first frame per session (~370 ms) could be hidden by warming the
