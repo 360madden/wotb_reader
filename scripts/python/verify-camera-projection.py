@@ -120,17 +120,29 @@ def center_distance(screen, width, height):
     return math.sqrt(ndc_x * ndc_x + ndc_y * ndc_y)
 
 
-def basis_coherent(basis, yaw, pitch, tol_deg=15.0):
-    """Checks the persisted view-basis floats (+0x80..0xA8) are a coherent
-    camera basis: the 3x3 rows are orthonormal and one row is the camera
-    forward direction consistent with (yaw, pitch).
+def _finite_vec(vec):
+    """Component mask of a possibly NaN-padded vector."""
+    return [k for k in range(len(vec)) if math.isfinite(vec[k])]
 
-    The region is row-major with the diff-scan-verified subset at
-    indices [0,1,2] (+0x80/84/88) and [4,5,6] (+0x90/94/98), plus the
-    full 10-float window (index 3 = +0x8C gap). We try the contiguous
-    3x3 starting at index 0 (rows 0..2 over +0x80..0xA0) first, then the
-    verified subset [0,1,2],[4,5,6],[7,8,9]. A row matches the forward
-    direction forward(yaw, pitch) up to sign.
+
+def basis_coherent(basis, yaw, pitch, tol_deg=15.0):
+    """Checks the persisted view-basis floats (+0x80..0xB0) are a coherent
+    camera basis.
+
+    Layout VERIFIED 2026-08-11 on real dumps (CAM-001 v7b): the region is
+    a row-major 3x4 view matrix with 16-byte stride — row0 at +0x80
+    (indices [0:3]), row1 at +0x90 ([4:7]), row2 at +0xA0 ([8:11]), and
+    the zero padding at +0x8C/+0x9C. Row0 equals the camera forward under
+    the DAVA left-handed convention: row0 = (fx, -fy, -fz) where
+    fwd = forward(yaw, pitch) (measured dot 1.0000 across all 6 rounds of
+    the 2026-08-11 session). Rows are orthonormal with r0 x r1 = r2.
+
+    Coherence = (a) rows unit-length, (b) pairwise-orthogonal, (c) the
+    cross product r0 x r1 equals r2 (componentwise, finite components
+    only), and (d) one row matches forward(yaw, pitch) under any
+    per-axis sign flip (max-over-signs dot >= cos(tol)). Legacy 10-float
+    captures (row2.z at +0xA8 unread) are verified on the finite
+    components only and reported as such.
 
     Returns (coherent, details) where details explains the verdict.
     """
@@ -139,57 +151,114 @@ def basis_coherent(basis, yaw, pitch, tol_deg=15.0):
     ):
         return False, "basis missing or non-finite"
 
-    candidates = []
-    # Full-window contiguous 3x3: rows [0..2],[3..5],[6..8] over +0x80..0xA0.
-    candidates.append([basis[i : i + 3] for i in (0, 3, 6)])
-    # Diff-scan verified subset: rows [0,1,2], [4,5,6], [7,8,9] (0x8C gap).
-    candidates.append([basis[0:3], basis[4:7], basis[7:10]])
-
+    # Stride-4 rows: [0:3] (+0x80), [4:7] (+0x90), [8:11] (+0xA0). Legacy
+    # 10-float captures pad row2.z (+0xA8) with NaN.
+    rows = [
+        list(basis[0:3]),
+        list(basis[4:7]),
+        list(basis[8:11]) if len(basis) >= 11 else [basis[8], basis[9], float("nan")],
+    ]
     fwd = forward(yaw, pitch)
-    best = None
-    for rows in candidates:
-        lengths = [math.sqrt(sum(v * v for v in r)) for r in rows]
-        if any(abs(l - 1.0) > 0.02 for l in lengths):
-            continue
-        ortho = True
-        for i in range(3):
-            for j in range(i + 1, 3):
-                dot = sum(rows[i][k] * rows[j][k] for k in range(3))
+    finite_rows = [_finite_vec(r) for r in rows]
+    if len(finite_rows[2]) < 2:
+        return False, "basis rows incomplete (row2 lacks its x/y components)"
+
+    # Legacy 10-float captures never read row2.z (+0xA8). A partial row's
+    # own unit length / pair-wise dot cannot be verified (the missing z
+    # term is exactly what makes it orthogonal), so for partial rows we
+    # rely on the cross-product identity r0 x r1 = r2, which pins row2
+    # completely: if r0, r1 are unit and orthogonal and r0 x r1 = r2,
+    # then r2 is automatically unit and orthogonal to both.
+    complete = len(basis) >= 12 and len(finite_rows[2]) == 3
+
+    # (a) unit length — complete rows only; (b) orthogonality — only
+    # between complete rows (partial pairs are implied by the cross check).
+    complete_rows = [r for r, comps in zip(rows, finite_rows)
+                     if len(comps) == 3]
+    for r in complete_rows:
+        norm = math.sqrt(sum(v * v for v in r))
+        if abs(norm - 1.0) > 0.02:
+            return False, f"basis row not unit length (norm {norm:.3f})"
+    if len(complete_rows) >= 2:
+        for i in range(len(complete_rows)):
+            for j in range(i + 1, len(complete_rows)):
+                dot = sum(complete_rows[i][k] * complete_rows[j][k]
+                          for k in range(3))
                 if abs(dot) > 0.02:
-                    ortho = False
-        if not ortho:
-            continue
-        for row_idx in (1, 2):
-            r = rows[row_idx]
-            dot_abs = abs(sum(r[k] * fwd[k] for k in range(3)))
-            if dot_abs >= math.cos(math.radians(tol_deg)):
-                best = (row_idx, math.degrees(math.acos(min(1.0, dot_abs))))
-                break
-        if best:
+                    return False, f"basis rows not orthogonal (dot {dot:.3f})"
+
+    # (c) cross product r0 x r1 == r2 on finite components.
+    xprod = [
+        rows[0][1] * rows[1][2] - rows[0][2] * rows[1][1],
+        rows[0][2] * rows[1][0] - rows[0][0] * rows[1][2],
+        rows[0][0] * rows[1][1] - rows[0][1] * rows[1][0],
+    ]
+    xfail = [
+        k for k in finite_rows[2]
+        if abs(xprod[k] - rows[2][k]) > 0.03
+    ]
+    if xfail:
+        return False, f"r0 x r1 != r2 on components {xfail}"
+
+    # (d) one row matches forward(yaw, pitch) up to per-axis sign flips.
+    best = None
+    for row_idx, r in enumerate(rows):
+        comps = finite_rows[row_idx]
+        dot_abs = sum(abs(r[k] * fwd[k]) for k in comps)
+        if dot_abs >= math.cos(math.radians(tol_deg)):
+            angle = math.degrees(math.acos(min(1.0, dot_abs)))
+            best = (row_idx, angle, len(comps))
             break
     if best is None:
-        return False, "no orthonormal row set whose forward row matches yaw/pitch"
-    return True, f"orthonormal rows, forward=row{best[0]}, angle {best[1]:.2f} deg"
+        return False, "no row matches forward(yaw, pitch) under sign flips"
+
+    partial = " (legacy 10-float capture: row2.z unverified)" if not complete else ""
+    return True, (
+        f"orthonormal stride-4 rows, r0 x r1 = r2, forward=row{best[0]}, "
+        f"angle {best[1]:.2f} deg{partial}"
+    )
 
 
 def classify_mode(screen, look_at, expected_pitch, memory_pitch):
-    """Uses the captured-window derived scalars (when present) to classify
-    the camera state: chase (tank-centered third-person), high (elevated,
-    level pitch), or unknown. Returns (mode, hint) — hint is diagnostic
-    text, never a verdict."""
+    """Classifies the camera state: chase (tank-centered third-person),
+    non-chase (elevated/detached — the 2026-08-11 honest-negative
+    signature), high (elevated with visible sky band), or unknown.
+    Returns (mode, hint) — hint is diagnostic text, never a verdict.
+
+    Order matters: the memory-side pitch-to-tank gap branch (no pixel
+    dependence) fires first, because the sky-luminance branch is
+    scene-dependent (Oasis dusk skies never pass the >0.5 row-luminance
+    sky test). A chase camera aims at the tank (look-at ~0, memory pitch
+    ~= pitch-to-tank); the non-chase state aims elsewhere (large look-at
+    AND memory pitch far from pitch-to-tank)."""
+    if look_at <= 8.0:
+        sky_txt = _screen_summary(screen)
+        return "chase", f"look-at {look_at:.1f} deg{sky_txt}"
+    if (
+        expected_pitch is not None and memory_pitch is not None
+        and abs(memory_pitch - expected_pitch) > math.radians(20.0)
+    ):
+        return "non-chase", (
+            f"look-at {look_at:.1f} deg, memory pitch {math.degrees(memory_pitch):.1f} "
+            f"vs pitch-to-tank {math.degrees(expected_pitch):.1f} deg"
+        )
+    if screen:
+        sky = screen.get("skyFraction")
+        horizon = screen.get("horizonRow")
+        if isinstance(sky, (int, float)) and isinstance(horizon, (int, float)):
+            if sky > 0.15 and 0.3 < horizon < 0.8:
+                return "high", f"look-at {look_at:.1f} deg, sky {sky:.2f}, horizon {horizon:.2f}"
+    return "unknown", _screen_summary(screen) or "no screen scalars (run with -CaptureWindow)"
+
+
+def _screen_summary(screen):
     if not screen:
-        return None, "no screen scalars (run with -CaptureWindow)"
+        return None
     sky = screen.get("skyFraction")
     horizon = screen.get("horizonRow")
-    if not isinstance(sky, (int, float)) or not isinstance(horizon, (int, float)):
-        return None, "screen scalars incomplete"
-    # A level/high camera sees sky above the horizon and terrain below; a
-    # chase camera is low to the ground (sky thin or absent).
-    if look_at <= 8.0:
-        return "chase", f"look-at {look_at:.1f} deg, sky {sky:.2f}, horizon {horizon:.2f}"
-    if sky > 0.15 and 0.3 < horizon < 0.8:
-        return "high", f"look-at {look_at:.1f} deg, sky {sky:.2f}, horizon {horizon:.2f}"
-    return "unknown", f"look-at {look_at:.1f} deg, sky {sky:.2f}, horizon {horizon:.2f}"
+    if isinstance(sky, (int, float)) and isinstance(horizon, (int, float)):
+        return f", sky {sky:.2f}, horizon {horizon:.2f}"
+    return None
 
 
 def evaluate_round(round_sample, width, height):
@@ -400,31 +469,48 @@ def self_test():
         check("C# yaw-quarter X == 960", abs(quarter[0] - 960.0) < 1e-6, quarter)
         check("C# yaw-quarter Y == 540", abs(quarter[1] - 540.0) < 1e-6, quarter)
 
-    # 5. Basis coherence: an orthonormal basis whose forward row matches
-    #    yaw/pitch is coherent; a scrambled matrix is not.
+    # 5. Basis coherence (stride-4 DAVA layout verified 2026-08-11): an
+    #    orthonormal row set whose row0 = (fx,-fy,-fz) of forward(yaw,pitch)
+    #    is coherent; scrambled rows are not; legacy 10-float captures
+    #    (row2.z unread) are verified on finite components.
     yaw0, pitch0 = 0.0, 0.0  # forward = +Z
     fwd = forward(yaw0, pitch0)
-    right = (1.0, 0.0, 0.0)
-    up = (0.0, 1.0, 0.0)
-    coherent_basis = list(right) + list(up) + list(fwd)
+    row0 = (fwd[0], -fwd[1], -fwd[2])  # DAVA: (fx, -fy, -fz) = (0, 0, -1)
+    row1 = (0.0, 1.0, 0.0)
+    row2 = (row0[1] * row1[2] - row0[2] * row1[1],
+            row0[2] * row1[0] - row0[0] * row1[2],
+            row0[0] * row1[1] - row0[1] * row1[0])  # r0 x r1 = (1, 0, 0)
+    coherent_basis = [row0[0], row0[1], row0[2], 0.0,
+                      row1[0], row1[1], row1[2], 0.0,
+                      row2[0], row2[1], row2[2], 0.0]
     ok_basis, detail_basis = basis_coherent(coherent_basis, yaw0, pitch0)
-    check("basis coherent when orthonormal + forward row matches", ok_basis, detail_basis)
-    scrambled = [0.9, 0.0, 0.0, 0.0, 0.9, 0.0, 0.0, 0.0, 0.9]
+    check("basis coherent when stride-4 orthonormal + DAVA forward row", ok_basis, detail_basis)
+    check("basis forward is row0", "forward=row0" in detail_basis, detail_basis)
+    legacy_basis, detail_legacy = basis_coherent(coherent_basis[:10], yaw0, pitch0)
+    check("legacy 10-float basis coherent on finite components", legacy_basis, detail_legacy)
+    check("legacy detail flags partial verification", "legacy" in detail_legacy, detail_legacy)
+    scrambled = [0.9, 0.0, 0.0, 0.0, 0.9, 0.0, 0.0, 0.0, 0.9, 0.0, 0.0, 0.0]
     bad_basis, detail_bad = basis_coherent(scrambled, yaw0, pitch0)
     check("basis NOT coherent when rows not orthonormal", not bad_basis, detail_bad)
     missing_basis, detail_missing = basis_coherent(None, yaw0, pitch0)
     check("basis NOT coherent when missing", not missing_basis, detail_missing)
 
     # 6. Mode classification: high sky + mid horizon => high camera; tiny
-    #    look-at => chase; no screen scalars => unknown.
+    #    look-at => chase; level camera far from pitch-to-tank => non-chase
+    #    (the 2026-08-11 honest-negative signature); no signals => unknown.
     mode_high, hint_high = classify_mode(
         {"skyFraction": 0.4, "horizonRow": 0.5}, 30.0, None, None)
     check("mode classifies high camera", mode_high == "high", (mode_high, hint_high))
     mode_chase, hint_chase = classify_mode(
         {"skyFraction": 0.05, "horizonRow": 0.4}, 2.0, None, None)
     check("mode classifies chase camera", mode_chase == "chase", (mode_chase, hint_chase))
+    mode_nonchase, hint_nonchase = classify_mode(
+        {"skyFraction": 0.0, "horizonRow": 0.39},
+        50.0, math.radians(-46.0), math.radians(-3.0))
+    check("mode classifies non-chase from pitch gap without sky",
+          mode_nonchase == "non-chase", (mode_nonchase, hint_nonchase))
     mode_unknown, hint_unknown = classify_mode(None, 30.0, None, None)
-    check("mode unknown without screen scalars", mode_unknown is None, (mode_unknown, hint_unknown))
+    check("mode unknown without screen scalars", mode_unknown == "unknown", (mode_unknown, hint_unknown))
 
     if failures:
         for name, detail in failures:

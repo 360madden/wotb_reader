@@ -89,7 +89,7 @@ rendering-only decision; no resolver/offset-table change.
 
 The session turns the CAM-004 `camera-state-consistent` verdict (GameCamera
 posA `+0x38` is the true world camera; yaw cos/sin `+0x50/+0x54`, pitch
-`+0x58`, basis `+0x80..0xA8`) into a W2S-relevant claim: if the memory
+`+0x58`, basis `+0x80..0xB0`) into a W2S-relevant claim: if the memory
 camera's yaw AND pitch aim at the tank, the decoded tank projects near
 screen center under the overlay's analytic pinhole model, and the existing
 `WorldToScreen` can render nameplates/beacons through the true camera
@@ -146,13 +146,22 @@ rounds + ≥ 1 yaw- and position-correlated round).
    decoded tank, whose yaw-aligned time can be WRONG by the replay-clock
    skew (the 2026-08-11 runs aligned to 30–40 s while the reads were at
    ~180 s), which silently corrupted the look-at/center check.
-2. Per-round `basis` (view-basis +0x80..0xA8 floats) is persisted and the
-   validator reports `cameraCoherent` (orthonormal rows, one row matching
-   yaw/pitch) — the memory-side half of the mode-vs-pose discriminator,
-   independent of the chase-view assumption.
+2. Per-round `basis` (view-basis +0x80..0xB0, 12 floats) is persisted and
+   the validator reports `cameraCoherent` — the memory-side half of the
+   mode-vs-pose discriminator, independent of the chase-view assumption.
+   **Layout VERIFIED 2026-08-11 on the v7b dumps:** stride-4 row-major
+   3x4 view matrix — row0 +0x80, row1 +0x90, row2 +0xA0; row0 =
+   (fx,-fy,-fz) of forward(yaw,pitch) (DAVA left-handed, dot 1.0000 across
+   all 6 rounds); rows orthonormal with r0 x r1 = r2. The earlier
+   contiguous/0x8C-gap guesses were wrong and are superseded.
 3. With `-CaptureWindow`, per-round `screen` scalars (skyFraction /
-   horizonRow / mean luminances) feed `renderMode` (chase / high /
-   unknown).
+   horizonRow / mean luminances) feed `renderMode` — **chase** (look-at
+   ~0), **non-chase** (look-at large AND memory pitch far from
+   pitch-to-tank; scene-independent, fires before the sky test), **high**
+   (sky band visible), **unknown**. The sky-luminance branch alone is not
+   scene-robust (Oasis dusk skies never pass the >0.5 row-luminance sky
+   test — skyFraction stays 0–0.11), so the pitch-gap branch is the
+   primary non-chase signal.
 
 ## Known static values (do not change without re-verifying)
 
@@ -162,7 +171,7 @@ rounds + ≥ 1 yaw- and position-correlated round).
 | Executable SHA-256 | `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d` |
 | Replay | Oasis Palms (the CAM-001 verified replay) |
 | Camera member path | ReplayCameraController `base+0x326dd0c` / GameCamera `base+0x32dafa0` (identity gates pass) |
-| Live pose | GameCamera position `+0x38`, yaw cos/sin `+0x50/+0x54`, pitch `+0x58`, basis `+0x80..0xA8` (CAM-001 v6 walk) |
+| Live pose | GameCamera position `+0x38`, yaw cos/sin `+0x50/+0x54`, pitch `+0x58`, basis `+0x80..0xB0` stride-4 (CAM-001 v6 walk; basis layout verified 2026-08-11) |
 | Prior verdict | CAM-001 `camera-state-consistent` (2026-08-11, CAM-004: GameCamera posA `+0x38` is the true world camera — 23.57 m third-person offset, 7/8 rounds) |
 | CAM-003 caveat | session-controller vftable flips between launches; one relaunch allowed |
 
@@ -171,7 +180,7 @@ rounds + ≥ 1 yaw- and position-correlated round).
 | Outcome | Action |
 |---|---|
 | **verified** (exit 0, look-at ≈ 0, pitch coherent) | W2S path proven: the overlay can render nameplates/beacons/POIs through the memory camera with the analytic pinhole model. Record `w2sProjectionVerified = true`; the overlay consumption seam (CAM-006 frame endpoint already serves the memory camera) is acceptance-tested. |
-| **coherent but not aimed** (`cameraCoherent=true`, look-at large, `renderMode=high`) | The walked GameCamera IS a real coherent camera in a NON-chase state (the 2026-08-11 shape). W2S still works — consume posA as-is, the tank simply projects off-center. If `renderMode` confirms the screen shows the high view, posA is right; record the mode and treat the W2S seam as valid for the high state. If the screen shows the chase view while posA is high, re-derive the pose field. |
+| **coherent but not aimed** (`cameraCoherent=true`, look-at large, `renderMode=non-chase`) | The walked GameCamera IS a real coherent camera in a NON-chase state (the 2026-08-11 shape). W2S still works — consume posA as-is, the tank simply projects off-center. Record the mode; the W2S seam is valid for the state as long as the basis is coherent. If the screen shows the chase view while posA reads non-chase, re-derive the pose field. |
 | **pitch convention fails** (`expectedPitchDeg` vs `memoryPitchDeg` consistently off / sign flipped) | The memory pitch `+0x58` needs a re-derivation or sign flip BEFORE the overlay swap — record the observed mapping, do NOT change the read surface without a new identity gate. |
 | **look-at small but nonzero** (camera aims slightly above tank center) | Nameplate label offset input: record the offset magnitude; no surface change (rendering-only). |
 | **CAM-003 flip** (identity fails on first launch) | Relaunch once (088/089 precedent); if it flips twice in a row, record and stop — do not broaden scanning. |

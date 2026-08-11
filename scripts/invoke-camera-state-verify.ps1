@@ -23,7 +23,7 @@
       position        +0x38/+0x3C/+0x40   (interpolated prev copy +0x44..)
       yaw cos/sin     +0x50/+0x54         (yaw = atan2(sin, cos))
       pitch           +0x58
-      view basis      +0x80..0xA8
+      view basis      +0x80..0xB0
       extra pos copy  +0xB0/+0xB4/+0xB8
 
   Correlation is now done in MEMORY space: the viewpoint tank position is
@@ -72,7 +72,7 @@
           wall time (memory space; /discover/entity-position or the
           CAM-008 pre-login-aware direct walk) - the delta norm is the
           third-person offset (verified 23.57 m, CAM-004).
-       c. finite-value + view-basis sanity checks on the +0x80..0xA8 rows.
+       c. finite-value + view-basis sanity checks on the +0x80..0xB0 rows.
     6. Writes a fresh CAM-001 aggregate (schema
        wotbtreader.cam001.camera-state-verify.v7) including per-round
        pose + decoded-tank samples for verify-camera-projection.py.
@@ -106,7 +106,7 @@
   camera controller — WRONG, that object is frozen. Live diff-scan showed
   all pose fields on the GameCamera (vftable base+0x32dafa0): position at
   +0x38/+0x3C/+0x40 (prev-frame copy +0x44), yaw as cos/sin at
-  +0x50/+0x54, pitch +0x58, basis +0x80..0xA8. v5 reads those fields and
+  +0x50/+0x54, pitch +0x58, basis +0x80..0xB0. v5 reads those fields and
   correlates the camera-to-tank offset IN MEMORY SPACE via
   /discover/entity-position (same-wall-time, no decoded-clock alignment
   needed), plus a yaw alignment against the decoded frame yaw timeline.
@@ -970,10 +970,13 @@ for ($round = 0; $round -lt $ReadCount; $round++) {
         $readAddresses = @($fieldSpecs | ForEach-Object {
             ('0x' + ($cameraStateAddress + $_.Off).ToString('X'))
         })
-        # CAM-001 v7 follow-up: full view-basis region +0x80..0xA8 (10 floats,
-        # row-major 3x3 with the 0x8C gap) for the offline coherence check.
+        # CAM-001 v7 follow-up: the view-basis region +0x80..0xB0 (12
+        # floats) is a row-major 3x4 view matrix (rows at +0x80/0x90/0xA0,
+        # 16-byte stride — verified 2026-08-11: row0 = (fx,-fy,-fz) of the
+        # yaw/pitch forward, rows orthonormal). Read all 12 so the offline
+        # coherence check has the complete third row.
         $basisReadAddresses = @()
-        for ($bo = 0x80; $bo -lt 0xA8; $bo += 4) {
+        for ($bo = 0x80; $bo -lt 0xB0; $bo += 4) {
             $basisReadAddresses += ('0x' + ($cameraStateAddress + $bo).ToString('X'))
         }
         $fieldRead = Invoke-OdApi -Method 'Post' `
@@ -1170,9 +1173,10 @@ for ($round = 0; $round -lt $ReadCount; $round++) {
             memoryTankSource  = $memoryTankSource
         }
         # CAM-001 v7 root-cause follow-up: persist the full view-basis region
-        # (+0x80..0xA8, 10 floats) so the offline validator can check the
-        # walked object is a COHERENT camera (orthonormal rows consistent
-        # with yaw/pitch) — the memory-side half of the mode-vs-pose
+        # (+0x80..0xB0, 12 floats — stride-4 3x4 view matrix verified
+        # 2026-08-11) so the offline validator can check the walked object is
+        # a COHERENT camera (orthonormal rows, row0 = (fx,-fy,-fz) of
+        # yaw/pitch) — the memory-side half of the mode-vs-pose
         # discriminator. Additive; older consumers ignore unknown keys.
         $basisFloats = @()
         $basisRead = Invoke-OdApi -Method 'Post' `

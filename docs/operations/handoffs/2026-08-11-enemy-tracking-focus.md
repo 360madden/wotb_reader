@@ -887,3 +887,42 @@ full diagnosis + per-launch table) and the ledger Next-planned row updated:
 (vftable hex + sibling pointers) and compare against CAM-004's
 session-controller variant before re-attempting the look-at check.**
 OD-RECOVERY-090 remains the next gate that needs no further design.
+
+## Turn 3 — CAM-001 v7 root cause isolated + validator mode discriminator
+
+**Instance-fingerprint probes (`019ff25b`):** process-wide vftable scan
+(`base+0x32dafa0`, 10k cap) proved exactly ONE GameCamera instance exists
+and the chain reaches it (wrong-instance FALSIFIED); CAM-004's `0x0365AFA0`
+vs today's `0x03D8AFA0` both resolve to the same RVA `0x32dafa0` (ASLR
+bases 0x380000/0xAB0000, class identity airtight); the object-window scan
+found NO float triple in the 1–50 m third-person band anywhere in the
+object (wrong-field FALSIFIED). **Root cause: camera-MODE artifact of the
+flipped session-controller phase** — posA `+0x38` tracks the tank's x
+exactly but sits ~50 m above with level pitch; the camera is real, live,
+unique, class-correct, and simply not in the chase state.
+
+**Basis layout correction (key finding):** the v7b dumps prove the
+view-basis region `+0x80..0xB0` is a **row-major stride-4 3x4 view
+matrix** — row0 +0x80, row1 +0x90, row2 +0xA0, with row0 =
+(fx,-fy,-fz) of forward(yaw,pitch) (DAVA left-handed; measured dot
+1.0000 across all 6 rounds) and r0 x r1 = r2. The earlier
+contiguous/0x8C-gap layout guesses were wrong and are superseded; the
+validator's coherence check now uses the verified layout with a
+convention-tolerant sign-flip forward match and NaN-tolerant legacy
+10-float handling (row2.z at +0xA8 unread in old captures).
+
+**Validator upgrade (`verify-camera-projection.py` + the PS1):**
+`basisReadAddresses` now reads the full 12 floats; `cameraCoherent`
+reports stride-4 orthonormality + forward-row match + cross-product
+identity; `renderMode` gains a scene-independent **non-chase** branch
+(look-at large AND memory pitch far from pitch-to-tank — fires before the
+sky test, which Oasis dusk skies never pass: skyFraction 0–0.11).
+Re-validated on the real v7b aggregate: **6/6 rounds coherent=True,
+mode=non-chase** — the honest-negative signature is now labeled
+automatically. Self-test extended (stride-4 fixture, legacy partial,
+non-chase classifier).
+
+Gate: full `scripts/validate.ps1` green (all suites pass, script hygiene,
+offset schema, exit 0). Remaining: the next live CAM session answers the
+mode-vs-pose question in one launch via `-CaptureWindow` (chase-state
+launch should reproduce CAM-004's 23.57 m with mode=chase).
