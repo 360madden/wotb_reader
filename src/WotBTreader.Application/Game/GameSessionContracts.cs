@@ -313,7 +313,7 @@ public interface IGameMemoryScanner
     /// enumerate the avatar-family roster once, batch-read every roster
     /// entity's ring record through the batch surface (ONE G2 clock
     /// attestation when a battle session id is supplied), decode position
-    /// (+0x10) and hull yaw (+0x2C), read the CAM-001 camera pose, and
+    /// (+0x10) and hull yaw (+0x30), read the CAM-001 camera pose, and
     /// assemble the frame — all under the scan authorization. Per-tank
     /// statuses are authoritative; gate-level failures (build mismatch,
     /// inactive phase, revoked authorization) fail the WHOLE frame.
@@ -612,7 +612,7 @@ public sealed record EntityRosterReadResult(
 /// <summary>
 /// One tank of a live frame: the avatar-family entity with its ring-record
 /// position and hull yaw, when that entity resolved and its region decoded.
-/// Position/yaw come from the ring-record region dump (+0x10 / +0x2C) via
+/// Position/yaw come from the ring-record region dump (+0x10 / +0x30) via
 /// the pure <c>RingRecordRegion</c> decoder. <see cref="Hp"/> is an honest
 /// null until the L1 HP live session lands (design:
 /// docs/operations/live-frame-loop-design.md) — the HUD must never render a

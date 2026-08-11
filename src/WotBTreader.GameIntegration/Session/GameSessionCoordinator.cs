@@ -2667,7 +2667,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
 
             // 2. Batch-read every roster entity's ring record under the same
             //    authorization (ring-record anchor; the region must reach
-            //    hull yaw at +0x2C, so 0x40 bytes). ONE G2 clock attestation
+            //    hull yaw at +0x30, so 0x40 bytes). ONE G2 clock attestation
             //    when a battle session id is supplied.
             var batchItems = roster.EntityIds
                 .Select(entityId => new EntityRegionReadRequestItem(
@@ -2736,7 +2736,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             CameraPoseReadResult? camera = cameraResult.IsSuccess ? cameraResult.Value : null;
             DateTimeOffset frameEndedAt = _timeProvider.GetUtcNow();
 
-            // 4. Assemble: decode position (+0x10) and hull yaw (+0x2C)
+            // 4. Assemble: decode position (+0x10) and hull yaw (+0x30)
             //    from each resolved ring-record region. HP is an honest null
             //    until L1 lands. Per-tank statuses are authoritative; a
             //    region that resolved but failed to decode its position is a

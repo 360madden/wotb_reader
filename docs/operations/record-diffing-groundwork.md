@@ -539,7 +539,12 @@ G2) and shares the O5 rehearsed target:
    AND repeatability: the same offset must hit on both 11.19.0 replays
    (the ring record is 0x38 bytes; the +0x2C..+0x37 tail is the first
    place to look — the predicted +0x2C rehearsal HIT already scored 1.0/1.0
-   on both).
+   on both). **Live update 2026-08-11 (OD-RECOVERY-088): the live read
+   corrected the prediction — the tail is a rotation triple roll `+0x28` /
+   pitch `+0x2C` / yaw `+0x30` (the rehearsal's +0x2C yaw was
+   self-constructed); the yaw-diff verdict now uses the additive value-match
+   lag path (`--max-lag-seconds`) because the ring record applies decoded
+   packet state with a ~5 s memory-apply lag.**
 4. **Evidence + privacy** — record under an OD-RECOVERY id,
    `publicProcessAddressesOrRawBytes: false`; publish only the offset via
    the operator gate (P3 facing/yaw publication).

@@ -22,12 +22,16 @@ position moved to `chains` in G0. Static module-offset candidates are the
 wrong address kind for this field by construction.
 
 Status: legacy static candidates **retired**; the yaw anchor becomes the
-ring-record `+0x2C` chain field, predicted and rehearsed by the facing
-correlator against packet-derived yaw ground truth (`position_samples.yaw`):
-27/27 turn windows on Oasis Palms, 35/35 on Dead Rail, score 1.0, flatness
-1.0 (synthetic dumps — the live L2 facing session via the `entity-region`
-ring-record seam confirms it). Published table keeps yaw at `0`/Stale;
-a future publication would be a `chains` entry per the consolidation plan.
+ring-record chain field, predicted and rehearsed by the facing correlator
+against packet-derived yaw ground truth (`position_samples.yaw`): 27/27
+turn windows on Oasis Palms, 35/35 on Dead Rail, score 1.0, flatness 1.0
+(synthetic dumps). **Live update 2026-08-11 (OD-RECOVERY-088): the live L2
+facing session corrected the prediction — the ring-record tail is a
+rotation triple roll `+0x28` / pitch `+0x2C` / yaw `+0x30` (the rehearsal's
++0x2C yaw was self-constructed), and the automated contract HIT via the new
+value-match lag path (score 1.0, flatness 1.0, 48/48 at the ~5 s shared
+lag).** Published table keeps yaw at `0`/Stale; a future publication would
+be a `chains` entry per the consolidation plan.
 
 Docs updated: `offset-discovery-ledger.md` (status row + dated reconciliation
 note), `offset-discovery-workflow.md` (quarantine paragraph), and the
@@ -57,7 +61,10 @@ FailOnMiss), 3 (no dumps/no acquire).
 
 ## Remaining
 
-- The live L2 facing session confirms ring-record `+0x2C` (prediction already
-  rehearsed on both replays) — same approval gate as every other live step.
+- ~~The live L2 facing session~~ — DONE 2026-08-11 (OD-RECOVERY-088): the
+  live read corrected the rehearsal — yaw is at ring-record `+0x30` (roll
+  `+0x28`, pitch `+0x2C`), HIT score 1.0, flatness 1.0, 48/48 dumps. The
+  Phase-4 repeat on Dead Rail (OD-RECOVERY-089, same approval gate) still
+  gates facing/yaw publication.
 - Everything else on the consolidation checklist stays as recorded: items
   1-4 done, item 6 staged, item 7 LAST.

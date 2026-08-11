@@ -1812,7 +1812,8 @@ public sealed class GameSessionCoordinatorTests
         Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
         Type10CameraPoseLayout cameraLayout = Type10CameraPoseLayout.WotBlitz1119010;
         // Ring-record regions for two roster entities: position at +0x10,
-        // hull yaw at +0x2C (the L2 chain field).
+        // hull yaw at +0x30 (the L2 chain field, OD-RECOVERY-088 corrected
+        // the rehearsal's +0x2C prediction).
         byte[] ringA = CreateRingRegion(12.5f, 3.25f, -44.75f, yaw: 0.5f);
         byte[] ringB = CreateRingRegion(-8f, 2f, 30f, yaw: -1.25f);
         Dictionary<long, byte[]> pages = CreateCameraChainPages(cameraLayout);

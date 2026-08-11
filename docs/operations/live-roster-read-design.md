@@ -177,7 +177,7 @@ Mirrors the batch surface's trust boundary exactly:
 |---|---|---|
 | Enemy ids | decoded participants | **enumerated from maps** |
 | Position (all enemies) | position_samples | batch ring reads |
-| Hull yaw (all enemies) | canonicalized | ring `+0x2C` (yaw chain field, rehearsed 27/27 + 35/35) |
+| Hull yaw (all enemies) | canonicalized | ring `+0x30` (yaw chain field, live-verified 2026-08-11 by OD-RECOVERY-088; the tail is roll `+0x28` / pitch `+0x2C` / yaw `+0x30`) |
 | HP | exact ledger | L1 HP discovery target |
 | Turret / lock / targeted | provably absent (type-7 survey) | discovery targets on the per-entity surface |
 | Aim-line | `AimGeometry` (tested) | same utility on live yaw |

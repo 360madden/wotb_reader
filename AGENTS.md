@@ -88,10 +88,13 @@ coordinator + endpoint + tests shipped, rehearsal driver
 `scripts/invoke-batch-rehearsal.ps1` + cross-check tool
 `scripts/python/batch-rehearsal-crosscheck.py` ready (proven 42/42 on real
 decoded data); the yaw quarantine is **resolved-by-supersession** (yaw is a
-runtime chain field at ring-record `+0x2C`, not a static offset — rehearsed
-27/27 + 35/35 against packet yaw, pending the live L2 facing session); item
-7 (hardware-atomicity proof) stays LAST by design. The only remaining gates
-are approved live sessions (batch rehearsal, L1 HP, L2 facing, CAM-001 v7).
+runtime chain field at ring-record `+0x30` — live-verified 2026-08-11 by
+OD-RECOVERY-088 as part of a rotation triple roll `+0x28` / pitch `+0x2C` /
+yaw `+0x30`, the rehearsal's +0x2C prediction corrected; not a static
+offset); item 7 (hardware-atomicity proof) stays LAST by design. The only
+remaining gates are approved live sessions (L2 facing Phase-4 Dead Rail
+repeat, CAM-001 v7) plus the Phase-4 two-replay HP rule (Dead Rail victim
+2549399) before any HP/yaw publication.
 - **BLK-0026 resolved and validated (2026-08-09):** root cause was a launcher
   regression — .NET `Set-Acl` threw `PrivilegeNotHeldException` on the
   persisted owner-only marker ACL, mapped by the catch-all to

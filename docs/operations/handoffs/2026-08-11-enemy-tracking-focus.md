@@ -94,6 +94,12 @@ player must share the file.
    the aim-line is now a tested Core utility.
 2. Multi-perspective comparison via `comparison_runs` when a second
    player's file is obtainable.
+2b. ~~L2 facing live session~~ — DONE 2026-08-11 (OD-RECOVERY-088): yaw
+    live-confirmed at ring-record **+0x30** (rotation triple roll +0x28 /
+    pitch +0x2C / yaw +0x30; the rehearsal's +0x2C prediction corrected —
+    it was self-constructed). Automated contract HIT score 1.0, flatness
+    1.0, 48/48 at the 5 s shared lag via the new value-match lag path.
+    Phase-4 repeat on Dead Rail (OD-RECOVERY-089) still gates publication.
 3. ~~Live enemy-roster read design~~ — DESIGNED AND IMPLEMENTED 2026-08-11:
    `docs/operations/live-roster-read-design.md` (X3, status ADOPTED).
    Closes the one gap between the batch rehearsal and live frames: the
@@ -274,6 +280,52 @@ time cannot bracket the memory write. Two harness/tooling fixes shipped:
 real additively (live-frame design honest-limits row flipped to ✅). Phase-4
 repeatability (Dead Rail victim 2549399) still gates any HP publication.
 
+## OD-RECOVERY-088 live session — L2 facing HIT at +0x30, rehearsal corrected (2026-08-11)
+
+Approved live session on Oasis Palms (victim 3760577, 24 turn segments,
+48 region dumps, every dump `sameDecodedClockProven=true`, gate
+`OK OfflineReplayVerified`). Full evidence:
+`docs/operations/od-recovery-088-evidence-template.md` (filled) + ledger
+section. **Verdict: HIT — but at a DIFFERENT offset than the rehearsal
+predicted: yaw is live-confirmed at ring-record `+0x30`.**
+
+- **The ring-record tail is a live-verified rotation triple**: roll `+0x28`
+  (48/48 dumps within 0.5°), pitch `+0x2C` (47/48), yaw `+0x30` (46/48 at
+  fixed 5 s shared lag; median per-dump error 0.000°), `+0x34` padding — all
+  at the ~5 s memory-apply lag (median 5.0 s, mean 4.52 s). Position
+  `+0x10/+0x14/+0x18` matches decoded ground truth exactly when stationary,
+  confirming the region base IS the ring-record base.
+- **The rehearsal's +0x2C yaw was self-constructed.** Its synthetic dumps
+  placed yaw at +0x2C by design (`HeadingCorrelatorTests.YawOffset = 0x2C`),
+  so 27/27 + 35/35 validated the correlator mechanics — not the layout. The
+  live read is the first ground truth and corrects it.
+- **Automated contract: HIT score 1.0, flatness 1.0, 48/48 dumps, best
+  shared lag 5.0 s** via the new value-match lag path
+  (`yaw-diff --max-lag-seconds 8`). The window-delta path alone returned an
+  honest negative (top `0x84` score 0.143) — the ~5 s lag breaks
+  before/after deltas (087-class finding).
+
+**Fixes shipped (same class as 087, all committed):**
+
+1. **`RingRecordRegion` chain-field correction** — `YawOffset` +0x2C →
+   +0x30; new `RollOffset` (+0x28) / `PitchOffset` (+0x2C); new
+   `TryReadPitch` / `TryReadRoll`. The X4 frame's `yawRadians` read now
+   decodes the proven field.
+2. **`HeadingCorrelator.CorrelateWithLag` value-match path** (additive,
+   default path unchanged): per-candidate SHARED bounded-lag search,
+   score = matched dumps / matchable dumps, flatness over stationary
+   control dumps; `HeadingCorrelationCandidate.BestLagSeconds`. 2 new tests.
+3. **`yaw-diff --max-lag-seconds`** + `bestLagSeconds` JSON output.
+4. **Driver** — `-DataRoot` → extractor `--db` (host store, same class as
+   086/087), per-target clock wait in the dump loop, transient rendezvous
+   retry, `--max-lag-seconds 8` pass-through.
+5. Stale +0x2C comments corrected in `GameSessionContracts` /
+   `GameSessionCoordinator`.
+
+`yawLiveAtRingOffset` claimable at +0x30; `liveFrameYawBecomesLive` true;
+`twoReplayRepeatability` still false — Phase-4 repeat on Dead Rail
+(OD-RECOVERY-089, 5 seam crossings) gates any facing/yaw publication.
+
 ## OD-RECOVERY-086 live session — X2 PASS live + X3 team-based partial (2026-08-11)
 
 Approved live session on Oasis Palms (the content-distinct 11.19.0.10
@@ -378,4 +430,25 @@ surface changed. Next live gates in pre-staged order: OD-RECOVERY-087
 - `scripts/invoke-hp-diffing-session.ps1` (dense-span schedule,
   `-LagToleranceSeconds`, transient rendezvous retry, `-DataRoot` →
   extractor `--db`, BOM-less snapshots write)
+- `docs/operations/od-recovery-088-evidence-template.md` (filled 2026-08-11:
+  L2 HIT at `+0x30`, rehearsal +0x2C corrected; rotation triple roll
+  `+0x28` / pitch `+0x2C` / yaw `+0x30`)
+- `docs/operations/offset-discovery-ledger.md` (OD-RECOVERY-088 section +
+  index row + playerYaw row + Next-planned row → 089; header refreshed)
+- `docs/operations/offset-discovery-workflow.md` (current decision → 089;
+  yaw anchor +0x2C → +0x30)
+- `docs/operations/product-roadmap.md` (L2 row → ✅ HIT at +0x30; Phase-0
+  note corrected)
+- `docs/operations/live-frame-loop-design.md` (hull-yaw honest-limits row
+  → ✅ L2 HIT; +0x2C → +0x30)
+- `src/WotBTreader.Core/Discovery/RingRecordRegion.cs` (`YawOffset` +0x2C →
+  +0x30, `RollOffset` +0x28 / `PitchOffset` +0x2C, `TryReadPitch` /
+  `TryReadRoll`)
+- `src/WotBTreader.Core/Discovery/HeadingCorrelator.cs` (`CorrelateWithLag`
+  value-match path, `BestLagSeconds`) + 2 tests
+- `src/WotBTreader.Host.Cli/Cli/CliCommandRouter.cs` +
+  `src/WotBTreader.Host.Cli/Cli/CliInvocation.cs` (`yaw-diff
+  --max-lag-seconds` + `bestLagSeconds` output)
+- `scripts/invoke-facing-session.ps1` (`-DataRoot` → extractor `--db`,
+  per-target clock wait, transient rendezvous retry, `-MaxLagSeconds 8`)
 - `docs/operations/handoffs/2026-08-11-enemy-tracking-focus.md` (this file)

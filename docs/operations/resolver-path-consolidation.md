@@ -72,7 +72,7 @@ cross-link, and the planning handoff.
 | Track | Anchor | Region / correlate | Published form | Live session cap |
 |---|---|---|---|---|
 | L1 HP | entity-base | region ≥ 0x120, correlate int16; `VerifyPlayerHpChain` 26/26 rehearsed (`+0xB8` current, `+0x11C` max) | chain (`chains` + layout) | 1 |
-| L2 Facing | ring-record | dump vs `position_samples.yaw`; probe `+0x2C..0x37` | chain | 1 |
+| L2 Facing | ring-record | dump vs `position_samples.yaw`; probe `+0x2C..0x37` (live-verified 2026-08-11: yaw at `+0x30`, roll `+0x28`, pitch `+0x2C`) | chain | 1 |
 | L3 Damage | viewpoint counter | `invoke-hp-diffing-session.ps1 -Track damage-dealt` (rehearsal HIT `+0x48` 5/5 both replays) | chain | 1 |
 | L4 replayTime | static chain (`GameCore 0x04095c88 → … → [BWServerConnection+0x58]+0x90` Double) | OD-044 interceptor, byte-exact Double; `-ArmSourceOnFirstHit` load-bearing | chain | 1 |
 
@@ -153,7 +153,8 @@ cross-link, and the planning handoff.
 - 2026-08-11: plan adopted; hardware atomicity ordered last; observation
   promotion decision deferred to the X2/X4 proposal; yaw quarantine
   **resolved-by-supersession 2026-08-11** (see ledger) — yaw is a runtime
-  chain field on the movement ring record (`+0x2C`), not a static offset;
-  the three legacy static candidates were mutually inconsistent and are
-  retired; the ring-record `+0x2C` prediction (rehearsed 27/27 + 35/35
-  against packet yaw) is the anchor pending the live L2 facing session.
+  chain field on the movement ring record (`+0x30`, live-verified
+  OD-RECOVERY-088; the rehearsal's +0x2C prediction was self-constructed
+  and the tail is roll `+0x28` / pitch `+0x2C` / yaw `+0x30`), not a static
+  offset; the three legacy static candidates were mutually inconsistent and
+  are retired.

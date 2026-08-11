@@ -16,6 +16,8 @@ public sealed class HeadingCorrelatorTests
     private const long TargetEntity = 7001;
     private const int YawOffset = 0x2C;
     private const int DecoyOffset = 0x20;
+    // OD-RECOVERY-088 live-corrected yaw offset on the ring record.
+    private const int LiveYawOffset = 0x30;
 
     private static byte[] Region(float yaw, float decoy = 0f)
     {
@@ -298,4 +300,127 @@ public sealed class HeadingCorrelatorTests
 
         Assert.IsEmpty(candidates);
     }
+
+    [TestMethod]
+    public void CorrelateWithLag_FindsYawAtSharedApplyLag_WhenDeltaPathMisses()
+    {
+        // OD-RECOVERY-087/088 finding: the ring record applies decoded packet
+        // state with a variable ~1-5 s memory-apply lag, so the field at dump
+        // time t holds the packet yaw from t - lag. The window-delta path
+        // misses this (before/after dumps bracket a turn, but the memory is
+        // still showing the PRE-turn value); the value-match lag path must
+        // find the field at the true offset (+0x30, the live-corrected yaw)
+        // with the shared lag.
+        //
+        // Fixture: the packet yaw is 0 rad until t=10s then 1.2 rad; the
+        // memory applies it 5 s late. Dumps at 6..16 s carry the memory value
+        // from t-5, i.e. [0,0,0,0,0,1.2] vs the packet [0,0,0,1.2,1.2,1.2].
+        // The yaw sample series spans 0..16 s so lag lookups resolve.
+        const double lag = 5.0;
+        double[] dumpTimes = [6.0, 8.0, 10.0, 12.0, 14.0, 16.0];
+        var snapshots = dumpTimes
+            .Select(t => new RecordSnapshot(
+                TimeSpan.FromSeconds(t),
+                LaggedRegion(PacketYawAt(t - lag))))
+            .ToArray();
+        // Every non-target 4-byte offset carries a constant 0.7 rad (never
+        // equal to the packet yaw 0/1.2), so no zero-filled decoy can match
+        // the stationary stretches at some lag.
+        foreach (RecordSnapshot snapshot in snapshots)
+        {
+            for (int offset = 0; offset <= snapshot.Bytes.Length - 4; offset += 4)
+            {
+                if (offset == LiveYawOffset)
+                {
+                    continue;
+                }
+
+                BinaryPrimitives.WriteSingleLittleEndian(
+                    snapshot.Bytes.AsSpan(offset), 0.7f);
+            }
+        }
+        var yawSamples = Enumerable.Range(0, 9)
+            .Select(i => Yaw(TimeSpan.FromSeconds(2.0 * i), PacketYawAt(2.0 * i)))
+            .ToArray();
+
+        // The window-delta path must NOT hit (the lag breaks before/after
+        // deltas at the turn boundary): no candidate reaches score 1.0.
+        IReadOnlyList<HeadingCorrelationCandidate> deltaCandidates =
+            HeadingCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                yawSamples,
+                TargetEntity);
+        Assert.IsTrue(deltaCandidates.All(c => c.Score < 1.0));
+
+        IReadOnlyList<HeadingCorrelationCandidate> candidates =
+            HeadingCorrelator.CorrelateWithLag(
+                snapshots,
+                yawSamples,
+                TargetEntity,
+                maxLagSeconds: 8.0,
+                lagStepSeconds: 0.5);
+
+        Assert.IsNotEmpty(candidates);
+        Assert.AreEqual(LiveYawOffset, candidates[0].Offset);
+        Assert.AreEqual(1.0, candidates[0].Score, 1e-9);
+        Assert.AreEqual(1.0, candidates[0].Flatness, 1e-9);
+        Assert.AreEqual(6, candidates[0].MatchedWindows);
+        Assert.AreEqual(6, candidates[0].TotalWindows);
+        Assert.IsNotNull(candidates[0].BestLagSeconds);
+        Assert.AreEqual(5.0, candidates[0].BestLagSeconds!.Value, 0.55);
+    }
+
+    [TestMethod]
+    public void CorrelateWithLag_ConstantField_FailsValueMatch()
+    {
+        // A constant field never matches the turning packet yaw at any lag:
+        // the lag path must return no candidate with score 1.0 (the turning
+        // dumps prove the yaw field is the changing one).
+        double[] dumpTimes = [6.0, 8.0, 10.0, 12.0, 14.0, 16.0];
+        var snapshots = dumpTimes
+            .Select(t => new RecordSnapshot(
+                TimeSpan.FromSeconds(t),
+                ConstantRegion(0.5f)))  // constant everywhere
+            .ToArray();
+        var yawSamples = Enumerable.Range(0, 9)
+            .Select(i => Yaw(TimeSpan.FromSeconds(2.0 * i), PacketYawAt(2.0 * i)))
+            .ToArray();
+
+        IReadOnlyList<HeadingCorrelationCandidate> candidates =
+            HeadingCorrelator.CorrelateWithLag(
+                snapshots,
+                yawSamples,
+                TargetEntity,
+                maxLagSeconds: 8.0,
+                lagStepSeconds: 0.5);
+
+        // No candidate can track a turning series with a constant value.
+        Assert.IsEmpty(candidates.Where(c => c.Score >= 1.0 - 1e-9));
+    }
+
+    /// <summary>Packet yaw fixture: 0 rad before t=10s, 1.2 rad after.</summary>
+    private static double PacketYawAt(double seconds) => seconds < 10.0 ? 0.0 : 1.2;
+
+    /// <summary>Builds a region whose +0x30 yaw field carries the given
+    /// memory yaw (the value applied after the memory-apply lag).</summary>
+    private static byte[] LaggedRegion(double memoryYaw)
+    {
+        byte[] bytes = new byte[0x100];
+        BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(LiveYawOffset), (float)memoryYaw);
+        return bytes;
+    }
+
+    /// <summary>Builds a region whose every 4-byte-aligned float32 is the
+    /// given constant (a field that can never track a turning yaw).</summary>
+    private static byte[] ConstantRegion(float value)
+    {
+        byte[] bytes = new byte[0x100];
+        for (int offset = 0; offset <= bytes.Length - 4; offset += 4)
+        {
+            BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(offset), value);
+        }
+
+        return bytes;
+    }
 }
+

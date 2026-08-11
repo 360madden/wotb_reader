@@ -393,6 +393,23 @@ public sealed class CliCommandRouter
                 correlationId);
         }
 
+        // OD-RECOVERY-087/088: the ring record applies decoded packet state
+        // with a variable ~1-5 s memory-apply lag, which defeats the
+        // window-delta comparison. --max-lag-seconds > 0 switches to the
+        // value-match lag path (bounded shared-lag search); default 0 keeps
+        // the exact window-delta behavior.
+        double maxLagSeconds = 0;
+        if (invocation.Options.TryGetValue("max-lag-seconds", out string? lagText) &&
+            (!double.TryParse(lagText, out maxLagSeconds) ||
+             !double.IsFinite(maxLagSeconds) ||
+             maxLagSeconds < 0))
+        {
+            return Invalid(
+                "cli.yaw-diff.max-lag",
+                "--max-lag-seconds must be a non-negative finite number of seconds.",
+                correlationId);
+        }
+
         OperationResult<IReadOnlyList<RecordSnapshot>> snapshotsResult =
             HpDiffSnapshotsFile.Load(invocation.Positionals[0]);
         if (!snapshotsResult.IsSuccess || snapshotsResult.Value is null)
@@ -408,14 +425,21 @@ public sealed class CliCommandRouter
             return FromResult(groundTruthResult, correlationId, "Ground truth loaded.");
         }
 
-        IReadOnlyList<ByteChangeWindow> windows =
+        IReadOnlyList<ByteChangeWindow> changeWindows =
             RecordChangeBucketer.Bucket(snapshotsResult.Value);
         IReadOnlyList<HeadingCorrelationCandidate> candidates =
-            HeadingCorrelator.Correlate(
-                windows,
-                groundTruthResult.Value.Samples,
-                entityId,
-                tolerance);
+            maxLagSeconds > 0
+                ? HeadingCorrelator.CorrelateWithLag(
+                    snapshotsResult.Value,
+                    groundTruthResult.Value.Samples,
+                    entityId,
+                    tolerance,
+                    maxLagSeconds)
+                : HeadingCorrelator.Correlate(
+                    changeWindows,
+                    groundTruthResult.Value.Samples,
+                    entityId,
+                    tolerance);
 
         HeadingCorrelationCandidate? top = candidates.Count > 0 ? candidates[0] : null;
         bool hit = top is not null
@@ -451,8 +475,9 @@ public sealed class CliCommandRouter
             sessionId = sessionGuid,
             entityId,
             tolerance,
+            maxLagSeconds,
             snapshots = snapshotsResult.Value.Count,
-            changeWindows = windows.Count,
+            changeWindows = changeWindows.Count,
             yawSamples = groundTruthResult.Value.Samples.Count,
             turnWindows = top?.TotalWindows ?? 0,
             topCandidate = top is null
@@ -475,6 +500,7 @@ public sealed class CliCommandRouter
                             expectedDeltaRadians = matched.ExpectedDeltaRadians,
                         })
                         .ToList(),
+                    bestLagSeconds = top.BestLagSeconds,
                     explanation = top.Explanation,
                 },
             verdict = new

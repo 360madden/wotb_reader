@@ -24,8 +24,8 @@ one has composed them into the per-frame loop:
   counterpart to the decoded participants roster.
 - **Per-entity ring records** — `POST /discover/entity-regions` (batch,
   ≤ 16 entities, ONE clock attestation per batch): the ring-record dump
-  carries position (`+0x10`) and hull yaw (`+0x2C`, rehearsed 27/27 +
-  35/35 against packet yaw).
+  carries position (`+0x10`) and the rotation triple (roll `+0x28`, pitch
+  `+0x2C`, yaw `+0x30` — live-verified 2026-08-11 by OD-RECOVERY-088).
 - **Camera pose** — `POST /discover/camera-pose` (CAM-001/005): the
   GameCamera world pose with per-hop identity gates, gate-free w.r.t. the
   phase-flipping session controller (CAM-003/008).
@@ -55,7 +55,7 @@ constraint. Instead:
       "entityId": 3760578,
       "status": "resolved",                // per-entity
       "x": ..., "y": ..., "z": ...,
-      "yawRadians": ...,                   // hull facing from ring +0x2C (live-verified pending L2)
+      "yawRadians": ...,                   // hull facing from ring +0x30 (live-verified 2026-08-11)
       "hp": null                           // honest null until L1 lands
     }
   ]
@@ -84,7 +84,7 @@ authorization and ONE guarded-reader lease:
    drift mid-battle (spawns/despawns) is handled by re-enumerating on a
    per-entity `EntityNotFound` burst — recorded, not decided here.
 2. **Batch-read the whole roster** through `entity-regions` semantics
-   (ring-record anchor, region ≥ 0x40 to cover yaw `+0x2C`): one resolve
+   (ring-record anchor, region ≥ 0x40 to cover yaw `+0x30`): one resolve
    pass, one read pass, ONE post-read clock snapshot. Per-entity statuses:
    an unresolved entity fails only itself (the frame keeps the others).
 3. **Read the camera pose** under the same lease. The pose walk is
@@ -123,7 +123,7 @@ open question, not silently decided.
 | Field | Live status | Why |
 |---|---|---|
 | Position (x/y/z) | ✅ readable now | ring `+0x10`, batch surface proven |
-| Hull yaw | ✅ readable now (L2 gate pending live verification) | ring `+0x2C`, rehearsed 27/27 + 35/35 |
+| Hull yaw | ✅ **L2 HIT 2026-08-11 (OD-RECOVERY-088)** | ring **`+0x30`** (roll `+0x28` / pitch `+0x2C` / yaw `+0x30`) confirmed live — 48/48 dumps, score 1.0, flatness 1.0 at the ~5 s memory-apply lag; the rehearsal's +0x2C was self-constructed and is corrected |
 | HP (current/max) | ✅ L1 HIT 2026-08-11 (OD-RECOVERY-087) | entity-base current int16 **`+0xB8`** / max `+0x11C` confirmed live (score 1.0, flatness 1.0, Strict 8/8); frame `hp` can become real additively — `hpCurrent/hpMax` (the empty bar is no longer fabricated-free but provable) |
 | Turret facing / lock / targeted | ❌ absent | type-7 survey proved no replay carrier; ring does not expose it; future discovery |
 | Aim-line | ✅ computable | `AimGeometry` hull-arc utility; honest weak necessary-condition only |

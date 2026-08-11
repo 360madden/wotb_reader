@@ -71,7 +71,7 @@ public sealed record CliInvocation(
     private static bool OptionRequiresValue(string option) =>
         option is "data-root" or "format" or "limit" or "offset" or "output"
             or "session" or "victim" or "mode" or "direction" or "int16"
-            or "lag-tolerance" or "tolerance" or "fov" or "width" or "height"
+            or "lag-tolerance" or "max-lag-seconds" or "tolerance" or "fov" or "width" or "height"
             or "color" or "from" or "until" or "png";
 
     private static bool TryAddOption(

@@ -14,7 +14,7 @@ offset.
 
 ## Current decision
 
-Session ID: `OD-RECOVERY-088`.
+Session ID: `OD-RECOVERY-089`.
 
 **OD-RECOVERY-087 is DONE (2026-08-11) — L1 HP HIT live.** The entity-base
 current-health signed int16 is **confirmed at `+0xB8`** on Oasis Palms
@@ -32,15 +32,29 @@ subsets (`--lag-tolerance`, default 0 = exact). The X4 live frame's
 `docs/operations/od-recovery-087-evidence-template.md` (filled) + ledger
 `OD-RECOVERY-087` result section.
 
-**Next planned session (2026-08-11, OD-RECOVERY-088): L2 facing** — the
-ring-record `+0x2C` yaw confirm. Drive `scripts/invoke-facing-session.ps1`
-(region ≥ 0x40, `+0x2C..+0x37` probe first, wrap-aware matcher, flatness
-1.0 over stationary segments) live on Oasis Palms with the
-**launch-matched host-store session + `-DataRoot "$env:LOCALAPPDATA\
-WotBTreader"`** (the launcher logs `battleSession=` at the gate; both 086
-and 087 proved the repo-local `.data/treader.db` 404s in the host store).
-The Phase-4 rule requires the offset to agree on Dead Rail too. Evidence
-template: `docs/operations/od-recovery-088-evidence-template.md`.
+**DONE (2026-08-11, OD-RECOVERY-088): L2 facing — HIT at ring-record
+`+0x30`.** The ring-record tail is a live-verified rotation triple: roll
+`+0x28`, pitch `+0x2C`, yaw `+0x30` (48 Oasis Palms region dumps, sub-0.1 deg
+alignment at the ~5 s memory-apply lag). The rehearsal's +0x2C yaw
+prediction was self-constructed (its synthetic dumps placed yaw at +0x2C by
+design — correlator mechanics, not layout); the live read corrects it.
+Automated contract HIT: score 1.0, flatness 1.0, 48/48 dumps, best shared
+lag 5.0 s via the new value-match lag path (`yaw-diff --max-lag-seconds 8`;
+additive — the window-delta path alone returned an honest negative, top
+0x84 score 0.143, because the ~5 s memory-apply lag breaks before/after
+deltas). `RingRecordRegion.YawOffset` corrected to `+0x30` (+ pitch/roll
+constants and readers). Evidence:
+`docs/operations/od-recovery-088-evidence-template.md` (filled) + ledger
+`OD-RECOVERY-088` result section.
+
+**Next planned session (2026-08-11, OD-RECOVERY-089): L2 facing Phase-4
+repeat on Dead Rail** — the same yaw offset must agree (Dead Rail's 5 seam
+crossings exercise the wrap-aware matcher). Drive
+`scripts/invoke-facing-session.ps1` with the **launch-matched host-store
+session + `-DataRoot "$env:LOCALAPPDATA\WotBTreader"` + `-MaxLagSeconds 8`**
+(the launcher logs `battleSession=` at the gate; both 086 and 087 proved the
+repo-local `.data/treader.db` 404s in the host store). The Phase-4 rule
+requires the offset to agree before any facing/yaw publication.
 
 **The position anchor is ESTABLISHED and PUBLISHED (2026-08-10):**
 `playerPositionX/Y/Z` are `Verified` via the module-rooted position-ring chain
@@ -61,23 +75,24 @@ reconciled.
 
 **Reconciled 2026-08-11 (resolved-by-supersession, see the ledger):** the
 address-kind question is answered by the L2 facing track — yaw is a **runtime
-chain field on the movement ring record** (`+0x2C`, ring stride 0x38),
+chain field on the movement ring record** (`+0x30`, live-verified
+OD-RECOVERY-088; the tail is roll `+0x28` / pitch `+0x2C` / yaw `+0x30`),
 reachable only through the module-rooted entity chain (same reason position
 moved to `chains` in G0). Static module-offset candidates are the wrong kind
 for this field by construction, and the three legacy values were mutually
 inconsistent on their own terms (the table's own decimal does not convert to
-its own notes hex). The static candidates are retired; the ring-record `+0x2C`
-field is the yaw anchor, rehearsed 27/27 + 35/35 by the facing correlator
-against packet yaw ground truth, pending the live L2 facing session. The
-published table keeps yaw at `0`/Stale; a future publication would be a
-`chains` entry.
+its own notes hex). The static candidates are retired; the ring-record `+0x30`
+field is the yaw anchor, live-verified 2026-08-11 (the rehearsal's +0x2C
+prediction was self-constructed). The published table keeps yaw at
+`0`/Stale; a future publication would be a `chains` entry.
 
 Next anchors after position: the pre-staged live gates in order — **L2
-facing** (OD-RECOVERY-088, ring-record `+0x2C`;
-`invoke-facing-session.ps1`), then CAM-001 v7. **L1 HP is DONE
-(OD-RECOVERY-087, HIT at `+0xB8`)** — the live-frame HP bar can become real
-(additive contract change), and the Phase-4 two-replay rule for HP (Dead
-Rail victim 2549399) gates any HP publication.
+facing Phase-4 repeat** (OD-RECOVERY-089, ring-record `+0x30` on Dead Rail;
+`invoke-facing-session.ps1 -MaxLagSeconds 8`), then CAM-001 v7. **L1 HP is
+DONE (OD-RECOVERY-087, HIT at `+0xB8`) and L2 facing is DONE
+(OD-RECOVERY-088, HIT at `+0x30`)** — the live-frame HP bar and hull-yaw row
+can become real (additive contract changes), and the Phase-4 two-replay rules
+(Dead Rail for both HP and yaw) gate any publication.
 `replayTime` retains
 its rolling increased-Double evidence (OD-012..038) and `playerHP` has the
 query-side ground truth ready (`IHpGroundTruthProvider`); both ride the same

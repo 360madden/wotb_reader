@@ -82,6 +82,11 @@ param(
     # Radians threshold for a turn segment in --yaw-dump (0.1 = 2x the 0.05
     # rad match tolerance; the L2 picker rule).
     [double]$TurnThreshold = 0.1,
+    # OD-RECOVERY-087/088: the ring record applies decoded packet state with
+    # a variable ~1-5 s memory-apply lag, which defeats the window-delta
+    # comparison. When > 0, yaw-diff runs the value-match lag path (shared
+    # bounded lag search); 0 keeps the exact window-delta behavior.
+    [double]$MaxLagSeconds = 8,
     [string]$Python = 'python',
     [string]$CliDll = '',
     [switch]$FailOnNoHit
@@ -103,12 +108,22 @@ if (-not (Test-Path -LiteralPath $CliDll)) {
 }
 
 # ---- 1. QUALIFY (offline, real) -----------------------------------------
+# The extractor's default --db is the repo-local .data\treader.db, which does
+# NOT hold the launch-matched decode (OD-RECOVERY-086 proved the host store
+# at %LOCALAPPDATA%\WotBTreader\treader.db is the store that serves the live
+# session; the repo-local copy 404s there). When -DataRoot is given, derive
+# the extractor DB from it so QUALIFY reads the SAME store the host serves.
+$QualifyDbArgs = @()
+if ($DataRoot -ne '') {
+    $QualifyDbArgs = @('--db', (Join-Path $DataRoot 'treader.db'))
+}
 Write-Step "Qualifying facing target for session $SessionId (turn threshold $TurnThreshold rad)..."
 $OldErrorActionPreference = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
 try {
     $QualificationJson = (& $Python (Join-Path $RepoRoot 'scripts\python\replay-delta-extractor.py') `
-        --yaw-dump --session $SessionId --turn-threshold $TurnThreshold 2>$null) | Out-String
+        --yaw-dump --session $SessionId --turn-threshold $TurnThreshold `
+        @QualifyDbArgs 2>$null) | Out-String
 } finally {
     $ErrorActionPreference = $OldErrorActionPreference
 }
@@ -170,11 +185,32 @@ function Invoke-FacingApi {
     param(
         [string]$Method,
         [string]$RelativePath,
-        [object]$Body = $null
+        [object]$Body = $null,
+        # Used by the wait-probe path only: a single missed rendezvous read
+        # (the host publishes web.json every 2 min; a rename race or a brief
+        # host hiccup can miss one) must not kill the whole session. Bounded
+        # retry with backoff; the DUMP path stays fail-closed immediately.
+        [switch]$RetryTransient
     )
-    $rendezvous = Get-FacingRendezvous
-    if ($null -eq $rendezvous) {
-        throw [InvalidOperationException]::new('rendezvous_unavailable')
+    $attempt = 0
+    while ($true) {
+        $attempt++
+        try {
+            $rendezvous = Get-FacingRendezvous
+            if ($null -eq $rendezvous) {
+                throw [InvalidOperationException]::new('rendezvous_unavailable')
+            }
+            break
+        }
+        catch {
+            if (-not $RetryTransient -or $attempt -ge 15) {
+                throw
+            }
+            Start-Sleep -Seconds 3
+        }
+    }
+    if ($attempt -gt 1) {
+        Write-Step ("  rendezvous recovered after {0} attempt(s)." -f $attempt)
     }
     $arguments = @{
         Uri        = [string]$rendezvous.baseUri + $RelativePath
@@ -226,6 +262,60 @@ if (-not $OfflineDumpExists) {
 
     $Snapshots = [System.Collections.Generic.List[object]]::new()
     foreach ($t in ($DumpTimes | Sort-Object -Unique)) {
+        # Wait for the game's replay clock to reach the target time before
+        # dumping (same class of fix as the batch/HP drivers, OD-RECOVERY-086:
+        # the endpoint labels each dump with the CURRENT game clock, so
+        # firing all dumps back-to-back lands every dump at the same instant
+        # and the before/after turn windows never align). A probe of the
+        # same endpoint reads the label cheaply; bounded and fail-closed.
+        $waitIterations = 0
+        $maxWaitIterations = [int]((180 + $t) / 3)  # ~3s per iteration
+        $probeLabel = 0.0
+        while ($waitIterations -lt $maxWaitIterations) {
+            $probeBody = @{
+                entityId        = $TargetEntityId
+                regionLength    = $RegionLength
+                battleSessionId = $SessionId
+                regionAnchor    = 'ring-record'
+            }
+            $probe = Invoke-FacingApi -Method 'Post' `
+                -RelativePath '/api/v1/game/discover/entity-region' `
+                -Body $probeBody -RetryTransient
+            if ($null -eq $probe) {
+                throw ("clock probe returned no response while waiting for " +
+                    "{0:0.0}s." -f $t)
+            }
+            if ($probe.status -ne 'Resolved') {
+                throw ("clock probe failed while waiting for {0:0.0}s: " +
+                    "status='{1}'." -f $t, $probe.status)
+            }
+            if (-not $probe.sameDecodedClockProven) {
+                throw ("clock probe at {0:0.0}s did not attest the decoded " +
+                    "clock (sameDecodedClockProven=false) - cannot label a " +
+                    "wait target safely." -f $t)
+            }
+            if ($null -eq $probe.replayTimeSeconds) {
+                throw ("clock probe while waiting for {0:0.0}s returned no " +
+                    "replay-time label." -f $t)
+            }
+            $probeLabel = [double]$probe.replayTimeSeconds
+            if ($probeLabel -ge ($t - 1.0)) {
+                Write-Step (("  clock at {0:0.0}s >= target {1:0.0}s " +
+                    "(probes {2}) - dumping.") -f $probeLabel, $t, $waitIterations)
+                break
+            }
+            if ($waitIterations -eq 0) {
+                Write-Step (("  waiting for replay {0:0.0}s (clock now " +
+                    "{1:0.0}s)...") -f $t, $probeLabel)
+            }
+            $waitIterations++
+            Start-Sleep -Seconds 3
+        }
+        if ($waitIterations -ge $maxWaitIterations) {
+            throw ("clock never reached {0:0.0}s within the bounded wait " +
+                "(last probe {1:0.0}s) - the replay may have ended; fail-closed." -f `
+                $t, $probeLabel)
+        }
         Write-Step ("  ring-record dump at replay {0,7}s (entity {1})..." -f $t, $TargetEntityId)
         $response = Invoke-FacingApi -Method 'Post' -RelativePath '/api/v1/game/discover/entity-region' `
             -Body @{
@@ -294,10 +384,15 @@ else {
 Write-Step "Running yaw-diff verdict..."
 $DataRootArgs = if ($DataRoot -ne '') { @('--data-root', $DataRoot) } else { @() }
 $ErrorActionPreference = 'Continue'
+$LagArgs = if ($MaxLagSeconds -gt 0) {
+    @('--max-lag-seconds', ([string]$MaxLagSeconds))
+} else {
+    @()
+}
 try {
     $VerdictJson = (& dotnet $CliDll yaw-diff $SnapshotsPath `
         --session $SessionId --victim $TargetEntityId `
-        --json @DataRootArgs 2>$null) | Out-String
+        --json @DataRootArgs @LagArgs 2>$null) | Out-String
 } finally {
     $ErrorActionPreference = $OldErrorActionPreference
 }
@@ -317,6 +412,10 @@ if ($null -ne $TopCandidateProperty -and $null -ne $TopCandidateProperty.Value) 
         [int]$TopCandidate.offset, $TopCandidate.score, `
         $TopCandidate.flatness, $TopCandidate.matchedWindows, `
         $TopCandidate.totalWindows)
+    $LagProperty = $TopCandidate.PSObject.Properties['bestLagSeconds']
+    if ($null -ne $LagProperty -and $null -ne $LagProperty.Value) {
+        Write-Step ("  best shared lag {0:0.##}s" -f [double]$LagProperty.Value)
+    }
 }
 
 if ($FailOnNoHit -and -not $Hit) {
