@@ -72,6 +72,32 @@ Continued the audit across the remaining live drivers.
   `FAIL_unexpected` (exit 5) rather than a clean diagnostic — non-issue
   because the launcher just proved the gate.
 
+## Round 5 (same session) — PSBanUninitializedVariableReads custom rule
+
+The camera StrictMode finding became a durable repo-wide pin: a new custom
+PSScriptAnalyzer rule (`PSBanUninitializedVariableReads`) flags reads of a
+variable never assigned anywhere in the file — the exact CAM-001 landmine
+class. Verified against the 1.25.0 contract along the way:
+
+- **The analyzer calls a ScriptBlockAst rule ONCE PER NODE (root + every
+  nested body) and merges findings** — refuting the module header's old
+  "fires once per file at the root" claim. A per-body walk can't see
+  file-wide assignments or a function's inline param block (a sibling of
+  the body), which manufactured 474 false positives on the first run.
+  Fixed: walk up to the root and emit only from the root call.
+- **`$x++` parses as UnaryExpressionAst (PostfixPlusPlus), not
+  AssignmentStatementAst**, and a scoped variable's UserPath carries the
+  scope (`script:fail`) — both had to be handled before the rule stopped
+  flagging the e2e harness counters.
+- **Dynamic scriptblock execution (`[scriptblock]::Create`) makes the
+  assigned set provably incomplete** (only the e2e scratch harnesses use
+  it; verified none of the shipped drivers do) — such files are skipped.
+- **PSSA 1.25 does NOT honor `# PSScriptAnalyzer -Rule <name> -Suppress`
+  comments for custom-rule findings** — documented so nobody relies on it.
+- Self-test extended with the unassigned-read positive, assigned-read
+  negative, and dynamic-block-skip controls; full analyzer run is back to
+  0 violations (474 false positives → 0).
+
 ## Round 4 (same session) — od-073 poll + CAM-001 camera verifier
 
 Completed the audit across the last two un-audited scripts.

@@ -41,8 +41,12 @@ if ($SelfTest) {
     try {
         $badA = Join-Path $tmpDir 'bad-isfinite.ps1'
         $badB = Join-Path $tmpDir 'bad-ps7op.ps1'
+        $badC = Join-Path $tmpDir 'bad-uninit.ps1'
         Set-Content -LiteralPath $badA -Value '$x = [double]::IsFinite(1.0)' -Encoding UTF8
         Set-Content -LiteralPath $badB -Value '$a = $null; $x = $a ?? 5' -Encoding UTF8
+        # StrictMode landmine class (CAM-001): $calSample-style read with no
+        # assignment anywhere in the file.
+        Set-Content -LiteralPath $badC -Value "`$calSample = `$null`nif (`$null -ne `$calSample) { Write-Host 'ok' }`nWrite-Host (`$uninitSeen)" -Encoding UTF8
 
         # NOTE: do NOT pass -Severity here. PSScriptAnalyzer 1.25 declares
         # external (script) rules at Warning rule-level (ExternalRule.GetSeverity),
@@ -65,9 +69,32 @@ if ($SelfTest) {
             Exit-With 3 "SELF-TEST FAIL: PS7-only operator '??' was not flagged as Error or ParseError."
         }
 
+        # PSBanUninitializedVariableReads: the assigned read must NOT fire,
+        # the unassigned read MUST fire with Error severity.
+        $resC = @(Invoke-ScriptAnalyzer -Path $badC -CustomRulePath $customRulesPath)
+        $uninitHits = @($resC | Where-Object { $_.RuleName -eq 'PSBanUninitializedVariableReads' -and $_.Severity -eq 'Error' })
+        $uninitOnCal = @($uninitHits | Where-Object { $_.Message -match 'calSample' })
+        $uninitOnUnseen = @($uninitHits | Where-Object { $_.Message -match 'uninitSeen' })
+        if ($uninitOnCal.Count -ne 0) {
+            Exit-With 3 'SELF-TEST FAIL: PSBanUninitializedVariableReads fired on an assigned variable (calSample).'
+        }
+        if ($uninitOnUnseen.Count -lt 1) {
+            Exit-With 3 "SELF-TEST FAIL: PSBanUninitializedVariableReads did not fire on the unassigned read 'uninitSeen'."
+        }
+
+        # Dynamic scriptblock execution makes the whole-file assigned set
+        # provably incomplete ([scriptblock]::Create + dot-source); the rule
+        # must skip such files entirely (e2e scratch harness pattern).
+        $badD = Join-Path $tmpDir 'dynamic-block.ps1'
+        Set-Content -LiteralPath $badD -Value ". ([scriptblock]::Create('`$x = 1')); Write-Host `$x" -Encoding UTF8
+        $resD = @(Invoke-ScriptAnalyzer -Path $badD -CustomRulePath $customRulesPath | Where-Object { $_.RuleName -eq 'PSBanUninitializedVariableReads' })
+        if ($resD.Count -ne 0) {
+            Exit-With 3 'SELF-TEST FAIL: dynamic scriptblock file produced PSBanUninitializedVariableReads findings.'
+        }
+
         # Negative control: a clean file must produce zero custom-rule findings.
         $good = Join-Path $tmpDir 'good.ps1'
-        Set-Content -LiteralPath $good -Value '$v = 1.0; if ($v -gt 0.5) { Write-Host "ok" }' -Encoding UTF8
+        Set-Content -LiteralPath $good -Value '$v = 1.0; if ($v -gt 0.5) { Write-Host "ok" }; $r = $LASTEXITCODE; foreach ($e in $v) { $r += $e }' -Encoding UTF8
         $resGood = @(Invoke-ScriptAnalyzer -Path $good -CustomRulePath $customRulesPath | Where-Object { $_.RuleName -like 'PSBan*' })
         if ($resGood.Count -ne 0) {
             Exit-With 3 "SELF-TEST FAIL: clean file produced custom-rule findings: $($resGood.Count)"
