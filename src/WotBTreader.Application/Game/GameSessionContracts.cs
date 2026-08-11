@@ -280,6 +280,20 @@ public interface IGameMemoryScanner
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Reads bounded regions of up to 16 entities in one round trip with ONE
+    /// replay-clock attestation for the batch (the per-frame live surface).
+    /// Caller supplies only decoded entity ids + region lengths + anchors;
+    /// the coordinator owns process identity and every resolved address.
+    /// Returns ONLY bytes + one replay time — never absolute addresses.
+    /// Per-entity statuses are authoritative: an unresolved entity fails only
+    /// itself; a gate-level failure (build mismatch, inactive phase) fails
+    /// the whole batch.
+    /// </summary>
+    ValueTask<OperationResult<EntityRegionsReadResult>> ReadEntityRegionsAsync(
+        EntityRegionsReadRequest request,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Diagnostic-only, gate-verified: runs the same traversal as
     /// <see cref="ReadEntityPositionAsync"/> and returns the ring-record page
     /// address so the guard-page interceptor can arm the exact page a poll
@@ -456,6 +470,60 @@ public sealed record EntityRecordRegionReadResult(
     bool EntityIdentityRevalidated,
     bool ConsistentDoubleRead,
     bool SameDecodedClockProven);
+
+/// <summary>One entity region in a batch read (mirrors the single-read fields).</summary>
+public sealed record EntityRegionReadRequestItem(
+    int EntityId,
+    int RegionLength,
+    EntityRecordRegionAnchor RegionAnchor = EntityRecordRegionAnchor.RingRecord);
+
+/// <summary>
+/// Batch request for up to <see cref="MaxEntities"/> entity region dumps in
+/// one round trip (the per-frame live read surface design — see
+/// docs/operations/batch-entity-read-design.md). The whole batch carries ONE
+/// replay-clock attestation so a frame read gets a coherent timestamp, and
+/// total region bytes are bounded by <see cref="MaxTotalBytes"/>.
+/// </summary>
+public sealed record EntityRegionsReadRequest(
+    IReadOnlyList<EntityRegionReadRequestItem> Entities,
+    BattleSessionId? BattleSessionId = null)
+{
+    /// <summary>Maximum entities per batch (safety cap; the frame read is 14).</summary>
+    public const int MaxEntities = 16;
+
+    /// <summary>Maximum total region bytes per batch (16 × the 4 KB single-read cap).</summary>
+    public const int MaxTotalBytes = 16 * 1024;
+}
+
+/// <summary>Outcome of one entity within a batch region read.</summary>
+public sealed record EntityRegionReadResultItem(
+    int EntityId,
+    Type10EntityPositionStatus Status,
+    double? ReplayTimeSeconds,
+    byte[]? RegionBytes,
+    string? FailureStage,
+    int Attempts,
+    int NodesVisited,
+    bool ModuleRooted,
+    bool EntityIdentityRevalidated,
+    bool ConsistentDoubleRead);
+
+/// <summary>
+/// Privacy-safe batch region read result: the raw bytes + ONE replay-time
+/// label per batch. No absolute address, process id, or module base ever
+/// leaves the coordinator. <see cref="Status"/> is the gate-level outcome
+/// (<c>Resolved</c> when the read pass completed — inspect per-entity
+/// statuses for individual entities); <c>ReplaySessionInactive</c> fails the
+/// WHOLE batch (the pre-battle phase is global — a frame cannot be
+/// half-timed).
+/// </summary>
+public sealed record EntityRegionsReadResult(
+    DateTimeOffset CompletedAtUtc,
+    string GameVersion,
+    Type10EntityPositionStatus Status,
+    double? ReplayTimeSeconds,
+    bool SameDecodedClockProven,
+    IReadOnlyList<EntityRegionReadResultItem> Regions);
 
 /// <summary>Outcome of one CAM-001 gate-free camera-pose walk.</summary>
 public enum CameraPoseStatus

@@ -405,6 +405,56 @@ public sealed record EntityRecordRegionReadResponse
     public bool SameDecodedClockProven { get; init; }
 }
 
+/// <summary>One entity region in a batch read (mirrors the single-read fields).</summary>
+public sealed record EntityRegionReadItemRequest
+{
+    public int EntityId { get; init; }
+    public int RegionLength { get; init; }
+    public string? RegionAnchor { get; init; }
+}
+
+/// <summary>
+/// Batch entity-region read: up to 16 bounded region dumps in one round
+/// trip with ONE replay-clock attestation for the whole batch (the per-frame
+/// live read surface design — see docs/operations/batch-entity-read-design.md).
+/// </summary>
+public sealed record EntityRegionsReadRequest
+{
+    public IReadOnlyList<EntityRegionReadItemRequest> Entities { get; init; } = [];
+    public string? BattleSessionId { get; init; }
+}
+
+/// <summary>Outcome of one entity within a batch region read.</summary>
+public sealed record EntityRegionReadItemResponse
+{
+    public int EntityId { get; init; }
+    public string Status { get; init; } = string.Empty;
+    public double? ReplayTimeSeconds { get; init; }
+    public string? RegionBase64 { get; init; }
+    public string? FailureStage { get; init; }
+    public int Attempts { get; init; }
+    public int NodesVisited { get; init; }
+    public bool ModuleRooted { get; init; }
+    public bool EntityIdentityRevalidated { get; init; }
+    public bool ConsistentDoubleRead { get; init; }
+}
+
+/// <summary>
+/// Privacy-safe batch region read result: the raw bytes (base64) + ONE
+/// replay-time label per batch. No absolute address, process id, or module
+/// base ever leaves the coordinator. Per-entity statuses are authoritative;
+/// the batch status is the gate-level outcome.
+/// </summary>
+public sealed record EntityRegionsReadResponse
+{
+    public DateTimeOffset CompletedAtUtc { get; init; }
+    public string GameVersion { get; init; } = string.Empty;
+    public string Status { get; init; } = string.Empty;
+    public double? ReplayTimeSeconds { get; init; }
+    public bool SameDecodedClockProven { get; init; }
+    public IReadOnlyList<EntityRegionReadItemResponse> Regions { get; init; } = [];
+}
+
 /// <summary>
 /// Response of the gate-verified camera-pose endpoint (CAM-001 chain): the
 /// GameCamera world pose plus per-hop identity flags. Addresses are

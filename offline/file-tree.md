@@ -55,6 +55,7 @@ docs/decisions/0001-modular-monolith.md
 docs/decisions/0002-evidence-and-offline-safety.md
 docs/formats/telemetry-capture-ndjson-v1.md
 docs/operations/README.md
+docs/operations/batch-entity-read-design.md
 docs/operations/blk-0026-diagnosis-plan.md
 docs/operations/blocker-log.md
 docs/operations/blockers/2026-07-26-command-execution-gate.md
@@ -244,6 +245,7 @@ docs/operations/handoffs/2026-08-10-v4-minimap-texture.md
 docs/operations/handoffs/2026-08-10-w2s-hud-nameplates.md
 docs/operations/handoffs/2026-08-10-walkable-position-chain-applied.md
 docs/operations/handoffs/2026-08-10-walkable-position-chain-draft.md
+docs/operations/handoffs/2026-08-11-batch-entity-read-design.md
 docs/operations/handoffs/2026-08-11-cam001-pre-staged-aslr-correction.md
 docs/operations/handoffs/2026-08-11-cam002-live-pose-layout.md
 docs/operations/handoffs/2026-08-11-cam003-session-controller-phase-drift.md

@@ -1364,6 +1364,312 @@ public sealed class GameSessionCoordinatorTests
     }
 
     [TestMethod]
+    public async Task EntityRegionsRead_ExactBuildReturnsBytesInRequestOrder()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        byte[] expectedRegion = [0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80];
+        var factory = new TrackingEntityPositionReaderFactory(
+            CreateResolvedEntityPosition(4242),
+            regionBytes: expectedRegion);
+        var (coordinator, _) = CreateCoordinator(memoryReaderFactory: factory);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRegionsReadResult> result = await coordinator
+            .ReadEntityRegionsAsync(
+                new EntityRegionsReadRequest(
+                    [
+                        new EntityRegionReadRequestItem(4242, RegionLength: 8),
+                        new EntityRegionReadRequestItem(4243, RegionLength: 8),
+                    ]),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess, result.Error?.Message);
+        EntityRegionsReadResult batch = result.Value!;
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, batch.Status);
+        Assert.HasCount(2, batch.Regions);
+        // Request order preserved, both resolved with the expected bytes.
+        Assert.AreEqual(4242, batch.Regions[0].EntityId);
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, batch.Regions[0].Status);
+        CollectionAssert.AreEqual(expectedRegion, batch.Regions[0].RegionBytes);
+        Assert.AreEqual(4243, batch.Regions[1].EntityId);
+        CollectionAssert.AreEqual(expectedRegion, batch.Regions[1].RegionBytes);
+        // One guarded reader, one read per entity at the ring-record address.
+        Assert.AreEqual(1, factory.CreateCount);
+        Assert.HasCount(2, factory.Reader.RegionReads);
+        Assert.AreEqual(0x25000038, factory.Reader.RegionReads[0].Address.ToInt64());
+        Assert.AreEqual(0x25000038, factory.Reader.RegionReads[1].Address.ToInt64());
+        // No battle session id -> no clock attestation, no replay label.
+        Assert.IsNull(batch.ReplayTimeSeconds);
+        Assert.IsFalse(batch.SameDecodedClockProven);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionsRead_WithSessionIdAttestsClockOnceForWholeBatch()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        byte[] expectedRegion = [1, 2, 3, 4];
+        var factory = new TrackingEntityPositionReaderFactory(
+            CreateResolvedEntityPosition(4242),
+            regionBytes: expectedRegion);
+        BattleSessionId sessionId = BattleSessionId.New();
+        var clock = new StubReplayClockSource(
+            CreateSnapshotResult(sessionId, ReplayClockQuality.Estimated, TimeSpan.FromMilliseconds(500)));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            replayClockSource: clock);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRegionsReadResult> result = await coordinator
+            .ReadEntityRegionsAsync(
+                new EntityRegionsReadRequest(
+                    [
+                        new EntityRegionReadRequestItem(4242, RegionLength: 4),
+                        new EntityRegionReadRequestItem(4243, RegionLength: 4),
+                    ],
+                    sessionId),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess, result.Error?.Message);
+        EntityRegionsReadResult batch = result.Value!;
+        Assert.IsTrue(batch.SameDecodedClockProven);
+        Assert.IsNotNull(batch.ReplayTimeSeconds);
+        Assert.AreEqual(sessionId, clock.LastRequestedSessionId);
+        // ONE snapshot for the whole batch, not one per entity.
+        Assert.AreEqual(1, clock.CallCount);
+        // Per-entity time mirrors carry the batch label.
+        Assert.AreEqual(batch.ReplayTimeSeconds, batch.Regions[0].ReplayTimeSeconds);
+        Assert.AreEqual(batch.ReplayTimeSeconds, batch.Regions[1].ReplayTimeSeconds);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionsRead_OneUnresolvedEntityFailsOnlyItself()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        byte[] expectedRegion = [0xAA, 0xBB, 0xCC, 0xDD];
+        var resolved = new Type10EntityPositionAddressResult(
+            Type10EntityPositionStatus.Resolved,
+            RecordAddress: 0x25000038,
+            PageAddress: 0x25000000,
+            EntityAddress: 0x25000028,
+            FailureStage: null,
+            Attempts: 1,
+            NodesVisited: 3,
+            ModuleRooted: true);
+        var factory = new TrackingEntityPositionReaderFactory(
+            CreateResolvedEntityPosition(4242),
+            regionBytes: expectedRegion,
+            addressByEntity: new Dictionary<int, Type10EntityPositionAddressResult>
+            {
+                [4242] = resolved,
+            });
+        var (coordinator, _) = CreateCoordinator(memoryReaderFactory: factory);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRegionsReadResult> result = await coordinator
+            .ReadEntityRegionsAsync(
+                new EntityRegionsReadRequest(
+                    [
+                        new EntityRegionReadRequestItem(4242, RegionLength: 4),
+                        new EntityRegionReadRequestItem(4243, RegionLength: 4),
+                    ]),
+                CancellationToken.None);
+
+        // The batch succeeds; only the unresolved entity reports a failure.
+        Assert.IsTrue(result.IsSuccess, result.Error?.Message);
+        EntityRegionsReadResult batch = result.Value!;
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, batch.Status);
+        Assert.HasCount(2, batch.Regions);
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, batch.Regions[0].Status);
+        CollectionAssert.AreEqual(expectedRegion, batch.Regions[0].RegionBytes);
+        Assert.AreEqual(Type10EntityPositionStatus.EntityNotFound, batch.Regions[1].Status);
+        Assert.IsNull(batch.Regions[1].RegionBytes);
+        Assert.AreEqual("entity-lookup", batch.Regions[1].FailureStage);
+        // Only the resolved entity's region was read.
+        Assert.HasCount(1, factory.Reader.RegionReads);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionsRead_InactivePhaseFailsWholeBatch()
+    {
+        // The pre-battle phase is global: if ANY resolve reports the
+        // retryable ReplaySessionInactive, the whole batch reports it and no
+        // region read fires (a frame cannot be half-timed).
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        var inactive = new Type10EntityPositionAddressResult(
+            Type10EntityPositionStatus.ReplaySessionInactive,
+            RecordAddress: null,
+            PageAddress: null,
+            EntityAddress: null,
+            FailureStage: "session-controller",
+            Attempts: 1,
+            NodesVisited: 0,
+            ModuleRooted: false);
+        var factory = new TrackingEntityPositionReaderFactory(
+            CreateResolvedEntityPosition(4242),
+            regionBytes: [1, 2, 3, 4],
+            addressByEntity: new Dictionary<int, Type10EntityPositionAddressResult>
+            {
+                [4242] = inactive,
+            });
+        var (coordinator, _) = CreateCoordinator(memoryReaderFactory: factory);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRegionsReadResult> result = await coordinator
+            .ReadEntityRegionsAsync(
+                new EntityRegionsReadRequest(
+                    [
+                        new EntityRegionReadRequestItem(4242, RegionLength: 4),
+                        new EntityRegionReadRequestItem(4243, RegionLength: 4),
+                    ]),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess, result.Error?.Message);
+        EntityRegionsReadResult batch = result.Value!;
+        Assert.AreEqual(Type10EntityPositionStatus.ReplaySessionInactive, batch.Status);
+        // Every requested entity reports the phase, none carry bytes.
+        Assert.HasCount(2, batch.Regions);
+        Assert.AreEqual(Type10EntityPositionStatus.ReplaySessionInactive, batch.Regions[0].Status);
+        Assert.AreEqual("pre-battle-inactive", batch.Regions[0].FailureStage);
+        Assert.AreEqual(Type10EntityPositionStatus.ReplaySessionInactive, batch.Regions[1].Status);
+        Assert.IsNull(batch.Regions[0].RegionBytes);
+        Assert.IsNull(batch.Regions[1].RegionBytes);
+        // No region read ever fired.
+        Assert.IsEmpty(factory.Reader.RegionReads);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionsRead_InvalidRequestFailsClosedBeforeGate()
+    {
+        var factory = new TrackingEntityPositionReaderFactory(
+            CreateResolvedEntityPosition(4242));
+        var (coordinator, _) = CreateCoordinator(memoryReaderFactory: factory);
+
+        OperationResult<EntityRegionsReadResult> empty = await coordinator
+            .ReadEntityRegionsAsync(
+                new EntityRegionsReadRequest([]),
+                CancellationToken.None);
+        Assert.IsFalse(empty.IsSuccess);
+        Assert.AreEqual("discover.entity_regions.invalid_request", empty.Error?.Code);
+
+        OperationResult<EntityRegionsReadResult> tooMany = await coordinator
+            .ReadEntityRegionsAsync(
+                new EntityRegionsReadRequest(
+                    Enumerable.Range(0, EntityRegionsReadRequest.MaxEntities + 1)
+                        .Select(i => new EntityRegionReadRequestItem(i, RegionLength: 8))
+                        .ToList()),
+                CancellationToken.None);
+        Assert.IsFalse(tooMany.IsSuccess);
+        Assert.AreEqual("discover.entity_regions.invalid_request", tooMany.Error?.Code);
+
+        OperationResult<EntityRegionsReadResult> zeroLength = await coordinator
+            .ReadEntityRegionsAsync(
+                new EntityRegionsReadRequest(
+                    [new EntityRegionReadRequestItem(4242, RegionLength: 0)]),
+                CancellationToken.None);
+        Assert.IsFalse(zeroLength.IsSuccess);
+        Assert.AreEqual("discover.entity_regions.invalid_request", zeroLength.Error?.Code);
+
+        OperationResult<EntityRegionsReadResult> badAnchor = await coordinator
+            .ReadEntityRegionsAsync(
+                new EntityRegionsReadRequest(
+                    [new EntityRegionReadRequestItem(
+                        4242,
+                        RegionLength: 8,
+                        (EntityRecordRegionAnchor)99)]),
+                CancellationToken.None);
+        Assert.IsFalse(badAnchor.IsSuccess);
+        Assert.AreEqual("discover.entity_regions.invalid_request", badAnchor.Error?.Code);
+
+        OperationResult<EntityRegionsReadResult> tooManyBytes = await coordinator
+            .ReadEntityRegionsAsync(
+                new EntityRegionsReadRequest(
+                    Enumerable.Range(0, EntityRegionsReadRequest.MaxEntities)
+                        .Select(i => new EntityRegionReadRequestItem(i, RegionLength: 1025))
+                        .ToList()),
+                CancellationToken.None);
+        Assert.IsFalse(tooManyBytes.IsSuccess);
+        Assert.AreEqual("discover.entity_regions.invalid_request", tooManyBytes.Error?.Code);
+
+        // No validation failure ever creates a memory reader.
+        Assert.AreEqual(0, factory.CreateCount);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionsRead_MissingOfflineGateNeverCreatesMemoryReader()
+    {
+        var factory = new TrackingEntityPositionReaderFactory(
+            CreateResolvedEntityPosition(4242));
+        var (coordinator, _) = CreateCoordinator(memoryReaderFactory: factory);
+
+        OperationResult<EntityRegionsReadResult> result = await coordinator
+            .ReadEntityRegionsAsync(
+                new EntityRegionsReadRequest(
+                    [new EntityRegionReadRequestItem(4242, RegionLength: 8)]),
+                CancellationToken.None);
+
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual("discover.gate_not_satisfied", result.Error?.Code);
+        Assert.AreEqual(0, factory.CreateCount);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionsRead_UnsupportedBuildFailsWholeBatch()
+    {
+        var factory = new TrackingEntityPositionReaderFactory(
+            CreateResolvedEntityPosition(4242));
+        var (coordinator, _) = CreateCoordinator(memoryReaderFactory: factory);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+        coordinator.ApplyEvidence(CreateValidEvidence());
+
+        OperationResult<EntityRegionsReadResult> result = await coordinator
+            .ReadEntityRegionsAsync(
+                new EntityRegionsReadRequest(
+                    [
+                        new EntityRegionReadRequestItem(4242, RegionLength: 8),
+                        new EntityRegionReadRequestItem(4243, RegionLength: 8),
+                    ]),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        EntityRegionsReadResult batch = result.Value!;
+        Assert.AreEqual(Type10EntityPositionStatus.UnsupportedBuild, batch.Status);
+        Assert.HasCount(2, batch.Regions);
+        Assert.AreEqual(Type10EntityPositionStatus.UnsupportedBuild, batch.Regions[0].Status);
+        Assert.AreEqual("build-identity", batch.Regions[0].FailureStage);
+        Assert.AreEqual(Type10EntityPositionStatus.UnsupportedBuild, batch.Regions[1].Status);
+        Assert.IsNull(batch.Regions[0].RegionBytes);
+        Assert.AreEqual(0, factory.CreateCount);
+    }
+
+    [TestMethod]
     public async Task CameraPoseRead_MissingOfflineGateNeverCreatesMemoryReader()
     {
         var factory = new ScriptedCameraReaderFactory(CreateCameraChainPages());
@@ -2060,12 +2366,13 @@ public sealed class GameSessionCoordinatorTests
         Type10EntityPositionResult result,
         Type10EntityPositionAddressResult? addressResult = null,
         byte[]? regionBytes = null,
-        uint? tankRecordAddress = null) : IGuardedMemoryReaderFactory
+        uint? tankRecordAddress = null,
+        IReadOnlyDictionary<int, Type10EntityPositionAddressResult>? addressByEntity = null) : IGuardedMemoryReaderFactory
     {
         public int CreateCount { get; private set; }
         public AuthorizedMemoryObservation? Observation { get; private set; }
         public TrackingEntityPositionReader Reader { get; } =
-            new(result, addressResult, regionBytes, tankRecordAddress);
+            new(result, addressResult, regionBytes, tankRecordAddress, addressByEntity);
 
         public ValueTask<OperationResult<IAuthorizedMemoryReader>> CreateAsync(
             AuthorizedMemoryObservation observation,
@@ -2082,7 +2389,8 @@ public sealed class GameSessionCoordinatorTests
         Type10EntityPositionResult result,
         Type10EntityPositionAddressResult? addressResult = null,
         byte[]? regionBytes = null,
-        uint? tankRecordAddress = null)
+        uint? tankRecordAddress = null,
+        IReadOnlyDictionary<int, Type10EntityPositionAddressResult>? addressByEntity = null)
         : IAuthorizedMemoryReader
     {
         public nint ModuleBase { get; private set; }
@@ -2150,6 +2458,21 @@ public sealed class GameSessionCoordinatorTests
             EntityId = entityId;
             Layout = layout;
             BeforeReturn?.Invoke();
+            if (addressByEntity is not null)
+            {
+                return ValueTask.FromResult(OperationResult.Success(
+                    addressByEntity.TryGetValue(entityId, out Type10EntityPositionAddressResult? perEntity)
+                        ? perEntity
+                        : new Type10EntityPositionAddressResult(
+                            Type10EntityPositionStatus.EntityNotFound,
+                            RecordAddress: null,
+                            PageAddress: null,
+                            EntityAddress: null,
+                            FailureStage: "entity-lookup",
+                            Attempts: 3,
+                            NodesVisited: 2,
+                            ModuleRooted: true)));
+            }
             return ValueTask.FromResult(OperationResult.Success(
                 addressResult ?? new Type10EntityPositionAddressResult(
                     Type10EntityPositionStatus.Resolved,
@@ -2413,12 +2736,14 @@ public sealed class GameSessionCoordinatorTests
         }
 
         public BattleSessionId? LastRequestedSessionId { get; private set; }
+        public int CallCount { get; private set; }
 
         public ValueTask<OperationResult<ReplayClockSnapshot>> GetSnapshotAsync(
             BattleSessionId battleSessionId,
             DateTimeOffset observedAtUtc,
             CancellationToken cancellationToken)
         {
+            CallCount++;
             LastRequestedSessionId = battleSessionId;
             return ValueTask.FromResult(_snapshotResult);
         }

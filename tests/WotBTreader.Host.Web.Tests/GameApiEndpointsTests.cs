@@ -1296,6 +1296,196 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task EntityRegions_ReturnsBatchResponseWithBase64Bytes()
+    {
+        byte[] first = [0x10, 0x20, 0x30, 0x40];
+        byte[] second = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE];
+        var scanner = new FakeGameMemoryScanner
+        {
+            EntityRegionsResult = OperationResult.Success(
+                new EntityRegionsReadResult(
+                    DateTimeOffset.UnixEpoch.AddSeconds(7),
+                    "11.19.0.10",
+                    Type10EntityPositionStatus.Resolved,
+                    ReplayTimeSeconds: 42.5,
+                    SameDecodedClockProven: true,
+                    [
+                        new EntityRegionReadResultItem(
+                            4242,
+                            Type10EntityPositionStatus.Resolved,
+                            ReplayTimeSeconds: 42.5,
+                            RegionBytes: first,
+                            FailureStage: null,
+                            Attempts: 1,
+                            NodesVisited: 3,
+                            ModuleRooted: true,
+                            EntityIdentityRevalidated: false,
+                            ConsistentDoubleRead: false),
+                        new EntityRegionReadResultItem(
+                            4243,
+                            Type10EntityPositionStatus.EntityNotFound,
+                            ReplayTimeSeconds: 42.5,
+                            RegionBytes: null,
+                            FailureStage: "entity-lookup",
+                            Attempts: 3,
+                            NodesVisited: 2,
+                            ModuleRooted: true,
+                            EntityIdentityRevalidated: false,
+                            ConsistentDoubleRead: false),
+                    ])),
+        };
+
+        IResult result = await GameApiEndpoints.ReadEntityRegionsAsync(
+            scanner,
+            new WotBTreader.ApiContracts.EntityRegionsReadRequest
+            {
+                Entities =
+                [
+                    new WotBTreader.ApiContracts.EntityRegionReadItemRequest
+                    {
+                        EntityId = 4242,
+                        RegionLength = 4,
+                        RegionAnchor = "entity-base",
+                    },
+                    new WotBTreader.ApiContracts.EntityRegionReadItemRequest
+                    {
+                        EntityId = 4243,
+                        RegionLength = 5,
+                    },
+                ],
+                BattleSessionId = "019fa431-5ace-78ce-ba92-cd825ff9911c",
+            },
+            TestContext.CancellationToken);
+
+        WotBTreader.ApiContracts.EntityRegionsReadResponse response =
+            Value<WotBTreader.ApiContracts.EntityRegionsReadResponse>(result);
+        Assert.AreEqual("Resolved", response.Status);
+        Assert.AreEqual(42.5, response.ReplayTimeSeconds);
+        Assert.IsTrue(response.SameDecodedClockProven);
+        Assert.HasCount(2, response.Regions);
+        Assert.AreEqual(4242, response.Regions[0].EntityId);
+        Assert.AreEqual("Resolved", response.Regions[0].Status);
+        Assert.AreEqual(Convert.ToBase64String(first), response.Regions[0].RegionBase64);
+        Assert.AreEqual("EntityNotFound", response.Regions[1].Status);
+        Assert.AreEqual("entity-lookup", response.Regions[1].FailureStage);
+        Assert.IsNull(response.Regions[1].RegionBase64);
+        // The batch request forwarded: both entities + the session id.
+        WotBTreader.Application.Game.EntityRegionsReadRequest? forwarded =
+            scanner.LastEntityRegionsRequest;
+        Assert.IsNotNull(forwarded);
+        Assert.HasCount(2, forwarded.Entities);
+        Assert.AreEqual(
+            EntityRecordRegionAnchor.EntityBase,
+            forwarded.Entities[0].RegionAnchor);
+        Assert.AreEqual(4243, forwarded.Entities[1].EntityId);
+        Assert.IsNotNull(forwarded.BattleSessionId);
+        // No absolute address may leak in the serialized response.
+        string json = JsonSerializer.Serialize(response, CamelCaseJson);
+        Assert.IsFalse(json.Contains("address", StringComparison.OrdinalIgnoreCase));
+        Assert.IsTrue(json.Contains(Convert.ToBase64String(first), StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task EntityRegions_InvalidAnchorFailsClosed()
+    {
+        var scanner = new FakeGameMemoryScanner
+        {
+            EntityRegionsResult = OperationResult.Success(
+                new EntityRegionsReadResult(
+                    DateTimeOffset.UnixEpoch,
+                    "11.19.0.10",
+                    Type10EntityPositionStatus.Resolved,
+                    null,
+                    false,
+                    [])),
+        };
+
+        IResult result = await GameApiEndpoints.ReadEntityRegionsAsync(
+            scanner,
+            new WotBTreader.ApiContracts.EntityRegionsReadRequest
+            {
+                Entities =
+                [
+                    new WotBTreader.ApiContracts.EntityRegionReadItemRequest
+                    {
+                        EntityId = 4242,
+                        RegionLength = 8,
+                        RegionAnchor = "scan-whole-process",
+                    },
+                ],
+            },
+            TestContext.CancellationToken);
+
+        Assert.AreEqual(StatusCodes.Status400BadRequest, ((IStatusCodeHttpResult)result).StatusCode);
+        JsonElement body = BadRequestAnonymous(result);
+        Assert.AreEqual(
+            "discover.entity_regions.invalid_anchor",
+            body.GetProperty("error").GetString());
+        Assert.IsNull(scanner.LastEntityRegionsRequest);
+    }
+
+    [TestMethod]
+    public async Task EntityRegions_EmptyEntitiesFailsClosed()
+    {
+        var scanner = new FakeGameMemoryScanner
+        {
+            EntityRegionsResult = OperationResult.Success(
+                new EntityRegionsReadResult(
+                    DateTimeOffset.UnixEpoch,
+                    "11.19.0.10",
+                    Type10EntityPositionStatus.Resolved,
+                    null,
+                    false,
+                    [])),
+        };
+
+        IResult result = await GameApiEndpoints.ReadEntityRegionsAsync(
+            scanner,
+            new WotBTreader.ApiContracts.EntityRegionsReadRequest(),
+            TestContext.CancellationToken);
+
+        Assert.AreEqual(StatusCodes.Status400BadRequest, ((IStatusCodeHttpResult)result).StatusCode);
+        JsonElement body = BadRequestAnonymous(result);
+        Assert.AreEqual(
+            "discover.entity_regions.invalid_request",
+            body.GetProperty("error").GetString());
+        Assert.IsNull(scanner.LastEntityRegionsRequest);
+    }
+
+    [TestMethod]
+    public async Task EntityRegions_FailureReturnsBadRequest()
+    {
+        var scanner = new FakeGameMemoryScanner
+        {
+            EntityRegionsResult = OperationResult.Failure<EntityRegionsReadResult>(
+                new ApplicationError(
+                    "discover.entity_regions.read_unavailable",
+                    "The guarded entity-region reader is unavailable.")),
+        };
+
+        IResult result = await GameApiEndpoints.ReadEntityRegionsAsync(
+            scanner,
+            new WotBTreader.ApiContracts.EntityRegionsReadRequest
+            {
+                Entities =
+                [
+                    new WotBTreader.ApiContracts.EntityRegionReadItemRequest
+                    {
+                        EntityId = 4242,
+                        RegionLength = 8,
+                    },
+                ],
+            },
+            TestContext.CancellationToken);
+
+        Assert.AreEqual(StatusCodes.Status400BadRequest, ((IStatusCodeHttpResult)result).StatusCode);
+        JsonElement body = BadRequestAnonymous(result);
+        Assert.AreEqual(
+            "discover.entity_regions.read_unavailable",
+            body.GetProperty("error").GetString());
+    }
+
+    [TestMethod]
     public async Task InstructionSnapshotForwardsOnlyBoundsAndProjectsSafeEvidence()
     {
         DateTimeOffset capturedAt = DateTimeOffset.UnixEpoch.AddSeconds(5);
@@ -2012,10 +2202,14 @@ public sealed class GameApiEndpointsTests
         public OperationResult<EntityRecordRegionReadResult> EntityRegionResult { get; init; } =
             OperationResult.Failure<EntityRecordRegionReadResult>(
                 new ApplicationError("discover.entity_region.not_configured", "Test default."));
+        public OperationResult<EntityRegionsReadResult> EntityRegionsResult { get; init; } =
+            OperationResult.Failure<EntityRegionsReadResult>(
+                new ApplicationError("discover.entity_regions.not_configured", "Test default."));
         public OperationResult<WotBTreader.Application.Game.EntityPositionAddressResult> EntityPositionAddressResult { get; init; } =
             OperationResult.Failure<WotBTreader.Application.Game.EntityPositionAddressResult>(
                 new ApplicationError("discover.entity_position.address_not_configured", "Test default."));
         public WotBTreader.Application.Game.EntityRecordRegionReadRequest? LastEntityRegionRequest { get; private set; }
+        public WotBTreader.Application.Game.EntityRegionsReadRequest? LastEntityRegionsRequest { get; private set; }
         public OperationResult<MemoryCompareResult> CompareResult { get; init; } = OperationResult.Success(
             new MemoryCompareResult(DateTimeOffset.UnixEpoch, 0, 0, 0, 0, 0, 0, [], false, false, 0));
         public OperationResult<MemoryPointerChainResult> PointerChainResult { get; init; } = OperationResult.Success(
@@ -2098,6 +2292,15 @@ public sealed class GameApiEndpointsTests
             LastEntityRegionRequest = request;
             LastCancellationToken = cancellationToken;
             return ValueTask.FromResult(EntityRegionResult);
+        }
+
+        public ValueTask<OperationResult<EntityRegionsReadResult>> ReadEntityRegionsAsync(
+            WotBTreader.Application.Game.EntityRegionsReadRequest request,
+            CancellationToken cancellationToken)
+        {
+            LastEntityRegionsRequest = request;
+            LastCancellationToken = cancellationToken;
+            return ValueTask.FromResult(EntityRegionsResult);
         }
 
         public ValueTask<OperationResult<WotBTreader.Application.Game.EntityPositionAddressResult>> ResolveEntityPositionAddressAsync(

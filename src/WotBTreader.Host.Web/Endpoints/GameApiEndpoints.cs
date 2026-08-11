@@ -35,6 +35,7 @@ internal static class GameApiEndpoints
         group.MapPost("/discover/read", ReadOffsetsAsync);
         group.MapPost("/discover/entity-position", ReadEntityPositionAsync);
         group.MapPost("/discover/entity-region", ReadEntityRegionAsync);
+        group.MapPost("/discover/entity-regions", ReadEntityRegionsAsync);
         group.MapPost("/discover/position-page", ResolveEntityPositionAddressAsync);
         group.MapPost("/discover/camera-pose", DiscoverCameraPoseAsync);
         group.MapPost("/discover/clock-segment", AppendClockSegmentAsync);
@@ -935,6 +936,83 @@ internal static class GameApiEndpoints
             NodesVisited = read.NodesVisited,
             ModuleRooted = read.ModuleRooted,
             SameDecodedClockProven = read.SameDecodedClockProven,
+        });
+    }
+
+    internal static async Task<IResult> ReadEntityRegionsAsync(
+        IGameMemoryScanner scanner,
+        WotBTreader.ApiContracts.EntityRegionsReadRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(scanner);
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.Entities is null || request.Entities.Count == 0)
+        {
+            return Results.BadRequest(new { error = "discover.entity_regions.invalid_request" });
+        }
+
+        BattleSessionId? battleSessionId = null;
+        if (!string.IsNullOrWhiteSpace(request.BattleSessionId) &&
+            Guid.TryParse(request.BattleSessionId, out Guid parsedBattleSessionId))
+        {
+            battleSessionId = new BattleSessionId(parsedBattleSessionId);
+        }
+
+        var entities =
+            new List<WotBTreader.Application.Game.EntityRegionReadRequestItem>(request.Entities.Count);
+        foreach (WotBTreader.ApiContracts.EntityRegionReadItemRequest item in request.Entities)
+        {
+            EntityRecordRegionAnchor anchor = EntityRecordRegionAnchor.RingRecord;
+            if (!string.IsNullOrWhiteSpace(item.RegionAnchor) &&
+                !TryParseRegionAnchor(item.RegionAnchor, out anchor))
+            {
+                return Results.BadRequest(new { error = "discover.entity_regions.invalid_anchor" });
+            }
+
+            entities.Add(new WotBTreader.Application.Game.EntityRegionReadRequestItem(
+                item.EntityId,
+                item.RegionLength,
+                anchor));
+        }
+
+        OperationResult<EntityRegionsReadResult> result = await scanner
+            .ReadEntityRegionsAsync(
+                new WotBTreader.Application.Game.EntityRegionsReadRequest(entities, battleSessionId),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!result.IsSuccess || result.Value is null)
+        {
+            return Results.BadRequest(new
+            {
+                error = result.Error?.Code ?? "discover.entity_regions.read_failed",
+            });
+        }
+
+        EntityRegionsReadResult read = result.Value;
+        return Results.Ok(new WotBTreader.ApiContracts.EntityRegionsReadResponse
+        {
+            CompletedAtUtc = read.CompletedAtUtc,
+            GameVersion = read.GameVersion,
+            Status = read.Status.ToString(),
+            ReplayTimeSeconds = read.ReplayTimeSeconds,
+            SameDecodedClockProven = read.SameDecodedClockProven,
+            Regions = read.Regions
+                .Select(region => new WotBTreader.ApiContracts.EntityRegionReadItemResponse
+                {
+                    EntityId = region.EntityId,
+                    Status = region.Status.ToString(),
+                    ReplayTimeSeconds = region.ReplayTimeSeconds,
+                    RegionBase64 = region.RegionBytes is null
+                        ? null
+                        : Convert.ToBase64String(region.RegionBytes),
+                    FailureStage = region.FailureStage,
+                    Attempts = region.Attempts,
+                    NodesVisited = region.NodesVisited,
+                    ModuleRooted = region.ModuleRooted,
+                    EntityIdentityRevalidated = region.EntityIdentityRevalidated,
+                    ConsistentDoubleRead = region.ConsistentDoubleRead,
+                })
+                .ToList(),
         });
     }
 

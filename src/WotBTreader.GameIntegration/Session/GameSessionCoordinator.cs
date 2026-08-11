@@ -2109,6 +2109,328 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     }
 
     /// <summary>
+    /// Reads bounded regions of up to <see cref="EntityRegionsReadRequest.MaxEntities"/>
+    /// entities in one round trip with ONE replay-clock attestation for the
+    /// batch (the per-frame live read surface design,
+    /// docs/operations/batch-entity-read-design.md). Per-entity statuses are
+    /// authoritative: an unresolved entity fails only itself; the retryable
+    /// pre-battle phase (<c>ReplaySessionInactive</c>) fails the WHOLE batch
+    /// — phase is global, a frame cannot be half-timed. Read discipline:
+    /// gate + build identity first (no reads on a gate violation), resolve
+    /// ALL addresses, read ALL regions, then ONE post-read clock snapshot
+    /// that bounds the batch.
+    /// </summary>
+    public async ValueTask<OperationResult<EntityRegionsReadResult>> ReadEntityRegionsAsync(
+        EntityRegionsReadRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (request.Entities is null ||
+            request.Entities.Count is < 1 or > EntityRegionsReadRequest.MaxEntities)
+        {
+            return OperationResult.Failure<EntityRegionsReadResult>(
+                new ApplicationError(
+                    "discover.entity_regions.invalid_request",
+                    $"The batch must contain 1..{EntityRegionsReadRequest.MaxEntities} entities."));
+        }
+
+        int totalBytes = 0;
+        foreach (EntityRegionReadRequestItem entity in request.Entities)
+        {
+            if (entity.RegionLength < 1 ||
+                entity.RegionLength > EntityRecordRegionReadRequest.MaxLength ||
+                entity.RegionAnchor is < EntityRecordRegionAnchor.RingRecord or > EntityRecordRegionAnchor.EntityBase)
+            {
+                return OperationResult.Failure<EntityRegionsReadResult>(
+                    new ApplicationError(
+                        "discover.entity_regions.invalid_request",
+                        "Each entity region must be 1..4096 bytes with a known region anchor."));
+            }
+
+            totalBytes += entity.RegionLength;
+        }
+
+        if (totalBytes > EntityRegionsReadRequest.MaxTotalBytes)
+        {
+            return OperationResult.Failure<EntityRegionsReadResult>(
+                new ApplicationError(
+                    "discover.entity_regions.invalid_request",
+                    "The total region bytes exceed the 16 KB batch bound."));
+        }
+
+        (AuthorizedMemoryObservation? observation, long baseAddress, CancellationToken authorizationToken, bool ok) =
+            GetScanAuthorization(cancellationToken);
+        if (!ok)
+        {
+            return GateCheck<EntityRegionsReadResult>(
+                "discover.gate_not_satisfied",
+                "The offline-session gate is not satisfied.");
+        }
+
+        using CancellationTokenSource readCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, authorizationToken);
+        try
+        {
+            Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+            if (!string.Equals(
+                observation!.ProductVersion,
+                layout.GameVersion,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                observation.ExecutableSha256.Value,
+                layout.ExecutableSha256,
+                StringComparison.Ordinal))
+            {
+                return IsScanAuthorizationCurrent(observation, authorizationToken)
+                    ? OperationResult.Success(BuildBatchResult(
+                        layout,
+                        request.Entities,
+                        Type10EntityPositionStatus.UnsupportedBuild,
+                        replayTimeSeconds: null,
+                        sameDecodedClockProven: false))
+                    : GateCheck<EntityRegionsReadResult>(
+                        "discover.gate_not_satisfied",
+                        "The offline-session gate is no longer satisfied.");
+            }
+
+            OperationResult<IAuthorizedMemoryReader> readerResult = await _memoryReaderFactory
+                .CreateAsync(observation, readCancellation.Token)
+                .ConfigureAwait(false);
+            if (!readerResult.IsSuccess || readerResult.Value is null)
+            {
+                return OperationResult.Failure<EntityRegionsReadResult>(
+                    new ApplicationError(
+                        "discover.entity_regions.read_unavailable",
+                        "The guarded entity-region reader is unavailable."));
+            }
+
+            // Phase 1: resolve ALL entity addresses under the same lease.
+            // An unresolved entity fails only itself; the retryable
+            // pre-battle phase fails the whole batch.
+            var results = new EntityRegionReadResultItem[request.Entities.Count];
+            var resolvedItems =
+                new List<(int Index, EntityRegionReadRequestItem Item, Type10EntityPositionAddressResult Address)>(
+                    request.Entities.Count);
+            bool inactive = false;
+            for (int i = 0; i < request.Entities.Count; i++)
+            {
+                EntityRegionReadRequestItem entity = request.Entities[i];
+                OperationResult<Type10EntityPositionAddressResult> resolveResult =
+                    await readerResult.Value.ResolveEntityPositionAddressAsync(
+                        (nint)baseAddress,
+                        entity.EntityId,
+                        layout,
+                        readCancellation.Token).ConfigureAwait(false);
+                if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+                {
+                    return GateCheck<EntityRegionsReadResult>(
+                        "discover.gate_not_satisfied",
+                        "The offline-session gate is no longer satisfied.");
+                }
+
+                if (resolveResult.IsSuccess && resolveResult.Value is not null)
+                {
+                    Type10EntityPositionAddressResult resolved = resolveResult.Value;
+                    if (resolved.Status == Type10EntityPositionStatus.ReplaySessionInactive)
+                    {
+                        inactive = true;
+                        break;
+                    }
+
+                    if (resolved.Status == Type10EntityPositionStatus.Resolved &&
+                        resolved.RecordAddress is not null)
+                    {
+                        resolvedItems.Add((i, entity, resolved));
+                        continue;
+                    }
+
+                    results[i] = new EntityRegionReadResultItem(
+                        entity.EntityId,
+                        resolved.Status,
+                        ReplayTimeSeconds: null,
+                        RegionBytes: null,
+                        resolved.FailureStage,
+                        resolved.Attempts,
+                        resolved.NodesVisited,
+                        resolved.ModuleRooted,
+                        EntityIdentityRevalidated: false,
+                        ConsistentDoubleRead: false);
+                }
+                else
+                {
+                    results[i] = new EntityRegionReadResultItem(
+                        entity.EntityId,
+                        Type10EntityPositionStatus.ReadFailed,
+                        ReplayTimeSeconds: null,
+                        RegionBytes: null,
+                        FailureStage: resolveResult.Error?.Code ?? "resolve-failed",
+                        Attempts: 0,
+                        NodesVisited: 0,
+                        ModuleRooted: false,
+                        EntityIdentityRevalidated: false,
+                        ConsistentDoubleRead: false);
+                }
+            }
+
+            if (inactive)
+            {
+                return OperationResult.Success(BuildBatchResult(
+                    layout,
+                    request.Entities,
+                    Type10EntityPositionStatus.ReplaySessionInactive,
+                    replayTimeSeconds: null,
+                    sameDecodedClockProven: false));
+            }
+
+            // Phase 2: read ALL regions.
+            foreach ((int index, EntityRegionReadRequestItem entity, Type10EntityPositionAddressResult resolved) in resolvedItems)
+            {
+                uint? regionBaseAddress = entity.RegionAnchor switch
+                {
+                    EntityRecordRegionAnchor.RingRecord => resolved.RecordAddress,
+                    EntityRecordRegionAnchor.EntityTankRecord => await ResolveTankRecordAddressAsync(
+                        readerResult.Value,
+                        resolved.EntityAddress,
+                        readCancellation.Token).ConfigureAwait(false),
+                    EntityRecordRegionAnchor.EntityBase => resolved.EntityAddress,
+                    _ => null,
+                };
+
+                if (regionBaseAddress is null)
+                {
+                    results[index] = new EntityRegionReadResultItem(
+                        entity.EntityId,
+                        Type10EntityPositionStatus.ReadFailed,
+                        ReplayTimeSeconds: null,
+                        RegionBytes: null,
+                        FailureStage: "region-anchor",
+                        resolved.Attempts,
+                        resolved.NodesVisited,
+                        resolved.ModuleRooted,
+                        EntityIdentityRevalidated: false,
+                        ConsistentDoubleRead: false);
+                    continue;
+                }
+
+                OperationResult<byte[]> regionResult = await readerResult.Value.ReadAsync(
+                    (nint)regionBaseAddress.Value,
+                    entity.RegionLength,
+                    readCancellation.Token).ConfigureAwait(false);
+                if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+                {
+                    return GateCheck<EntityRegionsReadResult>(
+                        "discover.gate_not_satisfied",
+                        "The offline-session gate is no longer satisfied.");
+                }
+
+                if (!regionResult.IsSuccess || regionResult.Value is null)
+                {
+                    results[index] = new EntityRegionReadResultItem(
+                        entity.EntityId,
+                        Type10EntityPositionStatus.ReadFailed,
+                        ReplayTimeSeconds: null,
+                        RegionBytes: null,
+                        FailureStage: "region-read",
+                        resolved.Attempts,
+                        resolved.NodesVisited,
+                        resolved.ModuleRooted,
+                        EntityIdentityRevalidated: false,
+                        ConsistentDoubleRead: false);
+                    continue;
+                }
+
+                results[index] = new EntityRegionReadResultItem(
+                    entity.EntityId,
+                    Type10EntityPositionStatus.Resolved,
+                    ReplayTimeSeconds: null,
+                    RegionBytes: regionResult.Value,
+                    FailureStage: null,
+                    resolved.Attempts,
+                    resolved.NodesVisited,
+                    resolved.ModuleRooted,
+                    EntityIdentityRevalidated: false,
+                    ConsistentDoubleRead: false);
+            }
+
+            // Phase 3: ONE replay-clock label + same-decoded-clock
+            // attestation for the whole batch (post-read snapshot bounds the
+            // batch). Per-entity time mirrors carry the batch label; only
+            // the batch attestation is load-bearing.
+            double? replayTimeSeconds = null;
+            bool sameDecodedClockProven = false;
+            if (request.BattleSessionId is not null)
+            {
+                OperationResult<ReplayClockSnapshot> clock = await _replayClockSource
+                    .GetSnapshotAsync(
+                        request.BattleSessionId.Value,
+                        _timeProvider.GetUtcNow(),
+                        readCancellation.Token)
+                    .ConfigureAwait(false);
+                if (clock.IsSuccess && clock.Value is not null &&
+                    clock.Value.Quality != ReplayClockQuality.Stale &&
+                    clock.Value.Uncertainty is not null &&
+                    clock.Value.Uncertainty <= SameDecodedClockUncertaintyLimit)
+                {
+                    sameDecodedClockProven = true;
+                    replayTimeSeconds = clock.Value.EstimatedReplayTime.TotalSeconds;
+                }
+            }
+
+            return OperationResult.Success(new EntityRegionsReadResult(
+                _timeProvider.GetUtcNow(),
+                layout.GameVersion,
+                Type10EntityPositionStatus.Resolved,
+                replayTimeSeconds,
+                sameDecodedClockProven,
+                results
+                    .Select(item => item with { ReplayTimeSeconds = replayTimeSeconds })
+                    .ToList()));
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return GateCheck<EntityRegionsReadResult>(
+                "discover.gate_not_satisfied",
+                "The offline-session gate is no longer satisfied.");
+        }
+    }
+
+    /// <summary>
+    /// Builds a whole-batch result where every requested entity carries the
+    /// same gate-level status (build mismatch, inactive phase) and no bytes.
+    /// </summary>
+    private EntityRegionsReadResult BuildBatchResult(
+        Type10EntityPositionLayout layout,
+        IReadOnlyList<EntityRegionReadRequestItem> entities,
+        Type10EntityPositionStatus status,
+        double? replayTimeSeconds,
+        bool sameDecodedClockProven) => new(
+        _timeProvider.GetUtcNow(),
+        layout.GameVersion,
+        status,
+        replayTimeSeconds,
+        sameDecodedClockProven,
+        entities
+            .Select(entity => new EntityRegionReadResultItem(
+                entity.EntityId,
+                status,
+                replayTimeSeconds,
+                RegionBytes: null,
+                FailureStage: status switch
+                {
+                    Type10EntityPositionStatus.UnsupportedBuild => "build-identity",
+                    Type10EntityPositionStatus.ReplaySessionInactive => "pre-battle-inactive",
+                    _ => null,
+                },
+                Attempts: 0,
+                NodesVisited: 0,
+                ModuleRooted: false,
+                EntityIdentityRevalidated: false,
+                ConsistentDoubleRead: false))
+            .ToList());
+
+    /// <summary>
     /// Reads the tank-record pointer at <c>[entity + 0x3C]</c> through the
     /// same guarded reader/lease and validates it before any region read.
     /// The pointer value is coordinator-owned and never returned; only bytes

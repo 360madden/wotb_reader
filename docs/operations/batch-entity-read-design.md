@@ -1,7 +1,9 @@
 # Batch N-entity read surface — design proposal (X2 pre-design)
 
 **Date:** 2026-08-11
-**Status:** PROPOSAL only — no shared-contract changes, no code. This is the
+**Status:** DESIGN ADOPTED — items 1–2 of the implementation order
+(coordinator method + web endpoint) are IMPLEMENTED and test-pinned; the
+replay rehearsal (item 3) still needs one approved live session. This is the
 offline half of consolidation item 6 (live-mode alignment) and the explicit
 prerequisite for item 7 (hardware-atomicity proof), which "needs the batch
 read-surface design (X2) and the per-frame read discipline to exist first."
@@ -171,11 +173,15 @@ the read discipline that makes atomicity unnecessary") gets its home here:
 - The single-read endpoint and `EntityRecordRegionReadRequest/Result` are
   unchanged; L1–L4 event-bound schedules keep using them.
 - The batch endpoint is additive. Implementation order (each a separate
-  unit, when approved):
-  1. Coordinator method `ReadEntityRegionsAsync` + validation (clamps,
-     anchor enum) + unit tests (gate, build identity, per-entity
-     unresolved, batch-level inactive, clock attestation, bytes-only).
-  2. Web endpoint `POST /discover/entity-regions` + endpoint tests.
+  unit):
+  1. ✅ **DONE 2026-08-11** — Coordinator method `ReadEntityRegionsAsync`
+     + validation (count/length/anchor/total-byte clamps) + 7 unit tests
+     (exact-build bytes in request order, one clock attestation per batch,
+     one-unresolved-fails-only-itself, inactive-fails-whole-batch, invalid
+     request before gate, missing gate, unsupported build).
+  2. ✅ **DONE 2026-08-11** — Web endpoint `POST /discover/entity-regions`
+     + 4 endpoint tests (batch response mapping + base64 + no-address
+     leak, invalid anchor, empty entities, failure mapping).
   3. Replay rehearsal (approved-session step): dump all roster entities at
      replay-clock-labeled times and cross-check against the decoded frame
      (the X2 rehearsal).
