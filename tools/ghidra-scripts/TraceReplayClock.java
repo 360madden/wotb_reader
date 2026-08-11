@@ -15,11 +15,21 @@
 // field directly: slot 10 = FLD double [[this+0x58]+0x90]; slot 18 computes
 // [subobj+0x1270] - [subobj+0x90] (remaining time), corroborating +0x90 as
 // the current replay clock and +0x1270 as a duration/end anchor.
+////   Headless rule: reject SCRIPT ERROR / error: in the script log and require a
+//   fresh report containing verdict=replay-clock-chain-verified with zero
+//   failed checks. This is hash-bound static evidence only; it authorizes no
+//   live read and promotes no offset.
 //
-// Headless rule: reject SCRIPT ERROR / error: in the script log and require a
-// fresh report containing verdict=replay-clock-chain-verified with zero
-// failed checks. This is hash-bound static evidence only; it authorizes no
-// live read and promotes no offset.
+//   Write-site negative (2026-08-11): an exhaustive byte scan of every direct
+//   8-byte store encoding with displacement 0x90 (FSTP/FST m64fp disp8+disp32,
+//   MOVSD, MOVQ, MOVLPD, SIB, absolute, split-double MOV pairs) found ZERO
+//   sites in the executable — the clock field is written by a copy path
+//   (memcpy/rep-movsd or DAVA Any through a computed address), matching the
+//   FRESH37/38/43 synchronized-copy reality for position. Evidence:
+//   .build/ghidra-evidence-player21/scan-clock-store-bytes.txt (v2, 0 hits).
+//   Consequence for the live session: expect a copy-site first hit (CRT
+//   memcpy), so the interceptor's -ArmSourceOnFirstHit fallback is load-
+//   bearing, and the first-hit RIP resolves to a module RVA for the source.
 
 import java.io.File;
 import java.io.PrintWriter;

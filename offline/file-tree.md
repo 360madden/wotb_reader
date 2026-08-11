@@ -228,6 +228,7 @@ docs/operations/handoffs/2026-08-10-overlay-consistency-check.md
 docs/operations/handoffs/2026-08-10-packet-inventory-type32-v3-closure.md
 docs/operations/handoffs/2026-08-10-phase0-foundations-complete.md
 docs/operations/handoffs/2026-08-10-projection-cache.md
+docs/operations/handoffs/2026-08-10-replay-clock-chain-static.md
 docs/operations/handoffs/2026-08-10-replay-overlay-o1-projection.md
 docs/operations/handoffs/2026-08-10-replaytime-live-plan-prestaged.md
 docs/operations/handoffs/2026-08-10-runtime-chain-walker.md
@@ -879,12 +880,14 @@ tools/find-static-roots.py
 tools/ghidra-scripts/DumpCallers.java
 tools/ghidra-scripts/DumpChain.java
 tools/ghidra-scripts/DumpFunctions.java
+tools/ghidra-scripts/DumpRawBytes.java
 tools/ghidra-scripts/DumpVtableSlots.java
 tools/ghidra-scripts/DumpWindow.java
 tools/ghidra-scripts/DumpWriteSite.java
 tools/ghidra-scripts/FindFunctionReferences.java
 tools/ghidra-scripts/FindOffsets.java
 tools/ghidra-scripts/FindOffsets.py
+tools/ghidra-scripts/FindReplayClockWriter.java
 tools/ghidra-scripts/FindReplayEntityBridges.java
 tools/ghidra-scripts/FindScenePointWriter.java
 tools/ghidra-scripts/FindType10DispatchTable.java
@@ -892,6 +895,7 @@ tools/ghidra-scripts/FindType10PositionConsumers.java
 tools/ghidra-scripts/FindType10RecordDispatch.java
 tools/ghidra-scripts/FindVehiclePositionFamily.java
 tools/ghidra-scripts/TraceEntityRegistryPosition.java
+tools/ghidra-scripts/TraceReplayClock.java
 tools/ghidra-scripts/TraceType10MovementPosition.java
 tools/ghidra-scripts/callers-disasm.txt
 tools/ghidra-scripts/chain-disasm.txt

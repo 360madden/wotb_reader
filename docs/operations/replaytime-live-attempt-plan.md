@@ -8,6 +8,26 @@ operator-present Find-what-writes). This doc records the exact session flow,
 the verdict contract, and the known failure modes, so the live step is
 decisions-only.
 
+## 2026-08-11 update: write-site negative — copy-path expectation
+
+An exhaustive byte-level scan of every direct 8-byte store encoding with
+displacement 0x90 in wotblitz.exe found **zero sites** (FSTP/FST m64fp
+disp8+disp32, MOVSD, MOVQ, MOVLPD, SIB, absolute, split-double MOV pairs;
+`.build/ghidra-evidence-player21/scan-clock-store-bytes.txt`, v2, 0 hits;
+corroborated by the instruction-iterator scan in
+`.build/ghidra-evidence-player18/scan-all-clock-offset-stores.txt` — 0 qword
+stores, 3088 other loads). The clock at `[subobj+0x90]` is therefore written
+by a **copy path**, not a direct store — the same synchronized-multi-copy
+reality FRESH37/38/43 proved for position (CRT `memcpy`/`rep movsd` landing
+on the field, or a DAVA Any store through a computed address).
+
+**Session consequence:** expect the first interceptor hit to be a copy site
+(CRT/VCRUNTIME RIP shape), not the logical write. `-ArmSourceOnFirstHit` is
+therefore load-bearing for replayTime, not speculative: capture the first
+hit, arm the copy-source page in the same window, and resolve the real write
+one level up — mirroring FRESH43 for position. The chain-resolve path (below)
+is unchanged; it lands the interceptor on `[subobj+0x90]` directly.
+
 ## 2026-08-10 update: replay-clock chain statically verified
 
 `tools/ghidra-scripts/TraceReplayClock.java` (v3, hash-bound, 10/10 checks)
@@ -169,6 +189,9 @@ a **second** session. Do not attempt cross-battle arming of captured sources
 
 - 2026-08-10: static clock chain verified (see update above); plan updated
   with the chain-resolve session option.
+- 2026-08-11: exhaustive write-site scan returned the copy-path negative;
+  `-ArmSourceOnFirstHit` promoted from optional to expected in the session
+  flow.
 - Pre-staged plan only; **no live session run, no product change**.
 - Next: decide chain-resolve (L0 reads, ~10 s) vs rolling campaign (proven,
   ~120 s) at the approved session; both feed the same interceptor verdict
