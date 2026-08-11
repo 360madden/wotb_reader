@@ -140,7 +140,15 @@ world matrix at `+0x60..0x9C`**. Pass 2 decompiled
 multiply** (20+ call sites; second operand read column-major), so the `+0x60`
 matrix is a per-frame composited world/view-style matrix — the live camera/VP
 track's static anchor. Evidence: `tools/ghidra-scripts/writesite-ring-disasm.txt`
-+ `writesite-matrix-helper-disasm.txt`.
++ `writesite-matrix-helper-disasm.txt`. ✅ **Camera family RTTI foothold
+(2026-08-11)**: `ReplayCameraController::vftable` RVA `0x326dd0c` +
+`BaseCameraController::vftable` RVA `0x32dddcc` both forward-verified via
+RTTI (`ResolveVftableClass`); `BaseCameraController` slot 4
+(`FUN_01dd2cd0`) writes a camera-state RING at `[camera+0x28]` (entries at
+`(idx+0x36)*0x10` and `0x364+idx*0x10`, 0x10-byte stride, ringIndex at
+`[ring+0x320]`) — the same bounded-ring pattern as the G0 position ring,
+the anchor for the VP-matrix hunt. New tools: `FindVftableForType.java`
+(reverse RTTI name→vftable) + `DumpHierarchy.java` (RTTI base walk).
 
 ### Phase 2 — The live seam + first live sessions (serialized)
 
