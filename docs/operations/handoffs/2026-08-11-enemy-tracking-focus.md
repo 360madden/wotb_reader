@@ -122,6 +122,22 @@ player must share the file.
    on the next approved session. Turret/target/lock fields ride on that
    per-entity surface.
 
+## Coordinator extraction audit (2026-08-11, PASS)
+
+Read-only semantic audit of the `475f042` core-extraction refactor: the
+pre-refactor (`187664f`) bodies of `ReadEntityRegionsAsync` /
+`EnumerateEntitiesAsync` / `ReadCameraPoseAsync` were diffed against the
+current wrappers + private cores. Every string literal and enum member
+preserved (the two "moved" items, `avatar-vftable-anchor` /
+`AnchorNotFound`, live in the `CameraAnchorNotFound` helper);
+`IsScanAuthorizationCurrent` / `GateCheck` / `Success` / `Failure` counts
+match per method. The camera's +1 auth check is the intended post-
+`FindAvatarAnchorAsync` disambiguation — the helper's (0,0) sentinel on
+authorization revocation resolves to `GateCheck` in the caller (never
+`AnchorNotFound`), exactly the old immediate-bail semantics; the frame's
+single-lease composition and anchor-before-lease ordering were verified
+against the design.
+
 ## X4 step 3 implemented — composed live frame (2026-08-11)
 
 The coordinator now serves the whole per-frame read under **ONE guarded
