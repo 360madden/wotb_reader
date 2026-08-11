@@ -97,7 +97,7 @@ cross-link, and the planning handoff.
   post-read G2 snapshot, per-entity statuses in request order) and
   `POST /api/v1/game/discover/entity-regions`, with 7 coordinator + 4 web
   endpoint tests.
-- **✅ REHEARSAL PRE-STAGED 2026-08-11:** driver
+- **✅ REHEARSAL FULLY PRE-STAGED 2026-08-11:** driver
   `scripts/invoke-batch-rehearsal.ps1` + cross-check tool
   `scripts/python/batch-rehearsal-crosscheck.py` — qualify the decoded
   roster, batch-dump the full roster per replay time through the gated
@@ -106,8 +106,22 @@ cross-link, and the planning handoff.
   on real decoded data (42/42 PASS, corruption detected; exits 0/1/3). The
   batch response also carries the read-pass measurement (`Measurement`:
   resolve-start → last-read, + snapshot moment) so the rehearsal measures
-  the item-7 verification window in the same session. The session itself
-  still needs one approved live launch.
+  the item-7 verification window in the same session.
+- **✅ X3 LIVE-ROSTER ENUMERATION IMPLEMENTED + REHEARSAL-WIRED 2026-08-11:**
+  `EnumerateEntities` (full-tree walk over the three entity maps + cache,
+  deduped, per-tree node bound fails closed, movement-filter vtable gate
+  → avatar family) + `EnumerateEntitiesAsync` + `POST
+  /discover/entity-roster` (ids only; addresses die inside the
+  coordinator). The rehearsal driver now composes BOTH rehearsals in one
+  command: `invoke-batch-rehearsal.ps1 -EnumerateLive -LiveAcquire` —
+  enumerate → filter → batch-read the ENUMERATED ids → cross-check
+  positions, with the enumeration verdict (matched/missing/extra + filter
+  precision, `--enumeration` mode, fail-closed on TraversalLimited) closing
+  the X3 filter-precision question in the same session. See
+  `docs/operations/live-roster-read-design.md` (X3) and
+  `docs/operations/live-frame-loop-design.md` (X4). The session itself
+  still needs one approved live launch (`OD-RECOVERY-086`;
+  `docs/operations/od-recovery-086-evidence-template.md`).
 - `LiveFrameSource` consumes the **resolver endpoints**, not the observation
   DTO. Deferred decision (shared-contract proposal when that work starts):
   promote resolver results into the observation contract vs. keep the

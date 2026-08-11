@@ -337,10 +337,17 @@ widens (entity base / ring record).
 | Step | WS | Deliverable | Gate |
 |---|---|---|---|
 | X1 | G | Policy memo: ADR-0002 relaxation decision, ToS risk, scope | Explicit user approval |
-| X2 | C | Batch N-entity read surface (positions + yaw + HP per frame; walker already resolves any entity id) | X1 |
+| X2 | C | Batch N-entity read surface (positions + yaw + HP per frame; walker already resolves any entity id) — rehearsal half fully staged 2026-08-11 (design `docs/operations/batch-entity-read-design.md`, coordinator + endpoint + tests, `invoke-batch-rehearsal.ps1`, composed with the roster enumeration below in the one-command `OD-RECOVERY-086` session) | X1 |
+| X2b | C | **Live roster enumeration** (2026-08-11 design `docs/operations/live-roster-read-design.md`): where the per-frame ids come from in live mode — `/discover/entity-roster` full-tree walk over the game's own BWEntities maps, movement-filter gate → avatar family, ids only; rehearsal `-EnumerateLive` measures the filter precision against the decoded roster in the same `OD-RECOVERY-086` session | X1 |
 | X3 | C/D | Camera offset track (the LIVE game's camera — a new discovery target) | X1 |
-| X4 | F | `LiveFrameSource` behind the same `OverlayFrame` contract — **no overlay rewrite** | X2 + X3 |
+| X4 | F | `LiveFrameSource` behind the same `OverlayFrame` contract — **no overlay rewrite**; per-frame loop design 2026-08-11 (`docs/operations/live-frame-loop-design.md`): coordinator-composed `POST /discover/live-frame` (roster → batch regions → camera pose, ONE lease + ONE clock label, `hp: null` until L1) | X2 + X2b + X3 |
 | X5 | F | Spotting model (only spotted tanks rendered; wall-hack god-view explicitly out) | X1 |
+
+**Label note (2026-08-11):** the rehearsal design docs use `X2`/`X3`/`X4`
+for the offline rehearsal tracks (`batch-entity-read-design.md` =
+roadmap X2, `live-roster-read-design.md` = roadmap **X2b**, and
+`live-frame-loop-design.md` = roadmap X4). They are the offline halves of
+the live surfaces above; nothing is rebuilt at the live step.
 
 ## Cross-links
 
