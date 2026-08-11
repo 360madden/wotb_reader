@@ -198,6 +198,19 @@ public sealed class ReplayDecoderTests
         Assert.AreEqual(100, destroyed[0].EntityId);
         Assert.AreEqual(TimeSpan.FromSeconds(3.0), destroyed[0].ReplayTime);
 
+        // Ledger invariants (the verify-hp-ledger.py checks, synthetic
+        // form): every victim's taken <= its max health, and attacker-side
+        // totals equal victim-side totals exactly.
+        long takenBy100 = damageEvents
+            .Where(ev => ev.EntityId == 100)
+            .Sum(ev => JsonDocument.Parse(ev.ValuesJson).RootElement.GetProperty("damage").GetInt32());
+        long takenBy200 = damageEvents
+            .Where(ev => ev.EntityId == 200)
+            .Sum(ev => JsonDocument.Parse(ev.ValuesJson).RootElement.GetProperty("damage").GetInt32());
+        Assert.AreEqual(700, takenBy100); // max 700, destroyed -> 0 remaining
+        Assert.AreEqual(50, takenBy200);  // max 500, still alive
+        Assert.AreEqual(attacker200Total + 50, takenBy100 + takenBy200);
+
         // The health-change packets are preserved as typed raw records.
         Assert.IsTrue(projection.RawRecords.Any(
             record => record.RecordKind == "event-stream.packet" &&

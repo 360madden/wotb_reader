@@ -340,6 +340,7 @@ scripts/python/offset_check.py
 scripts/python/overlay-consistency-check.py
 scripts/python/replay-delta-extractor.py
 scripts/python/velocity-pitch-validation.py
+scripts/python/verify-hp-ledger.py
 scripts/replay-play-state.ps1
 scripts/roll-replay-time-increased.ps1
 scripts/scan-repository.ps1

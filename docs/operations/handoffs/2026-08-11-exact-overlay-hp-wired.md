@@ -53,6 +53,19 @@ ledger exactly on both replays (0 mismatches).
 | Overlay frame | CLI `overlay-frame` carries exact `maxHealth`/`currentHealth`/`hpFraction`; `tr00per_2015` now `alive=False` |
 | Tests | New: exact-fraction test (survivor 600/700 at end, dead 0/500 with destroy credit) + API contract test (`OverlayFrame_ExactHealthRidesThrough`); strengthened decoder test asserts the 0xFFFD Destroyed event. Full suite: 12 projects, 0 failures |
 
+## Durable verification
+
+`scripts/python/verify-hp-ledger.py` makes the validation re-runnable and
+read-only against the treader SQLite store, per session: HP conservation
+(current = max − taken never negative), ledger balance (dealt == taken),
+alive alignment (ledger-dead iff a Destroyed event exists), and the
+battle_results cross-check for players with stats. Verified: exit 0 on
+both fresh sessions, exit 1 on the pre-fix Dead Rail session (21 errors:
+negative HP, imbalance, battle_results mismatches) — the check is
+discriminating. The synthetic form of the same invariants is asserted in
+`HealthChangeLedgerComputesDamageFromHpDeltas` (victim taken ≤ max,
+attacker totals == victim totals).
+
 ## Files touched
 
 `src/WotBTreader.Core/Overlay/OverlayFrameModels.cs`,
