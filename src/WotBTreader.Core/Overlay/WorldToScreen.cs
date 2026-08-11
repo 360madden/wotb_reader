@@ -64,8 +64,12 @@ public static class WorldToScreen
         if (!double.IsFinite(verticalFovRadians) || verticalFovRadians <= 0
             || verticalFovRadians >= Math.PI
             || !double.IsFinite(viewportWidth) || viewportWidth <= 0
-            || !double.IsFinite(viewportHeight) || viewportHeight <= 0)
+            || !double.IsFinite(viewportHeight) || viewportHeight <= 0
+            || !double.IsFinite(yaw) || !double.IsFinite(pitch))
         {
+            // A non-finite rotation would carry NaN through the basis into
+            // the pixel coordinates, which the JSON serializers reject (and
+            // would 500 the frame endpoint). Fail closed: no projection.
             return null;
         }
 

@@ -55,7 +55,11 @@ VIEWPORT = (1920, 1080)
 
 
 def project(eye, yaw, pitch, fov_deg, width, height, world):
-    """Returns (screen_x, screen_y, depth) or None when behind the camera."""
+    """Returns (screen_x, screen_y, depth) or None when behind the camera.
+    Mirrors WorldToScreen.Project: any non-finite input fails closed (None),
+    so NaN can never reach the pixel coordinates."""
+    if not all(math.isfinite(v) for v in (*eye, yaw, pitch, fov_deg, width, height, *world)):
+        return None
     fov = math.radians(fov_deg)
     cos_yaw, sin_yaw = math.cos(yaw), math.sin(yaw)
     cos_pitch, sin_pitch = math.cos(pitch), math.sin(pitch)

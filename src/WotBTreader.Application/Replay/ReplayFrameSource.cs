@@ -307,12 +307,17 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
     {
         // CAM-001 seam: a caller-supplied camera (e.g. the verified live
         // cameraState pose) replaces the viewpoint approximation. Fail-closed:
-        // a non-finite position is never rendered — it falls through to the
-        // replay viewpoint fallback below instead of fabricating a pose.
+        // a pose with any non-finite component (position or rotation) is
+        // never rendered — it falls through to the replay viewpoint fallback
+        // below instead of fabricating a pose or blanking every projection.
         if (cameraOverride is { } overrideCamera
             && double.IsFinite(overrideCamera.X)
             && double.IsFinite(overrideCamera.Y)
-            && double.IsFinite(overrideCamera.Z))
+            && double.IsFinite(overrideCamera.Z)
+            && overrideCamera.YawRadians is double finiteYaw
+            && double.IsFinite(finiteYaw)
+            && overrideCamera.PitchRadians is double finitePitch
+            && double.IsFinite(finitePitch))
         {
             return overrideCamera;
         }

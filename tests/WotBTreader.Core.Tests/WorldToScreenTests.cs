@@ -121,6 +121,26 @@ public sealed class WorldToScreenTests
     }
 
     [TestMethod]
+    public void NonFiniteYaw_ReturnsNull()
+    {
+        ScreenPoint? point = WorldToScreen.Project(
+            0, 0, 0, yaw: double.NaN, pitch: 0, Fov, Width, Height,
+            worldX: 0, worldY: 0, worldZ: 10);
+
+        Assert.IsNull(point);
+    }
+
+    [TestMethod]
+    public void NonFinitePitch_ReturnsNull()
+    {
+        ScreenPoint? point = WorldToScreen.Project(
+            0, 0, 0, yaw: 0, pitch: double.PositiveInfinity, Fov, Width, Height,
+            worldX: 0, worldY: 0, worldZ: 10);
+
+        Assert.IsNull(point);
+    }
+
+    [TestMethod]
     public void InsideViewport_ReflectsBounds()
     {
         var inside = new ScreenPoint(100, 100, 10);

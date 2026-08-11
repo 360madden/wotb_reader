@@ -528,6 +528,34 @@ public sealed class ReplayFrameSourceTests
     }
 
     [TestMethod]
+    public void Frame_NonFiniteCameraOverrideRotation_FallsBackToViewpoint()
+    {
+        // Fail-closed: a finite position with a non-finite rotation (e.g. a
+        // stable-but-uninitialized GameCamera pitch field) must not blank
+        // every projection — the viewpoint camera is used instead.
+        ParticipantId viewpointId = ParticipantId.New();
+        var projection = Projection(
+            viewpointId,
+            new[]
+            {
+                Participant(viewpointId, entityId: 1, "ViewpointTank", team: 1),
+            },
+            new[]
+            {
+                Sample(entityId: 1, seconds: 0, x: 3, y: 4, z: 0, yaw: 0.1),
+            },
+            events: []);
+
+        var invalid = new OverlayCamera(
+            6, 2, 0, YawRadians: double.NaN, PitchRadians: -0.2, RollRadians: null);
+        OverlayFrame frame = ReplayFrameSource.BuildFrame(
+            projection, TimeSpan.Zero, invalid);
+
+        Assert.AreEqual(3, frame.Camera.X);
+        Assert.AreEqual(0.1, frame.Camera.YawRadians!.Value, 1e-9);
+    }
+
+    [TestMethod]
     public async Task GetFrameAsync_SessionMissing_ReturnsFailure()
     {
         // Projection with a null session record triggers the explicit guard.
