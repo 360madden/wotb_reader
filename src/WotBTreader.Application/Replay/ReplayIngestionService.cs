@@ -40,6 +40,7 @@ public sealed class ReplayIngestionService : IReplayIngestionService
     private readonly ReplayDecoderRegistry _decoderRegistry;
     private readonly IDecodeRunRepository _decodeRuns;
     private readonly ITelemetryEventPublisher _publisher;
+    private readonly IProjectionCache _cache;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<ReplayIngestionService> _logger;
 
@@ -49,6 +50,7 @@ public sealed class ReplayIngestionService : IReplayIngestionService
         ReplayDecoderRegistry decoderRegistry,
         IDecodeRunRepository decodeRuns,
         ITelemetryEventPublisher publisher,
+        IProjectionCache cache,
         TimeProvider timeProvider,
         ILogger<ReplayIngestionService> logger)
     {
@@ -57,6 +59,7 @@ public sealed class ReplayIngestionService : IReplayIngestionService
         _decoderRegistry = decoderRegistry;
         _decodeRuns = decodeRuns;
         _publisher = publisher;
+        _cache = cache;
         _timeProvider = timeProvider;
         _logger = logger;
     }
@@ -231,6 +234,14 @@ public sealed class ReplayIngestionService : IReplayIngestionService
                 return OperationResult.Failure<ReplayIngestionOutcome>(
                     persisted.Error ?? new ApplicationError("decode.persist.failed", "Decode results were not committed."),
                     [.. persisted.Warnings]);
+            }
+
+            // Warm the projection cache so the first frame request for this
+            // session never pays the full storage re-read. The projection is
+            // immutable after commit; the cache is a pure performance seam.
+            if (projection.Session is not null)
+            {
+                _cache.Store(projection.Session.Id, projection);
             }
 
             // Publication is a separate delivery concern. A publication failure

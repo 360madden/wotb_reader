@@ -31,6 +31,7 @@ public sealed class ReplayIngestionServiceTests
             new ReplayDecoderRegistry([decoder]),
             repository,
             publisher,
+            new ProjectionCache(),
             TimeProvider.System,
             NullLogger<ReplayIngestionService>.Instance);
 
@@ -46,6 +47,56 @@ public sealed class ReplayIngestionServiceTests
         Assert.IsTrue(result.IsSuccess);
         Assert.IsTrue(repository.Committed);
         Assert.IsTrue(publisher.Published);
+    }
+
+    [TestMethod]
+    public async Task SuccessfulDecodeWarmsProjectionCache()
+    {
+        SourceArtifact artifact = new(
+            SourceArtifactId.New(),
+            new ContentHash(new string('a', ContentHash.Sha256HexLength)),
+            ByteLength: 4,
+            MediaType: "application/vnd.wotblitz.replay",
+            StoredExtension: ".wotbreplay",
+            ImportedAtUtc: DateTimeOffset.UnixEpoch,
+            SchemaVersion: "1");
+        FakeArtifactStore store = new(artifact);
+        FakeDecodeRunRepository repository = new();
+        VerifyingPublisher publisher = new(repository);
+        StubDecoder decoder = new(artifact);
+        ProjectionCache cache = new();
+        ReplayIngestionService service = new(
+            store,
+            new StubProbe(),
+            new ReplayDecoderRegistry([decoder]),
+            repository,
+            publisher,
+            cache,
+            TimeProvider.System,
+            NullLogger<ReplayIngestionService>.Instance);
+
+        OperationResult<ReplayIngestionOutcome> result = await service.ImportAsync(
+            new ReplayIngestionRequest(
+                "input.wotbreplay",
+                artifact.MediaType,
+                artifact.StoredExtension,
+                MaximumArtifactBytes: 1024,
+                DecoderLimits.Default),
+            CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        // The freshly decoded projection is already in the cache, so the first
+        // frame request for this session never re-reads storage.
+        ReplayDecodeProjection decoded = decoder.LastProjection!;
+        Assert.IsNotNull(decoded.Session);
+        Assert.IsTrue(cache.TryGet(decoded.Session.Id, out ReplayDecodeProjection? cached));
+        // The service stores the committed rebuild (DecodeRun timestamps
+        // stamped by the ingestion service), keyed by the same session with
+        // the same decoded content.
+        Assert.IsNotNull(cached);
+        Assert.AreEqual(decoded.Session.Id, cached.Session!.Id);
+        Assert.HasCount(decoded.Events.Count, cached.Events);
+        Assert.AreEqual(decoded.Events[0].EntityId, cached.Events[0].EntityId);
     }
 
     private sealed class FakeArtifactStore(SourceArtifact artifact) : ISourceArtifactStore
@@ -87,6 +138,8 @@ public sealed class ReplayIngestionServiceTests
 
     private sealed class StubDecoder(SourceArtifact artifact) : IReplayDecoder
     {
+        public ReplayDecodeProjection? LastProjection { get; private set; }
+
         public DecoderDescriptor Descriptor { get; } = new(
             "strict",
             "1",
@@ -141,14 +194,16 @@ public sealed class ReplayIngestionServiceTests
                 ValuesJson: "{}",
                 EvidenceConfidence.Exact,
                 evidence);
-            return ValueTask.FromResult(OperationResult.Success(new ReplayDecodeProjection(
+            ReplayDecodeProjection projection = new(
                 decodeRun,
                 session,
                 Participants: [],
                 Positions: [],
                 Events: [canonicalEvent],
                 RawRecords: [],
-                Warnings: [])));
+                Warnings: []);
+            LastProjection = projection;
+            return ValueTask.FromResult(OperationResult.Success(projection));
         }
     }
 

@@ -46,10 +46,32 @@ HUD's real 20 fps tick (t step 0.05 s, 252 s battle → 5040 frames):
 This closes the loop on F5's "playback-speed HUD" unlock: the data path is
 no longer the bottleneck.
 
+## Cache warming (2026-08-10, appended)
+
+The cold first frame per session (~370 ms) is now hidden by two complementary
+warm points:
+
+1. **Decode-time warm** — `ReplayIngestionService` stores the freshly decoded
+   projection in the cache right after a successful commit, so anything that
+   decodes in-process serves its first frame warm (an invariant, not just an
+   optimization: freshly decoded ⇒ warm).
+2. **Host-startup warm** — `ProjectionCacheWarmer` (hosted service) loads the
+   most recent session's projection into the cache when the web host starts,
+   with retry backoff for the storage-init race. This is the one that matters
+   for the real flow: the CLI decodes in a separate process, so only the host
+   can warm itself.
+
+Verified: host started against the `.data` DB logged
+`[ProjectionCacheWarmer] Warmed session ... (33281 positions)` and the first
+frame for that session took **33 ms instead of ~370 ms**. 3 warmer tests
+(warm-most-recent, skip-when-empty, retry-then-recover) + 1 ingestion test
+(decode warms the cache); web suite 138/138, Application 58/58, full suite
+12 projects green, 0 warnings.
+
 ## Notes for next
 
-- The cold first frame per session (~370 ms) could be hidden by warming the
-  cache for the most recent session at host startup, or by prefetching during
-  the CLI `decode` command. Not done — not needed for the current UX.
 - Capacity 4 comfortably covers the HUD's one-session-at-a-time pattern; bump
   only if the overlay ever scrubs multiple sessions concurrently.
+- The startup warmer only covers the most recent session (the one the HUD
+  lists first). Sessions opened later still take one ~370 ms cold frame before
+  they warm — acceptable, and visible as a single slow first frame.
