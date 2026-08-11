@@ -314,12 +314,14 @@ public interface IGameMemoryScanner
     /// entity's ring record through the batch surface (ONE G2 clock
     /// attestation when a battle session id is supplied), decode position
     /// (+0x10) and hull yaw (+0x30), read the CAM-001 camera pose, and
-    /// assemble the frame — all under the scan authorization. Per-tank
-    /// statuses are authoritative; gate-level failures (build mismatch,
-    /// inactive phase, revoked authorization) fail the WHOLE frame.
-    /// <see cref="LiveFrameTankState.Hp"/> is null until L1 lands. No
-    /// absolute address, process id, or module base ever leaves the
-    /// coordinator.
+    /// assemble the frame — all under the scan authorization. The batch
+    /// also reads each entity's entity-base region (L1: current health
+    /// int16 +0xB8, max +0x11C) so the frame carries live health; health
+    /// fields stay honest nulls when that read failed or decoded invalid.
+    /// Per-tank statuses are authoritative; gate-level failures (build
+    /// mismatch, inactive phase, revoked authorization) fail the WHOLE
+    /// frame. No absolute address, process id, or module base ever leaves
+    /// the coordinator.
     /// </summary>
     ValueTask<OperationResult<LiveFrameReadResult>> ReadLiveFrameAsync(
         LiveFrameReadRequest request,
@@ -503,11 +505,21 @@ public sealed record EntityRecordRegionReadResult(
     bool ConsistentDoubleRead,
     bool SameDecodedClockProven);
 
-/// <summary>One entity region in a batch read (mirrors the single-read fields).</summary>
+/// <summary>
+/// One entity region in a batch read (mirrors the single-read fields).
+/// When <see cref="EntityBaseRegionLength"/> is set (1..4096), the batch
+/// ALSO reads that many bytes of the entity-base region for the same
+/// entity (the L1 HP surface — current int16 +0xB8 / max +0x11C) under
+/// the SAME resolve and the SAME single replay-clock attestation, so the
+/// frame gets position + facing + health from one coherent moment without
+/// doubling batch items past the 16-item cap (design:
+/// docs/operations/live-frame-loop-design.md).
+/// </summary>
 public sealed record EntityRegionReadRequestItem(
     int EntityId,
     int RegionLength,
-    EntityRecordRegionAnchor RegionAnchor = EntityRecordRegionAnchor.RingRecord);
+    EntityRecordRegionAnchor RegionAnchor = EntityRecordRegionAnchor.RingRecord,
+    int? EntityBaseRegionLength = null);
 
 /// <summary>
 /// Batch request for up to <see cref="MaxEntities"/> entity region dumps in
@@ -527,7 +539,14 @@ public sealed record EntityRegionsReadRequest(
     public const int MaxTotalBytes = 16 * 1024;
 }
 
-/// <summary>Outcome of one entity within a batch region read.</summary>
+/// <summary>
+/// Outcome of one entity within a batch region read. The optional
+/// <see cref="EntityBaseRegionBytes"/> (and its failure stage) cover the
+/// L1 entity-base read when the request asked for one: an entity whose
+/// primary region resolved but whose entity-base read failed keeps its
+/// ring bytes and reports the entity-base failure separately — the frame
+/// renders position/facing and leaves HP honest-null for that tank.
+/// </summary>
 public sealed record EntityRegionReadResultItem(
     int EntityId,
     Type10EntityPositionStatus Status,
@@ -538,7 +557,10 @@ public sealed record EntityRegionReadResultItem(
     int NodesVisited,
     bool ModuleRooted,
     bool EntityIdentityRevalidated,
-    bool ConsistentDoubleRead);
+    bool ConsistentDoubleRead,
+    byte[]? EntityBaseRegionBytes = null,
+    string? EntityBaseFailureStage = null,
+    int EntityBaseAttempts = 0);
 
 /// <summary>
 /// Wall-clock measurement of the batch read pass (the item-7 atomicity
@@ -611,13 +633,17 @@ public sealed record EntityRosterReadResult(
 
 /// <summary>
 /// One tank of a live frame: the avatar-family entity with its ring-record
-/// position and hull yaw, when that entity resolved and its region decoded.
-/// Position/yaw come from the ring-record region dump (+0x10 / +0x30) via
-/// the pure <c>RingRecordRegion</c> decoder. <see cref="Hp"/> is an honest
-/// null until the L1 HP live session lands (design:
-/// docs/operations/live-frame-loop-design.md) — the HUD must never render a
-/// fabricated health value. World coordinates only; addresses never leave
-/// the coordinator.
+/// position and hull yaw, when that entity resolved and its region decoded,
+/// plus its health from the entity-base region when that read also
+/// resolved. Position/yaw come from the ring-record region dump (+0x10 /
+/// +0x30) via the pure <c>RingRecordRegion</c> decoder; health comes from
+/// the entity-base region dump (+0xB8 current int16 / +0x11C max / +0xBA
+/// alive) via the pure <c>EntityBaseRegion</c> decoder (L1 live-confirmed
+/// by OD-RECOVERY-087). All health fields are honest nulls when the
+/// entity-base read was not requested, failed, or decoded to an invalid
+/// value — the HUD must never render a fabricated health value (design:
+/// docs/operations/live-frame-loop-design.md). World coordinates only;
+/// addresses never leave the coordinator.
 /// </summary>
 public sealed record LiveFrameTankState(
     int EntityId,
@@ -626,7 +652,9 @@ public sealed record LiveFrameTankState(
     float? Y,
     float? Z,
     float? YawRadians,
-    float? Hp,
+    float? HpCurrent,
+    float? HpMax,
+    bool? Alive,
     string? FailureStage,
     bool ModuleRooted);
 

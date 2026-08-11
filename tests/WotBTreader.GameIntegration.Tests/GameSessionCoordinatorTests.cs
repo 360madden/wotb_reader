@@ -1417,6 +1417,55 @@ public sealed class GameSessionCoordinatorTests
     }
 
     [TestMethod]
+    public async Task EntityRegionsRead_EntityBaseRegionReadsUnderSameResolve()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        byte[] expectedRing = [1, 2, 3, 4];
+        var factory = new TrackingEntityPositionReaderFactory(
+            CreateResolvedEntityPosition(4242),
+            regionBytes: expectedRing);
+        var (coordinator, _) = CreateCoordinator(memoryReaderFactory: factory);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRegionsReadResult> result = await coordinator
+            .ReadEntityRegionsAsync(
+                new EntityRegionsReadRequest(
+                    [
+                        new EntityRegionReadRequestItem(
+                            4242,
+                            RegionLength: 4,
+                            EntityBaseRegionLength: 0x120),
+                    ]),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess, result.Error?.Message);
+        EntityRegionsReadResult batch = result.Value!;
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, batch.Status);
+        EntityRegionReadResultItem item = batch.Regions.Single();
+        CollectionAssert.AreEqual(expectedRing, item.RegionBytes);
+        // The entity-base region was read under the same lease: bytes
+        // present, no failure, one attempt.
+        Assert.IsNotNull(item.EntityBaseRegionBytes);
+        Assert.IsNull(item.EntityBaseFailureStage);
+        Assert.AreEqual(1, item.EntityBaseAttempts);
+        // Two reads for one item: ring at the record address, entity-base
+        // at the resolved entity address — NO second resolve.
+        Assert.HasCount(2, factory.Reader.RegionReads);
+        Assert.AreEqual(0x25000038, factory.Reader.RegionReads[0].Address.ToInt64());
+        Assert.AreEqual(4, factory.Reader.RegionReads[0].Length);
+        Assert.AreEqual(0x25000028, factory.Reader.RegionReads[1].Address.ToInt64());
+        Assert.AreEqual(0x120, factory.Reader.RegionReads[1].Length);
+        Assert.AreEqual(1, factory.CreateCount);
+    }
+
+    [TestMethod]
     public async Task EntityRegionsRead_WithSessionIdAttestsClockOnceForWholeBatch()
     {
         Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
@@ -1898,7 +1947,10 @@ public sealed class GameSessionCoordinatorTests
         Assert.AreEqual(3.25f, first.Y);
         Assert.AreEqual(-44.75f, first.Z);
         Assert.AreEqual(0.5f, first.YawRadians);
-        Assert.IsNull(first.Hp);
+        // No entity-base pages in this fixture: health stays honest-null.
+        Assert.IsNull(first.HpCurrent);
+        Assert.IsNull(first.HpMax);
+        Assert.IsNull(first.Alive);
         Assert.IsTrue(first.ModuleRooted);
         // Tank B: its own ring region.
         LiveFrameTankState second = frame.Tanks[1];
@@ -1918,6 +1970,75 @@ public sealed class GameSessionCoordinatorTests
         Assert.IsNull(frame.Measurement.ClockSnapshotAtUtc);
         Assert.AreEqual(1, factory.CreateCount);
         Assert.AreEqual(1, scan.ScanCount);
+    }
+
+    [TestMethod]
+    public async Task LiveFrame_DecodesEntityBaseHpUnderOneAttestation()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        Type10CameraPoseLayout cameraLayout = Type10CameraPoseLayout.WotBlitz1119010;
+        byte[] ringA = CreateRingRegion(12.5f, 3.25f, -44.75f, yaw: 0.5f);
+        // Entity A's entity-base page (L1: current 1228 / max 1550, alive).
+        byte[] baseA = CreateEntityBaseRegion(hpCurrent: 1228, hpMax: 1550, alive: 1);
+        Dictionary<long, byte[]> pages = CreateCameraChainPages(cameraLayout);
+        pages[0x25000038] = ringA;
+        pages[0x25000028] = baseA;
+        var factory = new ScriptedCameraReaderFactory(pages);
+        factory.Reader.RosterResult = new EntityRosterResult(
+            Type10EntityPositionStatus.Resolved,
+            FailureStage: null,
+            ModuleRooted: true,
+            NodesVisited: 12,
+            CandidatesSeen: 18,
+            FilteredOut: 4,
+            Entities:
+            [
+                new EntityRosterEntry(3760578, 0x25000028),
+            ],
+            TraversalLimited: false);
+        factory.Reader.AddressByEntity = new Dictionary<int, Type10EntityPositionAddressResult>
+        {
+            [3760578] = new(
+                Type10EntityPositionStatus.Resolved,
+                RecordAddress: 0x25000038,
+                PageAddress: 0x25000000,
+                EntityAddress: 0x25000028,
+                FailureStage: null,
+                Attempts: 1,
+                NodesVisited: 0,
+                ModuleRooted: true),
+        };
+        var scan = new FakeScanDiscoverer(CreateAvatarScanResult());
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<LiveFrameReadResult> result = await coordinator
+            .ReadLiveFrameAsync(new LiveFrameReadRequest(), CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess, result.Error?.Message);
+        LiveFrameTankState tank = result.Value!.Tanks.Single();
+        Assert.AreEqual(3760578, tank.EntityId);
+        Assert.AreEqual(12.5f, tank.X);
+        Assert.AreEqual(1228f, tank.HpCurrent);
+        Assert.AreEqual(1550f, tank.HpMax);
+        Assert.IsTrue(tank.Alive);
+        // Both the ring and the entity-base reads happened in the SAME
+        // batch pass under one authorization (the camera-chain reads are
+        // separate — filter to the batch addresses).
+        Assert.IsTrue(factory.Reader.Reads.Any(
+            read => read.Address == 0x25000038 && read.Length == 0x40));
+        Assert.IsTrue(factory.Reader.Reads.Any(
+            read => read.Address == 0x25000028 && read.Length == 0x120));
+        Assert.AreEqual(1, factory.CreateCount);
     }
 
     [TestMethod]
@@ -3022,6 +3143,15 @@ public sealed class GameSessionCoordinatorTests
         BitConverter.GetBytes(y).CopyTo(region, RingRecordRegion.PositionOffset + 4);
         BitConverter.GetBytes(z).CopyTo(region, RingRecordRegion.PositionOffset + 8);
         BitConverter.GetBytes(yaw).CopyTo(region, RingRecordRegion.YawOffset);
+        return region;
+    }
+
+    private static byte[] CreateEntityBaseRegion(short hpCurrent, short hpMax, byte alive)
+    {
+        byte[] region = new byte[0x120];
+        BitConverter.GetBytes(hpCurrent).CopyTo(region, EntityBaseRegion.HpCurrentOffset);
+        region[EntityBaseRegion.AliveOffset] = alive;
+        BitConverter.GetBytes(hpMax).CopyTo(region, EntityBaseRegion.HpMaxOffset);
         return region;
     }
 

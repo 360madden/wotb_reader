@@ -20,9 +20,12 @@ namespace WotBTreader.Application.Replay;
 /// - Tanks: only <c>Resolved</c> ring records with finite position are
 ///   projected; a region that resolved but failed to decode is a per-tank
 ///   miss, never a guessed position. Names/team are null (live mode has no
-///   decoded roster join yet), and HP is the DTO's "unknown" representation —
-///   <c>HpFraction 0</c> with <c>MaxHealth/CurrentHealth 0</c> — which renders
-///   as an empty/unknown HP bar until the L1 live session lands.
+///   decoded roster join yet). HP is honest: when the L1 entity-base read
+///   delivered current/max health they map to <c>HpFraction</c>/
+///   <c>CurrentHealth</c>/<c>MaxHealth</c> (the alive byte rides along);
+///   otherwise the DTO's "unknown" representation — <c>HpFraction 0</c>
+///   with <c>MaxHealth/CurrentHealth 0</c> — renders as an empty/unknown
+///   HP bar. Never fabricated.
 /// - No pips/kills/beacons: those are decode-projection features and live
 ///   mode honestly has none.
 /// </summary>
@@ -108,14 +111,33 @@ public static class LiveFrameProjector
             x,
             y,
             z);
+
+        // L1 health mapping (honest): real values only when the entity-base
+        // read delivered both; otherwise the DTO's unknown representation
+        // (fraction 0, healths 0) so the HUD renders an empty bar. The alive
+        // byte rides along only when health evidence is present.
+        double hpFraction = 0;
+        bool alive = true;
+        long maxHealth = 0;
+        long currentHealth = 0;
+        if (tank.HpCurrent is float hpCurrent
+            && tank.HpMax is float hpMax
+            && hpMax > 0)
+        {
+            currentHealth = (long)hpCurrent;
+            maxHealth = (long)hpMax;
+            hpFraction = Math.Clamp(hpCurrent / hpMax, 0.0, 1.0);
+            alive = tank.Alive ?? true;
+        }
+
         return new ProjectedTank(
             tank.EntityId,
             PlayerName: null,
             TankName: null,
             ClanTag: null,
             TeamNumber: null,
-            HpFraction: 0,
-            Alive: true,
+            HpFraction: hpFraction,
+            Alive: alive,
             DistanceMeters: DistanceMeters(camera, x, y, z),
             x,
             z,
@@ -137,8 +159,8 @@ public static class LiveFrameProjector
             DamageDealt: 0,
             DamageTaken: 0,
             Kills: 0,
-            MaxHealth: 0,
-            CurrentHealth: 0);
+            MaxHealth: maxHealth,
+            CurrentHealth: currentHealth);
     }
 
     private static double DistanceMeters(

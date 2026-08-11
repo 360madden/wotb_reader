@@ -43,14 +43,19 @@ public sealed class LiveFrameProjectorTests
         float y,
         float z,
         float? yaw = 0.5f,
-        Type10EntityPositionStatus status = Type10EntityPositionStatus.Resolved) => new(
+        Type10EntityPositionStatus status = Type10EntityPositionStatus.Resolved,
+        float? hpCurrent = null,
+        float? hpMax = null,
+        bool? alive = null) => new(
         entityId,
         status,
         x,
         y,
         z,
         yaw,
-        Hp: null,
+        hpCurrent,
+        hpMax,
+        alive,
         FailureStage: null,
         ModuleRooted: true);
 
@@ -162,7 +167,7 @@ public sealed class LiveFrameProjectorTests
                 [
                     Tank(1, 0, 0, 10),
                     // Region resolved but position failed to decode: X null.
-                    new LiveFrameTankState(2, Type10EntityPositionStatus.Resolved, null, 0f, 10f, null, null, "region-position-decode", false),
+                    new LiveFrameTankState(2, Type10EntityPositionStatus.Resolved, null, 0f, 10f, null, null, null, null, "region-position-decode", false),
                     // Read failed entirely.
                     Tank(3, 0, 0, 10, status: Type10EntityPositionStatus.ReadFailed),
                     // Non-finite position: never projected.
@@ -241,11 +246,53 @@ public sealed class LiveFrameProjectorTests
 
         OverlayFrameProjection noYaw = LiveFrameProjector.Project(
             Frame(
-                [new LiveFrameTankState(2, Type10EntityPositionStatus.Resolved, 0f, 0f, 10f, null, null, null, true)],
+                [new LiveFrameTankState(2, Type10EntityPositionStatus.Resolved, 0f, 0f, 10f, null, null, null, null, null, true)],
                 Pose(0f, 0f, 0f)),
             Fov,
             1920,
             1080);
         Assert.IsNull(noYaw.Tanks[0].ScreenHeadingDegrees);
+    }
+
+    [TestMethod]
+    public void Project_L1HealthMapsToBar_OnlyWhenBothFieldsPresent()
+    {
+        // Live L1 evidence: current 1228 / max 1550, alive byte true.
+        OverlayFrameProjection withHp = LiveFrameProjector.Project(
+            Frame(
+                [Tank(1, 0, 0, 10, hpCurrent: 1228f, hpMax: 1550f, alive: true)],
+                Pose(0f, 0f, 0f)),
+            Fov,
+            1920,
+            1080);
+
+        ProjectedTank tank = withHp.Tanks.Single();
+        Assert.AreEqual(1228L, tank.CurrentHealth);
+        Assert.AreEqual(1550L, tank.MaxHealth);
+        Assert.AreEqual((double)(1228f / 1550f), tank.HpFraction, 1e-9);
+        Assert.IsTrue(tank.Alive);
+
+        // Dead tank: current 0 / max 1550, alive byte false.
+        OverlayFrameProjection dead = LiveFrameProjector.Project(
+            Frame(
+                [Tank(2, 0, 0, 10, hpCurrent: 0f, hpMax: 1550f, alive: false)],
+                Pose(0f, 0f, 0f)),
+            Fov,
+            1920,
+            1080);
+        Assert.AreEqual(0.0, dead.Tanks.Single().HpFraction, 1e-9);
+        Assert.IsFalse(dead.Tanks.Single().Alive);
+
+        // Partial evidence (max missing): stays the honest-unknown shape.
+        OverlayFrameProjection partial = LiveFrameProjector.Project(
+            Frame(
+                [Tank(3, 0, 0, 10, hpCurrent: 800f)],
+                Pose(0f, 0f, 0f)),
+            Fov,
+            1920,
+            1080);
+        Assert.AreEqual(0.0, partial.Tanks.Single().HpFraction, 1e-9);
+        Assert.AreEqual(0L, partial.Tanks.Single().CurrentHealth);
+        Assert.AreEqual(0L, partial.Tanks.Single().MaxHealth);
     }
 }

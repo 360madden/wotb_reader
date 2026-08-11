@@ -1362,7 +1362,9 @@ public sealed class GameApiEndpointsTests
                             Y: 0,
                             Z: 100,
                             YawRadians: 0.5f,
-                            Hp: null,
+                            HpCurrent: null,
+                            HpMax: null,
+                            Alive: null,
                             FailureStage: null,
                             ModuleRooted: true),
                     ],
@@ -1469,7 +1471,10 @@ public sealed class GameApiEndpointsTests
                             NodesVisited: 3,
                             ModuleRooted: true,
                             EntityIdentityRevalidated: false,
-                            ConsistentDoubleRead: false),
+                            ConsistentDoubleRead: false,
+                            EntityBaseRegionBytes: [0xB8, 0x04],
+                            EntityBaseFailureStage: null,
+                            EntityBaseAttempts: 1),
                         new EntityRegionReadResultItem(
                             4243,
                             Type10EntityPositionStatus.EntityNotFound,
@@ -1499,6 +1504,7 @@ public sealed class GameApiEndpointsTests
                         EntityId = 4242,
                         RegionLength = 4,
                         RegionAnchor = "entity-base",
+                        EntityBaseRegionLength = 0x120,
                     },
                     new WotBTreader.ApiContracts.EntityRegionReadItemRequest
                     {
@@ -1519,6 +1525,13 @@ public sealed class GameApiEndpointsTests
         Assert.AreEqual(4242, response.Regions[0].EntityId);
         Assert.AreEqual("Resolved", response.Regions[0].Status);
         Assert.AreEqual(Convert.ToBase64String(first), response.Regions[0].RegionBase64);
+        // The L1 entity-base region round-trips with its own bytes/failure.
+        Assert.AreEqual(
+            Convert.ToBase64String([0xB8, 0x04]),
+            response.Regions[0].EntityBaseRegionBase64);
+        Assert.IsNull(response.Regions[0].EntityBaseFailureStage);
+        Assert.AreEqual(1, response.Regions[0].EntityBaseAttempts);
+        Assert.IsNull(response.Regions[1].EntityBaseRegionBase64);
         Assert.AreEqual("EntityNotFound", response.Regions[1].Status);
         Assert.AreEqual("entity-lookup", response.Regions[1].FailureStage);
         Assert.IsNull(response.Regions[1].RegionBase64);
@@ -1541,6 +1554,8 @@ public sealed class GameApiEndpointsTests
         Assert.AreEqual(
             EntityRecordRegionAnchor.EntityBase,
             forwarded.Entities[0].RegionAnchor);
+        Assert.AreEqual(0x120, forwarded.Entities[0].EntityBaseRegionLength);
+        Assert.IsNull(forwarded.Entities[1].EntityBaseRegionLength);
         Assert.AreEqual(4243, forwarded.Entities[1].EntityId);
         Assert.IsNotNull(forwarded.BattleSessionId);
         // No absolute address may leak in the serialized response.

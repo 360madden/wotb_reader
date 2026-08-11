@@ -2149,7 +2149,16 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                         "Each entity region must be 1..4096 bytes with a known region anchor."));
             }
 
-            totalBytes += entity.RegionLength;
+            if (entity.EntityBaseRegionLength is int entityBaseLength &&
+                (entityBaseLength < 1 || entityBaseLength > EntityRecordRegionReadRequest.MaxLength))
+            {
+                return OperationResult.Failure<EntityRegionsReadResult>(
+                    new ApplicationError(
+                        "discover.entity_regions.invalid_request",
+                        "The entity-base region length must be 1..4096 bytes when supplied."));
+            }
+
+            totalBytes += entity.RegionLength + (entity.EntityBaseRegionLength ?? 0);
         }
 
         if (totalBytes > EntityRegionsReadRequest.MaxTotalBytes)
@@ -2437,6 +2446,45 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 continue;
             }
 
+            // L1 additive: when the item asked for an entity-base region,
+            // read it at the RESOLVED entity address under the same lease
+            // (no second resolve, no second clock snapshot — the ONE batch
+            // attestation still labels the whole item). A failed entity-base
+            // read fails only the health fields, never the ring region.
+            byte[]? entityBaseBytes = null;
+            string? entityBaseFailureStage = null;
+            int entityBaseAttempts = 0;
+            if (entity.EntityBaseRegionLength is int entityBaseLength)
+            {
+                if (resolved.EntityAddress is not uint entityAddress)
+                {
+                    entityBaseFailureStage = "entity-base-anchor";
+                }
+                else
+                {
+                    entityBaseAttempts = 1;
+                    OperationResult<byte[]> entityBaseResult = await reader.ReadAsync(
+                        (nint)entityAddress,
+                        entityBaseLength,
+                        cancellationToken).ConfigureAwait(false);
+                    if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+                    {
+                        return GateCheck<EntityRegionsReadResult>(
+                            "discover.gate_not_satisfied",
+                            "The offline-session gate is no longer satisfied.");
+                    }
+
+                    if (entityBaseResult.IsSuccess && entityBaseResult.Value is not null)
+                    {
+                        entityBaseBytes = entityBaseResult.Value;
+                    }
+                    else
+                    {
+                        entityBaseFailureStage = "entity-base-read";
+                    }
+                }
+            }
+
             results[index] = new EntityRegionReadResultItem(
                 entity.EntityId,
                 Type10EntityPositionStatus.Resolved,
@@ -2447,7 +2495,10 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 resolved.NodesVisited,
                 resolved.ModuleRooted,
                 EntityIdentityRevalidated: false,
-                ConsistentDoubleRead: false);
+                ConsistentDoubleRead: false,
+                EntityBaseRegionBytes: entityBaseBytes,
+                EntityBaseFailureStage: entityBaseFailureStage,
+                EntityBaseAttempts: entityBaseAttempts);
         }
 
         // Phase 3: ONE replay-clock label + same-decoded-clock
@@ -2665,15 +2716,18 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     RosterFilteredOut: roster.FilteredOut));
             }
 
-            // 2. Batch-read every roster entity's ring record under the same
-            //    authorization (ring-record anchor; the region must reach
-            //    hull yaw at +0x30, so 0x40 bytes). ONE G2 clock attestation
-            //    when a battle session id is supplied.
+            // 2. Batch-read every roster entity's ring record AND its
+            //    entity-base region under the same authorization (ring
+            //    record must reach hull yaw at +0x30, so 0x40 bytes;
+            //    entity-base must reach max-health int16 at +0x11C, so
+            //    0x120 bytes). Both read under ONE resolve and ONE G2
+            //    clock attestation when a battle session id is supplied.
             var batchItems = roster.EntityIds
                 .Select(entityId => new EntityRegionReadRequestItem(
                     entityId,
                     RegionLength: 0x40,
-                    EntityRecordRegionAnchor.RingRecord))
+                    EntityRecordRegionAnchor.RingRecord,
+                    EntityBaseRegionLength: 0x120))
                 .ToList();
             OperationResult<EntityRegionsReadResult> batchResult = await ReadEntityRegionsCoreAsync(
                 new EntityRegionsReadRequest(batchItems, request.BattleSessionId),
@@ -2737,10 +2791,12 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             DateTimeOffset frameEndedAt = _timeProvider.GetUtcNow();
 
             // 4. Assemble: decode position (+0x10) and hull yaw (+0x30)
-            //    from each resolved ring-record region. HP is an honest null
-            //    until L1 lands. Per-tank statuses are authoritative; a
-            //    region that resolved but failed to decode its position is a
-            //    per-tank failure, not a frame failure.
+            //    from each resolved ring-record region, plus live health
+            //    from the entity-base region (L1). Health fields stay honest
+            //    nulls when the entity-base read failed or decoded invalid.
+            //    Per-tank statuses are authoritative; a region that resolved
+            //    but failed to decode its position is a per-tank failure,
+            //    not a frame failure.
             var tanks = new List<LiveFrameTankState>(batch.Regions.Count);
             foreach (EntityRegionReadResultItem region in batch.Regions)
             {
@@ -2765,6 +2821,16 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     }
                 }
 
+                float? hpCurrent = null;
+                float? hpMax = null;
+                bool? alive = null;
+                if (region.EntityBaseRegionBytes is not null)
+                {
+                    hpCurrent = EntityBaseRegion.TryReadHpCurrent(region.EntityBaseRegionBytes);
+                    hpMax = EntityBaseRegion.TryReadHpMax(region.EntityBaseRegionBytes);
+                    alive = EntityBaseRegion.TryReadAlive(region.EntityBaseRegionBytes);
+                }
+
                 tanks.Add(new LiveFrameTankState(
                     region.EntityId,
                     region.Status,
@@ -2772,7 +2838,9 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     y,
                     z,
                     yaw,
-                    Hp: null,
+                    hpCurrent,
+                    hpMax,
+                    alive,
                     failureStage,
                     region.ModuleRooted));
             }

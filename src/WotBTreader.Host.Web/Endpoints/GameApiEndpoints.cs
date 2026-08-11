@@ -1022,7 +1022,9 @@ internal static class GameApiEndpoints
                     Y = tank.Y,
                     Z = tank.Z,
                     YawRadians = tank.YawRadians,
-                    Hp = tank.Hp,
+                    HpCurrent = tank.HpCurrent,
+                    HpMax = tank.HpMax,
+                    Alive = tank.Alive,
                     FailureStage = tank.FailureStage,
                     ModuleRooted = tank.ModuleRooted,
                 })
@@ -1098,7 +1100,8 @@ internal static class GameApiEndpoints
             entities.Add(new WotBTreader.Application.Game.EntityRegionReadRequestItem(
                 item.EntityId,
                 item.RegionLength,
-                anchor));
+                anchor,
+                item.EntityBaseRegionLength));
         }
 
         OperationResult<EntityRegionsReadResult> result = await scanner
@@ -1137,6 +1140,11 @@ internal static class GameApiEndpoints
                     ModuleRooted = region.ModuleRooted,
                     EntityIdentityRevalidated = region.EntityIdentityRevalidated,
                     ConsistentDoubleRead = region.ConsistentDoubleRead,
+                    EntityBaseRegionBase64 = region.EntityBaseRegionBytes is null
+                        ? null
+                        : Convert.ToBase64String(region.EntityBaseRegionBytes),
+                    EntityBaseFailureStage = region.EntityBaseFailureStage,
+                    EntityBaseAttempts = region.EntityBaseAttempts,
                 })
                 .ToList(),
             Measurement = read.Measurement is null

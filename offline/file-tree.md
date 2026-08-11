@@ -449,6 +449,7 @@ src/WotBTreader.CaptureLogs/WotBTreader.CaptureLogs.csproj
 src/WotBTreader.CaptureLogs/packages.lock.json
 src/WotBTreader.Core/AffiliationResolver.cs
 src/WotBTreader.Core/ComparisonModels.cs
+src/WotBTreader.Core/Discovery/EntityBaseRegion.cs
 src/WotBTreader.Core/Discovery/HeadingCorrelator.cs
 src/WotBTreader.Core/Discovery/HpGroundTruthModels.cs
 src/WotBTreader.Core/Discovery/OffsetChainWalker.cs
@@ -706,6 +707,7 @@ tests/WotBTreader.CaptureLogs.Tests/WotBTreader.CaptureLogs.Tests.csproj
 tests/WotBTreader.CaptureLogs.Tests/packages.lock.json
 tests/WotBTreader.Core.Tests/AffiliationResolverTests.cs
 tests/WotBTreader.Core.Tests/AimGeometryTests.cs
+tests/WotBTreader.Core.Tests/EntityBaseRegionTests.cs
 tests/WotBTreader.Core.Tests/HeadingCorrelatorTests.cs
 tests/WotBTreader.Core.Tests/IdentifierTests.cs
 tests/WotBTreader.Core.Tests/MSTestSettings.cs

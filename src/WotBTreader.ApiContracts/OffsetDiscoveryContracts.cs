@@ -405,12 +405,19 @@ public sealed record EntityRecordRegionReadResponse
     public bool SameDecodedClockProven { get; init; }
 }
 
-/// <summary>One entity region in a batch read (mirrors the single-read fields).</summary>
+/// <summary>
+/// One entity region in a batch read (mirrors the single-read fields).
+/// When <see cref="EntityBaseRegionLength"/> is set, the batch ALSO reads
+/// that many bytes of the entity-base region for the same entity (the L1
+/// HP surface) under the SAME resolve and the SAME single replay-clock
+/// attestation.
+/// </summary>
 public sealed record EntityRegionReadItemRequest
 {
     public int EntityId { get; init; }
     public int RegionLength { get; init; }
     public string? RegionAnchor { get; init; }
+    public int? EntityBaseRegionLength { get; init; }
 }
 
 /// <summary>
@@ -424,7 +431,13 @@ public sealed record EntityRegionsReadRequest
     public string? BattleSessionId { get; init; }
 }
 
-/// <summary>Outcome of one entity within a batch region read.</summary>
+/// <summary>
+/// Outcome of one entity within a batch region read. The optional
+/// <see cref="EntityBaseRegionBase64"/> (and its failure stage) cover the
+/// L1 entity-base read when the request asked for one: an entity whose
+/// primary region resolved but whose entity-base read failed keeps its
+/// ring bytes and reports the entity-base failure separately.
+/// </summary>
 public sealed record EntityRegionReadItemResponse
 {
     public int EntityId { get; init; }
@@ -437,6 +450,9 @@ public sealed record EntityRegionReadItemResponse
     public bool ModuleRooted { get; init; }
     public bool EntityIdentityRevalidated { get; init; }
     public bool ConsistentDoubleRead { get; init; }
+    public string? EntityBaseRegionBase64 { get; init; }
+    public string? EntityBaseFailureStage { get; init; }
+    public int EntityBaseAttempts { get; init; }
 }
 
 /// <summary>
@@ -502,8 +518,10 @@ public sealed record LiveFrameReadRequest
 
 /// <summary>
 /// One tank of a live frame response: entity id + world position + hull
-/// yaw, when that entity resolved. HP is honest null until L1 lands — the
-/// HUD must never render a fabricated health value (design:
+/// yaw, when that entity resolved, plus live health when the entity-base
+/// read resolved (L1: current int16 +0xB8, max +0x11C, alive +0xBA). All
+/// health fields are honest nulls when not read or not decodable — the HUD
+/// must never render a fabricated health value (design:
 /// docs/operations/live-frame-loop-design.md). World coordinates only.
 /// </summary>
 public sealed record LiveFrameTankResponse
@@ -514,7 +532,9 @@ public sealed record LiveFrameTankResponse
     public double? Y { get; init; }
     public double? Z { get; init; }
     public double? YawRadians { get; init; }
-    public double? Hp { get; init; }
+    public double? HpCurrent { get; init; }
+    public double? HpMax { get; init; }
+    public bool? Alive { get; init; }
     public string? FailureStage { get; init; }
     public bool ModuleRooted { get; init; }
 }

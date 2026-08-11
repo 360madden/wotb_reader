@@ -326,6 +326,47 @@ predicted: yaw is live-confirmed at ring-record `+0x30`.**
 `twoReplayRepeatability` still false — Phase-4 repeat on Dead Rail
 (OD-RECOVERY-089, 5 seam crossings) gates any facing/yaw publication.
 
+## X4 L1 wiring — live-frame HP becomes real (2026-08-11)
+
+The pre-staged additive unit from `live-frame-loop-design.md` step 5: the
+frame's `hp: null` is now backed by the L1-proven entity-base read.
+**No new discovery, no offsets touched, no resolver/read-surface changes —
+strictly the composition layer consuming the 087 evidence.**
+
+- **Batch contract (additive):** `EntityRegionReadRequestItem` gained an
+  optional `EntityBaseRegionLength` (1..4096) — the batch ALSO reads that
+  many bytes of the entity-base region for the same entity under the SAME
+  resolve and the SAME single replay-clock attestation, so the frame gets
+  position + facing + health from one coherent moment without doubling
+  items past the 16-cap. The result item carries the entity-base bytes /
+  failure stage / attempts; a failed entity-base read fails ONLY the health
+  fields (the ring region stands). Total-byte validation includes the
+  entity-base length.
+- **New pure decoder:** `EntityBaseRegion` — current-health int16 `+0xB8`,
+  alive byte `+0xBA`, max-health int16 `+0x11C` (healing `+0x11E` pinned
+  but not read). Fail-closed: too-short region, negative health, or an
+  alive byte that is neither 0 nor 1 → null, never fabricated.
+- **Frame assembly:** the live frame requests `EntityBaseRegionLength:
+  0x120` per roster entity and decodes `hpCurrent`/`hpMax`/`alive` into
+  `LiveFrameTankState` (replacing the single honest `Hp` null).
+- **Projector:** real values map to `HpFraction`/`MaxHealth`/
+  `CurrentHealth`/`Alive`; absent/failed reads keep the DTO's honest
+  unknown shape (empty bar). No overlay/client changes — the projected
+  `OverlayFrameResponse` shape is unchanged.
+- **Contract + endpoint round-trip:** ApiContracts request/response gained
+  the entity-base fields; `TreaderApiClient` untouched (it consumes the
+  projected shape).
+
+**Verified:** 11 new Core decoder tests, batch multi-region coordinator
+paths (read under same resolve; failure fails only health), coordinator
+frame HP decode, endpoint batch round-trip + live-frame mapping, projector
+HP mapping. All touched suites green (Core 205, Application 73,
+GameIntegration 294, Host.Web 159).
+
+Next in the pre-staged order: the Phase-4 two-replay HP rule (Dead Rail
+victim 2549399) gates any HP publication; OD-RECOVERY-089 (L2 facing
+repeat, 5 seam crossings) gates facing/yaw publication.
+
 ## OD-RECOVERY-086 live session — X2 PASS live + X3 team-based partial (2026-08-11)
 
 Approved live session on Oasis Palms (the content-distinct 11.19.0.10
@@ -451,4 +492,22 @@ surface changed. Next live gates in pre-staged order: OD-RECOVERY-087
   --max-lag-seconds` + `bestLagSeconds` output)
 - `scripts/invoke-facing-session.ps1` (`-DataRoot` → extractor `--db`,
   per-target clock wait, transient rendezvous retry, `-MaxLagSeconds 8`)
+- `src/WotBTreader.Core/Discovery/EntityBaseRegion.cs` (NEW — pure
+  fail-closed decoder: current int16 `+0xB8`, alive `+0xBA`, max `+0x11C`,
+  healing `+0x11E` pinned) + 11 tests
+- `src/WotBTreader.Application/Game/GameSessionContracts.cs` (batch item
+  `EntityBaseRegionLength`; result entity-base bytes/failure/attempts;
+  `LiveFrameTankState.Hp` → `HpCurrent`/`HpMax`/`Alive`)
+- `src/WotBTreader.GameIntegration/Session/GameSessionCoordinator.cs`
+  (entity-base read under same resolve + ONE attestation; frame requests
+  0x120 entity-base per roster entity and decodes HP)
+- `src/WotBTreader.Application/Replay/LiveFrameProjector.cs` (HP →
+  `HpFraction`/`MaxHealth`/`CurrentHealth`/`Alive`; honest unknown when
+  absent) + projector test
+- `src/WotBTreader.ApiContracts/OffsetDiscoveryContracts.cs` +
+  `src/WotBTreader.Host.Web/Endpoints/GameApiEndpoints.cs` (entity-base
+  batch fields + live-frame HP round-trip) + endpoint tests
+- `docs/operations/live-frame-loop-design.md` (step 5 L1 wiring → DONE;
+  HP honest-limits row → WIRED)
+- `offline/api-surface.md` (entity-regions + live-frame + /live/frame rows)
 - `docs/operations/handoffs/2026-08-11-enemy-tracking-focus.md` (this file)

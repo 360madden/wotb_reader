@@ -124,7 +124,7 @@ open question, not silently decided.
 |---|---|---|
 | Position (x/y/z) | ✅ readable now | ring `+0x10`, batch surface proven |
 | Hull yaw | ✅ **L2 HIT 2026-08-11 (OD-RECOVERY-088)** | ring **`+0x30`** (roll `+0x28` / pitch `+0x2C` / yaw `+0x30`) confirmed live — 48/48 dumps, score 1.0, flatness 1.0 at the ~5 s memory-apply lag; the rehearsal's +0x2C was self-constructed and is corrected |
-| HP (current/max) | ✅ L1 HIT 2026-08-11 (OD-RECOVERY-087) | entity-base current int16 **`+0xB8`** / max `+0x11C` confirmed live (score 1.0, flatness 1.0, Strict 8/8); frame `hp` can become real additively — `hpCurrent/hpMax` (the empty bar is no longer fabricated-free but provable) |
+| HP (current/max) | ✅ L1 HIT 2026-08-11 (OD-RECOVERY-087) + **WIRED into the frame** | entity-base current int16 **`+0xB8`** / max `+0x11C` / alive `+0xBA` confirmed live (score 1.0, flatness 1.0, Strict 8/8); the frame batch now reads each entity's entity-base region (0x120) under the SAME resolve + ONE attestation and `LiveFrameTankState` carries `hpCurrent`/`hpMax`/`alive` — the HUD bar is real whenever the read resolves |
 | Turret facing / lock / targeted | ❌ absent | type-7 survey proved no replay carrier; ring does not expose it; future discovery |
 | Aim-line | ✅ computable | `AimGeometry` hull-arc utility; honest weak necessary-condition only |
 | Spotting model | ❌ out of scope | X5 policy-gated, replay god-view stays |
@@ -140,9 +140,9 @@ open question, not silently decided.
    roster enumeration + ring-record batch + CAM-001 camera pose under **ONE
    guarded reader lease** (single sanctioned walker — the three public
    methods now delegate to shared private cores), one G2 clock attestation
-   per frame, honest `hp: null`, ids-only privacy boundary; endpoint +
-   contract + 25 new tests (10 Core decoder, 4 coordinator frame, 3
-   endpoint, plus resolver/roster). The `LiveFrameSource` seam is DONE
+   per frame, ids-only privacy boundary; endpoint + contract + 25 new
+   tests (10 Core decoder, 4 coordinator frame, 3 endpoint, plus
+   resolver/roster). The `LiveFrameSource` seam is DONE
    too: `LiveFrameProjector` (Application, pure) maps `LiveFrameReadResult`
    → the SAME `OverlayFrameProjection` shape; `GET /api/v1/live/frame`
    serves it projected to viewport pixels (the shared
@@ -167,8 +167,17 @@ open question, not silently decided.
    result carries `LiveFrameReadMeasurement` (anchor-scan start →
    camera-pose read end + the ONE G2 snapshot moment) through the endpoint
    DTO — only the live measurement itself is gated on the approved session.
-5. Then: L1 wiring (`hp` becomes real), the live overlay render pass, and
-   the future X1 live gate (policy-gated, not part of this design).
+5. **L1 wiring (`hp` becomes real).** ✅ DONE (2026-08-11): the batch item
+   gained an optional entity-base region (read under the SAME resolve and
+   the SAME single attestation — no second resolve, no doubled items past
+   the 16-cap), the pure `EntityBaseRegion` decoder (current int16 +0xB8 /
+   max +0x11C / alive +0xBA, fail-closed) feeds `LiveFrameTankState`
+   (`hpCurrent`/`hpMax`/`alive`), and `LiveFrameProjector` maps real
+   values to `HpFraction`/`MaxHealth`/`CurrentHealth`/`Alive` — the empty
+   bar stays only when the entity-base read failed or decoded invalid
+   (honest per-tank null, never fabricated).
+   Remaining: the live overlay render pass and the future X1 live gate
+   (policy-gated, not part of this design).
 
 ## Relationship to the consolidation checklist
 
