@@ -940,8 +940,9 @@ legacy armed evidence mode.)
 marker/ACL failures are the BLK-0026 class (resolved). The wrapper then
 prints: `game_pid`, `battle_session`, `entity_id`, `record_address`, and the
 final `verdict` line (in corrected mode: `write-observation-skipped`). Do
-not touch the game window (the launcher already shrank it and the dialog
-clicker is done). The poll's `clock_anchor appended` line tells whether the
+not touch the game window (the launcher already shrank it to 640×360 — at
+the second monitor's top-left when one is attached, else the primary's —
+and the dialog clicker is done). The poll's `clock_anchor appended` line tells whether the
 G2 anchor POST landed.
 
 **After — evidence review (a flag is claimable only when ALL of these hold):**

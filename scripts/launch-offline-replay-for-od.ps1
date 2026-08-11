@@ -57,16 +57,22 @@ param(
     # FRESH17: shrink the game window after the game settles so it never
     # covers the operator's other programs (a covering window steals the
     # foreground lock and swallows the dialog click - the recurring
-    # OD-044/FRESH16 focus class). Default 640x360 at the top-left corner,
-    # applied ONCE after the settle (the splash is fragile; SW_RESTORE churn
-    # during LoginOnReplay correlated with OnBackground). The clicker
-    # auto-scales its pixel thresholds from the captured window size, so the
-    # ready gate still fires at the small size. -NoResizeWindow opts out.
+    # OD-044/FRESH16 focus class). Default 640x360 placed at the top-left
+    # corner of the SECOND monitor when one is attached (see
+    # -NoSecondMonitorPlacement), else the primary's top-left, applied ONCE
+    # after the settle (the splash is fragile; SW_RESTORE churn during
+    # LoginOnReplay correlated with OnBackground). The clicker auto-scales
+    # its pixel thresholds from the captured window size, so the ready gate
+    # still fires at the small size. -NoResizeWindow opts out entirely.
     [int]$ResizeWindowWidth = 640,
     [int]$ResizeWindowHeight = 360,
     [int]$ResizeWindowX = 0,
     [int]$ResizeWindowY = 0,
-    [switch]$NoResizeWindow
+    [switch]$NoResizeWindow,
+    # Keep the resized window at the caller's X/Y (default: primary display
+    # top-left) even when a second monitor is attached. The default prefers
+    # the second monitor's top-left when one exists.
+    [switch]$NoSecondMonitorPlacement
 )
 
 Set-StrictMode -Version Latest
@@ -240,6 +246,62 @@ namespace OdLaunch {
             return SetWindowPos(h, IntPtr.Zero, x, y, w, hgt, SWP_NOZORDER | SWP_NOACTIVATE);
         }
         public static bool Restore(IntPtr h) { return ShowWindow(h, SW_RESTORE); }
+    }
+}
+'@ -ErrorAction Stop
+}
+
+# Second-monitor placement for the resized game window (FRESH17 follow-on): a
+# SEPARATE type from OdLaunch.WindowResize so an in-process autoloop relaunch
+# never hits a stale-type guard (same pattern as WindowResize vs Focus). Pure
+# Win32 interop - the script does not load System.Windows.Forms.
+if (-not ('OdLaunch.MonitorTarget' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace OdLaunch {
+    public static class MonitorTarget {
+        [StructLayout(LayoutKind.Sequential)]
+        public struct RECT { public int Left, Top, Right, Bottom; }
+        [StructLayout(LayoutKind.Sequential)]
+        public struct MONITORINFO {
+            public int cbSize;
+            public RECT rcMonitor;
+            public RECT rcWork;
+            public uint dwFlags;
+        }
+        public delegate bool MonitorEnumProc(IntPtr hMonitor, IntPtr hdcMonitor, ref RECT lprcMonitor, IntPtr dwData);
+        [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+        [DllImport("user32.dll")] public static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr lprcClip, MonitorEnumProc lpfnEnum, IntPtr dwData);
+        [DllImport("user32.dll", CharSet = CharSet.Auto)] public static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+        public const uint MONITORINFOF_PRIMARY = 1;
+        // Top-left of the first NON-primary monitor's work area (excludes the
+        // taskbar), in physical pixels once SetProcessDPIAware is active.
+        // Returns false when only the primary monitor is attached.
+        public static bool TryGetSecondMonitorTopLeft(out int x, out int y) {
+            x = 0;
+            y = 0;
+            SetProcessDPIAware();
+            bool found = false;
+            int foundX = 0;
+            int foundY = 0;
+            EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, delegate(IntPtr hMon, IntPtr hdc, ref RECT rc, IntPtr data) {
+                MONITORINFO mi = new MONITORINFO();
+                mi.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
+                if (GetMonitorInfo(hMon, ref mi)) {
+                    if ((mi.dwFlags & MONITORINFOF_PRIMARY) == 0) {
+                        foundX = mi.rcWork.Left;
+                        foundY = mi.rcWork.Top;
+                        found = true;
+                        return false;
+                    }
+                }
+                return true;
+            }, IntPtr.Zero);
+            x = foundX;
+            y = foundY;
+            return found;
+        }
     }
 }
 '@ -ErrorAction Stop
@@ -566,8 +628,24 @@ try {
             [void][OdLaunch.WindowResize]::GetWindowRect($rg.MainWindowHandle, [ref]$before)
             $wasZoomed = [OdLaunch.WindowResize]::IsZoomed($rg.MainWindowHandle)
             if ($wasZoomed) { [void][OdLaunch.WindowResize]::Restore($rg.MainWindowHandle) }
+            # Place the resized window at the second monitor's top-left when
+            # one is attached; otherwise keep the caller's X/Y (default 0,0).
+            $resizeX = $ResizeWindowX
+            $resizeY = $ResizeWindowY
+            if (-not $NoSecondMonitorPlacement) {
+                $monX = 0
+                $monY = 0
+                if ([OdLaunch.MonitorTarget]::TryGetSecondMonitorTopLeft([ref]$monX, [ref]$monY)) {
+                    $resizeX = $monX
+                    $resizeY = $monY
+                    Write-Od ("resize_window second_monitor top_left=" + $monX + "," + $monY)
+                }
+                else {
+                    Write-Od 'resize_window second_monitor none_primary_top_left'
+                }
+            }
             $resized = [OdLaunch.WindowResize]::Resize(
-                $rg.MainWindowHandle, $ResizeWindowWidth, $ResizeWindowHeight, $ResizeWindowX, $ResizeWindowY)
+                $rg.MainWindowHandle, $ResizeWindowWidth, $ResizeWindowHeight, $resizeX, $resizeY)
             Start-Sleep -Milliseconds 300
             $after = New-Object OdLaunch.WindowResize+RECT
             [void][OdLaunch.WindowResize]::GetWindowRect($rg.MainWindowHandle, [ref]$after)
