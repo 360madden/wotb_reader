@@ -27,11 +27,26 @@
       extra pos copy  +0xB0/+0xB4/+0xB8
 
   Correlation is now done in MEMORY space: the viewpoint tank position is
-  read via /discover/entity-position at the same wall time as the camera,
-  so the camera-to-tank offset needs no decoded-clock alignment. The yaw is
-  additionally aligned to the decoded frame yaw over the timeline (same
-  convention confirmed: 0.0027 rad best match) to bridge into decoded
-  space for the W2S path.
+  read at the same wall time as the camera, so the camera-to-tank offset
+  needs no decoded-clock alignment. The yaw is additionally aligned to the
+  decoded frame yaw over the timeline (same convention confirmed: 0.0027
+  rad best match) to bridge into decoded space for the W2S path.
+
+  CORRECTED v6 (2026-08-11): /discover/entity-position (and
+  /discover/position-page) are gated on the resolver's hard-coded vtable
+  checks (session-controller-vtable etc.) which only match ONE game phase
+  — today's sessions hit a different session-controller vftable
+  (base+0x325ad2c vs the recorded 0x323d9bc), so both endpoints refuse. The
+  od-073 24/24 evidence (2026-08-09) proves the underlying chain resolves
+  during replay playback, so v6 falls back to a DIRECT manual walk of the
+  resolver chain (gameCore -> app -> session -> account -> playback ->
+  connection -> entities -> cached/tree -> entity -> movementFilter ->
+  avatar-helper ring -> position record) with NO vtable gates, using the
+  same layout constants. The reads happen in the od-073-proven window
+  (StageDelaySeconds default 55 = gate+55s..+72s), and the memory tank
+  position is compared against the decoded trajectory at the yaw-aligned
+  time to record the memory<->decoded origin delta (coordinate
+  calibration).
 
   ASLR note (verified 2026-08-11 on the hash-pinned binary): wotblitz.exe
   has DllCharacteristics 0x8140 (DYNAMIC_BASE set), so the runtime vftable
@@ -108,7 +123,7 @@
 param(
     [string]$SessionId = '',
     [int]$WaitVerifiedSeconds = 180,
-    [int]$StageDelaySeconds = 15,
+    [int]$StageDelaySeconds = 55,
     [int]$ReadCount = 6,
     [int]$ReadIntervalMilliseconds = 750,
     [int]$MaxCandidates = 20,
@@ -302,6 +317,148 @@ function Convert-HexToBytes([string]$Hex) {
     return $bytes
 }
 
+function Read-MemoryUInt32([long]$Address) {
+    if ($Address -lt 0x10000) { return $null }
+    try {
+        $read = Invoke-OdApi -Method 'Post' `
+            -RelativePath '/api/v1/game/discover/read' `
+            -Body @{
+                addresses = @(('0x' + $Address.ToString('X')))
+                valueKind = 'UInt32'
+                valueSize = 4
+            }
+        $item = $read.reads[0]
+        if ($null -eq $item -or -not [bool]$item.readOk -or
+            [string]::IsNullOrWhiteSpace([string]$item.observedValueHex)) {
+            return $null
+        }
+        $bytes = Convert-HexToBytes -Hex ([string]$item.observedValueHex)
+        if ($bytes.Length -ne 4) { return $null }
+        return [long][BitConverter]::ToUInt32($bytes, 0)
+    }
+    catch {
+        return $null
+    }
+}
+
+function Read-MemoryFloat([long]$Address) {
+    if ($Address -lt 0x10000) { return [double]::NaN }
+    try {
+        $read = Invoke-OdApi -Method 'Post' `
+            -RelativePath '/api/v1/game/discover/read' `
+            -Body @{
+                addresses = @(('0x' + $Address.ToString('X')))
+                valueKind = 'Float'
+                valueSize = 4
+            }
+        $item = $read.reads[0]
+        if ($null -eq $item -or -not [bool]$item.readOk -or
+            [string]::IsNullOrWhiteSpace([string]$item.observedValueHex)) {
+            return [double]::NaN
+        }
+        $bytes = Convert-HexToBytes -Hex ([string]$item.observedValueHex)
+        if ($bytes.Length -ne 4) { return [double]::NaN }
+        return [double][single][BitConverter]::ToSingle($bytes, 0)
+    }
+    catch {
+        return [double]::NaN
+    }
+}
+
+function Walk-EntityPositionMemory {
+    param(
+        [long]$ModuleBase,
+        [int]$EntityId
+    )
+    # Manual replication of the Type10EntityPositionResolver chain for
+    # 11.19.0.10 WITHOUT the phase-fragile vtable gates. Same layout
+    # constants; the od-073 24/24 evidence proves the chain resolves during
+    # replay playback. Returns @{x;y;z;source} or $null.
+    $gameCore = Read-MemoryUInt32 -Address ($ModuleBase + 0x04095c88)
+    if ($null -eq $gameCore) { return $null }
+    $app = Read-MemoryUInt32 -Address ($gameCore + 0x0c)
+    $session = Read-MemoryUInt32 -Address ($app + 0x124)
+    $account = Read-MemoryUInt32 -Address ($session + 0x118)
+    $playback = Read-MemoryUInt32 -Address ($account + 0x128)
+    if ($null -eq $playback -or $playback -lt 0x10000) { return $null }
+    $connection = Read-MemoryUInt32 -Address ($playback + 0x120)
+    if ($null -eq $connection -or $connection -lt 0x10000) { return $null }
+    $entities = $connection + 0x04
+
+    # FindEntity: cached entity first, then the three trees.
+    $entity = $null
+    $source = ''
+    $cached = Read-MemoryUInt32 -Address ($entities + 0x48)
+    if ($null -ne $cached -and $cached -ge 0x10000) {
+        $cachedId = Read-MemoryUInt32 -Address ($cached + 0x1c)
+        if ($null -ne $cachedId -and $cachedId -eq $EntityId) {
+            $entity = $cached
+            $source = 'cache'
+        }
+    }
+    if ($null -eq $entity) {
+        foreach ($treeOff in @(0x1c, 0x40, 0x34)) {
+            $sentinel = Read-MemoryUInt32 -Address ($entities + $treeOff)
+            if ($null -eq $sentinel -or $sentinel -lt 0x10000) { continue }
+            $node = Read-MemoryUInt32 -Address ($sentinel + 0x04)
+            $visited = New-Object 'System.Collections.Generic.HashSet[long]'
+            $steps = 0
+            while ($null -ne $node -and $node -ge 0x10000 -and $steps -lt 1024) {
+                $steps++
+                if (-not $visited.Add($node)) { break }
+                $left = Read-MemoryUInt32 -Address $node
+                $right = Read-MemoryUInt32 -Address ($node + 0x08)
+                $nilDword = Read-MemoryUInt32 -Address ($node + 0x0c)
+                $key = Read-MemoryUInt32 -Address ($node + 0x10)
+                $value = Read-MemoryUInt32 -Address ($node + 0x14)
+                $nilFlag = if ($null -eq $nilDword) { 0 } else { ($nilDword -band 0xFF) }
+                if ($nilFlag -eq 1) { break }
+                if ($null -ne $key -and $key -eq $EntityId -and
+                    $null -ne $value -and $value -ge 0x10000) {
+                    $entity = $value
+                    $source = 'tree'
+                    break
+                }
+                $node = if ($EntityId -lt $key) { $left } else { $right }
+            }
+            if ($null -ne $entity) { break }
+        }
+    }
+    if ($null -eq $entity) { return $null }
+
+    $movementFilter = Read-MemoryUInt32 -Address ($entity + 0x38)
+    if ($null -eq $movementFilter -or $movementFilter -lt 0x10000) { return $null }
+    $helper = Read-MemoryUInt32 -Address ($movementFilter + 0x08)
+    if ($null -eq $helper -or $helper -lt 0x10000) { return $null }
+    $index = Read-MemoryUInt32 -Address ($helper + 0x1c8)
+    if ($null -eq $index -or $index -ge 8) { return $null }
+    $recordAddress = $helper + 0x08 + $index * 0x38
+
+    # Double-read stability (ring index stable + record unchanged).
+    $idxA = Read-MemoryUInt32 -Address ($helper + 0x1c8)
+    $x1 = Read-MemoryFloat -Address ($recordAddress + 0x10)
+    $y1 = Read-MemoryFloat -Address ($recordAddress + 0x14)
+    $z1 = Read-MemoryFloat -Address ($recordAddress + 0x18)
+    $idxB = Read-MemoryUInt32 -Address ($helper + 0x1c8)
+    $x2 = Read-MemoryFloat -Address ($recordAddress + 0x10)
+    $y2 = Read-MemoryFloat -Address ($recordAddress + 0x14)
+    $z2 = Read-MemoryFloat -Address ($recordAddress + 0x18)
+    if ($null -eq $idxA -or $null -eq $idxB -or
+        $idxA -ne $index -or $idxB -ne $index) {
+        return $null
+    }
+    if (-not (Test-Finite -Value $x1) -or -not (Test-Finite -Value $y1) -or
+        -not (Test-Finite -Value $z1)) {
+        return $null
+    }
+    if ([Math]::Abs($x1 - $x2) -gt 0.0001 -or
+        [Math]::Abs($y1 - $y2) -gt 0.0001 -or
+        [Math]::Abs($z1 - $z2) -gt 0.0001) {
+        return $null
+    }
+    return @{ x = $x1; y = $y1; z = $z1; source = $source }
+}
+
 function Write-AggregateResult([hashtable]$Aggregate) {
     try {
         $parent = Split-Path -Parent $ResultPath
@@ -468,6 +625,9 @@ $yawDeltaRadians = $null
 $alignedDecodedSeconds = $null
 $offsetNorm = $null
 $offsetNormC = $null
+$memoryTankSource = ''
+$entityPositionStatus = ''
+$memoryDecodedDelta = $null
 $cameraVftableMatches = $false
 $cameraStateVftableHex = $null
 $cameraStateIdentityMatches = $false
@@ -722,11 +882,15 @@ for ($round = 0; $round -lt $ReadCount; $round++) {
             $roundsYawCorrelated += 1
         }
 
-        # Position: camera-to-tank offset IN MEMORY SPACE. The viewpoint
-        # tank position is read via /discover/entity-position at the same
-        # wall time as the camera, so no decoded-clock alignment is needed.
-        # A third-person camera sits ~1-30 m from the tank.
+        # Position: camera-to-tank offset IN MEMORY SPACE. Prefer the
+        # server /discover/entity-position; fall back to the direct
+        # resolver-chain walk (v6: the endpoint's vtable gates are
+        # phase-fragile; the direct walk has none). A third-person camera
+        # sits ~1-30 m from the tank.
         $roundPosition = $false
+        $tankX = $null
+        $tankY = $null
+        $tankZ = $null
         try {
             $entityPos = Invoke-OdApi -Method 'Post' `
                 -RelativePath '/api/v1/game/discover/entity-position' `
@@ -737,24 +901,64 @@ for ($round = 0; $round -lt $ReadCount; $round++) {
             if ([string]$entityPos.status -eq 'Resolved' -and
                 $null -ne $entityPos.x -and $null -ne $entityPos.y -and
                 $null -ne $entityPos.z) {
-                $tx = [double]$entityPos.x
-                $ty = [double]$entityPos.y
-                $tz = [double]$entityPos.z
-                $dx = [double]$fieldMap['posAX'] - $tx
-                $dy = [double]$fieldMap['posAY'] - $ty
-                $dz = [double]$fieldMap['posAZ'] - $tz
-                $offsetNorm = [Math]::Sqrt(($dx * $dx) + ($dy * $dy) + ($dz * $dz))
-                $dxc = [double]$fieldMap['posCX'] - $tx
-                $dyc = [double]$fieldMap['posCY'] - $ty
-                $dzc = [double]$fieldMap['posCZ'] - $tz
-                $offsetNormC = [Math]::Sqrt(($dxc * $dxc) + ($dyc * $dyc) + ($dzc * $dzc))
-                if (($offsetNorm -ge 1.0 -and $offsetNorm -le 30.0) -or
-                    ($offsetNormC -ge 1.0 -and $offsetNormC -le 30.0)) {
-                    $roundPosition = $true
+                $tankX = [double]$entityPos.x
+                $tankY = [double]$entityPos.y
+                $tankZ = [double]$entityPos.z
+                $memoryTankSource = 'entity-position'
+            }
+            else {
+                $entityPositionStatus = [string]$entityPos.status + ':' +
+                    [string]$entityPos.failureStage
+            }
+        }
+        catch {
+            $entityPositionStatus = 'threw'
+        }
+        if ($null -eq $tankX) {
+            $walked = Walk-EntityPositionMemory `
+                -ModuleBase $runtimeBase -EntityId $viewpointEntityId
+            if ($null -ne $walked) {
+                $tankX = $walked.x
+                $tankY = $walked.y
+                $tankZ = $walked.z
+                $memoryTankSource = 'direct-walk:' + $walked.source
+            }
+            else {
+                $entityPositionStatus += '+direct-walk-failed'
+            }
+        }
+        if ($null -ne $tankX) {
+            $dx = [double]$fieldMap['posAX'] - $tankX
+            $dy = [double]$fieldMap['posAY'] - $tankY
+            $dz = [double]$fieldMap['posAZ'] - $tankZ
+            $offsetNorm = [Math]::Sqrt(($dx * $dx) + ($dy * $dy) + ($dz * $dz))
+            $dxc = [double]$fieldMap['posCX'] - $tankX
+            $dyc = [double]$fieldMap['posCY'] - $tankY
+            $dzc = [double]$fieldMap['posCZ'] - $tankZ
+            $offsetNormC = [Math]::Sqrt(($dxc * $dxc) + ($dyc * $dyc) + ($dzc * $dzc))
+            if (($offsetNorm -ge 1.0 -and $offsetNorm -le 30.0) -or
+                ($offsetNormC -ge 1.0 -and $offsetNormC -le 30.0)) {
+                $roundPosition = $true
+            }
+            # Coordinate calibration: memory tank vs decoded trajectory at
+            # the yaw-aligned time. A constant delta across rounds = the
+            # memory<->decoded origin offset for the W2S path.
+            if ($null -ne $alignedDecodedSeconds) {
+                $calTicks = [long]($alignedDecodedSeconds * 10000000)
+                $calSample = $viewpoint.samples |
+                    Sort-Object { [Math]::Abs([long]$_.replayTimeTicks - $calTicks) } |
+                    Select-Object -First 1
+                if ($null -ne $calSample) {
+                    $cdx = $tankX - [double]$calSample.x
+                    $cdy = $tankY - [double]$calSample.y
+                    $cdz = $tankZ - [double]$calSample.z
+                    $calNorm = [Math]::Sqrt(($cdx * $cdx) + ($cdy * $cdy) + ($cdz * $cdz))
+                    if ($null -eq $memoryDecodedDelta -or $calNorm -lt $memoryDecodedDelta) {
+                        $memoryDecodedDelta = $calNorm
+                    }
                 }
             }
         }
-        catch { }
         if ($roundPosition) {
             $roundsPositionCorrelated += 1
         }
@@ -798,7 +1002,7 @@ else {
 }
 
 $aggregate = [ordered]@{
-    schema                = 'wotbtreader.cam001.camera-state-verify.v5'
+    schema                = 'wotbtreader.cam001.camera-state-verify.v6'
     campaign              = 'cam-001-camera-state'
     completedAtUtc        = [DateTime]::UtcNow.ToString('o')
     verdict               = $verdict
@@ -822,6 +1026,9 @@ $aggregate = [ordered]@{
     alignedDecodedSeconds = $alignedDecodedSeconds
     thirdPersonOffsetNorm = $offsetNorm
     extraPositionOffsetNorm = $offsetNormC
+    memoryTankSource      = $memoryTankSource
+    entityPositionStatus  = $entityPositionStatus
+    memoryDecodedDelta    = $memoryDecodedDelta
     groundTruthBoundToLaunchArtifact = $true
     groundTruthSelection  = $groundTruthSelection
     cameraStateVerified   = $cameraStateVerified
@@ -845,5 +1052,6 @@ Write-Host ('cam001: verdict=' + $verdict +
     ' pos_correlated_rounds=' + $roundsPositionCorrelated +
     ' offset_norm=' + [string]$offsetNorm +
     ' extra_offset_norm=' + [string]$offsetNormC +
+    ' tank_source=' + $memoryTankSource +
     ' aligned_s=' + [string]$alignedDecodedSeconds)
 exit 0
