@@ -276,6 +276,8 @@ internal static class ReadApiEndpoints
                 Name = beacon.Name,
                 Color = beacon.Color,
                 DistanceMeters = beacon.DistanceMeters,
+                WorldX = beacon.WorldX,
+                WorldZ = beacon.WorldZ,
                 ScreenX = beacon.ScreenX,
                 ScreenY = beacon.ScreenY,
                 Depth = beacon.Depth,

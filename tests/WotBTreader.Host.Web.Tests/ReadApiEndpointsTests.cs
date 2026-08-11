@@ -575,6 +575,9 @@ public sealed class ReadApiEndpointsTests
         Assert.AreEqual(960.0, flag.ScreenX!.Value, 1e-6);
         Assert.AreEqual(540.0, flag.ScreenY!.Value, 1e-6);
         Assert.IsTrue(flag.InViewport);
+        // World coords ride through for the minimap.
+        Assert.AreEqual(0.0, flag.WorldX, 1e-9);
+        Assert.AreEqual(100.0, flag.WorldZ, 1e-9);
     }
 
     private sealed class FakeBeaconStore(IReadOnlyList<OverlayBeacon>? beacons = null) : IBeaconStore

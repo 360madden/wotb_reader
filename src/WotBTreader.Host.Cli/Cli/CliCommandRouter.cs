@@ -583,6 +583,8 @@ public sealed class CliCommandRouter
                 beacon.Name,
                 beacon.Color,
                 beacon.DistanceMeters,
+                beacon.WorldX,
+                beacon.WorldZ,
                 screen = beacon.ScreenX is null
                     ? null
                     : new

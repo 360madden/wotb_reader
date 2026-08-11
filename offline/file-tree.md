@@ -233,6 +233,7 @@ docs/operations/handoffs/2026-08-10-v1-facing-arrows-nameplates.md
 docs/operations/handoffs/2026-08-10-v2-event-feed-pips.md
 docs/operations/handoffs/2026-08-10-v2-killfeed.md
 docs/operations/handoffs/2026-08-10-v4-godview-minimap.md
+docs/operations/handoffs/2026-08-10-v4-minimap-beacons.md
 docs/operations/handoffs/2026-08-10-w2s-hud-nameplates.md
 docs/operations/handoffs/2026-08-10-walkable-position-chain-applied.md
 docs/operations/handoffs/2026-08-10-walkable-position-chain-draft.md
@@ -552,6 +553,7 @@ src/WotBTreader.Overlay/Services/TreaderApiClient.cs
 src/WotBTreader.Overlay/ViewModels/BeaconItem.cs
 src/WotBTreader.Overlay/ViewModels/KillItem.cs
 src/WotBTreader.Overlay/ViewModels/MainViewModel.cs
+src/WotBTreader.Overlay/ViewModels/MinimapBeaconItem.cs
 src/WotBTreader.Overlay/ViewModels/MinimapItem.cs
 src/WotBTreader.Overlay/ViewModels/MinimapMath.cs
 src/WotBTreader.Overlay/ViewModels/NameplateItem.cs

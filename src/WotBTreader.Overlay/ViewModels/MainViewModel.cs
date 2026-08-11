@@ -72,6 +72,7 @@ public class MainViewModel : INotifyPropertyChanged
     private readonly ObservableCollection<BeaconItem> _beacons = [];
     private readonly ObservableCollection<PipItem> _pips = [];
     private readonly ObservableCollection<MinimapItem> _minimapItems = [];
+    private readonly ObservableCollection<MinimapBeaconItem> _minimapBeacons = [];
     private readonly ObservableCollection<KillItem> _killFeed = [];
     private CancellationTokenSource? _frameLoadCts;
     private long _frameLoadGeneration;
@@ -427,6 +428,10 @@ public class MainViewModel : INotifyPropertyChanged
     /// roster tank's nearest position sample.</summary>
     public ObservableCollection<MinimapItem> MinimapItems => _minimapItems;
 
+    /// <summary>Beacons on the minimap panel (normalized 0..1 coordinates),
+    /// rebuilt every frame from the frame's visible beacons and the boundary.</summary>
+    public ObservableCollection<MinimapBeaconItem> MinimapBeacons => _minimapBeacons;
+
     /// <summary>Camera world X for the minimap marker; null when the
     /// viewpoint has no position evidence.</summary>
     public double? MinimapCameraX => _minimapCameraX;
@@ -504,6 +509,7 @@ public class MainViewModel : INotifyPropertyChanged
             _beacons.Clear();
             _pips.Clear();
             _minimapItems.Clear();
+            _minimapBeacons.Clear();
             _minimapCameraX = frame.CameraX;
             _minimapCameraZ = frame.CameraZ;
             BuildMinimap(frame);
@@ -578,7 +584,8 @@ public class MainViewModel : INotifyPropertyChanged
 
     /// <summary>
     /// Rebuilds <see cref="MinimapItems"/> from the frame's tanks and the
-    /// session's map boundary. God-view: every roster tank with a position
+    /// session's map boundary, and <see cref="MinimapBeacons"/> from the
+    /// frame's visible beacons. God-view: every roster tank with a position
     /// sample appears, dead or alive, in or out of viewport. When the map
     /// boundary is degenerate/absent the panel renders nothing (fail-closed).
     /// </summary>
@@ -600,6 +607,22 @@ public class MainViewModel : INotifyPropertyChanged
                 normalized.Value.V,
                 tank.TeamNumber,
                 tank.Alive));
+        }
+
+        foreach (OverlayBeaconResponse beacon in frame.Beacons)
+        {
+            (double U, double V)? normalized = MinimapMath.Normalize(
+                beacon.WorldX, beacon.WorldZ, minX, maxX, minZ, maxZ);
+            if (normalized is null)
+            {
+                continue;
+            }
+
+            _minimapBeacons.Add(new MinimapBeaconItem(
+                beacon.Name,
+                beacon.Color,
+                normalized.Value.U,
+                normalized.Value.V));
         }
     }
 

@@ -71,6 +71,7 @@ public sealed partial class W2sHudView : UserControl
         IReadOnlyList<PipItem> pips,
         IReadOnlyList<NameplateItem> items,
         IReadOnlyList<MinimapItem> minimap,
+        IReadOnlyList<MinimapBeaconItem> minimapBeacons,
         double? cameraX,
         double? cameraZ,
         IReadOnlyList<KillItem> killFeed,
@@ -93,9 +94,10 @@ public sealed partial class W2sHudView : UserControl
             HudCanvas.Children.Add(BuildNameplate(item, viewportWidth, viewportHeight));
         }
 
-        if (minimap.Count > 0)
+        if (minimap.Count > 0 || minimapBeacons.Count > 0)
         {
-            HudCanvas.Children.Add(BuildMinimap(minimap, cameraX, cameraZ, viewportWidth, viewportHeight));
+            HudCanvas.Children.Add(
+                BuildMinimap(minimap, minimapBeacons, cameraX, cameraZ, viewportWidth, viewportHeight));
         }
 
         if (killFeed.Count > 0)
@@ -159,6 +161,7 @@ public sealed partial class W2sHudView : UserControl
     /// </summary>
     private static Canvas BuildMinimap(
         IReadOnlyList<MinimapItem> minimap,
+        IReadOnlyList<MinimapBeaconItem> minimapBeacons,
         double? cameraX,
         double? cameraZ,
         double viewportWidth,
@@ -176,6 +179,30 @@ public sealed partial class W2sHudView : UserControl
         };
         Canvas.SetRight(panel, margin);
         Canvas.SetBottom(panel, margin);
+
+        // Beacons first (under the tank dots): small diamonds in their own
+        // marker color, so POIs read even where they overlap tanks.
+        foreach (MinimapBeaconItem beacon in minimapBeacons)
+        {
+            Brush markerBrush = CreateBrush(beacon.Color);
+            var diamond = new Polygon
+            {
+                Points = new PointCollection
+                {
+                    new Point(0, -5),
+                    new Point(5, 0),
+                    new Point(0, 5),
+                    new Point(-5, 0),
+                },
+                Fill = markerBrush,
+                Stroke = CreateBrush("#CC000000"),
+                StrokeThickness = 1,
+                RenderTransform = new TranslateTransform(
+                    beacon.NormalizedX * panelSize,
+                    beacon.NormalizedZ * panelSize),
+            };
+            panel.Children.Add(diamond);
+        }
 
         foreach (MinimapItem item in minimap)
         {

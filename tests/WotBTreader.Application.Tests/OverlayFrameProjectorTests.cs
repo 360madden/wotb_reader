@@ -148,9 +148,15 @@ public sealed class OverlayFrameProjectorTests
         Assert.AreEqual(540, front.ScreenY!.Value, 1e-6);
         Assert.IsTrue(front.InViewport);
         Assert.AreEqual(100, front.DistanceMeters, 1e-9);
+        // World coords ride through for the minimap (god-view), even for the
+        // behind-camera beacon whose screen projection is null.
+        Assert.AreEqual(0.0, front.WorldX, 1e-9);
+        Assert.AreEqual(100.0, front.WorldZ, 1e-9);
         ProjectedBeacon behind = projection.Beacons.Single(beacon => beacon.Name == "Behind");
         Assert.IsNull(behind.ScreenX);
         Assert.IsFalse(behind.InViewport);
+        Assert.AreEqual(0.0, behind.WorldX, 1e-9);
+        Assert.AreEqual(-100.0, behind.WorldZ, 1e-9);
     }
 
     [TestMethod]

@@ -1076,6 +1076,9 @@ public sealed class MainViewModelTests
                 { "entityId": 1, "playerName": "Self", "tankName": null, "clanTag": null, "teamNumber": 1, "hpFraction": 1.0, "alive": true, "distanceMeters": 0.0, "worldX": -100.0, "worldZ": -100.0, "screenX": 960.0, "screenY": 540.0, "depth": 1.0, "inViewport": true },
                 { "entityId": 2, "playerName": "Alpha", "tankName": "TankA", "clanTag": null, "teamNumber": 2, "hpFraction": 0.5, "alive": true, "distanceMeters": 120.0, "worldX": 0.0, "worldZ": 0.0, "screenX": 800.0, "screenY": 400.0, "depth": 80.0, "inViewport": true },
                 { "entityId": 5, "playerName": "Wreck", "tankName": null, "clanTag": null, "teamNumber": 1, "hpFraction": 0.0, "alive": false, "distanceMeters": 90.0, "worldX": 100.0, "worldZ": 100.0, "screenX": null, "screenY": null, "depth": null, "inViewport": false }
+              ],
+              "beacons": [
+                { "name": "Flag", "color": "#FFD700", "distanceMeters": 50.0, "worldX": 50.0, "worldZ": -50.0, "screenX": null, "screenY": null, "depth": null, "inViewport": false }
               ]
             }
             """;
@@ -1133,6 +1136,13 @@ public sealed class MainViewModelTests
         Assert.AreEqual(1.0, wreck.NormalizedX, 1e-9);
         Assert.AreEqual(1.0, wreck.NormalizedZ, 1e-9);
         Assert.IsFalse(wreck.Alive);
+        // The beacon normalizes onto the same boundary even though it is
+        // behind the camera (god-view): world (50, -50) -> (0.75, 0.25).
+        MinimapBeaconItem flag = viewModel.MinimapBeacons.Single();
+        Assert.AreEqual("Flag", flag.Name);
+        Assert.AreEqual("#FFD700", flag.Color);
+        Assert.AreEqual(0.75, flag.NormalizedX, 1e-9);
+        Assert.AreEqual(0.25, flag.NormalizedZ, 1e-9);
         Assert.AreEqual(0.0, viewModel.MinimapCameraX!.Value, 1e-9);
         Assert.AreEqual(0.0, viewModel.MinimapCameraZ!.Value, 1e-9);
     }

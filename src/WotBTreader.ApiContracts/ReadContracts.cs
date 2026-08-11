@@ -381,6 +381,14 @@ public sealed record OverlayBeaconResponse
     /// <summary>Distance from the camera in world units.</summary>
     public double DistanceMeters { get; init; }
 
+    /// <summary>World X of the beacon (replay-raw space). Camera-independent;
+    /// used by the minimap so POIs appear regardless of what the camera sees.</summary>
+    public double WorldX { get; init; }
+
+    /// <summary>World Z of the beacon (replay-raw space). Camera-independent;
+    /// used by the minimap.</summary>
+    public double WorldZ { get; init; }
+
     /// <summary>Projected viewport X (pixels from the left); null = behind camera.</summary>
     public double? ScreenX { get; init; }
 
