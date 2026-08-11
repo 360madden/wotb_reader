@@ -260,6 +260,7 @@ docs/operations/handoffs/2026-08-11-cli-frame-png-preview.md
 docs/operations/handoffs/2026-08-11-damage-ledger-subtype1.md
 docs/operations/handoffs/2026-08-11-entity-base-record-map.md
 docs/operations/handoffs/2026-08-11-exact-overlay-hp-wired.md
+docs/operations/handoffs/2026-08-11-minimap-correctness-unification.md
 docs/operations/handoffs/2026-08-11-playerhp-static-chain.md
 docs/operations/handoffs/2026-08-11-replay-clock-write-site-negative.md
 docs/operations/handoffs/2026-08-11-transform-record-verified.md
@@ -738,6 +739,7 @@ tests/WotBTreader.Host.Web.Tests/GameApiEndpointsTests.cs
 tests/WotBTreader.Host.Web.Tests/LocalMutationSecurityTests.cs
 tests/WotBTreader.Host.Web.Tests/LoopbackOnlyMiddlewareTests.cs
 tests/WotBTreader.Host.Web.Tests/MSTestSettings.cs
+tests/WotBTreader.Host.Web.Tests/MinimapTextureFolderTests.cs
 tests/WotBTreader.Host.Web.Tests/ProjectionCacheWarmerTests.cs
 tests/WotBTreader.Host.Web.Tests/ReadApiEndpointsTests.cs
 tests/WotBTreader.Host.Web.Tests/WotBTreader.Host.Web.Tests.csproj
