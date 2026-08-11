@@ -88,15 +88,26 @@ player must share the file.
   detection needs turret data — absent from the replay, a live-memory
   discovery target.
 
-## Next units (offline, ready to start)
+## Next units
 
 1. ~~Enemy-track overlay frame~~ — already present in the frame contract;
    the aim-line is now a tested Core utility.
 2. Multi-perspective comparison via `comparison_runs` when a second
    player's file is obtainable.
-3. Live enemy-roster read design (entity-regions serving all enemy ring
-   records) — pre-staged for the next approved session; turret/target
-   fields ride on that discovery.
+3. ~~Live enemy-roster read design~~ — DESIGNED 2026-08-11:
+   `docs/operations/live-roster-read-design.md` (X3). Closes the one gap
+   between the batch rehearsal and live frames: the batch surface takes
+   entity ids, but live mode has no decoded participants table, so the ids
+   are enumerated from the game's own entity maps via a **full-tree walk**
+   (both children per node, vs the resolver's branch-pruned search), deduped
+   across cache + three maps, filtered by the movement-filter vtable set,
+   and returned **ids only** through a new `POST /discover/entity-roster`
+   endpoint that feeds the unchanged `entity-regions` batch. Design is
+   PROPOSAL (no code yet); the first implementation unit is the pure
+   resolver enumeration + coordinator/endpoint/tests, and the rehearsal
+   driver gains an `-EnumerateLive` mode that **measures the movement-filter
+   precision** against the decoded roster on the next approved session.
+   Turret/target/lock fields ride on that per-entity surface.
 
 ## Files touched
 
