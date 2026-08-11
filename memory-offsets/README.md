@@ -78,9 +78,9 @@ the published table.
 observation path.
 
 **playerHP static chain (2026-08-11, NOT promoted — live verification
-still required):** `VerifyPlayerHpChain.java` (hash-bound, 16/16 checks,
-verdict `player-hp-chain-verified` on `1cda5c31…1760307d`) pins the
-entity base record's health block: current health as a **signed int16 at
+still required):** `VerifyPlayerHpChain.java` (hash-bound, **26/26 checks**, verdict
+`player-hp-chain-verified` on `1cda5c31…1760307d`) pins the entity base
+record's health block: current health as a **signed int16 at
 `[entity+0xB8]`**, alive byte at `[entity+0xBA]`, **max health int16 at
 `[entity+0x11C]`**, healing int16 at `[entity+0x11E]`, and packed gun
 angles (2 × 6-bit) at `[entity+0x7E]`. Evidence: VehicleGameLogic vftable
@@ -95,6 +95,17 @@ the entity record itself. `playerHP` remains `0`/Unknown in the table
 until the L1 live session confirms the field empirically on both 11.19.0
 replays; the `entity-base` region anchor + int16 correlator pass
 (2026-08-11) are the session's tools.
+
+**Entity-base record map beyond HP (2026-08-11, static-only, not
+promoted):** the full VehicleGameLogic setter family extends the map for
+future discovery — strafing byte `[entity+0x7C]`, engine-mode object ptr
+`[entity+0xBC]` (mode + sub byte), hit-marks vector `[entity+0xC8]`,
+byte-array mask pair `[entity+0xD4]`/`[entity+0xD8]`, critical-devices
+list `[entity+0xE0]`, destroyed-devices list `[entity+0xEC]`,
+active-equipments list `[entity+0xF8]`, debug-strings state
+`[entity+0x110]` — all read through the entity getter by their setters and
+covered by the same 26-check verifier run. Not promoted; they spare future
+scans from re-scanning the record.
 
 ## Confidence levels
 

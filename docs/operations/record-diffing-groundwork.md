@@ -162,21 +162,32 @@ The L0 seam is now IMPLEMENTED (2026-08-10):
    `FUN_01675f60` does the same with property-changed listener dispatch
    (vtable +0x68).
 
-   **The entity-base health block (11.19.0.10, statically verified):**
+   **The entity-base record map (11.19.0.10, statically verified 26/26 by
+   `VerifyPlayerHpChain`, 2026-08-11):**
 
-   | Offset | Width | Field |
-   |---|---|---|
-   | `+0x7E` | int16 | gun angles packed (2 × 6-bit, `set_gunAnglesPacked`) |
-   | `+0xB8` | int16 | current health (`set_health`) |
-   | `+0xBA` | byte | alive flag (`set_isAlive`) |
-   | `+0x11C` | int16 | max health (`set_maxHealth`) |
-   | `+0x11E` | int16 | healing health (`set_healingHealth`) |
+   | Offset | Width | Field | Anchor |
+   |---|---|---|---|
+   | `+0x7C` | byte | isStrafing | `set_isStrafing` (0x12eead0) |
+   | `+0x7E` | int16 | gun angles packed (2 × 6-bit) | `set_gunAnglesPacked` (0x12ee230) |
+   | `+0xB8` | int16 | current health | `set_health` (0x12ee450) + state-sync writer |
+   | `+0xBA` | byte | alive flag | `set_isAlive` (0x12ee990) |
+   | `+0xBC` | ptr | engine-mode object (byte mode + sub-byte) | `set_engineMode` (0x12ee110) |
+   | `+0xC8` | vector | hit-marks list | `set_hitMarks` (0x12ee5a0) |
+   | `+0xD4`/`+0xD8` | ptr pair | byte-array mask state | `FUN_016ef1a0` |
+   | `+0xE0` | list | critical devices | `set_criticalDevices` (0x12edae0) |
+   | `+0xEC` | list | destroyed devices | `set_destroyedDevices` (0x12edf60) |
+   | `+0xF8` | list | active equipments | `set_activeEquipments` (0x12ecd90) |
+   | `+0x110` | state | debug strings | `set_debugStrings` (0x12ede90) |
+   | `+0x11C` | int16 | max health | `set_maxHealth` (0x12eeb70) |
+   | `+0x11E` | int16 | healing health | `set_healingHealth` (0x12ee350) |
 
    So the HP session anchors at **entity-base** with a region length ≥ 0x120
    and correlates **int16** candidates (`hp-diff --int16 true`, on by
    default for the HP/decrement direction). The tank-record anchor remains
    correct for the facing/rotation work (the +0x2C tail of the transform
-   layout).
+   layout). The fields beyond the health block (`+0xBC`…`+0x110`) are
+   static-only evidence, not promoted — future discovery work can re-use the
+   map instead of re-scanning the entity record.
 2. **Session driver** — `scripts/invoke-hp-diffing-session.ps1` runs the
    whole flow: gate → **qualify the victim from the decoded replay**
    (see below — do NOT default to the player's own entity) → print the

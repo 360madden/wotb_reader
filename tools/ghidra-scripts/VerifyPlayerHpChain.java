@@ -113,6 +113,55 @@ public class VerifyPlayerHpChain extends GhidraScript {
         check("set_gunAnglesPacked_reads_entity_7e_word",
                 dis7.contains("MOVZX ECX,word ptr [EAX + 0x7e]"), "");
 
+        // ---- 9. set_isStrafing: byte at [entity+0x7C] ----
+        out.append("### 9. set_isStrafing (0x12eead0): byte at [entity+0x7C]\n");
+        String dis9 = disasmRange(0x12eead0, 0x12eead0 + 0xc0);
+        check("set_isStrafing_reads_entity_7c_byte",
+                dis9.contains("CMP byte ptr [EAX + 0x7c],0x0"), "");
+
+        // ---- 10. set_engineMode: mode object pointer at [entity+0xBC] ----
+        out.append("### 10. set_engineMode (0x12ee110): ptr [entity+0xBC] (mode + sub byte)\n");
+        String dis10 = disasmRange(0x12ee110, 0x12ee110 + 0xc0);
+        check("set_engineMode_reads_entity_bc_ptr",
+                dis10.contains("MOV ECX,dword ptr [EAX + 0xbc]"), "");
+        check("set_engineMode_derefs_vtable_slot1",
+                dis10.contains("CALL dword ptr [EAX + 0x4]"), "");
+
+        // ---- 11. set_hitMarks: vector at [entity+0xC8] ----
+        out.append("### 11. set_hitMarks (0x12ee5a0): vector at [entity+0xC8]\n");
+        String dis11 = disasmRange(0x12ee5a0, 0x12ee5a0 + 0x350);
+        check("set_hitMarks_reads_entity_c8_vector",
+                dis11.contains("ADD EAX,0xc8"), "");
+
+        // ---- 12. byte-array mask state: [entity+0xD4] and [entity+0xD8] ----
+        out.append("### 12. FUN_016ef1a0: byte arrays at [entity+0xD4] and [entity+0xD8]\n");
+        String dis12 = disasmRange(0x12ef1a0, 0x12ef1a0 + 0x1a0);
+        check("byte_mask_reads_entity_d8_ptr",
+                dis12.contains("MOV ECX,dword ptr [EAX + 0xd8]"), "");
+        check("byte_mask_reads_entity_d4_ptr",
+                dis12.contains("MOV EDI,dword ptr [EAX + 0xd4]"), "");
+
+        // ---- 13. set_criticalDevices / set_destroyedDevices ----
+        out.append("### 13. device lists: [entity+0xE0] and [entity+0xEC]\n");
+        String dis13 = disasmRange(0x12edae0, 0x12edf60);
+        check("set_criticalDevices_reads_entity_e0_list",
+                dis13.contains("ADD EAX,0xe0"), "");
+        String dis13b = disasmRange(0x12edf60, 0x12edf60 + 0x290);
+        check("set_destroyedDevices_reads_entity_ec_list",
+                dis13b.contains("ADD EAX,0xec"), "");
+
+        // ---- 14. set_activeEquipments: list at [entity+0xF8] ----
+        out.append("### 14. set_activeEquipments (0x12ecd90): list at [entity+0xF8]\n");
+        String dis14 = disasmRange(0x12ecd90, 0x12ecd90 + 0x280);
+        check("set_activeEquipments_reads_entity_f8_list",
+                dis14.contains("LEA EDI,[EAX + 0xf8]"), "");
+
+        // ---- 15. set_debugStrings: state at [entity+0x110] ----
+        out.append("### 15. set_debugStrings (0x12ede90): state at [entity+0x110]\n");
+        String dis15 = disasmRange(0x12ede90, 0x12ede90 + 0x280);
+        check("set_debugStrings_reads_entity_110_state",
+                dis15.contains("ADD EAX,0x110"), "");
+
         // ---- summary ----
         out.append("\nPASS=" + pass + " FAIL=" + fail + "\n");
         String verdict = fail == 0 ? "player-hp-chain-verified"
