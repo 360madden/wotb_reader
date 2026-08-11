@@ -261,6 +261,7 @@ docs/operations/handoffs/2026-08-11-cam006-camera-wired-into-frame-endpoint.md
 docs/operations/handoffs/2026-08-11-cam007-projection-cross-check.md
 docs/operations/handoffs/2026-08-11-cam008-prelogin-controller-rtti.md
 docs/operations/handoffs/2026-08-11-cam009-fov-config-found.md
+docs/operations/handoffs/2026-08-11-cam010-cam011-camera-truth.md
 docs/operations/handoffs/2026-08-11-cam010-yz-swap-position-convention.md
 docs/operations/handoffs/2026-08-11-camera-family-hierarchy-factory.md
 docs/operations/handoffs/2026-08-11-camera-family-rtti.md
