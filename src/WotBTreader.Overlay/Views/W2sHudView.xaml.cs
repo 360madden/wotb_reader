@@ -79,6 +79,8 @@ public sealed partial class W2sHudView : UserControl
         double? cameraYawRadians,
         IReadOnlyList<KillItem> killFeed,
         ImageSource? minimapImage,
+        double? playbackProgress,
+        string? playbackLabel,
         double viewportWidth,
         double viewportHeight)
     {
@@ -108,7 +110,104 @@ public sealed partial class W2sHudView : UserControl
         {
             HudCanvas.Children.Add(BuildKillFeed(killFeed));
         }
+
+        if (playbackProgress is not null)
+        {
+            HudCanvas.Children.Add(BuildPlaybackBar(playbackProgress.Value, playbackLabel, viewportWidth));
+        }
     }
+
+    /// <summary>
+    /// Builds the playback progress bar: a thin track pinned to the bottom-
+    /// centre of the overlay with a filled portion proportional to playback
+    /// progress and a small time label above the left end. Only drawn while a
+    /// session is selected and its duration is known.
+    /// </summary>
+    private static Canvas BuildPlaybackBar(
+        double progress,
+        string? label,
+        double viewportWidth)
+    {
+        const double barWidth = 320;
+        const double barHeight = 3;
+        const double margin = 12;
+        const double gap = 40;
+        double trackWidth = Math.Min(barWidth, Math.Max(0, viewportWidth - (2 * margin) - gap));
+        double left = (viewportWidth - trackWidth) / 2.0;
+        double bottom = margin;
+        double fillWidth = PlaybackFillWidth(trackWidth, progress);
+
+        var panel = new Canvas
+        {
+            Width = trackWidth,
+            Height = barHeight,
+        };
+        Canvas.SetLeft(panel, left);
+        Canvas.SetBottom(panel, bottom);
+
+        // Track.
+        panel.Children.Add(new Rectangle
+        {
+            Width = trackWidth,
+            Height = barHeight,
+            RadiusX = 1.5,
+            RadiusY = 1.5,
+            Fill = CreateBrush("#66101820"),
+        });
+
+        // Fill.
+        if (fillWidth > 0)
+        {
+            panel.Children.Add(new Rectangle
+            {
+                Width = fillWidth,
+                Height = barHeight,
+                RadiusX = 1.5,
+                RadiusY = 1.5,
+                Fill = CreateBrush("#CCFFFFFF"),
+                HorizontalAlignment = HorizontalAlignment.Left,
+            });
+        }
+
+        if (!string.IsNullOrWhiteSpace(label))
+        {
+            var text = new TextBlock
+            {
+                Text = label,
+                FontSize = 10,
+                Foreground = CreateBrush("#BFFFFFFF"),
+                Margin = new Thickness(0, -16, 0, 0),
+            };
+            panel.Children.Add(text);
+        }
+
+        return panel;
+    }
+
+    /// <summary>
+    /// Computes the progress bar fill width for a given track width and
+    /// progress fraction, for unit tests (no WPF rendering required). Clamps
+    /// progress to 0..1 so the fill never overflows the track.
+    /// </summary>
+    public static double PlaybackFillWidth(double trackWidth, double progress) =>
+        Math.Clamp(progress, 0, 1) * trackWidth;
+
+    /// <summary>
+    /// Formats a playback time label "m:ss / m:ss" for the HUD progress bar,
+    /// for unit tests. Null when the duration is unknown or non-positive.
+    /// </summary>
+    public static string? FormatPlaybackLabel(double currentSeconds, double totalSeconds)
+    {
+        if (!double.IsFinite(currentSeconds) || !double.IsFinite(totalSeconds) || totalSeconds <= 0)
+        {
+            return null;
+        }
+
+        return $"{FormatClock(currentSeconds)} / {FormatClock(totalSeconds)}";
+    }
+
+    private static string FormatClock(double seconds) =>
+        $"{TimeSpan.FromSeconds(Math.Max(0, seconds)):m\\:ss}";
 
     /// <summary>
     /// Builds the kill-feed panel: the most recent entries as a stacked list

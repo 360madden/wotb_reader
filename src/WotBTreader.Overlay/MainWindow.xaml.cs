@@ -184,6 +184,14 @@ public partial class MainWindow : System.Windows.Window, IDisposable
     /// <summary>Renders the latest view-model nameplates + beacons onto the HUD canvas.</summary>
     private void RenderW2sHud()
     {
+        double totalSeconds = _viewModel.Duration.TotalSeconds;
+        double? progress = totalSeconds > 0
+            ? Math.Clamp(_viewModel.CurrentTimeSeconds / totalSeconds, 0, 1)
+            : null;
+        string? label = totalSeconds > 0
+            ? Views.W2sHudView.FormatPlaybackLabel(_viewModel.CurrentTimeSeconds, totalSeconds)
+            : null;
+
         W2sHudView.Render(
             _viewModel.Beacons,
             _viewModel.Pips,
@@ -195,6 +203,8 @@ public partial class MainWindow : System.Windows.Window, IDisposable
             _viewModel.MinimapCameraYawRadians,
             _viewModel.KillFeed,
             _viewModel.MinimapImageSource,
+            progress,
+            label,
             ActualWidth,
             ActualHeight);
     }

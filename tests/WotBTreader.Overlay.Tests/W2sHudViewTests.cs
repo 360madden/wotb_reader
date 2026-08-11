@@ -116,4 +116,30 @@ public sealed class W2sHudViewTests
         Assert.AreEqual(0.5 * 150, apex.X, 1e-9);
         Assert.AreEqual(0.5 * 150 - 14, apex.Y, 1e-9);
     }
+
+    [TestMethod]
+    public void PlaybackFillWidth_ScalesAndClamps()
+    {
+        Assert.AreEqual(0, W2sHudView.PlaybackFillWidth(trackWidth: 320, progress: 0.0), 1e-9);
+        Assert.AreEqual(160, W2sHudView.PlaybackFillWidth(trackWidth: 320, progress: 0.5), 1e-9);
+        Assert.AreEqual(320, W2sHudView.PlaybackFillWidth(trackWidth: 320, progress: 1.0), 1e-9);
+        // Out-of-range progress clamps instead of overflowing the track.
+        Assert.AreEqual(320, W2sHudView.PlaybackFillWidth(trackWidth: 320, progress: 1.5), 1e-9);
+        Assert.AreEqual(0, W2sHudView.PlaybackFillWidth(trackWidth: 320, progress: -0.5), 1e-9);
+    }
+
+    [TestMethod]
+    public void FormatPlaybackLabel_ClockStyle()
+    {
+        Assert.AreEqual("0:47 / 4:12", W2sHudView.FormatPlaybackLabel(47, 252));
+        Assert.AreEqual("10:00 / 10:00", W2sHudView.FormatPlaybackLabel(600, 600));
+    }
+
+    [TestMethod]
+    public void FormatPlaybackLabel_UnknownDuration_Null()
+    {
+        Assert.IsNull(W2sHudView.FormatPlaybackLabel(47, 0));
+        Assert.IsNull(W2sHudView.FormatPlaybackLabel(47, -5));
+        Assert.IsNull(W2sHudView.FormatPlaybackLabel(double.NaN, 252));
+    }
 }
