@@ -137,5 +137,9 @@ cross-link, and the planning handoff.
 ## Decision log
 
 - 2026-08-11: plan adopted; hardware atomicity ordered last; observation
-  promotion decision deferred to the X2/X4 proposal; yaw stays quarantined
-  (decimal `51808784` vs `0x0317A810` conflict unresolved — none trusted).
+  promotion decision deferred to the X2/X4 proposal; yaw quarantine
+  **resolved-by-supersession 2026-08-11** (see ledger) — yaw is a runtime
+  chain field on the movement ring record (`+0x2C`), not a static offset;
+  the three legacy static candidates were mutually inconsistent and are
+  retired; the ring-record `+0x2C` prediction (rehearsed 27/27 + 35/35
+  against packet yaw) is the anchor pending the live L2 facing session.

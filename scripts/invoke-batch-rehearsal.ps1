@@ -248,6 +248,12 @@ if (-not $DumpsExist) {
         foreach ($region in $response.regions) {
             if ($region.status -eq 'Resolved') { $resolvedCount++ }
         }
+        if ($resolvedCount -lt 1) {
+            throw ("entity-regions at {0:0.0}s resolved 0/{1} entities - " +
+                "wrong session/roster, or the battle is not active. A frame " +
+                "with no resolved entity is useless; failing closed." -f `
+                $t, $EntityIds.Count)
+        }
         Write-Step ("  batch at {0:0.0}s: {1}/{2} entities resolved " +
             "(label {3:0.00}s)." -f $t, $resolvedCount, $EntityIds.Count, $label)
         $DumpTimesOut.Add(@{

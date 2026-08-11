@@ -30,6 +30,19 @@ while the conflict remains in evidence notes and the ledger; none of these
 values may be used as a trusted scan anchor until the original analysis is
 reconciled.
 
+**Reconciled 2026-08-11 (resolved-by-supersession, see the ledger):** the
+address-kind question is answered by the L2 facing track — yaw is a **runtime
+chain field on the movement ring record** (`+0x2C`, ring stride 0x38),
+reachable only through the module-rooted entity chain (same reason position
+moved to `chains` in G0). Static module-offset candidates are the wrong kind
+for this field by construction, and the three legacy values were mutually
+inconsistent on their own terms (the table's own decimal does not convert to
+its own notes hex). The static candidates are retired; the ring-record `+0x2C`
+field is the yaw anchor, rehearsed 27/27 + 35/35 by the facing correlator
+against packet yaw ground truth, pending the live L2 facing session. The
+published table keeps yaw at `0`/Stale; a future publication would be a
+`chains` entry.
+
 Next anchor, in roadmap preference order after position: `replayTime`, then
 `playerHP`. `replayTime` retains its rolling increased-Double evidence
 (OD-012..038); `playerHP` has the query-side ground truth ready
