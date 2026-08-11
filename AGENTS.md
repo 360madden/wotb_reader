@@ -77,6 +77,21 @@ No runtime AI, cloud, Python, Node.js, Rust, Electron, or containers.
   See
   `docs/operations/offset-promotion-checklist.md` (and ledger
   `OD-RECOVERY-078/079/080/081/082/083`).
+- **Resolver-path consolidation (2026-08-11):** the 7-item checklist
+  (`docs/operations/resolver-path-consolidation.md`) is executed — items 1–4
+done (chains-only publication, single sanctioned walker, phase tolerance
+audited, legacy observation surface frozen + deprecated); item 6 fully
+staged: the **batch N-entity read surface** (`/discover/entity-regions`, up
+to 16 entities, ONE clock attestation per batch, per-entity statuses,
+read-pass measurement) — design `docs/operations/batch-entity-read-design.md`,
+coordinator + endpoint + tests shipped, rehearsal driver
+`scripts/invoke-batch-rehearsal.ps1` + cross-check tool
+`scripts/python/batch-rehearsal-crosscheck.py` ready (proven 42/42 on real
+decoded data); the yaw quarantine is **resolved-by-supersession** (yaw is a
+runtime chain field at ring-record `+0x2C`, not a static offset — rehearsed
+27/27 + 35/35 against packet yaw, pending the live L2 facing session); item
+7 (hardware-atomicity proof) stays LAST by design. The only remaining gates
+are approved live sessions (batch rehearsal, L1 HP, L2 facing, CAM-001 v7).
 - **BLK-0026 resolved and validated (2026-08-09):** root cause was a launcher
   regression — .NET `Set-Acl` threw `PrivilegeNotHeldException` on the
   persisted owner-only marker ACL, mapped by the catch-all to

@@ -272,6 +272,7 @@ docs/operations/handoffs/2026-08-11-resolver-path-consolidation-exec.md
 docs/operations/handoffs/2026-08-11-resolver-path-consolidation-plan.md
 docs/operations/handoffs/2026-08-11-transform-record-verified.md
 docs/operations/handoffs/2026-08-11-type5-maxhp-in-replay.md
+docs/operations/handoffs/2026-08-11-yaw-quarantine-reconciled.md
 docs/operations/handoffs/README.md
 docs/operations/legacy-observation-surface.md
 docs/operations/offset-discovery-guide.md

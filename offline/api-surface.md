@@ -36,6 +36,11 @@ overlay endpoint/state implementation was deleted.
 | `/discover/neighborhood` | POST | Scan a memory window around a known offset |
 | `/discover/read` | POST | Re-read a bounded staged set of absolute addresses under the offline gate |
 | `/discover/entity-position` | POST | Resolve one decoded replay entity ID through the exact-build, server-owned module root and return a sanitized newest-ring XYZ result |
+| `/discover/entity-region` | POST | One bounded region dump (≤ 4 KB) of a decoded entity — bytes + replay-clock label only; anchors: `ring-record` / `entity-tank-record` / `entity-base` (the L1–L4 seam) |
+| `/discover/entity-regions` | POST | **Batch** region dumps (≤ 16 entities, ≤ 16 KB total) in one round trip with ONE replay-clock attestation — the per-frame live read surface (design: `docs/operations/batch-entity-read-design.md`); response carries the read-pass measurement window |
+| `/discover/position-page` | POST | Resolve the entity address + region page (diagnostic-only; feeds the guarded poll) |
+| `/discover/camera-pose` | POST | Gate-verified GameCamera world pose (CAM-001 chain, live-verified 2026-08-11) |
+| `/discover/clock-segment` | POST | Append a replay-clock segment (G2 same-decoded-clock anchor) |
 | `/discover/instruction-snapshot` | POST | Run the server-pinned instruction-first XYZ capture; caller controls only duration/hit bounds, never PID/module/address/register |
 | `/discover/trajectory/{battleSessionId}` | GET | Return decoded ground-truth trajectories for correlation |
 | `/discover/correlate` | POST | Score staged value series against decoded trajectory ground truth |
