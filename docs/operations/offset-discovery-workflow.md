@@ -1,8 +1,8 @@
 # WoT Blitz PC offset-discovery workflow
 
-Last updated: 2026-08-11 (OD-RECOVERY-086 closed the composed X2 batch +
-X3 enumeration rehearsal: X2 batch surface PASS live, X3 team-based
-enumeration evidenced)
+Last updated: 2026-08-11 (OD-RECOVERY-087 closed L1 HP: the entity-base
+current-health int16 is confirmed live at `+0xB8` — HIT, score 1.0,
+flatness 1.0, Strict 8/8)
 
 This is the operational playbook for discovering memory evidence from the
 Windows WoT Blitz client during a **positively verified offline replay**. It is
@@ -14,32 +14,33 @@ offset.
 
 ## Current decision
 
-Session ID: `OD-RECOVERY-087`.
+Session ID: `OD-RECOVERY-088`.
 
-**OD-RECOVERY-086 is DONE (2026-08-11)** — composed X2 batch + X3
-enumeration rehearsal closed: X2 `/discover/entity-regions` full-roster
-batch surface **PASS live** (3/3 batches Resolved + clock-attested, 34/34
-compared positions align to decoded ground truth within the 2 s G2 window;
-stationary 0.00 m, moving at the −0.8 s read-pass window); X3
-`/discover/entity-roster` enumeration answered live — the movement-filter
-vtable gate separates the player's OWN team only (7/14, precision 1.000,
-recall 0.500, 0 extra; all found = team 1, all missing = team 2/enemies).
-Harness fixes shipped: launcher-owned G2 anchor at the blitz-log marker
-moment (logs `battleSession=`), driver per-target clock wait, BOM-less
-writes, cross-check 2 s window matching. Evidence:
-`docs/operations/od-recovery-086-evidence-template.md` (filled) + ledger
-`OD-RECOVERY-086` result section.
+**OD-RECOVERY-087 is DONE (2026-08-11) — L1 HP HIT live.** The entity-base
+current-health signed int16 is **confirmed at `+0xB8`** on Oasis Palms
+(victim 3760578, 9 events / 1,183 damage, 74 dense-span dumps): every one
+of the 8 health drops equals its damage sum exactly (149, 173, 174, 164,
+168, 142, 198 = 41+157, 15), max `+0x11C` 1550 constant, alive `+0xBA` 1,
+healing `+0x11E` 0; the automated contract fires **HIT — score 1.0,
+flatness 1.0, Strict 8/8** via the new subset-sum lag attribution
+(`hp-diff --int16 true --lag-tolerance 4`). Key finding: the game applies
+decoded damage events to the health field with a **variable ~1–3.4 s
+memory-apply lag** (measured with the dense span) — the driver now dumps a
+dense span around each hit and the correlator matches drops against event
+subsets (`--lag-tolerance`, default 0 = exact). The X4 live frame's
+`hp: null` can become real (additive change). Evidence:
+`docs/operations/od-recovery-087-evidence-template.md` (filled) + ledger
+`OD-RECOVERY-087` result section.
 
-**Next planned session (2026-08-11, OD-RECOVERY-087): L1 HP** — the first
-enemy-facing live gate. Drive `scripts/invoke-hp-diffing-session.ps1`
-(entity-base anchor, victim 3760578, signed-int16 correlate, flatness +
-Strict contract) live on Oasis Palms with the **launch-matched host-store
-session + `-DbPath "$env:LOCALAPPDATA\WotBTreader\treader.db"`** (the 086
-session proved the repo-local `.data/treader.db` + pre-staged session 404
-in the host store; the launcher logs `battleSession=` at the gate). Branch:
-hit at `+0xB8` → live-frame HP becomes real; different offset → the live
-finding wins; no-hit → widen the anchor. Evidence template:
-`docs/operations/od-recovery-087-evidence-template.md`.
+**Next planned session (2026-08-11, OD-RECOVERY-088): L2 facing** — the
+ring-record `+0x2C` yaw confirm. Drive `scripts/invoke-facing-session.ps1`
+(region ≥ 0x40, `+0x2C..+0x37` probe first, wrap-aware matcher, flatness
+1.0 over stationary segments) live on Oasis Palms with the
+**launch-matched host-store session + `-DataRoot "$env:LOCALAPPDATA\
+WotBTreader"`** (the launcher logs `battleSession=` at the gate; both 086
+and 087 proved the repo-local `.data/treader.db` 404s in the host store).
+The Phase-4 rule requires the offset to agree on Dead Rail too. Evidence
+template: `docs/operations/od-recovery-088-evidence-template.md`.
 
 **The position anchor is ESTABLISHED and PUBLISHED (2026-08-10):**
 `playerPositionX/Y/Z` are `Verified` via the module-rooted position-ring chain
@@ -71,10 +72,12 @@ against packet yaw ground truth, pending the live L2 facing session. The
 published table keeps yaw at `0`/Stale; a future publication would be a
 `chains` entry.
 
-Next anchors after position: the pre-staged live gates in order — **L1 HP**
-(OD-RECOVERY-087, entity-base anchor, victim 3760578;
-`invoke-hp-diffing-session.ps1`), **L2 facing** (OD-RECOVERY-088,
-ring-record `+0x2C`; `invoke-facing-session.ps1`), and CAM-001 v7.
+Next anchors after position: the pre-staged live gates in order — **L2
+facing** (OD-RECOVERY-088, ring-record `+0x2C`;
+`invoke-facing-session.ps1`), then CAM-001 v7. **L1 HP is DONE
+(OD-RECOVERY-087, HIT at `+0xB8`)** — the live-frame HP bar can become real
+(additive contract change), and the Phase-4 two-replay rule for HP (Dead
+Rail victim 2549399) gates any HP publication.
 `replayTime` retains
 its rolling increased-Double evidence (OD-012..038) and `playerHP` has the
 query-side ground truth ready (`IHpGroundTruthProvider`); both ride the same

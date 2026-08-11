@@ -240,6 +240,40 @@ records that it authorizes NO live testing and changes NO code-enforced
 gate; it only clears the Phase-5 design track if approved. Roadmap X1 row
 updated to reference the draft.
 
+## OD-RECOVERY-087 live session — L1 HP HIT at +0xB8 (2026-08-11)
+
+Approved live session on Oasis Palms (victim 3760578, 9 events / 1,183
+damage). Full evidence: `docs/operations/od-recovery-087-evidence-template.md`
+(filled) + ledger section. **Verdict: HIT** — the entity-base current-health
+signed int16 is CONFIRMED LIVE at **`+0xB8`**:
+
+- **Byte-level exact track** (74 dense-span dumps): 8/8 health drops ==
+  damage sums exactly (149, 173, 174, 164, 168, 142, 198 = 41+157, 15);
+  max `+0x11C` 1550 constant; alive `+0xBA` 1; healing `+0x11E` 0.
+- **Automated contract HIT**: score 1.0, flatness 1.0, Strict 8/8 exact
+  sums at `0xB8` (`hp-diff --int16 true --lag-tolerance 4`).
+
+**Key finding — variable memory-apply lag.** The first run's automated
+verdict was an honest negative (spurious pointer-field top candidate) while
+the raw bytes correlated exactly: the game applies a decoded damage event to
+the health field with a **variable ~1–3.4 s lag** (decoded packet time
+precedes the state-sync write), so before/after dump pairs around the decoded
+time cannot bracket the memory write. Two harness/tooling fixes shipped:
+
+1. **Correlator subset-sum lag attribution** (`eventLagToleranceSeconds`,
+   default 0 = exact behavior unchanged; `hp-diff --lag-tolerance`) — each
+   drop matches the sum of a SUBSET of its candidate events (each event
+   consumed once), which handles both the lag and multi-hit windows. 5 new
+   tests (192 Core total, +4).
+2. **Driver dense-span schedule** (hit−1 s then every ~2 s to hit+13 s;
+   74 dumps vs 20), plus a bounded transient rendezvous retry on the
+   wait-probe path, `-DataRoot` feeding BOTH the QUALIFY extractor `--db`
+   and `hp-diff --data-root` (host-store session), and BOM-less writes.
+
+`hpLiveAtEntityBaseOffset` claimable; the X4 frame's `hp: null` can become
+real additively (live-frame design honest-limits row flipped to ✅). Phase-4
+repeatability (Dead Rail victim 2549399) still gates any HP publication.
+
 ## OD-RECOVERY-086 live session — X2 PASS live + X3 team-based partial (2026-08-11)
 
 Approved live session on Oasis Palms (the content-distinct 11.19.0.10
@@ -330,4 +364,18 @@ surface changed. Next live gates in pre-staged order: OD-RECOVERY-087
 - `scripts/invoke-batch-rehearsal.ps1` (per-target clock wait, BOM-less
   evidence writes)
 - `scripts/python/batch-rehearsal-crosscheck.py` (2 s G2-window matching)
+- `docs/operations/od-recovery-087-evidence-template.md` (filled 2026-08-11:
+  L1 HIT at `+0xB8`)
+- `docs/operations/offset-discovery-ledger.md` (OD-RECOVERY-087 section +
+  index row + Next-planned row → 088)
+- `docs/operations/offset-discovery-workflow.md` (current decision → 088)
+- `docs/operations/product-roadmap.md` (L1 row → ✅ HIT)
+- `docs/operations/live-frame-loop-design.md` (HP honest-limits row → ✅)
+- `src/WotBTreader.Core/Discovery/RecordDiffing.cs` (subset-sum lag
+  attribution `eventLagToleranceSeconds`, default 0) + tests
+- `src/WotBTreader.Host.Cli/Cli/CliCommandRouter.cs` +
+  `src/WotBTreader.Host.Cli/Cli/CliInvocation.cs` (`hp-diff --lag-tolerance`)
+- `scripts/invoke-hp-diffing-session.ps1` (dense-span schedule,
+  `-LagToleranceSeconds`, transient rendezvous retry, `-DataRoot` →
+  extractor `--db`, BOM-less snapshots write)
 - `docs/operations/handoffs/2026-08-11-enemy-tracking-focus.md` (this file)

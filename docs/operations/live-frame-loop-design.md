@@ -62,9 +62,9 @@ constraint. Instead:
 }
 ```
 
-- `hp` is **null by design** until L1 (the HP live session) lands — the
-  HUD renders an empty/unknown HP bar, never a fabricated one. The frame
-  contract can gain `hpCurrent/hpMax` additively after L1 without a shape
+- `hp` was **null by design** until L1; **L1 landed 2026-08-11
+  (OD-RECOVERY-087 HIT at `+0xB8`)** — the frame can gain `hpCurrent/hpMax`
+  additively without a shape
   break.
 - No pips/kills/scoreboard in the live frame: those are decode-projection
   features. Live nameplates render position + facing + (later) HP.
@@ -124,7 +124,7 @@ open question, not silently decided.
 |---|---|---|
 | Position (x/y/z) | ✅ readable now | ring `+0x10`, batch surface proven |
 | Hull yaw | ✅ readable now (L2 gate pending live verification) | ring `+0x2C`, rehearsed 27/27 + 35/35 |
-| HP (current/max) | ⏳ L1 live session | int16 candidates pinned at entity-base `+0xB8`/`+0x11C`; `hp: null` until then |
+| HP (current/max) | ✅ L1 HIT 2026-08-11 (OD-RECOVERY-087) | entity-base current int16 **`+0xB8`** / max `+0x11C` confirmed live (score 1.0, flatness 1.0, Strict 8/8); frame `hp` can become real additively — `hpCurrent/hpMax` (the empty bar is no longer fabricated-free but provable) |
 | Turret facing / lock / targeted | ❌ absent | type-7 survey proved no replay carrier; ring does not expose it; future discovery |
 | Aim-line | ✅ computable | `AimGeometry` hull-arc utility; honest weak necessary-condition only |
 | Spotting model | ❌ out of scope | X5 policy-gated, replay god-view stays |

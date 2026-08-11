@@ -141,10 +141,17 @@ public static class HpDamageCorrelator
         long targetEntityId,
         DamageMatchMode matchMode = DamageMatchMode.Strict,
         DamageCorrelationDirection direction = DamageCorrelationDirection.Decrement,
-        bool includeInt16Candidates = false)
+        bool includeInt16Candidates = false,
+        double eventLagToleranceSeconds = 0)
     {
         ArgumentNullException.ThrowIfNull(windows);
         ArgumentNullException.ThrowIfNull(damageEvents);
+        if (eventLagToleranceSeconds < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(eventLagToleranceSeconds),
+                "The event-lag tolerance must be >= 0.");
+        }
 
         int regionLength = windows.Count > 0 ? windows[0].Before.Length : 0;
         foreach (ByteChangeWindow window in windows)
@@ -176,7 +183,17 @@ public static class HpDamageCorrelator
                     continue;
                 }
 
-                if (damageEvent.ReplayTime > window.FromReplayTime
+                // Attribution window: (From - lag, To]. Live memory reads
+                // (OD-RECOVERY-087) measured the game applying decoded damage
+                // events to the health field with a VARIABLE lag of ~1-10 s
+                // (the event's decoded packet time precedes the state-sync
+                // write by a few seconds, and the lag varies per event), so
+                // the before/after dump pair around the decoded event time
+                // cannot bracket the memory write. A bounded lag tolerance
+                // (default 0 = exact, unchanged) lets the event attribute to
+                // the change window that actually contains its memory write.
+                if (damageEvent.ReplayTime
+                        > window.FromReplayTime - TimeSpan.FromSeconds(eventLagToleranceSeconds)
                     && damageEvent.ReplayTime <= window.ToReplayTime)
                 {
                     sum += amount;
@@ -192,6 +209,52 @@ public static class HpDamageCorrelator
         if (damageByWindow.Count == 0)
         {
             return [];
+        }
+
+        // Lag path: per-window candidate events (t in (From - lag, To]), in
+        // time order, for the greedy subset-sum attribution below. The lagged
+        // memory write can land in the window AFTER the event's own (the
+        // write crosses a dump boundary when lag > dump gap), so a pure
+        // time-window attribution over-counts or mis-attributes; matching
+        // each drop against the SUM of a subset of its candidate events
+        // (each event consumed at most once) attributes the true field's
+        // drops exactly (OD-RECOVERY-087: every HP drop equals its damage
+        // sum while the spurious pointer fields change in every window).
+        List<ByteChangeWindow> orderedWindows = windows
+            .OrderBy(window => window.FromReplayTime)
+            .ToList();
+        Dictionary<ByteChangeWindow, List<int>> candidatesByWindow = [];
+        if (eventLagToleranceSeconds > 0)
+        {
+            for (int eventIndex = 0; eventIndex < damageEvents.Count; eventIndex++)
+            {
+                HpDamageEvent damageEvent = damageEvents[eventIndex];
+                bool belongsToTarget = direction == DamageCorrelationDirection.Increment
+                    ? damageEvent.AttackerEntityId == targetEntityId
+                    : damageEvent.EntityId == targetEntityId;
+                if (!belongsToTarget
+                    || damageEvent.Damage is not int
+                    || damageEvent.Damage <= 0)
+                {
+                    continue;
+                }
+
+                foreach (ByteChangeWindow window in orderedWindows)
+                {
+                    if (damageEvent.ReplayTime
+                            > window.FromReplayTime - TimeSpan.FromSeconds(eventLagToleranceSeconds)
+                        && damageEvent.ReplayTime <= window.ToReplayTime)
+                    {
+                        if (!candidatesByWindow.TryGetValue(window, out List<int>? indices))
+                        {
+                            indices = [];
+                            candidatesByWindow[window] = indices;
+                        }
+
+                        indices.Add(eventIndex);
+                    }
+                }
+            }
         }
 
         // Control windows: change windows in which the target took NO damage.
@@ -226,8 +289,15 @@ public static class HpDamageCorrelator
             {
                 int matched = 0;
                 int changed = 0;
+                int damageWindowsWithEvents = 0;
                 List<MatchedDamageWindow> matchedWindows = [];
-                foreach ((ByteChangeWindow window, long sum) in damageByWindow)
+                bool[] consumed = eventLagToleranceSeconds > 0
+                    ? new bool[damageEvents.Count]
+                    : [];
+                IEnumerable<ByteChangeWindow> loopWindows = eventLagToleranceSeconds > 0
+                    ? orderedWindows
+                    : damageByWindow.Keys;
+                foreach (ByteChangeWindow window in loopWindows)
                 {
                     long before = width == sizeof(int)
                         ? BinaryPrimitives.ReadInt32LittleEndian(window.Before.AsSpan(offset))
@@ -242,14 +312,78 @@ public static class HpDamageCorrelator
                     }
 
                     changed++;
-                    bool isMatch = matchMode == DamageMatchMode.Lenient
+                    if (eventLagToleranceSeconds > 0)
+                    {
+                        // Subset-sum attribution: the drop must equal (Strict)
+                        // or cover (Lenient) the sum of SOME subset of the
+                        // window's candidate events, with each event consumed
+                        // at most once across windows. This is what makes the
+                        // variable-lag memory writes match: the true field's
+                        // drop lands in the window containing the write, and
+                        // the subset selects exactly the events that fired
+                        // there (a multi-hit window matches its combined sum;
+                        // a lagged event that crossed a dump boundary still
+                        // matches because the tolerance admits it).
+                        if (!candidatesByWindow.TryGetValue(window, out List<int>? indices)
+                            || indices.Count == 0)
+                        {
+                            // A change with no candidate events is a control
+                            // change — the flatness pass scores it.
+                            continue;
+                        }
+
+                        List<int> available = indices
+                            .Where(index => !consumed[index])
+                            .ToList();
+                        if (available.Count == 0)
+                        {
+                            continue;
+                        }
+
+                        damageWindowsWithEvents++;
+                        long target = Math.Abs(delta);
+                        int[] amounts = available
+                            .Select(index => (int)damageEvents[index].Damage!)
+                            .ToArray();
+                        (long subsetSum, int subsetMask) =
+                            LargestSubsetSumAtMost(amounts, target);
+                        if (subsetSum == 0)
+                        {
+                            continue;
+                        }
+
+                        bool isMatch = matchMode == DamageMatchMode.Lenient
+                            || subsetSum == target;
+                        if (!isMatch)
+                        {
+                            continue;
+                        }
+
+                        for (int bit = 0; bit < available.Count; bit++)
+                        {
+                            if ((subsetMask & (1 << bit)) != 0)
+                            {
+                                consumed[available[bit]] = true;
+                            }
+                        }
+
+                        matched++;
+                        matchedWindows.Add(new MatchedDamageWindow(
+                            window.FromReplayTime,
+                            window.ToReplayTime,
+                            subsetSum));
+                        continue;
+                    }
+
+                    long sum = damageByWindow[window];
+                    bool exactMatch = matchMode == DamageMatchMode.Lenient
                         ? (direction == DamageCorrelationDirection.Increment
                             ? delta >= sum
                             : delta <= -sum)
                         : (direction == DamageCorrelationDirection.Increment
                             ? delta == sum
                             : delta == -sum);
-                    if (isMatch)
+                    if (exactMatch)
                     {
                         matched++;
                         matchedWindows.Add(new MatchedDamageWindow(
@@ -279,7 +413,16 @@ public static class HpDamageCorrelator
                     }
                 }
 
-                double score = (double)matched / damageByWindow.Count;
+                // Lag path: the denominator is the candidate's changed
+                // windows that carry candidate events (the true field's drops
+                // each land in exactly one such window, so score 1.0 is
+                // reachable; spurious pointer fields change in many more
+                // windows than they can subset-match). Exact path: the
+                // field-agnostic event-bearing windows, unchanged.
+                int denominator = eventLagToleranceSeconds > 0
+                    ? damageWindowsWithEvents
+                    : damageByWindow.Count;
+                double score = denominator == 0 ? 0.0 : (double)matched / denominator;
                 double flatness = controlWindows.Count == 0
                     ? 1.0
                     : (double)(controlWindows.Count - controlChanged) / controlWindows.Count;
@@ -297,9 +440,9 @@ public static class HpDamageCorrelator
                     width,
                     score,
                     matched,
-                    damageByWindow.Count,
+                    denominator,
                     changed,
-                    $"{typeWord} at +0x{offset:X}: value {moveWord} matched {matched}/{damageByWindow.Count} "
+                    $"{typeWord} at +0x{offset:X}: value {moveWord} matched {matched}/{denominator} "
                     + $"damage windows (precision {matched}/{changed}); flatness "
                     + $"{flatness:0.##} ({controlWindows.Count - controlChanged}/"
                     + $"{controlWindows.Count} control windows unchanged); {matchText}",
@@ -316,5 +459,62 @@ public static class HpDamageCorrelator
             .ThenByDescending(candidate => (double)candidate.MatchedDamageWindows / candidate.ChangedWindows)
             .ThenBy(candidate => candidate.Offset)
             .ToList();
+    }
+
+    /// <summary>
+    /// Returns the largest subset sum of <paramref name="amounts"/> that is
+    /// at most <paramref name="target"/>, plus the subset bitmask (bit i set
+    /// = amounts[i] chosen). Zero sum means no affordable positive subset.
+    /// Small n (events per window are few) via bitmask enumeration; beyond 20
+    /// items the sum of all is returned as the pragmatic upper bound.
+    /// </summary>
+    private static (long Sum, int Mask) LargestSubsetSumAtMost(
+        int[] amounts,
+        long target)
+    {
+        int n = amounts.Length;
+        if (n == 0 || target <= 0)
+        {
+            return (0, 0);
+        }
+
+        if (n > 20)
+        {
+            long total = 0;
+            foreach (int amount in amounts)
+            {
+                total += amount;
+            }
+
+            return (Math.Min(total, target), (1 << n) - 1);
+        }
+
+        long best = 0;
+        int bestMask = 0;
+        int full = 1 << n;
+        for (int mask = 1; mask < full; mask++)
+        {
+            long sum = 0;
+            for (int bit = 0; bit < n; bit++)
+            {
+                if ((mask & (1 << bit)) != 0)
+                {
+                    sum += amounts[bit];
+                    if (sum > target)
+                    {
+                        sum = long.MaxValue;
+                        break;
+                    }
+                }
+            }
+
+            if (sum <= target && sum > best)
+            {
+                best = sum;
+                bestMask = mask;
+            }
+        }
+
+        return (best, bestMask);
     }
 }

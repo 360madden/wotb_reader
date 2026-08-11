@@ -102,7 +102,14 @@ param(
     [int]$WindowSeconds = 10,
     [string]$Python = 'python',
     [string]$CliDll = '',
-    [switch]$FailOnNoHit
+    [switch]$FailOnNoHit,
+    # Bounded tolerance (seconds) for attributing a decoded damage event to
+    # the change window that contains its memory write. Live evidence
+    # (OD-RECOVERY-087) measured a VARIABLE memory-apply lag of ~1-10 s vs
+    # the decoded event time, so the HP driver defaults to 12 s (the
+    # measured bound plus margin) for the HP path; damage-dealt (int32
+    # counter, increments synchronously with the packets) keeps 0.
+    [double]$LagToleranceSeconds = 12
 )
 
 Set-StrictMode -Version Latest
@@ -126,6 +133,15 @@ if (-not (Test-Path -LiteralPath $CliDll)) {
 # ---- 1. QUALIFY (offline, real) -----------------------------------------
 $IsIncrement = ($Track -eq 'damage-dealt')
 $TrackLabel = if ($IsIncrement) { 'damage-dealt' } else { 'HP victim' }
+# The extractor's default --db is the repo-local .data\treader.db, which does
+# NOT hold the launch-matched decode (OD-RECOVERY-086 proved the host store
+# at %LOCALAPPDATA%\WotBTreader\treader.db is the store that serves the live
+# session; the repo-local copy 404s there). When -DataRoot is given, derive
+# the extractor DB from it so QUALIFY reads the SAME store hp-diff reads.
+$QualifyDbArgs = @()
+if ($DataRoot -ne '') {
+    $QualifyDbArgs = @('--db', (Join-Path $DataRoot 'treader.db'))
+}
 Write-Step "Qualifying $TrackLabel $VictimEntityId for session $SessionId..."
 # Native tools write informational lines to stderr; under
 # $ErrorActionPreference = 'Stop' (PowerShell 7) those become terminating
@@ -136,14 +152,14 @@ try {
     if ($IsIncrement) {
         $QualificationJson = (& $Python (Join-Path $RepoRoot 'scripts\python\replay-delta-extractor.py') `
             --session $SessionId --damage-dealt --attacker-entity $VictimEntityId `
-            --window $WindowSeconds 2>$null) | Out-String
+            --window $WindowSeconds @QualifyDbArgs 2>$null) | Out-String
     } else {
         if ($VictimEntityId -le 0) {
             throw "-VictimEntityId is required for -Track hp."
         }
         $QualificationJson = (& $Python (Join-Path $RepoRoot 'scripts\python\replay-delta-extractor.py') `
             --session $SessionId --hp-delta --victim-entity $VictimEntityId `
-            --window $WindowSeconds 2>$null) | Out-String
+            --window $WindowSeconds @QualifyDbArgs 2>$null) | Out-String
     }
 } finally {
     $ErrorActionPreference = $OldErrorActionPreference
@@ -207,11 +223,32 @@ function Invoke-HpApi {
     param(
         [string]$Method,
         [string]$RelativePath,
-        [object]$Body = $null
+        [object]$Body = $null,
+        # Used by the wait-probe path only: a single missed rendezvous read
+        # (the host publishes web.json every 2 min; a rename race or a brief
+        # host hiccup can miss one) must not kill the whole session. Bounded
+        # retry with backoff; the DUMP path stays fail-closed immediately.
+        [switch]$RetryTransient
     )
-    $rendezvous = Get-HpRendezvous
-    if ($null -eq $rendezvous) {
-        throw [InvalidOperationException]::new('rendezvous_unavailable')
+    $attempt = 0
+    while ($true) {
+        $attempt++
+        try {
+            $rendezvous = Get-HpRendezvous
+            if ($null -eq $rendezvous) {
+                throw [InvalidOperationException]::new('rendezvous_unavailable')
+            }
+            break
+        }
+        catch {
+            if (-not $RetryTransient -or $attempt -ge 15) {
+                throw
+            }
+            Start-Sleep -Seconds 3
+        }
+    }
+    if ($attempt -gt 1) {
+        Write-Step ("  rendezvous recovered after {0} attempt(s)." -f $attempt)
     }
     $arguments = @{
         Uri        = [string]$rendezvous.baseUri + $RelativePath
@@ -254,11 +291,23 @@ if (-not $OfflineDumpExists) {
         throw "No dump schedule from the extractor - cannot acquire dumps."
     }
 
-    # Dump times: before+after each hit (event-bound) + flat control times.
+    # Dump times: a DENSE SPAN around each hit + flat control times. Live
+    # evidence (OD-RECOVERY-087) measured the game applying a decoded damage
+    # event to the health field with a VARIABLE lag of ~1-10 s after the
+    # decoded packet time, so a single before/after pair around the decoded
+    # time cannot bracket the memory write (both dumps land after the hit,
+    # and the health drop lands in a later window the correlator cannot
+    # attribute). Dumping every ~2 s from hit-1 to hit+13 makes the change
+    # window that contains the memory write small enough that the correlator
+    # (with --lag-tolerance) attributes the event to exactly that window.
     $DumpTimes = [System.Collections.Generic.List[double]]::new()
     foreach ($entry in $HpDelta.dump_schedule) {
-        if ($null -ne $entry.dump_before_s) { $DumpTimes.Add([double]$entry.dump_before_s) }
-        if ($null -ne $entry.dump_after_s)  { $DumpTimes.Add([double]$entry.dump_after_s) }
+        if ($null -eq $entry.hit_replay_s) { continue }
+        $hit = [double]$entry.hit_replay_s
+        $DumpTimes.Add($hit - 1.0)
+        for ($offset = 1.0; $offset -le 13.0; $offset += 2.0) {
+            $DumpTimes.Add($hit + $offset)
+        }
     }
     if ($ControlTimes -ne '') {
         foreach ($t in ($ControlTimes -split ',')) {
@@ -270,6 +319,60 @@ if (-not $OfflineDumpExists) {
     $Snapshots = [System.Collections.Generic.List[object]]::new()
     $ControlCount = 0
     foreach ($t in ($DumpTimes | Sort-Object -Unique)) {
+        # Wait for the game's replay clock to reach the target time before
+        # dumping (same class of fix as the batch driver, OD-RECOVERY-086:
+        # the endpoint labels each dump with the CURRENT game clock, so
+        # firing all dumps back-to-back lands every dump at the same instant
+        # and the before/after damage windows never align). A probe of the
+        # same endpoint reads the label cheaply; bounded and fail-closed.
+        $waitIterations = 0
+        $maxWaitIterations = [int]((180 + $t) / 3)  # ~3s per iteration
+        $probeLabel = 0.0
+        while ($waitIterations -lt $maxWaitIterations) {
+            $probeBody = @{
+                entityId        = $TargetEntityId
+                regionLength    = $RegionLength
+                battleSessionId = $SessionId
+                regionAnchor    = $RegionAnchor
+            }
+            $probe = Invoke-HpApi -Method 'Post' `
+                -RelativePath '/api/v1/game/discover/entity-region' `
+                -Body $probeBody -RetryTransient
+            if ($null -eq $probe) {
+                throw ("clock probe returned no response while waiting for " +
+                    "{0:0.0}s." -f $t)
+            }
+            if ($probe.status -ne 'Resolved') {
+                throw ("clock probe failed while waiting for {0:0.0}s: " +
+                    "status='{1}'." -f $t, $probe.status)
+            }
+            if (-not $probe.sameDecodedClockProven) {
+                throw ("clock probe at {0:0.0}s did not attest the decoded " +
+                    "clock (sameDecodedClockProven=false) - cannot label a " +
+                    "wait target safely." -f $t)
+            }
+            if ($null -eq $probe.replayTimeSeconds) {
+                throw ("clock probe while waiting for {0:0.0}s returned no " +
+                    "replay-time label." -f $t)
+            }
+            $probeLabel = [double]$probe.replayTimeSeconds
+            if ($probeLabel -ge ($t - 1.0)) {
+                Write-Step (("  clock at {0:0.0}s >= target {1:0.0}s " +
+                    "(probes {2}) - dumping.") -f $probeLabel, $t, $waitIterations)
+                break
+            }
+            if ($waitIterations -eq 0) {
+                Write-Step (("  waiting for replay {0:0.0}s (clock now " +
+                    "{1:0.0}s)...") -f $t, $probeLabel)
+            }
+            $waitIterations++
+            Start-Sleep -Seconds 3
+        }
+        if ($waitIterations -ge $maxWaitIterations) {
+            throw ("clock never reached {0:0.0}s within the bounded wait " +
+                "(last probe {1:0.0}s) - the replay may have ended; fail-closed." -f `
+                $t, $probeLabel)
+        }
         Write-Step ("  region dump at replay {0,7}s (entity {1})..." -f $t, $TargetEntityId)
         $response = Invoke-HpApi -Method 'Post' -RelativePath '/api/v1/game/discover/entity-region' `
             -Body @{
@@ -347,11 +450,14 @@ $DirectionArgs = if ($IsIncrement) { @('--direction', 'increment') } else { @() 
 # 11.19.0.10), so the decrement/HP path scans int16 candidates; the increment
 # (damage-dealt, int32 counter) path stays int32-only.
 $Int16Args = if (-not $IsIncrement) { @('--int16', 'true') } else { @() }
+$LagArgs = if (-not $IsIncrement -and $LagToleranceSeconds -gt 0) {
+    @('--lag-tolerance', ([string]$LagToleranceSeconds))
+} else { @() }
 $ErrorActionPreference = 'Continue'
 try {
     $VerdictJson = (& dotnet $CliDll hp-diff $SnapshotsPath `
         --session $SessionId --victim $TargetEntityId --mode lenient `
-        --json @DataRootArgs @DirectionArgs @Int16Args 2>$null) | Out-String
+        --json @DataRootArgs @DirectionArgs @Int16Args @LagArgs 2>$null) | Out-String
 } finally {
     $ErrorActionPreference = $OldErrorActionPreference
 }

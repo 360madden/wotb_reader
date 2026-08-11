@@ -209,13 +209,33 @@ public sealed class CliCommandRouter
             return FromResult(groundTruthResult, correlationId, "Ground truth loaded.");
         }
 
+        // Live memory reads lag the decoded damage events by a variable
+        // ~1-10 s (OD-RECOVERY-087 measured it: the game applies the health
+        // write a few seconds after the decoded packet time, varying per
+        // event), so before/after dump pairs around the decoded time cannot
+        // bracket the memory write. A bounded --lag-tolerance (default 0 =
+        // exact, unchanged) lets each event attribute to the change window
+        // that actually contains its memory write; the HP driver passes the
+        // measured bound.
+        double eventLagToleranceSeconds = 0;
+        if (invocation.Options.TryGetValue("lag-tolerance", out string? lagText) &&
+            !double.TryParse(lagText, out eventLagToleranceSeconds))
+        {
+            return Invalid(
+                "cli.hp-diff.lag-tolerance",
+                "--lag-tolerance must be a non-negative number of seconds (default 0).",
+                correlationId);
+        }
+
         IReadOnlyList<ByteChangeWindow> windows =
             RecordChangeBucketer.Bucket(snapshotsResult.Value);
         IReadOnlyList<HpDamageEvent> events = groundTruthResult.Value.Events;
         IReadOnlyList<DamageCorrelationCandidate> primary = HpDamageCorrelator.Correlate(
-            windows, events, victimEntityId, matchMode, direction, includeInt16);
+            windows, events, victimEntityId, matchMode, direction, includeInt16,
+            eventLagToleranceSeconds);
         IReadOnlyList<DamageCorrelationCandidate> confirm = HpDamageCorrelator.Correlate(
-            windows, events, victimEntityId, DamageMatchMode.Strict, direction, includeInt16);
+            windows, events, victimEntityId, DamageMatchMode.Strict, direction, includeInt16,
+            eventLagToleranceSeconds);
 
         DamageCorrelationCandidate? top = primary.Count > 0 ? primary[0] : null;
         DamageCorrelationCandidate? strictTop = confirm.Count > 0 ? confirm[0] : null;

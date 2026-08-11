@@ -866,4 +866,143 @@ public sealed class RecordDiffingTests
         Assert.AreEqual(4, candidates[0].Length);
         Assert.AreEqual(1.0, candidates[0].Score, 1e-9);
     }
+
+    [TestMethod]
+    public void Correlate_LagToleranceZero_DoesNotMatchLaggedEvent()
+    {
+        // The memory write lands AFTER the decoded event (live evidence,
+        // OD-RECOVERY-087: the health field drops ~1-10 s after the decoded
+        // damage time). The window (1000, 2000] contains the drop but the
+        // event at t=0 is OUTSIDE (From - 0, To] — with the default tolerance
+        // 0 the drop is unexplained, exactly like the live session's mis-
+        // attributed windows.
+        var snapshots = new[]
+        {
+            new RecordSnapshot(TimeSpan.Zero, Region(hp: 500)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(1000), Region(hp: 500)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(2000), Region(hp: 350)),
+        };
+        var events = new[]
+        {
+            Damage(TimeSpan.Zero, 150),
+        };
+
+        IReadOnlyList<DamageCorrelationCandidate> candidates =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                TargetEntity,
+                DamageMatchMode.Lenient);
+
+        // The HP drop 500 -> 350 in (1000, 2000] cannot be attributed to the
+        // t=0 event — no window carries a matching event sum, so the drop is
+        // unexplained and NO candidate is reported (the correlator omits
+        // zero-match offsets). Exactly the live session's mis-attribution.
+        Assert.IsEmpty(candidates);
+    }
+
+    [TestMethod]
+    public void Correlate_LagTolerance_MatchesLaggedEvent()
+    {
+        // The same lagged fixture with a bounded tolerance: the event at t=0
+        // now attributes to the (1000, 2000] change window that contains its
+        // memory write ((From - 2s, To] contains 0), the 150 drop matches the
+        // 150 damage, and the candidate scores 1.0 — the live-session fix.
+        var snapshots = new[]
+        {
+            new RecordSnapshot(TimeSpan.Zero, Region(hp: 500)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(1000), Region(hp: 500)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(2000), Region(hp: 350)),
+        };
+        var events = new[]
+        {
+            Damage(TimeSpan.Zero, 150),
+        };
+
+        IReadOnlyList<DamageCorrelationCandidate> candidates =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                TargetEntity,
+                DamageMatchMode.Lenient,
+                DamageCorrelationDirection.Decrement,
+                includeInt16Candidates: false,
+                eventLagToleranceSeconds: 2.0);
+
+        Assert.HasCount(1, candidates);
+        Assert.AreEqual(HpOffset, candidates[0].Offset);
+        Assert.AreEqual(1.0, candidates[0].Score, 1e-9);
+    }
+
+    [TestMethod]
+    public void Correlate_LagTolerance_DoesNotMatchUnrelatedDrop()
+    {
+        // A tolerance must not fabricate matches: the window's drop (100) is
+        // smaller than the only event's damage (150), so even with the
+        // tolerance the strict Lenient test (drop >= sum) rejects it.
+        var snapshots = new[]
+        {
+            new RecordSnapshot(TimeSpan.Zero, Region(hp: 500)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(1000), Region(hp: 500)),
+            new RecordSnapshot(TimeSpan.FromMilliseconds(2000), Region(hp: 400)),
+        };
+        var events = new[]
+        {
+            Damage(TimeSpan.Zero, 150),
+        };
+
+        IReadOnlyList<DamageCorrelationCandidate> candidates =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                TargetEntity,
+                DamageMatchMode.Lenient,
+                DamageCorrelationDirection.Decrement,
+                includeInt16Candidates: false,
+                eventLagToleranceSeconds: 2.0);
+
+        // The drop is smaller than the only event's damage: no candidate is
+        // reported (the Lenient gate rejects it before ranking).
+        Assert.IsEmpty(candidates);
+    }
+
+    [TestMethod]
+    public void Correlate_LagTolerance_MatchesMultiEventClusterSum()
+    {
+        // The dense-span live case (OD-RECOVERY-087): two events ~1 s apart
+        // (41 + 157 damage) apply in ONE change window whose drop equals
+        // their combined sum (198). The subset match consumes both; a later
+        // window with an unexplained drop has no affordable subset left, so
+        // the denominator stays at the one real window and the true field
+        // scores 1.0.
+        var snapshots = new[]
+        {
+            new RecordSnapshot(TimeSpan.FromSeconds(0), Region(hp: 500)),
+            new RecordSnapshot(TimeSpan.FromSeconds(100), Region(hp: 500)),
+            new RecordSnapshot(TimeSpan.FromSeconds(200), Region(hp: 302)),
+            new RecordSnapshot(TimeSpan.FromSeconds(300), Region(hp: 187)),
+        };
+        var events = new[]
+        {
+            Damage(TimeSpan.FromSeconds(155), 41),
+            Damage(TimeSpan.FromSeconds(156), 157),
+        };
+
+        IReadOnlyList<DamageCorrelationCandidate> candidates =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                TargetEntity,
+                DamageMatchMode.Lenient,
+                DamageCorrelationDirection.Decrement,
+                includeInt16Candidates: false,
+                eventLagToleranceSeconds: 50.0);
+
+        Assert.HasCount(1, candidates);
+        Assert.AreEqual(HpOffset, candidates[0].Offset);
+        Assert.AreEqual(1.0, candidates[0].Score, 1e-9);
+        Assert.IsNotNull(candidates[0].MatchedWindows);
+        Assert.HasCount(1, candidates[0].MatchedWindows!);
+        Assert.AreEqual(198, candidates[0].MatchedWindows![0].DamageSum);
+    }
 }
