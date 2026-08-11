@@ -204,10 +204,24 @@ and branch-on-evidence rules (hit at `+0x2C` → live frame yaw
 live-verified; different offset → live finding wins; no-hit → widen the
 probe; Dead Rail's 5 seam crossings exercise the wrap-aware matcher).
 
+## X1 policy memo drafted (2026-08-11)
+
+`docs/operations/x1-live-game-policy-memo.md` is the Phase-5 gate document
+for the live-online track (roadmap X1, gate = explicit user approval):
+three options (A read-only live overlay, A+B + local-only record, C
+replays-only), honest ToS risk analysis (read-only observation of the
+owner's own client; no writes/injection/automation; account risk is the
+real exposure), scope pinned to replay-proven fields (position, yaw after
+L2, HP after L1), and an approval checklist for the owner. It explicitly
+records that it authorizes NO live testing and changes NO code-enforced
+gate; it only clears the Phase-5 design track if approved. Roadmap X1 row
+updated to reference the draft.
+
 ## Files touched
 
 - `src/WotBTreader.Core/Discovery/RingRecordRegion.cs` (pure ring-region
   decoder: position +0x10, yaw +0x2C, finite fail-closed) + tests
+- `docs/operations/x1-live-game-policy-memo.md` (X1 gate draft)
 - `docs/operations/od-recovery-087-evidence-template.md` (L1 pre-staged
   evidence template)
 - `src/WotBTreader.Application/Replay/LiveFrameProjector.cs`
