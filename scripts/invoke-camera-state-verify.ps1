@@ -62,17 +62,20 @@
     3. Learns the runtime module base from a pattern scan, then scans the
        verified process for the avatar vftable dword (base + 0x3277e8c).
     4. Walks [avatar+0x154] -> [br+0x2C] -> [cam+0x28] via the server-owned
-       read endpoint, then reads the cameraState fields.
+       read endpoint, with identity gates on the camera vftables
+       (ReplayCameraController base+0x326dd0c, GameCamera base+0x32dafa0 -
+       CAM-002 verified), then reads the GameCamera pose fields.
     5. Correlates:
-       a. camera yaw +0x58 vs the decoded frame camera yaw at the same
-          replay time (expect ~1:1 - the replay camera tracks the author
-          viewpoint).
-       b. camera position +0x11C vs the viewpoint tank position at the same
-          replay time - the delta norm is the third-person offset the
-          overlay currently lacks (expect 1..30 m).
-       c. finite-value + view-basis sanity checks on the +0xAC rows.
+       a. camera yaw atan2(sin@+0x54, cos@+0x50) vs the decoded frame
+          camera yaw (same convention proven to 0.15 deg, CAM-002).
+       b. camera posA +0x38 vs the viewpoint tank position at the same
+          wall time (memory space; /discover/entity-position or the
+          CAM-008 pre-login-aware direct walk) - the delta norm is the
+          third-person offset (verified 23.57 m, CAM-004).
+       c. finite-value + view-basis sanity checks on the +0x80..0xA8 rows.
     6. Writes a fresh CAM-001 aggregate (schema
-       wotbtreader.cam001.camera-state-verify.v2).
+       wotbtreader.cam001.camera-state-verify.v7) including per-round
+       pose + decoded-tank samples for verify-camera-projection.py.
 
   CORRECTED 2026-08-11 (first live run): the chain walk reads at
   (current + displacement) and advances to the pointer VALUE — the v1 walk
