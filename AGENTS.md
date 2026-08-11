@@ -3,9 +3,23 @@
 Windows-first .NET 10 modular monolith for **offline** WoTB replay telemetry.
 No runtime AI, cloud, Python, Node.js, Rust, Electron, or containers.
 
-## Where we are now (2026-08-09)
+## Where we are now (2026-08-11)
 
-- **Active workstream:** offset discovery — module-rooted player-position
+- **Active workstream (2026-08-11): overlay + camera track.** See
+  `docs/operations/product-roadmap.md` (forward plan), the newest files in
+  `docs/operations/handoffs/` (CAM-002/003), and the ledger. The W2S camera
+  is live-verified: the fixed member-path walks and both identity gates
+  pass (ReplayCameraController `base+0x326dd0c` / GameCamera
+  `base+0x32dafa0`), and the live pose lives on the **GameCamera**
+  (position `+0x38`, yaw cos/sin `+0x50/+0x54`, pitch `+0x58`, basis
+  `+0x80..0xA8`). **Known blocker (CAM-003):** the game currently runs a
+  third session-controller vftable (`base+0x325ad2c`) whose member layout
+  the resolver's hard-coded gates reject — `/discover/entity-position` and
+  `/discover/position-page` return `UnsupportedSessionController` this
+  phase (unchanged od-073 poll 0/12 today vs 24/24 on 2026-08-09; likely
+  the 08-11 DLC update). Mitigation: the CAM-001 v6 gate-free direct walk.
+  The 08-09 offset-promotion history below is complete and retained.
+- **Offset-promotion history (2026-08-09):** offset discovery — module-rooted player-position
   polling. Continuous polling is positive in **two distinct 11.19.0 replays**
   (Dead Rail 24/24; Oasis Palms 24/24, stable-resolver-positive) — cross-replay
   repeatability is proven. **All offline promotion-gate work is done
@@ -68,15 +82,17 @@ No runtime AI, cloud, Python, Node.js, Rust, Electron, or containers.
   Fixed with `icacls` in both owner-only ACL functions; the launcher now
   reaches `OfflineReplayVerified` and exactly one unchanged bounded OD-075
   poll returned positive on the content-distinct replay (24/24 resolved,
-  stable-resolver-positive) — **cross-replay continuous polling is now proven
+  stable-resolver-positive) — **  cross-replay continuous polling is now proven
   across two distinct 11.19.0 replays** (Dead Rail + Oasis Palms, ledger
   `OD-RECOVERY-076`). See `docs/operations/blocker-log.md` BLK-0026 and the
-  2026-08-09 resolution handoff. Still unproved: hardware atomicity,
-  same-decoded-clock proof, numeric-offset publication, and promotion — no
-  offset-table change without those.
-- **Last verified gate:** 2026-08-09 — 675 tests passed, 2 local opt-in skips,
+  2026-08-09 resolution handoff. At the time (2026-08-09) still unproved:
+  hardware atomicity, same-decoded-clock proof, numeric-offset publication,
+  promotion. **Superseded 2026-08-10** by the operator-approved G0
+  publication (below); hardware atomicity remains unproved.
+- **Last verified gate:** 2026-08-11 — 887 tests passed, 3 local opt-in skips,
   0 warnings, 0 errors.
 - **Refresh from:** the newest file in `docs/operations/handoffs/`,
+  `docs/operations/product-roadmap.md` (forward plan / workstreams),
   `docs/operations/offset-discovery-ledger.md` (Next planned session row),
   `docs/operations/blocker-log.md` (open blockers),
   `docs/operations/offset-promotion-checklist.md` (offset-gate status).
@@ -242,7 +258,7 @@ Hard decoder/security/contract decisions stay on the lead model; Codex subagents
 
 ## Last verified
 
-- 2026-08-09 — full gate green: 654 tests passed, 2 local opt-in skips,
+- 2026-08-11 — full gate green: 887 tests passed, 3 local opt-in skips,
   0 warnings, 0 errors (fresh run).
 - 2026-08-09 — AGENTS.md restructured to the table-driven layout; hard
   constraints trimmed (offline-only + Cheat Engine bullets removed), ADR 0002
