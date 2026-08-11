@@ -56,6 +56,29 @@ matches the pre-existing verifier caveat (`write_site_rva=unpinned, live
 interceptor capture, like FRESH36/43`) — now upgraded from assumption to
 exhaustive negative.
 
+## Amendment (same session): mechanism identified — DAVA Any store
+
+Follow-up narrowed the copy path to a concrete mechanism. The connection
+ctor installs the initial time through `FUN_0270f430`, which decompiles to
+DAVA `Any::cast` machinery (`Any:: can't be casted into specified T`),
+called with `ECX=[conn+0x58]` (the sub-object) and the float time value
+(`026f8f85: MOV ECX,[ESI+0x58]; MOVSS [ESP],XMM0; CALL 0x0270f430`). Its
+caller chain (`FUN_027063d0` ← `FUN_02721490`) is entirely inside the DAVA
+Any/TLS band (RVA 0x2700000–0x2720000).
+
+Extending the byte scan to 16-byte MOVUPS/MOVAPS stores that could straddle
++0x90 (disp 0x80/0x88/0x90) still finds **zero direct stores** — so the
+write is `Any::Set`-style: type-erased buffer, computed address, internal
+copy. Expected first-hit RIP: DAVA Any region or CRT copy; resolve to module
+RVA via `WriteSiteAnalysis`, then `-ArmSourceOnFirstHit` follows the source
+one level up (FRESH43 pattern). This is why the plan now treats
+`-ArmSourceOnFirstHit` as expected, not optional.
+
+Artifacts: `.build/ghidra-evidence-copy5/scan-clock-store-bytes.txt` (v3,
+0 hits incl. 16B stores), `.build/ghidra-evidence-copy6/window-disasm.txt`
+(Any::cast), `.build/ghidra-evidence-copy7/callers-disasm.txt` (Any/TLS
+caller chain).
+
 ## Session consequence (plan updated)
 
 The `replayTime` live session should **expect the first interceptor hit to be

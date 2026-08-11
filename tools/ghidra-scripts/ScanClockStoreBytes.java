@@ -129,6 +129,35 @@ public class ScanClockStoreBytes extends GhidraScript {
                     tag = "MOVLPD [reg+0x90],XMM (disp32)";
                     len = 8;
                 }
+                // --- 16-byte vector stores that could cover +0x90 ---
+                // MOVUPS XMMWORD [reg+0x80..0x90],XMM: 0F 11 /r mod=10
+                // MOVAPS XMMWORD [reg+0x80..0x90],XMM: 0F 29 /r mod=10
+                // A 16-byte store at disp 0x80/0x84/0x88/0x8c covers the
+                // 8-byte field at 0x90; at 0x90 exactly it covers 0x90-0x9f.
+                if (tag == null && (b0 == 0x0f)
+                        && (b1 == 0x11 || b1 == 0x29)
+                        && (b3 & 0xc0) == 0x80
+                        && b4 == (byte) 0x80 && data[i + 5] == 0
+                        && data[i + 6] == 0 && data[i + 7] == 0) {
+                    tag = "MOVUPS/MOVAPS [reg+0x80],XMM (16B, covers +0x90)";
+                    len = 8;
+                }
+                if (tag == null && (b0 == 0x0f)
+                        && (b1 == 0x11 || b1 == 0x29)
+                        && (b3 & 0xc0) == 0x80
+                        && b4 == (byte) 0x88 && data[i + 5] == 0
+                        && data[i + 6] == 0 && data[i + 7] == 0) {
+                    tag = "MOVUPS/MOVAPS [reg+0x88],XMM (16B, covers +0x90)";
+                    len = 8;
+                }
+                if (tag == null && (b0 == 0x0f)
+                        && (b1 == 0x11 || b1 == 0x29)
+                        && (b3 & 0xc0) == 0x80
+                        && b4 == (byte) 0x90 && data[i + 5] == 0
+                        && data[i + 6] == 0 && data[i + 7] == 0) {
+                    tag = "MOVUPS/MOVAPS [reg+0x90],XMM (16B at +0x90)";
+                    len = 8;
+                }
                 // --- integer 8-byte stores via two 32-bit MOVs ---
                 // MOV dword [reg+0x90],imm32 then MOV dword [reg+0x94],imm32
                 // (MSVC split-double pattern): report the +0x90 half.

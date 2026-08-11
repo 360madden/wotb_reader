@@ -28,6 +28,19 @@ hit, arm the copy-source page in the same window, and resolve the real write
 one level up — mirroring FRESH43 for position. The chain-resolve path (below)
 is unchanged; it lands the interceptor on `[subobj+0x90]` directly.
 
+**Mechanism refinement (2026-08-11, same day):** the copy is a **DAVA `Any`
+store**, not a bare CRT memcpy. The connection ctor installs the initial
+time through `FUN_0270f430` = DAVA `Any::cast` machinery (called with
+`ECX=[conn+0x58]`, the sub-object, and the float time value), and its
+caller chain (`FUN_027063d0` ← `FUN_02721490`) all sits in the DAVA
+Any/TLS region (RVA 0x2700000–0x2720000). The extended store scan (now
+covering 16-byte MOVUPS/MOVAPS stores that could straddle +0x90) still
+finds **zero direct stores**, so the write is `Any::Set`-style: type-erased
+buffer + computed address. Expected first-hit RIP: DAVA Any region
+(0x2700000–0x2720000) or CRT copy, resolving to a module RVA via
+`WriteSiteAnalysis`; `-ArmSourceOnFirstHit` then follows the source one
+level up, exactly as FRESH43 did for position.
+
 ## 2026-08-10 update: replay-clock chain statically verified
 
 `tools/ghidra-scripts/TraceReplayClock.java` (v3, hash-bound, 10/10 checks)
@@ -192,6 +205,10 @@ a **second** session. Do not attempt cross-battle arming of captured sources
 - 2026-08-11: exhaustive write-site scan returned the copy-path negative;
   `-ArmSourceOnFirstHit` promoted from optional to expected in the session
   flow.
+- 2026-08-11: mechanism refined — the copy is a DAVA `Any` store (ctor calls
+  `Any::cast` machinery `FUN_0270f430` on the sub-object with the time
+  value; callers all in the Any/TLS band 0x2700000–0x2720000). Expected
+  first-hit RIP region narrowed accordingly.
 - Pre-staged plan only; **no live session run, no product change**.
 - Next: decide chain-resolve (L0 reads, ~10 s) vs rolling campaign (proven,
   ~120 s) at the approved session; both feed the same interceptor verdict
