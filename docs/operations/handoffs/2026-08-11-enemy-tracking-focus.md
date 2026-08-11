@@ -185,10 +185,25 @@ per-frame timing budget (item-7 groundwork) only needs the approved
 session to record a real window. 2 new tests (coordinator compose
 measurement shape + endpoint DTO flow).
 
+## L1 HP session pre-staged (2026-08-11)
+
+`docs/operations/od-recovery-087-evidence-template.md` pre-stages the L1
+live session the same way OD-RECOVERY-086 was pre-staged: static values
+pinned (entity-base anchor, region ≥ 0x120, signed-int16 correlate,
+VerifyPlayerHpChain 26/26 map: current `+0xB8`, alive `+0xBA`, max
+`+0x11C`, healing `+0x11E`; Oasis Palms victim 3760578, Dead Rail victim
+2549399 for the Phase-4 two-replay rule), the runnable one-command
+`invoke-hp-diffing-session.ps1` invocation, the ledger YAML skeleton, and
+branch-on-evidence rules (hit at `+0xB8` → live frame HP becomes real;
+different confirming offset → live finding wins; no-hit → widen the
+anchor). Ledger next-session row + workflow references updated.
+
 ## Files touched
 
 - `src/WotBTreader.Core/Discovery/RingRecordRegion.cs` (pure ring-region
   decoder: position +0x10, yaw +0x2C, finite fail-closed) + tests
+- `docs/operations/od-recovery-087-evidence-template.md` (L1 pre-staged
+  evidence template)
 - `src/WotBTreader.Application/Replay/LiveFrameProjector.cs`
   (live-frame → `OverlayFrameProjection`, reuses `WorldToScreen`) + tests
 - `src/WotBTreader.Host.Web/Endpoints/ReadApiEndpoints.cs`

@@ -26,7 +26,10 @@ dumps through `/discover/entity-regions` per replay time (one clock
 attestation per batch), cross-checked against decoded positions
 (42/42 rehearsal proven), measuring the read-pass window (item 4). Closes
 X2 + X3 rehearsals + the item-7 verification-window measurement. Evidence
-template: `docs/operations/od-recovery-086-evidence-template.md`.
+template: `docs/operations/od-recovery-086-evidence-template.md`. The L1 HP
+session is likewise pre-staged: driver `scripts/invoke-hp-diffing-session.ps1`
+(entity-base anchor, int16 correlate, flatness + Strict contract) and
+evidence template `docs/operations/od-recovery-087-evidence-template.md`.
 
 **The position anchor is ESTABLISHED and PUBLISHED (2026-08-10):**
 `playerPositionX/Y/Z` are `Verified` via the module-rooted position-ring chain
