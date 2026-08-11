@@ -263,6 +263,7 @@ docs/operations/handoffs/2026-08-11-exact-overlay-hp-wired.md
 docs/operations/handoffs/2026-08-11-minimap-correctness-unification.md
 docs/operations/handoffs/2026-08-11-playerhp-static-chain.md
 docs/operations/handoffs/2026-08-11-replay-clock-write-site-negative.md
+docs/operations/handoffs/2026-08-11-resolver-path-consolidation-exec.md
 docs/operations/handoffs/2026-08-11-resolver-path-consolidation-plan.md
 docs/operations/handoffs/2026-08-11-transform-record-verified.md
 docs/operations/handoffs/2026-08-11-type5-maxhp-in-replay.md

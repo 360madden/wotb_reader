@@ -85,6 +85,13 @@ cross-link, and the planning handoff.
 - Rehearse **batch N-entity reads** on replays (the walker already resolves
   any entity id) so the per-frame live surface is measured before live mode
   needs it.
+- **✅ DESIGN DONE 2026-08-11:** `docs/operations/batch-entity-read-design.md`
+  — the batch surface proposal (one round trip for ≤ 16 entities, one G2
+  clock attestation per batch, per-entity status so an unresolved entity
+  never fails the frame, read discipline: gate → resolve-all → read-all →
+  one post-read snapshot, and the item-7 atomicity hook: per-entity
+  `ConsistentDoubleRead` + a measured verification window, added additively
+  when the proof starts). Single-read seam unchanged (back-compat).
 - `LiveFrameSource` consumes the **resolver endpoints**, not the observation
   DTO. Deferred decision (shared-contract proposal when that work starts):
   promote resolver results into the observation contract vs. keep the
