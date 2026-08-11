@@ -107,6 +107,7 @@ touch what.
 | F2 | F | ✅ `OverlayFrame`/`TankState` contract + `ReplayFrameSource` (DB → frames at replay time t, HP step function) | Nameplates, beacons, live swap-in |
 | F3 | E | ✅ Velocity series from replay (finite difference) + pitch/roll validation script | `+0x28` semantics, pitch/roll tracks |
 | F4 | G | ✅ This roadmap + workstream registry | All parallel work |
+| F5 | F | ✅ **Per-session projection cache** (2026-08-10): `IProjectionCache` (bounded, LRU-ish, capacity 4) sits at the `ReplayFrameSource` projection boundary so the ~580k position/event/raw records load from SQLite once per session instead of on every frame request. Warm frame latency drops ~250 ms → ~10 ms (measured on Oasis Palms at the `/sessions/{id}/frame` endpoint); sessions are immutable post-decode so the cache cannot go stale | Playback-speed HUD |
 
 Phase 0 is complete (2026-08-10): the facing correlator rehearses to `+0x2C` on
 both replays (27/27 Oasis, 35/35 Dead Rail, flatness 1.0 — with the L2 driver's

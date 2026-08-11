@@ -22,11 +22,18 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
     internal static readonly TimeSpan PipWindow = TimeSpan.FromSeconds(2);
 
     private readonly ISessionQueryRepository _sessions;
+    private readonly IProjectionCache? _cache;
 
     public ReplayFrameSource(ISessionQueryRepository sessions)
+        : this(sessions, cache: null)
+    {
+    }
+
+    public ReplayFrameSource(ISessionQueryRepository sessions, IProjectionCache? cache)
     {
         ArgumentNullException.ThrowIfNull(sessions);
         _sessions = sessions;
+        _cache = cache;
     }
 
     /// <inheritdoc />
@@ -35,8 +42,18 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
         TimeSpan replayTime,
         CancellationToken cancellationToken)
     {
-        OperationResult<ReplayDecodeProjection> projectionResult =
-            await _sessions.GetProjectionAsync(sessionId, cancellationToken)
+        // The projection is immutable per session (every decode run creates a
+        // fresh session id), so a cache hit skips re-reading every position /
+        // event / raw record from storage — the dominant single-frame cost.
+        ReplayDecodeProjection? cached = null;
+        if (_cache is not null && _cache.TryGet(sessionId, out ReplayDecodeProjection? hit))
+        {
+            cached = hit;
+        }
+
+        OperationResult<ReplayDecodeProjection> projectionResult = cached is not null
+            ? OperationResult.Success(cached)
+            : await _sessions.GetProjectionAsync(sessionId, cancellationToken)
                 .ConfigureAwait(false);
         if (!projectionResult.IsSuccess || projectionResult.Value is null)
         {
@@ -52,6 +69,7 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
                     $"Battle session '{sessionId}' has no session record."));
         }
 
+        _cache?.Store(sessionId, projection);
         return OperationResult.Success(BuildFrame(projection, replayTime));
     }
 

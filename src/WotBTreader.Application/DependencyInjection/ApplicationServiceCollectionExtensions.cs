@@ -14,7 +14,10 @@ public static class ApplicationServiceCollectionExtensions
         services.AddSingleton<ReplayDecoderRegistry>();
         services.AddSingleton<ITelemetryEventPublisher, SequencedTelemetryEventPublisher>();
         services.AddScoped<IReplayIngestionService, ReplayIngestionService>();
-        services.AddScoped<IOverlayFrameSource, ReplayFrameSource>();
+        services.AddSingleton<IProjectionCache, ProjectionCache>();
+        services.AddScoped<IOverlayFrameSource>(sp => new ReplayFrameSource(
+            sp.GetRequiredService<ISessionQueryRepository>(),
+            sp.GetRequiredService<IProjectionCache>()));
         services.AddSingleton<IOffsetTableReader>(sp =>
         {
             string offsetsPath = Path.Combine(
