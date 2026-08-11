@@ -12,6 +12,28 @@ int16 candidate pass and the region-read seam gained an `entity-base`
 anchor. The live HP session is now decisions-only, with the exact field
 location known before the first dump.
 
+## Follow-up same day: the full health block (16/16 verifier)
+
+Extending the same setter family (the string-anchored `VehicleGameLogic::set_*`
+setters from `replay-entity-bridges.txt`) pinned the whole health block on
+the entity base record:
+
+| Offset | Width | Field | Setter evidence |
+|---|---|---|---|
+| `+0x7E` | int16 | gun angles packed (2 × 6-bit) | `set_gunAnglesPacked` `FUN_016ee230`: `MOVZX ECX,word ptr [EAX+0x7e]` then `&0x3f` / `>>6` |
+| `+0xB8` | int16 | current health | `set_health` `FUN_016ee450` |
+| `+0xBA` | byte | alive flag | `set_isAlive` `FUN_016ee990`: `CMP byte ptr [EAX+0xba],0x0` + `CMP word ptr [EAX+0xb8],0x0` |
+| `+0x11C` | int16 | **max health** | `set_maxHealth` `FUN_016eeb70`: `MOVSX EDI,word ptr [EAX+0x11c]` |
+| `+0x11E` | int16 | healing health | `set_healingHealth` `FUN_016ee350` |
+
+The state-sync writer `FUN_0166b9f0` stores every one of these (word→
+`+0x7E`/`+0xB8`/`+0x11C`/`+0x11E`, byte→`+0xBA`), so the block is
+read/write-consistent. **`VerifyPlayerHpChain` is now 16/16 checks.** The
+max-health field at `+0x11C` is the piece the overlay's HP fraction needs
+(it currently defaults to 1.0 when the tank took no damage because exact max
+HP is not in the decoded data) — the L1 live session confirms it, and the
+overlay can then render true HP fractions per tank.
+
 ## What was done (all offline, hash-bound)
 
 ### 1. The listener trail led to the wrong class, then to the right one
@@ -57,11 +79,12 @@ flag. **HP is int16 — not int32.**
 
 ### 4. Verifier
 
-`VerifyPlayerHpChain.java` — hash-bound, **11/11 checks pass, verdict
+`VerifyPlayerHpChain.java` — hash-bound, **16/16 checks pass, verdict
 `player-hp-chain-verified`** on sha256 `1cda5c31…1760307d`: vftable slot 1
-target + getter bytes (`8b 41 04 c3`), both setters' reads, both writers'
-stores, and the listener dispatch all byte-verified. Run log has zero
-`SCRIPT ERROR`/`error:` lines, report fresh.
+target + getter bytes (`8b 41 04 c3`), the health/healing/maxHealth/alive/
+gun-angles setter reads, both writers' stores, and the listener dispatch
+all byte-verified. Run log has zero `SCRIPT ERROR`/`error:` lines, report
+fresh.
 
 ## Why this changes the L1 plan
 

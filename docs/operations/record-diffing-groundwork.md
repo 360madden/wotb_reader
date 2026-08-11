@@ -143,7 +143,7 @@ The L0 seam is now IMPLEMENTED (2026-08-10):
    dereference possible.
 
    **2026-08-11 static correction — HP lives on the ENTITY BASE, not the
-   tank record.** `VerifyPlayerHpChain.java` (hash-bound, 11/11 checks,
+   tank record.** `VerifyPlayerHpChain.java` (hash-bound, 16/16 checks,
    sha256 `1cda5c31…1760307d`, verdict `player-hp-chain-verified`) pins the
    current-health field as a SIGNED int16 at `[entity+0xB8]` on the entity
    base record itself, with the alive byte at `[entity+0xBA]` and the
@@ -151,15 +151,32 @@ The L0 seam is now IMPLEMENTED (2026-08-10):
    vftable slot 1 (0x31b560) is the byte-verified entity getter
    `MOV EAX,[ECX+0x4]; RET`; `set_health`
    (`FUN_016ee450`) reads the OLD value through it
-   (`MOVSX EDI,word ptr [EAX+0xb8]`) and `set_healingHealth`
-   (`FUN_016ee350`) reads `[EAX+0x11e]`; the state-sync writer
-   `FUN_0166b9f0` stores int16→`+0xB8`, byte→`+0xBA`, int16→`+0x11E`;
-   the diff-notify twin `FUN_01675f60` does the same with
-   property-changed listener dispatch (vtable +0x68). So the HP session
-   anchors at **entity-base** with a region length ≥ 0x120 and correlates
-   **int16** candidates (`hp-diff --int16 true`, on by default for the
-   decrement/HP direction). The tank-record anchor remains correct for the
-   facing/rotation work (the +0x2C tail of the transform layout).
+   (`MOVSX EDI,word ptr [EAX+0xb8]`), `set_healingHealth`
+   (`FUN_016ee350`) reads `[EAX+0x11e]`, `set_maxHealth`
+   (`FUN_016eeb70`) reads `[EAX+0x11c]`, `set_isAlive`
+   (`FUN_016ee990`) checks the `[EAX+0xba]` byte and `[EAX+0xb8]` word,
+   and `set_gunAnglesPacked` (`FUN_016ee230`) reads the `[EAX+0x7e]`
+   word (two 6-bit packed angles); the state-sync writer
+   `FUN_0166b9f0` stores the same offsets (int16→`+0xB8`/`+0x11C`/`+0x11E`,
+   byte→`+0xBA`, word→`+0x7E`) and the diff-notify twin
+   `FUN_01675f60` does the same with property-changed listener dispatch
+   (vtable +0x68).
+
+   **The entity-base health block (11.19.0.10, statically verified):**
+
+   | Offset | Width | Field |
+   |---|---|---|
+   | `+0x7E` | int16 | gun angles packed (2 × 6-bit, `set_gunAnglesPacked`) |
+   | `+0xB8` | int16 | current health (`set_health`) |
+   | `+0xBA` | byte | alive flag (`set_isAlive`) |
+   | `+0x11C` | int16 | max health (`set_maxHealth`) |
+   | `+0x11E` | int16 | healing health (`set_healingHealth`) |
+
+   So the HP session anchors at **entity-base** with a region length ≥ 0x120
+   and correlates **int16** candidates (`hp-diff --int16 true`, on by
+   default for the HP/decrement direction). The tank-record anchor remains
+   correct for the facing/rotation work (the +0x2C tail of the transform
+   layout).
 2. **Session driver** — `scripts/invoke-hp-diffing-session.ps1` runs the
    whole flow: gate → **qualify the victim from the decoded replay**
    (see below — do NOT default to the player's own entity) → print the

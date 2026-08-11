@@ -244,6 +244,7 @@ docs/operations/handoffs/2026-08-10-v4-minimap-texture.md
 docs/operations/handoffs/2026-08-10-w2s-hud-nameplates.md
 docs/operations/handoffs/2026-08-10-walkable-position-chain-applied.md
 docs/operations/handoffs/2026-08-10-walkable-position-chain-draft.md
+docs/operations/handoffs/2026-08-11-playerhp-static-chain.md
 docs/operations/handoffs/2026-08-11-replay-clock-write-site-negative.md
 docs/operations/handoffs/README.md
 docs/operations/legacy-observation-surface.md
@@ -887,6 +888,7 @@ tools/ghidra-scripts/DumpWindow.java
 tools/ghidra-scripts/DumpWriteSite.java
 tools/ghidra-scripts/FindClockCopySites.java
 tools/ghidra-scripts/FindFunctionReferences.java
+tools/ghidra-scripts/FindHealthFieldStores.java
 tools/ghidra-scripts/FindOffsets.java
 tools/ghidra-scripts/FindOffsets.py
 tools/ghidra-scripts/FindReplayClockWriter.java
@@ -896,11 +898,17 @@ tools/ghidra-scripts/FindType10DispatchTable.java
 tools/ghidra-scripts/FindType10PositionConsumers.java
 tools/ghidra-scripts/FindType10RecordDispatch.java
 tools/ghidra-scripts/FindVehiclePositionFamily.java
+tools/ghidra-scripts/FindVftableRefs.java
+tools/ghidra-scripts/FindVftableViaCol.java
+tools/ghidra-scripts/ResolveVftableClass.java
 tools/ghidra-scripts/ScanAllClockOffsetStores.java
 tools/ghidra-scripts/ScanClockStoreBytes.java
+tools/ghidra-scripts/ScanRttiHealthClasses.java
+tools/ghidra-scripts/TraceAvatarHealthListener.java
 tools/ghidra-scripts/TraceEntityRegistryPosition.java
 tools/ghidra-scripts/TraceReplayClock.java
 tools/ghidra-scripts/TraceType10MovementPosition.java
+tools/ghidra-scripts/VerifyPlayerHpChain.java
 tools/ghidra-scripts/callers-disasm.txt
 tools/ghidra-scripts/chain-disasm.txt
 tools/ghidra-scripts/functions-disasm.txt

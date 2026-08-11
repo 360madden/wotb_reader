@@ -78,21 +78,23 @@ the published table.
 observation path.
 
 **playerHP static chain (2026-08-11, NOT promoted — live verification
-still required):** `VerifyPlayerHpChain.java` (hash-bound, 11/11 checks,
-verdict `player-hp-chain-verified` on `1cda5c31…1760307d`) pins current
-health as a **signed int16 at `[entity+0xB8]`** on the entity base record,
-with the alive byte at `[entity+0xBA]` and healing int16 at
-`[entity+0x11E]`. Evidence: VehicleGameLogic vftable slot 1 (0x31b560 =
-byte-verified `MOV EAX,[ECX+0x4]; RET`) is the entity getter;
-`set_health`/`set_healingHealth` read the old values through it; the
-state-sync writer `FUN_0166b9f0` and diff-notify twin `FUN_01675f60`
-store the same offsets. This REFUTES the earlier int32-in-tank-record
-expectation (`[entity+0x3C]`, the `+0x48` rehearsal fixture): HP is int16
-and lives 0x7C bytes past the transform pointer on the entity record
-itself. `playerHP` remains `0`/Unknown in the table until the L1 live
-session confirms the field empirically on both 11.19.0 replays; the
-`entity-base` region anchor + int16 correlator pass (2026-08-11) are the
-session's tools.
+still required):** `VerifyPlayerHpChain.java` (hash-bound, 16/16 checks,
+verdict `player-hp-chain-verified` on `1cda5c31…1760307d`) pins the
+entity base record's health block: current health as a **signed int16 at
+`[entity+0xB8]`**, alive byte at `[entity+0xBA]`, **max health int16 at
+`[entity+0x11C]`**, healing int16 at `[entity+0x11E]`, and packed gun
+angles (2 × 6-bit) at `[entity+0x7E]`. Evidence: VehicleGameLogic vftable
+slot 1 (0x31b560 = byte-verified `MOV EAX,[ECX+0x4]; RET`) is the entity
+getter; the `set_health`/`set_healingHealth`/`set_maxHealth`/
+`set_isAlive`/`set_gunAnglesPacked` setters read their old values through
+it; the state-sync writer `FUN_0166b9f0` and diff-notify twin
+`FUN_01675f60` store the same offsets. This REFUTES the earlier
+int32-in-tank-record expectation (`[entity+0x3C]`, the `+0x48` rehearsal
+fixture): HP is int16 and lives 0x7C bytes past the transform pointer on
+the entity record itself. `playerHP` remains `0`/Unknown in the table
+until the L1 live session confirms the field empirically on both 11.19.0
+replays; the `entity-base` region anchor + int16 correlator pass
+(2026-08-11) are the session's tools.
 
 ## Confidence levels
 

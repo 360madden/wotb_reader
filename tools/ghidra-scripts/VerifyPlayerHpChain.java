@@ -93,6 +93,26 @@ public class VerifyPlayerHpChain extends GhidraScript {
         check("notify_twin_dispatch_slot_0x68",
                 dis4.contains("CALL dword ptr [EAX + 0x68]"), "");
 
+        // ---- 6. maxHealth / isAlive / gunAnglesPacked setters ----
+        out.append("### 6. maxHealth (0x12eeb70): int16 at [entity+0x11C]\n");
+        String dis5 = disasmRange(0x12eeb70, 0x12eeb70 + 0x10c);
+        check("set_maxHealth_reads_entity_11c_int16",
+                dis5.contains("MOVSX EDI,word ptr [EAX + 0x11c]"), "");
+        check("set_maxHealth_derefs_vtable_slot1",
+                dis5.contains("CALL dword ptr [EAX + 0x4]"), "");
+
+        out.append("### 7. isAlive (0x12ee990): alive byte at [entity+0xBA]\n");
+        String dis6 = disasmRange(0x12ee990, 0x12ee990 + 0xa4);
+        check("set_isAlive_reads_entity_ba_byte",
+                dis6.contains("CMP byte ptr [EAX + 0xba],0x0"), "");
+        check("set_isAlive_reads_entity_b8_word",
+                dis6.contains("CMP word ptr [EAX + 0xb8],0x0"), "");
+
+        out.append("### 8. gunAnglesPacked (0x12ee230): word at [entity+0x7E]\n");
+        String dis7 = disasmRange(0x12ee230, 0x12ee230 + 0x11f);
+        check("set_gunAnglesPacked_reads_entity_7e_word",
+                dis7.contains("MOVZX ECX,word ptr [EAX + 0x7e]"), "");
+
         // ---- summary ----
         out.append("\nPASS=" + pass + " FAIL=" + fail + "\n");
         String verdict = fail == 0 ? "player-hp-chain-verified"
