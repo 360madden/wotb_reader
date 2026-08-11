@@ -491,6 +491,56 @@ public sealed record EntityRosterReadResponse
 }
 
 /// <summary>
+/// Request for one composed live frame. The optional battle session id
+/// enables the ONE G2 replay-clock attestation for the frame; omitted never
+/// claims the flag.
+/// </summary>
+public sealed record LiveFrameReadRequest
+{
+    public string? BattleSessionId { get; init; }
+}
+
+/// <summary>
+/// One tank of a live frame response: entity id + world position + hull
+/// yaw, when that entity resolved. HP is honest null until L1 lands — the
+/// HUD must never render a fabricated health value (design:
+/// docs/operations/live-frame-loop-design.md). World coordinates only.
+/// </summary>
+public sealed record LiveFrameTankResponse
+{
+    public int EntityId { get; init; }
+    public string Status { get; init; } = string.Empty;
+    public double? X { get; init; }
+    public double? Y { get; init; }
+    public double? Z { get; init; }
+    public double? YawRadians { get; init; }
+    public double? Hp { get; init; }
+    public string? FailureStage { get; init; }
+    public bool ModuleRooted { get; init; }
+}
+
+/// <summary>
+/// One composed live frame (design: docs/operations/live-frame-loop-design.md):
+/// the camera pose, every roster tank's position/facing, and ONE replay-
+/// clock label for the frame. No absolute address, process id, or module
+/// base is ever returned. The camera pose is embedded (null when the pose
+/// walk did not resolve).
+/// </summary>
+public sealed record LiveFrameReadResponse
+{
+    public DateTimeOffset CompletedAtUtc { get; init; }
+    public string GameVersion { get; init; } = string.Empty;
+    public string Status { get; init; } = string.Empty;
+    public string? FailureStage { get; init; }
+    public double? ReplayTimeSeconds { get; init; }
+    public bool SameDecodedClockProven { get; init; }
+    public CameraPoseReadResponse? Camera { get; init; }
+    public IReadOnlyList<LiveFrameTankResponse> Tanks { get; init; } = [];
+    public int RosterCandidatesSeen { get; init; }
+    public int RosterFilteredOut { get; init; }
+}
+
+/// <summary>
 /// Response of the gate-verified camera-pose endpoint (CAM-001 chain): the
 /// GameCamera world pose plus per-hop identity flags. Addresses are
 /// diagnostic evidence formatted as hex, never runtime read offsets.

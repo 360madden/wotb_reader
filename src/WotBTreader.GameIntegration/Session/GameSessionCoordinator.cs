@@ -2207,197 +2207,15 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             }
 
             // Phase 1: resolve ALL entity addresses under the same lease.
-            // An unresolved entity fails only itself; the retryable
-            // pre-battle phase fails the whole batch. The batch pass window
-            // (first resolve -> last read) is the item-7 verification
-            // window measurement.
-            DateTimeOffset batchStartedAt = _timeProvider.GetUtcNow();
-            var results = new EntityRegionReadResultItem[request.Entities.Count];
-            var resolvedItems =
-                new List<(int Index, EntityRegionReadRequestItem Item, Type10EntityPositionAddressResult Address)>(
-                    request.Entities.Count);
-            bool inactive = false;
-            for (int i = 0; i < request.Entities.Count; i++)
-            {
-                EntityRegionReadRequestItem entity = request.Entities[i];
-                OperationResult<Type10EntityPositionAddressResult> resolveResult =
-                    await readerResult.Value.ResolveEntityPositionAddressAsync(
-                        (nint)baseAddress,
-                        entity.EntityId,
-                        layout,
-                        readCancellation.Token).ConfigureAwait(false);
-                if (!IsScanAuthorizationCurrent(observation, authorizationToken))
-                {
-                    return GateCheck<EntityRegionsReadResult>(
-                        "discover.gate_not_satisfied",
-                        "The offline-session gate is no longer satisfied.");
-                }
 
-                if (resolveResult.IsSuccess && resolveResult.Value is not null)
-                {
-                    Type10EntityPositionAddressResult resolved = resolveResult.Value;
-                    if (resolved.Status == Type10EntityPositionStatus.ReplaySessionInactive)
-                    {
-                        inactive = true;
-                        break;
-                    }
-
-                    if (resolved.Status == Type10EntityPositionStatus.Resolved &&
-                        resolved.RecordAddress is not null)
-                    {
-                        resolvedItems.Add((i, entity, resolved));
-                        continue;
-                    }
-
-                    results[i] = new EntityRegionReadResultItem(
-                        entity.EntityId,
-                        resolved.Status,
-                        ReplayTimeSeconds: null,
-                        RegionBytes: null,
-                        resolved.FailureStage,
-                        resolved.Attempts,
-                        resolved.NodesVisited,
-                        resolved.ModuleRooted,
-                        EntityIdentityRevalidated: false,
-                        ConsistentDoubleRead: false);
-                }
-                else
-                {
-                    results[i] = new EntityRegionReadResultItem(
-                        entity.EntityId,
-                        Type10EntityPositionStatus.ReadFailed,
-                        ReplayTimeSeconds: null,
-                        RegionBytes: null,
-                        FailureStage: resolveResult.Error?.Code ?? "resolve-failed",
-                        Attempts: 0,
-                        NodesVisited: 0,
-                        ModuleRooted: false,
-                        EntityIdentityRevalidated: false,
-                        ConsistentDoubleRead: false);
-                }
-            }
-
-            if (inactive)
-            {
-                return OperationResult.Success(BuildBatchResult(
-                    layout,
-                    request.Entities,
-                    Type10EntityPositionStatus.ReplaySessionInactive,
-                    replayTimeSeconds: null,
-                    sameDecodedClockProven: false));
-            }
-
-            // Phase 2: read ALL regions.
-            foreach ((int index, EntityRegionReadRequestItem entity, Type10EntityPositionAddressResult resolved) in resolvedItems)
-            {
-                uint? regionBaseAddress = entity.RegionAnchor switch
-                {
-                    EntityRecordRegionAnchor.RingRecord => resolved.RecordAddress,
-                    EntityRecordRegionAnchor.EntityTankRecord => await ResolveTankRecordAddressAsync(
-                        readerResult.Value,
-                        resolved.EntityAddress,
-                        readCancellation.Token).ConfigureAwait(false),
-                    EntityRecordRegionAnchor.EntityBase => resolved.EntityAddress,
-                    _ => null,
-                };
-
-                if (regionBaseAddress is null)
-                {
-                    results[index] = new EntityRegionReadResultItem(
-                        entity.EntityId,
-                        Type10EntityPositionStatus.ReadFailed,
-                        ReplayTimeSeconds: null,
-                        RegionBytes: null,
-                        FailureStage: "region-anchor",
-                        resolved.Attempts,
-                        resolved.NodesVisited,
-                        resolved.ModuleRooted,
-                        EntityIdentityRevalidated: false,
-                        ConsistentDoubleRead: false);
-                    continue;
-                }
-
-                OperationResult<byte[]> regionResult = await readerResult.Value.ReadAsync(
-                    (nint)regionBaseAddress.Value,
-                    entity.RegionLength,
-                    readCancellation.Token).ConfigureAwait(false);
-                if (!IsScanAuthorizationCurrent(observation, authorizationToken))
-                {
-                    return GateCheck<EntityRegionsReadResult>(
-                        "discover.gate_not_satisfied",
-                        "The offline-session gate is no longer satisfied.");
-                }
-
-                if (!regionResult.IsSuccess || regionResult.Value is null)
-                {
-                    results[index] = new EntityRegionReadResultItem(
-                        entity.EntityId,
-                        Type10EntityPositionStatus.ReadFailed,
-                        ReplayTimeSeconds: null,
-                        RegionBytes: null,
-                        FailureStage: "region-read",
-                        resolved.Attempts,
-                        resolved.NodesVisited,
-                        resolved.ModuleRooted,
-                        EntityIdentityRevalidated: false,
-                        ConsistentDoubleRead: false);
-                    continue;
-                }
-
-                results[index] = new EntityRegionReadResultItem(
-                    entity.EntityId,
-                    Type10EntityPositionStatus.Resolved,
-                    ReplayTimeSeconds: null,
-                    RegionBytes: regionResult.Value,
-                    FailureStage: null,
-                    resolved.Attempts,
-                    resolved.NodesVisited,
-                    resolved.ModuleRooted,
-                    EntityIdentityRevalidated: false,
-                    ConsistentDoubleRead: false);
-            }
-
-            // Phase 3: ONE replay-clock label + same-decoded-clock
-            // attestation for the whole batch (post-read snapshot bounds the
-            // batch). Per-entity time mirrors carry the batch label; only
-            // the batch attestation is load-bearing. The snapshot moment is
-            // measured so the label-vs-read gap is quantifiable.
-            DateTimeOffset batchEndedAt = _timeProvider.GetUtcNow();
-            double? replayTimeSeconds = null;
-            bool sameDecodedClockProven = false;
-            DateTimeOffset? clockSnapshotAt = null;
-            if (request.BattleSessionId is not null)
-            {
-                clockSnapshotAt = _timeProvider.GetUtcNow();
-                OperationResult<ReplayClockSnapshot> clock = await _replayClockSource
-                    .GetSnapshotAsync(
-                        request.BattleSessionId.Value,
-                        clockSnapshotAt.Value,
-                        readCancellation.Token)
-                    .ConfigureAwait(false);
-                if (clock.IsSuccess && clock.Value is not null &&
-                    clock.Value.Quality != ReplayClockQuality.Stale &&
-                    clock.Value.Uncertainty is not null &&
-                    clock.Value.Uncertainty <= SameDecodedClockUncertaintyLimit)
-                {
-                    sameDecodedClockProven = true;
-                    replayTimeSeconds = clock.Value.EstimatedReplayTime.TotalSeconds;
-                }
-            }
-
-            return OperationResult.Success(new EntityRegionsReadResult(
-                _timeProvider.GetUtcNow(),
-                layout.GameVersion,
-                Type10EntityPositionStatus.Resolved,
-                replayTimeSeconds,
-                sameDecodedClockProven,
-                results
-                    .Select(item => item with { ReplayTimeSeconds = replayTimeSeconds })
-                    .ToList(),
-                new EntityRegionsReadMeasurement(
-                    batchStartedAt,
-                    batchEndedAt,
-                    clockSnapshotAt)));
+            return await ReadEntityRegionsCoreAsync(
+                request,
+                observation,
+                baseAddress,
+                readerResult.Value,
+                layout,
+                authorizationToken,
+                readCancellation.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -2457,45 +2275,517 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                         "The guarded roster reader is unavailable."));
             }
 
-            OperationResult<EntityRosterResult> enumerateResult = await readerResult.Value
-                .EnumerateEntitiesAsync(
-                    (nint)baseAddress,
-                    layout,
-                    readCancellation.Token)
-                .ConfigureAwait(false);
-            if (!IsScanAuthorizationCurrent(observation, authorizationToken))
-            {
-                return GateCheck<EntityRosterReadResult>(
-                    "discover.gate_not_satisfied",
-                    "The offline-session gate is no longer satisfied.");
-            }
-
-            if (!enumerateResult.IsSuccess || enumerateResult.Value is null)
-            {
-                return OperationResult.Failure<EntityRosterReadResult>(
-                    enumerateResult.Error ?? new ApplicationError(
-                        "discover.entity_roster.read_failed",
-                        "The roster enumeration read failed."));
-            }
-
-            EntityRosterResult roster = enumerateResult.Value;
-            // Privacy boundary: addresses stay inside the coordinator — the
-            // result carries ids ONLY (plus the filter-precision counters
-            // the live rehearsal cross-checks against the decoded roster).
-            return OperationResult.Success(new EntityRosterReadResult(
-                _timeProvider.GetUtcNow(),
-                layout.GameVersion,
-                roster.Status,
-                roster.FailureStage,
-                roster.CandidatesSeen,
-                roster.FilteredOut,
-                roster.ModuleRooted,
-                roster.TraversalLimited,
-                roster.Entities?.Select(entry => entry.EntityId).ToList() ?? []));
+            return await EnumerateEntitiesCoreAsync(
+                observation,
+                baseAddress,
+                readerResult.Value,
+                layout,
+                authorizationToken,
+                readCancellation.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             return GateCheck<EntityRosterReadResult>(
+                "discover.gate_not_satisfied",
+                "The offline-session gate is no longer satisfied.");
+        }
+    }
+
+    private async ValueTask<OperationResult<EntityRegionsReadResult>> ReadEntityRegionsCoreAsync(
+        EntityRegionsReadRequest request,
+        AuthorizedMemoryObservation observation,
+        long baseAddress,
+        IAuthorizedMemoryReader reader,
+        Type10EntityPositionLayout layout,
+        CancellationToken authorizationToken,
+        CancellationToken cancellationToken)
+    {
+        // An unresolved entity fails only itself; the retryable
+        // pre-battle phase fails the whole batch. The batch pass window
+        // (first resolve -> last read) is the item-7 verification
+        // window measurement.
+        DateTimeOffset batchStartedAt = _timeProvider.GetUtcNow();
+        var results = new EntityRegionReadResultItem[request.Entities.Count];
+        var resolvedItems =
+            new List<(int Index, EntityRegionReadRequestItem Item, Type10EntityPositionAddressResult Address)>(
+                request.Entities.Count);
+        bool inactive = false;
+        for (int i = 0; i < request.Entities.Count; i++)
+        {
+            EntityRegionReadRequestItem entity = request.Entities[i];
+            OperationResult<Type10EntityPositionAddressResult> resolveResult =
+                await reader.ResolveEntityPositionAddressAsync(
+                    (nint)baseAddress,
+                    entity.EntityId,
+                    layout,
+                    cancellationToken).ConfigureAwait(false);
+            if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+            {
+                return GateCheck<EntityRegionsReadResult>(
+                    "discover.gate_not_satisfied",
+                    "The offline-session gate is no longer satisfied.");
+            }
+
+            if (resolveResult.IsSuccess && resolveResult.Value is not null)
+            {
+                Type10EntityPositionAddressResult resolved = resolveResult.Value;
+                if (resolved.Status == Type10EntityPositionStatus.ReplaySessionInactive)
+                {
+                    inactive = true;
+                    break;
+                }
+
+                if (resolved.Status == Type10EntityPositionStatus.Resolved &&
+                    resolved.RecordAddress is not null)
+                {
+                    resolvedItems.Add((i, entity, resolved));
+                    continue;
+                }
+
+                results[i] = new EntityRegionReadResultItem(
+                    entity.EntityId,
+                    resolved.Status,
+                    ReplayTimeSeconds: null,
+                    RegionBytes: null,
+                    resolved.FailureStage,
+                    resolved.Attempts,
+                    resolved.NodesVisited,
+                    resolved.ModuleRooted,
+                    EntityIdentityRevalidated: false,
+                    ConsistentDoubleRead: false);
+            }
+            else
+            {
+                results[i] = new EntityRegionReadResultItem(
+                    entity.EntityId,
+                    Type10EntityPositionStatus.ReadFailed,
+                    ReplayTimeSeconds: null,
+                    RegionBytes: null,
+                    FailureStage: resolveResult.Error?.Code ?? "resolve-failed",
+                    Attempts: 0,
+                    NodesVisited: 0,
+                    ModuleRooted: false,
+                    EntityIdentityRevalidated: false,
+                    ConsistentDoubleRead: false);
+            }
+        }
+
+        if (inactive)
+        {
+            return OperationResult.Success(BuildBatchResult(
+                layout,
+                request.Entities,
+                Type10EntityPositionStatus.ReplaySessionInactive,
+                replayTimeSeconds: null,
+                sameDecodedClockProven: false));
+        }
+
+        // Phase 2: read ALL regions.
+        foreach ((int index, EntityRegionReadRequestItem entity, Type10EntityPositionAddressResult resolved) in resolvedItems)
+        {
+            uint? regionBaseAddress = entity.RegionAnchor switch
+            {
+                EntityRecordRegionAnchor.RingRecord => resolved.RecordAddress,
+                EntityRecordRegionAnchor.EntityTankRecord => await ResolveTankRecordAddressAsync(
+                    reader,
+                    resolved.EntityAddress,
+                    cancellationToken).ConfigureAwait(false),
+                EntityRecordRegionAnchor.EntityBase => resolved.EntityAddress,
+                _ => null,
+            };
+
+            if (regionBaseAddress is null)
+            {
+                results[index] = new EntityRegionReadResultItem(
+                    entity.EntityId,
+                    Type10EntityPositionStatus.ReadFailed,
+                    ReplayTimeSeconds: null,
+                    RegionBytes: null,
+                    FailureStage: "region-anchor",
+                    resolved.Attempts,
+                    resolved.NodesVisited,
+                    resolved.ModuleRooted,
+                    EntityIdentityRevalidated: false,
+                    ConsistentDoubleRead: false);
+                continue;
+            }
+
+            OperationResult<byte[]> regionResult = await reader.ReadAsync(
+                (nint)regionBaseAddress.Value,
+                entity.RegionLength,
+                cancellationToken).ConfigureAwait(false);
+            if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+            {
+                return GateCheck<EntityRegionsReadResult>(
+                    "discover.gate_not_satisfied",
+                    "The offline-session gate is no longer satisfied.");
+            }
+
+            if (!regionResult.IsSuccess || regionResult.Value is null)
+            {
+                results[index] = new EntityRegionReadResultItem(
+                    entity.EntityId,
+                    Type10EntityPositionStatus.ReadFailed,
+                    ReplayTimeSeconds: null,
+                    RegionBytes: null,
+                    FailureStage: "region-read",
+                    resolved.Attempts,
+                    resolved.NodesVisited,
+                    resolved.ModuleRooted,
+                    EntityIdentityRevalidated: false,
+                    ConsistentDoubleRead: false);
+                continue;
+            }
+
+            results[index] = new EntityRegionReadResultItem(
+                entity.EntityId,
+                Type10EntityPositionStatus.Resolved,
+                ReplayTimeSeconds: null,
+                RegionBytes: regionResult.Value,
+                FailureStage: null,
+                resolved.Attempts,
+                resolved.NodesVisited,
+                resolved.ModuleRooted,
+                EntityIdentityRevalidated: false,
+                ConsistentDoubleRead: false);
+        }
+
+        // Phase 3: ONE replay-clock label + same-decoded-clock
+        // attestation for the whole batch (post-read snapshot bounds the
+        // batch). Per-entity time mirrors carry the batch label; only
+        // the batch attestation is load-bearing. The snapshot moment is
+        // measured so the label-vs-read gap is quantifiable.
+        DateTimeOffset batchEndedAt = _timeProvider.GetUtcNow();
+        double? replayTimeSeconds = null;
+        bool sameDecodedClockProven = false;
+        DateTimeOffset? clockSnapshotAt = null;
+        if (request.BattleSessionId is not null)
+        {
+            clockSnapshotAt = _timeProvider.GetUtcNow();
+            OperationResult<ReplayClockSnapshot> clock = await _replayClockSource
+                .GetSnapshotAsync(
+                    request.BattleSessionId.Value,
+                    clockSnapshotAt.Value,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (clock.IsSuccess && clock.Value is not null &&
+                clock.Value.Quality != ReplayClockQuality.Stale &&
+                clock.Value.Uncertainty is not null &&
+                clock.Value.Uncertainty <= SameDecodedClockUncertaintyLimit)
+            {
+                sameDecodedClockProven = true;
+                replayTimeSeconds = clock.Value.EstimatedReplayTime.TotalSeconds;
+            }
+        }
+
+        return OperationResult.Success(new EntityRegionsReadResult(
+            _timeProvider.GetUtcNow(),
+            layout.GameVersion,
+            Type10EntityPositionStatus.Resolved,
+            replayTimeSeconds,
+            sameDecodedClockProven,
+            results
+                .Select(item => item with { ReplayTimeSeconds = replayTimeSeconds })
+                .ToList(),
+            new EntityRegionsReadMeasurement(
+                batchStartedAt,
+                batchEndedAt,
+                clockSnapshotAt)));
+
+    }
+
+    private async ValueTask<OperationResult<EntityRosterReadResult>> EnumerateEntitiesCoreAsync(
+        AuthorizedMemoryObservation observation,
+        long baseAddress,
+        IAuthorizedMemoryReader reader,
+        Type10EntityPositionLayout layout,
+        CancellationToken authorizationToken,
+        CancellationToken cancellationToken)
+    {
+
+        OperationResult<EntityRosterResult> enumerateResult = await reader
+            .EnumerateEntitiesAsync(
+                (nint)baseAddress,
+                layout,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+        {
+            return GateCheck<EntityRosterReadResult>(
+                "discover.gate_not_satisfied",
+                "The offline-session gate is no longer satisfied.");
+        }
+
+        if (!enumerateResult.IsSuccess || enumerateResult.Value is null)
+        {
+            return OperationResult.Failure<EntityRosterReadResult>(
+                enumerateResult.Error ?? new ApplicationError(
+                    "discover.entity_roster.read_failed",
+                    "The roster enumeration read failed."));
+        }
+
+        EntityRosterResult roster = enumerateResult.Value;
+        // Privacy boundary: addresses stay inside the coordinator — the
+        // result carries ids ONLY (plus the filter-precision counters
+        // the live rehearsal cross-checks against the decoded roster).
+        return OperationResult.Success(new EntityRosterReadResult(
+            _timeProvider.GetUtcNow(),
+            layout.GameVersion,
+            roster.Status,
+            roster.FailureStage,
+            roster.CandidatesSeen,
+            roster.FilteredOut,
+            roster.ModuleRooted,
+            roster.TraversalLimited,
+            roster.Entities?.Select(entry => entry.EntityId).ToList() ?? []));
+
+    }
+
+    public async ValueTask<OperationResult<LiveFrameReadResult>> ReadLiveFrameAsync(
+        LiveFrameReadRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        (AuthorizedMemoryObservation? observation, long baseAddress, CancellationToken authorizationToken, bool ok) =
+            GetScanAuthorization(cancellationToken);
+        if (!ok)
+        {
+            return GateCheck<LiveFrameReadResult>(
+                "discover.gate_not_satisfied",
+                "The offline-session gate is not satisfied.");
+        }
+
+        using CancellationTokenSource readCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, authorizationToken);
+        try
+        {
+            Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+            if (!string.Equals(
+                observation!.ProductVersion,
+                layout.GameVersion,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                observation.ExecutableSha256.Value,
+                layout.ExecutableSha256,
+                StringComparison.Ordinal))
+            {
+                return OperationResult.Success(new LiveFrameReadResult(
+                    _timeProvider.GetUtcNow(),
+                    layout.GameVersion,
+                    Type10EntityPositionStatus.UnsupportedBuild,
+                    "build-identity",
+                    ReplayTimeSeconds: null,
+                    SameDecodedClockProven: false,
+                    Camera: null,
+                    Tanks: [],
+                    RosterCandidatesSeen: 0,
+                    RosterFilteredOut: 0));
+            }
+
+            Type10CameraPoseLayout cameraLayout = Type10CameraPoseLayout.WotBlitz1119010;
+
+            // Camera anchor first: the anchor scan never touches the guarded
+            // reader, so it runs before the single lease is opened (a missing
+            // anchor must not justify opening one). The frame still serves
+            // roster + batch when the anchor is missing; the camera simply
+            // reports AnchorNotFound.
+            (long avatarAddress, uint matchedAvatarRva) = await FindAvatarAnchorAsync(
+                observation,
+                baseAddress,
+                cameraLayout,
+                authorizationToken,
+                readCancellation.Token).ConfigureAwait(false);
+            if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+            {
+                return GateCheck<LiveFrameReadResult>(
+                    "discover.gate_not_satisfied",
+                    "The offline-session gate is no longer satisfied.");
+            }
+
+            // ONE guarded reader lease for the whole frame: roster, batch,
+            // and camera share it, so the frame is one coherent read window.
+            OperationResult<IAuthorizedMemoryReader> readerResult = await _memoryReaderFactory
+                .CreateAsync(observation, readCancellation.Token)
+                .ConfigureAwait(false);
+            if (!readerResult.IsSuccess || readerResult.Value is null)
+            {
+                return OperationResult.Failure<LiveFrameReadResult>(
+                    new ApplicationError(
+                        "discover.live_frame.read_unavailable",
+                        "The guarded live-frame reader is unavailable."));
+            }
+
+            IAuthorizedMemoryReader reader = readerResult.Value;
+
+            // 1. Enumerate the avatar-family roster (the live counterpart to
+            //    the decoded participants table). A roster that cannot be
+            //    established fails the whole frame — the frame is nothing
+            //    without its entities.
+            OperationResult<EntityRosterReadResult> rosterResult = await EnumerateEntitiesCoreAsync(
+                observation,
+                baseAddress,
+                reader,
+                layout,
+                authorizationToken,
+                readCancellation.Token).ConfigureAwait(false);
+            if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+            {
+                return GateCheck<LiveFrameReadResult>(
+                    "discover.gate_not_satisfied",
+                    "The offline-session gate is no longer satisfied.");
+            }
+
+            if (!rosterResult.IsSuccess || rosterResult.Value is null)
+            {
+                return OperationResult.Failure<LiveFrameReadResult>(
+                    rosterResult.Error ?? new ApplicationError(
+                        "discover.live_frame.roster_failed",
+                        "The roster enumeration failed."));
+            }
+
+            EntityRosterReadResult roster = rosterResult.Value;
+            if (roster.Status != Type10EntityPositionStatus.Resolved)
+            {
+                return OperationResult.Success(new LiveFrameReadResult(
+                    _timeProvider.GetUtcNow(),
+                    layout.GameVersion,
+                    roster.Status,
+                    roster.FailureStage,
+                    ReplayTimeSeconds: null,
+                    SameDecodedClockProven: false,
+                    Camera: null,
+                    Tanks: [],
+                    RosterCandidatesSeen: roster.CandidatesSeen,
+                    RosterFilteredOut: roster.FilteredOut));
+            }
+
+            // 2. Batch-read every roster entity's ring record under the same
+            //    authorization (ring-record anchor; the region must reach
+            //    hull yaw at +0x2C, so 0x40 bytes). ONE G2 clock attestation
+            //    when a battle session id is supplied.
+            var batchItems = roster.EntityIds
+                .Select(entityId => new EntityRegionReadRequestItem(
+                    entityId,
+                    RegionLength: 0x40,
+                    EntityRecordRegionAnchor.RingRecord))
+                .ToList();
+            OperationResult<EntityRegionsReadResult> batchResult = await ReadEntityRegionsCoreAsync(
+                new EntityRegionsReadRequest(batchItems, request.BattleSessionId),
+                observation,
+                baseAddress,
+                reader,
+                layout,
+                authorizationToken,
+                readCancellation.Token).ConfigureAwait(false);
+            if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+            {
+                return GateCheck<LiveFrameReadResult>(
+                    "discover.gate_not_satisfied",
+                    "The offline-session gate is no longer satisfied.");
+            }
+
+            if (!batchResult.IsSuccess || batchResult.Value is null)
+            {
+                return OperationResult.Failure<LiveFrameReadResult>(
+                    batchResult.Error ?? new ApplicationError(
+                        "discover.live_frame.batch_failed",
+                        "The roster batch read failed."));
+            }
+
+            EntityRegionsReadResult batch = batchResult.Value;
+            if (batch.Status != Type10EntityPositionStatus.Resolved)
+            {
+                return OperationResult.Success(new LiveFrameReadResult(
+                    _timeProvider.GetUtcNow(),
+                    layout.GameVersion,
+                    batch.Status,
+                    batch.Status switch
+                    {
+                        Type10EntityPositionStatus.UnsupportedBuild => "build-identity",
+                        Type10EntityPositionStatus.ReplaySessionInactive => "pre-battle-inactive",
+                        _ => "batch",
+                    },
+                    batch.ReplayTimeSeconds,
+                    batch.SameDecodedClockProven,
+                    Camera: null,
+                    Tanks: [],
+                    RosterCandidatesSeen: roster.CandidatesSeen,
+                    RosterFilteredOut: roster.FilteredOut));
+            }
+
+            // 3. Camera pose (CAM-001 chain) — independent of the entity
+            //    maps; its wall-clock proximity to the batch is bounded by
+            //    the batch read-pass window (the frame's timing budget).
+            OperationResult<CameraPoseReadResult> cameraResult = avatarAddress == 0
+                ? OperationResult.Success(CameraAnchorNotFound(cameraLayout))
+                : await ReadCameraPoseCoreAsync(
+                    observation,
+                    baseAddress,
+                    reader,
+                    avatarAddress,
+                    matchedAvatarRva,
+                    cameraLayout,
+                    authorizationToken,
+                    readCancellation.Token).ConfigureAwait(false);
+            CameraPoseReadResult? camera = cameraResult.IsSuccess ? cameraResult.Value : null;
+
+            // 4. Assemble: decode position (+0x10) and hull yaw (+0x2C)
+            //    from each resolved ring-record region. HP is an honest null
+            //    until L1 lands. Per-tank statuses are authoritative; a
+            //    region that resolved but failed to decode its position is a
+            //    per-tank failure, not a frame failure.
+            var tanks = new List<LiveFrameTankState>(batch.Regions.Count);
+            foreach (EntityRegionReadResultItem region in batch.Regions)
+            {
+                float? x = null;
+                float? y = null;
+                float? z = null;
+                float? yaw = null;
+                string? failureStage = region.FailureStage;
+                if (region.Status == Type10EntityPositionStatus.Resolved &&
+                    region.RegionBytes is not null)
+                {
+                    (float X, float Y, float Z)? position =
+                        RingRecordRegion.TryReadPosition(region.RegionBytes);
+                    if (position is null)
+                    {
+                        failureStage = "region-position-decode";
+                    }
+                    else
+                    {
+                        (x, y, z) = position.Value;
+                        yaw = RingRecordRegion.TryReadYaw(region.RegionBytes);
+                    }
+                }
+
+                tanks.Add(new LiveFrameTankState(
+                    region.EntityId,
+                    region.Status,
+                    x,
+                    y,
+                    z,
+                    yaw,
+                    Hp: null,
+                    failureStage,
+                    region.ModuleRooted));
+            }
+
+            return OperationResult.Success(new LiveFrameReadResult(
+                _timeProvider.GetUtcNow(),
+                layout.GameVersion,
+                Type10EntityPositionStatus.Resolved,
+                FailureStage: null,
+                batch.ReplayTimeSeconds,
+                batch.SameDecodedClockProven,
+                camera,
+                tanks,
+                roster.CandidatesSeen,
+                roster.FilteredOut));
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return GateCheck<LiveFrameReadResult>(
                 "discover.gate_not_satisfied",
                 "The offline-session gate is no longer satisfied.");
         }
@@ -2630,49 +2920,22 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             //    variant is the fallback for live-mode sessions). The guarded
             //    reader is created only after the anchor exists, so a missing
             //    anchor never opens a process lease.
-            long avatarAddress = 0;
-            uint matchedAvatarRva = 0;
-            foreach (uint avatarRva in new[]
+            (long avatarAddress, uint matchedAvatarRva) = await FindAvatarAnchorAsync(
+                observation,
+                baseAddress,
+                layout,
+                authorizationToken,
+                readCancellation.Token).ConfigureAwait(false);
+            if (!IsScanAuthorizationCurrent(observation, authorizationToken))
             {
-                layout.AvatarVftableReplayRva,
-                layout.AvatarVftableLiveRva,
-            })
-            {
-                OperationResult<MemoryScanResult> scanResult = await ScanForCameraAnchorAsync(
-                    observation,
-                    baseAddress,
-                    (uint)(baseAddress + avatarRva),
-                    layout,
-                    readCancellation.Token).ConfigureAwait(false);
-                if (!IsScanAuthorizationCurrent(observation, authorizationToken))
-                {
-                    return GateCheck<CameraPoseReadResult>(
-                        "discover.gate_not_satisfied",
-                        "The offline-session gate is no longer satisfied.");
-                }
-
-                if (scanResult.IsSuccess && scanResult.Value is { Candidates.Count: > 0 })
-                {
-                    avatarAddress = scanResult.Value.Candidates[0].AbsoluteAddress;
-                    matchedAvatarRva = avatarRva;
-                    break;
-                }
+                return GateCheck<CameraPoseReadResult>(
+                    "discover.gate_not_satisfied",
+                    "The offline-session gate is no longer satisfied.");
             }
 
             if (avatarAddress == 0)
             {
-                return OperationResult.Success(new CameraPoseReadResult(
-                    _timeProvider.GetUtcNow(),
-                    layout.GameVersion,
-                    CameraPoseStatus.AnchorNotFound,
-                    "avatar-vftable-anchor",
-                    0, 0, 0,
-                    0f, 0f, 0f, 0f, 0f, [],
-                    AvatarIdentityVerified: false,
-                    CameraIdentityVerified: false,
-                    CameraStateIdentityVerified: false,
-                    ConsistentDoubleRead: false,
-                    ModuleRooted: true));
+                return OperationResult.Success(CameraAnchorNotFound(layout));
             }
 
             OperationResult<IAuthorizedMemoryReader> readerResult = await _memoryReaderFactory
@@ -2688,128 +2951,15 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
 
             IAuthorizedMemoryReader reader = readerResult.Value;
 
-            // 2. [avatar + AvatarBattleResourcesOffset] → battle resources.
-            OperationResult<uint> battleResources = await ReadUInt32PointerAsync(
-                reader,
-                avatarAddress + layout.AvatarBattleResourcesOffset,
-                readCancellation.Token).ConfigureAwait(false);
-            if (!battleResources.IsSuccess)
-            {
-                return OperationResult.Success(CameraChainBroken(layout, avatarAddress, "avatar-battle-resources",
-                    matchedAvatarRva, false, false));
-            }
-
-            // 3. [br + CameraControllerOffset] → camera controller; gate its
-            //    vftable against the replay (or live) variant.
-            OperationResult<uint> cameraAddress = await ReadUInt32PointerAsync(
-                reader,
-                battleResources.Value + layout.CameraControllerOffset,
-                readCancellation.Token).ConfigureAwait(false);
-            if (!cameraAddress.IsSuccess || cameraAddress.Value == 0)
-            {
-                return OperationResult.Success(CameraChainBroken(layout, avatarAddress, "camera-controller",
-                    matchedAvatarRva, false, false));
-            }
-
-            OperationResult<uint> cameraVftable = await ReadUInt32PointerAsync(
-                reader,
-                cameraAddress.Value,
-                readCancellation.Token).ConfigureAwait(false);
-            uint cameraVftableRva = (uint)(cameraVftable.Value - (uint)baseAddress);
-            bool cameraIdentity = cameraVftable.IsSuccess
-                && (cameraVftableRva == layout.CameraReplayVftableRva
-                    || cameraVftableRva == layout.CameraLiveVftableRva);
-            if (!cameraIdentity)
-            {
-                return OperationResult.Success(CameraChainBroken(layout, avatarAddress, "camera-vftable",
-                    matchedAvatarRva, false, false));
-            }
-
-            // 4. [camera + CameraStateOffset] → GameCamera; gate its vftable.
-            OperationResult<uint> cameraStateAddress = await ReadUInt32PointerAsync(
-                reader,
-                cameraAddress.Value + layout.CameraStateOffset,
-                readCancellation.Token).ConfigureAwait(false);
-            if (!cameraStateAddress.IsSuccess || cameraStateAddress.Value == 0)
-            {
-                return OperationResult.Success(CameraChainBroken(layout, avatarAddress, "camera-state",
-                    matchedAvatarRva, cameraIdentity, false));
-            }
-
-            OperationResult<uint> cameraStateVftable = await ReadUInt32PointerAsync(
-                reader,
-                cameraStateAddress.Value,
-                readCancellation.Token).ConfigureAwait(false);
-            bool cameraStateIdentity = cameraStateVftable.IsSuccess
-                && cameraStateVftable.Value - (uint)baseAddress == layout.CameraStateVftableRva;
-            if (!cameraStateIdentity)
-            {
-                return OperationResult.Success(CameraChainBroken(layout, avatarAddress, "camera-state-vftable",
-                    matchedAvatarRva, cameraIdentity, false));
-            }
-
-            // 5. Pose region: [GameCamera + PositionOffset, PoseRegionLength)
-            //    read twice, byte-identical, before parsing any field.
-            nint poseAddress = (nint)(cameraStateAddress.Value + layout.PositionOffset);
-            OperationResult<byte[]> firstRead = await reader.ReadAsync(
-                poseAddress,
-                layout.PoseRegionLength,
-                readCancellation.Token).ConfigureAwait(false);
-            if (!firstRead.IsSuccess || firstRead.Value is null ||
-                firstRead.Value.Length != layout.PoseRegionLength)
-            {
-                return OperationResult.Success(CameraChainBroken(layout, avatarAddress, "pose-region",
-                    matchedAvatarRva, cameraIdentity, cameraStateIdentity));
-            }
-
-            OperationResult<byte[]> secondRead = await reader.ReadAsync(
-                poseAddress,
-                layout.PoseRegionLength,
-                readCancellation.Token).ConfigureAwait(false);
-            bool consistentDoubleRead = secondRead.IsSuccess
-                && secondRead.Value is not null
-                && secondRead.Value.AsSpan().SequenceEqual(firstRead.Value);
-            if (!consistentDoubleRead)
-            {
-                return OperationResult.Success(CameraChainBroken(layout, avatarAddress, "pose-double-read",
-                    matchedAvatarRva, cameraIdentity, cameraStateIdentity));
-            }
-
-            byte[] pose = firstRead.Value;
-            int posOffset = 0;
-            int yawCosOffset = (int)(layout.YawCosOffset - layout.PositionOffset);
-            int yawSinOffset = (int)(layout.YawSinOffset - layout.PositionOffset);
-            int pitchOffset = (int)(layout.PitchOffset - layout.PositionOffset);
-            int basisOffset = (int)(layout.BasisOffset - layout.PositionOffset);
-
-            float x = BitConverter.ToSingle(pose, posOffset);
-            float y = BitConverter.ToSingle(pose, posOffset + sizeof(float));
-            float z = BitConverter.ToSingle(pose, posOffset + 2 * sizeof(float));
-            float yawCos = BitConverter.ToSingle(pose, yawCosOffset);
-            float yawSin = BitConverter.ToSingle(pose, yawSinOffset);
-            float pitch = BitConverter.ToSingle(pose, pitchOffset);
-            float yaw = (float)Math.Atan2(yawSin, yawCos);
-
-            float[] basis = new float[9];
-            for (int i = 0; i < 9; i++)
-            {
-                basis[i] = BitConverter.ToSingle(pose, basisOffset + i * sizeof(float));
-            }
-
-            return OperationResult.Success(new CameraPoseReadResult(
-                _timeProvider.GetUtcNow(),
-                layout.GameVersion,
-                CameraPoseStatus.Resolved,
-                null,
+            return await ReadCameraPoseCoreAsync(
+                observation,
+                baseAddress,
+                readerResult.Value,
                 avatarAddress,
-                cameraAddress.Value,
-                cameraStateAddress.Value,
-                x, y, z, yaw, pitch, basis,
-                AvatarIdentityVerified: true,
-                CameraIdentityVerified: true,
-                CameraStateIdentityVerified: true,
-                ConsistentDoubleRead: true,
-                ModuleRooted: true));
+                matchedAvatarRva,
+                layout,
+                authorizationToken,
+                readCancellation.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -2817,6 +2967,142 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 "discover.gate_not_satisfied",
                 "The offline-session gate is no longer satisfied.");
         }
+    }
+
+    private async ValueTask<OperationResult<CameraPoseReadResult>> ReadCameraPoseCoreAsync(
+        AuthorizedMemoryObservation observation,
+        long baseAddress,
+        IAuthorizedMemoryReader reader,
+        long avatarAddress,
+        uint matchedAvatarRva,
+        Type10CameraPoseLayout layout,
+        CancellationToken authorizationToken,
+        CancellationToken cancellationToken)
+    {
+
+        // 2. [avatar + AvatarBattleResourcesOffset] → battle resources.
+        OperationResult<uint> battleResources = await ReadUInt32PointerAsync(
+            reader,
+            avatarAddress + layout.AvatarBattleResourcesOffset,
+            cancellationToken).ConfigureAwait(false);
+        if (!battleResources.IsSuccess)
+        {
+            return OperationResult.Success(CameraChainBroken(layout, avatarAddress, "avatar-battle-resources",
+                matchedAvatarRva, false, false));
+        }
+
+        // 3. [br + CameraControllerOffset] → camera controller; gate its
+        //    vftable against the replay (or live) variant.
+        OperationResult<uint> cameraAddress = await ReadUInt32PointerAsync(
+            reader,
+            battleResources.Value + layout.CameraControllerOffset,
+            cancellationToken).ConfigureAwait(false);
+        if (!cameraAddress.IsSuccess || cameraAddress.Value == 0)
+        {
+            return OperationResult.Success(CameraChainBroken(layout, avatarAddress, "camera-controller",
+                matchedAvatarRva, false, false));
+        }
+
+        OperationResult<uint> cameraVftable = await ReadUInt32PointerAsync(
+            reader,
+            cameraAddress.Value,
+            cancellationToken).ConfigureAwait(false);
+        uint cameraVftableRva = (uint)(cameraVftable.Value - (uint)baseAddress);
+        bool cameraIdentity = cameraVftable.IsSuccess
+            && (cameraVftableRva == layout.CameraReplayVftableRva
+                || cameraVftableRva == layout.CameraLiveVftableRva);
+        if (!cameraIdentity)
+        {
+            return OperationResult.Success(CameraChainBroken(layout, avatarAddress, "camera-vftable",
+                matchedAvatarRva, false, false));
+        }
+
+        // 4. [camera + CameraStateOffset] → GameCamera; gate its vftable.
+        OperationResult<uint> cameraStateAddress = await ReadUInt32PointerAsync(
+            reader,
+            cameraAddress.Value + layout.CameraStateOffset,
+            cancellationToken).ConfigureAwait(false);
+        if (!cameraStateAddress.IsSuccess || cameraStateAddress.Value == 0)
+        {
+            return OperationResult.Success(CameraChainBroken(layout, avatarAddress, "camera-state",
+                matchedAvatarRva, cameraIdentity, false));
+        }
+
+        OperationResult<uint> cameraStateVftable = await ReadUInt32PointerAsync(
+            reader,
+            cameraStateAddress.Value,
+            cancellationToken).ConfigureAwait(false);
+        bool cameraStateIdentity = cameraStateVftable.IsSuccess
+            && cameraStateVftable.Value - (uint)baseAddress == layout.CameraStateVftableRva;
+        if (!cameraStateIdentity)
+        {
+            return OperationResult.Success(CameraChainBroken(layout, avatarAddress, "camera-state-vftable",
+                matchedAvatarRva, cameraIdentity, false));
+        }
+
+        // 5. Pose region: [GameCamera + PositionOffset, PoseRegionLength)
+        //    read twice, byte-identical, before parsing any field.
+        nint poseAddress = (nint)(cameraStateAddress.Value + layout.PositionOffset);
+        OperationResult<byte[]> firstRead = await reader.ReadAsync(
+            poseAddress,
+            layout.PoseRegionLength,
+            cancellationToken).ConfigureAwait(false);
+        if (!firstRead.IsSuccess || firstRead.Value is null ||
+            firstRead.Value.Length != layout.PoseRegionLength)
+        {
+            return OperationResult.Success(CameraChainBroken(layout, avatarAddress, "pose-region",
+                matchedAvatarRva, cameraIdentity, cameraStateIdentity));
+        }
+
+        OperationResult<byte[]> secondRead = await reader.ReadAsync(
+            poseAddress,
+            layout.PoseRegionLength,
+            cancellationToken).ConfigureAwait(false);
+        bool consistentDoubleRead = secondRead.IsSuccess
+            && secondRead.Value is not null
+            && secondRead.Value.AsSpan().SequenceEqual(firstRead.Value);
+        if (!consistentDoubleRead)
+        {
+            return OperationResult.Success(CameraChainBroken(layout, avatarAddress, "pose-double-read",
+                matchedAvatarRva, cameraIdentity, cameraStateIdentity));
+        }
+
+        byte[] pose = firstRead.Value;
+        int posOffset = 0;
+        int yawCosOffset = (int)(layout.YawCosOffset - layout.PositionOffset);
+        int yawSinOffset = (int)(layout.YawSinOffset - layout.PositionOffset);
+        int pitchOffset = (int)(layout.PitchOffset - layout.PositionOffset);
+        int basisOffset = (int)(layout.BasisOffset - layout.PositionOffset);
+
+        float x = BitConverter.ToSingle(pose, posOffset);
+        float y = BitConverter.ToSingle(pose, posOffset + sizeof(float));
+        float z = BitConverter.ToSingle(pose, posOffset + 2 * sizeof(float));
+        float yawCos = BitConverter.ToSingle(pose, yawCosOffset);
+        float yawSin = BitConverter.ToSingle(pose, yawSinOffset);
+        float pitch = BitConverter.ToSingle(pose, pitchOffset);
+        float yaw = (float)Math.Atan2(yawSin, yawCos);
+
+        float[] basis = new float[9];
+        for (int i = 0; i < 9; i++)
+        {
+            basis[i] = BitConverter.ToSingle(pose, basisOffset + i * sizeof(float));
+        }
+
+        return OperationResult.Success(new CameraPoseReadResult(
+            _timeProvider.GetUtcNow(),
+            layout.GameVersion,
+            CameraPoseStatus.Resolved,
+            null,
+            avatarAddress,
+            cameraAddress.Value,
+            cameraStateAddress.Value,
+            x, y, z, yaw, pitch, basis,
+            AvatarIdentityVerified: true,
+            CameraIdentityVerified: true,
+            CameraStateIdentityVerified: true,
+            ConsistentDoubleRead: true,
+            ModuleRooted: true));
+
     }
 
     private CameraPoseReadResult CameraChainBroken(
@@ -2836,6 +3122,56 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         AvatarIdentityVerified: matchedAvatarRva != 0,
         CameraIdentityVerified: cameraIdentity,
         CameraStateIdentityVerified: cameraStateIdentity,
+        ConsistentDoubleRead: false,
+        ModuleRooted: true);
+
+    private async ValueTask<(long AvatarAddress, uint MatchedAvatarRva)> FindAvatarAnchorAsync(
+        AuthorizedMemoryObservation observation,
+        long baseAddress,
+        Type10CameraPoseLayout layout,
+        CancellationToken authorizationToken,
+        CancellationToken cancellationToken)
+    {
+        long avatarAddress = 0;
+        uint matchedAvatarRva = 0;
+        foreach (uint avatarRva in new[]
+        {
+            layout.AvatarVftableReplayRva,
+            layout.AvatarVftableLiveRva,
+        })
+        {
+            OperationResult<MemoryScanResult> scanResult = await ScanForCameraAnchorAsync(
+                observation,
+                baseAddress,
+                (uint)(baseAddress + avatarRva),
+                layout,
+                cancellationToken).ConfigureAwait(false);
+            if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+            {
+                return (0, 0);
+            }
+
+            if (scanResult.IsSuccess && scanResult.Value is { Candidates.Count: > 0 })
+            {
+                avatarAddress = scanResult.Value.Candidates[0].AbsoluteAddress;
+                matchedAvatarRva = avatarRva;
+                break;
+            }
+        }
+
+        return (avatarAddress, matchedAvatarRva);
+    }
+
+    private CameraPoseReadResult CameraAnchorNotFound(Type10CameraPoseLayout layout) => new(
+        _timeProvider.GetUtcNow(),
+        layout.GameVersion,
+        CameraPoseStatus.AnchorNotFound,
+        "avatar-vftable-anchor",
+        0, 0, 0,
+        0f, 0f, 0f, 0f, 0f, [],
+        AvatarIdentityVerified: false,
+        CameraIdentityVerified: false,
+        CameraStateIdentityVerified: false,
         ConsistentDoubleRead: false,
         ModuleRooted: true);
 

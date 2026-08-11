@@ -1807,6 +1807,185 @@ public sealed class GameSessionCoordinatorTests
     }
 
     [TestMethod]
+    public async Task LiveFrame_ComposesRosterBatchAndCamera()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        Type10CameraPoseLayout cameraLayout = Type10CameraPoseLayout.WotBlitz1119010;
+        // Ring-record regions for two roster entities: position at +0x10,
+        // hull yaw at +0x2C (the L2 chain field).
+        byte[] ringA = CreateRingRegion(12.5f, 3.25f, -44.75f, yaw: 0.5f);
+        byte[] ringB = CreateRingRegion(-8f, 2f, 30f, yaw: -1.25f);
+        Dictionary<long, byte[]> pages = CreateCameraChainPages(cameraLayout);
+        pages[0x25000038] = ringA;
+        pages[0x25000100] = ringB;
+        var factory = new ScriptedCameraReaderFactory(pages);
+        factory.Reader.RosterResult = new EntityRosterResult(
+            Type10EntityPositionStatus.Resolved,
+            FailureStage: null,
+            ModuleRooted: true,
+            NodesVisited: 12,
+            CandidatesSeen: 18,
+            FilteredOut: 4,
+            Entities:
+            [
+                new EntityRosterEntry(3760578, 0x25000028),
+                new EntityRosterEntry(3760577, 0x25000100),
+            ],
+            TraversalLimited: false);
+        factory.Reader.AddressResult = new Type10EntityPositionAddressResult(
+            Type10EntityPositionStatus.Resolved,
+            RecordAddress: 0x25000038,
+            PageAddress: 0x25000000,
+            EntityAddress: 0x25000028,
+            FailureStage: null,
+            Attempts: 1,
+            NodesVisited: 0,
+            ModuleRooted: true);
+        // Second entity resolves to the second ring region.
+        factory.Reader.AddressByEntity = new Dictionary<int, Type10EntityPositionAddressResult>
+        {
+            [3760578] = new(
+                Type10EntityPositionStatus.Resolved,
+                RecordAddress: 0x25000038,
+                PageAddress: 0x25000000,
+                EntityAddress: 0x25000028,
+                FailureStage: null,
+                Attempts: 1,
+                NodesVisited: 0,
+                ModuleRooted: true),
+            [3760577] = new(
+                Type10EntityPositionStatus.Resolved,
+                RecordAddress: 0x25000100,
+                PageAddress: 0x25000000,
+                EntityAddress: 0x25000100,
+                FailureStage: null,
+                Attempts: 1,
+                NodesVisited: 0,
+                ModuleRooted: true),
+        };
+        var scan = new FakeScanDiscoverer(CreateAvatarScanResult());
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<LiveFrameReadResult> result = await coordinator
+            .ReadLiveFrameAsync(
+                new LiveFrameReadRequest(),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess, result.Error?.Message);
+        LiveFrameReadResult frame = result.Value!;
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, frame.Status);
+        Assert.IsNull(frame.ReplayTimeSeconds);
+        Assert.IsFalse(frame.SameDecodedClockProven);
+        Assert.AreEqual(18, frame.RosterCandidatesSeen);
+        Assert.AreEqual(4, frame.RosterFilteredOut);
+        Assert.HasCount(2, frame.Tanks);
+        // Tank A: position + yaw decoded from its ring region, hp honest null.
+        LiveFrameTankState first = frame.Tanks[0];
+        Assert.AreEqual(3760578, first.EntityId);
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, first.Status);
+        Assert.AreEqual(12.5f, first.X);
+        Assert.AreEqual(3.25f, first.Y);
+        Assert.AreEqual(-44.75f, first.Z);
+        Assert.AreEqual(0.5f, first.YawRadians);
+        Assert.IsNull(first.Hp);
+        Assert.IsTrue(first.ModuleRooted);
+        // Tank B: its own ring region.
+        LiveFrameTankState second = frame.Tanks[1];
+        Assert.AreEqual(3760577, second.EntityId);
+        Assert.AreEqual(-8f, second.X);
+        Assert.AreEqual(-1.25f, second.YawRadians);
+        // Camera pose resolved through the CAM-001 chain.
+        Assert.IsNotNull(frame.Camera);
+        Assert.AreEqual(CameraPoseStatus.Resolved, frame.Camera!.Status);
+        Assert.AreEqual(10.5f, frame.Camera.X);
+        Assert.AreEqual(1, factory.CreateCount);
+        Assert.AreEqual(1, scan.ScanCount);
+    }
+
+    [TestMethod]
+    public async Task LiveFrame_MissingOfflineGateNeverCreatesMemoryReader()
+    {
+        var factory = new ScriptedCameraReaderFactory(CreateCameraChainPages());
+        var scan = new FakeScanDiscoverer(CreateAvatarScanResult());
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+
+        OperationResult<LiveFrameReadResult> result = await coordinator
+            .ReadLiveFrameAsync(new LiveFrameReadRequest(), CancellationToken.None);
+
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual("discover.gate_not_satisfied", result.Error?.Code);
+        Assert.AreEqual(0, factory.CreateCount);
+        Assert.AreEqual(0, scan.ScanCount);
+    }
+
+    [TestMethod]
+    public async Task LiveFrame_UnsupportedBuildFailsClosed()
+    {
+        var factory = new ScriptedCameraReaderFactory(CreateCameraChainPages());
+        var (coordinator, _) = CreateCoordinator(memoryReaderFactory: factory);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+        coordinator.ApplyEvidence(CreateValidEvidence());
+
+        OperationResult<LiveFrameReadResult> result = await coordinator
+            .ReadLiveFrameAsync(new LiveFrameReadRequest(), CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        LiveFrameReadResult frame = result.Value!;
+        Assert.AreEqual(Type10EntityPositionStatus.UnsupportedBuild, frame.Status);
+        Assert.AreEqual("build-identity", frame.FailureStage);
+        Assert.IsEmpty(frame.Tanks);
+        Assert.IsNull(frame.Camera);
+        Assert.AreEqual(0, factory.CreateCount);
+    }
+
+    [TestMethod]
+    public async Task LiveFrame_RosterInactiveFailsWholeFrame()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        var factory = new ScriptedCameraReaderFactory(CreateCameraChainPages());
+        factory.Reader.RosterResult = new EntityRosterResult(
+            Type10EntityPositionStatus.ReplaySessionInactive,
+            "session-controller-vtable",
+            ModuleRooted: true,
+            NodesVisited: 0,
+            CandidatesSeen: 0,
+            FilteredOut: 0,
+            Entities: null,
+            TraversalLimited: false);
+        var (coordinator, _) = CreateCoordinator(memoryReaderFactory: factory);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<LiveFrameReadResult> result = await coordinator
+            .ReadLiveFrameAsync(new LiveFrameReadRequest(), CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess, result.Error?.Message);
+        LiveFrameReadResult frame = result.Value!;
+        Assert.AreEqual(Type10EntityPositionStatus.ReplaySessionInactive, frame.Status);
+        Assert.AreEqual("session-controller-vtable", frame.FailureStage);
+        Assert.IsEmpty(frame.Tanks);
+        Assert.IsNull(frame.Camera);
+    }
+
+    [TestMethod]
     public async Task CameraPoseRead_MissingOfflineGateNeverCreatesMemoryReader()
     {
         var factory = new ScriptedCameraReaderFactory(CreateCameraChainPages());
@@ -2733,18 +2912,62 @@ public sealed class GameSessionCoordinatorTests
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
+        public EntityRosterResult? RosterResult { get; set; }
+        public Type10EntityPositionAddressResult? AddressResult { get; set; }
+        public Dictionary<int, Type10EntityPositionAddressResult>? AddressByEntity { get; set; }
+
         public ValueTask<OperationResult<Type10EntityPositionAddressResult>> ResolveEntityPositionAddressAsync(
             nint moduleBase,
             int entityId,
             Type10EntityPositionLayout layout,
-            CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (AddressByEntity is not null)
+            {
+                return ValueTask.FromResult(OperationResult.Success(
+                    AddressByEntity.TryGetValue(entityId, out Type10EntityPositionAddressResult? perEntity)
+                        ? perEntity
+                        : new Type10EntityPositionAddressResult(
+                            Type10EntityPositionStatus.EntityNotFound,
+                            RecordAddress: null,
+                            PageAddress: null,
+                            EntityAddress: null,
+                            FailureStage: "entity-lookup",
+                            Attempts: 3,
+                            NodesVisited: 2,
+                            ModuleRooted: true)));
+            }
+
+            return ValueTask.FromResult(OperationResult.Success(
+                AddressResult ?? new Type10EntityPositionAddressResult(
+                    Type10EntityPositionStatus.Resolved,
+                    RecordAddress: 0x25000038,
+                    PageAddress: 0x25000000,
+                    EntityAddress: 0x25000028,
+                    FailureStage: null,
+                    Attempts: 1,
+                    NodesVisited: 0,
+                    ModuleRooted: true)));
+        }
 
         public ValueTask<OperationResult<EntityRosterResult>> EnumerateEntitiesAsync(
             nint moduleBase,
             Type10EntityPositionLayout layout,
-            CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(OperationResult.Success(
+                RosterResult ?? new EntityRosterResult(
+                    Type10EntityPositionStatus.Resolved,
+                    FailureStage: null,
+                    ModuleRooted: true,
+                    NodesVisited: 0,
+                    CandidatesSeen: 0,
+                    FilteredOut: 0,
+                    Entities: [],
+                    TraversalLimited: false)));
+        }
     }
 
     private static MemoryScanResult CreateAvatarScanResult() => new(
@@ -2782,6 +3005,16 @@ public sealed class GameSessionCoordinatorTests
             // pose region [GameCamera + 0x38, 0x78)
             [0x25004038] = CreatePoseRegion(),
         };
+    }
+
+    private static byte[] CreateRingRegion(float x, float y, float z, float yaw)
+    {
+        byte[] region = new byte[0x40];
+        BitConverter.GetBytes(x).CopyTo(region, RingRecordRegion.PositionOffset);
+        BitConverter.GetBytes(y).CopyTo(region, RingRecordRegion.PositionOffset + 4);
+        BitConverter.GetBytes(z).CopyTo(region, RingRecordRegion.PositionOffset + 8);
+        BitConverter.GetBytes(yaw).CopyTo(region, RingRecordRegion.YawOffset);
+        return region;
     }
 
     private static byte[] CreatePoseRegion()

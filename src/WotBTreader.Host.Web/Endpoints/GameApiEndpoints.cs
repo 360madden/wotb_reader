@@ -37,6 +37,7 @@ internal static class GameApiEndpoints
         group.MapPost("/discover/entity-region", ReadEntityRegionAsync);
         group.MapPost("/discover/entity-regions", ReadEntityRegionsAsync);
         group.MapPost("/discover/entity-roster", DiscoverEntityRosterAsync);
+        group.MapPost("/discover/live-frame", DiscoverLiveFrameAsync);
         group.MapPost("/discover/position-page", ResolveEntityPositionAddressAsync);
         group.MapPost("/discover/camera-pose", DiscoverCameraPoseAsync);
         group.MapPost("/discover/clock-segment", AppendClockSegmentAsync);
@@ -971,6 +972,90 @@ internal static class GameApiEndpoints
             EntityIds = roster.EntityIds,
         });
     }
+
+    internal static async Task<IResult> DiscoverLiveFrameAsync(
+        IGameMemoryScanner scanner,
+        WotBTreader.ApiContracts.LiveFrameReadRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(scanner);
+        ArgumentNullException.ThrowIfNull(request);
+
+        BattleSessionId? battleSessionId = null;
+        if (!string.IsNullOrWhiteSpace(request.BattleSessionId) &&
+            Guid.TryParse(request.BattleSessionId, out Guid parsedBattleSessionId))
+        {
+            battleSessionId = new BattleSessionId(parsedBattleSessionId);
+        }
+
+        OperationResult<LiveFrameReadResult> result = await scanner
+            .ReadLiveFrameAsync(
+                new WotBTreader.Application.Game.LiveFrameReadRequest(battleSessionId),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!result.IsSuccess || result.Value is null)
+        {
+            return Results.BadRequest(new
+            {
+                error = result.Error?.Code ?? "discover.live_frame.read_failed",
+            });
+        }
+
+        LiveFrameReadResult frame = result.Value;
+        return Results.Ok(new WotBTreader.ApiContracts.LiveFrameReadResponse
+        {
+            CompletedAtUtc = frame.CompletedAtUtc,
+            GameVersion = frame.GameVersion,
+            Status = frame.Status.ToString(),
+            FailureStage = frame.FailureStage,
+            ReplayTimeSeconds = frame.ReplayTimeSeconds,
+            SameDecodedClockProven = frame.SameDecodedClockProven,
+            Camera = frame.Camera is null
+                ? null
+                : BuildCameraPoseResponse(frame.Camera),
+            Tanks = frame.Tanks
+                .Select(tank => new WotBTreader.ApiContracts.LiveFrameTankResponse
+                {
+                    EntityId = tank.EntityId,
+                    Status = tank.Status.ToString(),
+                    X = tank.X,
+                    Y = tank.Y,
+                    Z = tank.Z,
+                    YawRadians = tank.YawRadians,
+                    Hp = tank.Hp,
+                    FailureStage = tank.FailureStage,
+                    ModuleRooted = tank.ModuleRooted,
+                })
+                .ToList(),
+            RosterCandidatesSeen = frame.RosterCandidatesSeen,
+            RosterFilteredOut = frame.RosterFilteredOut,
+        });
+    }
+
+    private static CameraPoseReadResponse BuildCameraPoseResponse(
+        CameraPoseReadResult pose) => new()
+        {
+            CompletedAtUtc = pose.CompletedAtUtc,
+            GameVersion = pose.GameVersion,
+            Status = pose.Status.ToString(),
+            FailureStage = pose.FailureStage,
+            AvatarAddress = FormatCameraAddress(pose.AvatarAddress),
+            CameraAddress = FormatCameraAddress(pose.CameraAddress),
+            CameraStateAddress = FormatCameraAddress(pose.CameraStateAddress),
+            X = pose.Status == CameraPoseStatus.Resolved ? pose.X : null,
+            Y = pose.Status == CameraPoseStatus.Resolved ? pose.Y : null,
+            Z = pose.Status == CameraPoseStatus.Resolved ? pose.Z : null,
+            YawRadians = pose.Status == CameraPoseStatus.Resolved ? pose.YawRadians : null,
+            PitchRadians = pose.Status == CameraPoseStatus.Resolved ? pose.PitchRadians : null,
+            Basis = pose.Status == CameraPoseStatus.Resolved
+            ? pose.Basis.Select(value => (double)value).ToArray()
+            : null,
+            AvatarIdentityVerified = pose.AvatarIdentityVerified,
+            CameraIdentityVerified = pose.CameraIdentityVerified,
+            CameraStateIdentityVerified = pose.CameraStateIdentityVerified,
+            ConsistentDoubleRead = pose.ConsistentDoubleRead,
+            ModuleRooted = pose.ModuleRooted,
+        };
 
     internal static async Task<IResult> ReadEntityRegionsAsync(
         IGameMemoryScanner scanner,

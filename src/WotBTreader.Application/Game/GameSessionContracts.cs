@@ -309,6 +309,23 @@ public interface IGameMemoryScanner
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Composes one live frame (design: docs/operations/live-frame-loop-design.md):
+    /// enumerate the avatar-family roster once, batch-read every roster
+    /// entity's ring record through the batch surface (ONE G2 clock
+    /// attestation when a battle session id is supplied), decode position
+    /// (+0x10) and hull yaw (+0x2C), read the CAM-001 camera pose, and
+    /// assemble the frame — all under the scan authorization. Per-tank
+    /// statuses are authoritative; gate-level failures (build mismatch,
+    /// inactive phase, revoked authorization) fail the WHOLE frame.
+    /// <see cref="LiveFrameTankState.Hp"/> is null until L1 lands. No
+    /// absolute address, process id, or module base ever leaves the
+    /// coordinator.
+    /// </summary>
+    ValueTask<OperationResult<LiveFrameReadResult>> ReadLiveFrameAsync(
+        LiveFrameReadRequest request,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Diagnostic-only, gate-verified: runs the same traversal as
     /// <see cref="ReadEntityPositionAsync"/> and returns the ring-record page
     /// address so the guard-page interceptor can arm the exact page a poll
@@ -576,6 +593,59 @@ public sealed record EntityRosterReadResult(
     bool ModuleRooted,
     bool TraversalLimited,
     IReadOnlyList<int> EntityIds);
+
+/// <summary>
+/// One tank of a live frame: the avatar-family entity with its ring-record
+/// position and hull yaw, when that entity resolved and its region decoded.
+/// Position/yaw come from the ring-record region dump (+0x10 / +0x2C) via
+/// the pure <c>RingRecordRegion</c> decoder. <see cref="Hp"/> is an honest
+/// null until the L1 HP live session lands (design:
+/// docs/operations/live-frame-loop-design.md) — the HUD must never render a
+/// fabricated health value. World coordinates only; addresses never leave
+/// the coordinator.
+/// </summary>
+public sealed record LiveFrameTankState(
+    int EntityId,
+    Type10EntityPositionStatus Status,
+    float? X,
+    float? Y,
+    float? Z,
+    float? YawRadians,
+    float? Hp,
+    string? FailureStage,
+    bool ModuleRooted);
+
+/// <summary>
+/// One composed live frame (design: docs/operations/live-frame-loop-design.md):
+/// the roster enumeration (ids), the whole-roster batch region read with ONE
+/// G2 clock attestation, and the CAM-001 camera pose, assembled by the
+/// coordinator under the scan authorization. <see cref="Status"/> is the
+/// gate-level outcome (Resolved = the frame pass completed; inspect per-tank
+/// statuses for individual entities); a gate-level failure (build mismatch,
+/// inactive phase, revoked authorization) fails the WHOLE frame so the HUD
+/// never renders a half-timed frame. <see cref="SameDecodedClockProven"/>
+/// is true only when a battle session id was supplied and the G2 bound held.
+/// No absolute address, process id, or module base ever leaves the
+/// coordinator.
+/// </summary>
+public sealed record LiveFrameReadResult(
+    DateTimeOffset CompletedAtUtc,
+    string GameVersion,
+    Type10EntityPositionStatus Status,
+    string? FailureStage,
+    double? ReplayTimeSeconds,
+    bool SameDecodedClockProven,
+    CameraPoseReadResult? Camera,
+    IReadOnlyList<LiveFrameTankState> Tanks,
+    int RosterCandidatesSeen,
+    int RosterFilteredOut);
+
+/// <summary>
+/// Request for one composed live frame. The optional battle session id
+/// enables the ONE G2 replay-clock attestation for the frame (same
+/// semantics as the batch surface): omitted never claims the flag.
+/// </summary>
+public sealed record LiveFrameReadRequest(BattleSessionId? BattleSessionId = null);
 
 /// <summary>Outcome of one CAM-001 gate-free camera-pose walk.</summary>
 public enum CameraPoseStatus

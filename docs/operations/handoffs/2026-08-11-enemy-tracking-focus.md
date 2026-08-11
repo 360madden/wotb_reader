@@ -122,8 +122,37 @@ player must share the file.
    on the next approved session. Turret/target/lock fields ride on that
    per-entity surface.
 
+## X4 step 3 implemented — composed live frame (2026-08-11)
+
+The coordinator now serves the whole per-frame read under **ONE guarded
+reader lease**: `POST /discover/live-frame` runs roster enumeration
+(`EnumerateEntitiesCoreAsync`) → ring-record batch (`ReadEntityRegionsCoreAsync`,
+position `+0x10` + hull yaw `+0x2C`) → CAM-001 camera pose
+(`ReadCameraPoseCoreAsync`) — one G2 clock attestation per frame, honest
+`hp: null` until L1, ids-only privacy boundary, camera `AnchorNotFound`
+reported without failing the frame. To enable this without duplicating any
+walker, the three public methods were split into thin gate/create wrappers
++ private cores that take the pre-created reader; the camera anchor scan
+moved into `FindAvatarAnchorAsync` (shared by both paths) and the
+anchor-missing result into `CameraAnchorNotFound`. `RingRecordRegion`
+(Core) decodes the ring region purely (finite fail-closed). 25 new tests
+(10 Core decoder, 4 coordinator frame incl. ONE-lease `CreateCount == 1`,
+3 endpoint, 8 resolver/roster); full suite green.
+
 ## Files touched
 
+- `src/WotBTreader.Core/Discovery/RingRecordRegion.cs` (pure ring-region
+  decoder: position +0x10, yaw +0x2C, finite fail-closed) + tests
+- `src/WotBTreader.GameIntegration/Session/GameSessionCoordinator.cs`
+  (`ReadLiveFrameAsync` + `EnumerateEntitiesCoreAsync` /
+  `ReadEntityRegionsCoreAsync` / `ReadCameraPoseCoreAsync` /
+  `FindAvatarAnchorAsync` / `CameraAnchorNotFound`)
+- `src/WotBTreader.Application/Game/GameSessionContracts.cs` +
+  `src/WotBTreader.ApiContracts/OffsetDiscoveryContracts.cs` +
+  `src/WotBTreader.Host.Web/Endpoints/GameApiEndpoints.cs`
+  (`LiveFrameReadRequest/Result`, `POST /discover/live-frame`)
+- `docs/operations/live-frame-loop-design.md` (step 3 status → DONE;
+  `LiveFrameSource` seam remains)
 - `offline/replay-format.md` (type-7 row + no-turret/lock finding)
 - `docs/operations/live-roster-read-design.md` (X3 — designed + implemented)
 - `docs/operations/live-frame-loop-design.md` (X4 — this session's design)

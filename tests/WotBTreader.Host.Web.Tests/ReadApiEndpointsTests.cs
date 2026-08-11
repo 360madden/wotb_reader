@@ -804,6 +804,11 @@ public sealed class ReadApiEndpointsTests
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
+        public ValueTask<OperationResult<LiveFrameReadResult>> ReadLiveFrameAsync(
+            WotBTreader.Application.Game.LiveFrameReadRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public ValueTask<OperationResult<EntityPositionAddressResult>> ResolveEntityPositionAddressAsync(
             WotBTreader.Application.Game.EntityPositionAddressRequest request,
             CancellationToken cancellationToken) =>

@@ -136,10 +136,15 @@ open question, not silently decided.
    batch rehearsal → X3 `-EnumerateLive` → L1 HP → L2 facing. Each closes a
    field this loop reads; the loop is not built on unproven reads.
 3. **Implement `ReadLiveFrameAsync`** (coordinator) + `POST
-   /discover/live-frame` + a `LiveFrameSource` seam so the overlay can
-   switch frame sources without touching its render path. Pure offline
-   coding, testable with the existing fakes (scripted roster + scripted
-   batch + scripted camera pose).
+   /discover/live-frame`. ✅ DONE (2026-08-11): the coordinator composes
+   roster enumeration + ring-record batch + CAM-001 camera pose under **ONE
+   guarded reader lease** (single sanctioned walker — the three public
+   methods now delegate to shared private cores), one G2 clock attestation
+   per frame, honest `hp: null`, ids-only privacy boundary; endpoint +
+   contract + 25 new tests (10 Core decoder, 4 coordinator frame, 3
+   endpoint, plus resolver/roster). Remaining: the `LiveFrameSource` seam
+   so the overlay can switch frame sources without touching its render
+   path — pure offline coding, testable with the existing fakes.
 4. **Measure the frame window** on the approved session; record it as the
    loop's budget (feeds item 7).
 5. Then: L1 wiring (`hp` becomes real), the live overlay render pass, and

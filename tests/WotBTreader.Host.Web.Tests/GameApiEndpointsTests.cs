@@ -2412,6 +2412,22 @@ public sealed class GameApiEndpointsTests
             return ValueTask.FromResult(EntityRosterResult);
         }
 
+        public OperationResult<LiveFrameReadResult> LiveFrameResult { get; init; } =
+            OperationResult.Failure<LiveFrameReadResult>(
+                new ApplicationError("discover.live_frame.not_configured", "Test default."));
+        public int LiveFrameCallCount { get; private set; }
+        public WotBTreader.Application.Game.LiveFrameReadRequest? LastLiveFrameRequest { get; private set; }
+
+        public ValueTask<OperationResult<LiveFrameReadResult>> ReadLiveFrameAsync(
+            WotBTreader.Application.Game.LiveFrameReadRequest request,
+            CancellationToken cancellationToken)
+        {
+            LiveFrameCallCount++;
+            LastLiveFrameRequest = request;
+            LastCancellationToken = cancellationToken;
+            return ValueTask.FromResult(LiveFrameResult);
+        }
+
         public ValueTask<OperationResult<EntityRegionsReadResult>> ReadEntityRegionsAsync(
             WotBTreader.Application.Game.EntityRegionsReadRequest request,
             CancellationToken cancellationToken)
