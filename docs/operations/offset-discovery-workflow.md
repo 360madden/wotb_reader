@@ -15,13 +15,18 @@ offset.
 
 Session ID: `OD-RECOVERY-086`.
 
-**Next planned session (2026-08-11, OD-RECOVERY-086): the batch N-entity
-rehearsal** — `scripts/invoke-batch-rehearsal.ps1 -LiveAcquire -Times
-90,150,220 -FailOnMiss` on Oasis Palms (`019fdff7-…`) — full-roster batch
+**Next planned session (2026-08-11, OD-RECOVERY-086): the composed X2 batch
++ X3 enumeration rehearsal** — `scripts/invoke-batch-rehearsal.ps1
+-EnumerateLive -LiveAcquire -Times 90,150,220 -FailOnMiss` on Oasis Palms
+(`019fdff7-…`) — (1) X3: `/discover/entity-roster` enumerated avatar-family
+ids verdict against the decoded participants roster (matched/missing/extra
++ movement-filter precision, `--enumeration` mode, fail-closed on
+TraversalLimited); (2) X2: the ENUMERATED ids drive full-roster batch
 dumps through `/discover/entity-regions` per replay time (one clock
 attestation per batch), cross-checked against decoded positions
 (42/42 rehearsal proven), measuring the read-pass window (item 4). Closes
-the X2 rehearsal + the item-7 verification-window measurement.
+X2 + X3 rehearsals + the item-7 verification-window measurement. Evidence
+template: `docs/operations/od-recovery-086-evidence-template.md`.
 
 **The position anchor is ESTABLISHED and PUBLISHED (2026-08-10):**
 `playerPositionX/Y/Z` are `Verified` via the module-rooted position-ring chain
@@ -398,17 +403,24 @@ entry says what was ruled out.
 
 ## Current next-session protocol
 
-> **Amended 2026-08-11 (batch rehearsal is next; OD-RECOVERY-086).** The
-> next approved session runs `scripts/invoke-batch-rehearsal.ps1 -LiveAcquire
-> -Times 90,150,220 -FailOnMiss` on Oasis Palms — the full-roster batch read
-> through `/discover/entity-regions` (design
-> `docs/operations/batch-entity-read-design.md`, consolidation item 6),
-> cross-checked against decoded positions and measuring the read-pass
-> window. Pre-staged: coordinator + endpoint + tests shipped, driver +
-> cross-check tool proven (42/42 on real decoded data). It closes the X2
-> rehearsal and feeds the item-7 measurement; the L1/L2/CAM-001 live gates
-> follow in their pre-staged order. The scan/roll/debugger material below is
-> retained as historical evidence only.
+> **Amended 2026-08-11 (composed X2+X3 rehearsal is next; OD-RECOVERY-086).**
+> The next approved session runs `scripts/invoke-batch-rehearsal.ps1
+> -EnumerateLive -LiveAcquire -Times 90,150,220 -FailOnMiss` on Oasis Palms —
+> (1) the X3 live-roster enumeration through `/discover/entity-roster`
+> (design `docs/operations/live-roster-read-design.md`) verdict against the
+> decoded participants roster (matched/missing/extra + movement-filter
+> precision), then (2) the X2 full-roster batch read through
+> `/discover/entity-regions` (design
+> `docs/operations/batch-entity-read-design.md`, consolidation item 6) with
+> the ENUMERATED ids, cross-checked against decoded positions and measuring
+> the read-pass window. Pre-staged: coordinator methods + endpoints + 21
+> tests shipped, driver `-EnumerateLive` + cross-check tool proven (42/42
+> position pairs; enumeration self-tested exact/missing/extra/
+> traversal-limited), evidence template
+> `docs/operations/od-recovery-086-evidence-template.md`. It closes the X2 +
+> X3 rehearsals and feeds the item-7 measurement; the L1/L2/CAM-001 live
+> gates follow in their pre-staged order. The scan/roll/debugger material
+> below is retained as historical evidence only.
 >
 > **Amended 2026-08-10 (position closed; HP-discovery live plan pre-staged).**
 > The scan/roll/debugger material below is retained as historical evidence,

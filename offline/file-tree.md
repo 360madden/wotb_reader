@@ -279,6 +279,7 @@ docs/operations/handoffs/README.md
 docs/operations/legacy-observation-surface.md
 docs/operations/live-frame-loop-design.md
 docs/operations/live-roster-read-design.md
+docs/operations/od-recovery-086-evidence-template.md
 docs/operations/offset-discovery-guide.md
 docs/operations/offset-discovery-ledger.md
 docs/operations/offset-discovery-m1-m2-choreography.md

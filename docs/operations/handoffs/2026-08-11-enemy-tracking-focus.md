@@ -130,4 +130,8 @@ player must share the file.
 - `scripts/invoke-batch-rehearsal.ps1` + `scripts/python/
   batch-rehearsal-crosscheck.py` (`-EnumerateLive` + `--enumeration`)
 - `offline/api-surface.md` (entity-roster row)
+- `docs/operations/od-recovery-086-evidence-template.md` (pre-staged
+  evidence template for the composed X2+X3 session — ledger row +
+  workflow next-session rows updated to the `-EnumerateLive -LiveAcquire`
+  command)
 - `docs/operations/handoffs/2026-08-11-enemy-tracking-focus.md` (this file)
