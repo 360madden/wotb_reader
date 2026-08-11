@@ -1029,6 +1029,14 @@ internal static class GameApiEndpoints
                 .ToList(),
             RosterCandidatesSeen = frame.RosterCandidatesSeen,
             RosterFilteredOut = frame.RosterFilteredOut,
+            Measurement = frame.Measurement is null
+                ? null
+                : new WotBTreader.ApiContracts.LiveFrameReadMeasurementResponse
+                {
+                    FrameStartedAtUtc = frame.Measurement.FrameStartedAtUtc,
+                    FrameEndedAtUtc = frame.Measurement.FrameEndedAtUtc,
+                    ClockSnapshotAtUtc = frame.Measurement.ClockSnapshotAtUtc,
+                },
         });
     }
 

@@ -160,7 +160,10 @@ open question, not silently decided.
    viewpoint tank at its ~23.57 m third-person camera offset, so the
    self-filter needs the id join, not distance).
 4. **Measure the frame window** on the approved session; record it as the
-   loop's budget (feeds item 7).
+   loop's budget (feeds item 7). The measurement is IMPLEMENTED: the frame
+   result carries `LiveFrameReadMeasurement` (anchor-scan start →
+   camera-pose read end + the ONE G2 snapshot moment) through the endpoint
+   DTO — only the live measurement itself is gated on the approved session.
 5. Then: L1 wiring (`hp` becomes real), the live overlay render pass, and
    the future X1 live gate (policy-gated, not part of this design).
 

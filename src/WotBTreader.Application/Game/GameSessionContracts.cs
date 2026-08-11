@@ -554,6 +554,21 @@ public sealed record EntityRegionsReadMeasurement(
     DateTimeOffset? ClockSnapshotAtUtc);
 
 /// <summary>
+/// Wall-clock measurement of one composed live frame (design:
+/// docs/operations/live-frame-loop-design.md): the frame pass window from
+/// the camera-anchor scan start through the camera-pose read end, plus the
+/// ONE G2 replay-clock snapshot moment carried by the batch read (null when
+/// no battle session id was supplied). Null when no reads happened
+/// (gate-level frame outcomes). The window is the loop's per-frame timing
+/// budget — the item-7 atomicity groundwork. Durations are honest
+/// wall-clock spans, not evidence claims.
+/// </summary>
+public sealed record LiveFrameReadMeasurement(
+    DateTimeOffset FrameStartedAtUtc,
+    DateTimeOffset FrameEndedAtUtc,
+    DateTimeOffset? ClockSnapshotAtUtc);
+
+/// <summary>
 /// Privacy-safe batch region read result: the raw bytes + ONE replay-time
 /// label per batch. No absolute address, process id, or module base ever
 /// leaves the coordinator. <see cref="Status"/> is the gate-level outcome
@@ -638,7 +653,8 @@ public sealed record LiveFrameReadResult(
     CameraPoseReadResult? Camera,
     IReadOnlyList<LiveFrameTankState> Tanks,
     int RosterCandidatesSeen,
-    int RosterFilteredOut);
+    int RosterFilteredOut,
+    LiveFrameReadMeasurement? Measurement = null);
 
 /// <summary>
 /// Request for one composed live frame. The optional battle session id

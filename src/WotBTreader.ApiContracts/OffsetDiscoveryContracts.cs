@@ -538,6 +538,21 @@ public sealed record LiveFrameReadResponse
     public IReadOnlyList<LiveFrameTankResponse> Tanks { get; init; } = [];
     public int RosterCandidatesSeen { get; init; }
     public int RosterFilteredOut { get; init; }
+
+    /// <summary>
+    /// Wall-clock measurement of the composed frame read pass (null when no
+    /// reads happened). The loop's per-frame timing budget — the item-7
+    /// atomicity groundwork.
+    /// </summary>
+    public LiveFrameReadMeasurementResponse? Measurement { get; init; }
+}
+
+/// <summary>Wall-clock measurement of one composed live frame read pass.</summary>
+public sealed record LiveFrameReadMeasurementResponse
+{
+    public DateTimeOffset FrameStartedAtUtc { get; init; }
+    public DateTimeOffset FrameEndedAtUtc { get; init; }
+    public DateTimeOffset? ClockSnapshotAtUtc { get; init; }
 }
 
 /// <summary>

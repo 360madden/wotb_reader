@@ -2585,6 +2585,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
 
             Type10CameraPoseLayout cameraLayout = Type10CameraPoseLayout.WotBlitz1119010;
 
+            // The frame's read-pass window (item-7 budget): anchor scan start
+            // through camera-pose read end, with the ONE G2 snapshot moment
+            // carried by the batch. Honest wall-clock spans, not claims.
+            DateTimeOffset frameStartedAt = _timeProvider.GetUtcNow();
+
             // Camera anchor first: the anchor scan never touches the guarded
             // reader, so it runs before the single lease is opened (a missing
             // anchor must not justify opening one). The frame still serves
@@ -2729,6 +2734,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     authorizationToken,
                     readCancellation.Token).ConfigureAwait(false);
             CameraPoseReadResult? camera = cameraResult.IsSuccess ? cameraResult.Value : null;
+            DateTimeOffset frameEndedAt = _timeProvider.GetUtcNow();
 
             // 4. Assemble: decode position (+0x10) and hull yaw (+0x2C)
             //    from each resolved ring-record region. HP is an honest null
@@ -2781,7 +2787,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 camera,
                 tanks,
                 roster.CandidatesSeen,
-                roster.FilteredOut));
+                roster.FilteredOut,
+                new LiveFrameReadMeasurement(
+                    frameStartedAt,
+                    frameEndedAt,
+                    batch.Measurement?.ClockSnapshotAtUtc)));
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {

@@ -1908,6 +1908,13 @@ public sealed class GameSessionCoordinatorTests
         Assert.IsNotNull(frame.Camera);
         Assert.AreEqual(CameraPoseStatus.Resolved, frame.Camera!.Status);
         Assert.AreEqual(10.5f, frame.Camera.X);
+        // The frame's read-pass window: an honest wall-clock span from the
+        // anchor scan through the camera read. No battle session id was
+        // supplied, so no G2 snapshot moment is claimed.
+        Assert.IsNotNull(frame.Measurement);
+        Assert.IsTrue(
+            frame.Measurement.FrameStartedAtUtc <= frame.Measurement.FrameEndedAtUtc);
+        Assert.IsNull(frame.Measurement.ClockSnapshotAtUtc);
         Assert.AreEqual(1, factory.CreateCount);
         Assert.AreEqual(1, scan.ScanCount);
     }

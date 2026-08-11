@@ -159,7 +159,13 @@ features), and a non-resolved/failed live read keeps last-good.
 Remaining: the live-ids → decoded-name join once X2b proves the id
 mapping (also the "own nameplate" refinement — live mode renders the
 viewpoint tank at its ~23.57 m third-person camera offset, so the
-self-filter needs the id join, not distance).
+self-filter needs the id join, not distance). The frame read-window
+measurement is IMPLEMENTED: `LiveFrameReadMeasurement` (anchor-scan start
+→ camera-pose read end + the ONE G2 snapshot moment from the batch) flows
+through `LiveFrameReadResult` → the `/discover/live-frame` DTO; the loop's
+per-frame timing budget (item-7 groundwork) only needs the approved
+session to record a real window. 2 new tests (coordinator compose
+measurement shape + endpoint DTO flow).
 
 ## Files touched
 

@@ -1334,6 +1334,65 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task LiveFrame_ResponseCarriesReadPassMeasurement()
+    {
+        DateTimeOffset started = DateTimeOffset.Parse(
+            "2026-08-11T10:00:00.000Z", CultureInfo.InvariantCulture);
+        DateTimeOffset ended = DateTimeOffset.Parse(
+            "2026-08-11T10:00:00.050Z", CultureInfo.InvariantCulture);
+        DateTimeOffset clock = DateTimeOffset.Parse(
+            "2026-08-11T10:00:00.040Z", CultureInfo.InvariantCulture);
+        var scanner = new FakeGameMemoryScanner
+        {
+            LiveFrameResult = OperationResult.Success(
+                new LiveFrameReadResult(
+                    CompletedAtUtc: DateTimeOffset.UtcNow,
+                    "11.19.0.10",
+                    Type10EntityPositionStatus.Resolved,
+                    FailureStage: null,
+                    ReplayTimeSeconds: 150.5,
+                    SameDecodedClockProven: true,
+                    Camera: null,
+                    Tanks:
+                    [
+                        new LiveFrameTankState(
+                            3760578,
+                            Type10EntityPositionStatus.Resolved,
+                            X: 0,
+                            Y: 0,
+                            Z: 100,
+                            YawRadians: 0.5f,
+                            Hp: null,
+                            FailureStage: null,
+                            ModuleRooted: true),
+                    ],
+                    RosterCandidatesSeen: 14,
+                    RosterFilteredOut: 2,
+                    Measurement: new LiveFrameReadMeasurement(
+                        started,
+                        ended,
+                        clock))),
+        };
+
+        IResult result = await GameApiEndpoints.DiscoverLiveFrameAsync(
+            scanner,
+            new WotBTreader.ApiContracts.LiveFrameReadRequest(),
+            TestContext.CancellationToken);
+
+        WotBTreader.ApiContracts.LiveFrameReadResponse response =
+            Value<WotBTreader.ApiContracts.LiveFrameReadResponse>(result);
+        Assert.IsNotNull(response.Measurement);
+        Assert.AreEqual(
+            started,
+            response.Measurement.FrameStartedAtUtc);
+        Assert.AreEqual(ended, response.Measurement.FrameEndedAtUtc);
+        Assert.AreEqual(clock, response.Measurement.ClockSnapshotAtUtc);
+        Assert.AreEqual(150.5, response.ReplayTimeSeconds!.Value, 1e-9);
+        Assert.IsTrue(response.SameDecodedClockProven);
+        Assert.AreEqual(1, scanner.LiveFrameCallCount);
+    }
+
+    [TestMethod]
     public async Task EntityRoster_TraversalLimitedFailsClosed()
     {
         var scanner = new FakeGameMemoryScanner
