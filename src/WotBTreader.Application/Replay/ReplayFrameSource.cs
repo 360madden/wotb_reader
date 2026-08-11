@@ -40,7 +40,8 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
     public async ValueTask<OperationResult<OverlayFrame>> GetFrameAsync(
         BattleSessionId sessionId,
         TimeSpan replayTime,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        OverlayCamera? cameraOverride = null)
     {
         // The projection is immutable per session (every decode run creates a
         // fresh session id), so a cache hit skips re-reading every position /
@@ -70,7 +71,7 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
         }
 
         _cache?.Store(sessionId, projection);
-        return OperationResult.Success(BuildFrame(projection, replayTime));
+        return OperationResult.Success(BuildFrame(projection, replayTime, cameraOverride));
     }
 
     internal static OverlayFrame BuildFrame(

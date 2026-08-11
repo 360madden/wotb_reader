@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using WotBTreader.ApiContracts;
+using WotBTreader.Application.Game;
 using WotBTreader.Application.Results;
 using WotBTreader.Application.Storage;
 using WotBTreader.Core;
@@ -254,6 +255,98 @@ public sealed class ReadApiEndpointsTests
             TestContext.CancellationToken);
 
         Assert.AreEqual(StatusCodes.Status404NotFound, StatusOf(result));
+    }
+
+    [TestMethod]
+    public async Task OverlayFrame_ResolvedMemoryCameraReplacesViewpoint()
+    {
+        // CAM-005 seam: a gate-verified GameCamera pose read is mapped to the
+        // overlay camera and threaded into the frame source.
+        FakeOverlayFrames frames = new(new OverlayFrame(
+            TimeSpan.FromSeconds(10),
+            new OverlayCamera(0, 0, 0, YawRadians: 0, PitchRadians: 0, RollRadians: 0),
+            [],
+            [],
+            []));
+        CameraScannerStub scanner = new(OperationResult.Success(
+            new CameraPoseReadResult(
+                DateTimeOffset.UnixEpoch.AddSeconds(2),
+                "11.19.0.10",
+                CameraPoseStatus.Resolved,
+                FailureStage: null,
+                AvatarAddress: 0x10000100,
+                CameraAddress: 0x10000200,
+                CameraStateAddress: 0x10000300,
+                X: 10.5f,
+                Y: 20.25f,
+                Z: -3.5f,
+                YawRadians: 0.7f,
+                PitchRadians: -0.2f,
+                Basis: [1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f],
+                AvatarIdentityVerified: true,
+                CameraIdentityVerified: true,
+                CameraStateIdentityVerified: true,
+                ConsistentDoubleRead: true,
+                ModuleRooted: true)));
+
+        IResult result = await ReadApiEndpoints.GetOverlayFrameAsync(
+            new DefaultHttpContext(),
+            frames,
+            new FakeBeaconStore(),
+            Guid.NewGuid(),
+            timeSeconds: 10,
+            fov: 90,
+            width: 1920,
+            height: 1080,
+            TestContext.CancellationToken,
+            scanner);
+
+        OverlayCamera? overrideCamera = frames.LastCameraOverride;
+        Assert.IsNotNull(overrideCamera);
+        Assert.AreEqual(10.5, overrideCamera!.X);
+        Assert.AreEqual(20.25, overrideCamera.Y);
+        Assert.AreEqual(-3.5, overrideCamera.Z);
+        Assert.AreEqual(0.7, overrideCamera.YawRadians!.Value, 1e-6);
+        Assert.AreEqual(-0.2, overrideCamera.PitchRadians!.Value, 1e-6);
+        Assert.IsNull(overrideCamera.RollRadians);
+        Assert.AreEqual(1, scanner.CameraPoseCallCount);
+
+        // The projected response rides the memory camera.
+        OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
+        Assert.AreEqual(10.5, frame.CameraX!.Value, 1e-6);
+        Assert.AreEqual(0.7, frame.CameraYawRadians!.Value, 1e-6);
+    }
+
+    [TestMethod]
+    public async Task OverlayFrame_MemoryCameraFailureFallsBackToViewpoint()
+    {
+        // Fail-closed: an unresolved/failed camera read yields no override and
+        // the frame uses the decoded viewpoint camera.
+        FakeOverlayFrames frames = new(new OverlayFrame(
+            TimeSpan.FromSeconds(10),
+            new OverlayCamera(0, 0, 0, YawRadians: 0, PitchRadians: 0, RollRadians: 0),
+            [],
+            [],
+            []));
+        CameraScannerStub scanner = new(OperationResult.Failure<CameraPoseReadResult>(
+            new ApplicationError("discover.gate_not_satisfied", "No gate.")));
+
+        IResult result = await ReadApiEndpoints.GetOverlayFrameAsync(
+            new DefaultHttpContext(),
+            frames,
+            new FakeBeaconStore(),
+            Guid.NewGuid(),
+            timeSeconds: 10,
+            fov: 90,
+            width: 1920,
+            height: 1080,
+            TestContext.CancellationToken,
+            scanner);
+
+        Assert.IsNull(frames.LastCameraOverride);
+        OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
+        Assert.AreEqual(0.0, frame.CameraX!.Value, 1e-9);
+        Assert.AreEqual(1, scanner.CameraPoseCallCount);
     }
 
     [TestMethod]
@@ -647,17 +740,94 @@ public sealed class ReadApiEndpointsTests
             CancellationToken cancellationToken) => Task.FromResult(true);
     }
 
+    private sealed class CameraScannerStub(
+        OperationResult<CameraPoseReadResult> poseResult) : IGameMemoryScanner
+    {
+        public int CameraPoseCallCount { get; private set; }
+
+        public ValueTask<OperationResult<CameraPoseReadResult>> ReadCameraPoseAsync(
+            CancellationToken cancellationToken)
+        {
+            CameraPoseCallCount++;
+            return ValueTask.FromResult(poseResult);
+        }
+
+        public ValueTask<OperationResult<MemoryScanResult>> ScanAsync(
+            MemoryScanRequest request, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public ValueTask<OperationResult<MemoryScanResult>> ScanPatternAsync(
+            MemoryScanRequest request, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public ValueTask<OperationResult<MemoryPointerChainResult>> ResolvePointerChainAsync(
+            MemoryPointerChainRequest request, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public ValueTask<OperationResult<string>> CreateSnapshotAsync(
+            MemorySnapshotRequest request, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public ValueTask<OperationResult<MemoryCompareResult>> CompareAsync(
+            string sessionId, string compareMode, int maxCandidates,
+            CancellationToken cancellationToken, bool advanceBaseline = false,
+            double? deltaTarget = null, double? deltaTolerance = null) =>
+            throw new NotSupportedException();
+
+        public void DiscardSession(string sessionId) =>
+            throw new NotSupportedException();
+
+        public ValueTask<OperationResult<MemoryScanResult>> ScanNeighborhoodAsync(
+            MemoryNeighborhoodRequest request, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public ValueTask<OperationResult<MemoryReadResult>> ReadAddressesAsync(
+            MemoryReadRequest request, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public ValueTask<OperationResult<EntityPositionReadResult>> ReadEntityPositionAsync(
+            WotBTreader.Application.Game.EntityPositionReadRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public ValueTask<OperationResult<EntityRecordRegionReadResult>> ReadEntityRegionAsync(
+            WotBTreader.Application.Game.EntityRecordRegionReadRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public ValueTask<OperationResult<EntityPositionAddressResult>> ResolveEntityPositionAddressAsync(
+            WotBTreader.Application.Game.EntityPositionAddressRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public ValueTask<OperationResult<InstructionSnapshotResult>> CaptureInstructionSnapshotAsync(
+            WotBTreader.Application.Game.InstructionSnapshotRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+    }
+
     private sealed class FakeOverlayFrames(
         OverlayFrame? frame = null,
         ApplicationError? error = null) : IOverlayFrameSource
     {
+        public OverlayCamera? LastCameraOverride { get; private set; }
+
         public ValueTask<OperationResult<OverlayFrame>> GetFrameAsync(
             BattleSessionId battleSessionId,
             TimeSpan replayTime,
-            CancellationToken cancellationToken) =>
-            ValueTask.FromResult(frame is null
+            CancellationToken cancellationToken,
+            OverlayCamera? cameraOverride = null)
+        {
+            LastCameraOverride = cameraOverride;
+            OverlayFrame? effective = frame is null
+                ? null
+                : cameraOverride is null
+                    ? frame
+                    : frame with { Camera = cameraOverride };
+            return ValueTask.FromResult(effective is null
                 ? OperationResult.Failure<OverlayFrame>(
                     error ?? new ApplicationError("storage.session.not_found", "No such session."))
-                : OperationResult.Success(frame));
+                : OperationResult.Success(effective));
+        }
     }
 }

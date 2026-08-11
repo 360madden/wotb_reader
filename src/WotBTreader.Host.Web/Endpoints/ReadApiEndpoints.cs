@@ -1,5 +1,6 @@
 using WotBTreader.ApiContracts;
 using WotBTreader.Application.Diagnostics;
+using WotBTreader.Application.Game;
 using WotBTreader.Application.Replay;
 using WotBTreader.Application.Results;
 using WotBTreader.Application.Storage;
@@ -180,7 +181,8 @@ internal static class ReadApiEndpoints
         double? fov,
         double? width,
         double? height,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IGameMemoryScanner? scanner = null)
     {
         ArgumentNullException.ThrowIfNull(frames);
         ArgumentNullException.ThrowIfNull(beacons);
@@ -220,10 +222,18 @@ internal static class ReadApiEndpoints
                 retryable: false);
         }
 
+        // CAM-005 seam: when a gate-verified session is live, the memory
+        // camera (GameCamera pose) replaces the viewpoint approximation.
+        // Fail-closed: any read/status problem yields null and the frame
+        // falls back to the decoded viewpoint camera.
+        OverlayCamera? cameraOverride = await TryReadMemoryCameraAsync(
+            scanner, cancellationToken).ConfigureAwait(false);
+
         OperationResult<OverlayFrame> frameResult = await frames.GetFrameAsync(
             new BattleSessionId(battleSessionId),
             TimeSpan.FromSeconds(resolvedTime),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            cameraOverride).ConfigureAwait(false);
         if (!frameResult.IsSuccess || frameResult.Value is null)
         {
             return Problem(
@@ -303,6 +313,49 @@ internal static class ReadApiEndpoints
                 ReplayTimeSeconds = kill.ReplayTime.TotalSeconds,
             })],
         });
+    }
+
+    /// <summary>
+    /// CAM-005 seam: reads the gate-verified GameCamera pose (the CAM-001
+    /// fixed member-path) and maps it to the overlay camera. Fail-closed —
+    /// null when there is no scanner, the gate is not satisfied, the pose is
+    /// not <see cref="CameraPoseStatus.Resolved"/>, or the request is
+    /// cancelled, so the frame always falls back to the decoded viewpoint.
+    /// </summary>
+    private static async ValueTask<OverlayCamera?> TryReadMemoryCameraAsync(
+        IGameMemoryScanner? scanner,
+        CancellationToken cancellationToken)
+    {
+        if (scanner is null)
+        {
+            return null;
+        }
+
+        OperationResult<CameraPoseReadResult> poseResult;
+        try
+        {
+            poseResult = await scanner.ReadCameraPoseAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
+
+        if (!poseResult.IsSuccess || poseResult.Value is null
+            || poseResult.Value.Status != CameraPoseStatus.Resolved)
+        {
+            return null;
+        }
+
+        CameraPoseReadResult pose = poseResult.Value;
+        return new OverlayCamera(
+            pose.X,
+            pose.Y,
+            pose.Z,
+            pose.YawRadians,
+            pose.PitchRadians,
+            RollRadians: null);
     }
 
     internal static async Task<IResult> GetDecodeRunAsync(

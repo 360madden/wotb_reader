@@ -243,13 +243,19 @@ gate-free direct walk is the fallback for the rejected phase.
 (avatar vftable anchor → br → camera → GameCamera, identity gates on
 every hop, pose region double-read), version-pinned in Core
 (`Type10CameraPoseLayout`), 7 unit tests, `IMemoryScanDiscoverer`
-extracted for testability. Next: thread the pose through the
-`cameraOverride` seam (`IOverlayFrameSource.GetFrameAsync` gains an
-optional camera; the frame endpoint pulls it from the new port when a
-gate-verified session is live) + the projection cross-check (viewpoint
-tank lands near screen center through the memory camera). Handoffs:
+extracted for testability.
+✅ **CAM-006 (2026-08-11): the pose is wired into the frame path** —
+`IOverlayFrameSource.GetFrameAsync` gains an optional `OverlayCamera?`
+(default null = viewpoint fallback), `ReplayFrameSource` passes it
+through the tested `cameraOverride` seam, and the frame endpoint pulls
+the pose from the scanner port when a gate-verified session is live
+(fail-closed: any read/status problem → viewpoint). 2 new endpoint
+tests. Remaining: the live session (frame response carries the memory
+pose) + the projection cross-check (viewpoint tank lands near screen
+center through the memory camera). Handoffs:
 `docs/operations/handoffs/2026-08-11-cam004-camera-state-consistent.md`,
-`docs/operations/handoffs/2026-08-11-cam005-host-camera-pose-endpoint.md`.
+`docs/operations/handoffs/2026-08-11-cam005-host-camera-pose-endpoint.md`,
+`docs/operations/handoffs/2026-08-11-cam006-camera-wired-into-frame-endpoint.md`.
 
 ### Phase 2 — The live seam + first live sessions (serialized)
 
