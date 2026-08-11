@@ -899,3 +899,33 @@ The overlay gained persistent world-space POIs ("beacons"):
 Verified end-to-end on the real Oasis Palms session (add → projected in
 `overlay-frame` → remove) plus 13 new tests across Application/Web/CLI/
 Storage/Overlay.
+
+## Turret-facing + lock-on survey (2026-08-11) — memory-side-only, no replay ground truth
+
+Survey of the two memory structures with rotation data (74 entity-base
+dumps, `hp-snapshots4.json`, OD-RECOVERY-087 session, victim 3760578) plus
+the decoded type-10 payload layout:
+
+| Structure | Rotation | Position | Notes |
+|---|---|---|---|
+| Type-10 packet | hull yaw/pitch/roll at +36/+40/+44 | x/y/z +12/+16/+20 | the ONLY rotation in the replay stream; persisted (migration 5) |
+| Ring record (0x38 B) | roll `+0x28` / pitch `+0x2C` / yaw `+0x30` (proven 088/089) | `+0x10/+0x14/+0x18` | ~5 s apply lag; the resolver's read |
+| Entity base (320 B, L1 anchor) | **roll `+0x48` / pitch `+0x4C` / yaw `+0x50` — full triple COPY, measured (median residual 0.0003/0.0003/0.0020 rad at per-dump best lag)** | **copy at `+0x3C/+0x40/+0x44` — measured (median \|err\| 0.023/0.001/0.010 m, max 0.18 m during movement)** | ~1 s apply lag (faster than the ring); also entity id `+0x1C`, HP `+0xB8/+0xBA/+0x11C`, the `3412` constant at `+0x24` (same as the ring head `+0x08`). NOTE: the L1 anchor reads the entity base directly — its `+0x3C` is a measured position float, distinct from the transform walk's `[ECX+0x3C]` deref (VerifyTransformRecord, hash-bound) |
+
+**No turret rotation field and no lock-on / target-id state** were found in
+either structure: the ring record has no room past the triple (+0x34
+padding, +0x38 = next record), and the entity base's remaining int fields
+are constants/pointers. The type-10 packet carries hull rotation only, so
+**turret facing and lock-on have NO replay ground truth** — the
+replay-ground-truth playbooks (087/088/089-style lag correlation) cannot
+prove a turret field. Discovery must be LIVE-BEHAVIORAL: capture the entity
+base (or a sibling) region while the player traverses the turret WITHOUT
+moving the hull; a candidate field responds to turret input while hull
+yaw/pitch/roll stay put. The overlay's hull-aim-line ("is an enemy's hull
+pointed at me") is already computable from hull yaw + positions.
+
+**Single-region read candidate (observed, NOT canonical):** the entity-base
+window `+0x1C..+0x50` carries id + position + full rotation in one region
+with a ~1 s apply lag — a candidate one-read-per-tank surface for the
+overlay. Unproven as the canonical layout (one entity, one session, 74
+dumps); verify live across entities before any promotion.

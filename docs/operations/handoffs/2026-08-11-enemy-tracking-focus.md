@@ -574,6 +574,31 @@ until the published table gains the chain — the live gate still shows 3
 fields); (2) the walkable draft gains the canonical `chains.playerYaw`.
 The g1 draft records the dry-run verdict + reduced apply scope.
 
+## Turret-facing + lock-on survey — memory-side-only, no replay ground truth (2026-08-11)
+
+Surveyed both memory structures with rotation data (74 entity-base dumps,
+`hp-snapshots4.json`, OD-087 session, victim 3760578) against the decoded
+type-10 ground truth:
+
+- **Entity-base measured layout (L1 anchor, 320 B):** entity id `+0x1C`;
+  **position copy `+0x3C/40/44`** (median |err| 0.023/0.001/0.010 m); **full
+  rotation-triple copy roll `+0x48` / pitch `+0x4C` / yaw `+0x50`** (median
+  residual 0.0003/0.0003/0.0020 rad at per-dump best lag); HP
+  `+0xB8/BA/11C`; the `3412` constant at `+0x24`. Apply lag ~1 s (faster
+  than the ring record's ~5 s). The +0x3C distinction vs the transform
+  walk's `[ECX+0x3C]` deref is recorded (L1 anchor reads the entity base
+  directly).
+- **No turret rotation field and no lock-on/target-id state** in either
+  structure; the type-10 packet carries hull rotation only → **turret and
+  lock-on have NO replay ground truth**, so the lag-correlation playbooks
+  cannot prove them. Discovery is live-behavioral (traverse the turret
+  without moving the hull; a candidate field responds while hull rotation
+  stays put) — roadmap T1 row pre-staged.
+- Hull-aim-line ("is an enemy's hull pointed at me") is already computable
+  from hull yaw + positions; the entity-base single-region read
+  (id + position + rotation + HP in one 0xB8-byte window) is a candidate
+  one-read-per-tank overlay surface, unproven as canonical.
+
 ## Files touched
 
 - `src/WotBTreader.Core/Discovery/RingRecordRegion.cs` (pure ring-region
@@ -710,4 +735,8 @@ The g1 draft records the dry-run verdict + reduced apply scope.
 - `docs/operations/record-diffing-groundwork.md` (label-skew finding)
 - `docs/operations/g1-yaw-publication-draft.md` (PENDING → READY; 089
   evidence rows)
+- `docs/operations/record-diffing-groundwork.md` (turret/lock-on survey
+  section: entity-base measured layout + live-behavioral discovery plan)
+- `docs/operations/product-roadmap.md` (T1 row: turret/lock-on
+  live-behavioral workstream)
 - `docs/operations/handoffs/2026-08-11-enemy-tracking-focus.md` (this file)
