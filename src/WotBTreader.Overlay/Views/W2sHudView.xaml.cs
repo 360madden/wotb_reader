@@ -59,7 +59,9 @@ public sealed partial class W2sHudView : UserControl
         left = Math.Clamp(left, 0, Math.Max(0, viewportWidth - NameplateWidth));
         top = Math.Clamp(top, 0, Math.Max(0, viewportHeight - NameplateHeight));
         return new Rect(left, top, NameplateWidth, NameplateHeight);
-    }    /// <summary>
+    }
+
+    /// <summary>
     /// Replaces the HUD contents with the given beacons (drawn first, under
     /// the nameplates), pips (drawn next, floating above the nameplates), and
     /// nameplates. All lists are already filtered to in-viewport projections

@@ -8,6 +8,37 @@ operator-present Find-what-writes). This doc records the exact session flow,
 the verdict contract, and the known failure modes, so the live step is
 decisions-only.
 
+## 2026-08-10 update: replay-clock chain statically verified
+
+`tools/ghidra-scripts/TraceReplayClock.java` (v3, hash-bound, 10/10 checks)
+now pins the clock's full ownership chain for the 11.19.0.10 build:
+
+```
+GameCore 0x04095c88 -> AppController +0xc -> SessionController +0x124
+  -> AccountController +0x118 -> PlaybackController +0x128
+  -> BWServerConnection +0x120 (vftable 0x34400d0)
+  -> replay-player sub-object +0x58 -> clock +0x90 (Double, seconds)
+```
+
+Verified via three independent anchors: (1) the entity-movement resolver
+`BWEntities::handleEntityMoveWithError` (0x022fc850) calls a virtual on the
+connection back-pointer and threads the Double into the movement-ring time
+field (record +0x0); (2) connection vtable slot 10 is the direct getter
+`FUN_026f9140 = MOV EAX,[ECX+0x58]; FLD double [EAX+0x90]; RET`;
+(3) slot 18 corroborates the semantics with `MOVSD XMM0,[EAX+0x1270];
+SUBSD XMM0,[EAX+0x90]` (duration anchor minus current clock). Evidence:
+`.build/ghidra-evidence-clock34/trace-replay-clock.txt`
+(verdict `replay-clock-chain-verified`, sha256
+`1cda5c31…1760307d`).
+
+**What this changes for the live session:** the field is no longer a
+rolling-scan unknown. The session can resolve the chain live via L0 region
+reads (deref `GameCore→…→[Connection+0x58]+0x90`) and arm the interceptor
+directly on the resolved address — turning the ~120 s rolling campaign into
+a ~10 s chain deref. The write site is still unpinned (the interceptor
+capture is the point of the session), and the chain root `0x04095c88` must
+be re-verified against the live module base at session start.
+
 ## What exists (evidence inventory)
 
 | Piece | State |
@@ -136,7 +167,12 @@ a **second** session. Do not attempt cross-battle arming of captured sources
 
 ## State
 
+- 2026-08-10: static clock chain verified (see update above); plan updated
+  with the chain-resolve session option.
 - Pre-staged plan only; **no live session run, no product change**.
+- Next: decide chain-resolve (L0 reads, ~10 s) vs rolling campaign (proven,
+  ~120 s) at the approved session; both feed the same interceptor verdict
+  contract.
 - **Driver built and offline-validated (2026-08-10):**
   `scripts/invoke-od-044-replaytime-session.ps1` (gate wait → roll → stage
   check → interceptor arm → verdict) — built from the proven

@@ -224,16 +224,22 @@ docs/operations/handoffs/2026-08-10-l2-facing-driver-and-deadband-fix.md
 docs/operations/handoffs/2026-08-10-l3-damage-dealt-driver-verified.md
 docs/operations/handoffs/2026-08-10-o3-beacons-parallel-guardrails.md
 docs/operations/handoffs/2026-08-10-o4-evidence-o5-heading-delta.md
+docs/operations/handoffs/2026-08-10-overlay-consistency-check.md
 docs/operations/handoffs/2026-08-10-packet-inventory-type32-v3-closure.md
 docs/operations/handoffs/2026-08-10-phase0-foundations-complete.md
+docs/operations/handoffs/2026-08-10-projection-cache.md
 docs/operations/handoffs/2026-08-10-replay-overlay-o1-projection.md
 docs/operations/handoffs/2026-08-10-replaytime-live-plan-prestaged.md
 docs/operations/handoffs/2026-08-10-runtime-chain-walker.md
 docs/operations/handoffs/2026-08-10-v1-facing-arrows-nameplates.md
 docs/operations/handoffs/2026-08-10-v2-event-feed-pips.md
 docs/operations/handoffs/2026-08-10-v2-killfeed.md
+docs/operations/handoffs/2026-08-10-v2-playback-progress-bar.md
+docs/operations/handoffs/2026-08-10-v2-scoreboard.md
 docs/operations/handoffs/2026-08-10-v4-godview-minimap.md
 docs/operations/handoffs/2026-08-10-v4-minimap-beacons.md
+docs/operations/handoffs/2026-08-10-v4-minimap-camera-tick.md
+docs/operations/handoffs/2026-08-10-v4-minimap-texture.md
 docs/operations/handoffs/2026-08-10-w2s-hud-nameplates.md
 docs/operations/handoffs/2026-08-10-walkable-position-chain-applied.md
 docs/operations/handoffs/2026-08-10-walkable-position-chain-draft.md
@@ -325,6 +331,7 @@ scripts/python/README.md
 scripts/python/e2e_smoke.py
 scripts/python/offline_check.py
 scripts/python/offset_check.py
+scripts/python/overlay-consistency-check.py
 scripts/python/replay-delta-extractor.py
 scripts/python/velocity-pitch-validation.py
 scripts/replay-play-state.ps1
@@ -357,6 +364,7 @@ src/WotBTreader.Application/Game/GameSessionContracts.cs
 src/WotBTreader.Application/Properties/AssemblyInfo.cs
 src/WotBTreader.Application/Replay/OffsetTableReader.cs
 src/WotBTreader.Application/Replay/OverlayFrameProjection.cs
+src/WotBTreader.Application/Replay/ProjectionCache.cs
 src/WotBTreader.Application/Replay/ReplayContracts.cs
 src/WotBTreader.Application/Replay/ReplayDecoderRegistry.cs
 src/WotBTreader.Application/Replay/ReplayFrameSource.cs
@@ -488,6 +496,7 @@ src/WotBTreader.Host.Web/Services/DashboardReadClient.cs
 src/WotBTreader.Host.Web/Services/IDashboardReadClient.cs
 src/WotBTreader.Host.Web/Services/MemoryObservationPublisher.cs
 src/WotBTreader.Host.Web/Services/MinimapTextureService.cs
+src/WotBTreader.Host.Web/Services/ProjectionCacheWarmer.cs
 src/WotBTreader.Host.Web/Services/RendezvousPublisher.cs
 src/WotBTreader.Host.Web/Services/StreamSequenceTracker.cs
 src/WotBTreader.Host.Web/WotBTreader.Host.Web.csproj
@@ -560,6 +569,7 @@ src/WotBTreader.Overlay/ViewModels/NameplateItem.cs
 src/WotBTreader.Overlay/ViewModels/PipItem.cs
 src/WotBTreader.Overlay/ViewModels/PlotPoint.cs
 src/WotBTreader.Overlay/ViewModels/RelayCommand.cs
+src/WotBTreader.Overlay/ViewModels/ScoreboardItem.cs
 src/WotBTreader.Overlay/ViewModels/SessionRow.cs
 src/WotBTreader.Overlay/Views/FastPlotRenderer.cs
 src/WotBTreader.Overlay/Views/PlotTransform.cs
@@ -611,6 +621,7 @@ test.cmd
 tests/WotBTreader.Application.Tests/MSTestSettings.cs
 tests/WotBTreader.Application.Tests/OffsetTableReaderTests.cs
 tests/WotBTreader.Application.Tests/OverlayFrameProjectorTests.cs
+tests/WotBTreader.Application.Tests/ProjectionCacheTests.cs
 tests/WotBTreader.Application.Tests/ReplayDecoderRegistryTests.cs
 tests/WotBTreader.Application.Tests/ReplayFrameSourceTests.cs
 tests/WotBTreader.Application.Tests/ReplayIngestionServiceTests.cs
@@ -696,6 +707,7 @@ tests/WotBTreader.Host.Web.Tests/GameApiEndpointsTests.cs
 tests/WotBTreader.Host.Web.Tests/LocalMutationSecurityTests.cs
 tests/WotBTreader.Host.Web.Tests/LoopbackOnlyMiddlewareTests.cs
 tests/WotBTreader.Host.Web.Tests/MSTestSettings.cs
+tests/WotBTreader.Host.Web.Tests/ProjectionCacheWarmerTests.cs
 tests/WotBTreader.Host.Web.Tests/ReadApiEndpointsTests.cs
 tests/WotBTreader.Host.Web.Tests/WotBTreader.Host.Web.Tests.csproj
 tests/WotBTreader.Host.Web.Tests/packages.lock.json
