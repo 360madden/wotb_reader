@@ -2824,11 +2824,22 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 float? hpCurrent = null;
                 float? hpMax = null;
                 bool? alive = null;
+                string? hpFailureStage = null;
                 if (region.EntityBaseRegionBytes is not null)
                 {
                     hpCurrent = EntityBaseRegion.TryReadHpCurrent(region.EntityBaseRegionBytes);
                     hpMax = EntityBaseRegion.TryReadHpMax(region.EntityBaseRegionBytes);
                     alive = EntityBaseRegion.TryReadAlive(region.EntityBaseRegionBytes);
+                    if (hpCurrent is null || hpMax is null)
+                    {
+                        hpFailureStage = "region-hp-decode";
+                    }
+                }
+                else
+                {
+                    // The entity-base read was requested (the frame always
+                    // does) but failed: surface WHY health is honest-null.
+                    hpFailureStage = region.EntityBaseFailureStage;
                 }
 
                 tanks.Add(new LiveFrameTankState(
@@ -2842,7 +2853,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     hpMax,
                     alive,
                     failureStage,
-                    region.ModuleRooted));
+                    region.ModuleRooted,
+                    hpFailureStage));
             }
 
             return OperationResult.Success(new LiveFrameReadResult(

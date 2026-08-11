@@ -1971,10 +1971,12 @@ public sealed class GameSessionCoordinatorTests
         Assert.AreEqual(3.25f, first.Y);
         Assert.AreEqual(-44.75f, first.Z);
         Assert.AreEqual(0.5f, first.YawRadians);
-        // No entity-base pages in this fixture: health stays honest-null.
+        // No entity-base pages in this fixture: health stays honest-null
+        // and the frame surfaces WHY (the entity-base read failed).
         Assert.IsNull(first.HpCurrent);
         Assert.IsNull(first.HpMax);
         Assert.IsNull(first.Alive);
+        Assert.AreEqual("entity-base-read", first.HpFailureStage);
         Assert.IsTrue(first.ModuleRooted);
         // Tank B: its own ring region.
         LiveFrameTankState second = frame.Tanks[1];
@@ -2055,6 +2057,7 @@ public sealed class GameSessionCoordinatorTests
         Assert.AreEqual(1228f, tank.HpCurrent);
         Assert.AreEqual(1550f, tank.HpMax);
         Assert.IsTrue(tank.Alive);
+        Assert.IsNull(tank.HpFailureStage);
         // Both the ring and the entity-base reads happened in the SAME
         // batch pass under one authorization (the camera-chain reads are
         // separate — filter to the batch addresses).

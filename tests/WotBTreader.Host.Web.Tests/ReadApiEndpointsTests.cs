@@ -432,6 +432,75 @@ public sealed class ReadApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task LiveFrame_ProjectsL1HealthIntoOverlayResponse()
+    {
+        // One live tank with L1 entity-base health: the projected response
+        // must carry the exact bar values (the L1 wiring end-to-end through
+        // the shared ToOverlayFrameResponse mapping).
+        CameraScannerStub scanner = new(
+            OperationResult.Failure<CameraPoseReadResult>(
+                new ApplicationError("unused", "The live path never calls the pose seam separately.")),
+            OperationResult.Success(new LiveFrameReadResult(
+                CompletedAtUtc: DateTimeOffset.UtcNow,
+                GameVersion: "11.19.0.10",
+                Type10EntityPositionStatus.Resolved,
+                FailureStage: null,
+                ReplayTimeSeconds: 150.5,
+                SameDecodedClockProven: true,
+                Camera: new CameraPoseReadResult(
+                    CompletedAtUtc: DateTimeOffset.UtcNow,
+                    GameVersion: "11.19.0.10",
+                    CameraPoseStatus.Resolved,
+                    FailureStage: null,
+                    AvatarAddress: 0,
+                    CameraAddress: 0,
+                    CameraStateAddress: 0,
+                    X: 0,
+                    Y: 0,
+                    Z: 0,
+                    YawRadians: 0,
+                    PitchRadians: 0,
+                    Basis: [],
+                    AvatarIdentityVerified: true,
+                    CameraIdentityVerified: true,
+                    CameraStateIdentityVerified: true,
+                    ConsistentDoubleRead: true,
+                    ModuleRooted: true),
+                Tanks:
+                [
+                    new LiveFrameTankState(
+                        3760578,
+                        Type10EntityPositionStatus.Resolved,
+                        X: 0,
+                        Y: 0,
+                        Z: 100,
+                        YawRadians: 0.5f,
+                        HpCurrent: 1228,
+                        HpMax: 1550,
+                        Alive: true,
+                        FailureStage: null,
+                        ModuleRooted: true),
+                ],
+                RosterCandidatesSeen: 14,
+                RosterFilteredOut: 2)));
+
+        IResult result = await ReadApiEndpoints.GetLiveFrameAsync(
+            new DefaultHttpContext(),
+            scanner,
+            fov: 90,
+            width: 1920,
+            height: 1080,
+            TestContext.CancellationToken);
+
+        OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
+        OverlayTankResponse tank = frame.Tanks.Single();
+        Assert.AreEqual(1228L, tank.CurrentHealth);
+        Assert.AreEqual(1550L, tank.MaxHealth);
+        Assert.AreEqual((double)(1228f / 1550f), tank.HpFraction, 1e-9);
+        Assert.IsTrue(tank.Alive);
+    }
+
+    [TestMethod]
     public async Task LiveFrame_NonResolvedFrame_ReturnsConflict()
     {
         CameraScannerStub scanner = new(

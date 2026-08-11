@@ -656,7 +656,8 @@ public sealed record LiveFrameTankState(
     float? HpMax,
     bool? Alive,
     string? FailureStage,
-    bool ModuleRooted);
+    bool ModuleRooted,
+    string? HpFailureStage = null);
 
 /// <summary>
 /// One composed live frame (design: docs/operations/live-frame-loop-design.md):

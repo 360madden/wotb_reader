@@ -537,6 +537,7 @@ public sealed record LiveFrameTankResponse
     public bool? Alive { get; init; }
     public string? FailureStage { get; init; }
     public bool ModuleRooted { get; init; }
+    public string? HpFailureStage { get; init; }
 }
 
 /// <summary>

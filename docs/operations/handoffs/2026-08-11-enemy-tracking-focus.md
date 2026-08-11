@@ -413,6 +413,21 @@ publication; HP publication keeps its own rule (victim 2549399).
   (L3) + its Dead Rail repeat; yaw publication package referenced as
   PENDING.
 
+## Live-frame HP hardening — HpFailureStage surfaced + endpoint flow pinned (2026-08-11)
+
+- **`LiveFrameTankState` + `LiveFrameTankResponse` gained `HpFailureStage`**
+  (additive, default null): the frame now surfaces WHY health is
+  honest-null per tank — `entity-base-read` / `entity-base-anchor` from the
+  batch, or `region-hp-decode` when the bytes were read but decoded invalid
+  (negative health / short region). Null means health present or not
+  requested.
+- **Endpoint flow pinned end-to-end:** `DiscoverLiveFrame_CarriesL1HealthAndFailureStage`
+  (health + failure round-trip through the DTO) and
+  `LiveFrame_ProjectsL1HealthIntoOverlayResponse` (the FULL `GET
+  /live/frame` path: projector → shared `ToOverlayFrameResponse` carries
+  1228/1550 + fraction + alive). The existing honest-unknown assertions
+  stayed and now also pin the null `HpFailureStage`.
+
 ## OD-RECOVERY-086 live session — X2 PASS live + X3 team-based partial (2026-08-11)
 
 Approved live session on Oasis Palms (the content-distinct 11.19.0.10
@@ -572,4 +587,13 @@ surface changed. Next live gates in pre-staged order: OD-RECOVERY-087
   recorded: per-id join valid for own-team ids, enemy join blocked)
 - `docs/operations/offset-discovery-ledger.md` (Next-planned row →
   includes OD-RECOVERY-090 + yaw-draft reference)
+- `src/WotBTreader.Application/Game/GameSessionContracts.cs` +
+  `src/WotBTreader.ApiContracts/OffsetDiscoveryContracts.cs` +
+  `src/WotBTreader.Host.Web/Endpoints/GameApiEndpoints.cs`
+  (`LiveFrameTankState`/`LiveFrameTankResponse` `HpFailureStage`,
+  additive)
+- `src/WotBTreader.GameIntegration/Session/GameSessionCoordinator.cs`
+  (frame surfaces the entity-base failure stage / decode failure)
+- `tests/WotBTreader.Host.Web.Tests/ReadApiEndpointsTests.cs` +
+  `GameApiEndpointsTests.cs` (endpoint HP flow + failure stage tests)
 - `docs/operations/handoffs/2026-08-11-enemy-tracking-focus.md` (this file)

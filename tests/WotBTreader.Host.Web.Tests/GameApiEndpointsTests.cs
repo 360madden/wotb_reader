@@ -1392,6 +1392,76 @@ public sealed class GameApiEndpointsTests
         Assert.AreEqual(150.5, response.ReplayTimeSeconds!.Value, 1e-9);
         Assert.IsTrue(response.SameDecodedClockProven);
         Assert.AreEqual(1, scanner.LiveFrameCallCount);
+        // Honest health: absent because the entity-base read was not
+        // exercised in this fixture — and the WHY is surfaced.
+        Assert.IsNull(response.Tanks.Single().HpCurrent);
+        Assert.IsNull(response.Tanks.Single().HpMax);
+        Assert.IsNull(response.Tanks.Single().Alive);
+        Assert.IsNull(response.Tanks.Single().HpFailureStage);
+    }
+
+    [TestMethod]
+    public async Task DiscoverLiveFrame_CarriesL1HealthAndFailureStage()
+    {
+        var scanner = new FakeGameMemoryScanner
+        {
+            LiveFrameResult = OperationResult.Success(
+                new LiveFrameReadResult(
+                    CompletedAtUtc: DateTimeOffset.UtcNow,
+                    "11.19.0.10",
+                    Type10EntityPositionStatus.Resolved,
+                    FailureStage: null,
+                    ReplayTimeSeconds: 150.5,
+                    SameDecodedClockProven: true,
+                    Camera: null,
+                    Tanks:
+                    [
+                        new LiveFrameTankState(
+                            3760578,
+                            Type10EntityPositionStatus.Resolved,
+                            X: 0,
+                            Y: 0,
+                            Z: 100,
+                            YawRadians: 0.5f,
+                            HpCurrent: 1228,
+                            HpMax: 1550,
+                            Alive: true,
+                            FailureStage: null,
+                            ModuleRooted: true),
+                        new LiveFrameTankState(
+                            3760579,
+                            Type10EntityPositionStatus.Resolved,
+                            X: 10,
+                            Y: 0,
+                            Z: 90,
+                            YawRadians: 0f,
+                            HpCurrent: null,
+                            HpMax: null,
+                            Alive: null,
+                            FailureStage: null,
+                            ModuleRooted: true,
+                            HpFailureStage: "entity-base-read"),
+                    ],
+                    RosterCandidatesSeen: 14,
+                    RosterFilteredOut: 2)),
+        };
+
+        IResult result = await GameApiEndpoints.DiscoverLiveFrameAsync(
+            scanner,
+            new WotBTreader.ApiContracts.LiveFrameReadRequest(),
+            TestContext.CancellationToken);
+
+        WotBTreader.ApiContracts.LiveFrameReadResponse response =
+            Value<WotBTreader.ApiContracts.LiveFrameReadResponse>(result);
+        Assert.HasCount(2, response.Tanks);
+        WotBTreader.ApiContracts.LiveFrameTankResponse healthy = response.Tanks[0];
+        Assert.AreEqual(1228.0, healthy.HpCurrent!.Value, 1e-9);
+        Assert.AreEqual(1550.0, healthy.HpMax!.Value, 1e-9);
+        Assert.IsTrue(healthy.Alive);
+        Assert.IsNull(healthy.HpFailureStage);
+        WotBTreader.ApiContracts.LiveFrameTankResponse failed = response.Tanks[1];
+        Assert.IsNull(failed.HpCurrent);
+        Assert.AreEqual("entity-base-read", failed.HpFailureStage);
     }
 
     [TestMethod]

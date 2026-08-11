@@ -1027,6 +1027,7 @@ internal static class GameApiEndpoints
                     Alive = tank.Alive,
                     FailureStage = tank.FailureStage,
                     ModuleRooted = tank.ModuleRooted,
+                    HpFailureStage = tank.HpFailureStage,
                 })
                 .ToList(),
             RosterCandidatesSeen = frame.RosterCandidatesSeen,
