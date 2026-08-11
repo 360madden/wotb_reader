@@ -182,13 +182,22 @@ Known packet types (decoded by `WotbReplayDecoder`):
 | 36 | 1 | 4 B | spawn marker |
 | 17 | 1 | 0 B | empty packet at t≈1.61 |
 | 38 | 1 | 1 B | single byte |
-| 7 | 19 040 | entity-id + packed int32s (13–16 B) | entity-status stream (the `0x02000000` state flag repeats — NOT yaw) |
+| 7 | 19 040 | entity-id + packed int32s (13–16 B) | entity-status stream. **Surveyed 2026-08-11 (Oasis 11.19.0, payload bytes vs canonicalized hull yaw):** layout = entity-id u32 + 2 entity-specific state int32s (e.g. `2,2` for most tanks, `9,4` for one effect entity) + a fast-rotating 16-bit tail that sweeps the full circle at 2 000–3 600°/s — a tick counter/bitfield, NOT an angle (a real turret traverse is ~20–60°/s). One effect entity carries a 16-byte layout with a third rotating float X (moves while hull yaw is static, but X ≠ yaw, X ≠ pitch — an effect parameter, not a tank field). **No turret angle and no lock/target field exist in type-7** |
 
 **NO spotting/reveal packet exists** — the full type inventory above covers
 100% of the stream and none carries reveal/visibility data. This is the V3
 finding (2026-08-10): spotted-reproduction is not data-possible from replays;
 replay mode renders god-view. Type 8 also carries large protobuf blobs
 (avatar URLs, player skins) — the `updateArena2` roster source.
+
+**NO turret-facing or lock/target packet exists either** — the type-7
+entity-status survey (2026-08-11, above) plus the full inventory closes both:
+the replay can provide per-enemy position, HP, hull yaw/pitch/roll, alive
+state, and team/tank — but NOT the turret angle and NOT any auto-aim /
+lock-on / "has-me-targeted" state (client-side UI state, absent from the
+server-authoritative stream). The replay HUD's "aims at me" signal is
+therefore limited to the HULL direction (geometry), and true turret/lock
+state is a live-memory discovery target, not a replay decode.
 
 **Destroy signal FOUND (2026-08-10):** the destroy marker is a **type-10
 position packet with the per-entity constant (payload +24..+35) zeroed AND
