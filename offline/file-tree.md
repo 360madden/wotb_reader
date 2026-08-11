@@ -251,6 +251,7 @@ docs/operations/handoffs/2026-08-11-cam004-camera-state-consistent.md
 docs/operations/handoffs/2026-08-11-cam005-host-camera-pose-endpoint.md
 docs/operations/handoffs/2026-08-11-cam006-camera-wired-into-frame-endpoint.md
 docs/operations/handoffs/2026-08-11-cam007-projection-cross-check.md
+docs/operations/handoffs/2026-08-11-cam008-prelogin-controller-rtti.md
 docs/operations/handoffs/2026-08-11-camera-family-hierarchy-factory.md
 docs/operations/handoffs/2026-08-11-camera-family-rtti.md
 docs/operations/handoffs/2026-08-11-camera-ownership-root.md

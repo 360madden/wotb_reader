@@ -378,6 +378,12 @@ function Walk-EntityPositionMemory {
     if ($null -eq $gameCore) { return $null }
     $app = Read-MemoryUInt32 -Address ($gameCore + 0x0c)
     $session = Read-MemoryUInt32 -Address ($app + 0x124)
+    # CAM-008 (2026-08-11, RTTI-verified): until replay playback starts the
+    # session slot holds a PreLoginController (0x325ad2c) whose +0x118 is NOT
+    # an account controller. Bail cleanly instead of walking garbage.
+    $sessionVftable = Read-MemoryUInt32 -Address $session
+    if ($null -eq $sessionVftable -or
+        $sessionVftable -eq ($ModuleBase + 0x325ad2c)) { return $null }
     $account = Read-MemoryUInt32 -Address ($session + 0x118)
     $playback = Read-MemoryUInt32 -Address ($account + 0x128)
     if ($null -eq $playback -or $playback -lt 0x10000) { return $null }

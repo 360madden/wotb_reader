@@ -190,6 +190,25 @@ public sealed class Type10EntityPositionResolverTests
     }
 
     [TestMethod]
+    public void Resolve_PreLoginSessionController_ReportsReplayInactiveInsteadOfUnsupported()
+    {
+        // CAM-008: the app's session slot holds a PreLoginController until
+        // replay playback starts (RTTI-verified 0x0325ad2c). That must read
+        // as the retryable ReplaySessionInactive, never as an unsupported
+        // layout, so callers wait for playback instead of failing the build.
+        MemoryFixture memory = MemoryFixture.CreateCached(EntityId, 1f, 2f, 3f);
+        memory.WriteUInt32(
+            memory.SessionController,
+            ModuleBase + Type10EntityPositionLayout.WotBlitz1119010.PreLoginControllerVtableRva);
+
+        Type10EntityPositionResult result = Resolve(memory);
+
+        Assert.AreEqual(Type10EntityPositionStatus.ReplaySessionInactive, result.Status);
+        Assert.AreEqual("session-controller-vtable", result.FailureStage);
+        Assert.IsTrue(result.ModuleRooted);
+    }
+
+    [TestMethod]
     public void Resolve_RecordChangesDuringFirstCollect_RetriesAndSucceeds()
     {
         MemoryFixture memory = MemoryFixture.CreateCached(EntityId, 1f, 2f, 3f);

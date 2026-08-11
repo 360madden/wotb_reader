@@ -234,10 +234,13 @@ timeline). Handoff:
 GameCamera posA `+0x38` is the true world camera — **23.57 m** from the
 viewpoint tank (7/8 rounds within 1-30 m, memory-space, same wall time),
 identity gates pass, posC `+0xB0` is a different quantity (368.8 m). The
-CAM-003 resolver gate is **phase-dependent, now resolved**: the
-session-controller vftable flips between launches (`base+0x325ad2c` →
-resolver rejects; `base+0x323d9bc` → resolver resolves), and v6's
-gate-free direct walk is the fallback for the rejected phase.
+CAM-003 resolver gate is **REFRAMED by CAM-008 (2026-08-11)**: the
+"variant" `base+0x325ad2c` is RTTI-verified to be **PreLoginController**
+— the game was simply not in a battle session yet during those reads (the
+resolver's `0x323d9bc` `SessionController` gate was CORRECT to reject).
+The resolver now reports the retryable `ReplaySessionInactive` for that
+phase (callers wait for playback), and the v6 direct walk bails cleanly
+instead of dereferencing garbage.
 ✅ **CAM-005 (2026-08-11): the host exposes the camera pose** —
 `POST /discover/camera-pose` walks the CAM-001 chain under the gate
 (avatar vftable anchor → br → camera → GameCamera, identity gates on
@@ -263,7 +266,8 @@ carries the memory pose; validator verdict on v7 evidence). Handoffs:
 `docs/operations/handoffs/2026-08-11-cam004-camera-state-consistent.md`,
 `docs/operations/handoffs/2026-08-11-cam005-host-camera-pose-endpoint.md`,
 `docs/operations/handoffs/2026-08-11-cam006-camera-wired-into-frame-endpoint.md`,
-`docs/operations/handoffs/2026-08-11-cam007-projection-cross-check.md`.
+`docs/operations/handoffs/2026-08-11-cam007-projection-cross-check.md`,
+`docs/operations/handoffs/2026-08-11-cam008-prelogin-controller-rtti.md`.
 
 ### Phase 2 — The live seam + first live sessions (serialized)
 

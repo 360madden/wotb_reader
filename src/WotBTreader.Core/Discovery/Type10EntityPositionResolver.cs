@@ -20,6 +20,7 @@ public sealed record Type10EntityPositionLayout(
     uint AppControllerVtableRva,
     uint AppControllerSessionControllerOffset,
     uint SessionControllerVtableRva,
+    uint PreLoginControllerVtableRva,
     uint SessionControllerAccountControllerOffset,
     uint AccountControllerVtableRva,
     uint AccountControllerActiveControllerOffset,
@@ -50,6 +51,7 @@ public sealed record Type10EntityPositionLayout(
         AppControllerVtableRva: 0x0323d61c,
         AppControllerSessionControllerOffset: 0x124,
         SessionControllerVtableRva: 0x0323d9bc,
+        PreLoginControllerVtableRva: 0x0325ad2c,
         SessionControllerAccountControllerOffset: 0x118,
         AccountControllerVtableRva: 0x0323eae4,
         AccountControllerActiveControllerOffset: 0x128,
@@ -254,6 +256,7 @@ public static class Type10EntityPositionResolver
             !TryAdd(moduleBase, layout.GameCoreRootRva, out uint rootAddress) ||
             !TryAdd(moduleBase, layout.AppControllerVtableRva, out uint expectedAppVtable) ||
             !TryAdd(moduleBase, layout.SessionControllerVtableRva, out uint expectedSessionVtable) ||
+            !TryAdd(moduleBase, layout.PreLoginControllerVtableRva, out uint expectedPreLoginVtable) ||
             !TryAdd(moduleBase, layout.AccountControllerVtableRva, out uint expectedAccountVtable) ||
             !TryAdd(moduleBase, layout.PlaybackControllerVtableRva, out uint expectedPlaybackVtable) ||
             !TryResolveModuleAddresses(
@@ -281,6 +284,7 @@ public static class Type10EntityPositionResolver
                 rootAddress,
                 expectedAppVtable,
                 expectedSessionVtable,
+                expectedPreLoginVtable,
                 expectedAccountVtable,
                 expectedPlaybackVtable,
                 expectedFilterVtables,
@@ -331,6 +335,7 @@ public static class Type10EntityPositionResolver
         uint rootAddress,
         uint expectedAppVtable,
         uint expectedSessionVtable,
+        uint expectedPreLoginVtable,
         uint expectedAccountVtable,
         uint expectedPlaybackVtable,
         uint[] expectedFilterVtables,
@@ -380,6 +385,19 @@ public static class Type10EntityPositionResolver
 
         if (sessionVtable != expectedSessionVtable)
         {
+            // CAM-008 (2026-08-11, RTTI-verified): the app's session slot
+            // holds a PreLoginController (vftable 0x0325ad2c) until replay
+            // playback starts. That is not an unsupported layout — the battle
+            // session simply is not active yet — so report the retryable
+            // inactive status and let the caller wait for playback instead of
+            // failing the build.
+            if (sessionVtable == expectedPreLoginVtable)
+            {
+                return AttemptResult.Retry(
+                    Type10EntityPositionStatus.ReplaySessionInactive,
+                    "session-controller-vtable");
+            }
+
             return AttemptResult.Stop(
                 Type10EntityPositionStatus.UnsupportedSessionController,
                 "session-controller-vtable");
@@ -950,6 +968,7 @@ public static class Type10EntityPositionResolver
             layout.AppControllerVtableRva != 0 &&
             layout.AppControllerSessionControllerOffset != 0 &&
             layout.SessionControllerVtableRva != 0 &&
+            layout.PreLoginControllerVtableRva != 0 &&
             layout.SessionControllerAccountControllerOffset != 0 &&
             layout.AccountControllerVtableRva != 0 &&
             layout.AccountControllerActiveControllerOffset != 0 &&
