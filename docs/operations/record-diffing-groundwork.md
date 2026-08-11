@@ -642,6 +642,49 @@ against replay-derived tank positions before any HUD change. Type-39 remains
 unresolved and is NOT treated as the camera (offset 30→507 m below the
 tank); the static camera-state object is the evidence-backed path.
 
+### FOV / projection status (2026-08-11) — measured in-session, not static
+
+The overlay's analytic pinhole `WorldToScreen.Project` is mathematically
+exact given pose + vertical FOV; the only unknown is the game's effective
+per-mode FOV. A static hunt found: the class `FlexFOVCamera` exists (RTTI
+name `. ?AVFlexFOVCamera@@` at RVA `0x3e4e460`), and tuning-property keys
+(`default fov`, `min fov`, `max fov`, `camo fov`, `showcase fov` near RVA
+`0x32de268`; `Movement FOV offset (deg)`/`Movement FOV multiplier` in the
+ReplayCameraController region) show FOV is a **config/res-driven runtime
+quantity, not a constant in the exe** — the values live in the game's
+DAVAProject settings, so the exe cannot yield the numeric FOV. The
+binary's RTTI is a modified layout (shared type-info slots, zero COL
+`pSelf`), so reverse name→vftable resolution for `FlexFOVCamera` does not
+complete cleanly; forward resolution from a known vftable still works.
+Plan: CAM-001 stays pose-only; the effective vertical FOV is measured in
+the session by fitting the projection of a known-world tank onto its
+screen position (manual/visual calibration step), or by reading the live
+camera's FOV field once the runtime camera object is reached in a later
+session.
+
+### Camera integration design (post-CAM-001)
+
+Once CAM-001 lands `camera-state-consistent`, wire the true camera through
+a seam, not a rewrite — the overlay renders only `OverlayFrame`, and the
+memory camera is a data-source swap:
+
+1. **Seam:** `ReplayFrameSource.BuildCamera` gains an optional
+   `OverlayCamera? cameraOverride` (or an `ICameraPoseSource` behind the
+   existing `IOverlayFrameSource`); null → today's viewpoint-tank fallback.
+2. **Mapping (cameraState → OverlayCamera):** `X/Y/Z` ← `+0x11C/+0x120/
+   +0x124` (world position, integrated per-frame); `YawRadians` ← `+0x58`;
+   `PitchRadians` ← `+0x5C`; `RollRadians` ← null (the +0xAC basis rows
+   0-1 can confirm zero roll; the engine composes yaw×pitch rotation × the
+   transform world matrix, so a non-trivial basis carries the tank's own
+   orientation). Sign/axis conventions are confirmed by the CAM-001
+   correlation before any swap.
+3. **Validation before HUD change:** run both sources on the same decoded
+   frame and diff the projected nameplate screen positions (the
+   third-person offset is the dominant correction, ~1-30 m); the swap only
+   ships when the diff is within the overlay's label-budget tolerance.
+4. **Fail-closed:** no verified memory camera → current viewpoint fallback
+   (never a zero/guessed pose).
+
 ## Overlay frame contract — ReplayFrameSource (2026-08-10)
 
 The replay overlay's data seam is in place: `Core/Overlay` defines
