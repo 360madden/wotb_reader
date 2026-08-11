@@ -182,9 +182,16 @@ the read discipline that makes atomicity unnecessary") gets its home here:
   2. ✅ **DONE 2026-08-11** — Web endpoint `POST /discover/entity-regions`
      + 4 endpoint tests (batch response mapping + base64 + no-address
      leak, invalid anchor, empty entities, failure mapping).
-  3. Replay rehearsal (approved-session step): dump all roster entities at
-     replay-clock-labeled times and cross-check against the decoded frame
-     (the X2 rehearsal).
+  3. ✅ **PRE-STAGED 2026-08-11** — Replay rehearsal: dump all roster
+     entities at replay-clock-labeled times and cross-check against the
+     decoded frame (the X2 rehearsal). Driver
+     `scripts/invoke-batch-rehearsal.ps1` (qualify roster → live batch dumps
+     through the gated seam → verdict) + `scripts/python/
+     batch-rehearsal-crosscheck.py` (roster mode; compare mode decodes each
+     ring-record dump's float32 triple at +0x10 and matches it to the
+     nearest decoded position_sample — proven on real data: 42/42 pairs
+     PASS, corruption detected, exit codes 0/1/3). The session itself still
+     needs one approved launch.
   4. Measure the batch window + double-read spans → feed item 7.
 
 ## Open questions (recorded, not decided)

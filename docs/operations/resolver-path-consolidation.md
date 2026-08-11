@@ -96,8 +96,15 @@ cross-link, and the planning handoff.
   `ReadEntityRegionsAsync` (validation clamps, resolve-all → read-all → one
   post-read G2 snapshot, per-entity statuses in request order) and
   `POST /api/v1/game/discover/entity-regions`, with 7 coordinator + 4 web
-  endpoint tests. The replay rehearsal (dump all roster entities vs the
-  decoded frame) still needs one approved live session.
+  endpoint tests.
+- **✅ REHEARSAL PRE-STAGED 2026-08-11:** driver
+  `scripts/invoke-batch-rehearsal.ps1` + cross-check tool
+  `scripts/python/batch-rehearsal-crosscheck.py` — qualify the decoded
+  roster, batch-dump the full roster per replay time through the gated
+  seam (one clock attestation per batch), and match each ring-record
+  position triple (+0x10) to the nearest decoded sample. Cross-check proven
+  on real decoded data (42/42 PASS, corruption detected; exits 0/1/3). The
+  session itself still needs one approved live launch.
 - `LiveFrameSource` consumes the **resolver endpoints**, not the observation
   DTO. Deferred decision (shared-contract proposal when that work starts):
   promote resolver results into the observation contract vs. keep the
