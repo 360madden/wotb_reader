@@ -581,24 +581,38 @@ object** — the replay overlay's missing true camera:
 | `+0x320` | ring index (800) |
 | `+0x360/0x364 + idx*0x10` | per-frame ring entries (2 floats) |
 
-Reachability: `cameraState = [[mgr+0x2C]+0x28]`; the camera factory
-(`FUN_0165fe40`) stores the controller at `[mgr+0x2C]` (mode 2 =
-ReplayCameraController). The manager's global root is NOT yet resolved, so
-an approved offline session locates cameraState by **signature scan** in the
-replay-launched process instead:
+Reachability is now a **fixed member-path** (resolved 2026-08-11;
+handoff `docs/operations/handoffs/2026-08-11-camera-ownership-root.md`):
 
-1. Scan for the ring signature: a buffer whose `+0x320` dword is a small
-   monotonic index with 2-float entries at `0x360/0x364 + idx*0x10` updated
-   per frame (same cadence pattern as the entity position ring).
-2. Require finite floats at `+0x58/+0x5C` (yaw/pitch) and a plausible world
+```
+cameraState = [camera + 0x28]
+camera      = [battleResources + 0x2C]
+battleRes   = [avatar + 0x154]          (BattleResources::Load this)
+avatar      = [session + 0x11C]         (AvatarControllerBattle / Replay)
+```
+
+Replay variant: `AvatarControllerReplay` main vftable `0x3277e8c` (ctor
+`FUN_016369f0`, created by `FUN_013d59a0`, stored at
+`[replayCtrl+0x158]`); live variant `AvatarControllerBattle` vftable
+`0x3277da4`. The SessionController instance itself is created by the
+by-name controller registry, so an approved offline session locates the
+anchor by scanning for the **avatar vftable pointer** (a distinctive
+`0x3677e8c`/`0x3677da4` dword in the replay-launched process) and then
+walks the fixed offsets — no blind ring scan:
+
+1. Scan for dword `0x3677e8c` (replay) or `0x3677da4` (live) → the avatar
+   controller instance (first vftable slot of the object).
+2. `battleResources = [avatar+0x154]`; `camera = [br+0x2C]`;
+   `cameraState = [camera+0x28]`.
+3. Require finite floats at `+0x58/+0x5C` (yaw/pitch) and a plausible world
    position at `+0x11C/+0x120/+0x124`.
-3. Correlate `+0x58` (camera yaw) against the decoded type-10 viewpoint yaw:
+4. Correlate `+0x58` (camera yaw) against the decoded type-10 viewpoint yaw:
    expect ~1:1 (the replay camera tracks the author tank).
-4. Correlate `+0x11C` (camera position) against the viewpoint tank position:
+5. Correlate `+0x11C` (camera position) against the viewpoint tank position:
    the delta is the **third-person offset** the overlay currently lacks
    (camera ≈ 5-10 m behind + 2-5 m above the tank) — the exact correction
    for W2S nameplate alignment.
-5. Cross-check the `+0xAC` rows against a recomputed yaw×pitch basis
+6. Cross-check the `+0xAC` rows against a recomputed yaw×pitch basis
    (consistency, ± small residual).
 
 **Deliverable:** the true per-frame camera pose for the overlay, replacing
