@@ -267,7 +267,16 @@ carries the memory pose; validator verdict on v7 evidence). Handoffs:
 `docs/operations/handoffs/2026-08-11-cam005-host-camera-pose-endpoint.md`,
 `docs/operations/handoffs/2026-08-11-cam006-camera-wired-into-frame-endpoint.md`,
 `docs/operations/handoffs/2026-08-11-cam007-projection-cross-check.md`,
-`docs/operations/handoffs/2026-08-11-cam008-prelogin-controller-rtti.md`.
+`docs/operations/handoffs/2026-08-11-cam008-prelogin-controller-rtti.md`,
+`docs/operations/handoffs/2026-08-11-cam009-fov-config-found.md`.
+✅ **CAM-009 (2026-08-11): the numeric FOV is in the installed config** —
+read-only DVPL/LZ4 inspection of `optionsGlobal.yaml.dvpl` pins the
+engine battle FOV: `default fov` **64° (horizontal**, `horizontal to
+vertical radius coefficient` 0.73 ⇒ ~47° vertical), `camo/showcase fov`
+64, movement FOV mult 1.0 / offset 1°; `optionsDesktop.yaml.dvpl` has the
+player slider 40–60 (default 54) + `Camera backward fov offset` 8°. The
+CAM-007 validator band widened to 40/47/64/90°; the live session settles
+the exact convention.
 
 ### Phase 2 — The live seam + first live sessions (serialized)
 

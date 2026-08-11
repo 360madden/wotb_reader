@@ -658,11 +658,31 @@ against replay-derived tank positions before any HUD change. Type-39 remains
 unresolved and is NOT treated as the camera (offset 30→507 m below the
 tank); the static camera-state object is the evidence-backed path.
 
-### FOV / projection status (2026-08-11) — measured in-session, not static
+### FOV / projection status (2026-08-11) — config values FOUND in the install
 
 The overlay's analytic pinhole `WorldToScreen.Project` is mathematically
-exact given pose + vertical FOV; the only unknown is the game's effective
-per-mode FOV. A static hunt found: the class `FlexFOVCamera` exists (RTTI
+exact given pose + vertical FOV. UPDATE (2026-08-11, CAM-009): the numeric
+FOV **is** available from the installed game data (read-only DVPL/LZ4
+inspection — same files the product's `DvplReader` opens), so the overlay
+no longer needs an in-session guess:
+
+- `Data/optionsDesktop.yaml.dvpl` — the player-facing slider: `Default fov`
+  40–60°, default **54°**; `Camera backward fov offset` **8°** (third-person
+  pulls the FOV down by 8°).
+- `Data/optionsGlobal.yaml.dvpl` — the engine camera tuning (matches the
+  exe's `default fov` / `camo fov` / `showcase fov` property keys):
+  `default fov` min 10 / max 120 / **value 64**; `min fov` 30, `max fov` 64;
+  `Movement FOV multiplier` 1.0 (max 3.0), `Movement FOV offset (deg)` 1.0;
+  `Camera FOV mult` 1.6; **`horizontal to vertical radius coefficient`
+  0.73** — the FOV values are HORIZONTAL, so the vertical FOV the overlay's
+  `WorldToScreen` needs is ~0.73 × the value (≈ **47°** at 64°) pending
+  the CAM-007 live projection verdict to pin the exact convention.
+- A second mode block uses `default fov` **60** (`limited rotation fov`
+  30–60).
+
+The CAM-007 validator sweeps the 40–90° vertical band to stay robust
+against the convention uncertainty. A static hunt earlier found: the class
+`FlexFOVCamera` exists (RTTI
 name `. ?AVFlexFOVCamera@@` at RVA `0x3e4e460`), and tuning-property keys
 (`default fov`, `min fov`, `max fov`, `camo fov`, `showcase fov` near RVA
 `0x32de268`; `Movement FOV offset (deg)`/`Movement FOV multiplier` in the

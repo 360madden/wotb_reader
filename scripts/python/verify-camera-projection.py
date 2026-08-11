@@ -14,7 +14,8 @@ WorldToScreen.cs) and checks the third-person look-at property:
     so this is small (<= LOOK_AT_TOLERANCE_DEG, default 8).
   - Center distance: the projected tank lands near viewport center (<=
     CENTER_TOLERANCE of the half-viewport) across the FOV band
-    (70..110 deg vertical) — the result must not be an artifact of one FOV.
+    (40..90 deg vertical, per the CAM-009 config findings) — the result
+    must not be an artifact of one FOV.
   - Pitch diagnostic: expected pitch = atan2(camera->tank vertical delta,
     horizontal distance) is reported alongside the memory pitch, so a wrong
     pitch convention shows up as a large expected-vs-memory gap.
@@ -37,7 +38,12 @@ import sys
 
 LOOK_AT_TOLERANCE_DEG = 8.0   # third-person camera aims at the tank
 CENTER_TOLERANCE = 0.25       # |offset| / half-viewport at the center
-FOV_BAND_DEG = (70.0, 90.0, 110.0)
+# CAM-009 (2026-08-11): the install's optionsGlobal.yaml pins the engine
+# default fov at 64 (horizontal, horizontal->vertical radius coefficient
+# 0.73 => ~47 deg vertical; player slider default 54, third-person offset
+# 8). Sweep the plausible vertical band; the look-at check is FOV-
+# independent, so the sweep mainly guards the center-distance check.
+FOV_BAND_DEG = (40.0, 47.0, 64.0, 90.0)
 PASS_RATIO = 0.7              # fraction of evaluable rounds that must pass
 VIEWPORT = (1920, 1080)
 
