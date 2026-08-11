@@ -523,9 +523,6 @@ public class MainViewModel : INotifyPropertyChanged
             _minimapItems.Clear();
             _minimapBeacons.Clear();
             _scoreboard.Clear();
-            _minimapCameraX = frame.CameraX;
-            _minimapCameraZ = frame.CameraZ;
-            _minimapCameraYaw = frame.CameraYawRadians;
             BuildMinimap(frame);
             BuildKillFeed(frame);
             BuildScoreboard(frame);
@@ -648,6 +645,26 @@ public class MainViewModel : INotifyPropertyChanged
                 normalized.Value.U,
                 normalized.Value.V));
         }
+
+        // Camera marker: the raw world camera position normalizes against
+        // the SAME boundary as the dots — a raw value scaled by panel pixels
+        // would land meters off-panel. Fail-closed: no boundary extent or no
+        // camera evidence → no ring (null).
+        _minimapCameraYaw = frame.CameraYawRadians;
+        if (frame.CameraX is double rawCameraX && frame.CameraZ is double rawCameraZ)
+        {
+            (double U, double V)? normalized = MinimapMath.Normalize(
+                rawCameraX, rawCameraZ, minX, maxX, minZ, maxZ);
+            if (normalized is not null)
+            {
+                _minimapCameraX = normalized.Value.U;
+                _minimapCameraZ = normalized.Value.V;
+                return;
+            }
+        }
+
+        _minimapCameraX = null;
+        _minimapCameraZ = null;
     }
 
     /// <summary>

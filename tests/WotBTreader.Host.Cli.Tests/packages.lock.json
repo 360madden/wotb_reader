@@ -456,6 +456,9 @@
         "resolved": "10.0.10",
         "contentHash": "OvGz3PrzuAI/Sj7LTcXcCe3FClRI1IyRMZjNONcZtFh+Ww7nAtSh4kh08r8KVe/xxkXJPjR0Y1jF7H+N42d4xQ=="
       },
+      "wotbtreader.apicontracts": {
+        "type": "Project"
+      },
       "wotbtreader.application": {
         "type": "Project",
         "dependencies": {
@@ -504,6 +507,7 @@
       "wotbtreader.host.cli": {
         "type": "Project",
         "dependencies": {
+          "WotBTreader.ApiContracts": "[1.0.0, )",
           "WotBTreader.Application": "[1.0.0, )",
           "WotBTreader.Bootstrap": "[1.0.0, )",
           "WotBTreader.Core": "[1.0.0, )"

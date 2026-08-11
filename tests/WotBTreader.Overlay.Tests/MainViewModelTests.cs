@@ -1190,8 +1190,10 @@ public sealed class MainViewModelTests
         Assert.AreEqual("#FFD700", flag.Color);
         Assert.AreEqual(0.75, flag.NormalizedX, 1e-9);
         Assert.AreEqual(0.25, flag.NormalizedZ, 1e-9);
-        Assert.AreEqual(0.0, viewModel.MinimapCameraX!.Value, 1e-9);
-        Assert.AreEqual(0.0, viewModel.MinimapCameraZ!.Value, 1e-9);
+        // The camera ring is drawn at the normalized position (panel center
+        // for raw world 0,0), not at raw meters scaled by pixels.
+        Assert.AreEqual(0.5, viewModel.MinimapCameraX!.Value, 1e-9);
+        Assert.AreEqual(0.5, viewModel.MinimapCameraZ!.Value, 1e-9);
         // The camera facing flows through for the minimap direction tick.
         Assert.AreEqual(0.5, viewModel.MinimapCameraYawRadians!.Value, 1e-9);
     }
