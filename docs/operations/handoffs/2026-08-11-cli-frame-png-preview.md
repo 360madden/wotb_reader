@@ -38,10 +38,23 @@ the projected frame can be eyeballed against any decoded replay, no game.
 - Full `scripts/validate.ps1` gate green (901 passed, 3 skips, 0 warnings).
 - Offline file-tree regenerated (5 new files).
 
+## Follow-ups shipped (same session)
+
+- **Minimap inset** (`dafa6d2`): `overlay-frame --png` renders a god-view
+  180x180 panel top-right — team-colored tank dots, beacon dots, camera
+  crosshair — normalized to the session's map boundary (session MapId →
+  `GetMapBoundariesAsync`, zero new DI). Verified on Oasis Palms: 13 tank
+  dots + camera. Fail-open when the boundary is degenerate/absent.
+- **`overlay-strip <start> <end> <count>`** (`6afd4af`): contact sheet of
+  `count` evenly spaced frames (640x360 cells, as-square grid, shared
+  boundary per cell). Shared frame-build/PNG-write helpers extracted from
+  `overlay-frame` so the commands can't drift. Verified: 12 frames, 5-275s,
+  2616x1128.
+- **Per-cell time labels** (`b59c862`): each strip cell shows its actual
+  frame time ("5s", "100s") via the 5x5 font.
+
 ## Remaining
 
 - The live CAM-001 v7 session → projection verdict (FOV convention + pitch
-  sign) remains the single outstanding camera-track gate; the `--png` preview
-  is the offline way to iterate the HUD meanwhile.
-- Possible follow-ups: `--png` could later accept a minimap inset, or a small
-  `--frames <start>:<end>:<step>` strip for motion preview.
+  sign) remains the single outstanding camera-track gate; the `--png`/strip
+  previews are the offline way to iterate the HUD meanwhile.
