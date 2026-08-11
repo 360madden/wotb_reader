@@ -209,6 +209,7 @@ docs/operations/handoffs/2026-08-09-od074-replay-root-live-narrowing.md
 docs/operations/handoffs/2026-08-09-od075-position-ring-correction-live-proof.md
 docs/operations/handoffs/2026-08-10-damage-dealt-track-prestaged.md
 docs/operations/handoffs/2026-08-10-deep-bug-hunt-interceptor-double.md
+docs/operations/handoffs/2026-08-10-destroy-signal-found.md
 docs/operations/handoffs/2026-08-10-facing-yaw-packet-discovery.md
 docs/operations/handoffs/2026-08-10-g0-offset-publication.md
 docs/operations/handoffs/2026-08-10-hp-correlator-flatness.md

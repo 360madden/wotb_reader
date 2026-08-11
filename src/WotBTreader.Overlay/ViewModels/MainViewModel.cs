@@ -71,10 +71,13 @@ public class MainViewModel : INotifyPropertyChanged
     private readonly ObservableCollection<NameplateItem> _nameplates = [];
     private readonly ObservableCollection<BeaconItem> _beacons = [];
     private readonly ObservableCollection<PipItem> _pips = [];
+    private readonly ObservableCollection<MinimapItem> _minimapItems = [];
     private CancellationTokenSource? _frameLoadCts;
     private long _frameLoadGeneration;
     private double _hudFovDegrees = 90.0;
     private double? _lastFrameReplayTimeSeconds;
+    private double? _minimapCameraX;
+    private double? _minimapCameraZ;
 
     public MainViewModel()
         : this(new RendezvousLocator(), static (baseUri, capability) => new TreaderApiClient(baseUri, capability: capability), null)
@@ -418,6 +421,19 @@ public class MainViewModel : INotifyPropertyChanged
     /// <summary>Event-feed pips (damage/death) for the W2S HUD.</summary>
     public ObservableCollection<PipItem> Pips => _pips;
 
+    /// <summary>God-view minimap entries (normalized 0..1 panel coordinates)
+    /// for the W2S HUD, rebuilt every frame from the map boundary and every
+    /// roster tank's nearest position sample.</summary>
+    public ObservableCollection<MinimapItem> MinimapItems => _minimapItems;
+
+    /// <summary>Camera world X for the minimap marker; null when the
+    /// viewpoint has no position evidence.</summary>
+    public double? MinimapCameraX => _minimapCameraX;
+
+    /// <summary>Camera world Z for the minimap marker; null when the
+    /// viewpoint has no position evidence.</summary>
+    public double? MinimapCameraZ => _minimapCameraZ;
+
     /// <summary>Vertical field of view (degrees) used to project HUD frames.</summary>
     public double HudFovDegrees
     {
@@ -482,6 +498,10 @@ public class MainViewModel : INotifyPropertyChanged
             _nameplates.Clear();
             _beacons.Clear();
             _pips.Clear();
+            _minimapItems.Clear();
+            _minimapCameraX = frame.CameraX;
+            _minimapCameraZ = frame.CameraZ;
+            BuildMinimap(frame);
             foreach (OverlayTankResponse tank in frame.Tanks)
             {
                 if (tank.ScreenX is null || tank.ScreenY is null || !tank.InViewport)
@@ -547,6 +567,33 @@ public class MainViewModel : INotifyPropertyChanged
                 cts.Dispose();
                 _frameLoadCts = null;
             }
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds <see cref="MinimapItems"/> from the frame's tanks and the
+    /// session's map boundary. God-view: every roster tank with a position
+    /// sample appears, dead or alive, in or out of viewport. When the map
+    /// boundary is degenerate/absent the panel renders nothing (fail-closed).
+    /// </summary>
+    private void BuildMinimap(OverlayFrameResponse frame)
+    {
+        double minX = _worldMinX, maxX = _worldMaxX, minZ = _worldMinZ, maxZ = _worldMaxZ;
+        foreach (OverlayTankResponse tank in frame.Tanks)
+        {
+            (double U, double V)? normalized = MinimapMath.Normalize(
+                tank.WorldX, tank.WorldZ, minX, maxX, minZ, maxZ);
+            if (normalized is null)
+            {
+                continue;
+            }
+
+            _minimapItems.Add(new MinimapItem(
+                tank.EntityId,
+                normalized.Value.U,
+                normalized.Value.V,
+                tank.TeamNumber,
+                tank.Alive));
         }
     }
 

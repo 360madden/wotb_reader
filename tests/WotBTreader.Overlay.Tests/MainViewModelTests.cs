@@ -1065,6 +1065,79 @@ public sealed class MainViewModelTests
     }
 
     [TestMethod]
+    public async Task RefreshOverlayFrameAsync_PopulatesGodViewMinimapFromBoundary()
+    {
+        string frameJson = """
+            {
+              "replayTimeSeconds": 200.0,
+              "cameraX": 0.0, "cameraY": 0.0, "cameraZ": 0.0,
+              "cameraYawRadians": 0.5, "cameraPitchRadians": 0.0,
+              "tanks": [
+                { "entityId": 1, "playerName": "Self", "tankName": null, "clanTag": null, "teamNumber": 1, "hpFraction": 1.0, "alive": true, "distanceMeters": 0.0, "worldX": -100.0, "worldZ": -100.0, "screenX": 960.0, "screenY": 540.0, "depth": 1.0, "inViewport": true },
+                { "entityId": 2, "playerName": "Alpha", "tankName": "TankA", "clanTag": null, "teamNumber": 2, "hpFraction": 0.5, "alive": true, "distanceMeters": 120.0, "worldX": 0.0, "worldZ": 0.0, "screenX": 800.0, "screenY": 400.0, "depth": 80.0, "inViewport": true },
+                { "entityId": 5, "playerName": "Wreck", "tankName": null, "clanTag": null, "teamNumber": 1, "hpFraction": 0.0, "alive": false, "distanceMeters": 90.0, "worldX": 100.0, "worldZ": 100.0, "screenX": null, "screenY": null, "depth": null, "inViewport": false }
+              ]
+            }
+            """;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            string path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/frame", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(JsonResponse(frameJson));
+            }
+
+            if (path.EndsWith("/maps/boundaries", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(JsonResponse("""
+                    [ { "mapId": "test-map", "minX": -100.0, "maxX": 100.0, "minZ": -100.0, "maxZ": 100.0 } ]
+                    """));
+            }
+
+            if (path.Contains(BattleSessionId.ToString("D"), StringComparison.Ordinal))
+            {
+                return Task.FromResult(JsonResponse("""{"session":{"id":"3fa85f64-5717-4562-b3fc-2c963f66afa6","mapId":"test-map","mapName":"Test Map"},"participants":[],"positions":[],"events":[]}"""));
+            }
+
+            return Task.FromResult(JsonResponse("""{"offset":0,"limit":200,"count":0,"items":[]}"""));
+        });
+        MainViewModel viewModel = CreateViewModel(handler);
+
+        await viewModel.RefreshSessionsAsync();
+        viewModel.SelectedSession = new SessionRow(
+            BattleSessionId, "Test Map", "test-map", Now, 1, 2);
+
+        // The boundary fetch is fire-and-forget; wait for it to land so the
+        // minimap normalization has a real extent to map against.
+        for (int i = 0; i < 100 && viewModel.WorldMinX == 0; i++)
+        {
+            await Task.Delay(10);
+        }
+
+        await viewModel.RefreshOverlayFrameAsync(1920, 1080);
+
+        Assert.IsTrue(viewModel.WorldMinX == -100.0, "Boundary should be applied before the minimap builds.");
+        // God-view: all three tanks appear regardless of viewport or distance,
+        // normalized across the [-100,100] x [-100,100] boundary.
+        Assert.HasCount(3, viewModel.MinimapItems);
+        MinimapItem self = viewModel.MinimapItems.Single(item => item.EntityId == 1);
+        Assert.AreEqual(0.0, self.NormalizedX, 1e-9);
+        Assert.AreEqual(0.0, self.NormalizedZ, 1e-9);
+        MinimapItem alpha = viewModel.MinimapItems.Single(item => item.EntityId == 2);
+        Assert.AreEqual(0.5, alpha.NormalizedX, 1e-9);
+        Assert.AreEqual(0.5, alpha.NormalizedZ, 1e-9);
+        Assert.IsTrue(alpha.Alive);
+        Assert.AreEqual(2, alpha.TeamNumber);
+        MinimapItem wreck = viewModel.MinimapItems.Single(item => item.EntityId == 5);
+        Assert.AreEqual(1.0, wreck.NormalizedX, 1e-9);
+        Assert.AreEqual(1.0, wreck.NormalizedZ, 1e-9);
+        Assert.IsFalse(wreck.Alive);
+        Assert.AreEqual(0.0, viewModel.MinimapCameraX!.Value, 1e-9);
+        Assert.AreEqual(0.0, viewModel.MinimapCameraZ!.Value, 1e-9);
+    }
+
+    [TestMethod]
     public async Task RefreshOverlayFrameAsync_PopulatesEventPips()
     {
         string frameJson = """

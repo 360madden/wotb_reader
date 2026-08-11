@@ -565,6 +565,8 @@ public sealed class CliCommandRouter
                 tank.HpFraction,
                 tank.Alive,
                 tank.DistanceMeters,
+                tank.WorldX,
+                tank.WorldZ,
                 screen = tank.ScreenX is null
                     ? null
                     : new

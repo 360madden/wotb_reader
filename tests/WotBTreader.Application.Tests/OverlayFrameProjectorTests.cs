@@ -37,6 +37,32 @@ public sealed class OverlayFrameProjectorTests
     }
 
     [TestMethod]
+    public void Project_CarriesWorldPositionForMinimap()
+    {
+        OverlayFrame frame = new(
+            TimeSpan.FromSeconds(10),
+            new OverlayCamera(0, 0, 0, YawRadians: 0, PitchRadians: 0, RollRadians: 0),
+            new[]
+            {
+                new OverlayTankState(1, -123.5, 40, 78.25, 0.1, 1.0, true, 1, "A", null, "TankA", "Heavy", 10),
+                // Behind the camera: world coords must survive even when the
+                // screen projection is null (the minimap draws god-view).
+                new OverlayTankState(2, 55, 40, -200, 0.1, 0.5, false, 2, "B", null, "TankB", "Heavy", 10),
+            },
+            []);
+
+        OverlayFrameProjection projection = OverlayFrameProjector.Project(frame, Fov, 1920, 1080);
+
+        ProjectedTank front = projection.Tanks.Single(tank => tank.EntityId == 1);
+        Assert.AreEqual(-123.5, front.WorldX, 1e-9);
+        Assert.AreEqual(78.25, front.WorldZ, 1e-9);
+        ProjectedTank behind = projection.Tanks.Single(tank => tank.EntityId == 2);
+        Assert.AreEqual(55, behind.WorldX, 1e-9);
+        Assert.AreEqual(-200, behind.WorldZ, 1e-9);
+        Assert.IsNull(behind.ScreenX);
+    }
+
+    [TestMethod]
     public void Project_SortsByDistanceNearestFirst()
     {
         OverlayFrame frame = new(

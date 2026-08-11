@@ -43,4 +43,28 @@ public sealed class W2sHudViewTests
         Assert.IsTrue(rect.Left >= 0);
         Assert.IsTrue(rect.Top >= 0);
     }
+
+    [TestMethod]
+    public void MinimapDotRect_CentresDotOnNormalizedPosition()
+    {
+        // 150px panel, 4px radius: u=0.5,v=0.5 -> dot rect centred at (75,75).
+        Rect rect = W2sHudView.MinimapDotRect(0.5, 0.5, panelSize: 150, dotRadius: 4);
+
+        Assert.AreEqual(75 - 4, rect.Left, 1e-9);
+        Assert.AreEqual(75 - 4, rect.Top, 1e-9);
+        Assert.AreEqual(8, rect.Width, 1e-9);
+        Assert.AreEqual(8, rect.Height, 1e-9);
+    }
+
+    [TestMethod]
+    public void MinimapDotRect_CornerPositionsLandInsidePanel()
+    {
+        Rect nw = W2sHudView.MinimapDotRect(0.0, 0.0, panelSize: 150, dotRadius: 4);
+        Assert.AreEqual(-4, nw.Left, 1e-9);
+        Assert.AreEqual(-4, nw.Top, 1e-9);
+
+        Rect se = W2sHudView.MinimapDotRect(1.0, 1.0, panelSize: 150, dotRadius: 4);
+        Assert.AreEqual(150 - 4, se.Left, 1e-9);
+        Assert.AreEqual(150 - 4, se.Top, 1e-9);
+    }
 }

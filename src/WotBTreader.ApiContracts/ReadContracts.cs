@@ -337,6 +337,15 @@ public sealed record OverlayTankResponse
     /// <summary>Distance from the camera in world units.</summary>
     public double DistanceMeters { get; init; }
 
+    /// <summary>World X of the tank's nearest position sample (replay-raw
+    /// space). Independent of the camera — used by the minimap, which draws
+    /// god-view positions regardless of what the camera can see.</summary>
+    public double WorldX { get; init; }
+
+    /// <summary>World Z of the tank's nearest position sample (replay-raw
+    /// space). Independent of the camera — used by the minimap.</summary>
+    public double WorldZ { get; init; }
+
     /// <summary>Projected viewport X (pixels from the left); null = behind camera.</summary>
     public double? ScreenX { get; init; }
 

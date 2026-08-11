@@ -263,6 +263,8 @@ internal static class ReadApiEndpoints
                 HpFraction = tank.HpFraction,
                 Alive = tank.Alive,
                 DistanceMeters = tank.DistanceMeters,
+                WorldX = tank.WorldX,
+                WorldZ = tank.WorldZ,
                 ScreenX = tank.ScreenX,
                 ScreenY = tank.ScreenY,
                 Depth = tank.Depth,

@@ -62,12 +62,17 @@ public sealed partial class W2sHudView : UserControl
     /// Replaces the HUD contents with the given beacons (drawn first, under
     /// the nameplates), pips (drawn next, floating above the nameplates), and
     /// nameplates. All lists are already filtered to in-viewport projections
-    /// by the view model.
+    /// by the view model. The minimap panel (god-view dots) is drawn last,
+    /// pinned to the bottom-right corner; it is skipped when no tank has a
+    /// normalized position or the camera position is unknown.
     /// </summary>
     public void Render(
         IReadOnlyList<BeaconItem> beacons,
         IReadOnlyList<PipItem> pips,
         IReadOnlyList<NameplateItem> items,
+        IReadOnlyList<MinimapItem> minimap,
+        double? cameraX,
+        double? cameraZ,
         double viewportWidth,
         double viewportHeight)
     {
@@ -85,9 +90,82 @@ public sealed partial class W2sHudView : UserControl
         foreach (NameplateItem item in items)
         {
             HudCanvas.Children.Add(BuildNameplate(item, viewportWidth, viewportHeight));
+        }
 
+        if (minimap.Count > 0)
+        {
+            HudCanvas.Children.Add(BuildMinimap(minimap, cameraX, cameraZ, viewportWidth, viewportHeight));
         }
     }
+
+    /// <summary>
+    /// Builds the god-view minimap panel: a fixed-size square pinned to the
+    /// bottom-right corner, with one dot per tank at its normalized position
+    /// (team-colored; grey when destroyed) and a white ring for the camera.
+    /// The camera marker is only drawn when the viewpoint position is known.
+    /// Pure layout math is unit-tested via <see cref="MinimapMath"/> and
+    /// <see cref="MinimapDotRect"/>.
+    /// </summary>
+    private static Canvas BuildMinimap(
+        IReadOnlyList<MinimapItem> minimap,
+        double? cameraX,
+        double? cameraZ,
+        double viewportWidth,
+        double viewportHeight)
+    {
+        const double panelSize = 150;
+        const double margin = 12;
+        const double dotRadius = 4;
+
+        var panel = new Canvas
+        {
+            Width = panelSize,
+            Height = panelSize,
+            Background = CreateBrush("#80101820"),
+        };
+        Canvas.SetRight(panel, margin);
+        Canvas.SetBottom(panel, margin);
+
+        foreach (MinimapItem item in minimap)
+        {
+            var dot = new Ellipse
+            {
+                Width = dotRadius * 2,
+                Height = dotRadius * 2,
+                Fill = item.Alive
+                    ? (item.TeamNumber == 1 ? Team1Brush : item.TeamNumber == 2 ? Team2Brush : NeutralBrush)
+                    : DeadBrush,
+            };
+            Canvas.SetLeft(dot, item.NormalizedX * panelSize - dotRadius);
+            Canvas.SetTop(dot, item.NormalizedZ * panelSize - dotRadius);
+            panel.Children.Add(dot);
+        }
+
+        if (cameraX is not null && cameraZ is not null)
+        {
+            var ring = new Ellipse
+            {
+                Width = dotRadius * 2 + 3,
+                Height = dotRadius * 2 + 3,
+                Stroke = CreateBrush("#FFFFFF"),
+                StrokeThickness = 1.5,
+                Fill = null,
+            };
+            Canvas.SetLeft(ring, cameraX.Value * panelSize - (dotRadius + 1.5));
+            Canvas.SetTop(ring, cameraZ.Value * panelSize - (dotRadius + 1.5));
+            panel.Children.Add(ring);
+        }
+
+        return panel;
+    }
+
+    /// <summary>
+    /// Computes the minimap dot anchor rect for a normalized position, for
+    /// unit tests (no WPF rendering required). Mirrors the layout used by
+    /// <see cref="BuildMinimap"/>.
+    /// </summary>
+    public static Rect MinimapDotRect(double normalizedX, double normalizedZ, double panelSize, double dotRadius) =>
+        new(normalizedX * panelSize - dotRadius, normalizedZ * panelSize - dotRadius, dotRadius * 2, dotRadius * 2);
 
     private static Canvas BuildBeacon(BeaconItem beacon)
     {

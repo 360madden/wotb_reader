@@ -52,9 +52,15 @@ public sealed class ReadApiEndpointsTests
         Assert.AreEqual(540.0, front.ScreenY!.Value, 1e-6);
         Assert.IsTrue(front.InViewport);
         Assert.AreEqual("Alpha", front.PlayerName);
+        // World position rides through for the minimap (god-view), even for
+        // the behind-camera tank whose screen projection is null.
+        Assert.AreEqual(0.0, front.WorldX, 1e-9);
+        Assert.AreEqual(100.0, front.WorldZ, 1e-9);
         OverlayTankResponse behind = frame.Tanks.Single(tank => tank.EntityId == 2);
         Assert.IsNull(behind.ScreenX);
         Assert.IsFalse(behind.InViewport);
+        Assert.AreEqual(0.0, behind.WorldX, 1e-9);
+        Assert.AreEqual(-100.0, behind.WorldZ, 1e-9);
     }
 
     [TestMethod]
