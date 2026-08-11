@@ -398,6 +398,11 @@ public sealed class CliCommandRouter
         // window-delta comparison. --max-lag-seconds > 0 switches to the
         // value-match lag path (bounded shared-lag search); default 0 keeps
         // the exact window-delta behavior.
+        // OD-RECOVERY-089: the G2 replay-clock LABEL itself carries a
+        // per-session skew OPPOSITE in sign between replays (Oasis memory
+        // lags ~3-5 s; Dead Rail memory leads ~2-5 s), so --memory-lead-seconds
+        // extends the search to memory-leading lags and --per-dump-lag lets
+        // each dump pick its own bounded best lag (median + spread reported).
         double maxLagSeconds = 0;
         if (invocation.Options.TryGetValue("max-lag-seconds", out string? lagText) &&
             (!double.TryParse(lagText, out maxLagSeconds) ||
@@ -409,6 +414,20 @@ public sealed class CliCommandRouter
                 "--max-lag-seconds must be a non-negative finite number of seconds.",
                 correlationId);
         }
+
+        double maxMemoryLeadSeconds = 0;
+        if (invocation.Options.TryGetValue("memory-lead-seconds", out string? leadText) &&
+            (!double.TryParse(leadText, out maxMemoryLeadSeconds) ||
+             !double.IsFinite(maxMemoryLeadSeconds) ||
+             maxMemoryLeadSeconds < 0))
+        {
+            return Invalid(
+                "cli.yaw-diff.memory-lead",
+                "--memory-lead-seconds must be a non-negative finite number of seconds.",
+                correlationId);
+        }
+
+        bool perDumpLag = invocation.Options.ContainsKey("per-dump-lag");
 
         OperationResult<IReadOnlyList<RecordSnapshot>> snapshotsResult =
             HpDiffSnapshotsFile.Load(invocation.Positionals[0]);
@@ -427,14 +446,18 @@ public sealed class CliCommandRouter
 
         IReadOnlyList<ByteChangeWindow> changeWindows =
             RecordChangeBucketer.Bucket(snapshotsResult.Value);
+        bool useLagPath = maxLagSeconds > 0 || maxMemoryLeadSeconds > 0 || perDumpLag;
         IReadOnlyList<HeadingCorrelationCandidate> candidates =
-            maxLagSeconds > 0
+            useLagPath
                 ? HeadingCorrelator.CorrelateWithLag(
                     snapshotsResult.Value,
                     groundTruthResult.Value.Samples,
                     entityId,
                     tolerance,
-                    maxLagSeconds)
+                    maxLagSeconds,
+                    lagStepSeconds: 0.1,
+                    maxMemoryLeadSeconds,
+                    perDumpLag)
                 : HeadingCorrelator.Correlate(
                     changeWindows,
                     groundTruthResult.Value.Samples,
@@ -476,6 +499,8 @@ public sealed class CliCommandRouter
             entityId,
             tolerance,
             maxLagSeconds,
+            maxMemoryLeadSeconds,
+            perDumpLag,
             snapshots = snapshotsResult.Value.Count,
             changeWindows = changeWindows.Count,
             yawSamples = groundTruthResult.Value.Samples.Count,
@@ -501,6 +526,7 @@ public sealed class CliCommandRouter
                         })
                         .ToList(),
                     bestLagSeconds = top.BestLagSeconds,
+                    lagSpreadSeconds = top.LagSpreadSeconds,
                     explanation = top.Explanation,
                 },
             verdict = new

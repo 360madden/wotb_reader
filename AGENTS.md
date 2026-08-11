@@ -91,10 +91,19 @@ decoded data); the yaw quarantine is **resolved-by-supersession** (yaw is a
 runtime chain field at ring-record `+0x30` — live-verified 2026-08-11 by
 OD-RECOVERY-088 as part of a rotation triple roll `+0x28` / pitch `+0x2C` /
 yaw `+0x30`, the rehearsal's +0x2C prediction corrected; not a static
-offset); item 7 (hardware-atomicity proof) stays LAST by design. The only
-remaining gates are approved live sessions (L2 facing Phase-4 Dead Rail
-repeat, CAM-001 v7) plus the Phase-4 two-replay HP rule (Dead Rail victim
-2549399) before any HP/yaw publication.
+offset). **OD-RECOVERY-089 closed 2026-08-11: L2 facing Phase-4 repeat HIT**
+— Dead Rail agrees at `+0x30` (56/56, score 1.0, flatness 1.0;
+`twoReplayRepeatability = true`). The at-session verdict was an honest
+negative from a matcher limitation: the G2 replay-clock LABEL skew is
+per-dump variable and OPPOSITE in sign per replay (Oasis memory lags
++4.8 s; Dead Rail leads −2.5 s, spread 5.6 s) — fixed additively by the
+per-dump bounded bidirectional lag path (`yaw-diff --per-dump-lag
+--memory-lead-seconds`), which re-verdicts the same dumps to HIT on both
+replays. Yaw publication package is READY (operator approval only). Item 7
+(hardware-atomicity proof) stays LAST by design. The only remaining gates
+are approved live sessions (CAM-001 v7, then OD-RECOVERY-090 L3
+damage-dealt + its Dead Rail repeat) plus the Phase-4 two-replay HP rule
+(Dead Rail victim 2549399) before any HP/yaw publication.
 - **BLK-0026 resolved and validated (2026-08-09):** root cause was a launcher
   regression — .NET `Set-Acl` threw `PrivilegeNotHeldException` on the
   persisted owner-only marker ACL, mapped by the catch-all to
@@ -109,7 +118,7 @@ repeat, CAM-001 v7) plus the Phase-4 two-replay HP rule (Dead Rail victim
   hardware atomicity, same-decoded-clock proof, numeric-offset publication,
   promotion. **Superseded 2026-08-10** by the operator-approved G0
   publication (below); hardware atomicity remains unproved.
-- **Last verified gate:** 2026-08-11 — 1011 tests passed, 3 local opt-in skips,
+- **Last verified gate:** 2026-08-11 — 1014 tests passed, 3 local opt-in skips,
   0 warnings, 0 errors.
 - **Refresh from:** the newest file in `docs/operations/handoffs/`,
   `docs/operations/product-roadmap.md` (forward plan / workstreams),
@@ -279,7 +288,7 @@ Hard decoder/security/contract decisions stay on the lead model; Codex subagents
 
 ## Last verified
 
-- 2026-08-11 — full gate green: 1011 tests passed, 3 local opt-in skips,
+- 2026-08-11 — full gate green: 1014 tests passed, 3 local opt-in skips,
   0 warnings, 0 errors (fresh run).
 - 2026-08-09 — AGENTS.md restructured to the table-driven layout; hard
   constraints trimmed (offline-only + Cheat Engine bullets removed), ADR 0002

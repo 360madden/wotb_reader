@@ -398,6 +398,218 @@ public sealed class HeadingCorrelatorTests
         Assert.IsEmpty(candidates.Where(c => c.Score >= 1.0 - 1e-9));
     }
 
+    [TestMethod]
+    public void CorrelateWithLag_PerDumpLag_FindsYawWhenMemoryLeadsLabel()
+    {
+        // OD-RECOVERY-089 (Dead Rail): the G2 replay-clock LABEL skew makes
+        // the memory value at label-time t equal the packet yaw at t + lead
+        // (memory LEADS the label). The shared-lag path only searches
+        // memory-behind-packet, so the per-dump path with a bounded memory
+        // lead must find +0x30 with a NEGATIVE best lag.
+        //
+        // Fixture: a continuously-varying ramp yaw (unique lag minimum), the
+        // memory leading by 2.4 s: memory(t) = yaw(t + 2.4). The per-dump
+        // search in [-6, +6] s must land on lag -2.4 for every dump.
+        double[] dumpTimes = [6.0, 8.0, 10.0, 12.0, 14.0, 16.0];
+        var snapshots = dumpTimes
+            .Select(t => new RecordSnapshot(
+                TimeSpan.FromSeconds(t),
+                LaggedRegion(RampYaw(t + 2.4))))
+            .ToArray();
+        foreach (RecordSnapshot snapshot in snapshots)
+        {
+            for (int offset = 0; offset <= snapshot.Bytes.Length - 4; offset += 4)
+            {
+                if (offset == LiveYawOffset)
+                {
+                    continue;
+                }
+
+                BinaryPrimitives.WriteSingleLittleEndian(
+                    snapshot.Bytes.AsSpan(offset), 0.7f);
+            }
+        }
+        var yawSamples = Enumerable.Range(0, 41)
+            .Select(i => Yaw(TimeSpan.FromSeconds(0.5 * i), RampYaw(0.5 * i)))
+            .ToArray();
+
+        // The shared one-directional path cannot see the lead: a lag >= 0
+        // never aligns the memory (it holds the FUTURE packet).
+        IReadOnlyList<HeadingCorrelationCandidate> sharedLeadCandidates =
+            HeadingCorrelator.CorrelateWithLag(
+                snapshots,
+                yawSamples,
+                TargetEntity,
+                maxLagSeconds: 6.0,
+                lagStepSeconds: 0.1);
+        Assert.IsEmpty(sharedLeadCandidates.Where(c => c.Score >= 1.0 - 1e-9));
+
+        IReadOnlyList<HeadingCorrelationCandidate> candidates =
+            HeadingCorrelator.CorrelateWithLag(
+                snapshots,
+                yawSamples,
+                TargetEntity,
+                maxLagSeconds: 6.0,
+                lagStepSeconds: 0.1,
+                maxMemoryLeadSeconds: 6.0,
+                perDumpLag: true);
+
+        Assert.IsNotEmpty(candidates);
+        Assert.AreEqual(LiveYawOffset, candidates[0].Offset);
+        Assert.AreEqual(1.0, candidates[0].Score, 1e-9);
+        Assert.AreEqual(1.0, candidates[0].Flatness, 1e-9);
+        Assert.AreEqual(6, candidates[0].MatchedWindows);
+        Assert.AreEqual(6, candidates[0].TotalWindows);
+        Assert.IsNotNull(candidates[0].BestLagSeconds);
+        // The memory-leading alignment is a NEGATIVE lag near -2.4 s (within
+        // the nearest-sample quantization of the 0.5 s yaw grid).
+        Assert.IsLessThan(0.0, candidates[0].BestLagSeconds!.Value);
+        Assert.IsLessThanOrEqualTo(
+            1.0,
+            Math.Abs(candidates[0].BestLagSeconds!.Value + 2.4),
+            $"best lag {candidates[0].BestLagSeconds!.Value} should be near -2.4 s");
+        Assert.IsNotNull(candidates[0].LagSpreadSeconds);
+        Assert.IsLessThanOrEqualTo(1.0, candidates[0].LagSpreadSeconds!.Value);
+    }
+
+    [TestMethod]
+    public void CorrelateWithLag_PerDumpLag_MatchesPerDumpVariableSkew_WhenSharedCaps()
+    {
+        // OD-RECOVERY-089 (Dead Rail, refined): the label skew is PER-DUMP
+        // variable (0..2.5 s, OPPOSITE sign per replay). A shared lag cannot
+        // align a mix of +2 s and -2 s per-dump skews (caps at 0.5); the
+        // per-dump path must still hit 1.0 with the spread reported.
+        //
+        // Fixture: ramp yaw; dumps alternate a memory LAG of +2 s and a
+        // memory LEAD of -2 s.
+        double[] dumpTimes = [6.0, 8.0, 10.0, 12.0, 14.0, 16.0];
+        double[] perDumpSkew = [2.0, -2.0, 2.0, -2.0, 2.0, -2.0];
+        var snapshots = dumpTimes
+            .Select((t, index) => new RecordSnapshot(
+                TimeSpan.FromSeconds(t),
+                LaggedRegion(RampYaw(t - perDumpSkew[index]))))
+            .ToArray();
+        foreach (RecordSnapshot snapshot in snapshots)
+        {
+            for (int offset = 0; offset <= snapshot.Bytes.Length - 4; offset += 4)
+            {
+                if (offset == LiveYawOffset)
+                {
+                    continue;
+                }
+
+                BinaryPrimitives.WriteSingleLittleEndian(
+                    snapshot.Bytes.AsSpan(offset), 0.7f);
+            }
+        }
+        var yawSamples = Enumerable.Range(0, 41)
+            .Select(i => Yaw(TimeSpan.FromSeconds(0.5 * i), RampYaw(0.5 * i)))
+            .ToArray();
+
+        // Shared lag (even bidirectional) cannot exceed half the dumps.
+        IReadOnlyList<HeadingCorrelationCandidate> sharedCandidates =
+            HeadingCorrelator.CorrelateWithLag(
+                snapshots,
+                yawSamples,
+                TargetEntity,
+                maxLagSeconds: 6.0,
+                lagStepSeconds: 0.1,
+                maxMemoryLeadSeconds: 6.0);
+        Assert.IsEmpty(sharedCandidates.Where(c => c.Score >= 1.0 - 1e-9));
+        Assert.IsLessThan(
+            1.0,
+            sharedCandidates.Count == 0 ? 0.0 : sharedCandidates.Max(c => c.Score),
+            "a shared lag cannot align alternating per-dump skews");
+
+        IReadOnlyList<HeadingCorrelationCandidate> candidates =
+            HeadingCorrelator.CorrelateWithLag(
+                snapshots,
+                yawSamples,
+                TargetEntity,
+                maxLagSeconds: 6.0,
+                lagStepSeconds: 0.1,
+                maxMemoryLeadSeconds: 6.0,
+                perDumpLag: true);
+
+        Assert.IsNotEmpty(candidates);
+        Assert.AreEqual(LiveYawOffset, candidates[0].Offset);
+        Assert.AreEqual(1.0, candidates[0].Score, 1e-9);
+        Assert.AreEqual(1.0, candidates[0].Flatness, 1e-9);
+        Assert.IsNotNull(candidates[0].LagSpreadSeconds);
+        // Lags alternate +2 / -2: the spread is ~4 s (nearest-sample
+        // quantization on the 0.5 s grid widens it slightly).
+        Assert.IsGreaterThanOrEqualTo(3.5, candidates[0].LagSpreadSeconds!.Value);
+    }
+
+    [TestMethod]
+    public void CorrelateWithLag_PerDumpLag_FlatnessDemotesDriftingDecoy()
+    {
+        // The per-dump lag must not become a license for silent per-dump
+        // fitting: a decoy that tracks the yaw during turns but drifts in
+        // the stationary (CONTROL) segments is still demoted by flatness,
+        // because controls are stationary and no lag makes a drifted value
+        // equal the constant packet yaw.
+        //
+        // Fixture: step yaw (0 rad until t=10s, 1.2 rad after); the memory
+        // LAGS by 3 s. The yaw field at +0x30 carries packet(t-3); a decoy at
+        // +0x20 carries 0.9 rad in BOTH stationary segments (before AND after
+        // the turn — the post-turn dumps are controls too, since the packet
+        // yaw is constant there), matching the packet only on the single
+        // turn dump. Every OTHER 4-byte offset carries the constant 0.7 (a
+        // value the packet timeline never contains): a zero-filled field
+        // would otherwise track the stationary 0.0 yaw AND slide its lag
+        // into the pre-turn window on the turning dumps, scoring a
+        // degenerate 1.0/1.0 tie.
+        double[] dumpTimes = [4.0, 6.0, 8.0, 12.0, 14.0, 16.0];
+        var snapshots = dumpTimes
+            .Select(t =>
+            {
+                byte[] bytes = new byte[0x100];
+                for (int offset = 0; offset <= bytes.Length - 4; offset += 4)
+                {
+                    BinaryPrimitives.WriteSingleLittleEndian(
+                        bytes.AsSpan(offset), 0.7f);
+                }
+
+                BinaryPrimitives.WriteSingleLittleEndian(
+                    bytes.AsSpan(LiveYawOffset), (float)PacketYawAt(t - 3.0));
+                bool stationary = t < 10.0 || t > 12.0;
+                double decoy = stationary ? 0.9 : PacketYawAt(t - 3.0);
+                BinaryPrimitives.WriteSingleLittleEndian(
+                    bytes.AsSpan(DecoyOffset), (float)decoy);
+                return new RecordSnapshot(TimeSpan.FromSeconds(t), bytes);
+            })
+            .ToArray();
+        var yawSamples = Enumerable.Range(0, 17)
+            .Select(i => Yaw(TimeSpan.FromSeconds(i), PacketYawAt(i)))
+            .ToArray();
+
+        IReadOnlyList<HeadingCorrelationCandidate> candidates =
+            HeadingCorrelator.CorrelateWithLag(
+                snapshots,
+                yawSamples,
+                TargetEntity,
+                maxLagSeconds: 8.0,
+                lagStepSeconds: 0.1,
+                perDumpLag: true);
+
+        Assert.IsNotEmpty(candidates);
+        Assert.AreEqual(LiveYawOffset, candidates[0].Offset);
+        Assert.AreEqual(1.0, candidates[0].Score, 1e-9);
+        Assert.AreEqual(1.0, candidates[0].Flatness, 1e-9);
+        HeadingCorrelationCandidate decoy = candidates.Single(
+            candidate => candidate.Offset == DecoyOffset);
+        // The decoy matches only the single turn dump (it drifts in both
+        // stationary segments), so it scores well below 1.0 and its flatness
+        // is exactly 0 — the demotion mechanism works under per-dump lag.
+        Assert.IsLessThan(1.0, decoy.Score);
+        Assert.AreEqual(0.0, decoy.Flatness, 1e-9);
+    }
+
+    /// <summary>Ramp yaw fixture: 0.5 + 0.1 * seconds (strictly varying, so
+    /// the per-dump lag minimum is unique per dump).</summary>
+    private static double RampYaw(double seconds) => 0.5 + 0.1 * seconds;
+
     /// <summary>Packet yaw fixture: 0 rad before t=10s, 1.2 rad after.</summary>
     private static double PacketYawAt(double seconds) => seconds < 10.0 ? 0.0 : 1.2;
 

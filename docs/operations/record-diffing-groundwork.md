@@ -553,7 +553,16 @@ G2) and shares the O5 rehearsed target:
    pitch `+0x2C` / yaw `+0x30` (the rehearsal's +0x2C yaw was
    self-constructed); the yaw-diff verdict now uses the additive value-match
    lag path (`--max-lag-seconds`) because the ring record applies decoded
-   packet state with a ~5 s memory-apply lag.**
+   packet state with a ~5 s memory-apply lag.** **Live update 2026-08-11
+   (OD-RECOVERY-089): the Phase-4 repeat is CLOSED HIT — `+0x30` agrees on
+   Dead Rail (56/56, score 1.0, flatness 1.0; `twoReplayRepeatability =
+   true`). New measured finding: the G2 replay-clock LABEL skew is
+   per-dump variable and OPPOSITE in sign between replays (Oasis memory
+   LAGS the label +4.8 s; Dead Rail LEADS −2.5 s, spread 5.6 s) — the
+   one-directional shared lag path cannot see the Dead Rail sign (honest
+   negative at the session), so the verdict now runs the additive per-dump
+   bounded bidirectional path (`--per-dump-lag --memory-lead-seconds`,
+   median lag + spread reported; shared path unchanged).**
 4. **Evidence + privacy** — record under an OD-RECOVERY id,
    `publicProcessAddressesOrRawBytes: false`; publish only the offset via
    the operator gate (P3 facing/yaw publication).

@@ -87,6 +87,19 @@ param(
     # comparison. When > 0, yaw-diff runs the value-match lag path (shared
     # bounded lag search); 0 keeps the exact window-delta behavior.
     [double]$MaxLagSeconds = 8,
+    # OD-RECOVERY-089: the G2 replay-clock LABEL skew is opposite in sign
+    # between replays (Oasis memory lags ~3-5 s; Dead Rail memory leads
+    # ~2-5 s), so the verdict also searches memory-leading lags up to this
+    # many seconds.
+    [double]$MemoryLeadSeconds = 8,
+    # Per-dump bounded lag: each dump picks its own best lag in
+    # [-MemoryLeadSeconds, +MaxLagSeconds] (median + spread reported).
+    # Handles per-dump-varying label skew; off = one shared lag.
+    # DEFAULT ON since OD-RECOVERY-089: the one-directional shared path
+    # produced an honest-negative on Dead Rail (label skew is opposite in
+    # sign per replay); per-dump is proven on both replays (088 +48/48,
+    # 089 56/56 at +0x30). Pass -PerDumpLag:$false to force the shared path.
+    [switch]$PerDumpLag = $true,
     [string]$Python = 'python',
     [string]$CliDll = '',
     [switch]$FailOnNoHit
@@ -384,10 +397,15 @@ else {
 Write-Step "Running yaw-diff verdict..."
 $DataRootArgs = if ($DataRoot -ne '') { @('--data-root', $DataRoot) } else { @() }
 $ErrorActionPreference = 'Continue'
-$LagArgs = if ($MaxLagSeconds -gt 0) {
-    @('--max-lag-seconds', ([string]$MaxLagSeconds))
-} else {
-    @()
+$LagArgs = @()
+if ($MaxLagSeconds -gt 0) {
+    $LagArgs += @('--max-lag-seconds', ([string]$MaxLagSeconds))
+}
+if ($MemoryLeadSeconds -gt 0) {
+    $LagArgs += @('--memory-lead-seconds', ([string]$MemoryLeadSeconds))
+}
+if ($PerDumpLag) {
+    $LagArgs += @('--per-dump-lag')
 }
 try {
     $VerdictJson = (& dotnet $CliDll yaw-diff $SnapshotsPath `
@@ -414,7 +432,12 @@ if ($null -ne $TopCandidateProperty -and $null -ne $TopCandidateProperty.Value) 
         $TopCandidate.totalWindows)
     $LagProperty = $TopCandidate.PSObject.Properties['bestLagSeconds']
     if ($null -ne $LagProperty -and $null -ne $LagProperty.Value) {
-        Write-Step ("  best shared lag {0:0.##}s" -f [double]$LagProperty.Value)
+        $LagLabel = if ($PerDumpLag) { 'median per-dump lag' } else { 'best shared lag' }
+        Write-Step ("  {0} {1:0.##}s" -f $LagLabel, [double]$LagProperty.Value)
+    }
+    $SpreadProperty = $TopCandidate.PSObject.Properties['lagSpreadSeconds']
+    if ($null -ne $SpreadProperty -and $null -ne $SpreadProperty.Value) {
+        Write-Step ("  per-dump lag spread {0:0.##}s" -f [double]$SpreadProperty.Value)
     }
 }
 

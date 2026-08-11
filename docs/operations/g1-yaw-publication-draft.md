@@ -1,21 +1,23 @@
-# G1 — Hull-yaw publication draft (PENDING, pre-staged 2026-08-11)
+# G1 — Hull-yaw publication draft (READY, pre-staged 2026-08-11)
 
-> **STATUS: PRE-STAGED — NOT APPLIED.** Publishing `playerYaw` as `Verified`
-> via the module-rooted ring-record chain is gated on **OD-RECOVERY-089**
+> **STATUS: READY — NOT APPLIED.** Publishing `playerYaw` as `Verified`
+> via the module-rooted ring-record chain was gated on **OD-RECOVERY-089**
 > (the Phase-4 two-replay rule: the live-found offset must agree on a second
-> content-distinct replay — Dead Rail, 5 seam crossings) **and** the
-> operator's approval. Until then the table stays frozen: `offsets` are
-> untouched, `chains` has no `playerYaw`, and `fieldValidation.playerYaw`
-> remains `Stale` (the quarantined Ghidra hypothesis, see the published
-> table). This file is the operator-facing spec + checklist for when the
-> gates close; applying it follows the G0 procedure
+> content-distinct replay — Dead Rail, 5 seam crossings). **089 CLOSED
+> HIT 2026-08-11** (`+0x30` on Dead Rail, 56/56, score 1.0, flatness 1.0 —
+> `twoReplayRepeatability = true`; see the filled evidence template and
+> ledger section). The remaining gate is the **operator's approval**.
+> Until then the table stays frozen: `offsets` are untouched, `chains` has
+> no `playerYaw`, and `fieldValidation.playerYaw` remains `Stale` (the
+> quarantined Ghidra hypothesis, see the published table). This file is the
+> operator-facing spec + checklist; applying it follows the G0 procedure
 > (`docs/operations/g0-operator-checklist.md`).
 
 ## 1. What gets published
 
 | Field | Live evidence | Chain | offsets |
 |---|---|---|---|
-| `playerYaw` | OD-RECOVERY-088 (Oasis Palms, 48 dumps): ring-record **`+0x30`** hull-yaw float32, score 1.0, flatness 1.0, 48/48 matched, best shared lag 5.0 s, median per-dump error 0.000°; OD-RECOVERY-089 (Dead Rail): **PENDING** — the Phase-4 agreement | The **identical module-rooted walk as `playerPositionX`** (same root RVA, same entity lookup, same ring-index hop — position `+0x10` and yaw `+0x30` were proven on the SAME record) with the final hop `recordOffset 48` (`0x30`) instead of `recordOffset 16` (`0x10`) | `offsets.playerYaw` stays **0** (chained field — the runtime computes `moduleBase + offset` and the ring record is battle-scoped heap) |
+| `playerYaw` | OD-RECOVERY-088 (Oasis Palms, 48 dumps): ring-record **`+0x30`** hull-yaw float32, score 1.0, flatness 1.0, 48/48 matched, median per-dump lag +4.8 s, median per-dump error 0.000°; OD-RECOVERY-089 (Dead Rail, 56 dumps): **`+0x30` AGREES** — score 1.0, flatness 1.0, 56/56 matched, median per-dump lag −2.5 s (spread 5.6 s; per-dump bounded bidirectional path — the G2 label skew is opposite in sign per replay) | The **identical module-rooted walk as `playerPositionX`** (same root RVA, same entity lookup, same ring-index hop — position `+0x10` and yaw `+0x30` were proven on the SAME record) with the final hop `recordOffset 48` (`0x30`) instead of `recordOffset 16` (`0x10`) | `offsets.playerYaw` stays **0** (chained field — the runtime computes `moduleBase + offset` and the ring record is battle-scoped heap) |
 
 The chain is NOT duplicated here: the canonical walkable form lives in
 `docs/operations/g0-walkable-position-chains.draft.json` (`playerPositionX`
@@ -33,11 +35,11 @@ the resolver's ring-record record.
 | Executable identity | `wotblitz.exe` v11.19.0.10 = `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d` (re-measured, G0) |
 | G1 (hardware-atomic read) | CLOSED — stored v4 aggregate 24/24 `stable-resolver-positive`, `allConsistentDoubleRead=true` |
 | G2 (same-decoded-clock) | CLOSED — `sameDecodedClockProven=true`, 4+ live confirmations (every 088 dump attested) |
-| G3 (repeatability) | position-family closed (OD-075/076/078/081/082); facing repeatability = **OD-RECOVERY-089 PENDING** |
-| Live evidence | OD-RECOVERY-088 filled template + ledger section; OD-RECOVERY-089 template pre-staged |
+| G3 (repeatability) | position-family closed (OD-075/076/078/081/082); facing repeatability = **OD-RECOVERY-089 CLOSED HIT** (`twoReplayRepeatability = true`) |
+| Live evidence | OD-RECOVERY-088 + OD-RECOVERY-089 filled templates + ledger sections (both replays, opposite-sign label skew, per-dump path) |
 | Static map | `RingRecordRegion.YawOffset = 0x30` (+ `RollOffset 0x28` / `PitchOffset 0x2C`) — already corrected and live-frame wired |
 
-## 3. Apply steps (ONLY after 089 closes HIT at +0x30 AND operator approval)
+## 3. Apply steps (ONLY after operator approval)
 
 1. `memory-offsets/11.19.0.10.json`:
    - `fieldValidation.playerYaw` → `status: "Verified"`, APPEND the

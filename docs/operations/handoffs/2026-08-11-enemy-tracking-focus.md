@@ -478,6 +478,49 @@ passed that session + the host DB path. No offsets, resolver, or read
 surface changed. Next live gates in pre-staged order: OD-RECOVERY-087
 (L1 HP) → 088 (L2 facing) → CAM-001 v7.
 
+## OD-RECOVERY-089 closed — L2 facing Phase-4 HIT; per-dump bidirectional lag path (2026-08-11)
+
+**Phase-4 repeatability proven for yaw: `twoReplayRepeatability = true`.**
+The approved Dead Rail session (victim 2549408, 56 ring-record dumps, every
+`sameDecodedClockProven=true`) initially returned an **honest-negative**
+(top `0xA0`, score 0.304) from the then-current one-directional shared lag
+path. Offline root-cause on the SAME immutable dumps: the G2 replay-clock
+LABEL skew is per-dump variable and **opposite in sign between replays** —
+Oasis memory LAGS the label (+4.8 s median), Dead Rail memory LEADS it
+(−2.5 s median, 5.6 s spread) — and the one-directional memory-behind
+search structurally cannot see the Dead Rail sign.
+
+The additive fix (defaults unchanged; shared path untouched):
+`HeadingCorrelator.CorrelateWithLag` gained a **per-dump bounded
+bidirectional lag search** (`--per-dump-lag --memory-lead-seconds`): each
+dump picks its best lag in [−lead, +lag] and the candidate reports the
+MEDIAN lag + `LagSpreadSeconds`, so the skew structure stays visible
+evidence, never silent per-dump fitting. Re-verdict of the stored evidence:
+
+| Evidence | Offset | Score | Flatness | Matched | Median lag | Spread |
+|---|---|---|---|---|---|---|
+| Dead Rail 089 | `+0x30` | 1.0 | 1.0 | **56/56** | −2.5 s | 5.6 s |
+| Oasis 088 (re-run) | `+0x30` | 1.0 | 1.0 | **48/48** | +4.8 s | 13.1 s |
+
+Median per-dump error 0.000° on both — the SAME offset agrees on two
+content-distinct replays with opposite-sign skew. 3 new unit tests (lead
+direction, variable-skew where the shared path caps at 0.5, decoy demotion
+under per-dump lag) exposed and pinned the fixture discipline: a
+zero-filled field would track the stationary 0.0 yaw AND slide its lag into
+the pre-turn window, so decoys must carry a value the packet timeline never
+contains. Driver default flipped to the proven path (`-PerDumpLag` ON;
+`-PerDumpLag:$false` forces the shared path).
+
+**Yaw publication is now READY** (`g1-yaw-publication-draft.md`: PRE-STAGED
+→ READY) — the only remaining gate is operator approval + the gate run;
+`offsets.playerYaw` stays 0 and `fieldValidation.playerYaw` stays `Stale`
+until then. Evidence recorded: 089 evidence template filled (the
+at-session negative + corrected verdict both documented), ledger index row
++ full 089 section, roadmap L2 row closed + X4 row updated, groundwork
+label-skew finding. Next live gates in order: CAM-001 v7 → OD-RECOVERY-090
+(L3 damage-dealt) + its Dead Rail repeat; HP Phase-4 rule (victim
+2549399) separate; item 7 LAST.
+
 ## Files touched
 
 - `src/WotBTreader.Core/Discovery/RingRecordRegion.cs` (pure ring-region
@@ -596,4 +639,22 @@ surface changed. Next live gates in pre-staged order: OD-RECOVERY-087
   (frame surfaces the entity-base failure stage / decode failure)
 - `tests/WotBTreader.Host.Web.Tests/ReadApiEndpointsTests.cs` +
   `GameApiEndpointsTests.cs` (endpoint HP flow + failure stage tests)
+- `src/WotBTreader.Core/Discovery/HeadingCorrelator.cs` (per-dump bounded
+  bidirectional lag path + `LagSpreadSeconds`; additive, shared path
+  unchanged)
+- `src/WotBTreader.Host.Cli/Cli/CliCommandRouter.cs` +
+  `src/WotBTreader.Host.Cli/Cli/CliInvocation.cs` (`yaw-diff
+  --memory-lead-seconds --per-dump-lag` + `lagSpreadSeconds` output)
+- `scripts/invoke-facing-session.ps1` (`-MemoryLeadSeconds` default 8,
+  `-PerDumpLag` default ON — the proven path; median-lag/spread report)
+- `tests/WotBTreader.Core.Tests/HeadingCorrelatorTests.cs` (+3 per-dump lag
+  tests)
+- `docs/operations/od-recovery-089-evidence-template.md` (filled: HIT
+  +0x30 56/56; at-session negative + corrected verdict both recorded)
+- `docs/operations/offset-discovery-ledger.md` (089 index row + full
+  result section; summary, playerYaw rows, Next-planned updated)
+- `docs/operations/product-roadmap.md` (L2 Phase-4 → closed; X4 row)
+- `docs/operations/record-diffing-groundwork.md` (label-skew finding)
+- `docs/operations/g1-yaw-publication-draft.md` (PENDING → READY; 089
+  evidence rows)
 - `docs/operations/handoffs/2026-08-11-enemy-tracking-focus.md` (this file)

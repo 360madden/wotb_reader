@@ -26,10 +26,19 @@ Strict 8/8 with the new subset-sum lag attribution). **L2 facing HIT live
 memory-apply lag; automated contract HIT score 1.0, flatness 1.0, 48/48 via
 the new value-match lag path). The rehearsal's +0x2C yaw prediction was
 self-constructed and is corrected to +0x30; the X4 live frame's `hp: null`
-can become real (additive) and its hull yaw is now live-verified. **Next
-planned session: OD-RECOVERY-089** (L2 facing Phase-4 repeat on Dead Rail —
-the same offset must agree, exercising the 5 seam crossings), then CAM-001
-v7; item 7 (hardware atomicity) stays LAST.
+can become real (additive) and its hull yaw is now live-verified.
+**OD-RECOVERY-089 is DONE (2026-08-11): L2 facing Phase-4 repeat HIT on
+Dead Rail** — ring-record `+0x30` agrees (56/56, score 1.0, flatness 1.0;
+`twoReplayRepeatability = true`). The at-session one-directional shared
+verdict was honest-negative; root cause = the G2 replay-clock LABEL skew is
+per-dump variable and OPPOSITE in sign between replays (Oasis memory lags
++4.8 s; Dead Rail memory leads −2.5 s). The additive per-dump bounded
+bidirectional lag path (`--per-dump-lag --memory-lead-seconds`) re-verdicts
+the SAME immutable dumps to HIT on both replays; yaw publication package is
+READY (operator approval only). **Next planned session: CAM-001 v7** (camera
+validator built, live evidence only), then OD-RECOVERY-090 (L3
+damage-dealt, Oasis attacker 3760577) + its Dead Rail Phase-4 repeat;
+item 7 (hardware atomicity) stays LAST.
 
 ### Prior status snapshot (2026-08-09, OD-RECOVERY-075 + BLK-0026 resolved)
 
@@ -271,11 +280,11 @@ Every address must be classified before publication:
 |------|------------------|
 | Campaign version | `11.19.0.10` |
 | Executable identity | Hash recorded in `memory-offsets/11.19.0.10.json`; re-measure before a live session |
-| Runtime-supported fields | 3 fields `Verified` via the module-rooted position-ring `chains` (`playerPositionX/Y/Z`, offsets stay 0 — OD-RECOVERY-083/084); `playerYaw` Stale/quarantined (resolved-by-supersession 2026-08-11, chain field at ring-record `+0x30` — OD-RECOVERY-088 live-verified, Phase-4 Dead Rail repeat pending); the rest Unknown |
-| `playerYaw` | **Quarantined → resolved-by-supersession (2026-08-11)** — the address-kind question is answered: yaw is a runtime chain field on the movement ring record (**record `+0x30`, live-verified 2026-08-11 by OD-RECOVERY-088**; the rehearsal's +0x2C prediction was self-constructed — the tail is roll `+0x28` / pitch `+0x2C` / yaw `+0x30`), not a static module offset; the legacy static candidates were mutually inconsistent and are retired; Phase-4 (Dead Rail) repeat still required before any publication |
+| Runtime-supported fields | 3 fields `Verified` via the module-rooted position-ring `chains` (`playerPositionX/Y/Z`, offsets stay 0 — OD-RECOVERY-083/084); `playerYaw` Stale/quarantined (resolved-by-supersession 2026-08-11, chain field at ring-record `+0x30` — OD-RECOVERY-088/089 live-verified on BOTH replays, `twoReplayRepeatability = true`, publication READY pending operator approval); the rest Unknown |
+| `playerYaw` | **Quarantined → resolved-by-supersession (2026-08-11)** — the address-kind question is answered: yaw is a runtime chain field on the movement ring record (**record `+0x30`, live-verified 2026-08-11 by OD-RECOVERY-088 on Oasis AND OD-RECOVERY-089 on Dead Rail — `twoReplayRepeatability = true`**; the rehearsal's +0x2C prediction was self-constructed — the tail is roll `+0x28` / pitch `+0x2C` / yaw `+0x30`), not a static module offset; the legacy static candidates were mutually inconsistent and are retired. Publication READY via `docs/operations/g1-yaw-publication-draft.md` (operator approval + gate run only) |
 | Trusted next anchor | Exact-build replay owner: module RVA `0x04095C88` through `GameCore`, the controller chain, replay `BWServerConnection`, `BWEntities`, matched movement-filter/helper subtype, eight-entry ring at helper `+0x08`, and position at record `+0x10`; one live process agrees with decoded trajectory |
 | Do not repeat | The same yaw neighborhood scan using `0x0317A810` without resolving its provenance; absolute image-only AOB of survivor pointer bytes without a changed encoding/root hypothesis (ruled out by OD-RECOVERY-007); absolute LE pointer AOB across private/all/image + align 1/8 without a changed encoding hypothesis (ruled out by OD-RECOVERY-008); truncated low-32 LE dword AOB of survivor absolutes without a changed encoding hypothesis (ruled out by OD-RECOVERY-009); automated CE `bptAccess`/`bptWrite` on Float position survivors without a field pivot or interactive debugger (0 RIP hits through OD-RECOVERY-011); CE write-BP alone on the single increased `replayTime` Double without interactive debugger or a second independent launch (0 RIP in OD-RECOVERY-012); treating file-association / `Invoke-Item` alone as the OD gate path (playback can succeed while Host stays `Denied` / `lifecycle_evidence_timeout` — amended 2026-08-02); reaching ≤10 RT survivors then starting interactive debugger after the fact under a 120s research lease loses the window to EvidenceStale (OD-RECOVERY-016) — pre-arm debugger / reserve lease margin; requiring the Watch Offline orange-dialog blob to vanish after `OfflineReplayVerified` (the replay HUD renders orange in that ROI, so `dialogGone` never sets, extra clicks hit in-game UI and kill the game — OD-RECOVERY-017) — trust the verified gate; reading compare `retainedCount` as the rolling survivor count (it is unreadable-chunk carryover only; survivors are `increasedCount` — OD-RECOVERY-017); automated CE Windows-debugger write-BPs (`debugProcess(1)` + `debug_setBreakpoint(addr, bptWrite, 1)`) on rolling Double survivors — zero RIP hits across OD-009/010/011 and OD-020/021/022 probes, so the operator-owned interactive Find-what-writes step is required, not a scripting gap to keep probing; rolling from a snapshot taken during the game load transition — the candidate set can be 66M+ (22–87× steady state), convergence cannot fit the 120s lease, and the resulting session discard surfaces as a confusing compare `400` (OD-RECOVERY-025 attempt 1) — wait for a clean steady-state snapshot before rolling; capturing the rendezvous capability once at roll start — the token rotates ~5 min and a 66M-baseline roll outlives it, so a mid-roll compare dies with a confusing 401 (OD-RECOVERY-030 attempt 1; fixed by refresh + retry in the rolling driver); running the separate full-walk sanity probe when round-1 `previousCount` reports the identical snapshot count — the probe's 66M-candidate walk wasted lease inside the 120s budget (OD-RECOVERY-030; gate folded into round 1); requesting `maxCandidates=500` (or any large harvest) on every rolling round when only the final target round's addresses are written — the big early compares (66M→1M) pay candidate serialization for nothing and cost lease; request 1 candidate per round and harvest the full set only on the target round (OD-RECOVERY-031 attempt 1 → fixed in driver, validated attempts 3–5: 10–14 rounds fit the lease vs 6–7 before); overriding the CE autorun's default survivor address-file path (`%TEMP%\od-survivors.txt`) with a custom `-AddressFile` — the autorun polls the default path only, so staged survivors silently never reach CE (OD-RECOVERY-031 attempt 4; use the default path so the staging handoff works); keeping the CE autorun poll window at 90s when a 66M-baseline roll outlives it — the file appears right at the 120s lease edge, so the poll must span the whole lease + margin (OD-RECOVERY-031 attempts 3/4; extended to 300s)  trusting a rolled-down survivor set landing on `0x7FFE0xxx` as a game-field hit — `KUSER_SHARED_DATA.SystemTime` (0x7FFE0010) is a FILETIME-style value that ticks every 100ns, so it survives every 'increased' compare after the game field stops ticking (replay tail / dying game); kernel writes to that page never fire user-mode hardware breakpoints, so a write-BP there returns 0 hits by construction (OD-RECOVERY-044 — drop the page from the address file + WARN, now in the driver); treating the x96dbg launcher as unusable for pre-arm — **re-verified 2026-08-04: in a healthy gated session `release\x96dbg.exe -p <pid>` headlessly dispatched cleanly to `x32\x32dbg.exe -p <pid>` (x86 build attached to wotblitz pid 50724, launcher exited, window title confirmed `wotblitz.exe - PID: 50724`) — the OD-RECOVERY-044 linger was environmental (game already dying that session), not a launcher defect; direct `x32\x32dbg.exe` launch remains the pipeline choice for determinism (removes the ShellExecute/elevation surface entirely), not because the launcher is broken (OD-044 launcher re-verification); **delaying the unchanged bounded poll after the gate** — the decoded trajectory is battle-scoped: starting the poll past the research lease dies with `FAILED_ground_truth_api`, and starting it after the battle ends resolves 0/24; start the poll immediately after `OfflineReplayVerified`, inside the active battle (BLK-0026 resolution, 2026-08-09) |
-| Next planned session | `OD-RECOVERY-089` — **L2 facing Phase-4 repeat on Dead Rail** (OD-RECOVERY-088 is DONE — L2 HIT live at ring-record `+0x30`; the rehearsal's +0x2C prediction corrected to a rotation triple roll `+0x28` / pitch `+0x2C` / yaw `+0x30`): drive `invoke-facing-session.ps1` on Dead Rail with the launch-matched host-store session + `-DataRoot "$env:LOCALAPPDATA\WotBTreader"` and `-MaxLagSeconds 8`; the Phase-4 rule requires the yaw offset to agree (Dead Rail's 5 seam crossings exercise the wrap-aware matcher). Then CAM-001 v7 (validator built, live evidence only); then **OD-RECOVERY-090 (L3 damage-dealt, Oasis attacker 3760577, template pre-staged)** + its Dead Rail Phase-4 repeat (attacker 2549401). The yaw publication package is pre-staged (PENDING, `docs/operations/g1-yaw-publication-draft.md` — applies only after 089 closes HIT at +0x30 + operator approval); the Phase-4 two-replay HP rule (Dead Rail victim 2549399) still gates HP publication; item 7 (hardware atomicity) stays LAST. |
+| Next planned session | **CAM-001 v7** (camera-state validator — built and rehearsed, live evidence only), then **OD-RECOVERY-090 (L3 damage-dealt, Oasis attacker 3760577, template pre-staged)** + its Dead Rail Phase-4 repeat (attacker 2549401). OD-RECOVERY-089 is DONE (2026-08-11): **L2 facing Phase-4 HIT** — ring-record `+0x30` agrees on Dead Rail (56/56, score 1.0, flatness 1.0), `twoReplayRepeatability = true`; the at-session honest-negative was a matcher limitation (one-directional shared lag vs the opposite-sign per-dump G2 label skew), fixed additively by the per-dump bidirectional lag path and proven on both replays. The yaw publication package is READY (`docs/operations/g1-yaw-publication-draft.md` — operator approval + gate run only); the Phase-4 two-replay HP rule (Dead Rail victim 2549399) still gates HP publication; item 7 (hardware atomicity) stays LAST. |
 
 The current yaw conflict is recorded explicitly:
 
@@ -422,6 +431,7 @@ occurred.
 | `OD-RECOVERY-086` | 2026-08-11 | Composed X2 batch + X3 enumeration rehearsal (resolver-path consolidation item 6/3, approved live session, Oasis Palms): X3 `/discover/entity-roster` → **team-based partial** (7/14, precision 1.000, recall 0.500, 0 extra; all found = team 1 / own team, all missing = team 2 / enemies — the movement-filter vtable gate separates the player's own team, not the avatar family); X2 `/discover/entity-regions` full-roster dumps at 89.3/149.6/221.9 s, every batch `sameDecodedClockProven=true` — **34/34 compared pairs align to decoded ground truth within the 2 s G2 window (stationary 0.00 m; moving at −0.8 s = the batch read-pass window)** | Approved live launches (5; 1 CAM-003-blocked) + driver `-LiveAcquire -Times 90,150,220 -FailOnMiss` + cross-check with new 2 s window matching; harness fixes shipped: launcher-owned G2 anchor at the blitz-log marker moment (gate moment lagged replay start ~4.9 s → constant skew), driver per-target clock wait, BOM-less evidence writes, launch-matched host-store session (`battleSession=` logged) | `Partial` (X3) / X2 batch surface **PASS** | `batchSurfaceLive: true` (3/3 Resolved + clock-attested, positions align within the G2 window); `rosterEnumerationMatchesDecoded: false` — the X4 loop must re-enumerate per tick or add a second discriminator for enemy avatars; `readPassWindowMeasured: ~0.8 s implied` (item-7 prerequisite) | No offsets / resolver / read surface touched. Next live gates in order: OD-RECOVERY-088 (L2 facing) → CAM-001 v7; the X3 team-split is a design input for the live-roster join, not a promotion |
 | `OD-RECOVERY-087` | 2026-08-11 | **L1 HP — HIT**: the entity-base current-health signed int16 is CONFIRMED LIVE at `+0xB8` (Oasis Palms victim 3760578, 9 events / 1,183 damage). Byte-level exact track: 8/8 drops == damage sums (149, 173, 174, 164, 168, 142, 198 = 41+157, 15), max `+0x11C` 1550 constant, alive `+0xBA` 1, healing `+0x11E` 0. Automated contract **HIT: score 1.0, flatness 1.0, Strict 8/8 exact sums** via the new subset-sum lag attribution (`hp-diff --lag-tolerance 4`). Finding: the game applies decoded damage events with a variable ~1–3.4 s memory lag (measured) | Approved live launches (4; 3 gated OK, 1 pre-fix driver abort) + driver `-LiveAcquire -ControlTimes 30,230` dense-span dumps (74) + `hp-diff --int16 true --lag-tolerance 4`; harness + tooling fixes shipped: correlator subset-sum lag attribution (`eventLagToleranceSeconds` default 0 + `--lag-tolerance`, 5 tests), driver dense-span schedule (hit−1…hit+13), transient rendezvous retry, `-DataRoot` → extractor `--db` + `hp-diff --data-root`, BOM-less writes | **HIT** | `hpLiveAtEntityBaseOffset: true`; `liveFrameHpBecomesReal: true` (hpCurrent/hpMax additive); `twoReplayRepeatability: false` — pending Dead Rail victim 2549399 (Phase-4 rule) | No offsets / resolver / read surface touched; correlator change additive (default 0 = exact). X4 frame `hp` becomes real in a separate additive change. Next: OD-RECOVERY-088 (L2 facing) → CAM-001 v7 |
 | `OD-RECOVERY-088` | 2026-08-11 | **L2 facing — HIT at `+0x30` (the rehearsal's +0x2C corrected)**: the ring-record tail is a live-verified rotation triple — roll `+0x28` (48/48 within 0.5°), pitch `+0x2C` (47/48), yaw `+0x30` (46/48 at fixed 5 s shared lag; median per-dump error 0.000°), `+0x34` padding. The rehearsal's +0x2C yaw "hit" was self-constructed (its synthetic dumps placed yaw at +0x2C by design — correlator mechanics, not layout); the live read wins. Automated contract **HIT: score 1.0, flatness 1.0, 48/48 dumps, best shared lag 5.0 s** via the new value-match lag path (`yaw-diff --max-lag-seconds 8`). Finding (087-class): the ring record applies decoded packet state with a variable ~1–5 s memory-apply lag (median 5.0 s), which defeated the window-delta correlator (honest negative: top 0x84 score 0.143) until the lag path landed | Approved live launches (2; 1 gated OK, 1 CAM-003 controller-phase flip) + driver `-LiveAcquire -ControlTimes 20,240` (48 dumps) + `yaw-diff --max-lag-seconds 8`; harness + tooling fixes shipped: `RingRecordRegion.YawOffset` +0x2C → +0x30 (+ `PitchOffset`/`RollOffset` + `TryReadPitch`/`TryReadRoll`), `HeadingCorrelator.CorrelateWithLag` value-match path (additive, default 0, `BestLagSeconds`, 2 tests), `yaw-diff --max-lag-seconds` + `bestLagSeconds` output, driver `-DataRoot` → extractor `--db` + per-target clock wait + transient rendezvous retry | **HIT** | `yawLiveAtRingOffset: true (at +0x30)`; `liveFrameYawBecomesLive: true` (RingRecordRegion now decodes +0x30); `twoReplayRepeatability: false` — pending Dead Rail agreement (Phase-4 rule, 5 seam crossings) | No offsets / resolver / read surface touched; correlator change additive (default 0 = exact). X4 frame `yawRadians` is live-verified. Next: Dead Rail L2 repeat (Phase-4) → CAM-001 v7; item 7 (hardware atomicity) stays LAST |
+| `OD-RECOVERY-089` | 2026-08-11 | **L2 facing Phase-4 repeat — HIT: `+0x30` agrees on Dead Rail** (56/56, score 1.0, flatness 1.0, median per-dump lag −2.5 s, spread 5.6 s) — **`twoReplayRepeatability = true`**, facing/yaw publication READY (operator approval + gate only, `g1-yaw-publication-draft.md`). At-session one-directional shared verdict was honest-negative (top 0xA0 score 0.304, flatness 0.2); root cause = the G2 replay-clock LABEL skew is per-dump variable and OPPOSITE in sign between replays (Oasis memory lags +4.8 s; Dead Rail leads −2.5 s) — the one-directional memory-behind search cannot see it. Additive per-dump bounded bidirectional lag path (`--per-dump-lag --memory-lead-seconds`) re-verdicts the SAME immutable dumps to HIT on both replays (089: 56/56; 088 re-run: 48/48, +4.8 s) | Approved live launch (1, launcher gate OK, `battleSession=019ff209-a4cb-7c2b-88e3-2b0eaf65c490`) + driver `-LiveAcquire` (56 dumps, Dead Rail victim 2549408, 27 turn segments) + offline re-verdict; tooling shipped: `HeadingCorrelator` per-dump bounded bidirectional lag + `LagSpreadSeconds` (3 tests: lead direction, variable-skew vs shared-cap, decoy demotion), `yaw-diff --memory-lead-seconds --per-dump-lag`, driver `-MemoryLeadSeconds -PerDumpLag` (default ON now) | **HIT** | `twoReplayRepeatability: true` (yaw +0x30 on both replays); `yawPublicationReady: true` (pending operator approval); label-skew finding: per-dump ± sign per replay, spread 5.6 s Dead Rail / 13.1 s Oasis | No offsets / resolver / read surface touched; correlator change additive (defaults unchanged). Next: CAM-001 v7 → OD-RECOVERY-090 (L3 damage-dealt) + Dead Rail repeat; HP Phase-4 rule (victim 2549399) separate; item 7 LAST |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -6614,3 +6624,119 @@ Dead Rail - the same offset must agree, exercising the 5 seam crossings)**,
 then CAM-001 v7; the Phase-4 two-replay rule for HP (Dead Rail victim
 2549399) still applies before any HP publication; item 7 (hardware
 atomicity) stays LAST.
+
+---
+
+## `OD-RECOVERY-089` result - 2026-08-11 (L2 facing Phase-4 repeat - HIT at ring-record +0x30; `twoReplayRepeatability = true`)
+
+### YAML skeleton
+
+```yaml
+sessionId: OD-RECOVERY-089
+status: Closed (L2 facing Phase-4 repeat on Dead Rail, HIT at +0x30)
+mode: invoke-facing-session.ps1 -SessionId 019ff209-a4cb-7c2b-88e3-2b0eaf65c490
+  -LiveAcquire -DataRoot "$env:LOCALAPPDATA\WotBTreader" -MaxLagSeconds 8
+  on Dead Rail: launcher to OfflineReplayVerified, then
+  /discover/entity-region ring-record dumps (region 256, replay-clock
+  labeled, sameDecodedClockProven required) per turn segment + flat
+  controls -> yaw-diff verdict (value-match lag path, wrap-aware)
+targetBuild:
+  version: 11.19.0.10
+  executableSha256: 1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d
+liveRun:
+  launcherExit: 0
+  gate: OK OfflineReplayVerified
+  decodedSessionId: 019ff209-a4cb-7c2b-88e3-2b0eaf65c490
+  victimEntityId: 2549408
+  turnSegments: 27
+  dumpsTaken: 56
+  allDumpsClockAttested: true
+  atSessionVerdict: honest-negative (top 0xA0 score 0.304, flatness 0.2;
+    one-directional shared lag could not see the opposite-sign label skew)
+  candidateOffset: 0x30 (per-dump bidirectional re-verdict on same dumps)
+  score: 1.0
+  matchedDumps: 56/56
+  flatness: 1.0
+  medianPerDumpLagSeconds: -2.5
+  lagSpreadSeconds: 5.6
+  verdict: HIT at +0x30
+proof:
+  twoReplayRepeatability: true (yaw +0x30 on Oasis 088 AND Dead Rail 089)
+  yawPublicationReady: true (pending operator approval, g1-yaw-publication-draft.md)
+  labelSkewFinding: per-dump replay-clock label skew, opposite sign per
+    replay (Oasis memory lags +4.8 s; Dead Rail memory leads -2.5 s),
+    spread 5.6 s (Dead Rail) / 13.1 s (Oasis)
+```
+
+### Session summary
+
+One approved live launch (Dead Rail, launcher exit 0, gate
+`OK OfflineReplayVerified`, clock anchored at the blitz-log marker moment,
+`battleSession=019ff209-a4cb-7c2b-88e3-2b0eaf65c490`). The facing driver
+QUALIFYed victim 2549408 (27 turn segments >= 0.1 rad, 5 seam crossings
+exercising the wrap-aware matcher) from the host store, took 56 ring-record
+region dumps (region 256, anchor ring-record, per turn segment + controls),
+every dump `sameDecodedClockProven=true`, then ran the yaw-diff verdict.
+
+**At-session automated verdict: honest negative** - top candidate `0xA0`
+score 0.304, flatness 0.2. Recorded per the template's "different offset /
+no hit" branch; chain field untouched.
+
+**Root cause (offline analysis of the SAME immutable dumps): a matcher
+limitation, not a wrong offset.** The ring-record yaw at +0x30 is byte-exact
+against the decoded packet yaw on Dead Rail, but the G2 replay-clock LABEL
+skew is OPPOSITE in sign vs Oasis: Oasis memory LAGS the label (+3..5 s),
+Dead Rail memory LEADS it (-2..5 s), and it varies per dump. The
+one-directional shared lag path (memory-behind-packet only) structurally
+cannot see the Dead Rail sign; the shared bidirectional path hits 56/56
+only because the stationary dumps match at any lag, and it HIDES the
+variation.
+
+**Corrected verdict (additive per-dump bounded bidirectional lag path,
+re-verdict of the identical evidence):**
+
+| Evidence | Path | Offset | Score | Flatness | Matched | Median lag | Spread |
+|---|---|---|---|---|---|---|---|
+| Dead Rail 089 | per-dump bidirectional | +0x30 | 1.0 | 1.0 | 56/56 | -2.5 s | 5.6 s |
+| Oasis 088 (re-run) | per-dump bidirectional | +0x30 | 1.0 | 1.0 | 48/48 | +4.8 s | 13.1 s |
+
+Median per-dump error 0.000 deg on both replays. **Phase-4 two-replay
+repeatability is proven: the SAME offset +0x30 agrees on two content-
+distinct replays with opposite-sign label skew.**
+
+### Tooling shipped (all committed)
+
+1. **`HeadingCorrelator.CorrelateWithLag` per-dump bounded bidirectional
+   lag path** (additive; shared path unchanged). Each dump independently
+   picks its best lag in [-maxMemoryLeadSeconds, +maxLagSeconds]; the
+   candidate reports the MEDIAN lag plus `LagSpreadSeconds` so the skew
+   structure stays visible evidence, never silent per-dump fitting.
+   Flatness still demotes drifters (controls are stationary, so no lag
+   hides drift). 3 new tests: memory-leading direction (negative best lag),
+   per-dump variable skew where the shared path caps at 0.5, and flatness
+   demotion of a drifting decoy under per-dump lag.
+2. **`yaw-diff --memory-lead-seconds --per-dump-lag`** CLI options +
+   `lagSpreadSeconds` in the JSON output; `memory-lead-seconds` registered
+   as a value option in `CliInvocation`.
+3. **Driver**: `-MemoryLeadSeconds` (default 8) + `-PerDumpLag` (default
+   ON since 089 - the proven-correct path; `-PerDumpLag:$false` forces the
+   shared path) + median-lag/spread reporting.
+
+### Evidence files (in `.data/`, gitignored)
+
+- `facing-snapshots-089.json` (56 region dumps, the live session)
+- `od089-launch.log` (launcher: gate OK, anchored session)
+- `od089-facing.log` (driver: QUALIFY schedule, dump pacing, verdict)
+
+### Not changed
+
+No offsets, no resolver changes, no read-surface changes, no offset-table
+edit. The correlator change is additive (default behavior unchanged).
+Facing/yaw publication is READY but applies ONLY via the operator-approved
+package (`docs/operations/g1-yaw-publication-draft.md`); `offsets.playerYaw`
+stays 0 and `fieldValidation.playerYaw` stays `Stale` until then. Next live
+gates in order: **CAM-001 v7** (validator built, live evidence only), then
+**OD-RECOVERY-090 (L3 damage-dealt, Oasis attacker 3760577)** + its Dead
+Rail Phase-4 repeat (attacker 2549401); the Phase-4 two-replay rule for HP
+(Dead Rail victim 2549399) still applies before any HP publication; item 7
+(hardware atomicity) stays LAST.

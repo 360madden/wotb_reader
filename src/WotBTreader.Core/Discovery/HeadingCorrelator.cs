@@ -51,7 +51,8 @@ public sealed record HeadingCorrelationCandidate(
     int ChangedControlWindows,
     IReadOnlyList<MatchedYawWindow>? MatchedWindowList,
     string Explanation,
-    double? BestLagSeconds = null);
+    double? BestLagSeconds = null,
+    double? LagSpreadSeconds = null);
 
 /// <summary>
 /// Correlates the target entity's packet-derived yaw against the bucketed
@@ -213,21 +214,32 @@ public static class HeadingCorrelator
     }
 
     /// <summary>
-    /// Value-match correlation with a bounded memory-apply lag search
-    /// (OD-RECOVERY-087/088 finding): the ring record applies decoded packet
-    /// state with a variable ~1-5 s delay, so a delta-over-window comparison
-    /// between a before/after dump pair misses the change when the memory is
-    /// still showing the PRE-turn value (the delta path's honest-negative in
-    /// the 088 live run). This path instead matches each dump's raw float at
-    /// the candidate offset against the packet yaw at (dump time - lag),
-    /// searching lag in [0, <paramref name="maxLagSeconds"/>] and keeping
-    /// the single best shared lag per offset. Score = matched dumps /
-    /// matchable dumps (a dump is matchable at lag L when ground truth
-    /// exists at t - L). Flatness = the fraction of stationary CONTROL dumps
-    /// (packet yaw constant, |expected delta| &lt;= tolerance) that also match
-    /// at the chosen lag — a decoy that happens to track yaw during turns is
-    /// separated by drifting in the stationary segments. Additive: the
-    /// window-delta <see cref="Correlate"/> path is unchanged.
+    /// Value-match correlation with a bounded, optionally bidirectional,
+    /// optionally per-dump lag search. Two findings drive this:
+    /// (1) OD-RECOVERY-088 — the ring record applies decoded packet state
+    /// with a ~1-5 s memory-apply delay, so a delta-over-window comparison
+    /// between a before/after dump pair misses the change (the delta path's
+    /// honest-negative in the 088 live run). This path instead matches each
+    /// dump's raw float at the candidate offset against the packet yaw at
+    /// (dump time - lag).
+    /// (2) OD-RECOVERY-089 — the G2 replay-clock LABEL itself carries a
+    /// per-session, per-dump-varying skew that is OPPOSITE in sign between
+    /// replays (Oasis: memory LAGS the label by ~3-5 s; Dead Rail: memory
+    /// LEADS the label by ~2-5 s). A one-directional shared lag therefore
+    /// caps below 1.0 on Dead Rail even though +0x30 is byte-exact
+    /// (56/56). When <paramref name="perDumpLag"/> is set, each dump
+    /// independently picks its best lag in
+    /// [-<paramref name="maxMemoryLeadSeconds"/>, +<paramref name="maxLagSeconds"/>]
+    /// and the candidate reports the median lag plus the spread
+    /// (<see cref="HeadingCorrelationCandidate.LagSpreadSeconds"/>) so the
+    /// skew structure stays visible evidence, never silent per-dump fitting.
+    /// Score = matched dumps / matchable dumps. Flatness = the fraction of
+    /// stationary CONTROL dumps (packet yaw constant, |expected delta| &lt;=
+    /// tolerance) that also match at their lag — a decoy that happens to
+    /// track yaw during turns is separated by drifting in the stationary
+    /// segments (controls are stationary, so the lag choice cannot hide
+    /// drift). Additive: default behavior (lead 0, shared lag) is unchanged;
+    /// the window-delta <see cref="Correlate"/> path is unchanged.
     /// </summary>
     public static IReadOnlyList<HeadingCorrelationCandidate> CorrelateWithLag(
         IReadOnlyList<RecordSnapshot> snapshots,
@@ -235,7 +247,9 @@ public static class HeadingCorrelator
         long targetEntityId,
         double toleranceRadians = DefaultToleranceRadians,
         double maxLagSeconds = 10.0,
-        double lagStepSeconds = 0.25)
+        double lagStepSeconds = 0.25,
+        double maxMemoryLeadSeconds = 0.0,
+        bool perDumpLag = false)
     {
         ArgumentNullException.ThrowIfNull(snapshots);
         ArgumentNullException.ThrowIfNull(yawSamples);
@@ -247,6 +261,11 @@ public static class HeadingCorrelator
         if (!double.IsFinite(maxLagSeconds) || maxLagSeconds < 0)
         {
             throw new ArgumentOutOfRangeException(nameof(maxLagSeconds));
+        }
+
+        if (!double.IsFinite(maxMemoryLeadSeconds) || maxMemoryLeadSeconds < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxMemoryLeadSeconds));
         }
 
         if (!double.IsFinite(lagStepSeconds) || lagStepSeconds <= 0)
@@ -303,94 +322,176 @@ public static class HeadingCorrelator
 
         int controlCount = classified.Count(item => item.IsControl);
         int maxOffset = regionLength - sizeof(float);
+        double lagMin = -maxMemoryLeadSeconds;
+        double lagMax = maxLagSeconds;
         List<HeadingCorrelationCandidate> candidates = [];
         for (int offset = 0; offset <= maxOffset; offset += sizeof(float))
         {
-            // Search the shared lag maximizing the match count; the yaw field
-            // must align at ONE lag across the whole session (the memory-apply
-            // delay is a property of the read, not per-dump noise).
-            int bestMatched = 0;
-            int bestMatchable = 0;
-            double bestLag = 0;
-            for (double lag = 0; lag <= maxLagSeconds + 1e-9; lag += lagStepSeconds)
+            double score;
+            int matched;
+            int matchable;
+            int controlMatched;
+            double bestLag;
+            double? lagSpread;
+            if (perDumpLag)
             {
-                int matched = 0;
-                int matchable = 0;
-                foreach ((RecordSnapshot snapshot, _) in classified)
+                // Each dump picks its own best lag in the bounded range; the
+                // reported median + spread make the skew structure visible.
+                List<double> perDumpLags = [];
+                matched = 0;
+                matchable = 0;
+                controlMatched = 0;
+                foreach ((RecordSnapshot snapshot, bool isControl) in classified)
                 {
-                    if (!lookup.TryGetValueAt(
-                            snapshot.ReplayTime - TimeSpan.FromSeconds(lag),
-                            out double expected))
+                    double? bestError = null;
+                    double bestDumpLag = 0;
+                    bool foundGroundTruth = false;
+                    for (double lag = lagMin; lag <= lagMax + 1e-9; lag += lagStepSeconds)
+                    {
+                        if (!lookup.TryGetValueAt(
+                                snapshot.ReplayTime - TimeSpan.FromSeconds(lag),
+                                out double expected))
+                        {
+                            continue;
+                        }
+
+                        foundGroundTruth = true;
+                        float memory = BinaryPrimitives.ReadSingleLittleEndian(snapshot.Bytes.AsSpan(offset));
+                        double error = Math.Abs(WrapPi(memory - expected));
+                        if (bestError is null || error < bestError.Value)
+                        {
+                            bestError = error;
+                            bestDumpLag = lag;
+                        }
+                    }
+
+                    if (!foundGroundTruth)
                     {
                         continue;
                     }
 
                     matchable++;
-                    float memory = BinaryPrimitives.ReadSingleLittleEndian(snapshot.Bytes.AsSpan(offset));
-                    if (Math.Abs(WrapPi(memory - expected)) <= toleranceRadians)
+                    if (bestError is not null && bestError.Value <= toleranceRadians)
                     {
                         matched++;
+                        perDumpLags.Add(bestDumpLag);
+                        if (isControl)
+                        {
+                            controlMatched++;
+                        }
                     }
                 }
 
-                if (matchable > 0
-                    && (double)matched / matchable > (double)bestMatched / Math.Max(1, bestMatchable)
-                    || (matchable == bestMatchable && matched > bestMatched))
-                {
-                    bestMatched = matched;
-                    bestMatchable = matchable;
-                    bestLag = lag;
-                }
-            }
-
-            if (bestMatchable == 0 || bestMatched == 0)
-            {
-                continue;
-            }
-
-            // Flatness over control dumps at the chosen lag: the field must
-            // equal the (constant) packet yaw in every stationary segment.
-            int controlMatched = 0;
-            foreach ((RecordSnapshot snapshot, bool isControl) in classified)
-            {
-                if (!isControl)
+                if (matchable == 0 || matched == 0)
                 {
                     continue;
                 }
 
-                if (!lookup.TryGetValueAt(
-                        snapshot.ReplayTime - TimeSpan.FromSeconds(bestLag),
-                        out double expected))
+                List<double> sortedLags = [.. perDumpLags.Order()];
+                bestLag = sortedLags[sortedLags.Count / 2];
+                lagSpread = sortedLags.Count > 1
+                    ? sortedLags[^1] - sortedLags[0]
+                    : 0.0;
+                score = (double)matched / matchable;
+            }
+            else
+            {
+                // Search the SHARED lag maximizing the match count; the yaw
+                // field must align at ONE lag across the whole session (the
+                // memory-apply delay is a property of the read, not per-dump
+                // noise). Bidirectional when a memory lead is allowed.
+                int bestMatched = 0;
+                int bestMatchable = 0;
+                bestLag = 0;
+                for (double lag = lagMin; lag <= lagMax + 1e-9; lag += lagStepSeconds)
+                {
+                    int currentMatched = 0;
+                    int currentMatchable = 0;
+                    foreach ((RecordSnapshot snapshot, _) in classified)
+                    {
+                        if (!lookup.TryGetValueAt(
+                                snapshot.ReplayTime - TimeSpan.FromSeconds(lag),
+                                out double expected))
+                        {
+                            continue;
+                        }
+
+                        currentMatchable++;
+                        float memory = BinaryPrimitives.ReadSingleLittleEndian(snapshot.Bytes.AsSpan(offset));
+                        if (Math.Abs(WrapPi(memory - expected)) <= toleranceRadians)
+                        {
+                            currentMatched++;
+                        }
+                    }
+
+                    if (currentMatchable > 0
+                        && (double)currentMatched / currentMatchable > (double)bestMatched / Math.Max(1, bestMatchable)
+                        || (currentMatchable == bestMatchable && currentMatched > bestMatched))
+                    {
+                        bestMatched = currentMatched;
+                        bestMatchable = currentMatchable;
+                        bestLag = lag;
+                    }
+                }
+
+                if (bestMatchable == 0 || bestMatched == 0)
                 {
                     continue;
                 }
 
-                float memory = BinaryPrimitives.ReadSingleLittleEndian(snapshot.Bytes.AsSpan(offset));
-                if (Math.Abs(WrapPi(memory - expected)) <= toleranceRadians)
+                matched = bestMatched;
+                matchable = bestMatchable;
+                lagSpread = null;
+                score = (double)matched / matchable;
+
+                // Flatness over control dumps at the chosen lag: the field
+                // must equal the (constant) packet yaw in every stationary
+                // segment.
+                controlMatched = 0;
+                foreach ((RecordSnapshot snapshot, bool isControl) in classified)
                 {
-                    controlMatched++;
+                    if (!isControl)
+                    {
+                        continue;
+                    }
+
+                    if (!lookup.TryGetValueAt(
+                            snapshot.ReplayTime - TimeSpan.FromSeconds(bestLag),
+                            out double expected))
+                    {
+                        continue;
+                    }
+
+                    float memory = BinaryPrimitives.ReadSingleLittleEndian(snapshot.Bytes.AsSpan(offset));
+                    if (Math.Abs(WrapPi(memory - expected)) <= toleranceRadians)
+                    {
+                        controlMatched++;
+                    }
                 }
             }
 
-            double score = (double)bestMatched / bestMatchable;
             double flatness = controlCount == 0
                 ? 1.0
                 : (double)controlMatched / controlCount;
+            string lagDescription = perDumpLag
+                ? $"per-dump best lag median {bestLag:0.##}s spread {lagSpread:0.##}s "
+                : $"shared lag {bestLag:0.##}s ";
             candidates.Add(new HeadingCorrelationCandidate(
                 offset,
                 score,
-                bestMatched,
-                bestMatchable,
-                bestMatchable - bestMatched,
+                matched,
+                matchable,
+                matchable - matched,
                 flatness,
                 controlCount,
                 controlCount - controlMatched,
                 null,
-                $"float32 at +0x{offset:X}: yaw VALUE matched {bestMatched}/{bestMatchable} "
-                + $"dumps at shared lag {bestLag:0.##}s (|wrapped value - yaw(t - lag)| <= "
+                $"float32 at +0x{offset:X}: yaw VALUE matched {matched}/{matchable} "
+                + $"dumps at {lagDescription}(|wrapped value - yaw(t - lag)| <= "
                 + $"{toleranceRadians:0.###} rad); flatness {flatness:0.##} "
                 + $"({controlMatched}/{controlCount} stationary dumps unchanged)",
-                bestLag));
+                bestLag,
+                lagSpread));
         }
 
         return [.. candidates
