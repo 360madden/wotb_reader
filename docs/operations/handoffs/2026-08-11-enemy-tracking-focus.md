@@ -196,7 +196,13 @@ VerifyPlayerHpChain 26/26 map: current `+0xB8`, alive `+0xBA`, max
 `invoke-hp-diffing-session.ps1` invocation, the ledger YAML skeleton, and
 branch-on-evidence rules (hit at `+0xB8` → live frame HP becomes real;
 different confirming offset → live finding wins; no-hit → widen the
-anchor). Ledger next-session row + workflow references updated.
+anchor). Ledger next-session row + workflow references updated. The L2 facing
+session is likewise pre-staged (`docs/operations/od-recovery-088-evidence-template.md`):
+ring-record dumps (region ≥ 0x40, `+0x2C..+0x37` probe first), the
+runnable `invoke-facing-session.ps1` invocation, ledger YAML skeleton,
+and branch-on-evidence rules (hit at `+0x2C` → live frame yaw
+live-verified; different offset → live finding wins; no-hit → widen the
+probe; Dead Rail's 5 seam crossings exercise the wrap-aware matcher).
 
 ## Files touched
 
