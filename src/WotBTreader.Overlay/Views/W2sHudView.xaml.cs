@@ -76,6 +76,7 @@ public sealed partial class W2sHudView : UserControl
         IReadOnlyList<MinimapBeaconItem> minimapBeacons,
         double? cameraX,
         double? cameraZ,
+        double? cameraYawRadians,
         IReadOnlyList<KillItem> killFeed,
         ImageSource? minimapImage,
         double viewportWidth,
@@ -100,7 +101,7 @@ public sealed partial class W2sHudView : UserControl
         if (minimap.Count > 0 || minimapBeacons.Count > 0)
         {
             HudCanvas.Children.Add(
-                BuildMinimap(minimap, minimapBeacons, cameraX, cameraZ, viewportWidth, viewportHeight, minimapImage));
+                BuildMinimap(minimap, minimapBeacons, cameraX, cameraZ, cameraYawRadians, viewportWidth, viewportHeight, minimapImage));
         }
 
         if (killFeed.Count > 0)
@@ -171,6 +172,7 @@ public sealed partial class W2sHudView : UserControl
         IReadOnlyList<MinimapBeaconItem> minimapBeacons,
         double? cameraX,
         double? cameraZ,
+        double? cameraYawRadians,
         double viewportWidth,
         double viewportHeight,
         ImageSource? minimapImage)
@@ -254,6 +256,32 @@ public sealed partial class W2sHudView : UserControl
             Canvas.SetLeft(ring, cameraX.Value * panelSize - (dotRadius + 1.5));
             Canvas.SetTop(ring, cameraZ.Value * panelSize - (dotRadius + 1.5));
             panel.Children.Add(ring);
+
+            // Camera facing tick: a short line from the ring toward the
+            // viewpoint's facing direction. Yaw convention (packet): 0 faces
+            // +Z, +pi/2 faces +X; the minimap maps world X to panel right and
+            // world Z to panel down, so the panel delta is (sin yaw, cos yaw)
+            // scaled by the tick length.
+            if (cameraYawRadians is double yaw && double.IsFinite(yaw))
+            {
+                const double tickLength = 14;
+                double cx = cameraX.Value * panelSize;
+                double cz = cameraZ.Value * panelSize;
+                double px = Math.Sin(yaw) * tickLength;
+                double pz = Math.Cos(yaw) * tickLength;
+
+                var tick = new Polygon
+                {
+                    Points = new PointCollection
+                    {
+                        new Point(cx + pz * 0.35, cz - px * 0.35),
+                        new Point(cx + px, cz + pz),
+                        new Point(cx - pz * 0.35, cz + px * 0.35),
+                    },
+                    Fill = CreateBrush("#FFFFFFFF"),
+                };
+                panel.Children.Add(tick);
+            }
         }
 
         return panel;
@@ -275,6 +303,22 @@ public sealed partial class W2sHudView : UserControl
     /// </summary>
     public static Rect MinimapImageRect(double panelSize) =>
         new(0, 0, panelSize, panelSize);
+
+    /// <summary>
+    /// Computes the camera facing tick's apex (panel coordinates) for a given
+    /// camera position, yaw and tick length, for unit tests (no WPF rendering
+    /// required). Yaw uses the packet convention (0 faces +Z, +π/2 faces +X)
+    /// mapped to panel pixels: world X → panel right, world Z → panel down.
+    /// </summary>
+    public static Point CameraTickApex(
+        double cameraX,
+        double cameraZ,
+        double yawRadians,
+        double panelSize,
+        double tickLength) =>
+        new(
+            cameraX * panelSize + Math.Sin(yawRadians) * tickLength,
+            cameraZ * panelSize + Math.Cos(yawRadians) * tickLength);
 
     private static Canvas BuildBeacon(BeaconItem beacon)
     {

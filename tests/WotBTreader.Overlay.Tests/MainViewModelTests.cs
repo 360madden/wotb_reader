@@ -1145,6 +1145,8 @@ public sealed class MainViewModelTests
         Assert.AreEqual(0.25, flag.NormalizedZ, 1e-9);
         Assert.AreEqual(0.0, viewModel.MinimapCameraX!.Value, 1e-9);
         Assert.AreEqual(0.0, viewModel.MinimapCameraZ!.Value, 1e-9);
+        // The camera facing flows through for the minimap direction tick.
+        Assert.AreEqual(0.5, viewModel.MinimapCameraYawRadians!.Value, 1e-9);
     }
 
     [TestMethod]

@@ -80,4 +80,40 @@ public sealed class W2sHudViewTests
         Assert.AreEqual(150, rect.Width, 1e-9);
         Assert.AreEqual(150, rect.Height, 1e-9);
     }
+
+    [TestMethod]
+    public void CameraTickApex_YawZeroFacesDownPanel()
+    {
+        // Yaw 0 faces +Z, which maps to panel-down (Canvas.SetTop grows down).
+        Point apex = W2sHudView.CameraTickApex(
+            cameraX: 0.5, cameraZ: 0.5, yawRadians: 0.0,
+            panelSize: 150, tickLength: 14);
+
+        Assert.AreEqual(0.5 * 150, apex.X, 1e-9);
+        Assert.AreEqual(0.5 * 150 + 14, apex.Y, 1e-9);
+    }
+
+    [TestMethod]
+    public void CameraTickApex_PiOverTwoFacesRightPanel()
+    {
+        // Yaw +pi/2 faces +X, which maps to panel-right.
+        Point apex = W2sHudView.CameraTickApex(
+            cameraX: 0.5, cameraZ: 0.5, yawRadians: Math.PI / 2.0,
+            panelSize: 150, tickLength: 14);
+
+        Assert.AreEqual(0.5 * 150 + 14, apex.X, 1e-9);
+        Assert.AreEqual(0.5 * 150, apex.Y, 1e-9);
+    }
+
+    [TestMethod]
+    public void CameraTickApex_PiFacesUpPanel()
+    {
+        // Yaw pi faces -Z, which maps to panel-up.
+        Point apex = W2sHudView.CameraTickApex(
+            cameraX: 0.5, cameraZ: 0.5, yawRadians: Math.PI,
+            panelSize: 150, tickLength: 14);
+
+        Assert.AreEqual(0.5 * 150, apex.X, 1e-9);
+        Assert.AreEqual(0.5 * 150 - 14, apex.Y, 1e-9);
+    }
 }

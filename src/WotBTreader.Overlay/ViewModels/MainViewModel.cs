@@ -80,6 +80,7 @@ public class MainViewModel : INotifyPropertyChanged
     private double? _lastFrameReplayTimeSeconds;
     private double? _minimapCameraX;
     private double? _minimapCameraZ;
+    private double? _minimapCameraYaw;
 
     public MainViewModel()
         : this(new RendezvousLocator(), static (baseUri, capability) => new TreaderApiClient(baseUri, capability: capability), null)
@@ -440,6 +441,11 @@ public class MainViewModel : INotifyPropertyChanged
     /// viewpoint has no position evidence.</summary>
     public double? MinimapCameraZ => _minimapCameraZ;
 
+    /// <summary>Camera facing yaw (radians, packet convention: 0 faces +Z,
+    /// +π/2 faces +X) for the minimap direction tick; null when the
+    /// viewpoint has no rotation evidence.</summary>
+    public double? MinimapCameraYawRadians => _minimapCameraYaw;
+
     /// <summary>Kill feed for the HUD: every destroy landed up to the current
     /// frame, newest first, with names resolved from the frame's roster.</summary>
     public ObservableCollection<KillItem> KillFeed => _killFeed;
@@ -512,6 +518,7 @@ public class MainViewModel : INotifyPropertyChanged
             _minimapBeacons.Clear();
             _minimapCameraX = frame.CameraX;
             _minimapCameraZ = frame.CameraZ;
+            _minimapCameraYaw = frame.CameraYawRadians;
             BuildMinimap(frame);
             BuildKillFeed(frame);
             foreach (OverlayTankResponse tank in frame.Tanks)
