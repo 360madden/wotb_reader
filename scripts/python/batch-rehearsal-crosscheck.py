@@ -130,19 +130,21 @@ def compare(connection: sqlite3.Connection, dumps_path: str, tolerance: float) -
                 skipped += 1
                 print(f"    entity {entity_id}: not Resolved ({status}) - skipped")
                 continue
-            memory = _position_from_dump(entity.get("regionBase64") or "")
-            if memory is None:
-                skipped += 1
-                misses.append(f"t={label:g}s entity {entity_id}: unreadable dump")
-                print(f"    entity {entity_id}: dump too short/unreadable - FAIL")
-                continue
             decoded = _nearest_sample(connection, session_id, entity_id, label)
             if decoded is None:
                 skipped += 1
                 print(f"    entity {entity_id}: no decoded sample near t={label:g}s - skipped")
                 continue
-            delta = math.dist(memory, decoded)
+            # A Resolved entity WITH decoded ground truth always counts
+            # against the verdict: an unreadable dump (truncated/short
+            # region) is an automatic MISS, never a silent skip.
             compared += 1
+            memory = _position_from_dump(entity.get("regionBase64") or "")
+            if memory is None:
+                misses.append(f"t={label:g}s entity {entity_id}: unreadable dump")
+                print(f"    entity {entity_id}: dump too short/unreadable - FAIL")
+                continue
+            delta = math.dist(memory, decoded)
             ok = delta <= tolerance
             matched += 1 if ok else 0
             if not ok:
@@ -166,8 +168,74 @@ def compare(connection: sqlite3.Connection, dumps_path: str, tolerance: float) -
     return 0
 
 
+def _self_test_compare() -> int:
+    """Verdict-level check on an in-memory DB (no repo files touched)."""
+    import tempfile
+
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    connection.executescript(
+        """
+        CREATE TABLE battle_sessions (id TEXT PRIMARY KEY, duration_ticks INTEGER);
+        CREATE TABLE position_samples (
+            id TEXT PRIMARY KEY, battle_session_id TEXT NOT NULL,
+            entity_id INTEGER, replay_time_ticks INTEGER NOT NULL,
+            raw_x REAL NOT NULL, raw_y REAL NOT NULL, raw_z REAL NOT NULL);
+        INSERT INTO battle_sessions (id, duration_ticks) VALUES ('s', 100000000);
+        INSERT INTO position_samples VALUES
+            ('a', 's', 1, 50000000, 10.0, 20.0, 30.0),
+            ('b', 's', 2, 50000000, 40.0, 50.0, 60.0);
+        """
+    )
+
+    def payload(x: float, y: float, z: float) -> str:
+        blob = bytearray(64)
+        struct.pack_into("<fff", blob, POSITION_OFFSET, x, y, z)
+        return base64.b64encode(bytes(blob)).decode("ascii")
+
+    def dumps_file(entities: list) -> str:
+        path = Path(tempfile.gettempdir()) / "batch-rehearsal-self-test.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "schema": DUMP_SCHEMA,
+                    "sessionId": "s",
+                    "regionAnchor": "ring-record",
+                    "regionLength": 64,
+                    "times": [
+                        {
+                            "replayTimeSeconds": 5.0,
+                            "sameDecodedClockProven": True,
+                            "entities": entities,
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return str(path)
+
+    # Matching dumps -> PASS.
+    clean = dumps_file(
+        [
+            {"entityId": 1, "status": "Resolved", "regionBase64": payload(10.0, 20.0, 30.0)},
+            {"entityId": 2, "status": "Resolved", "regionBase64": payload(40.0, 50.0, 60.0)},
+        ]
+    )
+    assert compare(connection, clean, 2.0) == 0
+    # A Resolved entity with ground truth but a truncated dump must FAIL the
+    # verdict (regression-pins the unreadable-dump bug class).
+    truncated = dumps_file(
+        [
+            {"entityId": 1, "status": "Resolved", "regionBase64": base64.b64encode(b"1234").decode("ascii")},
+        ]
+    )
+    assert compare(connection, truncated, 2.0) == 1
+    return 0
+
+
 def self_test() -> int:
-    """Synthetic fixture test of the pure decode + tolerance logic (no DB)."""
+    """Synthetic fixture tests of the decode + tolerance + verdict logic."""
     payload = bytearray(0x38)
     struct.pack_into("<fff", payload, POSITION_OFFSET, 1.0, 2.0, 3.0)
     encoded = base64.b64encode(bytes(payload)).decode("ascii")
@@ -176,6 +244,7 @@ def self_test() -> int:
     assert _position_from_dump(base64.b64encode(b"1234").decode("ascii")) is None
     # Tolerance math sanity.
     assert math.dist((0.0, 0.0, 0.0), (3.0, 4.0, 0.0)) == 5.0
+    assert _self_test_compare() == 0
     print("batch-rehearsal-crosscheck: self-test PASS")
     return 0
 

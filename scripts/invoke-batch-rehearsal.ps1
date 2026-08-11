@@ -240,12 +240,21 @@ if (-not $DumpsExist) {
                 "clock (sameDecodedClockProven=false) - the batch cannot be " +
                 "clock-labeled safely." -f $t)
         }
+        if ($null -eq $response.replayTimeSeconds) {
+            throw ("entity-regions at {0:0.0}s returned no replay-time label " +
+                "despite the clock attestation - refusing to write an " +
+                "unlabeled dump." -f $t)
+        }
         $label = [double]$response.replayTimeSeconds
-        if ($null -eq $response.regions -or $response.regions.Count -lt 1) {
+        # Force an array: Invoke-RestMethod (PS 5.1 ConvertFrom-Json) collapses
+        # single-element JSON arrays to scalars, which would serialize back as
+        # an OBJECT and break the cross-check's iteration.
+        $regions = @($response.regions)
+        if ($regions.Count -lt 1) {
             throw ("entity-regions at {0:0.0}s returned no regions." -f $t)
         }
         $resolvedCount = 0
-        foreach ($region in $response.regions) {
+        foreach ($region in $regions) {
             if ($region.status -eq 'Resolved') { $resolvedCount++ }
         }
         if ($resolvedCount -lt 1) {
@@ -259,7 +268,7 @@ if (-not $DumpsExist) {
         $DumpTimesOut.Add(@{
             replayTimeSeconds       = $label
             sameDecodedClockProven  = [bool]$response.sameDecodedClockProven
-            entities                = $response.regions
+            entities                = $regions
         })
     }
 
