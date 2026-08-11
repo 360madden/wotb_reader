@@ -195,8 +195,9 @@ live / AvatarControllerReplay replay, created in
 ReplayCameraController) → `cameraState = [camera+0x28]` (yaw/pitch
 `+0x58/+0x5C`, view basis `+0xAC..0xC4`, position `+0x11C/+0x120/+0x124`).
 BattleResources is embedded in the avatar controller hierarchy; the
-replay variant is reachable through the same member offsets. Handoff:
-`docs/operations/handoffs/2026-08-11-camera-ownership-root.md`.
+replay variant (`AvatarControllerReplay`, vftable `0x3277e8c`, created at
+`[replayCtrl+0x158]`) is reachable through the same member offsets.
+Handoff: `docs/operations/handoffs/2026-08-11-camera-ownership-root.md`.
 
 ### Phase 2 — The live seam + first live sessions (serialized)
 

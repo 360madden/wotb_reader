@@ -45,6 +45,16 @@ signature-scanning. (The SessionController instance itself still needs a
 process-global anchor or a targeted scan in the offline session — the
 chain *after* it is now fixed.)
 
+### Replay variant resolved
+
+`AvatarControllerReplay` RTTI name abs `0x427e184`, main vftable abs
+`0x3677e8c` (COL `0x3959438`; secondary tables `0x3677edc`/`0x3677f34`).
+Ctor `FUN_016369f0` (writes `0x3677e8c` at `[this]`), called from
+`FUN_013d59a0` (a replay-screen controller vftable slot at `0xfc5123`),
+which stores the result refcounted at `[replayCtrl + 0x158]`. The same
+`+0x154` BattleResources member and `+0x2C`/`+0x28` camera chain apply —
+replay mode reaches the W2S anchor through the same member offsets.
+
 ## Evidence trail
 
 - `BattleResources::Load` callers: `0x1214673` (BattleLoadingController::
@@ -56,6 +66,9 @@ chain *after* it is now fixed.)
 - AvatarControllerBattle RTTI: name abs `0x427e15c`, main vftable abs
   `0x3677da4` (COL `0x3959368`); ctor refs in .text at `0x1236957` and
   `0x123dcf2` (both write vftable `0x3677da4`).
+- AvatarControllerReplay RTTI: name abs `0x427e184`, main vftable abs
+  `0x3677e8c` (COL `0x3959438`); ctor `FUN_016369f0`, creator
+  `FUN_013d59a0` stores at `[replayCtrl+0x158]`.
 - Avatar creation site: `SessionController::OnAvatarBecomePlayer`
   `FUN_012afab0` (string at 0x12afab0 body; alloc 0x1a8, ctor
   `FUN_016368d0`) stores at `[param_1 + 0x11C]` (refcounted).
