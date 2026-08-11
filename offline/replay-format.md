@@ -165,6 +165,7 @@ Known packet types (decoded by `WotbReplayDecoder`):
 | 31 | 6 777 | 4-byte float, **combat-only** (first at t≈71 s = battle start, last at t≈275 s) | unknown; NOT distance-to-nearest-enemy (tested, no correlation); value toggles between ~27.009 (repeated default) and 6.7–8.8 minima; ~30 Hz during combat |
 | 35 | 2 814 | 1 byte, exactly one per 0.1 s tick, values 0x5f→0xbc→0x19→… | **mod-256 tick counter** (wraps every 25.6 s; 10 Hz) |
 | 39 | 16 984 | 28 bytes = 7 float32, **per-frame (~60 Hz)** | **scene point, semantics UNRESOLVED**: smooth drift, matches NO entity position, team centroid, or bbox anchor; NOT a third-person camera (offset 30→507 m, ~38 m below the tank); settles on fixed anchors (spawn corner t≈1.7–68 s, victory point t≈245–281 s on Oasis). Static pass `FindScenePointWriter` (2026-08-10): its bit-exact constant -0.0011081547 (f32 0xBA913F80) has **0 hits** — computed at runtime, writer not locatable by that anchor; Rust oracle also reports type 39 unknown. Not zone geometry; camera/VP-track candidate remains open (see `record-diffing-groundwork.md` triage). |
+| 10 | 60 103 | 49 B = entity-id + space + vehicle + x/y/z + per-entity constant + yaw/pitch/roll + flags byte | **position stream** (decoder `TryReadPosition`; 0.1 s cadence per entity; rotation tail verified 2026-08-10). **Destroy marker**: the same 49 B with the per-entity constant (payload +24..+35) zeroed AND flags byte (+48) cleared — fires at the death instant (position freezes), first marker per roster entity = `Destroyed` (2026-08-10) |
 | 32 | 258 | entity-id + event flag + payload, 3 layouts (11 B, 25–27 B, 14 B) | **damage/impact event mirror (2026-08-10)**: fires at the same instants as the type-8 direct-damage events for the same victim (81/85 alignment on Oasis, 107/120 on Dead Rail — every miss is an amt=0/no-damage event) and embeds the SAME 6-byte shell signature as its matching type-8 packet (e.g. `a6 a5 e0 a2 a8 b1` at t=69.13, `ff e0 b9 d7 d8 98` at t=69.62). Flag prefixes distinguish the event (`01 11`/`01 12` = damage-with-payload, `01 02`/`01 03` = short companion, `00 10` = state snapshot at spawn and at the end of the victim's event chain); shell/effect entities (0x30xxxx range) carry `01 05`/`01 06`. NOT spotting: no reveal/visibility data in any payload. |
 | 33 | 52 | 8 B = entity-id + 4 zero bytes | per-entity stream-open marker (1× per entity, at spawn t≈0.11) |
 | 5 | 52 | 48–173 B = entity-id + space-id + vehicle-id + x/y/z + tail | per-entity full-state broadcast at spawn (4 per tank); x/y/z float triples match the type-10 coordinates at the same instant |
@@ -188,16 +189,23 @@ finding (2026-08-10): spotted-reproduction is not data-possible from replays;
 replay mode renders god-view. Type 8 also carries large protobuf blobs
 (avatar URLs, player skins) — the `updateArena2` roster source.
 
-**Destroyed-events gap (2026-08-10):** the decoder emits NO
-`CanonicalEventKind.Destroyed` events from any current packet type (type 14
-is only BattleEnded; type 4's 4-byte entity markers do not align with the
-destroy timeline; the amt=0 direct-damage events at the end of a victim's
-chain are the last *damage* events, not a destroy signal). The HUD's
-`Alive`/death-pip path is therefore exercised only by synthetic fixtures
-today. Locating the destroy signal (likely an entity-method subtype or the
-type-7 status stream) is an open offline discovery target. Unknown packets
-remain `RawRecord`s with the `UnknownRecordsPreserved` capability — unknown
-stays unknown.
+**Destroy signal FOUND (2026-08-10):** the destroy marker is a **type-10
+position packet with the per-entity constant (payload +24..+35) zeroed AND
+the status flags byte (+48) cleared** — the same 49-byte layout as a normal
+sample, with the constant field zeroed at the death instant. Verified on
+both 11.19 replays: 15/15 destroyed tanks have exactly one first-marker and
+0/13 survivors have any; the position stream freezes at the marker (the
+wreck then re-broadcasts the frozen position, and can re-carry the marker
+byte pattern — only the FIRST marker per entity is a death). The decoder
+now emits `CanonicalEventKind.Destroyed` for the first marker per roster
+entity (non-roster viewpoint/debris entities are ignored even though they
+can carry the byte pattern). The HUD's `Alive` flag and death pips now run
+on real replays. Ruled out en route: type 4's entity markers (fire
+mid-battle for entities that keep streaming), amt=0 direct-damage events
+(last *damage* events, not a kill), and the type-7 status stream (states
+toggle constantly, no transition at death times). Unknown packets remain
+`RawRecord`s with the `UnknownRecordsPreserved` capability — unknown stays
+unknown.
 
 Decoding is **evidence-first**: every decoded fact carries an
 `EvidenceReference` (artifact, entry, offset, length, SHA-256) and a

@@ -223,6 +223,7 @@ docs/operations/handoffs/2026-08-10-l2-facing-driver-and-deadband-fix.md
 docs/operations/handoffs/2026-08-10-l3-damage-dealt-driver-verified.md
 docs/operations/handoffs/2026-08-10-o3-beacons-parallel-guardrails.md
 docs/operations/handoffs/2026-08-10-o4-evidence-o5-heading-delta.md
+docs/operations/handoffs/2026-08-10-packet-inventory-type32-v3-closure.md
 docs/operations/handoffs/2026-08-10-phase0-foundations-complete.md
 docs/operations/handoffs/2026-08-10-replay-overlay-o1-projection.md
 docs/operations/handoffs/2026-08-10-replaytime-live-plan-prestaged.md

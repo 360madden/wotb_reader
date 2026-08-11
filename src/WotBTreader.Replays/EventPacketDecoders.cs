@@ -29,6 +29,26 @@ internal sealed record BasePlayerCreateObservation(
     uint ArenaTypeId,
     BinaryEvidence Evidence);
 
+/// <summary>A decoded type-10 position packet.</summary>
+/// <param name="Sequence">Packet ordinal in the event stream.</param>
+/// <param name="ReplayTime">Replay clock time of the sample.</param>
+/// <param name="EntityId">World entity carrying the position.</param>
+/// <param name="SpaceId">Coordinate space id.</param>
+/// <param name="VehicleId">Vehicle id.</param>
+/// <param name="X">World x coordinate (replay-raw space).</param>
+/// <param name="Y">World y coordinate (replay-raw space).</param>
+/// <param name="Z">World z coordinate (replay-raw space).</param>
+/// <param name="Yaw">Vehicle yaw (radians).</param>
+/// <param name="Pitch">Vehicle pitch (radians).</param>
+/// <param name="Roll">Vehicle roll (radians).</param>
+/// <param name="IsDestroyMarker">True when the packet is a destroy marker:
+/// the per-entity constant (payload +24..+35) is zeroed and the status
+/// flags byte (+48) is cleared. Verified 2026-08-10 on both 11.19 replays:
+/// the first marker per roster entity fires at the instant the position
+/// stream freezes (the death position), every destroyed tank has exactly
+/// one first-marker, and no survivor has any. Normal packets carry a
+/// non-zero constant and flags=1.</param>
+/// <param name="Evidence">Binary evidence slice backing the packet.</param>
 internal sealed record PositionObservation(
     long Sequence,
     TimeSpan ReplayTime,
@@ -41,6 +61,7 @@ internal sealed record PositionObservation(
     double Yaw,
     double Pitch,
     double Roll,
+    bool IsDestroyMarker,
     BinaryEvidence Evidence);
 
 internal sealed record DamageObservation(
@@ -298,6 +319,24 @@ internal static class EventPacketDecoders
             return false;
         }
 
+        // Destroy marker: the per-entity constant (payload +24..+35) is
+        // zeroed and the status flags byte (+48) is cleared. Verified
+        // 2026-08-10 on both 11.19 replays — the first marker per roster
+        // entity fires at the death instant (position stream freezes) and
+        // survivors never carry one. See the record docs for details.
+        bool isDestroyMarker = payload[48] == 0;
+        if (isDestroyMarker)
+        {
+            for (int i = 24; i < 36; i++)
+            {
+                if (payload[i] != 0)
+                {
+                    isDestroyMarker = false;
+                    break;
+                }
+            }
+        }
+
         position = new PositionObservation(
             packet.Ordinal,
             TimeSpan.FromSeconds(packet.ClockSeconds),
@@ -310,6 +349,7 @@ internal static class EventPacketDecoders
             yaw,
             pitch,
             roll,
+            isDestroyMarker,
             EvidenceForPacket(packet));
         return true;
     }

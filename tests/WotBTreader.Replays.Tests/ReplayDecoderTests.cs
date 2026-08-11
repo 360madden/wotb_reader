@@ -202,6 +202,40 @@ public sealed class ReplayDecoderTests
     }
 
     [TestMethod]
+    public async Task DestroyMarkerEmitsSingleDestroyedEventPerRosterEntity()
+    {
+        ReplayInput input = SyntheticReplayFactory.CreateInput(
+            SyntheticReplayFactory.CreateReplay(includeDestroyMarker: true));
+        WotbReplayProbe probe = new();
+        var probeResult = await probe.ProbeAsync(
+            input,
+            DecoderLimits.Default,
+            CancellationToken.None);
+        Assert.IsTrue(probeResult.IsSuccess, probeResult.Error?.Message);
+
+        var decodeResult = await new WotbReplayDecoder().DecodeAsync(
+            new ReplayDecodeRequest(
+                input,
+                DecodeRunId.New(),
+                probeResult.Value!,
+                DecoderLimits.Default),
+            CancellationToken.None);
+        Assert.IsTrue(decodeResult.IsSuccess, decodeResult.Error?.Message);
+
+        CanonicalEvent[] destroyed = decodeResult.Value!.Events
+            .Where(ev => ev.Kind == CanonicalEventKind.Destroyed)
+            .ToArray();
+        // Two markers fire for entity 100 (t=3.0 and t=3.1) but only the
+        // first emits a Destroyed event; the marker for non-roster entity
+        // 999 is ignored entirely.
+        Assert.HasCount(1, destroyed);
+        Assert.AreEqual(100L, destroyed[0].EntityId);
+        Assert.AreEqual(TimeSpan.FromSeconds(3), destroyed[0].ReplayTime);
+        Assert.IsNotNull(destroyed[0].ParticipantId);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(destroyed[0].ValuesJson));
+    }
+
+    [TestMethod]
     public async Task AccountlessParticipantRetainsUnknownBotStatus()
     {
         ReplayInput input = SyntheticReplayFactory.CreateInput(

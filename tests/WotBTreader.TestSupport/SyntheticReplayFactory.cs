@@ -20,7 +20,8 @@ public static class SyntheticReplayFactory
         string version = "11.18.0",
         bool insertMalformedGap = false,
         bool includeEndSentinel = true,
-        ulong? basePlayerCreateArenaId = null)
+        ulong? basePlayerCreateArenaId = null,
+        bool includeDestroyMarker = false)
     {
         byte[] metadata = JsonSerializer.SerializeToUtf8Bytes(new
         {
@@ -43,7 +44,8 @@ public static class SyntheticReplayFactory
         byte[] eventStream = CreateEventStream(
             insertMalformedGap,
             includeEndSentinel,
-            basePlayerCreateArenaId);
+            basePlayerCreateArenaId,
+            includeDestroyMarker);
         return CreateArchive(
             (ReplayFormatConstants.MetadataEntry, metadata),
             (ReplayFormatConstants.BattleResultsEntry, battleResults),
@@ -105,7 +107,8 @@ public static class SyntheticReplayFactory
     public static byte[] CreateEventStream(
         bool insertMalformedGap,
         bool includeEndSentinel,
-        ulong? basePlayerCreateArenaId = null)
+        ulong? basePlayerCreateArenaId = null,
+        bool includeDestroyMarker = false)
     {
         using MemoryStream output = new();
         WriteUInt32(output, ReplayFormatConstants.EventStreamMagic);
@@ -123,6 +126,17 @@ public static class SyntheticReplayFactory
         }
 
         WritePacket(output, 10, 2.0f, CreatePositionPayload(200, -10, 5, -20));
+        if (includeDestroyMarker)
+        {
+            // Destroy marker for roster entity 100 at t=3.0, plus a second
+            // marker at t=3.1 for the same entity (wreck re-broadcast, must
+            // not emit a second Destroyed event), plus a marker for a
+            // non-roster entity (999) that must be ignored.
+            WritePacket(output, 10, 3.0f, CreatePositionPayload(100, 10, 20, 30, destroyMarker: true));
+            WritePacket(output, 10, 3.1f, CreatePositionPayload(100, 10, 20, 30, destroyMarker: true));
+            WritePacket(output, 10, 3.2f, CreatePositionPayload(999, 1, 2, 3, destroyMarker: true));
+        }
+
         WritePacket(output, 14, 120.0f, []);
         if (includeEndSentinel)
         {
@@ -263,7 +277,8 @@ public static class SyntheticReplayFactory
         float z,
         float yaw = 0f,
         float pitch = 0f,
-        float roll = 0f)
+        float roll = 0f,
+        bool destroyMarker = false)
     {
         byte[] payload = new byte[49];
         BinaryPrimitives.WriteInt32LittleEndian(payload, entityId);
@@ -276,6 +291,22 @@ public static class SyntheticReplayFactory
         WriteSingle(payload, 36, yaw);
         WriteSingle(payload, 40, pitch);
         WriteSingle(payload, 44, roll);
+        if (destroyMarker)
+        {
+            // Destroy marker: per-entity constant (payload +24..+35) zeroed
+            // and status flags byte (+48) cleared. The byte[] initializes to
+            // zeros, so nothing more to write.
+            return payload;
+        }
+
+        // Normal packets carry a non-zero per-entity constant and flags=1.
+        // (The decoder only gates on the destroy-marker predicate; the exact
+        // constant is a stand-in for the real per-entity value.) The constant
+        // occupies exactly payload +24..+35 so the rotation tail at +36 stays
+        // untouched.
+        BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(24), entityId);
+        BinaryPrimitives.WriteInt32LittleEndian(payload.AsSpan(32), entityId);
+        payload[48] = 1;
         return payload;
     }
 

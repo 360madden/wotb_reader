@@ -375,6 +375,7 @@ public sealed class WotbReplayDecoder : IReplayDecoder
                 participantProjection,
                 request,
                 positionSamples,
+                positions,
                 damageEvents,
                 battleEndPackets);
 
@@ -786,6 +787,7 @@ public sealed class WotbReplayDecoder : IReplayDecoder
         ParticipantProjection participantProjection,
         ReplayDecodeRequest request,
         IReadOnlyList<PositionSample> positions,
+        IReadOnlyList<PositionObservation> positionObservations,
         IReadOnlyList<DamageObservation> damageEvents,
         IReadOnlyList<EventPacket> battleEndPackets)
     {
@@ -846,6 +848,41 @@ public sealed class WotbReplayDecoder : IReplayDecoder
                 }),
                 EvidenceConfidence.Exact,
                 ToEvidence(request, damage.Evidence)));
+        }
+
+        // Destroyed: the first destroy-marker position packet per roster
+        // entity. The marker fires at the death instant (verified on both
+        // 11.19 replays: 15/15 destroyed tanks, 0/13 survivors). Wrecks can
+        // re-broadcast the marker, so only the first occurrence per entity
+        // emits an event; non-roster entities (viewpoint, debris) are
+        // ignored even though they can carry the marker byte pattern.
+        HashSet<long> destroyedEntities = [];
+        foreach (PositionObservation marker in positionObservations
+                     .Where(observation => observation.IsDestroyMarker)
+                     .OrderBy(observation => observation.Sequence))
+        {
+            if (!destroyedEntities.Add(marker.EntityId))
+            {
+                continue;
+            }
+
+            participantProjection.ParticipantByEntity.TryGetValue(
+                marker.EntityId,
+                out ParticipantId destroyedParticipant);
+            if (destroyedParticipant == default)
+            {
+                continue;
+            }
+
+            drafts.Add(new EventDraft(
+                marker.ReplayTime,
+                marker.Sequence,
+                CanonicalEventKind.Destroyed,
+                destroyedParticipant,
+                marker.EntityId,
+                "{}",
+                EvidenceConfidence.Exact,
+                ToEvidence(request, marker.Evidence)));
         }
 
         foreach (EventPacket packet in battleEndPackets)
