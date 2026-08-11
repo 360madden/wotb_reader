@@ -177,6 +177,12 @@
                                     Height="18" VerticalAlignment="Center" Cursor="Hand"/>
                         </StackPanel>
 
+                        <!-- Live HUD mode: the gated composed live frame (LiveFrameSource seam) -->
+                        <CheckBox Content="Live" IsChecked="{Binding IsLiveMode, Mode=TwoWay}"
+                                  Foreground="#AAFFAA" FontSize="9" VerticalAlignment="Center"
+                                  Margin="8,0,0,0"
+                                  ToolTip="Render the gated live frame (memory reads: roster -&gt; batch -&gt; camera) instead of the decoded replay projection"/>
+
                         <!-- Primary action: Refresh -->
                         <Button Content="↻" ToolTip="Refresh sessions" Style="{StaticResource ToolbarButton}"
                                 Command="{Binding RefreshCommand}" Width="24" Height="24" Margin="6,0,0,0"/>

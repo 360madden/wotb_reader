@@ -151,8 +151,15 @@ handler — both sources serialize identically). HP is the DTO's honest
 pips/kills/scoreboard absent; non-resolved frames fail closed with 409 and
 a failed read with 503 (the HUD keeps last-good-frame).
 `TreaderApiClient.GetLiveFrameAsync` added. 12 new tests (8 projector, 4
-endpoint). Remaining: the overlay's live-mode UI toggle (design decision)
-and the live-ids → decoded-name join once X2b proves the id mapping.
+endpoint). The overlay's live-mode UI toggle is DONE too: an `IsLiveMode`
+checkbox in the HUD toolbar flips `RefreshOverlayFrameAsync` between the
+replay fetch and `GetLiveFrameAsync`; the render path is unchanged, the
+kill feed / scoreboard stay empty in live mode (decode-projection
+features), and a non-resolved/failed live read keeps last-good.
+Remaining: the live-ids → decoded-name join once X2b proves the id
+mapping (also the "own nameplate" refinement — live mode renders the
+viewpoint tank at its ~23.57 m third-person camera offset, so the
+self-filter needs the id join, not distance).
 
 ## Files touched
 

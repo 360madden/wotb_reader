@@ -150,9 +150,15 @@ open question, not silently decided.
    and `TreaderApiClient` gained `GetLiveFrameAsync`. HP renders as the
    DTO's honest "unknown" (empty bar, no readout) until L1;
    pips/kills/scoreboard absent. 12 new tests (8 projector, 4 endpoint).
-   Remaining: the overlay's live-mode UI switch (a ViewModel mode toggle —
-   design decision, not code) and joining live ids to decoded roster names
-   once X2b proves the id mapping.
+   The overlay's live-mode UI switch is DONE too: an `IsLiveMode` toggle
+   (checkbox in the HUD toolbar) flips `RefreshOverlayFrameAsync` between
+   `GetOverlayFrameAsync` and `GetLiveFrameAsync`; the render path is
+   unchanged, the kill feed / scoreboard stay empty (decode-projection
+   features), and a non-resolved/failed live read keeps last-good.
+   Remaining: joining live ids to decoded roster names once X2b proves the
+   id mapping (also the "own nameplate" refinement — live mode renders the
+   viewpoint tank at its ~23.57 m third-person camera offset, so the
+   self-filter needs the id join, not distance).
 4. **Measure the frame window** on the approved session; record it as the
    loop's budget (feeds item 7).
 5. Then: L1 wiring (`hp` becomes real), the live overlay render pass, and

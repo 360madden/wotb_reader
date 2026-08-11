@@ -82,6 +82,7 @@ public class MainViewModel : INotifyPropertyChanged
     private double? _minimapCameraX;
     private double? _minimapCameraZ;
     private double? _minimapCameraYaw;
+    private bool _isLiveMode;
 
     public MainViewModel()
         : this(new RendezvousLocator(), static (baseUri, capability) => new TreaderApiClient(baseUri, capability: capability), null)
@@ -480,6 +481,27 @@ public class MainViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
+    /// Live HUD mode: when true, the frame source switches from the decoded
+    /// replay projection to the gated composed live frame
+    /// (<c>GET /api/v1/live/frame</c> — the LiveFrameSource seam). The render
+    /// path is unchanged (same <see cref="OverlayFrameResponse"/> shape);
+    /// hp is honestly unknown (empty bar) until the L1 live session lands,
+    /// and the kill feed / scoreboard stay empty (decode-projection
+    /// features). A non-resolved or failed live read returns null and the
+    /// previous frame stays on screen.
+    /// </summary>
+    public bool IsLiveMode
+    {
+        get => _isLiveMode;
+        set
+        {
+            if (value == _isLiveMode) return;
+            _isLiveMode = value;
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>
     /// Fetches the overlay frame at the current replay time and refreshes
     /// <see cref="Nameplates"/>. Called by the playback tick; a stale in-flight
     /// request is cancelled so a slow response can never clobber a newer one.
@@ -492,7 +514,9 @@ public class MainViewModel : INotifyPropertyChanged
     {
         TreaderApiClient? client = _client;
         SessionRow? session = _selectedSession;
-        if (client is null || session is null)
+        // Live mode needs no selected session (the frame comes from the gated
+        // memory surface, not a decoded replay projection).
+        if (client is null || (!IsLiveMode && session is null))
         {
             return;
         }
@@ -504,13 +528,19 @@ public class MainViewModel : INotifyPropertyChanged
         _frameLoadCts = cts;
         try
         {
-            OverlayFrameResponse? frame = await client.GetOverlayFrameAsync(
-                session.BattleSessionId,
-                _currentTime.TotalSeconds,
-                _hudFovDegrees,
-                viewportWidth,
-                viewportHeight,
-                cts.Token).ConfigureAwait(true);
+            OverlayFrameResponse? frame = IsLiveMode
+                ? await client.GetLiveFrameAsync(
+                    _hudFovDegrees,
+                    viewportWidth,
+                    viewportHeight,
+                    cts.Token).ConfigureAwait(true)
+                : await client.GetOverlayFrameAsync(
+                    session!.BattleSessionId,
+                    _currentTime.TotalSeconds,
+                    _hudFovDegrees,
+                    viewportWidth,
+                    viewportHeight,
+                    cts.Token).ConfigureAwait(true);
             if (generation != _frameLoadGeneration || frame is null)
             {
                 return;
@@ -524,8 +554,17 @@ public class MainViewModel : INotifyPropertyChanged
             _minimapBeacons.Clear();
             _scoreboard.Clear();
             BuildMinimap(frame);
-            BuildKillFeed(frame);
-            BuildScoreboard(frame);
+            if (IsLiveMode)
+            {
+                // Live mode honestly has no decode feed: the kill feed and
+                // scoreboard are replay-projection features. Keep them empty.
+                _killFeed.Clear();
+            }
+            else
+            {
+                BuildKillFeed(frame);
+                BuildScoreboard(frame);
+            }
             // Far-to-near (depth descending): WPF draws later children on top,
             // so nearer tanks' nameplates win when two overlap. Unknown depth
             // sorts last and is never hidden.
