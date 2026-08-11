@@ -256,6 +256,7 @@ docs/operations/handoffs/2026-08-11-cam009-fov-config-found.md
 docs/operations/handoffs/2026-08-11-camera-family-hierarchy-factory.md
 docs/operations/handoffs/2026-08-11-camera-family-rtti.md
 docs/operations/handoffs/2026-08-11-camera-ownership-root.md
+docs/operations/handoffs/2026-08-11-cli-frame-png-preview.md
 docs/operations/handoffs/2026-08-11-damage-ledger-subtype1.md
 docs/operations/handoffs/2026-08-11-entity-base-record-map.md
 docs/operations/handoffs/2026-08-11-exact-overlay-hp-wired.md
@@ -483,6 +484,9 @@ src/WotBTreader.Host.Cli/Cli/CliInvocation.cs
 src/WotBTreader.Host.Cli/Cli/CliOutput.cs
 src/WotBTreader.Host.Cli/Cli/HpDiffSnapshotsFile.cs
 src/WotBTreader.Host.Cli/Program.cs
+src/WotBTreader.Host.Cli/Rendering/BitmapFont5x7.cs
+src/WotBTreader.Host.Cli/Rendering/FrameRasterizer.cs
+src/WotBTreader.Host.Cli/Rendering/PngEncoder.cs
 src/WotBTreader.Host.Cli/WotBTreader.Host.Cli.csproj
 src/WotBTreader.Host.Cli/packages.lock.json
 src/WotBTreader.Host.Web/Components/App.razor
@@ -723,6 +727,8 @@ tests/WotBTreader.Host.Cli.Tests/CliOverlayFrameTests.cs
 tests/WotBTreader.Host.Cli.Tests/CliReplayIngestionTests.cs
 tests/WotBTreader.Host.Cli.Tests/HpDiffSnapshotsFileTests.cs
 tests/WotBTreader.Host.Cli.Tests/MSTestSettings.cs
+tests/WotBTreader.Host.Cli.Tests/Rendering/FrameRasterizerTests.cs
+tests/WotBTreader.Host.Cli.Tests/Rendering/PngEncoderTests.cs
 tests/WotBTreader.Host.Cli.Tests/TemporaryDataRoot.cs
 tests/WotBTreader.Host.Cli.Tests/WotBTreader.Host.Cli.Tests.csproj
 tests/WotBTreader.Host.Cli.Tests/packages.lock.json

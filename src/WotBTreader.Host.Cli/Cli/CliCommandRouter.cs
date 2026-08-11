@@ -9,6 +9,7 @@ using WotBTreader.Application.Storage;
 using WotBTreader.Core;
 using WotBTreader.Core.Discovery;
 using WotBTreader.Core.Overlay;
+using WotBTreader.Host.Cli.Rendering;
 
 namespace WotBTreader.Host.Cli.Cli;
 
@@ -475,7 +476,8 @@ public sealed class CliCommandRouter
     /// projected to viewport pixels via <see cref="WorldToScreen"/>. Pure
     /// offline preview of the replay-overlay data seam — no UI, no process
     /// access. Options: --fov (vertical degrees, default 90), --width,
-    /// --height (viewport pixels, default 1920x1080).
+    /// --height (viewport pixels, default 1920x1080), --png &lt;path&gt;
+    /// (also write a schematic PNG preview of the projected frame).
     /// </summary>
     private async ValueTask<CliExecution> OverlayFrameAsync(
         CliInvocation invocation,
@@ -534,6 +536,20 @@ public sealed class CliCommandRouter
                 correlationId);
         }
 
+        string? pngPath = null;
+        if (invocation.Options.TryGetValue("png", out string? pngText))
+        {
+            if (string.IsNullOrWhiteSpace(pngText))
+            {
+                return Invalid(
+                    "cli.overlay-frame.png",
+                    "--png requires a destination file path.",
+                    correlationId);
+            }
+
+            pngPath = Path.GetFullPath(pngText);
+        }
+
         OperationResult<OverlayFrame> frameResult = await _overlayFrames.GetFrameAsync(
             new BattleSessionId(sessionGuid),
             TimeSpan.FromSeconds(replayTimeSeconds),
@@ -551,6 +567,23 @@ public sealed class CliCommandRouter
         OverlayFrameProjection projection = OverlayFrameProjector.Project(
             frame, fovRadians, viewportWidth, viewportHeight, beacons);
 
+        if (pngPath is not null)
+        {
+            byte[] rgba = FrameRasterizer.Render(projection, (int)viewportWidth, (int)viewportHeight);
+            byte[] png = PngEncoder.Encode((int)viewportWidth, (int)viewportHeight, rgba);
+            try
+            {
+                await File.WriteAllBytesAsync(pngPath, png, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                return Invalid(
+                    "cli.overlay-frame.png_write",
+                    $"--png could not write {pngPath}: {exception.Message}",
+                    correlationId);
+            }
+        }
+
         object data = new
         {
             command = "overlay-frame",
@@ -559,6 +592,7 @@ public sealed class CliCommandRouter
             fovDegrees,
             viewportWidth,
             viewportHeight,
+            pngPath,
             camera = new
             {
                 x = projection.CameraX,

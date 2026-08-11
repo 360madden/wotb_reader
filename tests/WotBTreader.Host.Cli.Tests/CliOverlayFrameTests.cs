@@ -81,6 +81,40 @@ public sealed class CliOverlayFrameTests
         Assert.AreEqual((int)CliExitCode.InvalidArguments, badTime.ExitCode, badTime.Diagnostic);
     }
 
+    [TestMethod]
+    public async Task OverlayFrame_WithPng_WritesValidPngFile()
+    {
+        using TemporaryDataRoot root = new();
+        await SeedDatabaseAsync(root);
+
+        string pngPath = Path.Combine(root.Path, "frame.png");
+        CliRun run = await RunAsync(root, "overlay-frame", "5",
+            "--session", SessionId.ToString("D"),
+            "--png", pngPath);
+
+        Assert.AreEqual(0, run.ExitCode, run.Diagnostic);
+        Assert.IsTrue(File.Exists(pngPath), "--png should write the preview file.");
+        byte[] png = await File.ReadAllBytesAsync(pngPath, TestContext.CancellationToken);
+        CollectionAssert.AreEqual(
+            new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A },
+            png.Take(8).ToArray());
+        Assert.IsGreaterThan(40, png.Length, "PNG should contain more than the signature.");
+        Assert.AreEqual(Path.GetFullPath(pngPath),
+            run.Data.GetProperty("pngPath").GetString());
+    }
+
+    [TestMethod]
+    public async Task OverlayFrame_RejectsEmptyPngPath()
+    {
+        using TemporaryDataRoot root = new();
+        await SeedDatabaseAsync(root);
+
+        CliRun run = await RunAsync(root, "overlay-frame", "5",
+            "--session", SessionId.ToString("D"),
+            "--png");
+        Assert.AreEqual((int)CliExitCode.InvalidArguments, run.ExitCode, run.Diagnostic);
+    }
+
     /// <summary>Bootstrap the database (runs migrations), then seed the
     /// session, roster, and position samples directly via SQL.</summary>
     private async Task SeedDatabaseAsync(TemporaryDataRoot root)

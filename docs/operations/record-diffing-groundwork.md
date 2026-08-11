@@ -790,10 +790,15 @@ camera drops the horizon below center (how a real camera renders). Points
 at/behind the camera return null (fail-closed); a camera without rotation
 evidence (pre-migration-5 samples) returns null. 9 unit tests.
 
-The `overlay-frame <time> --session <guid> [--fov --width --height]` CLI
-command renders one frame through `ReplayFrameSource` + `WorldToScreen`:
-viewpoint camera with rotation, every roster tank with name/team/HP/distance
-plus projected screen X/Y/depth (or behind-camera), sorted by distance. Two
+The `overlay-frame <time> --session <guid> [--fov --width --height
+[--png <path>]]` CLI command renders one frame through `ReplayFrameSource`
++ `WorldToScreen`: viewpoint camera with rotation, every roster tank with
+name/team/HP/distance plus projected screen X/Y/depth (or behind-camera),
+sorted by distance. `--png <path>` additionally writes a schematic PNG
+preview (dark viewport + crosshair, beacon diamonds, pips, nameplate
+panels/labels) via a pure-BCL encoder + 5x5 bitmap-font rasterizer
+(`Host.Cli/Rendering`), so the HUD layout can be eyeballed against real
+replays without the game. Two
 real-data findings while previewing Oasis Palms: (1) the position stream
 carries non-participant entities (a duplicate "self" stream that starts at
 the viewpoint's spawn then teleports to origin, plus projectiles/debris) —
