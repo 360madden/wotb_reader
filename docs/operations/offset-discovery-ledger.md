@@ -1,6 +1,25 @@
 # Offset-discovery ledger
 
-**Current status (2026-08-09, OD-RECOVERY-075 + BLK-0026 resolved):** the exact-build module-rooted
+**Current status (2026-08-11):** the G0 publication is APPLIED —
+`playerPositionX/Y/Z` are `Verified` via the module-rooted position-ring
+`chains` (OD-RECOVERY-083/084; `offsets` stay 0 by design, resolver +
+read surface untouched). The CAM-001 camera track is live-verified
+(CAM-004 `camera-state-consistent`, 2026-08-11: GameCamera posA `+0x38`
+is the true world camera, 23.57 m third-person offset; the
+session-controller vftable flip CAM-003 is mitigated by the gate-free
+direct walk). The offline half of the live-HUD workstream is COMPLETE:
+X2 batch surface + X2b roster enumeration + `-EnumerateLive` rehearsal +
+X4 composed live frame (ONE lease → projection seam → overlay toggle →
+read-window measurement), all implemented, tested, and audited; the
+live-id → decoded-name join is designed (gated on X2b's exact-set
+proof). **Next planned session: OD-RECOVERY-086** (composed X2 batch +
+X3 enumeration rehearsal, one command), then L1 HP (OD-RECOVERY-087)
+and L2 facing (OD-RECOVERY-088) — evidence templates pre-staged for all
+three; CAM-001 v7 follows; item 7 (hardware atomicity) stays LAST.
+
+### Prior status snapshot (2026-08-09, OD-RECOVERY-075 + BLK-0026 resolved)
+
+The exact-build module-rooted
 resolver produced the first positive continuous player-position poll. Static
 evidence proved that the eight-entry ring begins at helper `+0x08`, position is
 record `+0x10`, and velocity is record `+0x28`. OD-073 had double-counted the
