@@ -36,6 +36,19 @@ can work at once without conflict; the integration point is the gate.
    Workstreams are file-disjoint; only the seams and the live process are
    serialized.
 
+## Strategy (2026-08-11)
+
+**Replays are the live-mode test harness.** The memory track exists for the
+future live-game overlay (Phase 5, policy-gated); replays are the reliable
+rehearsal ground (deterministic decoded ground truth, repeatable launches, a
+real game process, no policy risk). **The resolver path (module-rooted chain
+resolution) is the canonical read surface** — position is published and
+walkable; the legacy offset-table observation surface is frozen (offsets 0,
+chained fields excluded, emits nulls) and never extended. New discoveries
+publish as chains, not offsets. **Hardware-atomicity proof is ordered LAST**
+in the consolidation checklist. Full plan:
+`docs/operations/resolver-path-consolidation.md`.
+
 ## The compounding map (dependency graph)
 
 | Step | Produces | Consumed by |
@@ -339,3 +352,5 @@ widens (entity base / ring record).
 - Overlay (current 2D surface): `src/WotBTreader.Overlay/`
 - Packet rotation discovery: `offline/replay-format.md`, handoff
   `2026-08-10-facing-yaw-packet-discovery.md`
+- Resolver-path consolidation plan (strategy + ordered checklist, hardware
+  atomicity last): `docs/operations/resolver-path-consolidation.md`

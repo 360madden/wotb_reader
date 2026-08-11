@@ -263,6 +263,7 @@ docs/operations/handoffs/2026-08-11-exact-overlay-hp-wired.md
 docs/operations/handoffs/2026-08-11-minimap-correctness-unification.md
 docs/operations/handoffs/2026-08-11-playerhp-static-chain.md
 docs/operations/handoffs/2026-08-11-replay-clock-write-site-negative.md
+docs/operations/handoffs/2026-08-11-resolver-path-consolidation-plan.md
 docs/operations/handoffs/2026-08-11-transform-record-verified.md
 docs/operations/handoffs/2026-08-11-type5-maxhp-in-replay.md
 docs/operations/handoffs/README.md
@@ -281,6 +282,7 @@ docs/operations/product-roadmap.md
 docs/operations/record-diffing-groundwork.md
 docs/operations/replay-crosscheck.md
 docs/operations/replaytime-live-attempt-plan.md
+docs/operations/resolver-path-consolidation.md
 docs/project-context.md
 docs/superpowers/plans/2026-07-26-dashboard-read-ui.md
 docs/superpowers/specs/2026-08-02-hangar-replays-play.md
