@@ -43,8 +43,24 @@ two real defects, both in the fail-closed path:
   full `scripts/validate.ps1` gate green (936 passed, 3 local opt-in skips,
   0 warnings, 0 errors).
 
+## Round 2 (same session) — L1/L2 session drivers
+
+Applied the same fail-closed audit to the other pre-staged live drivers:
+
+- `invoke-hp-diffing-session.ps1` (L1 HP) and `invoke-facing-session.ps1`
+  (L2 facing) both had the **pre-dedupe count check gap**: the `>= 2` dump
+  check ran BEFORE the strict-increase dedupe, so live replay-clock jitter
+  could collapse the dump set below one change window and the verdict would
+  run on a degenerate file. Fixed: re-check `$Final.Count >= 2` AFTER the
+  dedupe, fail-closed with a retry hint.
+- Both also lacked the batch driver's **null replay-time label guard** (a
+  missing label despite the clock attestation silently cast to 0.0). Added
+  the same throw.
+- Verified: both parse; both QUALIFY on real data and reach the exit-3
+  contract cleanly.
+
 ## Remaining
 
 - Unchanged: the OD-RECOVERY-086 batch rehearsal session (one approved live
   launch) is the next gate; the rehearsal tooling now fails closed exactly
-  where it should.
+  where it should. The L1/L2 drivers carry the same hardening.

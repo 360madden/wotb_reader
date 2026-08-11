@@ -287,6 +287,10 @@ if (-not $OfflineDumpExists) {
             throw ("entity-region at {0}s did not attest the decoded clock " +
                 "(sameDecodedClockProven=false) - the dump cannot be clock-labeled safely." -f $t)
         }
+        if ($null -eq $response.replayTimeSeconds) {
+            throw ("entity-region at {0}s returned no replay-time label despite " +
+                "the clock attestation - refusing to write an unlabeled dump." -f $t)
+        }
         $Snapshots.Add(@{
             replayTimeSeconds = [double]$response.replayTimeSeconds
             bytesBase64       = [string]$response.regionBase64
@@ -308,6 +312,15 @@ if (-not $OfflineDumpExists) {
         if ([double]$s.replayTimeSeconds -le $last) { continue }
         $Final.Add($s)
         $last = [double]$s.replayTimeSeconds
+    }
+
+    # The pre-dedupe < 2 check above is not enough: live clock jitter can
+    # drop duplicates down below one change window. Re-check AFTER the
+    # strict-increase dedupe so the verdict never runs on a degenerate file.
+    if ($Final.Count -lt 2) {
+        throw ("After the strict-increase dedupe only {0} dump(s) remain - " +
+            "the verdict needs at least one hit window and one control. " +
+            "Retry the session (the live clock labels collapsed)." -f $Final.Count)
     }
 
     if ($SnapshotsPath -eq '') {
