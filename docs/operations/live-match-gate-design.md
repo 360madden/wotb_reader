@@ -96,6 +96,16 @@ the overlay renders.
   user-supplied. The overlay renders the same fields whether the process is
   in replay playback or a live match; the user's confirmation is the
   context.
+- **Code-confirmed (2026-08-11): no observed live marker exists in the
+  allowlist.** `BlitzReplayLifecycleParser` recognizes only
+  `START_REPLAY_LOCAL` / `STOP_REPLAY_LOCAL` / `Start replay event` /
+  `ReplayRecorder::StartRecording` / `ReplayRecorder::StopRecording`;
+  `ReplayLifecycleState.OnlineBattle` is a never-produced enum member (the
+  replay gate's Deny branch is defensive only). So the user assertion is
+  NOT a placeholder for an existing observation — it is the honest
+  evidence. If a future live-log capture ever verifies a real live-battle
+  marker, it could become observed evidence additively; nothing in this
+  design depends on that.
 - Anti-cheat risk is unchanged from the X1 memo: read-only observation of
   the user's own process, detectable in principle, enforcement posture
   unknown. The memo's Option A scope carries over verbatim.
