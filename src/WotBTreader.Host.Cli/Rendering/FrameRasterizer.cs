@@ -146,6 +146,11 @@ public static class FrameRasterizer
                     sheet, ((dstY + y) * width + dstX) * 4,
                     cellWidth * 4);
             }
+
+            // Replay-time label in the cell's top-left corner (the actual
+            // frame time, not the requested sample time).
+            DrawText(sheet, width, height, dstX + 2, dstY + 2,
+                $"{projections[index].ReplayTime.TotalSeconds:0}s", LabelDefault);
         }
 
         return sheet;

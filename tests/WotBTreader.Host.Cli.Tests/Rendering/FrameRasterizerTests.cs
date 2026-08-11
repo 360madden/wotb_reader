@@ -191,6 +191,19 @@ public sealed class FrameRasterizerTests
     }
 
     [TestMethod]
+    public void RenderContactSheet_DrawsTimeLabelPerCell()
+    {
+        // EmptyProjection() carries ReplayTime = 5s → label "5s". The '5'
+        // glyph's first row is 0x1F (all columns), so the label's first
+        // pixel is at the cell origin + (2,2): sheet (18,18).
+        byte[] sheet = FrameRasterizer.RenderContactSheet([EmptyProjection()]);
+        int width = FrameRasterizer.ContactSheetWidth(1, 640);
+
+        byte[] labelPixel = Pixel(sheet, width, 16 + 2, 16 + 2);
+        CollectionAssert.AreEqual(new byte[] { 230, 230, 230, 255 }, labelPixel);
+    }
+
+    [TestMethod]
     public void Render_DegenerateBoundarySkipsMinimap()
     {
         var boundary = new MapBoundary("maps/test", MinX: 0, MaxX: 0, MinZ: 0, MaxZ: 0);
