@@ -48,7 +48,10 @@ safe to open; none of it is private or runtime data.
 4. [`memory-offsets/`](../memory-offsets/) — evidence JSON + `schema.json`
 5. [`docs/operations/resolver-path-consolidation.md`](../docs/operations/resolver-path-consolidation.md) — the module-rooted chain-resolution plan (publish-as-chains, phase tolerance, freeze legacy; hardware atomicity LAST)
 6. [`docs/operations/batch-entity-read-design.md`](../docs/operations/batch-entity-read-design.md) — the batch N-entity read surface (`/discover/entity-regions`) + rehearsal driver `scripts/invoke-batch-rehearsal.ps1`
-7. `tools/cheat-engine/`, `tools/ghidra-scripts/` — approved offline tooling
+7. [`docs/operations/live-roster-read-design.md`](../docs/operations/live-roster-read-design.md) — live roster enumeration (`/discover/entity-roster`, X3) + `-EnumerateLive` rehearsal mode
+8. [`docs/operations/live-frame-loop-design.md`](../docs/operations/live-frame-loop-design.md) — the per-frame live HUD loop (X4, composition of the approved seams)
+9. `tools/cheat-engine/`, `tools/ghidra-scripts/` — approved offline tooling
+10. [`../research/README.md`](../research/README.md) — game internals research (replay loading, IPC, memory analysis)
 8. [`../research/README.md`](../research/README.md) — game internals research (replay loading, IPC, memory analysis)
 
 ## Add a DI port or service

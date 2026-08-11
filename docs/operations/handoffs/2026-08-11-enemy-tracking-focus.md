@@ -125,4 +125,9 @@ player must share the file.
 ## Files touched
 
 - `offline/replay-format.md` (type-7 row + no-turret/lock finding)
+- `docs/operations/live-roster-read-design.md` (X3 — designed + implemented)
+- `docs/operations/live-frame-loop-design.md` (X4 — this session's design)
+- `scripts/invoke-batch-rehearsal.ps1` + `scripts/python/
+  batch-rehearsal-crosscheck.py` (`-EnumerateLive` + `--enumeration`)
+- `offline/api-surface.md` (entity-roster row)
 - `docs/operations/handoffs/2026-08-11-enemy-tracking-focus.md` (this file)

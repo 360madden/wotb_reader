@@ -163,9 +163,13 @@ Mirrors the batch surface's trust boundary exactly:
 4. **Live session** (approved, pre-staged order): the enumeration rehearsal
    rides the next approved session after OD-RECOVERY-086; it does not need a
    new gate, it composes with the batch rehearsal.
-5. Only then: design the per-frame live loop (enumerate once per battle →
-   batch per frame) and the turret/target discovery targets on the per-entity
-   surface.
+5. **DESIGNED 2026-08-11 — per-frame live loop:**
+   `docs/operations/live-frame-loop-design.md` (X4) composes this
+   enumeration (enumerate once per battle, cached roster) → the batch
+   `entity-regions` read (one G2 attestation per frame) → the CAM-001
+   camera pose into ONE coordinator-side `POST /discover/live-frame` round
+   trip, with `hp: null` honest-unknown until L1 lands. Turret/target
+   discovery targets ride the per-entity surface.
 
 ## Relationship to the enemy-track plan
 

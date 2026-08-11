@@ -277,6 +277,7 @@ docs/operations/handoffs/2026-08-11-type5-maxhp-in-replay.md
 docs/operations/handoffs/2026-08-11-yaw-quarantine-reconciled.md
 docs/operations/handoffs/README.md
 docs/operations/legacy-observation-surface.md
+docs/operations/live-frame-loop-design.md
 docs/operations/live-roster-read-design.md
 docs/operations/offset-discovery-guide.md
 docs/operations/offset-discovery-ledger.md
