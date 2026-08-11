@@ -61,7 +61,11 @@ session + `-DataRoot "$env:LOCALAPPDATA\WotBTreader"` + `-MaxLagSeconds 8`**
 repo-local `.data/treader.db` 404s in the host store). Evidence template
 PRE-STAGED: `docs/operations/od-recovery-089-evidence-template.md` — fill
 it in after the session. The Phase-4 rule requires the offset to agree
-before any facing/yaw publication.
+before any facing/yaw publication. The yaw publication package is also
+PRE-STAGED (PENDING): `docs/operations/g1-yaw-publication-draft.md` — the
+operator checklist + chain spec (`playerYaw` = position-chain prefix +
+ring-record `recordOffset 0x30`), to apply ONLY after 089 closes HIT and
+the operator approves.
 
 **The position anchor is ESTABLISHED and PUBLISHED (2026-08-10):**
 `playerPositionX/Y/Z` are `Verified` via the module-rooted position-ring chain

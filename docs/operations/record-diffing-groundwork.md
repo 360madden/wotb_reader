@@ -451,9 +451,18 @@ correlate a float32 candidate whose per-window delta matches the packet
 `yaw` delta (radians, wrap-aware). Control windows are the stationary
 segments — the packet yaw is exactly constant there (proven), so flatness
 separates the yaw field from drifting decoys. The ring record is 0x38
-bytes (position +0x10/+0x14/+0x18, velocity +0x28); the unaccounted tail
-(+0x2C..+0x37) is the first place to look for the rotation floats. The
-live read is the remaining input; the offline ground truth is complete.
+bytes; the live read is the remaining input; the offline ground truth is
+complete. **Measured layout (OD-RECOVERY-088, 48 live region dumps,
+256-byte dump = 4+ full records at stride 0x38):** tail is the
+live-verified rotation triple roll `+0x28` / pitch `+0x2C` / yaw `+0x30`
+(`+0x34` NaN padding); head is clock/index territory — `+0x00` a
+repeating 32-bit tag (17 distinct over the session), `+0x04` a monotonic
+non-decreasing time-like float32 (~0.004 units per replay second — scaled
+battle clock, exact scale unproven), `+0x08` constant 3412 across ALL 48
+dumps (candidate ring capacity/slot constant, semantics unproven),
+`+0x0C` constant 0. These head fields are measured observations for the
+item-7 atomicity reasoning (a per-record clock/index would let a frame
+prove which record is newest), NOT claimed semantics.
 
 ## Facing correlator — rehearsal proven (2026-08-10)
 

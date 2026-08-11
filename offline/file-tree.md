@@ -68,6 +68,7 @@ docs/operations/g0-post-publication-regression.md
 docs/operations/g0-publication-review.md
 docs/operations/g0-walkable-position-chains.draft.json
 docs/operations/g1-live-evidence-template.md
+docs/operations/g1-yaw-publication-draft.md
 docs/operations/handoffs/2026-07-26-overlay-mvvm-buildout.md
 docs/operations/handoffs/2026-07-26-validated-integration-milestone.md
 docs/operations/handoffs/2026-07-27-alpha-final.md

@@ -367,6 +367,24 @@ Next in the pre-staged order: the Phase-4 two-replay HP rule (Dead Rail
 victim 2549399) gates any HP publication; OD-RECOVERY-089 (L2 facing
 repeat, 5 seam crossings) gates facing/yaw publication.
 
+## Ring-record head measured + yaw publication draft (2026-08-11)
+
+- **Ring-record head (measured, 48 live dumps from 088):** `+0x00` a
+  repeating 32-bit tag, `+0x04` a monotonic non-decreasing time-like
+  float32 (~0.004 units per replay second — scaled battle clock, scale
+  unproven), `+0x08` constant 3412 across ALL dumps (candidate
+  capacity/slot constant, unproven), `+0x0C` constant 0. Recorded in
+  `record-diffing-groundwork.md` as measured observations for the item-7
+  atomicity reasoning (a per-record clock/index would prove which record
+  is newest) — NOT claimed semantics.
+- **`docs/operations/g1-yaw-publication-draft.md` PRE-STAGED:** the
+  operator checklist + chain spec for publishing `playerYaw` as Verified
+  via the module-rooted ring-record chain (`playerYaw` = the published
+  position-chain prefix + `recordOffset 0x30`, since 088 proved position
+  `+0x10` and yaw `+0x30` live on the SAME record). Explicitly PENDING:
+  applies ONLY after OD-RECOVERY-089 closes HIT at +0x30 AND the operator
+  approves — the table stays frozen until then.
+
 ## OD-RECOVERY-086 live session — X2 PASS live + X3 team-based partial (2026-08-11)
 
 Approved live session on Oasis Palms (the content-distinct 11.19.0.10
@@ -510,4 +528,11 @@ surface changed. Next live gates in pre-staged order: OD-RECOVERY-087
 - `docs/operations/live-frame-loop-design.md` (step 5 L1 wiring → DONE;
   HP honest-limits row → WIRED)
 - `offline/api-surface.md` (entity-regions + live-frame + /live/frame rows)
+- `docs/operations/record-diffing-groundwork.md` (ring-record head
+  measured observations: +0x00 tag, +0x04 monotonic clock, +0x08 constant
+  3412, +0x0C 0)
+- `docs/operations/g1-yaw-publication-draft.md` (NEW — pre-staged yaw
+  publication operator checklist + chain spec, PENDING until 089 + approval)
+- `docs/operations/offset-discovery-workflow.md` (089 paragraph references
+  the yaw draft)
 - `docs/operations/handoffs/2026-08-11-enemy-tracking-focus.md` (this file)
