@@ -1,11 +1,62 @@
-# CAM-001 v7 live-run evidence — W2S projection cross-check (PRE-STAGED)
+# CAM-001 v7 live-run evidence — W2S projection cross-check (2026-08-11)
 
-**Status: PRE-STAGED (2026-08-11)** — the template below is the fill-in
-contract for the approved CAM-001 v7 live session. The validator
-(`scripts/python/verify-camera-projection.py`) is BUILT and self-tested; the
-v7 evidence collector (`scripts/invoke-camera-state-verify.ps1`) is BUILT
-and parse-checked. What remains is ONE approved live launch (Oasis Palms,
-mid-replay) to produce v7 round evidence, then the verdict branch below.
+**Status: HONEST-NEGATIVE — 2 launches, same signature; recorded, no
+scanning broadened.** Session `019ff23a-…` (launch 1) and
+`019ff243-…` (launch 2, the one-relaunch allowance) both returned
+`camera-state-found-unverified-offset`: the camera chain identity gates
+PASS (3/3, vftables match, finite 6/6) but posA `+0x38` read ~120 m from
+the viewpoint tank with pitch ≈ −1.5° while pitch-to-tank is ≈ −46° — the
+memory camera is NOT aimed at the tank on either launch, so the v7
+look-at/W2S acceptance cannot be confirmed. Tank source was verified
+CORRECT both times (memory tank matches the decoded trajectory within
+2.4 m at the same tick). Root cause unresolved (see the diagnosis below);
+the template below remains the fill-in contract for a future session that
+isolates the cause.
+
+## Diagnosis (both launches, 2026-08-11)
+
+| Evidence | Launch 1 `019ff23a` | Launch 2 `019ff243` |
+|---|---|---|
+| verdict | `camera-state-found-unverified-offset` | same |
+| camera chain | 3/3, identity True | 3/3, identity True |
+| vftable matches | ReplayCameraController + GameCamera both match | same |
+| finite rounds | 6/6 | 6/6 |
+| yaw-correlated rounds | 5/6 (0.0537 rad) | 1/6 |
+| pos-correlated rounds | 0/6 | 0/6 |
+| third-person offset norm | 123.16 m | 124.10 m |
+| extra (posC) offset | 373.36 m | 332.52 m |
+| tank source | entity-position (Resolved) | entity-position (Resolved) |
+| memory↔decoded tank delta | — | 2.4 m at tick 1.81–1.85B (tank source CORRECT) |
+| camera height vs tank | y≈130 vs y≈42 (88 m above) | same |
+| memory pitch | ≈ −1.5° (level) | ≈ −1.5° (level) |
+| pitch required to aim at tank | ≈ −46° | ≈ −46° |
+
+**What passed:** the gate-free camera walk + identity gates are solid — the
+chain resolves and the pose fields are finite and yaw-plausible. The
+`0xAB0000` ASLR-probe base with a successful rescan was seen on BOTH
+launches (the CAM-003 session-controller flip variant `base+0x325ad2c` was
+live: `/discover/entity-position` returned `UnsupportedReplayController`
+after launch 1's run, and launch 1's run itself silently resolved a
+wrong tank position; launch 2 resolved the correct one).
+
+**What failed:** the memory camera POSITION does not sit 1–30 m from the
+tank on either launch (120+ m, ~88 m above, level pitch). CAM-004 measured
+23.57 m with 7/8 position-correlated rounds on the same replay — so the
+field layout is not the difference; the CAMERA OBJECT the walk lands on
+(this launch class) appears not to be the active third-person camera, or
+it is mid-transition. This is NOT resolved — candidates: (a) the flipped
+session-controller phase changes which camera the member path reaches,
+(b) a second GameCamera instance exists and the walk lands on it, (c) the
+camera was in a non-third-person mode during the reads (no operator input
+was applied, so the default view should be third-person). No guesses were
+promoted; the read surface and offset table are untouched.
+
+**Next step (isolate, do not guess):** one session that (1) captures the
+same walk while ALSO dumping the camera vftable hex and a few sibling
+pointers in the GameCamera region to fingerprint the instance, and (2)
+checks whether CAM-004's launch had a different session-controller
+variant. Only then re-attempt the v7 look-at check.
+
 
 The session turns the CAM-004 `camera-state-consistent` verdict (GameCamera
 posA `+0x38` is the true world camera; yaw cos/sin `+0x50/+0x54`, pitch

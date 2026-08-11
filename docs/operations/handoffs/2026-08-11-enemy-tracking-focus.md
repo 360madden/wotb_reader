@@ -765,3 +765,31 @@ target-id candidates join against the roster. Includes the branch table
 - `docs/operations/t1-turret-traversal-design.md` (T1 session design:
   camera-as-turret-driver, camera-yaw discriminator, branch table)
 - `docs/operations/handoffs/2026-08-11-enemy-tracking-focus.md` (this file)
+
+## CAM-001 v7 live session — HONEST-NEGATIVE, camera not aimed at tank (2026-08-11)
+
+Two approved launches (Oasis Palms; `019ff23a` then the one-relaunch
+allowance `019ff243`) both returned `camera-state-found-unverified-offset`:
+
+- **PASS:** camera chain 3/3 + identity gates (ReplayCameraController /
+  GameCamera vftables match), finite 6/6, yaw-plausible (5/6 rounds
+  launch 1). The gate-free v6/v7 walk works on the flipped phase.
+- **FAIL:** posA `+0x38` reads ~120 m from the viewpoint tank with pitch
+  ≈ −1.5° while pitch-to-tank is ≈ −46° — the memory camera is NOT aimed
+  at the tank on either launch (CAM-004's 23.57 m / 7/8-round offset did
+  not reproduce). Tank source verified CORRECT both times (memory tank
+  matches the decoded trajectory within 2.4 m at tick 1.81–1.85B).
+- **CAM-003 confirmed live:** `/discover/entity-position` returned
+  `UnsupportedReplayController:playback-controller-vtable` (the flipped
+  `base+0x325ad2c` phase) — and launch 1's run silently resolved a WRONG
+  tank position (88/147 m off in x/z) before the endpoint failed cleanly;
+  launch 2 resolved the correct one. This is a resolver-phase symptom, not
+  a new offset claim.
+
+No scanning broadened, no offsets touched, no guesses promoted. Evidence
+recorded in `cam001-v7-evidence-template.md` (now HONEST-NEGATIVE with the
+full diagnosis + per-launch table) and the ledger Next-planned row updated:
+**the next camera session must fingerprint the GameCamera instance
+(vftable hex + sibling pointers) and compare against CAM-004's
+session-controller variant before re-attempting the look-at check.**
+OD-RECOVERY-090 remains the next gate that needs no further design.
