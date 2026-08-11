@@ -1013,6 +1013,14 @@ internal static class GameApiEndpoints
                     ConsistentDoubleRead = region.ConsistentDoubleRead,
                 })
                 .ToList(),
+            Measurement = read.Measurement is null
+                ? null
+                : new WotBTreader.ApiContracts.EntityRegionsReadMeasurementResponse
+                {
+                    BatchStartedAtUtc = read.Measurement.BatchStartedAtUtc,
+                    BatchEndedAtUtc = read.Measurement.BatchEndedAtUtc,
+                    ClockSnapshotAtUtc = read.Measurement.ClockSnapshotAtUtc,
+                },
         });
     }
 

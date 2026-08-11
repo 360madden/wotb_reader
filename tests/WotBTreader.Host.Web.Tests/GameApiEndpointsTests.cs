@@ -1332,7 +1332,11 @@ public sealed class GameApiEndpointsTests
                             ModuleRooted: true,
                             EntityIdentityRevalidated: false,
                             ConsistentDoubleRead: false),
-                    ])),
+                    ],
+                    Measurement: new EntityRegionsReadMeasurement(
+                        DateTimeOffset.UnixEpoch.AddSeconds(1),
+                        DateTimeOffset.UnixEpoch.AddSeconds(2),
+                        DateTimeOffset.UnixEpoch.AddSeconds(3)))),
         };
 
         IResult result = await GameApiEndpoints.ReadEntityRegionsAsync(
@@ -1369,6 +1373,17 @@ public sealed class GameApiEndpointsTests
         Assert.AreEqual("EntityNotFound", response.Regions[1].Status);
         Assert.AreEqual("entity-lookup", response.Regions[1].FailureStage);
         Assert.IsNull(response.Regions[1].RegionBase64);
+        // The read-pass measurement is mapped through.
+        Assert.IsNotNull(response.Measurement);
+        Assert.AreEqual(
+            DateTimeOffset.UnixEpoch.AddSeconds(1),
+            response.Measurement?.BatchStartedAtUtc);
+        Assert.AreEqual(
+            DateTimeOffset.UnixEpoch.AddSeconds(2),
+            response.Measurement?.BatchEndedAtUtc);
+        Assert.AreEqual(
+            DateTimeOffset.UnixEpoch.AddSeconds(3),
+            response.Measurement?.ClockSnapshotAtUtc);
         // The batch request forwarded: both entities + the session id.
         WotBTreader.Application.Game.EntityRegionsReadRequest? forwarded =
             scanner.LastEntityRegionsRequest;

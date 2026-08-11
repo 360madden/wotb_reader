@@ -1408,6 +1408,12 @@ public sealed class GameSessionCoordinatorTests
         // No battle session id -> no clock attestation, no replay label.
         Assert.IsNull(batch.ReplayTimeSeconds);
         Assert.IsFalse(batch.SameDecodedClockProven);
+        // The read-pass window is measured (item-7 groundwork): present,
+        // sane ordering, and no snapshot moment (no session id).
+        Assert.IsNotNull(batch.Measurement);
+        Assert.IsTrue(
+            batch.Measurement!.BatchEndedAtUtc >= batch.Measurement.BatchStartedAtUtc);
+        Assert.IsNull(batch.Measurement.ClockSnapshotAtUtc);
     }
 
     [TestMethod]
@@ -1453,6 +1459,10 @@ public sealed class GameSessionCoordinatorTests
         // Per-entity time mirrors carry the batch label.
         Assert.AreEqual(batch.ReplayTimeSeconds, batch.Regions[0].ReplayTimeSeconds);
         Assert.AreEqual(batch.ReplayTimeSeconds, batch.Regions[1].ReplayTimeSeconds);
+        // The snapshot moment is measured so the label-vs-read gap is
+        // quantifiable.
+        Assert.IsNotNull(batch.Measurement);
+        Assert.IsNotNull(batch.Measurement!.ClockSnapshotAtUtc);
     }
 
     [TestMethod]
@@ -1561,8 +1571,9 @@ public sealed class GameSessionCoordinatorTests
         Assert.AreEqual(Type10EntityPositionStatus.ReplaySessionInactive, batch.Regions[1].Status);
         Assert.IsNull(batch.Regions[0].RegionBytes);
         Assert.IsNull(batch.Regions[1].RegionBytes);
-        // No region read ever fired.
+        // No region read ever fired -> no read-pass window measurement.
         Assert.IsEmpty(factory.Reader.RegionReads);
+        Assert.IsNull(batch.Measurement);
     }
 
     [TestMethod]
@@ -1667,6 +1678,8 @@ public sealed class GameSessionCoordinatorTests
         Assert.AreEqual(Type10EntityPositionStatus.UnsupportedBuild, batch.Regions[1].Status);
         Assert.IsNull(batch.Regions[0].RegionBytes);
         Assert.AreEqual(0, factory.CreateCount);
+        // No reads happened -> no read-pass window measurement.
+        Assert.IsNull(batch.Measurement);
     }
 
     [TestMethod]

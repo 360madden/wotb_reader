@@ -453,6 +453,21 @@ public sealed record EntityRegionsReadResponse
     public double? ReplayTimeSeconds { get; init; }
     public bool SameDecodedClockProven { get; init; }
     public IReadOnlyList<EntityRegionReadItemResponse> Regions { get; init; } = [];
+
+    /// <summary>
+    /// Wall-clock measurement of the read pass (null when no reads
+    /// happened). The verification window for the item-7 atomicity
+    /// groundwork — how long the whole-roster frame read takes.
+    /// </summary>
+    public EntityRegionsReadMeasurementResponse? Measurement { get; init; }
+}
+
+/// <summary>Wall-clock measurement of one batch read pass.</summary>
+public sealed record EntityRegionsReadMeasurementResponse
+{
+    public DateTimeOffset BatchStartedAtUtc { get; init; }
+    public DateTimeOffset BatchEndedAtUtc { get; init; }
+    public DateTimeOffset? ClockSnapshotAtUtc { get; init; }
 }
 
 /// <summary>

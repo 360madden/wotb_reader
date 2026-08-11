@@ -2208,7 +2208,10 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
 
             // Phase 1: resolve ALL entity addresses under the same lease.
             // An unresolved entity fails only itself; the retryable
-            // pre-battle phase fails the whole batch.
+            // pre-battle phase fails the whole batch. The batch pass window
+            // (first resolve -> last read) is the item-7 verification
+            // window measurement.
+            DateTimeOffset batchStartedAt = _timeProvider.GetUtcNow();
             var results = new EntityRegionReadResultItem[request.Entities.Count];
             var resolvedItems =
                 new List<(int Index, EntityRegionReadRequestItem Item, Type10EntityPositionAddressResult Address)>(
@@ -2357,15 +2360,19 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             // Phase 3: ONE replay-clock label + same-decoded-clock
             // attestation for the whole batch (post-read snapshot bounds the
             // batch). Per-entity time mirrors carry the batch label; only
-            // the batch attestation is load-bearing.
+            // the batch attestation is load-bearing. The snapshot moment is
+            // measured so the label-vs-read gap is quantifiable.
+            DateTimeOffset batchEndedAt = _timeProvider.GetUtcNow();
             double? replayTimeSeconds = null;
             bool sameDecodedClockProven = false;
+            DateTimeOffset? clockSnapshotAt = null;
             if (request.BattleSessionId is not null)
             {
+                clockSnapshotAt = _timeProvider.GetUtcNow();
                 OperationResult<ReplayClockSnapshot> clock = await _replayClockSource
                     .GetSnapshotAsync(
                         request.BattleSessionId.Value,
-                        _timeProvider.GetUtcNow(),
+                        clockSnapshotAt.Value,
                         readCancellation.Token)
                     .ConfigureAwait(false);
                 if (clock.IsSuccess && clock.Value is not null &&
@@ -2386,7 +2393,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 sameDecodedClockProven,
                 results
                     .Select(item => item with { ReplayTimeSeconds = replayTimeSeconds })
-                    .ToList()));
+                    .ToList(),
+                new EntityRegionsReadMeasurement(
+                    batchStartedAt,
+                    batchEndedAt,
+                    clockSnapshotAt)));
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {

@@ -509,13 +509,27 @@ public sealed record EntityRegionReadResultItem(
     bool ConsistentDoubleRead);
 
 /// <summary>
+/// Wall-clock measurement of the batch read pass (the item-7 atomicity
+/// groundwork: the verification window between the batch's first resolve
+/// and last read, plus the replay-clock snapshot moment, quantifies how
+/// "one coherent moment" the frame read is). Null when no reads happened
+/// (gate-level batch outcomes). Durations are honest wall-clock spans, not
+/// evidence claims.
+/// </summary>
+public sealed record EntityRegionsReadMeasurement(
+    DateTimeOffset BatchStartedAtUtc,
+    DateTimeOffset BatchEndedAtUtc,
+    DateTimeOffset? ClockSnapshotAtUtc);
+
+/// <summary>
 /// Privacy-safe batch region read result: the raw bytes + ONE replay-time
 /// label per batch. No absolute address, process id, or module base ever
 /// leaves the coordinator. <see cref="Status"/> is the gate-level outcome
 /// (<c>Resolved</c> when the read pass completed — inspect per-entity
 /// statuses for individual entities); <c>ReplaySessionInactive</c> fails the
 /// WHOLE batch (the pre-battle phase is global — a frame cannot be
-/// half-timed).
+/// half-timed). <see cref="Measurement"/> carries the read-pass window
+/// when reads happened.
 /// </summary>
 public sealed record EntityRegionsReadResult(
     DateTimeOffset CompletedAtUtc,
@@ -523,7 +537,8 @@ public sealed record EntityRegionsReadResult(
     Type10EntityPositionStatus Status,
     double? ReplayTimeSeconds,
     bool SameDecodedClockProven,
-    IReadOnlyList<EntityRegionReadResultItem> Regions);
+    IReadOnlyList<EntityRegionReadResultItem> Regions,
+    EntityRegionsReadMeasurement? Measurement = null);
 
 /// <summary>Outcome of one CAM-001 gate-free camera-pose walk.</summary>
 public enum CameraPoseStatus

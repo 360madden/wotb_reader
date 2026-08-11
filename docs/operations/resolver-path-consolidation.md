@@ -104,7 +104,10 @@ cross-link, and the planning handoff.
   seam (one clock attestation per batch), and match each ring-record
   position triple (+0x10) to the nearest decoded sample. Cross-check proven
   on real decoded data (42/42 PASS, corruption detected; exits 0/1/3). The
-  session itself still needs one approved live launch.
+  batch response also carries the read-pass measurement (`Measurement`:
+  resolve-start → last-read, + snapshot moment) so the rehearsal measures
+  the item-7 verification window in the same session. The session itself
+  still needs one approved live launch.
 - `LiveFrameSource` consumes the **resolver endpoints**, not the observation
   DTO. Deferred decision (shared-contract proposal when that work starts):
   promote resolver results into the observation contract vs. keep the

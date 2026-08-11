@@ -1,12 +1,13 @@
 # Batch N-entity read surface — design proposal (X2 pre-design)
 
 **Date:** 2026-08-11
-**Status:** DESIGN ADOPTED — items 1–2 of the implementation order
-(coordinator method + web endpoint) are IMPLEMENTED and test-pinned; the
-replay rehearsal (item 3) still needs one approved live session. This is the
-offline half of consolidation item 6 (live-mode alignment) and the explicit
-prerequisite for item 7 (hardware-atomicity proof), which "needs the batch
-read-surface design (X2) and the per-frame read discipline to exist first."
+**Status:** DESIGN ADOPTED — items 1–2 IMPLEMENTED and test-pinned
+(coordinator method + web endpoint); items 3–4 PRE-STAGED (rehearsal
+driver + cross-check tool + read-pass measurement). The replay rehearsal
+itself still needs one approved live session. This is the offline half of
+consolidation item 6 (live-mode alignment) and the explicit prerequisite
+for item 7 (hardware-atomicity proof), which "needs the batch read-surface
+design (X2) and the per-frame read discipline to exist first."
 
 ## Why this exists
 
@@ -158,11 +159,13 @@ the read discipline that makes atomicity unnecessary") gets its home here:
   "consistent across two reads" from "atomic in one".
 - **The verification window** (the wall-clock span between double-reads, and
   between the batch's first and last read) becomes a measured quantity the
-  batch response can carry when the proof runs — the batch shape must not
-  preclude adding a per-entity read-window span field under the item-7
-  evidence flag. That field is deliberately NOT proposed now (nothing to
-  measure until the proof starts); the contract is designed so it can be
-  added additively, like the `chains` publication was.
+  batch response carries. **PRE-STAGED 2026-08-11:** the contract now ships
+  `Measurement` (`BatchStartedAtUtc` = first resolve, `BatchEndedAtUtc` =
+  last read, `ClockSnapshotAtUtc` = the G2 snapshot moment) so the rehearsal
+  session measures the whole-roster read window WITHOUT a second session
+  (the field had to exist before the run). Per-entity double-read spans
+  remain future — region dumps do not double-collect position bytes, and
+  the position payload's double-read span is a separate item-7 question.
 - The batch is also where **one-coherent-pass** semantics get designed: a
   single reader pass over all entities at ~the same wall time is the only
   shape that can later claim "all 14 tanks seen within X ms" — which is what
@@ -192,7 +195,11 @@ the read discipline that makes atomicity unnecessary") gets its home here:
      nearest decoded position_sample — proven on real data: 42/42 pairs
      PASS, corruption detected, exit codes 0/1/3). The session itself still
      needs one approved launch.
-  4. Measure the batch window + double-read spans → feed item 7.
+  4. ✅ **PRE-STAGED 2026-08-11** — Measure the batch window + double-read
+     spans → feed item 7. The batch response now carries the read-pass
+     window + snapshot moment (`Measurement`); the rehearsal run reports
+     it. (Per-entity double-read spans are a separate item-7 question, not
+     part of region dumps.)
 
 ## Open questions (recorded, not decided)
 
