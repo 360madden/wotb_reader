@@ -160,14 +160,14 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
                 continue;
             }
             long received = totalDamage.GetValueOrDefault(entityId);
+            long damageTaken = CumulativeDamageBefore(projection.Events, entityId, replayTime);
             bool alive = !destroyedAt.TryGetValue(entityId, out TimeSpan destroyed)
                 || destroyed > replayTime;
             // 1.0 when the tank took no damage; otherwise the fraction of its
             // observed damage arc NOT yet received at this frame time.
             double hpFraction = received <= 0
                 ? 1.0
-                : Math.Clamp(1.0 - (double)CumulativeDamageBefore(
-                    projection.Events, entityId, replayTime) / received, 0.0, 1.0);
+                : Math.Clamp(1.0 - (double)damageTaken / received, 0.0, 1.0);
 
             // Distance from the camera position.
             double distance = Math.Sqrt(
@@ -190,6 +190,7 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
                 participant?.TankClass.ToString(),
                 distance,
                 damageDealt.GetValueOrDefault(entityId),
+                damageTaken,
                 killsByKiller.GetValueOrDefault(entityId)));
         }
 

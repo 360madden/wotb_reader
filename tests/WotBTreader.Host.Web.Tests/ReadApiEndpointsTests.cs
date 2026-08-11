@@ -64,6 +64,7 @@ public sealed class ReadApiEndpointsTests
         Assert.AreEqual(-100.0, behind.WorldZ, 1e-9);
         // Scoreboard totals ride through (0 is the default in this fixture).
         Assert.AreEqual(0, front.DamageDealt);
+        Assert.AreEqual(0, front.DamageTaken);
         Assert.AreEqual(0, front.Kills);
     }
 

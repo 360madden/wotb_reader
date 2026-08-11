@@ -15,4 +15,8 @@ public sealed record NameplateItem(
     double HpFraction,
     bool Alive,
     double DistanceMeters,
-    double? ScreenHeadingDegrees);
+    double? ScreenHeadingDegrees,
+    // Cumulative battle statistics at the frame time, shown as a compact
+    // totals line under the HP bar (damage dealt + kills).
+    long DamageDealt = 0,
+    long Kills = 0);

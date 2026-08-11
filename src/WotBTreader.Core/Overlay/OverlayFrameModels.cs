@@ -40,10 +40,11 @@ public sealed record OverlayTankState(
     double DistanceMeters,
     // Cumulative battle statistics at the frame time: damage this tank has
     // dealt to other roster entities (sum of damage events attributed to it
-    // as attacker, 0 when no evidence) and destroy kills it has scored. Both
-    // drive the overlay scoreboard; 0 is the fail-closed default for samples
-    // that predate the fields.
+    // as attacker, 0 when no evidence), damage it has received, and destroy
+    // kills it has scored. All drive the overlay scoreboard and nameplates;
+    // 0 is the fail-closed default for samples that predate the fields.
     long DamageDealt = 0,
+    long DamageTaken = 0,
     long Kills = 0);
 
 /// <summary>

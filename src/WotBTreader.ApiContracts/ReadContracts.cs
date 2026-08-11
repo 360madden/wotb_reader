@@ -369,6 +369,10 @@ public sealed record OverlayTankResponse
     /// evidence). Scoreboard column.</summary>
     public long DamageDealt { get; init; }
 
+    /// <summary>Cumulative damage this tank has received up to the frame
+    /// time. Scoreboard column.</summary>
+    public long DamageTaken { get; init; }
+
     /// <summary>Destroy kills this tank has scored up to the frame time.
     /// Scoreboard column.</summary>
     public long Kills { get; init; }

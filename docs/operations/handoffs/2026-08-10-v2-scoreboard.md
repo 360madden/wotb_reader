@@ -37,6 +37,19 @@ consumer of the damage events the decode already produces.
   replays: damage dealt non-negative int, kills non-negative, and
   `sum(kills) == kills-feed size` — both replays PASS.
 
+## Damage taken + nameplate totals (2026-08-10, appended)
+
+- `OverlayTankState` gained `DamageTaken` (the value `BuildFrame` already
+  computed for `hpFraction` — now extracted once and reused) and it threads
+  the whole seam to a new scoreboard column. The nameplates additionally
+  render a compact totals line under the HP bar — "1,200 dmg · 2 kills"
+  (`NameplateTotalsLabel` pure helper) — so the carry follows each tank
+  in-world.
+- Verified on Oasis Palms t=250: **total damage dealt (22094) == total
+  damage taken (22094)** — every damage event balanced, a strong
+  end-to-end consistency signal. The consistency checker now also requires
+  `damageTaken` non-negative on both replays; both PASS.
+
 ## Notes for next
 
 - Damage-dealt excludes unattributed (environmental) hits — the same

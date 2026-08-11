@@ -11,6 +11,7 @@ public sealed record ScoreboardItem(
     string PlayerName,
     int? TeamNumber,
     long DamageDealt,
+    long DamageTaken,
     long Kills,
     double HpFraction,
     bool Alive);

@@ -100,6 +100,9 @@ def check_session(
             damage = tank.get("damageDealt")
             if not isinstance(damage, int) or damage < 0:
                 errors.append(f"t={t:.0f}: tank {tank.get('entityId')} damageDealt invalid: {damage!r}")
+            taken = tank.get("damageTaken")
+            if not isinstance(taken, int) or taken < 0:
+                errors.append(f"t={t:.0f}: tank {tank.get('entityId')} damageTaken invalid: {taken!r}")
             if not isinstance(tank.get("kills"), int) or tank.get("kills") < 0:
                 errors.append(f"t={t:.0f}: tank {tank.get('entityId')} kills invalid: {tank.get('kills')!r}")
         scored = sum(t.get("kills") or 0 for t in frame.get("tanks", []))

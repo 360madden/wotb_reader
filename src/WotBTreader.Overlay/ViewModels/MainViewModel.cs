@@ -551,7 +551,9 @@ public class MainViewModel : INotifyPropertyChanged
                     tank.HpFraction,
                     tank.Alive,
                     tank.DistanceMeters,
-                    tank.ScreenHeadingDegrees));
+                    tank.ScreenHeadingDegrees,
+                    tank.DamageDealt,
+                    tank.Kills));
             }
 
             foreach (OverlayBeaconResponse beacon in frame.Beacons)
@@ -688,6 +690,7 @@ public class MainViewModel : INotifyPropertyChanged
                 tank.PlayerName ?? $"Tank {tank.EntityId}",
                 tank.TeamNumber,
                 tank.DamageDealt,
+                tank.DamageTaken,
                 tank.Kills,
                 tank.HpFraction,
                 tank.Alive));

@@ -134,7 +134,7 @@ public sealed partial class W2sHudView : UserControl
     {
         const double margin = 12;
         const double rowHeight = 16;
-        const double panelWidth = 240;
+        const double panelWidth = 292;
         const double maxRows = 14;
 
         var panel = new Canvas
@@ -173,6 +173,14 @@ public sealed partial class W2sHudView : UserControl
             line.Children.Add(new TextBlock
             {
                 Text = row.DamageDealt.ToString(CultureInfo.InvariantCulture),
+                FontSize = 11,
+                Foreground = brush,
+                Width = 52,
+                TextAlignment = TextAlignment.Right,
+            });
+            line.Children.Add(new TextBlock
+            {
+                Text = row.DamageTaken.ToString(CultureInfo.InvariantCulture),
                 FontSize = 11,
                 Foreground = brush,
                 Width = 52,
@@ -288,6 +296,14 @@ public sealed partial class W2sHudView : UserControl
 
     private static string FormatClock(double seconds) =>
         $"{TimeSpan.FromSeconds(Math.Max(0, seconds)):m\\:ss}";
+
+    /// <summary>
+    /// Formats the compact nameplate totals line (damage dealt + kills),
+    /// invariant-culture numbers, for unit tests. "0 dmg · 0 kills" when
+    /// the tank has no stats evidence.
+    /// </summary>
+    public static string NameplateTotalsLabel(long damageDealt, long kills) =>
+        $"{damageDealt.ToString(CultureInfo.InvariantCulture)} dmg · {kills.ToString(CultureInfo.InvariantCulture)} kills";
 
     /// <summary>
     /// Builds the kill-feed panel: the most recent entries as a stacked list
@@ -615,6 +631,17 @@ public sealed partial class W2sHudView : UserControl
             Text = $"{item.DistanceMeters:F0} m",
             FontSize = 9,
             Foreground = CreateBrush("#AAFFFFFF"),
+            TextAlignment = TextAlignment.Center,
+            Margin = new Thickness(0, 1, 0, 0),
+        });
+
+        // Totals line: cumulative damage dealt + kills at the frame time.
+        // Kept under the distance so the plate height stays stable.
+        root.Children.Add(new TextBlock
+        {
+            Text = NameplateTotalsLabel(item.DamageDealt, item.Kills),
+            FontSize = 8,
+            Foreground = CreateBrush("#99FFFFFF"),
             TextAlignment = TextAlignment.Center,
             Margin = new Thickness(0, 1, 0, 0),
         });

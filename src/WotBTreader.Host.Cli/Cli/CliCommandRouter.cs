@@ -568,6 +568,7 @@ public sealed class CliCommandRouter
                 tank.WorldX,
                 tank.WorldZ,
                 tank.DamageDealt,
+                tank.DamageTaken,
                 tank.Kills,
                 screen = tank.ScreenX is null
                     ? null

@@ -142,4 +142,11 @@ public sealed class W2sHudViewTests
         Assert.IsNull(W2sHudView.FormatPlaybackLabel(47, -5));
         Assert.IsNull(W2sHudView.FormatPlaybackLabel(double.NaN, 252));
     }
+
+    [TestMethod]
+    public void NameplateTotalsLabel_InvariantNumbers()
+    {
+        Assert.AreEqual("1200 dmg · 2 kills", W2sHudView.NameplateTotalsLabel(1200, 2));
+        Assert.AreEqual("0 dmg · 0 kills", W2sHudView.NameplateTotalsLabel(0, 0));
+    }
 }

@@ -271,6 +271,7 @@ internal static class ReadApiEndpoints
                 InViewport = tank.InViewport,
                 ScreenHeadingDegrees = tank.ScreenHeadingDegrees,
                 DamageDealt = tank.DamageDealt,
+                DamageTaken = tank.DamageTaken,
                 Kills = tank.Kills,
             })],
             Beacons = [.. projection.Beacons.Select(beacon => new OverlayBeaconResponse

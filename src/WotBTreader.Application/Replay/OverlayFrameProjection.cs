@@ -26,6 +26,7 @@ public sealed record ProjectedTank(
     double? ScreenHeadingDegrees,
     // Cumulative battle statistics at the frame time (scoreboard columns).
     long DamageDealt,
+    long DamageTaken,
     long Kills);
 
 /// <summary>
@@ -130,6 +131,7 @@ public static class OverlayFrameProjector
                             tank.Z,
                             tank.YawRadians.Value),
                     tank.DamageDealt,
+                    tank.DamageTaken,
                     tank.Kills);
             })
             .OrderBy(tank => tank.DistanceMeters)

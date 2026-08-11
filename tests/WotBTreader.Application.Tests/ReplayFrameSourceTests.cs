@@ -154,18 +154,27 @@ public sealed class ReplayFrameSourceTests
         OverlayTankState earlyAttacker = early.Tanks.Single(tank => tank.EntityId == 3);
         Assert.AreEqual(0, earlyAttacker.DamageDealt);
         Assert.AreEqual(0, earlyAttacker.Kills);
+        Assert.AreEqual(0, earlyAttacker.DamageTaken);
 
         // Mid-battle: only the damage landed so far counts, no kill yet.
         OverlayFrame mid = ReplayFrameSource.BuildFrame(projection, TimeSpan.FromSeconds(3));
         OverlayTankState midAttacker = mid.Tanks.Single(tank => tank.EntityId == 3);
         Assert.AreEqual(60, midAttacker.DamageDealt);
         Assert.AreEqual(0, midAttacker.Kills);
+        // The victim has received 60 of its 100 observed damage by 3s.
+        Assert.AreEqual(60, mid.Tanks.Single(tank => tank.EntityId == 2).DamageTaken);
+        // The viewpoint tank (1) takes the 100 hit that lands at 5s — not yet
+        // by 3s; the attacker has taken nothing.
+        Assert.AreEqual(0, midAttacker.DamageTaken);
+        Assert.AreEqual(0, mid.Tanks.Single(tank => tank.EntityId == 1).DamageTaken);
 
         // After the destroy: all three damage hits + the attributed kill.
         OverlayFrame after = ReplayFrameSource.BuildFrame(projection, TimeSpan.FromSeconds(6));
         OverlayTankState attacker = after.Tanks.Single(tank => tank.EntityId == 3);
         Assert.AreEqual(200, attacker.DamageDealt);
         Assert.AreEqual(1, attacker.Kills);
+        Assert.AreEqual(0, attacker.DamageTaken);
+        Assert.AreEqual(100, after.Tanks.Single(tank => tank.EntityId == 1).DamageTaken);
         Assert.IsFalse(after.Tanks.Single(tank => tank.EntityId == 2).Alive);
         // The kill attribution flows into the kill feed too.
         OverlayKill kill = after.Kills.Single();

@@ -1215,9 +1215,9 @@ public sealed class MainViewModelTests
               "cameraX": 0.0, "cameraY": 0.0, "cameraZ": 0.0,
               "cameraYawRadians": 0.5, "cameraPitchRadians": 0.0,
               "tanks": [
-                { "entityId": 2, "playerName": "Alpha", "tankName": null, "clanTag": null, "teamNumber": 2, "hpFraction": 0.5, "alive": true, "distanceMeters": 120.0, "worldX": 0.0, "worldZ": 0.0, "screenX": 800.0, "screenY": 400.0, "depth": 80.0, "inViewport": true, "damageDealt": 1200, "kills": 2 },
-                { "entityId": 3, "playerName": "Bravo", "tankName": null, "clanTag": null, "teamNumber": 1, "hpFraction": 0.0, "alive": false, "distanceMeters": 90.0, "worldX": 10.0, "worldZ": 10.0, "screenX": 700.0, "screenY": 350.0, "depth": 60.0, "inViewport": true, "damageDealt": 2500, "kills": 3 },
-                { "entityId": 4, "playerName": "Charlie", "tankName": null, "clanTag": null, "teamNumber": 1, "hpFraction": 1.0, "alive": true, "distanceMeters": 300.0, "worldX": 50.0, "worldZ": 0.0, "screenX": 500.0, "screenY": 300.0, "depth": 200.0, "inViewport": true, "damageDealt": 800, "kills": 0 }
+                { "entityId": 2, "playerName": "Alpha", "tankName": null, "clanTag": null, "teamNumber": 2, "hpFraction": 0.5, "alive": true, "distanceMeters": 120.0, "worldX": 0.0, "worldZ": 0.0, "screenX": 800.0, "screenY": 400.0, "depth": 80.0, "inViewport": true, "damageDealt": 1200, "damageTaken": 500, "kills": 2 },
+                { "entityId": 3, "playerName": "Bravo", "tankName": null, "clanTag": null, "teamNumber": 1, "hpFraction": 0.0, "alive": false, "distanceMeters": 90.0, "worldX": 10.0, "worldZ": 10.0, "screenX": 700.0, "screenY": 350.0, "depth": 60.0, "inViewport": true, "damageDealt": 2500, "damageTaken": 900, "kills": 3 },
+                { "entityId": 4, "playerName": "Charlie", "tankName": null, "clanTag": null, "teamNumber": 1, "hpFraction": 1.0, "alive": true, "distanceMeters": 300.0, "worldX": 50.0, "worldZ": 0.0, "screenX": 500.0, "screenY": 300.0, "depth": 200.0, "inViewport": true, "damageDealt": 800, "damageTaken": 100, "kills": 0 }
               ]
             }
             """;
@@ -1251,16 +1251,24 @@ public sealed class MainViewModelTests
         Assert.AreEqual(3, top.EntityId);
         Assert.AreEqual("Bravo", top.PlayerName);
         Assert.AreEqual(2500, top.DamageDealt);
+        Assert.AreEqual(900, top.DamageTaken);
         Assert.AreEqual(3, top.Kills);
         Assert.IsFalse(top.Alive);
         ScoreboardItem second = viewModel.Scoreboard[1];
         Assert.AreEqual("Alpha", second.PlayerName);
         Assert.AreEqual(1200, second.DamageDealt);
+        Assert.AreEqual(500, second.DamageTaken);
         Assert.AreEqual(2, second.Kills);
         ScoreboardItem last = viewModel.Scoreboard[2];
         Assert.AreEqual("Charlie", last.PlayerName);
         Assert.AreEqual(800, last.DamageDealt);
+        Assert.AreEqual(100, last.DamageTaken);
         Assert.AreEqual(0, last.Kills);
+
+        // The same totals ride onto in-viewport nameplates for the totals line.
+        NameplateItem alpha = viewModel.Nameplates.Single(plate => plate.EntityId == 2);
+        Assert.AreEqual(1200, alpha.DamageDealt);
+        Assert.AreEqual(2, alpha.Kills);
     }
 
     [TestMethod]
