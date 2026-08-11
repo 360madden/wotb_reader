@@ -139,10 +139,31 @@ anchor-missing result into `CameraAnchorNotFound`. `RingRecordRegion`
 (10 Core decoder, 4 coordinator frame incl. ONE-lease `CreateCount == 1`,
 3 endpoint, 8 resolver/roster); full suite green.
 
+## X4 seam complete — `LiveFrameSource` (2026-08-11)
+
+The overlay can now consume live frames through the same render path as
+replay frames: `LiveFrameProjector` (Application, pure) maps
+`LiveFrameReadResult` → the SAME `OverlayFrameProjection` shape, and
+`GET /api/v1/live/frame` serves it projected to viewport pixels via the
+single shared `ToOverlayFrameResponse` mapping (extracted from the replay
+handler — both sources serialize identically). HP is the DTO's honest
+"unknown" representation (empty bar, no readout) until L1;
+pips/kills/scoreboard absent; non-resolved frames fail closed with 409 and
+a failed read with 503 (the HUD keeps last-good-frame).
+`TreaderApiClient.GetLiveFrameAsync` added. 12 new tests (8 projector, 4
+endpoint). Remaining: the overlay's live-mode UI toggle (design decision)
+and the live-ids → decoded-name join once X2b proves the id mapping.
+
 ## Files touched
 
 - `src/WotBTreader.Core/Discovery/RingRecordRegion.cs` (pure ring-region
   decoder: position +0x10, yaw +0x2C, finite fail-closed) + tests
+- `src/WotBTreader.Application/Replay/LiveFrameProjector.cs`
+  (live-frame → `OverlayFrameProjection`, reuses `WorldToScreen`) + tests
+- `src/WotBTreader.Host.Web/Endpoints/ReadApiEndpoints.cs`
+  (`GET /api/v1/live/frame` + shared `ToOverlayFrameResponse`) + tests
+- `src/WotBTreader.Overlay/Services/TreaderApiClient.cs`
+  (`GetLiveFrameAsync`)
 - `src/WotBTreader.GameIntegration/Session/GameSessionCoordinator.cs`
   (`ReadLiveFrameAsync` + `EnumerateEntitiesCoreAsync` /
   `ReadEntityRegionsCoreAsync` / `ReadCameraPoseCoreAsync` /

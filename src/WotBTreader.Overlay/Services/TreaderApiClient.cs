@@ -94,6 +94,40 @@ public sealed class TreaderApiClient : IDisposable
         return JsonSerializer.Deserialize<OverlayFrameResponse>(json, SerializerOptions);
     }
 
+    /// <summary>
+    /// Fetches one composed LIVE frame (gated memory read: roster -> batch
+    /// ring records -> CAM-001 camera pose) projected to viewport pixels —
+    /// the LiveFrameSource seam. Same <see cref="OverlayFrameResponse"/>
+    /// shape as the replay frame, so the HUD renders live nameplates without
+    /// touching its render path. HP is honestly unknown (empty bar) until
+    /// the L1 live session lands; pips/kills/scoreboard are absent.
+    /// </summary>
+    /// <param name="verticalFovDegrees">Vertical field of view (default 90).</param>
+    /// <param name="viewportWidth">Viewport width in pixels (default 1920).</param>
+    /// <param name="viewportHeight">Viewport height in pixels (default 1080).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The projected live frame, or null on a non-success response.</returns>
+    public async Task<OverlayFrameResponse?> GetLiveFrameAsync(
+        double verticalFovDegrees = 90.0,
+        double viewportWidth = 1920.0,
+        double viewportHeight = 1080.0,
+        CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await _httpClient.GetAsync(
+            "api/v1/live/frame"
+            + $"?fov={verticalFovDegrees.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}"
+            + $"&width={viewportWidth.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}"
+            + $"&height={viewportHeight.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}",
+            cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        string json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        return JsonSerializer.Deserialize<OverlayFrameResponse>(json, SerializerOptions);
+    }
+
     /// <summary>Fetches the complete map boundary catalogue for minimap projection.</summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>List of map boundaries; empty list on failure.</returns>

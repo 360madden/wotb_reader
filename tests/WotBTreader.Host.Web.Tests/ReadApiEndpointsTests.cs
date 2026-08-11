@@ -5,6 +5,7 @@ using WotBTreader.Application.Game;
 using WotBTreader.Application.Results;
 using WotBTreader.Application.Storage;
 using WotBTreader.Core;
+using WotBTreader.Core.Discovery;
 using WotBTreader.Core.Overlay;
 using WotBTreader.Host.Web.Contracts;
 using WotBTreader.Host.Web.Endpoints;
@@ -347,6 +348,154 @@ public sealed class ReadApiEndpointsTests
         OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
         Assert.AreEqual(0.0, frame.CameraX!.Value, 1e-9);
         Assert.AreEqual(1, scanner.CameraPoseCallCount);
+    }
+
+    [TestMethod]
+    public async Task LiveFrame_ProjectsResolvedFrame()
+    {
+        // One composed live frame: CAM-001 pose at the origin + one resolved
+        // ring record 100 m ahead. The LiveFrameSource seam projects it to
+        // the same OverlayFrameResponse shape the replay path serves.
+        CameraScannerStub scanner = new(
+            OperationResult.Failure<CameraPoseReadResult>(
+                new ApplicationError("unused", "The live path never calls the pose seam separately.")),
+            OperationResult.Success(new LiveFrameReadResult(
+                CompletedAtUtc: DateTimeOffset.UtcNow,
+                GameVersion: "11.19.0.10",
+                Type10EntityPositionStatus.Resolved,
+                FailureStage: null,
+                ReplayTimeSeconds: 150.5,
+                SameDecodedClockProven: true,
+                Camera: new CameraPoseReadResult(
+                    CompletedAtUtc: DateTimeOffset.UtcNow,
+                    GameVersion: "11.19.0.10",
+                    CameraPoseStatus.Resolved,
+                    FailureStage: null,
+                    AvatarAddress: 0,
+                    CameraAddress: 0,
+                    CameraStateAddress: 0,
+                    X: 0,
+                    Y: 0,
+                    Z: 0,
+                    YawRadians: 0,
+                    PitchRadians: 0,
+                    Basis: [],
+                    AvatarIdentityVerified: true,
+                    CameraIdentityVerified: true,
+                    CameraStateIdentityVerified: true,
+                    ConsistentDoubleRead: true,
+                    ModuleRooted: true),
+                Tanks:
+                [
+                    new LiveFrameTankState(
+                        3760578,
+                        Type10EntityPositionStatus.Resolved,
+                        X: 0,
+                        Y: 0,
+                        Z: 100,
+                        YawRadians: 0.5f,
+                        Hp: null,
+                        FailureStage: null,
+                        ModuleRooted: true),
+                ],
+                RosterCandidatesSeen: 14,
+                RosterFilteredOut: 2)));
+
+        IResult result = await ReadApiEndpoints.GetLiveFrameAsync(
+            new DefaultHttpContext(),
+            scanner,
+            fov: 90,
+            width: 1920,
+            height: 1080,
+            TestContext.CancellationToken);
+
+        OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
+        Assert.AreEqual(150.5, frame.ReplayTimeSeconds, 1e-9);
+        Assert.AreEqual(0.0, frame.CameraX!.Value, 1e-9);
+        OverlayTankResponse tank = frame.Tanks.Single();
+        Assert.AreEqual(3760578, tank.EntityId);
+        Assert.AreEqual(960, tank.ScreenX!.Value, 1e-6);
+        Assert.AreEqual(540, tank.ScreenY!.Value, 1e-6);
+        Assert.IsTrue(tank.InViewport);
+        // Honest unknown HP: empty bar, no exact readout.
+        Assert.AreEqual(0.0, tank.HpFraction);
+        Assert.AreEqual(0, tank.MaxHealth);
+        Assert.AreEqual(0, tank.CurrentHealth);
+        Assert.IsNull(tank.PlayerName);
+        // Live mode honestly has no decode feed.
+        Assert.IsEmpty(frame.Pips);
+        Assert.IsEmpty(frame.Kills);
+        Assert.IsEmpty(frame.Beacons);
+        Assert.AreEqual(1, scanner.LiveFrameCallCount);
+    }
+
+    [TestMethod]
+    public async Task LiveFrame_NonResolvedFrame_ReturnsConflict()
+    {
+        CameraScannerStub scanner = new(
+            OperationResult.Failure<CameraPoseReadResult>(
+                new ApplicationError("unused", "Unused.")),
+            OperationResult.Success(new LiveFrameReadResult(
+                CompletedAtUtc: DateTimeOffset.UtcNow,
+                GameVersion: "11.19.0.10",
+                Type10EntityPositionStatus.ReplaySessionInactive,
+                "pre-battle-inactive",
+                ReplayTimeSeconds: null,
+                SameDecodedClockProven: false,
+                Camera: null,
+                Tanks: [],
+                RosterCandidatesSeen: 0,
+                RosterFilteredOut: 0)));
+
+        IResult result = await ReadApiEndpoints.GetLiveFrameAsync(
+            new DefaultHttpContext(),
+            scanner,
+            fov: 90,
+            width: 1920,
+            height: 1080,
+            TestContext.CancellationToken);
+
+        Assert.AreEqual(StatusCodes.Status409Conflict, StatusOf(result));
+        Assert.AreEqual(1, scanner.LiveFrameCallCount);
+    }
+
+    [TestMethod]
+    public async Task LiveFrame_ReadFailure_Returns503()
+    {
+        CameraScannerStub scanner = new(
+            OperationResult.Failure<CameraPoseReadResult>(
+                new ApplicationError("unused", "Unused.")),
+            OperationResult.Failure<LiveFrameReadResult>(
+                new ApplicationError("discover.gate_not_satisfied", "No gate.")));
+
+        IResult result = await ReadApiEndpoints.GetLiveFrameAsync(
+            new DefaultHttpContext(),
+            scanner,
+            fov: 90,
+            width: 1920,
+            height: 1080,
+            TestContext.CancellationToken);
+
+        Assert.AreEqual(StatusCodes.Status503ServiceUnavailable, StatusOf(result));
+    }
+
+    [TestMethod]
+    public async Task LiveFrame_InvalidFov_Returns400WithoutCallingScanner()
+    {
+        CameraScannerStub scanner = new(
+            OperationResult.Failure<CameraPoseReadResult>(
+                new ApplicationError("unused", "Unused.")));
+
+        IResult result = await ReadApiEndpoints.GetLiveFrameAsync(
+            new DefaultHttpContext(),
+            scanner,
+            fov: 0,
+            width: 1920,
+            height: 1080,
+            TestContext.CancellationToken);
+
+        Assert.AreEqual(StatusCodes.Status400BadRequest, StatusOf(result));
+        Assert.AreEqual(0, scanner.LiveFrameCallCount);
     }
 
     [TestMethod]
@@ -741,9 +890,11 @@ public sealed class ReadApiEndpointsTests
     }
 
     private sealed class CameraScannerStub(
-        OperationResult<CameraPoseReadResult> poseResult) : IGameMemoryScanner
+        OperationResult<CameraPoseReadResult> poseResult,
+        OperationResult<LiveFrameReadResult>? liveFrameResult = null) : IGameMemoryScanner
     {
         public int CameraPoseCallCount { get; private set; }
+        public int LiveFrameCallCount { get; private set; }
 
         public ValueTask<OperationResult<CameraPoseReadResult>> ReadCameraPoseAsync(
             CancellationToken cancellationToken)
@@ -806,8 +957,12 @@ public sealed class ReadApiEndpointsTests
 
         public ValueTask<OperationResult<LiveFrameReadResult>> ReadLiveFrameAsync(
             WotBTreader.Application.Game.LiveFrameReadRequest request,
-            CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
+            CancellationToken cancellationToken)
+        {
+            LiveFrameCallCount++;
+            return ValueTask.FromResult(liveFrameResult ?? OperationResult.Failure<LiveFrameReadResult>(
+                new ApplicationError("discover.live_frame.not_configured", "Test default.")));
+        }
 
         public ValueTask<OperationResult<EntityPositionAddressResult>> ResolveEntityPositionAddressAsync(
             WotBTreader.Application.Game.EntityPositionAddressRequest request,

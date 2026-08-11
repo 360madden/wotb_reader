@@ -142,9 +142,17 @@ open question, not silently decided.
    methods now delegate to shared private cores), one G2 clock attestation
    per frame, honest `hp: null`, ids-only privacy boundary; endpoint +
    contract + 25 new tests (10 Core decoder, 4 coordinator frame, 3
-   endpoint, plus resolver/roster). Remaining: the `LiveFrameSource` seam
-   so the overlay can switch frame sources without touching its render
-   path — pure offline coding, testable with the existing fakes.
+   endpoint, plus resolver/roster). The `LiveFrameSource` seam is DONE
+   too: `LiveFrameProjector` (Application, pure) maps `LiveFrameReadResult`
+   → the SAME `OverlayFrameProjection` shape; `GET /api/v1/live/frame`
+   serves it projected to viewport pixels (the shared
+   `ToOverlayFrameResponse` mapping — both sources serialize identically),
+   and `TreaderApiClient` gained `GetLiveFrameAsync`. HP renders as the
+   DTO's honest "unknown" (empty bar, no readout) until L1;
+   pips/kills/scoreboard absent. 12 new tests (8 projector, 4 endpoint).
+   Remaining: the overlay's live-mode UI switch (a ViewModel mode toggle —
+   design decision, not code) and joining live ids to decoded roster names
+   once X2b proves the id mapping.
 4. **Measure the frame window** on the approved session; record it as the
    loop's budget (feeds item 7).
 5. Then: L1 wiring (`hp` becomes real), the live overlay render pass, and

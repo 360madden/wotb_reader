@@ -404,6 +404,7 @@ src/WotBTreader.Application/Diagnostics/TreaderDiagnostics.cs
 src/WotBTreader.Application/Game/GameMetadataContracts.cs
 src/WotBTreader.Application/Game/GameSessionContracts.cs
 src/WotBTreader.Application/Properties/AssemblyInfo.cs
+src/WotBTreader.Application/Replay/LiveFrameProjector.cs
 src/WotBTreader.Application/Replay/OffsetTableReader.cs
 src/WotBTreader.Application/Replay/OverlayFrameProjection.cs
 src/WotBTreader.Application/Replay/ProjectionCache.cs
@@ -666,6 +667,7 @@ src/WotBTreader.Storage.Sqlite/StorageLog.cs
 src/WotBTreader.Storage.Sqlite/WotBTreader.Storage.Sqlite.csproj
 src/WotBTreader.Storage.Sqlite/packages.lock.json
 test.cmd
+tests/WotBTreader.Application.Tests/LiveFrameProjectorTests.cs
 tests/WotBTreader.Application.Tests/MSTestSettings.cs
 tests/WotBTreader.Application.Tests/OffsetTableReaderTests.cs
 tests/WotBTreader.Application.Tests/OverlayFrameProjectorTests.cs

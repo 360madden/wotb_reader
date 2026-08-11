@@ -4,8 +4,9 @@ using WotBTreader.Application.Game;
 using WotBTreader.Application.Replay;
 using WotBTreader.Application.Results;
 using WotBTreader.Application.Storage;
-using WotBTreader.Core.Overlay;
 using WotBTreader.Core;
+using WotBTreader.Core.Discovery;
+using WotBTreader.Core.Overlay;
 using WotBTreader.Host.Web.Contracts;
 using WotBTreader.Host.Web.Infrastructure;
 using WotBTreader.Host.Web.Services;
@@ -40,6 +41,7 @@ internal static class ReadApiEndpoints
         group.MapGet("/maps/{mapId}/minimap", GetMinimapAsync);
         group.MapGet("/decode-runs/{decodeRunId:guid}", GetDecodeRunAsync);
         group.MapGet("/sessions/{battleSessionId:guid}/frame", GetOverlayFrameAsync);
+        group.MapGet("/live/frame", GetLiveFrameAsync);
         return builder;
     }
 
@@ -255,7 +257,94 @@ internal static class ReadApiEndpoints
             resolvedHeight,
             sessionBeacons);
 
-        return Results.Ok(new OverlayFrameResponse
+        return Results.Ok(ToOverlayFrameResponse(projection));
+    }
+
+    /// <summary>
+    /// Serves one composed LIVE frame projected to viewport pixels — the
+    /// <c>LiveFrameSource</c> seam. Same <see cref="OverlayFrameResponse"/>
+    /// shape as the replay frame, so the HUD renders live nameplates without
+    /// touching its render path. Query params: fov (vertical degrees, default
+    /// 90), width/height (viewport pixels, default 1920x1080). The frame
+    /// comes from the gated coordinator surface (ONE guarded reader lease,
+    /// ONE G2 clock label); hp is honestly unknown (empty bar) until L1
+    /// lands, and pips/kills/scoreboard are absent (decode-projection
+    /// features). Fail-closed: a failed read is 503 retryable; a gate-level
+    /// non-resolved frame (pre-battle-inactive, unsupported build, revoked
+    /// authorization) is 409 so the HUD keeps its last-good frame.
+    /// </summary>
+    internal static async Task<IResult> GetLiveFrameAsync(
+        HttpContext context,
+        IGameMemoryScanner scanner,
+        double? fov,
+        double? width,
+        double? height,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(scanner);
+
+        double resolvedFov = fov ?? 90.0;
+        if (!double.IsFinite(resolvedFov) || resolvedFov <= 0 || resolvedFov >= 180)
+        {
+            return Problem(
+                context,
+                StatusCodes.Status400BadRequest,
+                "api.frame.fov",
+                "fov must be a positive number of degrees below 180.",
+                retryable: false);
+        }
+
+        double resolvedWidth = width ?? 1920.0;
+        double resolvedHeight = height ?? 1080.0;
+        if (!double.IsFinite(resolvedWidth) || resolvedWidth <= 0
+            || !double.IsFinite(resolvedHeight) || resolvedHeight <= 0)
+        {
+            return Problem(
+                context,
+                StatusCodes.Status400BadRequest,
+                "api.frame.viewport",
+                "width and height must be positive viewport pixel dimensions.",
+                retryable: false);
+        }
+
+        OperationResult<LiveFrameReadResult> frameResult = await scanner.ReadLiveFrameAsync(
+            new WotBTreader.Application.Game.LiveFrameReadRequest(),
+            cancellationToken).ConfigureAwait(false);
+        if (!frameResult.IsSuccess || frameResult.Value is null)
+        {
+            return Problem(
+                context,
+                StatusCodes.Status503ServiceUnavailable,
+                frameResult.Error?.Code ?? "api.live_frame.unavailable",
+                frameResult.Error?.Message ?? "The live frame read is unavailable.",
+                retryable: true);
+        }
+
+        LiveFrameReadResult frame = frameResult.Value;
+        if (frame.Status != Type10EntityPositionStatus.Resolved)
+        {
+            return Problem(
+                context,
+                StatusCodes.Status409Conflict,
+                "api.live_frame.not_resolved",
+                $"The live frame is not resolved ({frame.Status}, {frame.FailureStage}).",
+                retryable: true);
+        }
+
+        OverlayFrameProjection projection = LiveFrameProjector.Project(
+            frame,
+            resolvedFov * Math.PI / 180.0,
+            resolvedWidth,
+            resolvedHeight);
+        return Results.Ok(ToOverlayFrameResponse(projection));
+    }
+
+    /// <summary>
+    /// The single projection→response mapping shared by the replay frame and
+    /// the live frame endpoints, so both sources serialize identically.
+    /// </summary>
+    private static OverlayFrameResponse ToOverlayFrameResponse(
+        OverlayFrameProjection projection) => new()
         {
             ReplayTimeSeconds = projection.ReplayTime.TotalSeconds,
             CameraX = projection.CameraX,
@@ -264,56 +353,55 @@ internal static class ReadApiEndpoints
             CameraYawRadians = projection.CameraYawRadians,
             CameraPitchRadians = projection.CameraPitchRadians,
             Tanks = [.. projection.Tanks.Select(tank => new OverlayTankResponse
-            {
-                EntityId = tank.EntityId,
-                PlayerName = tank.PlayerName,
-                TankName = tank.TankName,
-                ClanTag = tank.ClanTag,
-                TeamNumber = tank.TeamNumber,
-                HpFraction = tank.HpFraction,
-                Alive = tank.Alive,
-                DistanceMeters = tank.DistanceMeters,
-                WorldX = tank.WorldX,
-                WorldZ = tank.WorldZ,
-                ScreenX = tank.ScreenX,
-                ScreenY = tank.ScreenY,
-                Depth = tank.Depth,
-                InViewport = tank.InViewport,
-                ScreenHeadingDegrees = tank.ScreenHeadingDegrees,
-                DamageDealt = tank.DamageDealt,
-                DamageTaken = tank.DamageTaken,
-                Kills = tank.Kills,
-                MaxHealth = tank.MaxHealth,
-                CurrentHealth = tank.CurrentHealth,
-            })],
+        {
+            EntityId = tank.EntityId,
+            PlayerName = tank.PlayerName,
+            TankName = tank.TankName,
+            ClanTag = tank.ClanTag,
+            TeamNumber = tank.TeamNumber,
+            HpFraction = tank.HpFraction,
+            Alive = tank.Alive,
+            DistanceMeters = tank.DistanceMeters,
+            WorldX = tank.WorldX,
+            WorldZ = tank.WorldZ,
+            ScreenX = tank.ScreenX,
+            ScreenY = tank.ScreenY,
+            Depth = tank.Depth,
+            InViewport = tank.InViewport,
+            ScreenHeadingDegrees = tank.ScreenHeadingDegrees,
+            DamageDealt = tank.DamageDealt,
+            DamageTaken = tank.DamageTaken,
+            Kills = tank.Kills,
+            MaxHealth = tank.MaxHealth,
+            CurrentHealth = tank.CurrentHealth,
+        })],
             Beacons = [.. projection.Beacons.Select(beacon => new OverlayBeaconResponse
-            {
-                Name = beacon.Name,
-                Color = beacon.Color,
-                DistanceMeters = beacon.DistanceMeters,
-                WorldX = beacon.WorldX,
-                WorldZ = beacon.WorldZ,
-                ScreenX = beacon.ScreenX,
-                ScreenY = beacon.ScreenY,
-                Depth = beacon.Depth,
-                InViewport = beacon.InViewport,
-            })],
+        {
+            Name = beacon.Name,
+            Color = beacon.Color,
+            DistanceMeters = beacon.DistanceMeters,
+            WorldX = beacon.WorldX,
+            WorldZ = beacon.WorldZ,
+            ScreenX = beacon.ScreenX,
+            ScreenY = beacon.ScreenY,
+            Depth = beacon.Depth,
+            InViewport = beacon.InViewport,
+        })],
             Pips = [.. projection.Pips.Select(pip => new OverlayPipResponse
-            {
-                EntityId = pip.EntityId,
-                Kind = pip.Kind.ToString(),
-                Damage = pip.Damage,
-                ScreenX = pip.ScreenX,
-                ScreenY = pip.ScreenY,
-            })],
+        {
+            EntityId = pip.EntityId,
+            Kind = pip.Kind.ToString(),
+            Damage = pip.Damage,
+            ScreenX = pip.ScreenX,
+            ScreenY = pip.ScreenY,
+        })],
             Kills = [.. projection.Kills.Select(kill => new OverlayKillResponse
-            {
-                VictimEntityId = kill.VictimEntityId,
-                KillerEntityId = kill.KillerEntityId,
-                ReplayTimeSeconds = kill.ReplayTime.TotalSeconds,
-            })],
-        });
-    }
+        {
+            VictimEntityId = kill.VictimEntityId,
+            KillerEntityId = kill.KillerEntityId,
+            ReplayTimeSeconds = kill.ReplayTime.TotalSeconds,
+        })],
+        };
 
     /// <summary>
     /// CAM-005 seam: reads the gate-verified GameCamera pose (the CAM-001
