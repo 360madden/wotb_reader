@@ -70,7 +70,7 @@ failure mapping, base64 bytes, no-address-leak asserted in tests.
 ## Verification
 
 - GameIntegration 284/284, Host.Web 151/151, full `scripts/validate.ps1`
-  gate green (932 passed, 3 local opt-in skips, 0 warnings, 0 errors).
+  gate green (936 passed, 3 local opt-in skips, 0 warnings, 0 errors).
 
 ## Remaining
 
