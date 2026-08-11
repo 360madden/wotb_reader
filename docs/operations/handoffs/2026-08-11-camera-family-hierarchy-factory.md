@@ -90,6 +90,32 @@ smoothed, `+0x80/+0x84` deltas), i.e. the camera-state object at
 `+0x360/0x364` entries). The 2 floats pushed per frame by `FUN_01dd2cd0` are
 camera angles/state, not world position.
 
+## Camera state object layout (W2S-critical) — pinned
+
+`FUN_01ddb130` is the **per-frame camera update dispatcher**
+(`__thiscall(cameraState, dt)`): it calls the three math functions by mode
+(`param_1[0x43] == -1` replay → `FUN_01ddce80`; `param_1[0x4a] == 0` →
+`FUN_01ddc9c0`; else → `FUN_01dde860`) and integrates movement input
+(`param_1[0x23] += dt * param_1[0x39]`, direction flags `+0x12/+0x13`).
+
+The cameraState object (ring object at `[cam+0x28]`) layout, raw-byte
+verified:
+
+| offset | field |
+|---|---|
+| `+0x58/+0x5C` | current yaw/pitch (rad) |
+| `+0x60/+0x64` | smoothed yaw/pitch |
+| `+0x80/+0x84` | yaw/pitch deltas |
+| `+0xAC..0xC4` | **view matrix (4×4, 16 floats)** — composed by `FUN_01dde860` as yaw×pitch rotation × the transform-record world matrix, translation subtracted |
+| `+0x11C/+0x120/+0x124` | **camera world position (3 floats)** — integrated per frame (`pos += delta` at `0x19db433..0x19db45d` in `FUN_01ddb130`) |
+| `+0x320` | ring index (800) |
+| `+0x360/0x364 + idx*0x10` | per-frame ring entries (2 floats each) |
+
+This is the **W2S camera anchor**: view matrix + position + angles all live in
+one object reached as `[[mgr+0x2C]+0x28]`. The projection matrix (FOV
+`DAT_035cd11c`/`DAT_035cd128`) remains the last piece before a full
+world→screen projection can be assembled from static evidence.
+
 ## Files touched
 
 `.build/ghidra-evidence/` (ignored): `find-vftable-refs.txt`,
@@ -98,12 +124,10 @@ camera angles/state, not world position.
 
 ## Next steps
 
-- **VP/view matrix**: `FUN_01dde860` is the world→camera composition seam
-  (reads `[t+0x60..0x90]` + camera orientation); trace where its output
-  4×4 lands (per-frame VP target) and where FOV (`DAT_035cd11c`) applies —
-  the W2S projection matrix.
+- **Projection matrix**: find where FOV (`DAT_035cd11c` / `DAT_035cd128`)
+  builds the projection (perspective) matrix — likely multiplied with the
+  `+0xAC` view matrix in the renderer; completes world→screen.
 - Resolve the camera's **global root** (who owns the battle manager holding
   `[mgr+0x2C]`) so a live/offline read plan can name a fixed address chain.
-- Pin the camera **world position** source (the angles at `+0x58/+0x5c`
-  imply a position elsewhere in the camera-state object; the ring's
-  `+0x60`-region matrix may be the view basis).
+- Verify the `+0x11C` position triple against replay-derived camera ground
+  truth (the replay's own camera path) in a future offline session.

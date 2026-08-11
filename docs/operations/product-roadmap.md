@@ -169,7 +169,14 @@ holds live yaw/pitch `+0x58/+0x5c`, smoothed `+0x60/+0x64`, deltas
 rotation matrices via the verified 4×4 multiply `FUN_00729570`;
 `FUN_01dde860` reads the hash-bound transform world matrix
 `[t+0x60..0x90]` and composes it with camera orientation — the
-world→camera seam and the VP-matrix writer's entry point. Handoff:
+world→camera seam and the VP-matrix writer's entry point. ✅ **Camera
+state object pinned (2026-08-11)**: the per-frame dispatcher
+`FUN_01ddb130` integrates camera position `+0x11C/+0x120/+0x124`
+(`pos += delta`) and dispatches the angle/matrix builders by mode;
+**view matrix `+0xAC..0xC4`**, yaw/pitch `+0x58/+0x5C` (smoothed
+`+0x60/+0x64`), ring index `+0x320`. The W2S camera anchor is one object:
+`[[mgr+0x2C]+0x28]`; only the projection matrix (FOV `DAT_035cd11c`)
+remains before a full static world→screen pipeline. Handoff:
 `docs/operations/handoffs/2026-08-11-camera-family-hierarchy-factory.md`.
 
 ### Phase 2 — The live seam + first live sessions (serialized)
