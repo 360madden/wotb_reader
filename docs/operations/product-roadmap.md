@@ -247,21 +247,25 @@ memory-space offset is the third-person proof). Session script is now
 **v5** (GameCamera pose + memory-space correlation + decoded-yaw
 timeline). Handoff:
 `docs/operations/handoffs/2026-08-11-cam002-live-pose-layout.md`.
-✅ **CAM-001 verdict: `camera-state-consistent` (2026-08-11, CAM-004)**:
-GameCamera posA `+0x38` is the true world camera — **23.57 m** from the
-viewpoint tank (7/8 rounds within 1-30 m, memory-space, same wall time),
-identity gates pass, posC `+0xB0` is a different quantity (368.8 m).
-⚠️ **CAM-001 v7 look-at check HONEST-NEGATIVE + root cause ISOLATED
-(2026-08-11)**: two v7 launches read posA ~120 m from the tank with level
-pitch — the memory camera was NOT aimed at the tank. Three probes on
-session `019ff25b` falsified wrong-instance (the GameCamera is UNIQUE in
-the process and the chain reaches it), wrong-class (same RVA 0x32dafa0
-under ASLR bases 0x380000 vs 0xAB0000), and wrong-field (no near-tank
-pose anywhere in +0x00..0x200): posA is a real live pose that tracks the
-tank x exactly but sits ~50 m above/behind — a NON-chase camera STATE on
-that launch (CAM-004's launch had the chase state). Remaining
-discriminator (rendering-only): capture the game window and compare the
-screen view against posA. See `cam001-v7-evidence-template.md`.
+🚫 **CAM-001 verdict SUPERSEDED (CAM-010, 2026-08-11)**: GameCamera posA
+`+0x38` is stored **(x, z, y) — world Y/Z swapped**; the yz-swapped posA
+tracks the viewpoint tank to **2.1–3.6 m** (sub-meter on v7b+v7c), and
+CAM-004's "23.57 m third-person offset" was the `√2·|tank.z − tank.y|`
+artifact (z − y = 16.7 m at the read moment), NOT a chase eye. The W2S
+seam must yz-swap world→camera space; the orientation convention and the
+true render eye (candidate: ReplayCameraController `+0x28` ring) are the
+open questions. Handoff:
+`docs/operations/handoffs/2026-08-11-cam010-yz-swap-position-convention.md`.
+✅ **CAM-001 v7 root-cause work (2026-08-11) still stands structurally**:
+three probes on session `019ff25b` falsified wrong-instance (the
+GameCamera is UNIQUE in the process and the chain reaches it),
+wrong-class (same RVA 0x32dafa0 under ASLR bases 0x380000 vs 0xAB0000),
+and wrong-field (no near-tank pose anywhere in +0x00..0x200 — now
+explained: the eye is ON the tank, there never was a 23 m eye). The
+camera is NOT yaw-locked to the tank (101–177° gaps on v7b/v7c) — a
+non-chase camera STATE on the flipped phase. Validator `eye` now
+yz-swaps posA; `-CaptureWindow` scalars stay diagnostic-only. See
+`cam001-v7-evidence-template.md`.
 The
 CAM-003 resolver gate is **REFRAMED by CAM-008 (2026-08-11)**: the
 "variant" `base+0x325ad2c` is RTTI-verified to be **PreLoginController**

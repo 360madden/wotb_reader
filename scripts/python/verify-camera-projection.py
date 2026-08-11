@@ -264,6 +264,13 @@ def _screen_summary(screen):
 def evaluate_round(round_sample, width, height):
     """Returns a diagnostic dict, or None when the round is not evaluable.
 
+    CAM-010 (2026-08-11): the GameCamera position is stored (x, z, y) —
+    world Y and Z swapped — so the world eye is the yz-swap of the
+    persisted camera position (see the swap comment in the body). This
+    overturns CAM-004's "23.57 m third-person offset" (that value was
+    sqrt(2)*|tank.z - tank.y| at the read moment, an artifact of the
+    swapped read, reproduced to sub-meter on v7b/v7c).
+
     CORRECTED 2026-08-11 (CAM-001 v7 root-cause follow-up): the W2S
     projection is inherently MEMORY-space — the overlay consumes the
     memory camera pose and memory tank/entity positions at the same wall
@@ -289,7 +296,15 @@ def evaluate_round(round_sample, width, height):
     if not memory_tank and not decoded:
         return None
 
-    eye = (camera["x"], camera["y"], camera["z"])
+    # CAM-010 (2026-08-11): the GameCamera stores its position at
+    # +0x38/+0x3C/+0x40 as (x, z, y) — the world Y and Z are SWAPPED
+    # relative to the tank/entity space (proven on v7b+v7c: yz-swapped
+    # posA sits 2.1-3.6 m from the decoded tank, sub-meter, while the
+    # as-read distance was 113-206 m and CAM-004's "23.57 m third-person
+    # offset" was the sqrt(2)*|tank.z - tank.y| artifact). The orientation
+    # fields (yaw/pitch/basis) keep their stored convention. So the world
+    # eye is the yz-swap of the stored position.
+    eye = (camera["x"], camera["z"], camera["y"])
     yaw = camera["yawRadians"]
     pitch = camera["pitchRadians"]
     # Primary projection target: the memory tank (same wall time / memory
@@ -402,9 +417,11 @@ def self_test():
             failures.append((name, detail))
 
     # 1. Camera behind and above the tank aiming at it: look-at ~0, tank at
-    #    viewport center across the FOV band.
+    #    viewport center across the FOV band. The camera dict is the STORED
+    #    layout (x, z, y) — the world eye (0, 5, -20) is stored as
+    #    (0, -20, 5) per the CAM-010 yz-swap finding.
     round_ok = {
-        "camera": {"x": 0.0, "y": 5.0, "z": -20.0, "yawRadians": 0.0,
+        "camera": {"x": 0.0, "y": -20.0, "z": 5.0, "yawRadians": 0.0,
                    "pitchRadians": math.atan2(-5.0, 20.0)},
         "decodedTank": {"x": 0.0, "y": 0.0, "z": 0.0},
         "alignedDecodedSeconds": 60.0,
@@ -418,9 +435,9 @@ def self_test():
         check("tank at center", all(v <= 0.01 for v in result["centerDistanceByFov"].values()), result)
 
     # 2. Camera yaw rotated 90 deg away from the tank: look-at ~90, projection
-    #    behind the camera -> must fail.
+    #    behind the camera -> must fail. (Stored layout, same as above.)
     round_wrong = {
-        "camera": {"x": 0.0, "y": 5.0, "z": -20.0, "yawRadians": math.pi / 2.0,
+        "camera": {"x": 0.0, "y": -20.0, "z": 5.0, "yawRadians": math.pi / 2.0,
                    "pitchRadians": math.atan2(-5.0, 20.0)},
         "decodedTank": {"x": 0.0, "y": 0.0, "z": 0.0},
         "alignedDecodedSeconds": 60.0,
@@ -435,7 +452,7 @@ def self_test():
     # 3. Correct yaw but pitch 0 (no look-down): the tank sits well below
     #    center and the look-at angle exceeds the tolerance -> must fail.
     round_no_pitch = {
-        "camera": {"x": 0.0, "y": 5.0, "z": -20.0, "yawRadians": 0.0,
+        "camera": {"x": 0.0, "y": -20.0, "z": 5.0, "yawRadians": 0.0,
                    "pitchRadians": 0.0},
         "decodedTank": {"x": 0.0, "y": 0.0, "z": 0.0},
         "alignedDecodedSeconds": 60.0,

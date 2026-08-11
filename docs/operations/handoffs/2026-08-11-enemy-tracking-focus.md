@@ -923,6 +923,38 @@ automatically. Self-test extended (stride-4 fixture, legacy partial,
 non-chase classifier).
 
 Gate: full `scripts/validate.ps1` green (all suites pass, script hygiene,
-offset schema, exit 0). Remaining: the next live CAM session answers the
-mode-vs-pose question in one launch via `-CaptureWindow` (chase-state
-launch should reproduce CAM-004's 23.57 m with mode=chase).
+offset schema, exit 0).
+
+## Turn 4 — CAM-010: posA is stored (x, z, y) — CAM-004 verdict SUPERSEDED
+
+**Breakthrough from the `-CaptureWindow` re-attempt (session `019ff276`):**
+the new basis/coherence reporting (6/6 coherent=True, mode=non-chase) led
+to a cross-check of posA against the decoded store that OVERTURNED the
+flagship camera verdict. GameCamera posA `+0x38/+0x3C/+0x40` is stored
+**(x, z, y) — the world Y and Z are SWAPPED** relative to the tank/entity
+space:
+
+- yz-swapping posA puts the camera **2.1–3.6 m from the decoded viewpoint
+  tank** on every round of v7b (`019ff26b`) and v7c (`019ff276`) —
+  sub-meter fit while the as-read distance was 113–206 m.
+- The as-read distance is exactly the artifact `sqrt(dx² + 2·(tank.z −
+  tank.y)²)` (v7c: 206.0 m with z−y = 146.5; v7b r0: 130.3 m with
+  z−y = 92.4). **CAM-004's "23.57 m third-person offset" = `√2·|z − y|`
+  with z − y = 16.7 m at the read moment — a stable artifact, not a
+  chase eye.** The object-window scan's "no 1–50 m band triple" is now
+  explained: the eye is ON the tank; there never was a 23 m eye.
+- The camera is NOT yaw-locked to the tank (101–177° gaps on both
+  sessions) — a free observer riding the tank in the non-chase state.
+
+**Changes:** the validator's `eye` is now `(posA.x, posA.z, posA.y)`
+(fixtures rewritten to the stored convention; v7c now reports look-at
+~100°, pitch-to-tank −61°, tank behind camera — verdict unchanged);
+AGENTS.md, the roadmap, the cam004 handoff (SUPERSEDED banner), the
+CAM-010 handoff (new), and three forward design docs corrected. The chain
+walk, identity gates, and field offsets remain valid.
+
+**Next live unit:** find the true render eye + orientation convention —
+dump the ReplayCameraController `+0x28` per-frame ring + controller
+region on one launch (any phase) and search for a non-tank position
+triple consistent with a chase eye ~5–30 m behind the tank along the
+camera forward, or with the actual render view.

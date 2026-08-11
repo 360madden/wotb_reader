@@ -65,7 +65,7 @@ session id it is already bound to in replay mode (`_selectedSession`).
 ## Own-nameplate refinement (rides the same join)
 
 Live mode renders the viewpoint tank's own nameplate because the CAM-001
-camera sits ~23.57 m behind it (third-person), so the replay self-filter
+camera sits behind it (third-person), so the replay self-filter
 (`DistanceMeters < 1.0`) never catches it. With the join, the host can
 identify the viewpoint tank (the decoded session's
 `ViewpointParticipantId` → its `EntityId`) and the overlay can suppress

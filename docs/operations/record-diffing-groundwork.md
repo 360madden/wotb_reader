@@ -730,21 +730,23 @@ memory camera is a data-source swap:
 1. **Seam:** `ReplayFrameSource.BuildCamera` gains an optional
    `OverlayCamera? cameraOverride` (or an `ICameraPoseSource` behind the
    existing `IOverlayFrameSource`); null → today's viewpoint-tank fallback.
-2. **Mapping (GameCamera → OverlayCamera) — CAM-002/004 live-verified
-   2026-08-11:** `X/Y/Z` ← `+0x38/+0x3C/+0x40` (float32 world position,
-   interpolated prev-frame copy `+0x44..`); `YawRadians` ←
-   `atan2(sin@+0x54, cos@+0x50)` (the yaw is stored as a cos/sin pair, NOT
-   raw radians — CAM-001 correlated the memory yaw to the decoded camera
-   yaw at 0.15°); `PitchRadians` ← `+0x58`; `RollRadians` ← null (the
-   view basis `+0x80..0xA8` rows 0-1 can confirm zero roll; the engine
-   composes yaw×pitch rotation × the transform world matrix, so a
-   non-trivial basis carries the tank's own orientation). Sign/axis
-   conventions are confirmed by the CAM-004 `camera-state-consistent`
-   verdict (GameCamera posA `+0x38` sits 23.57 m from the viewpoint tank,
-   7/8 rounds) before any swap.
+2. **Mapping (GameCamera → OverlayCamera) — CAM-002 live-verified
+   2026-08-11, CAM-010 CORRECTED:** `X/Y/Z` ← **yz-swap of
+   `+0x38/+0x3C/+0x40`** — the position is stored (x, z, y) with the
+   world Y and Z swapped (CAM-010: the yz-swapped posA tracks the
+   viewpoint tank to 2.1–3.6 m; the claimed 23.57 m third-person offset
+   was the `√2·|tank.z − tank.y|` artifact and is DEAD); interpolated
+   prev-frame copy `+0x44..`; `YawRadians` ← `atan2(sin@+0x54,
+   cos@+0x50)` (the yaw is stored as a cos/sin pair, NOT raw radians —
+   CAM-001 correlated the memory yaw to the decoded camera yaw at
+   0.15°); `PitchRadians` ← `+0x58`; `RollRadians` ← null (the view
+   basis `+0x80..0xB0` stride-4 rows 0-1 can confirm zero roll; the
+   engine composes yaw×pitch rotation × the transform world matrix, so a
+   non-trivial basis carries the tank's own orientation). The world-space
+   mapping of the orientation fields and the true render eye remain
+   OPEN (CAM-010) — do not ship the swap without resolving them.
 3. **Validation before HUD change:** run both sources on the same decoded
-   frame and diff the projected nameplate screen positions (the
-   third-person offset is the dominant correction, ~1-30 m); the swap only
+   frame and diff the projected nameplate screen positions; the swap only
    ships when the diff is within the overlay's label-budget tolerance.
 4. **Fail-closed:** no verified memory camera → current viewpoint fallback
    (never a zero/guessed pose).

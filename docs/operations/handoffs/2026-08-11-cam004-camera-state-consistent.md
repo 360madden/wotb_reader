@@ -1,3 +1,12 @@
+> **SUPERSEDED 2026-08-11 (CAM-010):** the "23.57 m third-person offset"
+> was the yz-swap artifact `√2·|tank.z − tank.y|` (z − y = 16.7 m at the
+> read moment) — GameCamera posA `+0x38` is stored (x, z, y) with world
+> Y/Z swapped, and the yz-swapped posA tracks the viewpoint tank to
+> within ~2 m, not a third-person eye 23.57 m behind it. See
+> `docs/operations/handoffs/2026-08-11-cam010-yz-swap-position-convention.md`.
+> The chain walk, identity gates, and field offsets remain valid; the
+> interpretation of posA as a chase eye does not.
+
 # CAM-004 — camera-state-consistent: the GameCamera pose is the true W2S camera
 
 Date: 2026-08-11. Binary: wotblitz.exe 11.19.0.10 (hash `1cda5c31…1760307d`).

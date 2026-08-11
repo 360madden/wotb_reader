@@ -163,6 +163,21 @@ rounds + ≥ 1 yaw- and position-correlated round).
    test — skyFraction stays 0–0.11), so the pitch-gap branch is the
    primary non-chase signal.
 
+## CAM-010 — posA is stored (x, z, y): CAM-004's 23.57 m is superseded
+
+Cross-session offline analysis (v7b `019ff26b` + v7c `019ff276` vs the
+decoded store) proved the GameCamera position at `+0x38/+0x3C/+0x40` is
+stored as **(x, z, y) — world Y and Z swapped**. yz-swapping posA puts it
+**2.1–3.6 m from the decoded viewpoint tank on every round** (sub-meter
+fit; the as-read distance was 113–206 m). CAM-004's 23.57 m equals
+`√2·|tank.z − tank.y|` with z − y = 16.7 m — the same artifact, not a
+third-person eye. The validator's `eye` is now `(posA.x, posA.z,
+posA.y)`; v7c look-at measures 100° (tank behind camera), pitch-to-tank
+−61°, verdict unchanged (non-chase honest-negative). Full record:
+`docs/operations/handoffs/2026-08-11-cam010-yz-swap-position-convention.md`.
+Remaining question: the orientation convention and the true render eye
+(candidate: the ReplayCameraController `+0x28` ring).
+
 ## Known static values (do not change without re-verifying)
 
 | Item | Value |

@@ -12,9 +12,14 @@ No runtime AI, cloud, Python, Node.js, Rust, Electron, or containers.
   pass (ReplayCameraController `base+0x326dd0c` / GameCamera
   `base+0x32dafa0`), and the live pose lives on the **GameCamera**
   (position `+0x38`, yaw cos/sin `+0x50/+0x54`, pitch `+0x58`, basis
-  `+0x80..0xA8`). **CAM-001 verdict: `camera-state-consistent` (2026-08-11,
-  CAM-004)** — GameCamera posA `+0x38` is the true world camera (23.57 m
-  third-person offset from the viewpoint tank, 7/8 rounds). **Known caveat
+  `+0x80..0xB0`). **CAM-010 (2026-08-11): CAM-004's verdict is SUPERSEDED
+  — GameCamera posA `+0x38` is stored (x, z, y) with world Y/Z swapped
+  (yz-swap puts it 2.1–3.6 m from the decoded viewpoint tank, sub-meter,
+  on v7b+v7c; CAM-004's "23.57 m third-person offset" was the
+  `√2·|tank.z − tank.y|` artifact of the un-swapped read, not a chase
+  eye). The W2S seam must yz-swap world→camera space; the orientation
+  convention and the true render eye (controller `+0x28` ring?) are the
+  open questions. **Known caveat
   (CAM-003):** the session-controller vftable FLIPS between launches
   (`base+0x325ad2c` — resolver's hard-coded gates reject it and
   `/discover/entity-position` + `/position-page` return

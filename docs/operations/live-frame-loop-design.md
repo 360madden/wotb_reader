@@ -160,7 +160,12 @@ open question, not silently decided.
    server-side entity-id → decoded-participant join feeding
    `LiveFrameProjector` (names/clan/team/tank), fail-closed per id, plus
    the own-nameplate suppression that rides the same join (live mode
-   renders the viewpoint tank at its ~23.57 m third-person camera offset,
+   renders the viewpoint tank at its camera offset — NOTE (CAM-010,
+   2026-08-11): the claimed ~23.57 m third-person offset was a yz-swap
+   artifact of the un-swapped posA read (see the CAM-010 handoff); posA
+   is stored (x, z, y) and tracks the tank to ~2 m, and the world→camera
+   space yz-swap is REQUIRED for the W2S seam. The design below consumes
+   the memory pose with that swap.
    so the self-filter needs the id join, not distance).
 4. **Measure the frame window** on the approved session; record it as the
    loop's budget (feeds item 7). The measurement is IMPLEMENTED: the frame

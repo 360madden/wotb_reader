@@ -1290,7 +1290,7 @@ $aggregate = [ordered]@{
         # positions by design (the W2S projection validator consumes them),
         # so coordinates ARE persisted - flagged honestly (v7, 2026-08-11).
         coordinatesPersisted  = $true
-        # v7 follow-up: per-round view-basis floats (+0x80..0xA8) are
+        # v7 follow-up: per-round view-basis floats (+0x80..0xB0) are
         # persisted for the offline coherence check; derived sky/terrain
         # scalars only when -CaptureWindow (never raw pixels).
         basisRowsPersisted    = $true
