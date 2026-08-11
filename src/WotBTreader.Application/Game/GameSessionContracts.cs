@@ -291,6 +291,18 @@ public interface IGameMemoryScanner
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Reads the live GameCamera pose through the CAM-001 fixed member-path
+    /// (avatar vftable anchor → BattleResources → camera controller →
+    /// GameCamera) with an identity gate on every hop, for a gate-verified
+    /// offline session. The chain is deliberately gate-free with respect to
+    /// the session-controller vftable (CAM-003: it flips between launches),
+    /// so this works in both phases. Only the pose + identity flags leave the
+    /// coordinator; process identity stays inside.
+    /// </summary>
+    ValueTask<OperationResult<CameraPoseReadResult>> ReadCameraPoseAsync(
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Captures bounded register-derived position triples at a version-pinned
     /// game-code instruction. The coordinator, not the caller, supplies the
     /// process identity, module, RVA, register, and member displacement.
@@ -444,6 +456,48 @@ public sealed record EntityRecordRegionReadResult(
     bool EntityIdentityRevalidated,
     bool ConsistentDoubleRead,
     bool SameDecodedClockProven);
+
+/// <summary>Outcome of one CAM-001 gate-free camera-pose walk.</summary>
+public enum CameraPoseStatus
+{
+    /// <summary>Pose read with all hop identity gates passed.</summary>
+    Resolved,
+
+    /// <summary>The running executable does not match the pinned camera layout.</summary>
+    UnsupportedBuild,
+
+    /// <summary>The avatar vftable anchor was not found in memory.</summary>
+    AnchorNotFound,
+
+    /// <summary>A pointer hop read failed or a hop identity gate did not pass.</summary>
+    ChainBroken,
+}
+
+/// <summary>
+/// Privacy-safe result of one gate-verified GameCamera pose read: the world
+/// position, yaw/pitch, and view basis plus the per-hop identity flags. The
+/// addresses are diagnostic evidence (formatted as hex by the endpoint),
+/// never runtime read offsets.
+/// </summary>
+public sealed record CameraPoseReadResult(
+    DateTimeOffset CompletedAtUtc,
+    string GameVersion,
+    CameraPoseStatus Status,
+    string? FailureStage,
+    long AvatarAddress,
+    long CameraAddress,
+    long CameraStateAddress,
+    float X,
+    float Y,
+    float Z,
+    float YawRadians,
+    float PitchRadians,
+    float[] Basis,
+    bool AvatarIdentityVerified,
+    bool CameraIdentityVerified,
+    bool CameraStateIdentityVerified,
+    bool ConsistentDoubleRead,
+    bool ModuleRooted);
 
 /// <summary>
 /// Bounded diagnostic request for the gate-verified position-page endpoint.

@@ -687,13 +687,18 @@ memory camera is a data-source swap:
 1. **Seam:** `ReplayFrameSource.BuildCamera` gains an optional
    `OverlayCamera? cameraOverride` (or an `ICameraPoseSource` behind the
    existing `IOverlayFrameSource`); null → today's viewpoint-tank fallback.
-2. **Mapping (cameraState → OverlayCamera):** `X/Y/Z` ← `+0x11C/+0x120/
-   +0x124` (world position, integrated per-frame); `YawRadians` ← `+0x58`;
-   `PitchRadians` ← `+0x5C`; `RollRadians` ← null (the +0xAC basis rows
-   0-1 can confirm zero roll; the engine composes yaw×pitch rotation × the
-   transform world matrix, so a non-trivial basis carries the tank's own
-   orientation). Sign/axis conventions are confirmed by the CAM-001
-   correlation before any swap.
+2. **Mapping (GameCamera → OverlayCamera) — CAM-002/004 live-verified
+   2026-08-11:** `X/Y/Z` ← `+0x38/+0x3C/+0x40` (float32 world position,
+   interpolated prev-frame copy `+0x44..`); `YawRadians` ←
+   `atan2(sin@+0x54, cos@+0x50)` (the yaw is stored as a cos/sin pair, NOT
+   raw radians — CAM-001 correlated the memory yaw to the decoded camera
+   yaw at 0.15°); `PitchRadians` ← `+0x58`; `RollRadians` ← null (the
+   view basis `+0x80..0xA8` rows 0-1 can confirm zero roll; the engine
+   composes yaw×pitch rotation × the transform world matrix, so a
+   non-trivial basis carries the tank's own orientation). Sign/axis
+   conventions are confirmed by the CAM-004 `camera-state-consistent`
+   verdict (GameCamera posA `+0x38` sits 23.57 m from the viewpoint tank,
+   7/8 rounds) before any swap.
 3. **Validation before HUD change:** run both sources on the same decoded
    frame and diff the projected nameplate screen positions (the
    third-person offset is the dominant correction, ~1-30 m); the swap only

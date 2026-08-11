@@ -160,7 +160,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     private readonly IGuardedMemoryReaderFactory _memoryReaderFactory;
     private readonly IGameProcessModuleBaseAddressResolver _moduleBaseAddressResolver;
     private readonly IOffsetTableReader _offsetTableReader;
-    private readonly MemoryScanDiscoverer _scanDiscoverer;
+    private readonly IMemoryScanDiscoverer _scanDiscoverer;
     private readonly IInstructionSnapshotRunner _instructionSnapshotRunner;
     private const int MaximumReadAddresses = 2000;
     private readonly IBlitzReplayLifecycleFeed _lifecycleFeed;
@@ -202,7 +202,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         IGuardedMemoryReaderFactory memoryReaderFactory,
         IGameProcessModuleBaseAddressResolver moduleBaseAddressResolver,
         IOffsetTableReader offsetTableReader,
-        MemoryScanDiscoverer scanDiscoverer,
+        IMemoryScanDiscoverer scanDiscoverer,
         MemoryScanEngine scanEngine,
         IBlitzReplayLifecycleFeed lifecycleFeed,
         IInstructionSnapshotRunner instructionSnapshotRunner)
@@ -2149,6 +2149,313 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         }
 
         return tankRecord;
+    }
+
+    /// <summary>
+    /// Reads the live GameCamera pose through the CAM-001 fixed member-path
+    /// (avatar vftable anchor → BattleResources → camera controller →
+    /// GameCamera) with an identity gate on every hop. The anchor scan is
+    /// base-relative (runtime module base + avatar vftable RVA) so it works
+    /// regardless of ASLR; the chain is deliberately gate-free with respect
+    /// to the session-controller vftable, which flips between launches
+    /// (CAM-003). The pose region is read twice byte-identically before any
+    /// field is parsed.
+    /// </summary>
+    public async ValueTask<OperationResult<CameraPoseReadResult>> ReadCameraPoseAsync(
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        (AuthorizedMemoryObservation? observation, long baseAddress, CancellationToken authorizationToken, bool ok) =
+            GetScanAuthorization(cancellationToken);
+        if (!ok)
+        {
+            return GateCheck<CameraPoseReadResult>(
+                "discover.gate_not_satisfied",
+                "The offline-session gate is not satisfied.");
+        }
+
+        using CancellationTokenSource readCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, authorizationToken);
+        try
+        {
+            Type10CameraPoseLayout layout = Type10CameraPoseLayout.WotBlitz1119010;
+            if (!string.Equals(
+                observation!.ProductVersion,
+                layout.GameVersion,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                observation.ExecutableSha256.Value,
+                layout.ExecutableSha256,
+                StringComparison.Ordinal))
+            {
+                return IsScanAuthorizationCurrent(observation, authorizationToken)
+                    ? OperationResult.Failure<CameraPoseReadResult>(
+                        new ApplicationError(
+                            "discover.camera_pose.unsupported_build",
+                            "The running executable does not match the version-pinned camera layout."))
+                    : GateCheck<CameraPoseReadResult>(
+                        "discover.gate_not_satisfied",
+                        "The offline-session gate is no longer satisfied.");
+            }
+
+            // 1. Anchor: find the avatar object by its vftable dword = runtime
+            //    module base + avatar RVA (replay variant first; the live
+            //    variant is the fallback for live-mode sessions). The guarded
+            //    reader is created only after the anchor exists, so a missing
+            //    anchor never opens a process lease.
+            long avatarAddress = 0;
+            uint matchedAvatarRva = 0;
+            foreach (uint avatarRva in new[]
+            {
+                layout.AvatarVftableReplayRva,
+                layout.AvatarVftableLiveRva,
+            })
+            {
+                OperationResult<MemoryScanResult> scanResult = await ScanForCameraAnchorAsync(
+                    observation,
+                    baseAddress,
+                    (uint)(baseAddress + avatarRva),
+                    layout,
+                    readCancellation.Token).ConfigureAwait(false);
+                if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+                {
+                    return GateCheck<CameraPoseReadResult>(
+                        "discover.gate_not_satisfied",
+                        "The offline-session gate is no longer satisfied.");
+                }
+
+                if (scanResult.IsSuccess && scanResult.Value is { Candidates.Count: > 0 })
+                {
+                    avatarAddress = scanResult.Value.Candidates[0].AbsoluteAddress;
+                    matchedAvatarRva = avatarRva;
+                    break;
+                }
+            }
+
+            if (avatarAddress == 0)
+            {
+                return OperationResult.Success(new CameraPoseReadResult(
+                    _timeProvider.GetUtcNow(),
+                    layout.GameVersion,
+                    CameraPoseStatus.AnchorNotFound,
+                    "avatar-vftable-anchor",
+                    0, 0, 0,
+                    0f, 0f, 0f, 0f, 0f, [],
+                    AvatarIdentityVerified: false,
+                    CameraIdentityVerified: false,
+                    CameraStateIdentityVerified: false,
+                    ConsistentDoubleRead: false,
+                    ModuleRooted: true));
+            }
+
+            OperationResult<IAuthorizedMemoryReader> readerResult = await _memoryReaderFactory
+                .CreateAsync(observation, readCancellation.Token)
+                .ConfigureAwait(false);
+            if (!readerResult.IsSuccess || readerResult.Value is null)
+            {
+                return OperationResult.Failure<CameraPoseReadResult>(
+                    new ApplicationError(
+                        "discover.camera_pose.read_unavailable",
+                        "The guarded camera-pose reader is unavailable."));
+            }
+
+            IAuthorizedMemoryReader reader = readerResult.Value;
+
+            // 2. [avatar + AvatarBattleResourcesOffset] → battle resources.
+            OperationResult<uint> battleResources = await ReadUInt32PointerAsync(
+                reader,
+                avatarAddress + layout.AvatarBattleResourcesOffset,
+                readCancellation.Token).ConfigureAwait(false);
+            if (!battleResources.IsSuccess)
+            {
+                return OperationResult.Success(CameraChainBroken(layout, avatarAddress, "avatar-battle-resources",
+                    matchedAvatarRva, false, false));
+            }
+
+            // 3. [br + CameraControllerOffset] → camera controller; gate its
+            //    vftable against the replay (or live) variant.
+            OperationResult<uint> cameraAddress = await ReadUInt32PointerAsync(
+                reader,
+                battleResources.Value + layout.CameraControllerOffset,
+                readCancellation.Token).ConfigureAwait(false);
+            if (!cameraAddress.IsSuccess || cameraAddress.Value == 0)
+            {
+                return OperationResult.Success(CameraChainBroken(layout, avatarAddress, "camera-controller",
+                    matchedAvatarRva, false, false));
+            }
+
+            OperationResult<uint> cameraVftable = await ReadUInt32PointerAsync(
+                reader,
+                cameraAddress.Value,
+                readCancellation.Token).ConfigureAwait(false);
+            uint cameraVftableRva = (uint)(cameraVftable.Value - (uint)baseAddress);
+            bool cameraIdentity = cameraVftable.IsSuccess
+                && (cameraVftableRva == layout.CameraReplayVftableRva
+                    || cameraVftableRva == layout.CameraLiveVftableRva);
+            if (!cameraIdentity)
+            {
+                return OperationResult.Success(CameraChainBroken(layout, avatarAddress, "camera-vftable",
+                    matchedAvatarRva, false, false));
+            }
+
+            // 4. [camera + CameraStateOffset] → GameCamera; gate its vftable.
+            OperationResult<uint> cameraStateAddress = await ReadUInt32PointerAsync(
+                reader,
+                cameraAddress.Value + layout.CameraStateOffset,
+                readCancellation.Token).ConfigureAwait(false);
+            if (!cameraStateAddress.IsSuccess || cameraStateAddress.Value == 0)
+            {
+                return OperationResult.Success(CameraChainBroken(layout, avatarAddress, "camera-state",
+                    matchedAvatarRva, cameraIdentity, false));
+            }
+
+            OperationResult<uint> cameraStateVftable = await ReadUInt32PointerAsync(
+                reader,
+                cameraStateAddress.Value,
+                readCancellation.Token).ConfigureAwait(false);
+            bool cameraStateIdentity = cameraStateVftable.IsSuccess
+                && cameraStateVftable.Value - (uint)baseAddress == layout.CameraStateVftableRva;
+            if (!cameraStateIdentity)
+            {
+                return OperationResult.Success(CameraChainBroken(layout, avatarAddress, "camera-state-vftable",
+                    matchedAvatarRva, cameraIdentity, false));
+            }
+
+            // 5. Pose region: [GameCamera + PositionOffset, PoseRegionLength)
+            //    read twice, byte-identical, before parsing any field.
+            nint poseAddress = (nint)(cameraStateAddress.Value + layout.PositionOffset);
+            OperationResult<byte[]> firstRead = await reader.ReadAsync(
+                poseAddress,
+                layout.PoseRegionLength,
+                readCancellation.Token).ConfigureAwait(false);
+            if (!firstRead.IsSuccess || firstRead.Value is null ||
+                firstRead.Value.Length != layout.PoseRegionLength)
+            {
+                return OperationResult.Success(CameraChainBroken(layout, avatarAddress, "pose-region",
+                    matchedAvatarRva, cameraIdentity, cameraStateIdentity));
+            }
+
+            OperationResult<byte[]> secondRead = await reader.ReadAsync(
+                poseAddress,
+                layout.PoseRegionLength,
+                readCancellation.Token).ConfigureAwait(false);
+            bool consistentDoubleRead = secondRead.IsSuccess
+                && secondRead.Value is not null
+                && secondRead.Value.AsSpan().SequenceEqual(firstRead.Value);
+            if (!consistentDoubleRead)
+            {
+                return OperationResult.Success(CameraChainBroken(layout, avatarAddress, "pose-double-read",
+                    matchedAvatarRva, cameraIdentity, cameraStateIdentity));
+            }
+
+            byte[] pose = firstRead.Value;
+            int posOffset = 0;
+            int yawCosOffset = (int)(layout.YawCosOffset - layout.PositionOffset);
+            int yawSinOffset = (int)(layout.YawSinOffset - layout.PositionOffset);
+            int pitchOffset = (int)(layout.PitchOffset - layout.PositionOffset);
+            int basisOffset = (int)(layout.BasisOffset - layout.PositionOffset);
+
+            float x = BitConverter.ToSingle(pose, posOffset);
+            float y = BitConverter.ToSingle(pose, posOffset + sizeof(float));
+            float z = BitConverter.ToSingle(pose, posOffset + 2 * sizeof(float));
+            float yawCos = BitConverter.ToSingle(pose, yawCosOffset);
+            float yawSin = BitConverter.ToSingle(pose, yawSinOffset);
+            float pitch = BitConverter.ToSingle(pose, pitchOffset);
+            float yaw = (float)Math.Atan2(yawSin, yawCos);
+
+            float[] basis = new float[9];
+            for (int i = 0; i < 9; i++)
+            {
+                basis[i] = BitConverter.ToSingle(pose, basisOffset + i * sizeof(float));
+            }
+
+            return OperationResult.Success(new CameraPoseReadResult(
+                _timeProvider.GetUtcNow(),
+                layout.GameVersion,
+                CameraPoseStatus.Resolved,
+                null,
+                avatarAddress,
+                cameraAddress.Value,
+                cameraStateAddress.Value,
+                x, y, z, yaw, pitch, basis,
+                AvatarIdentityVerified: true,
+                CameraIdentityVerified: true,
+                CameraStateIdentityVerified: true,
+                ConsistentDoubleRead: true,
+                ModuleRooted: true));
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return GateCheck<CameraPoseReadResult>(
+                "discover.gate_not_satisfied",
+                "The offline-session gate is no longer satisfied.");
+        }
+    }
+
+    private CameraPoseReadResult CameraChainBroken(
+        Type10CameraPoseLayout layout,
+        long avatarAddress,
+        string failureStage,
+        uint matchedAvatarRva,
+        bool cameraIdentity,
+        bool cameraStateIdentity) => new(
+        _timeProvider.GetUtcNow(),
+        layout.GameVersion,
+        CameraPoseStatus.ChainBroken,
+        failureStage,
+        avatarAddress,
+        0, 0,
+        0f, 0f, 0f, 0f, 0f, [],
+        AvatarIdentityVerified: matchedAvatarRva != 0,
+        CameraIdentityVerified: cameraIdentity,
+        CameraStateIdentityVerified: cameraStateIdentity,
+        ConsistentDoubleRead: false,
+        ModuleRooted: true);
+
+    private async ValueTask<OperationResult<MemoryScanResult>> ScanForCameraAnchorAsync(
+        AuthorizedMemoryObservation observation,
+        long baseAddress,
+        uint expectedDword,
+        Type10CameraPoseLayout layout,
+        CancellationToken cancellationToken)
+    {
+        byte[] expected = new byte[sizeof(uint)];
+        BinaryPrimitives.WriteUInt32LittleEndian(expected, expectedDword);
+        MemoryScanRequest request = new(
+            FieldName: "avatar-vftable",
+            FieldType: "Bytes",
+            ExpectedValue: expected,
+            ToleranceMask: null,
+            MaxCandidates: layout.MaxCandidates,
+            MinRegionSize: layout.MinRegionSize,
+            Alignment: 4);
+        return await Task.Run(
+            () => _scanDiscoverer.Scan(observation, baseAddress, request, cancellationToken, "aob"),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async ValueTask<OperationResult<uint>> ReadUInt32PointerAsync(
+        IAuthorizedMemoryReader reader,
+        long address,
+        CancellationToken cancellationToken)
+    {
+        if (address < 0 || address > uint.MaxValue)
+        {
+            return OperationResult.Failure<uint>(
+                new ApplicationError("discover.camera_pose.invalid_address", "The camera chain pointer is out of range."));
+        }
+
+        OperationResult<byte[]> read = await reader.ReadAsync(
+            (nint)address,
+            sizeof(uint),
+            cancellationToken).ConfigureAwait(false);
+        if (!read.IsSuccess || read.Value is null || read.Value.Length != sizeof(uint))
+        {
+            return OperationResult.Failure<uint>(read.Error ?? new ApplicationError(
+                "discover.camera_pose.read_failed", "The camera chain read failed."));
+        }
+
+        return OperationResult.Success(BinaryPrimitives.ReadUInt32LittleEndian(read.Value));
     }
 
     public async ValueTask<OperationResult<EntityPositionAddressResult>> ResolveEntityPositionAddressAsync(

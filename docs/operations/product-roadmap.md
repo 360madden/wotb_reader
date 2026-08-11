@@ -237,10 +237,19 @@ identity gates pass, posC `+0xB0` is a different quantity (368.8 m). The
 CAM-003 resolver gate is **phase-dependent, now resolved**: the
 session-controller vftable flips between launches (`base+0x325ad2c` →
 resolver rejects; `base+0x323d9bc` → resolver resolves), and v6's
-gate-free direct walk is the fallback for the rejected phase. Next: wire
-the verified pose through the `cameraOverride` seam (host exposes the
-memory camera during the gate-verified session). Handoff:
-`docs/operations/handoffs/2026-08-11-cam004-camera-state-consistent.md`.
+gate-free direct walk is the fallback for the rejected phase.
+✅ **CAM-005 (2026-08-11): the host exposes the camera pose** —
+`POST /discover/camera-pose` walks the CAM-001 chain under the gate
+(avatar vftable anchor → br → camera → GameCamera, identity gates on
+every hop, pose region double-read), version-pinned in Core
+(`Type10CameraPoseLayout`), 7 unit tests, `IMemoryScanDiscoverer`
+extracted for testability. Next: thread the pose through the
+`cameraOverride` seam (`IOverlayFrameSource.GetFrameAsync` gains an
+optional camera; the frame endpoint pulls it from the new port when a
+gate-verified session is live) + the projection cross-check (viewpoint
+tank lands near screen center through the memory camera). Handoffs:
+`docs/operations/handoffs/2026-08-11-cam004-camera-state-consistent.md`,
+`docs/operations/handoffs/2026-08-11-cam005-host-camera-pose-endpoint.md`.
 
 ### Phase 2 — The live seam + first live sessions (serialized)
 

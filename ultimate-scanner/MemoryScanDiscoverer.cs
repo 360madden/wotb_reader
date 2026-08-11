@@ -9,7 +9,34 @@ namespace WotBTreader.UltimateScanner;
 
 #pragma warning disable CA1873
 
-internal sealed class MemoryScanDiscoverer
+/// <summary>
+/// Memory-scan surface used by the coordinator: guarded AOB/value scans,
+/// neighborhood dumps, and bounded pointer-chain resolution. Interface
+/// extracted so the evidence paths are unit-testable without a process.
+/// </summary>
+internal interface IMemoryScanDiscoverer
+{
+    OperationResult<MemoryScanResult> Scan(
+        AuthorizedMemoryObservation observation,
+        long baseAddress,
+        MemoryScanRequest request,
+        CancellationToken cancellationToken,
+        string scanKind = "value");
+
+    OperationResult<MemoryScanResult> ScanNeighborhood(
+        AuthorizedMemoryObservation observation,
+        long baseAddress,
+        MemoryNeighborhoodRequest request,
+        CancellationToken cancellationToken);
+
+    OperationResult<MemoryPointerChainResult> ResolvePointerChain(
+        AuthorizedMemoryObservation observation,
+        long baseAddress,
+        MemoryPointerChainRequest request,
+        CancellationToken cancellationToken);
+}
+
+internal sealed class MemoryScanDiscoverer : IMemoryScanDiscoverer
 {
     private const uint MemCommit = 0x1000;
     private const uint MemPrivate = 0x20000;

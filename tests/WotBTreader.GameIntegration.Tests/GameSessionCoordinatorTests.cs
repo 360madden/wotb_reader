@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Globalization;
 using Microsoft.Extensions.Logging.Abstractions;
 using WotBTreader.Application.Capture;
 using WotBTreader.Application.Game;
@@ -1362,6 +1363,160 @@ public sealed class GameSessionCoordinatorTests
         Assert.IsEmpty(factory.Reader.RegionReads);
     }
 
+    [TestMethod]
+    public async Task CameraPoseRead_MissingOfflineGateNeverCreatesMemoryReader()
+    {
+        var factory = new ScriptedCameraReaderFactory(CreateCameraChainPages());
+        var scan = new FakeScanDiscoverer(CreateAvatarScanResult());
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+
+        OperationResult<CameraPoseReadResult> result = await coordinator
+            .ReadCameraPoseAsync(CancellationToken.None);
+
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual("discover.gate_not_satisfied", result.Error?.Code);
+        Assert.AreEqual(0, factory.CreateCount);
+        Assert.AreEqual(0, scan.ScanCount);
+    }
+
+    [TestMethod]
+    public async Task CameraPoseRead_UnsupportedBuildFailsClosed()
+    {
+        var factory = new ScriptedCameraReaderFactory(CreateCameraChainPages());
+        var scan = new FakeScanDiscoverer(CreateAvatarScanResult());
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch());
+        coordinator.ApplyEvidence(CreateValidEvidence());
+
+        OperationResult<CameraPoseReadResult> result = await coordinator
+            .ReadCameraPoseAsync(CancellationToken.None);
+
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual("discover.camera_pose.unsupported_build", result.Error?.Code);
+        Assert.AreEqual(0, factory.CreateCount);
+        Assert.AreEqual(0, scan.ScanCount);
+    }
+
+    [TestMethod]
+    public async Task CameraPoseRead_ExactBuildResolvesPoseWithIdentityGates()
+    {
+        Type10CameraPoseLayout layout = Type10CameraPoseLayout.WotBlitz1119010;
+        var factory = new ScriptedCameraReaderFactory(CreateCameraChainPages(layout));
+        var scan = new FakeScanDiscoverer(CreateAvatarScanResult());
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<CameraPoseReadResult> result = await coordinator
+            .ReadCameraPoseAsync(CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess, result.Error?.Message);
+        CameraPoseReadResult pose = result.Value!;
+        Assert.AreEqual(CameraPoseStatus.Resolved, pose.Status);
+        Assert.AreEqual(10.5f, pose.X);
+        Assert.AreEqual(20.25f, pose.Y);
+        Assert.AreEqual(-3.5f, pose.Z);
+        Assert.AreEqual(0.7f, pose.YawRadians, 0.001f);
+        Assert.AreEqual(-0.2f, pose.PitchRadians);
+        Assert.AreEqual(1f, pose.Basis[0]);
+        Assert.IsTrue(pose.AvatarIdentityVerified);
+        Assert.IsTrue(pose.CameraIdentityVerified);
+        Assert.IsTrue(pose.CameraStateIdentityVerified);
+        Assert.IsTrue(pose.ConsistentDoubleRead);
+        Assert.IsTrue(pose.ModuleRooted);
+        Assert.AreEqual(0x25001000, pose.AvatarAddress);
+        Assert.AreEqual(0x25003000, pose.CameraAddress);
+        Assert.AreEqual(0x25004000, pose.CameraStateAddress);
+        // The pose region is read twice under the lease (double-read).
+        Assert.HasCount(2, factory.Reader.Reads.Where(read => read.Length == 0x78));
+        Assert.AreEqual(1, factory.CreateCount);
+    }
+
+    [TestMethod]
+    public async Task CameraPoseRead_AnchorNotFoundReturnsStatus()
+    {
+        var factory = new ScriptedCameraReaderFactory(CreateCameraChainPages());
+        var scan = new FakeScanDiscoverer(new MemoryScanResult(
+            DateTimeOffset.UnixEpoch,
+            BaseAddress: 0x10000000,
+            RegionsScanned: 1,
+            BytesScanned: 4096,
+            Candidates: [],
+            TotalMatchesBeforeTruncation: 0));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        Type10CameraPoseLayout layout = Type10CameraPoseLayout.WotBlitz1119010;
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<CameraPoseReadResult> result = await coordinator
+            .ReadCameraPoseAsync(CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(CameraPoseStatus.AnchorNotFound, result.Value?.Status);
+        Assert.AreEqual("avatar-vftable-anchor", result.Value?.FailureStage);
+        Assert.IsFalse(result.Value?.AvatarIdentityVerified);
+        Assert.AreEqual(0, factory.CreateCount);
+        // Both avatar-vftable variants are probed before giving up.
+        Assert.AreEqual(2, scan.ScanCount);
+    }
+
+    [TestMethod]
+    public async Task CameraPoseRead_CameraVftableMismatchFailsClosed()
+    {
+        Type10CameraPoseLayout layout = Type10CameraPoseLayout.WotBlitz1119010;
+        IReadOnlyDictionary<long, byte[]> pages = CreateCameraChainPages(layout);
+        // Corrupt the camera-controller vftable dword (hop 2 identity gate).
+        pages = pages.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Key == 0x25003000
+                ? BitConverter.GetBytes(0x19999999u)
+                : pair.Value);
+        var factory = new ScriptedCameraReaderFactory(pages);
+        var scan = new FakeScanDiscoverer(CreateAvatarScanResult());
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<CameraPoseReadResult> result = await coordinator
+            .ReadCameraPoseAsync(CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(CameraPoseStatus.ChainBroken, result.Value?.Status);
+        Assert.AreEqual("camera-vftable", result.Value?.FailureStage);
+        Assert.IsTrue(result.Value?.AvatarIdentityVerified);
+        Assert.IsFalse(result.Value?.CameraIdentityVerified);
+        Assert.IsFalse(result.Value?.CameraStateIdentityVerified);
+        Assert.IsFalse(result.Value?.ConsistentDoubleRead);
+    }
+
     private static (GameSessionCoordinator Coordinator, TrackingEntityPositionReaderFactory Factory)
         CreateVerifiedExactBuildCoordinator(
             Type10EntityPositionResult result,
@@ -1661,6 +1816,7 @@ public sealed class GameSessionCoordinatorTests
             IOffsetTableReader? offsetTableReader = null,
             IBlitzReplayLifecycleFeed? lifecycleFeed = null,
             IInstructionSnapshotRunner? instructionSnapshotRunner = null,
+            IMemoryScanDiscoverer? scanDiscoverer = null,
             GameIntegrationOptions? options = null)
     {
         var timeProvider = new ManualTimeProvider(StartTime);
@@ -1678,7 +1834,7 @@ public sealed class GameSessionCoordinatorTests
             memoryReaderFactory ?? new StubMemoryReaderFactory(),
             moduleBaseAddressResolver ?? new FixedModuleBaseResolver((nint)0x10000000),
             offsetTableReader ?? new StubOffsetTableReader(),
-            new MemoryScanDiscoverer(timeProvider, NullLogger<MemoryScanDiscoverer>.Instance),
+            scanDiscoverer ?? new MemoryScanDiscoverer(timeProvider, NullLogger<MemoryScanDiscoverer>.Instance),
             new MemoryScanEngine(timeProvider, NullLogger<MemoryScanEngine>.Instance),
             lifecycleFeed ?? new StubLifecycleFeed(),
             instructionSnapshotRunner ?? new StubInstructionSnapshotRunner()), timeProvider);
@@ -2005,6 +2161,161 @@ public sealed class GameSessionCoordinatorTests
                     NodesVisited: 0,
                     ModuleRooted: true)));
         }
+    }
+
+    private sealed class FakeScanDiscoverer(MemoryScanResult result) : IMemoryScanDiscoverer
+    {
+        public int ScanCount { get; private set; }
+        public MemoryScanRequest? LastRequest { get; private set; }
+
+        public OperationResult<MemoryScanResult> Scan(
+            AuthorizedMemoryObservation observation,
+            long baseAddress,
+            MemoryScanRequest request,
+            CancellationToken cancellationToken,
+            string scanKind = "value")
+        {
+            ScanCount++;
+            LastRequest = request;
+            return OperationResult.Success(result);
+        }
+
+        public OperationResult<MemoryScanResult> ScanNeighborhood(
+            AuthorizedMemoryObservation observation,
+            long baseAddress,
+            MemoryNeighborhoodRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public OperationResult<MemoryPointerChainResult> ResolvePointerChain(
+            AuthorizedMemoryObservation observation,
+            long baseAddress,
+            MemoryPointerChainRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class ScriptedCameraReaderFactory(
+        IReadOnlyDictionary<long, byte[]> pages) : IGuardedMemoryReaderFactory
+    {
+        public int CreateCount { get; private set; }
+        public AuthorizedMemoryObservation? Observation { get; private set; }
+        public ScriptedCameraReader Reader { get; } = new(pages);
+
+        public ValueTask<OperationResult<IAuthorizedMemoryReader>> CreateAsync(
+            AuthorizedMemoryObservation observation,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CreateCount++;
+            Observation = observation;
+            return ValueTask.FromResult(OperationResult.Success<IAuthorizedMemoryReader>(Reader));
+        }
+    }
+
+    private sealed class ScriptedCameraReader(
+        IReadOnlyDictionary<long, byte[]> pages) : IAuthorizedMemoryReader
+    {
+        public List<(long Address, int Length)> Reads { get; } = [];
+
+        public ValueTask<OperationResult<byte[]>> ReadAsync(
+            nint address,
+            int length,
+            CancellationToken cancellationToken)
+        {
+            long key = address.ToInt64();
+            Reads.Add((key, length));
+            if (pages.TryGetValue(key, out byte[]? page) && page.Length >= length)
+            {
+                return ValueTask.FromResult(OperationResult.Success(
+                    page.AsSpan(0, length).ToArray()));
+            }
+
+            return ValueTask.FromResult(OperationResult.Failure<byte[]>(
+                new ApplicationError(
+                    "test.read_miss",
+                    "Scripted read miss at 0x"
+                        + key.ToString("X", CultureInfo.InvariantCulture))));
+        }
+
+        public ValueTask<OperationResult<IReadOnlyList<MemoryReadItem>>> ReadBatchAsync(
+            IReadOnlyList<nint> addresses,
+            int length,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public ValueTask<OperationResult<Type10EntityPositionResult>> ResolveEntityPositionAsync(
+            nint moduleBase,
+            int entityId,
+            Type10EntityPositionLayout layout,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public ValueTask<OperationResult<Type10EntityPositionAddressResult>> ResolveEntityPositionAddressAsync(
+            nint moduleBase,
+            int entityId,
+            Type10EntityPositionLayout layout,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+    }
+
+    private static MemoryScanResult CreateAvatarScanResult() => new(
+        DateTimeOffset.UnixEpoch,
+        BaseAddress: 0x10000000,
+        RegionsScanned: 1,
+        BytesScanned: 4096,
+        Candidates:
+        [
+            new MemoryScanCandidate(
+                AbsoluteAddress: 0x25001000,
+                BaseDisplacement: 0,
+                ObservedValue: BitConverter.GetBytes(0x13277e8cu),
+                ValueSummary: "avatar-vftable"),
+        ],
+        TotalMatchesBeforeTruncation: 1);
+
+    private static Dictionary<long, byte[]> CreateCameraChainPages(
+        Type10CameraPoseLayout? layout = null)
+    {
+        Type10CameraPoseLayout pinned = layout ?? Type10CameraPoseLayout.WotBlitz1119010;
+        const uint moduleBase = 0x10000000u;
+        return new Dictionary<long, byte[]>
+        {
+            // [avatar + 0x154] -> battle resources
+            [0x25001154] = BitConverter.GetBytes(0x25002000u),
+            // [br + 0x2C] -> camera controller
+            [0x2500202C] = BitConverter.GetBytes(0x25003000u),
+            // camera controller vftable (replay variant)
+            [0x25003000] = BitConverter.GetBytes(moduleBase + pinned.CameraReplayVftableRva),
+            // [camera + 0x28] -> GameCamera
+            [0x25003028] = BitConverter.GetBytes(0x25004000u),
+            // GameCamera vftable
+            [0x25004000] = BitConverter.GetBytes(moduleBase + pinned.CameraStateVftableRva),
+            // pose region [GameCamera + 0x38, 0x78)
+            [0x25004038] = CreatePoseRegion(),
+        };
+    }
+
+    private static byte[] CreatePoseRegion()
+    {
+        byte[] region = new byte[0x78];
+        BitConverter.GetBytes(10.5f).CopyTo(region, 0x00);
+        BitConverter.GetBytes(20.25f).CopyTo(region, 0x04);
+        BitConverter.GetBytes(-3.5f).CopyTo(region, 0x08);
+        const float yaw = 0.7f;
+        BitConverter.GetBytes((float)Math.Cos(yaw)).CopyTo(region, 0x18);
+        BitConverter.GetBytes((float)Math.Sin(yaw)).CopyTo(region, 0x1C);
+        BitConverter.GetBytes(-0.2f).CopyTo(region, 0x20);
+        BitConverter.GetBytes(1f).CopyTo(region, 0x48);
+        BitConverter.GetBytes(0f).CopyTo(region, 0x4C);
+        BitConverter.GetBytes(0f).CopyTo(region, 0x50);
+        BitConverter.GetBytes(0f).CopyTo(region, 0x54);
+        BitConverter.GetBytes(1f).CopyTo(region, 0x58);
+        BitConverter.GetBytes(0f).CopyTo(region, 0x5C);
+        BitConverter.GetBytes(0f).CopyTo(region, 0x60);
+        BitConverter.GetBytes(0f).CopyTo(region, 0x64);
+        BitConverter.GetBytes(1f).CopyTo(region, 0x68);
+        return region;
     }
 
     private static OffsetTable CreateObservationFixtureTable() =>

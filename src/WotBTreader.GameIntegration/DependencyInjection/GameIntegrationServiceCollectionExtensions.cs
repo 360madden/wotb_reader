@@ -50,7 +50,7 @@ public static class GameIntegrationServiceCollectionExtensions
         services.TryAddSingleton<IThreadResumePlatform, WindowsThreadResumePlatform>();
         services.TryAddSingleton<IGuardedMemoryReaderFactory, GuardedMemoryReaderFactory>();
         services.TryAddSingleton<IInstructionSnapshotRunner, WindowsInstructionSnapshotRunner>();
-        services.TryAddSingleton<MemoryScanDiscoverer>();
+        services.TryAddSingleton<IMemoryScanDiscoverer, MemoryScanDiscoverer>();
         services.TryAddSingleton<MemoryScanEngine>();
 
         services.TryAddSingleton<IGameSessionState>(

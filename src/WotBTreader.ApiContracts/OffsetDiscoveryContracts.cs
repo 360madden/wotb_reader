@@ -406,6 +406,33 @@ public sealed record EntityRecordRegionReadResponse
 }
 
 /// <summary>
+/// Response of the gate-verified camera-pose endpoint (CAM-001 chain): the
+/// GameCamera world pose plus per-hop identity flags. Addresses are
+/// diagnostic evidence formatted as hex, never runtime read offsets.
+/// </summary>
+public sealed record CameraPoseReadResponse
+{
+    public DateTimeOffset CompletedAtUtc { get; init; }
+    public string GameVersion { get; init; } = string.Empty;
+    public string Status { get; init; } = string.Empty;
+    public string? FailureStage { get; init; }
+    public string? AvatarAddress { get; init; }
+    public string? CameraAddress { get; init; }
+    public string? CameraStateAddress { get; init; }
+    public double? X { get; init; }
+    public double? Y { get; init; }
+    public double? Z { get; init; }
+    public double? YawRadians { get; init; }
+    public double? PitchRadians { get; init; }
+    public IReadOnlyList<double>? Basis { get; init; }
+    public bool AvatarIdentityVerified { get; init; }
+    public bool CameraIdentityVerified { get; init; }
+    public bool CameraStateIdentityVerified { get; init; }
+    public bool ConsistentDoubleRead { get; init; }
+    public bool ModuleRooted { get; init; }
+}
+
+/// <summary>
 /// Diagnostic request for the gate-verified position-page endpoint. Only the
 /// decoded entity ID is caller-supplied; the process identity and the
 /// resolved page address are coordinator-owned. Internal diagnostic surface

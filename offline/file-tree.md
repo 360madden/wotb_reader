@@ -248,6 +248,7 @@ docs/operations/handoffs/2026-08-11-cam001-pre-staged-aslr-correction.md
 docs/operations/handoffs/2026-08-11-cam002-live-pose-layout.md
 docs/operations/handoffs/2026-08-11-cam003-session-controller-phase-drift.md
 docs/operations/handoffs/2026-08-11-cam004-camera-state-consistent.md
+docs/operations/handoffs/2026-08-11-cam005-host-camera-pose-endpoint.md
 docs/operations/handoffs/2026-08-11-camera-family-hierarchy-factory.md
 docs/operations/handoffs/2026-08-11-camera-family-rtti.md
 docs/operations/handoffs/2026-08-11-camera-ownership-root.md
@@ -425,6 +426,7 @@ src/WotBTreader.Core/Discovery/RecordDiffing.cs
 src/WotBTreader.Core/Discovery/RecordDiffingModels.cs
 src/WotBTreader.Core/Discovery/TrajectoryCorrelation.cs
 src/WotBTreader.Core/Discovery/TrajectoryFamily.cs
+src/WotBTreader.Core/Discovery/Type10CameraPoseLayout.cs
 src/WotBTreader.Core/Discovery/Type10EntityPositionResolver.cs
 src/WotBTreader.Core/Discovery/WriteSiteAnalysis.cs
 src/WotBTreader.Core/Identifiers.cs

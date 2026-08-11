@@ -1161,6 +1161,78 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task CameraPose_ResolvedReturnsPoseWithIdentityFlags()
+    {
+        var scanner = new FakeGameMemoryScanner
+        {
+            CameraPoseResult = OperationResult.Success(
+                new CameraPoseReadResult(
+                    DateTimeOffset.UnixEpoch.AddSeconds(2),
+                    "11.19.0.10",
+                    CameraPoseStatus.Resolved,
+                    FailureStage: null,
+                    AvatarAddress: 0x10000100,
+                    CameraAddress: 0x10000200,
+                    CameraStateAddress: 0x10000300,
+                    X: 10.5f,
+                    Y: 20.25f,
+                    Z: -3.5f,
+                    YawRadians: 0.7f,
+                    PitchRadians: -0.2f,
+                    Basis: [1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f],
+                    AvatarIdentityVerified: true,
+                    CameraIdentityVerified: true,
+                    CameraStateIdentityVerified: true,
+                    ConsistentDoubleRead: true,
+                    ModuleRooted: true)),
+        };
+
+        IResult result = await GameApiEndpoints.DiscoverCameraPoseAsync(
+            scanner,
+            TestContext.CancellationToken);
+
+        CameraPoseReadResponse response = Value<CameraPoseReadResponse>(result);
+        Assert.AreEqual("Resolved", response.Status);
+        Assert.AreEqual("0x10000100", response.AvatarAddress);
+        Assert.AreEqual("0x10000200", response.CameraAddress);
+        Assert.AreEqual("0x10000300", response.CameraStateAddress);
+        // The pose floats widen to double exactly; compare against the
+        // widened float so the assertion is exact.
+        Assert.AreEqual((double)10.5f, response.X);
+        Assert.AreEqual((double)20.25f, response.Y);
+        Assert.AreEqual((double)-3.5f, response.Z);
+        Assert.AreEqual((double)0.7f, response.YawRadians);
+        Assert.AreEqual((double)-0.2f, response.PitchRadians);
+        Assert.IsNotNull(response.Basis);
+        Assert.HasCount(9, response.Basis!);
+        Assert.IsTrue(response.AvatarIdentityVerified);
+        Assert.IsTrue(response.CameraIdentityVerified);
+        Assert.IsTrue(response.CameraStateIdentityVerified);
+        Assert.IsTrue(response.ConsistentDoubleRead);
+        Assert.IsTrue(response.ModuleRooted);
+        Assert.AreEqual(1, scanner.CreateCameraPoseCallCount);
+    }
+
+    [TestMethod]
+    public async Task CameraPose_CoordinatorFailureIsPropagated()
+    {
+        var scanner = new FakeGameMemoryScanner
+        {
+            CameraPoseResult = OperationResult.Failure<CameraPoseReadResult>(
+                new ApplicationError("discover.camera_pose.read_unavailable", "Test failure.")),
+        };
+
+        IResult result = await GameApiEndpoints.DiscoverCameraPoseAsync(
+            scanner,
+            TestContext.CancellationToken);
+
+        JsonElement body = BadRequestAnonymous(result);
+        Assert.AreEqual(
+            "discover.camera_pose.read_unavailable",
+            body.GetProperty("error").GetString());
+    }
+
+    [TestMethod]
     public async Task EntityRegion_InvalidAnchorFailsClosed()
     {
         var scanner = new FakeGameMemoryScanner
@@ -1930,6 +2002,10 @@ public sealed class GameApiEndpointsTests
         public OperationResult<WotBTreader.Application.Game.InstructionSnapshotResult> InstructionSnapshotResult { get; init; } =
             OperationResult.Failure<WotBTreader.Application.Game.InstructionSnapshotResult>(
                 new ApplicationError("discover.instruction_snapshot.not_configured", "Test default."));
+        public OperationResult<CameraPoseReadResult> CameraPoseResult { get; init; } =
+            OperationResult.Failure<CameraPoseReadResult>(
+                new ApplicationError("discover.camera_pose.not_configured", "Test default."));
+        public int CreateCameraPoseCallCount { get; private set; }
         public OperationResult<EntityPositionReadResult> EntityPositionResult { get; init; } =
             OperationResult.Failure<EntityPositionReadResult>(
                 new ApplicationError("discover.entity_position.not_configured", "Test default."));
@@ -2040,6 +2116,14 @@ public sealed class GameApiEndpointsTests
             LastInstructionSnapshotRequest = request;
             LastCancellationToken = cancellationToken;
             return ValueTask.FromResult(InstructionSnapshotResult);
+        }
+
+        public ValueTask<OperationResult<CameraPoseReadResult>> ReadCameraPoseAsync(
+            CancellationToken cancellationToken)
+        {
+            LastCancellationToken = cancellationToken;
+            CreateCameraPoseCallCount++;
+            return ValueTask.FromResult(CameraPoseResult);
         }
     }
 

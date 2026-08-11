@@ -36,6 +36,7 @@ internal static class GameApiEndpoints
         group.MapPost("/discover/entity-position", ReadEntityPositionAsync);
         group.MapPost("/discover/entity-region", ReadEntityRegionAsync);
         group.MapPost("/discover/position-page", ResolveEntityPositionAddressAsync);
+        group.MapPost("/discover/camera-pose", DiscoverCameraPoseAsync);
         group.MapPost("/discover/clock-segment", AppendClockSegmentAsync);
         group.MapPost("/discover/instruction-snapshot", CaptureInstructionSnapshotAsync);
         group.MapGet("/discover/trajectory/{battleSessionId:guid}", GetTrajectoryAsync);
@@ -975,6 +976,53 @@ internal static class GameApiEndpoints
             ModuleRooted = resolved.ModuleRooted,
         });
     }
+
+    internal static async Task<IResult> DiscoverCameraPoseAsync(
+        IGameMemoryScanner scanner,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(scanner);
+
+        OperationResult<CameraPoseReadResult> result = await scanner
+            .ReadCameraPoseAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (!result.IsSuccess || result.Value is null)
+        {
+            return Results.BadRequest(new
+            {
+                error = result.Error?.Code ?? "discover.camera_pose.read_failed",
+            });
+        }
+
+        CameraPoseReadResult pose = result.Value;
+        return Results.Ok(new CameraPoseReadResponse
+        {
+            CompletedAtUtc = pose.CompletedAtUtc,
+            GameVersion = pose.GameVersion,
+            Status = pose.Status.ToString(),
+            FailureStage = pose.FailureStage,
+            AvatarAddress = FormatCameraAddress(pose.AvatarAddress),
+            CameraAddress = FormatCameraAddress(pose.CameraAddress),
+            CameraStateAddress = FormatCameraAddress(pose.CameraStateAddress),
+            X = pose.Status == CameraPoseStatus.Resolved ? pose.X : null,
+            Y = pose.Status == CameraPoseStatus.Resolved ? pose.Y : null,
+            Z = pose.Status == CameraPoseStatus.Resolved ? pose.Z : null,
+            YawRadians = pose.Status == CameraPoseStatus.Resolved ? pose.YawRadians : null,
+            PitchRadians = pose.Status == CameraPoseStatus.Resolved ? pose.PitchRadians : null,
+            Basis = pose.Status == CameraPoseStatus.Resolved
+                ? pose.Basis.Select(value => (double)value).ToArray()
+                : null,
+            AvatarIdentityVerified = pose.AvatarIdentityVerified,
+            CameraIdentityVerified = pose.CameraIdentityVerified,
+            CameraStateIdentityVerified = pose.CameraStateIdentityVerified,
+            ConsistentDoubleRead = pose.ConsistentDoubleRead,
+            ModuleRooted = pose.ModuleRooted,
+        });
+    }
+
+    private static string? FormatCameraAddress(long address) => address == 0
+        ? null
+        : "0x" + address.ToString("X8", CultureInfo.InvariantCulture);
 
     private static bool TryParseRegionAnchor(string value, out EntityRecordRegionAnchor anchor)
     {
