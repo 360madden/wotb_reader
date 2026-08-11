@@ -569,7 +569,10 @@ public sealed class CliCommandRouter
 
         if (pngPath is not null)
         {
-            byte[] rgba = FrameRasterizer.Render(projection, (int)viewportWidth, (int)viewportHeight);
+            MapBoundary? boundary = await ResolveMapBoundaryAsync(sessionGuid, cancellationToken)
+                .ConfigureAwait(false);
+            byte[] rgba = FrameRasterizer.Render(
+                projection, (int)viewportWidth, (int)viewportHeight, boundary);
             byte[] png = PngEncoder.Encode((int)viewportWidth, (int)viewportHeight, rgba);
             try
             {
@@ -666,6 +669,27 @@ public sealed class CliCommandRouter
             data,
             $"Overlay frame at {replayTimeSeconds:0.###}s: {frame.Tanks.Count} tank(s), {projection.Beacons.Count} beacon(s) projected.",
             correlationId);
+    }
+
+    /// <summary>Resolves the session's map boundary (null when the session
+    /// carries no map ID or no position-derived boundary exists yet) for the
+    /// PNG preview's god-view minimap inset.</summary>
+    private async ValueTask<MapBoundary?> ResolveMapBoundaryAsync(
+        Guid sessionGuid,
+        CancellationToken cancellationToken)
+    {
+        OperationResult<ReplayDecodeProjection> projectionResult = await _sessions
+            .GetProjectionAsync(new BattleSessionId(sessionGuid), cancellationToken)
+            .ConfigureAwait(false);
+        string? mapId = projectionResult.Value?.Session?.MapId;
+        if (mapId is null)
+        {
+            return null;
+        }
+
+        IReadOnlyList<MapBoundary> boundaries = await _sessions
+            .GetMapBoundariesAsync(cancellationToken).ConfigureAwait(false);
+        return boundaries.FirstOrDefault(boundary => boundary.MapId == mapId);
     }
 
     /// <summary>

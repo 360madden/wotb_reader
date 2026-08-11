@@ -796,7 +796,9 @@ The `overlay-frame <time> --session <guid> [--fov --width --height
 name/team/HP/distance plus projected screen X/Y/depth (or behind-camera),
 sorted by distance. `--png <path>` additionally writes a schematic PNG
 preview (dark viewport + crosshair, beacon diamonds, pips, nameplate
-panels/labels) via a pure-BCL encoder + 5x5 bitmap-font rasterizer
+panels/labels, plus a god-view minimap inset with team-colored tank dots,
+beacon dots, and a camera crosshair normalized to the session's map
+boundary) via a pure-BCL encoder + 5x5 bitmap-font rasterizer
 (`Host.Cli/Rendering`), so the HUD layout can be eyeballed against real
 replays without the game. Two
 real-data findings while previewing Oasis Palms: (1) the position stream

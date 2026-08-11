@@ -1,4 +1,5 @@
 using WotBTreader.Application.Replay;
+using WotBTreader.Core;
 
 namespace WotBTreader.Host.Cli.Rendering;
 
@@ -17,6 +18,9 @@ public static class FrameRasterizer
     private const int NameplateHeight = 22;
     private const int BeaconRadius = 4;
     private const int PipSize = 5;
+    private const int MinimapSize = 180;
+    private const int MinimapMargin = 12;
+    private const int MinimapDot = 3;
 
     private static readonly byte[] Background = [12, 14, 20, 255];
     private static readonly byte[] Crosshair = [40, 44, 56, 255];
@@ -29,8 +33,16 @@ public static class FrameRasterizer
     private static readonly byte[] LabelDefault = [230, 230, 230, 255];
 
     /// <summary>Renders the projection into a width×height RGBA buffer
-    /// (row-major, 4 bytes per pixel, origin top-left).</summary>
-    public static byte[] Render(OverlayFrameProjection projection, int width, int height)
+    /// (row-major, 4 bytes per pixel, origin top-left). When
+    /// <paramref name="boundary"/> is a non-degenerate map boundary, a
+    /// god-view minimap inset is drawn top-right: team-colored tank dots,
+    /// beacon dots, and a camera crosshair normalized within the boundary.
+    /// </summary>
+    public static byte[] Render(
+        OverlayFrameProjection projection,
+        int width,
+        int height,
+        MapBoundary? boundary = null)
     {
         ArgumentNullException.ThrowIfNull(projection);
         if (width <= 0 || height <= 0)
@@ -42,6 +54,11 @@ public static class FrameRasterizer
         Fill(rgba, width, height, Background);
 
         DrawCrosshair(rgba, width, height);
+
+        if (IsUsableBoundary(boundary))
+        {
+            DrawMinimap(rgba, width, height, projection, boundary!);
+        }
 
         foreach (ProjectedBeacon beacon in projection.Beacons)
         {
@@ -59,6 +76,82 @@ public static class FrameRasterizer
         }
 
         return rgba;
+    }
+
+    private static bool IsUsableBoundary(MapBoundary? boundary) =>
+        boundary is not null
+        && boundary.MaxX > boundary.MinX
+        && boundary.MaxZ > boundary.MinZ;
+
+    /// <summary>God-view minimap inset: tanks (team color, grey when dead),
+    /// beacons (their color), and the camera (white crosshair). World X maps
+    /// to the panel's left→right, world Z to top→bottom.</summary>
+    private static void DrawMinimap(
+        byte[] rgba, int width, int height, OverlayFrameProjection projection, MapBoundary boundary)
+    {
+        int left = width - MinimapSize - MinimapMargin;
+        int top = MinimapMargin;
+        for (int dy = 0; dy < MinimapSize; dy++)
+        {
+            for (int dx = 0; dx < MinimapSize; dx++)
+            {
+                bool border = dx == 0 || dy == 0 || dx == MinimapSize - 1 || dy == MinimapSize - 1;
+                SetPixel(rgba, width, height, left + dx, top + dy,
+                    border ? Crosshair : PanelFill);
+            }
+        }
+
+        foreach (ProjectedTank tank in projection.Tanks)
+        {
+            byte[] color = !tank.Alive
+                ? Dead
+                : tank.TeamNumber == 1 ? Team1 : tank.TeamNumber == 2 ? Team2 : Neutral;
+            DrawDot(rgba, width, height, left, top, boundary, tank.WorldX, tank.WorldZ, color);
+        }
+
+        foreach (ProjectedBeacon beacon in projection.Beacons)
+        {
+            DrawDot(rgba, width, height, left, top, boundary, beacon.WorldX, beacon.WorldZ,
+                ParseColor(beacon.Color, LabelDefault));
+        }
+
+        if (projection.CameraX is double cameraX && projection.CameraZ is double cameraZ)
+        {
+            (int cx, int cy) = Normalize(boundary, left, top, cameraX, cameraZ);
+            for (int dx = -2; dx <= 2; dx++)
+            {
+                SetPixel(rgba, width, height, cx + dx, cy, LabelDefault);
+            }
+
+            for (int dy = -2; dy <= 2; dy++)
+            {
+                SetPixel(rgba, width, height, cx, cy + dy, LabelDefault);
+            }
+        }
+    }
+
+    private static void DrawDot(
+        byte[] rgba, int width, int height, int panelLeft, int panelTop,
+        MapBoundary boundary, double worldX, double worldZ, byte[] color)
+    {
+        (int x, int y) = Normalize(boundary, panelLeft, panelTop, worldX, worldZ);
+        for (int dy = 0; dy < MinimapDot; dy++)
+        {
+            for (int dx = 0; dx < MinimapDot; dx++)
+            {
+                SetPixel(rgba, width, height, x + dx, y + dy, color);
+            }
+        }
+    }
+
+    private static (int X, int Y) Normalize(
+        MapBoundary boundary, int panelLeft, int panelTop, double worldX, double worldZ)
+    {
+        double fx = (worldX - boundary.MinX) / (boundary.MaxX - boundary.MinX);
+        double fz = (worldZ - boundary.MinZ) / (boundary.MaxZ - boundary.MinZ);
+        int x = panelLeft + 1 + (int)Math.Round(Math.Clamp(fx, 0, 1) * (MinimapSize - 2 - MinimapDot));
+        int y = panelTop + 1 + (int)Math.Round(Math.Clamp(fz, 0, 1) * (MinimapSize - 2 - MinimapDot));
+        return (x, y);
     }
 
     private static void DrawCrosshair(byte[] rgba, int width, int height)

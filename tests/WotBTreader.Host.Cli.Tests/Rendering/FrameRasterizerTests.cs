@@ -1,4 +1,5 @@
 using WotBTreader.Application.Replay;
+using WotBTreader.Core;
 using WotBTreader.Host.Cli.Rendering;
 
 namespace WotBTreader.Host.Cli.Tests.Rendering;
@@ -93,6 +94,68 @@ public sealed class FrameRasterizerTests
         // top = marker top - 5 (glyph) - 2 (gap).
         AssertPixel(rgba, 240 - 8 + 1, 100 - 4 - 5 - 2, 0, 255, 0);
     }
+
+    [TestMethod]
+    public void Render_MinimapInsetDrawsTankBeaconAndCamera()
+    {
+        // Boundary 0..1000 both axes; panel at top-right (left 128, top 12
+        // for a 320px-wide viewport). Tanks/beacons project via normalized
+        // world coords: tank at (250,250) → (173,57), beacon at (750,750) →
+        // (260,144), camera at (500,500) → (217,101).
+        var boundary = new MapBoundary("maps/test", MinX: 0, MaxX: 1000, MinZ: 0, MaxZ: 1000);
+        var tank = new ProjectedTank(
+            EntityId: 2,
+            PlayerName: "Hidden",
+            TankName: null,
+            ClanTag: null,
+            TeamNumber: 2,
+            HpFraction: 1.0,
+            Alive: true,
+            DistanceMeters: 100,
+            WorldX: 250, WorldZ: 250,
+            ScreenX: null, ScreenY: null,
+            Depth: null,
+            InViewport: false,
+            ScreenHeadingDegrees: null,
+            DamageDealt: 0, DamageTaken: 0, Kills: 0);
+        var beacon = new ProjectedBeacon(
+            Name: "CAP",
+            Color: "#00FF88",
+            DistanceMeters: 200,
+            WorldX: 750, WorldZ: 750,
+            ScreenX: null, ScreenY: null,
+            Depth: null,
+            InViewport: false);
+        var projection = new OverlayFrameProjection(
+            ReplayTime: TimeSpan.FromSeconds(5),
+            CameraX: 500, CameraY: 0, CameraZ: 500,
+            CameraYawRadians: 0.5, CameraPitchRadians: -0.1,
+            Tanks: [tank],
+            Beacons: [beacon],
+            Pips: [],
+            Kills: []);
+
+        byte[] rgba = FrameRasterizer.Render(projection, Width, Height, boundary);
+
+        AssertPixel(rgba, 173, 57, 255, 90, 90);   // team-2 tank dot
+        AssertPixel(rgba, 260, 144, 0, 255, 136);  // beacon dot
+        AssertPixel(rgba, 217, 101, 230, 230, 230); // camera crosshair
+        AssertPixel(rgba, 100, 20, 12, 14, 20);    // untouched background
+    }
+
+    [TestMethod]
+    public void Render_DegenerateBoundarySkipsMinimap()
+    {
+        var boundary = new MapBoundary("maps/test", MinX: 0, MaxX: 0, MinZ: 0, MaxZ: 0);
+
+        byte[] rgba = FrameRasterizer.Render(EmptyProjection(), Width, Height, boundary);
+
+        // The panel area (top-right) stays background — no inset is drawn.
+        AssertPixel(rgba, Width - MinimapMidX(), MinimapMidY(), 12, 14, 20);
+    }
+
+    private static int MinimapMidX() => Width - 180 - 12 + 90;
+    private static int MinimapMidY() => 12 + 90;
 
     [TestMethod]
     public void Render_OffscreenProjectionIsSkipped()
