@@ -5,6 +5,9 @@ namespace WotBTreader.Overlay.ViewModels;
 /// projected viewport pixel (top-left origin), and the label/HP bar draw
 /// above it. Only tanks in front of the camera with a projection inside the
 /// viewport produce items; the player's own tank (distance ~0) is excluded.
+/// Items are collected far-to-near (depth descending) so that, when two
+/// nameplates overlap, the nearer tank's plate draws on top (WPF paints
+/// later canvas children over earlier ones).
 /// </summary>
 public sealed record NameplateItem(
     long EntityId,
@@ -15,6 +18,7 @@ public sealed record NameplateItem(
     double HpFraction,
     bool Alive,
     double DistanceMeters,
+    double Depth,
     double? ScreenHeadingDegrees,
     // Cumulative battle statistics at the frame time, shown as a compact
     // totals line under the HP bar (damage dealt + kills).

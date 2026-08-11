@@ -529,7 +529,11 @@ public class MainViewModel : INotifyPropertyChanged
             BuildMinimap(frame);
             BuildKillFeed(frame);
             BuildScoreboard(frame);
-            foreach (OverlayTankResponse tank in frame.Tanks)
+            // Far-to-near (depth descending): WPF draws later children on top,
+            // so nearer tanks' nameplates win when two overlap. Unknown depth
+            // sorts last and is never hidden.
+            foreach (OverlayTankResponse tank in frame.Tanks
+                .OrderByDescending(tank => tank.Depth))
             {
                 if (tank.ScreenX is null || tank.ScreenY is null || !tank.InViewport)
                 {
@@ -551,6 +555,7 @@ public class MainViewModel : INotifyPropertyChanged
                     tank.HpFraction,
                     tank.Alive,
                     tank.DistanceMeters,
+                    tank.Depth ?? double.MaxValue,
                     tank.ScreenHeadingDegrees,
                     tank.DamageDealt,
                     tank.Kills,

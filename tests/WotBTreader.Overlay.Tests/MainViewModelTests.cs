@@ -1065,6 +1065,53 @@ public sealed class MainViewModelTests
     }
 
     [TestMethod]
+    public async Task RefreshOverlayFrameAsync_SortsNameplatesFarToNear()
+    {
+        // Depth = distance along the view axis; larger = farther from the
+        // camera. WPF draws later children on top, so the collection must be
+        // far-to-near: a nearer tank's nameplate wins when two overlap.
+        string frameJson = """
+            {
+              "replayTimeSeconds": 100.0,
+              "cameraX": 0.0, "cameraY": 0.0, "cameraZ": 0.0,
+              "cameraYawRadians": 0.0, "cameraPitchRadians": 0.0,
+              "tanks": [
+                { "entityId": 10, "playerName": "Near", "tankName": null, "clanTag": null, "teamNumber": 2, "hpFraction": 1.0, "alive": true, "distanceMeters": 15.0, "screenX": 100.0, "screenY": 100.0, "depth": 10.0, "inViewport": true },
+                { "entityId": 30, "playerName": "Far", "tankName": null, "clanTag": null, "teamNumber": 2, "hpFraction": 1.0, "alive": true, "distanceMeters": 200.0, "screenX": 200.0, "screenY": 200.0, "depth": 100.0, "inViewport": true },
+                { "entityId": 20, "playerName": "Mid", "tankName": null, "clanTag": null, "teamNumber": 2, "hpFraction": 1.0, "alive": true, "distanceMeters": 90.0, "screenX": 300.0, "screenY": 300.0, "depth": 50.0, "inViewport": true },
+                { "entityId": 40, "playerName": "Unknown", "tankName": null, "clanTag": null, "teamNumber": 2, "hpFraction": 1.0, "alive": true, "distanceMeters": 60.0, "screenX": 400.0, "screenY": 400.0, "depth": null, "inViewport": true }
+              ]
+            }
+            """;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            string path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/frame", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(JsonResponse(frameJson));
+            }
+
+            return Task.FromResult(JsonResponse("""{"offset":0,"limit":200,"count":0,"items":[]}"""));
+        });
+        MainViewModel viewModel = CreateViewModel(handler);
+
+        await viewModel.RefreshSessionsAsync();
+        viewModel.SelectedSession = new SessionRow(
+            BattleSessionId, "Test Map", null, Now, 1, 2);
+
+        await viewModel.RefreshOverlayFrameAsync(1920, 1080);
+
+        Assert.AreEqual(4, viewModel.Nameplates.Count);
+        // Far (100) → mid (50) → near (10), unknown depth last (never hidden).
+        CollectionAssert.AreEqual(new long[] { 30, 20, 10, 40 },
+            viewModel.Nameplates.Select(item => item.EntityId).ToArray());
+        Assert.AreEqual(100.0, viewModel.Nameplates[0].Depth, 1e-9);
+        Assert.AreEqual(10.0, viewModel.Nameplates[2].Depth, 1e-9);
+        Assert.AreEqual(double.MaxValue, viewModel.Nameplates[3].Depth);
+    }
+
+    [TestMethod]
     public async Task RefreshOverlayFrameAsync_PopulatesGodViewMinimapFromBoundary()
     {
         string frameJson = """
