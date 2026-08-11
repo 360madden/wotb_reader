@@ -129,6 +129,77 @@ public sealed class ReplayDecoderTests
     }
 
     [TestMethod]
+    public async Task HealthChangeLedgerComputesDamageFromHpDeltas()
+    {
+        ReplayInput input = SyntheticReplayFactory.CreateInput(
+            SyntheticReplayFactory.CreateReplay(
+                includeSpawnHealth: true,
+                includeHealthChange: true));
+        WotbReplayProbe probe = new();
+        var probeResult = await probe.ProbeAsync(
+            input,
+            DecoderLimits.Default,
+            CancellationToken.None);
+        Assert.IsTrue(probeResult.IsSuccess, probeResult.Error?.Message);
+
+        WotbReplayDecoder decoder = new();
+        var decodeResult = await decoder.DecodeAsync(
+            new ReplayDecodeRequest(
+                input,
+                DecodeRunId.New(),
+                probeResult.Value!,
+                DecoderLimits.Default),
+            CancellationToken.None);
+        Assert.IsTrue(decodeResult.IsSuccess, decodeResult.Error?.Message);
+        ReplayDecodeProjection projection = decodeResult.Value!;
+
+        // Ledger: 100 starts at 700, takes 100 -> 600 (attacker 200), then is
+        // destroyed by 200 with 600 remaining (credited to the killer). 200
+        // starts at 500, takes 50 -> 450 (attacker 100).
+        CanonicalEvent[] damageEvents = projection.Events
+            .Where(ev => ev.Kind == CanonicalEventKind.Damage)
+            .OrderBy(ev => ev.Sequence)
+            .ToArray();
+        Assert.HasCount(3, damageEvents);
+
+        (long Victim, long Attacker, int Damage)[] expected =
+        [
+            (100, 200, 100),
+            (200, 100, 50),
+            (100, 200, 600),
+        ];
+        for (int i = 0; i < expected.Length; i++)
+        {
+            using JsonDocument values = JsonDocument.Parse(damageEvents[i].ValuesJson);
+            Assert.AreEqual(
+                expected[i].Victim,
+                values.RootElement.GetProperty("victimEntityId").GetInt64());
+            Assert.AreEqual(
+                expected[i].Attacker,
+                values.RootElement.GetProperty("attackerEntityId").GetInt64());
+            Assert.AreEqual(
+                expected[i].Damage,
+                values.RootElement.GetProperty("damage").GetInt32());
+        }
+
+        // Per-attacker sums: attacker 200 dealt 100 + 600 = 700.
+        long attacker200Total = damageEvents
+            .Select(ev => JsonDocument.Parse(ev.ValuesJson))
+            .Where(doc => doc.RootElement.GetProperty("attackerEntityId").GetInt64() == 200)
+            .Sum(doc => doc.RootElement.GetProperty("damage").GetInt32());
+        Assert.AreEqual(700, attacker200Total);
+
+        // The health-change packets are preserved as typed raw records.
+        Assert.IsTrue(projection.RawRecords.Any(
+            record => record.RecordKind == "event-stream.packet" &&
+                      record.PropertiesJson?.Contains(
+                          "healthChange",
+                          StringComparison.Ordinal) == true));
+        Assert.IsFalse(projection.Warnings.Any(
+            warning => warning.Contains("malformed", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [TestMethod]
     public async Task BasePlayerCreatePacketDecodesAsTypedRawRecordWithArenaIdentity()
     {
         ReplayInput input = SyntheticReplayFactory.CreateInput(

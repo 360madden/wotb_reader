@@ -15,7 +15,7 @@ from the actual data model, not assumptions.
 |---|---|---|
 | `ParticipantObserved` | arena participant packets | account/entity ids, team |
 | `Position` | position packets | per-participant trajectory samples |
-| `Damage` | `EventPacketDecoders.TryReadDirectDamage` → `DamageObservation` | `AttackerEntityId`, `VictimEntityId`, `Damage`, `ReplayTime`, evidence |
+| `Damage` | type-8 subtype-1 health-change ledger (`TryReadHealthChange`); amount = victim HP delta seeded by the type-5 max-HP broadcast | `AttackerEntityId`, `VictimEntityId`, `Damage`, `ReplayTime`, evidence |
 | `Destroyed` | battle events | victim entity id + replay time |
 | `BattleStarted` / `BattleEnded` | battle lifecycle | replay clock bounds |
 

@@ -64,12 +64,24 @@ internal sealed record PositionObservation(
     bool IsDestroyMarker,
     BinaryEvidence Evidence);
 
-internal sealed record DamageObservation(
+/// <summary>
+/// A decoded type-8 subtype-1 health-change packet — the replay's actual HP
+/// ledger. Layout (pinned from real 11.19 replays and validated against
+/// battle_results per-player damage totals): entity/victim id u32 LE at
+/// +0x00, subtype 1 u32 LE at +0x04, declared length 7 u32 LE at +0x08,
+/// post-hit health u16 LE at +0x0C, attacker id i32 LE at +0x0E, flag byte
+/// at +0x12. A post-hit health of 0xFFFD (65533) is the destroy marker and
+/// names the killer in the attacker field. The damage amount is the victim's
+/// HP delta (previous health minus this post-hit health), not a stored field
+/// — the type-8 subtype-8 "amount" at +0x16 is unrelated to HP loss.
+/// </summary>
+internal sealed record HealthChangeObservation(
     long Sequence,
     TimeSpan ReplayTime,
-    long AttackerEntityId,
     long VictimEntityId,
-    int Damage,
+    int PostHitHealth,
+    long AttackerEntityId,
+    bool IsDestroy,
     BinaryEvidence Evidence);
 
 /// <summary>
@@ -407,49 +419,61 @@ internal static class EventPacketDecoders
         return true;
     }
 
-    public static bool TryReadDirectDamage(
+    /// <summary>
+    /// Decodes a type-8 subtype-1 health-change packet — the replay's HP
+    /// ledger. Layout: victim id u32 LE at +0x00, subtype 1 at +0x04,
+    /// declared length 7 at +0x08, post-hit health u16 LE at +0x0C, attacker
+    /// i32 LE at +0x0E, flag byte at +0x12. Post-hit health 0xFFFD is the
+    /// destroy marker and carries the killer in the attacker field. The
+    /// damage amount is NOT stored in the packet: it is the victim's HP
+    /// delta from its previous known health (seeded by the type-5 max-HP
+    /// broadcast), which is why the old subtype-8 amount read (at +0x16)
+    /// never matched battle_results. Validated 2026-08-11: per-attacker
+    /// damage sums equal battle_results damage_dealt on both replays with
+    /// destroy credit (remaining HP at the destroy marker) included.
+    /// </summary>
+    public static bool TryReadHealthChange(
         EventPacket packet,
-        out DamageObservation? damage,
+        out HealthChangeObservation? healthChange,
         out string? warning)
     {
-        damage = null;
+        healthChange = null;
         warning = null;
-        if (packet.Type != 8 || packet.Payload.Length < 24)
+        if (packet.Type != 8 || packet.Payload.Length < 19)
         {
             return false;
         }
 
         ReadOnlySpan<byte> payload = packet.Payload.Span;
-        int methodEntity = BinaryPrimitives.ReadInt32LittleEndian(payload);
         uint subtype = BinaryPrimitives.ReadUInt32LittleEndian(payload[4..]);
-        if (subtype != 8)
+        if (subtype != 1)
         {
             return false;
         }
 
         uint declaredLength = BinaryPrimitives.ReadUInt32LittleEndian(payload[8..]);
-        if (declaredLength > payload.Length - 12 || payload.Length < 24)
-        {
-            warning = "A direct-damage method packet had an invalid declared length.";
-            return false;
-        }
-
-        int attacker = BinaryPrimitives.ReadInt32LittleEndian(payload[12..]);
-        int victim = BinaryPrimitives.ReadInt32LittleEndian(payload[16..]);
-        byte kind = payload[20];
-        byte damageSubtype = payload[21];
-        int amount = BinaryPrimitives.ReadUInt16BigEndian(payload[22..]);
-        if (methodEntity != victim || kind != 1 || damageSubtype != 3)
+        if (declaredLength != 7)
         {
             return false;
         }
 
-        damage = new DamageObservation(
+        int victim = BinaryPrimitives.ReadInt32LittleEndian(payload);
+        int postHitHealth = BinaryPrimitives.ReadUInt16LittleEndian(payload[0x0C..]);
+        int attacker = BinaryPrimitives.ReadInt32LittleEndian(payload[0x0E..]);
+        if (victim <= 0)
+        {
+            warning = "A health-change packet carried a non-positive victim id.";
+            return false;
+        }
+
+        const int destroyHealth = 0xFFFD;
+        healthChange = new HealthChangeObservation(
             packet.Ordinal,
             TimeSpan.FromSeconds(packet.ClockSeconds),
-            attacker,
             victim,
-            amount,
+            postHitHealth,
+            attacker,
+            IsDestroy: postHitHealth == destroyHealth,
             EvidenceForPacket(packet));
         return true;
     }

@@ -210,8 +210,8 @@ public sealed class WotbReplayDecoder : IReplayDecoder
 
             Dictionary<long, ArenaParticipantObservation> arenaByEntity = [];
             List<PositionObservation> positions = [];
-            List<DamageObservation> damageEvents = [];
             List<SpawnHealthObservation> spawnHealths = [];
+            List<HealthChangeObservation> healthChanges = [];
             List<EventPacket> battleEndPackets = [];
             foreach (EventPacket packet in eventStream.Packets)
             {
@@ -246,19 +246,38 @@ public sealed class WotbReplayDecoder : IReplayDecoder
                     warnings.Add(positionWarning);
                 }
 
-                string? damageWarning = null;
+                string? healthChangeWarning = null;
                 if (!decoded &&
-                    EventPacketDecoders.TryReadDirectDamage(
+                    EventPacketDecoders.TryReadHealthChange(
                         packet,
-                        out DamageObservation? damage,
-                        out damageWarning))
+                        out HealthChangeObservation? healthChange,
+                        out healthChangeWarning))
                 {
                     decoded = true;
-                    damageEvents.Add(damage!);
+                    healthChanges.Add(healthChange!);
+                    AddRaw(
+                        rawRecords,
+                        request,
+                        ref rawOrdinal,
+                        "event-stream.packet",
+                        healthChange!.ReplayTime,
+                        EventPacketDecoders.EvidenceForPacket(packet),
+                        new
+                        {
+                            packetType = packet.Type,
+                            entityMethodSubtype = 1,
+                            healthChange = new
+                            {
+                                victimEntityId = healthChange.VictimEntityId,
+                                postHitHealth = healthChange.PostHitHealth,
+                                attackerEntityId = healthChange.AttackerEntityId,
+                                isDestroy = healthChange.IsDestroy,
+                            },
+                        });
                 }
-                else if (damageWarning is not null)
+                else if (healthChangeWarning is not null)
                 {
-                    warnings.Add(damageWarning);
+                    warnings.Add(healthChangeWarning);
                 }
 
                 string? spawnHealthWarning = null;
@@ -408,8 +427,8 @@ public sealed class WotbReplayDecoder : IReplayDecoder
                 request,
                 positionSamples,
                 positions,
-                damageEvents,
                 spawnHealths,
+                healthChanges,
                 battleEndPackets);
 
             ReplayCapability capabilities =
@@ -436,7 +455,7 @@ public sealed class WotbReplayDecoder : IReplayDecoder
                 capabilities |= ReplayCapability.Positions;
             }
 
-            if (damageEvents.Count > 0)
+            if (healthChanges.Count > 0)
             {
                 capabilities |= ReplayCapability.Damage;
             }
@@ -821,8 +840,8 @@ public sealed class WotbReplayDecoder : IReplayDecoder
         ReplayDecodeRequest request,
         IReadOnlyList<PositionSample> positions,
         IReadOnlyList<PositionObservation> positionObservations,
-        IReadOnlyList<DamageObservation> damageEvents,
         IReadOnlyList<SpawnHealthObservation> spawnHealths,
+        IReadOnlyList<HealthChangeObservation> healthChanges,
         IReadOnlyList<EventPacket> battleEndPackets)
     {
         List<EventDraft> drafts = [];
@@ -863,25 +882,89 @@ public sealed class WotbReplayDecoder : IReplayDecoder
                 position.Evidence));
         }
 
-        foreach (DamageObservation damage in damageEvents)
+        // Damage: computed from the type-8 subtype-1 health-change ledger.
+        // Each packet carries the victim's post-hit health; the damage amount
+        // is the delta from the victim's previous known health, seeded by the
+        // type-5 max-HP broadcast (first broadcast = max HP, verified
+        // 2026-08-11). This is the replay's true HP ledger — per-attacker
+        // sums match battle_results damage_dealt on both replays when the
+        // destroy marker's remaining HP is credited to the killer.
+        Dictionary<long, int> healthByEntity = [];
+        foreach (SpawnHealthObservation spawnHealth in spawnHealths
+                     .OrderBy(observation => observation.Sequence))
         {
+            // First broadcast per entity is the max-HP seed; later
+            // broadcasts carry current HP and are not re-seeded (they can
+            // only be <= the ledger value, so they never raise it).
+            healthByEntity.TryAdd(spawnHealth.EntityId, spawnHealth.Health);
+        }
+
+        foreach (HealthChangeObservation healthChange in healthChanges
+                     .OrderBy(observation => observation.Sequence))
+        {
+            if (!healthByEntity.TryGetValue(healthChange.VictimEntityId, out int previous))
+            {
+                // No max-HP seed for a non-roster entity; skip its ledger.
+                continue;
+            }
+
+            if (healthChange.IsDestroy)
+            {
+                // Destroy marker: credit the killer with the victim's
+                // remaining HP, mirroring battle_results damage accounting.
+                int remaining = Math.Max(previous, 0);
+                if (remaining > 0)
+                {
+                    participantProjection.ParticipantByEntity.TryGetValue(
+                        healthChange.VictimEntityId,
+                        out ParticipantId victim);
+                    drafts.Add(new EventDraft(
+                        healthChange.ReplayTime,
+                        healthChange.Sequence,
+                        CanonicalEventKind.Damage,
+                        victim == default ? null : victim,
+                        healthChange.VictimEntityId,
+                        JsonSerializer.Serialize(new
+                        {
+                            attackerEntityId = healthChange.AttackerEntityId,
+                            victimEntityId = healthChange.VictimEntityId,
+                            damage = remaining,
+                        }),
+                        EvidenceConfidence.Exact,
+                        ToEvidence(request, healthChange.Evidence)));
+                }
+
+                healthByEntity[healthChange.VictimEntityId] = 0;
+                continue;
+            }
+
+            int damage = previous - healthChange.PostHitHealth;
+            if (damage <= 0)
+            {
+                // A heal or a ledger discrepancy; keep the observed value but
+                // do not emit a negative/zero damage event.
+                healthByEntity[healthChange.VictimEntityId] = healthChange.PostHitHealth;
+                continue;
+            }
+
             participantProjection.ParticipantByEntity.TryGetValue(
-                damage.VictimEntityId,
-                out ParticipantId victim);
+                healthChange.VictimEntityId,
+                out ParticipantId damageVictim);
             drafts.Add(new EventDraft(
-                damage.ReplayTime,
-                damage.Sequence,
+                healthChange.ReplayTime,
+                healthChange.Sequence,
                 CanonicalEventKind.Damage,
-                victim == default ? null : victim,
-                damage.VictimEntityId,
+                damageVictim == default ? null : damageVictim,
+                healthChange.VictimEntityId,
                 JsonSerializer.Serialize(new
                 {
-                    attackerEntityId = damage.AttackerEntityId,
-                    victimEntityId = damage.VictimEntityId,
-                    damage = damage.Damage,
+                    attackerEntityId = healthChange.AttackerEntityId,
+                    victimEntityId = healthChange.VictimEntityId,
+                    damage,
                 }),
                 EvidenceConfidence.Exact,
-                ToEvidence(request, damage.Evidence)));
+                ToEvidence(request, healthChange.Evidence)));
+            healthByEntity[healthChange.VictimEntityId] = healthChange.PostHitHealth;
         }
 
         // Destroyed: the first destroy-marker position packet per roster

@@ -22,7 +22,8 @@ public static class SyntheticReplayFactory
         bool includeEndSentinel = true,
         ulong? basePlayerCreateArenaId = null,
         bool includeDestroyMarker = false,
-        bool includeSpawnHealth = false)
+        bool includeSpawnHealth = false,
+        bool includeHealthChange = false)
     {
         byte[] metadata = JsonSerializer.SerializeToUtf8Bytes(new
         {
@@ -47,7 +48,8 @@ public static class SyntheticReplayFactory
             includeEndSentinel,
             basePlayerCreateArenaId,
             includeDestroyMarker,
-            includeSpawnHealth);
+            includeSpawnHealth,
+            includeHealthChange);
         return CreateArchive(
             (ReplayFormatConstants.MetadataEntry, metadata),
             (ReplayFormatConstants.BattleResultsEntry, battleResults),
@@ -111,7 +113,8 @@ public static class SyntheticReplayFactory
         bool includeEndSentinel,
         ulong? basePlayerCreateArenaId = null,
         bool includeDestroyMarker = false,
-        bool includeSpawnHealth = false)
+        bool includeSpawnHealth = false,
+        bool includeHealthChange = false)
     {
         using MemoryStream output = new();
         WriteUInt32(output, ReplayFormatConstants.EventStreamMagic);
@@ -141,6 +144,18 @@ public static class SyntheticReplayFactory
         }
 
         WritePacket(output, 10, 2.0f, CreatePositionPayload(200, -10, 5, -20));
+        if (includeHealthChange)
+        {
+            // Type-8 subtype-1 health-change ledger. Entity 100 starts at
+            // max 700 (from the spawn broadcast), takes 100 -> 600, then is
+            // destroyed (0xFFFD marker) by entity 200 with 600 remaining HP.
+            // Entity 200 takes 50 -> 450. The destroy marker's remaining HP
+            // is credited to the killer, so entity 200 deals 600 + 50.
+            // Written after the position packets so stream clocks ascend.
+            WritePacket(output, 8, 2.0f, CreateHealthChangePayload(100, 600, 200));
+            WritePacket(output, 8, 2.1f, CreateHealthChangePayload(200, 450, 100));
+            WritePacket(output, 8, 3.0f, CreateHealthChangePayload(100, 0xFFFD, 200));
+        }
         if (includeDestroyMarker)
         {
             // Destroy marker for roster entity 100 at t=3.0, plus a second
@@ -283,6 +298,20 @@ public static class SyntheticReplayFactory
         }
 
         return player.ToArray();
+    }
+
+    private static byte[] CreateHealthChangePayload(int victimId, int postHitHealth, int attackerId)
+    {
+        // Type-8 subtype-1 health-change layout: victim u32 LE at +0x00,
+        // subtype 1 at +0x04, declared length 7 at +0x08, post-hit health
+        // u16 LE at +0x0C, attacker i32 LE at +0x0E, flag byte at +0x12.
+        byte[] payload = new byte[19];
+        BinaryPrimitives.WriteInt32LittleEndian(payload, victimId);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(4), 1);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(8), 7);
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(0x0C), checked((ushort)postHitHealth));
+        BinaryPrimitives.WriteInt32LittleEndian(payload.AsSpan(0x0E), attackerId);
+        return payload;
     }
 
     private static byte[] CreateSpawnHealthPayload(int entityId, int health)

@@ -154,7 +154,7 @@ Known packet types (decoded by `WotbReplayDecoder`):
 |-------------|--------|
 | Arena participants (`updateArena2` wrapper, type 8) | `CanonicalEventKind.ParticipantObserved` roster entries |
 | Position (type 10) | `CanonicalEventKind.Position` → `PositionSample` (raw + normalized coords) |
-| Direct damage (type 8/subtype 8) | `CanonicalEventKind.Damage` |
+| Health change (type 8/subtype 1, 19 B) | `CanonicalEventKind.Damage` — victim u32 at +0x00, subtype 1 at +0x04, declared length 7 at +0x08, post-hit HP u16 at +0x0C, attacker i32 at +0x0E, flag byte at +0x12. The packet holds the victim's CURRENT HP, not the amount; damage = HP delta from the ledger seeded by the type-5 max-HP broadcast. 0xFFFD post-hit HP is the destroy marker carrying the killer (remaining HP credited to the killer, matching battle_results accounting). Validated 2026-08-11: per-attacker sums equal battle_results damage_dealt exactly on both replays for every player WITH battle results (left players have none but their decoded damage is still true); the old subtype-8 amount field was never the HP damage |
 | Spawn full-state (type 5) | `CanonicalEventKind.MaxHealthObserved` (first broadcast per roster entity; u32 eid at +0x00, u16 current HP at +0x33 — the first broadcast precedes any damage, so it equals max HP) |
 | Lifecycle (type 14) | `CanonicalEventKind.BattleEnded` |
 
