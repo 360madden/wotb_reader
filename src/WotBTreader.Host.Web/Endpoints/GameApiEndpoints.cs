@@ -911,7 +911,8 @@ internal static class GameApiEndpoints
                     request.EntityId,
                     request.RegionLength,
                     battleSessionId,
-                    anchor),
+                    anchor,
+                    request.AvatarCandidateIndex),
                 cancellationToken)
             .ConfigureAwait(false);
         if (!result.IsSuccess || result.Value is null)
@@ -938,6 +939,7 @@ internal static class GameApiEndpoints
             NodesVisited = read.NodesVisited,
             ModuleRooted = read.ModuleRooted,
             SameDecodedClockProven = read.SameDecodedClockProven,
+            AvatarCandidateCount = read.AvatarCandidateCount,
         });
     }
 
@@ -1257,6 +1259,9 @@ internal static class GameApiEndpoints
                 return true;
             case "entity-base":
                 anchor = EntityRecordRegionAnchor.EntityBase;
+                return true;
+            case "avatar-stats":
+                anchor = EntityRecordRegionAnchor.AvatarStats;
                 return true;
             default:
                 anchor = EntityRecordRegionAnchor.RingRecord;

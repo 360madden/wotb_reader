@@ -55,12 +55,22 @@ FIELD_DEFS = [
     ("playerPositionX", "float", "World-space X position"),
     ("playerPositionY", "float", "World-space Y position (height)"),
     ("playerPositionZ", "float", "World-space Z position"),
-    ("playerYaw", "float", "Camera yaw in radians"),
+    ("playerYaw", "float", "Player yaw in radians (ring-record +0x30, rotation triple)"),
+    ("playerPitch", "float", "Player pitch in radians (ring-record +0x2C, rotation triple)"),
+    ("playerRoll", "float", "Player roll in radians (ring-record +0x28, rotation triple)"),
     ("cameraPitch", "float", "Camera pitch in radians"),
     ("aliveTankCount", "int32", "Number of tanks alive"),
 ]
 
 FIELD_NAMES = {name for name, _type, _desc in FIELD_DEFS}
+
+# Schema-declared fields that are NOT yet required in the version tables:
+# pre-staged 2026-08-12 with playerPitch/playerRoll (rotation-triple
+# publication draft, docs/operations/g1-pitch-roll-publication-draft.md).
+# They exist in schema.json's offsets.properties, chains, and
+# fieldValidation enums so the draft chains validate, but the tables only
+# gain them (and the required list grows) at the operator-approved apply.
+OPTIONAL_FIELDS = {"playerPitch", "playerRoll"}
 
 # The only chain hop kinds the schema, the pack doc, the validator, and
 # OffsetChainHopKind (Core/OffsetModels.cs) agree on. Must match
@@ -126,10 +136,11 @@ def validate_schema(log_path: Path, schema: dict) -> list[str]:
             f"{sorted(FIELD_NAMES)}")
 
     offsets_required = set(offsets.get("required", []))
-    if offsets_required and offsets_required != FIELD_NAMES:
+    expected_required = FIELD_NAMES - OPTIONAL_FIELDS
+    if offsets_required and offsets_required != expected_required:
         issues.append(
             f"schema.json offsets.required={sorted(offsets_required)}, expected "
-            f"{sorted(FIELD_NAMES)}")
+            f"{sorted(expected_required)}")
 
     if offsets.get("additionalProperties") is not False:
         issues.append("schema.json offsets.additionalProperties is not false")
@@ -394,7 +405,7 @@ def check_walkable_fidelity(log_path: Path) -> list[str]:
     # skipped (each fidelity check goes active the moment the published
     # table gains its chain).
     for field in ("playerPositionX", "playerPositionY", "playerPositionZ",
-                  "playerYaw", "playerHP"):
+                  "playerYaw", "playerPitch", "playerRoll", "playerHP"):
         pub = pub_chains.get(field)
         dr = draft_chains.get(field)
         if pub is None or dr is None:
@@ -547,7 +558,10 @@ def validate_against_documented_schema(
     offsets = data.get("offsets", {})
     doc_fields = doc["offset_fields"]
     if doc_fields:
-        missing = doc_fields - set(offsets.keys())
+        # OPTIONAL_FIELDS are schema-declared but not yet table-required
+        # (pre-staged publication); a table without them is NOT a drift.
+        required_doc_fields = doc_fields - OPTIONAL_FIELDS
+        missing = required_doc_fields - set(offsets.keys())
         extra = set(offsets.keys()) - doc_fields
         if missing:
             issues.append(

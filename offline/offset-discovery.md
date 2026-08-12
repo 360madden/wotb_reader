@@ -368,6 +368,33 @@ static-analysis `playerYaw` hypothesis is now `Stale` with a published value of
 `0`; 7 fields remain unknown and no field is runtime-supported. Full tool status in
 [`docs/operations/offset-discovery-guide.md`](../docs/operations/offset-discovery-guide.md).
 
+## Replay-correlation CLI (`wotbtreader-cli hp-diff` / `yaw-diff`)
+
+The verdict tooling that turns live region dumps into offset evidence (used
+by `scripts/invoke-hp-diffing-session.ps1` / `invoke-facing-session.ps1`):
+
+- `hp-diff <snapshots.json> --session <id> --victim <entity> --direction
+  increment|decrement` — the damage correlator. Decrement = a victim's HP
+  (signed int16 at `[entity+0xB8]`); increment = an OWN counter rise (the L3
+  damage-dealt family, `--int16` off). Windows are attributed with bounded
+  bidirectional lag (`--lag-tolerance` / `--lag-lead-seconds`).
+- `yaw-diff <snapshots.json> --session <id> --victim <entity>` — the
+  rotation-triple value-match correlator over the ring-record dumps:
+  - `--field yaw|pitch|roll` — re-verdict the SAME immutable dumps per
+    rotation member (ring-record `+0x28` roll / `+0x2C` pitch / `+0x30` yaw;
+    the decoded `position_samples` tail carries the full triple).
+  - `--record-span <bytes>` — trim each snapshot to the single-record span
+    (0x38 = 56 for the ring) so ring-sibling decoys are excluded
+    automatically (region `+0x60` is the NEXT record's `+0x28`, stride 0x38 —
+    byte-near-identical, a tie-break decoy under the lag path).
+  - `--max-lag-seconds` / `--memory-lead-seconds` / `--per-dump-lag` — the
+    bounded bidirectional per-dump lag path: the G2 replay-clock LABEL skew
+    is opposite in sign per replay (Oasis memory lags ~+4.8 s; Dead Rail
+    leads ~−2.5 s), so the per-dump search must see both directions.
+- Both verdicts apply the hardened contract (score 1.0 + flatness 1.0 +
+  ≥ 2 matched windows); the Phase-4 two-replay rule requires the matched
+  offset to AGREE on both content-distinct replays before publication.
+
 ## Hard rules
 
 - **Offline only.** Gate must be `OfflineReplayVerified`; never during an

@@ -95,6 +95,21 @@ public enum Type10EntityPositionStatus
     NonFinitePosition,
     UnstableSnapshot,
     TraversalLimitExceeded,
+
+    /// <summary>
+    /// The <c>avatar-stats</c> region anchor scan found no entity-Avatar
+    /// candidate (vftable AOB scan targeted at
+    /// <c>moduleBase + 0x032752a4</c> on the 11.19.0.10 build).
+    /// </summary>
+    AvatarAnchorNotFound,
+
+    /// <summary>
+    /// The <c>avatar-stats</c> region anchor scan candidate failed the
+    /// vftable identity re-gate (read-back != the expected Avatar vftable
+    /// dword). Fail-closed: never read the stats quad off an
+    /// unauthenticated object.
+    /// </summary>
+    AvatarIdentityMismatch,
 }
 
 /// <summary>

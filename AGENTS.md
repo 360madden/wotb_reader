@@ -111,8 +111,9 @@ No runtime AI, cloud, Python, Node.js, Rust, Electron, or containers.
   and the ring record is battle-scoped heap), evidence appended (4 launches
   / 2 replays), approvals set, `numericOffsetPublication: true`, all
   post-edit gates green (`offset_check.py` chains-validated 3 fields,
-  `validate.ps1` exit 0). NOT promoted: velocity, playerYaw, replayTime,
-  playerHP, cameraPitch, aliveTankCount. Resolver + read surface untouched;
+  `validate.ps1` exit 0). NOT promoted at G0: velocity, playerYaw, replayTime,
+  playerHP, cameraPitch, aliveTankCount (playerHP + playerYaw were published
+  under G1 2026-08-12, OD-RECOVERY-092 — see below). Resolver + read surface untouched;
   the legacy observation path still emits position nulls (chained fields
   excluded — pinned by `ChainedFields_AreExcludedFromObservationReads`).**
   See
@@ -150,9 +151,107 @@ class: Dead Rail's memory clock LEADS the decoded clock (~2.5 s), invisible
 to the one-directional attribution — fixed additively by the bounded
 lead-side window (`hp-diff --lag-lead-seconds`, default 0 = unchanged, 3
 tests), which re-verdicts the same dumps to HIT and leaves Oasis
-regression-free. **Both publication packages (HP + yaw) are now READY
-(operator approval + gate run only); item 7 (hardware-atomicity proof)
-stays LAST by design** — its execution plan is pre-staged
+regression-free. **G1 publication applies LANDED 2026-08-12
+(OD-RECOVERY-092, operator-approved): `playerHP` (entity-base `[entity+0xB8]`
+signed int16 — OD-RECOVERY-087/091, `twoReplayRepeatability = true`) and
+`playerYaw` (ring-record `+0x30` float32 — OD-RECOVERY-088/089,
+`twoReplayRepeatability = true`) are now `Verified` via module-rooted
+`chains`** (5 chained fields total; both `offsets` stay 0 by design;
+yaw resolves-by-supersession the quarantined static candidate; post-edit
+gates green — `offset_check.py` chains-validated 5 fields + fidelity 5/5,
+`validate.ps1` exit 0). **Rotation-triple reconciliation DONE (2026-08-12,
+offline):** `yaw-diff --field pitch|roll` (new selector over the decoded
+`position_samples.pitch/roll` columns) re-verdicts the SAME immutable
+OD-088/089 dumps — pitch `+0x2C` and roll `+0x28` now AGREE on both replays
+(Oasis 48/48 + Dead Rail 56/56 each, score 1.0 / flatness 1.0,
+`twoReplayRepeatability = true` for the full triple roll `+0x28` / pitch
+`+0x2C` / yaw `+0x30`); methodology lesson: the Oasis full-region roll
+verdict matched `0x60` = the NEXT ring entry's `+0x28` (stride 0x38,
+byte-near-identical sibling) — record-span (0x38) trimming removes the
+decoy and both replays agree at `+0x28`. **Record-span option SHIPPED
+(2026-08-12):** `yaw-diff --record-span <bytes>` (default 0 = full region)
+trims snapshots to the single-record span so ring-sibling decoys are
+excluded automatically — re-verdicting the SAME full 256-byte OD-088/089
+dumps with `--record-span 56` reproduces the trimmed verdicts in one
+command (Oasis roll `+0x28` 48/48 incl. the former `0x60` decoy, pitch
+`+0x2C`, yaw `+0x30`; Dead Rail roll `+0x28` 56/56; 3 new tests), and
+`invoke-facing-session.ps1 -RecordSpan 56` threads it through the facing
+driver (verified on the full OD-088 dumps → `+0x30` 48/48 in one command).
+Pitch/roll publication chains are
+pre-staged to mirror yaw (position hops 1..11 + recordOffset 0x2C / 0x28),
+and the publication package is PRE-STAGED (2026-08-12): optional
+`playerPitch`/`playerRoll` offset slots + chains/fieldValidation enums in
+`schema.json`, draft chains in the walkable draft, and the operator-facing
+spec at `docs/operations/g1-pitch-roll-publication-draft.md` (apply =
+table edit + pack doc, nothing else). **L3 static candidate search DONE (2026-08-12,
+hash-bound `1cda5c31…`):** the Avatar object (entity-factory case 1, vtable
+`0x36752a4`, 0x128 bytes) carries a contiguous uint32 battle-stats block at
+`+0x118/0x11c/0x120/0x124` (property indices 0xA–0xD, property-change
+dispatcher `FUN_01670de0`); all 13 `+0xB8` word-store sites classified —
+the two vehicle state decoders (Vehicle vtable `0x36755d0` slots 12/13,
+dispatch `+0x30`/`+0x34`) are the victim-HP write path, the rest are
+unrelated-family constructors; damage-dealt is NOT on the entity record
+(consistent with OD-RECOVERY-090); new tooling `FindVtableDispatch.java` /
+`FindDispatchCallers.java` / `DumpRawWindow.java`; evidence
+`.build/ghidra-evidence-l3-damage/`; **reachability CORRECTED
+2026-08-12** — the camera chain's `avatarAddress` anchors
+`AvatarControllerReplay` (vftable `0x3677e8c`), a DIFFERENT object from
+this Avatar; live reach is the established gated vftable AOB scan targeted
+at `moduleBase + 0x032752a4`; **the session seam is PRE-STAGED
+(2026-08-12):** `/discover/entity-region` gained the `avatar-stats` anchor
+(gated AOB scan + identity re-gate + quad read, `avatarCandidateIndex` /
+`avatarCandidateCount`, fail-closed `AvatarAnchorNotFound` /
+`AvatarIdentityMismatch`) and `invoke-hp-diffing-session.ps1 -RegionAnchor
+avatar-stats` dumps every scan candidate per tick (per-candidate snapshots
+files, own-counter discrimination at scoring time; 6 new tests); **the
+protocol is REHEARSED offline (2026-08-12) —
+`scripts/invoke-avatar-stats-rehearsal.ps1` on the real decoded session
+`019fa44a-b226-…` proves the increment verdict discriminates the own
+counter (score 1.0 / flatness 1.0 / 7/7, offset 0x0) from flat candidates
+and the PHASE-4 two-replay simulation passes (Dead Rail 5/5 at the same
+offset 0x0 — offsets agree across both replays)**;
+live increment-correlation session on the Avatar uint32 quad is the next L3
+step (approved launches, plan
+`docs/operations/l3-damage-dealt-avatar-family-plan.md`). **L3 LIVE ATTEMPT
+2026-08-12 RECORDED (inconclusive + env-blocked):** sweep 1 reached
+OfflineReplayVerified (monitor-2 placement verified live) but the first
+`avatar-stats` probe 400'd mid-battle with the status swallowed — most
+likely `avatar-scan-not-found` (no entity-Avatar instance in the gated
+scan; INCONCLUSIVE); sweeps 2-3 were environment-blocked (second monitor
+detached mid-session; game landed in ReplayList + ErrorDialog, gate never
+flipped). **Sweep 4 RESOLVED THE LANE LIVE (2026-08-12, OD-RECOVERY-093):**
+the playback mechanism changed and was re-proven — with the Wargaming Game
+Center running + authenticated, the launcher (window move/resize + orange
+Watch Offline click) reaches `OfflineReplayVerified` 3/3 when given the
+**top-level original replay in the game's replays folder**
+(`20260802_1615__…_Churchill_I_….wotbreplay`, the OD-075/076 ground truth);
+file-association alone stalls at `LoginOnReplayDialog`. **Error 126
+ROOT-CAUSED 2026-08-12 (OD-RECOVERY-094): the discriminator is the replay's
+CLIENT VERSION, not its location** — the `.data/launch` Copperfield copy
+was an **11.18.0** replay and the 11.19.0.10 game refuses that family
+("Replay Error code: 126"); the 11.19.0 `savanna-…` copy in the same
+folder plays fine. The old "slow clicks / sync-dim" attribution in the
+2026-08-02 specs was wrong (corrected). The launcher now runs a read-only
+pre-flight probe (`$cli probe <path> --json`; new CLI `probe` command
+reporting `gameVersion`/`installedGameVersion`/`compatible`) and fails
+fast with `FAILED_replay_client_version_mismatch` BEFORE the
+import/launch dance.
+The avatar-stats seam **resolved live on every probe across the whole
+battle** (`status='Resolved' candidates=1` — the entity-factory Avatar
+instance IS reachable via the gated vftable scan; sweep 1's
+`avatar-scan-not-found` was the wrong replay + wrong session id), and the
+first real increment-correlation verdict ran: session `019ff5f1`, 20 dumps
+spanning the damage windows, **top candidate offset 0x0 with score 1.0 and
+3/3 EXACT damage sums (152/170/1) but flatness 0.333 (changed in control
+windows) → honest-negative** under the strict Phase-4 contract
+(`twoReplayRepeatability` not claimed). Driver fixes shipped with the run:
+dump-stage end-of-replay skip + `AvatarAnchorNotFound`/`GateNotSatisfied`
+teardown statuses (battle-end teardown no longer discards captured dumps)
+and removal of a redundant pre-loop verdict on the suffix-less base path.
+Bounded follow-up: discriminate the 0x0 control-window changes (e.g.
+damage-taken counter on the same quad) before re-verdicting. **Item 7
+(hardware-atomicity proof) stays LAST by
+design** — its execution plan is pre-staged
 (`docs/operations/item7-hardware-atomicity-proof-plan.md`), and **Branch A's
 sub-proofs landed 2026-08-11 (hash-bound): HP — the health setters
 `FUN_0166b9f0`/`FUN_01675f60` write `+0xB8` (current HP) and `+0x11E`
@@ -172,7 +271,11 @@ each read TWICE per attempt with a bounded retry and fail-closed
 per-span `SequenceEqual` is the stability witness (the ring record's leading
 time field sits inside the span); `ConsistentDoubleRead` stays false — the
 flag flip + per-entity span measurement fields are the owner-gated
-shared-contract proposal)**.
+shared-contract proposal **DRAFTED 2026-08-12** at
+`docs/operations/item7-branch-b-step2-consistent-double-read-proposal.md`
+(computed-true on the witnessed batch item + `RegionReadAttempts` /
+`RegionTearObserved` / `EntityBaseTearObserved`, camera-pose precedent,
+single-read surface stays honest-false, owner review required)**.
 - **BLK-0026 resolved and validated (2026-08-09):** root cause was a launcher
   regression — .NET `Set-Acl` threw `PrivilegeNotHeldException` on the
   persisted owner-only marker ACL, mapped by the catch-all to

@@ -250,23 +250,174 @@
         "value": 24,
         "note": "float32 Z at +0x18"
       }
+    ],
+    "playerYaw": [
+      {
+        "kind": "rootRva",
+        "value": 67722376,
+        "note": "GameCoreRootRva 0x04095C88 - root slot dereferences to the GameCore pointer"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 12,
+        "note": "GameCore->AppController 0x0C"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 292,
+        "note": "AppController->SessionController 0x124"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 280,
+        "note": "SessionController->AccountController 0x118"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 296,
+        "note": "AccountController->Active playback controller 0x128"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 288,
+        "note": "PlaybackController->Connection 0x120"
+      },
+      {
+        "kind": "inlineOffset",
+        "value": 4,
+        "note": "Connection->BWEntities map - INLINE member (no deref) 0x04"
+      },
+      {
+        "kind": "entityLookup",
+        "value": 0,
+        "cachedEntityOffset": 72,
+        "entityIdOffset": 28,
+        "treeRootOffsets": [
+          28,
+          64,
+          52
+        ],
+        "treeNodeSize": 24,
+        "treeNodeNilOffset": 13,
+        "treeNodeKeyOffset": 16,
+        "treeNodeValueOffset": 20,
+        "treeNodeChildLessOffset": 0,
+        "treeNodeChildGreaterOffset": 8,
+        "treeSentinelFirstNodeOffset": 4,
+        "maxTreeNodes": 1024,
+        "note": "Entity lookup (resolver constants): cache fast path 0x48 + ALTERNATIVE tree roots 0x1C/0x40/0x34, node 0x18 layout; target entity id supplied per walk"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 56,
+        "note": "Found entity->movement filter 0x38"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 8,
+        "note": "Filter->avatar helper 0x08"
+      },
+      {
+        "kind": "ringIndex",
+        "value": 8,
+        "indexOffset": 456,
+        "stride": 56,
+        "note": "Helper->ring entry - INLINE ring 0x08 + index(0x1C8)*0x38, stride 0x38"
+      },
+      {
+        "kind": "recordOffset",
+        "value": 48,
+        "note": "float32 hull yaw at +0x30 (OD-RECOVERY-088/089 live-verified rotation triple roll +0x28 / pitch +0x2C / yaw +0x30)"
+      }
+    ],
+    "playerHP": [
+      {
+        "kind": "rootRva",
+        "value": 67722376,
+        "note": "GameCoreRootRva 0x04095C88 - root slot dereferences to the GameCore pointer"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 12,
+        "note": "GameCore->AppController 0x0C"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 292,
+        "note": "AppController->SessionController 0x124"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 280,
+        "note": "SessionController->AccountController 0x118"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 296,
+        "note": "AccountController->Active playback controller 0x128"
+      },
+      {
+        "kind": "memberOffset",
+        "value": 288,
+        "note": "PlaybackController->Connection 0x120"
+      },
+      {
+        "kind": "inlineOffset",
+        "value": 4,
+        "note": "Connection->BWEntities map - INLINE member (no deref) 0x04"
+      },
+      {
+        "kind": "entityLookup",
+        "value": 0,
+        "cachedEntityOffset": 72,
+        "entityIdOffset": 28,
+        "treeRootOffsets": [
+          28,
+          64,
+          52
+        ],
+        "treeNodeSize": 24,
+        "treeNodeNilOffset": 13,
+        "treeNodeKeyOffset": 16,
+        "treeNodeValueOffset": 20,
+        "treeNodeChildLessOffset": 0,
+        "treeNodeChildGreaterOffset": 8,
+        "treeSentinelFirstNodeOffset": 4,
+        "maxTreeNodes": 1024,
+        "note": "Entity lookup (resolver constants): cache fast path 0x48 + ALTERNATIVE tree roots 0x1C/0x40/0x34, node 0x18 layout; target entity id supplied per walk"
+      },
+      {
+        "kind": "recordOffset",
+        "value": 184,
+        "note": "signed int16 current health at [entity+0xB8] (OD-RECOVERY-087/091 live-verified on both replays; max +0x11C, alive +0xBA, healing +0x11E siblings on the same entity base record)"
+      }
     ]
   },
   "fieldValidation": {
     "playerYaw": {
-      "status": "Stale",
+      "status": "Verified",
       "evidence": [
         {
           "provenanceKind": "StaticAnalysis",
           "sourceTool": "Ghidra 12.1.2 — FindOffsets.java",
           "notes": "Historical hypothesis quarantined after reconciliation: prior table decimal 51808784 = 0x03168A10; prior notes claimed 0x0317A810 = 51882000; raw export top candidate was 56085200 = 0x0357CAD0. No dynamic verification or address-kind proof."
+        },
+        {
+          "provenanceKind": "DynamicScan",
+          "sourceTool": "GameHarness loopback yaw-diff live correlator (value-match lag path)",
+          "notes": "OD-RECOVERY-088 (2026-08-11): ring-record +0x30 hull-yaw float32 CONFIRMED LIVE on Oasis Palms (48 dumps) — score 1.0, flatness 1.0, 48/48 matched, median per-dump error 0.000 deg, shared lag 5.0 s; rotation triple roll +0x28 / pitch +0x2C / yaw +0x30 (the rehearsal +0x2C yaw hit was self-constructed; live read wins)."
+        },
+        {
+          "provenanceKind": "DynamicScan",
+          "sourceTool": "GameHarness loopback yaw-diff live correlator (per-dump bounded bidirectional lag)",
+          "notes": "OD-RECOVERY-089 (2026-08-11): Phase-4 two-replay repeat CLOSED HIT — +0x30 AGREES on Dead Rail (56/56, 27 turn segments) — score 1.0, flatness 1.0, median per-dump lag -2.5 s (spread 5.6 s; G2 label skew per-dump variable and opposite in sign per replay — per-dump bidirectional path); twoReplayRepeatability = true."
         }
       ],
-      "independentProcessLaunches": 0,
-      "independentReplays": 0,
-      "harnessInvariantsPassed": false,
-      "leadApproved": false,
-      "decoderAuditorApproved": false
+      "independentProcessLaunches": 3,
+      "independentReplays": 2,
+      "harnessInvariantsPassed": true,
+      "leadApproved": true,
+      "decoderAuditorApproved": true
     },
     "playerPositionX": {
       "status": "Verified",
@@ -474,21 +625,31 @@
       "decoderAuditorApproved": false
     },
     "playerHP": {
-      "status": "Unknown",
+      "status": "Verified",
       "evidence": [
         {
           "provenanceKind": "DynamicScan",
           "sourceTool": "Host.Web discover/snapshot+compare Int32 unchanged",
           "notes": "OD-RECOVERY-012: Int32 [100,3500] unchanged-during-move pool ~4441 with mapped-mapping sample kinds; secondary HP reconnaissance only; not promoted."
+        },
+        {
+          "provenanceKind": "DynamicScan",
+          "sourceTool": "GameHarness loopback hp-diff live correlator (subset-sum lag attribution)",
+          "notes": "OD-RECOVERY-087 (2026-08-11): entity-base +0xB8 signed int16 CONFIRMED LIVE on Oasis Palms (victim 3760578, 74 dumps, 9 events / 1,183 damage) — score 1.0, flatness 1.0, Strict 8/8 exact sums via --lag-tolerance 4; max +0x11C 1550 constant, alive +0xBA 1, healing +0x11E 0; variable ~1-3.4 s memory-apply lag measured."
+        },
+        {
+          "provenanceKind": "DynamicScan",
+          "sourceTool": "GameHarness loopback hp-diff live correlator (bounded lead-side window)",
+          "notes": "OD-RECOVERY-091 (2026-08-11): Phase-4 two-replay repeat CLOSED HIT — +0xB8 AGREES on Dead Rail (victim 2549395/team 1, 58 dumps, 4 windows / 520 dmg, 92.7-104.7 s) — score 1.0, flatness 1.0, Strict 4/4 exact sums via --lag-lead-seconds 4; Dead Rail memory leads the decoded clock ~2.5 s (label-skew finding reproduced on the HP field); twoReplayRepeatability = true."
         }
       ],
-      "independentProcessLaunches": 0,
-      "independentReplays": 0,
-      "harnessInvariantsPassed": false,
-      "leadApproved": false,
-      "decoderAuditorApproved": false
+      "independentProcessLaunches": 8,
+      "independentReplays": 2,
+      "harnessInvariantsPassed": true,
+      "leadApproved": true,
+      "decoderAuditorApproved": true
     }
   },
   "confidence": "high",
-  "notes": "No usable offsets published for 11.19.0.10. playerYaw Stale. replayTime: rolling increased-Double evidence reproduced across 30 verified process launches (OD-012..038); TARGET 10<=10 reached 3x (OD-031 x2, OD-036) with up to 10 survivors CE-staged + 4 HW write-BPs armed (OD-036 end-to-end). Tail is value-bound (11-17 plateau, 11 best under budget); OD-038 corrected the OD-037 lobby-login hypothesis (login failure is baseline noise, present in the OD-036 success run too) and hardened the 401-refresh (750ms settle + 4 retries). Static (OD-039..042-STATIC): the two 'root candidates' 0x03FA0C74/0x03FA012C were confirmed read-write code-initialized globals then RE-CLASSIFIED as members of a repeating 0x50-byte .data record family (base 0x03FA0C20) -- NOT standalone gameplay roots; 0x037F3054 precisely identified as the shared RTTI type_info vftable (every TypeDescriptor's pVFTable points at it, confirmed td@0x03DB5120; constructor at 0x020CB956 writes it to [this]+0), explaining the 48,609 aligned .data refs; --vtables now names 17,133/18,721 vtables via the COL chain (MSVC x86 stores the mangled name inline at td+8) including GameScene 0x0319D3C4 (26 slots, 0 .data roots = honest negative for vtable-singleton path), BaseContext/RootContext, Vehicle component family; Vehicle-family TypeDescriptor xref = 0 .text refs / 0 slots -- RTTI name-to-root path exhausted. EntityList proven a plain struct (0 RTTI hits). OD-043-STATIC: class-to-vtable query mode --vtable-root (GameScene vtable 0x0319D3C4/COL 0x034A89F0, 0 .data holders = vtable-singleton negative; TankComponent -> 19 matches all AnyFn delegate invokers roots=1) and pointer-array decoder --table-map: .data 0x03B7E198 reclassified as the DAVA AnyFn invoker vtable table (34 entries, modal stride 0x2C = 44-byte vtables, 24 named StaticAnyFnInvoker<lambda> binding TankComponent/AimingPointComponent/Scene/Entity = component event subscriptions; all 24 share dispatcher fn 0x002C4550; each vtable has exactly 1 .data root = its array entry, internally-closed set; 3 .text refs incl. runtime write mov [0x03B7E198],imm32 at 0x03104FAB repointing entry[0]) -- dispatch infrastructure, NOT a gameplay root. independentReplays still 0 (BLK-0019 - same Churchill replay content only). Next OD-044 operator-present interactive Find-what-writes on the replayTime-staged set; offsets remain 0. G0 (2026-08-10, OD-RECOVERY-082/083): playerPositionX/Y/Z published Verified via the module-rooted position-ring chain (see 'chains'; offsets stay 0 by design - the runtime reads moduleBase + offset and the ring record is battle-scoped heap; the resolver reads position via its own hash-bound layout). Executable identity re-measured 2026-08-09: 1cda5c31... exact match. Not promoted: velocity +0x28, playerYaw (Stale), replayTime, playerHP, cameraPitch, aliveTankCount. 2nd-gen walkable chains (2026-08-10, OD-RECOVERY-084): the chains section now uses the walkable form - inlineOffset (entities map, no deref), entityLookup (cached fast path + ALTERNATIVE tree roots 0x1C/0x40/0x34, node 0x18 layout; target entity id supplied per walk), INLINE ringIndex (0x08 + index(0x1C8)*0x38) - the same walk the OD-RECOVERY-083 evidence verified, re-expressed for the chain walker. Prior memberOffset-spelled form: git commit 0e6bdba + ledger OD-RECOVERY-083. offsets stay 0; resolver remains authoritative and untouched."
+  "notes": "No usable offsets published for 11.19.0.10. playerYaw Stale. replayTime: rolling increased-Double evidence reproduced across 30 verified process launches (OD-012..038); TARGET 10<=10 reached 3x (OD-031 x2, OD-036) with up to 10 survivors CE-staged + 4 HW write-BPs armed (OD-036 end-to-end). Tail is value-bound (11-17 plateau, 11 best under budget); OD-038 corrected the OD-037 lobby-login hypothesis (login failure is baseline noise, present in the OD-036 success run too) and hardened the 401-refresh (750ms settle + 4 retries). Static (OD-039..042-STATIC): the two 'root candidates' 0x03FA0C74/0x03FA012C were confirmed read-write code-initialized globals then RE-CLASSIFIED as members of a repeating 0x50-byte .data record family (base 0x03FA0C20) -- NOT standalone gameplay roots; 0x037F3054 precisely identified as the shared RTTI type_info vftable (every TypeDescriptor's pVFTable points at it, confirmed td@0x03DB5120; constructor at 0x020CB956 writes it to [this]+0), explaining the 48,609 aligned .data refs; --vtables now names 17,133/18,721 vtables via the COL chain (MSVC x86 stores the mangled name inline at td+8) including GameScene 0x0319D3C4 (26 slots, 0 .data roots = honest negative for vtable-singleton path), BaseContext/RootContext, Vehicle component family; Vehicle-family TypeDescriptor xref = 0 .text refs / 0 slots -- RTTI name-to-root path exhausted. EntityList proven a plain struct (0 RTTI hits). OD-043-STATIC: class-to-vtable query mode --vtable-root (GameScene vtable 0x0319D3C4/COL 0x034A89F0, 0 .data holders = vtable-singleton negative; TankComponent -> 19 matches all AnyFn delegate invokers roots=1) and pointer-array decoder --table-map: .data 0x03B7E198 reclassified as the DAVA AnyFn invoker vtable table (34 entries, modal stride 0x2C = 44-byte vtables, 24 named StaticAnyFnInvoker<lambda> binding TankComponent/AimingPointComponent/Scene/Entity = component event subscriptions; all 24 share dispatcher fn 0x002C4550; each vtable has exactly 1 .data root = its array entry, internally-closed set; 3 .text refs incl. runtime write mov [0x03B7E198],imm32 at 0x03104FAB repointing entry[0]) -- dispatch infrastructure, NOT a gameplay root. independentReplays still 0 (BLK-0019 - same Churchill replay content only). Next OD-044 operator-present interactive Find-what-writes on the replayTime-staged set; offsets remain 0. G0 (2026-08-10, OD-RECOVERY-082/083): playerPositionX/Y/Z published Verified via the module-rooted position-ring chain (see 'chains'; offsets stay 0 by design - the runtime reads moduleBase + offset and the ring record is battle-scoped heap; the resolver reads position via its own hash-bound layout). Executable identity re-measured 2026-08-09: 1cda5c31... exact match. Not promoted at G0: velocity +0x28, playerYaw (Stale at the time), replayTime, playerHP, cameraPitch, aliveTankCount. G1 (2026-08-12, operator-approved): playerHP and playerYaw published Verified via module-rooted chains (see chains.playerHP/playerYaw; offsets stay 0 by design - the runtime computes moduleBase + offset and both records are battle-scoped heap). playerHP: entity-base [entity+0xB8] signed int16, OD-RECOVERY-087 (Oasis Palms, 74 dumps, Strict 8/8) + OD-RECOVERY-091 (Dead Rail, 58 dumps, Strict 4/4, lead-side window) - twoReplayRepeatability = true; siblings max +0x11C / alive +0xBA / healing +0x11E decoded by the pure EntityBaseRegion reader. playerYaw: ring-record +0x30 float32, OD-RECOVERY-088 (Oasis, 48/48) + OD-RECOVERY-089 (Dead Rail, 56/56, per-dump bidirectional lag) - twoReplayRepeatability = true; rotation triple roll +0x28 / pitch +0x2C / yaw +0x30 (resolved-by-supersession of the quarantined static candidate). Chains: playerHP = position hops 1..8 (entityLookup prefix, no filter/ring path) + recordOffset 184; playerYaw = full position chain + recordOffset 48. Still NOT promoted: velocity +0x28, replayTime, cameraPitch, aliveTankCount (own gates); item 7 (hardware atomicity) stays LAST. 2nd-gen walkable chains (2026-08-10, OD-RECOVERY-084): the chains section now uses the walkable form - inlineOffset (entities map, no deref), entityLookup (cached fast path + ALTERNATIVE tree roots 0x1C/0x40/0x34, node 0x18 layout; target entity id supplied per walk), INLINE ringIndex (0x08 + index(0x1C8)*0x38) - the same walk the OD-RECOVERY-083 evidence verified, re-expressed for the chain walker. Prior memberOffset-spelled form: git commit 0e6bdba + ledger OD-RECOVERY-083. offsets stay 0; resolver remains authoritative and untouched."
 }

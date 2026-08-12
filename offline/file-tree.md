@@ -70,6 +70,7 @@ docs/operations/g0-publication-review.md
 docs/operations/g0-walkable-position-chains.draft.json
 docs/operations/g1-hp-publication-draft.md
 docs/operations/g1-live-evidence-template.md
+docs/operations/g1-pitch-roll-publication-draft.md
 docs/operations/g1-yaw-publication-draft.md
 docs/operations/handoffs/2026-07-26-overlay-mvvm-buildout.md
 docs/operations/handoffs/2026-07-26-validated-integration-milestone.md
@@ -284,8 +285,10 @@ docs/operations/handoffs/2026-08-11-transform-record-verified.md
 docs/operations/handoffs/2026-08-11-type5-maxhp-in-replay.md
 docs/operations/handoffs/2026-08-11-w2s-consumption-shipped.md
 docs/operations/handoffs/2026-08-11-yaw-quarantine-reconciled.md
+docs/operations/handoffs/2026-08-12-g1-publication-applies.md
 docs/operations/handoffs/2026-08-12-item7-branch-ab-own-marker.md
 docs/operations/handoffs/README.md
+docs/operations/item7-branch-b-step2-consistent-double-read-proposal.md
 docs/operations/item7-hardware-atomicity-proof-plan.md
 docs/operations/item7-hardware-atomicity-proof.md
 docs/operations/l3-damage-dealt-avatar-family-plan.md
@@ -368,6 +371,7 @@ scripts/click-hangar-replay.ps1
 scripts/click-watch-offline.ps1
 scripts/ghidra-scan.py
 scripts/install-psscriptanalyzer.ps1
+scripts/invoke-avatar-stats-rehearsal.ps1
 scripts/invoke-batch-rehearsal.ps1
 scripts/invoke-camera-state-verify.ps1
 scripts/invoke-csharp-write-trace.ps1
@@ -967,10 +971,12 @@ tools/ghidra-scripts/DumpChain.java
 tools/ghidra-scripts/DumpFunctions.java
 tools/ghidra-scripts/DumpHierarchy.java
 tools/ghidra-scripts/DumpRawBytes.java
+tools/ghidra-scripts/DumpRawWindow.java
 tools/ghidra-scripts/DumpVtableSlots.java
 tools/ghidra-scripts/DumpWindow.java
 tools/ghidra-scripts/DumpWriteSite.java
 tools/ghidra-scripts/FindClockCopySites.java
+tools/ghidra-scripts/FindDispatchCallers.java
 tools/ghidra-scripts/FindFunctionReferences.java
 tools/ghidra-scripts/FindHealthFieldStores.java
 tools/ghidra-scripts/FindOffsets.java
@@ -985,6 +991,8 @@ tools/ghidra-scripts/FindVehiclePositionFamily.java
 tools/ghidra-scripts/FindVftableForType.java
 tools/ghidra-scripts/FindVftableRefs.java
 tools/ghidra-scripts/FindVftableViaCol.java
+tools/ghidra-scripts/FindVtableDispatch.java
+tools/ghidra-scripts/FindVtableInstallers.java
 tools/ghidra-scripts/ResolveVftableClass.java
 tools/ghidra-scripts/ScanAllClockOffsetStores.java
 tools/ghidra-scripts/ScanClockStoreBytes.java

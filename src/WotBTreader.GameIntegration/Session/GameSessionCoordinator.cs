@@ -1919,6 +1919,15 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     "The region length must be within 1..4096 bytes."));
         }
 
+        if (request.AvatarCandidateIndex is int avatarIndex &&
+            (avatarIndex < 0 || avatarIndex >= EntityRecordRegionReadRequest.MaxAvatarCandidates))
+        {
+            return OperationResult.Failure<EntityRecordRegionReadResult>(
+                new ApplicationError(
+                    "discover.entity_region.invalid_avatar_candidate",
+                    $"The avatar-stats candidate index must be within 0..{EntityRecordRegionReadRequest.MaxAvatarCandidates - 1}."));
+        }
+
         (AuthorizedMemoryObservation? observation, long baseAddress, CancellationToken authorizationToken, bool ok) =
             GetScanAuthorization(cancellationToken);
         if (!ok)
@@ -1974,47 +1983,62 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             }
 
             // Resolve the entity's ring-record address under the same lease
-            // (the address stays coordinator-owned; only bytes leave).
-            OperationResult<Type10EntityPositionAddressResult> resolveResult =
-                await readerResult.Value.ResolveEntityPositionAddressAsync(
-                    (nint)baseAddress,
-                    request.EntityId,
-                    layout,
-                    readCancellation.Token).ConfigureAwait(false);
-            if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+            // (the address stays coordinator-owned; only bytes leave). The
+            // avatar-stats anchor SKIPS the entity-ID resolver entirely: it
+            // ignores EntityId and scans for the entity-Avatar vftable
+            // instead (the L3 damage-dealt family is on that object, not the
+            // entity record).
+            Type10EntityPositionAddressResult? resolved = null;
+            if (request.RegionAnchor != EntityRecordRegionAnchor.AvatarStats)
             {
-                return GateCheck<EntityRecordRegionReadResult>(
-                    "discover.gate_not_satisfied",
-                    "The offline-session gate is no longer satisfied.");
+                OperationResult<Type10EntityPositionAddressResult> resolveResult =
+                    await readerResult.Value.ResolveEntityPositionAddressAsync(
+                        (nint)baseAddress,
+                        request.EntityId,
+                        layout,
+                        readCancellation.Token).ConfigureAwait(false);
+                if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+                {
+                    return GateCheck<EntityRecordRegionReadResult>(
+                        "discover.gate_not_satisfied",
+                        "The offline-session gate is no longer satisfied.");
+                }
+
+                if (!resolveResult.IsSuccess || resolveResult.Value is null)
+                {
+                    return OperationResult.Failure<EntityRecordRegionReadResult>(
+                        resolveResult.Error ?? new ApplicationError(
+                            "discover.entity_region.resolve_failed",
+                            "The entity ring-record address resolution failed."));
+                }
+
+                resolved = resolveResult.Value;
+                if (resolved.Status != Type10EntityPositionStatus.Resolved ||
+                    resolved.RecordAddress is null)
+                {
+                    return OperationResult.Success(new EntityRecordRegionReadResult(
+                        _timeProvider.GetUtcNow(),
+                        layout.GameVersion,
+                        resolved.Status,
+                        request.EntityId,
+                        null,
+                        null,
+                        resolved.FailureStage,
+                        resolved.Attempts,
+                        resolved.NodesVisited,
+                        resolved.ModuleRooted,
+                        EntityIdentityRevalidated: false,
+                        ConsistentDoubleRead: false,
+                        SameDecodedClockProven: false));
+                }
             }
 
-            if (!resolveResult.IsSuccess || resolveResult.Value is null)
-            {
-                return OperationResult.Failure<EntityRecordRegionReadResult>(
-                    resolveResult.Error ?? new ApplicationError(
-                        "discover.entity_region.resolve_failed",
-                        "The entity ring-record address resolution failed."));
-            }
-
-            Type10EntityPositionAddressResult resolved = resolveResult.Value;
-            if (resolved.Status != Type10EntityPositionStatus.Resolved ||
-                resolved.RecordAddress is null)
-            {
-                return OperationResult.Success(new EntityRecordRegionReadResult(
-                    _timeProvider.GetUtcNow(),
-                    layout.GameVersion,
-                    resolved.Status,
-                    request.EntityId,
-                    null,
-                    null,
-                    resolved.FailureStage,
-                    resolved.Attempts,
-                    resolved.NodesVisited,
-                    resolved.ModuleRooted,
-                    EntityIdentityRevalidated: false,
-                    ConsistentDoubleRead: false,
-                    SameDecodedClockProven: false));
-            }
+            // Result metadata for the chosen anchor (entity path vs avatar
+            // scan) — consumed by the success return below.
+            string? anchorFailureStage = resolved?.FailureStage;
+            int anchorAttempts = resolved?.Attempts ?? 0;
+            int anchorNodesVisited = resolved?.NodesVisited ?? 0;
+            bool anchorModuleRooted = resolved?.ModuleRooted ?? true;
 
             // Replay-clock label + same-decoded-clock attestation (one call).
             double? replayTimeSeconds = null;
@@ -2038,30 +2062,79 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             }
 
             // Anchor the dump: the movement ring record (the resolver's
-            // target) or the per-entity tank record at [entity+0x3C]. The
-            // coordinator performs the tank-record dereference itself under
-            // the same guarded lease; only the resulting bytes leave.
-            uint? regionBaseAddress = request.RegionAnchor switch
+            // target), the per-entity tank record at [entity+0x3C], or the
+            // entity base record itself. The coordinator performs the
+            // tank-record dereference itself under the same guarded lease;
+            // only the resulting bytes leave. The avatar-stats anchor is
+            // DIFFERENT: it ignores EntityId and runs the gated vftable AOB
+            // scan for the entity-factory Avatar object (the L3 damage-dealt
+            // family — the camera chain's avatarAddress is
+            // AvatarControllerReplay, NOT this object; see the L3 plan).
+            uint? regionBaseAddress;
+            int avatarCandidateCount = 0;
+            if (request.RegionAnchor == EntityRecordRegionAnchor.AvatarStats)
             {
-                EntityRecordRegionAnchor.RingRecord => resolved.RecordAddress,
-                EntityRecordRegionAnchor.EntityTankRecord => await ResolveTankRecordAddressAsync(
+                AvatarStatsResolution avatar = await ResolveAvatarStatsAddressAsync(
                     readerResult.Value,
-                    resolved.EntityAddress,
-                    readCancellation.Token).ConfigureAwait(false),
-                // The entity base record itself: the statically-verified HP
-                // fields ([entity+0xB8] int16 current health, +0xBA alive
-                // byte, +0x11E healing int16) live on this record, not the
-                // tank record at [entity+0x3C].
-                EntityRecordRegionAnchor.EntityBase => resolved.EntityAddress,
-                _ => null,
-            };
-            if (regionBaseAddress is null)
+                    observation!,
+                    baseAddress,
+                    request.AvatarCandidateIndex,
+                    readCancellation.Token).ConfigureAwait(false);
+                if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+                {
+                    return GateCheck<EntityRecordRegionReadResult>(
+                        "discover.gate_not_satisfied",
+                        "The offline-session gate is no longer satisfied.");
+                }
+                avatarCandidateCount = avatar.CandidateCount;
+                anchorFailureStage = avatar.FailureStage;
+                anchorAttempts = avatar.Attempts;
+                anchorNodesVisited = 0;
+                anchorModuleRooted = true;
+                if (avatar.Address is not uint avatarAddress)
+                {
+                    return OperationResult.Success(new EntityRecordRegionReadResult(
+                        _timeProvider.GetUtcNow(),
+                        layout.GameVersion,
+                        avatar.Status,
+                        request.EntityId,
+                        null,
+                        null,
+                        avatar.FailureStage,
+                        avatar.Attempts,
+                        0,
+                        true,
+                        EntityIdentityRevalidated: false,
+                        ConsistentDoubleRead: false,
+                        SameDecodedClockProven: sameDecodedClockProven,
+                        AvatarCandidateCount: avatarCandidateCount));
+                }
+                regionBaseAddress = avatarAddress + EntityRecordRegionReadRequest.AvatarStatsQuadOffset;
+            }
+            else
             {
-                return OperationResult.Failure<EntityRecordRegionReadResult>(
-                    new ApplicationError(
-                        "discover.entity_region.tank_record_unresolved",
-                        "The region anchor could not be resolved (missing entity base or invalid tank-record pointer).",
-                        Retryable: false));
+                regionBaseAddress = request.RegionAnchor switch
+                {
+                    EntityRecordRegionAnchor.RingRecord => resolved!.RecordAddress,
+                    EntityRecordRegionAnchor.EntityTankRecord => await ResolveTankRecordAddressAsync(
+                        readerResult.Value,
+                        resolved!.EntityAddress,
+                        readCancellation.Token).ConfigureAwait(false),
+                    // The entity base record itself: the statically-verified
+                    // HP fields ([entity+0xB8] int16 current health, +0xBA
+                    // alive byte, +0x11E healing int16) live on this record,
+                    // not the tank record at [entity+0x3C].
+                    EntityRecordRegionAnchor.EntityBase => resolved!.EntityAddress,
+                    _ => null,
+                };
+                if (regionBaseAddress is null)
+                {
+                    return OperationResult.Failure<EntityRecordRegionReadResult>(
+                        new ApplicationError(
+                            "discover.entity_region.tank_record_unresolved",
+                            "The region anchor could not be resolved (missing entity base or invalid tank-record pointer).",
+                            Retryable: false));
+                }
             }
 
             OperationResult<byte[]> regionResult = await readerResult.Value.ReadAsync(
@@ -2090,15 +2163,16 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 request.EntityId,
                 replayTimeSeconds,
                 regionResult.Value,
-                resolved.FailureStage,
-                resolved.Attempts,
-                resolved.NodesVisited,
-                resolved.ModuleRooted,
+                anchorFailureStage,
+                anchorAttempts,
+                anchorNodesVisited,
+                anchorModuleRooted,
                 // The address path does not double-collect position bytes, so
                 // these evidence flags are not claimable from a region dump.
                 EntityIdentityRevalidated: false,
                 ConsistentDoubleRead: false,
-                SameDecodedClockProven: sameDecodedClockProven));
+                SameDecodedClockProven: sameDecodedClockProven,
+                AvatarCandidateCount: avatarCandidateCount));
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -3034,6 +3108,140 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         }
 
         return tankRecord;
+    }
+
+    private sealed record AvatarStatsResolution(
+        uint? Address,
+        Type10EntityPositionStatus Status,
+        string? FailureStage,
+        int Attempts,
+        int CandidateCount);
+
+    /// <summary>
+    /// Entity-Avatar vftable RVA (L3 static finding, hash-bound
+    /// <c>1cda5c31…</c>, 11.19.0.10): the entity-factory Avatar (case 1,
+    /// 0x128 bytes, vftable <c>0x36752a4</c>) carries the contiguous uint32
+    /// battle-stats block at <c>+0x118/+0x11c/+0x120/+0x124</c>. This is NOT
+    /// the camera chain's AvatarControllerReplay anchor (RVA
+    /// <c>0x03277e8c</c>) — reusing that anchor would read a different
+    /// object (see docs/operations/l3-damage-dealt-avatar-family-plan.md,
+    /// reachability section, corrected 2026-08-12).
+    /// </summary>
+    private const uint EntityAvatarVftableRva = 0x032752a4;
+
+    /// <summary>
+    /// The avatar-stats anchor resolution: gated vftable AOB scan for the
+    /// entity-Avatar (<c>moduleBase + <see cref="EntityAvatarVftableRva"/></c>,
+    /// same guarded scan the camera chain uses — MaxCandidates 4, alignment
+    /// 4), identity re-gate on the chosen candidate's vftable dword, and the
+    /// battle-stats base (candidate + quad offset, applied by the caller).
+    /// Fail-closed: no candidate → <see cref="Type10EntityPositionStatus.AvatarAnchorNotFound"/>;
+    /// identity mismatch → <see cref="Type10EntityPositionStatus.AvatarIdentityMismatch"/>.
+    /// </summary>
+    private async ValueTask<AvatarStatsResolution> ResolveAvatarStatsAddressAsync(
+        IAuthorizedMemoryReader reader,
+        AuthorizedMemoryObservation observation,
+        long baseAddress,
+        int? candidateIndex,
+        CancellationToken cancellationToken)
+    {
+        uint expectedVftable = (uint)(baseAddress + EntityAvatarVftableRva);
+        byte[] expected = new byte[sizeof(uint)];
+        BinaryPrimitives.WriteUInt32LittleEndian(expected, expectedVftable);
+        MemoryScanRequest request = new(
+            FieldName: "avatar-stats-vftable",
+            FieldType: "Bytes",
+            ExpectedValue: expected,
+            ToleranceMask: null,
+            MaxCandidates: EntityRecordRegionReadRequest.MaxAvatarCandidates,
+            MinRegionSize: 4096,
+            Alignment: 4);
+        OperationResult<MemoryScanResult> scanResult = await Task.Run(
+            () => _scanDiscoverer.Scan(
+                observation,
+                baseAddress,
+                request,
+                cancellationToken,
+                "aob"),
+            cancellationToken).ConfigureAwait(false);
+        if (!scanResult.IsSuccess || scanResult.Value is null)
+        {
+            return new AvatarStatsResolution(
+                null,
+                Type10EntityPositionStatus.ReadFailed,
+                "avatar-scan",
+                1,
+                0);
+        }
+
+        IReadOnlyList<MemoryScanCandidate> candidates = scanResult.Value.Candidates;
+        if (candidates.Count == 0)
+        {
+            return new AvatarStatsResolution(
+                null,
+                Type10EntityPositionStatus.AvatarAnchorNotFound,
+                "avatar-scan-not-found",
+                1,
+                0);
+        }
+
+        int index = candidateIndex ?? 0;
+        if (index < 0 || index >= candidates.Count)
+        {
+            return new AvatarStatsResolution(
+                null,
+                Type10EntityPositionStatus.AvatarAnchorNotFound,
+                "avatar-candidate-out-of-range",
+                1,
+                candidates.Count);
+        }
+
+        long candidateAddress = candidates[index].AbsoluteAddress;
+        if (candidateAddress < 0 || candidateAddress > uint.MaxValue)
+        {
+            return new AvatarStatsResolution(
+                null,
+                Type10EntityPositionStatus.ReadFailed,
+                "avatar-address-out-of-range",
+                1,
+                candidates.Count);
+        }
+
+        // Identity re-gate: the AOB scan matched the exact vftable dword,
+        // but the discipline re-reads the object's vftable under the same
+        // guarded lease before trusting the stats quad (never read the
+        // counter off an unauthenticated object).
+        OperationResult<byte[]> vftableRead = await reader.ReadAsync(
+            (nint)candidateAddress,
+            sizeof(uint),
+            cancellationToken).ConfigureAwait(false);
+        if (!vftableRead.IsSuccess || vftableRead.Value is null ||
+            vftableRead.Value.Length != sizeof(uint))
+        {
+            return new AvatarStatsResolution(
+                null,
+                Type10EntityPositionStatus.ReadFailed,
+                "avatar-identity-read",
+                1,
+                candidates.Count);
+        }
+
+        if (BinaryPrimitives.ReadUInt32LittleEndian(vftableRead.Value) != expectedVftable)
+        {
+            return new AvatarStatsResolution(
+                null,
+                Type10EntityPositionStatus.AvatarIdentityMismatch,
+                "avatar-identity-mismatch",
+                1,
+                candidates.Count);
+        }
+
+        return new AvatarStatsResolution(
+            (uint)candidateAddress,
+            Type10EntityPositionStatus.Resolved,
+            null,
+            1,
+            candidates.Count);
     }
 
     /// <summary>

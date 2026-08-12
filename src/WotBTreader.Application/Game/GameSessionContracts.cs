@@ -450,6 +450,23 @@ public enum EntityRecordRegionAnchor
     /// here (region length ≥ 0x120) and correlates int16 candidates.
     /// </summary>
     EntityBase = 2,
+
+    /// <summary>
+    /// The entity-factory Avatar object's battle-stats quad (L3 damage-dealt
+    /// discovery). The <see cref="EntityRecordRegionReadRequest.EntityId"/> is
+    /// IGNORED for this anchor: instead of the entity-ID resolver, the
+    /// coordinator runs the gated vftable AOB scan targeted at
+    /// <c>moduleBase + 0x032752a4</c> (entity-Avatar vftable, 11.19.0.10
+    /// build), re-gates the chosen candidate's vftable dword, and anchors the
+    /// dump at the candidate + 0x118 (the contiguous uint32 battle-stats
+    /// quad +0x118/+0x11c/+0x120/+0x124 — property indices 0xA–0xD).
+    /// <see cref="EntityRecordRegionReadRequest.AvatarCandidateIndex"/>
+    /// selects which scan candidate to dump so the increment correlator can
+    /// discriminate the own Avatar at scoring time (only the own counter
+    /// increments on own-attacker events; other candidates stay flat as
+    /// built-in control windows).
+    /// </summary>
+    AvatarStats = 3,
 }
 
 /// <summary>
@@ -466,7 +483,8 @@ public sealed record EntityRecordRegionReadRequest(
     int EntityId,
     int RegionLength,
     BattleSessionId? BattleSessionId = null,
-    EntityRecordRegionAnchor RegionAnchor = EntityRecordRegionAnchor.RingRecord)
+    EntityRecordRegionAnchor RegionAnchor = EntityRecordRegionAnchor.RingRecord,
+    int? AvatarCandidateIndex = null)
 {
     /// <summary>
     /// Maximum region size the L0 seam will read. 4 KB bounds the dump to a
@@ -483,6 +501,25 @@ public sealed record EntityRecordRegionReadRequest(
     /// (Ghidra-candidate, test-local until live verification).
     /// </summary>
     public const int EntityTankRecordOffset = 0x3C;
+
+    /// <summary>
+    /// Maximum scan candidates the <see cref="EntityRecordRegionAnchor.AvatarStats"/>
+    /// anchor will enumerate (mirrors the camera chain's MaxCandidates 4).
+    /// </summary>
+    public const int MaxAvatarCandidates = 4;
+
+    /// <summary>
+    /// The battle-stats quad offset on the entity-Avatar object for
+    /// <see cref="EntityRecordRegionAnchor.AvatarStats"/> dumps
+    /// (uint32 quad at +0x118/+0x11c/+0x120/+0x124, property indices
+    /// 0xA–0xD — hash-bound L3 static finding, 11.19.0.10 build).
+    /// </summary>
+    public const int AvatarStatsQuadOffset = 0x118;
+
+    /// <summary>
+    /// Length of the battle-stats quad (four uint32 values).
+    /// </summary>
+    public const int AvatarStatsQuadLength = 0x10;
 }
 
 /// <summary>
@@ -503,7 +540,8 @@ public sealed record EntityRecordRegionReadResult(
     bool ModuleRooted,
     bool EntityIdentityRevalidated,
     bool ConsistentDoubleRead,
-    bool SameDecodedClockProven);
+    bool SameDecodedClockProven,
+    int AvatarCandidateCount = 0);
 
 /// <summary>
 /// One entity region in a batch read (mirrors the single-read fields).

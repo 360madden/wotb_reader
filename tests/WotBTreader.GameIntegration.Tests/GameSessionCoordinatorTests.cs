@@ -1363,6 +1363,224 @@ public sealed class GameSessionCoordinatorTests
         Assert.IsEmpty(factory.Reader.RegionReads);
     }
 
+    // ---- avatar-stats anchor (L3 damage-dealt pre-stage, 2026-08-12) ----
+
+    // The coordinator's test module base is 0x10000000 (FixedModuleBaseResolver);
+    // the entity-Avatar vftable RVA is 0x032752a4 (L3 static finding).
+    private const uint TestEntityAvatarVftable = 0x10000000 + 0x032752a4;
+
+    private static MemoryScanResult CreateAvatarStatsScanResult(params long[] candidateAddresses) => new(
+        DateTimeOffset.UnixEpoch,
+        BaseAddress: 0x10000000,
+        RegionsScanned: 1,
+        BytesScanned: 4096,
+        Candidates:
+            candidateAddresses.Select(address => new MemoryScanCandidate(
+                AbsoluteAddress: address,
+                BaseDisplacement: 0,
+                ObservedValue: BitConverter.GetBytes(TestEntityAvatarVftable),
+                ValueSummary: "avatar-stats-vftable")).ToArray(),
+        TotalMatchesBeforeTruncation: candidateAddresses.Length);
+
+    [TestMethod]
+    public async Task EntityRegionRead_AvatarStatsAnchor_ScansGatesAndReadsQuad()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long candidateAddress = 0x25001000;
+        byte[] quad =
+        [
+            0x11, 0x00, 0x00, 0x00, 0x22, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x44, 0x00, 0x00, 0x00,
+        ];
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            [candidateAddress] = BitConverter.GetBytes(TestEntityAvatarVftable),
+            [candidateAddress + 0x118] = quad,
+        });
+        var scan = new FakeScanDiscoverer(CreateAvatarStatsScanResult(candidateAddress));
+        BattleSessionId sessionId = BattleSessionId.New();
+        var clock = new StubReplayClockSource(
+            CreateSnapshotResult(sessionId, ReplayClockQuality.Estimated, TimeSpan.FromMilliseconds(500)));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan,
+            replayClockSource: clock);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    sessionId,
+                    EntityRecordRegionAnchor.AvatarStats,
+                    AvatarCandidateIndex: null),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, result.Value?.Status);
+        CollectionAssert.AreEqual(quad, result.Value?.RegionBytes);
+        Assert.AreEqual(1, result.Value?.AvatarCandidateCount);
+        Assert.IsTrue(result.Value?.SameDecodedClockProven);
+        // The AOB scan targeted the entity-Avatar vftable dword (NOT the
+        // camera chain's AvatarControllerReplay anchor).
+        Assert.AreEqual("avatar-stats-vftable", scan.LastRequest?.FieldName);
+        CollectionAssert.AreEqual(
+            BitConverter.GetBytes(TestEntityAvatarVftable),
+            scan.LastRequest?.ExpectedValue);
+        // Exactly two reads: the identity re-gate at the candidate and the
+        // 16-byte quad read at candidate + 0x118. No entity-ID resolution
+        // path (the avatar anchor ignores EntityId).
+        CollectionAssert.AreEqual(
+            new[] { candidateAddress, candidateAddress + 0x118 },
+            factory.Reader.Reads.Select(read => read.Address).ToArray());
+        Assert.AreEqual(4, factory.Reader.Reads[0].Length);
+        Assert.AreEqual(16, factory.Reader.Reads[1].Length);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_AvatarStatsAnchor_NoCandidatesFailsClosed()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>());
+        var scan = new FakeScanDiscoverer(CreateAvatarStatsScanResult());
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.AvatarStats),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.AvatarAnchorNotFound, result.Value?.Status);
+        Assert.AreEqual("avatar-scan-not-found", result.Value?.FailureStage);
+        Assert.AreEqual(0, result.Value?.AvatarCandidateCount);
+        Assert.IsNull(result.Value?.RegionBytes);
+        // No identity re-gate and no quad read when the scan finds nothing.
+        Assert.IsEmpty(factory.Reader.Reads);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_AvatarStatsAnchor_IdentityMismatchFailsClosed()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long candidateAddress = 0x25001000;
+        // The scan matched the expected dword but the object's vftable
+        // re-read disagrees (churn / wrong object) -> never read the quad.
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            [candidateAddress] = BitConverter.GetBytes(0xDEADBEEFu),
+        });
+        var scan = new FakeScanDiscoverer(CreateAvatarStatsScanResult(candidateAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.AvatarStats),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.AvatarIdentityMismatch, result.Value?.Status);
+        Assert.AreEqual("avatar-identity-mismatch", result.Value?.FailureStage);
+        Assert.AreEqual(1, result.Value?.AvatarCandidateCount);
+        Assert.IsNull(result.Value?.RegionBytes);
+        // Only the identity re-gate fired; the quad read must never happen.
+        CollectionAssert.AreEqual(new[] { candidateAddress }, factory.Reader.Reads.Select(read => read.Address).ToArray());
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_AvatarStatsAnchor_CandidateIndexOutOfRangeFailsClosed()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long candidateAddress = 0x25001000;
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            [candidateAddress] = BitConverter.GetBytes(TestEntityAvatarVftable),
+        });
+        var scan = new FakeScanDiscoverer(CreateAvatarStatsScanResult(candidateAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.AvatarStats,
+                    AvatarCandidateIndex: 3),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.AvatarAnchorNotFound, result.Value?.Status);
+        Assert.AreEqual("avatar-candidate-out-of-range", result.Value?.FailureStage);
+        Assert.AreEqual(1, result.Value?.AvatarCandidateCount);
+        Assert.IsNull(result.Value?.RegionBytes);
+        Assert.IsEmpty(factory.Reader.Reads);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_AvatarStatsAnchor_InvalidCandidateIndexFailsBeforeGate()
+    {
+        // The candidate index must be within 0..3 regardless of the gate;
+        // a 4 (== MaxAvatarCandidates) is rejected before any reader exists.
+        var factory = new StubMemoryReaderFactory(); // throws if created
+        var (coordinator, _) = CreateCoordinator(memoryReaderFactory: factory);
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.AvatarStats,
+                    AvatarCandidateIndex: 4),
+                CancellationToken.None);
+
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual("discover.entity_region.invalid_avatar_candidate", result.Error?.Code);
+    }
+
     [TestMethod]
     public async Task EntityRegionsRead_ExactBuildReturnsBytesInRequestOrder()
     {

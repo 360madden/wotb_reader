@@ -45,6 +45,17 @@
   (Dead Rail victim 2549399) and require the matched offsets to agree - the
   Phase-4 rule, applied by the operator after the two sessions.
 
+  L3 avatar-stats anchor (2026-08-12 pre-stage): -Track damage-dealt
+  -RegionAnchor 'avatar-stats' anchors each dump on the entity-factory
+  Avatar's uint32 battle-stats quad ([avatar+0x118..0x124], the L3 static
+  finding; entityId is IGNORED - the coordinator runs the gated vftable AOB
+  scan for the entity-Avatar instead). The scan re-runs per dump and the
+  driver dumps EVERY scan candidate (per-candidate snapshots files
+  hp-snapshots-<session>-<stamp>-candN.json) so the increment correlator
+  discriminates the own counter at scoring time (only the own counter
+  increments on own-attacker events; other candidates stay flat as built-in
+  control windows). -RegionLength defaults to 16 (the quad).
+
 .EXAMPLE
   # Live acquisition through the gated seam (web host serving the verified
   # offline replay), then the verdict:
@@ -89,11 +100,16 @@ param(
     [int]$RegionLength = 320,
     # Which object the dump anchors on: 'ring-record' (the movement ring
     # record the position resolver reads), 'entity-tank-record' (the
-    # per-entity tank record at [entity+0x3C]), or 'entity-base' (the entity
+    # per-entity tank record at [entity+0x3C]), 'entity-base' (the entity
     # base record itself). Static evidence (VerifyPlayerHpChain, 11.19.0.10)
     # pins HP as int16 at [entity+0xB8] on the ENTITY BASE record, so this
-    # driver defaults to 'entity-base'.
-    [ValidateSet('ring-record', 'entity-tank-record', 'entity-base')]
+    # driver defaults to 'entity-base'. 'avatar-stats' anchors on the
+    # entity-factory Avatar's uint32 battle-stats quad (the L3 damage-dealt
+    # family, [avatar+0x118..0x124]) - for -Track damage-dealt only; the
+    # scan re-runs per dump and the driver dumps EVERY scan candidate so
+    # the increment correlator can discriminate the own counter at scoring
+    # time (region length defaults to 16 = the quad).
+    [ValidateSet('ring-record', 'entity-tank-record', 'entity-base', 'avatar-stats')]
     [string]$RegionAnchor = 'entity-base',
     # Comma-separated replay-clock seconds for flat CONTROL dumps in the
     # no-damage segments (e.g. '30,230' for Oasis Palms). Optional in live
@@ -136,6 +152,20 @@ if ($CliDll -eq '') {
 }
 if (-not (Test-Path -LiteralPath $CliDll)) {
     throw "CLI not built: $CliDll (run 'dotnet build src/WotBTreader.Host.Cli' first)."
+}
+
+# ---- 0. AVATAR-STATS ANCHOR SETUP ---------------------------------------
+$IsAvatarStats = ($RegionAnchor -eq 'avatar-stats')
+if ($IsAvatarStats) {
+    if ($RegionLength -lt 16) {
+        throw "-RegionLength must be >= 16 (the battle-stats quad is 16 bytes) for -RegionAnchor avatar-stats."
+    }
+    if ($RegionLength -eq 320) {
+        # The 320 default is the entity-base HP window; the Avatar stats
+        # block is the 16-byte quad at +0x118..+0x124 (L3 static finding).
+        $RegionLength = 16
+        Write-Step "-RegionLength defaulted to 16 (the uint32 battle-stats quad) for avatar-stats."
+    }
 }
 
 # ---- 1. QUALIFY (offline, real) -----------------------------------------
@@ -270,7 +300,43 @@ function Invoke-HpApi {
         $arguments.ContentType = 'application/json'
         $arguments.Body = $Body | ConvertTo-Json -Depth 5 -Compress
     }
-    return Invoke-RestMethod @arguments
+    try {
+        return Invoke-RestMethod @arguments
+    }        catch [System.Net.WebException] {
+            # Fail-closed statuses come back as HTTP 400 with the error code in
+            # the body (e.g. avatar-scan-not-found, gate_not_satisfied). Surface
+            # that code so a live-session failure is diagnosable instead of a
+            # bare WebException.
+            $statusCode = '?'
+            $errorBody = ''
+            $response = $_.Exception.Response
+            if ($null -ne $response) {
+                $statusCode = [int]$response.StatusCode
+                try {
+                    $stream = $response.GetResponseStream()
+                    if ($null -ne $stream) {
+                        $errorBody = (New-Object System.IO.StreamReader($stream)).ReadToEnd()
+                    }
+                }
+                catch {
+                    $errorBody = '<unreadable>'
+                }
+            }
+            if ($errorBody -match 'gate_not_satisfied') {
+                # End-of-replay: when the game process exits, the gate flips
+                # to discover.gate_not_satisfied (HTTP 400). Surface it as a
+                # synthetic teardown status so the probe/dump end-of-replay
+                # skips (which only fire within the last-40s window) treat it
+                # like AvatarAnchorNotFound; any earlier gate flip still
+                # throws fail-closed in the caller.
+                return [pscustomobject]@{
+                    status        = 'GateNotSatisfied'
+                    failureStage  = 'gate-not-satisfied'
+                }
+            }
+            throw [InvalidOperationException]::new(
+                ("entity-region HTTP {0} on {1}: {2}" -f $statusCode, $RelativePath, $errorBody))
+        }
 }
 
 $OfflineDumpExists = ($SnapshotsPath -ne '' -and (Test-Path -LiteralPath $SnapshotsPath))
@@ -324,7 +390,8 @@ if (-not $OfflineDumpExists) {
         }
     }
 
-    $Snapshots = [System.Collections.Generic.List[object]]::new()
+    $SnapshotsByCandidate = [System.Collections.Generic.Dictionary[int, System.Collections.Generic.List[object]]]::new()
+    $AvatarCandidateCount = 1
     $ControlCount = 0
     # End-of-replay protection (OD-RECOVERY-090 re-attempt, 2026-08-11): the
     # last dump target can sit past the replay end (the entity is torn down
@@ -336,7 +403,7 @@ if (-not $OfflineDumpExists) {
     $LastDumpTarget = [double](($DumpTimes | Sort-Object -Unique |
         Measure-Object -Maximum).Maximum)
     $TeardownStatuses = @('UnsupportedReplayController', 'EntityNotFound',
-        'ReplaySessionInactive')
+        'ReplaySessionInactive', 'AvatarAnchorNotFound', 'GateNotSatisfied')
     $SkippedEndOfReplay = $false
     foreach ($t in ($DumpTimes | Sort-Object -Unique)) {
         # Wait for the game's replay clock to reach the target time before
@@ -355,12 +422,19 @@ if (-not $OfflineDumpExists) {
                 battleSessionId = $SessionId
                 regionAnchor    = $RegionAnchor
             }
+            if ($IsAvatarStats) { $probeBody.avatarCandidateIndex = 0 }
             $probe = Invoke-HpApi -Method 'Post' `
                 -RelativePath '/api/v1/game/discover/entity-region' `
                 -Body $probeBody -RetryTransient
             if ($null -eq $probe) {
                 throw ("clock probe returned no response while waiting for " +
                     "{0:0.0}s." -f $t)
+            }
+            if ($waitIterations -eq 0) {
+                Write-Step (("  probe[{0:0.0}s] status='{1}' candidates={2} " +
+                    "clock={3}") -f $t, $probe.status, `
+                    $(if ($null -ne $probe.avatarCandidateCount) { $probe.avatarCandidateCount } else { '-' }), `
+                    $(if ($null -ne $probe.replayTimeSeconds) { $probe.replayTimeSeconds } else { '-' }))
             }
             if ($probe.status -ne 'Resolved') {
                 if ($TeardownStatuses -contains $probe.status -and
@@ -406,72 +480,141 @@ if (-not $OfflineDumpExists) {
             continue
         }
         Write-Step ("  region dump at replay {0,7}s (entity {1})..." -f $t, $TargetEntityId)
-        $response = Invoke-HpApi -Method 'Post' -RelativePath '/api/v1/game/discover/entity-region' `
-            -Body @{
+        $DumpCandidateMax = $AvatarCandidateCount - 1
+        $DumpSkipEndOfReplay = $false
+        for ($cand = 0; $cand -le $DumpCandidateMax; $cand++) {
+            $DumpBody = @{
                 entityId        = $TargetEntityId
                 regionLength    = $RegionLength
                 battleSessionId = $SessionId
                 regionAnchor    = $RegionAnchor
             }
-        if ($null -eq $response -or $response.status -ne 'Resolved') {
-            throw ("entity-region failed at {0}s: status='{1}' stage='{2}'" -f `
-                $t, $(if ($null -ne $response) { $response.status } else { 'null' }), `
-                $(if ($null -ne $response) { $response.failureStage } else { '' }))
+            if ($IsAvatarStats) { $DumpBody.avatarCandidateIndex = $cand }
+            $response = Invoke-HpApi -Method 'Post' -RelativePath '/api/v1/game/discover/entity-region' `
+                -Body $DumpBody
+            if ($null -eq $response -or $response.status -ne 'Resolved') {
+                $dumpStatus = if ($null -ne $response) { $response.status } else { 'null' }
+                $dumpStage = if ($null -ne $response) { $response.failureStage } else { '' }
+                if ($TeardownStatuses -contains $dumpStatus -and $t -ge ($LastDumpTarget - 40)) {
+                    # End-of-replay protection for the DUMP stage (mirrors the
+                    # probe stage above): the last dump targets can sit past
+                    # the replay end, where the avatar anchor is already torn
+                    # down (avatar-scan-not-found). Skip the target instead of
+                    # aborting and discarding the dumps already captured.
+                    Write-Step (("  replay ended during dump for target {0:0.0}s " +
+                        "(status='{1}') - skipping end-of-replay dump.") -f `
+                        $t, $dumpStatus)
+                    $DumpSkipEndOfReplay = $true
+                    break
+                }
+                throw ("entity-region failed at {0}s: status='{1}' stage='{2}'" -f `
+                    $t, $dumpStatus, $dumpStage)
+            }
+            if (-not $response.sameDecodedClockProven) {
+                throw ("entity-region at {0}s did not attest the decoded clock " +
+                    "(sameDecodedClockProven=false) - the dump cannot be clock-labeled safely." -f $t)
+            }
+            if ($null -eq $response.replayTimeSeconds) {
+                throw ("entity-region at {0}s returned no replay-time label despite " +
+                    "the clock attestation - refusing to write an unlabeled dump." -f $t)
+            }
+            # The avatar-stats scan re-runs per call: the candidate count can
+            # shrink between dumps (object churn) and the FIRST call of each
+            # dump time reports it. The own Avatar is discriminated at
+            # scoring time, so a churned (missing) candidate simply gets no
+            # dump this tick; a count that GROWS past what we enumerated is
+            # fail-closed (the new candidate never received its earlier
+            # dumps, so its snapshots cannot score honestly).
+            if ($IsAvatarStats -and $null -ne $response.avatarCandidateCount) {
+                $DiscoveredCount = [int]$response.avatarCandidateCount
+                if ($DiscoveredCount -lt 1) {
+                    throw ("avatar-stats at {0}s returned candidate count {1} - refuse." -f `
+                        $t, $DiscoveredCount)
+                }
+                if ($DiscoveredCount -gt $AvatarCandidateCount) {
+                    if ($cand -ne 0) {
+                        throw ("avatar-stats at {0}s grew to {1} candidates mid-tick - fail-closed." -f `
+                            $t, $DiscoveredCount)
+                    }
+                    $AvatarCandidateCount = $DiscoveredCount
+                    $DumpCandidateMax = $AvatarCandidateCount - 1
+                }
+                elseif ($DiscoveredCount -lt $AvatarCandidateCount) {
+                    # Churn shrink: drop the tail candidates for this tick.
+                    $AvatarCandidateCount = $DiscoveredCount
+                    $DumpCandidateMax = $AvatarCandidateCount - 1
+                    if ($cand -gt $DumpCandidateMax) { break }
+                }
+            }
+            if (-not $SnapshotsByCandidate.ContainsKey($cand)) {
+                $SnapshotsByCandidate[$cand] = [System.Collections.Generic.List[object]]::new()
+            }
+            $SnapshotsByCandidate[$cand].Add(@{
+                replayTimeSeconds = [double]$response.replayTimeSeconds
+                bytesBase64       = [string]$response.regionBase64
+            })
+            $ControlCount++
         }
-        if (-not $response.sameDecodedClockProven) {
-            throw ("entity-region at {0}s did not attest the decoded clock " +
-                "(sameDecodedClockProven=false) - the dump cannot be clock-labeled safely." -f $t)
-        }
-        if ($null -eq $response.replayTimeSeconds) {
-            throw ("entity-region at {0}s returned no replay-time label despite " +
-                "the clock attestation - refusing to write an unlabeled dump." -f $t)
-        }
-        $Snapshots.Add(@{
-            replayTimeSeconds = [double]$response.replayTimeSeconds
-            bytesBase64       = [string]$response.regionBase64
-        })
-        $ControlCount++
+        if ($DumpSkipEndOfReplay) { continue }
     }
-    if ($Snapshots.Count -lt 2) {
-        throw "Fewer than 2 region dumps acquired - the verdict needs at least one hit window and one control."
+    if ($SnapshotsByCandidate.Count -lt 1) {
+        throw "No region dumps acquired - the verdict needs at least one hit window and one control."
     }
 
     # The bucketer requires strictly increasing replay times; the extractor's
     # times are already ascending after Sort-Object -Unique, but the LIVE
     # clocks can jitter - re-sort by the response's replayTimeSeconds and
-    # drop any non-increasing duplicates fail-closed.
-    $Ordered = $Snapshots | Sort-Object @{ Expression = { $_.replayTimeSeconds } }
-    $Final = [System.Collections.Generic.List[object]]::new()
-    $last = [double]::NegativeInfinity
-    foreach ($s in $Ordered) {
-        if ([double]$s.replayTimeSeconds -le $last) { continue }
-        $Final.Add($s)
-        $last = [double]$s.replayTimeSeconds
-    }
-
-    # The pre-dedupe < 2 check above is not enough: live clock jitter can
-    # drop duplicates down below one change window. Re-check AFTER the
-    # strict-increase dedupe so the verdict never runs on a degenerate file.
-    if ($Final.Count -lt 2) {
-        throw ("After the strict-increase dedupe only {0} dump(s) remain - " +
-            "the verdict needs at least one hit window and one control. " +
-            "Retry the session (the live clock labels collapsed)." -f $Final.Count)
-    }
-
+    # drop any non-increasing duplicates fail-closed. In avatar-stats mode
+    # each scan candidate gets its OWN snapshots file: the increment
+    # correlator discriminates the own counter per candidate, and the other
+    # candidates serve as built-in control windows.
     if ($SnapshotsPath -eq '') {
         $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
         $SnapshotsPath = Join-Path $RepoRoot ".data\hp-snapshots-$SessionId-$stamp.json"
     }
-    $snapshotsJson = @{
-        schema       = 'wotbtreader.od.hp-diff.snapshots.v1'
-        regionLength = $RegionLength
-        snapshots    = @($Final)
-    } | ConvertTo-Json -Depth 5
-    Set-Content -LiteralPath $SnapshotsPath -Value $snapshotsJson -Encoding UTF8
-    Write-Step ("Wrote {0} region dumps to {1}" -f $Final.Count, $SnapshotsPath)
+    $SnapshotsBase = if ($IsAvatarStats) {
+        [System.IO.Path]::ChangeExtension($SnapshotsPath, $null)
+    } else { $SnapshotsPath }
+    $CandidateFiles = [ordered]@{}
+    foreach ($cand in ($SnapshotsByCandidate.Keys | Sort-Object)) {
+        $Snapshots = $SnapshotsByCandidate[$cand]
+        if ($Snapshots.Count -lt 2) {
+            Write-Step "candidate ${cand}: only $($Snapshots.Count) dump(s) - skipping (needs >= 2 for a verdict)."
+            continue
+        }
+        $Ordered = $Snapshots | Sort-Object @{ Expression = { $_.replayTimeSeconds } }
+        $Final = [System.Collections.Generic.List[object]]::new()
+        $last = [double]::NegativeInfinity
+        foreach ($s in $Ordered) {
+            if ([double]$s.replayTimeSeconds -le $last) { continue }
+            $Final.Add($s)
+            $last = [double]$s.replayTimeSeconds
+        }
+        # The pre-dedupe < 2 check above is not enough: live clock jitter can
+        # drop duplicates down below one change window. Re-check AFTER the
+        # strict-increase dedupe so the verdict never runs on a degenerate file.
+        if ($Final.Count -lt 2) {
+            Write-Step ("candidate {0}: after the strict-increase dedupe only {1} dump(s) remain - skipping." -f `
+                $cand, $Final.Count)
+            continue
+        }
+        $CandPath = if ($IsAvatarStats) { "$SnapshotsBase-cand$cand.json" } else { $SnapshotsPath }
+        $snapshotsJson = @{
+            schema       = 'wotbtreader.od.hp-diff.snapshots.v1'
+            regionLength = $RegionLength
+            snapshots    = @($Final)
+        } | ConvertTo-Json -Depth 5
+        Set-Content -LiteralPath $CandPath -Value $snapshotsJson -Encoding UTF8
+        Write-Step ("candidate {0}: wrote {1} region dumps to {2}" -f $cand, $Final.Count, $CandPath)
+        $CandidateFiles[$cand] = $CandPath
+    }
+    if ($CandidateFiles.Count -lt 1) {
+        throw "No candidate produced >= 2 usable dumps - fail-closed."
+    }
 }
 else {
     Write-Step "Using existing snapshots file: $SnapshotsPath"
+    $CandidateFiles = [ordered]@{ 0 = $SnapshotsPath }
 }
 
 # ---- 3. VERDICT (offline, real) ------------------------------------------
@@ -488,40 +631,67 @@ $LagArgs = if (-not $IsIncrement -and $LagToleranceSeconds -gt 0) {
 $LagLeadArgs = if (-not $IsIncrement -and $LagLeadSeconds -gt 0) {
     @('--lag-lead-seconds', ([string]$LagLeadSeconds))
 } else { @() }
-$ErrorActionPreference = 'Continue'
-try {
-    $VerdictJson = (& dotnet $CliDll hp-diff $SnapshotsPath `
-        --session $SessionId --victim $TargetEntityId --mode lenient `
-        --json @DataRootArgs @DirectionArgs @Int16Args @LagArgs @LagLeadArgs 2>$null) | Out-String
-} finally {
-    $ErrorActionPreference = $OldErrorActionPreference
-}
-$Verdict = $VerdictJson | ConvertFrom-Json
-if ($null -eq $Verdict -or -not $Verdict.success) {
-    $ErrorText = if ($null -ne $Verdict) { ($Verdict.errors | ForEach-Object { $_.message }) -join '; ' } else { 'no output' }
-    throw "hp-diff failed: $ErrorText"
-}
-
-$VerdictData = $Verdict.data
-$Hit = $VerdictData.verdict.hit
-Write-Step ("VERDICT: hit={0} reason='{1}'" -f $Hit, $VerdictData.verdict.reason)
-# ConvertFrom-Json can drop null-valued members, so probe the property table
-# instead of touching $VerdictData.topCandidate directly (StrictMode throws
-# PropertyNotFoundException when the member is absent).
-$TopCandidateProperty = $VerdictData.PSObject.Properties['topCandidate']
-if ($null -ne $TopCandidateProperty -and $null -ne $TopCandidateProperty.Value) {
-    $TopCandidate = $TopCandidateProperty.Value
-    Write-Step ("top candidate offset 0x{0:X} score {1} flatness {2} matched {3}/{4}" -f `
-        [int]$TopCandidate.offset, $TopCandidate.score, `
-        $TopCandidate.flatness, $TopCandidate.matchedDamageWindows, `
-        $TopCandidate.totalDamageWindows)
-    $TopCandidate.matchedWindows | ForEach-Object {
-        Write-Host ("hp_session:   matched window ({0:0.###}, {1:0.###}] sum {2}" -f `
-            $_.fromSeconds, $_.toSeconds, $_.damageSum)
+# The per-candidate loop below runs the verdict for every candidate file
+# (avatar-stats mode writes -candN.json files; the base $SnapshotsPath has no
+# suffix and does NOT exist in that mode). There is intentionally no pre-loop
+# verdict run: it would invoke hp-diff against the suffix-less base path and
+# throw (the 2026-08-12 live-session ArgumentOutOfRangeException).
+$AnyHit = $false
+$VerdictRuns = 0
+foreach ($cand in $CandidateFiles.Keys) {
+        $CandPath = $CandidateFiles[$cand]
+        $CandLabel = if ($IsAvatarStats) { "candidate $cand" } else { 'target' }
+        $VerdictRuns++
+        $ErrorActionPreference = 'Continue'
+        try {
+            $VerdictJson = (& dotnet $CliDll hp-diff $CandPath `
+                --session $SessionId --victim $TargetEntityId --mode lenient `
+                --json @DataRootArgs @DirectionArgs @Int16Args @LagArgs @LagLeadArgs 2>$null) | Out-String
+        } finally {
+            $ErrorActionPreference = $OldErrorActionPreference
+        }
+        $Verdict = $VerdictJson | ConvertFrom-Json
+        if ($null -eq $Verdict -or -not $Verdict.success) {
+            $ErrorText = if ($null -ne $Verdict) { ($Verdict.errors | ForEach-Object { $_.message }) -join '; ' } else { 'no output' }
+            if ($IsAvatarStats) {
+                # One candidate failing its verdict must not sink the whole
+                # session (a churned non-own candidate is expected to stay
+                # flat); the OTHER candidates still score. Fail only when
+                # EVERY candidate's verdict fails (checked after the loop).
+                Write-Step "$CandLabel verdict failed: $ErrorText"
+                continue
+            }
+            throw "hp-diff failed: $ErrorText"
+        }
+        $VerdictData = $Verdict.data
+        $Hit = $VerdictData.verdict.hit
+        Write-Step ("VERDICT [$CandLabel]: hit={0} reason='{1}'" -f $Hit, $VerdictData.verdict.reason)
+        # ConvertFrom-Json can drop null-valued members, so probe the
+        # property table instead of touching $VerdictData.topCandidate
+        # directly (StrictMode throws PropertyNotFoundException when the
+        # member is absent).
+        $TopCandidateProperty = $VerdictData.PSObject.Properties['topCandidate']
+        if ($null -ne $TopCandidateProperty -and $null -ne $TopCandidateProperty.Value) {
+            $TopCandidate = $TopCandidateProperty.Value
+            Write-Step ("$CandLabel top candidate offset 0x{0:X} score {1} flatness {2} matched {3}/{4}" -f `
+                [int]$TopCandidate.offset, $TopCandidate.score, `
+                $TopCandidate.flatness, $TopCandidate.matchedDamageWindows, `
+                $TopCandidate.totalDamageWindows)
+            $TopCandidate.matchedWindows | ForEach-Object {
+                Write-Host ("hp_session:   [$CandLabel] matched window ({0:0.###}, {1:0.###}] sum {2}" -f `
+                    $_.fromSeconds, $_.toSeconds, $_.damageSum)
+            }
+        }
+        if ($Hit) { $AnyHit = $true }
     }
-}
+    if ($VerdictRuns -eq 0) {
+        throw "No candidate verdicts ran - fail-closed."
+    }
+    if ($IsAvatarStats -and -not $AnyHit) {
+        Write-Step "avatar-stats: NO candidate hit - the own Avatar's counter never incremented in sync (honest-negative for this session)."
+    }
 
-if ($FailOnNoHit -and -not $Hit) {
-    exit 1
-}
+    if ($FailOnNoHit -and -not $AnyHit) {
+        exit 1
+    }
 exit 0

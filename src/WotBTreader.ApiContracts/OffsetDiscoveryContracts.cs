@@ -375,13 +375,27 @@ public sealed record EntityRecordRegionReadRequest
     /// Which object the dump anchors on: <c>ring-record</c> (the movement
     /// ring record the position resolver reads — the default),
     /// <c>entity-tank-record</c> (the per-entity tank record at
-    /// <c>[entity+0x3C]</c>), or <c>entity-base</c> (the entity base record
+    /// <c>[entity+0x3C]</c>), <c>entity-base</c> (the entity base record
     /// itself — the statically-verified HP fields live at
     /// <c>[entity+0xB8]</c> int16 current health, +0xBA alive byte,
-    /// +0x11E healing, per VerifyPlayerHpChain on the 11.19.0.10 build).
-    /// Unknown values fail closed (no dump).
+    /// +0x11E healing, per VerifyPlayerHpChain on the 11.19.0.10 build), or
+    /// <c>avatar-stats</c> (the entity-factory Avatar's uint32 battle-stats
+    /// quad at <c>[avatar+0x118..0x124]</c> — the L3 damage-dealt family;
+    /// for this anchor <c>entityId</c> is ignored and the coordinator runs
+    /// the gated vftable AOB scan for the entity-Avatar instead). Unknown
+    /// values fail closed (no dump).
     /// </summary>
     public string? RegionAnchor { get; init; }
+
+    /// <summary>
+    /// For <c>avatar-stats</c> dumps: which scan candidate (0..3) to anchor
+    /// on. The scan enumerates up to 4 entity-Avatar candidates (one per
+    /// player); the increment correlator discriminates the OWN counter at
+    /// scoring time (only the own counter increments on own-attacker
+    /// events; other candidates stay flat as built-in control windows).
+    /// Defaults to 0. Ignored for entity-keyed anchors.
+    /// </summary>
+    public int? AvatarCandidateIndex { get; init; }
 }
 
 /// <summary>
@@ -403,6 +417,15 @@ public sealed record EntityRecordRegionReadResponse
     public int NodesVisited { get; init; }
     public bool ModuleRooted { get; init; }
     public bool SameDecodedClockProven { get; init; }
+
+    /// <summary>
+    /// For <c>avatar-stats</c> dumps: how many entity-Avatar scan candidates
+    /// the scan found (0 when the anchor is entity-keyed). The caller loops
+    /// <see cref="EntityRecordRegionReadRequest.AvatarCandidateIndex"/>
+    /// 0..count-1 to dump every candidate's quad for the correlator's
+    /// own-counter discrimination.
+    /// </summary>
+    public int AvatarCandidateCount { get; init; }
 }
 
 /// <summary>

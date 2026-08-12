@@ -1,17 +1,16 @@
-# G1 — Hull-yaw publication draft (READY, pre-staged 2026-08-11)
+# G1 — Hull-yaw publication (APPLIED 2026-08-12, OD-RECOVERY-092)
 
-> **STATUS: READY — NOT APPLIED.** Publishing `playerYaw` as `Verified`
-> via the module-rooted ring-record chain was gated on **OD-RECOVERY-089**
-> (the Phase-4 two-replay rule: the live-found offset must agree on a second
-> content-distinct replay — Dead Rail, 5 seam crossings). **089 CLOSED
-> HIT 2026-08-11** (`+0x30` on Dead Rail, 56/56, score 1.0, flatness 1.0 —
-> `twoReplayRepeatability = true`; see the filled evidence template and
-> ledger section). The remaining gate is the **operator's approval**.
-> Until then the table stays frozen: `offsets` are untouched, `chains` has
-> no `playerYaw`, and `fieldValidation.playerYaw` remains `Stale` (the
-> quarantined Ghidra hypothesis, see the published table). This file is the
-> operator-facing spec + checklist; applying it follows the G0 procedure
-> (`docs/operations/g0-operator-checklist.md`).
+> **STATUS: APPLIED 2026-08-12 (operator-approved, OD-RECOVERY-092).**
+> `playerYaw` is published `Verified` via the module-rooted ring-record
+> chain (12 hops: the identical position walk + `recordOffset 48` = float32
+> hull yaw at `+0x30`); `offsets.playerYaw` stays 0 by design. Gates were:
+> **OD-RECOVERY-089** CLOSED HIT 2026-08-11 (`+0x30` on Dead Rail, 56/56,
+> score 1.0, flatness 1.0 — `twoReplayRepeatability = true`) + operator
+> approval. `fieldValidation.playerYaw` is now `Verified` (the quarantined
+> Ghidra hypothesis is retained as the first evidence entry, superseded).
+> This file was the operator-facing spec + checklist; the apply followed
+> the G0 procedure (`docs/operations/g0-operator-checklist.md`). Section 3
+> below documents exactly what was done.
 
 ## 1. What gets published
 

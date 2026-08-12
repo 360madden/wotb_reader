@@ -54,6 +54,14 @@
           "type": "integer",
           "description": "Base-relative offset for player yaw (float, radians). 0 = unknown."
         },
+        "playerPitch": {
+          "type": "integer",
+          "description": "Chained field: see `chains`. The integer stays 0 (the pitch is reached through the module-relative chain, not a direct base-relative offset). float pitch at ring-record +0x2C (rotation triple, 2026-08-12 reconciliation)."
+        },
+        "playerRoll": {
+          "type": "integer",
+          "description": "Chained field: see `chains`. The integer stays 0 (the roll is reached through the module-relative chain, not a direct base-relative offset). float roll at ring-record +0x28 (rotation triple, 2026-08-12 reconciliation)."
+        },
         "cameraPitch": {
           "type": "integer",
           "description": "Base-relative offset for camera pitch (float, radians). 0 = unknown."
@@ -71,7 +79,8 @@
       "propertyNames": {
         "enum": [
           "replayTime", "playerHP", "playerPositionX", "playerPositionY",
-          "playerPositionZ", "playerYaw", "cameraPitch", "aliveTankCount"
+          "playerPositionZ", "playerYaw", "playerPitch", "playerRoll",
+          "cameraPitch", "aliveTankCount"
         ]
       },
       "additionalProperties": {
@@ -180,7 +189,8 @@
       "propertyNames": {
         "enum": [
           "replayTime", "playerHP", "playerPositionX", "playerPositionY",
-          "playerPositionZ", "playerYaw", "cameraPitch", "aliveTankCount"
+          "playerPositionZ", "playerYaw", "playerPitch", "playerRoll",
+          "cameraPitch", "aliveTankCount"
         ]
       },
       "additionalProperties": {

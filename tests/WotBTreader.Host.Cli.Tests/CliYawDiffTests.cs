@@ -22,6 +22,8 @@ public sealed class CliYawDiffTests
     private static readonly Guid SessionId = Guid.Parse("019fdff8-8dcf-7426-8547-9fb8cc3eb07b");
     private const long Target = 7001;
     private const int LiveYawOffset = 0x30;
+    private static readonly int[] DecoyOnlyOffsets = [0x60];
+    private static readonly int[] TruePlusSiblingOffsets = [0x28, 0x60];
 
     [TestMethod]
     public async Task YawDiff_PerDumpLeadLag_FindsYawWhenMemoryLeadsLabel()
@@ -102,10 +104,180 @@ public sealed class CliYawDiffTests
         Assert.AreEqual((int)CliExitCode.InvalidArguments, run.ExitCode, run.Diagnostic);
     }
 
+    [TestMethod]
+    public async Task YawDiff_PitchField_FindsPitchAt0x2C()
+    {
+        // The rotation-triple reconciliation: the SAME ring-record dumps
+        // re-verdict for pitch via --field pitch (decoded pitch column as
+        // ground truth) at the static ring-record offset +0x2C.
+        using TemporaryDataRoot root = new();
+        await SeedDatabaseAsync(root, seedPitch: true);
+
+        string snapshotsPath = await WriteSnapshotsAtAsync(
+            root,
+            0x2C,
+            (6.0, PacketYawAt(8.0)),
+            (8.0, PacketYawAt(10.0)),
+            (10.0, PacketYawAt(12.0)),
+            (12.0, PacketYawAt(14.0)),
+            (14.0, PacketYawAt(16.0)),
+            (16.0, PacketYawAt(18.0)));
+
+        CliRun run = await RunAsync(root, "yaw-diff", snapshotsPath,
+            "--session", SessionId.ToString("D"),
+            "--victim", Target.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "--field", "pitch",
+            "--max-lag-seconds", "4",
+            "--memory-lead-seconds", "4",
+            "--per-dump-lag");
+
+        Assert.AreEqual(0, run.ExitCode, run.Diagnostic);
+        JsonElement data = run.Data;
+        Assert.IsTrue(data.GetProperty("verdict").GetProperty("hit").GetBoolean(), run.Diagnostic);
+        Assert.AreEqual(
+            0x2C,
+            data.GetProperty("topCandidate").GetProperty("offset").GetInt32());
+        Assert.AreEqual(1.0, data.GetProperty("topCandidate").GetProperty("score").GetDouble(), 1e-9);
+        Assert.AreEqual(1.0, data.GetProperty("topCandidate").GetProperty("flatness").GetDouble(), 1e-9);
+        Assert.AreEqual("pitch", data.GetProperty("field").GetString());
+    }
+
+    [TestMethod]
+    public async Task YawDiff_RecordSpan_ExcludesOutOfSpanOffsets()
+    {
+        // Rotation-triple methodology lesson (2026-08-12): region +0x60 is
+        // the NEXT ring record's +0x28 (stride 0x38) — a ring-sibling decoy.
+        // The true series sits ONLY at +0x60 here, so WITHOUT --record-span
+        // the verdict hits at 0x60; WITH --record-span 56 (the single-record
+        // span) the decoy is excluded and nothing in-span matches.
+        using TemporaryDataRoot root = new();
+        await SeedDatabaseAsync(root);
+
+        string snapshotsPath = await WriteSnapshotsAtOffsetsAsync(
+            root,
+            DecoyOnlyOffsets,
+            (6.0, PacketYawAt(6.0)),
+            (8.0, PacketYawAt(8.0)),
+            (10.0, PacketYawAt(10.0)),
+            (12.0, PacketYawAt(12.0)),
+            (14.0, PacketYawAt(14.0)),
+            (16.0, PacketYawAt(16.0)));
+
+        CliRun fullRun = await RunAsync(root, "yaw-diff", snapshotsPath,
+            "--session", SessionId.ToString("D"),
+            "--victim", Target.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "--max-lag-seconds", "4",
+            "--memory-lead-seconds", "4",
+            "--per-dump-lag");
+        Assert.AreEqual(0, fullRun.ExitCode, fullRun.Diagnostic);
+        Assert.IsTrue(fullRun.Data.GetProperty("verdict").GetProperty("hit").GetBoolean(), fullRun.Diagnostic);
+        Assert.AreEqual(
+            0x60,
+            fullRun.Data.GetProperty("topCandidate").GetProperty("offset").GetInt32());
+
+        CliRun spannedRun = await RunAsync(root, "yaw-diff", snapshotsPath,
+            "--session", SessionId.ToString("D"),
+            "--victim", Target.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "--max-lag-seconds", "4",
+            "--memory-lead-seconds", "4",
+            "--per-dump-lag",
+            "--record-span", "56");
+        Assert.AreEqual(0, spannedRun.ExitCode, spannedRun.Diagnostic);
+        Assert.AreEqual(
+            56,
+            spannedRun.Data.GetProperty("recordSpan").GetInt32(),
+            spannedRun.Diagnostic);
+        Assert.IsFalse(
+            spannedRun.Data.GetProperty("verdict").GetProperty("hit").GetBoolean(),
+            spannedRun.Diagnostic);
+    }
+
+    [TestMethod]
+    public async Task YawDiff_RecordSpan_KeepsInSpanOffsets()
+    {
+        // The real ring scenario: the true yaw at +0x28 AND a byte-near-
+        // identical sibling at +0x60. With --record-span 56 the sibling is
+        // excluded and the correlation resolves at +0x28 (the tie can no
+        // longer form).
+        using TemporaryDataRoot root = new();
+        await SeedDatabaseAsync(root);
+
+        string snapshotsPath = await WriteSnapshotsAtOffsetsAsync(
+            root,
+            TruePlusSiblingOffsets,
+            (6.0, PacketYawAt(6.0)),
+            (8.0, PacketYawAt(8.0)),
+            (10.0, PacketYawAt(10.0)),
+            (12.0, PacketYawAt(12.0)),
+            (14.0, PacketYawAt(14.0)),
+            (16.0, PacketYawAt(16.0)));
+
+        CliRun run = await RunAsync(root, "yaw-diff", snapshotsPath,
+            "--session", SessionId.ToString("D"),
+            "--victim", Target.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "--max-lag-seconds", "4",
+            "--memory-lead-seconds", "4",
+            "--per-dump-lag",
+            "--record-span", "56");
+
+        Assert.AreEqual(0, run.ExitCode, run.Diagnostic);
+        JsonElement data = run.Data;
+        Assert.AreEqual(56, data.GetProperty("recordSpan").GetInt32(), run.Diagnostic);
+        Assert.IsTrue(data.GetProperty("verdict").GetProperty("hit").GetBoolean(), run.Diagnostic);
+        Assert.AreEqual(
+            0x28,
+            data.GetProperty("topCandidate").GetProperty("offset").GetInt32());
+        Assert.AreEqual(1.0, data.GetProperty("topCandidate").GetProperty("score").GetDouble(), 1e-9);
+        Assert.AreEqual(1.0, data.GetProperty("topCandidate").GetProperty("flatness").GetDouble(), 1e-9);
+    }
+
+    [TestMethod]
+    public async Task YawDiff_RecordSpan_RejectsInvalid()
+    {
+        using TemporaryDataRoot root = new();
+        await SeedDatabaseAsync(root);
+        string snapshotsPath = await WriteSnapshotsAsync(root, (6.0, 0.0), (8.0, 0.0));
+
+        CliRun notMultipleOfFour = await RunAsync(root, "yaw-diff", snapshotsPath,
+            "--session", SessionId.ToString("D"),
+            "--victim", Target.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "--record-span", "30");
+        Assert.AreEqual((int)CliExitCode.InvalidArguments, notMultipleOfFour.ExitCode, notMultipleOfFour.Diagnostic);
+
+        CliRun negative = await RunAsync(root, "yaw-diff", snapshotsPath,
+            "--session", SessionId.ToString("D"),
+            "--victim", Target.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "--record-span", "-4");
+        Assert.AreEqual((int)CliExitCode.InvalidArguments, negative.ExitCode, negative.Diagnostic);
+
+        CliRun tooLarge = await RunAsync(root, "yaw-diff", snapshotsPath,
+            "--session", SessionId.ToString("D"),
+            "--victim", Target.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "--record-span", "512");
+        Assert.AreEqual((int)CliExitCode.InvalidArguments, tooLarge.ExitCode, tooLarge.Diagnostic);
+    }
+
+    [TestMethod]
+    public async Task YawDiff_RejectsUnknownField()
+    {
+        using TemporaryDataRoot root = new();
+        await SeedDatabaseAsync(root);
+        string snapshotsPath = await WriteSnapshotsAsync(root, (6.0, 0.0), (8.0, 0.0));
+
+        CliRun run = await RunAsync(root, "yaw-diff", snapshotsPath,
+            "--session", SessionId.ToString("D"),
+            "--victim", Target.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "--field", "turret");
+
+        Assert.AreEqual((int)CliExitCode.InvalidArguments, run.ExitCode, run.Diagnostic);
+    }
+
     /// <summary>Bootstrap the database (runs migrations), then seed the
-    /// battle session + decoded yaw timeline directly via SQL — the same
-    /// shape the repository commits (position_samples, migration 5).</summary>
-    private async Task SeedDatabaseAsync(TemporaryDataRoot root)
+    /// battle session + decoded rotation timeline directly via SQL — the
+    /// same shape the repository commits (position_samples, migration 5).
+    /// With <paramref name="seedPitch"/> the PITCH column carries the step
+    /// (and yaw stays 0); otherwise the YAW column carries it.</summary>
+    private async Task SeedDatabaseAsync(TemporaryDataRoot root, bool seedPitch = false)
     {
         CliRun bootstrap = await RunAsync(root, "sessions", "--limit", "1");
         Assert.AreEqual(0, bootstrap.ExitCode, bootstrap.Diagnostic);
@@ -157,7 +329,7 @@ public sealed class CliYawDiffTests
                 VALUES
                     ($id, $session, $entity, $seq, $ticks,
                      0.0, 0.0, 0.0, 0,
-                     $yaw, 0.0, 0.0,
+                     $yaw, $pitch, 0.0,
                      $artifact, 0, 10, $sha);
                 """;
             for (int second = 0; second <= 16; second++)
@@ -168,7 +340,8 @@ public sealed class CliYawDiffTests
                 command.Parameters.AddWithValue("$entity", Target);
                 command.Parameters.AddWithValue("$seq", second + 1);
                 command.Parameters.AddWithValue("$ticks", second * 10_000_000L);
-                command.Parameters.AddWithValue("$yaw", PacketYawAt(second));
+                command.Parameters.AddWithValue("$yaw", seedPitch ? 0.0 : PacketYawAt(second));
+                command.Parameters.AddWithValue("$pitch", seedPitch ? PacketYawAt(second) : 0.0);
                 command.Parameters.AddWithValue("$artifact", "019fdff8-aaaa-7426-8547-9fb8cc3eb07b");
                 command.Parameters.AddWithValue("$sha", Sha256);
                 await command.ExecuteNonQueryAsync(TestContext.CancellationToken);
@@ -179,8 +352,61 @@ public sealed class CliYawDiffTests
     /// <summary>Packet yaw fixture: 0 rad before t=10s, 1.2 rad after.</summary>
     private static double PacketYawAt(double seconds) => seconds < 10.0 ? 0.0 : 1.2;
 
-    private async Task<string> WriteSnapshotsAsync(
+    private Task<string> WriteSnapshotsAsync(
         TemporaryDataRoot root,
+        params (double Seconds, double MemoryYaw)[] dumps) =>
+        WriteSnapshotsAtAsync(root, LiveYawOffset, dumps);
+
+    /// <summary>
+    /// Write snapshots with the yaw series at EVERY given offset (the ring-
+    /// sibling scenario: +0x28 and +0x60 carry the same series) and the
+    /// constant 0.7 everywhere else (never a degenerate match).
+    /// </summary>
+    private async Task<string> WriteSnapshotsAtOffsetsAsync(
+        TemporaryDataRoot root,
+        IReadOnlyList<int> targetOffsets,
+        params (double Seconds, double MemoryYaw)[] dumps)
+    {
+        string path = Path.Combine(root.Path, "yaw-snapshots-multi.json");
+        using MemoryStream stream = new();
+        using (Utf8JsonWriter writer = new(stream))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("schema", "wotbtreader.od.hp-diff.snapshots.v1");
+            writer.WriteNumber("regionLength", 0x100);
+            writer.WritePropertyName("snapshots");
+            writer.WriteStartArray();
+            foreach ((double seconds, double memoryYaw) in dumps)
+            {
+                byte[] bytes = new byte[0x100];
+                for (int offset = 0; offset <= bytes.Length - 4; offset += 4)
+                {
+                    BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(offset), 0.7f);
+                }
+
+                foreach (int offset in targetOffsets)
+                {
+                    BinaryPrimitives.WriteSingleLittleEndian(
+                        bytes.AsSpan(offset), (float)memoryYaw);
+                }
+
+                writer.WriteStartObject();
+                writer.WriteNumber("replayTimeSeconds", seconds);
+                writer.WriteString("bytesBase64", Convert.ToBase64String(bytes));
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+
+        await File.WriteAllBytesAsync(path, stream.ToArray(), TestContext.CancellationToken);
+        return path;
+    }
+
+    private async Task<string> WriteSnapshotsAtAsync(
+        TemporaryDataRoot root,
+        int targetOffset,
         params (double Seconds, double MemoryYaw)[] dumps)
     {
         string path = Path.Combine(root.Path, "yaw-snapshots.json");
@@ -201,7 +427,7 @@ public sealed class CliYawDiffTests
                 }
 
                 BinaryPrimitives.WriteSingleLittleEndian(
-                    bytes.AsSpan(LiveYawOffset), (float)memoryYaw);
+                    bytes.AsSpan(targetOffset), (float)memoryYaw);
                 writer.WriteStartObject();
                 writer.WriteNumber("replayTimeSeconds", seconds);
                 writer.WriteString("bytesBase64", Convert.ToBase64String(bytes));

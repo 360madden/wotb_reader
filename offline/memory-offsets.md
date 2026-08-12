@@ -35,18 +35,21 @@ Canonical detail: [`memory-offsets/README.md`](../memory-offsets/README.md)
   },
   "offsets": { "replayTime": 0, "playerHP": 0, "playerPositionX": 0,
                "playerPositionY": 0, "playerPositionZ": 0, "playerYaw": 0,
+               "playerPitch": 0, "playerRoll": 0,
                "cameraPitch": 0, "aliveTankCount": 0 },
   "confidence": "none",
   "notes": ""
 }
 ```
 
-Required: `schemaVersion`, `gameVersion`, `offsets` (all 8 fields,
+Required: `schemaVersion`, `gameVersion`, `offsets` (all 10 declared
+fields — 8 required plus `playerPitch`/`playerRoll` pre-staged OPTIONAL
+chained fields awaiting the operator-approved apply —
 `additionalProperties: false`). `executableSha256` is required for candidate
 or promoted evidence. An intentional placeholder has `confidence: "none"`, an
-empty hash, `discoveredAtUtc: null`, and all eight offsets set to `0`;
+empty hash, `discoveredAtUtc: null`, and all offsets set to `0`;
 placeholders are never runtime-supported. `fieldValidation` is optional; when
-present, its keys are the eight known fields and each entry records promotion
+present, its keys are the known fields and each entry records promotion
 evidence. `0` = unknown.
 
 | Field | Type | Semantics |
@@ -54,7 +57,9 @@ evidence. `0` = unknown.
 | `replayTime` | double | Replay timeline seconds |
 | `playerHP` | int32 | Current hit points |
 | `playerPositionX/Y/Z` | float | World units (Y = height) |
-| `playerYaw` | float | Radians |
+| `playerYaw` | float | Radians (ring-record `+0x30`, published) |
+| `playerPitch` | float | Radians (ring-record `+0x2C`, pre-staged optional — see `g1-pitch-roll-publication-draft.md`) |
+| `playerRoll` | float | Radians (ring-record `+0x28`, pre-staged optional — see `g1-pitch-roll-publication-draft.md`) |
 | `cameraPitch` | float | Radians |
 | `aliveTankCount` | int32 | Tanks still in battle |
 
@@ -158,6 +163,34 @@ object (chained field offsets must be 0; hops must be non-empty with valid
 `kind`/non-negative `value`; the first hex literal in each hop's `note` must
 match its decimal `value` — catches hex↔decimal transcription drift, e.g.
 the G0 grill's `0x04095C88` ≠ 67518856 error); absent `chains` is a no-op.
+
+### HP and hull-yaw chains (G1, 2026-08-12)
+
+Two more fields joined the walkable `chains` family under G1
+(OD-RECOVERY-087/088/089/091, operator-approved 2026-08-12):
+
+- **`playerHP`** — `Verified` via the **entity-base** chain: the module-rooted
+  walk of the resolver's entity-map family through the `entityLookup` hop
+  ONLY (`GameCoreRootRva` → … → `entityLookup`, the position chain's hops
+  1..8 — HP does NOT take the movement-filter/ring path) with final hop
+  `recordOffset 184` = signed int16 current health at `[entity+0xB8]`
+  (OD-RECOVERY-087 Oasis Palms 74 dumps Strict 8/8 + OD-RECOVERY-091 Dead
+  Rail 58 dumps Strict 4/4 via the lead-side window —
+  `twoReplayRepeatability = true`). Sibling fields on the same entity-base
+  record: max `+0x11C`, alive `+0xBA`, healing `+0x11E` (decoded by the pure
+  `EntityBaseRegion` reader; no resolver/read-surface change).
+- **`playerYaw`** — `Verified` via the ring-record chain: the IDENTICAL
+  module-rooted walk as `playerPositionX` (position `+0x10` and yaw `+0x30`
+  were proven on the SAME ring record) with final hop `recordOffset 48` =
+  float32 hull yaw at `+0x30` (OD-RECOVERY-088 Oasis 48/48 + OD-RECOVERY-089
+  Dead Rail 56/56 per-dump bidirectional lag — `twoReplayRepeatability =
+  true`). The rotation triple is roll `+0x28` / pitch `+0x2C` / yaw `+0x30`;
+  this resolves-by-supersession the quarantined static yaw candidate
+  (ring-record `RingRecordRegion.YawOffset = 0x30` is live-verified).
+
+Both keep `offsets` 0 by design (battle-scoped heap, same rationale as the
+position family); the canonical walkable forms are the SAME hops as the
+published table (fidelity-enforced by `offset_check.py`).
 
 ## Validation tooling
 

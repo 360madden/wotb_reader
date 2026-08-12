@@ -48,7 +48,7 @@ public sealed class WalkablePositionChainTests
         Assert.IsTrue(result.IsSuccess, result.Error?.Message);
         Assert.IsNotNull(result.Value);
         Assert.IsNotNull(result.Value.Chains);
-        Assert.HasCount(5, result.Value.Chains);
+        Assert.HasCount(7, result.Value.Chains);
 
         Type10EntityPositionLayout layout = Layout;
         AssertChainEqual(ExpectedChain((int)layout.PositionRecordOffset), result.Value.Chains["playerPositionX"]);
@@ -58,6 +58,12 @@ public sealed class WalkablePositionChainTests
         // recordOffset 0x30 (OD-RECOVERY-088/089 live-verified rotation
         // triple) — pinned to the resolver's ring-record yaw constant.
         AssertChainEqual(ExpectedChain(RingRecordRegion.YawOffset), result.Value.Chains["playerYaw"]);
+        // G1 (2026-08-12): the pitch/roll chains are the SAME walk with the
+        // final recordOffset 0x2C / 0x28 — the rotation-triple Phase-4
+        // reconciliation (both replays agree at these offsets) — pinned to
+        // the resolver's ring-record constants.
+        AssertChainEqual(ExpectedChain(RingRecordRegion.PitchOffset), result.Value.Chains["playerPitch"]);
+        AssertChainEqual(ExpectedChain(RingRecordRegion.RollOffset), result.Value.Chains["playerRoll"]);
         // G1 (2026-08-11): the playerHP chain is the SAME entity-lookup
         // spine WITHOUT the position ring — HP lives on the ENTITY BASE
         // record (recordOffset 0xB8 = current-health signed int16,

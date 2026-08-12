@@ -1,10 +1,10 @@
 # Offset promotion checklist
 
 Last verified: 2026-08-12 (after G0 publication OD-RECOVERY-083, the
-Phase-4 two-replay closures OD-RECOVERY-089/091, CAM-013, and the 08-12
-live-frame refinements — the 08-12 overlay/live-frame work and the
-pre-staged L3/item-7 plans changed NO promotion gate: both publication
-packages remain READY, operator approval + gate run only).
+Phase-4 two-replay closures OD-RECOVERY-089/091, CAM-013, the 08-12
+live-frame refinements, and the **G1 publication applies OD-RECOVERY-092 —
+`playerHP` + `playerYaw` are now PUBLISHED `Verified` via module-rooted
+`chains`** (2026-08-12; both `offsets` stay 0; post-edit gates green).
 
 Purpose: the single place that maps every promotion gate to its **current,
 source-verified status** and the exact evidence that flips it. The poll verdict
@@ -90,8 +90,9 @@ heap), evidence appended (launches 4 / replays 2), approvals set,
 `numericOffsetPublication: true`. All post-edit gates green:
 `offset_check.py` PASS + `chains validated (3 field(s))`, evidence report
 clean, offline links 112/112, exclusion test passed, `validate.ps1` exit 0.
-What was NOT promoted: velocity, playerYaw, replayTime, playerHP,
-cameraPitch, aliveTankCount; no absolute/heap addresses published. The
+What was NOT promoted at G0: velocity, playerYaw, replayTime, playerHP,
+cameraPitch, aliveTankCount (playerHP + playerYaw published under G1
+2026-08-12, OD-RECOVERY-092); no absolute/heap addresses published. The
 resolver + read surface are untouched; the legacy observation path still
 emits position nulls (chained fields excluded — pinned by
 `ChainedFields_AreExcludedFromObservationReads`).
@@ -131,8 +132,8 @@ Status as of 2026-08-11:
 | Field | Live agreement | Evidence | Publication state |
 |---|---|---|---|
 | `playerPositionX/Y/Z` | two replays, 24/24 polls (Dead Rail OD-075 + Oasis OD-076) | OD-RECOVERY-083 | **PUBLISHED 2026-08-10** (`Verified`, chains, offsets 0) |
-| Facing/yaw (ring record `+0x30`) | **HIT both replays** — Oasis 088 (48/48), Dead Rail 089 Phase-4 (56/56, score 1.0, flatness 1.0) | OD-RECOVERY-088/089 | **PACKAGE READY** — `docs/operations/g1-yaw-publication-draft.md` (operator approval + gate run only; draft chain pre-staged in `g0-walkable-position-chains.draft.json`) |
-| HP (entity base `+0xB8`, signed int16) | **HIT both replays** — Oasis 087 (8/8 strict), Dead Rail 091 Phase-4 (4/4 strict, 58 dumps) | OD-RECOVERY-087/091 | **PACKAGE READY** — `docs/operations/g1-hp-publication-draft.md` (operator approval + gate run only; draft chain pre-staged, 5th chain). Item-7 static support landed 2026-08-11: hash-bound listing-confirmed 16-bit health setters (`FUN_0166b9f0`/`FUN_01675f60` write `+0xB8`/`+0x11E` as `MOV word`), zero 64/128-bit stores to the fields — `item7-hardware-atomicity-proof-plan.md` Branch A |
+| Facing/yaw (ring record `+0x30`) | **HIT both replays** — Oasis 088 (48/48), Dead Rail 089 Phase-4 (56/56, score 1.0, flatness 1.0) | OD-RECOVERY-088/089 | **PUBLISHED 2026-08-12 (OD-RECOVERY-092)** — `Verified`, chains (position walk + `recordOffset 48`), offsets 0 |
+| HP (entity base `+0xB8`, signed int16) | **HIT both replays** — Oasis 087 (8/8 strict), Dead Rail 091 Phase-4 (4/4 strict, 58 dumps) | OD-RECOVERY-087/091 | **PUBLISHED 2026-08-12 (OD-RECOVERY-092)** — `Verified`, chains (entity-lookup prefix + `recordOffset 184`), offsets 0. Item-7 static support: hash-bound listing-confirmed 16-bit health setters (`FUN_0166b9f0`/`FUN_01675f60` write `+0xB8`/`+0x11E` as `MOV word`), zero 64/128-bit stores to the fields — `item7-hardware-atomicity-proof-plan.md` Branch A |
 | Velocity, replayTime, playerHP-as-offset, aliveTankCount | not promoted | G0 record | untouched |
 | Pitch/roll (ring `+0x2C`/`+0x28`) | live-verified as the rotation triple (OD-RECOVERY-088) but NO Phase-4 repeat run | 088 | not packaged; P4 candidate only |
 | Damage-dealt | HONEST-NEGATIVE (OD-RECOVERY-090, three sweeps) | 090 | not reachable via entity records — needs a NEW object family (avatar/player-stats) |
@@ -375,7 +376,8 @@ processes (Dead Rail OD-075 + Oasis Palms OD-076) — is satisfied.
 | G0 offset-table publication | Offline (operator-approved gate) | **done 2026-08-10 (OD-RECOVERY-083):** `playerPositionX/Y/Z` → `Verified` via the module-rooted position-ring chain (additive `chains` section; offsets stay 0), evidence appended (4 launches / 2 replays), approvals set, `numericOffsetPublication: true`; post-edit gates all green (`offset_check.py` chains-validated 3 fields, `validate.ps1` exit 0). Resolver + read surface untouched; NOT promoted: velocity, playerYaw, replayTime, playerHP, cameraPitch, aliveTankCount |
 | Phase-4 facing/yaw repeat | Live | **done 2026-08-11 (OD-RECOVERY-089): HIT** — ring `+0x30` agrees on Dead Rail (56/56, score 1.0, flatness 1.0, per-dump bounded bidirectional lag). `twoReplayRepeatability = true`; yaw publication **READY** (`g1-yaw-publication-draft.md`) |
 | Phase-4 HP repeat | Live | **done 2026-08-11 (OD-RECOVERY-091): HIT** — entity `+0xB8` agrees on Dead Rail (score 1.0, flatness 1.0, Strict 4/4 exact sums via `--lag-lead-seconds`). `twoReplayRepeatability = true`; HP publication **READY** (`g1-hp-publication-draft.md`) |
-| Publication applies (HP then yaw) | Operator-gated | **PENDING operator approval** — both packages pre-staged; each is a bounded table edit + evidence append + post-edit gates; no further live sessions strictly required |
+| Publication applies (HP then yaw) | Operator-gated | **DONE 2026-08-12 (OD-RECOVERY-092)** — both packages applied, all post-edit gates green (`offset_check.py` chains-validated 5 fields + fidelity 5/5, `offline_check.py --refresh`, `ChainedFields_AreExcludedFromObservationReads`, `validate.ps1` exit 0) |
+| Rotation-triple Phase-4 reconciliation (pitch +0x2C / roll +0x28) | Offline re-verdict | **done 2026-08-12** — `yaw-diff --field pitch\|roll` re-verdicts the SAME immutable OD-088/089 dumps: pitch `+0x2C` and roll `+0x28` AGREE on both replays (Oasis 48/48 + Dead Rail 56/56 each, score 1.0, flatness 1.0; record-span 0x38-trimmed verdicts — ring-sibling decoy `0x60` removed). `twoReplayRepeatability = true` for the full rotation triple; pitch/roll publication package **PRE-STAGED** (`g1-pitch-roll-publication-draft.md` — schema slots + draft chains + checker already staged, operator approval only) |
 
 ## Frozen surfaces (unchanged)
 

@@ -100,6 +100,13 @@ param(
     # sign per replay); per-dump is proven on both replays (088 +48/48,
     # 089 56/56 at +0x30). Pass -PerDumpLag:$false to force the shared path.
     [switch]$PerDumpLag = $true,
+    # Rotation-triple methodology lesson (2026-08-12): the ring holds
+    # consecutive position updates, so region +0x60 is the NEXT record's
+    # +0x28 (stride 0x38) - a byte-near-identical sibling that can tie under
+    # the per-dump lag path. When > 0, yaw-diff trims every dump to the
+    # single-record span (0x38 = 56 for the ring) so out-of-record siblings
+    # are never candidates. 0 = full region (unchanged).
+    [int]$RecordSpan = 0,
     [string]$Python = 'python',
     [string]$CliDll = '',
     [switch]$FailOnNoHit
@@ -406,6 +413,9 @@ if ($MemoryLeadSeconds -gt 0) {
 }
 if ($PerDumpLag) {
     $LagArgs += @('--per-dump-lag')
+}
+if ($RecordSpan -gt 0) {
+    $LagArgs += @('--record-span', ([string]$RecordSpan))
 }
 try {
     $VerdictJson = (& dotnet $CliDll yaw-diff $SnapshotsPath `

@@ -72,8 +72,8 @@ public sealed record CliInvocation(
         option is "data-root" or "format" or "limit" or "offset" or "output"
             or "session" or "victim" or "mode" or "direction" or "int16"
             or "lag-tolerance" or "lag-lead-seconds" or "max-lag-seconds"
-            or "memory-lead-seconds" or "tolerance" or "fov" or "width"
-            or "height"
+            or "memory-lead-seconds" or "field" or "record-span" or "tolerance"
+            or "fov" or "width" or "height"
             or "color" or "from" or "until" or "png";
 
     private static bool TryAddOption(

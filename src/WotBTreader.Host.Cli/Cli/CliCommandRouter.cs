@@ -467,6 +467,39 @@ public sealed class CliCommandRouter
 
         bool perDumpLag = invocation.Options.ContainsKey("per-dump-lag");
 
+        // Which rotation component is ground truth: yaw (default), pitch, or
+        // roll — the decoded position_samples tail carries the full triple,
+        // so the SAME immutable ring-record dumps can be re-verdict per
+        // member (roll +0x28 / pitch +0x2C / yaw +0x30, the rotation-triple
+        // Phase-4 reconciliation, 2026-08-12).
+        HeadingField field = HeadingField.Yaw;
+        if (invocation.Options.TryGetValue("field", out string? fieldText) &&
+            !Enum.TryParse(fieldText, ignoreCase: true, out field))
+        {
+            return Invalid(
+                "cli.yaw-diff.field",
+                "--field must be 'yaw', 'pitch', or 'roll' (default: yaw).",
+                correlationId);
+        }
+
+        // Rotation-triple methodology lesson (2026-08-12): the ring holds
+        // consecutive position updates, so region +0x60 is the NEXT record's
+        // +0x28 (stride 0x38) — a byte-near-identical sibling that ties under
+        // the per-dump lag path. --record-span <bytes> trims every snapshot
+        // to the single-record span (0x38 = 56 for the ring) so out-of-record
+        // siblings are never candidates. 0 = full region (unchanged).
+        int recordSpanBytes = 0;
+        if (invocation.Options.TryGetValue("record-span", out string? spanText) &&
+            (!int.TryParse(spanText, out recordSpanBytes) ||
+             recordSpanBytes < 0 ||
+             recordSpanBytes % sizeof(float) != 0))
+        {
+            return Invalid(
+                "cli.yaw-diff.record-span",
+                "--record-span must be a non-negative multiple of 4 (bytes; 0 = full region).",
+                correlationId);
+        }
+
         OperationResult<IReadOnlyList<RecordSnapshot>> snapshotsResult =
             HpDiffSnapshotsFile.Load(invocation.Positionals[0]);
         if (!snapshotsResult.IsSuccess || snapshotsResult.Value is null)
@@ -474,8 +507,25 @@ public sealed class CliCommandRouter
             return FromResult(snapshotsResult, correlationId, "Snapshots loaded.");
         }
 
+        IReadOnlyList<RecordSnapshot> snapshots = snapshotsResult.Value;
+        if (recordSpanBytes > 0)
+        {
+            if (snapshots.Any(s => s.Bytes.Length < recordSpanBytes))
+            {
+                return Invalid(
+                    "cli.yaw-diff.record-span",
+                    $"--record-span {recordSpanBytes} exceeds the shortest snapshot region " +
+                    $"({snapshots.Min(s => s.Bytes.Length)} bytes).",
+                    correlationId);
+            }
+
+            snapshots = snapshots
+                .Select(s => s with { Bytes = s.Bytes.AsSpan(0, recordSpanBytes).ToArray() })
+                .ToList();
+        }
+
         OperationResult<YawGroundTruth> groundTruthResult = await _yawGroundTruth
-            .GetAsync(new BattleSessionId(sessionGuid), cancellationToken)
+            .GetAsync(new BattleSessionId(sessionGuid), field, cancellationToken)
             .ConfigureAwait(false);
         if (!groundTruthResult.IsSuccess || groundTruthResult.Value is null)
         {
@@ -483,12 +533,12 @@ public sealed class CliCommandRouter
         }
 
         IReadOnlyList<ByteChangeWindow> changeWindows =
-            RecordChangeBucketer.Bucket(snapshotsResult.Value);
+            RecordChangeBucketer.Bucket(snapshots);
         bool useLagPath = maxLagSeconds > 0 || maxMemoryLeadSeconds > 0 || perDumpLag;
         IReadOnlyList<HeadingCorrelationCandidate> candidates =
             useLagPath
                 ? HeadingCorrelator.CorrelateWithLag(
-                    snapshotsResult.Value,
+                    snapshots,
                     groundTruthResult.Value.Samples,
                     entityId,
                     tolerance,
@@ -535,11 +585,13 @@ public sealed class CliCommandRouter
             command = "yaw-diff",
             sessionId = sessionGuid,
             entityId,
+            field = field.ToString().ToLowerInvariant(),
             tolerance,
             maxLagSeconds,
             maxMemoryLeadSeconds,
             perDumpLag,
-            snapshots = snapshotsResult.Value.Count,
+            recordSpan = recordSpanBytes,
+            snapshots = snapshots.Count,
             changeWindows = changeWindows.Count,
             yawSamples = groundTruthResult.Value.Samples.Count,
             turnWindows = top?.TotalWindows ?? 0,

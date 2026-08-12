@@ -25,6 +25,7 @@ internal sealed class SqliteYawGroundTruthProvider : IYawGroundTruthProvider
 
     public async ValueTask<OperationResult<YawGroundTruth>> GetAsync(
         BattleSessionId sessionId,
+        HeadingField field,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -41,7 +42,7 @@ internal sealed class SqliteYawGroundTruthProvider : IYawGroundTruthProvider
             if (durationTicks <= 0)
             {
                 // Missing row OR a NULL/zero duration: the replay clock span is
-                // unknown, so the yaw timeline would be meaningless. Fail
+                // unknown, so the rotation timeline would be meaningless. Fail
                 // closed instead of returning a degenerate ground truth.
                 return OperationResult.Failure<YawGroundTruth>(
                     StorageErrors.NotFound("Battle session"));
@@ -50,6 +51,7 @@ internal sealed class SqliteYawGroundTruthProvider : IYawGroundTruthProvider
             List<YawSample> samples = await ReadYawSamplesAsync(
                 connection,
                 sessionId,
+                field,
                 cancellationToken).ConfigureAwait(false);
 
             return OperationResult.Success(new YawGroundTruth(
@@ -93,17 +95,26 @@ internal sealed class SqliteYawGroundTruthProvider : IYawGroundTruthProvider
     private static async ValueTask<List<YawSample>> ReadYawSamplesAsync(
         SqliteConnection connection,
         BattleSessionId sessionId,
+        HeadingField field,
         CancellationToken cancellationToken)
     {
+        // The column comes from a closed enum switch, never caller text.
+        string column = field switch
+        {
+            HeadingField.Pitch => "pitch",
+            HeadingField.Roll => "roll",
+            _ => "yaw",
+        };
+
         List<YawSample> samples = [];
         await using SqliteCommand command = connection.CreateCommand();
         command.CommandText =
-            """
-            SELECT replay_time_ticks, entity_id, yaw
+            $"""
+            SELECT replay_time_ticks, entity_id, {column}
             FROM position_samples
             WHERE battle_session_id = $sessionId
               AND entity_id IS NOT NULL
-              AND yaw IS NOT NULL
+              AND {column} IS NOT NULL
             ORDER BY replay_time_ticks, sequence;
             """;
         command.Parameters.AddWithValue(

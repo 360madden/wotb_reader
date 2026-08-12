@@ -1161,6 +1161,54 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task EntityRegion_AvatarStatsAnchor_ForwardsCandidateIndexAndCount()
+    {
+        // The avatar-stats anchor (L3 damage-dealt pre-stage, 2026-08-12)
+        // parses, forwards the candidate index, and echoes the candidate
+        // count back so the session driver can loop every candidate.
+        byte[] quad = new byte[16];
+        var scanner = new FakeGameMemoryScanner
+        {
+            EntityRegionResult = OperationResult.Success(
+                new EntityRecordRegionReadResult(
+                    DateTimeOffset.UnixEpoch.AddSeconds(1),
+                    "11.19.0.10",
+                    Type10EntityPositionStatus.Resolved,
+                    4242,
+                    ReplayTimeSeconds: 1.5,
+                    RegionBytes: quad,
+                    FailureStage: null,
+                    Attempts: 1,
+                    NodesVisited: 0,
+                    ModuleRooted: true,
+                    EntityIdentityRevalidated: false,
+                    ConsistentDoubleRead: false,
+                    SameDecodedClockProven: false,
+                    AvatarCandidateCount: 4)),
+        };
+
+        IResult result = await GameApiEndpoints.ReadEntityRegionAsync(
+            scanner,
+            new WotBTreader.ApiContracts.EntityRecordRegionReadRequest
+            {
+                EntityId = 4242,
+                RegionLength = 16,
+                RegionAnchor = "avatar-stats",
+                AvatarCandidateIndex = 2,
+            },
+            TestContext.CancellationToken);
+
+        EntityRecordRegionReadResponse response = Value<EntityRecordRegionReadResponse>(result);
+        Assert.AreEqual("Resolved", response.Status);
+        Assert.AreEqual(
+            EntityRecordRegionAnchor.AvatarStats,
+            scanner.LastEntityRegionRequest?.RegionAnchor);
+        Assert.AreEqual(2, scanner.LastEntityRegionRequest?.AvatarCandidateIndex);
+        Assert.AreEqual(4, response.AvatarCandidateCount);
+        Assert.AreEqual(Convert.ToBase64String(quad), response.RegionBase64);
+    }
+
+    [TestMethod]
     public async Task CameraPose_ResolvedReturnsPoseWithIdentityFlags()
     {
         var scanner = new FakeGameMemoryScanner

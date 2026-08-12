@@ -1,16 +1,15 @@
-# G1 — Player-HP publication draft (READY, pre-staged 2026-08-11)
+# G1 — Player-HP publication (APPLIED 2026-08-12, OD-RECOVERY-092)
 
-> **STATUS: READY — NOT APPLIED.** Publishing `playerHP` as `Verified`
-> via the module-rooted entity-base chain was gated on **OD-RECOVERY-091**
-> (the Phase-4 two-replay rule: the live-found offset must agree on a second
-> content-distinct replay — Dead Rail). **091 CLOSED HIT 2026-08-11**
+> **STATUS: APPLIED 2026-08-12 (operator-approved, OD-RECOVERY-092).**
+> `playerHP` is published `Verified` via the module-rooted entity-base chain
+> (9 hops: position hops 1..8 through the entity lookup + `recordOffset 184`
+> = signed int16 current health at `[entity+0xB8]`); `offsets.playerHP`
+> stays 0 by design. Gates were: **OD-RECOVERY-091** CLOSED HIT 2026-08-11
 > (`+0xB8` on Dead Rail, score 1.0, flatness 1.0, Strict 4/4 exact sums —
-> `twoReplayRepeatability = true`; see the filled evidence template and
-> ledger section). The remaining gate is the **operator's approval**.
-> Until then the table stays frozen: `offsets` are untouched, `chains` has
-> no `playerHP`, and `fieldValidation.playerHP` remains `Unknown`. This file
-> is the operator-facing spec + checklist; applying it follows the G0
-> procedure (`docs/operations/g0-operator-checklist.md`).
+> `twoReplayRepeatability = true`) + operator approval. This file was the
+> operator-facing spec + checklist; the apply followed the G0 procedure
+> (`docs/operations/g0-operator-checklist.md`). Section 3 below documents
+> exactly what was done.
 
 ## 1. What gets published
 
