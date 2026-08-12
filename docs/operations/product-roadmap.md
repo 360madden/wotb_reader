@@ -14,8 +14,9 @@ Unify two ambitions into one dependency-ordered plan:
    lowering the cost of the next.
 2. **Deliver an overlay** that renders nameplates, HP bars, beacons, and
    points of interest **on top of the replay window first** (data-driven,
-   offline-only), with a **live-game overlay later** behind the same
-   contract (policy-gated; see Phase 5).
+   replay-first), with a **live-game overlay later** behind the same
+   contract (approved 2026-08-11 as X1 Option A: read-only live overlay;
+   policy-gated — see Phase 5).
 
 The plan is written to be **agentic-friendly**: parallel workstreams own
 disjoint files, share small seams, and compound discoveries. Several agents

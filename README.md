@@ -2,7 +2,7 @@
 
 # WotB Treader
 
-**A Windows-first, offline-only replay telemetry reader for World of Tanks Blitz**
+**A Windows-first, replay-first telemetry reader for World of Tanks Blitz**
 
 Decodes `.wotbreplay` evidence into immutable, versioned telemetry projections and
 presents them through a loopback Blazor dashboard and a transparent WPF HUD.
@@ -25,10 +25,13 @@ presents them through a loopback Blazor dashboard and a transparent WPF HUD.
 
 ## 📖 Overview
 
-WotB Treader reads replay files that the game has already written to disk. It never
-touches a live match. Replay bytes are decoded into a content-addressed store, unknown
-records are preserved rather than discarded, and every reprocess produces a **new
-immutable decode run** instead of mutating an old one.
+WotB Treader reads replay files that the game has already written to disk —
+replay-first by design: every field is proven on replays before any live read. A
+read-only live overlay of the same replay-proven fields (zero writes, injection, or
+automation) is the approved end goal (X1 policy memo, 2026-08-11). Replay bytes are
+decoded into a content-addressed store, unknown records are preserved rather than
+discarded, and every reprocess produces a **new immutable decode run** instead of
+mutating an old one.
 
 The result is served locally: an ASP.NET Core Blazor dashboard bound to loopback, and a
 transparent, borderless, topmost HUD that overlays the game while it plays back a
@@ -258,6 +261,12 @@ restrictive and **fails closed by default**.
 | 📌 | **Immutable evidence.** Source artifacts and decode runs are append-only; reprocessing creates a new run |
 | 🛡️ | **Loopback ≠ authorization.** Unsafe local operations require an explicit owner-only capability, not merely a loopback source address |
 | 🧊 | **The game install is read-only.** WotB files and game-derived assets are never modified or redistributed |
+
+A **read-only live overlay** is the approved long-term track (X1 policy memo): the
+same replay-proven fields rendered over the user's own live matches, with zero writes,
+injection, input, or automation. The fail-closed rules above are unchanged — the
+code-enforced `OfflineReplayVerified` gate on every scanner/observation path stays in
+force until a subsequent operator-approved change.
 
 Rationale and decision records: [ADR 0002 — Evidence and offline safety](docs/decisions/0002-evidence-and-offline-safety.md).
 

@@ -39,3 +39,16 @@ constraint list.
 The code-enforced offline gate and the fail-closed memory-access rules below
 are unchanged: scanner and observation paths still require a positively
 verified offline replay and exact executable identity before any memory read.
+
+## Amendment (2026-08-12) — live online play is in scope
+
+The X1 policy memo (`docs/operations/x1-live-game-policy-memo.md`, 2026-08-11)
+approved **Option A: a read-only live overlay** over the user's own live
+matches, using only fields first proven on replays, with zero writes,
+injection, input, or automation. Online play is therefore **in scope** for
+read-only observation; it is no longer excluded by policy. This amendment
+records that the scope restriction is lifted and keeps this ADR consistent
+with the approved live track. The code-enforced `OfflineReplayVerified` gate
+on scanner and observation paths is **unchanged** until a subsequent
+operator-approved change (per the memo). Match automation and input injection
+remain out of scope.

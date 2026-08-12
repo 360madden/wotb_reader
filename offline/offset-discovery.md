@@ -72,7 +72,10 @@ serve (web host on 127.0.0.1:9182, loopback)
   identity metadata only, never caller labels, expected bytes, memory addresses,
   decoded values, or observed process-memory bytes.
 - **Safety gate:** every discover command requires an `OfflineReplayVerified`
-  session (`GET /api/v1/game/state`); never scan an online match.
+  session (`GET /api/v1/game/state`); never scan an online match. This is the
+  code-enforced gate, unchanged per X1 (2026-08-11); the approved live track is
+  the separate Phase-5 read-only live overlay (see
+  `docs/operations/x1-live-game-policy-memo.md`).
 
 ## GameHarness CLI (tools/src/WotBTreader.GameHarness)
 
@@ -404,8 +407,10 @@ by `scripts/invoke-hp-diffing-session.ps1` / `invoke-facing-session.ps1`):
 
 ## Hard rules
 
-- **Offline only.** Gate must be `OfflineReplayVerified`; never during an
-  online match.
+- **Gate.** Discovery reads require `OfflineReplayVerified`; never during an
+  online match. This is the code-enforced gate (unchanged per X1
+  2026-08-11), not a scope restriction — the approved live track is the
+  Phase-5 read-only live overlay of replay-proven fields.
 - Cheat Engine 7.7 is an approved local diagnostic tool for offline replay
   sessions only.
 - Never commit scan files, memory dumps, pointer maps, or game-derived data.

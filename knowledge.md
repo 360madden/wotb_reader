@@ -1,6 +1,6 @@
 # Project knowledge
 
-WotB Treader is a **Windows-first offline replay telemetry reader** for World of Tanks Blitz. It parses replay evidence, stores versioned telemetry projections, and presents a local Blazor dashboard + WPF overlay with SignalR push-based updates.
+WotB Treader is a **Windows-first, replay-first telemetry reader** for World of Tanks Blitz. It parses replay evidence, stores versioned telemetry projections, and presents a local Blazor dashboard + WPF overlay with SignalR push-based updates. A **read-only live overlay** over the user's own matches is the approved end goal (X1 Option A, 2026-08-11) — online play is in scope for read-only observation of replay-proven fields; the code-enforced `OfflineReplayVerified` gate stays until a subsequent operator-approved change.
 
 The project owner identifies as a junior developer at Wargaming.net. This is
 user-provided background for a personal, independently maintained project;
