@@ -299,6 +299,7 @@ docs/operations/live-frame-loop-design.md
 docs/operations/live-match-gate-design.md
 docs/operations/live-roster-name-join-design.md
 docs/operations/live-roster-read-design.md
+docs/operations/next-10-actions.md
 docs/operations/od-recovery-086-evidence-template.md
 docs/operations/od-recovery-087-evidence-template.md
 docs/operations/od-recovery-088-evidence-template.md

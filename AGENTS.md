@@ -381,6 +381,11 @@ single-read surface stays honest-false, owner review required)**.
    blockers append to `docs/operations/blocker-log.md` (immutable UTC).
 3. Report: what changed, what was verified, what remains. Leave the tree clean
    of stray files.
+4. Refresh `docs/operations/next-10-actions.md`: check off completed items,
+   re-anchor against `docs/operations/product-roadmap.md` (newly completed
+   roadmap rows may open actions), cluster live items per approved launch,
+   and surface the offline-eligible subset when a session is launch-gated.
+   Close the turn by referencing that list (top 10, sorted, sequenced).
 
 ## Project owner context
 
