@@ -1,6 +1,17 @@
-# G2 — Damage-dealt publication (DRAFT 2026-08-12 — awaiting operator approval)
+# G2 — Damage-dealt publication (APPLIED 2026-08-12, OD-RECOVERY-097)
 
-> **STATUS: DRAFT (2026-08-12), operator approval required — NOT applied.**
+> **STATUS: APPLIED (2026-08-12, OD-RECOVERY-097, operator-approved).** The
+> schema decision (`vftableScan` hop kind + `damageDealt` field) was
+> approved and §4 steps 1–5 were executed (this document's corrected step 2
+> included). The real gates also surfaced two extensions the draft did not
+> enumerate: `tools/report-offset-evidence.ps1` (knownFields + optional set
+> + the G1-era GameHarness-kind acceptance — pre-existing drift, also fixed
+> playerHP's missing StaticAnalysis evidence) and
+> `OffsetTableReader.KnownFieldNames` (pre-staged pitch/roll too). All §5
+> post-edit gates green (`offset_check --check-schema` 6 chains + fidelity
+> 6/6, report exit 0, ChainedFields exclusion test, `validate.ps1` exit 0).
+> **Not applied here:** consumption (live-frame `DamageDealt` read surface) —
+> separate workstream.
 > **APPLY REHEARSED (2026-08-12):** the full §4 apply (steps 1–5, corrected
 > step 2 below) was run end-to-end on SCRATCH copies with a scratch validator
 > and PASSES — `11.19.0.10.json: chains validated (6 field(s))`, walkable

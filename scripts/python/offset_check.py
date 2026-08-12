@@ -60,6 +60,7 @@ FIELD_DEFS = [
     ("playerRoll", "float", "Player roll in radians (ring-record +0x28, rotation triple)"),
     ("cameraPitch", "float", "Camera pitch in radians"),
     ("aliveTankCount", "int32", "Number of tanks alive"),
+    ("damageDealt", "uint32", "Cumulative own damage dealt (avatar-stats quad dword0)"),
 ]
 
 FIELD_NAMES = {name for name, _type, _desc in FIELD_DEFS}
@@ -70,7 +71,7 @@ FIELD_NAMES = {name for name, _type, _desc in FIELD_DEFS}
 # They exist in schema.json's offsets.properties, chains, and
 # fieldValidation enums so the draft chains validate, but the tables only
 # gain them (and the required list grows) at the operator-approved apply.
-OPTIONAL_FIELDS = {"playerPitch", "playerRoll"}
+OPTIONAL_FIELDS = {"playerPitch", "playerRoll", "damageDealt"}
 
 # The only chain hop kinds the schema, the pack doc, the validator, and
 # OffsetChainHopKind (Core/OffsetModels.cs) agree on. Must match
@@ -86,7 +87,7 @@ OPTIONAL_FIELDS = {"playerPitch", "playerRoll"}
 #   recordOffset  final: add value without dereferencing
 CHAIN_KINDS = {
     "rootRva", "memberOffset", "inlineOffset", "recordOffset",
-    "ringIndex", "entityLookup",
+    "ringIndex", "entityLookup", "vftableScan",
 }
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -276,6 +277,28 @@ def walkable_fidelity_issues(field: str, pub: list, dr: list) -> list[str]:
     def value(h):
         return h.get("value")
 
+    if field == "damageDealt":
+        # Avatar-stats scan chain (G2, 2026-08-12): the vftableScan anchor is
+        # the gated AOB scan for the entity-factory Avatar (moduleBase + RVA
+        # 0x032752a4), recordOffset 280 = the uint32 quad base dword0.
+        # Published must be IDENTICAL to the canonical draft (signature per
+        # hop) - OD-RECOVERY-095/096 live-verified.
+        expected_kinds = ["vftableScan", "recordOffset"]
+        actual_kinds = [h.get("kind") for h in dr]
+        if actual_kinds != expected_kinds:
+            issues.append(f"{tag}: unexpected avatar-stats chain shape "
+                          f"{actual_kinds} (expected {expected_kinds})")
+            return issues
+        pub_kinds = [h.get("kind") for h in pub]
+        if pub_kinds != expected_kinds:
+            issues.append(f"{tag}: published chain has unrecognized shape "
+                          f"({len(pub)} hops, kinds {pub_kinds})")
+            return issues
+        if [_hop_signature(h) for h in pub] != [_hop_signature(h) for h in dr]:
+            issues.append(f"{tag}: published avatar-stats chain differs from the "
+                          f"canonical draft (signature per hop)")
+        return issues
+
     if field == "playerHP":
         # Entity-base chain (HP, G1 pre-stage 2026-08-11): the module-rooted
         # walk through the entity lookup ONLY — the health field lives on the
@@ -405,7 +428,8 @@ def check_walkable_fidelity(log_path: Path) -> list[str]:
     # skipped (each fidelity check goes active the moment the published
     # table gains its chain).
     for field in ("playerPositionX", "playerPositionY", "playerPositionZ",
-                  "playerYaw", "playerPitch", "playerRoll", "playerHP"):
+                  "playerYaw", "playerPitch", "playerRoll", "playerHP",
+                  "damageDealt"):
         pub = pub_chains.get(field)
         dr = draft_chains.get(field)
         if pub is None or dr is None:
@@ -773,7 +797,7 @@ def validate_offset_file(log_path: Path, path: Path, schema: dict) -> list[str]:
                         "memberOffset", "inlineOffset", "ringIndex", "entityLookup",
                     )
                     for h in hops[1:-1])
-                if first != "rootRva" or last != "recordOffset" or not middle_ok:
+                if first not in ("rootRva", "vftableScan") or last != "recordOffset" or not middle_ok:
                     issues.append(
                         f"{rel}: chains['{field_name}'] hop shape must be "
                         f"rootRva -> memberOffset|inlineOffset|ringIndex|entityLookup* "

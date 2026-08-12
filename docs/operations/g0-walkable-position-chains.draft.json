@@ -551,6 +551,18 @@
     "value": 40,
     "note": "float32 hull roll at ring-record +0x28 (2026-08-12 rotation-triple reconciliation, Phase-4 two-replay: Oasis 48/48 + Dead Rail 56/56, score 1.0, flatness 1.0)"
    }
+  ],
+  "damageDealt": [
+   {
+    "kind": "vftableScan",
+    "value": 52908708,
+    "note": "gated AOB scan for the entity-factory Avatar vftable dword == moduleBase + 0x032752a4 (0x128-byte object); identity re-gated; max 4 candidates, alignment 4; own counter discriminated by increment correlation (OD-RECOVERY-095/096)"
+   },
+   {
+    "kind": "recordOffset",
+    "value": 280,
+    "note": "uint32 battle-stats quad base [avatar+0x118]; dword0 = cumulative own damageDealt; quad = [damageDealt, damageBlocked, damageAssisted1, damageAssisted2] (indices 0xA-0xD); OD-RECOVERY-095/096 live-verified (finals 752 / 1598 = decoded damageDealt)"
+   }
   ]
  }
 }

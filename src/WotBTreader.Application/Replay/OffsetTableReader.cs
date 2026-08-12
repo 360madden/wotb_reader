@@ -38,8 +38,11 @@ internal sealed class OffsetTableReader : IOffsetTableReader
         "playerPositionY",
         "playerPositionZ",
         "playerYaw",
+        "playerPitch",
+        "playerRoll",
         "cameraPitch",
         "aliveTankCount",
+        "damageDealt",
     };
 
     private static readonly JsonSerializerOptions SerializerOptions = new()

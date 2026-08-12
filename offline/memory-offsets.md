@@ -36,7 +36,7 @@ Canonical detail: [`memory-offsets/README.md`](../memory-offsets/README.md)
   "offsets": { "replayTime": 0, "playerHP": 0, "playerPositionX": 0,
                "playerPositionY": 0, "playerPositionZ": 0, "playerYaw": 0,
                "playerPitch": 0, "playerRoll": 0,
-               "cameraPitch": 0, "aliveTankCount": 0 },
+               "cameraPitch": 0, "aliveTankCount": 0, "damageDealt": 0 },
   "confidence": "none",
   "notes": ""
 }
@@ -118,7 +118,7 @@ Full trace: `docs/operations/legacy-observation-surface.md`.
 
 Since OD-RECOVERY-083 (2026-08-10), version files may carry a top-level
 `chains` object mapping a field name to an ordered array of hops, each
-`{ "kind": "rootRva" | "memberOffset" | "inlineOffset" | "recordOffset" | "ringIndex" | "entityLookup", "value": <non-negative int>, "note": <text> }`.
+`{ "kind": "rootRva" | "memberOffset" | "inlineOffset" | "recordOffset" | "ringIndex" | "entityLookup" | "vftableScan", "value": <non-negative int>, "note": <text> }`.
 Semantics (2026-08-10 walker rework, clean object model): `rootRva`
 dereferences the root slot (`moduleBase + value`); `memberOffset` dereferences
 a pointer at (object + value); `inlineOffset` adds value WITHOUT dereferencing
@@ -191,6 +191,30 @@ Two more fields joined the walkable `chains` family under G1
 Both keep `offsets` 0 by design (battle-scoped heap, same rationale as the
 position family); the canonical walkable forms are the SAME hops as the
 published table (fidelity-enforced by `offset_check.py`).
+
+### Damage-dealt chain (G2, 2026-08-12)
+
+- **`damageDealt`** — `Verified` via a NEW **scan-based** anchor:
+  `vftableScan` (FIRST hop; semantics: scan the module's Private+Mapped
+  regions for an object whose vftable dword == `moduleBase + value`, value =
+  the vftable RVA `0x032752a4` = 52908708 of the entity-factory Avatar,
+  0x128-byte object; the identity re-gate is implicit — the chosen
+  candidate's vftable dword must equal the target; scan bounds max 4
+  candidates / alignment 4 ride the hop note) with final hop
+  `recordOffset 280` = uint32 battle-stats quad base `[avatar+0x118]`,
+  **dword0 = cumulative own `damageDealt`** (OD-RECOVERY-095 Oasis 5/5
+  exact sums via the bounded lag path + OD-RECOVERY-096 Dead Rail 9/9 —
+  `twoReplayRepeatability = true`, finals 752 / 1598 = decoded
+  `damageDealt`). Quad layout: `[damageDealt, damageBlocked,
+  damageAssisted1, damageAssisted2]` (property indices 0xA-0xD via the
+  property-change dispatcher `FUN_01670de0`); the three sibling dwords stay
+  honest-unknown (measured, not Phase-4-closed for their consumers).
+  `offsets.damageDealt` stays 0 (the Avatar object is battle-scoped heap).
+  Reachability note: the camera chain's `avatarAddress` anchors
+  `AvatarControllerReplay` (a DIFFERENT object) — the scan targets the
+  entity-factory Avatar, never the camera anchor. Consumption (a read
+  surface for the live frame's own row) is a separate workstream, untouched
+  by this publication.
 
 ## Validation tooling
 

@@ -69,18 +69,22 @@
         "aliveTankCount": {
           "type": "integer",
           "description": "Base-relative offset for alive tank count (int32). 0 = unknown."
+        },
+        "damageDealt": {
+          "type": "integer",
+          "description": "Chained field: see `chains`. The integer stays 0 (the runtime computes moduleBase + offset and the Avatar object is battle-scoped heap). uint32 cumulative own damage dealt at the avatar-stats quad dword0 [avatar+0x118]."
         }
       },
       "additionalProperties": false
     },
     "chains": {
       "type": "object",
-      "description": "Module-relative pointer chain for chained fields (position family). offsets.<field> stays 0 for chained fields by design: the runtime observation path computes moduleBase + offset, which cannot represent a chain, and the ring record itself is battle-scoped heap. The resolver reads chained fields via its own hash-bound layout. Hops: rootRva first, recordOffset last, memberOffset/inlineOffset/ringIndex/entityLookup in between. memberOffset dereferences a pointer at (object + value); inlineOffset adds value WITHOUT dereferencing (an inline member, e.g. the entities map); ringIndex selects an INLINE ring entry at (object + value + index*stride) using the Int32 index field at (object + indexOffset) — no ring pointer dereference; entityLookup resolves an entity-map lookup (cached fast path + alternative tree roots) with its descriptor on the hop, the target entity id supplied per walk. The 11.19.0.10 position chains are mechanically walkable since OD-RECOVERY-084 (2026-08-10): inlineOffset (entities map, no deref) + entityLookup (cache fast path + alternative tree roots, node layout in the descriptor, target id per walk) + INLINE ringIndex, proven equivalent to the resolver by Walk_PublishedTableChains_*. The pre-publication memberOffset-spelled form remains in git history (commit 0e6bdba) and the ledger.",
+      "description": "Module-relative pointer chain for chained fields (position family). offsets.<field> stays 0 for chained fields by design: the runtime observation path computes moduleBase + offset, which cannot represent a chain, and the ring record itself is battle-scoped heap. The resolver reads chained fields via its own hash-bound layout. Hops: rootRva first, recordOffset last, memberOffset/inlineOffset/ringIndex/entityLookup in between. memberOffset dereferences a pointer at (object + value); inlineOffset adds value WITHOUT dereferencing (an inline member, e.g. the entities map); ringIndex selects an INLINE ring entry at (object + value + index*stride) using the Int32 index field at (object + indexOffset) — no ring pointer dereference; entityLookup resolves an entity-map lookup (cached fast path + alternative tree roots) with its descriptor on the hop, the target entity id supplied per walk. The 11.19.0.10 position chains are mechanically walkable since OD-RECOVERY-084 (2026-08-10): inlineOffset (entities map, no deref) + entityLookup (cache fast path + alternative tree roots, node layout in the descriptor, target id per walk) + INLINE ringIndex, proven equivalent to the resolver by Walk_PublishedTableChains_*. The pre-publication memberOffset-spelled form remains in git history (commit 0e6bdba) and the ledger. vftableScan (2026-08-12, G2): FIRST hop alternative to rootRva - scan the module's Private+Mapped regions for an object whose vftable dword == moduleBase + value (value = the vftable RVA); the identity re-gate is implicit (the chosen candidate's vftable dword must equal the target); scan bounds (max 4 candidates, alignment 4) ride the hop note. damageDealt is the avatar-stats quad dword0 ([avatar+0x118], uint32, OD-RECOVERY-095/096 live-verified).",
       "propertyNames": {
         "enum": [
           "replayTime", "playerHP", "playerPositionX", "playerPositionY",
           "playerPositionZ", "playerYaw", "playerPitch", "playerRoll",
-          "cameraPitch", "aliveTankCount"
+          "cameraPitch", "aliveTankCount", "damageDealt"
         ]
       },
       "additionalProperties": {
@@ -92,7 +96,7 @@
           "properties": {
             "kind": {
               "type": "string",
-              "enum": ["rootRva", "memberOffset", "inlineOffset", "recordOffset", "ringIndex", "entityLookup"]
+              "enum": ["rootRva", "memberOffset", "inlineOffset", "recordOffset", "ringIndex", "entityLookup", "vftableScan"]
             },
             "value": {
               "type": "integer",
@@ -190,7 +194,7 @@
         "enum": [
           "replayTime", "playerHP", "playerPositionX", "playerPositionY",
           "playerPositionZ", "playerYaw", "playerPitch", "playerRoll",
-          "cameraPitch", "aliveTankCount"
+          "cameraPitch", "aliveTankCount", "damageDealt"
         ]
       },
       "additionalProperties": {

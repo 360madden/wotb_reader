@@ -209,13 +209,34 @@ gitignored; reproducible from the corrected specs in the drafts):
 Both packages are now rehearsal-proven: operator approval = low-risk
 mechanical execution.
 
-- **Tree state at handoff end:** 22 files uncommitted, nothing pushed — the
-  completion detection stack (parser/coordinator/driver/launcher/clicker/
-  chain), OD-095/096 + both rehearsal-proven publication drafts + handoff
-  records, Branch A quad tooling, checklist updates, ASCII hygiene. Fresh
-  full `validate.ps1` exit 0 at the last edit; the only delta since is the
-  pitch/roll draft doc (not gate-scanned). Commit as one conventional
-  handoff (Codex Agent author) per the repo convention.
+### 5. G2 publication APPLIED (2026-08-12, OD-RECOVERY-097)
+
+The operator-approved G2 apply landed (schema + checker + walkable draft +
+table + pack doc + ledger row). The REAL gates surfaced three extensions
+the draft did not enumerate — caught and fixed during the apply:
+- `tools/report-offset-evidence.ps1`: `$knownFields` + a new `$optionalFields`
+  set (mirroring the schema's OPTIONAL_FIELDS) + the GameHarness-kind
+  acceptance in BOTH the structure check and `Get-FieldStatus` (pre-existing
+  G1 drift: yaw/HP record `DynamicScan` with a GameHarness sourceTool, the
+  tool required the `GameHarness` kind — it had been failing since
+  e79a6bc); also `playerHP` gained its missing StaticAnalysis evidence
+  (the item-7 Branch A census — exists, was never recorded).
+- `src/WotBTreader.Application/Replay/OffsetTableReader.cs`: `KnownFieldNames`
+  gained damageDealt (+ playerPitch/playerRoll pre-staged) — the C# reader
+  rejects unknown fieldValidation keys (`Walk_PublishedTableChains_*` were
+  failing).
+- Post-apply: `offset_check --check-schema` chains-validated 6 fields +
+  fidelity 6/6; `report-offset-evidence.ps1` verified=6 exit 0;
+  ChainedFields exclusion test; `validate.ps1` exit 0.
+
+Six fields are now `Verified` via chains. `damageDealt` is published with
+`offsets 0`; the read surface stays untouched (own frame row honest-0 until
+the consumption workstream).
+
+- **Tree state at handoff end:** the G2 apply + OD-097 record are committed
+  as `feat(od): publish damageDealt via vftableScan chain (OD-097)`; the
+  pitch/roll apply (OD-RECOVERY-098, table-only) and the consumption
+  workstream remain open.
 - **G2 apply** — operator decision on the `vftableScan` hop kind, then the
   draft's apply steps (§4) + post-edit gates.
 - **Damage-dealt consumption** — resolver/read surface for the live frame's

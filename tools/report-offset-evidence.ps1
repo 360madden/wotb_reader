@@ -37,8 +37,15 @@ if (-not $OffsetDir) { $OffsetDir = Join-Path $RepoRoot 'memory-offsets' }
 
 $knownFields = @(
     'replayTime', 'playerHP', 'playerPositionX', 'playerPositionY',
-    'playerPositionZ', 'playerYaw', 'cameraPitch', 'aliveTankCount'
+    'playerPositionZ', 'playerYaw', 'playerPitch', 'playerRoll',
+    'cameraPitch', 'aliveTankCount', 'damageDealt'
 )
+
+# Pre-staged OPTIONAL chained fields (mirror the schema's OPTIONAL_FIELDS and
+# offset_check.py): they exist in the schema + the walkable draft but only
+# enter the version tables at their operator-approved apply, so they must
+# NOT be required here.
+$optionalFields = @('playerPitch', 'playerRoll', 'damageDealt')
 
 function Get-FieldStatus {
     param(
@@ -71,7 +78,14 @@ function Get-FieldStatus {
 
     $evidence = @($ValidationObject.evidence)
     $hasStatic = @($evidence | Where-Object { $_.provenanceKind -eq 'StaticAnalysis' }).Count -gt 0
-    $hasHarness = @($evidence | Where-Object { $_.provenanceKind -eq 'GameHarness' }).Count -gt 0
+    # Live/harness evidence: accept the G0-era 'GameHarness' kind OR the
+    # G1/G2-era 'DynamicScan' with a GameHarness sourceTool (the harness
+    # session convention).
+    $hasHarness = @($evidence | Where-Object {
+        $_.provenanceKind -eq 'GameHarness' -or
+        ($_.provenanceKind -eq 'DynamicScan' -and
+         [string]$_.sourceTool -match 'GameHarness')
+    }).Count -gt 0
     $complete = [int]$ValidationObject.independentProcessLaunches -ge 2 -and
         [int]$ValidationObject.independentReplays -ge 2 -and
         [bool]$ValidationObject.harnessInvariantsPassed -and
@@ -94,7 +108,10 @@ function Assert-ReportShape {
     foreach ($field in $knownFields) {
         $offsetProperty = $Data.offsets.PSObject.Properties[$field]
         if ($null -eq $offsetProperty) {
-            throw "missing required offset '$field'"
+            if ($field -notin $optionalFields) {
+                throw "missing required offset '$field'"
+            }
+            continue
         }
         $status = Get-FieldStatus $offsetProperty.Value $null
         if ($status -eq 'Invalid') {
@@ -140,7 +157,15 @@ function Assert-ReportShape {
                 }
             }
             $hasStatic = @($evidenceProperty.Value | Where-Object { $_.provenanceKind -eq 'StaticAnalysis' }).Count -gt 0
-            $hasHarness = @($evidenceProperty.Value | Where-Object { $_.provenanceKind -eq 'GameHarness' }).Count -gt 0
+            # Live/harness evidence: the G0-era kind was 'GameHarness'; the
+            # G1/G2 harness sessions record 'DynamicScan' with a GameHarness
+            # sourceTool (OD-RECOVERY-087/088/089/091/095/096). Accept both so
+            # the gate matches the evidence convention actually in the table.
+            $hasHarness = @($evidenceProperty.Value | Where-Object {
+                $_.provenanceKind -eq 'GameHarness' -or
+                ($_.provenanceKind -eq 'DynamicScan' -and
+                 [string]$_.sourceTool -match 'GameHarness')
+            }).Count -gt 0
             if ([int64]$entry.independentProcessLaunches -lt 2 -or
                 [int64]$entry.independentReplays -lt 2 -or
                 -not [bool]$entry.harnessInvariantsPassed -or
