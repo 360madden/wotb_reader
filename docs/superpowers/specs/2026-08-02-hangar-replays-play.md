@@ -14,7 +14,13 @@ Get an offline replay running by navigating the logged-in hangar UI.
 
 ## Why not argv launch
 
-Managed `wotblitz.exe "replay"` forces `LoginOnReplayDialog` → sync-dim → Error 126 under slow clicks. Hangar path uses the world where orange **Battle** is visible.
+Managed `wotblitz.exe "replay"` forces `LoginOnReplayDialog`; a click-timing
+miss then wastes the session. **Error 126 is NOT click timing — it is a
+replay client-version mismatch** (the game refuses a replay whose
+major.minor version family differs from the installed game; root-caused
+2026-08-12: an 11.18.0 replay against an 11.19.0.10 game). The launcher now
+probes the replay version pre-flight and refuses mismatches before the
+launch dance. Hangar path uses the world where orange **Battle** is visible.
 
 ## Flow
 

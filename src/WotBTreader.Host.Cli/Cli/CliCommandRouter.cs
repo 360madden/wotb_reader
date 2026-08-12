@@ -1,9 +1,12 @@
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using WotBTreader.Application.Capture;
 using WotBTreader.Application.Diagnostics;
+using WotBTreader.Application.Game;
 using WotBTreader.Application.Replay;
+using WotBTreader.GameIntegration.Discovery;
 using WotBTreader.Application.Results;
 using WotBTreader.Application.Storage;
 using WotBTreader.Core;
@@ -32,6 +35,7 @@ public sealed class CliCommandRouter
     private static readonly string[] CommandNames =
     [
         "doctor",
+        "probe",
         "import",
         "inspect",
         "reprocess",
@@ -57,11 +61,15 @@ public sealed class CliCommandRouter
     private readonly IYawGroundTruthProvider _yawGroundTruth;
     private readonly IOverlayFrameSource _overlayFrames;
     private readonly IBeaconStore _beacons;
+    private readonly IReplayProbe _probe;
+    private readonly IGameInstallationDiscovery _gameDiscovery;
     private readonly ILogger<CliCommandRouter> _logger;
 
     /// <summary>Creates a command router with all application ports resolved by DI.</summary>
     public CliCommandRouter(
         IDoctorService doctor,
+        IReplayProbe probe,
+        IGameInstallationDiscovery gameDiscovery,
         IReplayIngestionService ingestion,
         IDecodeRunRepository decodeRuns,
         ISessionQueryRepository sessions,
@@ -74,6 +82,8 @@ public sealed class CliCommandRouter
         ILogger<CliCommandRouter> logger)
     {
         _doctor = doctor;
+        _probe = probe;
+        _gameDiscovery = gameDiscovery;
         _ingestion = ingestion;
         _decodeRuns = decodeRuns;
         _sessions = sessions;
@@ -101,6 +111,7 @@ public sealed class CliCommandRouter
         return invocation.Command switch
         {
             "doctor" => await DoctorAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
+            "probe" => await ProbeAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "import" => await ImportAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "inspect" => await InspectAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "reprocess" => await ReprocessAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
@@ -1154,6 +1165,118 @@ public sealed class CliCommandRouter
     }
 
     /// <summary>
+    /// Read-only pre-flight probe of one <c>.wotbreplay</c> file: reports the
+    /// replay's game version without importing, decoding, or touching storage.
+    /// The launcher uses this to refuse a replay whose client version family
+    /// does not match the installed game before the managed-launch dance
+    /// (game-side refusal: "Replay Error code: 126" = client-version mismatch,
+    /// 2026-08-12 root cause; NOT slow clicks).
+    /// </summary>
+    private async ValueTask<CliExecution> ProbeAsync(
+        CliInvocation invocation,
+        Guid correlationId,
+        CancellationToken cancellationToken)
+    {
+        if (invocation.Positionals.Count != 1)
+        {
+            return Invalid("cli.probe.path_required", "probe requires exactly one replay path.", correlationId);
+        }
+
+        string candidatePath = invocation.Positionals[0];
+        if (!string.Equals(Path.GetExtension(candidatePath), ".wotbreplay", StringComparison.OrdinalIgnoreCase))
+        {
+            return Invalid(
+                "cli.probe.extension",
+                "probe accepts a .wotbreplay file.",
+                correlationId,
+                CliExitCode.InvalidInput);
+        }
+
+        try
+        {
+            byte[] bytes = await File.ReadAllBytesAsync(candidatePath, cancellationToken).ConfigureAwait(false);
+            if (bytes.Length == 0)
+            {
+                return Invalid("cli.probe.empty", "The replay file is empty.", correlationId, CliExitCode.InvalidInput);
+            }
+
+            SourceArtifact artifact = new(
+                SourceArtifactId.New(),
+                new ContentHash(Convert.ToHexString(SHA256.HashData(bytes))),
+                bytes.Length,
+                "application/vnd.wotblitz.replay",
+                ".wotbreplay",
+                DateTimeOffset.UtcNow,
+                SchemaVersion: "1");
+            ReplayInput input = new(
+                artifact,
+                _ => ValueTask.FromResult<Stream>(new MemoryStream(bytes)));
+
+            OperationResult<ReplayProbeResult> result = await _probe
+                .ProbeAsync(input, DecoderLimits.Default, cancellationToken)
+                .ConfigureAwait(false);
+            if (!result.IsSuccess || result.Value is null)
+            {
+                return FromResult(result, correlationId, "Replay probe failed.");
+            }
+
+            ReplayProbeResult probed = result.Value;
+
+            // Report the installed game's product version when discovery
+            // succeeds, plus a family verdict: the game refuses to play a
+            // replay whose client version family (major.minor) differs from
+            // the installed game ("Replay Error code: 126"). Discovery is
+            // best-effort here; a null verdict means "cannot check".
+            string? installedGameVersion = null;
+            bool? compatible = null;
+            OperationResult<InstalledGameIdentity> discovered =
+                await _gameDiscovery.DiscoverAsync(cancellationToken).ConfigureAwait(false);
+            if (discovered.IsSuccess && discovered.Value is not null)
+            {
+                installedGameVersion = discovered.Value.ProductVersion;
+                string? replayFamily = VersionFamily(probed.GameVersion);
+                string? gameFamily = VersionFamily(installedGameVersion);
+                if (replayFamily is not null && gameFamily is not null)
+                {
+                    compatible = string.Equals(replayFamily, gameFamily, StringComparison.Ordinal);
+                }
+            }
+
+            return Success(
+                new
+                {
+                    isReplay = probed.IsReplay,
+                    gameVersion = probed.GameVersion,
+                    formatVersion = probed.FormatVersion,
+                    installedGameVersion,
+                    compatible,
+                },
+                probed.IsReplay
+                    ? $"Replay probed: game version {probed.GameVersion ?? "unknown"}."
+                    : "The file is not a recognized replay.",
+                correlationId,
+                result.Warnings);
+        }
+        catch (FileNotFoundException)
+        {
+            return Invalid("cli.probe.not_found", "The replay file was not found.", correlationId, CliExitCode.InvalidInput);
+        }
+        catch (Exception exception) when (
+            exception is IOException or
+            UnauthorizedAccessException or
+            NotSupportedException or
+            ArgumentException)
+        {
+            return Failure(
+                CliExitCode.InvalidInput,
+                "cli.probe.read_failed",
+                $"The replay source could not be read ({exception.GetType().Name}).",
+                data: null,
+                correlationId);
+        }
+    }
+
+    /// <summary>
     /// Imports one <c>.wotbreplay</c> file into content-addressed storage
     /// and decodes it. The same file imported twice produces two distinct
     /// decode runs sharing one artifact (evidence-first reprocessing rule).
@@ -2012,5 +2135,32 @@ public sealed class CliCommandRouter
         }
 
         return CliExitCode.InternalFailure;
+    }
+
+    /// <summary>
+    /// Reduces a dotted version string to its major.minor family
+    /// ("11.19.0.10" and "11.19.0" both -> "11.19"). The game refuses to
+    /// play a replay whose client-version family differs from the installed
+    /// game, so the family is the compatibility unit for the pre-flight
+    /// guard. Returns null for unparseable input.
+    /// </summary>
+    private static string? VersionFamily(string? version)
+    {
+        if (string.IsNullOrWhiteSpace(version))
+        {
+            return null;
+        }
+
+        ReadOnlySpan<char> span = version.AsSpan();
+        int first = span.IndexOf('.');
+        if (first <= 0)
+        {
+            return null;
+        }
+
+        int second = span[(first + 1)..].IndexOf('.');
+        return second < 0
+            ? version
+            : version[..(first + 1 + second)];
     }
 }

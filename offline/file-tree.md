@@ -774,6 +774,7 @@ tests/WotBTreader.Host.Cli.Tests/CliHpDiffTests.cs
 tests/WotBTreader.Host.Cli.Tests/CliInvocationTests.cs
 tests/WotBTreader.Host.Cli.Tests/CliOutputTests.cs
 tests/WotBTreader.Host.Cli.Tests/CliOverlayFrameTests.cs
+tests/WotBTreader.Host.Cli.Tests/CliProbeTests.cs
 tests/WotBTreader.Host.Cli.Tests/CliReplayIngestionTests.cs
 tests/WotBTreader.Host.Cli.Tests/CliYawDiffTests.cs
 tests/WotBTreader.Host.Cli.Tests/HpDiffSnapshotsFileTests.cs

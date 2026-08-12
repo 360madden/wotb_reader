@@ -24,10 +24,15 @@
   1. Stop stale wotblitz / Host.Web / CE (clear Denied).
   2. Start Host.Web with research lease (evidence 120s / lifecycle 120s).
   3. Pick a .wotbreplay from the game replays folder (or -ReplayPath).
-  4. Import via CLI -> content-addressed artifact id.
-  5. POST /api/v1/game/launch (managed) with a freshly read capability.
-  6. Wait for window + settle so WATCH OFFLINE can appear.
-  7. Run scripts/click-watch-offline.ps1 (dual: OfflineReplayVerified + dialog gone).
+  4. Probe the replay's client version vs the installed game family; fail
+     fast (FAILED_replay_client_version_mismatch) if they differ — the game
+     refuses mismatched replays with "Replay Error code: 126" (a client-
+     version mismatch, NOT slow clicks; supersedes the pre-2026-08-12
+     attribution in the specs).
+  5. Import via CLI -> content-addressed artifact id.
+  6. POST /api/v1/game/launch (managed) with a freshly read capability.
+  7. Wait for window + settle so WATCH OFFLINE can appear.
+  8. Run scripts/click-watch-offline.ps1 (dual: OfflineReplayVerified + dialog gone).
 
   Never logs private full paths, replay hashes, tokens, or account ids.
 
@@ -383,6 +388,41 @@ try {
         Write-Od 'FAILED_cli_missing_build_release_first'
         exit 1
     }
+
+    # Replay-version guard (2026-08-12). The game refuses to play a replay
+    # whose client-version family differs from the installed game with
+    # "Replay Error code: 126" -- a recurring, session-wasting failure whose
+    # earlier "slow clicks / sync-dim" attribution in the specs was WRONG
+    # (root cause: the staged replay was 11.18.0 against an 11.19.0.10 game).
+    # Probe BEFORE any host launch so a mismatched replay fails in seconds,
+    # not after the full import + launch + Watch Offline dance.
+    # The envelope is the ONLY thing the CLI writes to stdout with --json
+    # (all logs go to stderr, discarded here), so join every captured line.
+    $probeOut = & $cli probe $replayItem.FullName --json 2>$null | ForEach-Object { "$_" }
+    $probeJson = ($probeOut -join "`n")
+    if (-not $probeJson) {
+        Write-Od 'FAILED_replay_probe_unreadable'
+        exit 1
+    }
+    try {
+        $probe = $probeJson | ConvertFrom-Json
+    }
+    catch {
+        Write-Od 'FAILED_replay_probe_parse'
+        exit 1
+    }
+    if (-not $probe.success) {
+        Write-Od 'FAILED_replay_probe'
+        exit 1
+    }
+    if ($probe.data.compatible -eq $false) {
+        Write-Od ("FAILED_replay_client_version_mismatch replay=" + $probe.data.gameVersion +
+            " installed=" + $probe.data.installedGameVersion +
+            " use_a_replay_from_the_installed_game_family")
+        exit 1
+    }
+    Write-Od ("replay_probe_ok replay=" + $probe.data.gameVersion +
+        " installed=" + $probe.data.installedGameVersion)
 
     # Stale-build guard (2026-08-05). The host is started below with `dotnet
     # run --no-build` from bin\Release, so a Release build older than the newest

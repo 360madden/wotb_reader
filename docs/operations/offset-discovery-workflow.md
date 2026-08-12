@@ -804,8 +804,17 @@ owner-chosen source of which battle to play. Managed launch stages under
 originals; flat GUID clones the game may drop beside originals are scavenged
 when the stage file is disposed.
 
+**Replay version guard (2026-08-12):** the game refuses a replay whose
+client-version family differs from the installed game with "Replay Error
+code: 126" — NOT a click-timing issue (the earlier "slow clicks / sync-dim"
+attribution in the specs was wrong). `launch-offline-replay-for-od.ps1` now
+probes the replay pre-flight (`$cli probe <path> --json`, family verdict vs
+`wotblitz.exe` product version) and fails fast with
+`FAILED_replay_client_version_mismatch` before the import/launch dance. Use
+`$cli probe` on any suspect `.wotbreplay` to see its version and verdict.
+
 **Playback-only (hangar UI)** — preferred when you only need an offline replay
-in-game and want to avoid argv/`WATCH OFFLINE` Error 126:
+in-game and want to avoid the argv/`WATCH OFFLINE` path:
 
 ```text
 powershell -File scripts/play-replay-from-hangar.ps1

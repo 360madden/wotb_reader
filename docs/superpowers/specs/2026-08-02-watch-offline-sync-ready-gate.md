@@ -60,7 +60,12 @@ long settle.
 
 - AppearTimeoutSeconds: wait for first dialog (orange or dim dialog).
 - ReadyTimeoutSeconds: wait for ready after dialog (covers sync duration).
-- MaxDialogLifetimeSeconds: absolute ceiling from first dialog → click (Error 126).
+- MaxDialogLifetimeSeconds: absolute ceiling from first dialog → click.
+  (A stale "slow clicks → Error 126" attribution was superseded 2026-08-12:
+  Error 126 is a replay client-version mismatch — the game refuses a replay
+  whose version family differs from the installed game. The launcher's
+  pre-flight probe guard catches that before the launch dance; see
+  `launch-offline-replay-for-od.ps1` and the ledger.)
 - Exit 5 if ready never reached; exit 3 if click rounds fail gate dual-check.
 
 ## Non-goals

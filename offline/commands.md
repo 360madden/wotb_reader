@@ -207,6 +207,7 @@ Its output is a search lead, not proof of member semantics or layout identity.
 | `everything` | One-shot: serve then overlay |
 | `overlay` | Launch the WPF overlay (needs web host running) |
 | `import <file>` | Import a .wotbreplay |
+| `probe <file>` | Read-only replay version probe: reports `gameVersion`, `installedGameVersion`, and `compatible` (major.minor family vs the installed game) — the launcher's pre-flight guard uses this to refuse a version-mismatched replay before the launch dance (the game refuses mismatches with "Replay Error code: 126"; the earlier "slow clicks" attribution was wrong, 2026-08-12) |
 | `watch <dir>` | Watch a directory and auto-import new replays |
 | `sessions` | List decoded battle sessions (JSON) |
 | `doctor` | Environment health checks (JSON) |
