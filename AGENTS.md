@@ -278,7 +278,30 @@ int-key index assignment → plain hashtable (the real root cause of the
 misattributed); diagnostic trap; and the deadlock-free chain pattern
 (Start-Process -RedirectStandardOutput + log polling — no `*>`
 handle-inheritance wait, which hung the earlier Dead Rail chain while the
-replay played out unwatched). **Item 7
+replay played out unwatched). **Publications + consumption LANDED
+(2026-08-12):** G2 damage-dealt (`vftableScan` chain hop — the ONE schema
+decision, operator-approved; OD-RECOVERY-097) and G1 pitch/roll
+(OD-RECOVERY-098) are APPLIED — **EIGHT fields now `Verified` via chains**
+(position family + yaw + HP + damageDealt + pitch + roll); the apply
+rehearsal tool is tracked (`scripts/python/rehearse-offset-apply.py`, both
+packages idempotently re-rehearsable); and the damage-dealt CONSUMPTION is
+committed — the live frame's own-row `DamageDealt` reads the published
+chain via the coordinator's avatar-stats anchor (own-id from the decoded
+viewpoint join; fail-closed null, never guessed; projector own-row only).
+**OD-RECOVERY-099 (2026-08-12): the L3 lane re-proven live IN-SESSION at
+DEFAULT lag (no override)** — session `019ff74f`, 20 dumps, every
+avatar-stats probe `Resolved candidates=1` across the whole battle (the
+consumption seam's exact read path proven live), verdict offset 0x0 score
+1.0 flatness 1.0 5/5 exact sums; battle end recognized IN-SESSION
+(`AvatarAnchorNotFound` teardown → dump schedule stop → verdict → chain
+exit 0). **Completion-loop CORRECTION (OD-099, live forensics): the game
+EXITS ON ITS OWN ~1–2 min after the Battle Results screen** (no crash, no
+shutdown lines, replay file untouched; launcher/clicker/driver/chain audited
+— zero game-kill paths post-launch), so the design's cross-session
+`Denied`/`evidence.replay_completed` re-run signal is in-memory and
+unobservable — SUPERSEDED; the RELIABLE completion signal is the in-session
+teardown statuses after a verified start, and the recommended durable fix
+(owner-gated) is a PERSISTED completion marker the pre-flights consult.** **Item 7
 (hardware-atomicity proof) stays LAST by
 design** — its execution plan is pre-staged
 (`docs/operations/item7-hardware-atomicity-proof-plan.md`), and **Branch A's

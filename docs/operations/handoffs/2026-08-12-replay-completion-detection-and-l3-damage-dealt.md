@@ -179,12 +179,24 @@ in scope — a separate read-surface workstream, exactly as G0/G1.
 
 ## What remains
 
-- **Live completion-loop verification** — the one thing not observed this
-  session: Host.Web's lease lapsed before a post-battle read. Next approved
-  launch should confirm: gate `OfflineReplayVerified` → results screen →
-  `Denied`/`evidence.replay_completed` → driver pre-flight exit 4 on a
-  late-starting run → launcher/clicker/chain `FAILED_replay_already_completed`
-  on re-run (the full matrix is implemented, never yet observed live end-to-end).
+- **Live completion-loop verification — RESOLVED with a correction
+  (2026-08-12, OD-RECOVERY-099).** The next approved launch ran the FULL loop
+  live: gate `OfflineReplayVerified` → battle played → battle end recognized
+  IN-SESSION (`AvatarAnchorNotFound` teardown; the driver stopped the dump
+  schedule cleanly and ran the verdict on the captured dumps) → chain exit 0.
+  The live observation CORRECTED the design: **the game exits on its own
+  ~1–2 min after the Battle Results screen** (blitz log stops mid-results-page
+  texture load, no crash event, no shutdown lines, replay file untouched;
+  launcher/clicker/driver/chain audited — zero game-kill paths post-launch).
+  The cross-session `Denied`/`evidence.replay_completed` re-run signal is
+  IN-MEMORY and dies with the process → effectively unobservable. The
+  RELIABLE completion signal is the in-session teardown statuses
+  (`AvatarAnchorNotFound`/`GateNotSatisfied`/session-inactive) after a
+  verified start. Owner-gated design change recommended: persist a completion
+  marker when the in-session detection fires and have the launcher/clicker/
+  driver pre-flights consult it instead of the ephemeral gate denial (the
+  `FAILED_replay_already_completed` matrix stays as the belt-and-suspenders
+  in-window check).
 ### 4. Both publication applies REHEARSED on scratch copies (2026-08-12)
 
 Before either operator-gated apply, each package's apply path was proven on
@@ -262,17 +274,69 @@ The live frame's own-row `DamageDealt` is no longer honest-0:
   1 projector (own-only), 1 endpoint (own-id forwarded into the request).
   Full `validate.ps1` exit 0.
 
+### 8. OD-099 live session: damage-dealt in-session HIT + completion detection live (2026-08-12)
+
+Operator go-ahead executed the remaining live items. The chain launch
+(`scripts/invoke-od-replay-chain.ps1` → launcher → clicker → hp-diffing
+driver `-LiveAcquire -Track damage-dealt -RegionAnchor avatar-stats`)
+played the ground-truth Oasis replay (session `019ff74f-fd4c-7a30-8686-
+f71c18db4b22`, own viewpoint 3760577) end-to-end:
+
+- **Damage-dealt lane re-proven live IN-SESSION at DEFAULT lag (no explicit
+  override — the fixed driver passes lag args on both directions; default
+  tolerance 12 s):** 20 region dumps, every probe `status='Resolved'
+  candidates=1` across the whole battle (the gated AOB scan + identity
+  re-gate — the EXACT read path the live-frame consumption seam uses —
+  proven live); verdict **offset 0x0, score 1.0, flatness 1.0, 5/5 exact
+  sums (152/144/151/170/1; the first 134 at 177.82 s predates the formable
+  capture span — same class as OD-095/096), Strict ≥ 2 → HIT**. Snapshots:
+  `.data/hp-snapshots-019ff74f-*-cand0.json`.
+- **Completion detection verified live end-to-end:** battle end recognized
+  in-session via `AvatarAnchorNotFound` at dump target 259.3 s → dump
+  schedule stopped → verdict ran on the captured dumps → chain exit 0 (no
+  error, no hang — the exact failure mode the user hit earlier, now
+  handled).
+- **The game-exit finding (durable):** after the results screen the game
+  exits on its own (forensics above in What remains). This is consistent
+  with the driver's pre-existing `gate_not_satisfied`-on-game-exit comment.
+  The `evidence.replay_completed` re-run gate denial was never observed live
+  and is now understood to be unreachable by design — record it as
+  SUPERSEDED by the in-session teardown detection + recommended persisted
+  completion marker.
+
+- **Follow-on launch attempt (2026-08-12, same session):** the operator
+go-ahead also covered the batch `-LiveAcquire` rehearsal re-run (Branch B
+step 3 live measurement) — the launcher was re-invoked pinned to the
+ground-truth replay, but the attempt FAILED at the replay-path argument
+(`FAILED_replay_path_missing`): the launch wrapper passed the literal
+`$env:LOCALAPPDATA\wotblitz\DAVAProject\replays\…` string instead of the
+resolved path (bash→PowerShell argument escaping — the `$env:` expansion
+never happened). The launcher fail-closed correctly (exit with the
+`FAILED_replay_path_missing` token, nothing launched). Durable lesson: pass
+the ABSOLUTE literal path (`C:\Users\mrkoo\AppData\Local\wotblitz\DAVAProject\replays\…`),
+never `$env:`-relative text, when invoking the launcher from bash. The batch
+rehearsal re-run + Branch B steps 3–4 remain open on the next approved
+launch.
+
 - **Tree state at handoff end:** the G2 apply + OD-097 record are committed
   as `feat(od): publish damageDealt via vftableScan chain (OD-097)`; the
   pitch/roll apply (OD-RECOVERY-098, table-only) is committed as its own
   conventional commit; the damage-dealt consumption workstream is committed
-  as its own conventional commit.
-- **G2 apply** — operator decision on the `vftableScan` hop kind, then the
-  draft's apply steps (§4) + post-edit gates.
-- **Damage-dealt consumption** — resolver/read surface for the live frame's
-  own row (separate workstream; enemy/teammate rows stay honest-unknown).
-- **Pitch/roll publication** — READY in parallel
-  (`g1-pitch-roll-publication-draft.md`), operator approval only.
+  as its own conventional commit; the apply-rehearsal tool is committed as
+  `feat(od): tracked apply-rehearsal tool for offset publications`. **This
+  turn's pending commit (docs-only, 4 files):** `AGENTS.md` (OD-097/098/099 +
+  consumption + completion-loop correction), the ledger (OD-099 row +
+  updated Next planned session), this handoff, and the refreshed
+  `offline/file-tree.md` — commit as one docs conventional commit after the
+  gate.
+- **Batch rehearsal re-run (`-LiveAcquire`)** — re-establish the clean 42/42
+  live verdict with the current driver (also Branch B step 3's live
+  read-pass measurement: 100% byte-identical double-reads / zero
+  `region-unstable-snapshot` acceptance). Next approved launch; the last
+  attempt was blocked by the `FAILED_replay_path_missing` argument bug
+  above — use the absolute replay path.
+- **Item-7 Branch B step 4** — camera pose double-read treatment remains for
+  the live half (the camera verify tool is vision-only today).
 - **Item 7 (hardware atomicity)** — stays LAST; **Branch A quad sub-proof
   DONE (2026-08-12)** — width-complete census (MOV + RMW + **XADD/CMPXCHG**,
   all widths) of every write to the Avatar battle-stats quad: 1688 candidates

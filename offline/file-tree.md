@@ -400,6 +400,7 @@ scripts/python/e2e_smoke.py
 scripts/python/offline_check.py
 scripts/python/offset_check.py
 scripts/python/overlay-consistency-check.py
+scripts/python/rehearse-offset-apply.py
 scripts/python/replay-delta-extractor.py
 scripts/python/velocity-pitch-validation.py
 scripts/python/verify-camera-projection.py
