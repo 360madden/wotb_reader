@@ -122,22 +122,35 @@ param(
     # Bounded tolerance (seconds) for attributing a decoded damage event to
     # the change window that contains its memory write. Live evidence
     # (OD-RECOVERY-087) measured a VARIABLE memory-apply lag of ~1-10 s vs
-    # the decoded event time, so the HP driver defaults to 12 s (the
-    # measured bound plus margin) for the HP path; damage-dealt (int32
-    # counter, increments synchronously with the packets) keeps 0.
+    # the decoded event time for HP; the damage-dealt lane measured the SAME
+    # class of lag live (OD-RECOVERY-095: +2.3-4.1 s on Oasis, the counter
+    # does NOT increment synchronously with the packets), so BOTH directions
+    # default to 12 s (the measured bound plus margin).
     [double]$LagToleranceSeconds = 12,
     # Bounded LEAD window (seconds) extending the attribution window FORWARD
     # to (From - lag, To + lead]. Some replays show the memory clock LEADING
     # the decoded clock (Dead Rail by ~2.5 s, OD-RECOVERY-089 measured it for
     # yaw), so a memory-lead event's decoded time postdates the window that
     # contains its write and the one-directional window cannot see it. The
-    # HP driver defaults to 4 s (the measured Dead Rail lead plus margin);
-    # requires LagToleranceSeconds > 0.
+    # driver defaults to 4 s (the measured Dead Rail lead plus margin);
+    # requires LagToleranceSeconds > 0. Applied to both directions.
     [double]$LagLeadSeconds = 4
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# Diagnostic trap (2026-08-12): the 019ff6de live run threw a truncated
+# strict-mode PropertyNotFoundException after the end-of-replay schedule stop
+# ('avatarCandidateCount' cannot be found) whose full text was swallowed by the
+# chain's native-command capture. Log the full exception type + message (no
+# stack, no paths) so the next run reports it, then exit a distinct code.
+trap {
+    $trapMessage = [string]$_.Exception.Message
+    if ($trapMessage.Length -gt 400) { $trapMessage = $trapMessage.Substring(0, 400) }
+    Write-Host ("hp_session: TRAP " + $_.Exception.GetType().FullName + ": " + $trapMessage)
+    exit 9
+}
 
 function Write-Step([string]$Message) {
     Write-Host ("hp_session: " + $Message)
@@ -357,6 +370,27 @@ verify the offline replay, then re-run with -LiveAcquire (or pass
 
 if (-not $OfflineDumpExists) {
     # ---- live acquisition through the gated seam ----
+    # Pre-flight completion check (2026-08-12): if the replay already finished
+    # before this driver started (the deadlocked-chain failure mode - the
+    # session completed while nothing was watching), the gate is Denied with
+    # reason evidence.replay_completed. Report that distinguishable outcome
+    # instead of polling a finished session until the wait budget exhausts.
+    # Any other state (unverified, monitor fault, stale evidence) still
+    # proceeds through the normal dump path fail-closed.
+    try {
+        $preflight = Invoke-HpApi -Method 'Get' -RelativePath '/api/v1/game/state'
+        if ($null -ne $preflight -and
+            [string]$preflight.VerificationState -eq 'Denied' -and
+            [string]$preflight.ReasonCode -eq 'evidence.replay_completed') {
+            Write-Host "hp_session: replay already completed (reason=evidence.replay_completed) - no capture performed"
+            exit 4
+        }
+    }
+    catch {
+        # A failed state read is not completion evidence; the dump path below
+        # reports host issues fail-closed.
+        Write-Step '  pre-flight state read unavailable; continuing to dump path'
+    }
     Write-Step "Acquiring region dumps live via /discover/entity-region (region=$RegionLength)..."
     if (($RegionLength % 4) -ne 0) {
         throw "-RegionLength must be a multiple of 4 (the snapshots schema requires it)."
@@ -403,9 +437,27 @@ if (-not $OfflineDumpExists) {
     $LastDumpTarget = [double](($DumpTimes | Sort-Object -Unique |
         Measure-Object -Maximum).Maximum)
     $TeardownStatuses = @('UnsupportedReplayController', 'EntityNotFound',
-        'ReplaySessionInactive', 'AvatarAnchorNotFound', 'GateNotSatisfied')
-    $SkippedEndOfReplay = $false
+        'ReplaySessionInactive', 'AvatarAnchorNotFound', 'GateNotSatisfied',
+        'AvatarIdentityMismatch')
+    # Definitive end-of-replay statuses: the anchor/session is provably gone
+    # (avatar AOB scan found zero candidates, gate denied, session inactive,
+    # controller flipped, or the identity re-gate failing as the avatar object
+    # is torn down - observed live at battle end on 2026-08-12, run 019ff6ea),
+    # so NO remaining target can ever dump - stop the whole schedule and
+    # verdict on what was captured. EntityNotFound can be a transient
+    # entity-map miss and keeps the target-proximity guard below.
+    $DefinitiveTeardownStatuses = @('AvatarAnchorNotFound', 'GateNotSatisfied',
+        'ReplaySessionInactive', 'UnsupportedReplayController',
+        'AvatarIdentityMismatch')
+    # PS 5.1 quirk (2026-08-12, verified live on run 019ff6de): `break :label`
+    # from a NESTED loop (the wait while / candidate for) does NOT exit the
+    # labeled foreach - it only breaks the innermost loop, the schedule
+    # continues, and the next probe against the torn-down anchor throws a
+    # strict-mode PropertyNotFoundException. Use the flag + guard pattern
+    # instead of labeled breaks.
+    $ScheduleStopped = $false
     foreach ($t in ($DumpTimes | Sort-Object -Unique)) {
+        if ($ScheduleStopped) { break }
         # Wait for the game's replay clock to reach the target time before
         # dumping (same class of fix as the batch driver, OD-RECOVERY-086:
         # the endpoint labels each dump with the CURRENT game clock, so
@@ -430,23 +482,35 @@ if (-not $OfflineDumpExists) {
                 throw ("clock probe returned no response while waiting for " +
                     "{0:0.0}s." -f $t)
             }
+            if ($probe.status -ne 'Resolved') {
+                # Status check BEFORE the informational print: a teardown
+                # response may lack the label members (avatarCandidateCount /
+                # replayTimeSeconds), and StrictMode turns a missing-member
+                # read inside the print into a PropertyNotFoundException that
+                # masks the real end-of-replay signal (bit run 019ff6de).
+                if ($TeardownStatuses -contains $probe.status -and
+                    ($DefinitiveTeardownStatuses -contains $probe.status -or
+                     $t -ge ($LastDumpTarget - 40))) {
+                    # End-of-replay: the anchor is gone (definitive) or the
+                    # target sits in the last 40 s of the schedule. The game
+                    # clock can outrun the dump schedule (dumps are ~3 s each
+                    # at 2 s target spacing), so a teardown can land mid-
+                    # schedule even when the target is far from the last one.
+                    Write-Step (("  replay ended before target {0:0.0}s " +
+                        "(status='{1}') - stopping the dump schedule; " +
+                        "verdict runs on the captured dumps.") -f `
+                        $t, $probe.status)
+                    $ScheduleStopped = $true
+                    break
+                }
+                throw (("clock probe failed while waiting for {0:0.0}s: " +
+                    "status='{1}'.") -f $t, $probe.status)
+            }
             if ($waitIterations -eq 0) {
                 Write-Step (("  probe[{0:0.0}s] status='{1}' candidates={2} " +
                     "clock={3}") -f $t, $probe.status, `
                     $(if ($null -ne $probe.avatarCandidateCount) { $probe.avatarCandidateCount } else { '-' }), `
                     $(if ($null -ne $probe.replayTimeSeconds) { $probe.replayTimeSeconds } else { '-' }))
-            }
-            if ($probe.status -ne 'Resolved') {
-                if ($TeardownStatuses -contains $probe.status -and
-                    $t -ge ($LastDumpTarget - 40)) {
-                    Write-Step (("  replay ended before target {0:0.0}s " +
-                        "(status='{1}') - skipping end-of-replay dump.") -f `
-                        $t, $probe.status)
-                    $SkippedEndOfReplay = $true
-                    break
-                }
-                throw (("clock probe failed while waiting for {0:0.0}s: " +
-                    "status='{1}'.") -f $t, $probe.status)
             }
             if (-not $probe.sameDecodedClockProven) {
                 throw ("clock probe at {0:0.0}s did not attest the decoded " +
@@ -475,13 +539,9 @@ if (-not $OfflineDumpExists) {
                 "(last probe {1:0.0}s) - the replay may have ended; fail-closed." -f `
                 $t, $probeLabel)
         }
-        if ($SkippedEndOfReplay) {
-            $SkippedEndOfReplay = $false
-            continue
-        }
+        if ($ScheduleStopped) { continue }
         Write-Step ("  region dump at replay {0,7}s (entity {1})..." -f $t, $TargetEntityId)
         $DumpCandidateMax = $AvatarCandidateCount - 1
-        $DumpSkipEndOfReplay = $false
         for ($cand = 0; $cand -le $DumpCandidateMax; $cand++) {
             $DumpBody = @{
                 entityId        = $TargetEntityId
@@ -495,16 +555,18 @@ if (-not $OfflineDumpExists) {
             if ($null -eq $response -or $response.status -ne 'Resolved') {
                 $dumpStatus = if ($null -ne $response) { $response.status } else { 'null' }
                 $dumpStage = if ($null -ne $response) { $response.failureStage } else { '' }
-                if ($TeardownStatuses -contains $dumpStatus -and $t -ge ($LastDumpTarget - 40)) {
+                if ($TeardownStatuses -contains $dumpStatus -and
+                    ($DefinitiveTeardownStatuses -contains $dumpStatus -or
+                     $t -ge ($LastDumpTarget - 40))) {
                     # End-of-replay protection for the DUMP stage (mirrors the
-                    # probe stage above): the last dump targets can sit past
-                    # the replay end, where the avatar anchor is already torn
-                    # down (avatar-scan-not-found). Skip the target instead of
-                    # aborting and discarding the dumps already captured.
+                    # probe stage above): the anchor is provably gone, so stop
+                    # the whole schedule and verdict on the captured dumps
+                    # instead of aborting and discarding them.
                     Write-Step (("  replay ended during dump for target {0:0.0}s " +
-                        "(status='{1}') - skipping end-of-replay dump.") -f `
+                        "(status='{1}') - stopping the dump schedule; " +
+                        "verdict runs on the captured dumps.") -f `
                         $t, $dumpStatus)
-                    $DumpSkipEndOfReplay = $true
+                    $ScheduleStopped = $true
                     break
                 }
                 throw ("entity-region failed at {0}s: status='{1}' stage='{2}'" -f `
@@ -525,8 +587,10 @@ if (-not $OfflineDumpExists) {
             # dump this tick; a count that GROWS past what we enumerated is
             # fail-closed (the new candidate never received its earlier
             # dumps, so its snapshots cannot score honestly).
-            if ($IsAvatarStats -and $null -ne $response.avatarCandidateCount) {
-                $DiscoveredCount = [int]$response.avatarCandidateCount
+            $ResponseCandidateProperty = $response.PSObject.Properties['avatarCandidateCount']
+            if ($IsAvatarStats -and $null -ne $ResponseCandidateProperty -and
+                $null -ne $ResponseCandidateProperty.Value) {
+                $DiscoveredCount = [int]$ResponseCandidateProperty.Value
                 if ($DiscoveredCount -lt 1) {
                     throw ("avatar-stats at {0}s returned candidate count {1} - refuse." -f `
                         $t, $DiscoveredCount)
@@ -555,7 +619,6 @@ if (-not $OfflineDumpExists) {
             })
             $ControlCount++
         }
-        if ($DumpSkipEndOfReplay) { continue }
     }
     if ($SnapshotsByCandidate.Count -lt 1) {
         throw "No region dumps acquired - the verdict needs at least one hit window and one control."
@@ -572,10 +635,16 @@ if (-not $OfflineDumpExists) {
         $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
         $SnapshotsPath = Join-Path $RepoRoot ".data\hp-snapshots-$SessionId-$stamp.json"
     }
+    # Plain hashtable, NOT [ordered]@{}: PS resolves an int key on an
+    # OrderedDictionary as an INDEX, and writing $dict[0] to an empty ordered
+    # dict throws ArgumentOutOfRangeException 'Parameter name: index' under
+    # StrictMode (verified 2026-08-12 - this is what aborted the run-4
+    # verdict after the dumps were already persisted, previously misattributed
+    # to the suffix-less base-path hypothesis).
     $SnapshotsBase = if ($IsAvatarStats) {
-        [System.IO.Path]::ChangeExtension($SnapshotsPath, $null)
+        ($SnapshotsPath -replace '\.json$', '')
     } else { $SnapshotsPath }
-    $CandidateFiles = [ordered]@{}
+    $CandidateFiles = @{}
     foreach ($cand in ($SnapshotsByCandidate.Keys | Sort-Object)) {
         $Snapshots = $SnapshotsByCandidate[$cand]
         if ($Snapshots.Count -lt 2) {
@@ -614,7 +683,7 @@ if (-not $OfflineDumpExists) {
 }
 else {
     Write-Step "Using existing snapshots file: $SnapshotsPath"
-    $CandidateFiles = [ordered]@{ 0 = $SnapshotsPath }
+    $CandidateFiles = @{ 0 = $SnapshotsPath }
 }
 
 # ---- 3. VERDICT (offline, real) ------------------------------------------
@@ -625,10 +694,15 @@ $DirectionArgs = if ($IsIncrement) { @('--direction', 'increment') } else { @() 
 # 11.19.0.10), so the decrement/HP path scans int16 candidates; the increment
 # (damage-dealt, int32 counter) path stays int32-only.
 $Int16Args = if (-not $IsIncrement) { @('--int16', 'true') } else { @() }
-$LagArgs = if (-not $IsIncrement -and $LagToleranceSeconds -gt 0) {
+# BOTH directions get the bounded lag window. OD-RECOVERY-095 measured the
+# damage-dealt lane lagging +2.3-4.1 s on Oasis (the same variable
+# memory-apply lag class as HP); gating these behind -not $IsIncrement
+# silently ran the increment verdict at lag 0 and misread real damage
+# windows as control-window changes.
+$LagArgs = if ($LagToleranceSeconds -gt 0) {
     @('--lag-tolerance', ([string]$LagToleranceSeconds))
 } else { @() }
-$LagLeadArgs = if (-not $IsIncrement -and $LagLeadSeconds -gt 0) {
+$LagLeadArgs = if ($LagLeadSeconds -gt 0) {
     @('--lag-lead-seconds', ([string]$LagLeadSeconds))
 } else { @() }
 # The per-candidate loop below runs the verdict for every candidate file

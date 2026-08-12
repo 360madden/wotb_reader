@@ -106,6 +106,21 @@ the overlay renders.
   evidence. If a future live-log capture ever verifies a real live-battle
   marker, it could become observed evidence additively; nothing in this
   design depends on that.
+  **Amended 2026-08-12 (replay side):** the allowlist gained the two
+  post-battle completion markers `Controller activated:
+  BattleResultsController` and `Controller activated:
+  BattleResultsPersonalPageController`, both mapped to
+  `OfflineReplayStopped` — the game never writes `STOP_REPLAY_LOCAL` in a
+  real replay run (live-verified on 11.19.0.10), so the results-screen
+  controller transition is the observed replay-completion evidence. The
+  monitor's terminal denial for these markers carries the distinct reason
+  `evidence.replay_completed` (vs `evidence.monitor_unhealthy` for a
+  monitor fault and `EvidenceStale` when no completion marker ever
+  arrives). The results screen is the final-end signal only: auto-loop
+  battles chain without it (fixture `2026-08-06`), and a session can end
+  without it at all, which fails closed via evidence-lifetime expiry.
+  These are replay markers, not live markers; the "no observed live
+  marker" statement above is unchanged.
 - Anti-cheat risk is unchanged from the X1 memo: read-only observation of
   the user's own process, detectable in principle, enforcement posture
   unknown. The memo's Option A scope carries over verbatim.

@@ -13,6 +13,19 @@ public sealed class BlitzReplayLifecycleParser : IBlitzReplayLifecycleParser
         ("START_REPLAY_LOCAL", ReplayLogMarkerKind.OfflineReplayStarted),
         ("STOP_REPLAY_LOCAL", ReplayLogMarkerKind.OfflineReplayStopped),
         ("Start replay event", ReplayLogMarkerKind.OfflineReplayStarted),
+        // Playback completion: the game never writes STOP_REPLAY_LOCAL in a real
+        // replay run (verified live 2026-08-12 on 11.19.0.10 - the only replay
+        // stop markers in the session log are these post-battle controller
+        // transitions to the results screen, which fire ~1-2 s after the last
+        // frame). This is the FINAL-end signal: auto-loop battles chain without
+        // a results screen between them (fixture 2026-08-06), so the marker only
+        // appears when playback truly ends - and a session can end without it
+        // entirely, which fails closed via evidence-lifetime expiry. Mapped to
+        // OfflineReplayStopped so the monitor treats them as the same terminal
+        // fail-closed event as an explicit stop: revoke the session and deny the
+        // gate so no scan continues after playback ends.
+        ("Controller activated: BattleResultsController", ReplayLogMarkerKind.OfflineReplayStopped),
+        ("Controller activated: BattleResultsPersonalPageController", ReplayLogMarkerKind.OfflineReplayStopped),
         ("ReplayRecorder::StartRecording", ReplayLogMarkerKind.ReplayRecordingStarted),
         ("ReplayRecorder::StopRecording", ReplayLogMarkerKind.ReplayRecordingStopped),
     ];

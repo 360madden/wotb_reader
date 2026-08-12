@@ -33,6 +33,15 @@ public sealed class BlitzReplayLifecycleParserTests
     [DataRow("ReplayRecorder::StartRecording", ReplayLogMarkerKind.ReplayRecordingStarted)]
     [DataRow("ReplayRecorder::StopRecording", ReplayLogMarkerKind.ReplayRecordingStopped)]
     [DataRow("STOP_REPLAY_LOCAL", ReplayLogMarkerKind.OfflineReplayStopped)]
+    // Playback completion: the game never writes STOP_REPLAY_LOCAL in a real
+    // run; the observed completion signals are the post-battle controller
+    // transitions to the results screen (live-verified 2026-08-12).
+    [DataRow(
+        "Controller activated: BattleResultsController",
+        ReplayLogMarkerKind.OfflineReplayStopped)]
+    [DataRow(
+        "Controller activated: BattleResultsPersonalPageController",
+        ReplayLogMarkerKind.OfflineReplayStopped)]
     public void TryParse_KnownNonStartMarkers_AreNotPositiveOfflineEvidence(
         string line,
         ReplayLogMarkerKind expectedKind)
@@ -43,6 +52,25 @@ public sealed class BlitzReplayLifecycleParserTests
 
         Assert.IsTrue(recognized);
         Assert.AreEqual(expectedKind, marker!.Kind);
+        Assert.IsFalse(marker.IsPositiveOfflineReplayEvidence);
+    }
+
+    [TestMethod]
+    public void TryParse_RealResultsControllerLine_IsOfflineReplayStopped()
+    {
+        BlitzReplayLifecycleParser parser = new(Options);
+
+        // Exact line shape from the live 11.19.0.10 replay session log
+        // (2026-08-12, deadlocked-run replay): the results screen controller
+        // activation fired ~4m41s after the second 'Start replay event' marker,
+        // matching the decoded battle duration.
+        bool recognized = parser.TryParse(
+            "15:41:18 [info] 10:41:18 -5 [base] Controller activated: BattleResultsPersonalPageController",
+            out ParsedReplayLogMarker? marker);
+
+        Assert.IsTrue(recognized);
+        Assert.IsNotNull(marker);
+        Assert.AreEqual(ReplayLogMarkerKind.OfflineReplayStopped, marker.Kind);
         Assert.IsFalse(marker.IsPositiveOfflineReplayEvidence);
     }
 

@@ -301,6 +301,55 @@ control windows too) → HONEST-NEGATIVE under the strict Phase-4 contract**
 (`twoReplayRepeatability` not claimed; exact-sum matches at 0x0 are a
 strong partial signal but the counter is not flat where it must be).
 
+**FOLLOW-UP (2026-08-12, OD-RECOVERY-095): the honest-negative is
+ROOT-CAUSED and the SAME dumps RE-VERDICT to HIT — the offset-0x0 quad IS
+the damage-dealt counter.** All 6 decoded own-attacker damage events
+(134/152/144/151/170/1, sum 752) map 1:1 to d0 increments; the two
+"control-window" changes (+144 at ~257.3 s, +151 at ~263.6 s) are REAL
+damage events whose memory writes lag the decoded clock by +2.3–4.1 s
+(the OD-087 variable memory-apply lag class — the at-session verdict ran
+at the lag-0 default because the driver gated the lag args behind
+`-not $IsIncrement`). Re-verdict with the bounded lag window
+(`hp-diff --lag-tolerance`, both 5 s and the driver defaults 12/4):
+**offset 0x0, score 1.0, matched 5/5 (152/144/151/170/1), flatness 1.0
+(0/0 control windows), Strict 5/5 → HIT**. d0 final 752 = decoded
+`damageDealt` 752; d2 (offset `+0x8`) final 126 = decoded
+`damageAssisted1` 126 (the quad is the battle-stats block). Driver fixed:
+`invoke-hp-diffing-session.ps1` passes the lag args on BOTH directions.
+**Phase-4 CLOSED (2026-08-12, OD-RECOVERY-096): the Dead Rail live
+avatar-stats capture re-verdicts HIT at offset 0x0 (9/9 exact sums
+146/162/145/162/140/178/181/171/168, score 1.0, flatness 1.0, Strict >= 2;
+final d0 1598 = decoded `damageDealt` 1598) — offsets agree with Oasis
+(0x0) → `twoReplayRepeatability = true`; quad layout refined to
+`[damageDealt, damageBlocked, damageAssisted1, damageAssisted2]` (Dead Rail
+finals d1 140 = `damageBlocked`, d3 228 = `damageAssisted2`; `damageAssisted1`
+null == d2 0). The L3 damage-dealt lane is CLOSED.** Capture notes: the
+deadlock-free chain (Start-Process + log polling) launched 4 sessions
+(019ff6d6/019ff6de/019ff6ea/019ff6f0); run 4 persisted 38 dumps (labels
+158.0–276.9 s) and the verdict ran offline on the captured file. The dense
+2 s dump schedule outruns the game clock (~3 s/dump → clock lead grows
+~+1 s/dump), so the schedule stops at the battle end (~271 s) — the clock
+lead still bracketed the last events; the first damage event (145 at
+154.5 s) predates the earliest dump label, so its window was not formable
+(the counter already held it at capture start).
+
+**Driver fixes shipped with the Dead Rail session (2026-08-12, OD-096):**
+(a) PS 5.1 `break :label` from a NESTED loop does NOT exit the labeled
+foreach — replaced with the flag + guard pattern (the labeled break made
+the schedule continue after teardown and throw on the next probe);
+(b) `AvatarIdentityMismatch` added to the teardown + definitive lists
+(observed at battle end: the identity re-gate fails as the avatar object is
+torn down); (c) the probe status check now precedes the informational print
+(the print read `avatarCandidateCount`/`replayTimeSeconds` before the
+status check — StrictMode threw PropertyNotFoundException on teardown
+responses that omit them); (d) `[ordered]@{}` int-key index assignment →
+plain hashtable — PS resolves an int key on an OrderedDictionary as an
+INDEX, and writing to an empty ordered dict throws
+`ArgumentOutOfRangeException: Parameter name: index` under StrictMode (this
+is the real root cause of the previously-misattributed 2026-08-12
+ArgumentOutOfRangeException after the write phase); (e) a diagnostic trap
+logs the full exception type + message (no stack/paths) and exits 9.
+
 **Driver fixes shipped with sweep 4 (2026-08-12):** (a) dump-stage
 end-of-replay skip + `AvatarAnchorNotFound` added to the teardown list —
 previously a battle-end `avatar-scan-not-found` on the LAST dump target
@@ -315,6 +364,66 @@ exist in avatar-stats mode) — that was the `ArgumentOutOfRangeException`
 after the write phase. Verified: parse clean + ASCII-only; session 9 wrote
 its 20 dumps before the gate flip and the verdict ran offline on the
 captured file.
+
+## Item-7 Branch A quad sub-proof — DONE (2026-08-12, hash-bound `1cda5c31…`)
+
+The G2 draft's flagged Branch A gap (the stats quad's write sites were never
+statically censused) is now closed. Tooling:
+`ScanAvatarStatsQuadStoreWidths.java` (width-complete raw byte-scan, MOV +
+RMW encodings — ADD/SUB/XOR/INC/DEC — because damageDealt INCREMENTS and a
+MOV-only census would miss the live write path) + `ConfirmAvatarStatsQuadSites.java`
+(boundary + semantic confirmation: each candidate must sit at a real
+instruction boundary AND its true instruction text must be a memory write
+`ptr [.. + 0xNNN]` to the quad). Evidence: `.build/ghidra-evidence-avatar-quad/`.
+
+Result: 1688 byte-scan candidates → 1646 confirmed at real instruction
+boundaries → **1642 real memory writes** after the semantic filter (42
+off-boundary + 4 register-only misattributions — `INC/ DEC EAX/EBX` —
+rejected; the raw scan's four "64-bit" candidates were ALL byte-scan
+artifacts). Per dword: d0 `+0x118` 10× byte + 401× dword (10 in-place RMW),
+d1 13+445 (3 RMW), d2 13+16+480 (3 RMW), d3 14+6+239 (3 RMW) — **ZERO
+64-bit and ZERO 128-bit writes to any quad dword**. All 32-bit stores/RMWs
+are aligned → atomic within a cache line → a 32-bit read of `damageDealt`
+cannot tear; the live OD-RECOVERY-095/096 exact-increment reads bound the
+residual object-family ambiguity (the census matches by displacement only,
+so most sites are other-object-family writes — constructors writing
+constants like `0x0/0xf/0x7fffffff`, matching the HP `+0xB8` precedent). The
+census is opcode-complete for write families: MOV + RMW
+(ADD/SUB/XOR reg+imm, INC/DEC) **+ XADD (`0F C1`) + CMPXCHG (`0F B1`)** —
+re-verified after the XADD/CMPXCHG addition (results unchanged → zero
+XADD/CMPXCHG writes the quad; the binary carries 25,875 XADD + 545 CMPXCHG
+byte sequences — read-only count on the 71 MB install — so the parser was
+fully exercised and the zero is meaningful, not a dead branch). ****Decompiler-mislabel gotcha (2026-08-12, resolved):** the victim decoder
+`FUN_0166b9f0`'s DECOMPILED C shows `*(undefined8 *)(param_1 + 0x120) =
+*puVar4` — a false alarm for a 64-bit quad write. The instruction listing
+(DumpWriteSite at 0x126baf0) proves the copy targets `LEA [ESI + 0x128]` +
+`MOVSD` — **+0x128, OUTSIDE the quad** (a larger object's field; the Avatar
+is 0x128 bytes so +0x128 is past it). Trust the disassembly over the
+Ghidra decompiler for field offsets. The
+live damage-increment function is NOT identifiable from the store census**: all 10 confirmed in-place RMWs to d0
+are FIXED increments (`INC` / `ADD imm` 0x4/0x8/0x2c) — none can carry the
+variable decoded damage sums (146/162/…); no register-source `ADD` and no
+`XADD` targets the quad, so the variable increment is a **LOAD-ADD-STORE**
+sequence whose store half is one of the 163 register-source
+`MOV dword ptr [..+0x118], reg` sites (110× EAX, 25× ECX, 11× ESI, 9× EDX,
+5× EDI, 2× EBX, 1× AL). Pinning the exact function needs dataflow tracing
+(which `+0x118` load feeds which `+0x118` store with the damage value
+between), not a store census — and the atomicity claim does not require it:
+all write forms are ≤32-bit aligned (bounded statically), and the live reads
+bound the semantics. The caller-walk approach is a static DEAD-END: the
+victim decoders `FUN_0166b9f0`/`FUN_01675f60` are Vehicle-vtable slots
+12/13 (virtual dispatch — `DumpCallers` reports no direct callers), so the
+damage applier cannot be reached by walking callers. The vtable-reference
+walk is ALSO a dead-end (verified 2026-08-12, `FindVtableDispatch` at slot
+0x3675600 → base 0x36755d0, slots 12/13 = the decoders as established):
+the only two code references to the vtable base are INSTALLERS
+(`FUN_01639560` = the known Vehicle constructor zero-init,
+`FUN_0163bd70` = a second installer), and the real virtual dispatch reads
+`CALL [reg+0x30]` through the object's vtable POINTER — invisible to
+reference analysis. Identifying the damage applier therefore needs dataflow
+tracing of the vehicle-update path (deep) or runtime observation; NO gate
+requires it — the atomicity claim is bounded statically (all ≤32-bit) and
+the semantics live (OD-095/096).
 
 ## Definition of done (Phase-4 standard)
 

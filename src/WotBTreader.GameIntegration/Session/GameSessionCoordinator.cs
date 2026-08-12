@@ -303,6 +303,25 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         }
     }
 
+    private void ReportReplayCompleted(
+        ManagedGameLaunchContext launch,
+        CancellationToken monitorToken)
+    {
+        lock (_gate)
+        {
+            if (!IsCurrentMonitorLocked(launch, monitorToken))
+            {
+                return;
+            }
+
+            // Distinguishable terminal reason: tooling can tell "the replay
+            // finished normally" (results screen observed) from a broken
+            // monitor (evidence.monitor_unhealthy) or an expired lease
+            // (EvidenceStale when no completion marker ever arrived).
+            Deny("evidence.replay_completed");
+        }
+    }
+
     private void ApplyMonitorEvidence(
         ManagedGameLaunchContext launch,
         GameSessionEvidence evidence,
@@ -4080,10 +4099,12 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                             // A replay stop is a terminal lifecycle event, not
                             // a transient monitor condition. Revoke immediately
                             // so no scan can continue during the evidence grace
-                            // period after playback has ended.
+                            // period after playback has ended. The reason is
+                            // distinct so callers observe completion rather
+                            // than a monitor fault.
                             if (!token.IsCancellationRequested)
                             {
-                                ReportMonitorFailure(launch, token);
+                                ReportReplayCompleted(launch, token);
                             }
                             return;
                         }

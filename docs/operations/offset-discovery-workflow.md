@@ -863,6 +863,51 @@ What it does:
    clicking. For hangar-chained dismiss without a Host correlation, use
    `-VisualDismissOnly` (playback-only success).
 
+**Replay completion is also log-detected (2026-08-12).** The game never writes
+`STOP_REPLAY_LOCAL` in a real replay run; the completion evidence is the
+post-battle controller transition (`Controller activated: BattleResultsController`
+/ `Controller activated: BattleResultsPersonalPageController`, live-verified on
+11.19.0.10). `BlitzReplayLifecycleParser` maps those lines to
+`OfflineReplayStopped`, so the monitor revokes the session and the gate flips
+`Denied` with reason `evidence.replay_completed` ~1-2 s after the last frame.
+No scan continues after playback ends, and a chain that starts the driver late
+sees the gate already `Denied` instead of hanging on a finished replay. The
+the gate readers recognize the state too, all via the same `reasonCode`
+check: the launcher's pre-watch check (exit 2) and post-watch check (exit 4)
+and the clicker's pre-click check (exit 6) each report
+`FAILED_replay_already_completed` instead of the misleading
+`FAILED_host_denied_before_watch_restart_required` /
+`FAILED_gate_not_verified` / `FAILED_host_denied` when the reason is
+`evidence.replay_completed` - a clean terminal state, not a broken host
+(mirrors the driver's pre-flight exit 4).
+
+Completion-detection nuances (recorded 2026-08-12):
+
+- **Final-end only.** Auto-loop battles chain without a results screen between
+  them (fixture `2026-08-06`: the next `BattleController::LoadGameScene begins`
+  follows `onLeaveWorld` directly, no `BattleResults*` controller), so the
+  results controller fires only at playback end - exactly the "finally
+  completed" signal. Per-battle boundaries are read from the decoded clock,
+  not this marker.
+- **Not guaranteed, and that is safe.** A session can end without the results
+  screen (error dialog, manual kill, cut mid-battle). No marker then arrives;
+  the gate stays `OfflineReplayVerified` until the evidence lifetime expires
+  (`EvidenceStale`, fail-closed) - no read overruns playback.
+- **Distinguishable reasons.** `evidence.replay_completed` = finished normally;
+  `evidence.monitor_unhealthy` = monitor fault; `EvidenceStale` = ended
+  without a completion marker. A late-starting driver can tell "already
+  completed" from "broke" or "never started".
+- **Version-dependent.** Controller names are client-version-specific; markers
+  are additive, and a renamed controller fails closed (no completion claim,
+  expiry fallback).
+- **`HangarLoadingController` is NOT a completion marker (decision 2026-08-12).**
+  It fires ~2 s before the results controllers at replay end, but also at game
+  startup (live 11.19.0.10 log: line 647 `Controller activated:
+  HangarLoadingController` at 15:36:32 precedes the `Start replay event`
+  marker at 15:36:35, after the launch baseline) - adding it would revoke the
+  session before playback starts. The results controllers are the only safe
+  completion evidence; do not add hangar loading.
+
 File-association remains useful only as a **playback smoke** (“does this
 `.wotbreplay` open?”). It is not a substitute for steps 1–7 before scanning.
 

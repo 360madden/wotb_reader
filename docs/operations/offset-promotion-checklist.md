@@ -136,16 +136,19 @@ Status as of 2026-08-11:
 | HP (entity base `+0xB8`, signed int16) | **HIT both replays** — Oasis 087 (8/8 strict), Dead Rail 091 Phase-4 (4/4 strict, 58 dumps) | OD-RECOVERY-087/091 | **PUBLISHED 2026-08-12 (OD-RECOVERY-092)** — `Verified`, chains (entity-lookup prefix + `recordOffset 184`), offsets 0. Item-7 static support: hash-bound listing-confirmed 16-bit health setters (`FUN_0166b9f0`/`FUN_01675f60` write `+0xB8`/`+0x11E` as `MOV word`), zero 64/128-bit stores to the fields — `item7-hardware-atomicity-proof-plan.md` Branch A |
 | Velocity, replayTime, playerHP-as-offset, aliveTankCount | not promoted | G0 record | untouched |
 | Pitch/roll (ring `+0x2C`/`+0x28`) | live-verified as the rotation triple (OD-RECOVERY-088) but NO Phase-4 repeat run | 088 | not packaged; P4 candidate only |
-| Damage-dealt | HONEST-NEGATIVE (OD-RECOVERY-090, three sweeps) | 090 | not reachable via entity records — needs a NEW object family (avatar/player-stats) |
+| Damage-dealt (Avatar stats quad `+0x0`, uint32) | **HIT both replays** — Oasis 095 (5/5 exact sums, lag-corrected), Dead Rail 096 Phase-4 (9/9 exact sums, score 1.0, flatness 1.0, Strict ≥ 2); offsets agree at `0x0` → `twoReplayRepeatability = true` | OD-RECOVERY-095/096 | **G2 publication package DRAFTED** (`g2-damage-dealt-publication-draft.md`, pre-staged `vftableScan` hop + `recordOffset 0`) — awaits operator approval; read surface untouched (own row honest-0 until wired) |
 | Camera pose (posA yz-swap + basis) | CAM-013 verified the W2S seam live (091/091b/092 chase, `w2sProjectionVerified: true`) | CAM-013 | overlay consumption only — no offset promotion (the camera track is a separate workstream, read surface untouched) |
 
-Both packages (`g1-yaw-publication-draft.md`, `g1-hp-publication-draft.md`)
-await **operator approval**; each applies the chain from the pre-staged
-draft to the published table (`chains` additive section, `offsets` stay 0),
-appends evidence + approvals, then re-runs `offset_check.py --check-schema`
-and the full gate. The fidelity branch (`offset_check.py`) already validates
-the 5-field draft against the 3 published fields (identity enforced
-post-publication). Item 7 (hardware atomicity) stays LAST by design —
+Three packages await **operator approval**: `g1-yaw-publication-draft.md`,
+`g1-hp-publication-draft.md` (both applied 2026-08-12 via OD-RECOVERY-092),
+and `g2-damage-dealt-publication-draft.md` (drafted 2026-08-12, pre-staged
+`vftableScan` hop + `recordOffset 0`; its §4 chain is copy-verbatim valid
+JSON). Each applies the chain from the pre-staged draft to the published
+table (`chains` additive section, `offsets` stay 0), appends evidence +
+approvals, then re-runs `offset_check.py --check-schema` and the full gate.
+Pitch/roll (`g1-pitch-roll-publication-draft.md`) is separately pre-staged.
+The fidelity branch (`offset_check.py`) already validates the 5-field draft
+against the published fields (identity enforced post-publication). Item 7 (hardware atomicity) stays LAST by design —
 execution plan pre-staged `docs/operations/item7-hardware-atomicity-proof-plan.md`.
 
 ### G1 — Hardware-atomic read proof

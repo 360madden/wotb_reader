@@ -10,6 +10,14 @@
 > chains (the identical position walk + `recordOffset 44` / `recordOffset
 > 40`); `offsets` stay 0 by design. Apply ONLY after operator approval, as
 > a single conventional commit, mirroring the G1 yaw apply
+> **APPLY REHEARSED (2026-08-12):** the Section 3 table edit was run on a
+> scratch copy with a scratch validator (real canonical draft + pack doc
+> cross-checks retained) and PASSES first run — `11.19.0.10.json: chains
+> validated (7 field(s))`, walkable draft 7 fields, fidelity 7 fields,
+> `PASS: All offset files are valid.` (exit 0), matching the post-edit
+> expectation exactly. The pre-staging was complete — no gaps found (unlike
+> the G2 apply, whose first rehearsal caught an incomplete checker spec;
+> see `g2-damage-dealt-publication-draft.md`).
 > (`docs/operations/g1-yaw-publication-draft.md`, OD-RECOVERY-092).
 
 ## 1. What gets published

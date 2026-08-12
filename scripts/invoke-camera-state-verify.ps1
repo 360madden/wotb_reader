@@ -17,7 +17,7 @@
         [cam+0x28]     -> cameraState (GameCamera, RVA 0x32dafa0)
 
   v5 (live-verified 2026-08-11): the POSE lives on the GameCamera, NOT the
-  ReplayCameraController (which is a frozen shell — no live fields). The
+  ReplayCameraController (which is a frozen shell -- no live fields). The
   GameCamera pose layout (diff-scan verified):
 
       position        +0x38/+0x3C/+0x40   (interpolated prev copy +0x44..)
@@ -35,7 +35,7 @@
   CORRECTED v6 (2026-08-11): /discover/entity-position (and
   /discover/position-page) are gated on the resolver's hard-coded vtable
   checks (session-controller-vtable etc.) which only match ONE game phase
-  — today's sessions hit a different session-controller vftable
+  -- today's sessions hit a different session-controller vftable
   (base+0x325ad2c vs the recorded 0x323d9bc), so both endpoints refuse. The
   od-073 24/24 evidence (2026-08-09) proves the underlying chain resolves
   during replay playback, so v6 falls back to a DIRECT manual walk of the
@@ -78,7 +78,7 @@
        pose + decoded-tank samples for verify-camera-projection.py.
 
   CORRECTED 2026-08-11 (first live run): the chain walk reads at
-  (current + displacement) and advances to the pointer VALUE — the v1 walk
+  (current + displacement) and advances to the pointer VALUE -- the v1 walk
   added the displacement to the pointer value, dereferencing .rdata text
   instead of the object chain (the first run's 3/3 was garbage). v2 also
   records yawDeltaRadians / thirdPersonOffsetNorm whenever the comparison
@@ -88,7 +88,7 @@
   the camera CONTROLLER object (the chain's hop 2), not on the GameCamera
   ring object at [cam+0x28]. The per-frame dispatcher FUN_01ddb130
   integrates position at param_1[0x47..0x49] = [controller+0x11C..0x124]
-  and updates +0xAC..0xB4 (param_1[0x2b..0x2d]) — param_1 is the
+  and updates +0xAC..0xB4 (param_1[0x2b..0x2d]) -- param_1 is the
   polymorphic camera controller (virtual calls through *param_1). Live
   identity probe confirmed the walked hop-2 object's vftable is
   ReplayCameraController (runtime base+0x326dd0c). v3 therefore reads the
@@ -103,7 +103,7 @@
   matched sample index/seconds are also recorded.
 
   CORRECTED v5 (same session, decisive branch): v3 read the pose from the
-  camera controller — WRONG, that object is frozen. Live diff-scan showed
+  camera controller -- WRONG, that object is frozen. Live diff-scan showed
   all pose fields on the GameCamera (vftable base+0x32dafa0): position at
   +0x38/+0x3C/+0x40 (prev-frame copy +0x44), yaw as cos/sin at
   +0x50/+0x54, pitch +0x58, basis +0x80..0xB0. v5 reads those fields and
@@ -178,8 +178,8 @@ function Test-Finite([object]$Value) {
 # ---- CAM-001 v7 root-cause follow-up: in-memory window capture -------
 # The mode-vs-pose discriminator needs to know what the game actually
 # renders. Capturing the shrunk wotblitz window and persisting derived
-# scalars (sky fraction / horizon row / mean luminance) — NEVER raw
-# pixels — lets the offline validator classify the camera state. The C#
+# scalars (sky fraction / horizon row / mean luminance) -- NEVER raw
+# pixels -- lets the offline validator classify the camera state. The C#
 # helper mirrors the launcher's PrintWindow capture (click-watch-offline),
 # scaled down to just capture + luminance analysis.
 function Initialize-CamCaptureHelper {
@@ -861,7 +861,7 @@ for ($round = 0; $round -lt $ReadCount; $round++) {
         $chainValid = $true
         foreach ($hop in $chainOffsets) {
             # Chain walk: read at (current + displacement); the pointer VALUE
-            # becomes the next base (CORRECTED 2026-08-11 — the first live run
+            # becomes the next base (CORRECTED 2026-08-11 -- the first live run
             # read at the bare current address and added the displacement to
             # the pointer value, dereferencing .rdata text instead of walking
             # the object chain).
@@ -972,7 +972,7 @@ for ($round = 0; $round -lt $ReadCount; $round++) {
         })
         # CAM-001 v7 follow-up: the view-basis region +0x80..0xB0 (12
         # floats) is a row-major 3x4 view matrix (rows at +0x80/0x90/0xA0,
-        # 16-byte stride — verified 2026-08-11: row0 = (fx,-fy,-fz) of the
+        # 16-byte stride -- verified 2026-08-11: row0 = (fx,-fy,-fz) of the
         # yaw/pitch forward, rows orthonormal). Read all 12 so the offline
         # coherence check has the complete third row.
         $basisReadAddresses = @()
@@ -1173,10 +1173,10 @@ for ($round = 0; $round -lt $ReadCount; $round++) {
             memoryTankSource  = $memoryTankSource
         }
         # CAM-001 v7 root-cause follow-up: persist the full view-basis region
-        # (+0x80..0xB0, 12 floats — stride-4 3x4 view matrix verified
+        # (+0x80..0xB0, 12 floats -- stride-4 3x4 view matrix verified
         # 2026-08-11) so the offline validator can check the walked object is
         # a COHERENT camera (orthonormal rows, row0 = (fx,-fy,-fz) of
-        # yaw/pitch) — the memory-side half of the mode-vs-pose
+        # yaw/pitch) -- the memory-side half of the mode-vs-pose
         # discriminator. Additive; older consumers ignore unknown keys.
         $basisFloats = @()
         $basisRead = Invoke-OdApi -Method 'Post' `

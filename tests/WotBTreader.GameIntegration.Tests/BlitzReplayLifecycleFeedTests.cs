@@ -42,6 +42,66 @@ public sealed class BlitzReplayLifecycleFeedTests
     }
 
     [TestMethod]
+    public async Task ReadAfterAsync_RealCompletionMarker_SurfacesOfflineReplayStopped()
+    {
+        // Real line shapes from the live 11.19.0.10 replay session log
+        // (2026-08-12): the results-screen controller activation fires ~4m41s
+        // after the start marker, matching the decoded battle duration.
+        await using TestFeed fixture = await TestFeed.CreateAsync(
+            "15:36:35 [info] 10:36:35 -5 [replay] Start replay event\n");
+        LifecycleFeedBaseline baseline = await fixture.Feed.CaptureBaselineAsync(CancellationToken.None);
+
+        await File.AppendAllTextAsync(
+            fixture.LogPath,
+            "15:41:18 [info] 10:41:18 -5 [base] Controller activated: BattleResultsPersonalPageController\n");
+        LifecycleFeedReadResult events = await fixture.WaitForAsync(
+            baseline.Sequence,
+            static feedEvents => feedEvents.Any(feedEvent =>
+                feedEvent.Kind == LifecycleFeedEventKind.Marker
+                && feedEvent.MarkerKind == ReplayLogMarkerKind.OfflineReplayStopped
+                && feedEvent.Provenance == LifecycleMarkerProvenance.Live));
+
+        Assert.IsFalse(events.HistoryGap);
+
+        // The start marker was captured in the baseline (sequence <= baseline), so
+        // a full read from 0 sees it as historical evidence alongside the live
+        // completion marker.
+        LifecycleFeedReadResult all =
+            await fixture.Feed.ReadAfterAsync(0, CancellationToken.None);
+        LifecycleFeedEvent start = all.Events.Single(feedEvent =>
+            feedEvent.Kind == LifecycleFeedEventKind.Marker
+            && feedEvent.MarkerKind == ReplayLogMarkerKind.OfflineReplayStarted);
+        Assert.AreEqual(LifecycleMarkerProvenance.Historical, start.Provenance);
+    }
+
+    [TestMethod]
+    public async Task ReadAfterAsync_AutoLoopBoundaryLines_DoNotSurfaceCompletion()
+    {
+        // Real line shapes from the 2026-08-06 auto-loop fixture: battle 1's
+        // onLeaveWorld and the next LoadGameScene chain directly, with no
+        // results-screen controller between battles. These per-battle boundary
+        // lines are NOT in the marker allowlist and must never surface an
+        // OfflineReplayStopped event (completion is final-end only). Regression
+        // guard: appended after baseline, so an over-greedy future marker on
+        // either line would surface as a Live event and fail this test.
+        await using TestFeed fixture = await TestFeed.CreateAsync(
+            "02:31:28 [info] 21:31:28 -5 [replay] Start replay event\n");
+        LifecycleFeedBaseline baseline = await fixture.Feed.CaptureBaselineAsync(CancellationToken.None);
+
+        await File.AppendAllTextAsync(
+            fixture.LogPath,
+            "02:31:30 [info] 21:31:30 -5 [battle] VehicleGameLogic::onLeaveWorld id: 2549401 isPlayer: 1\n" +
+            "02:31:33 [info] 21:31:33 -5 [battle] BattleController::LoadGameScene begins\n");
+        await Task.Delay(TimeSpan.FromSeconds(1));
+        LifecycleFeedReadResult events =
+            await fixture.Feed.ReadAfterAsync(baseline.Sequence, CancellationToken.None);
+
+        Assert.IsFalse(events.Events.Any(feedEvent =>
+            feedEvent.Kind == LifecycleFeedEventKind.Marker
+            && feedEvent.MarkerKind == ReplayLogMarkerKind.OfflineReplayStopped));
+    }
+
+    [TestMethod]
     public async Task CaptureReconciledBaselineAsync_IncludesMarkerAlreadyWritten()
     {
         await using TestFeed fixture = await TestFeed.CreateAsync("initial\n");

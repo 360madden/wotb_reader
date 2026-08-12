@@ -40,7 +40,7 @@
   3  Retries exhausted (gate and/or dialog check failed)
   4  Unexpected error
   5  Ready gate never satisfied (dialog not interactive in time)
-  6  Host already Denied (stale lifecycle timeout) aEUR" restart via launch-offline-replay-for-od.ps1
+  6  Host already Denied (stale lifecycle timeout) -> restart via launch-offline-replay-for-od.ps1 / replay already completed (FAILED_replay_already_completed)
 #>
 # ResultPath is read by Quit-WatchOffline (a child function) via script-scope
 # dynamic lookup; PSSA's PSReviewUnusedParameter cannot see cross-function
@@ -528,8 +528,8 @@ function Test-ReadySample(
     if ($DialogMeanL -lt $ReadyMinLuminance) { return $false }
     # Prefer post-sync: first bright after dim is the interactive window.
     if ($SeenSyncing) { return $true }
-    # Grace: bright idle without observed sync aEUR" must clear both age floors so
-    # we do not click at ~2aEUR"3s (dialog dismisses, no Start replay in blitz-log).
+    # Grace: bright idle without observed sync - must clear both age floors so
+    # we do not click at ~2-3s (dialog dismisses, no Start replay in blitz-log).
     if (-not $FirstBrightAt -or -not $FirstDialogAt) { return $false }
     $brightAge = ((Get-Date) - $FirstBrightAt).TotalSeconds
     $dialogAge = ((Get-Date) - $FirstDialogAt).TotalSeconds
@@ -604,6 +604,13 @@ try {
         Write-Host "watch_offline: before=$before reason=$beforeReason pid=$($game.Id)"
 
         if ($before -eq 'Denied') {
+            # Distinguishable completion (same reason the launcher + driver use):
+            # a gate denied with evidence.replay_completed means the replay
+            # already finished - do not click, no capture is possible.
+            if ($beforeReason -eq 'evidence.replay_completed') {
+                Write-Host 'watch_offline: FAILED_replay_already_completed (replay finished; no capture possible)'
+                Quit-WatchOffline 6
+            }
             Write-Host 'watch_offline: FAILED_host_denied (do not click; run scripts/launch-offline-replay-for-od.ps1)'
             Quit-WatchOffline 6
         }
@@ -677,7 +684,7 @@ try {
                 break
             }
 
-            # Owner sync: dim dialog (~31 L) with collapsed-but-nonzero orange (~60aEUR"80
+            # Owner sync: dim dialog (~31 L) with collapsed-but-nonzero orange (~60-80
             # at 1080p; scaled by window area). Blank frames (La%^0) and bright
             # low-orange splash must NOT arm SeenSyncing.
             $syncOrangeFloor = Get-ScaledThreshold 30 $analysis.PxScale
@@ -798,7 +805,7 @@ try {
         Start-Sleep -Milliseconds $holdMs
     }
 
-    # Re-check after hold aEUR" dialog may have timed out during hold.
+    # Re-check after hold - dialog may have timed out during hold.
     $game = Get-GameWindow
     if (-not $game) {
         Write-Host 'watch_offline: window_lost_after_hold'

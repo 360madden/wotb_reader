@@ -72,6 +72,7 @@ docs/operations/g1-hp-publication-draft.md
 docs/operations/g1-live-evidence-template.md
 docs/operations/g1-pitch-roll-publication-draft.md
 docs/operations/g1-yaw-publication-draft.md
+docs/operations/g2-damage-dealt-publication-draft.md
 docs/operations/handoffs/2026-07-26-overlay-mvvm-buildout.md
 docs/operations/handoffs/2026-07-26-validated-integration-milestone.md
 docs/operations/handoffs/2026-07-27-alpha-final.md
@@ -287,6 +288,7 @@ docs/operations/handoffs/2026-08-11-w2s-consumption-shipped.md
 docs/operations/handoffs/2026-08-11-yaw-quarantine-reconciled.md
 docs/operations/handoffs/2026-08-12-g1-publication-applies.md
 docs/operations/handoffs/2026-08-12-item7-branch-ab-own-marker.md
+docs/operations/handoffs/2026-08-12-replay-completion-detection-and-l3-damage-dealt.md
 docs/operations/handoffs/README.md
 docs/operations/item7-branch-b-step2-consistent-double-read-proposal.md
 docs/operations/item7-hardware-atomicity-proof-plan.md
@@ -380,6 +382,7 @@ scripts/invoke-fresh44-crossbattle.ps1
 scripts/invoke-g1-live-poll.ps1
 scripts/invoke-hp-diffing-session.ps1
 scripts/invoke-od-044-replaytime-session.ps1
+scripts/invoke-od-replay-chain.ps1
 scripts/invoke-replay-crosscheck.ps1
 scripts/invoke-scriptanalyzer.ps1
 scripts/launch-offline-replay-for-od.ps1
@@ -965,6 +968,7 @@ tools/compute-exe-hash.ps1
 tools/external/README.md
 tools/external/tools.lock.json
 tools/find-static-roots.py
+tools/ghidra-scripts/ConfirmAvatarStatsQuadSites.java
 tools/ghidra-scripts/ConfirmHealthFieldStores.java
 tools/ghidra-scripts/DumpCallers.java
 tools/ghidra-scripts/DumpChain.java
@@ -995,6 +999,7 @@ tools/ghidra-scripts/FindVtableDispatch.java
 tools/ghidra-scripts/FindVtableInstallers.java
 tools/ghidra-scripts/ResolveVftableClass.java
 tools/ghidra-scripts/ScanAllClockOffsetStores.java
+tools/ghidra-scripts/ScanAvatarStatsQuadStoreWidths.java
 tools/ghidra-scripts/ScanClockStoreBytes.java
 tools/ghidra-scripts/ScanHealthFieldStoreWidths.java
 tools/ghidra-scripts/ScanRttiHealthClasses.java

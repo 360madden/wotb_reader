@@ -282,7 +282,7 @@ function Test-PollInPreLoginPhase {
     <#
     CAM-008 (2026-08-11): returns $true when the od-073 poll aggregate shows
     ALL reads in the pre-login phase (status ReplaySessionInactive or
-    UnsupportedSessionController) — the app's session slot holds a
+    UnsupportedSessionController) -- the app's session slot holds a
     PreLoginController until replay playback starts, so the poll landed
     early. The caller re-runs the unchanged poll after a delay instead of
     failing the run. Returns $false for a missing/unreadable aggregate, an
@@ -506,7 +506,7 @@ try {
     # 4. Unchanged bounded poll inside the capture window. CAM-008: when the
     #    reads all land in the pre-login phase (PreLoginController until
     #    playback starts), wait and re-run the unchanged poll (corrected mode
-    #    only — the interceptor's PAGE_GUARD forbids a second pass).
+    #    only -- the interceptor's PAGE_GUARD forbids a second pass).
     $pollAttempt = 1
     $preLoginRetries = 0
     $pollStartUtc = [DateTimeOffset]::UtcNow

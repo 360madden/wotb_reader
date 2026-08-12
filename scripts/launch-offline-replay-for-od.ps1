@@ -25,7 +25,7 @@
   2. Start Host.Web with research lease (evidence 120s / lifecycle 120s).
   3. Pick a .wotbreplay from the game replays folder (or -ReplayPath).
   4. Probe the replay's client version vs the installed game family; fail
-     fast (FAILED_replay_client_version_mismatch) if they differ — the game
+     fast (FAILED_replay_client_version_mismatch) if they differ -- the game
      refuses mismatched replays with "Replay Error code: 126" (a client-
      version mismatch, NOT slow clicks; supersedes the pre-2026-08-12
      attribution in the specs).
@@ -39,9 +39,9 @@
 .EXITCODES
   0  OfflineReplayVerified after Watch Offline
   1  Missing replay / CLI / host
-  2  Managed launch failed
+  2  Managed launch failed / replay already completed (FAILED_replay_already_completed)
   3  Game window never appeared
-  4  Watch Offline script failed
+  4  Watch Offline script failed / replay already completed (FAILED_replay_already_completed)
   5  Unexpected error
 #>
 [CmdletBinding()]
@@ -153,7 +153,7 @@ function Set-OwnerOnlyFileAcl([string]$Path) {
     $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
     # icacls instead of .NET Set-Acl: Set-Acl with a fresh security descriptor
     # throws PrivilegeNotHeldException (SeSecurityPrivilege) when the target
-    # already has a protected owner-only ACL — i.e. on EVERY launch after the
+    # already has a protected owner-only ACL -- i.e. on EVERY launch after the
     # first, since the marker persists between launches (BLK-0026 root cause).
     # /inheritance:r disables inherited ACEs; /grant:r replaces grants with
     # exactly the single owner FullControl rule. Owner is unchanged (current
@@ -163,7 +163,7 @@ function Set-OwnerOnlyFileAcl([string]$Path) {
 
 function Set-OwnerOnlyDirectoryAcl([string]$Path) {
     $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
-    # See Set-OwnerOnlyFileAcl — same icacls approach; (OI)(CI) propagates the
+    # See Set-OwnerOnlyFileAcl -- same icacls approach; (OI)(CI) propagates the
     # owner-only rule to children so future marker files inherit it.
     & icacls $Path /inheritance:r /grant:r ("*" + $owner + ':(OI)(CI)F') | Out-Null
 }
@@ -398,7 +398,19 @@ try {
     # not after the full import + launch + Watch Offline dance.
     # The envelope is the ONLY thing the CLI writes to stdout with --json
     # (all logs go to stderr, discarded here), so join every captured line.
-    $probeOut = & $cli probe $replayItem.FullName --json 2>$null | ForEach-Object { "$_" }
+    # PS 5.1: under $ErrorActionPreference='Stop' the CLI's stderr log lines
+    # become a terminating RemoteException the moment the probe starts (the
+    # first launch that exercised this guard hit it as FAILED_unexpected
+    # before any probe output). Drop EAP for the native call only; the
+    # envelope parse below still fails closed on any real error.
+    $probeOldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $probeOut = & $cli probe $replayItem.FullName --json 2>$null | ForEach-Object { "$_" }
+    }
+    finally {
+        $ErrorActionPreference = $probeOldEap
+    }
     $probeJson = ($probeOut -join "`n")
     if (-not $probeJson) {
         Write-Od 'FAILED_replay_probe_unreadable'
@@ -636,6 +648,14 @@ try {
     Write-Od ("pre_watch_vs=" + $pre.verificationState + " reason=" + $pre.reasonCode)
 
     if ($pre.verificationState -eq 'Denied') {
+        # Distinguishable completion: a gate denied with evidence.replay_completed
+        # means the replay ALREADY finished (results screen observed) - a clean,
+        # expected terminal state, not a broken host. Same reason the driver's
+        # pre-flight exits 4; chains must not read this as 'restart required'.
+        if ($pre.reasonCode -eq 'evidence.replay_completed') {
+            Write-Od 'FAILED_replay_already_completed'
+            exit 2
+        }
         Write-Od 'FAILED_host_denied_before_watch_restart_required'
         exit 2
     }
@@ -734,6 +754,13 @@ try {
     $post = Invoke-RestMethod -Uri "$($api.Base)/api/v1/game/state" -Headers $api.Headers
     Write-Od ("post_watch_vs=" + $post.verificationState + " reason=" + $post.reasonCode)
     if ($post.verificationState -ne 'OfflineReplayVerified') {
+        # Same distinguishable completion as the pre-watch check: the replay may
+        # have ended DURING the watch click (results screen) - that is a clean
+        # terminal state, not a failed gate.
+        if ($post.reasonCode -eq 'evidence.replay_completed') {
+            Write-Od 'FAILED_replay_already_completed'
+            exit 4
+        }
         Write-Od 'FAILED_gate_not_verified'
         exit 4
     }

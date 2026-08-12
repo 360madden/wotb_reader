@@ -248,8 +248,37 @@ windows) → honest-negative** under the strict Phase-4 contract
 dump-stage end-of-replay skip + `AvatarAnchorNotFound`/`GateNotSatisfied`
 teardown statuses (battle-end teardown no longer discards captured dumps)
 and removal of a redundant pre-loop verdict on the suffix-less base path.
-Bounded follow-up: discriminate the 0x0 control-window changes (e.g.
-damage-taken counter on the same quad) before re-verdicting. **Item 7
+**OD-RECOVERY-095 (2026-08-12): the honest-negative is ROOT-CAUSED and the
+SAME dumps RE-VERDICT to HIT — the avatar-stats quad `+0x0` IS the
+damage-dealt counter.** All 6 decoded own-attacker damage events
+(134/152/144/151/170/1, sum 752) map 1:1 to d0 increments; the two
+"control-window" changes (+144/+151) were real damage events whose memory
+writes LAG the decoded clock by +2.3–4.1 s (OD-087 lag class), invisible to
+the at-session lag-0 default (the driver gated lag args behind
+`-not $IsIncrement`). Re-verdict with the bounded lag path
+(`hp-diff --lag-tolerance` 5 or 12/4): offset 0x0, 5/5 exact sums
+(152/144/151/170/1), flatness 1.0, Strict 5/5 → **HIT**; d0 final 752 =
+decoded `damageDealt`, d2 final 126 = decoded `damageAssisted1` (the quad
+IS the battle-stats block). Driver fixed: lag args now pass on BOTH
+directions. **L3 Phase-4 CLOSED (2026-08-12, OD-RECOVERY-096): the Dead
+Rail live avatar-stats capture re-verdicts HIT at offset 0x0 (9/9 exact
+sums 146/162/145/162/140/178/181/171/168, flatness 1.0, Strict >= 2; final
+d0 1598 = decoded `damageDealt`) — offsets agree with Oasis (0x0) →
+`twoReplayRepeatability = true`; quad layout refined to `[damageDealt,
+damageBlocked, damageAssisted1, damageAssisted2]` (Dead Rail d1 140 =
+`damageBlocked`, d3 228 = `damageAssisted2`); the L3 damage-dealt lane is
+CLOSED.** Driver fixes shipped with the session: the PS 5.1 `break :label`
+from a nested loop does NOT exit the labeled foreach (flag + guard pattern;
+the labeled break let the schedule continue after teardown and throw on the
+next probe); `AvatarIdentityMismatch` added to the teardown + definitive
+lists (observed at battle end); probe status check reordered before the
+informational print (StrictMode missing-member hazard); `[ordered]@{}`
+int-key index assignment → plain hashtable (the real root cause of the
+2026-08-12 `ArgumentOutOfRangeException` after the write phase, previously
+misattributed); diagnostic trap; and the deadlock-free chain pattern
+(Start-Process -RedirectStandardOutput + log polling — no `*>`
+handle-inheritance wait, which hung the earlier Dead Rail chain while the
+replay played out unwatched). **Item 7
 (hardware-atomicity proof) stays LAST by
 design** — its execution plan is pre-staged
 (`docs/operations/item7-hardware-atomicity-proof-plan.md`), and **Branch A's
@@ -409,6 +438,7 @@ installed-game tests are local opt-in and skip by default.
 | A `.ps1` silently corrupts at runtime | PowerShell 5.1 reads BOM-less UTF-8 as ANSI (an em-dash's trailing byte `0x94` maps to `"` and terminates a string literal early) | keep every `.ps1` ASCII-only; the PSScriptAnalyzer gate (`scripts/invoke-scriptanalyzer.ps1`) and custom rules (`tools/psscriptanalyzer-custom-rules.psm1`) enforce it — they ban `[double]::IsFinite` and `??`/`&&`/`||`; type custom-rule parameters with a **concrete AST node** (`[ScriptBlockAst]`, never `[Ast]` — the analyzer matches by type-name substring and silently skips `[Ast]`); pass `-IncludeDefaultRules` (custom paths replace defaults); run `powershell -File scripts/invoke-scriptanalyzer.ps1 -SelfTest` after touching the rules module |
 | cmd wrapper misbehaves | delayed expansion + `!` in filenames, unquoted `%~dp0` in nested `cmd /c`, whitespace input → arithmetic crash, env var leaking | full catalogue and review checklist in [`docs/operations/cmd-wrapper-gotchas.md`](docs/operations/cmd-wrapper-gotchas.md); route any non-trivial cmd/batch review through a thinker agent with the actual file contents — never rely on manual reading |
 | .NET commands time out | basher default 30s is far too short | minimums: build 300s, full test suite 300s, single test project 120s, publish 180s; never run interactive `.cmd` wrappers (import, everything, serve) through basher — they expect a TTY or spawn windows; use direct `dotnet build` / `dotnet test` / `dotnet publish`; verify prerequisites (CLI built, packages restored) before running dependents |
+| PS `& script *> log` never returns | the launched host/game grandchildren inherit the `*>` redirect file handle, so PowerShell's redirect-wait never sees EOF (bit the 2026-08-12 Dead Rail chain: launcher exited, log complete, chain stuck forever, replay finished unwatched) | never block on `& launcher *> log` when the script spawns long-lived children; start it, poll the log/state you need, and let the child own its handle — the launcher's own log file is enough |
 | Fixture leak | private replays, captures, DBs, screenshots reach the repo | synthetic fixtures only in CI; private data stays in ignored paths; full sanitization process: [`docs/testing/fixture-policy.md`](docs/testing/fixture-policy.md) |
 
 ## Definition of done + commit checklist
