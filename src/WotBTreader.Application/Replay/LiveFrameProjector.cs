@@ -30,6 +30,10 @@ namespace WotBTreader.Application.Replay;
 ///   otherwise the DTO's "unknown" representation — <c>HpFraction 0</c>
 ///   with <c>MaxHealth/CurrentHealth 0</c> — renders as an empty/unknown
 ///   HP bar. Never fabricated.
+/// - Damage (G2 consumption): only the OWN row (the request's
+///   <c>OwnEntityId</c>) can carry <c>DamageDealt</c> — the coordinator read
+///   the own Avatar's battle-stats dword0 (honest, fail-closed). All other
+///   rows keep 0 (unknown). DamageTaken/Kills stay 0 in live mode.
 /// - No pips/kills/beacons: those are decode-projection features and live
 ///   mode honestly has none.
 /// </summary>
@@ -229,7 +233,7 @@ public static class LiveFrameProjector
                     z,
                     yaw)
                 : null,
-            DamageDealt: 0,
+            DamageDealt: tank.DamageDealt ?? 0,
             DamageTaken: 0,
             Kills: 0,
             MaxHealth: maxHealth,

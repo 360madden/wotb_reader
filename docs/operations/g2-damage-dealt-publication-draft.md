@@ -10,8 +10,15 @@
 > `OffsetTableReader.KnownFieldNames` (pre-staged pitch/roll too). All §5
 > post-edit gates green (`offset_check --check-schema` 6 chains + fidelity
 > 6/6, report exit 0, ChainedFields exclusion test, `validate.ps1` exit 0).
-> **Not applied here:** consumption (live-frame `DamageDealt` read surface) —
-> separate workstream.
+> **Consumption IMPLEMENTED (2026-08-12, post-apply):** the live frame's
+> own-row `DamageDealt` is no longer honest-0 — `LiveFrameReadRequest`
+> gained `OwnEntityId` (the decoded session's viewpoint participant's
+> entity id, derived by the endpoint before the read), the coordinator
+> reads the own Avatar's battle-stats dword0 via the gated vftable scan +
+> quad read (fail-closed: any failure leaves the row null, never guessed),
+> and the projector maps it for the OWN row only (all other rows stay 0).
+> Tests: coordinator (attached + fail-closed), projector (own-only),
+> endpoint (own-id forwarded).
 > **APPLY REHEARSED (2026-08-12):** the full §4 apply (steps 1–5, corrected
 > step 2 below) was run end-to-end on SCRATCH copies with a scratch validator
 > and PASSES — `11.19.0.10.json: chains validated (6 field(s))`, walkable

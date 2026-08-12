@@ -696,8 +696,11 @@ public sealed class ReadApiEndpointsTests
         OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
         Assert.AreEqual(100, frame.OwnEntityId);
         // The session id is forwarded into the discover call so the batch
-        // core's G2 replay-clock snapshot runs (real frame time, not 0.0).
+        // core's G2 replay-clock snapshot runs (real frame time, not 0.0),
+        // and the decoded own entity id drives the own-row damage-dealt
+        // consumption in the same request.
         Assert.AreEqual(new BattleSessionId(sessionGuid), scanner.LastLiveFrameSessionId);
+        Assert.AreEqual(100, scanner.LastLiveFrameOwnEntityId);
         // The join still names both tanks; suppression is a render-path
         // decision made from OwnEntityId, not a name wipe.
         Assert.HasCount(2, frame.Tanks);
@@ -1231,6 +1234,7 @@ public sealed class ReadApiEndpointsTests
         public int CameraPoseCallCount { get; private set; }
         public int LiveFrameCallCount { get; private set; }
         public BattleSessionId? LastLiveFrameSessionId { get; private set; }
+        public long? LastLiveFrameOwnEntityId { get; private set; }
 
         public ValueTask<OperationResult<CameraPoseReadResult>> ReadCameraPoseAsync(
             CancellationToken cancellationToken)
@@ -1297,6 +1301,7 @@ public sealed class ReadApiEndpointsTests
         {
             LiveFrameCallCount++;
             LastLiveFrameSessionId = request.BattleSessionId;
+            LastLiveFrameOwnEntityId = request.OwnEntityId;
             return ValueTask.FromResult(liveFrameResult ?? OperationResult.Failure<LiveFrameReadResult>(
                 new ApplicationError("discover.live_frame.not_configured", "Test default.")));
         }

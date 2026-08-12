@@ -2386,6 +2386,145 @@ public sealed class GameSessionCoordinatorTests
     }
 
     [TestMethod]
+    public async Task LiveFrame_OwnDamageDealt_AttachedToOwnRowWhenRequested()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        Type10CameraPoseLayout cameraLayout = Type10CameraPoseLayout.WotBlitz1119010;
+        byte[] ringA = CreateRingRegion(12.5f, 3.25f, -44.75f, yaw: 0.5f);
+        byte[] baseA = CreateEntityBaseRegion(hpCurrent: 1228, hpMax: 1550, alive: 1);
+        Dictionary<long, byte[]> pages = CreateCameraChainPages(cameraLayout);
+        pages[0x25000038] = ringA;
+        pages[0x25000028] = baseA;
+        // The own Avatar's vftable dword (identity re-gate re-reads it under
+        // the guarded lease) and the battle-stats quad dword0
+        // ([avatar+0x118], the G2 published chain): cumulative own
+        // damage-dealt.
+        pages[0x25001000] = BitConverter.GetBytes(0x132752a4u);
+        pages[0x25001118] = BitConverter.GetBytes(752u);
+        var factory = new ScriptedCameraReaderFactory(pages);
+        factory.Reader.RosterResult = new EntityRosterResult(
+            Type10EntityPositionStatus.Resolved,
+            FailureStage: null,
+            ModuleRooted: true,
+            NodesVisited: 12,
+            CandidatesSeen: 18,
+            FilteredOut: 4,
+            Entities:
+            [
+                new EntityRosterEntry(3760578, 0x25000028),
+            ],
+            TraversalLimited: false);
+        factory.Reader.AddressByEntity = new Dictionary<int, Type10EntityPositionAddressResult>
+        {
+            [3760578] = new(
+                Type10EntityPositionStatus.Resolved,
+                RecordAddress: 0x25000038,
+                PageAddress: 0x25000000,
+                EntityAddress: 0x25000028,
+                FailureStage: null,
+                Attempts: 1,
+                NodesVisited: 0,
+                ModuleRooted: true),
+        };
+        var scan = new FieldAwareScanDiscoverer(
+            CreateAvatarScanResult(),
+            CreateOwnAvatarStatsScanResult());
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<LiveFrameReadResult> result = await coordinator
+            .ReadLiveFrameAsync(
+                new LiveFrameReadRequest(OwnEntityId: 3760578),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess, result.Error?.Message);
+        LiveFrameReadResult frame = result.Value!;
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, frame.Status);
+        LiveFrameTankState tank = frame.Tanks.Single();
+        Assert.AreEqual(3760578, tank.EntityId);
+        Assert.AreEqual(752, tank.DamageDealt);
+        // Both the camera-anchor scan and the avatar-stats scan ran.
+        Assert.AreEqual(2, scan.ScanCount);
+        // The own quad read happened under the frame's single lease.
+        Assert.IsTrue(factory.Reader.Reads.Any(
+            read => read.Address == 0x25001118 && read.Length == sizeof(uint)));
+        Assert.AreEqual(1, factory.CreateCount);
+    }
+
+    [TestMethod]
+    public async Task LiveFrame_OwnDamageDealt_StaysNullWhenScanNotFound()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        Type10CameraPoseLayout cameraLayout = Type10CameraPoseLayout.WotBlitz1119010;
+        byte[] ringA = CreateRingRegion(12.5f, 3.25f, -44.75f, yaw: 0.5f);
+        byte[] baseA = CreateEntityBaseRegion(hpCurrent: 1228, hpMax: 1550, alive: 1);
+        Dictionary<long, byte[]> pages = CreateCameraChainPages(cameraLayout);
+        pages[0x25000038] = ringA;
+        pages[0x25000028] = baseA;
+        var factory = new ScriptedCameraReaderFactory(pages);
+        factory.Reader.RosterResult = new EntityRosterResult(
+            Type10EntityPositionStatus.Resolved,
+            FailureStage: null,
+            ModuleRooted: true,
+            NodesVisited: 12,
+            CandidatesSeen: 18,
+            FilteredOut: 4,
+            Entities:
+            [
+                new EntityRosterEntry(3760578, 0x25000028),
+            ],
+            TraversalLimited: false);
+        factory.Reader.AddressByEntity = new Dictionary<int, Type10EntityPositionAddressResult>
+        {
+            [3760578] = new(
+                Type10EntityPositionStatus.Resolved,
+                RecordAddress: 0x25000038,
+                PageAddress: 0x25000000,
+                EntityAddress: 0x25000028,
+                FailureStage: null,
+                Attempts: 1,
+                NodesVisited: 0,
+                ModuleRooted: true),
+        };
+        var scan = new FieldAwareScanDiscoverer(
+            CreateAvatarScanResult(),
+            CreateOwnAvatarStatsScanResult(empty: true));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<LiveFrameReadResult> result = await coordinator
+            .ReadLiveFrameAsync(
+                new LiveFrameReadRequest(OwnEntityId: 3760578),
+                CancellationToken.None);
+
+        // Honest and fail-closed: no avatar-stats candidate -> the own row's
+        // damage stays null (unknown); the frame still resolves.
+        Assert.IsTrue(result.IsSuccess, result.Error?.Message);
+        LiveFrameTankState tank = result.Value!.Tanks.Single();
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, result.Value!.Status);
+        Assert.IsNull(tank.DamageDealt);
+        Assert.AreEqual(2, scan.ScanCount);
+    }
+
+    [TestMethod]
     public async Task LiveFrame_MissingOfflineGateNeverCreatesMemoryReader()
     {
         var factory = new ScriptedCameraReaderFactory(CreateCameraChainPages());
@@ -3460,6 +3599,69 @@ public sealed class GameSessionCoordinatorTests
                     TraversalLimited: false)));
         }
     }
+
+    /// <summary>
+    /// Scan discoverer that serves the avatar-stats scan (the own Avatar's
+    /// battle-stats quad, G2 published chain) separately from the camera
+    /// anchor scan, mirroring the real coordinator's two distinct scans.
+    /// </summary>
+    private sealed class FieldAwareScanDiscoverer(
+        MemoryScanResult avatarAnchorResult,
+        MemoryScanResult avatarStatsResult) : IMemoryScanDiscoverer
+    {
+        public int ScanCount { get; private set; }
+
+        public OperationResult<MemoryScanResult> Scan(
+            AuthorizedMemoryObservation observation,
+            long baseAddress,
+            MemoryScanRequest request,
+            CancellationToken cancellationToken,
+            string scanKind = "value")
+        {
+            ScanCount++;
+            return OperationResult.Success(
+                request.FieldName == "avatar-stats-vftable"
+                    ? avatarStatsResult
+                    : avatarAnchorResult);
+        }
+
+        public OperationResult<MemoryScanResult> ScanNeighborhood(
+            AuthorizedMemoryObservation observation,
+            long baseAddress,
+            MemoryNeighborhoodRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public OperationResult<MemoryPointerChainResult> ResolvePointerChain(
+            AuthorizedMemoryObservation observation,
+            long baseAddress,
+            MemoryPointerChainRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+    }
+
+    /// <summary>
+    /// The avatar-stats scan result: the entity-factory Avatar candidate at
+    /// 0x25001000 with the avatar-stats vftable dword (moduleBase + RVA
+    /// 0x032752a4). <paramref name="empty"/> returns no candidates so tests
+    /// can exercise the fail-closed path.
+    /// </summary>
+    private static MemoryScanResult CreateOwnAvatarStatsScanResult(bool empty = false) => new(
+        DateTimeOffset.UnixEpoch,
+        BaseAddress: 0x10000000,
+        RegionsScanned: 1,
+        BytesScanned: 4096,
+        Candidates: empty
+            ? []
+            :
+            [
+                new MemoryScanCandidate(
+                    AbsoluteAddress: 0x25001000,
+                    BaseDisplacement: 0,
+                    ObservedValue: BitConverter.GetBytes(0x132752a4u),
+                    ValueSummary: "entity-avatar-vftable"),
+            ],
+        TotalMatchesBeforeTruncation: empty ? 0 : 1);
 
     private static MemoryScanResult CreateAvatarScanResult() => new(
         DateTimeOffset.UnixEpoch,

@@ -246,11 +246,27 @@ predates the G2 apply), report verified=8 exit 0, ChainedFields exclusion
 test, `validate.ps1` exit 0. **Eight fields are now `Verified` via
 chains** — the rotation triple is fully published.
 
+### 7. Damage-dealt consumption IMPLEMENTED (2026-08-12)
+
+The live frame's own-row `DamageDealt` is no longer honest-0:
+- `LiveFrameReadRequest` gained `OwnEntityId`; `LiveFrameTankState` gained
+  `long? DamageDealt` (additive, nullable — no existing consumer breaks).
+- The endpoint derives the own entity id from the decoded session's
+  viewpoint participant (before the frame read) and forwards it.
+- The coordinator reads the own Avatar's battle-stats dword0 via the gated
+  vftable scan + identity re-gate + quad read (the OD-095/096-proven seam);
+  fail-closed — any failure leaves the row's DamageDealt null, never
+  guessed; the frame still succeeds.
+- The projector maps it for the OWN row only; all other rows keep 0.
+- Tests: 2 coordinator (attached-to-own-row + scan-not-found fail-closed),
+  1 projector (own-only), 1 endpoint (own-id forwarded into the request).
+  Full `validate.ps1` exit 0.
+
 - **Tree state at handoff end:** the G2 apply + OD-097 record are committed
   as `feat(od): publish damageDealt via vftableScan chain (OD-097)`; the
   pitch/roll apply (OD-RECOVERY-098, table-only) is committed as its own
-  conventional commit; the consumption workstream (damage-dealt read
-  surface) remains open.
+  conventional commit; the damage-dealt consumption workstream is committed
+  as its own conventional commit.
 - **G2 apply** — operator decision on the `vftableScan` hop kind, then the
   draft's apply steps (§4) + post-edit gates.
 - **Damage-dealt consumption** — resolver/read surface for the live frame's

@@ -310,44 +310,15 @@ internal static class ReadApiEndpoints
                 retryable: false);
         }
 
-        // Forward the session id into the discover call so the batch core's
-        // ONE G2 replay-clock snapshot runs (same clock source the
-        // /discover/entity-regions path uses): the frame then carries a real
-        // estimated replay time instead of 0.0. Fail-closed: an unknown or
-        // stale session leaves ReplayTimeSeconds null (frame 0.0), never an
-        // error on the live frame.
-        OperationResult<LiveFrameReadResult> frameResult = await scanner.ReadLiveFrameAsync(
-            new WotBTreader.Application.Game.LiveFrameReadRequest(
-                sessionId is { } forwarded ? new BattleSessionId(forwarded) : null),
-            cancellationToken).ConfigureAwait(false);
-        if (!frameResult.IsSuccess || frameResult.Value is null)
-        {
-            return Problem(
-                context,
-                StatusCodes.Status503ServiceUnavailable,
-                frameResult.Error?.Code ?? "api.live_frame.unavailable",
-                frameResult.Error?.Message ?? "The live frame read is unavailable.",
-                retryable: true);
-        }
-
-        LiveFrameReadResult frame = frameResult.Value;
-        if (frame.Status != Type10EntityPositionStatus.Resolved)
-        {
-            return Problem(
-                context,
-                StatusCodes.Status409Conflict,
-                "api.live_frame.not_resolved",
-                $"The live frame is not resolved ({frame.Status}, {frame.FailureStage}).",
-                retryable: true);
-        }
-
         // Optional per-id decoded-roster join (design
         // docs/operations/live-roster-name-join-design.md): when a session
         // id is supplied, load its decoded participants and map entity id ->
         // participant with the SAME first-match convention as
         // ReplayFrameSource. Fail-closed: a missing/unknown session degrades
         // to anonymous names (the join is best-effort per id, never an error
-        // on the live frame).
+        // on the live frame). Loaded BEFORE the frame read so the decoded
+        // own entity id can drive the frame's own-row damage-dealt
+        // consumption.
         IReadOnlyDictionary<long, Participant>? participants = null;
         long? ownEntityId = null;
         if (sessionId is { } requestedSession)
@@ -375,6 +346,39 @@ internal static class ReadApiEndpoints
                         ?.EntityId;
                 }
             }
+        }
+
+        // Forward the session id into the discover call so the batch core's
+        // ONE G2 replay-clock snapshot runs (same clock source the
+        // /discover/entity-regions path uses): the frame then carries a real
+        // estimated replay time instead of 0.0. Fail-closed: an unknown or
+        // stale session leaves ReplayTimeSeconds null (frame 0.0), never an
+        // error on the live frame. The decoded own entity id drives the
+        // own-row damage-dealt read (honest, fail-closed).
+        OperationResult<LiveFrameReadResult> frameResult = await scanner.ReadLiveFrameAsync(
+            new WotBTreader.Application.Game.LiveFrameReadRequest(
+                sessionId is { } forwarded ? new BattleSessionId(forwarded) : null,
+                ownEntityId),
+            cancellationToken).ConfigureAwait(false);
+        if (!frameResult.IsSuccess || frameResult.Value is null)
+        {
+            return Problem(
+                context,
+                StatusCodes.Status503ServiceUnavailable,
+                frameResult.Error?.Code ?? "api.live_frame.unavailable",
+                frameResult.Error?.Message ?? "The live frame read is unavailable.",
+                retryable: true);
+        }
+
+        LiveFrameReadResult frame = frameResult.Value;
+        if (frame.Status != Type10EntityPositionStatus.Resolved)
+        {
+            return Problem(
+                context,
+                StatusCodes.Status409Conflict,
+                "api.live_frame.not_resolved",
+                $"The live frame is not resolved ({frame.Status}, {frame.FailureStage}).",
+                retryable: true);
         }
 
         OverlayFrameProjection projection = LiveFrameProjector.Project(

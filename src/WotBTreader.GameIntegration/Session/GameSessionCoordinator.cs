@@ -3028,6 +3028,38 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     hpFailureStage));
             }
 
+            // 4b. Own damage-dealt consumption (G2, OD-RECOVERY-097 published
+            //     chain): when the request names the own entity id, read the
+            //     own Avatar's battle-stats dword0 — the gated vftable scan
+            //     + [avatar+0x118] quad read, the same seam the L3 sessions
+            //     live-proved (OD-RECOVERY-095/096) — and attach it to that
+            //     roster row. Honest and fail-closed: a scan/read failure
+            //     leaves the row's DamageDealt null (unknown), never guessed;
+            //     the frame still succeeds. Only the OWN row can carry it
+            //     (the avatar-stats quad is the own player's counter); other
+            //     rows stay null.
+            if (request.OwnEntityId is { } ownEntityId)
+            {
+                long? ownDamageDealt = await ReadOwnDamageDealtAsync(
+                    observation,
+                    baseAddress,
+                    reader,
+                    authorizationToken,
+                    readCancellation.Token).ConfigureAwait(false);
+                if (ownDamageDealt is not null)
+                {
+                    for (int i = 0; i < tanks.Count; i++)
+                    {
+                        if (tanks[i].EntityId == ownEntityId)
+                        {
+                            LiveFrameTankState tank = tanks[i];
+                            tanks[i] = tank with { DamageDealt = ownDamageDealt };
+                            break;
+                        }
+                    }
+                }
+            }
+
             return OperationResult.Success(new LiveFrameReadResult(
                 _timeProvider.GetUtcNow(),
                 layout.GameVersion,
@@ -3127,6 +3159,46 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         }
 
         return tankRecord;
+    }
+
+    /// <summary>
+    /// Read the own Avatar's battle-stats dword0 (cumulative own
+    /// damage-dealt, the G2 published chain: vftableScan
+    /// <c>0x032752a4</c> -&gt; recordOffset 280). Honest and fail-closed:
+    /// any failure (scan not found, identity mismatch, read error) returns
+    /// null — the caller keeps the row's DamageDealt unknown, never
+    /// fabricates a value. One guarded scan + one 4-byte read under the
+    /// frame's existing lease.
+    /// </summary>
+    private async ValueTask<long?> ReadOwnDamageDealtAsync(
+        AuthorizedMemoryObservation observation,
+        long baseAddress,
+        IAuthorizedMemoryReader reader,
+        CancellationToken authorizationToken,
+        CancellationToken cancellationToken)
+    {
+        AvatarStatsResolution avatar = await ResolveAvatarStatsAddressAsync(
+            reader,
+            observation,
+            baseAddress,
+            null,
+            cancellationToken).ConfigureAwait(false);
+        if (avatar.Address is not uint avatarAddress)
+        {
+            return null;
+        }
+
+        OperationResult<byte[]> quadResult = await reader.ReadAsync(
+            (nint)(avatarAddress + EntityRecordRegionReadRequest.AvatarStatsQuadOffset),
+            sizeof(uint),
+            cancellationToken).ConfigureAwait(false);
+        if (!quadResult.IsSuccess || quadResult.Value is null
+            || quadResult.Value.Length < sizeof(uint))
+        {
+            return null;
+        }
+
+        return BinaryPrimitives.ReadUInt32LittleEndian(quadResult.Value);
     }
 
     private sealed record AvatarStatsResolution(

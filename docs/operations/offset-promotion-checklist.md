@@ -150,8 +150,9 @@ pre-staged draft to the published table (`chains` additive section,
 `offset_check.py --check-schema` and the full gate. **Eight fields are now
 `Verified` via chains.** The fidelity branch (`offset_check.py`) validates
 the walkable draft against the published fields (identity enforced
-post-publication). Remaining lanes: damage-dealt consumption (read surface
-for the live frame's own row) and item 7 (hardware atomicity, LAST). Item 7 (hardware atomicity) stays LAST by design —
+post-publication). Remaining lanes: damage-dealt consumption (live frame's own-row read,
+implemented 2026-08-12 — the own row now carries real `DamageDealt`;
+enemy/teammate rows stay honest-0) and item 7 (hardware atomicity, LAST). Item 7 (hardware atomicity) stays LAST by design —
 execution plan pre-staged `docs/operations/item7-hardware-atomicity-proof-plan.md`.
 
 ### G1 — Hardware-atomic read proof

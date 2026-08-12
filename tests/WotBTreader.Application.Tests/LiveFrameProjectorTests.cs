@@ -48,7 +48,8 @@ public sealed class LiveFrameProjectorTests
         Type10EntityPositionStatus status = Type10EntityPositionStatus.Resolved,
         float? hpCurrent = null,
         float? hpMax = null,
-        bool? alive = null) => new(
+        bool? alive = null,
+        long? damageDealt = null) => new(
         entityId,
         status,
         x,
@@ -59,7 +60,8 @@ public sealed class LiveFrameProjectorTests
         hpMax,
         alive,
         FailureStage: null,
-        ModuleRooted: true);
+        ModuleRooted: true,
+        DamageDealt: damageDealt);
 
     private static LiveFrameReadResult Frame(
         IReadOnlyList<LiveFrameTankState> tanks,
@@ -136,6 +138,30 @@ public sealed class LiveFrameProjectorTests
         Assert.AreEqual(0, tank.DamageTaken);
         Assert.AreEqual(0, tank.Kills);
         Assert.IsTrue(tank.Alive);
+    }
+
+    [TestMethod]
+    public void Project_OwnRowDamageDealt_MapsThroughWhenRead()
+    {
+        // G2 consumption: only the OWN row can carry DamageDealt (the
+        // coordinator read the own Avatar's battle-stats dword0). The other
+        // row keeps 0 (honest unknown) — never guessed.
+        OverlayFrameProjection projection = LiveFrameProjector.Project(
+            Frame(
+                [
+                    Tank(7, 0, 0, 10, damageDealt: 752),
+                    Tank(8, 0, 0, 12),
+                ],
+                Pose(0f, 0f, 0f)),
+            Fov,
+            1920,
+            1080);
+
+        Assert.AreEqual(752, projection.Tanks.Single(t => t.EntityId == 7).DamageDealt);
+        Assert.AreEqual(0, projection.Tanks.Single(t => t.EntityId == 8).DamageDealt);
+        // DamageTaken/Kills stay honest 0 in live mode.
+        Assert.AreEqual(0, projection.Tanks.Single(t => t.EntityId == 7).DamageTaken);
+        Assert.AreEqual(0, projection.Tanks.Single(t => t.EntityId == 7).Kills);
     }
 
     [TestMethod]

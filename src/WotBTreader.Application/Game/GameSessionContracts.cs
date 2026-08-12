@@ -695,7 +695,8 @@ public sealed record LiveFrameTankState(
     bool? Alive,
     string? FailureStage,
     bool ModuleRooted,
-    string? HpFailureStage = null);
+    string? HpFailureStage = null,
+    long? DamageDealt = null);
 
 /// <summary>
 /// One composed live frame (design: docs/operations/live-frame-loop-design.md):
@@ -726,9 +727,16 @@ public sealed record LiveFrameReadResult(
 /// <summary>
 /// Request for one composed live frame. The optional battle session id
 /// enables the ONE G2 replay-clock attestation for the frame (same
-/// semantics as the batch surface): omitted never claims the flag.
+/// semantics as the batch surface): omitted never claims the flag. The
+/// optional <see cref="OwnEntityId"/> (the decoded session's viewpoint
+/// participant's entity id) enables the own-row damage-dealt consumption:
+/// the coordinator reads the own Avatar's battle-stats dword0 (the G2
+/// published chain) and attaches it to that row — honest, fail-closed
+/// (any read failure leaves the row's DamageDealt null, never guessed).
 /// </summary>
-public sealed record LiveFrameReadRequest(BattleSessionId? BattleSessionId = null);
+public sealed record LiveFrameReadRequest(
+    BattleSessionId? BattleSessionId = null,
+    long? OwnEntityId = null);
 
 /// <summary>Outcome of one CAM-001 gate-free camera-pose walk.</summary>
 public enum CameraPoseStatus
