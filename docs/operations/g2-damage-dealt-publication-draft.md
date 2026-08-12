@@ -185,9 +185,12 @@ wiring, or any resolver/read-surface change in the same change.
 
 ## 7. NOT in scope (own gates)
 
-- **Live-frame consumption** — `LiveFrameTankState.DamageDealt` stays
-  honest-0; wiring a resolver/read surface for it is a SEPARATE read-surface
-  workstream (publication is evidence + table record, exactly as G0/G1).
+- **Live-frame consumption** — COMMITTED 2026-08-12 after this apply: the
+  live frame's own-row `DamageDealt` reads the published chain via the
+  coordinator's avatar-stats anchor (own id from the decoded viewpoint join;
+  fail-closed null on any failure, never guessed; projector own-row only).
+  This publication was evidence + table record; the consumption landed as a
+  separate read-surface commit.
 - **Enemy/teammate per-row damage** — stays honest-unknown (their stats
   objects are not in the player's memory map); the live scoreboard is
   own-row-only.

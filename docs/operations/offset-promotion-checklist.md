@@ -127,7 +127,7 @@ comma-binding, documented), both consistent with the ledger.
 
 The G0 Phase-5 review defined promotion gates per field; the Phase-4 rule
 requires **two-replay live agreement** (`twoReplayRepeatability = true`).
-Status as of 2026-08-11:
+Status as of 2026-08-12:
 
 | Field | Live agreement | Evidence | Publication state |
 |---|---|---|---|
@@ -136,7 +136,7 @@ Status as of 2026-08-11:
 | HP (entity base `+0xB8`, signed int16) | **HIT both replays** — Oasis 087 (8/8 strict), Dead Rail 091 Phase-4 (4/4 strict, 58 dumps) | OD-RECOVERY-087/091 | **PUBLISHED 2026-08-12 (OD-RECOVERY-092)** — `Verified`, chains (entity-lookup prefix + `recordOffset 184`), offsets 0. Item-7 static support: hash-bound listing-confirmed 16-bit health setters (`FUN_0166b9f0`/`FUN_01675f60` write `+0xB8`/`+0x11E` as `MOV word`), zero 64/128-bit stores to the fields — `item7-hardware-atomicity-proof-plan.md` Branch A |
 | Velocity, replayTime, playerHP-as-offset, aliveTankCount | not promoted | G0 record | untouched |
 | Pitch/roll (ring `+0x2C`/`+0x28`) | **HIT both replays** — rotation-triple reconciliation: `yaw-diff --field pitch\|roll` re-verdicts the SAME OD-088/089 dumps (Oasis 48/48 + Dead Rail 56/56 each, score 1.0, flatness 1.0, record-span 0x38-trimmed) | OD-RECOVERY-088/089 | **PUBLISHED 2026-08-12 (OD-RECOVERY-098)** — `Verified`, chains (position walk + `recordOffset 44`/`40`), offsets 0; rotation triple fully published |
-| Damage-dealt (Avatar stats quad `+0x0`, uint32) | **HIT both replays** — Oasis 095 (5/5 exact sums, lag-corrected), Dead Rail 096 Phase-4 (9/9 exact sums, score 1.0, flatness 1.0, Strict ≥ 2); offsets agree at `0x0` → `twoReplayRepeatability = true` | OD-RECOVERY-095/096 | **PUBLISHED 2026-08-12 (OD-RECOVERY-097)** — `Verified`, chains (`vftableScan` 0x032752a4 → `recordOffset 280`), offsets 0; new hop kind; read surface untouched (own row honest-0 until the consumption workstream) |
+| Damage-dealt (Avatar stats quad `+0x0`, uint32) | **HIT both replays** — Oasis 095 (5/5 exact sums, lag-corrected), Dead Rail 096 Phase-4 (9/9 exact sums, score 1.0, flatness 1.0, Strict ≥ 2), re-proven live in-session OD-099 (5/5 exact sums, default lag); offsets agree at `0x0` → `twoReplayRepeatability = true` | OD-RECOVERY-095/096/099 | **PUBLISHED 2026-08-12 (OD-RECOVERY-097)** — `Verified`, chains (`vftableScan` 0x032752a4 → `recordOffset 280`), offsets 0; new hop kind; CONSUMPTION committed 2026-08-12 (live frame's own-row `DamageDealt` via the avatar-stats anchor; fail-closed null) |
 | Camera pose (posA yz-swap + basis) | CAM-013 verified the W2S seam live (091/091b/092 chase, `w2sProjectionVerified: true`) | CAM-013 | overlay consumption only — no offset promotion (the camera track is a separate workstream, read surface untouched) |
 
 Applied: `g1-yaw-publication-draft.md` + `g1-hp-publication-draft.md`

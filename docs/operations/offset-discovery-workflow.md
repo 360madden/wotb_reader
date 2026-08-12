@@ -1,10 +1,12 @@
 # WoT Blitz PC offset-discovery workflow
 
-Last updated: 2026-08-11 (OD-RECOVERY-087 closed L1 HP: the entity-base
-current-health int16 is confirmed live at `+0xB8` — HIT, score 1.0,
-flatness 1.0, Strict 8/8; OD-RECOVERY-088 closed L2 facing at `+0x30`;
-X4 L1 wiring shipped — the live frame's HP is real; OD-RECOVERY-089
-template pre-staged for the Phase-4 Dead Rail repeat)
+Last updated: 2026-08-12 (ALL publication applies landed — G1 HP+yaw
+OD-092, G2 damageDealt OD-097, G1 pitch/roll OD-098; **EIGHT fields
+`Verified` via chains**; damage-dealt consumption committed; OD-RECOVERY-099
+re-proved the L3 lane live in-session at default lag and corrected the
+completion-loop design: the game exits on its own after the Battle Results
+screen, so the reliable completion signal is the in-session teardown
+statuses, not the ephemeral `evidence.replay_completed` gate denial)
 
 This is the operational playbook for discovering memory evidence from the
 Windows WoT Blitz client during a **positively verified offline replay**. It is
@@ -16,7 +18,20 @@ offset.
 
 ## Current decision
 
-Session ID: `OD-RECOVERY-091`.
+**Status 2026-08-12: the offset-discovery lanes are converged.** G0/G1/G2
+publications are all APPLIED (position family OD-083, HP+yaw OD-092,
+damageDealt OD-097, pitch/roll OD-098 — EIGHT fields `Verified` via
+module-rooted `chains`, `offsets` 0 by design), the damage-dealt CONSUMPTION
+is committed (live frame's own-row `DamageDealt` via the avatar-stats
+anchor), and OD-RECOVERY-099 re-proved the L3 lane live in-session at
+default lag (offset 0x0, 5/5 exact sums) with the completion loop verified
+live (battle-end teardown → clean driver exit). Remaining approved-launch
+items: the batch `-LiveAcquire` rehearsal re-run (re-establishes the 42/42
+live verdict + Branch B step 3 read-pass measurements) and item-7 Branch B
+steps 3–4 (camera-pose double-reads). Item 7 (hardware atomicity) stays
+LAST. The full historical record is below.
+
+Session ID (historical): `OD-RECOVERY-091`.
 
 **OD-RECOVERY-087 is DONE (2026-08-11) — L1 HP HIT live.** The entity-base
 current-health signed int16 is **confirmed at `+0xB8`** on Oasis Palms
@@ -68,14 +83,13 @@ dumps / 4 windows / 520 dmg / 92.7–104.7 s: byte-level exact track 520 →
 (`hp-diff --lag-lead-seconds`, default 0 = unchanged, 3 new tests) re-
 verdicts the SAME immutable dumps to **HIT: score 1.0, flatness 1.0,
 Strict 4/4 exact sums**; Oasis re-verifies unchanged. `twoReplayRepeatability =
-true` for HP — the Phase-4 two-replay rule CLOSES; HP publication
-PRE-STAGED (PENDING operator approval):
-`docs/operations/g1-hp-publication-draft.md`. Evidence:
+true` for HP — the Phase-4 two-replay rule CLOSES; HP publication APPLIED 2026-08-12 (OD-RECOVERY-092):
+`docs/operations/g1-hp-publication-draft.md` (historical pre-apply record). Evidence:
 `docs/operations/od-recovery-091-evidence-template.md` (filled) + ledger
 `OD-RECOVERY-091` result section.
 
-The yaw publication package stays PRE-STAGED (PENDING operator approval):
-`docs/operations/g1-yaw-publication-draft.md`.
+The yaw publication package was APPLIED 2026-08-12 (OD-RECOVERY-092):
+`docs/operations/g1-yaw-publication-draft.md` (historical pre-apply record).
 
 **The position anchor is ESTABLISHED and PUBLISHED (2026-08-10):**
 `playerPositionX/Y/Z` are `Verified` via the module-rooted position-ring chain
@@ -121,7 +135,7 @@ DONE (OD-RECOVERY-087, HIT at `+0xB8`) and L2 facing is DONE
 (OD-RECOVERY-088, HIT at `+0x30`)** — the live-frame HP bar and hull-yaw row
 can become real (additive contract changes); the Phase-4 two-replay rules
 (Dead Rail for both HP and yaw) are now CLOSED and both publication packages
-(HP + yaw) await the operator gate.
+(HP + yaw) are APPLIED (OD-RECOVERY-092).
 `replayTime` retains
 its rolling increased-Double evidence (OD-012..038) and `playerHP` has the
 query-side ground truth ready (`IHpGroundTruthProvider`); both ride the same

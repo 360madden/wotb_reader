@@ -13,8 +13,10 @@ End-to-end flow for discovering game memory offsets. Canonical detail:
 
 Versioned, module-relative offsets into the game process that let the reader
 observe live replay state (replay time, player HP/position/yaw/pitch, alive
-tank count). Evidence lives in `memory-offsets/<gameVersion>.json`, validated
-against `memory-offsets/schema.json`. 8 fields, each with an expected type:
+tank count, own damage dealt). Evidence lives in `memory-offsets/<gameVersion>.json`, validated
+against `memory-offsets/schema.json`. 11 declared fields (8 required + the
+three OPTIONAL chained `playerPitch`/`playerRoll`/`damageDealt`), each with
+an expected type:
 
 | Field | Type |
 |-------|------|
@@ -22,11 +24,16 @@ against `memory-offsets/schema.json`. 8 fields, each with an expected type:
 | `playerHP` | int32 |
 | `playerPositionX/Y/Z` | float (world units / height) |
 | `playerYaw` | float (radians) |
+| `playerPitch` / `playerRoll` | float (radians) |
+| `damageDealt` | uint32 (cumulative own damage) |
 | `cameraPitch` | float (radians) |
 | `aliveTankCount` | int32 |
 
 `0` = unknown. `confidence`: none/low/medium/high is a summary only; per-field
-`fieldValidation.status` and its required evidence control promotion. The offset file is read by
+`fieldValidation.status` and its required evidence control promotion. As of
+2026-08-12 **EIGHT fields are `Verified` via module-rooted `chains`** (position
+family + yaw + HP + damageDealt + pitch + roll — G0/G1/G2 publications
+OD-RECOVERY-083/092/097/098); all `offsets` stay 0 by design. The offset file is read by
 `Application/Replay/OffsetTableReader.cs` and consumed in
 `GameSessionCoordinator` (which refuses memory reads without a known,
 version-matched offset table — `HasKnownOffsets`).

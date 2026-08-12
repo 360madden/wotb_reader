@@ -45,7 +45,7 @@ what runtime promotion consumes.
 
 Pointer-chain fields (e.g. the position family, published 2026-08-10 via
 OD-RECOVERY-083) are recorded in the additive `chains` object: field →
-array of `{ "kind": "rootRva" | "memberOffset" | "inlineOffset" | "recordOffset" | "ringIndex" | "entityLookup",
+array of `{ "kind": "rootRva" | "memberOffset" | "inlineOffset" | "recordOffset" | "ringIndex" | "entityLookup" | "vftableScan",
 "value": <non-negative int>, "note": <text> }` hops — the module-relative
 dereference path the resolver walks. `rootRva` dereferences the root slot;
 `memberOffset` dereferences a pointer at (object + value); `inlineOffset`
@@ -54,8 +54,12 @@ INLINE ring entry at (object + value + index·stride) using the Int32 index
 field at (object + `indexOffset`) — no ring pointer dereference;
 `entityLookup` resolves an entity-map lookup (cached fast path +
 alternative tree roots, node layout in its descriptor) with the target
-entity id supplied per walk. `ringIndex` requires `indexOffset` and
-`stride`; `entityLookup` requires its descriptor fields;
+entity id supplied per walk; `vftableScan` (G2, 2026-08-12) is a FIRST-hop
+alternative to `rootRva` — scan the module's Private+Mapped regions for an
+object whose vftable dword == `moduleBase + value` (value = the vftable
+RVA; identity re-gate implicit; scan bounds ride the hop note). `ringIndex`
+requires `indexOffset` and `stride`; `entityLookup` requires its descriptor
+fields;
 `OffsetChainWalker` walks chains fail-closed, and `OffsetTableReader`
 parses `chains` into the model. Chained fields keep their `offsets` value
 `0` **by design**: the runtime observation path computes `moduleBase +
@@ -77,8 +81,8 @@ the published table.
 `schemaVersion` stays 1 — the additive keys are ignored by the legacy
 observation path.
 
-**playerHP static chain (2026-08-11, NOT promoted — live verification
-still required):** `VerifyPlayerHpChain.java` (hash-bound, **26/26 checks**, verdict
+**playerHP chain (2026-08-11 static evidence, G1 PROMOTED 2026-08-12,
+OD-RECOVERY-092):** `VerifyPlayerHpChain.java` (hash-bound, **26/26 checks**, verdict
 `player-hp-chain-verified` on `1cda5c31…1760307d`) pins the entity base
 record's health block: current health as a **signed int16 at
 `[entity+0xB8]`**, alive byte at `[entity+0xBA]`, **max health int16 at
@@ -91,10 +95,11 @@ it; the state-sync writer `FUN_0166b9f0` and diff-notify twin
 `FUN_01675f60` store the same offsets. This REFUTES the earlier
 int32-in-tank-record expectation (`[entity+0x3C]`, the `+0x48` rehearsal
 fixture): HP is int16 and lives 0x7C bytes past the transform pointer on
-the entity record itself. `playerHP` remains `0`/Unknown in the table
-until the L1 live session confirms the field empirically on both 11.19.0
-replays; the `entity-base` region anchor + int16 correlator pass
-(2026-08-11) are the session's tools.
+the entity record itself. The static proof became the G1 `playerHP`
+fieldValidation StaticAnalysis entry; live verification followed
+(OD-RECOVERY-087 Oasis + OD-RECOVERY-091 Dead Rail,
+`twoReplayRepeatability = true`) and the field is `Verified` via the
+entity-base chain (final hop `recordOffset 184`).
 
 **Transform record `[entity+0x3C]` (2026-08-11, static-only, not
 promoted):** `VerifyTransformRecord.java` (hash-bound, **20/20 checks**,
@@ -154,15 +159,16 @@ repeating unresolved hypotheses.
 
 Offset discovery follows the timeboxed workflow in the canonical documents:
 identity/offline gate → static triage → controlled dynamic anchor → native access
-tracing → repeatability → conservative publication. The current 11.19.0.10 table
-contains one hash-bound quarantined `playerYaw` (Stale) plus Unknown
-`playerPositionX`/`playerPositionZ` (OD-RECOVERY-004/005/006 private-mapping /
-heap-dynamic aggregates) and Unknown `replayTime` with the campaign's most
-substantial evidence: rolling increased-Double convergence reproduced across
-30 verified process launches (OD-012…OD-038), TARGET 10 ≤ 10 reached three
-times (OD-031 ×2, OD-036), up to 10 survivors CE-staged with 4 hardware
-write-BPs armed (OD-036 end-to-end), and the value-bound 11–17 survivor tail
-plateau. All eight offsets remain `0` and no field is runtime-supported.
+tracing → repeatability → conservative publication. **Current 11.19.0.10 state
+(2026-08-12): EIGHT fields are `Verified` via module-rooted `chains`**
+(position family + yaw + HP + damageDealt + pitch + roll; all `offsets` 0 by
+design, runtime-supported by the resolver / `OffsetChainWalker` / coordinator
+anchors) — see the `fieldValidation` + `chains` sections above and the
+`docs/operations/g0-walkable-position-chains.draft.json` canonical form. Not
+published: velocity, `replayTime`, `cameraPitch`, `aliveTankCount`. The
+pre-publication discovery history below (quarantined yaw, OD-RECOVERY-004..038
+campaign aggregates, "all eight offsets remain 0") documents the discovery
+path only.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐

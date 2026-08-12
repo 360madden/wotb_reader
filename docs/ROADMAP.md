@@ -37,8 +37,9 @@ matrix below and in the root README.
 | Session search/filter (overlay sidebar) | ✅ | — |
 | Documentation (architecture, handoffs, BLK log, knowledge.md) | ✅ | — |
 
-**Current snapshot (2026-08-01):** 412 tests — 410 passed, 0 failed, 2 skipped
-(local opt-in) across 12 test projects. Build: 0 errors, 0 warnings.
+**Current snapshot (2026-08-12):** 1045 tests passed, 3 local opt-in skips,
+0 warnings, 0 errors (full `scripts/validate.ps1` gate, fresh run). Build:
+0 errors, 0 warnings.
 Vulnerability audit: 0 vulnerable packages across all 28 projects. Repository scan
 counts are intentionally not repeated here because the tracked file set changes as
 offline evidence and documentation are added.
@@ -215,9 +216,13 @@ via CLI → published → served → all API endpoints verified → overlay laun
   `discover`, `discover-pattern`, `discover-pointer-chain`,
   `discover-snapshot`, `discover-compare`, `discover-nearby`,
   `discover-discard`. The 11.19.0.10 table is hash-bound to the
-  installed executable; `playerYaw` has static-analysis provenance but is
-  quarantined/Stale (conflicting representations, OD-2026-07-31-YAW-RECONCILE-001), and seven
-  fields remain unknown. Candidate evidence is not runtime-supported.
+  installed executable; **EIGHT fields are `Verified` via module-rooted
+  `chains`** (position family + yaw + HP + damageDealt + pitch + roll — G0
+  OD-083, G1 OD-092, G2 OD-097, G1 OD-098; all `offsets` 0 by design;
+  yaw's static candidate was resolved-by-supersession, the quarantined
+  representations retired 2026-08-11). The earlier "seven fields remain
+  unknown / yaw quarantined" text documents the pre-publication state.
+  Candidate evidence is not runtime-supported.
 
 ### 🟢 P4 — `watch` CLI command ✅
 

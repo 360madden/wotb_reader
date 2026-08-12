@@ -42,9 +42,9 @@ Canonical detail: [`memory-offsets/README.md`](../memory-offsets/README.md)
 }
 ```
 
-Required: `schemaVersion`, `gameVersion`, `offsets` (all 10 declared
-fields — 8 required plus `playerPitch`/`playerRoll` pre-staged OPTIONAL
-chained fields awaiting the operator-approved apply —
+Required: `schemaVersion`, `gameVersion`, `offsets` (all 11 declared
+fields — 8 required plus the three OPTIONAL chained fields
+`playerPitch`/`playerRoll`/`damageDealt` —
 `additionalProperties: false`). `executableSha256` is required for candidate
 or promoted evidence. An intentional placeholder has `confidence: "none"`, an
 empty hash, `discoveredAtUtc: null`, and all offsets set to `0`;
@@ -58,8 +58,9 @@ evidence. `0` = unknown.
 | `playerHP` | int32 | Current hit points |
 | `playerPositionX/Y/Z` | float | World units (Y = height) |
 | `playerYaw` | float | Radians (ring-record `+0x30`, published) |
-| `playerPitch` | float | Radians (ring-record `+0x2C`, pre-staged optional — see `g1-pitch-roll-publication-draft.md`) |
-| `playerRoll` | float | Radians (ring-record `+0x28`, pre-staged optional — see `g1-pitch-roll-publication-draft.md`) |
+| `playerPitch` | float | Radians (ring-record `+0x2C`, published) |
+| `playerRoll` | float | Radians (ring-record `+0x28`, published) |
+| `damageDealt` | uint32 | Cumulative own damage dealt (avatar-stats quad dword0 `[avatar+0x118]`, published) |
 | `cameraPitch` | float | Radians |
 | `aliveTankCount` | int32 | Tanks still in battle |
 
@@ -222,9 +223,13 @@ published table (fidelity-enforced by `offset_check.py`).
   `offsets.damageDealt` stays 0 (the Avatar object is battle-scoped heap).
   Reachability note: the camera chain's `avatarAddress` anchors
   `AvatarControllerReplay` (a DIFFERENT object) — the scan targets the
-  entity-factory Avatar, never the camera anchor. Consumption (a read
-  surface for the live frame's own row) is a separate workstream, untouched
-  by this publication.
+  entity-factory Avatar, never the camera anchor. **Consumption committed
+  (2026-08-12):** the live frame's own row `DamageDealt` now reads this
+  published chain via the coordinator's avatar-stats anchor (own id from the
+  decoded viewpoint join; fail-closed null on any failure, never guessed;
+  projector own-row only — enemy/teammate rows stay honest-0); the read path
+  was proven live in-session by OD-RECOVERY-099 (every avatar-stats probe
+  `Resolved candidates=1`, verdict HIT at default lag).
 
 ## Validation tooling
 

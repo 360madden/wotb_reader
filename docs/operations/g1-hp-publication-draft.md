@@ -95,7 +95,8 @@ Do NOT include velocity, yaw, `replayTime`, `cameraPitch`,
 
 ## 6. NOT in scope (own gates)
 
-- **Yaw publication** — READY in parallel
-  (`docs/operations/g1-yaw-publication-draft.md`), operator approval only.
+- **Yaw publication** — APPLIED 2026-08-12 (OD-RECOVERY-092) alongside
+  this package (both G1 applies landed together); the draft is the
+  historical pre-apply record.
 - **Velocity, replayTime, cameraPitch, aliveTankCount** — untouched.
 - **Item 7 (hardware atomicity)** — stays LAST by design.

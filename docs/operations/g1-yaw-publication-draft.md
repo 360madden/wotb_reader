@@ -94,9 +94,9 @@ Do NOT include velocity, HP, `replayTime`, `cameraPitch`,
 
 ## 6. NOT in scope (own gates)
 
-- **HP publication** — Phase-4 two-replay rule CLOSED (OD-RECOVERY-091,
-  2026-08-11: Dead Rail HIT at `+0xB8`, victim 2549395 — the planned
-  2549399 is team 2 and cannot resolve); package READY at
-  `docs/operations/g1-hp-publication-draft.md`, operator approval only.
+- **HP publication** — APPLIED 2026-08-12 (OD-RECOVERY-092) alongside
+  this package (both G1 applies landed together); the Phase-4 evidence
+  (OD-RECOVERY-087/091) is recorded in the ledger; the draft is the
+  historical pre-apply record.
 - **Velocity, replayTime, cameraPitch, aliveTankCount** — untouched.
 - **Item 7 (hardware atomicity)** — stays LAST by design.

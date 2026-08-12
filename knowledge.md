@@ -28,23 +28,26 @@ full design specification.
   parser's published fixtures. Known documented divergences: bot-account sentinels
   (Rust uint32-truncates, C# rejects sign-extended IDs) and battle-time source
   (client `meta.json` vs server protobuf tag 2). See `tools/external/README.md`.
-- **Current offset evidence (2026-08-11):** `11.19.0.10` is hash-bound to
+- **Current offset evidence (2026-08-12):** `11.19.0.10` is hash-bound to
   `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d`.
-  `playerPositionX/Y/Z` are **`Verified` via the module-rooted position-ring
-  `chains`** (G0 publication applied 2026-08-10; `offsets` stay 0 by design
-  — the runtime computes `moduleBase + offset` and the ring record is
-  battle-scoped heap); the resolver + `/discover/entity-position` are
-  runtime-supported. `playerYaw` is **resolved-by-supersession** — a runtime
-  chain field at ring-record `+0x30`, live-verified on BOTH replays
-  (OD-RECOVERY-088/089, `twoReplayRepeatability = true`). HP (current
-  health) is live-verified at entity-base `+0xB8` on BOTH replays
-  (OD-RECOVERY-087/091, Strict 8/8 and 4/4 exact sums,
-  `twoReplayRepeatability = true`). Both publication packages are READY
-  (`g1-yaw-publication-draft.md`, `g1-hp-publication-draft.md` — operator
-  approval + gate run only); the table stays frozen until then. Still not
-  published: velocity, `replayTime`, `cameraPitch`, `aliveTankCount`;
-  damage-dealt L3 closed honest-negative (no counter in the entity records
-  — a new object family would be required).
+  **EIGHT fields are `Verified` via module-rooted `chains`** (all `offsets`
+  stay 0 by design — the runtime computes `moduleBase + offset` and the ring
+  records / entity bases / Avatar objects are battle-scoped heap): the
+  position family (`playerPositionX/Y/Z`, ring record `+0x10/+0x14/+0x18`,
+  G0 publication OD-RECOVERY-083), `playerYaw` (ring `+0x30`, G1
+  OD-RECOVERY-092), `playerHP` (entity-base `+0xB8`, G1 OD-RECOVERY-092),
+  `damageDealt` (avatar-stats quad `[avatar+0x118]` dword0 via the NEW
+  `vftableScan` chain hop — G2 OD-RECOVERY-097, live HITs OD-095/096/099,
+  `twoReplayRepeatability = true`), and `playerPitch`/`playerRoll` (ring
+  `+0x2C`/`+0x28`, G1 OD-RECOVERY-098). The damage-dealt CONSUMPTION is
+  committed: the live frame's own row reads the published chain via the
+  coordinator's avatar-stats anchor (fail-closed null, never guessed). The
+  publication applies are all operator-approved + rehearsal-proven
+  (`scripts/python/rehearse-offset-apply.py`). Still not published:
+  velocity, `replayTime`, `cameraPitch`, `aliveTankCount`; the rotation
+  triple is fully published. Apply details: `docs/operations/g2-damage-dealt-publication-draft.md`
+  + `g1-pitch-roll-publication-draft.md`; evidence in the ledger
+  OD-RECOVERY-083/088/089/091/092/095–099.
 - **Replay-start flake (OD-044) fixed:** the ~50% launch deaths were two defects —
   a watch_offline round-2 double-click + SW_RESTORE churn into the live replay HUD
   (become hidden → OnBackground), and mid-battle `OfflineReplayEvidenceLifetime`
@@ -61,6 +64,14 @@ full design specification.
   400 `discover.gate_not_satisfied`), so memory reads must be anchored inside a
   single battle, and staging scans (~65s for 9 axis scans) must not span a
   boundary. M1 can be re-run per loop iteration without relaunching the game.
+  **CORRECTION (2026-08-12, OD-RECOVERY-099 live):** in the current
+  watch-offline flow the game instead EXITS ON ITS OWN ~1–2 min after the
+  Battle Results screen (no auto-loop observed, no crash, no shutdown lines,
+  replay file untouched; launcher/clicker/driver/chain audited — zero
+  game-kill paths). The reliable completion signal is the in-session teardown
+  statuses (`AvatarAnchorNotFound`/`GateNotSatisfied` after a verified start),
+  NOT the cross-session `evidence.replay_completed` gate denial (in-memory,
+  dies with the process).
 - **Type-10 (`0x0A`) position packet layout is verified end-to-end** against the
   decoded DB ground truth (33 281 packets, all 49 bytes, byte-identical floats):
   `entity int32 | space int32 | vehicle int32 | x f32 | y f32 | z f32 | 12B zeros |
