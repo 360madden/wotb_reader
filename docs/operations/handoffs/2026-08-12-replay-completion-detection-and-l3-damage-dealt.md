@@ -233,10 +233,24 @@ Six fields are now `Verified` via chains. `damageDealt` is published with
 `offsets 0`; the read surface stays untouched (own frame row honest-0 until
 the consumption workstream).
 
+### 6. G1 pitch/roll publication APPLIED (2026-08-12, OD-RECOVERY-098)
+
+`playerPitch` / `playerRoll` published `Verified` via the ring-record chain
+(the identical position walk, `recordOffset 44` / `40`); offsets 0.
+Evidence: the rotation-triple reconciliation (`yaw-diff --field pitch|roll`
+re-verdicts the SAME OD-088/089 dumps — Oasis 48/48 + Dead Rail 56/56,
+score 1.0, flatness 1.0, record-span trimmed) + the item-7 Branch A
+rotation sub-proof as StaticAnalysis evidence. Post-apply: `offset_check
+--check-schema` 8 chains + fidelity 8/8 (the draft's "7" expectation
+predates the G2 apply), report verified=8 exit 0, ChainedFields exclusion
+test, `validate.ps1` exit 0. **Eight fields are now `Verified` via
+chains** — the rotation triple is fully published.
+
 - **Tree state at handoff end:** the G2 apply + OD-097 record are committed
   as `feat(od): publish damageDealt via vftableScan chain (OD-097)`; the
-  pitch/roll apply (OD-RECOVERY-098, table-only) and the consumption
-  workstream remain open.
+  pitch/roll apply (OD-RECOVERY-098, table-only) is committed as its own
+  conventional commit; the consumption workstream (damage-dealt read
+  surface) remains open.
 - **G2 apply** — operator decision on the `vftableScan` hop kind, then the
   draft's apply steps (§4) + post-edit gates.
 - **Damage-dealt consumption** — resolver/read surface for the live frame's

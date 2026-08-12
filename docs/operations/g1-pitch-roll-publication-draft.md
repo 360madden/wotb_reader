@@ -18,6 +18,14 @@
 > expectation exactly. The pre-staging was complete — no gaps found (unlike
 > the G2 apply, whose first rehearsal caught an incomplete checker spec;
 > see `g2-damage-dealt-publication-draft.md`).
+> **APPLIED (2026-08-12, OD-RECOVERY-098, operator-approved):** §3 executed
+> — table chains verbatim from the canonical draft, offsets 0, fieldValidation
+> Verified (StaticAnalysis item-7 Branch A rotation sub-proof + DynamicScan
+> reconciliation), pack doc documented the rotation triple. Post-edit gates
+> green: `offset_check --check-schema` chains-validated **8 fields**
+> (position family + yaw + HP + damageDealt + pitch + roll — the §4 "7"
+> expectation predates the G2 apply) + fidelity 8/8, report verified=8 exit
+> 0, ChainedFields exclusion test, `validate.ps1` exit 0.
 > (`docs/operations/g1-yaw-publication-draft.md`, OD-RECOVERY-092).
 
 ## 1. What gets published

@@ -135,21 +135,23 @@ Status as of 2026-08-11:
 | Facing/yaw (ring record `+0x30`) | **HIT both replays** — Oasis 088 (48/48), Dead Rail 089 Phase-4 (56/56, score 1.0, flatness 1.0) | OD-RECOVERY-088/089 | **PUBLISHED 2026-08-12 (OD-RECOVERY-092)** — `Verified`, chains (position walk + `recordOffset 48`), offsets 0 |
 | HP (entity base `+0xB8`, signed int16) | **HIT both replays** — Oasis 087 (8/8 strict), Dead Rail 091 Phase-4 (4/4 strict, 58 dumps) | OD-RECOVERY-087/091 | **PUBLISHED 2026-08-12 (OD-RECOVERY-092)** — `Verified`, chains (entity-lookup prefix + `recordOffset 184`), offsets 0. Item-7 static support: hash-bound listing-confirmed 16-bit health setters (`FUN_0166b9f0`/`FUN_01675f60` write `+0xB8`/`+0x11E` as `MOV word`), zero 64/128-bit stores to the fields — `item7-hardware-atomicity-proof-plan.md` Branch A |
 | Velocity, replayTime, playerHP-as-offset, aliveTankCount | not promoted | G0 record | untouched |
-| Pitch/roll (ring `+0x2C`/`+0x28`) | live-verified as the rotation triple (OD-RECOVERY-088) but NO Phase-4 repeat run | 088 | not packaged; P4 candidate only |
+| Pitch/roll (ring `+0x2C`/`+0x28`) | **HIT both replays** — rotation-triple reconciliation: `yaw-diff --field pitch\|roll` re-verdicts the SAME OD-088/089 dumps (Oasis 48/48 + Dead Rail 56/56 each, score 1.0, flatness 1.0, record-span 0x38-trimmed) | OD-RECOVERY-088/089 | **PUBLISHED 2026-08-12 (OD-RECOVERY-098)** — `Verified`, chains (position walk + `recordOffset 44`/`40`), offsets 0; rotation triple fully published |
 | Damage-dealt (Avatar stats quad `+0x0`, uint32) | **HIT both replays** — Oasis 095 (5/5 exact sums, lag-corrected), Dead Rail 096 Phase-4 (9/9 exact sums, score 1.0, flatness 1.0, Strict ≥ 2); offsets agree at `0x0` → `twoReplayRepeatability = true` | OD-RECOVERY-095/096 | **PUBLISHED 2026-08-12 (OD-RECOVERY-097)** — `Verified`, chains (`vftableScan` 0x032752a4 → `recordOffset 280`), offsets 0; new hop kind; read surface untouched (own row honest-0 until the consumption workstream) |
 | Camera pose (posA yz-swap + basis) | CAM-013 verified the W2S seam live (091/091b/092 chase, `w2sProjectionVerified: true`) | CAM-013 | overlay consumption only — no offset promotion (the camera track is a separate workstream, read surface untouched) |
 
 Applied: `g1-yaw-publication-draft.md` + `g1-hp-publication-draft.md`
-(OD-RECOVERY-092, 2026-08-12) and `g2-damage-dealt-publication-draft.md`
+(OD-RECOVERY-092, 2026-08-12), `g2-damage-dealt-publication-draft.md`
 (OD-RECOVERY-097, 2026-08-12 — new `vftableScan` hop kind, apply
-rehearsal-proven before landing). Each applied the chain from the pre-staged
-draft to the published table (`chains` additive section, `offsets` stay 0),
-appended evidence + approvals, then re-ran `offset_check.py --check-schema`
-and the full gate. Remaining: pitch/roll
-(`g1-pitch-roll-publication-draft.md`) — table-only apply, rehearsal-proven
-first run, awaits the operator's go-ahead. The fidelity branch
-(`offset_check.py`) validates the walkable draft against the published
-fields (identity enforced post-publication). Item 7 (hardware atomicity) stays LAST by design —
+rehearsal-proven before landing), and
+`g1-pitch-roll-publication-draft.md` (OD-RECOVERY-098, 2026-08-12 —
+table-only, rehearsal-proven first run). Each applied the chain from the
+pre-staged draft to the published table (`chains` additive section,
+`offsets` stay 0), appended evidence + approvals, then re-ran
+`offset_check.py --check-schema` and the full gate. **Eight fields are now
+`Verified` via chains.** The fidelity branch (`offset_check.py`) validates
+the walkable draft against the published fields (identity enforced
+post-publication). Remaining lanes: damage-dealt consumption (read surface
+for the live frame's own row) and item 7 (hardware atomicity, LAST). Item 7 (hardware atomicity) stays LAST by design —
 execution plan pre-staged `docs/operations/item7-hardware-atomicity-proof-plan.md`.
 
 ### G1 — Hardware-atomic read proof

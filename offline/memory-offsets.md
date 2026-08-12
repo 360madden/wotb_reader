@@ -187,6 +187,16 @@ Two more fields joined the walkable `chains` family under G1
   true`). The rotation triple is roll `+0x28` / pitch `+0x2C` / yaw `+0x30`;
   this resolves-by-supersession the quarantined static yaw candidate
   (ring-record `RingRecordRegion.YawOffset = 0x30` is live-verified).
+- **`playerPitch` / `playerRoll`** (2026-08-12, OD-RECOVERY-098) — `Verified`
+  via the SAME ring-record chain with final hops `recordOffset 44`
+  (float32 hull pitch at `+0x2C`) / `recordOffset 40` (float32 hull roll at
+  `+0x28`). Rotation-triple reconciliation: `yaw-diff --field pitch|roll`
+  re-verdicts the SAME immutable OD-088/089 dumps — Oasis 48/48 + Dead Rail
+  56/56 each, score 1.0, flatness 1.0 (record-span 0x38-trimmed;
+  `--record-span` excludes the next ring entry's byte-near-identical
+  sibling decoy), `twoReplayRepeatability = true`. With this apply the
+  rotation triple roll `+0x28` / pitch `+0x2C` / yaw `+0x30` is FULLY
+  published.
 
 Both keep `offsets` 0 by design (battle-scoped heap, same rationale as the
 position family); the canonical walkable forms are the SAME hops as the
