@@ -85,6 +85,11 @@ param(
     # When set, write the exit code here and throw WATCH_EXIT:<code> so the
     # launcher can invoke this script in-process (no nested console focus steal).
     [string]$ResultPath = '',
+    # Persisted completion marker (OD-099): the launcher passes the replay path
+    # so the pre-click check can consult the marker file and refuse to click a
+    # replay that already played to completion (fail fast instead of starting
+    # the game for a re-run).
+    [string]$ReplayPath = '',
     # FRESH16 click reliability: the ready gate fires on the FIRST bright frame
     # (StableSamples=1 post-sync), but the CTA's entrance animation can still be
     # running - clicking mid-animation misses (the button is not yet hit-testable).
@@ -561,7 +566,22 @@ function Test-ReplayStartedMarker([datetime]$ProcessStartAt) {
     return [bool](Select-String -LiteralPath $log.FullName -Pattern 'START_REPLAY_LOCAL|Start replay event' -Quiet)
 }
 
+# Persisted replay-completion marker (OD-099 durable fix): dot-source the
+# shared helper before the pre-click marker check below.
+. (Join-Path $PSScriptRoot 'od-replay-completion.ps1')
+
 try {
+    # Persisted completion marker (OD-099 durable fix): the gate denial
+    # evidence.replay_completed is in-memory and dies with the game process;
+    # the marker file (keyed to the replay's immutable fingerprint) survives
+    # across processes. Check it FIRST - before any game window lookup or
+    # rendezvous read - so a re-run of an already-completed replay fails fast
+    # without touching the game at all.
+    if ($ReplayPath -and (Test-OdReplayCompleted -ReplayPath $ReplayPath)) {
+        Write-Host 'watch_offline: FAILED_replay_already_completed (persisted marker)'
+        Quit-WatchOffline 6
+    }
+
     [void][WatchOfflineVisionV3]::EnsureDpiAware()
     if (-not $VisualDismissOnly) {
         try {

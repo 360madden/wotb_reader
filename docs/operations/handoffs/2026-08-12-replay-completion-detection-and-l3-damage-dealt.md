@@ -192,11 +192,23 @@ in scope — a separate read-surface workstream, exactly as G0/G1.
   IN-MEMORY and dies with the process → effectively unobservable. The
   RELIABLE completion signal is the in-session teardown statuses
   (`AvatarAnchorNotFound`/`GateNotSatisfied`/session-inactive) after a
-  verified start. Owner-gated design change recommended: persist a completion
-  marker when the in-session detection fires and have the launcher/clicker/
-  driver pre-flights consult it instead of the ephemeral gate denial (the
-  `FAILED_replay_already_completed` matrix stays as the belt-and-suspenders
-  in-window check).
+  verified start. **DURABLE FIX IMPLEMENTED (2026-08-12, offline):** a
+  persisted completion marker (`scripts/od-replay-completion.ps1`, dot-sourced
+  by all four tools) is keyed to the replay's immutable fingerprint (path +
+  size + LastWriteTimeUtc) under `%LOCALAPPDATA%\WotBTreader\od-completion\`
+  with owner-only ACLs (icacls, the BLK-0026 pattern). The driver persists it
+  when the in-session DEFINITIVE teardown fires (the ≤40 s near-end fallback
+  deliberately does NOT mark — only a provably-gone anchor proves the replay
+  finished); the launcher persists it on an in-window gate denial. Pre-flights
+  consult it FIRST and fail fast with `FAILED_replay_already_completed`
+  (launcher exit 2, clicker exit 6, driver exit 4, chain exit 7) without
+  touching the game. A replaced/re-imported replay (fingerprint mismatch) or a
+  deleted replay is treated as fresh (fail-open); a corrupt marker is ignored.
+  The in-window `evidence.replay_completed` matrix stays as the
+  belt-and-suspenders check. Offline-verified: write → fresh-process
+  pre-flight reads (chain/launcher both see completed) → replaced replay
+  invalidates to fresh; marker helper behavior covered by a scratch harness
+  (init/write/validate/ACL/stale/corrupt/missing/other-path).
 ### 4. Both publication applies REHEARSED on scratch copies (2026-08-12)
 
 Before either operator-gated apply, each package's apply path was proven on
@@ -301,8 +313,8 @@ f71c18db4b22`, own viewpoint 3760577) end-to-end:
   with the driver's pre-existing `gate_not_satisfied`-on-game-exit comment.
   The `evidence.replay_completed` re-run gate denial was never observed live
   and is now understood to be unreachable by design — record it as
-  SUPERSEDED by the in-session teardown detection + recommended persisted
-  completion marker.
+  SUPERSEDED by the in-session teardown detection + the IMPLEMENTED persisted
+  completion marker (`scripts/od-replay-completion.ps1`).
 
 - **Follow-on launch attempt (2026-08-12, same session):** the operator
 go-ahead also covered the batch `-LiveAcquire` rehearsal re-run (Branch B

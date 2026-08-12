@@ -391,6 +391,7 @@ scripts/od-047-exact-scan-session.ps1
 scripts/od-048-monitor-correlate-session.ps1
 scripts/od-073-entity-position-poll.ps1
 scripts/od-query-state.ps1
+scripts/od-replay-completion.ps1
 scripts/play-replay-from-hangar.ps1
 scripts/pre-arm-debugger.ps1
 scripts/publish-instruction-snapshot-helper.ps1

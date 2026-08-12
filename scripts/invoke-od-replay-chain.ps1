@@ -24,6 +24,11 @@
     FAILED_replay_already_completed (gate Denied with reason
     evidence.replay_completed) means the replay ALREADY finished - a clean
     terminal state, not a failure. The chain reports it distinctly (exit 7).
+    Persisted completion marker (OD-099 durable fix): the gate denial is
+    in-memory and dies with the game process, so the pre-flight ALSO consults
+    a marker file keyed to the replay's immutable fingerprint (written by the
+    driver on the in-session definitive teardown, or by the launcher on an
+    in-window gate denial) and exits 7 before any launch.
 
 .EXITCODES
   0  Driver verdict ran (exit code propagated from invoke-hp-diffing-session.ps1)
@@ -33,7 +38,7 @@
   4  Launcher exited without the gate
   5  No battleSession anchor within the timeout
   6  Launcher exited OK but no anchor
-  7  Replay already completed (launcher FAILED_replay_already_completed)
+  7  Replay already completed (launcher FAILED_replay_already_completed / persisted completion marker)
 
 .PARAMETER ReplayPath
     Top-level ORIGINAL replay in the game's replays folder (the launcher's
@@ -77,9 +82,21 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
+# Persisted replay-completion marker (OD-099 durable fix): the cross-session
+# gate denial evidence.replay_completed is in-memory and dies with the game
+# process, so the pre-flight consults a marker file keyed to the replay's
+# immutable fingerprint instead. Fail BEFORE any launch (the launcher would
+# reject it too, but this exits 7 immediately with a clear message).
+. (Join-Path $PSScriptRoot 'od-replay-completion.ps1')
+
 if (-not (Test-Path -LiteralPath $ReplayPath)) {
     Write-Output "CHAIN: replay file missing: $ReplayPath"
     exit 2
+}
+
+if (Test-OdReplayCompleted -ReplayPath $ReplayPath) {
+    Write-Output 'CHAIN: replay already completed (persisted marker) - no capture possible'
+    exit 7
 }
 
 $launchLog = '.data/od-chain-launch.log'
@@ -156,7 +173,8 @@ if (-not $liveSession) {
 }
 
 $driverArgs = @('-SessionId', $liveSession, '-Track', $Track,
-    '-RegionAnchor', $RegionAnchor, '-LiveAcquire', '-DataRoot', $DataRoot)
+    '-RegionAnchor', $RegionAnchor, '-LiveAcquire', '-DataRoot', $DataRoot,
+    '-ReplayPath', $ReplayPath)
 if ($FailOnNoHit) { $driverArgs += '-FailOnNoHit' }
 
 Write-Output ('CHAIN: running hp-diffing session for ' + $liveSession)

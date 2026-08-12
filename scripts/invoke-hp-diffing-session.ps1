@@ -134,7 +134,15 @@ param(
     # contains its write and the one-directional window cannot see it. The
     # driver defaults to 4 s (the measured Dead Rail lead plus margin);
     # requires LagToleranceSeconds > 0. Applied to both directions.
-    [double]$LagLeadSeconds = 4
+    [double]$LagLeadSeconds = 4,
+    # Persisted completion marker (OD-099 durable fix): when the in-session
+    # end-of-replay teardown fires, persist a marker keyed to THIS replay's
+    # immutable fingerprint so later launcher/clicker/driver pre-flights fail
+    # fast with FAILED_replay_already_completed instead of re-launching a
+    # replay that already played to completion. The chain passes its
+    # -ReplayPath through; standalone driver runs may pass it too. Without it
+    # the driver never writes a marker (it cannot key one without the path).
+    [string]$ReplayPath = ''
 )
 
 Set-StrictMode -Version Latest
@@ -151,6 +159,10 @@ trap {
     Write-Host ("hp_session: TRAP " + $_.Exception.GetType().FullName + ": " + $trapMessage)
     exit 9
 }
+
+# Persisted replay-completion marker (OD-099 durable fix): dot-source the
+# shared helper before the pre-flight checks below.
+. (Join-Path $PSScriptRoot 'od-replay-completion.ps1')
 
 function Write-Step([string]$Message) {
     Write-Host ("hp_session: " + $Message)
@@ -377,6 +389,16 @@ if (-not $OfflineDumpExists) {
     # instead of polling a finished session until the wait budget exhausts.
     # Any other state (unverified, monitor fault, stale evidence) still
     # proceeds through the normal dump path fail-closed.
+    #
+    # Persisted marker (OD-099 durable fix): the gate denial is in-memory and
+    # dies with the game process; the marker file (keyed to the replay's
+    # immutable fingerprint) survives across processes. Check it FIRST so a
+    # re-run of an already-completed replay fails fast without touching the
+    # host.
+    if ($ReplayPath -and (Test-OdReplayCompleted -ReplayPath $ReplayPath)) {
+        Write-Host 'hp_session: replay already completed (persisted marker) - no capture performed'
+        exit 4
+    }
     try {
         $preflight = Invoke-HpApi -Method 'Get' -RelativePath '/api/v1/game/state'
         if ($null -ne $preflight -and
@@ -456,6 +478,13 @@ if (-not $OfflineDumpExists) {
     # strict-mode PropertyNotFoundException. Use the flag + guard pattern
     # instead of labeled breaks.
     $ScheduleStopped = $false
+    # Persisted completion marker (OD-099): set when a DEFINITIVE teardown
+    # status stops the schedule (the anchor/session is provably gone = the
+    # replay reached its end - the reliable in-session completion signal).
+    # The <= 40 s near-end fallback does NOT set it (that branch can fire on
+    # a transient error near the end; only a definitive teardown proves the
+    # replay finished).
+    $BattleEndObserved = $false
     foreach ($t in ($DumpTimes | Sort-Object -Unique)) {
         if ($ScheduleStopped) { break }
         # Wait for the game's replay clock to reach the target time before
@@ -501,6 +530,9 @@ if (-not $OfflineDumpExists) {
                         "verdict runs on the captured dumps.") -f `
                         $t, $probe.status)
                     $ScheduleStopped = $true
+                    if ($DefinitiveTeardownStatuses -contains $probe.status) {
+                        $BattleEndObserved = $true
+                    }
                     break
                 }
                 throw (("clock probe failed while waiting for {0:0.0}s: " +
@@ -567,6 +599,9 @@ if (-not $OfflineDumpExists) {
                         "verdict runs on the captured dumps.") -f `
                         $t, $dumpStatus)
                     $ScheduleStopped = $true
+                    if ($DefinitiveTeardownStatuses -contains $dumpStatus) {
+                        $BattleEndObserved = $true
+                    }
                     break
                 }
                 throw ("entity-region failed at {0}s: status='{1}' stage='{2}'" -f `
@@ -620,6 +655,26 @@ if (-not $OfflineDumpExists) {
             $ControlCount++
         }
     }
+    # Persisted completion marker (OD-099 durable fix): the in-session
+    # definitive teardown is the RELIABLE completion signal (the gate denial
+    # evidence.replay_completed is in-memory and dies with the game). Persist
+    # the marker keyed to the replay's immutable fingerprint so later
+    # launcher/clicker/driver/chain pre-flights fail fast with
+    # FAILED_replay_already_completed instead of re-launching the replay.
+    # Only when the driver knows the replay path (-ReplayPath; the chain
+    # passes it through) and a definitive teardown was observed; a failed
+    # marker write is non-fatal (the verdict still runs).
+    if ($BattleEndObserved -and $ReplayPath) {
+        $markerWritten = Write-OdCompletionMarker -ReplayPath $ReplayPath `
+            -Reason 'in-session definitive teardown' -SessionId $SessionId
+        if ($markerWritten) {
+            Write-Step '  completion marker persisted (replay completed)'
+        }
+        else {
+            Write-Step '  WARN: completion marker write failed (non-fatal; gate matrix still covers this run)'
+        }
+    }
+
     if ($SnapshotsByCandidate.Count -lt 1) {
         throw "No region dumps acquired - the verdict needs at least one hit window and one control."
     }

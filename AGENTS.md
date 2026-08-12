@@ -300,8 +300,18 @@ shutdown lines, replay file untouched; launcher/clicker/driver/chain audited
 — zero game-kill paths post-launch), so the design's cross-session
 `Denied`/`evidence.replay_completed` re-run signal is in-memory and
 unobservable — SUPERSEDED; the RELIABLE completion signal is the in-session
-teardown statuses after a verified start, and the recommended durable fix
-(owner-gated) is a PERSISTED completion marker the pre-flights consult.** **Item 7
+teardown statuses after a verified start. **Durable fix IMPLEMENTED
+(2026-08-12, offline): a PERSISTED completion marker
+(`scripts/od-replay-completion.ps1`, dot-sourced by launcher/clicker/driver/
+chain) is keyed to the replay's immutable fingerprint (path + size +
+LastWriteTimeUtc) under `%LOCALAPPDATA%\WotBTreader\od-completion\` with
+owner-only ACLs; the driver persists it on the in-session definitive
+teardown, the launcher on an in-window gate denial, and the launcher pre-
+flight / clicker pre-click / driver pre-flight / chain pre-flight all consult
+it and fail fast with `FAILED_replay_already_completed` before touching the
+game. A replaced/re-imported replay (fingerprint mismatch) is treated as a
+fresh replay; a corrupt marker fails open. The in-window `evidence.replay_completed`
+matrix stays as the belt-and-suspenders check.** **Item 7
 (hardware-atomicity proof) stays LAST by
 design** — its execution plan is pre-staged
 (`docs/operations/item7-hardware-atomicity-proof-plan.md`), and **Branch A's

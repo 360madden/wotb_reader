@@ -83,15 +83,21 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+$scriptDir = if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+    $PSScriptRoot
+}
+else {
+    Split-Path -Parent $MyInvocation.MyCommand.Path
+}
 if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
-    $scriptDir = if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
-        $PSScriptRoot
-    }
-    else {
-        Split-Path -Parent $MyInvocation.MyCommand.Path
-    }
     $RepoRoot = (Resolve-Path (Join-Path $scriptDir '..')).Path
 }
+
+# Persisted replay-completion marker (OD-099 durable fix): the cross-session
+# gate denial evidence.replay_completed is in-memory and dies with the game
+# process, so the pre-flight consults a marker file keyed to the replay's
+# immutable fingerprint instead.
+. (Join-Path $scriptDir 'od-replay-completion.ps1')
 
 if ($EnableInstructionSnapshot -and $KeepExistingHost) {
     Write-Host 'od_launch: FAILED_instruction_snapshot_requires_new_host'
@@ -383,6 +389,16 @@ try {
 
     Write-Od ("replay_selected bytes=" + $replayItem.Length)
 
+    # Persisted completion marker (OD-099): if THIS replay (same fingerprint)
+    # was already played to completion, fail fast instead of re-importing +
+    # re-launching it. The replay files are immutable in this workflow, so a
+    # matching fingerprint is authoritative; a replaced/re-imported file
+    # (fingerprint mismatch) is treated as a fresh replay.
+    if (Test-OdReplayCompleted -ReplayPath $ReplayPath) {
+        Write-Od 'FAILED_replay_already_completed'
+        exit 2
+    }
+
     $cli = Join-Path $RepoRoot 'src\WotBTreader.Host.Cli\bin\Release\net10.0\WotBTreader.Host.Cli.exe'
     if (-not (Test-Path -LiteralPath $cli)) {
         Write-Od 'FAILED_cli_missing_build_release_first'
@@ -653,6 +669,9 @@ try {
         # expected terminal state, not a broken host. Same reason the driver's
         # pre-flight exits 4; chains must not read this as 'restart required'.
         if ($pre.reasonCode -eq 'evidence.replay_completed') {
+            # In-window belt-and-suspenders: persist the marker so a later
+            # pre-flight (after this host/process is gone) also fails fast.
+            [void](Write-OdCompletionMarker -ReplayPath $ReplayPath -Reason 'launcher pre-watch gate denial')
             Write-Od 'FAILED_replay_already_completed'
             exit 2
         }
@@ -724,7 +743,8 @@ try {
     Remove-Item -LiteralPath $watchResult -Force -ErrorAction SilentlyContinue
     $watchExit = 99
     try {
-        & $watchScript -TimeoutSeconds $WatchTimeoutSeconds -ResultPath $watchResult
+        & $watchScript -TimeoutSeconds $WatchTimeoutSeconds -ResultPath $watchResult `
+            -ReplayPath $ReplayPath
         if (Test-Path -LiteralPath $watchResult) {
             $watchExit = [int](Get-Content -LiteralPath $watchResult -Raw)
         }
@@ -758,6 +778,9 @@ try {
         # have ended DURING the watch click (results screen) - that is a clean
         # terminal state, not a failed gate.
         if ($post.reasonCode -eq 'evidence.replay_completed') {
+            # In-window belt-and-suspenders: persist the marker so a later
+            # pre-flight (after this host/process is gone) also fails fast.
+            [void](Write-OdCompletionMarker -ReplayPath $ReplayPath -Reason 'launcher post-watch gate denial')
             Write-Od 'FAILED_replay_already_completed'
             exit 4
         }
