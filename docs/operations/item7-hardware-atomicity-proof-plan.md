@@ -148,9 +148,43 @@ claim "consumed fields are written only by these instructions" is anchored to
 the proven chain + the reader-side functions, bounded live by the byte-exact
 reads.
 
+### Branch A — avatar-stats quad sub-proof (2026-08-12, DONE — hash-bound, listing-confirmed)
+
+The damage-dealt counter became a CONSUMED field with the G2 publication
+(2026-08-12, OD-RECOVERY-097: `damageDealt` via the `vftableScan` chain; the
+live frame reads own-row `DamageDealt` from the avatar-stats quad dword0
+`[avatar+0x118]`), so Branch A extended to it. Tooling:
+`ScanAvatarStatsQuadStoreWidths.java` (width-complete raw byte-scan, MOV +
+RMW encodings — ADD/SUB/XOR/INC/DEC + XADD/CMPXCHG — because damageDealt
+INCREMENTS and a MOV-only census would miss the live write path) +
+`ConfirmAvatarStatsQuadSites.java` (boundary + semantic confirmation: each
+candidate must sit at a real instruction boundary AND its true instruction
+text must be a memory write `ptr [.. + 0xNNN]` to the quad). Evidence:
+`.build/ghidra-evidence-avatar-quad/`, `executable_sha256=1cda5c31…`.
+
+Result: 1688 byte-scan candidates → 1646 confirmed at real instruction
+boundaries → **1642 real memory writes** after the semantic filter (42
+off-boundary + 4 register-only misattributions rejected; the raw scan's four
+"64-bit" candidates were ALL byte-scan artifacts — three resolved to 32-bit
+MOVs at the true instruction start +1, one is `DEC EAX` = not a memory
+write). Per dword: d0 `+0x118` 10× byte + 401× dword (10 in-place RMW),
+d1 `+0x11C` 13× byte + 5× word + 445× dword (3 RMW), d2 `+0x120` 13+16+480
+(3 RMW), d3 `+0x124` 14+6+239 (3 RMW) — **ZERO 64-bit and ZERO 128-bit
+writes to any quad dword** (XMM census empty). Every quad dword is therefore
+written only by ≤ 32-bit stores → an aligned 32-bit read of any dword cannot
+tear. The 10 d0 RMW sites are all FIXED increments (INC/ADD-imm); the
+variable damage amount goes through the load-add-store path (one of the 163
+register-source `MOV dword [..+0x118],reg` sites) — a single aligned 32-bit
+store either way. Bounded live by OD-095/096/099's byte-exact d0 increments
+(the exact damage sums land at the right replay times on the actual object).
+HONEST BOUND (same class as HP): the census matches by displacement only and
+sites may belong to other object families with identical field offsets;
+per-function object-type attribution remains an option, not a gate.
+
 **Branch A is now COMPLETE for all consumed fields** (HP word stores;
-position MOVQ+MOV; rotation MOVQ+MOV; ring handoff characterized). Branch B
-(read-discipline extension) and the contract flag flip remain.
+position MOVQ+MOV; rotation MOVQ+MOV; avatar-stats quad ≤32-bit stores only;
+ring handoff characterized). Branch B (read-discipline extension) and the
+contract flag flip remain.
 
 Evidence format mirrors the earlier hash-bound work: instruction listing with
 RVA, operand size, and alignment analysis; the exact analyzed binary hash
