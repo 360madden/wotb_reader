@@ -137,38 +137,48 @@ function Write-OdCompletionMarker {
         [string]$Reason,
         [string]$SessionId = ''
     )
-    $dir = Get-OdCompletionMarkerDirectory
-    if (-not (Test-Path -LiteralPath $dir)) {
-        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    # NEVER THROW: every caller treats a failed marker write as non-fatal
+    # (the driver's verdict must still run; the launcher's clean exit codes
+    # must not be masked by FAILED_unexpected). New-Item / WriteAllText /
+    # icacls can all throw on permissions or IO faults - catch and report
+    # $false so the call site decides.
+    try {
+        $dir = Get-OdCompletionMarkerDirectory
+        if (-not (Test-Path -LiteralPath $dir)) {
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        }
+        Set-OdOwnerOnlyDirectoryAcl -Path $dir
+        if (-not (Test-OdOwnerOnlyDirectoryAcl -Path $dir)) {
+            return $false
+        }
+        $fingerprint = Get-OdReplayFingerprint -ReplayPath $ReplayPath
+        if ($null -eq $fingerprint) {
+            return $false
+        }
+        $marker = @{
+            version       = 1
+            replayPath    = (Get-OdReplayFullPath -ReplayPath $ReplayPath)
+            replaySize    = $fingerprint.Size
+            replayLastUtc = $fingerprint.LastWriteUtc
+            completedAtUtc = [DateTime]::UtcNow.ToString('o')
+            reason        = $Reason
+            sessionId     = $SessionId
+        } | ConvertTo-Json
+        $markerPath = Get-OdCompletionMarkerPath -ReplayPath $ReplayPath
+        [IO.File]::WriteAllText(
+            $markerPath,
+            $marker,
+            (New-Object Text.UTF8Encoding($false)))
+        Set-OdOwnerOnlyFileAcl -Path $markerPath
+        if (-not (Test-OdOwnerOnlyFileAcl -Path $markerPath)) {
+            Remove-Item -LiteralPath $markerPath -Force -ErrorAction SilentlyContinue
+            return $false
+        }
+        return $true
     }
-    Set-OdOwnerOnlyDirectoryAcl -Path $dir
-    if (-not (Test-OdOwnerOnlyDirectoryAcl -Path $dir)) {
+    catch {
         return $false
     }
-    $fingerprint = Get-OdReplayFingerprint -ReplayPath $ReplayPath
-    if ($null -eq $fingerprint) {
-        return $false
-    }
-    $marker = @{
-        version       = 1
-        replayPath    = (Get-OdReplayFullPath -ReplayPath $ReplayPath)
-        replaySize    = $fingerprint.Size
-        replayLastUtc = $fingerprint.LastWriteUtc
-        completedAtUtc = [DateTime]::UtcNow.ToString('o')
-        reason        = $Reason
-        sessionId     = $SessionId
-    } | ConvertTo-Json
-    $markerPath = Get-OdCompletionMarkerPath -ReplayPath $ReplayPath
-    [IO.File]::WriteAllText(
-        $markerPath,
-        $marker,
-        (New-Object Text.UTF8Encoding($false)))
-    Set-OdOwnerOnlyFileAcl -Path $markerPath
-    if (-not (Test-OdOwnerOnlyFileAcl -Path $markerPath)) {
-        Remove-Item -LiteralPath $markerPath -Force -ErrorAction SilentlyContinue
-        return $false
-    }
-    return $true
 }
 
 function Test-OdReplayCompleted {
@@ -176,29 +186,35 @@ function Test-OdReplayCompleted {
         [Parameter(Mandatory = $true)]
         [string]$ReplayPath
     )
-    $markerPath = Get-OdCompletionMarkerPath -ReplayPath $ReplayPath
-    if (-not (Test-Path -LiteralPath $markerPath)) {
-        return $false
-    }
+    # NEVER THROW: the pre-flight contract is fail-open on ANY unreadable/
+    # corrupt marker (the docstring's "ignored, never a false block"). A
+    # JSON that parses but has wrong types (e.g. replaySize as a string), a
+    # missing field under StrictMode, or a [long] cast failure must all
+    # return $false - not throw into the caller's FAILED_unexpected path.
     try {
+        $markerPath = Get-OdCompletionMarkerPath -ReplayPath $ReplayPath
+        if (-not (Test-Path -LiteralPath $markerPath)) {
+            return $false
+        }
         $marker = Get-Content -LiteralPath $markerPath -Raw | ConvertFrom-Json
+        if ($null -eq $marker -or $null -eq $marker.replayPath) {
+            return $false
+        }
+        $fingerprint = Get-OdReplayFingerprint -ReplayPath $ReplayPath
+        if ($null -eq $fingerprint) {
+            # Replay file gone: nothing to launch; a re-import produces a new file.
+            return $false
+        }
+        $full = Get-OdReplayFullPath -ReplayPath $ReplayPath
+        return [string]::Equals(
+                [string]$marker.replayPath, $full,
+                [StringComparison]::OrdinalIgnoreCase) -and
+            ([long]$marker.replaySize -eq [long]$fingerprint.Size) -and
+            ([string]$marker.replayLastUtc -eq [string]$fingerprint.LastWriteUtc)
     }
     catch {
-        # Corrupt marker: fail-open (a fresh run is allowed), never a false block.
+        # Corrupt marker (unparseable or wrong-typed): fail-open, never a
+        # false block and never a throw into the caller.
         return $false
     }
-    if ($null -eq $marker -or $null -eq $marker.replayPath) {
-        return $false
-    }
-    $fingerprint = Get-OdReplayFingerprint -ReplayPath $ReplayPath
-    if ($null -eq $fingerprint) {
-        # Replay file gone: nothing to launch; a re-import produces a new file.
-        return $false
-    }
-    $full = Get-OdReplayFullPath -ReplayPath $ReplayPath
-    return [string]::Equals(
-            [string]$marker.replayPath, $full,
-            [StringComparison]::OrdinalIgnoreCase) -and
-        ([long]$marker.replaySize -eq [long]$fingerprint.Size) -and
-        ([string]$marker.replayLastUtc -eq [string]$fingerprint.LastWriteUtc)
 }

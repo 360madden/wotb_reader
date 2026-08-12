@@ -305,8 +305,10 @@ teardown statuses after a verified start. **Durable fix IMPLEMENTED
 (`scripts/od-replay-completion.ps1`, dot-sourced by launcher/clicker/driver/
 chain) is keyed to the replay's immutable fingerprint (path + size +
 LastWriteTimeUtc) under `%LOCALAPPDATA%\WotBTreader\od-completion\` with
-owner-only ACLs; the driver persists it on the in-session definitive
-teardown, the launcher on an in-window gate denial, and the launcher pre-
+owner-only ACLs; the driver persists it when the dump schedule FINISHES
+(in-session definitive teardown OR all targets completed — the ≤40 s
+near-end fallback deliberately does NOT mark), the launcher on an in-window
+gate denial, and the launcher pre-
 flight / clicker pre-click / driver pre-flight / chain pre-flight all consult
 it and fail fast with `FAILED_replay_already_completed` before touching the
 game. A replaced/re-imported replay (fingerprint mismatch) is treated as a

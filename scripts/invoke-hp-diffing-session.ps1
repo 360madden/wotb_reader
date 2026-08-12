@@ -483,7 +483,9 @@ if (-not $OfflineDumpExists) {
     # replay reached its end - the reliable in-session completion signal).
     # The <= 40 s near-end fallback does NOT set it (that branch can fire on
     # a transient error near the end; only a definitive teardown proves the
-    # replay finished).
+    # replay finished). A schedule that completes ALL targets without any
+    # teardown also counts as capture-finished (the marker-write site treats
+    # -not $ScheduleStopped the same way).
     $BattleEndObserved = $false
     foreach ($t in ($DumpTimes | Sort-Object -Unique)) {
         if ($ScheduleStopped) { break }
@@ -661,12 +663,24 @@ if (-not $OfflineDumpExists) {
     # the marker keyed to the replay's immutable fingerprint so later
     # launcher/clicker/driver/chain pre-flights fail fast with
     # FAILED_replay_already_completed instead of re-launching the replay.
-    # Only when the driver knows the replay path (-ReplayPath; the chain
-    # passes it through) and a definitive teardown was observed; a failed
-    # marker write is non-fatal (the verdict still runs).
-    if ($BattleEndObserved -and $ReplayPath) {
+    # Written when the dump schedule FINISHED - either a definitive teardown
+    # interrupted it (battle ended in-session) OR it completed all targets
+    # (the last scheduled dump was reached; the game outran/ended the battle
+    # after the schedule). The <= 40 s near-end fallback (ScheduleStopped
+    # without BattleEndObserved) deliberately does NOT mark: that branch can
+    # fire on a transient near-end error, not a proven battle end. Only when
+    # the driver knows the replay path (-ReplayPath; the chain passes it
+    # through); a failed marker write is non-fatal (the verdict still runs).
+    $CaptureFinished = $BattleEndObserved -or (-not $ScheduleStopped)
+    if ($CaptureFinished -and $ReplayPath) {
+        $MarkerReason = if ($BattleEndObserved) {
+            'in-session definitive teardown'
+        }
+        else {
+            'dump schedule completed'
+        }
         $markerWritten = Write-OdCompletionMarker -ReplayPath $ReplayPath `
-            -Reason 'in-session definitive teardown' -SessionId $SessionId
+            -Reason $MarkerReason -SessionId $SessionId
         if ($markerWritten) {
             Write-Step '  completion marker persisted (replay completed)'
         }
