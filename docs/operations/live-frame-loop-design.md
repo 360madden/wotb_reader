@@ -1,14 +1,21 @@
 # Live per-frame HUD loop — design proposal (X4)
 
 **Date:** 2026-08-11
-**Status:** DESIGN — no code yet. This is the composition layer that turns
-the approved seams (X3 roster enumeration, batch `entity-regions`, CAM-001
-camera pose, G2 clock attestation) into the live overlay's per-frame read.
-It deliberately does NOT introduce any new memory discovery — everything it
-reads is already proven on replays and gated by the existing
-`OfflineReplayVerified` seam. Live policy gating (X1) and the
-hardware-atomicity proof (item 7) stay future and are explicitly out of
-scope here.
+**Status: IMPLEMENTED + LIVE-VERIFIED END-TO-END 2026-08-11.** This is the
+composition layer that turns the approved seams (X3 roster enumeration,
+batch `entity-regions`, CAM-001 camera pose, G2 clock attestation) into the
+live overlay's per-frame read: `POST /discover/live-frame` → pure
+`LiveFrameProjector` → `GET /api/v1/live/frame` → overlay `IsLiveMode`
+toggle (roadmap X4 row for the shipped pieces). **X4-E2E (2026-08-11):**
+the live render pass was verified mid-battle on the CAM-013-verified seam —
+full 7v7 roster at battle start, 14/14 exact decoded-name joins (enemy ids
+included; the X2b own-team-only bound superseded), 13/15 real L1 HP, chase
+camera geometry (eye 1.9 m, level pitch = aim point, tank below-center),
+and the CAM-003 controller flip re-demonstrated fail-closed. It deliberately
+does NOT introduce any new memory discovery — everything it reads is already
+proven on replays and gated by the existing `OfflineReplayVerified` seam.
+Live policy gating (X1) and the hardware-atomicity proof (item 7) stay
+future and are explicitly out of scope here.
 
 ## Why this exists
 

@@ -1,7 +1,10 @@
 # Offset promotion checklist
 
-Last verified: 2026-08-09 (after BLK-0026 resolution and the cross-replay proof,
-ledger `OD-RECOVERY-076`).
+Last verified: 2026-08-12 (after G0 publication OD-RECOVERY-083, the
+Phase-4 two-replay closures OD-RECOVERY-089/091, CAM-013, and the 08-12
+live-frame refinements — the 08-12 overlay/live-frame work and the
+pre-staged L3/item-7 plans changed NO promotion gate: both publication
+packages remain READY, operator approval + gate run only).
 
 Purpose: the single place that maps every promotion gate to its **current,
 source-verified status** and the exact evidence that flips it. The poll verdict
@@ -118,6 +121,31 @@ the poll's exact fail-closed prior check (schema `wotbtreader.od073*` +
 positive verdict); the stored `stableRootLiveRepeatabilityProven` is false
 in 081 (never exercised — verdict negative) and 082 (mechanical
 comma-binding, documented), both consistent with the ledger.
+
+## Publication packages READY (2026-08-11) — Phase-4 two-replay rules
+
+The G0 Phase-5 review defined promotion gates per field; the Phase-4 rule
+requires **two-replay live agreement** (`twoReplayRepeatability = true`).
+Status as of 2026-08-11:
+
+| Field | Live agreement | Evidence | Publication state |
+|---|---|---|---|
+| `playerPositionX/Y/Z` | two replays, 24/24 polls (Dead Rail OD-075 + Oasis OD-076) | OD-RECOVERY-083 | **PUBLISHED 2026-08-10** (`Verified`, chains, offsets 0) |
+| Facing/yaw (ring record `+0x30`) | **HIT both replays** — Oasis 088 (48/48), Dead Rail 089 Phase-4 (56/56, score 1.0, flatness 1.0) | OD-RECOVERY-088/089 | **PACKAGE READY** — `docs/operations/g1-yaw-publication-draft.md` (operator approval + gate run only; draft chain pre-staged in `g0-walkable-position-chains.draft.json`) |
+| HP (entity base `+0xB8`, signed int16) | **HIT both replays** — Oasis 087 (8/8 strict), Dead Rail 091 Phase-4 (4/4 strict, 58 dumps) | OD-RECOVERY-087/091 | **PACKAGE READY** — `docs/operations/g1-hp-publication-draft.md` (operator approval + gate run only; draft chain pre-staged, 5th chain). Item-7 static support landed 2026-08-11: hash-bound listing-confirmed 16-bit health setters (`FUN_0166b9f0`/`FUN_01675f60` write `+0xB8`/`+0x11E` as `MOV word`), zero 64/128-bit stores to the fields — `item7-hardware-atomicity-proof-plan.md` Branch A |
+| Velocity, replayTime, playerHP-as-offset, aliveTankCount | not promoted | G0 record | untouched |
+| Pitch/roll (ring `+0x2C`/`+0x28`) | live-verified as the rotation triple (OD-RECOVERY-088) but NO Phase-4 repeat run | 088 | not packaged; P4 candidate only |
+| Damage-dealt | HONEST-NEGATIVE (OD-RECOVERY-090, three sweeps) | 090 | not reachable via entity records — needs a NEW object family (avatar/player-stats) |
+| Camera pose (posA yz-swap + basis) | CAM-013 verified the W2S seam live (091/091b/092 chase, `w2sProjectionVerified: true`) | CAM-013 | overlay consumption only — no offset promotion (the camera track is a separate workstream, read surface untouched) |
+
+Both packages (`g1-yaw-publication-draft.md`, `g1-hp-publication-draft.md`)
+await **operator approval**; each applies the chain from the pre-staged
+draft to the published table (`chains` additive section, `offsets` stay 0),
+appends evidence + approvals, then re-runs `offset_check.py --check-schema`
+and the full gate. The fidelity branch (`offset_check.py`) already validates
+the 5-field draft against the 3 published fields (identity enforced
+post-publication). Item 7 (hardware atomicity) stays LAST by design —
+execution plan pre-staged `docs/operations/item7-hardware-atomicity-proof-plan.md`.
 
 ### G1 — Hardware-atomic read proof
 
@@ -345,6 +373,9 @@ processes (Dead Rail OD-075 + Oasis Palms OD-076) — is satisfied.
 | ~~G1 live poll (G1 closed)~~ | ~~Live (done 2026-08-09)~~ | **done — OD-RECOVERY-082:** stored v4 aggregate 24/24 `stable-resolver-positive` with `allConsistentDoubleRead=true` (per-read byte-identical branch). Armed runs 19/24 + 22/24 were harness artifacts (OD-RECOVERY-080); run 081 hit 24/24 clean read evidence but the verdict label was blocked by a verdict-contract conflict (fixed, schema v4); run 082 delivered the stored positive aggregate |
 | G0 publication review | Offline (verdict delivered) | **done 2026-08-09 (OD-RECOVERY-082): PROMOTE-READY (conditional)** — exe identity exact, RVA chain verified, field identity set, repeatability attested, read-only gates PASS; the table edit is a separate operator-approved change |
 | G0 offset-table publication | Offline (operator-approved gate) | **done 2026-08-10 (OD-RECOVERY-083):** `playerPositionX/Y/Z` → `Verified` via the module-rooted position-ring chain (additive `chains` section; offsets stay 0), evidence appended (4 launches / 2 replays), approvals set, `numericOffsetPublication: true`; post-edit gates all green (`offset_check.py` chains-validated 3 fields, `validate.ps1` exit 0). Resolver + read surface untouched; NOT promoted: velocity, playerYaw, replayTime, playerHP, cameraPitch, aliveTankCount |
+| Phase-4 facing/yaw repeat | Live | **done 2026-08-11 (OD-RECOVERY-089): HIT** — ring `+0x30` agrees on Dead Rail (56/56, score 1.0, flatness 1.0, per-dump bounded bidirectional lag). `twoReplayRepeatability = true`; yaw publication **READY** (`g1-yaw-publication-draft.md`) |
+| Phase-4 HP repeat | Live | **done 2026-08-11 (OD-RECOVERY-091): HIT** — entity `+0xB8` agrees on Dead Rail (score 1.0, flatness 1.0, Strict 4/4 exact sums via `--lag-lead-seconds`). `twoReplayRepeatability = true`; HP publication **READY** (`g1-hp-publication-draft.md`) |
+| Publication applies (HP then yaw) | Operator-gated | **PENDING operator approval** — both packages pre-staged; each is a bounded table edit + evidence append + post-edit gates; no further live sessions strictly required |
 
 ## Frozen surfaces (unchanged)
 

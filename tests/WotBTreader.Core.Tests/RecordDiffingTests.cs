@@ -1005,4 +1005,114 @@ public sealed class RecordDiffingTests
         Assert.HasCount(1, candidates[0].MatchedWindows!);
         Assert.AreEqual(198, candidates[0].MatchedWindows![0].DamageSum);
     }
+
+    [TestMethod]
+    public void Correlate_LagLeadToleranceDefaultZero_DoesNotMatchLeadEvent()
+    {
+        // Dead Rail memory LEADS the decoded clock by ~2.5 s (OD-RECOVERY-089
+        // measured it for yaw): the health write lands BEFORE the decoded
+        // damage time, so the event's decoded time postdates the window that
+        // contains its write. The one-directional attribution window
+        // (From - lag, To] cannot see it — the drop in (1s, 2s] is
+        // unexplained and the Strict pass reports no candidate. Exactly the
+        // Phase-4 at-session honest negative (OD-RECOVERY-091).
+        var snapshots = new[]
+        {
+            new RecordSnapshot(TimeSpan.FromSeconds(0), Region(hp: 500)),
+            new RecordSnapshot(TimeSpan.FromSeconds(1), Region(hp: 500)),
+            new RecordSnapshot(TimeSpan.FromSeconds(2), Region(hp: 350)),
+        };
+        var events = new[]
+        {
+            Damage(TimeSpan.FromSeconds(3), 150),
+        };
+
+        IReadOnlyList<DamageCorrelationCandidate> candidates =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                TargetEntity,
+                DamageMatchMode.Strict,
+                DamageCorrelationDirection.Decrement,
+                includeInt16Candidates: false,
+                eventLagToleranceSeconds: 1.0,
+                eventLagLeadSeconds: 0.0);
+
+        // The default lead 0 keeps the one-directional window: the t=3s event
+        // is outside (From - 1, To] = (0, 2], so the 150 drop is unexplained
+        // and no candidate is reported — additive, unchanged behavior.
+        Assert.IsEmpty(candidates);
+    }
+
+    [TestMethod]
+    public void Correlate_LagLeadTolerance_MatchesLeadEventExactlyInStrictMode()
+    {
+        // The same memory-lead fixture with a bounded LEAD window: the event
+        // at t=3s now attributes to the (1s, 2s] change window that contains
+        // its write ((From - 1, To + 2] contains 3), the 150 drop equals the
+        // 150 damage EXACTLY, and the Strict pass confirms the field with
+        // score 1.0 — the fix that re-verdicts the OD-091 dumps to HIT.
+        var snapshots = new[]
+        {
+            new RecordSnapshot(TimeSpan.FromSeconds(0), Region(hp: 500)),
+            new RecordSnapshot(TimeSpan.FromSeconds(1), Region(hp: 500)),
+            new RecordSnapshot(TimeSpan.FromSeconds(2), Region(hp: 350)),
+        };
+        var events = new[]
+        {
+            Damage(TimeSpan.FromSeconds(3), 150),
+        };
+
+        IReadOnlyList<DamageCorrelationCandidate> candidates =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                TargetEntity,
+                DamageMatchMode.Strict,
+                DamageCorrelationDirection.Decrement,
+                includeInt16Candidates: false,
+                eventLagToleranceSeconds: 1.0,
+                eventLagLeadSeconds: 2.0);
+
+        Assert.HasCount(1, candidates);
+        Assert.AreEqual(HpOffset, candidates[0].Offset);
+        Assert.AreEqual(1.0, candidates[0].Score, 1e-9);
+        Assert.IsNotNull(candidates[0].MatchedWindows);
+        Assert.HasCount(1, candidates[0].MatchedWindows!);
+        Assert.AreEqual(150, candidates[0].MatchedWindows![0].DamageSum);
+    }
+
+    [TestMethod]
+    public void Correlate_LagLeadTolerance_DoesNotFabricateMatchForLargerEvent()
+    {
+        // A lead must not fabricate matches: the window's drop (100) is
+        // smaller than the only candidate event's damage (150), so even with
+        // the bounded lead the Lenient gate (drop >= sum) rejects it — the
+        // boundary is respected, not papered over.
+        var snapshots = new[]
+        {
+            new RecordSnapshot(TimeSpan.FromSeconds(0), Region(hp: 500)),
+            new RecordSnapshot(TimeSpan.FromSeconds(1), Region(hp: 500)),
+            new RecordSnapshot(TimeSpan.FromSeconds(2), Region(hp: 400)),
+        };
+        var events = new[]
+        {
+            Damage(TimeSpan.FromSeconds(3), 150),
+        };
+
+        IReadOnlyList<DamageCorrelationCandidate> candidates =
+            HpDamageCorrelator.Correlate(
+                RecordChangeBucketer.Bucket(snapshots),
+                events,
+                TargetEntity,
+                DamageMatchMode.Lenient,
+                DamageCorrelationDirection.Decrement,
+                includeInt16Candidates: false,
+                eventLagToleranceSeconds: 1.0,
+                eventLagLeadSeconds: 2.0);
+
+        // The drop is smaller than the only event's damage: no candidate is
+        // reported (the Lenient gate rejects it before ranking).
+        Assert.IsEmpty(candidates);
+    }
 }

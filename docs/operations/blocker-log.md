@@ -463,7 +463,7 @@ folder for the full numbering convention and document map.
 ## BLK-0019 — Offset promotion lacks a second independent replay
 
 - First observed: `2026-08-02T02:47:26Z`
-- Status: open
+- Status: superseded (2026-08-11)
 - Impact: the private replay inventory contains multiple files but only one
   distinct replay payload. Fresh process launches can establish cross-launch
   repeatability, but no dynamic candidate may satisfy the repository's
@@ -499,6 +499,13 @@ folder for the full numbering convention and document map.
   replay independence separately. Never infer replay independence from file
   count, file name, or repeated launches, and never promote a candidate while
   this blocker remains open.
+- Superseded (2026-08-11): two-replay promotion is now PROVEN for every
+  published/live family — position (OD-075/076/078/081/082, Dead Rail + Oasis
+  continuous polls; G0 publication applied 2026-08-10), yaw (OD-089:
+  ring-record `+0x30` on BOTH replays, `twoReplayRepeatability = true`), and
+  HP (OD-091: entity-base `+0xB8` on BOTH replays, Strict 4/4 exact sums,
+  `twoReplayRepeatability = true`). The two-independent-replay promotion rule
+  is satisfied and no longer blocks any publication.
 
 ## BLK-0020 — Campaign module probe crossed below the trusted module base
 
@@ -525,7 +532,7 @@ folder for the full numbering convention and document map.
 ## BLK-0021 — Controlled-transition work exceeds the fixed evidence lifetime
 
 - First observed: `2026-08-02T03:23:58Z`
-- Status: open
+- Status: superseded (2026-08-11)
 - Impact: the coordinator terminates the exact managed replay process 15
   seconds after its correlated live start marker. That bound is appropriate
   for automated aggregate reconnaissance but cannot accommodate an operator's
@@ -547,11 +554,18 @@ folder for the full numbering convention and document map.
   expiry, and every immediate monitor revocation path before using the opt-in
   in a positively verified offline replay. Never expose it as an implicit
   production default or use it to authorize an uncorrelated process.
+- Superseded (2026-08-11): the Cheat Engine controlled-transition workflow
+  was retired (offline-only policy, ADR 0002 amended); discovery now runs
+  approved live sessions through the launcher with the research-only
+  `Research:LifecycleEvidenceTimeoutSeconds` bound (BLK-0024) and bounded
+  session drivers. Every 2026-08-11 session (087/088/089/090/091 + camera
+  lane) completed within the evidence bounds — the fixed 15-second
+  coordinator bound no longer blocks any active workflow.
 
 ## BLK-0022 — Controlled replay movement requires an available operator
 
 - First observed: `2026-08-02T03:45:40Z`
-- Status: open
+- Status: superseded (2026-08-11)
 - Impact: OD-RECOVERY-004 cannot yet collect a defensible state A to state B
   movement pair. Treating natural replay progression as controlled would repeat
   the invalid hypothesis already ruled out by OD-RECOVERY-003.
@@ -635,11 +649,16 @@ folder for the full numbering convention and document map.
 - Resolution amendment (`2026-08-02T20:35:00Z`): agent-owned **WATCH OFFLINE**
   click covered `OD-RECOVERY-014`. Neighborhood via survivor relativeOffset
   worked but was noisy; pointer AOB not stable. No promoted offset.
+- Superseded (2026-08-11): the CE-controlled-movement hypothesis was ruled
+  out and replaced by the approved-session flow with bounded gated
+  polls/dumps (OD-RECOVERY-075..091). No Cheat Engine dependency remains;
+  the resolver/ring chains and the entity-region read surface are the only
+  live-memory paths (offline-only policy).
 
 ## BLK-0023 — Managed replay launch hid the window and fabricated window evidence
 
 - First observed: `2026-08-02T04:34:31Z`
-- Status: open
+- Status: superseded (2026-08-11)
 - Impact: two managed replay attempts produced an exact correlated
   `wotblitz.exe` PID and `OfflineReplayVerified`, but no visible game window.
   The operator correctly rejected both launches before any scanner operation.
@@ -683,11 +702,18 @@ folder for the full numbering convention and document map.
   separately in BLK-0025. Live regressions cover normal startup flags,
   zero-window denial, observed-handle propagation, and the exact-PID
   enumeration policy.
+- Superseded (2026-08-11): the launcher now shows AND sizes the game window
+  explicitly (FRESH17: 640×360 after settle) and places it at the second
+  monitor's top-left when one is attached (2026-08-11, `d5fbb94`); window
+  visibility is live-verified by the dialog clicker's ready-gate on every
+  launch (verified on the 2026-08-11 sessions, including the monitor-2
+  placement). No launch hides the window anymore.
 
 ## BLK-0024 — Offline confirmation exceeded the fixed lifecycle startup wait
 
 - First observed: `2026-08-02T04:57:21Z`
-- Status: open
+- Status: resolved and validated (2026-08-02, amendment below; launcher flow
+  re-proven on every 2026-08-11 live session)
 - Impact: after the managed child became visible and the operator-selected
   **Watch Offline** path began loading, no fresh native replay-start marker
   arrived before the fixed 45-second lifecycle-evidence deadline. The

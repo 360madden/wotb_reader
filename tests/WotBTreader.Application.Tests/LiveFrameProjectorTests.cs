@@ -1,5 +1,6 @@
 using WotBTreader.Application.Game;
 using WotBTreader.Application.Replay;
+using WotBTreader.Core;
 using WotBTreader.Core.Discovery;
 
 namespace WotBTreader.Application.Tests;
@@ -364,4 +365,99 @@ public sealed class LiveFrameProjectorTests
         Assert.AreEqual(0L, partial.Tanks.Single().CurrentHealth);
         Assert.AreEqual(0L, partial.Tanks.Single().MaxHealth);
     }
+
+    [TestMethod]
+    public void Project_PerIdRosterJoin_FillsNamesWhenTheIdIsInTheMap()
+    {
+        // The optional decoded-roster join (design
+        // live-roster-name-join-design.md): an id present in the map gets
+        // its participant's identity — the X4 live-nameplate gap.
+        OverlayFrameProjection projection = LiveFrameProjector.Project(
+            Frame(
+                [Tank(3760578, 0, 0, 10)],
+                Pose(0f, 0f, 0f)),
+            Fov,
+            1920,
+            1080,
+            participants: new Dictionary<long, Participant>
+            {
+                [3760578] = Participant(
+                    3760578,
+                    "Sniper",
+                    "M4 Sherman",
+                    "CLAN",
+                    teamNumber: 1),
+            });
+
+        ProjectedTank tank = projection.Tanks.Single();
+        Assert.AreEqual("Sniper", tank.PlayerName);
+        Assert.AreEqual("M4 Sherman", tank.TankName);
+        Assert.AreEqual("CLAN", tank.ClanTag);
+        Assert.AreEqual(1, tank.TeamNumber);
+    }
+
+    [TestMethod]
+    public void Project_PerIdRosterJoin_StaysAnonymousWithoutTheMap()
+    {
+        // No participants supplied: names/team stay null (today's behavior).
+        OverlayFrameProjection projection = LiveFrameProjector.Project(
+            Frame([Tank(1, 0, 0, 10)], Pose(0f, 0f, 0f)),
+            Fov,
+            1920,
+            1080);
+
+        ProjectedTank tank = projection.Tanks.Single();
+        Assert.IsNull(tank.PlayerName);
+        Assert.IsNull(tank.TankName);
+        Assert.IsNull(tank.ClanTag);
+        Assert.IsNull(tank.TeamNumber);
+    }
+
+    [TestMethod]
+    public void Project_PerIdRosterJoin_UnknownIdStaysAnonymous()
+    {
+        // An id NOT in the map is never guessed — the fail-closed rule.
+        OverlayFrameProjection projection = LiveFrameProjector.Project(
+            Frame([Tank(99, 0, 0, 10)], Pose(0f, 0f, 0f)),
+            Fov,
+            1920,
+            1080,
+            participants: new Dictionary<long, Participant>
+            {
+                [1] = Participant(1, "Other", "T-34", null, teamNumber: 2),
+            });
+
+        ProjectedTank tank = projection.Tanks.Single();
+        Assert.IsNull(tank.PlayerName);
+        Assert.IsNull(tank.TankName);
+        Assert.IsNull(tank.ClanTag);
+        Assert.IsNull(tank.TeamNumber);
+    }
+
+    private static Participant Participant(
+        long entityId,
+        string? playerName,
+        string? tankName,
+        string? clanTag,
+        int? teamNumber) => new(
+        ParticipantId.New(),
+        BattleSessionId.New(),
+        AccountId: null,
+        EntityId: entityId,
+        TeamNumber: teamNumber,
+        PlayerName: playerName,
+        ClanTag: clanTag,
+        VehicleCompactDescriptor: null,
+        TankId: null,
+        TankName: tankName,
+        TankClass.Unknown,
+        BotStatus.Unknown,
+        EvidenceConfidence.Unknown,
+        BattleStats: null,
+        new EvidenceReference(
+            SourceArtifactId.New(),
+            ArchiveEntry: "meta.json",
+            Offset: 0,
+            Length: 0,
+            new ContentHash(new string('0', ContentHash.Sha256HexLength))));
 }

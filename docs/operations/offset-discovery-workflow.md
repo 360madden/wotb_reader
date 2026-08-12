@@ -16,7 +16,7 @@ offset.
 
 ## Current decision
 
-Session ID: `OD-RECOVERY-089`.
+Session ID: `OD-RECOVERY-091`.
 
 **OD-RECOVERY-087 is DONE (2026-08-11) — L1 HP HIT live.** The entity-base
 current-health signed int16 is **confirmed at `+0xB8`** on Oasis Palms
@@ -52,20 +52,30 @@ constants and readers). Evidence:
 `docs/operations/od-recovery-088-evidence-template.md` (filled) + ledger
 `OD-RECOVERY-088` result section.
 
-**Next planned session (2026-08-11, OD-RECOVERY-089): L2 facing Phase-4
-repeat on Dead Rail** — the same yaw offset must agree (Dead Rail's 5 seam
-crossings exercise the wrap-aware matcher). Drive
-`scripts/invoke-facing-session.ps1` with the **launch-matched host-store
-session + `-DataRoot "$env:LOCALAPPDATA\WotBTreader"` + `-MaxLagSeconds 8`**
-(the launcher logs `battleSession=` at the gate; both 086 and 087 proved the
-repo-local `.data/treader.db` 404s in the host store). Evidence template
-PRE-STAGED: `docs/operations/od-recovery-089-evidence-template.md` — fill
-it in after the session. The Phase-4 rule requires the offset to agree
-before any facing/yaw publication. The yaw publication package is also
-PRE-STAGED (PENDING): `docs/operations/g1-yaw-publication-draft.md` — the
-operator checklist + chain spec (`playerYaw` = position-chain prefix +
-ring-record `recordOffset 0x30`), to apply ONLY after 089 closes HIT and
-the operator approves.
+**DONE (2026-08-11, OD-RECOVERY-091): HP Phase-4 repeat — CLOSED HIT at
+entity-base `+0xB8` on Dead Rail.** The victim was RE-SCOPED to the
+qualified team-1 **2549395 (dudster_2015)** — the original 2549399
+(vandal13) is TEAM 2 and can never resolve (the resolver's entity-map
+trees are the movement-filter family, player's own team only; the
+30/60/113 s EntityNotFound failures were structural, not timing). 58
+dumps / 4 windows / 520 dmg / 92.7–104.7 s: byte-level exact track 520 →
+443 → 303 → 227 → 55 → 0 with every drop an exact damage subset (140 =
+36+104, 76 = 76, 172 = 94+78, 55 = 55), max `+0x11C` 520 constant, alive
+`+0xBA` flips exactly at 0. At-session verdict honest-negative (Strict
+0x4E vs 0xB8) — Dead Rail's memory clock LEADS the decoded clock by ~2.5 s
+(the OD-089 finding reproduced), invisible to the one-directional
+(From − lag, To] attribution. Additive lead-side window
+(`hp-diff --lag-lead-seconds`, default 0 = unchanged, 3 new tests) re-
+verdicts the SAME immutable dumps to **HIT: score 1.0, flatness 1.0,
+Strict 4/4 exact sums**; Oasis re-verifies unchanged. `twoReplayRepeatability =
+true` for HP — the Phase-4 two-replay rule CLOSES; HP publication
+PRE-STAGED (PENDING operator approval):
+`docs/operations/g1-hp-publication-draft.md`. Evidence:
+`docs/operations/od-recovery-091-evidence-template.md` (filled) + ledger
+`OD-RECOVERY-091` result section.
+
+The yaw publication package stays PRE-STAGED (PENDING operator approval):
+`docs/operations/g1-yaw-publication-draft.md`.
 
 **The position anchor is ESTABLISHED and PUBLISHED (2026-08-10):**
 `playerPositionX/Y/Z` are `Verified` via the module-rooted position-ring chain
@@ -97,13 +107,21 @@ field is the yaw anchor, live-verified 2026-08-11 (the rehearsal's +0x2C
 prediction was self-constructed). The published table keeps yaw at
 `0`/Stale; a future publication would be a `chains` entry.
 
-Next anchors after position: the pre-staged live gates in order — **L2
-facing Phase-4 repeat** (OD-RECOVERY-089, ring-record `+0x30` on Dead Rail;
-`invoke-facing-session.ps1 -MaxLagSeconds 8`), then CAM-001 v7. **L1 HP is
+Next anchors after position: the pre-staged live gates in order — **HP
+Phase-4 repeat** (OD-RECOVERY-091, entity-base `+0xB8` on Dead Rail,
+victim 2549395 — the planned 2549399 is team 2 and can never resolve;
+`invoke-hp-diffing-session.ps1 -ControlTimes 130,200`) — **DONE 2026-08-11,
+CLOSED HIT**: `+0xB8` agrees on Dead Rail (score 1.0, flatness 1.0, Strict
+4/4 exact sums via the additive lead-side window `--lag-lead-seconds`),
+`twoReplayRepeatability = true`; HP publication READY (operator approval
+only, `g1-hp-publication-draft.md`). CAM-001 v7's W2S acceptance gate is
+closed by the CAM-007 ship-time cross-check (honest-negative superseded by
+CAM-010/011/012). **L1 HP is
 DONE (OD-RECOVERY-087, HIT at `+0xB8`) and L2 facing is DONE
 (OD-RECOVERY-088, HIT at `+0x30`)** — the live-frame HP bar and hull-yaw row
-can become real (additive contract changes), and the Phase-4 two-replay rules
-(Dead Rail for both HP and yaw) gate any publication.
+can become real (additive contract changes); the Phase-4 two-replay rules
+(Dead Rail for both HP and yaw) are now CLOSED and both publication packages
+(HP + yaw) await the operator gate.
 `replayTime` retains
 its rolling increased-Double evidence (OD-012..038) and `playerHP` has the
 query-side ground truth ready (`IHpGroundTruthProvider`); both ride the same

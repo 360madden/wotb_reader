@@ -71,4 +71,22 @@ public sealed class CliInvocationTests
         Assert.IsNull(result.Value.Options["memory-lead-seconds"]);
         Assert.IsTrue(result.Value.Json);
     }
+
+    [TestMethod]
+    public void Parse_LagLeadSecondsRequiresAValue()
+    {
+        // OptionRequiresValue covers lag-lead-seconds (hp-diff lead-side
+        // attribution window, OD-RECOVERY-091): without a value the option
+        // is registered with null, and the router rejects it as invalid
+        // arguments — the parser must not treat the next option as its
+        // value.
+        var result = CliInvocation.Parse(
+            ["hp-diff", "s.json", "--lag-lead-seconds", "--json"]);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.IsNotNull(result.Value);
+        Assert.IsTrue(result.Value.Options.ContainsKey("lag-lead-seconds"));
+        Assert.IsNull(result.Value.Options["lag-lead-seconds"]);
+        Assert.IsTrue(result.Value.Json);
+    }
 }

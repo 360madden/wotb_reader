@@ -216,7 +216,13 @@ public sealed class CliCommandRouter
         // bracket the memory write. A bounded --lag-tolerance (default 0 =
         // exact, unchanged) lets each event attribute to the change window
         // that actually contains its memory write; the HP driver passes the
-        // measured bound.
+        // measured bound. Some replays show the OPPOSITE skew (Dead Rail
+        // memory LEADS the decoded clock by ~2.5 s — OD-RECOVERY-089): the
+        // write lands BEFORE the decoded event time, so the event's decoded
+        // time postdates the window containing its write. --lag-lead-seconds
+        // (default 0 = unchanged) extends the attribution window FORWARD to
+        // (From - lag, To + lead], admitting those lead-side events so the
+        // drop can match exactly.
         double eventLagToleranceSeconds = 0;
         if (invocation.Options.TryGetValue("lag-tolerance", out string? lagText) &&
             !double.TryParse(lagText, out eventLagToleranceSeconds))
@@ -227,15 +233,34 @@ public sealed class CliCommandRouter
                 correlationId);
         }
 
+        double eventLagLeadSeconds = 0;
+        if (invocation.Options.TryGetValue("lag-lead-seconds", out string? leadText) &&
+            !double.TryParse(leadText, out eventLagLeadSeconds))
+        {
+            return Invalid(
+                "cli.hp-diff.lag-lead-seconds",
+                "--lag-lead-seconds must be a non-negative number of seconds (default 0).",
+                correlationId);
+        }
+
+        if (eventLagLeadSeconds > 0 && eventLagToleranceSeconds <= 0)
+        {
+            return Invalid(
+                "cli.hp-diff.lag-lead-seconds",
+                "--lag-lead-seconds requires --lag-tolerance &gt; 0 (the lead is part of "
+                + "the bounded lag attribution window).",
+                correlationId);
+        }
+
         IReadOnlyList<ByteChangeWindow> windows =
             RecordChangeBucketer.Bucket(snapshotsResult.Value);
         IReadOnlyList<HpDamageEvent> events = groundTruthResult.Value.Events;
         IReadOnlyList<DamageCorrelationCandidate> primary = HpDamageCorrelator.Correlate(
             windows, events, victimEntityId, matchMode, direction, includeInt16,
-            eventLagToleranceSeconds);
+            eventLagToleranceSeconds, eventLagLeadSeconds);
         IReadOnlyList<DamageCorrelationCandidate> confirm = HpDamageCorrelator.Correlate(
             windows, events, victimEntityId, DamageMatchMode.Strict, direction, includeInt16,
-            eventLagToleranceSeconds);
+            eventLagToleranceSeconds, eventLagLeadSeconds);
 
         DamageCorrelationCandidate? top = primary.Count > 0 ? primary[0] : null;
         DamageCorrelationCandidate? strictTop = confirm.Count > 0 ? confirm[0] : null;
@@ -296,6 +321,8 @@ public sealed class CliCommandRouter
             snapshots = snapshotsResult.Value.Count,
             changeWindows = windows.Count,
             damageWindows = top?.TotalDamageWindows ?? 0,
+            lagToleranceSeconds = eventLagToleranceSeconds,
+            lagLeadSeconds = eventLagLeadSeconds,
             topCandidate = top is null
                 ? null
                 : new

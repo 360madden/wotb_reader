@@ -196,6 +196,7 @@ public partial class MainWindow : System.Windows.Window, IDisposable
             _viewModel.Beacons,
             _viewModel.Pips,
             _viewModel.Nameplates,
+            _viewModel.OwnMarkers,
             _viewModel.MinimapItems,
             _viewModel.MinimapBeacons,
             _viewModel.MinimapCameraX,

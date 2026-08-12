@@ -109,7 +109,15 @@ param(
     # the decoded event time, so the HP driver defaults to 12 s (the
     # measured bound plus margin) for the HP path; damage-dealt (int32
     # counter, increments synchronously with the packets) keeps 0.
-    [double]$LagToleranceSeconds = 12
+    [double]$LagToleranceSeconds = 12,
+    # Bounded LEAD window (seconds) extending the attribution window FORWARD
+    # to (From - lag, To + lead]. Some replays show the memory clock LEADING
+    # the decoded clock (Dead Rail by ~2.5 s, OD-RECOVERY-089 measured it for
+    # yaw), so a memory-lead event's decoded time postdates the window that
+    # contains its write and the one-directional window cannot see it. The
+    # HP driver defaults to 4 s (the measured Dead Rail lead plus margin);
+    # requires LagToleranceSeconds > 0.
+    [double]$LagLeadSeconds = 4
 )
 
 Set-StrictMode -Version Latest
@@ -477,11 +485,14 @@ $Int16Args = if (-not $IsIncrement) { @('--int16', 'true') } else { @() }
 $LagArgs = if (-not $IsIncrement -and $LagToleranceSeconds -gt 0) {
     @('--lag-tolerance', ([string]$LagToleranceSeconds))
 } else { @() }
+$LagLeadArgs = if (-not $IsIncrement -and $LagLeadSeconds -gt 0) {
+    @('--lag-lead-seconds', ([string]$LagLeadSeconds))
+} else { @() }
 $ErrorActionPreference = 'Continue'
 try {
     $VerdictJson = (& dotnet $CliDll hp-diff $SnapshotsPath `
         --session $SessionId --victim $TargetEntityId --mode lenient `
-        --json @DataRootArgs @DirectionArgs @Int16Args @LagArgs 2>$null) | Out-String
+        --json @DataRootArgs @DirectionArgs @Int16Args @LagArgs @LagLeadArgs 2>$null) | Out-String
 } finally {
     $ErrorActionPreference = $OldErrorActionPreference
 }

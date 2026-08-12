@@ -75,6 +75,7 @@ public sealed partial class W2sHudView : UserControl
         IReadOnlyList<BeaconItem> beacons,
         IReadOnlyList<PipItem> pips,
         IReadOnlyList<NameplateItem> items,
+        IReadOnlyList<OwnMarkerItem> ownMarkers,
         IReadOnlyList<MinimapItem> minimap,
         IReadOnlyList<MinimapBeaconItem> minimapBeacons,
         double? cameraX,
@@ -102,6 +103,11 @@ public sealed partial class W2sHudView : UserControl
         foreach (NameplateItem item in items)
         {
             HudCanvas.Children.Add(BuildNameplate(item, viewportWidth, viewportHeight));
+        }
+
+        foreach (OwnMarkerItem marker in ownMarkers)
+        {
+            HudCanvas.Children.Add(BuildOwnMarker(marker));
         }
 
         if (minimap.Count > 0 || minimapBeacons.Count > 0)
@@ -516,6 +522,36 @@ public sealed partial class W2sHudView : UserControl
         new(
             cameraX * panelSize + Math.Sin(yawRadians) * tickLength,
             cameraZ * panelSize + Math.Cos(yawRadians) * tickLength);
+
+    /// <summary>
+    /// The own-tank edge marker: a small chevron whose apex points toward
+    /// the player's hull (angle from <see cref="OwnMarkerItem"/>, 0 = +X,
+    /// +π/2 = +Y in viewport pixels), anchored at the clamped viewport edge.
+    /// </summary>
+    private static Canvas BuildOwnMarker(OwnMarkerItem marker)
+    {
+        const double size = 14.0;
+        var chevron = new Polygon
+        {
+            Points =
+            [
+                new Point(0, -size),
+                new Point(-size * 0.45, size * 0.55),
+                new Point(size * 0.45, size * 0.55),
+            ],
+            Fill = CreateBrush("#E6FFFFFF"),
+            Stroke = CreateBrush("#CC000000"),
+            StrokeThickness = 1.5,
+            RenderTransform = new RotateTransform(
+                marker.AngleRadians * 180.0 / Math.PI),
+        };
+
+        var root = new Canvas();
+        Canvas.SetLeft(root, marker.ScreenX);
+        Canvas.SetTop(root, marker.ScreenY);
+        root.Children.Add(chevron);
+        return root;
+    }
 
     private static Canvas BuildBeacon(BeaconItem beacon)
     {

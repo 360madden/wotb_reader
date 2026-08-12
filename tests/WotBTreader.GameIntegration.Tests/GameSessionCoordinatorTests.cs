@@ -1400,11 +1400,15 @@ public sealed class GameSessionCoordinatorTests
         CollectionAssert.AreEqual(expectedRegion, batch.Regions[0].RegionBytes);
         Assert.AreEqual(4243, batch.Regions[1].EntityId);
         CollectionAssert.AreEqual(expectedRegion, batch.Regions[1].RegionBytes);
-        // One guarded reader, one read per entity at the ring-record address.
+        // One guarded reader; the Branch B discipline reads each region
+        // span TWICE (read + re-read, SequenceEqual) at the ring-record
+        // address.
         Assert.AreEqual(1, factory.CreateCount);
-        Assert.HasCount(2, factory.Reader.RegionReads);
+        Assert.HasCount(4, factory.Reader.RegionReads);
         Assert.AreEqual(0x25000038, factory.Reader.RegionReads[0].Address.ToInt64());
         Assert.AreEqual(0x25000038, factory.Reader.RegionReads[1].Address.ToInt64());
+        Assert.AreEqual(0x25000038, factory.Reader.RegionReads[2].Address.ToInt64());
+        Assert.AreEqual(0x25000038, factory.Reader.RegionReads[3].Address.ToInt64());
         // No battle session id -> no clock attestation, no replay label.
         Assert.IsNull(batch.ReplayTimeSeconds);
         Assert.IsFalse(batch.SameDecodedClockProven);
@@ -1414,6 +1418,96 @@ public sealed class GameSessionCoordinatorTests
         Assert.IsTrue(
             batch.Measurement!.BatchEndedAtUtc >= batch.Measurement.BatchStartedAtUtc);
         Assert.IsNull(batch.Measurement.ClockSnapshotAtUtc);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionsRead_RegionTearRetriesAndSucceeds()
+    {
+        // Branch B (item 7): the region span is read TWICE per attempt; a
+        // torn first read (different bytes on the second read) retries and
+        // the stable re-read wins.
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        byte[] expectedRegion = [1, 2, 3, 4];
+        var factory = new TrackingEntityPositionReaderFactory(
+            CreateResolvedEntityPosition(4242),
+            regionBytes: expectedRegion);
+        factory.Reader.RecordReadScript =
+            [new byte[] { 0xFF, 0xFF, 0xFF, 0xFF }];
+        var (coordinator, _) = CreateCoordinator(memoryReaderFactory: factory);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRegionsReadResult> result = await coordinator
+            .ReadEntityRegionsAsync(
+                new EntityRegionsReadRequest(
+                    [new EntityRegionReadRequestItem(4242, RegionLength: 4)]),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess, result.Error?.Message);
+        EntityRegionsReadResult batch = result.Value!;
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, batch.Status);
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, batch.Regions.Single().Status);
+        // The torn first read retried; the stable re-read's bytes win.
+        CollectionAssert.AreEqual(expectedRegion, batch.Regions.Single().RegionBytes);
+        Assert.IsNull(batch.Regions.Single().FailureStage);
+        // Two attempt rounds x two reads: script read, stable read, then
+        // the retry round's two stable reads.
+        Assert.HasCount(4, factory.Reader.RegionReads);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionsRead_RegionAlwaysTornFailsRegionOnly()
+    {
+        // Branch B (item 7): a span that NEVER settles across the bounded
+        // attempts fails ONLY the item (stage region-unstable-snapshot),
+        // never a silent single read — the batch itself stays resolved.
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        byte[] expectedRegion = [1, 2, 3, 4];
+        var factory = new TrackingEntityPositionReaderFactory(
+            CreateResolvedEntityPosition(4242),
+            regionBytes: expectedRegion);
+        factory.Reader.RecordReadScript =
+        [
+            [0xFF, 0xFF, 0xFF, 0xFF],
+            [0xFE, 0xFE, 0xFE, 0xFE],
+            [0xFD, 0xFD, 0xFD, 0xFD],
+            [0xFC, 0xFC, 0xFC, 0xFC],
+            [0xFB, 0xFB, 0xFB, 0xFB],
+            [0xFA, 0xFA, 0xFA, 0xFA],
+        ];
+        var (coordinator, _) = CreateCoordinator(memoryReaderFactory: factory);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRegionsReadResult> result = await coordinator
+            .ReadEntityRegionsAsync(
+                new EntityRegionsReadRequest(
+                    [new EntityRegionReadRequestItem(4242, RegionLength: 4)]),
+                CancellationToken.None);
+
+        // The batch succeeds; only the torn region's item fails closed.
+        Assert.IsTrue(result.IsSuccess, result.Error?.Message);
+        EntityRegionsReadResult batch = result.Value!;
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, batch.Status);
+        EntityRegionReadResultItem item = batch.Regions.Single();
+        Assert.AreEqual(Type10EntityPositionStatus.ReadFailed, item.Status);
+        Assert.AreEqual("region-unstable-snapshot", item.FailureStage);
+        Assert.IsNull(item.RegionBytes);
+        Assert.IsFalse(item.ConsistentDoubleRead);
+        // Three attempt rounds x two reads, all mismatched, then exhausted.
+        Assert.HasCount(6, factory.Reader.RegionReads);
     }
 
     [TestMethod]
@@ -1455,13 +1549,18 @@ public sealed class GameSessionCoordinatorTests
         Assert.IsNotNull(item.EntityBaseRegionBytes);
         Assert.IsNull(item.EntityBaseFailureStage);
         Assert.AreEqual(1, item.EntityBaseAttempts);
-        // Two reads for one item: ring at the record address, entity-base
-        // at the resolved entity address — NO second resolve.
-        Assert.HasCount(2, factory.Reader.RegionReads);
+        // Four reads for one item — the Branch B discipline double-reads
+        // BOTH spans: ring read+re-read at the record address, entity-base
+        // read+re-read at the resolved entity address — NO second resolve.
+        Assert.HasCount(4, factory.Reader.RegionReads);
         Assert.AreEqual(0x25000038, factory.Reader.RegionReads[0].Address.ToInt64());
         Assert.AreEqual(4, factory.Reader.RegionReads[0].Length);
-        Assert.AreEqual(0x25000028, factory.Reader.RegionReads[1].Address.ToInt64());
-        Assert.AreEqual(0x120, factory.Reader.RegionReads[1].Length);
+        Assert.AreEqual(0x25000038, factory.Reader.RegionReads[1].Address.ToInt64());
+        Assert.AreEqual(4, factory.Reader.RegionReads[1].Length);
+        Assert.AreEqual(0x25000028, factory.Reader.RegionReads[2].Address.ToInt64());
+        Assert.AreEqual(0x120, factory.Reader.RegionReads[2].Length);
+        Assert.AreEqual(0x25000028, factory.Reader.RegionReads[3].Address.ToInt64());
+        Assert.AreEqual(0x120, factory.Reader.RegionReads[3].Length);
         Assert.AreEqual(1, factory.CreateCount);
     }
 
@@ -1564,8 +1663,8 @@ public sealed class GameSessionCoordinatorTests
         Assert.AreEqual(Type10EntityPositionStatus.EntityNotFound, batch.Regions[1].Status);
         Assert.IsNull(batch.Regions[1].RegionBytes);
         Assert.AreEqual("entity-lookup", batch.Regions[1].FailureStage);
-        // Only the resolved entity's region was read.
-        Assert.HasCount(1, factory.Reader.RegionReads);
+        // Only the resolved entity's region was read (twice — Branch B).
+        Assert.HasCount(2, factory.Reader.RegionReads);
     }
 
     [TestMethod]
@@ -2875,6 +2974,13 @@ public sealed class GameSessionCoordinatorTests
         public Action? BeforeReturn { get; set; }
         public List<(nint Address, int Length)> RegionReads { get; } = [];
 
+        // Branch B (item 7): optional per-record-address-read script — each
+        // record read pops the next entry; when exhausted, regionBytes is
+        // served. Lets tests inject torn/mismatched region reads to prove
+        // the double-read discipline retries and fails closed.
+        public List<byte[]>? RecordReadScript { get; set; }
+        private int recordReadIndex;
+
         // The L0 seam's tank-record anchor probes [entity + 0x3C]; the
         // entity base comes from the resolved address result.
         private nint ProbeAddress =>
@@ -2895,6 +3001,13 @@ public sealed class GameSessionCoordinatorTests
                 // pointer for the 4-byte probe at entity+0x3C.
                 return ValueTask.FromResult(OperationResult.Success(
                     BitConverter.GetBytes(tankRecord)));
+            }
+            if (address == (nint)(addressResult?.RecordAddress ?? 0x25000038) &&
+                RecordReadScript is not null &&
+                recordReadIndex < RecordReadScript.Count)
+            {
+                return ValueTask.FromResult(OperationResult.Success(
+                    RecordReadScript[recordReadIndex++]));
             }
             if (regionBytes is null)
             {

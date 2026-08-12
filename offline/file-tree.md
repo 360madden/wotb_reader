@@ -68,6 +68,7 @@ docs/operations/g0-operator-checklist.md
 docs/operations/g0-post-publication-regression.md
 docs/operations/g0-publication-review.md
 docs/operations/g0-walkable-position-chains.draft.json
+docs/operations/g1-hp-publication-draft.md
 docs/operations/g1-live-evidence-template.md
 docs/operations/g1-yaw-publication-draft.md
 docs/operations/handoffs/2026-07-26-overlay-mvvm-buildout.md
@@ -263,6 +264,7 @@ docs/operations/handoffs/2026-08-11-cam008-prelogin-controller-rtti.md
 docs/operations/handoffs/2026-08-11-cam009-fov-config-found.md
 docs/operations/handoffs/2026-08-11-cam010-cam011-camera-truth.md
 docs/operations/handoffs/2026-08-11-cam010-yz-swap-position-convention.md
+docs/operations/handoffs/2026-08-11-cam013-aim-point-convention.md
 docs/operations/handoffs/2026-08-11-camera-family-hierarchy-factory.md
 docs/operations/handoffs/2026-08-11-camera-family-rtti.md
 docs/operations/handoffs/2026-08-11-camera-ownership-root.md
@@ -271,6 +273,8 @@ docs/operations/handoffs/2026-08-11-damage-ledger-subtype1.md
 docs/operations/handoffs/2026-08-11-enemy-tracking-focus.md
 docs/operations/handoffs/2026-08-11-entity-base-record-map.md
 docs/operations/handoffs/2026-08-11-exact-overlay-hp-wired.md
+docs/operations/handoffs/2026-08-11-hp-phase4-closed.md
+docs/operations/handoffs/2026-08-11-live-frame-end-to-end.md
 docs/operations/handoffs/2026-08-11-minimap-correctness-unification.md
 docs/operations/handoffs/2026-08-11-playerhp-static-chain.md
 docs/operations/handoffs/2026-08-11-replay-clock-write-site-negative.md
@@ -281,7 +285,9 @@ docs/operations/handoffs/2026-08-11-type5-maxhp-in-replay.md
 docs/operations/handoffs/2026-08-11-w2s-consumption-shipped.md
 docs/operations/handoffs/2026-08-11-yaw-quarantine-reconciled.md
 docs/operations/handoffs/README.md
+docs/operations/item7-hardware-atomicity-proof-plan.md
 docs/operations/item7-hardware-atomicity-proof.md
+docs/operations/l3-damage-dealt-avatar-family-plan.md
 docs/operations/legacy-observation-surface.md
 docs/operations/live-frame-loop-design.md
 docs/operations/live-match-gate-design.md
@@ -292,6 +298,7 @@ docs/operations/od-recovery-087-evidence-template.md
 docs/operations/od-recovery-088-evidence-template.md
 docs/operations/od-recovery-089-evidence-template.md
 docs/operations/od-recovery-090-evidence-template.md
+docs/operations/od-recovery-091-evidence-template.md
 docs/operations/offset-discovery-guide.md
 docs/operations/offset-discovery-ledger.md
 docs/operations/offset-discovery-m1-m2-choreography.md
@@ -630,6 +637,8 @@ src/WotBTreader.Overlay/ViewModels/MinimapBeaconItem.cs
 src/WotBTreader.Overlay/ViewModels/MinimapItem.cs
 src/WotBTreader.Overlay/ViewModels/MinimapMath.cs
 src/WotBTreader.Overlay/ViewModels/NameplateItem.cs
+src/WotBTreader.Overlay/ViewModels/OwnMarkerItem.cs
+src/WotBTreader.Overlay/ViewModels/OwnMarkerMath.cs
 src/WotBTreader.Overlay/ViewModels/PipItem.cs
 src/WotBTreader.Overlay/ViewModels/PlotPoint.cs
 src/WotBTreader.Overlay/ViewModels/RelayCommand.cs
@@ -788,6 +797,7 @@ tests/WotBTreader.Overlay.Tests/MainViewModelTests.cs
 tests/WotBTreader.Overlay.Tests/MinimapMathTests.cs
 tests/WotBTreader.Overlay.Tests/MinimapNormalizerTests.cs
 tests/WotBTreader.Overlay.Tests/OverlayControlPlaneContainmentTests.cs
+tests/WotBTreader.Overlay.Tests/OwnMarkerMathTests.cs
 tests/WotBTreader.Overlay.Tests/PlotTransformTests.cs
 tests/WotBTreader.Overlay.Tests/ReadApiDtoTests.cs
 tests/WotBTreader.Overlay.Tests/RendezvousLocatorTests.cs
@@ -949,6 +959,7 @@ tools/compute-exe-hash.ps1
 tools/external/README.md
 tools/external/tools.lock.json
 tools/find-static-roots.py
+tools/ghidra-scripts/ConfirmHealthFieldStores.java
 tools/ghidra-scripts/DumpCallers.java
 tools/ghidra-scripts/DumpChain.java
 tools/ghidra-scripts/DumpFunctions.java
@@ -975,6 +986,7 @@ tools/ghidra-scripts/FindVftableViaCol.java
 tools/ghidra-scripts/ResolveVftableClass.java
 tools/ghidra-scripts/ScanAllClockOffsetStores.java
 tools/ghidra-scripts/ScanClockStoreBytes.java
+tools/ghidra-scripts/ScanHealthFieldStoreWidths.java
 tools/ghidra-scripts/ScanRttiHealthClasses.java
 tools/ghidra-scripts/TraceAvatarHealthListener.java
 tools/ghidra-scripts/TraceEntityRegistryPosition.java

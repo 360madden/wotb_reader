@@ -125,6 +125,19 @@ public static class HpDamageCorrelator
     /// window are returned, ordered by score (matched / damage windows)
     /// descending, then precision (matched / changed damage-windows)
     /// descending, then offset ascending.
+    ///
+    /// The attribution window is one-directional by default: an event
+    /// attributes to a change window when its decoded replay time falls in
+    /// (From - <paramref name="eventLagToleranceSeconds"/>, To]. That models
+    /// a memory clock that LAGS the decoded clock (the health write lands a
+    /// few seconds after the decoded damage time — OD-RECOVERY-087). Some
+    /// replays show the opposite skew (Dead Rail memory LEADS the decoded
+    /// clock by ~2.5 s — OD-RECOVERY-089 measured it for yaw): the write
+    /// lands BEFORE the decoded event time, so the event's decoded time
+    /// postdates the window that contains its write and the one-directional
+    /// window cannot see it. <paramref name="eventLagLeadSeconds"/> (default
+    /// 0 = unchanged) extends the window FORWARD to (From - lag, To + lead],
+    /// admitting those lead-side events so the drop can match exactly.
     /// </summary>
     /// <summary>
     /// Whether to also score 2-byte-aligned int16 candidates. The default
@@ -142,7 +155,8 @@ public static class HpDamageCorrelator
         DamageMatchMode matchMode = DamageMatchMode.Strict,
         DamageCorrelationDirection direction = DamageCorrelationDirection.Decrement,
         bool includeInt16Candidates = false,
-        double eventLagToleranceSeconds = 0)
+        double eventLagToleranceSeconds = 0,
+        double eventLagLeadSeconds = 0)
     {
         ArgumentNullException.ThrowIfNull(windows);
         ArgumentNullException.ThrowIfNull(damageEvents);
@@ -151,6 +165,13 @@ public static class HpDamageCorrelator
             throw new ArgumentOutOfRangeException(
                 nameof(eventLagToleranceSeconds),
                 "The event-lag tolerance must be >= 0.");
+        }
+
+        if (eventLagLeadSeconds < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(eventLagLeadSeconds),
+                "The event-lag lead must be >= 0.");
         }
 
         int regionLength = windows.Count > 0 ? windows[0].Before.Length : 0;
@@ -183,18 +204,24 @@ public static class HpDamageCorrelator
                     continue;
                 }
 
-                // Attribution window: (From - lag, To]. Live memory reads
-                // (OD-RECOVERY-087) measured the game applying decoded damage
-                // events to the health field with a VARIABLE lag of ~1-10 s
-                // (the event's decoded packet time precedes the state-sync
-                // write by a few seconds, and the lag varies per event), so
-                // the before/after dump pair around the decoded event time
-                // cannot bracket the memory write. A bounded lag tolerance
-                // (default 0 = exact, unchanged) lets the event attribute to
-                // the change window that actually contains its memory write.
+                // Attribution window: (From - lag, To + lead]. Live memory
+                // reads (OD-RECOVERY-087) measured the game applying decoded
+                // damage events to the health field with a VARIABLE lag of
+                // ~1-10 s (the event's decoded packet time precedes the
+                // state-sync write by a few seconds, and the lag varies per
+                // event), so the before/after dump pair around the decoded
+                // event time cannot bracket the memory write. A bounded lag
+                // tolerance (default 0 = exact, unchanged) lets the event
+                // attribute to the change window that actually contains its
+                // memory write. The bounded LEAD side (default 0 = unchanged)
+                // admits events whose decoded time POSTDATES the window — the
+                // memory clock can also lead the decoded clock (Dead Rail
+                // leads by ~2.5 s, OD-RECOVERY-089), so the write for such an
+                // event lands in an EARLIER window than its decoded time.
                 if (damageEvent.ReplayTime
                         > window.FromReplayTime - TimeSpan.FromSeconds(eventLagToleranceSeconds)
-                    && damageEvent.ReplayTime <= window.ToReplayTime)
+                    && damageEvent.ReplayTime
+                        <= window.ToReplayTime + TimeSpan.FromSeconds(eventLagLeadSeconds))
                 {
                     sum += amount;
                 }
@@ -211,8 +238,9 @@ public static class HpDamageCorrelator
             return [];
         }
 
-        // Lag path: per-window candidate events (t in (From - lag, To]), in
-        // time order, for the greedy subset-sum attribution below. The lagged
+        // Lag path: per-window candidate events (t in (From - lag, To +
+        // lead]), in time order, for the greedy subset-sum attribution
+        // below. The lagged
         // memory write can land in the window AFTER the event's own (the
         // write crosses a dump boundary when lag > dump gap), so a pure
         // time-window attribution over-counts or mis-attributes; matching
@@ -243,7 +271,8 @@ public static class HpDamageCorrelator
                 {
                     if (damageEvent.ReplayTime
                             > window.FromReplayTime - TimeSpan.FromSeconds(eventLagToleranceSeconds)
-                        && damageEvent.ReplayTime <= window.ToReplayTime)
+                        && damageEvent.ReplayTime
+                            <= window.ToReplayTime + TimeSpan.FromSeconds(eventLagLeadSeconds))
                     {
                         if (!candidatesByWindow.TryGetValue(window, out List<int>? indices))
                         {

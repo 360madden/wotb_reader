@@ -1,17 +1,32 @@
 # CAM-001 v7 live-run evidence — W2S projection cross-check (2026-08-11)
 
-**Status: HONEST-NEGATIVE — 2 launches, same signature; recorded, no
-scanning broadened.** Session `019ff23a-…` (launch 1) and
-`019ff243-…` (launch 2, the one-relaunch allowance) both returned
-`camera-state-found-unverified-offset`: the camera chain identity gates
-PASS (3/3, vftables match, finite 6/6) but posA `+0x38` read ~120 m from
-the viewpoint tank with pitch ≈ −1.5° while pitch-to-tank is ≈ −46° — the
-memory camera is NOT aimed at the tank on either launch, so the v7
-look-at/W2S acceptance cannot be confirmed. Tank source was verified
-CORRECT both times (memory tank matches the decoded trajectory within
-2.4 m at the same tick). Root cause unresolved (see the diagnosis below);
-the template below remains the fill-in contract for a future session that
-isolates the cause.
+**Status: SUPERSEDED — CAM-013 (2026-08-11): the non-chase verdicts were a
+measurement-target artifact; the W2S seam is VERIFIED.** The original
+honest-negative (below) and every subsequent "non-chase" capture (v7b/v7c,
+091/091b/092) measured look-at / pitch-to-tank / projection against the
+tank HULL CENTER, but the WoTB chase camera aims at the TURRET-LEVEL AIM
+POINT (~1.9 m above the hull center — the eye sits 1.7–2.0 m above the
+hull on every chase round, so pitch-to-AIM ≈ 0° ≈ the level memory pitch).
+With that target, the 091/091b/092/v7c captures re-verdict to CHASE
+(`verified`, pitch gaps 0.1–15.6°, aim point near center across the FOV
+band) and only the v7b battle-intro cinematic (+88° pitch) stays non-chase
+— the discriminator works. Validator-only change (aim-point target +
+pitch-gap gate + a `classify_mode` radians unit fix); no read surface, no
+offsets, no resolver, no C#. Full record:
+`docs/operations/handoffs/2026-08-11-cam013-aim-point-convention.md`.
+
+### Original honest-negative (2026-08-11, superseded by CAM-013)
+
+2 launches, same signature; recorded, no scanning broadened. Session
+`019ff23a-…` (launch 1) and `019ff243-…` (launch 2, the one-relaunch
+allowance) both returned `camera-state-found-unverified-offset`: the
+camera chain identity gates PASS (3/3, vftables match, finite 6/6) but
+posA `+0x38` read ~120 m from the viewpoint tank with pitch ≈ −1.5° while
+pitch-to-tank is ≈ −46° — the memory camera is NOT aimed at the tank on
+either launch, so the v7 look-at/W2S acceptance cannot be confirmed. Tank
+source was verified CORRECT both times (memory tank matches the decoded
+trajectory within 2.4 m at the same tick). Root cause at the time:
+unresolved (see the diagnosis below).
 
 ## Diagnosis (both launches, 2026-08-11)
 
@@ -162,6 +177,39 @@ rounds + ≥ 1 yaw- and position-correlated round).
    scene-robust (Oasis dusk skies never pass the >0.5 row-luminance sky
    test — skyFraction stays 0–0.11), so the pitch-gap branch is the
    primary non-chase signal.
+
+## CAM-013 — the chase camera aims at the turret-level aim point
+
+**Verdict: the memory camera IS the chase render camera; the W2S seam is
+validated.** The 2026-08-11 live evidence (2 launches / 3 captures,
+`cam001-v7-aggregate-091/091b/092.json`) reproduces the same memory-side
+signature on every round: identity gates PASS, basis coherent (CAM-012),
+eye (yz-swap of posA) 2–3 m from the memory tank with dy −1.7…−2.0 m, yaw
+stable and tank-following, **memory pitch level (−1.4…+4.2°)**. The
+validator measured the acceptance against the HULL CENTER — pitch-to-hull
+−35…−63° → every round classified non-chase. The WoTB chase camera aims at
+the TURRET-LEVEL AIM POINT ~1.9 m above the hull center (the eye's height),
+so pitch-to-AIM ≈ 0° ≈ memory pitch: the level pitch IS the chase state.
+
+Re-verdict of the SAME immutable aggregates with the aim-point target
+(`AIM_POINT_HEIGHT_METERS 1.9`, `passed` = aim-point pitch gap ≤ 20° +
+not-behind + (near-aim or small look-at)):
+
+| Capture | Phase | Pre-CAM-013 | Post-CAM-013 |
+|---|---|---|---|
+| 091 | battle 1 end | failed 0/6 non-chase | **verified 5/6** (5 chase; 19 m camera cut fails) |
+| 091b | battle 2 | failed 0/6 | **verified 5/6** (19 m cut fails) |
+| 092 | fresh launch | failed 0/6 | **verified 6/6**, all chase |
+| v7c | battle 1 end | failed 0/6 | **verified 6/6**, all chase |
+| v7b | battle 1 intro | failed 0/6 | **failed 0/6** (+88° cinematic, correctly non-chase) |
+
+Also fixed: `classify_mode` compared radians against degrees (caller
+passed degrees) and double-converted in the hint — both now radians. The
+validator's self-test gained a CAM-013 chase-signature regression fixture
+(level camera, eye 1.9 m above the hull → passes; `tankFramingByFov`
+reports the tank below center — the expected chase framing). The earlier
+"coherent but not aimed" and "pitch convention fails" branch readings are
+superseded; no read-surface change was needed.
 
 ## CAM-010 — posA is stored (x, z, y): CAM-004's 23.57 m is superseded
 

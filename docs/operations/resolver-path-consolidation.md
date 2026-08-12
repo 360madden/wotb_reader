@@ -73,13 +73,15 @@ cross-link, and the planning handoff.
 |---|---|---|---|---|
 | L1 HP | entity-base | region ≥ 0x120, correlate int16; `VerifyPlayerHpChain` 26/26 rehearsed (`+0xB8` current, `+0x11C` max) | chain (`chains` + layout) | 1 |
 | L2 Facing | ring-record | dump vs `position_samples.yaw`; probe `+0x2C..0x37` (live-verified 2026-08-11: yaw at `+0x30`, roll `+0x28`, pitch `+0x2C`) | chain | 1 |
-| L3 Damage | viewpoint counter | `invoke-hp-diffing-session.ps1 -Track damage-dealt` (rehearsal HIT `+0x48` 5/5 both replays) | chain | 1 |
+| L3 Damage | viewpoint counter | `invoke-hp-diffing-session.ps1 -Track damage-dealt` (rehearsal HIT `+0x48` 5/5 both replays — **synthetic fixture only, the self-constructed `+0x2C`-trap class; SUPERSEDED by the LIVE honest-negative OD-RECOVERY-090 (2026-08-11, three entity-base sweeps, no damage counter) — damage-dealt needs the avatar/player-stats family, plan `docs/operations/l3-damage-dealt-avatar-family-plan.md`**) | chain | 1 |
 | L4 replayTime | static chain (`GameCore 0x04095c88 → … → [BWServerConnection+0x58]+0x90` Double) | OD-044 interceptor, byte-exact Double; `-ArmSourceOnFirstHit` load-bearing | chain | 1 |
 
-  Each session reuses L0's region dump (multipurpose). NOTE: `+0x48` is the
-  synthetic fixture for HP; HP's real location is discovered by the
-  record-diffing playbook scan of the dumped region — an honest no-hit widens
-  the anchor (entity base / ring record).
+  Each session reuses L0's region dump (multipurpose). NOTE: the L3 row's
+  `+0x48` was the synthetic rehearsal fixture (self-constructed, never a
+  live location) — the live honest-negative OD-RECOVERY-090 swept the
+  entity base three times and found no damage-dealt counter; the L1/L2
+  rows are the LIVE-verified locations (`+0xB8` HP, `+0x30` yaw —
+  OD-RECOVERY-087/088/089/091).
 
 ### 6. Live-mode alignment (X2/X4)
 - Rehearse **batch N-entity reads** on replays (the walker already resolves
@@ -120,8 +122,11 @@ cross-link, and the planning handoff.
   the X3 filter-precision question in the same session. See
   `docs/operations/live-roster-read-design.md` (X3) and
   `docs/operations/live-frame-loop-design.md` (X4). The session itself
-  still needs one approved live launch (`OD-RECOVERY-086`;
-  `docs/operations/od-recovery-086-evidence-template.md`).
+  **RAN 2026-08-11 (OD-RECOVERY-086):** the live rehearsal delivered the
+  team-based split — own-team only (7/14, precision 1.000, recall 0.500,
+  0 extras); SUPERSEDED for enemy ids by the X4-E2E battle-start capture
+  (the movement-filter family is time-varying; the full 7v7 roster joins
+  exactly at t=0).
 - `LiveFrameSource` consumes the **resolver endpoints**, not the observation
   DTO. Deferred decision (shared-contract proposal when that work starts):
   promote resolver results into the observation contract vs. keep the
@@ -134,6 +139,13 @@ cross-link, and the planning handoff.
   unnecessary (double-read + verification window, batch surface).
 - Explicitly deferred until items 1–6 land; nothing in the checklist before
   it blocks on it.
+- **Execution plan pre-staged 2026-08-12:**
+  `docs/operations/item7-hardware-atomicity-proof-plan.md` — Branch A
+  (static write-size proof via hash-bound Ghidra) + Branch B (extend the
+  resolver's double-read + index-stability discipline to the batch region
+  spans, which today are read once with `ConsistentDoubleRead: false`
+  explicitly not claimable); the `HardwareAtomicReadProven` flag flip is a
+  shared-contract proposal, never applied without owner review.
 
 ## Per-target layout convention (`Type10<X>Layout`)
 

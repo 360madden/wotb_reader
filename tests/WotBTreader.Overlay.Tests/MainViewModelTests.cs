@@ -1109,6 +1109,240 @@ public sealed class MainViewModelTests
     }
 
     [TestMethod]
+    public async Task RefreshOverlayFrameAsync_LiveModeForwardsSelectedSessionForRosterJoin()
+    {
+        // Live mode forwards the selected session id so the server can name
+        // the live tanks via the per-id decoded-roster join (design
+        // live-roster-name-join-design.md); the joined name lands in the
+        // nameplate.
+        string frameJson = """
+            {
+              "replayTimeSeconds": 150.5,
+              "cameraX": 0.0, "cameraY": 0.0, "cameraZ": 0.0,
+              "cameraYawRadians": 0.5, "cameraPitchRadians": 0.0,
+              "tanks": [
+                { "entityId": 100, "playerName": "pilot", "tankName": null, "clanTag": "TAG", "teamNumber": 1, "hpFraction": 0.0, "alive": true, "distanceMeters": 120.0, "screenX": 800.0, "screenY": 400.0, "depth": 80.0, "inViewport": true, "maxHealth": 0, "currentHealth": 0 }
+              ]
+            }
+            """;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        Uri? liveFrameUri = null;
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/live/frame", StringComparison.OrdinalIgnoreCase))
+            {
+                liveFrameUri = request.RequestUri;
+                return Task.FromResult(JsonResponse(frameJson));
+            }
+
+            return Task.FromResult(JsonResponse("""{"offset":0,"limit":200,"count":0,"items":[]}"""));
+        });
+        MainViewModel viewModel = CreateViewModel(handler);
+
+        await viewModel.RefreshSessionsAsync();
+        viewModel.IsLiveMode = true;
+        viewModel.SelectedSession = new SessionRow(BattleSessionId, "Test Map", null, Now, 1, 2);
+
+        await viewModel.RefreshOverlayFrameAsync(1920, 1080);
+
+        Assert.IsNotNull(liveFrameUri);
+        string sessionParam = liveFrameUri!.Query
+            .TrimStart('?')
+            .Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Single(part => part.StartsWith("sessionId=", StringComparison.OrdinalIgnoreCase))
+            ["sessionId=".Length..];
+        Assert.AreEqual(BattleSessionId, Guid.Parse(sessionParam));
+        NameplateItem tank = viewModel.Nameplates.Single();
+        Assert.AreEqual("pilot", tank.Label);
+        Assert.AreEqual(1, tank.TeamNumber);
+    }
+
+    [TestMethod]
+    public async Task RefreshOverlayFrameAsync_LiveModeSuppressesOwnNameplateByIdentity()
+    {
+        // Own-nameplate refinement (name-join design step 4): live mode
+        // identifies the player's own tank via the decoded viewpoint id on
+        // the frame (OwnEntityId) — the CAM-001 chase eye sits at the
+        // turret-level aim point ~1.9 m above the hull center, so the
+        // <1.0 m distance heuristic can't catch it. The own tank still
+        // reaches the minimap; only its nameplate is suppressed.
+        string frameJson = """
+            {
+              "replayTimeSeconds": 150.5,
+              "cameraX": 0.0, "cameraY": 1.9, "cameraZ": 0.0,
+              "cameraYawRadians": 0.5, "cameraPitchRadians": 0.0,
+              "ownEntityId": 3760577,
+              "tanks": [
+                { "entityId": 3760577, "playerName": "mrkool1138", "tankName": "GB08_Churchill_I", "clanTag": null, "teamNumber": 1, "hpFraction": 1.0, "alive": true, "distanceMeters": 1.9, "worldX": 0.0, "worldZ": 0.0, "screenX": 960.0, "screenY": 620.0, "depth": 0.5, "inViewport": true },
+                { "entityId": 3760575, "playerName": "sother_XD", "tankName": null, "clanTag": null, "teamNumber": 2, "hpFraction": 0.206, "alive": true, "distanceMeters": 33.6, "worldX": 50.0, "worldZ": -50.0, "screenX": 800.0, "screenY": 400.0, "depth": 60.0, "inViewport": true }
+              ]
+            }
+            """;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            string path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/live/frame", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(JsonResponse(frameJson));
+            }
+
+            if (path.EndsWith("/maps/boundaries", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(JsonResponse("""
+                    [ { "mapId": "test-map", "minX": -100.0, "maxX": 100.0, "minZ": -100.0, "maxZ": 100.0 } ]
+                    """));
+            }
+
+            if (path.Contains(BattleSessionId.ToString("D"), StringComparison.Ordinal))
+            {
+                return Task.FromResult(JsonResponse("""{"session":{"id":"3fa85f64-5717-4562-b3fc-2c963f66afa6","mapId":"test-map","mapName":"Test Map"},"participants":[],"positions":[],"events":[]}"""));
+            }
+
+            return Task.FromResult(JsonResponse("""{"offset":0,"limit":200,"count":0,"items":[]}"""));
+        });
+        MainViewModel viewModel = CreateViewModel(handler);
+
+        await viewModel.RefreshSessionsAsync();
+        viewModel.IsLiveMode = true;
+        viewModel.SelectedSession = new SessionRow(
+            BattleSessionId, "Test Map", "test-map", Now, 1, 2);
+
+        // The boundary fetch is fire-and-forget; wait for it to land so the
+        // minimap normalization has a real extent to map against.
+        for (int i = 0; i < 100 && viewModel.WorldMinX == 0; i++)
+        {
+            await Task.Delay(10);
+        }
+
+        await viewModel.RefreshOverlayFrameAsync(1920, 1080);
+
+        // Exactly one nameplate: the enemy's. The own tank (1.9 m, beyond
+        // the old distance heuristic) is suppressed via OwnEntityId but
+        // still flows to the minimap — suppression is nameplate-only.
+        NameplateItem nameplate = viewModel.Nameplates.Single();
+        Assert.AreEqual(3760575, nameplate.EntityId);
+        Assert.AreEqual("sother_XD", nameplate.Label);
+        Assert.IsTrue(viewModel.MinimapItems.Any(item => item.EntityId == 3760577));
+    }
+
+    [TestMethod]
+    public async Task RefreshOverlayFrameAsync_LiveModeShowsOwnEdgeMarker_WhenOwnTankOffViewport()
+    {
+        // Own-nameplate refinement, the "honest self marker" half: when the
+        // decoded viewpoint tank projects OFF the viewport (the capture's
+        // chase eye puts the hull below the 640x360 rect at screenY ~500),
+        // the HUD gets one clamped edge marker pointing back at the hull.
+        string frameJson = """
+            {
+              "replayTimeSeconds": 150.5,
+              "cameraX": 0.0, "cameraY": 1.9, "cameraZ": 0.0,
+              "cameraYawRadians": 0.5, "cameraPitchRadians": 0.0,
+              "ownEntityId": 3760577,
+              "tanks": [
+                { "entityId": 3760577, "playerName": "mrkool1138", "tankName": null, "clanTag": null, "teamNumber": 1, "hpFraction": 1.0, "alive": true, "distanceMeters": 2.3, "worldX": 0.0, "worldZ": 0.0, "screenX": 358.9, "screenY": 500.0, "depth": 0.5, "inViewport": false },
+                { "entityId": 3760575, "playerName": "sother_XD", "tankName": null, "clanTag": null, "teamNumber": 2, "hpFraction": 0.2, "alive": true, "distanceMeters": 33.6, "worldX": 50.0, "worldZ": -50.0, "screenX": 800.0, "screenY": 400.0, "depth": 60.0, "inViewport": true }
+              ]
+            }
+            """;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/live/frame", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(JsonResponse(frameJson));
+            }
+
+            return Task.FromResult(JsonResponse("""{"offset":0,"limit":200,"count":0,"items":[]}"""));
+        });
+        MainViewModel viewModel = CreateViewModel(handler);
+
+        await viewModel.RefreshSessionsAsync();
+        viewModel.IsLiveMode = true;
+
+        // The 640x360 viewport mirrors the live captures where the chase
+        // eye puts the own hull BELOW the rect (screenY 500 > 360): the
+        // server projects at the client's viewport, so InViewport:false is
+        // consistent with this rect and the marker clamps to the bottom edge.
+        await viewModel.RefreshOverlayFrameAsync(640, 360);
+
+        OwnMarkerItem marker = viewModel.OwnMarkers.Single();
+        Assert.AreEqual(358.9, marker.ScreenX, 1e-9);
+        Assert.AreEqual(360.0 - OwnMarkerMath.Margin, marker.ScreenY, 1e-9);
+        Assert.AreEqual(Math.PI / 2.0, marker.AngleRadians, 1e-9);
+    }
+
+    [TestMethod]
+    public async Task RefreshOverlayFrameAsync_LiveModeOmitsOwnMarker_WhenOwnTankInViewport()
+    {
+        // The own tank on-screen needs no marker (the player sees the hull).
+        string frameJson = """
+            {
+              "replayTimeSeconds": 150.5,
+              "cameraX": 0.0, "cameraY": 1.9, "cameraZ": 0.0,
+              "cameraYawRadians": 0.5, "cameraPitchRadians": 0.0,
+              "ownEntityId": 3760577,
+              "tanks": [
+                { "entityId": 3760577, "playerName": "mrkool1138", "tankName": null, "clanTag": null, "teamNumber": 1, "hpFraction": 1.0, "alive": true, "distanceMeters": 2.3, "worldX": 0.0, "worldZ": 0.0, "screenX": 358.9, "screenY": 250.0, "depth": 0.5, "inViewport": true }
+              ]
+            }
+            """;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/live/frame", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(JsonResponse(frameJson));
+            }
+
+            return Task.FromResult(JsonResponse("""{"offset":0,"limit":200,"count":0,"items":[]}"""));
+        });
+        MainViewModel viewModel = CreateViewModel(handler);
+
+        await viewModel.RefreshSessionsAsync();
+        viewModel.IsLiveMode = true;
+
+        await viewModel.RefreshOverlayFrameAsync(1920, 1080);
+
+        Assert.HasCount(0, viewModel.OwnMarkers);
+    }
+
+    [TestMethod]
+    public async Task RefreshOverlayFrameAsync_ReplayFrameHasNoOwnMarker()
+    {
+        // Without an OwnEntityId (replay path) the marker is never guessed.
+        string frameJson = """
+            {
+              "replayTimeSeconds": 150.5,
+              "cameraX": 0.0, "cameraY": 0.0, "cameraZ": 0.0,
+              "cameraYawRadians": 0.5, "cameraPitchRadians": 0.0,
+              "tanks": [
+                { "entityId": 3760577, "playerName": "mrkool1138", "tankName": null, "clanTag": null, "teamNumber": 1, "hpFraction": 1.0, "alive": true, "distanceMeters": 2.3, "worldX": 0.0, "worldZ": 0.0, "screenX": 358.9, "screenY": 500.0, "depth": 0.5, "inViewport": false }
+              ]
+            }
+            """;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/frame", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(JsonResponse(frameJson));
+            }
+
+            return Task.FromResult(JsonResponse("""{"offset":0,"limit":200,"count":0,"items":[]}"""));
+        });
+        MainViewModel viewModel = CreateViewModel(handler);
+
+        await viewModel.RefreshSessionsAsync();
+        viewModel.SelectedSession = new SessionRow(
+            BattleSessionId, "Test Map", null, Now, 1, 2);
+
+        await viewModel.RefreshOverlayFrameAsync(1920, 1080);
+
+        Assert.HasCount(0, viewModel.OwnMarkers);
+    }
+
+    [TestMethod]
     public async Task RefreshOverlayFrameAsync_SortsNameplatesFarToNear()
     {
         // Depth = distance along the view axis; larger = farther from the

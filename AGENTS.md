@@ -7,7 +7,8 @@ No runtime AI, cloud, Python, Node.js, Rust, Electron, or containers.
 
 - **Active workstream (2026-08-11): overlay + camera track.** See
   `docs/operations/product-roadmap.md` (forward plan), the newest files in
-  `docs/operations/handoffs/` (CAM-002/003), and the ledger. The W2S camera
+  `docs/operations/handoffs/` (HP Phase-4 closed, 2026-08-11), and the
+  ledger. The W2S camera
   is live-verified: the fixed member-path walks and both identity gates
   pass (ReplayCameraController `base+0x326dd0c` / GameCamera
   `base+0x32dafa0`), and the live pose lives on the **GameCamera**
@@ -17,9 +18,44 @@ No runtime AI, cloud, Python, Node.js, Rust, Electron, or containers.
   (yz-swap puts it 2.1–3.6 m from the decoded viewpoint tank, sub-meter,
   on v7b+v7c; CAM-004's "23.57 m third-person offset" was the
   `√2·|tank.z − tank.y|` artifact of the un-swapped read, not a chase
-  eye). The W2S seam must yz-swap world→camera space; the orientation
-  convention and the true render eye (controller `+0x28` ring?) are the
-  open questions. **Known caveat
+  eye). **CAM-011/012 (2026-08-11): orientation LOCKED and the W2S seam
+  shipped** — posA yz-swapped IS the render eye, the basis rows are the
+  camera's world axes (forward = −row1, up = row2), and the
+  `LiveFrameProjector.BuildCamera` consumption is validated by the CAM-007
+  screen cross-check at ship time. **CAM-013 (2026-08-11): the CAM-007
+  live session VERIFIES the W2S seam (`w2sProjectionVerified: true`)** —
+  two launches / three captures (`cam001-v7-aggregate-091/091b/092`)
+  reproduce the chase signature (identity gates 3/3, basis coherent, eye
+  2–3 m from the tank, yaw tank-following, memory pitch level), and the
+  earlier "non-chase honest-negative" was a hull-center measurement
+  artifact: the WoTB chase camera aims at the TURRET-LEVEL AIM POINT
+  (~1.9 m above the hull center), where pitch-to-aim ≈ 0° ≈ the memory
+  pitch. Re-verdict with that target: 091/091b/092/v7c verified (all
+  chase), only the v7b battle-intro cinematic (+88° pitch) stays
+  non-chase. Validator-only change (no read surface / offsets).
+  **X4-E2E (2026-08-11): the live overlay render pass is VERIFIED
+  end-to-end** — a mid-battle `GET /live/frame?sessionId=` capture on the
+  CAM-013 seam served the full 7v7 roster at battle start with **14/14
+  exact decoded-name joins** (enemy ids included — the X2b own-team-only
+  bound is superseded; the movement-filter family is time-varying and the
+  loop's per-tick re-enumeration catches the full roster at t=0), 13/15
+  real L1 HP, and the chase camera geometry (eye 1.9 m, pitch level =
+  aim point, viewpoint tank below-center); the CAM-003 controller flip
+  between auto-loop battles re-demonstrated the fail-closed 409.
+  **Refinements live-verified 2026-08-12:** the live frame now carries a
+  real replay clock (the endpoint forwards the session id into the
+  discover request so the batch's ONE G2 snapshot runs; capture read
+  115.5 s mid-battle — and a pre-existing launcher anchor-date bug was
+  found + fixed: the anchor date came from the blitz-log FILENAME (local
+  date) while the marker's leading time is UTC — a local-evening launch
+  writes its marker to the previous day's file, rolling the estimate 24 h
+  (86517 s); the launcher now rolls the date bounded to within 10 min of
+  UTC now), and the own-nameplate  suppression
+  marker (`OwnEntityId` = the decoded viewpoint participant's entity id)
+  was verified live on both launches with exact joins + real HP, and the
+  own-tank OFF-viewport edge marker shipped (clamped chevron back at the
+  hull, `OwnMarkerItem`/`OwnMarkerMath`, 8 tests, fail-closed).
+  **Known caveat
   (CAM-003):** the session-controller vftable FLIPS between launches
   (`base+0x325ad2c` — resolver's hard-coded gates reject it and
   `/discover/entity-position` + `/position-page` return
@@ -104,11 +140,39 @@ per-dump variable and OPPOSITE in sign per replay (Oasis memory lags
 +4.8 s; Dead Rail leads −2.5 s, spread 5.6 s) — fixed additively by the
 per-dump bounded bidirectional lag path (`yaw-diff --per-dump-lag
 --memory-lead-seconds`), which re-verdicts the same dumps to HIT on both
-replays. Yaw publication package is READY (operator approval only). Item 7
-(hardware-atomicity proof) stays LAST by design. The only remaining gates
-are approved live sessions (CAM-001 v7, then OD-RECOVERY-090 L3
-damage-dealt + its Dead Rail repeat) plus the Phase-4 two-replay HP rule
-(Dead Rail victim 2549399) before any HP/yaw publication.
+replays. **OD-RECOVERY-091 closed 2026-08-11: L1 HP Phase-4 repeat HIT** —
+Dead Rail agrees at entity-base `+0xB8` (score 1.0, flatness 1.0, Strict
+4/4 exact sums; `twoReplayRepeatability = true`; victim re-scoped to
+team-1 2549395 — the planned 2549399 is team 2 and can never resolve, the
+resolver's entity-map trees hold the player's own team only). The
+at-session verdict was an honest negative from the SAME matcher limitation
+class: Dead Rail's memory clock LEADS the decoded clock (~2.5 s), invisible
+to the one-directional attribution — fixed additively by the bounded
+lead-side window (`hp-diff --lag-lead-seconds`, default 0 = unchanged, 3
+tests), which re-verdicts the same dumps to HIT and leaves Oasis
+regression-free. **Both publication packages (HP + yaw) are now READY
+(operator approval + gate run only); item 7 (hardware-atomicity proof)
+stays LAST by design** — its execution plan is pre-staged
+(`docs/operations/item7-hardware-atomicity-proof-plan.md`), and **Branch A's
+sub-proofs landed 2026-08-11 (hash-bound): HP — the health setters
+`FUN_0166b9f0`/`FUN_01675f60` write `+0xB8` (current HP) and `+0x11E`
+(healing) as single 16-bit stores, zero 64/128-bit stores to either field
+anywhere in the binary, and the 360 dword/53 byte `+0xB8` stores belong to
+other object families (bounded live by OD-087/091's byte-exact reads);
+position + rotation — the ring writer `FUN_0270df40` (avatar-helper vtable
+slot 2, chain-anchored on the 40-check type-10 semantic chain) writes x,y at
+record+0x10 as one 8-byte MOVQ and z at +0x18 as a 4-byte store, roll+pitch
+at +0x28/+0x2C as one 8-byte MOVQ and yaw at +0x30 as a 4-byte store
+(stride 0x38 == resolver `RingRecordSize`), with the monotonic-time guard
+and index-advance-before-fill handoff (double-read discipline covers the
+sub-microsecond window; zero live tears). **Branch B step 1 landed
+2026-08-11 (offline):** the batch region span and the entity-base span are
+each read TWICE per attempt with a bounded retry and fail-closed
+`region-unstable-snapshot`/`entity-base-unstable-snapshot` exhaustion; the
+per-span `SequenceEqual` is the stability witness (the ring record's leading
+time field sits inside the span); `ConsistentDoubleRead` stays false — the
+flag flip + per-entity span measurement fields are the owner-gated
+shared-contract proposal)**.
 - **BLK-0026 resolved and validated (2026-08-09):** root cause was a launcher
   regression — .NET `Set-Acl` threw `PrivilegeNotHeldException` on the
   persisted owner-only marker ACL, mapped by the catch-all to
@@ -123,7 +187,7 @@ damage-dealt + its Dead Rail repeat) plus the Phase-4 two-replay HP rule
   hardware atomicity, same-decoded-clock proof, numeric-offset publication,
   promotion. **Superseded 2026-08-10** by the operator-approved G0
   publication (below); hardware atomicity remains unproved.
-- **Last verified gate:** 2026-08-11 — 1019 tests passed, 3 local opt-in skips,
+- **Last verified gate:** 2026-08-12 — 1045 tests passed, 3 local opt-in skips,
   0 warnings, 0 errors.
 - **Refresh from:** the newest file in `docs/operations/handoffs/`,
   `docs/operations/product-roadmap.md` (forward plan / workstreams),
@@ -293,7 +357,7 @@ Hard decoder/security/contract decisions stay on the lead model; Codex subagents
 
 ## Last verified
 
-- 2026-08-11 — full gate green: 1019 tests passed, 3 local opt-in skips,
+- 2026-08-12 — full gate green: 1045 tests passed, 3 local opt-in skips,
   0 warnings, 0 errors (fresh run).
 - 2026-08-09 — AGENTS.md restructured to the table-driven layout; hard
   constraints trimmed (offline-only + Cheat Engine bullets removed), ADR 0002

@@ -2419,25 +2419,73 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 continue;
             }
 
-            OperationResult<byte[]> regionResult = await reader.ReadAsync(
-                (nint)regionBaseAddress.Value,
-                entity.RegionLength,
-                cancellationToken).ConfigureAwait(false);
-            if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+            // Branch B (item 7): the region span is read TWICE per attempt
+            // with an UnstableSnapshot-style retry (the resolver template).
+            // The record bytes are the stability witness — for ring records
+            // the leading time field is inside the span, so any ring advance
+            // or mid-write changes the bytes and retries. The retry is
+            // bounded by layout.MaxAttempts and fail-closed: an exhausted
+            // region is an item failure (stage region-unstable-snapshot),
+            // never a silent single read. ConsistentDoubleRead stays false
+            // until the owner-approved shared-contract proposal (Branch B
+            // step 2 — this step only performs the discipline).
+            byte[]? regionBytes = null;
+            string? regionFailureStage = null;
+            int maxRegionAttempts = Math.Max(1, layout.MaxAttempts);
+            for (int attempt = 1; attempt <= maxRegionAttempts && regionBytes is null; attempt++)
             {
-                return GateCheck<EntityRegionsReadResult>(
-                    "discover.gate_not_satisfied",
-                    "The offline-session gate is no longer satisfied.");
+                OperationResult<byte[]> firstRegionRead = await reader.ReadAsync(
+                    (nint)regionBaseAddress.Value,
+                    entity.RegionLength,
+                    cancellationToken).ConfigureAwait(false);
+                if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+                {
+                    return GateCheck<EntityRegionsReadResult>(
+                        "discover.gate_not_satisfied",
+                        "The offline-session gate is no longer satisfied.");
+                }
+
+                if (!firstRegionRead.IsSuccess || firstRegionRead.Value is null)
+                {
+                    regionFailureStage = "region-read";
+                    break;
+                }
+
+                OperationResult<byte[]> secondRegionRead = await reader.ReadAsync(
+                    (nint)regionBaseAddress.Value,
+                    entity.RegionLength,
+                    cancellationToken).ConfigureAwait(false);
+                if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+                {
+                    return GateCheck<EntityRegionsReadResult>(
+                        "discover.gate_not_satisfied",
+                        "The offline-session gate is no longer satisfied.");
+                }
+
+                if (!secondRegionRead.IsSuccess || secondRegionRead.Value is null)
+                {
+                    regionFailureStage = "region-read";
+                    break;
+                }
+
+                if (firstRegionRead.Value.AsSpan().SequenceEqual(secondRegionRead.Value))
+                {
+                    regionBytes = firstRegionRead.Value;
+                }
+                else if (attempt == maxRegionAttempts)
+                {
+                    regionFailureStage = "region-unstable-snapshot";
+                }
             }
 
-            if (!regionResult.IsSuccess || regionResult.Value is null)
+            if (regionBytes is null)
             {
                 results[index] = new EntityRegionReadResultItem(
                     entity.EntityId,
                     Type10EntityPositionStatus.ReadFailed,
                     ReplayTimeSeconds: null,
                     RegionBytes: null,
-                    FailureStage: "region-read",
+                    FailureStage: regionFailureStage ?? "region-read",
                     resolved.Attempts,
                     resolved.NodesVisited,
                     resolved.ModuleRooted,
@@ -2462,25 +2510,55 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 }
                 else
                 {
-                    entityBaseAttempts = 1;
-                    OperationResult<byte[]> entityBaseResult = await reader.ReadAsync(
-                        (nint)entityAddress,
-                        entityBaseLength,
-                        cancellationToken).ConfigureAwait(false);
-                    if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+                    // Branch B (item 7): the entity-base span gets the same
+                    // double-read discipline; a mid-write tear retries, and
+                    // exhaustion fails only the health fields.
+                    int maxEntityBaseAttempts = Math.Max(1, layout.MaxAttempts);
+                    for (int attempt = 1; attempt <= maxEntityBaseAttempts && entityBaseBytes is null; attempt++)
                     {
-                        return GateCheck<EntityRegionsReadResult>(
-                            "discover.gate_not_satisfied",
-                            "The offline-session gate is no longer satisfied.");
-                    }
+                        entityBaseAttempts = attempt;
+                        OperationResult<byte[]> entityBaseFirst = await reader.ReadAsync(
+                            (nint)entityAddress,
+                            entityBaseLength,
+                            cancellationToken).ConfigureAwait(false);
+                        if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+                        {
+                            return GateCheck<EntityRegionsReadResult>(
+                                "discover.gate_not_satisfied",
+                                "The offline-session gate is no longer satisfied.");
+                        }
 
-                    if (entityBaseResult.IsSuccess && entityBaseResult.Value is not null)
-                    {
-                        entityBaseBytes = entityBaseResult.Value;
-                    }
-                    else
-                    {
-                        entityBaseFailureStage = "entity-base-read";
+                        if (!entityBaseFirst.IsSuccess || entityBaseFirst.Value is null)
+                        {
+                            entityBaseFailureStage = "entity-base-read";
+                            break;
+                        }
+
+                        OperationResult<byte[]> entityBaseSecond = await reader.ReadAsync(
+                            (nint)entityAddress,
+                            entityBaseLength,
+                            cancellationToken).ConfigureAwait(false);
+                        if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+                        {
+                            return GateCheck<EntityRegionsReadResult>(
+                                "discover.gate_not_satisfied",
+                                "The offline-session gate is no longer satisfied.");
+                        }
+
+                        if (!entityBaseSecond.IsSuccess || entityBaseSecond.Value is null)
+                        {
+                            entityBaseFailureStage = "entity-base-read";
+                            break;
+                        }
+
+                        if (entityBaseFirst.Value.AsSpan().SequenceEqual(entityBaseSecond.Value))
+                        {
+                            entityBaseBytes = entityBaseFirst.Value;
+                        }
+                        else if (attempt == maxEntityBaseAttempts)
+                        {
+                            entityBaseFailureStage = "entity-base-unstable-snapshot";
+                        }
                     }
                 }
             }
@@ -2489,7 +2567,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 entity.EntityId,
                 Type10EntityPositionStatus.Resolved,
                 ReplayTimeSeconds: null,
-                RegionBytes: regionResult.Value,
+                RegionBytes: regionBytes,
                 FailureStage: null,
                 resolved.Attempts,
                 resolved.NodesVisited,

@@ -163,9 +163,14 @@ the read discipline that makes atomicity unnecessary") gets its home here:
   `Measurement` (`BatchStartedAtUtc` = first resolve, `BatchEndedAtUtc` =
   last read, `ClockSnapshotAtUtc` = the G2 snapshot moment) so the rehearsal
   session measures the whole-roster read window WITHOUT a second session
-  (the field had to exist before the run). Per-entity double-read spans
-  remain future — region dumps do not double-collect position bytes, and
-  the position payload's double-read span is a separate item-7 question.
+  (the field had to exist before the run). **Per-entity double-read spans
+  landed 2026-08-11 (item-7 Branch B step 1):** the region span AND the
+  entity-base span are each read twice per attempt with a bounded retry
+  (fail-closed `region-unstable-snapshot` / `entity-base-unstable-snapshot`
+  exhaustion) — the per-span `SequenceEqual` is the stability witness (for
+  ring records the leading time field sits inside the span). The flag still
+  travels `ConsistentDoubleRead: false`; per-entity span MEASUREMENT fields
+  and the flag flip remain in the owner-gated shared-contract proposal.
 - The batch is also where **one-coherent-pass** semantics get designed: a
   single reader pass over all entities at ~the same wall time is the only
   shape that can later claim "all 14 tanks seen within X ms" — which is what
@@ -195,11 +200,14 @@ the read discipline that makes atomicity unnecessary") gets its home here:
      nearest decoded position_sample — proven on real data: 42/42 pairs
      PASS, corruption detected, exit codes 0/1/3). The session itself still
      needs one approved launch.
-  4. ✅ **PRE-STAGED 2026-08-11** — Measure the batch window + double-read
-     spans → feed item 7. The batch response now carries the read-pass
-     window + snapshot moment (`Measurement`); the rehearsal run reports
-     it. (Per-entity double-read spans are a separate item-7 question, not
-     part of region dumps.)
+  4. ✅ **DONE 2026-08-11** — Measure the batch window + double-read spans →
+     feed item 7. The batch response now carries the read-pass window +
+     snapshot moment (`Measurement`); the rehearsal run reports it. **The
+     per-entity double-read spans themselves landed 2026-08-11 (item-7
+     Branch B step 1)** — region + entity-base spans double-read with
+     bounded retry and fail-closed exhaustion; per-entity span measurement
+     fields + the `ConsistentDoubleRead` flip stay in the owner-gated
+     shared-contract proposal.
 
 ## Open questions (recorded, not decided)
 

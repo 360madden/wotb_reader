@@ -103,22 +103,30 @@ public sealed class TreaderApiClient : IDisposable
     /// bars/readouts carry the L1 entity-base values when the read
     /// resolved; pips/kills/scoreboard are absent.
     /// </summary>
+    /// <param name="sessionId">Optional decoded battle session whose roster
+    /// names the live tanks (per-id join; omitted = anonymous).</param>
     /// <param name="verticalFovDegrees">Vertical field of view (default 90).</param>
     /// <param name="viewportWidth">Viewport width in pixels (default 1920).</param>
     /// <param name="viewportHeight">Viewport height in pixels (default 1080).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The projected live frame, or null on a non-success response.</returns>
     public async Task<OverlayFrameResponse?> GetLiveFrameAsync(
+        Guid? sessionId = null,
         double verticalFovDegrees = 90.0,
         double viewportWidth = 1920.0,
         double viewportHeight = 1080.0,
         CancellationToken cancellationToken = default)
     {
-        using HttpResponseMessage response = await _httpClient.GetAsync(
-            "api/v1/live/frame"
-            + $"?fov={verticalFovDegrees.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}"
+        string query = $"?fov={verticalFovDegrees.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}"
             + $"&width={viewportWidth.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}"
-            + $"&height={viewportHeight.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}",
+            + $"&height={viewportHeight.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}";
+        if (sessionId is { } id)
+        {
+            query += $"&sessionId={id:D}";
+        }
+
+        using HttpResponseMessage response = await _httpClient.GetAsync(
+            "api/v1/live/frame" + query,
             cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {

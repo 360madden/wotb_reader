@@ -69,6 +69,7 @@ public class MainViewModel : INotifyPropertyChanged
 
     // W2S HUD state: the projected nameplates + beacons rendered over the game window.
     private readonly ObservableCollection<NameplateItem> _nameplates = [];
+    private readonly ObservableCollection<OwnMarkerItem> _ownMarkers = [];
     private readonly ObservableCollection<BeaconItem> _beacons = [];
     private readonly ObservableCollection<PipItem> _pips = [];
     private readonly ObservableCollection<MinimapItem> _minimapItems = [];
@@ -420,6 +421,12 @@ public class MainViewModel : INotifyPropertyChanged
     /// <summary>Projected nameplates for the W2S HUD, one per visible tank.</summary>
     public ObservableCollection<NameplateItem> Nameplates => _nameplates;
 
+    /// <summary>The own-tank edge marker (≤ 1 item): the clamped viewport
+    /// position + direction when the player's own tank projects off-screen.
+    /// Empty when it is on-screen, the id is unknown, or the projection is
+    /// missing — never guessed.</summary>
+    public ObservableCollection<OwnMarkerItem> OwnMarkers => _ownMarkers;
+
     /// <summary>Projected beacons for the W2S HUD, one per visible POI.</summary>
     public ObservableCollection<BeaconItem> Beacons => _beacons;
 
@@ -515,8 +522,10 @@ public class MainViewModel : INotifyPropertyChanged
     {
         TreaderApiClient? client = _client;
         SessionRow? session = _selectedSession;
-        // Live mode needs no selected session (the frame comes from the gated
-        // memory surface, not a decoded replay projection).
+        // Live mode needs no selected session to serve the frame (it comes
+        // from the gated memory surface); the selection is still forwarded
+        // when present so the per-id decoded-roster join can name the live
+        // tanks (own-team ids; anonymous otherwise — never guessed).
         if (client is null || (!IsLiveMode && session is null))
         {
             return;
@@ -531,6 +540,7 @@ public class MainViewModel : INotifyPropertyChanged
         {
             OverlayFrameResponse? frame = IsLiveMode
                 ? await client.GetLiveFrameAsync(
+                    session?.BattleSessionId,
                     _hudFovDegrees,
                     viewportWidth,
                     viewportHeight,
@@ -549,6 +559,7 @@ public class MainViewModel : INotifyPropertyChanged
 
             LastFrameReplayTimeSeconds = frame.ReplayTimeSeconds;
             _nameplates.Clear();
+            _ownMarkers.Clear();
             _beacons.Clear();
             _pips.Clear();
             _minimapItems.Clear();
@@ -578,7 +589,13 @@ public class MainViewModel : INotifyPropertyChanged
                 }
 
                 // The player's own tank is the camera: never a nameplate.
-                if (tank.DistanceMeters < 1.0)
+                // Live mode identifies it deterministically via the decoded
+                // viewpoint id on the frame (OwnEntityId, name-join design
+                // step 4) — the CAM-001 chase eye sits at the turret-level
+                // aim point ~1.9 m above the hull center, so the distance
+                // heuristic alone can't catch it. The heuristic stays as
+                // the replay/unknown fallback.
+                if (tank.EntityId == frame.OwnEntityId || tank.DistanceMeters < 1.0)
                 {
                     continue;
                 }
@@ -598,6 +615,30 @@ public class MainViewModel : INotifyPropertyChanged
                     tank.Kills,
                     tank.MaxHealth,
                     tank.CurrentHealth));
+            }
+
+            // Own-tank edge marker (name-join design step 4's "honest self
+            // marker"): when the decoded viewpoint tank projects OFF the
+            // viewport, clamp the projection to the edge and point the chevron
+            // back at the hull. On-screen -> no marker (the player sees it);
+            // unknown id or missing projection -> no marker (never guessed).
+            if (frame.OwnEntityId is { } ownEntityId)
+            {
+                OverlayTankResponse? own = frame.Tanks.FirstOrDefault(
+                    tank => tank.EntityId == ownEntityId);
+                if (own is { ScreenX: double ownX, ScreenY: double ownY }
+                    && !own.InViewport
+                    && OwnMarkerMath.ClampToViewport(
+                        ownX,
+                        ownY,
+                        viewportWidth,
+                        viewportHeight) is { } clamped)
+                {
+                    _ownMarkers.Add(new OwnMarkerItem(
+                        clamped.X,
+                        clamped.Y,
+                        OwnMarkerMath.AngleToward(ownX, ownY, clamped.X, clamped.Y)));
+                }
             }
 
             foreach (OverlayBeaconResponse beacon in frame.Beacons)

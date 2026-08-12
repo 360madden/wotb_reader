@@ -265,6 +265,33 @@ def walkable_fidelity_issues(field: str, pub: list, dr: list) -> list[str]:
     def value(h):
         return h.get("value")
 
+    if field == "playerHP":
+        # Entity-base chain (HP, G1 pre-stage 2026-08-11): the module-rooted
+        # walk through the entity lookup ONLY — the health field lives on the
+        # ENTITY BASE record itself ([entity+0xB8], OD-RECOVERY-087/091), not
+        # on the movement-filter/ring path, so the walkable form is 9 hops
+        # (no filter/helper/ring hops). Published must be IDENTICAL to the
+        # canonical draft (signature per hop).
+        expected_kinds = [
+            "rootRva", "memberOffset", "memberOffset", "memberOffset",
+            "memberOffset", "memberOffset", "inlineOffset", "entityLookup",
+            "recordOffset",
+        ]
+        actual_kinds = [h.get("kind") for h in dr]
+        if actual_kinds != expected_kinds:
+            issues.append(f"{tag}: unexpected entity-base chain shape "
+                          f"{actual_kinds} (expected {expected_kinds})")
+            return issues
+        pub_kinds = [h.get("kind") for h in pub]
+        if pub_kinds != expected_kinds:
+            issues.append(f"{tag}: published chain has unrecognized shape "
+                          f"({len(pub)} hops, kinds {pub_kinds})")
+            return issues
+        if [_hop_signature(h) for h in pub] != [_hop_signature(h) for h in dr]:
+            issues.append(f"{tag}: published entity-base chain differs from the "
+                          f"canonical draft (signature per hop)")
+        return issues
+
     # The walkable form's shape is pinned by schema.json; guard before
     # indexing (a shape change must fail, not index-panic).
     expected_kinds = [
@@ -361,9 +388,13 @@ def check_walkable_fidelity(log_path: Path) -> list[str]:
     checked = 0
     # playerYaw joined the walkable family 2026-08-11 (G1 pre-stage): the
     # SAME position prefix with recordOffset 48 (+0x30), OD-RECOVERY-088/089
-    # live-verified. Fields present in only ONE side are skipped (the yaw
-    # fidelity check goes active the moment the published table gains it).
-    for field in ("playerPositionX", "playerPositionY", "playerPositionZ", "playerYaw"):
+    # live-verified. playerHP joined the same day (G1 pre-stage): the
+    # entity-base chain (entityLookup prefix + recordOffset 184 [+0xB8]),
+    # OD-RECOVERY-087/091 live-verified. Fields present in only ONE side are
+    # skipped (each fidelity check goes active the moment the published
+    # table gains its chain).
+    for field in ("playerPositionX", "playerPositionY", "playerPositionZ",
+                  "playerYaw", "playerHP"):
         pub = pub_chains.get(field)
         dr = draft_chains.get(field)
         if pub is None or dr is None:

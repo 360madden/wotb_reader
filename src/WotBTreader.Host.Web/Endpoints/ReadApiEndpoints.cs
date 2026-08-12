@@ -276,12 +276,15 @@ internal static class ReadApiEndpoints
     internal static async Task<IResult> GetLiveFrameAsync(
         HttpContext context,
         IGameMemoryScanner scanner,
+        ISessionQueryRepository sessions,
+        Guid? sessionId,
         double? fov,
         double? width,
         double? height,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(scanner);
+        ArgumentNullException.ThrowIfNull(sessions);
 
         double resolvedFov = fov ?? 90.0;
         if (!double.IsFinite(resolvedFov) || resolvedFov <= 0 || resolvedFov >= 180)
@@ -307,8 +310,15 @@ internal static class ReadApiEndpoints
                 retryable: false);
         }
 
+        // Forward the session id into the discover call so the batch core's
+        // ONE G2 replay-clock snapshot runs (same clock source the
+        // /discover/entity-regions path uses): the frame then carries a real
+        // estimated replay time instead of 0.0. Fail-closed: an unknown or
+        // stale session leaves ReplayTimeSeconds null (frame 0.0), never an
+        // error on the live frame.
         OperationResult<LiveFrameReadResult> frameResult = await scanner.ReadLiveFrameAsync(
-            new WotBTreader.Application.Game.LiveFrameReadRequest(),
+            new WotBTreader.Application.Game.LiveFrameReadRequest(
+                sessionId is { } forwarded ? new BattleSessionId(forwarded) : null),
             cancellationToken).ConfigureAwait(false);
         if (!frameResult.IsSuccess || frameResult.Value is null)
         {
@@ -331,12 +341,49 @@ internal static class ReadApiEndpoints
                 retryable: true);
         }
 
+        // Optional per-id decoded-roster join (design
+        // docs/operations/live-roster-name-join-design.md): when a session
+        // id is supplied, load its decoded participants and map entity id ->
+        // participant with the SAME first-match convention as
+        // ReplayFrameSource. Fail-closed: a missing/unknown session degrades
+        // to anonymous names (the join is best-effort per id, never an error
+        // on the live frame).
+        IReadOnlyDictionary<long, Participant>? participants = null;
+        long? ownEntityId = null;
+        if (sessionId is { } requestedSession)
+        {
+            OperationResult<ReplayDecodeProjection> rosterResult =
+                await sessions.GetProjectionAsync(
+                    new BattleSessionId(requestedSession),
+                    cancellationToken).ConfigureAwait(false);
+            if (rosterResult.IsSuccess && rosterResult.Value is not null)
+            {
+                participants = rosterResult.Value.Participants
+                    .Where(participant => participant.EntityId is not null)
+                    .GroupBy(participant => participant.EntityId!.Value)
+                    .ToDictionary(group => group.Key, group => group.First());
+
+                // Own-nameplate refinement (name-join design step 4): the
+                // decoded session's viewpoint participant identifies the
+                // player's own tank — the "self" marker the HUD suppresses.
+                // Fail-closed: no viewpoint id or no matching participant
+                // leaves OwnEntityId null (no suppression, names intact).
+                if (rosterResult.Value.Session?.ViewpointParticipantId is { } viewpointId)
+                {
+                    ownEntityId = rosterResult.Value.Participants
+                        .FirstOrDefault(participant => participant.Id == viewpointId)
+                        ?.EntityId;
+                }
+            }
+        }
+
         OverlayFrameProjection projection = LiveFrameProjector.Project(
             frame,
             resolvedFov * Math.PI / 180.0,
             resolvedWidth,
-            resolvedHeight);
-        return Results.Ok(ToOverlayFrameResponse(projection));
+            resolvedHeight,
+            participants);
+        return Results.Ok(ToOverlayFrameResponse(projection, ownEntityId));
     }
 
     /// <summary>
@@ -344,7 +391,8 @@ internal static class ReadApiEndpoints
     /// the live frame endpoints, so both sources serialize identically.
     /// </summary>
     private static OverlayFrameResponse ToOverlayFrameResponse(
-        OverlayFrameProjection projection) => new()
+        OverlayFrameProjection projection,
+        long? ownEntityId = null) => new()
         {
             ReplayTimeSeconds = projection.ReplayTime.TotalSeconds,
             CameraX = projection.CameraX,
@@ -352,6 +400,7 @@ internal static class ReadApiEndpoints
             CameraZ = projection.CameraZ,
             CameraYawRadians = projection.CameraYawRadians,
             CameraPitchRadians = projection.CameraPitchRadians,
+            OwnEntityId = ownEntityId,
             Tanks = [.. projection.Tanks.Select(tank => new OverlayTankResponse
         {
             EntityId = tank.EntityId,

@@ -28,10 +28,23 @@ full design specification.
   parser's published fixtures. Known documented divergences: bot-account sentinels
   (Rust uint32-truncates, C# rejects sign-extended IDs) and battle-time source
   (client `meta.json` vs server protobuf tag 2). See `tools/external/README.md`.
-- **Current offset evidence:** `11.19.0.10` is hash-bound to
-  `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d`;
-  the `playerYaw` hypothesis is quarantined/Stale because its representations
-  conflict; seven fields remain unknown and no field is runtime-supported.
+- **Current offset evidence (2026-08-11):** `11.19.0.10` is hash-bound to
+  `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d`.
+  `playerPositionX/Y/Z` are **`Verified` via the module-rooted position-ring
+  `chains`** (G0 publication applied 2026-08-10; `offsets` stay 0 by design
+  — the runtime computes `moduleBase + offset` and the ring record is
+  battle-scoped heap); the resolver + `/discover/entity-position` are
+  runtime-supported. `playerYaw` is **resolved-by-supersession** — a runtime
+  chain field at ring-record `+0x30`, live-verified on BOTH replays
+  (OD-RECOVERY-088/089, `twoReplayRepeatability = true`). HP (current
+  health) is live-verified at entity-base `+0xB8` on BOTH replays
+  (OD-RECOVERY-087/091, Strict 8/8 and 4/4 exact sums,
+  `twoReplayRepeatability = true`). Both publication packages are READY
+  (`g1-yaw-publication-draft.md`, `g1-hp-publication-draft.md` — operator
+  approval + gate run only); the table stays frozen until then. Still not
+  published: velocity, `replayTime`, `cameraPitch`, `aliveTankCount`;
+  damage-dealt L3 closed honest-negative (no counter in the entity records
+  — a new object family would be required).
 - **Replay-start flake (OD-044) fixed:** the ~50% launch deaths were two defects —
   a watch_offline round-2 double-click + SW_RESTORE churn into the live replay HUD
   (become hidden → OnBackground), and mid-battle `OfflineReplayEvidenceLifetime`
@@ -55,7 +68,9 @@ full design specification.
   (19 entities: 14 named + 5 effect/shell) is present from `LoadGameScene` to
   `onLeaveWorld`. The velocity triple is physics velocity (eases after stops), NOT
   the position derivative. No yaw/pitch field exists in any packet type — the yaw
-  hypothesis stays quarantined. See `offline/replay-format.md`.
+  hypothesis was quarantined and is now RESOLVED-BY-SUPERSESSION: yaw is a
+  runtime chain field on the movement ring record (`+0x30`, live-verified
+  2026-08-11), not a packet field. See `offline/replay-format.md`.
 - **Discovery workflow:** use [`docs/operations/offset-discovery-workflow.md`](docs/operations/offset-discovery-workflow.md)
   and append every attempt to [`docs/operations/offset-discovery-ledger.md`](docs/operations/offset-discovery-ledger.md).
 - **M2/M3 offset-discovery state (FRESH43-OD-RECOVERY-068):** the C# guard-page
@@ -69,8 +84,11 @@ full design specification.
   series), resolving BLK-0019 and satisfying cross-battle correlation
   repeatability. Its bounded write trace was an honest zero-hit result. The
   matching addresses remain transient heap copies: no stable pointer chain,
-  module-relative field, or same-clock live read of the position triple exists,
-  so no offset is runtime-supported or ready for promotion. FRESH45 then tested
+  module-relative field, or same-clock live read of the position triple existed
+  at that time (SUPERSEDED 2026-08-10: the module-rooted position-ring `chains`
+  were found and published — see the Current offset evidence bullet; the
+  FRESH43-068 narrative above documents the pre-chain discovery state only).
+  FRESH45 then tested
   the candidate-derived immediate-read hypothesis: all 12 floats for four
   proposed `candidate-0x1C` layouts were readable, but none matched the complete
   decoded XYZ triple (102.2 ms completion gap). That is an honest negative for
@@ -205,7 +223,7 @@ full design specification.
 | Wrapper | What it does |
 |---------|-------------|
 | `build` | Build the solution (Release) |
-| `validate` | Full gate: restore → format → build → test → audit → scan |
+| `validate` | Full gate: restore → format → build → test → scan → PS hygiene → offline pack → offset schema/chains |
 | `test` | Run all tests (skip build) |
 | `serve` | Publish + start web host at http://127.0.0.1:9182 |
 | `everything` | One-shot: launch serve then overlay (the full HUD experience) |
@@ -275,7 +293,8 @@ dotnet test tests/WotBTreader.Core.Tests -c Release --filter "FullyQualifiedName
 ```
 
 - Tests are MSTest 4 on Microsoft.Testing.Platform. Some installed-game tests skip by default (local opt-in).
-- 12 test projects, 412 tests: 410 passed, 0 failed, 2 opt-in skips (as of 2026-08-01).
+- 12+ test projects; full gate green (2026-08-12): 1045 passed, 0 failed,
+  3 local opt-in skips (installed-game/probe tests skip by default).
 - All architecture hardening milestones (M0–M7) are complete. The alpha release
   (`v0.1.0-alpha`) passed the full gate; later changes added offset evidence tooling
   and stricter cancellation/hash validation without promoting candidate offsets.

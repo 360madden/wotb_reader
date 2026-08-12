@@ -63,7 +63,9 @@ ApiContracts (serialization-only; NO refs, NO packages)
 12 MSTest projects, including the module suites, architecture/bootstrap suites,
 and the Windows-only `tools/tests/WotBTreader.GameHarness.Tests`. The shared
 `TestSupport` project supplies synthetic fixtures but is not itself a test suite.
-The current snapshot is 412 tests: 410 passed, 0 failed, and 2 local opt-in skips.
+The current snapshot is 1045 tests passed, 0 failed, and 3 local opt-in
+skips (installed-game/probe tests skip by default; full gate green
+2026-08-12).
 `Architecture.Tests` enforces the reference graph, TFM allowlist, and native-access
 boundary.
 

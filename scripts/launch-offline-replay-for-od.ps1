@@ -745,7 +745,35 @@ try {
                             $logDate.Year, $logDate.Month, $logDate.Day,
                             [int]$Matches[1], [int]$Matches[2], [int]$Matches[3],
                             [DateTimeKind]::Utc)
-                        $replayStartUtc = $markerTime
+                        # The marker's HH:MM:SS is UTC; its DATE comes from
+                        # the log FILENAME. The game keeps writing to the log
+                        # it opened at launch, so a replay started just after
+                        # UTC midnight lands a marker in the PREVIOUS day's
+                        # file - the filename date is then 24 h stale and the
+                        # G2 clock estimate is off by a day (observed live
+                        # 2026-08-12: marker 00:43:42Z parsed as 08-11 while
+                        # the launch was 08-12 -> frame replayTimeSeconds
+                        # 86517 = 24.03 h). Roll the date forward (bounded)
+                        # until the marker sits within 10 min of now: the
+                        # marker is THIS launch's replay start (seconds before
+                        # this anchor append), so anything older cannot be it.
+                        $markerTooStale = $false
+                        $markerRolls = 0
+                        while ($markerRolls -lt 4 -and
+                            ([DateTime]::UtcNow - $markerTime).TotalMinutes -gt 10) {
+                            $markerTime = $markerTime.AddDays(1)
+                            $markerRolls++
+                        }
+                        if (([DateTime]::UtcNow - $markerTime).TotalMinutes -gt 10) {
+                            $markerTooStale = $true
+                        }
+                        if ($markerTooStale) {
+                            Write-Od 'clock_anchor marker_too_stale_falling_back_to_gate_moment'
+                            $replayStartUtc = [DateTime]::UtcNow
+                        }
+                        else {
+                            $replayStartUtc = $markerTime
+                        }
                     }
                 }
             }

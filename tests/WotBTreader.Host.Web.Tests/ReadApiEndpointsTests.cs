@@ -406,6 +406,8 @@ public sealed class ReadApiEndpointsTests
         IResult result = await ReadApiEndpoints.GetLiveFrameAsync(
             new DefaultHttpContext(),
             scanner,
+            sessions: new FakeSessionQueries([], projection: null),
+            sessionId: null,
             fov: 90,
             width: 1920,
             height: 1080,
@@ -487,6 +489,8 @@ public sealed class ReadApiEndpointsTests
         IResult result = await ReadApiEndpoints.GetLiveFrameAsync(
             new DefaultHttpContext(),
             scanner,
+            sessions: new FakeSessionQueries([], projection: null),
+            sessionId: null,
             fov: 90,
             width: 1920,
             height: 1080,
@@ -498,6 +502,260 @@ public sealed class ReadApiEndpointsTests
         Assert.AreEqual(1550L, tank.MaxHealth);
         Assert.AreEqual((double)(1228f / 1550f), tank.HpFraction, 1e-9);
         Assert.IsTrue(tank.Alive);
+    }
+
+    [TestMethod]
+    public async Task LiveFrame_JoinsDecodedRoster_WhenSessionIdSupplied()
+    {
+        // The per-id decoded-roster join (design
+        // live-roster-name-join-design.md): with a sessionId, the live
+        // frame names the tanks it can map exactly (EntityId in the decoded
+        // participants) — anonymous otherwise, never guessed.
+        CameraScannerStub scanner = new(
+            OperationResult.Failure<CameraPoseReadResult>(
+                new ApplicationError("unused", "Unused.")),
+            OperationResult.Success(new LiveFrameReadResult(
+                CompletedAtUtc: DateTimeOffset.UtcNow,
+                GameVersion: "11.19.0.10",
+                Type10EntityPositionStatus.Resolved,
+                FailureStage: null,
+                ReplayTimeSeconds: 150.5,
+                SameDecodedClockProven: true,
+                Camera: null,
+                Tanks:
+                [
+                    new LiveFrameTankState(
+                        100,
+                        Type10EntityPositionStatus.Resolved,
+                        X: 0,
+                        Y: 0,
+                        Z: 100,
+                        YawRadians: 0.5f,
+                        HpCurrent: null,
+                        HpMax: null,
+                        Alive: null,
+                        FailureStage: null,
+                        ModuleRooted: true),
+                ],
+                RosterCandidatesSeen: 14,
+                RosterFilteredOut: 2)));
+
+        ReplayDecodeProjection roster = new(
+            DecodeRunFixture(),
+            Session: null,
+            Participants: [ParticipantFixture()],
+            Positions: [],
+            Events: [],
+            RawRecords: [],
+            Warnings: []);
+
+        IResult result = await ReadApiEndpoints.GetLiveFrameAsync(
+            new DefaultHttpContext(),
+            scanner,
+            sessions: new FakeSessionQueries([], projection: roster),
+            sessionId: Guid.NewGuid(),
+            fov: 90,
+            width: 1920,
+            height: 1080,
+            TestContext.CancellationToken);
+
+        OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
+        OverlayTankResponse tank = frame.Tanks.Single();
+        Assert.AreEqual(100, tank.EntityId);
+        Assert.AreEqual("pilot", tank.PlayerName);
+        Assert.AreEqual("TAG", tank.ClanTag);
+        Assert.AreEqual(1, tank.TeamNumber);
+    }
+
+    [TestMethod]
+    public async Task LiveFrame_NoSession_LeavesDiscoverRequestSessionless()
+    {
+        // Without a session id the discover call must stay sessionless: the
+        // G2 clock simply doesn't fire (frame time 0.0), never an error.
+        CameraScannerStub scanner = new(
+            OperationResult.Failure<CameraPoseReadResult>(
+                new ApplicationError("unused", "Unused.")),
+            OperationResult.Success(new LiveFrameReadResult(
+                CompletedAtUtc: DateTimeOffset.UtcNow,
+                GameVersion: "11.19.0.10",
+                Type10EntityPositionStatus.Resolved,
+                FailureStage: null,
+                ReplayTimeSeconds: 150.5,
+                SameDecodedClockProven: false,
+                Camera: null,
+                Tanks: [],
+                RosterCandidatesSeen: 0,
+                RosterFilteredOut: 0)));
+
+        IResult result = await ReadApiEndpoints.GetLiveFrameAsync(
+            new DefaultHttpContext(),
+            scanner,
+            sessions: new FakeSessionQueries([], projection: null),
+            sessionId: null,
+            fov: 90,
+            width: 1920,
+            height: 1080,
+            TestContext.CancellationToken);
+
+        OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
+        Assert.AreEqual(150.5, frame.ReplayTimeSeconds, 1e-9);
+        Assert.IsNull(scanner.LastLiveFrameSessionId);
+    }
+
+    [TestMethod]
+    public async Task LiveFrame_IdentifiesOwnEntity_FromViewpointParticipant()
+    {
+        // Own-nameplate refinement (name-join design step 4): the decoded
+        // session's ViewpointParticipantId -> participant EntityId is
+        // surfaced as OwnEntityId so the overlay suppresses exactly that
+        // one nameplate (the CAM-001 chase eye sits at the turret-level
+        // aim point ~1.9 m above the hull center — beyond the <1.0 m
+        // distance heuristic).
+        Participant viewpoint = ParticipantFixture(); // EntityId 100
+        BattleSession session = new(
+            BattleSessionId.New(),
+            DecodeRunId.New(),
+            GameVersion: "11.19.0",
+            ArenaIdentity: null,
+            MapId: "11",
+            MapName: "Oasis Palms",
+            BattleTimeUtc: DateTimeOffset.UnixEpoch,
+            Duration: TimeSpan.FromSeconds(200),
+            ViewpointParticipantId: viewpoint.Id,
+            SchemaVersion: "1");
+        ReplayDecodeProjection roster = new(
+            DecodeRunFixture(),
+            Session: session,
+            Participants:
+            [
+                viewpoint,
+                ParticipantFixture() with
+                {
+                    EntityId = 101,
+                    PlayerName = "wingman",
+                    TeamNumber = 1,
+                },
+            ],
+            Positions: [],
+            Events: [],
+            RawRecords: [],
+            Warnings: []);
+
+        CameraScannerStub scanner = new(
+            OperationResult.Failure<CameraPoseReadResult>(
+                new ApplicationError("unused", "Unused.")),
+            OperationResult.Success(new LiveFrameReadResult(
+                CompletedAtUtc: DateTimeOffset.UtcNow,
+                GameVersion: "11.19.0.10",
+                Type10EntityPositionStatus.Resolved,
+                FailureStage: null,
+                ReplayTimeSeconds: 150.5,
+                SameDecodedClockProven: true,
+                Camera: null,
+                Tanks:
+                [
+                    new LiveFrameTankState(
+                        100,
+                        Type10EntityPositionStatus.Resolved,
+                        X: 0,
+                        Y: 0,
+                        Z: 100,
+                        YawRadians: 0.5f,
+                        HpCurrent: null,
+                        HpMax: null,
+                        Alive: null,
+                        FailureStage: null,
+                        ModuleRooted: true),
+                    new LiveFrameTankState(
+                        101,
+                        Type10EntityPositionStatus.Resolved,
+                        X: 100,
+                        Y: 0,
+                        Z: 0,
+                        YawRadians: 0.5f,
+                        HpCurrent: null,
+                        HpMax: null,
+                        Alive: null,
+                        FailureStage: null,
+                        ModuleRooted: true),
+                ],
+                RosterCandidatesSeen: 14,
+                RosterFilteredOut: 2)));
+
+        Guid sessionGuid = Guid.NewGuid();
+        IResult result = await ReadApiEndpoints.GetLiveFrameAsync(
+            new DefaultHttpContext(),
+            scanner,
+            sessions: new FakeSessionQueries([], projection: roster),
+            sessionId: sessionGuid,
+            fov: 90,
+            width: 1920,
+            height: 1080,
+            TestContext.CancellationToken);
+
+        OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
+        Assert.AreEqual(100, frame.OwnEntityId);
+        // The session id is forwarded into the discover call so the batch
+        // core's G2 replay-clock snapshot runs (real frame time, not 0.0).
+        Assert.AreEqual(new BattleSessionId(sessionGuid), scanner.LastLiveFrameSessionId);
+        // The join still names both tanks; suppression is a render-path
+        // decision made from OwnEntityId, not a name wipe.
+        Assert.HasCount(2, frame.Tanks);
+        Assert.AreEqual("pilot", frame.Tanks.Single(t => t.EntityId == 100).PlayerName);
+        Assert.AreEqual("wingman", frame.Tanks.Single(t => t.EntityId == 101).PlayerName);
+    }
+
+    [TestMethod]
+    public async Task LiveFrame_UnknownSession_DegradesToAnonymous()
+    {
+        // A session id that does not resolve must NOT fail the live frame:
+        // the join is best-effort per id — the frame serves anonymous.
+        CameraScannerStub scanner = new(
+            OperationResult.Failure<CameraPoseReadResult>(
+                new ApplicationError("unused", "Unused.")),
+            OperationResult.Success(new LiveFrameReadResult(
+                CompletedAtUtc: DateTimeOffset.UtcNow,
+                GameVersion: "11.19.0.10",
+                Type10EntityPositionStatus.Resolved,
+                FailureStage: null,
+                ReplayTimeSeconds: 150.5,
+                SameDecodedClockProven: true,
+                Camera: null,
+                Tanks:
+                [
+                    new LiveFrameTankState(
+                        100,
+                        Type10EntityPositionStatus.Resolved,
+                        X: 0,
+                        Y: 0,
+                        Z: 100,
+                        YawRadians: 0.5f,
+                        HpCurrent: null,
+                        HpMax: null,
+                        Alive: null,
+                        FailureStage: null,
+                        ModuleRooted: true),
+                ],
+                RosterCandidatesSeen: 14,
+                RosterFilteredOut: 2)));
+
+        IResult result = await ReadApiEndpoints.GetLiveFrameAsync(
+            new DefaultHttpContext(),
+            scanner,
+            sessions: new FakeSessionQueries([], projection: null),
+            sessionId: Guid.NewGuid(),
+            fov: 90,
+            width: 1920,
+            height: 1080,
+            TestContext.CancellationToken);
+
+        OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
+        OverlayTankResponse tank = frame.Tanks.Single();
+        Assert.AreEqual(100, tank.EntityId);
+        Assert.IsNull(tank.PlayerName);
+        Assert.IsNull(tank.TeamNumber);
+        // No resolvable session -> no self marker either (fail-closed).
+        Assert.IsNull(frame.OwnEntityId);
     }
 
     [TestMethod]
@@ -521,6 +779,8 @@ public sealed class ReadApiEndpointsTests
         IResult result = await ReadApiEndpoints.GetLiveFrameAsync(
             new DefaultHttpContext(),
             scanner,
+            sessions: new FakeSessionQueries([], projection: null),
+            sessionId: null,
             fov: 90,
             width: 1920,
             height: 1080,
@@ -542,6 +802,8 @@ public sealed class ReadApiEndpointsTests
         IResult result = await ReadApiEndpoints.GetLiveFrameAsync(
             new DefaultHttpContext(),
             scanner,
+            sessions: new FakeSessionQueries([], projection: null),
+            sessionId: null,
             fov: 90,
             width: 1920,
             height: 1080,
@@ -560,6 +822,8 @@ public sealed class ReadApiEndpointsTests
         IResult result = await ReadApiEndpoints.GetLiveFrameAsync(
             new DefaultHttpContext(),
             scanner,
+            sessions: new FakeSessionQueries([], projection: null),
+            sessionId: null,
             fov: 0,
             width: 1920,
             height: 1080,
@@ -966,6 +1230,7 @@ public sealed class ReadApiEndpointsTests
     {
         public int CameraPoseCallCount { get; private set; }
         public int LiveFrameCallCount { get; private set; }
+        public BattleSessionId? LastLiveFrameSessionId { get; private set; }
 
         public ValueTask<OperationResult<CameraPoseReadResult>> ReadCameraPoseAsync(
             CancellationToken cancellationToken)
@@ -1031,6 +1296,7 @@ public sealed class ReadApiEndpointsTests
             CancellationToken cancellationToken)
         {
             LiveFrameCallCount++;
+            LastLiveFrameSessionId = request.BattleSessionId;
             return ValueTask.FromResult(liveFrameResult ?? OperationResult.Failure<LiveFrameReadResult>(
                 new ApplicationError("discover.live_frame.not_configured", "Test default.")));
         }

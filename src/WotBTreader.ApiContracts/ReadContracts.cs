@@ -449,6 +449,13 @@ public sealed record OverlayFrameResponse
     /// <summary>Camera pitch (radians); null without packet rotation evidence.</summary>
     public double? CameraPitchRadians { get; init; }
 
+    /// <summary>Entity id of the viewpoint (player's own) tank, when the
+    /// decoded session's viewpoint participant resolves to an entity — the
+    /// "self" marker (name-join design step 4). Null on the replay path or
+    /// when the viewpoint id is unknown. The HUD suppresses exactly this
+    /// one nameplate and may draw its own self marker.</summary>
+    public long? OwnEntityId { get; init; }
+
     /// <summary>Projected tanks, sorted by distance (nearest first).</summary>
     public IReadOnlyList<OverlayTankResponse> Tanks { get; init; } = [];
 

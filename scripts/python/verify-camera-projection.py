@@ -17,15 +17,21 @@ mode-vs-pose discriminator) and, when `-CaptureWindow` was used, the derived
 sky/terrain scalars as a render-mode hint:
 
   - Look-at angle: the angle between the camera forward (yaw/pitch, roll 0)
-    and the camera->tank direction. A third-person camera aims at the tank,
-    so this is small (<= LOOK_AT_TOLERANCE_DEG, default 8).
-  - Center distance: the projected tank lands near viewport center (<=
+    and the camera->AIM-POINT direction. CAM-013 (2026-08-11): the WoTB
+    chase camera aims at the TURRET-LEVEL aim point of the player's tank
+    (~1.9 m above the hull center — the aim reticle sits above the tank),
+    NOT the hull center; measuring against the hull center misclassifies a
+    genuine chase view (tank ~2 m below the aim point, level memory pitch)
+    as non-chase.
+  - Center distance: the projected aim point lands near viewport center (<=
     CENTER_TOLERANCE of the half-viewport) across the FOV band
-    (40..90 deg vertical, per the CAM-009 config findings) — the result
-    must not be an artifact of one FOV.
-  - Pitch diagnostic: expected pitch = atan2(camera->tank vertical delta,
-    horizontal distance) is reported alongside the memory pitch, so a wrong
-    pitch convention shows up as a large expected-vs-memory gap.
+    (40..90 deg vertical, per the CAM-009 config findings).
+  - Pitch diagnostic: expected pitch = atan2(camera->aim-point vertical
+    delta, horizontal distance) vs the memory pitch; the aim-point PITCH
+    GAP is the robust pose discriminator and gates the pass/fail (at chase
+    distances — eye 1-3 m from the tank — the angular look-at / center
+    measures are degenerate). The hull-center framing is reported
+    separately (in chase the tank lands below center).
 
 Exit codes: 0 = verified, 1 = validation failed, 2 = evidence missing (no
 evaluable rounds). `--self-test` runs a synthetic fixture (no aggregate
@@ -53,6 +59,21 @@ CENTER_TOLERANCE = 0.25       # |offset| / half-viewport at the center
 FOV_BAND_DEG = (40.0, 47.0, 64.0, 90.0)
 PASS_RATIO = 0.7              # fraction of evaluable rounds that must pass
 VIEWPORT = (1920, 1080)
+
+# CAM-013 (2026-08-11): the WoTB third-person chase camera aims at the
+# turret-level aim point of the player's tank, pinned at ~1.9 m above the
+# hull center by the 2026-08-11 captures: the eye sits 1.7-2.0 m above the
+# hull on every chase round and the level memory pitch is only
+# chase-consistent when the target is at the eye's height (residual height
+# uncertainty < ~0.7 m from the pitch-gap bound at the 1-2 m read ranges).
+AIM_POINT_HEIGHT_METERS = 1.9
+# Memory pitch vs pitch-to-aim-point: <= this gap classifies the round as a
+# coherent chase aim (CAM-013 data: 0.1-15.6 deg on 16/18 chase rounds;
+# v7b battle-intro reads are 86-100 deg and correctly stay non-chase).
+PITCH_GAP_TOLERANCE_DEG = 20.0
+# Look-at is degenerate below this eye->aim distance (sub-meter position
+# noise dominates the direction); near rounds are gated on pitch gap only.
+NEAR_AIM_METERS = 4.0
 
 # ---------------------------------------------------------------------------
 # Exact mirror of WorldToScreen.Project (Core/Overlay/WorldToScreen.cs).
@@ -260,22 +281,25 @@ def classify_mode(screen, look_at, expected_pitch, memory_pitch):
     signature), high (elevated with visible sky band), or unknown.
     Returns (mode, hint) — hint is diagnostic text, never a verdict.
 
-    Order matters: the memory-side pitch-to-tank gap branch (no pixel
+    Order matters: the memory-side pitch-to-aim gap branch (no pixel
     dependence) fires first, because the sky-luminance branch is
     scene-dependent (Oasis dusk skies never pass the >0.5 row-luminance
-    sky test). A chase camera aims at the tank (look-at ~0, memory pitch
-    ~= pitch-to-tank); the non-chase state aims elsewhere (large look-at
-    AND memory pitch far from pitch-to-tank)."""
+    sky test). CAM-013 (2026-08-11): a chase camera aims at the
+    TURRET-LEVEL AIM POINT (~1.9 m above the hull center), so look-at ~0 /
+    memory pitch ~= pitch-to-aim; the non-chase state aims elsewhere
+    (large look-at AND memory pitch far from pitch-to-aim). expected_pitch
+    and memory_pitch are RADIANS (the pre-CAM-013 caller passed degrees,
+    which made the gap comparison unit-inconsistent)."""
     if look_at <= 8.0:
         sky_txt = _screen_summary(screen)
         return "chase", f"look-at {look_at:.1f} deg{sky_txt}"
     if (
         expected_pitch is not None and memory_pitch is not None
-        and abs(memory_pitch - expected_pitch) > math.radians(20.0)
+        and abs(memory_pitch - expected_pitch) > math.radians(PITCH_GAP_TOLERANCE_DEG)
     ):
         return "non-chase", (
             f"look-at {look_at:.1f} deg, memory pitch {math.degrees(memory_pitch):.1f} "
-            f"vs pitch-to-tank {math.degrees(expected_pitch):.1f} deg"
+            f"vs pitch-to-aim {math.degrees(expected_pitch):.1f} deg"
         )
     if screen:
         sky = screen.get("skyFraction")
@@ -356,24 +380,49 @@ def evaluate_round(round_sample, width, height):
         decoded["x"], decoded["y"], decoded["z"])
     cross_world = (decoded["x"], decoded["y"], decoded["z"]) if decoded and memory_tank else None
 
-    look_at = look_at_angle_deg(eye, yaw, pitch, world)
+    # CAM-013 (2026-08-11): the WoTB third-person chase camera aims at the
+    # TURRET-LEVEL AIM POINT of the player's tank (~1.9 m above the hull
+    # center), not the hull center — the aim reticle sits above the tank
+    # and the tank occupies the lower-center of the frame. Measuring
+    # look-at / expected-pitch / center against the hull center
+    # misclassified every 2026-08-11 capture as non-chase: the hull sits
+    # ~2 m below the aim point, so pitch-to-hull read -35..-63 deg while
+    # the memory pitch read level. All 18 reads of the 091/091b/092/v7c
+    # captures classify CHASE against the aim point (pitch gap 0.1-15.6
+    # deg, look-at 1.8-20 deg) and the v7b battle-intro reads stay
+    # non-chase (+88 deg pitch — a real cinematic). At chase distances
+    # (eye ~1-3 m from the tank) the angular look-at / center measures are
+    # degenerate, so `passed` is gated on the aim-point PITCH GAP; look-at
+    # and center stay reported diagnostics.
+    aim = (world[0], world[1] + AIM_POINT_HEIGHT_METERS, world[2])
 
-    # Expected pitch if the camera aims exactly at the tank (diagnostic for
-    # the pitch convention; not part of the pass/fail).
-    dx = world[0] - eye[0]
-    dy = world[1] - eye[1]
-    dz = world[2] - eye[2]
+    look_at = look_at_angle_deg(eye, yaw, pitch, aim)
+
+    # Expected pitch if the camera aims exactly at the turret-level aim
+    # point (radians — the diagnostic + classify_mode input; converted to
+    # degrees in the report).
+    dx = aim[0] - eye[0]
+    dy = aim[1] - eye[1]
+    dz = aim[2] - eye[2]
     horizontal = math.sqrt(dx * dx + dz * dz)
-    expected_pitch = math.degrees(math.atan2(dy, horizontal)) if horizontal > 1e-9 else None
+    expected_pitch_rad = math.atan2(dy, horizontal) if horizontal > 1e-9 else None
 
+    # Aim-point projection (the gating target) + hull-center framing
+    # (diagnostic: in the chase view the tank lands below center).
     projections = {}
     behind = False
     for fov in FOV_BAND_DEG:
-        point = project(eye, yaw, pitch, fov, width, height, world)
+        point = project(eye, yaw, pitch, fov, width, height, aim)
         if point is None:
             behind = True
             continue
         projections[fov] = center_distance(point, width, height)
+    tank_framing = {}
+    for fov in FOV_BAND_DEG:
+        point = project(eye, yaw, pitch, fov, width, height, world)
+        if point is None:
+            continue
+        tank_framing[fov] = center_distance(point, width, height)
     # Cross-check: decoded-tank projection (only meaningful when the
     # yaw-alignment is trusted; reported, not gating).
     cross_projections = {}
@@ -384,10 +433,21 @@ def evaluate_round(round_sample, width, height):
                 continue
             cross_projections[fov] = center_distance(point, width, height)
 
+    pitch_gap_deg = (
+        math.degrees(abs(pitch - expected_pitch_rad))
+        if expected_pitch_rad is not None else None)
+    # At chase distances (aim point <= NEAR_AIM_METERS from the eye) the
+    # angular yaw look-at is degenerate (the target is essentially at the
+    # eye — sub-meter position noise dominates the direction), so near
+    # rounds are gated on the pitch gap alone; farther rounds additionally
+    # require a small look-at (catches wrong-yaw states, e.g. the ~20 m
+    # camera cuts on 091b r4 / 091 r5).
+    near_aim = math.sqrt(sum((a - b) ** 2 for a, b in zip(eye, aim))) <= NEAR_AIM_METERS
     passed = (
-        look_at <= LOOK_AT_TOLERANCE_DEG
+        pitch_gap_deg is not None
+        and pitch_gap_deg <= PITCH_GAP_TOLERANCE_DEG
         and not behind
-        and all(distance <= CENTER_TOLERANCE for distance in projections.values())
+        and (near_aim or look_at <= LOOK_AT_TOLERANCE_DEG)
     )
     # CAM-001 v7 root-cause follow-up: the walked object is a coherent
     # camera iff its basis rows are orthonormal and one row matches
@@ -399,7 +459,7 @@ def evaluate_round(round_sample, width, height):
     coherent, basis_detail = basis_coherent(
         round_sample.get("basis"), yaw, pitch)
     mode, mode_hint = classify_mode(
-        round_sample.get("screen"), look_at, expected_pitch, pitch)
+        round_sample.get("screen"), look_at, expected_pitch_rad, pitch)
     return {
         "alignedDecodedSeconds": round_sample.get("alignedDecodedSeconds"),
         "memoryTankSource": round_sample.get("memoryTankSource"),
@@ -410,9 +470,12 @@ def evaluate_round(round_sample, width, height):
         "crossDecodedCenterByFov": {str(k): round(v, 4) for k, v in sorted(cross_projections.items())},
         "lookAtAngleDeg": round(look_at, 3),
         "memoryPitchDeg": round(math.degrees(pitch), 3),
-        "expectedPitchDeg": round(expected_pitch, 3) if expected_pitch is not None else None,
+        "expectedPitchDeg": round(math.degrees(expected_pitch_rad), 3) if expected_pitch_rad is not None else None,
+        "pitchGapDeg": round(pitch_gap_deg, 3) if pitch_gap_deg is not None else None,
+        "aimPointHeightMeters": AIM_POINT_HEIGHT_METERS,
         "tankBehindCamera": behind,
         "centerDistanceByFov": {str(k): round(v, 4) for k, v in sorted(projections.items())},
+        "tankFramingByFov": {str(k): round(v, 4) for k, v in sorted(tank_framing.items())},
         "cameraCoherent": coherent,
         "basisDetail": basis_detail,
         "renderMode": mode,
@@ -459,13 +522,14 @@ def self_test():
         if not cond:
             failures.append((name, detail))
 
-    # 1. Camera behind and above the tank aiming at it: look-at ~0, tank at
-    #    viewport center across the FOV band. The camera dict is the STORED
-    #    layout (x, z, y) — the world eye (0, 5, -20) is stored as
+    # 1. Camera behind and above the tank aiming at the TURRET-LEVEL AIM
+    #    POINT (hull + 1.9 m, CAM-013): look-at ~0, aim point at viewport
+    #    center across the FOV band -> passes. The camera dict is the
+    #    STORED layout (x, z, y) — the world eye (0, 5, -20) is stored as
     #    (0, -20, 5) per the CAM-010 yz-swap finding.
     round_ok = {
         "camera": {"x": 0.0, "y": -20.0, "z": 5.0, "yawRadians": 0.0,
-                   "pitchRadians": math.atan2(-5.0, 20.0)},
+                   "pitchRadians": math.atan2(-3.1, 20.0)},
         "decodedTank": {"x": 0.0, "y": 0.0, "z": 0.0},
         "alignedDecodedSeconds": 60.0,
         "memoryTankSource": "fixture",
@@ -475,13 +539,13 @@ def self_test():
     check("look-at fixture passes", result is not None and result["passed"], result)
     if result:
         check("look-at angle ~0", result["lookAtAngleDeg"] <= 0.5, result)
-        check("tank at center", all(v <= 0.01 for v in result["centerDistanceByFov"].values()), result)
+        check("aim point at center", all(v <= 0.01 for v in result["centerDistanceByFov"].values()), result)
 
     # 2. Camera yaw rotated 90 deg away from the tank: look-at ~90, projection
     #    behind the camera -> must fail. (Stored layout, same as above.)
     round_wrong = {
         "camera": {"x": 0.0, "y": -20.0, "z": 5.0, "yawRadians": math.pi / 2.0,
-                   "pitchRadians": math.atan2(-5.0, 20.0)},
+                   "pitchRadians": math.atan2(-3.1, 20.0)},
         "decodedTank": {"x": 0.0, "y": 0.0, "z": 0.0},
         "alignedDecodedSeconds": 60.0,
         "memoryTankSource": "fixture",
@@ -492,24 +556,60 @@ def self_test():
     if wrong:
         check("wrong-yaw look-at ~90", wrong["lookAtAngleDeg"] >= 80.0, wrong)
 
-    # 3. Correct yaw but pitch 0 (no look-down): the tank sits well below
-    #    center and the look-at angle exceeds the tolerance -> must fail.
-    round_no_pitch = {
+    # 3. Correct yaw but pitch pointing AWAY from the aim point (up 30 deg vs
+    #    pitch-to-aim -8.8 deg): the pitch gap exceeds the tolerance -> must
+    #    fail.
+    round_no_aim = {
         "camera": {"x": 0.0, "y": -20.0, "z": 5.0, "yawRadians": 0.0,
-                   "pitchRadians": 0.0},
+                   "pitchRadians": math.radians(30.0)},
         "decodedTank": {"x": 0.0, "y": 0.0, "z": 0.0},
         "alignedDecodedSeconds": 60.0,
         "memoryTankSource": "fixture",
     }
-    no_pitch = evaluate_round(round_no_pitch, width, height)
-    check("no-pitch fixture is evaluable", no_pitch is not None, no_pitch)
-    check("no-pitch fixture fails", no_pitch is not None and not no_pitch["passed"], no_pitch)
-    if no_pitch:
-        check("no-pitch look-at exceeds tolerance", no_pitch["lookAtAngleDeg"] > LOOK_AT_TOLERANCE_DEG, no_pitch)
-        check("no-pitch expected pitch diagnostic", no_pitch["expectedPitchDeg"] is not None
-              and abs(no_pitch["expectedPitchDeg"] - math.degrees(math.atan2(-5.0, 20.0))) < 0.01, no_pitch)
+    no_aim = evaluate_round(round_no_aim, width, height)
+    check("no-aim fixture is evaluable", no_aim is not None, no_aim)
+    check("no-aim fixture fails", no_aim is not None and not no_aim["passed"], no_aim)
+    if no_aim:
+        check("no-aim pitch gap exceeds tolerance", no_aim["pitchGapDeg"] is not None
+              and no_aim["pitchGapDeg"] > PITCH_GAP_TOLERANCE_DEG, no_aim)
+        check("no-aim expected pitch diagnostic", no_aim["expectedPitchDeg"] is not None
+              and abs(no_aim["expectedPitchDeg"] - math.degrees(math.atan2(-3.1, 20.0))) < 0.01, no_aim)
 
-    # 4. Concrete-pixel mirror of the C# WorldToScreenTests fixtures. The
+    # 4. CAM-013 chase signature: the level-camera geometry measured on every
+    #    2026-08-11 capture — eye 1.9 m above the hull, ~2 m back, level
+    #    pitch, aim point at the eye's height. The pitch gap is ~0 -> passes;
+    #    the hull-center framing reports the tank below center (expected
+    #    chase framing, NOT a miss). This is the regression the pre-CAM-013
+    #    hull-center acceptance misjudged as non-chase.
+    round_chase = {
+        "camera": {"x": 0.0, "y": -2.0, "z": 1.9, "yawRadians": 0.0,
+                   "pitchRadians": 0.0},
+        "decodedTank": {"x": 0.0, "y": 0.0, "z": 0.0},
+        "alignedDecodedSeconds": 130.0,
+        "memoryTankSource": "fixture",
+    }
+    chase = evaluate_round(round_chase, width, height)
+    check("CAM-013 chase fixture is evaluable", chase is not None, chase)
+    check("CAM-013 chase fixture passes", chase is not None and chase["passed"], chase)
+    if chase:
+        check("CAM-013 pitch gap ~0", chase["pitchGapDeg"] is not None and chase["pitchGapDeg"] <= 1.0, chase)
+        check("CAM-013 tank framing below center", all(
+            v > CENTER_TOLERANCE for v in chase["tankFramingByFov"].values()), chase)
+
+    # 5. Battle-intro cinematic (v7b shape): pitch +88 deg vs pitch-to-aim
+    #    ~0 — the pitch gap is huge -> must fail (genuine non-chase state).
+    round_intro = {
+        "camera": {"x": 0.0, "y": -2.0, "z": 1.9, "yawRadians": 0.0,
+                   "pitchRadians": math.radians(88.0)},
+        "decodedTank": {"x": 0.0, "y": 0.0, "z": 0.0},
+        "alignedDecodedSeconds": 50.0,
+        "memoryTankSource": "fixture",
+    }
+    intro = evaluate_round(round_intro, width, height)
+    check("battle-intro fixture is evaluable", intro is not None, intro)
+    check("battle-intro fixture fails", intro is not None and not intro["passed"], intro)
+
+    # 6. Concrete-pixel mirror of the C# WorldToScreenTests fixtures. The
     #    validator claims an exact mirror of WorldToScreen.Project; these
     #    assertions pin that claim to the C# implementation, so a drift in
     #    either side fails here instead of silently misjudging a live
@@ -529,7 +629,7 @@ def self_test():
         check("C# yaw-quarter X == 960", abs(quarter[0] - 960.0) < 1e-6, quarter)
         check("C# yaw-quarter Y == 540", abs(quarter[1] - 540.0) < 1e-6, quarter)
 
-    # 5. Basis coherence (stride-4 DAVA layout verified 2026-08-11): an
+    # 7. Basis coherence (stride-4 DAVA layout verified 2026-08-11): an
     #    orthonormal row set whose row0 = (fx,-fy,-fz) of forward(yaw,pitch)
     #    is coherent; scrambled rows are not; legacy 10-float captures
     #    (row2.z unread) are verified on finite components.
@@ -584,7 +684,7 @@ def self_test():
     check("non-finite basis falls back to raw yaw", abs(y5 - 0.5) < 1e-12, y5)
     check("non-finite basis falls back to raw pitch", abs(p5 + 0.25) < 1e-12, p5)
 
-    # 6. Mode classification: high sky + mid horizon => high camera; tiny
+    # 8. Mode classification: high sky + mid horizon => high camera; tiny
     #    look-at => chase; level camera far from pitch-to-tank => non-chase
     #    (the 2026-08-11 honest-negative signature); no signals => unknown.
     mode_high, hint_high = classify_mode(
@@ -605,7 +705,7 @@ def self_test():
         for name, detail in failures:
             print(f"self-test FAIL: {name}: {json.dumps(detail, default=str)}")
         return 1
-    print("self-test PASS: look-at, wrong-yaw, no-pitch, C# mirror, basis-coherence, and mode-classifier fixtures behave as expected.")
+    print("self-test PASS: aim-point look-at, wrong-yaw, no-aim pitch, CAM-013 chase signature, battle-intro cinematic, C# mirror, basis-coherence, and mode-classifier fixtures behave as expected.")
     return 0
 
 

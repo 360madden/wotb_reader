@@ -48,7 +48,7 @@ public sealed class WalkablePositionChainTests
         Assert.IsTrue(result.IsSuccess, result.Error?.Message);
         Assert.IsNotNull(result.Value);
         Assert.IsNotNull(result.Value.Chains);
-        Assert.HasCount(4, result.Value.Chains);
+        Assert.HasCount(5, result.Value.Chains);
 
         Type10EntityPositionLayout layout = Layout;
         AssertChainEqual(ExpectedChain((int)layout.PositionRecordOffset), result.Value.Chains["playerPositionX"]);
@@ -58,6 +58,12 @@ public sealed class WalkablePositionChainTests
         // recordOffset 0x30 (OD-RECOVERY-088/089 live-verified rotation
         // triple) — pinned to the resolver's ring-record yaw constant.
         AssertChainEqual(ExpectedChain(RingRecordRegion.YawOffset), result.Value.Chains["playerYaw"]);
+        // G1 (2026-08-11): the playerHP chain is the SAME entity-lookup
+        // spine WITHOUT the position ring — HP lives on the ENTITY BASE
+        // record (recordOffset 0xB8 = current-health signed int16,
+        // OD-RECOVERY-087/091 live-verified on both replays) — pinned to
+        // the resolver's entity-base HP constant.
+        AssertChainEqual(ExpectedEntityBaseChain(EntityBaseRegion.HpCurrentOffset), result.Value.Chains["playerHP"]);
     }
 
     [TestMethod]
@@ -451,8 +457,35 @@ public sealed class WalkablePositionChainTests
     }
 
     /// <summary>
-    /// The expected chain, derived from the resolver's layout constants + the
-    /// hardcoded tree-node layout. The draft JSON must parse to EXACTLY this.
+    /// The entity-lookup hop shared by the position/yaw ring chains and the
+    /// playerHP entity-base chain, derived from the resolver's layout
+    /// constants + the hardcoded tree-node layout.
+    /// </summary>
+    private static OffsetChainHop EntityLookupHop(Type10EntityPositionLayout layout)
+    {
+        return new OffsetChainHop(
+            OffsetChainHopKind.EntityLookup,
+            0,
+            null,
+            EntityLookup: new OffsetEntityLookupDescriptor(
+                CachedEntityOffset: (int)layout.CachedEntityOffset,
+                EntityIdOffset: (int)layout.EntityIdOffset,
+                TreeRootOffsets: layout.EntityTreeObjectOffsets
+                    .Select(static offset => (int)offset).ToArray(),
+                TreeNodeSize: 0x18,
+                TreeNodeNilOffset: 0x0d,
+                TreeNodeKeyOffset: 0x10,
+                TreeNodeValueOffset: 0x14,
+                TreeNodeChildLessOffset: 0x00,
+                TreeNodeChildGreaterOffset: 0x08,
+                TreeSentinelFirstNodeOffset: 0x04,
+                MaxTreeNodes: layout.MaxTreeNodes));
+    }
+
+    /// <summary>
+    /// The expected RING chain (position/yaw), derived from the resolver's
+    /// layout constants + the hardcoded tree-node layout. The draft JSON
+    /// must parse to EXACTLY this.
     /// </summary>
     private static IReadOnlyList<OffsetChainHop> ExpectedChain(int recordOffset)
     {
@@ -466,23 +499,7 @@ public sealed class WalkablePositionChainTests
             new OffsetChainHop(OffsetChainHopKind.MemberOffset, (int)layout.AccountControllerActiveControllerOffset, null),
             new OffsetChainHop(OffsetChainHopKind.MemberOffset, (int)layout.PlaybackControllerConnectionOffset, null),
             new OffsetChainHop(OffsetChainHopKind.InlineOffset, (int)layout.ConnectionEntitiesOffset, null),
-            new OffsetChainHop(
-                OffsetChainHopKind.EntityLookup,
-                0,
-                null,
-                EntityLookup: new OffsetEntityLookupDescriptor(
-                    CachedEntityOffset: (int)layout.CachedEntityOffset,
-                    EntityIdOffset: (int)layout.EntityIdOffset,
-                    TreeRootOffsets: layout.EntityTreeObjectOffsets
-                        .Select(static offset => (int)offset).ToArray(),
-                    TreeNodeSize: 0x18,
-                    TreeNodeNilOffset: 0x0d,
-                    TreeNodeKeyOffset: 0x10,
-                    TreeNodeValueOffset: 0x14,
-                    TreeNodeChildLessOffset: 0x00,
-                    TreeNodeChildGreaterOffset: 0x08,
-                    TreeSentinelFirstNodeOffset: 0x04,
-                    MaxTreeNodes: layout.MaxTreeNodes)),
+            EntityLookupHop(layout),
             new OffsetChainHop(OffsetChainHopKind.MemberOffset, (int)layout.EntityMovementFilterOffset, null),
             new OffsetChainHop(OffsetChainHopKind.MemberOffset, (int)layout.AvatarFilterHelperOffset, null),
             new OffsetChainHop(
@@ -491,6 +508,29 @@ public sealed class WalkablePositionChainTests
                 null,
                 IndexOffset: (int)layout.AvatarHelperCurrentIndexOffset,
                 Stride: (int)layout.AvatarHelperRingStride),
+            new OffsetChainHop(OffsetChainHopKind.RecordOffset, recordOffset, null),
+        ];
+    }
+
+    /// <summary>
+    /// The expected ENTITY-BASE chain (playerHP): the same spine up to and
+    /// including the entity lookup, then the recordOffset directly on the
+    /// entity record — HP lives on the entity base (+0xB8), not the
+    /// position ring (OD-RECOVERY-087/091).
+    /// </summary>
+    private static IReadOnlyList<OffsetChainHop> ExpectedEntityBaseChain(int recordOffset)
+    {
+        Type10EntityPositionLayout layout = Layout;
+        return
+        [
+            new OffsetChainHop(OffsetChainHopKind.RootRva, (int)layout.GameCoreRootRva, null),
+            new OffsetChainHop(OffsetChainHopKind.MemberOffset, (int)layout.GameCoreAppControllerOffset, null),
+            new OffsetChainHop(OffsetChainHopKind.MemberOffset, (int)layout.AppControllerSessionControllerOffset, null),
+            new OffsetChainHop(OffsetChainHopKind.MemberOffset, (int)layout.SessionControllerAccountControllerOffset, null),
+            new OffsetChainHop(OffsetChainHopKind.MemberOffset, (int)layout.AccountControllerActiveControllerOffset, null),
+            new OffsetChainHop(OffsetChainHopKind.MemberOffset, (int)layout.PlaybackControllerConnectionOffset, null),
+            new OffsetChainHop(OffsetChainHopKind.InlineOffset, (int)layout.ConnectionEntitiesOffset, null),
+            EntityLookupHop(layout),
             new OffsetChainHop(OffsetChainHopKind.RecordOffset, recordOffset, null),
         ];
     }

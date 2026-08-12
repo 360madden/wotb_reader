@@ -1,4 +1,5 @@
 using WotBTreader.Application.Game;
+using WotBTreader.Core;
 using WotBTreader.Core.Discovery;
 using WotBTreader.Core.Overlay;
 
@@ -19,8 +20,11 @@ namespace WotBTreader.Application.Replay;
 ///   the replay projector's "no viewpoint evidence" shape.
 /// - Tanks: only <c>Resolved</c> ring records with finite position are
 ///   projected; a region that resolved but failed to decode is a per-tank
-///   miss, never a guessed position. Names/team are null (live mode has no
-///   decoded roster join yet). HP is honest: when the L1 entity-base read
+///   miss, never a guessed position. Names/team come from the optional
+///   per-id decoded-roster join (design
+///   <c>docs/operations/live-roster-name-join-design.md</c>): an id present
+///   in the map gets its participant's name/tank/clan/team, everything else
+///   stays null — never guessed. HP is honest: when the L1 entity-base read
 ///   delivered current/max health they map to <c>HpFraction</c>/
 ///   <c>CurrentHealth</c>/<c>MaxHealth</c> (the alive byte rides along);
 ///   otherwise the DTO's "unknown" representation — <c>HpFraction 0</c>
@@ -35,7 +39,8 @@ public static class LiveFrameProjector
         LiveFrameReadResult frame,
         double verticalFovRadians,
         double viewportWidth,
-        double viewportHeight)
+        double viewportHeight,
+        IReadOnlyDictionary<long, Participant>? participants = null)
     {
         ArgumentNullException.ThrowIfNull(frame);
 
@@ -47,7 +52,8 @@ public static class LiveFrameProjector
                 camera,
                 verticalFovRadians,
                 viewportWidth,
-                viewportHeight))
+                viewportHeight,
+                participants))
             .OrderBy(tank => tank.DistanceMeters)
             .ToList();
 
@@ -148,7 +154,8 @@ public static class LiveFrameProjector
         OverlayCamera camera,
         double verticalFovRadians,
         double viewportWidth,
-        double viewportHeight)
+        double viewportHeight,
+        IReadOnlyDictionary<long, Participant>? participants)
     {
         double x = tank.X!.Value;
         double y = tank.Y!.Value;
@@ -161,6 +168,22 @@ public static class LiveFrameProjector
             x,
             y,
             z);
+
+        // Per-id decoded-roster join (fail-closed): an id in the map gets
+        // its participant's identity; anything else stays null (the live
+        // frame is the source of truth for what exists — never guessed).
+        string? playerName = null;
+        string? tankName = null;
+        string? clanTag = null;
+        int? teamNumber = null;
+        if (participants is not null
+            && participants.TryGetValue(tank.EntityId, out Participant? participant))
+        {
+            playerName = participant.PlayerName;
+            tankName = participant.TankName;
+            clanTag = participant.ClanTag;
+            teamNumber = participant.TeamNumber;
+        }
 
         // L1 health mapping (honest): real values only when the entity-base
         // read delivered both; otherwise the DTO's unknown representation
@@ -182,10 +205,10 @@ public static class LiveFrameProjector
 
         return new ProjectedTank(
             tank.EntityId,
-            PlayerName: null,
-            TankName: null,
-            ClanTag: null,
-            TeamNumber: null,
+            PlayerName: playerName,
+            TankName: tankName,
+            ClanTag: clanTag,
+            TeamNumber: teamNumber,
             HpFraction: hpFraction,
             Alive: alive,
             DistanceMeters: DistanceMeters(camera, x, y, z),

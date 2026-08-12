@@ -95,8 +95,9 @@ Do NOT include velocity, HP, `replayTime`, `cameraPitch`,
 
 ## 6. NOT in scope (own gates)
 
-- **HP publication** — Phase-4 two-replay rule (Dead Rail victim 2549399,
-  `hp-diff` session); the entity-base read is live-frame-wired but the
-  table stays frozen.
+- **HP publication** — Phase-4 two-replay rule CLOSED (OD-RECOVERY-091,
+  2026-08-11: Dead Rail HIT at `+0xB8`, victim 2549395 — the planned
+  2549399 is team 2 and cannot resolve); package READY at
+  `docs/operations/g1-hp-publication-draft.md`, operator approval only.
 - **Velocity, replayTime, cameraPitch, aliveTankCount** — untouched.
 - **Item 7 (hardware atomicity)** — stays LAST by design.
