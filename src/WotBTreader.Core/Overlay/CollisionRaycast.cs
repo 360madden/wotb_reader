@@ -46,9 +46,21 @@ public static class CollisionRaycast
         for (int i = 0; i < triangleCount; i++)
         {
             int baseIndex = i * 3;
-            CollisionVertex a = mesh.Vertices[mesh.TriangleIndices[baseIndex]];
-            CollisionVertex b = mesh.Vertices[mesh.TriangleIndices[baseIndex + 1]];
-            CollisionVertex c = mesh.Vertices[mesh.TriangleIndices[baseIndex + 2]];
+            int ia = mesh.TriangleIndices[baseIndex];
+            int ib = mesh.TriangleIndices[baseIndex + 1];
+            int ic = mesh.TriangleIndices[baseIndex + 2];
+            if (ia < 0 || ia >= mesh.Vertices.Count
+                || ib < 0 || ib >= mesh.Vertices.Count
+                || ic < 0 || ic >= mesh.Vertices.Count)
+            {
+                // A structurally corrupt triangle (index outside the vertex
+                // array) is skipped like a degenerate one — never an exception.
+                continue;
+            }
+
+            CollisionVertex a = mesh.Vertices[ia];
+            CollisionVertex b = mesh.Vertices[ib];
+            CollisionVertex c = mesh.Vertices[ic];
             if (!Finite(a) || !Finite(b) || !Finite(c))
             {
                 continue;

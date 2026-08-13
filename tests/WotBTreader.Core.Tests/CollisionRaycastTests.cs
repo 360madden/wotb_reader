@@ -114,4 +114,37 @@ public sealed class CollisionRaycastTests
 
         Assert.IsNull(CollisionRaycast.Raycast(ray, FrontTriangle()));
     }
+
+    [TestMethod]
+    public void Raycast_IndexOutsideVertices_SkipsCorruptTriangle()
+    {
+        // A corrupt triangle (index 9 is outside the vertex array) must be
+        // skipped, not throw, and the valid triangle behind it still hits.
+        CollisionVertex[] vertices =
+        [
+            new(0, 0, 0, 0, 0, 1),
+            new(1, 0, 0, 0, 0, 1),
+            new(0, 1, 0, 0, 0, 1),
+        ];
+        CollisionMesh mesh = new(vertices, [0, 1, 9, 0, 1, 2]);
+
+        MeshHit? hit = CollisionRaycast.Raycast(new AimRay(0, 0, -1, 0, 0, 1), mesh);
+
+        Assert.IsNotNull(hit);
+        Assert.AreEqual(1.0, hit.Value.Distance, 1e-9);
+    }
+
+    [TestMethod]
+    public void Raycast_AllIndicesOutsideVertices_ReturnsNull()
+    {
+        CollisionMesh mesh = new(
+            [
+                new(0, 0, 0, 0, 0, 1),
+                new(1, 0, 0, 0, 0, 1),
+                new(0, 1, 0, 0, 0, 1),
+            ],
+            [0, 1, 9]);
+
+        Assert.IsNull(CollisionRaycast.Raycast(new AimRay(0, 0, -1, 0, 0, 1), mesh));
+    }
 }

@@ -1,3 +1,5 @@
+using System.Text;
+using System.Xml;
 using Microsoft.Extensions.Logging;
 using WotBTreader.Application.Game;
 using WotBTreader.Application.Results;
@@ -235,8 +237,10 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
             {
                 mesh = CollisionMeshParser.Parse(payload.Value.Span, MaxMeshBytes);
             }
-            catch (InvalidDataException)
+            catch (Exception ex) when (ex is InvalidDataException or OverflowException)
             {
+                // A corrupt mesh omits the badge, never an exception through
+                // the frame path (the fail-closed contract).
                 mesh = null;
             }
         }
@@ -270,8 +274,19 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
             return null;
         }
 
-        VehicleArmorProfile profile = PenetrationDataParser.ParseVehicleArmor(
-            payload.Value.Span, $"{nation}:{tankId}", MaxCharacters);
+        VehicleArmorProfile profile;
+        try
+        {
+            profile = PenetrationDataParser.ParseVehicleArmor(
+                payload.Value.Span, $"{nation}:{tankId}", MaxCharacters);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or XmlException or DecoderFallbackException)
+        {
+            // A corrupt or oversized vehicle XML omits the badge, never an
+            // exception through the frame path (the fail-closed contract).
+            return null;
+        }
+
         TankArmor armor = PenetrationContext.NominalArmor(profile);
         if (armor.FrontMm <= 0)
         {
@@ -345,9 +360,19 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
 
         ReadOnlyMemory<byte>? payload = await ReadDvplAsync(
             VehiclePath(identity, nation, tankId), cancellationToken).ConfigureAwait(false);
-        string? shellName = payload is null
-            ? null
-            : PenetrationDataParser.ParseStockGunShellName(payload.Value.Span, MaxCharacters);
+        string? shellName = null;
+        if (payload is not null)
+        {
+            try
+            {
+                shellName = PenetrationDataParser.ParseStockGunShellName(
+                    payload.Value.Span, MaxCharacters);
+            }
+            catch (Exception ex) when (ex is InvalidDataException or XmlException or DecoderFallbackException)
+            {
+                shellName = null;
+            }
+        }
 
         lock (_gate)
         {
@@ -397,9 +422,17 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
             ComponentPath(identity, nation, "shells"), cancellationToken).ConfigureAwait(false);
         if (payload is not null)
         {
-            foreach (ShellProfile shell in PenetrationDataParser.ParseShells(payload.Value.Span, MaxCharacters))
+            try
             {
-                shells.TryAdd(shell.Name, shell);
+                foreach (ShellProfile shell in PenetrationDataParser.ParseShells(payload.Value.Span, MaxCharacters))
+                {
+                    shells.TryAdd(shell.Name, shell);
+                }
+            }
+            catch (Exception ex) when (ex is InvalidDataException or XmlException or DecoderFallbackException)
+            {
+                // A corrupt shells.xml yields an empty table; the viewer-shell
+                // lookup fails closed rather than throwing.
             }
         }
 
@@ -429,10 +462,18 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
             ComponentPath(identity, nation, "guns"), cancellationToken).ConfigureAwait(false);
         if (payload is not null)
         {
-            foreach (GunShellProfile gun in PenetrationDataParser.ParseGuns(payload.Value.Span, MaxCharacters))
+            try
             {
-                // A shell belongs to one gun's shot list; keep the first.
-                guns.TryAdd(gun.ShellName, gun);
+                foreach (GunShellProfile gun in PenetrationDataParser.ParseGuns(payload.Value.Span, MaxCharacters))
+                {
+                    // A shell belongs to one gun's shot list; keep the first.
+                    guns.TryAdd(gun.ShellName, gun);
+                }
+            }
+            catch (Exception ex) when (ex is InvalidDataException or XmlException or DecoderFallbackException)
+            {
+                // A corrupt guns.xml yields an empty table; the viewer-shell
+                // lookup fails closed rather than throwing.
             }
         }
 

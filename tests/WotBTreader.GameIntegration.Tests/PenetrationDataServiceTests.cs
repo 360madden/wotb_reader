@@ -118,6 +118,24 @@ public sealed class PenetrationDataServiceTests
         Assert.IsNull(context);
     }
 
+    [TestMethod]
+    public async Task ResolveAsync_MalformedVehicleXml_ReturnsNull()
+    {
+        // A corrupt vehicle XML must omit the badge (null context), never an
+        // exception through the frame path — the documented fail-closed
+        // contract. The mismatched tags throw XmlException during load.
+        using Fixture fixture = new();
+        fixture.WriteUkVehicle("GB08_Churchill_I", "<root><hull><armor></root>");
+
+        PenetrationDataService service = fixture.CreateService();
+
+        PenetrationContext? context = await service.ResolveAsync(
+            Projection("GB08_Churchill_I"),
+            CancellationToken.None);
+
+        Assert.IsNull(context);
+    }
+
     private static ReplayDecodeProjection Projection(string tankId)
     {
         DecodeRun decodeRun = new(
