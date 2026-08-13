@@ -80,23 +80,21 @@ verdict        = compare(effectiveArmor, penAtRange) + ricochet/overmatch rules
    no-damage (bounce/absorb) outcomes. Report hit-rate, plus the per-shot
    margin (effective armor vs pen) to localize which plate/thickness
    assumption is wrong.
-3. **Decode-lane status (checked 2026-08-13):** the type-8 flag byte `+0x12`
-   is present in the layout but **NOT decoded today** — `HealthChangeObservation`
-   carries victim/postHitHealth/attacker/destroy only, no flag field — and
-   type-32 is documented (impact mirror, flag prefixes `01 11`/`01 12` vs
-   `01 02`/`01 03`) but **not decoded into events** (raw evidence only). So
-   today's ground truth is **damaging-hit vs no-damage-hit** (type-8 damage vs
-   the type-32 mirror's no-damage hits), NOT per-shot pen-vs-bounce-vs-absorb.
-   That is sufficient for the geometry-first ricochet check and the full
-   pen/no-pen classification; disambiguating bounce-vs-absorb needs the flag
-   byte. The raw bytes ARE stored per event, but **the evidence offset is
-   relative to the DECOMPRESSED event-stream archive entry, not the raw
-   `.wotbreplay` file** (probed 2026-08-13: `EventStreamReader.Scan` runs over
-   `archive[EventStreamEntry]`, and offsets exceed the on-disk file size) — so
-   the flag-byte analysis must go through the archive + event-stream reader
-   (the decoder's own path), not a simple file seek. The cleanest route is a
-   small decoder-side surface change that surfaces the flag byte (and the
-   type-32 flags) at decode time.
+3. **Decode-lane status (checked 2026-08-13, second pass):** the type-8 flag
+   byte `+0x12` is present in the layout but **NOT decoded today**
+   (`HealthChangeObservation` carries victim/postHitHealth/attacker/destroy
+   only), and type-32 is **not decoded into events** — BUT the type-32 mirror
+   IS persisted in the store's raw records and is extractable offline (source
+   artifact sha256 → `.wotbreplay` zip → decompressed `data.wotreplay` →
+   evidence offset/length; a scratch script does this against the live store).
+   Flag prefixes map cleanly (`01 11`/`01 12` damage-with-payload, `01 02`/
+   `01 03` short companion, `01 05`/`01 06` shell/effect, `00 0f`/`00 10`
+   snapshot). **The prefix does NOT separate pen from bounce** — the same
+   `01 12` fires for both, and a candidate bit-7 flags byte at +0x0A is not a
+   clean discriminator. So today's ground truth stays **damaging-hit vs
+   no-damage-hit** (type-8 damage vs the mirror's no-damage hits); the
+   damage-vs-bounce field is in the payload and needs a bounded decoder-side
+   layout pinning (no re-decode — the bytes are already persisted).
 
 4. **PN-4 status (checked 2026-08-13): the cheap aim proxy is too coarse.**
    The live store (`%LOCALAPPDATA%\WotBTreader\treader.db`) DOES have yaw
@@ -176,10 +174,23 @@ reader.
    `CollisionMeshParser` + `CollisionRaycast` now read it and the badge
    consumes the per-vertex normals (verified against the real Churchill mesh).
 2. Does the type-8 flag byte / type-32 flag prefix distinguish pen vs bounce
-   vs absorb per shot? **Status (2026-08-13):** the flag byte is unread and
-   type-32 is raw-only today (see the validation loop's decode-lane status) —
-   so the open question is whether a flag-byte analysis of the stored evidence
-   bytes surfaces the finer distinction.
+   vs absorb per shot? **Status (2026-08-13, second pass):** the type-32
+   impact mirror is **already persisted** in the decoded store's raw records
+   (66 386 packets across the live store) and is extractable offline — source
+   artifact (sha256) → `.wotbreplay` zip → decompressed `data.wotreplay` →
+   evidence offset/length. Flag prefixes map cleanly: `01 11` (26 B) and
+   `01 12` (27 B) = damage-with-payload, `01 02` (11 B) / `01 03` (12 B) =
+   short companion, `01 05` (14 B) / `01 06` (15 B) = shell/effect entities
+   (0x30xxxx), `00 0f` (24 B) / `00 10` (25 B) = state snapshot. **Honest
+   negative:** the prefix does NOT separate pen from bounce — the same `01 12`
+   fires for both (e.g. victim 3760569: damage at t=69.62/86.12/91.00 AND
+   no-damage at t=79.93/86.63), and a candidate bit-7 flags byte at payload
+   +0x0A is NOT a clean discriminator either (bit7 set: 24 damage vs 3
+   no-damage; bit7 clear: 16 damage vs 13 no-damage, 0.2 s window). The
+   damage-vs-bounce field is in the payload but needs a proper per-field
+   decode (the `00000099`/`00000098` marker word + a 1–3 byte flags region +
+   the 6-byte shell signature + two 4-byte trailing fields) — the remaining
+   work is a bounded decoder-side type-32 layout pinning, NOT a re-decode.
 3. Is the viewer's loaded shell recoverable at all from the stream (shell
    signature → stat mapping via game data), or is a manual override the only
    honest path?
