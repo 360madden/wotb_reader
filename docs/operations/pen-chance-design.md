@@ -20,7 +20,11 @@ Live mode renders the SAME badge now (2026-08-13): the live frame scores the
 CAM-013 chase-camera pose (the chase camera aims at the turret-level aim
 point ~1.9 m above the hull center), so no T1 turret/gun discovery is needed
 for the badge to render — T1 remains the validation lane for the exact gun
-lock-on.
+lock-on. The live badge still needs a **selected decoded session**: the
+per-id roster join maps live entity ids → tank ids (armor + mesh) and the
+viewpoint participant supplies the stock gun's shell list — without a
+session the frame serves anonymously and the badge is omitted (fail-closed,
+same prerequisite as the live name join).
 
 ## Why this repo can build it (and no mod can)
 

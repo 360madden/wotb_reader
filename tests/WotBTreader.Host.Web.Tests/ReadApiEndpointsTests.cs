@@ -835,6 +835,70 @@ public sealed class ReadApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task LiveFrame_NoPenetrationData_OmitsBadgeButServesFrame()
+    {
+        // Fail-closed: a resolvable session whose install penetration data
+        // is unavailable must still serve the live frame — names/positions
+        // intact — with the pen badge simply null, never a fabricated
+        // verdict (install absent, a missing armor table, etc.).
+        CameraScannerStub scanner = new(
+            OperationResult.Failure<CameraPoseReadResult>(
+                new ApplicationError("unused", "Unused.")),
+            OperationResult.Success(new LiveFrameReadResult(
+                CompletedAtUtc: DateTimeOffset.UtcNow,
+                GameVersion: "11.19.0.10",
+                Type10EntityPositionStatus.Resolved,
+                FailureStage: null,
+                ReplayTimeSeconds: 150.5,
+                SameDecodedClockProven: true,
+                Camera: null,
+                Tanks:
+                [
+                    new LiveFrameTankState(
+                        100,
+                        Type10EntityPositionStatus.Resolved,
+                        X: 0,
+                        Y: 0,
+                        Z: 100,
+                        YawRadians: 0.5f,
+                        HpCurrent: null,
+                        HpMax: null,
+                        Alive: null,
+                        FailureStage: null,
+                        ModuleRooted: true),
+                ],
+                RosterCandidatesSeen: 14,
+                RosterFilteredOut: 2)));
+
+        ReplayDecodeProjection roster = new(
+            DecodeRunFixture(),
+            Session: null,
+            Participants: [ParticipantFixture()],
+            Positions: [],
+            Events: [],
+            RawRecords: [],
+            Warnings: []);
+
+        IResult result = await ReadApiEndpoints.GetLiveFrameAsync(
+            new DefaultHttpContext(),
+            scanner,
+            sessions: new FakeSessionQueries([], projection: roster),
+            penetrationData: FakePenetrationData.None,
+            sessionId: Guid.NewGuid(),
+            fov: 90,
+            width: 1920,
+            height: 1080,
+            shell: null,
+            cancellationToken: TestContext.CancellationToken);
+
+        OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
+        Assert.HasCount(1, frame.Tanks);
+        Assert.IsNull(frame.PenBadge);
+        Assert.IsEmpty(frame.PenShells);
+        Assert.IsNull(frame.PenShell);
+    }
+
+    [TestMethod]
     public async Task LiveFrame_UnknownSession_DegradesToAnonymous()
     {
         // A session id that does not resolve must NOT fail the live frame:
