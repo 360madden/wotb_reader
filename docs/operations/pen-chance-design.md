@@ -95,17 +95,21 @@ verdict        = compare(effectiveArmor, penAtRange) + ricochet/overmatch rules
    `archive[EventStreamEntry]`, and offsets exceed the on-disk file size) — so
    the flag-byte analysis must go through the archive + event-stream reader
    (the decoder's own path), not a simple file seek. The cleanest route is a
-   small decoder-side surface change that surfaces the flag byte (and   the type-32 flags) at decode time.
+   small decoder-side surface change that surfaces the flag byte (and the
+   type-32 flags) at decode time.
 
-4. **PN-4 status (checked 2026-08-13): the existing store cannot score yet.**
-   The decoded sessions predate the migration-5 rotation persistence —
-   `position_samples.yaw` is NULL for every sample (0/28236 in the rehearsal
-   session), and the type-32 no-damage hits are raw-only. So the validation
-   loop's aim-proxy needs the victim HULL FACING (null today) and the
-   bounce ground truth (needs the decoder path). The fix is offline: a
-   FRESH immutable re-decode with the current decoder (which persists the
-   rotation tail), then the aim-proxy + ricochet check runs against it. The
-   scratch `ricochet-check` script is written and ready for that re-decode.
+4. **PN-4 status (checked 2026-08-13): the cheap aim proxy is too coarse.**
+   The live store (`%LOCALAPPDATA%\WotBTreader\treader.db`) DOES have yaw
+   persisted (2.24M of 8.23M samples) — the earlier "yaw is NULL" finding was
+   the DEV store (`.data/treader.db`) only. The ricochet check ran on a real
+   121-damage session: the attacker→victim center-line incidence vs the
+   victim's hull facing is NEARLY UNIFORM across 0–80° (13/14/17/16/15/18/10/
+   9/9 by 10° bucket) with 18/121 (15%) at ≥70°. A strict ricochet model
+   would cluster penetrating shots sub-70°, so the hull-facing proxy washes
+   out the plate-specific incidence. **Honest negative:** the geometry-first
+   check needs the actual aim plate (the PN-5 `.scg` polygon geometry) or the
+   live camera aim (CAM-013) — the center-line proxy cannot validate the
+   ricochet rule. The scratch script is retained for the plate-level model.
 
 ## Phase plan
 
