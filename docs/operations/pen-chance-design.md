@@ -146,12 +146,18 @@ two-caliber, pen-at-range).
    sample run it produced 28 packets vs 69 type-32 shots and none before
    t≈79.9 s, so it is not a complete per-shot attribution source; penetrating
    shots are still attributed by the type-8 subtype-1 damage event (100%
-   coverage). **The full geometry-first validation should be a C# harness**
-   reusing `PenetrationDataService` + `CollisionRaycast` (the store's
-   `tank_id`/`tank_name` columns are inconsistent — a mix of `nation:id`
-   strings, raw compact descriptors, and meta.json player-vehicle names — so
-   the descriptor→tank-id resolution must go through the enrichment, not a
-   raw SQL join).
+   coverage). **The geometry-first SCORING harness now ships (2026-08-13):**
+   `PenValidation.Score` (Core) scores a list of `ScoredShot`s — the aim ray
+   (from ANY source), the victim's tank state + collision parts + armor, the
+   shell, and the decoded `penetrated` outcome — and reports the ricochet
+   agreement (a predicted ricochet must be non-penetrating) plus the band
+   accuracy (Pen ⇒ penetrated, NoPen ⇒ not), with per-shot rows. 6 tests.
+   The aim-source WIRING (a CLI command reading the store + install data,
+   reconstructing the attacker→victim aim) is the deferred half — it needs a
+   real aim source to be worth running (the store's `tank_id`/`tank_name`
+   columns are inconsistent — a mix of `nation:id` strings, raw compact
+   descriptors, and meta.json player-vehicle names — so the descriptor→tank-id
+   resolution must go through the enrichment, not a raw SQL join).
 
    **Shell direction is NOT decodable offline (probed 2026-08-13):** the
    position stream carries no short-lived projectile entities — every entity
@@ -160,7 +166,8 @@ two-caliber, pen-at-range).
    trajectory. The remaining PN-4 aim sources are the attacker→victim
    center-line (already shown too coarse, point 4) and the LIVE camera aim
    (CAM-013) captured at shot time, which needs a live session — so PN-4's
-   offline geometry validation is blocked, not just deferred.
+   offline geometry validation is blocked, not just deferred. `PenValidation`
+   is the scoring core the live CAM-013 capture will feed.
 
 ## `.sc2` SFV2 format spec (PARSED 2026-08-13 — `SceneFileParser`)
 

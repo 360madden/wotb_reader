@@ -499,6 +499,7 @@ src/WotBTreader.Core/Overlay/ArmorPenetration.cs
 src/WotBTreader.Core/Overlay/CollisionMesh.cs
 src/WotBTreader.Core/Overlay/CollisionRaycast.cs
 src/WotBTreader.Core/Overlay/OverlayFrameModels.cs
+src/WotBTreader.Core/Overlay/PenValidation.cs
 src/WotBTreader.Core/Overlay/PenetrationAim.cs
 src/WotBTreader.Core/Overlay/WorldToScreen.cs
 src/WotBTreader.Core/TelemetryModels.cs
@@ -758,6 +759,7 @@ tests/WotBTreader.Core.Tests/IdentifierTests.cs
 tests/WotBTreader.Core.Tests/MSTestSettings.cs
 tests/WotBTreader.Core.Tests/OffsetChainWalkerEquivalenceTests.cs
 tests/WotBTreader.Core.Tests/OffsetChainWalkerTests.cs
+tests/WotBTreader.Core.Tests/PenValidationTests.cs
 tests/WotBTreader.Core.Tests/PenetrationAimTests.cs
 tests/WotBTreader.Core.Tests/RecordDiffingTests.cs
 tests/WotBTreader.Core.Tests/RingRecordRegionTests.cs
