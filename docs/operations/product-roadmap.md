@@ -395,8 +395,8 @@ the live surfaces above; nothing is rebuilt at the live step.
 
 | Step | WS | Deliverable |
 |---|---|---|
-| PN-1 | G | **Static-data extraction** — tank armor models + hull geometry + gun/shell tables from the install's data files (read-only, evidence-first, CAM-009 style); a static store + verify script. The long pole; shares the install game-data extraction capability with the V4 minimap-texture gap |
-| PN-2 | F | **Pen math module** — pure, testable: aim ray vs hull-plate hit test, angle of incidence, effective armor = thickness/cos(angle), ≥70° AP/APCR ricochet (+25% pen loss), overmatch, pen-at-range → banded green/yellow/red verdict |
+| PN-1 | G | **Static-data extraction** — **PROBED 2026-08-13: present + readable.** Vehicle XML (`Data/XML/item_defs/vehicles/{nation}/{tank}.xml.dvpl`) carries per-group hull + turret armor; `components/shells.xml.dvpl` carries caliber/kind/normalizationAngle/ricochetAngle; `components/guns.xml.dvpl` carries `piercingPower` (2-point range) + speed + maxDistance — all DVPL/LZ4 → XML via the existing `DvplReader`. Remaining: the plate-slope `.model` collision geometry (binary) |
+| PN-2 | F | **Pen math module** — **DONE 2026-08-13** (`Core/Overlay/ArmorPenetration.cs`, 12 tests): ray-plane hit, incidence, effective armor = thickness/cos(angle), ≥70° ricochet (+3× overmatch), pen-at-range, banded green/yellow/red verdict. Refinement: add the per-shell `normalizationAngle` + `piercingPower` 2-point range mapping |
 | PN-3 | F | **Replay-mode HUD** — aim = the CAM-013-verified camera pose (no new discovery; the replay camera drives the turret); pen badge (colored + numeric) on the aimed enemy's nameplate |
 | PN-4 | F | **Validation loop** — score the model vs decoded shot outcomes (type-8 damage vs type-32 no-damage hits); geometry-first (ricochet is shell-independent), then full classification; report hit-rate + per-shot margin |
 | PN-5 | F | **Live mode** — T1 turret/gun aim + the same module, behind the X1 policy gate |
