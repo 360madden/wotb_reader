@@ -203,6 +203,8 @@ reader.
   classifies the face from the mesh-local normal (front=+Y); the real-install
   opt-in test pins a head-on Churchill shot to `StruckFace.Front` with
   effective armor ≥ the 186.7 mm nominal (the sloped glacis thickens it).
+  A top/bottom deck hit (dominant vertical normal) fails closed to Unknown
+  rather than borrowing a horizontal face's armor (fixed 2026-08-13).
   **Three-part structure (probed 2026-08-13):** the `.scg` is NOT one merged
   mesh — the header's count (`a=3`) is real: three polygon groups keyed `#id`
   1/3/5 = hull / turret / gun (the three `hitTester` collision models), each

@@ -239,6 +239,13 @@ public sealed class PenetrationAimTests
         new CollisionVertex(10, -1, 1, 1, 0, 0),
         new CollisionVertex(10, 1, 0, 1, 0, 0));
 
+    // The tank's local TOP-DECK plate: a horizontal triangle at local z=1
+    // facing +Z (up), so a shot from directly above strikes a vertical normal.
+    private static CollisionMesh DeckPlateMesh() => Mesh(
+        new CollisionVertex(-1, -1, 1, 0, 0, 1),
+        new CollisionVertex(1, -1, 1, 0, 0, 1),
+        new CollisionVertex(0, 1, 1, 0, 0, 1));
+
     [TestMethod]
     public void EvaluateAgainstMesh_FrontHeadOn_UsesFrontArmor()
     {
@@ -290,6 +297,21 @@ public sealed class PenetrationAimTests
 
         PenetrationVerdict verdict = PenetrationAim.EvaluateAgainstMesh(
             ray, Tank(1, 0, 0, yaw: null), FrontPlateMesh(), Armor, new ShellSpec(200, 100),
+            out StruckFace face);
+
+        Assert.AreEqual(StruckFace.Unknown, face);
+        Assert.AreEqual(PenetrationBand.Unknown, verdict.Band);
+    }
+
+    [TestMethod]
+    public void EvaluateAgainstMesh_DeckHit_VerticalNormal_Unknown()
+    {
+        // A top-deck hit (normal +Z in mesh space) is not a front/side/rear
+        // face — it must fail closed to Unknown, not borrow the frontal armor.
+        AimRay ray = new(0, 100, 0, 0, -1, 0); // straight down from above
+
+        PenetrationVerdict verdict = PenetrationAim.EvaluateAgainstMesh(
+            ray, Tank(1, 0, 0, yaw: 0), DeckPlateMesh(), Armor, new ShellSpec(200, 100),
             out StruckFace face);
 
         Assert.AreEqual(StruckFace.Unknown, face);

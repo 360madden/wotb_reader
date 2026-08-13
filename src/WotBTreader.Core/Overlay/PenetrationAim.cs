@@ -253,8 +253,9 @@ public static class PenetrationAim
     /// the effective-armor ANGLE is now geometric even while the thickness
     /// stays nominal. <paramref name="face"/> receives the struck face
     /// classified from the LOCAL surface normal (<see cref="StruckFace.Unknown"/>
-    /// when no hit or no facing). Fail-closed: no facing, no hit, or a
-    /// degenerate mesh yields <see cref="PenetrationBand.Unknown"/>.
+    /// when no hit, no facing, or a top/bottom deck hit). Fail-closed: no
+    /// facing, no hit, a top/bottom hit, or a degenerate mesh yields
+    /// <see cref="PenetrationBand.Unknown"/>.
     ///
     /// Coordinate convention (probed 2026-08-13 on the real Churchill mesh):
     /// the <c>.scg</c> collision mesh is stored Z-UP — +X right, +Y FORWARD,
@@ -301,7 +302,15 @@ public static class PenetrationAim
                 PenetrationBand.Unknown, null, null, null, null, Ricochet: false);
         }
 
-        face = ClassifyMeshFace(hit.Value.NormalX, hit.Value.NormalY);
+        face = ClassifyMeshFace(hit.Value.NormalX, hit.Value.NormalY, hit.Value.NormalZ);
+        if (face == StruckFace.Unknown)
+        {
+            // A top/bottom (deck/belly) hit is not a front/side/rear face —
+            // fail closed rather than borrowing a horizontal face's armor.
+            return new PenetrationVerdict(
+                PenetrationBand.Unknown, null, null, null, null, Ricochet: false);
+        }
+
         double thickness = face switch
         {
             StruckFace.Front => armor.FrontMm,
@@ -395,22 +404,25 @@ public static class PenetrationAim
     /// <summary>
     /// Classifies a MESH-LOCAL (Z-up) surface normal into front/back/side:
     /// the collision mesh faces +Y forward in its local space (rear = −Y,
-    /// deck = +Z), so the dominant horizontal axis of the outward normal
-    /// selects the face. (Sides are the two ±X normals, treated symmetrically.)
+    /// deck = +Z). The dominant HORIZONTAL axis selects the face (sides are
+    /// the two ±X normals, treated symmetrically). A dominant VERTICAL normal
+    /// (|Z| &gt; |X| and |Z| &gt; |Y|) is a deck/belly hit — not a front/side/
+    /// rear face — and returns <see cref="StruckFace.Unknown"/> so the caller
+    /// fails closed instead of borrowing a horizontal face's armor.
     /// </summary>
-    private static StruckFace ClassifyMeshFace(double nx, double ny)
+    private static StruckFace ClassifyMeshFace(double nx, double ny, double nz)
     {
-        double front = ny;
-        double back = -ny;
-        double sideA = nx;
-        double sideB = -nx;
-        double best = Math.Max(Math.Max(front, back), Math.Max(sideA, sideB));
-        if (best == front)
+        double absX = Math.Abs(nx);
+        double absY = Math.Abs(ny);
+        double absZ = Math.Abs(nz);
+        if (absZ > absX && absZ > absY)
         {
-            return StruckFace.Front;
+            return StruckFace.Unknown;
         }
 
-        return best == back ? StruckFace.Back : StruckFace.Side;
+        return absY >= absX
+            ? (ny >= 0 ? StruckFace.Front : StruckFace.Back)
+            : StruckFace.Side;
     }
 
     /// <summary>
