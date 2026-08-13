@@ -80,12 +80,18 @@ verdict        = compare(effectiveArmor, penAtRange) + ricochet/overmatch rules
    no-damage (bounce/absorb) outcomes. Report hit-rate, plus the per-shot
    margin (effective armor vs pen) to localize which plate/thickness
    assumption is wrong.
-3. **Open decode dependency:** whether the type-8 flag byte `+0x12` and the
-   type-32 flag prefixes (`01 11`/`01 12` damage-with-payload vs
-   `01 02`/`01 03` short companion) already distinguish pen vs bounce must be
-   confirmed in the decode lane before step 2 — if they do, ground truth is
-   exact; if not, ground truth is damage-vs-no-damage (still a strong
-   discriminator for ricochet, weaker for partial pens).
+3. **Decode-lane status (checked 2026-08-13):** the type-8 flag byte `+0x12`
+   is present in the layout but **NOT decoded today** — `HealthChangeObservation`
+   carries victim/postHitHealth/attacker/destroy only, no flag field — and
+   type-32 is documented (impact mirror, flag prefixes `01 11`/`01 12` vs
+   `01 02`/`01 03`) but **not decoded into events** (raw evidence only). So
+   today's ground truth is **damaging-hit vs no-damage-hit** (type-8 damage vs
+   the type-32 mirror's no-damage hits), NOT per-shot pen-vs-bounce-vs-absorb.
+   That is sufficient for the geometry-first ricochet check and the full
+   pen/no-pen classification; disambiguating bounce-vs-absorb needs the flag
+   byte. The raw bytes are already stored in each event's `Evidence`, so the
+   flag-byte analysis is an offline data-script (read `+0x12` from
+   `Evidence.EncodedBytes`), not a re-decode.
 
 ## Phase plan
 
@@ -131,8 +137,11 @@ reader.
 
 1. Does the install ship armor/shell/hull data in a readable format, and
    where (DVPL/LZ4 config vs engine-serialized)?
-2. Do the type-8 flag byte / type-32 flag prefixes distinguish pen vs bounce
-   vs absorb per shot, or only damage-vs-no-damage?
+2. Does the type-8 flag byte / type-32 flag prefix distinguish pen vs bounce
+   vs absorb per shot? **Status (2026-08-13):** the flag byte is unread and
+   type-32 is raw-only today (see the validation loop's decode-lane status) —
+   so the open question is whether a flag-byte analysis of the stored evidence
+   bytes surfaces the finer distinction.
 3. Is the viewer's loaded shell recoverable at all from the stream (shell
    signature → stat mapping via game data), or is a manual override the only
    honest path?
