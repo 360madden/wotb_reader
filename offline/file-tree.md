@@ -495,6 +495,7 @@ src/WotBTreader.Core/Identifiers.cs
 src/WotBTreader.Core/OffsetModels.cs
 src/WotBTreader.Core/Overlay/AimGeometry.cs
 src/WotBTreader.Core/Overlay/ArmorPenetration.cs
+src/WotBTreader.Core/Overlay/CollisionMesh.cs
 src/WotBTreader.Core/Overlay/OverlayFrameModels.cs
 src/WotBTreader.Core/Overlay/PenetrationAim.cs
 src/WotBTreader.Core/Overlay/WorldToScreen.cs
@@ -515,6 +516,7 @@ src/WotBTreader.GameIntegration/Logs/BlitzReplayLogMonitor.cs
 src/WotBTreader.GameIntegration/Logs/LifecycleEventJournal.cs
 src/WotBTreader.GameIntegration/Logs/LifecycleFeedContracts.cs
 src/WotBTreader.GameIntegration/Logs/ReplayLogContracts.cs
+src/WotBTreader.GameIntegration/Metadata/CollisionMeshParser.cs
 src/WotBTreader.GameIntegration/Metadata/InstalledGameMetadataProvider.cs
 src/WotBTreader.GameIntegration/Metadata/MetadataResourceParser.cs
 src/WotBTreader.GameIntegration/Metadata/PenetrationDataParser.cs
@@ -765,6 +767,7 @@ tests/WotBTreader.Core.Tests/packages.lock.json
 tests/WotBTreader.GameIntegration.Tests/BlitzReplayLifecycleFeedTests.cs
 tests/WotBTreader.GameIntegration.Tests/BlitzReplayLifecycleParserTests.cs
 tests/WotBTreader.GameIntegration.Tests/BlitzReplayLogMonitorTests.cs
+tests/WotBTreader.GameIntegration.Tests/CollisionMeshParserTests.cs
 tests/WotBTreader.GameIntegration.Tests/DvplReaderTests.cs
 tests/WotBTreader.GameIntegration.Tests/GameInstallationDiscoveryTests.cs
 tests/WotBTreader.GameIntegration.Tests/GameIntegrationOptionsTests.cs
