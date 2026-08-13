@@ -220,11 +220,12 @@ public sealed class PenetrationAimTests
         return new CollisionMesh(vertices, indices);
     }
 
-    // The tank's local FRONT plate: a triangle at local z=1 facing +Z (outward).
+    // The tank's local FRONT plate (mesh Z-up space: +Y forward): a triangle
+    // at local y=1 facing +Y (outward).
     private static CollisionMesh FrontPlateMesh() => Mesh(
-        new CollisionVertex(-1, -1, 1, 0, 0, 1),
-        new CollisionVertex(1, -1, 1, 0, 0, 1),
-        new CollisionVertex(0, 1, 1, 0, 0, 1));
+        new CollisionVertex(-1, 1, -1, 0, 1, 0),
+        new CollisionVertex(1, 1, -1, 0, 1, 0),
+        new CollisionVertex(0, 1, 1, 0, 1, 0));
 
     // The tank's local RIGHT-side plate: a triangle at local x=1 facing +X.
     private static CollisionMesh SidePlateMesh() => Mesh(

@@ -6,10 +6,15 @@ namespace WotBTreader.GameIntegration.Metadata;
 /// <summary>
 /// Parses the install's collision mesh (<c>CollisionMeshes/{nation}-{tank}.scg.dvpl</c>,
 /// already decompressed by <see cref="Dvpl.DvplReader"/>) into a
-/// <see cref="CollisionMesh"/>. The container is DAVA <c>SCPG</c> wrapping a
-/// <c>KeyedArchive</c> with one <c>PolygonGroup</c>: a vertex array (position +
-/// normal, the <c>EVF_VERTEX</c>/<c>EVF_NORMAL</c> attributes) and a triangle
-/// index list (<c>indexFormat</c> 0 = uint16, 1 = uint32).
+/// <see cref="CollisionMesh"/>. The container is DAVA <c>SCPG</c> whose header
+/// count is the number of <c>PolygonGroup</c> <c>KeyedArchive</c>s — three on
+/// the real installs (keyed <c>#id</c> 1/3/5 = hull / turret / gun, each in its
+/// own Z-up local space: +X right, +Y forward, +Z up). This parser reads the
+/// FIRST group (the hull) only: a vertex array (position + normal, the
+/// <c>EVF_VERTEX</c>/<c>EVF_NORMAL</c> attributes) and a triangle index list
+/// (<c>indexFormat</c> 0 = uint16, 1 = uint32). The turret/gun groups are
+/// separate local spaces whose placement needs the <c>.sc2</c> SFV2 scene
+/// transforms, not yet parsed.
 ///
 /// Pure span-in → mesh-out. Every read is bounds-checked and fail-closed:
 /// malformed, truncated, or over-limit input throws

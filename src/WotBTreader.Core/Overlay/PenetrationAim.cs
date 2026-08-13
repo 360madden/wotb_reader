@@ -246,16 +246,22 @@ public static class PenetrationAim
     /// <summary>
     /// Scores the penetration chance against one tank using the install
     /// collision MESH (PN-5): the world aim ray is transformed into the tank's
-    /// local collision space (position offset + yaw rotation; the mesh faces
-    /// +Z forward), raycast against the triangle surface, and the struck
-    /// triangle's OUTWARD surface normal drives the incidence angle — the true
-    /// plate normal the four-face box approximated. The nominal face thickness
-    /// (front/side/rear) is still selected from the struck face, so the
-    /// effective-armor ANGLE is now geometric even while the thickness stays
-    /// nominal. <paramref name="face"/> receives the struck face classified
-    /// from the LOCAL surface normal (<see cref="StruckFace.Unknown"/> when
-    /// no hit or no facing). Fail-closed: no facing, no hit, or a degenerate
-    /// mesh yields <see cref="PenetrationBand.Unknown"/>.
+    /// local collision space, raycast against the triangle surface, and the
+    /// struck triangle's OUTWARD surface normal drives the incidence angle —
+    /// the true plate normal the four-face box approximated. The nominal face
+    /// thickness (front/side/rear) is still selected from the struck face, so
+    /// the effective-armor ANGLE is now geometric even while the thickness
+    /// stays nominal. <paramref name="face"/> receives the struck face
+    /// classified from the LOCAL surface normal (<see cref="StruckFace.Unknown"/>
+    /// when no hit or no facing). Fail-closed: no facing, no hit, or a
+    /// degenerate mesh yields <see cref="PenetrationBand.Unknown"/>.
+    ///
+    /// Coordinate convention (probed 2026-08-13 on the real Churchill mesh):
+    /// the <c>.scg</c> collision mesh is stored Z-UP — +X right, +Y FORWARD,
+    /// +Z up (its rear face normal is −Y, its deck normal is +Z) — while the
+    /// decoded world and the four-face box model are Y-UP (+Y up, +Z forward).
+    /// The aim ray is therefore rotated into tank-local Y-up space and then
+    /// Y↔Z-swapped into the mesh's Z-up space before the raycast.
     /// </summary>
     public static PenetrationVerdict EvaluateAgainstMesh(
         AimRay ray,
@@ -282,7 +288,12 @@ public static class PenetrationAim
             originX, ray.OriginY - tank.Y, originZ,
             dirX, ray.DirectionY, dirZ);
 
-        MeshHit? hit = CollisionRaycast.Raycast(localRay, mesh);
+        // Swap Y↔Z into the mesh's Z-up space (forward=+Y, up=+Z).
+        AimRay meshRay = new(
+            localRay.OriginX, localRay.OriginZ, localRay.OriginY,
+            localRay.DirectionX, localRay.DirectionZ, localRay.DirectionY);
+
+        MeshHit? hit = CollisionRaycast.Raycast(meshRay, mesh);
         if (hit is null)
         {
             face = StruckFace.Unknown;
@@ -290,7 +301,7 @@ public static class PenetrationAim
                 PenetrationBand.Unknown, null, null, null, null, Ricochet: false);
         }
 
-        face = ClassifyFaceFromNormal(hit.Value.NormalX, hit.Value.NormalZ);
+        face = ClassifyMeshFace(hit.Value.NormalX, hit.Value.NormalY);
         double thickness = face switch
         {
             StruckFace.Front => armor.FrontMm,
@@ -302,7 +313,7 @@ public static class PenetrationAim
             thickness,
             hit.Value.NormalX, hit.Value.NormalY, hit.Value.NormalZ,
             hit.Value.HitX, hit.Value.HitY, hit.Value.HitZ);
-        return ArmorPenetration.Evaluate(localRay, plate, shell, margin);
+        return ArmorPenetration.Evaluate(meshRay, plate, shell, margin);
     }
 
     /// <summary>
@@ -382,14 +393,15 @@ public static class PenetrationAim
     }
 
     /// <summary>
-    /// Classifies a LOCAL surface normal into front/back/side: the mesh faces
-    /// +Z forward in local space, so the dominant axis of the outward normal
+    /// Classifies a MESH-LOCAL (Z-up) surface normal into front/back/side:
+    /// the collision mesh faces +Y forward in its local space (rear = −Y,
+    /// deck = +Z), so the dominant horizontal axis of the outward normal
     /// selects the face. (Sides are the two ±X normals, treated symmetrically.)
     /// </summary>
-    private static StruckFace ClassifyFaceFromNormal(double nx, double nz)
+    private static StruckFace ClassifyMeshFace(double nx, double ny)
     {
-        double front = nz;
-        double back = -nz;
+        double front = ny;
+        double back = -ny;
         double sideA = nx;
         double sideB = -nx;
         double best = Math.Max(Math.Max(front, back), Math.Max(sideA, sideB));

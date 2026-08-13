@@ -161,18 +161,27 @@ reader.
   uint16/uint32 indices) and `CollisionRaycast` raycasts the aim ray against
   it; the badge now uses the struck triangle's true outward normal (verified
   against the real Churchill mesh). The remaining gap is per-plate THICKNESS.
-  **Precise blocker (probed 2026-08-13):** the standalone
-  `CollisionMeshes/{nation}-{tank}.scg.dvpl` is ONE merged mesh under a single
-  generic `##name = PolygonGroup` (no per-plate/zone names), so the armor
-  groups cannot be attached to mesh faces from it; the vehicle XML's
+  **Mesh orientation FIXED (2026-08-13):** the `.scg` collision mesh is stored
+  Z-UP (+X right, +Y FORWARD, +Z up — its rear normal is −Y, deck normal +Z)
+  while the decoded world/box model are Y-up; the first mesh raycast cast the
+  ray in Y-up space and misclassified a head-on shot as the deck/back face.
+  `EvaluateAgainstMesh` now Y↔Z-swaps into mesh space before the raycast and
+  classifies the face from the mesh-local normal (front=+Y); the real-install
+  opt-in test pins a head-on Churchill shot to `StruckFace.Front` with
+  effective armor ≥ the 186.7 mm nominal (the sloped glacis thickens it).
+  **Three-part structure (probed 2026-08-13):** the `.scg` is NOT one merged
+  mesh — the header's count (`a=3`) is real: three polygon groups keyed `#id`
+  1/3/5 = hull / turret / gun (the three `hitTester` collision models), each
+  in its own Z-up local space. The parser reads only group 1 (the hull) today,
+  which is correct for the badge's hull-only verdicts; the turret/gun groups
+  are in separate local spaces whose placement (and the per-part
+  hull-vs-turret armor the vehicle XML DOES declare separately) needs the
+  `.sc2` SFV2 scene transforms, not yet parsed. The vehicle XML's
   `primaryArmor` lists the FRONTAL ARC, not a clean face split (the Churchill
   turret's primary `armor_1 armor_3 armor_4` includes `armor_4` = 76, a side
-  plate), so side/rear are not derivable from it either; and the per-part
-  collision models the `hitTester` references
-  (`vehicles/british/GB08_Churchill_I/collision/Turret_01.model`) are packed
-  (the `.sc2` beside the mesh is an SFV2 scene descriptor, not yet parsed).
-  Until one of those is unpacked/parsed, side/rear/turret stay fail-closed
-  Unknown — never a guessed convention.
+  plate), so per-group side/rear THICKNESS still has no face mapping. Until
+  the `.sc2` transforms are parsed, turret/side/rear stay fail-closed Unknown
+  — never a guessed convention.
 - **Blitz has a built-in reticle penetration indicator** (settings toggle).
   The overlay's value-add is the *numeric* readout (effective armor vs pen,
   actual %) and the aim-line-on-nameplate — not just re-deriving the color.

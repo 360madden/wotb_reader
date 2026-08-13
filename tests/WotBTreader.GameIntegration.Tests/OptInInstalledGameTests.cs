@@ -147,6 +147,15 @@ public sealed class OptInInstalledGameTests
 
         Assert.IsNotNull(badge);
         Assert.AreEqual(EnemyEntityId, badge.Value.AimedEntityId);
+        // The head-on aim must strike the FRONT plate of the real mesh. Before
+        // the Z-up orientation fix (2026-08-13) this same ray was cast as "down"
+        // in the Y-up local frame and misclassified the deck as the back face.
+        Assert.AreEqual(StruckFace.Front, badge.Value.Face);
+        // The real glacis is sloped, so effective armor thickens the nominal
+        // 186.7 mm front (thickness / cos(incidence) ≥ thickness). The exact
+        // slope is not pinned, only the monotonic bound.
+        Assert.IsGreaterThanOrEqualTo(186.7, badge.Value.Verdict.EffectiveArmorMm!.Value);
+        Assert.AreEqual(PenetrationBand.NoPen, badge.Value.Verdict.Band);
     }
 
     private const long EnemyEntityId = 42;
