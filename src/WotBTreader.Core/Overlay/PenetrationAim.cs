@@ -5,12 +5,50 @@ namespace WotBTreader.Core.Overlay;
 /// stand-in for the install's per-group armor XML until the plate-slope
 /// <c>.model</c> collision geometry is probed (PN-1's open sub-problem). The
 /// caller supplies front/side/rear from the vehicle definition's armor
-/// groups; side is symmetric (left == right).
+/// groups; side is symmetric (left == right). A face with thickness ≤ 0 is
+/// UNKNOWN armor (not zero protection): <see cref="PenetrationAim"/> rejects
+/// it as <see cref="PenetrationBand.Unknown"/> rather than fabricating a
+/// will-penetrate verdict, so callers may pass 0 for a face whose nominal
+/// thickness is not derivable (the install's armor XML declares the FRONT
+/// via <c>primaryArmor</c> but not the side/rear face mapping).
 /// </summary>
 public readonly record struct TankArmor(
     double FrontMm,
     double SideMm,
     double RearMm);
+
+/// <summary>
+/// Which hull face an aim ray strikes, derived from the tank's facing and
+/// the ray's direction (the four-face box model).
+/// </summary>
+public enum StruckFace
+{
+    /// <summary>No facing evidence or a degenerate ray — the struck face is
+    /// not derivable.</summary>
+    Unknown = 0,
+
+    /// <summary>The tank's forward-facing plate.</summary>
+    Front = 1,
+
+    /// <summary>The tank's rear plate.</summary>
+    Back = 2,
+
+    /// <summary>Either side plate (symmetric).</summary>
+    Side = 3,
+}
+
+/// <summary>
+/// The penetration indicator's renderable result: which tank is aimed at,
+/// which face the aim ray strikes, and the banded verdict with its
+/// diagnostics. The verdict's <see cref="PenetrationVerdict.Band"/> is
+/// <see cref="PenetrationBand.Unknown"/> when the face's armor is unknown or
+/// the geometry is degenerate — the HUD
+/// must not paint a green/red badge on an unknown.
+/// </summary>
+public readonly record struct PenetrationBadge(
+    long AimedEntityId,
+    StruckFace Face,
+    PenetrationVerdict Verdict);
 
 /// <summary>
 /// PN-3 aim resolution: turn the replay camera pose into an aim ray, pick the
@@ -121,43 +159,15 @@ public static class PenetrationAim
     }
 
     /// <summary>
-    /// Scores the penetration chance of an aim ray against one tank, using a
-    /// four-face box: the face whose outward normal most opposes the ray is
-    /// the struck face, and its nominal thickness (front/side/rear) is the
-    /// plate. Returns <see cref="PenetrationBand.Unknown"/> on any invalid
-    /// input (no hull facing, non-finite coordinates, or a ray that does not
-    /// approach any face).
+    /// Determines which hull face an aim ray strikes: the face whose outward
+    /// normal most opposes the ray direction (the four-face box model).
+    /// Returns <see cref="StruckFace.Unknown"/> when the tank has no facing
+    /// evidence, its coordinates are non-finite, or the ray approaches no
+    /// face (degenerate horizontal direction).
     /// </summary>
-    public static PenetrationVerdict EvaluateAgainst(
-        AimRay ray,
-        OverlayTankState tank,
-        TankArmor armor,
-        ShellSpec shell,
-        double margin = 0.1)
+    public static StruckFace SelectStruckFace(AimRay ray, OverlayTankState tank)
     {
-        if (tank.YawRadians is null
-            || !double.IsFinite(tank.X) || !double.IsFinite(tank.Y)
-            || !double.IsFinite(tank.Z)
-            || !double.IsFinite(tank.YawRadians.Value))
-        {
-            return new PenetrationVerdict(
-                PenetrationBand.Unknown, null, null, null, null, Ricochet: false);
-        }
-
-        double yaw = tank.YawRadians.Value;
-        // Facing in the XZ plane (yaw 0 → +Z), matching the packet convention.
-        double fx = Math.Sin(yaw);
-        double fz = Math.Cos(yaw);
-
-        // Four face normals: front, back, and the two symmetric sides.
-        (double Nx, double Nz)[] faces =
-        [
-            (fx, fz),                 // front
-            (-fx, -fz),               // back
-            (fz, -fx),                // side A
-            (-fz, fx),                // side B
-        ];
-
+        (double Nx, double Nz)[] faces = FaceNormals(tank);
         double best = double.NegativeInfinity;
         int bestFace = -1;
         for (int i = 0; i < faces.Length; i++)
@@ -172,7 +182,49 @@ public static class PenetrationAim
 
         if (bestFace < 0 || best <= 0)
         {
-            // The ray does not approach any face (degenerate direction).
+            return StruckFace.Unknown;
+        }
+
+        return bestFace switch
+        {
+            0 => StruckFace.Front,
+            1 => StruckFace.Back,
+            _ => StruckFace.Side,
+        };
+    }
+
+    /// <summary>
+    /// Scores the penetration chance of an aim ray against one tank, using a
+    /// four-face box: the face whose outward normal most opposes the ray is
+    /// the struck face, and its nominal thickness (front/side/rear) is the
+    /// plate. Returns <see cref="PenetrationBand.Unknown"/> on any invalid
+    /// input (no hull facing, non-finite coordinates, a ray that does not
+    /// approach any face, or a struck face whose nominal thickness is
+    /// unknown/zero).
+    /// </summary>
+    public static PenetrationVerdict EvaluateAgainst(
+        AimRay ray,
+        OverlayTankState tank,
+        TankArmor armor,
+        ShellSpec shell,
+        double margin = 0.1)
+    {
+        (double Nx, double Nz)[] faces = FaceNormals(tank);
+        double best = double.NegativeInfinity;
+        int bestFace = -1;
+        for (int i = 0; i < faces.Length; i++)
+        {
+            double approach = -((ray.DirectionX * faces[i].Nx) + (ray.DirectionZ * faces[i].Nz));
+            if (approach > best)
+            {
+                best = approach;
+                bestFace = i;
+            }
+        }
+
+        if (bestFace < 0 || best <= 0)
+        {
+            // No facing evidence or the ray does not approach any face.
             return new PenetrationVerdict(
                 PenetrationBand.Unknown, null, null, null, null, Ricochet: false);
         }
@@ -189,5 +241,80 @@ public static class PenetrationAim
             faces[bestFace].Nx, 0, faces[bestFace].Nz,
             tank.X, tank.Y, tank.Z);
         return ArmorPenetration.Evaluate(ray, plate, shell, margin);
+    }
+
+    /// <summary>
+    /// Resolves the full penetration badge for the current camera aim: build
+    /// the aim ray, pick the nearest aimed tank, evaluate its struck face
+    /// with that tank's armor and the shell, and wrap the verdict in a
+    /// <see cref="PenetrationBadge"/>. Returns null when the camera carries no
+    /// rotation or no tank is aimed at (no badge — never a fabricated one).
+    /// A tank absent from <paramref name="armorByEntity"/> or whose struck
+    /// face is unknown yields a badge with <see cref="PenetrationBand.Unknown"/>
+    /// (or no badge), so the HUD cannot paint a verdict it cannot derive.
+    /// </summary>
+    public static PenetrationBadge? ResolveBadge(
+        OverlayCamera camera,
+        IReadOnlyList<OverlayTankState> tanks,
+        IReadOnlyDictionary<long, TankArmor> armorByEntity,
+        ShellSpec shell,
+        double margin = 0.1)
+    {
+        ArgumentNullException.ThrowIfNull(tanks);
+        ArgumentNullException.ThrowIfNull(armorByEntity);
+
+        AimRay? ray = BuildAimRay(camera);
+        if (ray is null)
+        {
+            return null;
+        }
+
+        long? aimedId = AimedTankId(ray.Value, tanks);
+        if (aimedId is null)
+        {
+            return null;
+        }
+
+        OverlayTankState tank = tanks.First(item => item.EntityId == aimedId.Value);
+        StruckFace face = SelectStruckFace(ray.Value, tank);
+        if (!armorByEntity.TryGetValue(aimedId.Value, out TankArmor armor))
+        {
+            return new PenetrationBadge(
+                aimedId.Value,
+                face,
+                new PenetrationVerdict(
+                    PenetrationBand.Unknown, null, null, null, null, Ricochet: false));
+        }
+
+        PenetrationVerdict verdict = EvaluateAgainst(ray.Value, tank, armor, shell, margin);
+        return new PenetrationBadge(aimedId.Value, face, verdict);
+    }
+
+    /// <summary>
+    /// The four horizontal face normals for a tank's facing: front, back, and
+    /// the two symmetric sides. An empty array (no facing evidence or
+    /// non-finite coordinates) makes the caller fail closed to
+    /// <see cref="StruckFace.Unknown"/>.
+    /// </summary>
+    private static (double Nx, double Nz)[] FaceNormals(OverlayTankState tank)
+    {
+        if (tank.YawRadians is not { } yaw
+            || !double.IsFinite(yaw)
+            || !double.IsFinite(tank.X) || !double.IsFinite(tank.Y)
+            || !double.IsFinite(tank.Z))
+        {
+            return [];
+        }
+
+        // Facing in the XZ plane (yaw 0 → +Z), matching the packet convention.
+        double fx = Math.Sin(yaw);
+        double fz = Math.Cos(yaw);
+        return
+        [
+            (fx, fz),                 // front
+            (-fx, -fz),               // back
+            (fz, -fx),                // side A
+            (-fz, fx),                // side B
+        ];
     }
 }

@@ -118,4 +118,93 @@ public sealed class PenetrationAimTests
 
         Assert.AreEqual(PenetrationBand.Unknown, verdict.Band);
     }
+
+    [TestMethod]
+    public void EvaluateAgainst_UnknownSideArmor_UnknownBand()
+    {
+        // Side armor 0 = unknown face (not zero protection); a side shot must
+        // fail closed to Unknown, never fabricate a will-penetrate verdict.
+        AimRay sideShot = new(100, 0, 0, -1, 0, 0);
+        TankArmor frontOnly = new(FrontMm: 93.4, SideMm: 0, RearMm: 0);
+
+        PenetrationVerdict verdict = PenetrationAim.EvaluateAgainst(
+            sideShot, Tank(1, 0, 0, yaw: 0), frontOnly, new ShellSpec(200, 100));
+
+        Assert.AreEqual(PenetrationBand.Unknown, verdict.Band);
+    }
+
+    [TestMethod]
+    public void SelectStruckFace_FrontRearSide_AreDerivedFromFacing()
+    {
+        Assert.AreEqual(
+            StruckFace.Front,
+            PenetrationAim.SelectStruckFace(new AimRay(0, 0, 100, 0, 0, -1), Tank(1, 0, 0, yaw: 0)));
+        Assert.AreEqual(
+            StruckFace.Back,
+            PenetrationAim.SelectStruckFace(new AimRay(0, 0, -100, 0, 0, 1), Tank(1, 0, 0, yaw: 0)));
+        Assert.AreEqual(
+            StruckFace.Side,
+            PenetrationAim.SelectStruckFace(new AimRay(100, 0, 0, -1, 0, 0), Tank(1, 0, 0, yaw: 0)));
+    }
+
+    [TestMethod]
+    public void SelectStruckFace_NoYaw_Unknown()
+    {
+        Assert.AreEqual(
+            StruckFace.Unknown,
+            PenetrationAim.SelectStruckFace(new AimRay(0, 0, 100, 0, 0, -1), Tank(1, 0, 0, yaw: null)));
+    }
+
+    [TestMethod]
+    public void ResolveBadge_AimedFrontTank_ReturnsFrontBadge()
+    {
+        // Camera at z=+100 facing -Z (yaw pi); tank at origin facing +Z, so
+        // the ray arrives from in front and strikes the front plate.
+        OverlayCamera camera = Camera(yaw: Math.PI, pitch: 0, x: 0, z: 100);
+        OverlayTankState[] tanks = [Tank(1, 0, 0, yaw: 0)];
+        Dictionary<long, TankArmor> armor = new() { [1] = Armor };
+
+        PenetrationBadge? badge = PenetrationAim.ResolveBadge(
+            camera, tanks, armor, new ShellSpec(200, 100));
+
+        Assert.IsNotNull(badge);
+        Assert.AreEqual(1L, badge.Value.AimedEntityId);
+        Assert.AreEqual(StruckFace.Front, badge.Value.Face);
+        Assert.AreEqual(93.4, badge.Value.Verdict.EffectiveArmorMm!.Value, 1e-9);
+        Assert.AreEqual(PenetrationBand.Pen, badge.Value.Verdict.Band);
+    }
+
+    [TestMethod]
+    public void ResolveBadge_NoCameraRotation_Null()
+    {
+        OverlayCamera camera = new(0, 0, -100, null, null, null);
+        OverlayTankState[] tanks = [Tank(1, 0, 0)];
+        Dictionary<long, TankArmor> armor = new() { [1] = Armor };
+
+        Assert.IsNull(PenetrationAim.ResolveBadge(camera, tanks, armor, new ShellSpec(200, 100)));
+    }
+
+    [TestMethod]
+    public void ResolveBadge_NoAimedTank_Null()
+    {
+        OverlayCamera camera = Camera();
+        OverlayTankState[] tanks = [Tank(1, 10, 0)];
+        Dictionary<long, TankArmor> armor = new() { [1] = Armor };
+
+        Assert.IsNull(PenetrationAim.ResolveBadge(camera, tanks, armor, new ShellSpec(200, 100)));
+    }
+
+    [TestMethod]
+    public void ResolveBadge_AimedTankMissingArmor_UnknownBand()
+    {
+        OverlayCamera camera = Camera();
+        OverlayTankState[] tanks = [Tank(1, 0, 0)];
+        Dictionary<long, TankArmor> armor = new();
+
+        PenetrationBadge? badge = PenetrationAim.ResolveBadge(
+            camera, tanks, armor, new ShellSpec(200, 100));
+
+        Assert.IsNotNull(badge);
+        Assert.AreEqual(PenetrationBand.Unknown, badge.Value.Verdict.Band);
+    }
 }
