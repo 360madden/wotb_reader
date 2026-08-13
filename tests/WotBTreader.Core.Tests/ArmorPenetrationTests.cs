@@ -170,4 +170,65 @@ public sealed class ArmorPenetrationTests
         Assert.IsFalse(ArmorPenetration.Ricochets(
             70.0 * Math.PI / 180.0, caliberMm: 100, thickness: 10, ricochetDegrees: 90));
     }
+
+    [TestMethod]
+    public void Normalization_DigsIn_AvoidsRicochet()
+    {
+        // 70° incidence with 5° normalization => 65° effective incidence:
+        // under the 70° ricochet threshold, so a high-pen shell penetrates.
+        PenetrationVerdict verdict = ArmorPenetration.Evaluate(
+            RayFromZ(-100),
+            TiltedPlate(thickness: 10, phi: 70.0 * Math.PI / 180.0),
+            new ShellSpec(
+                Penetration0Mm: 100,
+                CaliberMm: 100,
+                DropPerMeterMm: 0,
+                RicochetDegrees: 70,
+                NormalizationDegrees: 5));
+
+        Assert.IsFalse(verdict.Ricochet);
+        Assert.AreEqual(PenetrationBand.Pen, verdict.Band);
+    }
+
+    [TestMethod]
+    public void Normalization_ReducesEffectiveArmor()
+    {
+        // 20° incidence, 5° normalization => effective = 100 / cos(15°).
+        double expected = 100.0 / Math.Cos(15.0 * Math.PI / 180.0);
+
+        PenetrationVerdict verdict = ArmorPenetration.Evaluate(
+            RayFromZ(-100),
+            TiltedPlate(thickness: 100, phi: 20.0 * Math.PI / 180.0),
+            new ShellSpec(100, 100, 0, 70, NormalizationDegrees: 5));
+
+        Assert.AreEqual(expected, verdict.EffectiveArmorMm!.Value, 1e-9);
+    }
+
+    [TestMethod]
+    public void FromPiercingPower_MapsTwoPointsToLinearDrop()
+    {
+        // piercingPower "25 19" over 350 m => drop = 6/350 per meter.
+        ShellSpec shell = ShellSpec.FromPiercingPower(
+            piercingPowerNearMm: 25, piercingPowerFarMm: 19, maxDistance: 350, caliberMm: 15);
+
+        Assert.AreEqual(25.0, shell.Penetration0Mm, 1e-9);
+        Assert.AreEqual((25.0 - 19.0) / 350.0, shell.DropPerMeterMm, 1e-9);
+
+        // At 175 m (mid-range) penetration is the midpoint of the two points.
+        Assert.AreEqual(
+            22.0,
+            ArmorPenetration.PenetrationAtRange(
+                shell.Penetration0Mm, distance: 175, shell.DropPerMeterMm)!.Value,
+            1e-9);
+    }
+
+    [TestMethod]
+    public void FromPiercingPower_InvalidMaxDistance_FailClosed()
+    {
+        ShellSpec shell = ShellSpec.FromPiercingPower(25, 19, maxDistance: 0, caliberMm: 15);
+
+        Assert.AreEqual(
+            PenetrationBand.Unknown,
+            ArmorPenetration.Evaluate(RayFromZ(-100), TiltedPlate(100, 0), shell).Band);
+    }
 }

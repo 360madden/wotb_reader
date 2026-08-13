@@ -31,19 +31,51 @@ public readonly record struct ArmorPlate(
 
 /// <summary>
 /// A shell's penetration profile: base penetration, caliber, linear
-/// penetration drop with distance, and the auto-ricochet angle. Ricochet and
-/// drop follow the WoT Blitz mechanics the PN design records — AP/APCR shells
-/// auto-bounce at an incidence angle ≥ 70° from the normal (suppressed by the
-/// 3× overmatch rule), and penetration falls off with range. The ±25%
-/// penetration randomization the live game applies is NOT modeled here — it
-/// is a validation target, never assumed (see
+/// penetration drop with distance, the auto-ricochet angle, and the shell
+/// normalization (degrees the shell "digs in", reducing the effective
+/// incidence). Ricochet and drop follow the WoT Blitz mechanics the PN design
+/// records — AP/APCR shells auto-bounce at an incidence angle ≥ 70° from the
+/// normal (suppressed by the 3× overmatch rule), penetration falls off with
+/// range, and normalization is applied before both. The ±25% penetration
+/// randomization the live game applies is NOT modeled here — it is a
+/// validation target, never assumed (see
 /// <c>docs/operations/pen-chance-design.md</c>).
 /// </summary>
 public readonly record struct ShellSpec(
     double Penetration0Mm,
     double CaliberMm,
     double DropPerMeterMm = 0.0,
-    double RicochetDegrees = 70.0);
+    double RicochetDegrees = 70.0,
+    double NormalizationDegrees = 0.0)
+{
+    /// <summary>
+    /// Builds a profile from the install's <c>piercingPower</c> two-point
+    /// range pair (penetration at 0 m and at <paramref name="maxDistance"/>),
+    /// matching <c>components/guns.xml.dvpl</c>; the linear drop is derived
+    /// from the two points. Fail-closed: an invalid max distance yields a
+    /// profile with zero penetration, which
+    /// <see cref="ArmorPenetration.Evaluate"/> rejects as Unknown.
+    /// </summary>
+    public static ShellSpec FromPiercingPower(
+        double piercingPowerNearMm,
+        double piercingPowerFarMm,
+        double maxDistance,
+        double caliberMm,
+        double ricochetDegrees = 70.0,
+        double normalizationDegrees = 0.0)
+    {
+        if (!double.IsFinite(maxDistance) || maxDistance <= 0
+            || !double.IsFinite(piercingPowerNearMm)
+            || !double.IsFinite(piercingPowerFarMm))
+        {
+            return new ShellSpec(0.0, caliberMm, 0.0, ricochetDegrees, normalizationDegrees);
+        }
+
+        double drop = Math.Max(0.0, (piercingPowerNearMm - piercingPowerFarMm) / maxDistance);
+        return new ShellSpec(
+            piercingPowerNearMm, caliberMm, drop, ricochetDegrees, normalizationDegrees);
+    }
+}
 
 /// <summary>
 /// The deterministic penetration verdict for one aim ray against one plate.
@@ -95,6 +127,9 @@ public readonly record struct PenetrationVerdict(
 ///  - Ricochet: AP/APCR shells auto-bounce when the incidence is ≥ the
 ///    shell's ricochet angle (default 70°), UNLESS the caliber overmatches
 ///    (caliber &gt; 3 × nominal plate thickness).
+///  - Normalization: the shell's normalization angle (per-shell, from the
+///    install data) reduces the incidence before the ricochet and
+///    effective-armor checks — a shell that "digs in" can avoid a ricochet.
 ///  - Penetration drops linearly with distance; it never goes below zero.
 ///  - The band is deterministic: Pen when penetration &gt; effective × (1 +
 ///    margin), NoPen when penetration &lt; effective × (1 − margin), Marginal
@@ -252,7 +287,8 @@ public static class ArmorPenetration
             || plate.Thickness <= 0
             || shell.Penetration0Mm <= 0 || shell.CaliberMm <= 0
             || shell.DropPerMeterMm < 0
-            || shell.RicochetDegrees <= 0 || shell.RicochetDegrees >= 90)
+            || shell.RicochetDegrees <= 0 || shell.RicochetDegrees >= 90
+            || shell.NormalizationDegrees < 0 || shell.NormalizationDegrees >= 90)
         {
             return Unknown();
         }
@@ -264,13 +300,16 @@ public static class ArmorPenetration
             return Unknown();
         }
 
+        double normalizedIncidence = Math.Max(
+            0.0, incidence.Value - shell.NormalizationDegrees * Math.PI / 180.0);
+
         bool ricochet = Ricochets(
-            incidence.Value,
+            normalizedIncidence,
             shell.CaliberMm,
             plate.Thickness,
             shell.RicochetDegrees);
 
-        double? effective = EffectiveArmor(plate.Thickness, incidence.Value);
+        double? effective = EffectiveArmor(plate.Thickness, normalizedIncidence);
         double? penAtRange = PenetrationAtRange(
             shell.Penetration0Mm, distance.Value, shell.DropPerMeterMm);
         if (effective is null || penAtRange is null)
@@ -322,7 +361,8 @@ public static class ArmorPenetration
     private static bool Finite(ShellSpec shell) =>
         double.IsFinite(shell.Penetration0Mm) && double.IsFinite(shell.CaliberMm)
         && double.IsFinite(shell.DropPerMeterMm)
-        && double.IsFinite(shell.RicochetDegrees);
+        && double.IsFinite(shell.RicochetDegrees)
+        && double.IsFinite(shell.NormalizationDegrees);
 
     private static PenetrationVerdict Unknown() =>
         new(PenetrationBand.Unknown, null, null, null, null, Ricochet: false);
