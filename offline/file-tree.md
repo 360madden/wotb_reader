@@ -291,6 +291,7 @@ docs/operations/handoffs/2026-08-12-item7-branch-ab-own-marker.md
 docs/operations/handoffs/2026-08-12-replay-completion-detection-and-l3-damage-dealt.md
 docs/operations/handoffs/2026-08-13-pen-chance-hud-pn3-shipped.md
 docs/operations/handoffs/2026-08-13-pen-collision-mesh-raycast-shipped.md
+docs/operations/handoffs/2026-08-13-pen-live-badge-and-aim-scoping.md
 docs/operations/handoffs/2026-08-13-pen-shell-selector-scoring-harness-and-hud-polish.md
 docs/operations/handoffs/README.md
 docs/operations/item7-branch-b-step2-consistent-double-read-proposal.md
