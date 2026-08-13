@@ -44,7 +44,10 @@ public static class LiveFrameProjector
         double verticalFovRadians,
         double viewportWidth,
         double viewportHeight,
-        IReadOnlyDictionary<long, Participant>? participants = null)
+        IReadOnlyDictionary<long, Participant>? participants = null,
+        PenetrationContext? penetration = null,
+        long? ownEntityId = null,
+        string? shellName = null)
     {
         ArgumentNullException.ThrowIfNull(frame);
 
@@ -61,6 +64,47 @@ public static class LiveFrameProjector
             .OrderBy(tank => tank.DistanceMeters)
             .ToList();
 
+        // Pen badge: the live camera aim (the CAM-013 chase pose) scored
+        // against the aimed tank's nominal armor with the selected viewer
+        // shell (default the stock shell). Same fail-closed contract as the
+        // replay path: no penetration data or no aimed tank leaves the badge
+        // null — never a fabricated verdict.
+        PenetrationBadge? penBadge = null;
+        IReadOnlyList<ShellOption> penShells = [];
+        string? penShell = null;
+        if (penetration is not null)
+        {
+            penShells = penetration.AvailableShells;
+            (ShellSpec viewerShell, string? activeShell) = penetration.SelectShell(shellName);
+            penShell = activeShell;
+
+            IReadOnlyList<OverlayTankState> aimTargets = frame.Tanks
+                .Where(IsProjectable)
+                .Where(tank => ownEntityId is null || tank.EntityId != ownEntityId.Value)
+                .Select(tank => new OverlayTankState(
+                    tank.EntityId,
+                    tank.X!.Value,
+                    tank.Y!.Value,
+                    tank.Z!.Value,
+                    tank.YawRadians is float yaw && float.IsFinite(yaw) ? (double?)yaw : null,
+                    HpFraction: 0,
+                    Alive: true,
+                    TeamNumber: null,
+                    PlayerName: null,
+                    ClanTag: null,
+                    TankName: null,
+                    TankClass: null,
+                    DistanceMeters: 0))
+                .ToList();
+
+            penBadge = PenetrationAim.ResolveBadge(
+                camera,
+                aimTargets,
+                penetration.ArmorByEntity,
+                viewerShell,
+                meshesByEntity: penetration.MeshesByEntity);
+        }
+
         return new OverlayFrameProjection(
             TimeSpan.FromSeconds(frame.ReplayTimeSeconds ?? 0.0),
             camera.X,
@@ -71,7 +115,10 @@ public static class LiveFrameProjector
             tanks,
             Beacons: [],
             Pips: [],
-            Kills: []);
+            Kills: [],
+            PenBadge: penBadge,
+            PenShells: penShells,
+            PenShell: penShell);
     }
 
     private static OverlayCamera BuildCamera(CameraPoseReadResult? pose)

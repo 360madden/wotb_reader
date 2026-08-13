@@ -279,14 +279,17 @@ internal static class ReadApiEndpoints
         HttpContext context,
         IGameMemoryScanner scanner,
         ISessionQueryRepository sessions,
+        IOverlayPenetrationData penetrationData,
         Guid? sessionId,
         double? fov,
         double? width,
         double? height,
+        string? shell,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(scanner);
         ArgumentNullException.ThrowIfNull(sessions);
+        ArgumentNullException.ThrowIfNull(penetrationData);
 
         double resolvedFov = fov ?? 90.0;
         if (!double.IsFinite(resolvedFov) || resolvedFov <= 0 || resolvedFov >= 180)
@@ -323,6 +326,7 @@ internal static class ReadApiEndpoints
         // consumption.
         IReadOnlyDictionary<long, Participant>? participants = null;
         long? ownEntityId = null;
+        PenetrationContext? penetration = null;
         if (sessionId is { } requestedSession)
         {
             OperationResult<ReplayDecodeProjection> rosterResult =
@@ -335,6 +339,14 @@ internal static class ReadApiEndpoints
                     .Where(participant => participant.EntityId is not null)
                     .GroupBy(participant => participant.EntityId!.Value)
                     .ToDictionary(group => group.Key, group => group.First());
+
+                // Pen badge inputs (fail-closed): resolve the install armor /
+                // shell / mesh for the decoded roster so the live frame can
+                // score the camera aim. A null context (install absent or an
+                // entity unresolvable) simply omits the badge.
+                penetration = await penetrationData
+                    .ResolveAsync(rosterResult.Value, cancellationToken)
+                    .ConfigureAwait(false);
 
                 // Own-nameplate refinement (name-join design step 4): the
                 // decoded session's viewpoint participant identifies the
@@ -388,7 +400,10 @@ internal static class ReadApiEndpoints
             resolvedFov * Math.PI / 180.0,
             resolvedWidth,
             resolvedHeight,
-            participants);
+            participants,
+            penetration,
+            ownEntityId,
+            shell);
         return Results.Ok(ToOverlayFrameResponse(projection, ownEntityId));
     }
 

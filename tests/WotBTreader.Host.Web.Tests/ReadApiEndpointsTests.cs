@@ -407,11 +407,13 @@ public sealed class ReadApiEndpointsTests
             new DefaultHttpContext(),
             scanner,
             sessions: new FakeSessionQueries([], projection: null),
+            penetrationData: FakePenetrationData.None,
             sessionId: null,
             fov: 90,
             width: 1920,
             height: 1080,
-            TestContext.CancellationToken);
+            shell: null,
+            cancellationToken: TestContext.CancellationToken);
 
         OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
         Assert.AreEqual(150.5, frame.ReplayTimeSeconds, 1e-9);
@@ -490,11 +492,13 @@ public sealed class ReadApiEndpointsTests
             new DefaultHttpContext(),
             scanner,
             sessions: new FakeSessionQueries([], projection: null),
+            penetrationData: FakePenetrationData.None,
             sessionId: null,
             fov: 90,
             width: 1920,
             height: 1080,
-            TestContext.CancellationToken);
+            shell: null,
+            cancellationToken: TestContext.CancellationToken);
 
         OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
         OverlayTankResponse tank = frame.Tanks.Single();
@@ -553,11 +557,13 @@ public sealed class ReadApiEndpointsTests
             new DefaultHttpContext(),
             scanner,
             sessions: new FakeSessionQueries([], projection: roster),
+            penetrationData: FakePenetrationData.None,
             sessionId: Guid.NewGuid(),
             fov: 90,
             width: 1920,
             height: 1080,
-            TestContext.CancellationToken);
+            shell: null,
+            cancellationToken: TestContext.CancellationToken);
 
         OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
         OverlayTankResponse tank = frame.Tanks.Single();
@@ -591,11 +597,13 @@ public sealed class ReadApiEndpointsTests
             new DefaultHttpContext(),
             scanner,
             sessions: new FakeSessionQueries([], projection: null),
+            penetrationData: FakePenetrationData.None,
             sessionId: null,
             fov: 90,
             width: 1920,
             height: 1080,
-            TestContext.CancellationToken);
+            shell: null,
+            cancellationToken: TestContext.CancellationToken);
 
         OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
         Assert.AreEqual(150.5, frame.ReplayTimeSeconds, 1e-9);
@@ -687,11 +695,13 @@ public sealed class ReadApiEndpointsTests
             new DefaultHttpContext(),
             scanner,
             sessions: new FakeSessionQueries([], projection: roster),
+            penetrationData: FakePenetrationData.None,
             sessionId: sessionGuid,
             fov: 90,
             width: 1920,
             height: 1080,
-            TestContext.CancellationToken);
+            shell: null,
+            cancellationToken: TestContext.CancellationToken);
 
         OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
         Assert.AreEqual(100, frame.OwnEntityId);
@@ -706,6 +716,122 @@ public sealed class ReadApiEndpointsTests
         Assert.HasCount(2, frame.Tanks);
         Assert.AreEqual("pilot", frame.Tanks.Single(t => t.EntityId == 100).PlayerName);
         Assert.AreEqual("wingman", frame.Tanks.Single(t => t.EntityId == 101).PlayerName);
+    }
+
+    [TestMethod]
+    public async Task LiveFrame_ResolvesPenBadge_WhenPenetrationContextAvailable()
+    {
+        // The live camera aim (CAM-013 chase pose) is scored against the
+        // aimed tank's armor when penetration data resolves — the SAME badge
+        // the replay path renders, fail-closed to null without the data.
+        CameraScannerStub scanner = new(
+            OperationResult.Failure<CameraPoseReadResult>(
+                new ApplicationError("unused", "Unused.")),
+            OperationResult.Success(new LiveFrameReadResult(
+                CompletedAtUtc: DateTimeOffset.UtcNow,
+                GameVersion: "11.19.0.10",
+                Type10EntityPositionStatus.Resolved,
+                FailureStage: null,
+                ReplayTimeSeconds: 150.5,
+                SameDecodedClockProven: true,
+                Camera: new CameraPoseReadResult(
+                    CompletedAtUtc: DateTimeOffset.UtcNow,
+                    GameVersion: "11.19.0.10",
+                    Status: CameraPoseStatus.Resolved,
+                    FailureStage: null,
+                    AvatarAddress: 0,
+                    CameraAddress: 0,
+                    CameraStateAddress: 0,
+                    X: 0,
+                    Y: 0,
+                    Z: 0,
+                    YawRadians: 0,
+                    PitchRadians: 0,
+                    Basis: [1, 0, 0, 0, 0, -1, 0, 1, 0],
+                    AvatarIdentityVerified: true,
+                    CameraIdentityVerified: true,
+                    CameraStateIdentityVerified: true,
+                    ConsistentDoubleRead: false,
+                    ModuleRooted: true),
+                Tanks:
+                [
+                    new LiveFrameTankState(
+                        101,
+                        Type10EntityPositionStatus.Resolved,
+                        X: 0,
+                        Y: 0,
+                        Z: 100,
+                        YawRadians: MathF.PI,
+                        HpCurrent: null,
+                        HpMax: null,
+                        Alive: null,
+                        FailureStage: null,
+                        ModuleRooted: true),
+                ],
+                RosterCandidatesSeen: 14,
+                RosterFilteredOut: 2)));
+
+        Participant viewpoint = ParticipantFixture(); // EntityId 100
+        BattleSession session = new(
+            BattleSessionId.New(),
+            DecodeRunId.New(),
+            GameVersion: "11.19.0",
+            ArenaIdentity: null,
+            MapId: "11",
+            MapName: "Oasis Palms",
+            BattleTimeUtc: DateTimeOffset.UnixEpoch,
+            Duration: TimeSpan.FromSeconds(200),
+            ViewpointParticipantId: viewpoint.Id,
+            SchemaVersion: "1");
+        ReplayDecodeProjection roster = new(
+            DecodeRunFixture(),
+            Session: session,
+            Participants:
+            [
+                viewpoint,
+                ParticipantFixture() with
+                {
+                    EntityId = 101,
+                    PlayerName = "target",
+                    TeamNumber = 2,
+                },
+            ],
+            Positions: [],
+            Events: [],
+            RawRecords: [],
+            Warnings: []);
+
+        ShellSpec shell = new(200, 100);
+        PenetrationContext context = new(
+            ArmorByEntity: new Dictionary<long, TankArmor>
+            {
+                [101] = new TankArmor(FrontMm: 100, SideMm: 0, RearMm: 0),
+            },
+            ViewerShell: shell,
+            Shells:
+            [
+                new ShellOption("ap_shell", ShellKind.ArmorPiercing, shell),
+            ]);
+
+        Guid sessionGuid = Guid.NewGuid();
+        IResult result = await ReadApiEndpoints.GetLiveFrameAsync(
+            new DefaultHttpContext(),
+            scanner,
+            sessions: new FakeSessionQueries([], projection: roster),
+            penetrationData: new FakePenetrationData(context),
+            sessionId: sessionGuid,
+            fov: 90,
+            width: 1920,
+            height: 1080,
+            shell: null,
+            cancellationToken: TestContext.CancellationToken);
+
+        OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
+        Assert.IsNotNull(frame.PenBadge);
+        Assert.AreEqual(101, frame.PenBadge!.AimedEntityId);
+        Assert.HasCount(1, frame.PenShells);
+        Assert.AreEqual("ap_shell", frame.PenShells[0].Name);
+        Assert.AreEqual("ap_shell", frame.PenShell);
     }
 
     [TestMethod]
@@ -746,11 +872,13 @@ public sealed class ReadApiEndpointsTests
             new DefaultHttpContext(),
             scanner,
             sessions: new FakeSessionQueries([], projection: null),
+            penetrationData: FakePenetrationData.None,
             sessionId: Guid.NewGuid(),
             fov: 90,
             width: 1920,
             height: 1080,
-            TestContext.CancellationToken);
+            shell: null,
+            cancellationToken: TestContext.CancellationToken);
 
         OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
         OverlayTankResponse tank = frame.Tanks.Single();
@@ -783,11 +911,13 @@ public sealed class ReadApiEndpointsTests
             new DefaultHttpContext(),
             scanner,
             sessions: new FakeSessionQueries([], projection: null),
+            penetrationData: FakePenetrationData.None,
             sessionId: null,
             fov: 90,
             width: 1920,
             height: 1080,
-            TestContext.CancellationToken);
+            shell: null,
+            cancellationToken: TestContext.CancellationToken);
 
         Assert.AreEqual(StatusCodes.Status409Conflict, StatusOf(result));
         Assert.AreEqual(1, scanner.LiveFrameCallCount);
@@ -806,11 +936,13 @@ public sealed class ReadApiEndpointsTests
             new DefaultHttpContext(),
             scanner,
             sessions: new FakeSessionQueries([], projection: null),
+            penetrationData: FakePenetrationData.None,
             sessionId: null,
             fov: 90,
             width: 1920,
             height: 1080,
-            TestContext.CancellationToken);
+            shell: null,
+            cancellationToken: TestContext.CancellationToken);
 
         Assert.AreEqual(StatusCodes.Status503ServiceUnavailable, StatusOf(result));
     }
@@ -826,11 +958,13 @@ public sealed class ReadApiEndpointsTests
             new DefaultHttpContext(),
             scanner,
             sessions: new FakeSessionQueries([], projection: null),
+            penetrationData: FakePenetrationData.None,
             sessionId: null,
             fov: 0,
             width: 1920,
             height: 1080,
-            TestContext.CancellationToken);
+            shell: null,
+            cancellationToken: TestContext.CancellationToken);
 
         Assert.AreEqual(StatusCodes.Status400BadRequest, StatusOf(result));
         Assert.AreEqual(0, scanner.LiveFrameCallCount);
@@ -1354,6 +1488,17 @@ public sealed class ReadApiEndpointsTests
             WotBTreader.Application.Game.InstructionSnapshotRequest request,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
+    }
+
+    private sealed class FakePenetrationData(PenetrationContext? context = null)
+        : IOverlayPenetrationData
+    {
+        public static FakePenetrationData None { get; } = new(null);
+
+        public ValueTask<PenetrationContext?> ResolveAsync(
+            ReplayDecodeProjection projection,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult(context);
     }
 
     private sealed class FakeOverlayFrames(

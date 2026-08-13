@@ -115,6 +115,8 @@ public sealed class TreaderApiClient : IDisposable
     /// <param name="verticalFovDegrees">Vertical field of view (default 90).</param>
     /// <param name="viewportWidth">Viewport width in pixels (default 1920).</param>
     /// <param name="viewportHeight">Viewport height in pixels (default 1080).</param>
+    /// <param name="shell">Optional viewer shell name that re-scores the
+    /// pen badge (default the stock shell).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The projected live frame, or null on a non-success response.</returns>
     public async Task<OverlayFrameResponse?> GetLiveFrameAsync(
@@ -122,6 +124,7 @@ public sealed class TreaderApiClient : IDisposable
         double verticalFovDegrees = 90.0,
         double viewportWidth = 1920.0,
         double viewportHeight = 1080.0,
+        string? shell = null,
         CancellationToken cancellationToken = default)
     {
         string query = $"?fov={verticalFovDegrees.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}"
@@ -130,6 +133,11 @@ public sealed class TreaderApiClient : IDisposable
         if (sessionId is { } id)
         {
             query += $"&sessionId={id:D}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(shell))
+        {
+            query += $"&shell={Uri.EscapeDataString(shell)}";
         }
 
         using HttpResponseMessage response = await _httpClient.GetAsync(

@@ -22,6 +22,27 @@ public sealed record PenetrationContext(
     public IReadOnlyList<ShellOption> AvailableShells => Shells ?? [];
 
     /// <summary>
+    /// Selects the shell to score the pen badge with: the option named by
+    /// <paramref name="requestedName"/> when present, else the stock shell
+    /// (the first option). Returns the spec plus its name, or
+    /// <see cref="ViewerShell"/> with a null name when no options exist.
+    /// </summary>
+    public (ShellSpec Spec, string? Name) SelectShell(string? requestedName)
+    {
+        foreach (ShellOption option in AvailableShells)
+        {
+            if (string.Equals(option.Name, requestedName, StringComparison.Ordinal))
+            {
+                return (option.Spec, option.Name);
+            }
+        }
+
+        return AvailableShells.Count == 0
+            ? (ViewerShell, null)
+            : (AvailableShells[0].Spec, AvailableShells[0].Name);
+    }
+
+    /// <summary>
     /// Derives the nominal <see cref="TankArmor"/> from a parsed vehicle armor
     /// profile. The FRONT face is the thickest group named by
     /// <c>primaryArmor</c> (the declared frontal plate family); the turret

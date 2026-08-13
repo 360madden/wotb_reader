@@ -630,6 +630,7 @@ public class MainViewModel : INotifyPropertyChanged
                     _hudFovDegrees,
                     viewportWidth,
                     viewportHeight,
+                    _selectedShell,
                     cts.Token).ConfigureAwait(true)
                 : await client.GetOverlayFrameAsync(
                     session!.BattleSessionId,

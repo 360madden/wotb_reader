@@ -251,8 +251,7 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
         if (penetration is not null)
         {
             penShells = penetration.AvailableShells;
-            (ShellSpec viewerShell, string? activeShell) = SelectShell(
-                penetration.AvailableShells, penetration.ViewerShell, shellName);
+            (ShellSpec viewerShell, string? activeShell) = penetration.SelectShell(shellName);
             penShell = activeShell;
 
             long? ownEntityId = projection.Session?.ViewpointParticipantId is { } viewpointId
@@ -272,33 +271,6 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
 
         return new OverlayFrame(
             replayTime, camera, tanks, pips, kills, penBadge, penShells, penShell);
-    }
-
-    /// <summary>
-    /// Selects the viewer shell to score the badge with: the shell named by
-    /// <paramref name="requestedName"/> when present, else the stock shell
-    /// (the first option). Returns the shell spec and its name, or the
-    /// caller's <paramref name="defaultShell"/> and null when no options exist.
-    /// </summary>
-    private static (ShellSpec Spec, string? Name) SelectShell(
-        IReadOnlyList<ShellOption> shells,
-        ShellSpec defaultShell,
-        string? requestedName)
-    {
-        if (shells.Count == 0)
-        {
-            return (defaultShell, null);
-        }
-
-        foreach (ShellOption option in shells)
-        {
-            if (string.Equals(option.Name, requestedName, StringComparison.Ordinal))
-            {
-                return (option.Spec, option.Name);
-            }
-        }
-
-        return (shells[0].Spec, shells[0].Name);
     }
 
     /// <summary>

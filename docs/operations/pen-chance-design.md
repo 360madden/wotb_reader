@@ -1,6 +1,6 @@
 # PN — Armor penetration chance HUD (design)
 
-**Status: IMPLEMENTED (offline) — replay-first badge ships; per-part armor + mesh raycast + `.sc2` parser landed; live validation (PN-4) is the remaining proof.**
+**Status: IMPLEMENTED — the badge renders in BOTH replay and live frames (live aim = the CAM-013 chase-camera pose); per-part armor + mesh raycast + `.sc2` parser landed; live validation (PN-4) is the remaining proof.**
 **Date:** 2026-08-13
 **Roadmap:** Phase 6 (`docs/operations/product-roadmap.md`)
 
@@ -16,7 +16,11 @@ The feature is **replay-first by design**: in playback the camera drives the
 viewed tank's turret (the T1 premise, `t1-turret-traversal-design.md`), and
 the memory camera pose is already live-verified (CAM-013), so the replay
 mode needs **no new memory discovery** — camera yaw/pitch *is* the aim line.
-Live mode is a later, policy-gated step (T1 + X1).
+Live mode renders the SAME badge now (2026-08-13): the live frame scores the
+CAM-013 chase-camera pose (the chase camera aims at the turret-level aim
+point ~1.9 m above the hull center), so no T1 turret/gun discovery is needed
+for the badge to render — T1 remains the validation lane for the exact gun
+lock-on.
 
 ## Why this repo can build it (and no mod can)
 
@@ -36,7 +40,7 @@ methodology the whole repo runs on.
 
 | Input | Status | Notes |
 |---|---|---|
-| **Aim line** (origin + direction) | ✅ replay, ⏳ live | Replay (in-game playback): camera pose CAM-013 (posA `+0x38` yz-swapped, yaw cos/sin `+0x50/+0x54`, pitch `+0x58`, basis `+0x80..0xA8`; aim point ~1.9 m above hull center). Live: T1 turret/gun discovery. **OFFLINE decode**: the viewpoint tank's HULL facing (type-10 yaw) only — no turret/aim rotation exists in the replay stream (`offline/replay-format.md`), so the offline aim is the hull direction, not the gun |
+| **Aim line** (origin + direction) | ✅ replay + live | Replay (in-game playback): camera pose CAM-013 (posA `+0x38` yz-swapped, yaw cos/sin `+0x50/+0x54`, pitch `+0x58`, basis `+0x80..0xA8`; aim point ~1.9 m above hull center). Live: the same CAM-013 chase-camera pose (the chase camera aims at the turret-level aim point) — wired 2026-08-13, no T1 discovery needed to render the badge. **OFFLINE decode**: the viewpoint tank's HULL facing (type-10 yaw) only — no turret/aim rotation exists in the replay stream (`offline/replay-format.md`), so the offline aim is the hull direction, not the gun |
 | **Target state** (position, hull yaw, identity, tank model) | ✅ | Position + yaw `+0x30` verified chains; identity via roster join; tank model id decoded |
 | **Aim point on target** | build (PN-2) | Raycast the aim ray against the target's 3D hull (dimensions from static data) |
 | **Armor model + hull geometry per tank** | ✅ **PN-1 PARSED (2026-08-13)** | Vehicle XML (`Data/XML/item_defs/vehicles/{nation}/{tank}.xml.dvpl`) carries per-group hull + turret `<armor>` (e.g. Churchill I hull `armor_1..16` 93.4→16.7 mm, `primaryArmor`, turret 102→30 mm). Plate SLOPE/normal is in the collision geometry at `Data/3d/Tanks/CollisionMeshes/{nation}-{tank}.scg.dvpl` (SCPG `PolygonGroup`, DAVA KeyedArchive binary) — **PARSED by `CollisionMeshParser.ParseAll`** (three groups: hull/turret/gun) and the `.sc2.dvpl` SFV2 scene descriptor is **PARSED by `SceneFileParser`** |
@@ -229,13 +233,13 @@ armor is a better approximation than hull-only, never exact offline.
 | **PN-2** | Pen math module: raycast, incidence, effective armor, ricochet/overmatch, pen-at-range, banded verdict — pure, unit-tested, synthetic fixtures. **DONE 2026-08-13** (`Core/Overlay/ArmorPenetration.cs`, 18 tests). Both probe findings are MODELED and wired: `normalizationAngle` → `ShellSpec.NormalizationDegrees` (applied AFTER the raw-angle ricochet check, amplified by the two-caliber rule) and `piercingPower`'s 2-point range pair → `ShellSpec.FromPiercingPower` (pen0 + linear drop over `maxDistance`). **Mechanics corrected 2026-08-13** against the official support article: ricochet on the RAW angle (normalization never prevents a bounce) and penetration RNG is ±5% (not ±25%) | Offline |
 | **PN-3** | Replay-mode HUD: aim = camera pose (verified); pen badge (colored + numeric) on the aimed enemy's nameplate. **DONE 2026-08-13** — `PenetrationBadge`/`StruckFace`/`PenetrationAim.ResolveBadge` (Core), `IOverlayPenetrationData` + `PenetrationContext` (Application), `PenetrationDataService` (GameIntegration, reads the install armor/shell/gun + collision-mesh data), badge threaded through the frame → projection → response, and rendered by the WPF HUD (green/yellow/red + numeric, struck face FRONT/SIDE/REAR shown, anchored to the aimed tank's nameplate with a reticle fallback). **Per-part armor landed 2026-08-13:** `CollisionMeshParser.ParseAll` + `SceneFileParser` read all three `.scg` groups (hull/turret/gun, identity transforms → one shared space) and `EvaluateAgainstMesh` raycasts them as a union, scoring turret/gun hits against the turret's frontal `primaryArmor`. **Shell selector landed 2026-08-13:** the badge offers a MANUAL shell choice — `PenetrationContext` carries every shot of the viewer's stock gun (`ShellOption` name+kind+spec), the frame scores with the `?shell=`-selected shell, the response surfaces `PenShells`/`PenShell`, and the overlay hotkey <c>Q</c> or the sidebar ComboBox selects AP/APCR/HE/HEAT (short label on the badge). **Shell kind threaded 2026-08-13:** `ShellSpec.Kind` excludes HEAT from the 3-caliber overmatch rule. Honest limits: nominal thickness per part (hull front/side/rear + turret front; side/rear of the turret/gun = 0 → Unknown, never guessed), the loaded shell is not decodable (the selector covers the stock gun's ammo, not the in-battle selection), thickness still nominal (the mesh surface NORMAL drives the incidence angle — the true plate normal; per-face thickness mapping is the remaining gap) | Offline, no launch |
 | **PN-4** | Validation loop: score the model vs decoded shot outcomes (geometry-first, then full); report hit-rate + per-shot margin | Offline, this is the proof |
-| **PN-5** | Live mode: T1 turret/gun aim + the same module, behind the X1 policy gate | Live-gated |
+| **PN-5** | Live mode: the badge already renders from the CAM-013 chase-camera aim (wired 2026-08-13); T1 turret/gun aim remains for validating the exact gun lock-on | Live-gated |
 
 ## Dependencies
 
 - ✅ Replay aim line (camera pose) — done (CAM-013).
 - ✅ Target state — done (verified chains + join).
-- ⏳ T1 turret discovery — required only for PN-5 (live).
+- ⏳ T1 turret discovery — the live badge now renders from the CAM-013 chase-camera aim; T1 remains for validating the exact gun lock-on (PN-5).
 - ✅ PN-1 static data — PROBED: present + readable (the long pole is now the plate-slope `.model` geometry).
 - ⛔ Loaded-shell resolution — see Open questions.
 
