@@ -223,6 +223,47 @@ public sealed class ArmorPenetrationTests
     }
 
     [TestMethod]
+    public void NeverRicochet_RicochetDegreesZero_NoBounceAtGrazingAngle()
+    {
+        // HE shells carry no ricochetAngle (=> RicochetDegrees 0) and no
+        // normalization: a 70° grazing shot does NOT ricochet — it is scored
+        // on effective armor alone.
+        PenetrationVerdict verdict = ArmorPenetration.Evaluate(
+            RayFromZ(-100),
+            TiltedPlate(thickness: 100, phi: 70.0 * Math.PI / 180.0),
+            new ShellSpec(
+                Penetration0Mm: 1000,
+                CaliberMm: 100,
+                DropPerMeterMm: 0,
+                RicochetDegrees: 0,
+                NormalizationDegrees: 0));
+
+        Assert.IsFalse(verdict.Ricochet);
+        // 100 / cos(70°) ≈ 292.4 < 1000 => Pen.
+        Assert.AreEqual(PenetrationBand.Pen, verdict.Band);
+    }
+
+    [TestMethod]
+    public void RicochetAt85_HollowCharge_StillBounces()
+    {
+        // HEAT shells carry ricochetAngle 85 in the install data (the support
+        // article says "never ricochet", but the data is the game's source) —
+        // an 85° grazing shot bounces when there is no overmatch.
+        PenetrationVerdict verdict = ArmorPenetration.Evaluate(
+            RayFromZ(-100),
+            TiltedPlate(thickness: 40, phi: 85.0 * Math.PI / 180.0),
+            new ShellSpec(
+                Penetration0Mm: 1000,
+                CaliberMm: 100,
+                DropPerMeterMm: 0,
+                RicochetDegrees: 85,
+                NormalizationDegrees: 0));
+
+        Assert.IsTrue(verdict.Ricochet);
+        Assert.AreEqual(PenetrationBand.NoPen, verdict.Band);
+    }
+
+    [TestMethod]
     public void Normalization_ReducesEffectiveArmor()
     {
         // 20° incidence, 5° normalization => effective = 100 / cos(15°).

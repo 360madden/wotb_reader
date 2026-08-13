@@ -74,14 +74,24 @@ verdict        = compare(effectiveArmor, penAtRange) + ricochet/overmatch rules
   a stretch goal measured against the validation loop, not a first
   deliverable.
 
-**Mechanics authority (2026-08-13):** the WoT Blitz support article
-"Armor Penetration Mechanics"
+**Mechanics authority + install-data evidence (2026-08-13):** the WoT Blitz
+support article "Armor Penetration Mechanics"
 (https://wargaming.net/support/en/products/wotb/article/15409/) — ricochet
-70° from the surface normal (AP/APCR; HEAT/HE never ricochet), 3-caliber
-overmatch, 25% pen loss on a bounce, 5°/2°/0° normalization, the two-caliber
-normalization amplification, ±5% penetration spread (Update 6.0+), ±25%
-damage spread. `ArmorPenetration` implements all of the single-target terms
-(ricochet ordering, overmatch, normalization + two-caliber, pen-at-range).
+70° from the surface normal (AP/APCR; the article says HEAT/HE never
+ricochet), 3-caliber overmatch, 25% pen loss on a bounce, 5°/2°/0°
+normalization, the two-caliber normalization amplification, ±5% penetration
+spread (Update 6.0+), ±25% damage spread. The install's per-nation
+shells.xml carries the per-shell values the game actually reads (probed
+across all nine nations: 716 AP / 400 APCR / 658 HE / 267 HEAT):
+ricochetAngle 70° (AP/APCR), 85° (HEAT), ABSENT (HE → never ricochet);
+normalizationAngle 5° or 15° (AP), 2° (APCR), ABSENT (HE/HEAT → 0). **The
+model follows the DATA (the game's source), and two article-vs-data
+conflicts are recorded, not papered over:** (1) some AP shells carry 15°
+normalization (the article says 5° flat), and (2) HEAT carries ricochetAngle
+85° (the article says "never ricochet"). A ricochet angle ≤ 0 is treated as
+"never ricochet" (HE), not invalid. `ArmorPenetration` implements all of the
+single-target terms (ricochet ordering, overmatch, normalization +
+two-caliber, pen-at-range).
 
 ## PN-4: the validation loop (the proof)
 

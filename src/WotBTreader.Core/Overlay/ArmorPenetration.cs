@@ -35,12 +35,14 @@ public readonly record struct ArmorPlate(
 /// normalization (degrees the shell "digs in", reducing the effective
 /// incidence). Ricochet, drop, and normalization follow the WoT Blitz
 /// mechanics the PN design records (the official "Armor Penetration
-/// Mechanics" support article): AP/APCR shells auto-bounce at an
-/// incidence angle ≥ 70° from the normal (suppressed by the 3× overmatch
-/// rule), penetration falls off with range, normalization is 5° (AP) /
-/// 2° (APCR) / 0° (HE/HEAT) and is amplified by the two-caliber rule,
-/// and the ricochet check runs on the RAW impact angle before
-/// normalization applies. The live game's ±5% penetration randomization
+/// Mechanics" support article), with the per-shell values read from the
+/// install's shells.xml: AP/APCR auto-bounce at ricochetAngle 70° from the
+/// normal (suppressed by the 3× overmatch rule), HEAT ricochets at 85°, and
+/// HE carries NO ricochet angle (≤ 0 = never ricochet). Penetration falls
+/// off with range; normalization is per-shell (AP 5°/15°, APCR 2°, HE/HEAT
+/// 0) and is amplified by the two-caliber rule; the ricochet check runs on
+/// the RAW impact angle before normalization applies. The live game's ±5%
+/// penetration randomization
 /// (Update 6.0+) is NOT modeled here — it is a validation target, never
 /// assumed (the ±25% figure is the DAMAGE spread, not penetration). See
 /// <c>docs/operations/pen-chance-design.md</c>.
@@ -130,13 +132,14 @@ public readonly record struct PenetrationVerdict(
 ///    (best penetration), approaching 90° = grazing. Effective armor =
 ///    thickness / cos(incidence), so an angled plate multiplies its
 ///    protection — the standard WoT angling model.
-///  - Ricochet: AP/APCR shells auto-bounce when the RAW incidence is ≥ the
-///    shell's ricochet angle (default 70°), UNLESS the caliber overmatches
-///    (caliber &gt; 3 × nominal plate thickness). Normalization applies ONLY
-///    when there is no ricochet — it never digs a shell out of a bounce.
-///  - Normalization: 5° (AP) / 2° (APCR) / 0° (HE/HEAT), from the install
-///    data. The two-caliber rule amplifies it when caliber &gt; 2 × plate
-///    thickness: resulting = base × 1.4 × caliber / (2 × thickness).
+///  - Ricochet: a shell auto-bounces when the RAW incidence is ≥ its
+///    ricochet angle (70° AP/APCR, 85° HEAT, ≤ 0 = never ricochet for HE),
+///    UNLESS the caliber overmatches (caliber &gt; 3 × nominal plate
+///    thickness). Normalization applies ONLY when there is no ricochet — it
+///    never digs a shell out of a bounce.
+///  - Normalization: per-shell from the install data (AP 5°/15°, APCR 2°,
+///    HE/HEAT 0). The two-caliber rule amplifies it when caliber &gt; 2 ×
+///    plate thickness: resulting = base × 1.4 × caliber / (2 × thickness).
 ///  - Penetration drops linearly with distance; it never goes below zero.
 ///  - The band is deterministic: Pen when penetration &gt; effective × (1 +
 ///    margin), NoPen when penetration &lt; effective × (1 − margin), Marginal
@@ -225,10 +228,11 @@ public static class ArmorPenetration
 
     /// <summary>
     /// Auto-ricochet rule: true when the incidence reaches the ricochet angle
-    /// (default 70° from the normal) AND the shell does NOT overmatch
-    /// (caliber ≤ 3 × nominal plate thickness). Fail-closed: invalid inputs
-    /// do not ricochet silently — but they also cannot produce a Pen verdict
-    /// because <see cref="Evaluate"/> rejects them first.
+    /// (70° AP/APCR, 85° HEAT — the install's per-shell <c>ricochetAngle</c>)
+    /// AND the shell does NOT overmatch (caliber ≤ 3 × nominal plate
+    /// thickness). A ricochet angle ≤ 0 means the shell NEVER ricochets (HE
+    /// shells carry no <c>ricochetAngle</c> in the install data), so this
+    /// returns false. Non-finite inputs also return false.
     /// </summary>
     public static bool Ricochets(
         double incidenceRadians,
@@ -318,7 +322,10 @@ public static class ArmorPenetration
             || plate.Thickness <= 0
             || shell.Penetration0Mm <= 0 || shell.CaliberMm <= 0
             || shell.DropPerMeterMm < 0
-            || shell.RicochetDegrees <= 0 || shell.RicochetDegrees >= 90
+            // RicochetDegrees ≤ 0 means "never ricochet" (HE shells carry no
+            // ricochetAngle in the install data), not an invalid angle — only
+            // a positive angle out of range is rejected.
+            || shell.RicochetDegrees >= 90
             || shell.NormalizationDegrees < 0 || shell.NormalizationDegrees >= 90)
         {
             return Unknown();
