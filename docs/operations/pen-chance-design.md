@@ -95,8 +95,17 @@ verdict        = compare(effectiveArmor, penAtRange) + ricochet/overmatch rules
    `archive[EventStreamEntry]`, and offsets exceed the on-disk file size) — so
    the flag-byte analysis must go through the archive + event-stream reader
    (the decoder's own path), not a simple file seek. The cleanest route is a
-   small decoder-side surface change that surfaces the flag byte (and the
-   type-32 flags) at decode time.
+   small decoder-side surface change that surfaces the flag byte (and   the type-32 flags) at decode time.
+
+4. **PN-4 status (checked 2026-08-13): the existing store cannot score yet.**
+   The decoded sessions predate the migration-5 rotation persistence —
+   `position_samples.yaw` is NULL for every sample (0/28236 in the rehearsal
+   session), and the type-32 no-damage hits are raw-only. So the validation
+   loop's aim-proxy needs the victim HULL FACING (null today) and the
+   bounce ground truth (needs the decoder path). The fix is offline: a
+   FRESH immutable re-decode with the current decoder (which persists the
+   rotation tail), then the aim-proxy + ricochet check runs against it. The
+   scratch `ricochet-check` script is written and ready for that re-decode.
 
 ## Phase plan
 
