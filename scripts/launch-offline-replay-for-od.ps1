@@ -108,71 +108,10 @@ function Write-Od([string]$Message) {
     Write-Host ("od_launch: " + $Message)
 }
 
-function Test-OwnerOnlyFileAcl([string]$Path) {
-    try {
-        $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
-        $acl = Get-Acl -LiteralPath $Path
-        $observedOwner = (New-Object Security.Principal.NTAccount($acl.Owner)).Translate(
-            [Security.Principal.SecurityIdentifier])
-        $rules = @($acl.GetAccessRules(
-            $true,
-            $false,
-            [Security.Principal.SecurityIdentifier]))
-        return $acl.AreAccessRulesProtected -and $observedOwner -eq $owner -and
-            $rules.Count -eq 1 -and $rules[0].IdentityReference -eq $owner -and
-            $rules[0].AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and
-            (($rules[0].FileSystemRights -band [Security.AccessControl.FileSystemRights]::FullControl) -eq
-                [Security.AccessControl.FileSystemRights]::FullControl)
-    }
-    catch {
-        return $false
-    }
-}
-
-function Test-OwnerOnlyDirectoryAcl([string]$Path) {
-    try {
-        $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
-        $directory = Get-Item -LiteralPath $Path
-        if (($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-            return $false
-        }
-
-        $acl = Get-Acl -LiteralPath $directory.FullName
-        $observedOwner = (New-Object Security.Principal.NTAccount($acl.Owner)).Translate(
-            [Security.Principal.SecurityIdentifier])
-        $rules = @($acl.GetAccessRules(
-            $true,
-            $false,
-            [Security.Principal.SecurityIdentifier]))
-        return $acl.AreAccessRulesProtected -and $observedOwner -eq $owner -and
-            $rules.Count -eq 1 -and $rules[0].IdentityReference -eq $owner -and
-            $rules[0].AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow -and
-            (($rules[0].FileSystemRights -band [Security.AccessControl.FileSystemRights]::FullControl) -eq
-                [Security.AccessControl.FileSystemRights]::FullControl)
-    }
-    catch {
-        return $false
-    }
-}
-
-function Set-OwnerOnlyFileAcl([string]$Path) {
-    $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
-    # icacls instead of .NET Set-Acl: Set-Acl with a fresh security descriptor
-    # throws PrivilegeNotHeldException (SeSecurityPrivilege) when the target
-    # already has a protected owner-only ACL -- i.e. on EVERY launch after the
-    # first, since the marker persists between launches (BLK-0026 root cause).
-    # /inheritance:r disables inherited ACEs; /grant:r replaces grants with
-    # exactly the single owner FullControl rule. Owner is unchanged (current
-    # user), so the Test-OwnerOnly* checks below still pass.
-    & icacls $Path /inheritance:r /grant:r ("*" + $owner + ':F') | Out-Null
-}
-
-function Set-OwnerOnlyDirectoryAcl([string]$Path) {
-    $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
-    # See Set-OwnerOnlyFileAcl -- same icacls approach; (OI)(CI) propagates the
-    # owner-only rule to children so future marker files inherit it.
-    & icacls $Path /inheritance:r /grant:r ("*" + $owner + ':(OI)(CI)F') | Out-Null
-}
+# Owner-only ACL helpers (Test/Set-OdOwnerOnly*) are dot-sourced from
+# od-replay-completion.ps1 above; the launch marker reuses them so the icacls
+# + reparse-point ACL logic has exactly one definition (dedupe of the former
+# local Test/Set-OwnerOnly* copies).
 
 function Get-Rendezvous {
     $dir = Join-Path $env:LOCALAPPDATA 'WotBTreader\rendezvous'
@@ -477,7 +416,7 @@ try {
             Write-Od 'FAILED_instruction_snapshot_helper_missing_publish_first'
             exit 1
         }
-        if (-not (Test-OwnerOnlyFileAcl -Path $instructionSnapshotManifest)) {
+        if (-not (Test-OdOwnerOnlyFileAcl -Path $instructionSnapshotManifest)) {
             Write-Od 'FAILED_instruction_snapshot_helper_manifest_acl'
             exit 1
         }
@@ -603,8 +542,8 @@ try {
     if (-not (Test-Path -LiteralPath $launchMarkerDirectory)) {
         New-Item -ItemType Directory -Path $launchMarkerDirectory | Out-Null
     }
-    Set-OwnerOnlyDirectoryAcl -Path $launchMarkerDirectory
-    if (-not (Test-OwnerOnlyDirectoryAcl -Path $launchMarkerDirectory)) {
+    Set-OdOwnerOnlyDirectoryAcl -Path $launchMarkerDirectory
+    if (-not (Test-OdOwnerOnlyDirectoryAcl -Path $launchMarkerDirectory)) {
         Write-Od 'FAILED_launch_marker_directory_acl'
         exit 1
     }
@@ -614,8 +553,8 @@ try {
         $launchMarker,
         $artifactId,
         (New-Object Text.UTF8Encoding($false)))
-    Set-OwnerOnlyFileAcl -Path $launchMarker
-    if (-not (Test-OwnerOnlyFileAcl -Path $launchMarker)) {
+    Set-OdOwnerOnlyFileAcl -Path $launchMarker
+    if (-not (Test-OdOwnerOnlyFileAcl -Path $launchMarker)) {
         Remove-Item -LiteralPath $launchMarker -Force -ErrorAction SilentlyContinue
         Write-Od 'FAILED_launch_marker_acl'
         exit 1
