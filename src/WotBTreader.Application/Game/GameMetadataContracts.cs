@@ -35,6 +35,47 @@ public sealed record MapMetadata(
     string GameVersion,
     ContentHash SourceHash);
 
+/// <summary>A named armor group and its nominal thickness in millimeters.</summary>
+public readonly record struct ArmorGroup(string Name, double ThicknessMm);
+
+/// <summary>
+/// One vehicle's armor model from the install's detailed definition XML:
+/// per-group hull and turret thickness plus the group names the definition
+/// declares as primary (front). The group → face (front/side/rear) mapping is
+/// NOT baked in here — that is the plate-geometry concern (the <c>.scg</c>
+/// collision mesh), not this store.
+/// </summary>
+public sealed record VehicleArmorProfile(
+    string VehicleId,
+    IReadOnlyList<ArmorGroup> HullGroups,
+    IReadOnlyList<ArmorGroup> TurretGroups,
+    IReadOnlyList<string> PrimaryArmorGroups);
+
+/// <summary>
+/// A shell's penetration-relevant stats from <c>components/shells.xml.dvpl</c>.
+/// <see cref="Kind"/> is the shell family (ARMOR_PIERCING / _CR / HIGH_EXPLOSIVE
+/// / HOLLOW_CHARGE); ricochet and normalization are the degrees the game uses.
+/// </summary>
+public sealed record ShellProfile(
+    string Name,
+    string Kind,
+    double CaliberMm,
+    double NormalizationDegrees,
+    double RicochetDegrees);
+
+/// <summary>
+/// One gun→shell pairing from <c>components/guns.xml.dvpl</c>: the shell's
+/// two-point penetration range (near = 0 m, far = <see cref="MaxDistanceMeters"/>),
+/// muzzle speed, and max range — the inputs the pen model's range drop consumes.
+/// </summary>
+public sealed record GunShellProfile(
+    string GunName,
+    string ShellName,
+    double PiercingPowerNearMm,
+    double PiercingPowerFarMm,
+    double MaxDistanceMeters,
+    double SpeedMetersPerSecond);
+
 /// <summary>
 /// Reads exact-version metadata from a local game installation without
 /// modifying it. All operations are read-only and evidence-bounded.
