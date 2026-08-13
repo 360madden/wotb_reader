@@ -30,6 +30,47 @@ public readonly record struct ArmorPlate(
     double PlaneZ);
 
 /// <summary>
+/// The shell family (the install's shells.xml <c>kind</c>). It controls the
+/// auto-ricochet OVERMATCH rule: AP/APCR suppress the bounce when the caliber
+/// overmatches the plate (caliber &gt; 3× thickness), HEAT ricochets at its
+/// angle regardless of caliber (the 3-caliber rule does NOT apply to HEAT),
+/// and HE never ricochets. <see cref="Unknown"/> keeps the pre-kind behavior
+/// (the kinetic overmatch rule) for shells resolved without a family.
+/// </summary>
+public enum ShellKind
+{
+    /// <summary>No family resolved — treated as a generic kinetic shell (the
+    /// 3× overmatch rule applies).</summary>
+    Unknown = 0,
+
+    /// <summary>Armor-piercing (the install's <c>ARMOR_PIERCING</c>).</summary>
+    ArmorPiercing = 1,
+
+    /// <summary>Armor-piercing composite rigid (<c>ARMOR_PIERCING_CR</c>).</summary>
+    ArmorPiercingCr = 2,
+
+    /// <summary>High-explosive (<c>HIGH_EXPLOSIVE</c>) — never ricochets.</summary>
+    HighExplosive = 3,
+
+    /// <summary>High-explosive anti-tank / HEAT (<c>HOLLOW_CHARGE</c>).</summary>
+    HollowCharge = 4,
+}
+
+/// <summary>Maps the install's shells.xml <c>kind</c> string to its
+/// <see cref="ShellKind"/> (the four families the game ships).</summary>
+public static class ShellKinds
+{
+    public static ShellKind FromInstallName(string? kindName) => kindName switch
+    {
+        "ARMOR_PIERCING" => ShellKind.ArmorPiercing,
+        "ARMOR_PIERCING_CR" => ShellKind.ArmorPiercingCr,
+        "HIGH_EXPLOSIVE" => ShellKind.HighExplosive,
+        "HOLLOW_CHARGE" => ShellKind.HollowCharge,
+        _ => ShellKind.Unknown,
+    };
+}
+
+/// <summary>
 /// A shell's penetration profile: base penetration, caliber, linear
 /// penetration drop with distance, the auto-ricochet angle, and the shell
 /// normalization (degrees the shell "digs in", reducing the effective
@@ -41,7 +82,10 @@ public readonly record struct ArmorPlate(
 /// HE carries NO ricochet angle (≤ 0 = never ricochet). Penetration falls
 /// off with range; normalization is per-shell (AP 5°/15°, APCR 2°, HE/HEAT
 /// 0) and is amplified by the two-caliber rule; the ricochet check runs on
-/// the RAW impact angle before normalization applies. The live game's ±5%
+/// the RAW impact angle before normalization applies. <see cref="Kind"/>
+/// (the install's shells.xml family) controls the overmatch rule: HEAT
+/// ricochets regardless of caliber, while AP/APCR overmatch suppresses the
+/// bounce. The live game's ±5%
 /// penetration randomization
 /// (Update 6.0+) is NOT modeled here — it is a validation target, never
 /// assumed (the ±25% figure is the DAMAGE spread, not penetration). See
@@ -52,7 +96,8 @@ public readonly record struct ShellSpec(
     double CaliberMm,
     double DropPerMeterMm = 0.0,
     double RicochetDegrees = 70.0,
-    double NormalizationDegrees = 0.0)
+    double NormalizationDegrees = 0.0,
+    ShellKind Kind = ShellKind.Unknown)
 {
     /// <summary>
     /// Builds a profile from the install's <c>piercingPower</c> two-point
@@ -68,18 +113,20 @@ public readonly record struct ShellSpec(
         double maxDistance,
         double caliberMm,
         double ricochetDegrees = 70.0,
-        double normalizationDegrees = 0.0)
+        double normalizationDegrees = 0.0,
+        ShellKind kind = ShellKind.Unknown)
     {
         if (!double.IsFinite(maxDistance) || maxDistance <= 0
             || !double.IsFinite(piercingPowerNearMm)
             || !double.IsFinite(piercingPowerFarMm))
         {
-            return new ShellSpec(0.0, caliberMm, 0.0, ricochetDegrees, normalizationDegrees);
+            return new ShellSpec(
+                0.0, caliberMm, 0.0, ricochetDegrees, normalizationDegrees, kind);
         }
 
         double drop = Math.Max(0.0, (piercingPowerNearMm - piercingPowerFarMm) / maxDistance);
         return new ShellSpec(
-            piercingPowerNearMm, caliberMm, drop, ricochetDegrees, normalizationDegrees);
+            piercingPowerNearMm, caliberMm, drop, ricochetDegrees, normalizationDegrees, kind);
     }
 }
 
@@ -232,13 +279,17 @@ public static class ArmorPenetration
     /// AND the shell does NOT overmatch (caliber ≤ 3 × nominal plate
     /// thickness). A ricochet angle ≤ 0 means the shell NEVER ricochets (HE
     /// shells carry no <c>ricochetAngle</c> in the install data), so this
-    /// returns false. Non-finite inputs also return false.
+    /// returns false. Non-finite inputs also return false. The overmatch
+    /// suppression applies to AP/APCR (and <see cref="ShellKind.Unknown"/>)
+    /// only — HEAT (<see cref="ShellKind.HollowCharge"/>) ricochets at its
+    /// angle regardless of caliber, per the WoT Blitz mechanics.
     /// </summary>
     public static bool Ricochets(
         double incidenceRadians,
         double caliberMm,
         double thickness,
-        double ricochetDegrees)
+        double ricochetDegrees,
+        ShellKind kind = ShellKind.Unknown)
     {
         if (!double.IsFinite(incidenceRadians)
             || !double.IsFinite(caliberMm) || caliberMm <= 0
@@ -254,7 +305,14 @@ public static class ArmorPenetration
             return false;
         }
 
-        // 3× overmatch suppresses the ricochet.
+        // HEAT does not benefit from the 3× overmatch rule: it ricochets at
+        // its (85°) angle regardless of caliber. AP/APCR are suppressed by
+        // caliber > 3× thickness.
+        if (kind == ShellKind.HollowCharge)
+        {
+            return true;
+        }
+
         return caliberMm <= 3.0 * thickness;
     }
 
@@ -345,7 +403,8 @@ public static class ArmorPenetration
             incidence.Value,
             shell.CaliberMm,
             plate.Thickness,
-            shell.RicochetDegrees);
+            shell.RicochetDegrees,
+            shell.Kind);
 
         double normalizedIncidence = ricochet
             ? incidence.Value

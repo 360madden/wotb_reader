@@ -257,10 +257,56 @@ public sealed class ArmorPenetrationTests
                 CaliberMm: 100,
                 DropPerMeterMm: 0,
                 RicochetDegrees: 85,
-                NormalizationDegrees: 0));
+                NormalizationDegrees: 0,
+                Kind: ShellKind.HollowCharge));
 
         Assert.IsTrue(verdict.Ricochet);
         Assert.AreEqual(PenetrationBand.NoPen, verdict.Band);
+    }
+
+    [TestMethod]
+    public void RicochetAt85_HollowCharge_Overmatch_StillBounces()
+    {
+        // HEAT does NOT benefit from the 3× overmatch rule: even when the
+        // caliber (400) far exceeds 3× the plate (10), the 85° bounce stands
+        // — the same geometry with an AP shell would be overmatch-suppressed.
+        PenetrationVerdict verdict = ArmorPenetration.Evaluate(
+            RayFromZ(-100),
+            TiltedPlate(thickness: 10, phi: 85.0 * Math.PI / 180.0),
+            new ShellSpec(
+                Penetration0Mm: 1000,
+                CaliberMm: 400,
+                DropPerMeterMm: 0,
+                RicochetDegrees: 85,
+                NormalizationDegrees: 0,
+                Kind: ShellKind.HollowCharge));
+
+        Assert.IsTrue(verdict.Ricochet);
+        Assert.AreEqual(PenetrationBand.NoPen, verdict.Band);
+    }
+
+    [TestMethod]
+    public void Ricochets_HollowCharge_OvermatchStillTrue()
+    {
+        double angle = 85.0 * Math.PI / 180.0;
+
+        // Caliber 400 > 3×10: AP/APCR would be overmatch-suppressed, but HEAT
+        // ricochets regardless of caliber.
+        Assert.IsTrue(ArmorPenetration.Ricochets(
+            angle, caliberMm: 400, thickness: 10, ricochetDegrees: 85, ShellKind.HollowCharge));
+        Assert.IsFalse(ArmorPenetration.Ricochets(
+            angle, caliberMm: 400, thickness: 10, ricochetDegrees: 85, ShellKind.ArmorPiercing));
+    }
+
+    [TestMethod]
+    public void ShellKinds_FromInstallName_MapsFamilies()
+    {
+        Assert.AreEqual(ShellKind.ArmorPiercing, ShellKinds.FromInstallName("ARMOR_PIERCING"));
+        Assert.AreEqual(ShellKind.ArmorPiercingCr, ShellKinds.FromInstallName("ARMOR_PIERCING_CR"));
+        Assert.AreEqual(ShellKind.HighExplosive, ShellKinds.FromInstallName("HIGH_EXPLOSIVE"));
+        Assert.AreEqual(ShellKind.HollowCharge, ShellKinds.FromInstallName("HOLLOW_CHARGE"));
+        Assert.AreEqual(ShellKind.Unknown, ShellKinds.FromInstallName("BOGUS"));
+        Assert.AreEqual(ShellKind.Unknown, ShellKinds.FromInstallName(null));
     }
 
     [TestMethod]

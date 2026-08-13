@@ -341,7 +341,8 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
             gun.MaxDistanceMeters,
             shell.CaliberMm,
             shell.RicochetDegrees,
-            shell.NormalizationDegrees);
+            shell.NormalizationDegrees,
+            ShellKinds.FromInstallName(shell.Kind));
     }
 
     private async ValueTask<string?> ResolveStockShellAsync(
