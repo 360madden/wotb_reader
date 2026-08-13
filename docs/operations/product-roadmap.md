@@ -391,6 +391,21 @@ roadmap X2, `live-roster-read-design.md` = roadmap **X2b**, and
 `live-frame-loop-design.md` = roadmap X4). They are the offline halves of
 the live surfaces above; nothing is rebuilt at the live step.
 
+### Phase 6 — Armor penetration chance (replay-first)
+
+| Step | WS | Deliverable |
+|---|---|---|
+| PN-1 | G | **Static-data extraction** — tank armor models + hull geometry + gun/shell tables from the install's data files (read-only, evidence-first, CAM-009 style); a static store + verify script. The long pole; shares the install game-data extraction capability with the V4 minimap-texture gap |
+| PN-2 | F | **Pen math module** — pure, testable: aim ray vs hull-plate hit test, angle of incidence, effective armor = thickness/cos(angle), ≥70° AP/APCR ricochet (+25% pen loss), overmatch, pen-at-range → banded green/yellow/red verdict |
+| PN-3 | F | **Replay-mode HUD** — aim = the CAM-013-verified camera pose (no new discovery; the replay camera drives the turret); pen badge (colored + numeric) on the aimed enemy's nameplate |
+| PN-4 | F | **Validation loop** — score the model vs decoded shot outcomes (type-8 damage vs type-32 no-damage hits); geometry-first (ricochet is shell-independent), then full classification; report hit-rate + per-shot margin |
+| PN-5 | F | **Live mode** — T1 turret/gun aim + the same module, behind the X1 policy gate |
+
+**Why replay-first works:** in playback the camera drives the viewed tank's
+turret (T1 premise), so the camera pose IS the aim line — no new memory
+discovery. The decoded type-8/type-32 stream gives pen-vs-bounce ground truth
+for the validation loop. Design: `docs/operations/pen-chance-design.md`.
+
 ## Cross-links
 
 - Legacy research detail: `docs/operations/offset-discovery-roadmap.md`

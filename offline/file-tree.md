@@ -316,6 +316,7 @@ docs/operations/offset-discovery-strategy-v4.md
 docs/operations/offset-discovery-workflow.md
 docs/operations/offset-promotion-checklist.md
 docs/operations/parallel-workstreams.md
+docs/operations/pen-chance-design.md
 docs/operations/product-roadmap.md
 docs/operations/record-diffing-groundwork.md
 docs/operations/replay-crosscheck.md

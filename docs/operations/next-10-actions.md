@@ -20,7 +20,7 @@ any live work; owner-gated items sit behind the evidence they consume.
 | 5 | **Approve + apply the `ConsistentDoubleRead` flag-flip proposal** | Item 7 Branch B step 2 (owner-gated shared contract, drafted) | Lets #2–3's measurements claim the flag; unblocks item-7 DoD | owner approval + gate |
 | 6 | **Pester smoke tests for the completion-marker helper** (never-throw, fail-open, clean-run contracts under the gate, not scratch harnesses) | OD-099 durable fix hardening | Makes `623b9df`'s fixes regression-proof; offline, no launch | full `validate.ps1` |
 | 7 | **Adversarial review of launcher pre-flight / clicker ready-gate / chain log-polling** (same fresh-eyes throw + state-machine tracing that found the marker defects) | script tooling quality | The review technique just caught 2 real bugs; the launcher/clicker/chain are the same risk class | offline; fix only genuine defects |
-| 8 | **Minimap texture mapping (arena-id → name-based folder)** | Phase 4 V4 (texture gap, pinned by tests) | The only open overlay gap: decoded numeric arena ids never match name-based minimap folders, and this install ships no Oasis/Dead Rail texture; needs an id→folder mapping to re-enable texture-under-dots | offline, mechanism tests |
+| 8 | **Pen-chance HUD (PN) — PN-1 static armor/shell data extraction first**, then PN-2 pen math, PN-3 replay HUD (aim = camera pose, CAM-013), PN-4 validation loop | Phase 6 (new; `docs/operations/pen-chance-design.md`) | Replay carries shot-outcome ground truth (type-8 pen vs type-32 no-damage), so the model can be scored, not believed; PN-1 is offline and its install-data extraction compounds with the V4 minimap gap | offline; evidence-first PN-1 |
 | 9 | **L4 replayTime session** — chained clock (`GameCore 0x04095c88 → … → [BWServerConnection+0x58]+0x90`), `-ArmSourceOnFirstHit` (expected first hit = CRT copy site) | Phase 2 L4 (next discovery lane) | Unclaimed discovery lane; needs its own approved launch | 1 approved launch |
 | 10 | **T1 turret-facing + lock-on discovery** — live-behavioral per the pre-staged design (camera-yaw correlation as the discriminator) | Phase 2 T1 (last Phase-2 session type) | Closes the roadmap's discovery table; pre-staged `docs/operations/t1-turret-traversal-design.md` | 1 approved launch |
 
@@ -37,6 +37,10 @@ any live work; owner-gated items sit behind the evidence they consume.
   needs a launch, sits behind #1–4).
 - **G3+ publication generalization of `rehearse-offset-apply.py`** — only
   when a new publication package appears.
+- **Minimap texture mapping (arena-id → name-based folder)** (Phase 4 V4 gap,
+  pinned by tests) — re-enabling texture-under-dots; now shares the PN-1
+  install game-data extraction capability, so it folds into the same
+  offline static-data lane.
 
 ## Refresh procedure (session end)
 
