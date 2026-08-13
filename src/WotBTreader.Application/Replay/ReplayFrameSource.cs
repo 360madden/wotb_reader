@@ -1,3 +1,4 @@
+using WotBTreader.Application.Game;
 using WotBTreader.Application.Results;
 using WotBTreader.Application.Storage;
 using WotBTreader.Core;
@@ -23,17 +24,22 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
 
     private readonly ISessionQueryRepository _sessions;
     private readonly IProjectionCache? _cache;
+    private readonly IOverlayPenetrationData? _penetration;
 
     public ReplayFrameSource(ISessionQueryRepository sessions)
-        : this(sessions, cache: null)
+        : this(sessions, cache: null, penetration: null)
     {
     }
 
-    public ReplayFrameSource(ISessionQueryRepository sessions, IProjectionCache? cache)
+    public ReplayFrameSource(
+        ISessionQueryRepository sessions,
+        IProjectionCache? cache,
+        IOverlayPenetrationData? penetration = null)
     {
         ArgumentNullException.ThrowIfNull(sessions);
         _sessions = sessions;
         _cache = cache;
+        _penetration = penetration;
     }
 
     /// <inheritdoc />
@@ -71,13 +77,27 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
         }
 
         _cache?.Store(sessionId, projection);
-        return OperationResult.Success(BuildFrame(projection, replayTime, cameraOverride));
+
+        // Penetration badge: install-derived armor + shell, resolved only
+        // when a data source is wired. A null context (or an absent source)
+        // omits the badge — never a fabricated verdict.
+        PenetrationContext? penetration = null;
+        if (_penetration is not null)
+        {
+            penetration = await _penetration
+                .ResolveAsync(projection, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return OperationResult.Success(
+            BuildFrame(projection, replayTime, cameraOverride, penetration));
     }
 
     internal static OverlayFrame BuildFrame(
         ReplayDecodeProjection projection,
         TimeSpan replayTime,
-        OverlayCamera? cameraOverride = null)
+        OverlayCamera? cameraOverride = null,
+        PenetrationContext? penetration = null)
     {
         // Per-entity nearest-sample lookup over the decoded position stream.
         Dictionary<long, List<PositionSample>> byEntity = projection.Positions
@@ -216,7 +236,28 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
         }
 
         tanks.Sort(static (left, right) => left.DistanceMeters.CompareTo(right.DistanceMeters));
-        return new OverlayFrame(replayTime, camera, tanks, pips, kills);
+
+        // Pen badge: the camera aim (replay == turret aim) scored against the
+        // aimed tank's nominal armor with the viewer's shell. Computed after
+        // the camera and tanks exist; fail-closed to null when the data is
+        // absent or the aim/face cannot be resolved. The viewpoint's own tank
+        // is excluded from aim targets — its hull sits at the camera origin
+        // and is never a penetration target.
+        PenetrationBadge? penBadge = null;
+        if (penetration is not null)
+        {
+            long? ownEntityId = projection.Session?.ViewpointParticipantId is { } viewpointId
+                ? projection.Participants.FirstOrDefault(
+                    participant => participant.Id == viewpointId)?.EntityId
+                : null;
+            IReadOnlyList<OverlayTankState> aimTargets = ownEntityId is { } ownId
+                ? tanks.Where(tank => tank.EntityId != ownId).ToList()
+                : tanks;
+            penBadge = PenetrationAim.ResolveBadge(
+                camera, aimTargets, penetration.ArmorByEntity, penetration.ViewerShell);
+        }
+
+        return new OverlayFrame(replayTime, camera, tanks, pips, kills, penBadge);
     }
 
     /// <summary>

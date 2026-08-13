@@ -149,4 +149,34 @@ public sealed class W2sHudViewTests
         Assert.AreEqual("1200 dmg · 2 kills", W2sHudView.NameplateTotalsLabel(1200, 2));
         Assert.AreEqual("0 dmg · 0 kills", W2sHudView.NameplateTotalsLabel(0, 0));
     }
+
+    [TestMethod]
+    public void PenBadgeLabel_BandedVerdictWithNumericReadout()
+    {
+        Assert.AreEqual(
+            "PEN  92/93 mm",
+            W2sHudView.PenBadgeLabel("Pen", effectiveArmorMm: 93, penetrationMmAtRange: 92, ricochet: false));
+        Assert.AreEqual(
+            "MARGINAL  50/52 mm",
+            W2sHudView.PenBadgeLabel("Marginal", 52, 50, ricochet: false));
+        Assert.AreEqual(
+            "NO PEN",
+            W2sHudView.PenBadgeLabel("NoPen", null, null, ricochet: false));
+    }
+
+    [TestMethod]
+    public void PenBadgeLabel_RicochetOverridesBand()
+    {
+        Assert.AreEqual(
+            "RICOCHET",
+            W2sHudView.PenBadgeLabel("NoPen", 93, 92, ricochet: true));
+    }
+
+    [TestMethod]
+    public void PenBadgeLabel_UnknownBand_Empty()
+    {
+        Assert.AreEqual(
+            string.Empty,
+            W2sHudView.PenBadgeLabel("Unknown", null, null, ricochet: false));
+    }
 }

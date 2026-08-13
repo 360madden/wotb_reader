@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using WotBTreader.Application.Game;
 using WotBTreader.Application.Replay;
 using WotBTreader.Application.Storage;
 using WotBTreader.Application.Streaming;
@@ -17,7 +18,8 @@ public static class ApplicationServiceCollectionExtensions
         services.AddSingleton<IProjectionCache, ProjectionCache>();
         services.AddScoped<IOverlayFrameSource>(sp => new ReplayFrameSource(
             sp.GetRequiredService<ISessionQueryRepository>(),
-            sp.GetRequiredService<IProjectionCache>()));
+            sp.GetRequiredService<IProjectionCache>(),
+            sp.GetService<IOverlayPenetrationData>()));
         services.AddSingleton<IOffsetTableReader>(sp =>
         {
             string offsetsPath = Path.Combine(

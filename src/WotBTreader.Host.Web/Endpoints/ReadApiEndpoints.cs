@@ -454,6 +454,17 @@ internal static class ReadApiEndpoints
             KillerEntityId = kill.KillerEntityId,
             ReplayTimeSeconds = kill.ReplayTime.TotalSeconds,
         })],
+            PenBadge = projection.PenBadge is { } badge
+                ? new OverlayPenBadgeResponse
+                {
+                    AimedEntityId = badge.AimedEntityId,
+                    Face = badge.Face.ToString(),
+                    Band = badge.Verdict.Band.ToString(),
+                    EffectiveArmorMm = badge.Verdict.EffectiveArmorMm,
+                    PenetrationMmAtRange = badge.Verdict.PenetrationMmAtRange,
+                    Ricochet = badge.Verdict.Ricochet,
+                }
+                : null,
         };
 
     /// <summary>

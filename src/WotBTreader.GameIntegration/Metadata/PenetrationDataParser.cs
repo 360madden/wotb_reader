@@ -115,6 +115,24 @@ internal static class PenetrationDataParser
     }
 
     /// <summary>
+    /// Reads a detailed vehicle definition's stock shell name: the first shot
+    /// of the first gun of the first <c>&lt;guns&gt;</c> block (the stock
+    /// turret's stock gun, in document order). Returns null when the vehicle
+    /// declares no gun/shots. This is the viewer's default shell until loaded
+    /// shell is decodable (the documented open gap).
+    /// </summary>
+    public static string? ParseStockGunShellName(
+        ReadOnlySpan<byte> payload,
+        long maxCharacters)
+    {
+        XDocument document = Load(payload, maxCharacters);
+        XElement? guns = document.Root?.Descendants("guns").FirstOrDefault();
+        XElement? gun = guns?.Elements().FirstOrDefault();
+        XElement? shot = gun?.Element("shots")?.Elements().FirstOrDefault();
+        return shot?.Name.LocalName;
+    }
+
+    /// <summary>
     /// Parses <c>components/guns.xml.dvpl</c> into gun→shell pairings. A gun
     /// entry is any root child carrying a <c>shots</c> list; each shot carries
     /// the two-point <c>piercingPower</c> ("near far"), the shell muzzle

@@ -36,6 +36,9 @@ public sealed partial class W2sHudView : UserControl
     private static readonly Brush HpMidBrush = CreateBrush("#E0B000");
     private static readonly Brush HpLowBrush = CreateBrush("#E03030");
     private static readonly Brush LabelBackground = CreateBrush("#B0101018");
+    private static readonly Brush PenBadgePenBrush = CreateBrush("#00E066");
+    private static readonly Brush PenBadgeMarginalBrush = CreateBrush("#E0B000");
+    private static readonly Brush PenBadgeNoPenBrush = CreateBrush("#E03030");
 
     public W2sHudView()
     {
@@ -83,6 +86,7 @@ public sealed partial class W2sHudView : UserControl
         double? cameraYawRadians,
         IReadOnlyList<KillItem> killFeed,
         IReadOnlyList<ScoreboardItem> scoreboard,
+        PenBadgeItem? penBadge,
         ImageSource? minimapImage,
         double? playbackProgress,
         string? playbackLabel,
@@ -124,6 +128,11 @@ public sealed partial class W2sHudView : UserControl
         if (scoreboard.Count > 0)
         {
             HudCanvas.Children.Add(BuildScoreboard(scoreboard));
+        }
+
+        if (penBadge is not null)
+        {
+            HudCanvas.Children.Add(BuildPenBadge(penBadge, viewportWidth, viewportHeight));
         }
 
         if (playbackProgress is not null)
@@ -211,6 +220,89 @@ public sealed partial class W2sHudView : UserControl
         panel.Width = panelWidth;
         panel.Height = shown * rowHeight + 4;
         return panel;
+    }
+
+    /// <summary>
+    /// Formats the penetration badge's text: the banded verdict plus the
+    /// numeric readout (penetration at range over effective armor, in mm)
+    /// when both are known. A ricochet overrides the band with its own label.
+    /// Pure and invariant-culture for unit tests.
+    /// </summary>
+    public static string PenBadgeLabel(
+        string band,
+        double? effectiveArmorMm,
+        double? penetrationMmAtRange,
+        bool ricochet)
+    {
+        if (ricochet)
+        {
+            return "RICOCHET";
+        }
+
+        string verdict = band switch
+        {
+            "Pen" => "PEN",
+            "Marginal" => "MARGINAL",
+            "NoPen" => "NO PEN",
+            _ => "",
+        };
+
+        if (effectiveArmorMm is double eff
+            && penetrationMmAtRange is double pen)
+        {
+            return string.Concat(
+                verdict,
+                "  ",
+                pen.ToString("F0", CultureInfo.InvariantCulture),
+                "/",
+                eff.ToString("F0", CultureInfo.InvariantCulture),
+                " mm");
+        }
+
+        return verdict;
+    }
+
+    /// <summary>
+    /// Builds the penetration indicator: a colored badge centered just below
+    /// the reticle showing the banded verdict and its numeric readout.
+    /// Unknown bands never reach here (the view model drops them).
+    /// </summary>
+    private static Canvas BuildPenBadge(
+        PenBadgeItem badge,
+        double viewportWidth,
+        double viewportHeight)
+    {
+        Brush brush = badge.Band switch
+        {
+            "Pen" => PenBadgePenBrush,
+            "Marginal" => PenBadgeMarginalBrush,
+            _ => PenBadgeNoPenBrush,
+        };
+
+        var label = new Border
+        {
+            Background = CreateBrush("#D0101018"),
+            CornerRadius = new CornerRadius(3),
+            Padding = new Thickness(5, 1, 5, 1),
+            Child = new TextBlock
+            {
+                Text = PenBadgeLabel(
+                    badge.Band,
+                    badge.EffectiveArmorMm,
+                    badge.PenetrationMmAtRange,
+                    badge.Ricochet),
+                FontSize = 12,
+                FontWeight = FontWeights.Bold,
+                Foreground = brush,
+            },
+        };
+        label.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+
+        var root = new Canvas();
+        Canvas.SetLeft(root, Math.Max(0, viewportWidth / 2.0 - label.DesiredSize.Width / 2.0));
+        Canvas.SetTop(root, viewportHeight * 0.56);
+        root.Children.Add(label);
+        return root;
     }
 
     /// <summary>

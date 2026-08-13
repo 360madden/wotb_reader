@@ -29,6 +29,7 @@ public static class GameIntegrationServiceCollectionExtensions
         services.TryAddSingleton<IDvplReader, DvplReader>();
         services.TryAddSingleton<IGameInstallationDiscovery, GameInstallationDiscovery>();
         services.TryAddSingleton<IInstalledGameMetadataProvider, InstalledGameMetadataProvider>();
+        services.TryAddSingleton<IOverlayPenetrationData, PenetrationDataService>();
         services.TryAddSingleton<IBlitzReplayLifecycleParser, BlitzReplayLifecycleParser>();
         services.TryAddTransient<IBlitzReplayLogMonitor, BlitzReplayLogMonitor>();
 

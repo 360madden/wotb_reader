@@ -470,6 +470,46 @@ public sealed record OverlayFrameResponse
     /// replay time, ordered oldest first (the HUD renders newest first).
     /// Killer is null when attribution is impossible (environmental kill).</summary>
     public IReadOnlyList<OverlayKillResponse> Kills { get; init; } = [];
+
+    /// <summary>The penetration indicator, when the frame resolved an aim: the
+    /// aimed enemy and the banded verdict (green/yellow/red) with its numeric
+    /// readout. Null when the camera carries no aim, no tank is aimed at, or
+    /// the install armor/shell data is unavailable — the HUD must not draw a
+    /// verdict it cannot derive.</summary>
+    public OverlayPenBadgeResponse? PenBadge { get; init; }
+}
+
+/// <summary>
+/// The penetration indicator's renderable result: which tank is aimed at,
+/// which face the aim ray strikes, and the banded verdict with the numeric
+/// readout. <see cref="Band"/> is the fail-closed band: <c>Unknown</c> means
+/// the HUD must not paint a green/red verdict (unknown armor face or
+/// degenerate geometry).
+/// </summary>
+public sealed record OverlayPenBadgeResponse
+{
+    /// <summary>Entity id of the aimed enemy tank.</summary>
+    public long AimedEntityId { get; init; }
+
+    /// <summary>Struck face: <c>Front</c>, <c>Back</c>, <c>Side</c>, or
+    /// <c>Unknown</c>.</summary>
+    public string Face { get; init; } = string.Empty;
+
+    /// <summary>Banded verdict: <c>Pen</c>, <c>Marginal</c>, <c>NoPen</c>, or
+    /// <c>Unknown</c> (fail-closed).</summary>
+    public string Band { get; init; } = string.Empty;
+
+    /// <summary>Effective armor at the incidence angle, in mm; null when the
+    /// verdict cannot be derived.</summary>
+    public double? EffectiveArmorMm { get; init; }
+
+    /// <summary>Shell penetration at the hit distance, in mm; null when the
+    /// verdict cannot be derived.</summary>
+    public double? PenetrationMmAtRange { get; init; }
+
+    /// <summary>True when the shot would auto-bounce (≥ the ricochet angle and
+    /// not overmatched).</summary>
+    public bool Ricochet { get; init; }
 }
 
 /// <summary>One kill-feed entry: the destroyed tank and, when attributable,

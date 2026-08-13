@@ -157,6 +157,12 @@ public partial class MainWindow : System.Windows.Window, IDisposable
                 _hpPulseTimer.Stop();
             }
         }
+        else if (e.PropertyName == nameof(MainViewModel.PenBadge))
+        {
+            // The pen badge can change without a nameplate change (e.g. the
+            // aim moves to a tank that is currently off-viewport); re-render.
+            RenderW2sHud();
+        }
     }
 
     private void OnPlaybackTick(object? sender, EventArgs e)
@@ -204,6 +210,7 @@ public partial class MainWindow : System.Windows.Window, IDisposable
             _viewModel.MinimapCameraYawRadians,
             _viewModel.KillFeed,
             _viewModel.Scoreboard,
+            _viewModel.PenBadge,
             _viewModel.MinimapImageSource,
             progress,
             label,

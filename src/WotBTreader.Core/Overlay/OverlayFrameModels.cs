@@ -100,7 +100,8 @@ public sealed record OverlayFrame(
     OverlayCamera Camera,
     IReadOnlyList<OverlayTankState> Tanks,
     IReadOnlyList<OverlayEventPip> Pips,
-    IReadOnlyList<OverlayKill> Kills)
+    IReadOnlyList<OverlayKill> Kills,
+    PenetrationBadge? PenBadge = null)
 {
     /// <summary>Frame with an empty kill feed — for fixtures that only
     /// exercise the nameplate/pip layers.</summary>

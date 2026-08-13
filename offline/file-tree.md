@@ -436,6 +436,7 @@ src/WotBTreader.Application/Diagnostics/DiagnosticsContracts.cs
 src/WotBTreader.Application/Diagnostics/TreaderDiagnostics.cs
 src/WotBTreader.Application/Game/GameMetadataContracts.cs
 src/WotBTreader.Application/Game/GameSessionContracts.cs
+src/WotBTreader.Application/Game/OverlayPenetrationData.cs
 src/WotBTreader.Application/Properties/AssemblyInfo.cs
 src/WotBTreader.Application/Replay/LiveFrameProjector.cs
 src/WotBTreader.Application/Replay/OffsetTableReader.cs
@@ -515,6 +516,8 @@ src/WotBTreader.GameIntegration/Logs/LifecycleFeedContracts.cs
 src/WotBTreader.GameIntegration/Logs/ReplayLogContracts.cs
 src/WotBTreader.GameIntegration/Metadata/InstalledGameMetadataProvider.cs
 src/WotBTreader.GameIntegration/Metadata/MetadataResourceParser.cs
+src/WotBTreader.GameIntegration/Metadata/PenetrationDataParser.cs
+src/WotBTreader.GameIntegration/Metadata/PenetrationDataService.cs
 src/WotBTreader.GameIntegration/Metadata/ResourceOverlay.cs
 src/WotBTreader.GameIntegration/Properties/AssemblyInfo.cs
 src/WotBTreader.GameIntegration/Session/GameProcessIdentityObserver.cs
@@ -653,6 +656,7 @@ src/WotBTreader.Overlay/ViewModels/MinimapMath.cs
 src/WotBTreader.Overlay/ViewModels/NameplateItem.cs
 src/WotBTreader.Overlay/ViewModels/OwnMarkerItem.cs
 src/WotBTreader.Overlay/ViewModels/OwnMarkerMath.cs
+src/WotBTreader.Overlay/ViewModels/PenBadgeItem.cs
 src/WotBTreader.Overlay/ViewModels/PipItem.cs
 src/WotBTreader.Overlay/ViewModels/PlotPoint.cs
 src/WotBTreader.Overlay/ViewModels/RelayCommand.cs
@@ -709,6 +713,7 @@ tests/WotBTreader.Application.Tests/LiveFrameProjectorTests.cs
 tests/WotBTreader.Application.Tests/MSTestSettings.cs
 tests/WotBTreader.Application.Tests/OffsetTableReaderTests.cs
 tests/WotBTreader.Application.Tests/OverlayFrameProjectorTests.cs
+tests/WotBTreader.Application.Tests/PenetrationContextTests.cs
 tests/WotBTreader.Application.Tests/ProjectionCacheTests.cs
 tests/WotBTreader.Application.Tests/ReplayDecoderRegistryTests.cs
 tests/WotBTreader.Application.Tests/ReplayFrameSourceTests.cs
@@ -773,6 +778,8 @@ tests/WotBTreader.GameIntegration.Tests/ManagedLaunchCorrelationRegistrarTests.c
 tests/WotBTreader.GameIntegration.Tests/ManagedLaunchPreparerTests.cs
 tests/WotBTreader.GameIntegration.Tests/ManagedReplayArtifactStagerTests.cs
 tests/WotBTreader.GameIntegration.Tests/OptInInstalledGameTests.cs
+tests/WotBTreader.GameIntegration.Tests/PenetrationDataParserTests.cs
+tests/WotBTreader.GameIntegration.Tests/PenetrationDataServiceTests.cs
 tests/WotBTreader.GameIntegration.Tests/ReplayLaunchStagingPathsTests.cs
 tests/WotBTreader.GameIntegration.Tests/SuspendedGameProcessLaunchTests.cs
 tests/WotBTreader.GameIntegration.Tests/TestInfrastructure.cs

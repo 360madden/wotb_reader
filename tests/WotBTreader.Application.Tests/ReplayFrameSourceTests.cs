@@ -1,3 +1,4 @@
+using WotBTreader.Application.Game;
 using WotBTreader.Application.Replay;
 using WotBTreader.Application.Results;
 using WotBTreader.Application.Storage;
@@ -556,6 +557,63 @@ public sealed class ReplayFrameSourceTests
     }
 
     [TestMethod]
+    public void Frame_WithPenetrationContext_ComputesBadgeExcludingOwnTank()
+    {
+        // Camera (viewpoint entity 1) sits at z=+100 facing -Z (yaw pi); the
+        // enemy (entity 2) is at the origin facing +Z, so the ray strikes its
+        // FRONT. The viewpoint's own hull (distance 0) is excluded from aim
+        // targets — otherwise the ray would trivially pick the camera's own
+        // tank instead of the enemy.
+        ParticipantId viewpointId = ParticipantId.New();
+        var projection = Projection(
+            viewpointId,
+            new[]
+            {
+                Participant(viewpointId, entityId: 1, "ViewpointTank", team: 1),
+                Participant(ParticipantId.New(), entityId: 2, "EnemyTank", team: 2),
+            },
+            new[]
+            {
+                Sample(entityId: 1, seconds: 0, x: 0, y: 0, z: 100, yaw: Math.PI, pitch: 0),
+                Sample(entityId: 2, seconds: 0, x: 0, y: 0, z: 0, yaw: 0, pitch: 0),
+            },
+            events: []);
+
+        PenetrationContext context = new(
+            new Dictionary<long, TankArmor> { [2] = new(FrontMm: 93.4, SideMm: 0, RearMm: 0) },
+            new ShellSpec(Penetration0Mm: 200, CaliberMm: 100));
+
+        OverlayFrame frame = ReplayFrameSource.BuildFrame(
+            projection, TimeSpan.Zero, cameraOverride: null, context);
+
+        Assert.IsNotNull(frame.PenBadge);
+        Assert.AreEqual(2L, frame.PenBadge.Value.AimedEntityId);
+        Assert.AreEqual(StruckFace.Front, frame.PenBadge.Value.Face);
+        Assert.AreEqual(PenetrationBand.Pen, frame.PenBadge.Value.Verdict.Band);
+    }
+
+    [TestMethod]
+    public void Frame_WithoutPenetrationContext_OmitsBadge()
+    {
+        ParticipantId viewpointId = ParticipantId.New();
+        var projection = Projection(
+            viewpointId,
+            new[]
+            {
+                Participant(viewpointId, entityId: 1, "ViewpointTank", team: 1),
+            },
+            new[]
+            {
+                Sample(entityId: 1, seconds: 0, x: 0, y: 0, z: 0, yaw: 0.1),
+            },
+            events: []);
+
+        OverlayFrame frame = ReplayFrameSource.BuildFrame(projection, TimeSpan.Zero);
+
+        Assert.IsNull(frame.PenBadge);
+    }
+
+    [TestMethod]
     public async Task GetFrameAsync_SessionMissing_ReturnsFailure()
     {
         // Projection with a null session record triggers the explicit guard.
@@ -642,7 +700,8 @@ public sealed class ReplayFrameSourceTests
         double x,
         double y,
         double z,
-        double? yaw) =>
+        double? yaw,
+        double? pitch = null) =>
         new(
             PositionSampleId.New(),
             SessionId,
@@ -659,7 +718,7 @@ public sealed class ReplayFrameSourceTests
             NormalizedCoordinateSpace: null,
             Evidence,
             yaw,
-            Pitch: null,
+            pitch,
             Roll: null);
 
     private static CanonicalEvent MaxHealthEvent(long entityId, long maxHealth) =>

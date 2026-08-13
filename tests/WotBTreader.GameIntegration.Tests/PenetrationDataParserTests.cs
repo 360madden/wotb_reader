@@ -216,6 +216,43 @@ public sealed class PenetrationDataParserTests
     }
 
     [TestMethod]
+    public void ParseStockGunShellName_ReadsFirstShotOfFirstGun()
+    {
+        string? shell = PenetrationDataParser.ParseStockGunShellName(
+            Encoding.UTF8.GetBytes(
+                """
+                <root>
+                  <hull>
+                    <turretPositions><turret>0 0 0</turret></turretPositions>
+                  </hull>
+                  <turrets0>
+                    <Turret_1_GB08_Churchill_I>
+                      <guns>
+                        <_2pdr_Gun_Mk_XT>
+                          <shots>
+                            <_2pdr_AP_Mk.IXBT_2><shell>shared</shell></_2pdr_AP_Mk.IXBT_2>
+                            <_2pdr_APCNR_Mk.2><shell>shared</shell></_2pdr_APCNR_Mk.2>
+                          </shots>
+                        </_2pdr_Gun_Mk_XT>
+                      </guns>
+                    </Turret_1_GB08_Churchill_I>
+                  </turrets0>
+                </root>
+                """),
+            MaxCharacters);
+
+        Assert.AreEqual("_2pdr_AP_Mk.IXBT_2", shell);
+    }
+
+    [TestMethod]
+    public void ParseStockGunShellName_NoGuns_Null()
+    {
+        Assert.IsNull(PenetrationDataParser.ParseStockGunShellName(
+            Encoding.UTF8.GetBytes("<root><hull><weight>10</weight></hull></root>"),
+            MaxCharacters));
+    }
+
+    [TestMethod]
     public void ParseVehicleArmor_OversizedResource_Throws()
     {
         string xml = $"<root>{new string('x', (int)(MaxCharacters + 1))}</root>";

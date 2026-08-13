@@ -76,6 +76,7 @@ public class MainViewModel : INotifyPropertyChanged
     private readonly ObservableCollection<MinimapBeaconItem> _minimapBeacons = [];
     private readonly ObservableCollection<KillItem> _killFeed = [];
     private readonly ObservableCollection<ScoreboardItem> _scoreboard = [];
+    private PenBadgeItem? _penBadge;
     private CancellationTokenSource? _frameLoadCts;
     private long _frameLoadGeneration;
     private double _hudFovDegrees = 90.0;
@@ -464,6 +465,24 @@ public class MainViewModel : INotifyPropertyChanged
     /// (highest first).</summary>
     public ObservableCollection<ScoreboardItem> Scoreboard => _scoreboard;
 
+    /// <summary>The penetration indicator, when the frame resolved an aim and
+    /// a non-Unknown band. Null when there is no aim, no aimed tank, or the
+    /// install armor/shell data is unavailable — never a fabricated verdict.</summary>
+    public PenBadgeItem? PenBadge
+    {
+        get => _penBadge;
+        private set
+        {
+            if (ReferenceEquals(_penBadge, value))
+            {
+                return;
+            }
+
+            _penBadge = value;
+            OnPropertyChanged();
+        }
+    }
+
     /// <summary>Vertical field of view (degrees) used to project HUD frames.</summary>
     public double HudFovDegrees
     {
@@ -558,6 +577,15 @@ public class MainViewModel : INotifyPropertyChanged
             }
 
             LastFrameReplayTimeSeconds = frame.ReplayTimeSeconds;
+            PenBadge = frame.PenBadge is { } badge
+                && !string.Equals(badge.Band, "Unknown", StringComparison.Ordinal)
+                    ? new PenBadgeItem(
+                        badge.AimedEntityId,
+                        badge.Band,
+                        badge.EffectiveArmorMm,
+                        badge.PenetrationMmAtRange,
+                        badge.Ricochet)
+                    : null;
             _nameplates.Clear();
             _ownMarkers.Clear();
             _beacons.Clear();
