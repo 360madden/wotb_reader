@@ -32,3 +32,15 @@ public sealed record CollisionMesh(
     /// <summary>The number of triangles (<see cref="TriangleIndices"/>.Count / 3).</summary>
     public int TriangleCount => TriangleIndices.Count / 3;
 }
+
+/// <summary>
+/// One collision part — the tank's hull, turret, or gun — with its DAVA
+/// polygon-group id (1 = hull, 3 = turret, 5 = gun) and its triangle mesh.
+/// The parts share ONE Z-up rest-pose space (the collision <c>.sc2</c> scene
+/// descriptor carries identity transforms for the collision parts, verified
+/// on the real Churchill), so they can be raycast as a union without any
+/// per-part placement.
+/// </summary>
+public readonly record struct CollisionMeshPart(
+    long PartId,
+    CollisionMesh Mesh);

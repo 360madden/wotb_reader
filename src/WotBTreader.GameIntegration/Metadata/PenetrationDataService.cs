@@ -48,7 +48,7 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
         new(StringComparer.Ordinal);
     private readonly Dictionary<string, Dictionary<string, GunShellProfile>> _gunsByNation =
         new(StringComparer.Ordinal);
-    private readonly Dictionary<string, CollisionMesh?> _meshByTankId =
+    private readonly Dictionary<string, IReadOnlyList<CollisionMeshPart>?> _meshByTankId =
         new(StringComparer.Ordinal);
 
     public PenetrationDataService(
@@ -89,7 +89,7 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
         }
 
         Dictionary<long, TankArmor> armorByEntity = [];
-        Dictionary<long, CollisionMesh> meshesByEntity = [];
+        Dictionary<long, IReadOnlyList<CollisionMeshPart>> meshesByEntity = [];
         foreach (Participant participant in projection.Participants)
         {
             if (participant.EntityId is not { } entityId || string.IsNullOrWhiteSpace(participant.TankId))
@@ -111,11 +111,11 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
                 armorByEntity[entityId] = resolvedArmor;
             }
 
-            // Best-effort collision mesh: when present, the badge uses its true
-            // surface normal; when absent it falls back to the box model.
-            CollisionMesh? mesh = await ResolveMeshAsync(identity, nation, participant.TankId, cancellationToken)
-                .ConfigureAwait(false);
-            if (mesh is not null)
+            // Best-effort collision meshes: when present, the badge uses their
+            // true surface normals; when absent it falls back to the box model.
+            IReadOnlyList<CollisionMeshPart>? mesh = await ResolveMeshAsync(
+                identity, nation, participant.TankId, cancellationToken).ConfigureAwait(false);
+            if (mesh is not null && mesh.Count > 0)
             {
                 meshesByEntity[entityId] = mesh;
             }
@@ -214,7 +214,7 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
         return nation;
     }
 
-    private async ValueTask<CollisionMesh?> ResolveMeshAsync(
+    private async ValueTask<IReadOnlyList<CollisionMeshPart>?> ResolveMeshAsync(
         InstalledGameIdentity identity,
         string nation,
         string tankId,
@@ -222,20 +222,20 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
     {
         lock (_gate)
         {
-            if (_meshByTankId.TryGetValue(tankId, out CollisionMesh? cached))
+            if (_meshByTankId.TryGetValue(tankId, out IReadOnlyList<CollisionMeshPart>? cached))
             {
                 return cached;
             }
         }
 
-        CollisionMesh? mesh = null;
+        IReadOnlyList<CollisionMeshPart>? mesh = null;
         ReadOnlyMemory<byte>? payload = await ReadDvplAsync(
             CollisionMeshPath(identity, nation, tankId), cancellationToken).ConfigureAwait(false);
         if (payload is not null)
         {
             try
             {
-                mesh = CollisionMeshParser.Parse(payload.Value.Span, MaxMeshBytes);
+                mesh = CollisionMeshParser.ParseAll(payload.Value.Span, MaxMeshBytes);
             }
             catch (Exception ex) when (ex is InvalidDataException or OverflowException)
             {

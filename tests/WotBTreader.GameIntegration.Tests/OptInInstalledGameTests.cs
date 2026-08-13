@@ -79,6 +79,77 @@ public sealed class OptInInstalledGameTests
             + (first.NormalY * first.NormalY)
             + (first.NormalZ * first.NormalZ));
         Assert.AreEqual(1.0, length, 0.01);
+
+        // All three collision parts (hull / turret / gun) parse, keyed #id
+        // 1/3/5 in one shared Z-up rest-pose space (probed 2026-08-13).
+        IReadOnlyList<CollisionMeshPart> parts = CollisionMeshParser.ParseAll(
+            result.Value!.Data.Span,
+            maxBytes: 16 * 1024 * 1024);
+        Assert.HasCount(3, parts);
+        Assert.AreEqual(1, parts[0].PartId);
+        Assert.AreEqual(3, parts[1].PartId);
+        Assert.AreEqual(5, parts[2].PartId);
+        Assert.IsGreaterThan(0, parts[1].Mesh.TriangleCount);
+        Assert.IsGreaterThan(0, parts[2].Mesh.TriangleCount);
+    }
+
+    [TestMethod]
+    public async Task SceneFileParser_WhenExplicitlyOptedIn_ReadsRealSceneTransforms()
+    {
+        string? gameRoot = Environment.GetEnvironmentVariable("WOTB_TREADER_GAME_ROOT");
+        if (string.IsNullOrWhiteSpace(gameRoot))
+        {
+            Assert.Inconclusive(
+                "Set WOTB_TREADER_GAME_ROOT to opt in to read-only installed-game validation.");
+            return;
+        }
+
+        GameIntegrationOptions options = new()
+        {
+            GameInstallRoots = [gameRoot],
+            UseDefaultDiscoveryRoots = false,
+        };
+        string path = System.IO.Path.Combine(
+            gameRoot, "Data", "3d", "Tanks", "CollisionMeshes", "uk-GB08_Churchill_I.sc2.dvpl");
+        if (!File.Exists(path))
+        {
+            Assert.Inconclusive("The Churchill I scene descriptor is not installed.");
+        }
+
+        DvplReader reader = new(options);
+        var result = await reader.ReadAsync(path, CancellationToken.None);
+        Assert.IsTrue(result.IsSuccess, result.Error?.Message);
+
+        SceneDescription scene = SceneFileParser.Parse(
+            result.Value!.Data.Span,
+            maxBytes: 16 * 1024 * 1024);
+
+        // The Churchill I collision scene has 7 nodes: hull, turret_01/02,
+        // gun_01/07/08/11 (probed 2026-08-13).
+        Assert.HasCount(7, scene.Nodes);
+        string[] names = scene.Nodes.Select(node => node.Name).ToArray();
+        CollectionAssert.Contains(names, "hull");
+        CollectionAssert.Contains(names, "turret_01");
+        CollectionAssert.Contains(names, "gun_01");
+
+        // Every collision part's transform is IDENTITY (verified 2026-08-13):
+        // the three .scg groups share one Z-up rest-pose space, so no per-part
+        // placement is needed. This pins the finding the per-part raycast
+        // relies on — if a future tank carries a non-identity transform this
+        // test will fail loudly instead of misplacing armor.
+        foreach (SceneNodeTransform node in scene.Nodes)
+        {
+            Assert.AreEqual(0.0, node.TranslationX, 1e-4);
+            Assert.AreEqual(0.0, node.TranslationY, 1e-4);
+            Assert.AreEqual(0.0, node.TranslationZ, 1e-4);
+            Assert.AreEqual(0.0, node.RotationX, 1e-4);
+            Assert.AreEqual(0.0, node.RotationY, 1e-4);
+            Assert.AreEqual(0.0, node.RotationZ, 1e-4);
+            Assert.AreEqual(1.0, node.RotationW, 1e-4);
+            Assert.AreEqual(1.0, node.ScaleX, 1e-4);
+            Assert.AreEqual(1.0, node.ScaleY, 1e-4);
+            Assert.AreEqual(1.0, node.ScaleZ, 1e-4);
+        }
     }
 
     [TestMethod]
@@ -114,6 +185,9 @@ public sealed class OptInInstalledGameTests
         // I); side/rear stay 0 = unknown because the install declares no face
         // mapping for them (fail-closed, never guessed).
         Assert.AreEqual(186.7, armor.FrontMm, 1e-6);
+        // Turret front = the turret's declared primaryArmor (102 for the
+        // Churchill I turret — probed 2026-08-13).
+        Assert.IsGreaterThan(0, armor.TurretFrontMm);
         Assert.AreEqual(0, armor.SideMm, 1e-9);
         Assert.AreEqual(0, armor.RearMm, 1e-9);
 
@@ -122,9 +196,11 @@ public sealed class OptInInstalledGameTests
         Assert.IsGreaterThan(0, shell.CaliberMm);
 
         Assert.IsNotNull(context.MeshesByEntity);
-        Assert.IsTrue(context.MeshesByEntity!.TryGetValue(EnemyEntityId, out CollisionMesh? mesh));
-        Assert.IsNotNull(mesh);
-        Assert.IsGreaterThan(0, mesh.TriangleCount);
+        Assert.IsTrue(context.MeshesByEntity!.TryGetValue(
+            EnemyEntityId, out IReadOnlyList<CollisionMeshPart>? parts));
+        Assert.IsNotNull(parts);
+        Assert.HasCount(3, parts);
+        Assert.IsGreaterThan(0, parts[0].Mesh.TriangleCount);
 
         // Aim the camera head-on at the enemy: the cylinder pick + mesh
         // raycast + verdict must resolve without a crash and attribute the

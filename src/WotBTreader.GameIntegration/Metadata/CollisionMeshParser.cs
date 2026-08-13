@@ -39,7 +39,29 @@ internal static class CollisionMeshParser
     private const int MaxVertices = 1 << 20;
     private const int MaxIndices = 1 << 22;
 
+    /// <summary>
+    /// Parses the FIRST polygon group (the hull on the real installs) only —
+    /// the legacy hull-only read surface.
+    /// </summary>
     public static CollisionMesh Parse(ReadOnlySpan<byte> payload, long maxBytes)
+    {
+        IReadOnlyList<CollisionMeshPart> parts = ParseAll(payload, maxBytes);
+        return parts.Count == 0
+            ? throw new InvalidDataException("A collision-mesh resource has no polygon groups.")
+            : parts[0].Mesh;
+    }
+
+    /// <summary>
+    /// Parses EVERY polygon group into per-part meshes sharing one Z-up
+    /// rest-pose space. The real installs carry three groups keyed
+    /// <c>#id</c> 1/3/5 = hull / turret / gun (the three <c>hitTester</c>
+    /// collision models); the collision <c>.sc2</c> scene descriptor carries
+    /// identity transforms for them (verified 2026-08-13), so the parts are
+    /// raycast as a union without per-part placement.
+    /// </summary>
+    public static IReadOnlyList<CollisionMeshPart> ParseAll(
+        ReadOnlySpan<byte> payload,
+        long maxBytes)
     {
         if (payload.Length > maxBytes)
         {
@@ -50,9 +72,24 @@ internal static class CollisionMeshParser
 
         reader.ExpectMagic("SCPG"u8);
         _ = reader.ReadUInt32(); // version
-        _ = reader.ReadUInt32(); // polygon-group / format counts (opaque)
-        _ = reader.ReadUInt32();
+        uint groupCount = reader.ReadUInt32(); // polygon-group count (3 on real installs)
+        _ = reader.ReadUInt32(); // format count (opaque)
+        if (groupCount == 0 || groupCount > 32)
+        {
+            throw new InvalidDataException("A collision-mesh resource has an invalid group count.");
+        }
 
+        List<CollisionMeshPart> parts = new(capacity: checked((int)groupCount));
+        for (uint group = 0; group < groupCount; group++)
+        {
+            parts.Add(ReadGroup(ref reader));
+        }
+
+        return parts;
+    }
+
+    private static CollisionMeshPart ReadGroup(ref Reader reader)
+    {
         reader.ExpectMagic("KA"u8);
         _ = reader.ReadUInt16(); // KeyedArchive version
         int keyCount = checked((int)reader.ReadUInt32());
@@ -61,6 +98,7 @@ internal static class CollisionMeshParser
             throw new InvalidDataException("A collision-mesh archive has an invalid key count.");
         }
 
+        long partId = 0;
         int vertexCount = 0;
         int vertexFormat = 0;
         int indexCount = 0;
@@ -105,6 +143,10 @@ internal static class CollisionMeshParser
                     {
                         indices = bytes;
                     }
+                    else if (key == "#id" && bytes.Length == 8)
+                    {
+                        partId = checked((long)BinaryPrimitives.ReadUInt64LittleEndian(bytes.Span));
+                    }
 
                     break;
                 default:
@@ -113,7 +155,9 @@ internal static class CollisionMeshParser
             }
         }
 
-        return BuildMesh(vertexCount, vertexFormat, vertices, indexCount, indexFormat, indices);
+        return new CollisionMeshPart(
+            partId,
+            BuildMesh(vertexCount, vertexFormat, vertices, indexCount, indexFormat, indices));
     }
 
     private static CollisionMesh BuildMesh(

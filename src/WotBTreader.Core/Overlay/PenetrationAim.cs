@@ -11,11 +11,15 @@ namespace WotBTreader.Core.Overlay;
 /// will-penetrate verdict, so callers may pass 0 for a face whose nominal
 /// thickness is not derivable (the install's armor XML declares the FRONT
 /// via <c>primaryArmor</c> but not the side/rear face mapping).
+/// <see cref="TurretFrontMm"/> is the turret's declared frontal (primary)
+/// thickness, used when the aim ray strikes the turret or gun collision part
+/// instead of the hull; 0 = unknown (fail closed).
 /// </summary>
 public readonly record struct TankArmor(
     double FrontMm,
     double SideMm,
-    double RearMm);
+    double RearMm,
+    double TurretFrontMm = 0.0);
 
 /// <summary>
 /// Which hull face an aim ray strikes, derived from the tank's facing and
@@ -272,7 +276,7 @@ public static class PenetrationAim
     public static PenetrationVerdict EvaluateAgainstMesh(
         AimRay ray,
         OverlayTankState tank,
-        CollisionMesh mesh,
+        IReadOnlyList<CollisionMeshPart> parts,
         TankArmor armor,
         ShellSpec shell,
         out StruckFace face,
@@ -299,15 +303,28 @@ public static class PenetrationAim
             localRay.OriginX, localRay.OriginZ, localRay.OriginY,
             localRay.DirectionX, localRay.DirectionZ, localRay.DirectionY);
 
-        MeshHit? hit = CollisionRaycast.Raycast(meshRay, mesh);
-        if (hit is null)
+        // Raycast every collision part (hull/turret/gun share one rest-pose
+        // space) and take the nearest hit; the struck part selects the armor.
+        MeshHit? best = null;
+        long partId = 0;
+        foreach (CollisionMeshPart part in parts)
+        {
+            MeshHit? hit = CollisionRaycast.Raycast(meshRay, part.Mesh);
+            if (hit is { } candidate && (best is null || candidate.Distance < best.Value.Distance))
+            {
+                best = candidate;
+                partId = part.PartId;
+            }
+        }
+
+        if (best is null)
         {
             face = StruckFace.Unknown;
             return new PenetrationVerdict(
                 PenetrationBand.Unknown, null, null, null, null, Ricochet: false);
         }
 
-        face = ClassifyMeshFace(hit.Value.NormalX, hit.Value.NormalY, hit.Value.NormalZ);
+        face = ClassifyMeshFace(best.Value.NormalX, best.Value.NormalY, best.Value.NormalZ);
         if (face == StruckFace.Unknown)
         {
             // A top/bottom (deck/belly) hit is not a front/side/rear face —
@@ -316,18 +333,34 @@ public static class PenetrationAim
                 PenetrationBand.Unknown, null, null, null, null, Ricochet: false);
         }
 
-        double thickness = face switch
+        double thickness = PartFaceThickness(partId, face, armor);
+
+        ArmorPlate plate = new(
+            thickness,
+            best.Value.NormalX, best.Value.NormalY, best.Value.NormalZ,
+            best.Value.HitX, best.Value.HitY, best.Value.HitZ);
+        return ArmorPenetration.Evaluate(meshRay, plate, shell, margin);
+    }
+
+    /// <summary>
+    /// The nominal thickness for a struck collision part's face. The hull
+    /// (<c>#id</c> 1) uses the hull front/side/rear; the turret (<c>#id</c> 3)
+    /// and gun (<c>#id</c> 5) use the turret's frontal (primary) armor — their
+    /// side/rear thickness stays 0 = unknown and fails closed.
+    /// </summary>
+    private static double PartFaceThickness(long partId, StruckFace face, TankArmor armor)
+    {
+        if (partId is 3 or 5)
+        {
+            return face == StruckFace.Front ? armor.TurretFrontMm : 0.0;
+        }
+
+        return face switch
         {
             StruckFace.Front => armor.FrontMm,
             StruckFace.Back => armor.RearMm,
             _ => armor.SideMm,
         };
-
-        ArmorPlate plate = new(
-            thickness,
-            hit.Value.NormalX, hit.Value.NormalY, hit.Value.NormalZ,
-            hit.Value.HitX, hit.Value.HitY, hit.Value.HitZ);
-        return ArmorPenetration.Evaluate(meshRay, plate, shell, margin);
     }
 
     /// <summary>
@@ -348,7 +381,7 @@ public static class PenetrationAim
         IReadOnlyDictionary<long, TankArmor> armorByEntity,
         ShellSpec shell,
         double margin = 0.1,
-        IReadOnlyDictionary<long, CollisionMesh>? meshesByEntity = null)
+        IReadOnlyDictionary<long, IReadOnlyList<CollisionMeshPart>>? meshesByEntity = null)
     {
         ArgumentNullException.ThrowIfNull(tanks);
         ArgumentNullException.ThrowIfNull(armorByEntity);
@@ -378,10 +411,11 @@ public static class PenetrationAim
 
         PenetrationVerdict verdict;
         if (meshesByEntity is not null
-            && meshesByEntity.TryGetValue(aimedId.Value, out CollisionMesh? mesh))
+            && meshesByEntity.TryGetValue(aimedId.Value, out IReadOnlyList<CollisionMeshPart>? parts)
+            && parts.Count > 0)
         {
             verdict = EvaluateAgainstMesh(
-                ray.Value, tank, mesh, armor, shell, out StruckFace meshFace, margin);
+                ray.Value, tank, parts, armor, shell, out StruckFace meshFace, margin);
             if (meshFace != StruckFace.Unknown)
             {
                 face = meshFace;
@@ -407,20 +441,21 @@ public static class PenetrationAim
     }
 
     /// <summary>
-    /// Classifies a MESH-LOCAL (Z-up) surface normal into front/back/side:
-    /// the collision mesh faces +Y forward in its local space (rear = −Y,
-    /// deck = +Z). The dominant HORIZONTAL axis selects the face (sides are
-    /// the two ±X normals, treated symmetrically). A dominant VERTICAL normal
-    /// (|Z| &gt; |X| and |Z| &gt; |Y|) is a deck/belly hit — not a front/side/
-    /// rear face — and returns <see cref="StruckFace.Unknown"/> so the caller
-    /// fails closed instead of borrowing a horizontal face's armor.
+    /// Classifies a MESH-LOCAL (Z-up) surface normal into front/back/side by
+    /// its HORIZONTAL projection: the collision mesh faces +Y forward (rear
+    /// = −Y, sides = ±X), and the dominant horizontal axis selects the face.
+    /// A deck/belly hit has a NEGLIGIBLE horizontal component (its surface
+    /// faces straight up/down), so it returns <see cref="StruckFace.Unknown"/>
+    /// and the caller fails closed rather than borrowing a horizontal face's
+    /// armor. The vertical component alone must NOT gate this: a shallow
+    /// glacis (e.g. the Churchill I's ~22° plate, ny≈0.38, nz≈0.93) is more
+    /// vertical than forward yet is unmistakably the FRONT face.
     /// </summary>
     private static StruckFace ClassifyMeshFace(double nx, double ny, double nz)
     {
         double absX = Math.Abs(nx);
         double absY = Math.Abs(ny);
-        double absZ = Math.Abs(nz);
-        if (absZ > absX && absZ > absY)
+        if (absX <= 1e-9 && absY <= 1e-9)
         {
             return StruckFace.Unknown;
         }

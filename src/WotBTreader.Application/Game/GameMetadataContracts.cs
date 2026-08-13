@@ -49,7 +49,8 @@ public sealed record VehicleArmorProfile(
     string VehicleId,
     IReadOnlyList<ArmorGroup> HullGroups,
     IReadOnlyList<ArmorGroup> TurretGroups,
-    IReadOnlyList<string> PrimaryArmorGroups);
+    IReadOnlyList<string> PrimaryArmorGroups,
+    IReadOnlyList<string> TurretPrimaryArmorGroups);
 
 /// <summary>
 /// A shell's penetration-relevant stats from <c>components/shells.xml.dvpl</c>.

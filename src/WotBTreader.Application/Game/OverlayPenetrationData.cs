@@ -14,15 +14,17 @@ namespace WotBTreader.Application.Game;
 public sealed record PenetrationContext(
     IReadOnlyDictionary<long, TankArmor> ArmorByEntity,
     ShellSpec ViewerShell,
-    IReadOnlyDictionary<long, CollisionMesh>? MeshesByEntity = null)
+    IReadOnlyDictionary<long, IReadOnlyList<CollisionMeshPart>>? MeshesByEntity = null)
 {
     /// <summary>
     /// Derives the nominal <see cref="TankArmor"/> from a parsed vehicle armor
     /// profile. The FRONT face is the thickest group named by
-    /// <c>primaryArmor</c> (the declared frontal plate family); side/rear are
-    /// NOT declared by the armor XML, so they stay 0 = unknown and the badge
-    /// resolver fails them closed to <see cref="PenetrationBand.Unknown"/>
-    /// rather than guessing.
+    /// <c>primaryArmor</c> (the declared frontal plate family); the turret
+    /// front is the thickest turret group named by the turret's
+    /// <c>primaryArmor</c>. Side/rear (hull and turret) are NOT declared by
+    /// the armor XML, so they stay 0 = unknown and the badge resolver fails
+    /// them closed to <see cref="PenetrationBand.Unknown"/> rather than
+    /// guessing.
     /// </summary>
     public static TankArmor NominalArmor(VehicleArmorProfile profile)
     {
@@ -38,7 +40,18 @@ public sealed record PenetrationContext(
             }
         }
 
-        return new TankArmor(FrontMm: front, SideMm: 0, RearMm: 0);
+        HashSet<string> turretPrimary = new(profile.TurretPrimaryArmorGroups, StringComparer.Ordinal);
+        double turretFront = 0;
+        foreach (ArmorGroup group in profile.TurretGroups)
+        {
+            if (turretPrimary.Contains(group.Name))
+            {
+                turretFront = Math.Max(turretFront, group.ThicknessMm);
+            }
+        }
+
+        return new TankArmor(
+            FrontMm: front, SideMm: 0, RearMm: 0, TurretFrontMm: turretFront);
     }
 }
 

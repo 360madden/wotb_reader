@@ -220,6 +220,10 @@ public sealed class PenetrationAimTests
         return new CollisionMesh(vertices, indices);
     }
 
+    // Wraps one mesh as the HULL part (#id 1).
+    private static CollisionMeshPart[] Parts(CollisionMesh mesh, long partId = 1) =>
+        [new CollisionMeshPart(partId, mesh)];
+
     // The tank's local FRONT plate (mesh Z-up space: +Y forward): a triangle
     // at local y=1 facing +Y (outward).
     private static CollisionMesh FrontPlateMesh() => Mesh(
@@ -246,6 +250,14 @@ public sealed class PenetrationAimTests
         new CollisionVertex(1, -1, 1, 0, 0, 1),
         new CollisionVertex(0, 1, 1, 0, 0, 1));
 
+    // The tank's local FRONT GLACIS: a shallow front plate whose normal is
+    // more vertical than forward (ny=0.38, nz=0.93), matching the Churchill I's
+    // real glacis. It must still classify as FRONT, not a deck.
+    private static CollisionMesh GlacisPlateMesh() => Mesh(
+        new CollisionVertex(-1, 1, -0.2054, 0, 0.380, 0.925),
+        new CollisionVertex(1, 1, -0.2054, 0, 0.380, 0.925),
+        new CollisionVertex(0, -0.5, 0.4108, 0, 0.380, 0.925));
+
     [TestMethod]
     public void EvaluateAgainstMesh_FrontHeadOn_UsesFrontArmor()
     {
@@ -253,7 +265,7 @@ public sealed class PenetrationAimTests
         AimRay ray = new(0, 0, 100, 0, 0, -1);
 
         PenetrationVerdict verdict = PenetrationAim.EvaluateAgainstMesh(
-            ray, Tank(1, 0, 0, yaw: 0), FrontPlateMesh(), Armor, new ShellSpec(200, 100),
+            ray, Tank(1, 0, 0, yaw: 0), Parts(FrontPlateMesh()), Armor, new ShellSpec(200, 100),
             out StruckFace face);
 
         Assert.AreEqual(StruckFace.Front, face);
@@ -269,7 +281,7 @@ public sealed class PenetrationAimTests
         AimRay ray = new(100, 0, 0, -1, 0, 0);
 
         PenetrationVerdict verdict = PenetrationAim.EvaluateAgainstMesh(
-            ray, Tank(1, 0, 0, yaw: 0), SidePlateMesh(), Armor, new ShellSpec(200, 100),
+            ray, Tank(1, 0, 0, yaw: 0), Parts(SidePlateMesh()), Armor, new ShellSpec(200, 100),
             out StruckFace face);
 
         Assert.AreEqual(StruckFace.Side, face);
@@ -283,7 +295,7 @@ public sealed class PenetrationAimTests
         AimRay ray = new(0, 0, 100, 0, 0, -1);
 
         PenetrationVerdict verdict = PenetrationAim.EvaluateAgainstMesh(
-            ray, Tank(1, 0, 0, yaw: 0), OffAxisMesh(), Armor, new ShellSpec(200, 100),
+            ray, Tank(1, 0, 0, yaw: 0), Parts(OffAxisMesh()), Armor, new ShellSpec(200, 100),
             out StruckFace face);
 
         Assert.AreEqual(StruckFace.Unknown, face);
@@ -296,7 +308,7 @@ public sealed class PenetrationAimTests
         AimRay ray = new(0, 0, 100, 0, 0, -1);
 
         PenetrationVerdict verdict = PenetrationAim.EvaluateAgainstMesh(
-            ray, Tank(1, 0, 0, yaw: null), FrontPlateMesh(), Armor, new ShellSpec(200, 100),
+            ray, Tank(1, 0, 0, yaw: null), Parts(FrontPlateMesh()), Armor, new ShellSpec(200, 100),
             out StruckFace face);
 
         Assert.AreEqual(StruckFace.Unknown, face);
@@ -311,11 +323,45 @@ public sealed class PenetrationAimTests
         AimRay ray = new(0, 100, 0, 0, -1, 0); // straight down from above
 
         PenetrationVerdict verdict = PenetrationAim.EvaluateAgainstMesh(
-            ray, Tank(1, 0, 0, yaw: 0), DeckPlateMesh(), Armor, new ShellSpec(200, 100),
+            ray, Tank(1, 0, 0, yaw: 0), Parts(DeckPlateMesh()), Armor, new ShellSpec(200, 100),
             out StruckFace face);
 
         Assert.AreEqual(StruckFace.Unknown, face);
         Assert.AreEqual(PenetrationBand.Unknown, verdict.Band);
+    }
+
+    [TestMethod]
+    public void EvaluateAgainstMesh_SteepGlacis_ClassifiesFrontNotDeck()
+    {
+        // The Churchill I's glacis normal (0, 0.38, 0.93) is more vertical than
+        // forward, but it is the FRONT plate: a head-on shot must use the front
+        // armor and thicken it by the slope, not fail closed as a deck hit.
+        AimRay ray = new(0, 0, 100, 0, 0, -1);
+
+        PenetrationVerdict verdict = PenetrationAim.EvaluateAgainstMesh(
+            ray, Tank(1, 0, 0, yaw: 0), Parts(GlacisPlateMesh()), Armor, new ShellSpec(200, 100),
+            out StruckFace face);
+
+        Assert.AreEqual(StruckFace.Front, face);
+        Assert.AreEqual(PenetrationBand.NoPen, verdict.Band);
+        // Sloped: effective armor = thickness / cos(incidence) > nominal 93.4.
+        Assert.IsGreaterThan(93.4, verdict.EffectiveArmorMm!.Value);
+    }
+
+    [TestMethod]
+    public void EvaluateAgainstMesh_TurretPart_UsesTurretFrontArmor()
+    {
+        // A head-on shot at the TURRET part (#id 3) uses the turret's frontal
+        // (primary) armor (102 mm), not the hull's (186.7 mm).
+        AimRay ray = new(0, 0, 100, 0, 0, -1);
+        TankArmor armor = new(FrontMm: 186.7, SideMm: 53.4, RearMm: 53.4, TurretFrontMm: 102.0);
+
+        PenetrationVerdict verdict = PenetrationAim.EvaluateAgainstMesh(
+            ray, Tank(1, 0, 0, yaw: 0), Parts(FrontPlateMesh(), partId: 3), armor,
+            new ShellSpec(200, 100), out StruckFace face);
+
+        Assert.AreEqual(StruckFace.Front, face);
+        Assert.AreEqual(102.0, verdict.EffectiveArmorMm!.Value, 1e-9);
     }
 
     [TestMethod]
@@ -324,7 +370,7 @@ public sealed class PenetrationAimTests
         OverlayCamera camera = Camera(yaw: Math.PI, pitch: 0, x: 0, z: 100);
         OverlayTankState[] tanks = [Tank(1, 0, 0, yaw: 0)];
         Dictionary<long, TankArmor> armor = new() { [1] = Armor };
-        Dictionary<long, CollisionMesh> meshes = new() { [1] = FrontPlateMesh() };
+        Dictionary<long, IReadOnlyList<CollisionMeshPart>> meshes = new() { [1] = Parts(FrontPlateMesh()) };
 
         PenetrationBadge? badge = PenetrationAim.ResolveBadge(
             camera, tanks, armor, new ShellSpec(200, 100), meshesByEntity: meshes);

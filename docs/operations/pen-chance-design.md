@@ -1,6 +1,6 @@
 # PN — Armor penetration chance HUD (design)
 
-**Status: DESIGN — replay-first; static-data extraction is the long pole.**
+**Status: IMPLEMENTED (offline) — replay-first badge ships; per-part armor + mesh raycast + `.sc2` parser landed; live validation (PN-4) is the remaining proof.**
 **Date:** 2026-08-13
 **Roadmap:** Phase 6 (`docs/operations/product-roadmap.md`)
 
@@ -39,7 +39,7 @@ methodology the whole repo runs on.
 | **Aim line** (origin + direction) | ✅ replay, ⏳ live | Replay (in-game playback): camera pose CAM-013 (posA `+0x38` yz-swapped, yaw cos/sin `+0x50/+0x54`, pitch `+0x58`, basis `+0x80..0xA8`; aim point ~1.9 m above hull center). Live: T1 turret/gun discovery. **OFFLINE decode**: the viewpoint tank's HULL facing (type-10 yaw) only — no turret/aim rotation exists in the replay stream (`offline/replay-format.md`), so the offline aim is the hull direction, not the gun |
 | **Target state** (position, hull yaw, identity, tank model) | ✅ | Position + yaw `+0x30` verified chains; identity via roster join; tank model id decoded |
 | **Aim point on target** | build (PN-2) | Raycast the aim ray against the target's 3D hull (dimensions from static data) |
-| **Armor model + hull geometry per tank** | ✅ **PN-1 probed (2026-08-13)** | Vehicle XML (`Data/XML/item_defs/vehicles/{nation}/{tank}.xml.dvpl`) carries per-group hull + turret `<armor>` (e.g. Churchill I hull `armor_1..16` 93.4→16.7 mm, `primaryArmor`, turret 102→30 mm). Plate SLOPE/normal is in the collision geometry — **PROBED 2026-08-13**: present at `Data/3d/Tanks/CollisionMeshes/{nation}-{tank}.scg.dvpl` (SCPG `PolygonGroup`, DAVA KeyedArchive binary; `.sc2.dvpl` is the SFV2 scene descriptor). Recoverable in principle; needs a KeyedArchive + polygon-group parser |
+| **Armor model + hull geometry per tank** | ✅ **PN-1 PARSED (2026-08-13)** | Vehicle XML (`Data/XML/item_defs/vehicles/{nation}/{tank}.xml.dvpl`) carries per-group hull + turret `<armor>` (e.g. Churchill I hull `armor_1..16` 93.4→16.7 mm, `primaryArmor`, turret 102→30 mm). Plate SLOPE/normal is in the collision geometry at `Data/3d/Tanks/CollisionMeshes/{nation}-{tank}.scg.dvpl` (SCPG `PolygonGroup`, DAVA KeyedArchive binary) — **PARSED by `CollisionMeshParser.ParseAll`** (three groups: hull/turret/gun) and the `.sc2.dvpl` SFV2 scene descriptor is **PARSED by `SceneFileParser`** |
 | **Shell stats** (pen at range, caliber, normalization) | ✅ **PN-1 probed (2026-08-13)** | `components/shells.xml.dvpl` carries `caliber`/`kind`/`normalizationAngle`/`ricochetAngle` per shell; `components/guns.xml.dvpl` carries `piercingPower` (2-point range pair, e.g. "25 19"), shell `speed`, `maxDistance` |
 | **Loaded shell type** | ⛔ open question | No fire/shell-type packet in the inventory; the type-32 6-byte "shell signature" is an *effect-entity id* (0x30xxxx range), not a stat reference. See Open questions |
 | **Penetration math** | build (PN-2) | Pure module — see below |
@@ -159,62 +159,57 @@ two-caliber, pen-at-range).
    (CAM-013) captured at shot time, which needs a live session — so PN-4's
    offline geometry validation is blocked, not just deferred.
 
-## `.sc2` SFV2 format spec (probed 2026-08-13 — mapped, not yet parsed)
+## `.sc2` SFV2 format spec (PARSED 2026-08-13 — `SceneFileParser`)
 
 The `.sc2.dvpl` scene descriptor (DVPL→LZ4→binary) is the per-part placement
-source the turret/gun collision groups need. Mapped on `uk-GB08_Churchill_I.sc2`
-(3 395 bytes) with a read-only probe; the structure below is CONFIRMED from the
-bytes, the value-encoding walk is the remaining work.
+source the turret/gun collision groups need. Reverse-engineered on
+`uk-GB08_Churchill_I.sc2` (3 395 bytes) and now **parsed end-to-end** by
+`SceneFileParser` (pure span-in → `SceneDescription` out, pinned by the
+opt-in `SceneFileParser_WhenExplicitlyOptedIn_ReadsRealSceneTransforms`
+test). The full container and value walk are CONFIRMED from the bytes — no
+remaining unknowns.
 
-- **SFV2 header:** magic `SFV2` + two uint32 (41, 7 — version/format counts,
-  opaque) + a `KeyedArchive` v1 (magic `KA`, uint16 version=1, uint32 0,
-  uint32 12, uint32 1, then floats) — the SFV2 header archive.
+- **SFV2 header:** magic `SFV2` + two uint32 (opaque version/format counts) +
+  a `KeyedArchive` v1 header archive (`KA` + uint16 version + three uint32 +
+  two floats, opaque) — skipped to reach the scene archive.
 - **Scene archive:** `KA` + uint16 version=2 + uint32 keyCount (52 for the
-  Churchill), then the key table — keyCount × (uint16 length + ASCII). Keys
-  carry a `#` (or `##`) FastName marker prefix. The 52 keys, in order:
-  `##name`, `#dataNodes`, `#hierarchy`, `#id`, `#sceneComponents`, `0000`,
-  `0001`, `BLENDING`, `Entity`, `Mesh`, `MeshInstanceNodeMaterial`,
-  `NMaterial`, `RenderBatch`, `RenderComponent`, `TransformComponent`,
-  `comp.typename`, `components`, `count`, `flags`, `fxName`, `gun_01`,
-  `gun_07`, `gun_08`, `gun_11`, `hull`, `id`, `materialName`, `name`,
-  `rb.aabbox`, `rb.classname`, `rb.datasource`, `rb.nmatname`,
-  `rb.sortingKey`, `rb0.lodIndex`, `rb0.switchIndex`, `rc.renderObj`,
-  `ro.batchCount`, `ro.batches`, `ro.debugflags`, `ro.flags`,
-  `ro.notShadowOnly`, `ro.sOclCull`, `ro.sOclIndex`, `tc.localRotation`,
-  `tc.localScale`, `tc.localTranslation`, `tc.worldRotation`, `tc.worldScale`,
-  `tc.worldTranslation`, `turret_01`, `turret_02`,
-  `~res:/Materials/VertexColor.material`.
-  The node names (`hull`/`turret_01`/`turret_02`/`gun_01..11`) and the
-  `tc.local*`/`tc.world*` transform keys are exactly the per-part placement
-  data the badge needs; the key table ends at byte 711, where the value data
-  begins.
-- **Value encoding (partially mapped):** FastName values are 4-byte LE hash
-  codes (the DAVA FastName registry) that reference the key table; other
-  values are length-prefixed strings, uint32s, float32 LE, and nested `KA`
-  archives (seen as `KA` + version + subtype `02 01`). Identity transforms
-  read as a quaternion `(0,0,0,1)` and scale `(1,1,1)` in float32 LE.
+  Churchill), then the key table — keyCount × (uint16 length + ASCII), keys
+  carrying a `#`/`##` FastName marker prefix — followed by the **hash table**
+  (keyCount × uint32 LE FastName hashes, in key order) which resolves
+  hash → key name. The node names (`hull`/`turret_01`/`turret_02`/`gun_01..11`)
+  and the `tc.local*` transform keys are in the table.
+- **Value section (complete):** a uint32 entry count, then count ×
+  `<uint32 keyHash, 1-byte type, value>` entries. The observed type codes in
+  WoT Blitz's newer DAVA are: 1 bool, 2 int32, 3 float32, **4 FastName**
+  (the 4-byte hash — NOT 18; the newer DAVA reordered the `eVariantType`
+  enum, a correction to the earlier v1-era guess), 5 string (uint32 len +
+  ASCII), 6 bytes (uint32 len + bytes), 7 uint32, 8 archive, 9 int64,
+  10 uint64, 0x0b vec2, 0x0c vec3, 0x0d vec4 (float32 LE), 0x13 aabbox3,
+  0x15 float64, 0x1b vector (uint32 count + typed elements).
+- **Nested archive (type 8):** a leading uint32 byte LENGTH, then `KA 02 01`
+  + uint32 keyCount + keyCount × `<uint32 keyHash, value>` — nested archives
+  drop the key table and hash table and write hash-keyed entries directly;
+  the length is validated so a corrupt archive fails closed. This is the
+  concrete per-value layout the earlier probe called "the remaining unknown".
+- **Hierarchy semantics:** `#hierarchy` is a type-0x1b vector of node values
+  (each a type-8 archive), not raw archives. A node archive carries a `name`
+  FastName and a `components` archive mapping `0000`/`0001`/… to component
+  archives; the one with `tc.localTranslation` (a vec3) is the
+  `TransformComponent`, whose `tc.localRotation` quaternion (x,y,z,w) and
+  `tc.localScale` vec3 complete the placement.
 
-**DAVA source reference (2026-08-13):** the container is DAVA `KeyedArchive`;
-`Sources/Internal/FileSystem/KeyedArchive.cpp` in the 2018-era
-`smile4u/dava.engine` fork documents the v1 format (`KA` + uint16 version +
-uint32 count + count × [key VariantType + value VariantType]), and
-`VariantType.cpp` documents the value encoding: a 1-byte TYPE then the
-payload. Type codes (the `eVariantType` order): 0 none, 1 bool, 2 int32,
-3 float, 4 string (uint32 len + bytes), 5 widestring, 6 byte-array (uint32
-len + bytes), 7 uint32, 8 keyed-archive (uint32 len + nested `KA`), 9 int64,
-10 uint64, 11..16 vector2/3/4 + matrix2/3/4, 17 color, 18 fastname (v1 =
-uint32 len + string; v2 = the 4-byte hash), 19 aabbox3, 20 filepath, 21
-float64, 22..25 int8/uint8/int16/uint16. The v2 archive (WoT Blitz's newer
-DAVA) keeps the key table + type codes but stores FastName VALUES as the
-4-byte hash; its exact per-value layout (type byte vs hash-in-band) is the
-remaining unknown to walk.
-
-**Remaining parser work (bounded now):** the value-encoding walk — FastName
-hash → key name, nested `KA` archives, and the `#hierarchy`/`#dataNodes`/
-`#sceneComponents` array semantics — to bind each `TransformComponent` to its
-node. Until then no turret/gun group placement is possible; the hull-only
-badge is unaffected. Caveat: even with the transforms, the turret's RUNTIME
-rotation is not in the replay stream, so a placed turret is the REST pose.
+**Identity-transform finding (2026-08-13, decisive):** on the real Churchill,
+every collision part (`hull`, `turret_01`/`turret_02`, `gun_01/07/08/11`)
+carries an IDENTITY transform in the collision `.sc2` — the `.scg` polygon
+groups 1/3/5 are ALREADY in one shared Z-up rest-pose space (the turret and
+gun sit at Z≈0.86 m atop the hull). So **no per-part placement is needed**:
+`CollisionMeshParser.ParseAll` reads all three groups and the badge raycasts
+them as a union, taking the nearest hit. The `SceneFileParser` still ships
+(and is opt-in-tested) to VERIFY that assumption per-tank rather than trust
+it blindly — a tank whose transforms are non-identity would fail that test
+and flag the placement gap. Caveat (unchanged): the turret's RUNTIME rotation
+is not in the replay stream, so a placed turret is the REST pose — per-part
+armor is a better approximation than hull-only, never exact offline.
 
 ## Phase plan
 
@@ -222,7 +217,7 @@ rotation is not in the replay stream, so a placed turret is the REST pose.
 |---|---|---|
 | **PN-1** | Static-data extraction: tank armor models + hull geometry + gun/shell tables from the install's data files (read-only, evidence-first, CAM-009 style); a static store + verify script. **PROBED 2026-08-13 — the data is present and readable** (vehicle XML armor groups, shells.xml caliber/kind/normalization/ricochet, guns.xml piercingPower). Collision geometry **PARSED 2026-08-13** (`CollisionMeshParser` + `CollisionRaycast`, verified on the real Churchill mesh) — the per-plate NORMAL is now available; the remaining sub-problem is mapping the XML armor groups to the mesh faces for per-plate THICKNESS | Offline |
 | **PN-2** | Pen math module: raycast, incidence, effective armor, ricochet/overmatch, pen-at-range, banded verdict — pure, unit-tested, synthetic fixtures. **DONE 2026-08-13** (`Core/Overlay/ArmorPenetration.cs`, 18 tests). Both probe findings are MODELED and wired: `normalizationAngle` → `ShellSpec.NormalizationDegrees` (applied AFTER the raw-angle ricochet check, amplified by the two-caliber rule) and `piercingPower`'s 2-point range pair → `ShellSpec.FromPiercingPower` (pen0 + linear drop over `maxDistance`). **Mechanics corrected 2026-08-13** against the official support article: ricochet on the RAW angle (normalization never prevents a bounce) and penetration RNG is ±5% (not ±25%) | Offline |
-| **PN-3** | Replay-mode HUD: aim = camera pose (verified); pen badge (colored + numeric) on the aimed enemy's nameplate. **DONE 2026-08-13** — `PenetrationBadge`/`StruckFace`/`PenetrationAim.ResolveBadge` (Core), `IOverlayPenetrationData` + `PenetrationContext` (Application), `PenetrationDataService` (GameIntegration, reads the install armor/shell/gun + collision-mesh data), badge threaded through the frame → projection → response, and rendered by the WPF HUD (reticle-centered, green/yellow/red + numeric). Honest limits: front-only armor (side/rear = 0 → Unknown, never guessed), stock AP shell (loaded shell not decodable), thickness still nominal (the mesh surface NORMAL now drives the incidence angle — the true plate normal the box model approximated; per-plate thickness mapping is the remaining gap) | Offline, no launch |
+| **PN-3** | Replay-mode HUD: aim = camera pose (verified); pen badge (colored + numeric) on the aimed enemy's nameplate. **DONE 2026-08-13** — `PenetrationBadge`/`StruckFace`/`PenetrationAim.ResolveBadge` (Core), `IOverlayPenetrationData` + `PenetrationContext` (Application), `PenetrationDataService` (GameIntegration, reads the install armor/shell/gun + collision-mesh data), badge threaded through the frame → projection → response, and rendered by the WPF HUD (reticle-centered, green/yellow/red + numeric). **Per-part armor landed 2026-08-13:** `CollisionMeshParser.ParseAll` + `SceneFileParser` read all three `.scg` groups (hull/turret/gun, identity transforms → one shared space) and `EvaluateAgainstMesh` raycasts them as a union, scoring turret/gun hits against the turret's frontal `primaryArmor`. Honest limits: nominal thickness per part (hull front/side/rear + turret front; side/rear of the turret/gun = 0 → Unknown, never guessed), stock AP shell (loaded shell not decodable), thickness still nominal (the mesh surface NORMAL drives the incidence angle — the true plate normal; per-face thickness mapping is the remaining gap) | Offline, no launch |
 | **PN-4** | Validation loop: score the model vs decoded shot outcomes (geometry-first, then full); report hit-rate + per-shot margin | Offline, this is the proof |
 | **PN-5** | Live mode: T1 turret/gun aim + the same module, behind the X1 policy gate | Live-gated |
 
@@ -260,27 +255,28 @@ reader.
   classifies the face from the mesh-local normal (front=+Y); the real-install
   opt-in test pins a head-on Churchill shot to `StruckFace.Front` with
   effective armor ≥ the 186.7 mm nominal (the sloped glacis thickens it).
-  A top/bottom deck hit (dominant vertical normal) fails closed to Unknown
-  rather than borrowing a horizontal face's armor (fixed 2026-08-13).
-  **Three-part structure (probed 2026-08-13):** the `.scg` is NOT one merged
+  A top/bottom deck hit (no horizontal surface component) fails closed to
+  Unknown rather than borrowing a horizontal face's armor (fixed 2026-08-13).
+  **Face classification FIXED for steep plates (2026-08-13):** the first
+  deck-hit fix gated on the VERTICAL component dominating, which
+  misclassified the Churchill I's ~22° glacis (normal (0, 0.38, 0.93)) as a
+  deck hit. `ClassifyMeshFace` now classifies by the HORIZONTAL projection
+  alone (dominant X/Y axis → side/front/back; negligible horizontal → deck),
+  so a shallow glacis is Front while a true deck/belly hit stays Unknown.
+  **Three-part structure (PARSED 2026-08-13):** the `.scg` is NOT one merged
   mesh — the header's count (`a=3`) is real: three polygon groups keyed `#id`
-  1/3/5 = hull / turret / gun (the three `hitTester` collision models), each
-  in its own Z-up local space. The parser reads only group 1 (the hull) today,
-  which is correct for the badge's hull-only verdicts; the turret/gun groups
-  are in separate local spaces whose placement (and the per-part
-  hull-vs-turret armor the vehicle XML DOES declare separately) needs the
-  `.sc2` SFV2 scene transforms. **The `.sc2` was probed 2026-08-13:** it IS
-  an SFV2 scene descriptor carrying the per-part nodes (names `hull`,
-  `turret_01`, `gun_01`, …) and `TransformComponent`s with
-  `tc.localTranslation`/`tc.worldTranslation`, `tc.localRotation`,
-  `tc.localScale` — exactly the placement data the turret/gun groups need —
-  but its KeyedArchive binary (version 2, FastName-encoded keys) needs a
-  dedicated parser before it can be consumed. The vehicle XML's
-  `primaryArmor` lists the FRONTAL ARC, not a clean face split (the Churchill
-  turret's primary `armor_1 armor_3 armor_4` includes `armor_4` = 76, a side
-  plate), so per-group side/rear THICKNESS still has no face mapping. Until
-  the `.sc2` transforms are parsed, turret/side/rear stay fail-closed Unknown
-  — never a guessed convention.
+  1/3/5 = hull / turret / gun (the three `hitTester` collision models).
+  `CollisionMeshParser.ParseAll` reads ALL three into `CollisionMeshPart`s,
+  and the collision `.sc2` (parsed by `SceneFileParser`) carries IDENTITY
+  transforms for them — the parts share ONE Z-up rest-pose space, so the badge
+  raycasts them as a union and takes the nearest hit. Per-part armor is now
+  wired: a turret/gun hit (`#id` 3/5) scores against the turret's declared
+  frontal `primaryArmor` (`TankArmor.TurretFrontMm`), a hull hit against the
+  hull front/side/rear. The vehicle XML's `primaryArmor` lists the FRONTAL
+  ARC, not a clean face split (the Churchill turret's primary
+  `armor_1 armor_3 armor_4` includes `armor_4` = 76, a side plate), so
+  turret/gun side/rear THICKNESS still has no face mapping and stays
+  fail-closed Unknown — never a guessed convention.
 - **Blitz has a built-in reticle penetration indicator** (settings toggle).
   The overlay's value-add is the *numeric* readout (effective armor vs pen,
   actual %) and the aim-line-on-nameplate — not just re-deriving the color.

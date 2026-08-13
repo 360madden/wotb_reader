@@ -524,6 +524,7 @@ src/WotBTreader.GameIntegration/Metadata/MetadataResourceParser.cs
 src/WotBTreader.GameIntegration/Metadata/PenetrationDataParser.cs
 src/WotBTreader.GameIntegration/Metadata/PenetrationDataService.cs
 src/WotBTreader.GameIntegration/Metadata/ResourceOverlay.cs
+src/WotBTreader.GameIntegration/Metadata/SceneFileParser.cs
 src/WotBTreader.GameIntegration/Properties/AssemblyInfo.cs
 src/WotBTreader.GameIntegration/Session/GameProcessIdentityObserver.cs
 src/WotBTreader.GameIntegration/Session/GameProcessLauncher.cs
@@ -788,6 +789,7 @@ tests/WotBTreader.GameIntegration.Tests/OptInInstalledGameTests.cs
 tests/WotBTreader.GameIntegration.Tests/PenetrationDataParserTests.cs
 tests/WotBTreader.GameIntegration.Tests/PenetrationDataServiceTests.cs
 tests/WotBTreader.GameIntegration.Tests/ReplayLaunchStagingPathsTests.cs
+tests/WotBTreader.GameIntegration.Tests/SceneFileParserTests.cs
 tests/WotBTreader.GameIntegration.Tests/SuspendedGameProcessLaunchTests.cs
 tests/WotBTreader.GameIntegration.Tests/TestInfrastructure.cs
 tests/WotBTreader.GameIntegration.Tests/TrustedGameIdentityProviderTests.cs

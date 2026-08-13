@@ -33,7 +33,7 @@ internal static class PenetrationDataParser
         XElement? root = document.Root;
         if (root is null)
         {
-            return new VehicleArmorProfile(vehicleId, [], [], []);
+            return new VehicleArmorProfile(vehicleId, [], [], [], []);
         }
 
         List<ArmorGroup> hull = [];
@@ -76,7 +76,21 @@ internal static class PenetrationDataParser
                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
         }
 
-        return new VehicleArmorProfile(vehicleId, hull, turret, primary);
+        // The turret's declared frontal (primary) armor, from the first
+        // turret section's <primaryArmor> (the turret front is declared
+        // separately from the hull's).
+        List<string> turretPrimary = [];
+        string? turretPrimaryArmor = turretSection?.Descendants("primaryArmor")
+            .FirstOrDefault()?.Value.Trim();
+        if (!string.IsNullOrWhiteSpace(turretPrimaryArmor))
+        {
+            turretPrimary.AddRange(
+                turretPrimaryArmor.Split(
+                    (char[]?)null,
+                    StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        }
+
+        return new VehicleArmorProfile(vehicleId, hull, turret, primary, turretPrimary);
     }
 
     /// <summary>

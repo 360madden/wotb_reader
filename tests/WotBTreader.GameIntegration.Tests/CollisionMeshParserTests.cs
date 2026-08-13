@@ -83,6 +83,31 @@ public sealed class CollisionMeshParserTests
     }
 
     [TestMethod]
+    public void ParseAll_MultipleGroups_ReturnsPerPartIdAndMesh()
+    {
+        (float X, float Y, float Z, float Nx, float Ny, float Nz)[] vertices =
+        [
+            (0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f),
+            (1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f),
+            (0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f),
+        ];
+        byte[] bytes = BuildMultiGroupScpg(
+        [
+            (PartId: 1L, vertices, [0, 1, 2], IndexFormat: 0, VertexFormat: 0x207),
+            (PartId: 3L, vertices, [0, 2, 1], IndexFormat: 0, VertexFormat: 0x207),
+            (PartId: 5L, vertices, [0, 1, 2], IndexFormat: 0, VertexFormat: 0x207),
+        ]);
+
+        IReadOnlyList<CollisionMeshPart> parts = CollisionMeshParser.ParseAll(bytes, MaxBytes);
+
+        Assert.HasCount(3, parts);
+        Assert.AreEqual(1, parts[0].PartId);
+        Assert.AreEqual(3, parts[1].PartId);
+        Assert.AreEqual(5, parts[2].PartId);
+        Assert.AreEqual(1, parts[1].Mesh.TriangleCount);
+    }
+
+    [TestMethod]
     public void Parse_MissingNormalAttribute_Throws()
     {
         (float X, float Y, float Z, float Nx, float Ny, float Nz)[] vertices =
@@ -103,18 +128,53 @@ public sealed class CollisionMeshParserTests
         int indexFormat,
         int vertexFormat = 0x207)
     {
+        return BuildMultiGroupScpg(
+            [(PartId: 0L, vertices, indices, indexFormat, vertexFormat)]);
+    }
+
+    private static byte[] BuildMultiGroupScpg(
+        IReadOnlyList<(
+            long PartId,
+            (float X, float Y, float Z, float Nx, float Ny, float Nz)[] Vertices,
+            int[] Indices,
+            int IndexFormat,
+            int VertexFormat)> groups)
+    {
         using MemoryStream stream = new();
         using BinaryWriter writer = new(stream);
         writer.Write("SCPG"u8);
-        writer.Write(1);   // version
-        writer.Write(3);   // opaque
-        writer.Write(3);   // opaque
+        writer.Write(1);                    // version
+        writer.Write(groups.Count);          // polygon-group count
+        writer.Write(3);                     // opaque format count
+        foreach ((long partId,
+            (float X, float Y, float Z, float Nx, float Ny, float Nz)[] vertices,
+            int[] indices,
+            int indexFormat,
+            int vertexFormat) in groups)
+        {
+            WriteGroup(writer, partId, vertices, indices, indexFormat, vertexFormat);
+        }
+
+        writer.Flush();
+        return stream.ToArray();
+    }
+
+    private static void WriteGroup(
+        BinaryWriter writer,
+        long partId,
+        (float X, float Y, float Z, float Nx, float Ny, float Nz)[] vertices,
+        int[] indices,
+        int indexFormat,
+        int vertexFormat)
+    {
         writer.Write("KA"u8);
         writer.Write((ushort)1); // KeyedArchive version
         writer.Write(13);  // key count
 
         WriteStringValue(writer, "##name", "PolygonGroup");
-        WriteBytesValue(writer, "#id", new byte[8]);
+        byte[] idBytes = new byte[8];
+        BinaryPrimitives.WriteUInt64LittleEndian(idBytes, (ulong)partId);
+        WriteBytesValue(writer, "#id", idBytes);
         WriteIntValue(writer, "cubeTextureCoordCount", 0);
         WriteIntValue(writer, "indexCount", indices.Length);
         WriteIntValue(writer, "indexFormat", indexFormat);
@@ -126,9 +186,6 @@ public sealed class CollisionMeshParserTests
         WriteIntValue(writer, "vertexCount", vertices.Length);
         WriteIntValue(writer, "vertexFormat", vertexFormat);
         WriteBytesValue(writer, "vertices", BuildVertices(vertices, vertexFormat));
-
-        writer.Flush();
-        return stream.ToArray();
     }
 
     private static void WriteIntValue(BinaryWriter writer, string key, int value)
