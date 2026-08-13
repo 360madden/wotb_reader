@@ -58,14 +58,19 @@ public readonly record struct PenetrationBadge(
 /// rendering and frame-model plumbing sit on top of this.
 ///
 /// Honest limits (recorded, never hidden):
-///  - The hull is a vertical cylinder for ray-picking and a four-face box
-///    (front/back/left/right, facing-derived normals) for armor — nominal
-///    thickness, no plate slope. True slope/normal comes from the
-///    <c>.model</c> collision geometry (PN-1 open sub-problem).
-///  - The plate plane passes through the tank CENTER, so the hit distance
-///    (and thus the range drop) is approximate.
-///  - Aim-line == camera forward (CAM-013: the replay camera drives the
-///    viewed tank's turret). Live mode needs T1 turret discovery.
+///  - The hull is a vertical cylinder for ray-picking. The struck face's
+///    NORMAL comes from the install collision mesh when one is parsed
+///    (PN-5); the four-face box (front/back/side, facing-derived normals) is
+///    the fallback. Face THICKNESS stays nominal (front via
+///    <c>primaryArmor</c>; side/rear unknown and fail closed).
+///  - The plate plane passes through the tank CENTER for the box fallback, so
+///    its hit distance (and the range drop) is approximate.
+///  - Aim-line == the camera's forward. In live / in-game replay playback the
+///    CAM-013 chase camera follows the turret (verified); in the OFFLINE
+///    decoded replay the "camera" is the viewpoint tank's HULL facing (the
+///    type-10 yaw — no turret/aim rotation exists in the replay stream, per
+///    offline/replay-format.md), so the offline aim is the hull direction,
+///    not the gun. Live battle needs T1 turret discovery.
 /// </summary>
 public static class PenetrationAim
 {

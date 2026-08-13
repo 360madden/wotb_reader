@@ -36,7 +36,7 @@ methodology the whole repo runs on.
 
 | Input | Status | Notes |
 |---|---|---|
-| **Aim line** (origin + direction) | ✅ replay, ⏳ live | Replay: camera pose CAM-013 (posA `+0x38` yz-swapped, yaw cos/sin `+0x50/+0x54`, pitch `+0x58`, basis `+0x80..0xA8`; aim point ~1.9 m above hull center). Live: T1 turret/gun discovery |
+| **Aim line** (origin + direction) | ✅ replay, ⏳ live | Replay (in-game playback): camera pose CAM-013 (posA `+0x38` yz-swapped, yaw cos/sin `+0x50/+0x54`, pitch `+0x58`, basis `+0x80..0xA8`; aim point ~1.9 m above hull center). Live: T1 turret/gun discovery. **OFFLINE decode**: the viewpoint tank's HULL facing (type-10 yaw) only — no turret/aim rotation exists in the replay stream (`offline/replay-format.md`), so the offline aim is the hull direction, not the gun |
 | **Target state** (position, hull yaw, identity, tank model) | ✅ | Position + yaw `+0x30` verified chains; identity via roster join; tank model id decoded |
 | **Aim point on target** | build (PN-2) | Raycast the aim ray against the target's 3D hull (dimensions from static data) |
 | **Armor model + hull geometry per tank** | ✅ **PN-1 probed (2026-08-13)** | Vehicle XML (`Data/XML/item_defs/vehicles/{nation}/{tank}.xml.dvpl`) carries per-group hull + turret `<armor>` (e.g. Churchill I hull `armor_1..16` 93.4→16.7 mm, `primaryArmor`, turret 102→30 mm). Plate SLOPE/normal is in the collision geometry — **PROBED 2026-08-13**: present at `Data/3d/Tanks/CollisionMeshes/{nation}-{tank}.scg.dvpl` (SCPG `PolygonGroup`, DAVA KeyedArchive binary; `.sc2.dvpl` is the SFV2 scene descriptor). Recoverable in principle; needs a KeyedArchive + polygon-group parser |
