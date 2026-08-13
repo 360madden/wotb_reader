@@ -260,12 +260,14 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
                 : null;
             long? ownEntityId = viewpoint?.EntityId;
             int? ownTeam = viewpoint?.TeamNumber;
-            // Own tank excluded; enemies only when the own team is known.
-            // A tank whose team is unknown stays eligible (fail-open toward
-            // showing — never hide a real enemy behind a decode gap).
+            // Own tank excluded; enemies only when the own team is known;
+            // destroyed wrecks are never a target. A tank whose team is
+            // unknown stays eligible (fail-open toward showing — never hide
+            // a real enemy behind a decode gap).
             IReadOnlyList<OverlayTankState> aimTargets = tanks
                 .Where(tank => ownEntityId is not { } ownId || tank.EntityId != ownId)
                 .Where(tank => ownTeam is not { } team || tank.TeamNumber != team)
+                .Where(tank => tank.Alive)
                 .ToList();
             penBadge = PenetrationAim.ResolveBadge(
                 camera,

@@ -948,6 +948,119 @@ public sealed class ReadApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task LiveFrame_ExcludesDestroyedTankFromPenBadge()
+    {
+        // A definitively-dead tank (alive byte 0) is a wreck and never a
+        // penetration target: the badge is null even though the enemy sits
+        // directly under the aim.
+        CameraScannerStub scanner = new(
+            OperationResult.Failure<CameraPoseReadResult>(
+                new ApplicationError("unused", "Unused.")),
+            OperationResult.Success(new LiveFrameReadResult(
+                CompletedAtUtc: DateTimeOffset.UtcNow,
+                GameVersion: "11.19.0.10",
+                Type10EntityPositionStatus.Resolved,
+                FailureStage: null,
+                ReplayTimeSeconds: 150.5,
+                SameDecodedClockProven: true,
+                Camera: new CameraPoseReadResult(
+                    CompletedAtUtc: DateTimeOffset.UtcNow,
+                    GameVersion: "11.19.0.10",
+                    Status: CameraPoseStatus.Resolved,
+                    FailureStage: null,
+                    AvatarAddress: 0,
+                    CameraAddress: 0,
+                    CameraStateAddress: 0,
+                    X: 0,
+                    Y: 0,
+                    Z: 0,
+                    YawRadians: 0,
+                    PitchRadians: 0,
+                    Basis: [1, 0, 0, 0, 0, -1, 0, 1, 0],
+                    AvatarIdentityVerified: true,
+                    CameraIdentityVerified: true,
+                    CameraStateIdentityVerified: true,
+                    ConsistentDoubleRead: false,
+                    ModuleRooted: true),
+                Tanks:
+                [
+                    new LiveFrameTankState(
+                        101,
+                        Type10EntityPositionStatus.Resolved,
+                        X: 0,
+                        Y: 0,
+                        Z: 100,
+                        YawRadians: MathF.PI,
+                        HpCurrent: 0,
+                        HpMax: 1500,
+                        Alive: false,
+                        FailureStage: null,
+                        ModuleRooted: true),
+                ],
+                RosterCandidatesSeen: 14,
+                RosterFilteredOut: 2)));
+
+        Participant viewpoint = ParticipantFixture(); // EntityId 100, team 1
+        BattleSession session = new(
+            BattleSessionId.New(),
+            DecodeRunId.New(),
+            GameVersion: "11.19.0",
+            ArenaIdentity: null,
+            MapId: "11",
+            MapName: "Oasis Palms",
+            BattleTimeUtc: DateTimeOffset.UnixEpoch,
+            Duration: TimeSpan.FromSeconds(200),
+            ViewpointParticipantId: viewpoint.Id,
+            SchemaVersion: "1");
+        ReplayDecodeProjection roster = new(
+            DecodeRunFixture(),
+            Session: session,
+            Participants:
+            [
+                viewpoint,
+                ParticipantFixture() with
+                {
+                    EntityId = 101,
+                    PlayerName = "wreck",
+                    TeamNumber = 2,
+                },
+            ],
+            Positions: [],
+            Events: [],
+            RawRecords: [],
+            Warnings: []);
+
+        ShellSpec shell = new(200, 100);
+        PenetrationContext context = new(
+            ArmorByEntity: new Dictionary<long, TankArmor>
+            {
+                [101] = new TankArmor(FrontMm: 100, SideMm: 0, RearMm: 0),
+            },
+            ViewerShell: shell,
+            Shells:
+            [
+                new ShellOption("ap_shell", ShellKind.ArmorPiercing, shell),
+            ]);
+
+        Guid sessionGuid = Guid.NewGuid();
+        IResult result = await ReadApiEndpoints.GetLiveFrameAsync(
+            new DefaultHttpContext(),
+            scanner,
+            sessions: new FakeSessionQueries([], projection: roster),
+            penetrationData: new FakePenetrationData(context),
+            sessionId: sessionGuid,
+            fov: 90,
+            width: 1920,
+            height: 1080,
+            shell: null,
+            cancellationToken: TestContext.CancellationToken);
+
+        OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
+        Assert.HasCount(1, frame.Tanks);
+        Assert.IsNull(frame.PenBadge);
+    }
+
+    [TestMethod]
     public async Task LiveFrame_NoPenetrationData_OmitsBadgeButServesFrame()
     {
         // Fail-closed: a resolvable session whose install penetration data

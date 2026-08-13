@@ -90,6 +90,9 @@ public static class LiveFrameProjector
             IReadOnlyList<OverlayTankState> aimTargets = frame.Tanks
                 .Where(IsProjectable)
                 .Where(tank => ownEntityId is null || tank.EntityId != ownEntityId.Value)
+                // A definitively-dead tank (alive byte 0) is a wreck, never
+                // a penetration target; unknown/true stays eligible.
+                .Where(tank => tank.Alive is not false)
                 .Select(tank =>
                 {
                     int? team = participants is not null
