@@ -259,6 +259,44 @@ public sealed class PenetrationDataParserTests
     }
 
     [TestMethod]
+    public void ParseGunShotNames_ReadsAllShotsOfFirstGun()
+    {
+        IReadOnlyList<string> shots = PenetrationDataParser.ParseGunShotNames(
+            Encoding.UTF8.GetBytes(
+                """
+                <root>
+                  <turrets0>
+                    <Turret_1_GB08_Churchill_I>
+                      <guns>
+                        <_2pdr_Gun_Mk_XT>
+                          <shots>
+                            <_2pdr_AP_Mk.IXBT_2><shell>shared</shell></_2pdr_AP_Mk.IXBT_2>
+                            <_2pdr_APCNR_Mk.2><shell>shared</shell></_2pdr_APCNR_Mk.2>
+                            <_2pdr_HE_Mk.1><shell>shared</shell></_2pdr_HE_Mk.1>
+                          </shots>
+                        </_2pdr_Gun_Mk_XT>
+                      </guns>
+                    </Turret_1_GB08_Churchill_I>
+                  </turrets0>
+                </root>
+                """),
+            MaxCharacters);
+
+        Assert.HasCount(3, shots);
+        Assert.AreEqual("_2pdr_AP_Mk.IXBT_2", shots[0]);
+        Assert.AreEqual("_2pdr_APCNR_Mk.2", shots[1]);
+        Assert.AreEqual("_2pdr_HE_Mk.1", shots[2]);
+    }
+
+    [TestMethod]
+    public void ParseGunShotNames_NoGuns_Empty()
+    {
+        Assert.IsEmpty(PenetrationDataParser.ParseGunShotNames(
+            Encoding.UTF8.GetBytes("<root><hull><weight>10</weight></hull></root>"),
+            MaxCharacters));
+    }
+
+    [TestMethod]
     public void ParseVehicleArmor_OversizedResource_Throws()
     {
         string xml = $"<root>{new string('x', (int)(MaxCharacters + 1))}</root>";

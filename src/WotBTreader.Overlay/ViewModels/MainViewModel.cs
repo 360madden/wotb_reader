@@ -77,6 +77,9 @@ public class MainViewModel : INotifyPropertyChanged
     private readonly ObservableCollection<KillItem> _killFeed = [];
     private readonly ObservableCollection<ScoreboardItem> _scoreboard = [];
     private PenBadgeItem? _penBadge;
+    private readonly List<PenShellOption> _penShells = [];
+    private string? _penShell;
+    private string? _selectedShell;
     private CancellationTokenSource? _frameLoadCts;
     private long _frameLoadGeneration;
     private double _hudFovDegrees = 90.0;
@@ -483,6 +486,45 @@ public class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>The viewer's available shells (stock gun's shots), empty when
+    /// the pen data is unavailable.</summary>
+    public IReadOnlyList<PenShellOption> PenShells => _penShells;
+
+    /// <summary>The shell name the latest badge was scored with, or null.</summary>
+    public string? PenShell => _penShell;
+
+    /// <summary>Short label of the active shell (e.g. <c>AP</c>), or empty
+    /// when no shell is resolved.</summary>
+    public string PenShellLabel => _penShells
+        .FirstOrDefault(shell => string.Equals(shell.Name, _penShell, StringComparison.Ordinal))
+        ?.ShortLabel ?? string.Empty;
+
+    /// <summary>
+    /// Advances the selected shell to the next available option (wrap-around).
+    /// The next frame refresh re-scores the badge with the new shell; the
+    /// caller re-fetches the frame to reflect the change.
+    /// </summary>
+    public void CycleShell()
+    {
+        if (_penShells.Count < 2)
+        {
+            return;
+        }
+
+        int index = 0;
+        if (_penShell is { } current)
+        {
+            int found = _penShells.FindIndex(shell => string.Equals(shell.Name, current, StringComparison.Ordinal));
+            if (found >= 0)
+            {
+                index = (found + 1) % _penShells.Count;
+            }
+        }
+
+        _selectedShell = _penShells[index].Name;
+        OnPropertyChanged(nameof(PenShellLabel));
+    }
+
     /// <summary>Vertical field of view (degrees) used to project HUD frames.</summary>
     public double HudFovDegrees
     {
@@ -570,6 +612,7 @@ public class MainViewModel : INotifyPropertyChanged
                     _hudFovDegrees,
                     viewportWidth,
                     viewportHeight,
+                    _selectedShell,
                     cts.Token).ConfigureAwait(true);
             if (generation != _frameLoadGeneration || frame is null)
             {
@@ -577,6 +620,10 @@ public class MainViewModel : INotifyPropertyChanged
             }
 
             LastFrameReplayTimeSeconds = frame.ReplayTimeSeconds;
+            _penShells.Clear();
+            _penShells.AddRange(frame.PenShells.Select(shell => new PenShellOption(shell.Name, shell.Kind)));
+            _penShell = frame.PenShell;
+            OnPropertyChanged(nameof(PenShellLabel));
             PenBadge = frame.PenBadge is { } badge
                 && !string.Equals(badge.Band, "Unknown", StringComparison.Ordinal)
                     ? new PenBadgeItem(
@@ -584,7 +631,8 @@ public class MainViewModel : INotifyPropertyChanged
                         badge.Band,
                         badge.EffectiveArmorMm,
                         badge.PenetrationMmAtRange,
-                        badge.Ricochet)
+                        badge.Ricochet,
+                        PenShellLabel)
                     : null;
             _nameplates.Clear();
             _ownMarkers.Clear();

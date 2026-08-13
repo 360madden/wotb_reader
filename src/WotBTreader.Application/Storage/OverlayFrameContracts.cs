@@ -28,5 +28,6 @@ public interface IOverlayFrameSource
         BattleSessionId sessionId,
         TimeSpan replayTime,
         CancellationToken cancellationToken,
-        OverlayCamera? cameraOverride = null);
+        OverlayCamera? cameraOverride = null,
+        string? shellName = null);
 }

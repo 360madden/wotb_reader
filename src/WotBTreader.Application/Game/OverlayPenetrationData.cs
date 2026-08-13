@@ -14,8 +14,13 @@ namespace WotBTreader.Application.Game;
 public sealed record PenetrationContext(
     IReadOnlyDictionary<long, TankArmor> ArmorByEntity,
     ShellSpec ViewerShell,
-    IReadOnlyDictionary<long, IReadOnlyList<CollisionMeshPart>>? MeshesByEntity = null)
+    IReadOnlyDictionary<long, IReadOnlyList<CollisionMeshPart>>? MeshesByEntity = null,
+    IReadOnlyList<ShellOption>? Shells = null)
 {
+    /// <summary>The viewer's available shells (empty when none resolved). The
+    /// first option is the stock shell and equals <see cref="ViewerShell"/>.</summary>
+    public IReadOnlyList<ShellOption> AvailableShells => Shells ?? [];
+
     /// <summary>
     /// Derives the nominal <see cref="TankArmor"/> from a parsed vehicle armor
     /// profile. The FRONT face is the thickest group named by

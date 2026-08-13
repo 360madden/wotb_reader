@@ -43,7 +43,7 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
     private InstalledGameIdentity? _identity;
     private readonly Dictionary<string, string?> _nationByTankId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TankArmor> _armorByTankId = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, string?> _stockShellByTankId = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IReadOnlyList<string>?> _gunShotsByTankId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Dictionary<string, ShellProfile>> _shellsByNation =
         new(StringComparer.Ordinal);
     private readonly Dictionary<string, Dictionary<string, GunShellProfile>> _gunsByNation =
@@ -126,21 +126,24 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
             return null;
         }
 
-        // The viewer's stock shell: the viewpoint participant's default shell
-        // (loaded shell is not decodable today). A failure omits the badge.
+        // The viewer's shells: the viewpoint participant's stock-gun shots
+        // (the loaded shell is not decodable today, so every shot of the
+        // stock gun is offered as a manual choice; the first is the default).
+        // No shells omits the badge.
         Participant? viewer = ResolveViewer(projection);
-        ShellSpec? viewerShell = viewer is null
-            ? null
-            : await ResolveViewerShellAsync(identity, viewer, cancellationToken).ConfigureAwait(false);
-        if (viewerShell is null)
+        IReadOnlyList<ShellOption> shells = viewer is null
+            ? []
+            : await ResolveViewerShellsAsync(identity, viewer, cancellationToken).ConfigureAwait(false);
+        if (shells.Count == 0)
         {
             return null;
         }
 
         return new PenetrationContext(
             armorByEntity,
-            viewerShell.Value,
-            meshesByEntity.Count > 0 ? meshesByEntity : null);
+            shells[0].Spec,
+            meshesByEntity.Count > 0 ? meshesByEntity : null,
+            shells);
     }
 
     private static Participant? ResolveViewer(ReplayDecodeProjection projection)
@@ -302,50 +305,62 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
         return armor;
     }
 
-    private async ValueTask<ShellSpec?> ResolveViewerShellAsync(
+    private async ValueTask<IReadOnlyList<ShellOption>> ResolveViewerShellsAsync(
         InstalledGameIdentity identity,
         Participant viewer,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(viewer.TankId))
         {
-            return null;
+            return [];
         }
 
         string? nation = await ResolveNationAsync(identity, viewer.TankId, cancellationToken)
             .ConfigureAwait(false);
         if (nation is null)
         {
-            return null;
+            return [];
         }
 
-        string? shellName = await ResolveStockShellAsync(identity, nation, viewer.TankId, cancellationToken)
-            .ConfigureAwait(false);
-        if (shellName is null)
+        IReadOnlyList<string> shotNames = await ResolveStockGunShotsAsync(
+            identity, nation, viewer.TankId, cancellationToken).ConfigureAwait(false);
+        if (shotNames.Count == 0)
         {
-            return null;
+            return [];
         }
 
-        ShellProfile? shell = await ResolveShellAsync(identity, nation, shellName, cancellationToken)
+        Dictionary<string, ShellProfile> shells = await GetShellsAsync(identity, nation, cancellationToken)
             .ConfigureAwait(false);
-        GunShellProfile? gun = await ResolveGunAsync(identity, nation, shellName, cancellationToken)
+        Dictionary<string, GunShellProfile> guns = await GetGunsAsync(identity, nation, cancellationToken)
             .ConfigureAwait(false);
-        if (shell is null || gun is null)
+
+        List<ShellOption> options = [];
+        foreach (string shellName in shotNames)
         {
-            return null;
+            if (!shells.TryGetValue(shellName, out ShellProfile? shell)
+                || !guns.TryGetValue(shellName, out GunShellProfile? gun))
+            {
+                continue;
+            }
+
+            ShellKind kind = ShellKinds.FromInstallName(shell.Kind);
+            options.Add(new ShellOption(
+                shellName,
+                kind,
+                ShellSpec.FromPiercingPower(
+                    gun.PiercingPowerNearMm,
+                    gun.PiercingPowerFarMm,
+                    gun.MaxDistanceMeters,
+                    shell.CaliberMm,
+                    shell.RicochetDegrees,
+                    shell.NormalizationDegrees,
+                    kind)));
         }
 
-        return ShellSpec.FromPiercingPower(
-            gun.PiercingPowerNearMm,
-            gun.PiercingPowerFarMm,
-            gun.MaxDistanceMeters,
-            shell.CaliberMm,
-            shell.RicochetDegrees,
-            shell.NormalizationDegrees,
-            ShellKinds.FromInstallName(shell.Kind));
+        return options;
     }
 
-    private async ValueTask<string?> ResolveStockShellAsync(
+    private async ValueTask<IReadOnlyList<string>> ResolveStockGunShotsAsync(
         InstalledGameIdentity identity,
         string nation,
         string tankId,
@@ -353,56 +368,34 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
     {
         lock (_gate)
         {
-            if (_stockShellByTankId.TryGetValue(tankId, out string? cached))
+            if (_gunShotsByTankId.TryGetValue(tankId, out IReadOnlyList<string>? cached))
             {
-                return cached;
+                return cached ?? [];
             }
         }
 
         ReadOnlyMemory<byte>? payload = await ReadDvplAsync(
             VehiclePath(identity, nation, tankId), cancellationToken).ConfigureAwait(false);
-        string? shellName = null;
+        IReadOnlyList<string> shotNames = [];
         if (payload is not null)
         {
             try
             {
-                shellName = PenetrationDataParser.ParseStockGunShellName(
+                shotNames = PenetrationDataParser.ParseGunShotNames(
                     payload.Value.Span, MaxCharacters);
             }
             catch (Exception ex) when (ex is InvalidDataException or XmlException or DecoderFallbackException)
             {
-                shellName = null;
+                shotNames = [];
             }
         }
 
         lock (_gate)
         {
-            _stockShellByTankId[tankId] = shellName;
+            _gunShotsByTankId[tankId] = shotNames;
         }
 
-        return shellName;
-    }
-
-    private async ValueTask<ShellProfile?> ResolveShellAsync(
-        InstalledGameIdentity identity,
-        string nation,
-        string shellName,
-        CancellationToken cancellationToken)
-    {
-        Dictionary<string, ShellProfile> shells = await GetShellsAsync(identity, nation, cancellationToken)
-            .ConfigureAwait(false);
-        return shells.TryGetValue(shellName, out ShellProfile? shell) ? shell : null;
-    }
-
-    private async ValueTask<GunShellProfile?> ResolveGunAsync(
-        InstalledGameIdentity identity,
-        string nation,
-        string shellName,
-        CancellationToken cancellationToken)
-    {
-        Dictionary<string, GunShellProfile> guns = await GetGunsAsync(identity, nation, cancellationToken)
-            .ConfigureAwait(false);
-        return guns.TryGetValue(shellName, out GunShellProfile? gun) ? gun : null;
+        return shotNames;
     }
 
     private async ValueTask<Dictionary<string, ShellProfile>> GetShellsAsync(
@@ -515,7 +508,7 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
     {
         _nationByTankId.Clear();
         _armorByTankId.Clear();
-        _stockShellByTankId.Clear();
+        _gunShotsByTankId.Clear();
         _shellsByNation.Clear();
         _gunsByNation.Clear();
         _meshByTankId.Clear();

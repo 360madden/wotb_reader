@@ -1209,6 +1209,45 @@ public sealed class ReadApiEndpointsTests
         Assert.AreEqual(100.0, flag.WorldZ, 1e-9);
     }
 
+    [TestMethod]
+    public async Task OverlayFrame_ShellSelectionAndOptionsRideThrough()
+    {
+        ShellOption ap = new("ap_shell", ShellKind.ArmorPiercing, new ShellSpec(200, 100));
+        ShellOption he = new(
+            "he_shell", ShellKind.HighExplosive,
+            new ShellSpec(40, 100, RicochetDegrees: 0, NormalizationDegrees: 0));
+        FakeOverlayFrames frames = new(new OverlayFrame(
+            TimeSpan.FromSeconds(10),
+            new OverlayCamera(0, 0, 0, YawRadians: 0, PitchRadians: 0, RollRadians: 0),
+            [],
+            [],
+            [],
+            PenBadge: null,
+            PenShells: [ap, he],
+            PenShell: "he_shell"));
+
+        IResult result = await ReadApiEndpoints.GetOverlayFrameAsync(
+            new DefaultHttpContext(),
+            frames,
+            new FakeBeaconStore(),
+            Guid.NewGuid(),
+            timeSeconds: 10,
+            fov: 90,
+            width: 1920,
+            height: 1080,
+            TestContext.CancellationToken,
+            shell: "he_shell");
+
+        Assert.AreEqual("he_shell", frames.LastShellName);
+        OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
+        Assert.AreEqual("he_shell", frame.PenShell);
+        Assert.HasCount(2, frame.PenShells);
+        Assert.AreEqual("ap_shell", frame.PenShells[0].Name);
+        Assert.AreEqual("ArmorPiercing", frame.PenShells[0].Kind);
+        Assert.AreEqual("he_shell", frame.PenShells[1].Name);
+        Assert.AreEqual("HighExplosive", frame.PenShells[1].Kind);
+    }
+
     private sealed class FakeBeaconStore(IReadOnlyList<OverlayBeacon>? beacons = null) : IBeaconStore
     {
         public Task<IReadOnlyList<OverlayBeacon>> GetBeaconsAsync(
@@ -1323,13 +1362,17 @@ public sealed class ReadApiEndpointsTests
     {
         public OverlayCamera? LastCameraOverride { get; private set; }
 
+        public string? LastShellName { get; private set; }
+
         public ValueTask<OperationResult<OverlayFrame>> GetFrameAsync(
             BattleSessionId battleSessionId,
             TimeSpan replayTime,
             CancellationToken cancellationToken,
-            OverlayCamera? cameraOverride = null)
+            OverlayCamera? cameraOverride = null,
+            string? shellName = null)
         {
             LastCameraOverride = cameraOverride;
+            LastShellName = shellName;
             OverlayFrame? effective = frame is null
                 ? null
                 : cameraOverride is null

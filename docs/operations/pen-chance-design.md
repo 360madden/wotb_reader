@@ -63,6 +63,9 @@ verdict        = compare(effectiveArmor, penAtRange) + ricochet/overmatch rules
   aimed tank. **This rule is shell-stat-independent geometry** — the single
   most validation-friendly term.
 - **Overmatch**: shell caliber > 3× plate thickness → no ricochet at 70°.
+  The 3-caliber rule applies to AP/APCR only — **HEAT ricochets at its 85°
+  angle regardless of caliber** (threaded via `ShellSpec.Kind`, fixed
+  2026-08-13).
 - **Normalization**: 5° (AP) / 2° (APCR) / 0° (HE/HEAT), applied only when
   there is no ricochet, amplified by the **two-caliber rule** (caliber > 2×
   thickness → norm × 1.4 × caliber / (2 × thickness)).
@@ -217,7 +220,7 @@ armor is a better approximation than hull-only, never exact offline.
 |---|---|---|
 | **PN-1** | Static-data extraction: tank armor models + hull geometry + gun/shell tables from the install's data files (read-only, evidence-first, CAM-009 style); a static store + verify script. **PROBED 2026-08-13 — the data is present and readable** (vehicle XML armor groups, shells.xml caliber/kind/normalization/ricochet, guns.xml piercingPower). Collision geometry **PARSED 2026-08-13** (`CollisionMeshParser` + `CollisionRaycast`, verified on the real Churchill mesh) — the per-plate NORMAL is now available; the remaining sub-problem is mapping the XML armor groups to the mesh faces for per-plate THICKNESS | Offline |
 | **PN-2** | Pen math module: raycast, incidence, effective armor, ricochet/overmatch, pen-at-range, banded verdict — pure, unit-tested, synthetic fixtures. **DONE 2026-08-13** (`Core/Overlay/ArmorPenetration.cs`, 18 tests). Both probe findings are MODELED and wired: `normalizationAngle` → `ShellSpec.NormalizationDegrees` (applied AFTER the raw-angle ricochet check, amplified by the two-caliber rule) and `piercingPower`'s 2-point range pair → `ShellSpec.FromPiercingPower` (pen0 + linear drop over `maxDistance`). **Mechanics corrected 2026-08-13** against the official support article: ricochet on the RAW angle (normalization never prevents a bounce) and penetration RNG is ±5% (not ±25%) | Offline |
-| **PN-3** | Replay-mode HUD: aim = camera pose (verified); pen badge (colored + numeric) on the aimed enemy's nameplate. **DONE 2026-08-13** — `PenetrationBadge`/`StruckFace`/`PenetrationAim.ResolveBadge` (Core), `IOverlayPenetrationData` + `PenetrationContext` (Application), `PenetrationDataService` (GameIntegration, reads the install armor/shell/gun + collision-mesh data), badge threaded through the frame → projection → response, and rendered by the WPF HUD (reticle-centered, green/yellow/red + numeric). **Per-part armor landed 2026-08-13:** `CollisionMeshParser.ParseAll` + `SceneFileParser` read all three `.scg` groups (hull/turret/gun, identity transforms → one shared space) and `EvaluateAgainstMesh` raycasts them as a union, scoring turret/gun hits against the turret's frontal `primaryArmor`. Honest limits: nominal thickness per part (hull front/side/rear + turret front; side/rear of the turret/gun = 0 → Unknown, never guessed), stock AP shell (loaded shell not decodable), thickness still nominal (the mesh surface NORMAL drives the incidence angle — the true plate normal; per-face thickness mapping is the remaining gap) | Offline, no launch |
+| **PN-3** | Replay-mode HUD: aim = camera pose (verified); pen badge (colored + numeric) on the aimed enemy's nameplate. **DONE 2026-08-13** — `PenetrationBadge`/`StruckFace`/`PenetrationAim.ResolveBadge` (Core), `IOverlayPenetrationData` + `PenetrationContext` (Application), `PenetrationDataService` (GameIntegration, reads the install armor/shell/gun + collision-mesh data), badge threaded through the frame → projection → response, and rendered by the WPF HUD (reticle-centered, green/yellow/red + numeric). **Per-part armor landed 2026-08-13:** `CollisionMeshParser.ParseAll` + `SceneFileParser` read all three `.scg` groups (hull/turret/gun, identity transforms → one shared space) and `EvaluateAgainstMesh` raycasts them as a union, scoring turret/gun hits against the turret's frontal `primaryArmor`. **Shell selector landed 2026-08-13:** the badge offers a MANUAL shell choice — `PenetrationContext` carries every shot of the viewer's stock gun (`ShellOption` name+kind+spec), the frame scores with the `?shell=`-selected shell, the response surfaces `PenShells`/`PenShell`, and the overlay hotkey <c>Q</c> cycles AP/APCR/HE/HEAT (short label on the badge). **Shell kind threaded 2026-08-13:** `ShellSpec.Kind` excludes HEAT from the 3-caliber overmatch rule. Honest limits: nominal thickness per part (hull front/side/rear + turret front; side/rear of the turret/gun = 0 → Unknown, never guessed), the loaded shell is not decodable (the selector covers the stock gun's ammo, not the in-battle selection), thickness still nominal (the mesh surface NORMAL drives the incidence angle — the true plate normal; per-face thickness mapping is the remaining gap) | Offline, no launch |
 | **PN-4** | Validation loop: score the model vs decoded shot outcomes (geometry-first, then full); report hit-rate + per-shot margin | Offline, this is the proof |
 | **PN-5** | Live mode: T1 turret/gun aim + the same module, behind the X1 policy gate | Live-gated |
 
@@ -280,9 +283,13 @@ reader.
 - **Blitz has a built-in reticle penetration indicator** (settings toggle).
   The overlay's value-add is the *numeric* readout (effective armor vs pen,
   actual %) and the aim-line-on-nameplate — not just re-deriving the color.
-- **Loaded shell is not decodable today.** Until resolved, PN-3/PN-4 default
-  to the viewer's standard AP shell with a manual overlay override; the
-  validation loop's geometry-first step does not need it.
+- **Loaded shell is not decodable today.** The pen badge instead offers a
+  MANUAL selector (overlay hotkey <c>Q</c>, `?shell=` query param): every
+  shot of the viewer's STOCK gun (the loaded-gun is not decodable either),
+  surfaced as `PenShells`/`PenShell` on the frame and scored with the
+  selected shell's ricochet/normalization/pen profile. The first is the
+  default (stock) shell. Until the loaded shell is decodable the selector
+  covers the stock gun's ammo, not the in-battle selection.
 
 ## Open questions (answered by evidence, never assumed)
 

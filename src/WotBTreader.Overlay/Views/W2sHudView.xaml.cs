@@ -232,11 +232,13 @@ public sealed partial class W2sHudView : UserControl
         string band,
         double? effectiveArmorMm,
         double? penetrationMmAtRange,
-        bool ricochet)
+        bool ricochet,
+        string? shell = null)
     {
+        string prefix = string.IsNullOrEmpty(shell) ? string.Empty : $"[{shell}] ";
         if (ricochet)
         {
-            return "RICOCHET";
+            return prefix + "RICOCHET";
         }
 
         string verdict = band switch
@@ -251,6 +253,7 @@ public sealed partial class W2sHudView : UserControl
             && penetrationMmAtRange is double pen)
         {
             return string.Concat(
+                prefix,
                 verdict,
                 "  ",
                 pen.ToString("F0", CultureInfo.InvariantCulture),
@@ -259,7 +262,7 @@ public sealed partial class W2sHudView : UserControl
                 " mm");
         }
 
-        return verdict;
+        return prefix + verdict;
     }
 
     /// <summary>
@@ -290,7 +293,8 @@ public sealed partial class W2sHudView : UserControl
                     badge.Band,
                     badge.EffectiveArmorMm,
                     badge.PenetrationMmAtRange,
-                    badge.Ricochet),
+                    badge.Ricochet,
+                    badge.Shell),
                 FontSize = 12,
                 FontWeight = FontWeights.Bold,
                 Foreground = brush,

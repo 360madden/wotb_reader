@@ -184,7 +184,8 @@ internal static class ReadApiEndpoints
         double? width,
         double? height,
         CancellationToken cancellationToken,
-        IGameMemoryScanner? scanner = null)
+        IGameMemoryScanner? scanner = null,
+        string? shell = null)
     {
         ArgumentNullException.ThrowIfNull(frames);
         ArgumentNullException.ThrowIfNull(beacons);
@@ -235,7 +236,8 @@ internal static class ReadApiEndpoints
             new BattleSessionId(battleSessionId),
             TimeSpan.FromSeconds(resolvedTime),
             cancellationToken,
-            cameraOverride).ConfigureAwait(false);
+            cameraOverride,
+            shell).ConfigureAwait(false);
         if (!frameResult.IsSuccess || frameResult.Value is null)
         {
             return Problem(
@@ -465,6 +467,12 @@ internal static class ReadApiEndpoints
                     Ricochet = badge.Verdict.Ricochet,
                 }
                 : null,
+            PenShells = [.. (projection.PenShells ?? []).Select(shell => new PenShellOptionResponse
+            {
+                Name = shell.Name,
+                Kind = shell.Kind.ToString(),
+            })],
+            PenShell = projection.PenShell,
         };
 
     /// <summary>

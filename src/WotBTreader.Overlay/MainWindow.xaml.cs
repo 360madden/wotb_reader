@@ -282,6 +282,12 @@ public partial class MainWindow : System.Windows.Window, IDisposable
                 _viewModel.SetPlaybackSpeed(8.0);
                 e.Handled = true;
                 break;
+            case System.Windows.Input.Key.Q:
+                // Cycle the pen badge's shell (AP/APCR/HE/HEAT) and re-score.
+                _viewModel.CycleShell();
+                RefreshW2sFrame();
+                e.Handled = true;
+                break;
             case System.Windows.Input.Key.Escape:
                 Close();
                 e.Handled = true;

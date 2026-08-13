@@ -179,4 +179,18 @@ public sealed class W2sHudViewTests
             string.Empty,
             W2sHudView.PenBadgeLabel("Unknown", null, null, ricochet: false));
     }
+
+    [TestMethod]
+    public void PenBadgeLabel_ShellPrefix_IsIncluded()
+    {
+        Assert.AreEqual(
+            "[HEAT] PEN  92/93 mm",
+            W2sHudView.PenBadgeLabel("Pen", 93, 92, ricochet: false, shell: "HEAT"));
+        Assert.AreEqual(
+            "[HE] RICOCHET",
+            W2sHudView.PenBadgeLabel("NoPen", 93, 92, ricochet: true, shell: "HE"));
+        Assert.AreEqual(
+            "[AP] NO PEN",
+            W2sHudView.PenBadgeLabel("NoPen", null, null, ricochet: false, shell: "AP"));
+    }
 }

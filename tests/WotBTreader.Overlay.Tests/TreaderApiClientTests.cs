@@ -112,6 +112,34 @@ public sealed class TreaderApiClientTests
         Assert.IsTrue(handler.PathAndQuery.Contains("height=720", StringComparison.Ordinal));
     }
 
+    [TestMethod]
+    public async Task GetOverlayFrameAsync_WithShell_AppendsShellQuery()
+    {
+        CapturingHandler handler = new("{}");
+        using var client = new TreaderApiClient(new Uri("http://127.0.0.1:8123"), handler);
+
+        await client.GetOverlayFrameAsync(
+            Guid.Parse("3fa85f64-5717-4562-b3fc-2c963f66afa6"),
+            replayTimeSeconds: 10,
+            shell: "_2pdr_HE_Mk.1");
+
+        Assert.IsTrue(
+            handler.PathAndQuery!.Contains("shell=_2pdr_HE_Mk.1", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task GetOverlayFrameAsync_WithoutShell_NoShellQuery()
+    {
+        CapturingHandler handler = new("{}");
+        using var client = new TreaderApiClient(new Uri("http://127.0.0.1:8123"), handler);
+
+        await client.GetOverlayFrameAsync(
+            Guid.Parse("3fa85f64-5717-4562-b3fc-2c963f66afa6"),
+            replayTimeSeconds: 10);
+
+        Assert.IsFalse(handler.PathAndQuery!.Contains("shell=", StringComparison.Ordinal));
+    }
+
     private sealed class CapturingHandler : HttpMessageHandler
     {
         private readonly string? _responseJson;

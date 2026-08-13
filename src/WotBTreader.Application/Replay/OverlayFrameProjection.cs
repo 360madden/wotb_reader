@@ -79,7 +79,9 @@ public sealed record OverlayFrameProjection(
     IReadOnlyList<ProjectedBeacon> Beacons,
     IReadOnlyList<ProjectedPip> Pips,
     IReadOnlyList<OverlayKill> Kills,
-    PenetrationBadge? PenBadge = null);
+    PenetrationBadge? PenBadge = null,
+    IReadOnlyList<ShellOption>? PenShells = null,
+    string? PenShell = null);
 
 /// <summary>
 /// Projects an <see cref="OverlayFrame"/> to viewport pixels via
@@ -208,7 +210,9 @@ public static class OverlayFrameProjector
             visibleBeacons,
             pips,
             frame.Kills,
-            frame.PenBadge);
+            frame.PenBadge,
+            frame.PenShells,
+            frame.PenShell);
     }
 
     private static double DistanceMeters(OverlayBeacon beacon, OverlayCamera camera)

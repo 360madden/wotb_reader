@@ -593,6 +593,51 @@ public sealed class ReplayFrameSourceTests
     }
 
     [TestMethod]
+    public void Frame_WithShellSelection_PicksRequestedShell()
+    {
+        // The stock AP shell pens the 93.4 mm plate head-on; the HE shell
+        // (never-ricochet, 40 mm pen) does not. Selecting "he_shell" must
+        // re-score the badge with the HE profile and report it as active.
+        ParticipantId viewpointId = ParticipantId.New();
+        var projection = Projection(
+            viewpointId,
+            new[]
+            {
+                Participant(viewpointId, entityId: 1, "ViewpointTank", team: 1),
+                Participant(ParticipantId.New(), entityId: 2, "EnemyTank", team: 2),
+            },
+            new[]
+            {
+                Sample(entityId: 1, seconds: 0, x: 0, y: 0, z: 100, yaw: Math.PI, pitch: 0),
+                Sample(entityId: 2, seconds: 0, x: 0, y: 0, z: 0, yaw: 0, pitch: 0),
+            },
+            events: []);
+
+        ShellOption ap = new("ap_shell", ShellKind.ArmorPiercing, new ShellSpec(200, 100));
+        ShellOption he = new(
+            "he_shell", ShellKind.HighExplosive,
+            new ShellSpec(40, 100, RicochetDegrees: 0, NormalizationDegrees: 0));
+        PenetrationContext context = new(
+            new Dictionary<long, TankArmor> { [2] = new(FrontMm: 93.4, SideMm: 0, RearMm: 0) },
+            ap.Spec,
+            Shells: [ap, he]);
+
+        OverlayFrame frame = ReplayFrameSource.BuildFrame(
+            projection, TimeSpan.Zero, cameraOverride: null, context, shellName: "he_shell");
+
+        Assert.AreEqual("he_shell", frame.PenShell);
+        Assert.HasCount(2, frame.PenShells!);
+        Assert.IsNotNull(frame.PenBadge);
+        Assert.AreEqual(PenetrationBand.NoPen, frame.PenBadge.Value.Verdict.Band);
+
+        // The default (no name) falls back to the stock (first) shell.
+        OverlayFrame defaultFrame = ReplayFrameSource.BuildFrame(
+            projection, TimeSpan.Zero, cameraOverride: null, context);
+        Assert.AreEqual("ap_shell", defaultFrame.PenShell);
+        Assert.AreEqual(PenetrationBand.Pen, defaultFrame.PenBadge!.Value.Verdict.Band);
+    }
+
+    [TestMethod]
     public void Frame_WithoutPenetrationContext_OmitsBadge()
     {
         ParticipantId viewpointId = ParticipantId.New();

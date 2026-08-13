@@ -195,6 +195,12 @@ public sealed class OptInInstalledGameTests
         Assert.IsGreaterThan(0, shell.Penetration0Mm);
         Assert.IsGreaterThan(0, shell.CaliberMm);
 
+        // The Churchill I's stock gun (2pdr Mk XT) carries AP + APCR, so the
+        // manual selector has more than one choice and the first is the stock
+        // shell that also feeds ViewerShell.
+        Assert.IsGreaterThanOrEqualTo(2, context.Shells!.Count);
+        Assert.AreEqual(shell, context.Shells[0].Spec);
+
         Assert.IsNotNull(context.MeshesByEntity);
         Assert.IsTrue(context.MeshesByEntity!.TryGetValue(
             EnemyEntityId, out IReadOnlyList<CollisionMeshPart>? parts));

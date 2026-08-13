@@ -47,7 +47,8 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
         BattleSessionId sessionId,
         TimeSpan replayTime,
         CancellationToken cancellationToken,
-        OverlayCamera? cameraOverride = null)
+        OverlayCamera? cameraOverride = null,
+        string? shellName = null)
     {
         // The projection is immutable per session (every decode run creates a
         // fresh session id), so a cache hit skips re-reading every position /
@@ -90,14 +91,15 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
         }
 
         return OperationResult.Success(
-            BuildFrame(projection, replayTime, cameraOverride, penetration));
+            BuildFrame(projection, replayTime, cameraOverride, penetration, shellName));
     }
 
     internal static OverlayFrame BuildFrame(
         ReplayDecodeProjection projection,
         TimeSpan replayTime,
         OverlayCamera? cameraOverride = null,
-        PenetrationContext? penetration = null)
+        PenetrationContext? penetration = null,
+        string? shellName = null)
     {
         // Per-entity nearest-sample lookup over the decoded position stream.
         Dictionary<long, List<PositionSample>> byEntity = projection.Positions
@@ -238,14 +240,21 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
         tanks.Sort(static (left, right) => left.DistanceMeters.CompareTo(right.DistanceMeters));
 
         // Pen badge: the camera aim (replay == turret aim) scored against the
-        // aimed tank's nominal armor with the viewer's shell. Computed after
-        // the camera and tanks exist; fail-closed to null when the data is
-        // absent or the aim/face cannot be resolved. The viewpoint's own tank
-        // is excluded from aim targets — its hull sits at the camera origin
-        // and is never a penetration target.
+        // aimed tank's nominal armor with the selected viewer shell. Computed
+        // after the camera and tanks exist; fail-closed to null when the data
+        // is absent or the aim/face cannot be resolved. The viewpoint's own
+        // tank is excluded from aim targets — its hull sits at the camera
+        // origin and is never a penetration target.
         PenetrationBadge? penBadge = null;
+        IReadOnlyList<ShellOption> penShells = [];
+        string? penShell = null;
         if (penetration is not null)
         {
+            penShells = penetration.AvailableShells;
+            (ShellSpec viewerShell, string? activeShell) = SelectShell(
+                penetration.AvailableShells, penetration.ViewerShell, shellName);
+            penShell = activeShell;
+
             long? ownEntityId = projection.Session?.ViewpointParticipantId is { } viewpointId
                 ? projection.Participants.FirstOrDefault(
                     participant => participant.Id == viewpointId)?.EntityId
@@ -257,11 +266,39 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
                 camera,
                 aimTargets,
                 penetration.ArmorByEntity,
-                penetration.ViewerShell,
+                viewerShell,
                 meshesByEntity: penetration.MeshesByEntity);
         }
 
-        return new OverlayFrame(replayTime, camera, tanks, pips, kills, penBadge);
+        return new OverlayFrame(
+            replayTime, camera, tanks, pips, kills, penBadge, penShells, penShell);
+    }
+
+    /// <summary>
+    /// Selects the viewer shell to score the badge with: the shell named by
+    /// <paramref name="requestedName"/> when present, else the stock shell
+    /// (the first option). Returns the shell spec and its name, or the
+    /// caller's <paramref name="defaultShell"/> and null when no options exist.
+    /// </summary>
+    private static (ShellSpec Spec, string? Name) SelectShell(
+        IReadOnlyList<ShellOption> shells,
+        ShellSpec defaultShell,
+        string? requestedName)
+    {
+        if (shells.Count == 0)
+        {
+            return (defaultShell, null);
+        }
+
+        foreach (ShellOption option in shells)
+        {
+            if (string.Equals(option.Name, requestedName, StringComparison.Ordinal))
+            {
+                return (option.Spec, option.Name);
+            }
+        }
+
+        return (shells[0].Spec, shells[0].Name);
     }
 
     /// <summary>

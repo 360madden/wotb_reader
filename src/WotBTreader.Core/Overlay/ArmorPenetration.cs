@@ -71,6 +71,17 @@ public static class ShellKinds
 }
 
 /// <summary>
+/// One available shell for the viewer's gun, surfaced to the HUD so it can
+/// cycle the pen-badge shell: the install shell name, its family (the
+/// shells.xml <c>kind</c>), and its resolved penetration profile. The first
+/// option is the stock shell.
+/// </summary>
+public readonly record struct ShellOption(
+    string Name,
+    ShellKind Kind,
+    ShellSpec Spec);
+
+/// <summary>
 /// A shell's penetration profile: base penetration, caliber, linear
 /// penetration drop with distance, the auto-ricochet angle, and the shell
 /// normalization (degrees the shell "digs in", reducing the effective

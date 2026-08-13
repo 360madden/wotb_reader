@@ -147,6 +147,25 @@ internal static class PenetrationDataParser
     }
 
     /// <summary>
+    /// Reads a detailed vehicle definition's stock-gun SHOT names — every
+    /// shot of the first gun of the first <c>&lt;guns&gt;</c> block (the stock
+    /// turret's stock gun), in document order. The first is the stock shell;
+    /// the rest are the viewer's alternative ammo (AP/APCR/HE/HEAT) the pen
+    /// badge's manual selector cycles through. Empty when the vehicle
+    /// declares no gun/shots.
+    /// </summary>
+    public static IReadOnlyList<string> ParseGunShotNames(
+        ReadOnlySpan<byte> payload,
+        long maxCharacters)
+    {
+        XDocument document = Load(payload, maxCharacters);
+        XElement? guns = document.Root?.Descendants("guns").FirstOrDefault();
+        XElement? gun = guns?.Elements().FirstOrDefault();
+        XElement? shots = gun?.Element("shots");
+        return shots?.Elements().Select(shot => shot.Name.LocalName).ToList() ?? [];
+    }
+
+    /// <summary>
     /// Parses <c>components/guns.xml.dvpl</c> into gun→shell pairings. The
     /// file's layout is <c>&lt;root&gt;&lt;nextAvailableId/&gt;&lt;ids/&gt;&lt;shared&gt;…</c>
     /// — the gun definitions (the only entries carrying a <c>shots</c> list)

@@ -477,6 +477,25 @@ public sealed record OverlayFrameResponse
     /// the install armor/shell data is unavailable — the HUD must not draw a
     /// verdict it cannot derive.</summary>
     public OverlayPenBadgeResponse? PenBadge { get; init; }
+
+    /// <summary>The viewer's available shells (stock gun's shots), so the HUD
+    /// can cycle the pen-badge shell. Empty when the pen data is unavailable.</summary>
+    public IReadOnlyList<PenShellOptionResponse> PenShells { get; init; } = [];
+
+    /// <summary>The shell name this frame's badge was scored with; null when
+    /// the pen data is unavailable.</summary>
+    public string? PenShell { get; init; }
+}
+
+/// <summary>One available shell the HUD can cycle for the pen badge.</summary>
+public sealed record PenShellOptionResponse
+{
+    /// <summary>Install shell name (e.g. <c>_15mm_AP_W_Mk1</c>).</summary>
+    public string Name { get; init; } = string.Empty;
+
+    /// <summary>Shell family (<c>ArmorPiercing</c>, <c>ArmorPiercingCr</c>,
+    /// <c>HighExplosive</c>, <c>HollowCharge</c>, or <c>Unknown</c>).</summary>
+    public string Kind { get; init; } = string.Empty;
 }
 
 /// <summary>

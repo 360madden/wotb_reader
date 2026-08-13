@@ -74,6 +74,8 @@ public sealed class TreaderApiClient : IDisposable
     /// <param name="verticalFovDegrees">Vertical field of view (default 90).</param>
     /// <param name="viewportWidth">Viewport width in pixels (default 1920).</param>
     /// <param name="viewportHeight">Viewport height in pixels (default 1080).</param>
+    /// <param name="shell">Optional shell name to score the pen badge with
+    /// (default = the viewer's stock shell).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The projected frame, or null if deserialization fails.</returns>
     public async Task<OverlayFrameResponse?> GetOverlayFrameAsync(
@@ -82,15 +84,20 @@ public sealed class TreaderApiClient : IDisposable
         double verticalFovDegrees = 90.0,
         double viewportWidth = 1920.0,
         double viewportHeight = 1080.0,
+        string? shell = null,
         CancellationToken cancellationToken = default)
     {
-        string json = await _httpClient.GetStringAsync(
-            $"api/v1/sessions/{battleSessionId:D}/frame"
+        string url = $"api/v1/sessions/{battleSessionId:D}/frame"
             + $"?timeSeconds={replayTimeSeconds.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}"
             + $"&fov={verticalFovDegrees.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}"
             + $"&width={viewportWidth.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}"
-            + $"&height={viewportHeight.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}",
-            cancellationToken);
+            + $"&height={viewportHeight.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}";
+        if (!string.IsNullOrEmpty(shell))
+        {
+            url += $"&shell={Uri.EscapeDataString(shell)}";
+        }
+
+        string json = await _httpClient.GetStringAsync(url, cancellationToken);
         return JsonSerializer.Deserialize<OverlayFrameResponse>(json, SerializerOptions);
     }
 
