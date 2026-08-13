@@ -159,6 +159,48 @@ two-caliber, pen-at-range).
    (CAM-013) captured at shot time, which needs a live session — so PN-4's
    offline geometry validation is blocked, not just deferred.
 
+## `.sc2` SFV2 format spec (probed 2026-08-13 — mapped, not yet parsed)
+
+The `.sc2.dvpl` scene descriptor (DVPL→LZ4→binary) is the per-part placement
+source the turret/gun collision groups need. Mapped on `uk-GB08_Churchill_I.sc2`
+(3 395 bytes) with a read-only probe; the structure below is CONFIRMED from the
+bytes, the value-encoding walk is the remaining work.
+
+- **SFV2 header:** magic `SFV2` + two uint32 (41, 7 — version/format counts,
+  opaque) + a `KeyedArchive` v1 (magic `KA`, uint16 version=1, uint32 0,
+  uint32 12, uint32 1, then floats) — the SFV2 header archive.
+- **Scene archive:** `KA` + uint16 version=2 + uint32 keyCount (52 for the
+  Churchill), then the key table — keyCount × (uint16 length + ASCII). Keys
+  carry a `#` (or `##`) FastName marker prefix. The 52 keys, in order:
+  `##name`, `#dataNodes`, `#hierarchy`, `#id`, `#sceneComponents`, `0000`,
+  `0001`, `BLENDING`, `Entity`, `Mesh`, `MeshInstanceNodeMaterial`,
+  `NMaterial`, `RenderBatch`, `RenderComponent`, `TransformComponent`,
+  `comp.typename`, `components`, `count`, `flags`, `fxName`, `gun_01`,
+  `gun_07`, `gun_08`, `gun_11`, `hull`, `id`, `materialName`, `name`,
+  `rb.aabbox`, `rb.classname`, `rb.datasource`, `rb.nmatname`,
+  `rb.sortingKey`, `rb0.lodIndex`, `rb0.switchIndex`, `rc.renderObj`,
+  `ro.batchCount`, `ro.batches`, `ro.debugflags`, `ro.flags`,
+  `ro.notShadowOnly`, `ro.sOclCull`, `ro.sOclIndex`, `tc.localRotation`,
+  `tc.localScale`, `tc.localTranslation`, `tc.worldRotation`, `tc.worldScale`,
+  `tc.worldTranslation`, `turret_01`, `turret_02`,
+  `~res:/Materials/VertexColor.material`.
+  The node names (`hull`/`turret_01`/`turret_02`/`gun_01..11`) and the
+  `tc.local*`/`tc.world*` transform keys are exactly the per-part placement
+  data the badge needs; the key table ends at byte 711, where the value data
+  begins.
+- **Value encoding (partially mapped):** FastName values are 4-byte LE hash
+  codes (the DAVA FastName registry) that reference the key table; other
+  values are length-prefixed strings, uint32s, float32 LE, and nested `KA`
+  archives (seen as `KA` + version + subtype `02 01`). Identity transforms
+  read as a quaternion `(0,0,0,1)` and scale `(1,1,1)` in float32 LE.
+
+**Remaining parser work (bounded now):** the value-encoding walk — FastName
+hash → key name, nested `KA` archives, and the `#hierarchy`/`#dataNodes`/
+`#sceneComponents` array semantics — to bind each `TransformComponent` to its
+node. Until then no turret/gun group placement is possible; the hull-only
+badge is unaffected. Caveat: even with the transforms, the turret's RUNTIME
+rotation is not in the replay stream, so a placed turret is the REST pose.
+
 ## Phase plan
 
 | Step | Deliverable | Gate |
