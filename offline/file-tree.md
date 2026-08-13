@@ -387,6 +387,7 @@ scripts/invoke-g1-live-poll.ps1
 scripts/invoke-hp-diffing-session.ps1
 scripts/invoke-od-044-replaytime-session.ps1
 scripts/invoke-od-replay-chain.ps1
+scripts/invoke-od-replay-completion-tests.ps1
 scripts/invoke-replay-crosscheck.ps1
 scripts/invoke-scriptanalyzer.ps1
 scripts/launch-offline-replay-for-od.ps1
@@ -395,6 +396,7 @@ scripts/od-047-exact-scan-session.ps1
 scripts/od-048-monitor-correlate-session.ps1
 scripts/od-073-entity-position-poll.ps1
 scripts/od-query-state.ps1
+scripts/od-replay-completion.Tests.ps1
 scripts/od-replay-completion.ps1
 scripts/play-replay-from-hangar.ps1
 scripts/pre-arm-debugger.ps1

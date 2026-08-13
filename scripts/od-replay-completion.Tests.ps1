@@ -1,0 +1,90 @@
+# Pester smoke tests for the persisted replay-completion marker (OD-099).
+#
+# These pin the helper's three documented contracts so a regression cannot
+# slip past the gate again:
+#   1. NEVER-THROW  -- a missing replay, missing marker, corrupt marker, or
+#      wrong-typed marker returns $false instead of throwing into a caller's
+#      FAILED_unexpected path.
+#   2. FAIL-OPEN    -- an unreadable/corrupt marker never blocks a fresh run.
+#   3. CLEAN-RUN    -- a written marker is recognized for the same replay and
+#      NOT recognized once the replay's fingerprint changes.
+#
+# The marker is keyed on the full path's fingerprint, so these tests use a
+# unique temp replay path that can never collide with a real replay; every
+# marker written here is removed in AfterEach/AfterAll. The helper's marker
+# directory ($env:LOCALAPPDATA\WotBTreader\od-completion) is shared with real
+# sessions by design -- only this temp path's marker is ever touched.
+
+$here = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $here 'od-replay-completion.ps1')
+
+# Script-scope state: Pester 3.x runs BeforeAll/AfterAll in a scope that does
+# not see Describe-body variables, so shared fixtures live at script scope.
+$script:tempReplay = Join-Path ([IO.Path]::GetTempPath()) (
+    'od-completion-smoke-' + [guid]::NewGuid().ToString('N') + '.wotbreplay')
+$script:canonicalBytes = [byte[]](1..255)
+
+Describe 'od-replay-completion smoke tests' {
+    BeforeEach {
+        [IO.File]::WriteAllBytes($script:tempReplay, $script:canonicalBytes)
+    }
+
+    AfterEach {
+        $marker = Get-OdCompletionMarkerPath -ReplayPath $script:tempReplay
+        Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
+    }
+
+    AfterAll {
+        Remove-Item -LiteralPath $script:tempReplay -Force -ErrorAction SilentlyContinue
+        $marker = Get-OdCompletionMarkerPath -ReplayPath $script:tempReplay
+        Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
+    }
+
+    It 'returns false (no throw) for a replay with no marker' {
+        Test-OdReplayCompleted -ReplayPath $script:tempReplay | Should Be $false
+    }
+
+    It 'returns false (no throw) for a non-existent replay' {
+        $missing = Join-Path ([IO.Path]::GetTempPath()) (
+            'od-completion-smoke-missing-' + [guid]::NewGuid().ToString('N') + '.wotbreplay')
+        Test-OdReplayCompleted -ReplayPath $missing | Should Be $false
+    }
+
+    It 'fails open on a corrupt marker' {
+        $marker = Get-OdCompletionMarkerPath -ReplayPath $script:tempReplay
+        [IO.Directory]::CreateDirectory((Split-Path -Parent $marker)) | Out-Null
+        [IO.File]::WriteAllText($marker, 'not-json {', (New-Object Text.UTF8Encoding($false)))
+        Test-OdReplayCompleted -ReplayPath $script:tempReplay | Should Be $false
+    }
+
+    It 'fails open on a wrong-typed marker' {
+        $marker = Get-OdCompletionMarkerPath -ReplayPath $script:tempReplay
+        [IO.Directory]::CreateDirectory((Split-Path -Parent $marker)) | Out-Null
+        $full = Get-OdReplayFullPath -ReplayPath $script:tempReplay
+        $bad = @{
+            version       = 1
+            replayPath    = $full
+            replaySize    = 'not-a-long'
+            replayLastUtc = 'x'
+        } | ConvertTo-Json
+        [IO.File]::WriteAllText($marker, $bad, (New-Object Text.UTF8Encoding($false)))
+        Test-OdReplayCompleted -ReplayPath $script:tempReplay | Should Be $false
+    }
+
+    It 'writes and recognizes a clean completion marker (round trip)' {
+        Write-OdCompletionMarker -ReplayPath $script:tempReplay -Reason 'smoke' | Should Be $true
+        Test-OdReplayCompleted -ReplayPath $script:tempReplay | Should Be $true
+    }
+
+    It 'does not recognize a replay whose fingerprint changed' {
+        Write-OdCompletionMarker -ReplayPath $script:tempReplay -Reason 'smoke' | Should Be $true
+        [IO.File]::WriteAllBytes($script:tempReplay, [byte[]](1..100))
+        Test-OdReplayCompleted -ReplayPath $script:tempReplay | Should Be $false
+    }
+
+    It 'returns false (no throw) when writing a marker for a missing replay' {
+        $missing = Join-Path ([IO.Path]::GetTempPath()) (
+            'od-completion-smoke-missing-' + [guid]::NewGuid().ToString('N') + '.wotbreplay')
+        Write-OdCompletionMarker -ReplayPath $missing -Reason 'smoke' | Should Be $false
+    }
+}
