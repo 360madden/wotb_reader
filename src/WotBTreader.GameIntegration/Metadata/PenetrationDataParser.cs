@@ -133,10 +133,12 @@ internal static class PenetrationDataParser
     }
 
     /// <summary>
-    /// Parses <c>components/guns.xml.dvpl</c> into gun→shell pairings. A gun
-    /// entry is any root child carrying a <c>shots</c> list; each shot carries
-    /// the two-point <c>piercingPower</c> ("near far"), the shell muzzle
-    /// <c>speed</c>, and <c>maxDistance</c>.
+    /// Parses <c>components/guns.xml.dvpl</c> into gun→shell pairings. The
+    /// file's layout is <c>&lt;root&gt;&lt;nextAvailableId/&gt;&lt;ids/&gt;&lt;shared&gt;…</c>
+    /// — the gun definitions (the only entries carrying a <c>shots</c> list)
+    /// live under the <c>&lt;shared&gt;</c> section, NOT as root children. Each shot
+    /// carries the two-point <c>piercingPower</c> ("near far"), the shell
+    /// muzzle <c>speed</c>, and <c>maxDistance</c>.
     /// </summary>
     public static IReadOnlyList<GunShellProfile> ParseGuns(
         ReadOnlySpan<byte> payload,
@@ -144,7 +146,7 @@ internal static class PenetrationDataParser
     {
         XDocument document = Load(payload, maxCharacters);
         List<GunShellProfile> guns = [];
-        foreach (XElement gun in document.Root?.Elements() ?? [])
+        foreach (XElement gun in document.Root?.Element("shared")?.Elements() ?? [])
         {
             XElement? shots = gun.Element("shots");
             if (shots is null)

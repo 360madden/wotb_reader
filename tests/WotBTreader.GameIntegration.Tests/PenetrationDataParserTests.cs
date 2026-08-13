@@ -168,15 +168,18 @@ public sealed class PenetrationDataParserTests
                 """
                 <root>
                   <nextAvailableId>1060</nextAvailableId>
-                  <_15mm_Machine_gun_BESA>
-                    <shots>
-                      <_15mm_AP_W_Mk1>
-                        <speed>884</speed>
-                        <maxDistance>350</maxDistance>
-                        <piercingPower>25 19</piercingPower>
-                      </_15mm_AP_W_Mk1>
-                    </shots>
-                  </_15mm_Machine_gun_BESA>
+                  <ids><_15mm_Machine_gun_BESA>5</_15mm_Machine_gun_BESA></ids>
+                  <shared>
+                    <_15mm_Machine_gun_BESA>
+                      <shots>
+                        <_15mm_AP_W_Mk1>
+                          <speed>884</speed>
+                          <maxDistance>350</maxDistance>
+                          <piercingPower>25 19</piercingPower>
+                        </_15mm_AP_W_Mk1>
+                      </shots>
+                    </_15mm_Machine_gun_BESA>
+                  </shared>
                 </root>
                 """),
             MaxCharacters);
@@ -197,17 +200,20 @@ public sealed class PenetrationDataParserTests
             Encoding.UTF8.GetBytes(
                 """
                 <root>
-                  <_badGun>
-                    <shots>
-                      <_badShell>
-                        <maxDistance>350</maxDistance>
-                        <piercingPower>25</piercingPower>
-                      </_badShell>
-                    </shots>
-                  </_badGun>
-                  <_noShots>
-                    <weight>5</weight>
-                  </_noShots>
+                  <ids><_badGun>1</_badGun><_noShots>2</_noShots></ids>
+                  <shared>
+                    <_badGun>
+                      <shots>
+                        <_badShell>
+                          <maxDistance>350</maxDistance>
+                          <piercingPower>25</piercingPower>
+                        </_badShell>
+                      </shots>
+                    </_badGun>
+                    <_noShots>
+                      <weight>5</weight>
+                    </_noShots>
+                  </shared>
                 </root>
                 """),
             MaxCharacters);

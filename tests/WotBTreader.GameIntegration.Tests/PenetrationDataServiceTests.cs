@@ -68,15 +68,18 @@ public sealed class PenetrationDataServiceTests
         fixture.WriteGuns(
             """
             <root>
-              <_2pdr_Gun_Mk_XT>
-                <shots>
-                  <_2pdr_AP_Mk.IXBT_2>
-                    <speed>850</speed>
-                    <maxDistance>720</maxDistance>
-                    <piercingPower>92 72</piercingPower>
-                  </_2pdr_AP_Mk.IXBT_2>
-                </shots>
-              </_2pdr_Gun_Mk_XT>
+              <ids><_2pdr_Gun_Mk_XT>1024</_2pdr_Gun_Mk_XT></ids>
+              <shared>
+                <_2pdr_Gun_Mk_XT>
+                  <shots>
+                    <_2pdr_AP_Mk.IXBT_2>
+                      <speed>850</speed>
+                      <maxDistance>720</maxDistance>
+                      <piercingPower>92 72</piercingPower>
+                    </_2pdr_AP_Mk.IXBT_2>
+                  </shots>
+                </_2pdr_Gun_Mk_XT>
+              </shared>
             </root>
             """);
 

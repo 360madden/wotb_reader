@@ -1,4 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using WotBTreader.Application.Game;
+using WotBTreader.Core;
 using WotBTreader.Core.Overlay;
 using WotBTreader.GameIntegration.Discovery;
 using WotBTreader.GameIntegration.Dvpl;
@@ -78,6 +80,148 @@ public sealed class OptInInstalledGameTests
             + (first.NormalZ * first.NormalZ));
         Assert.AreEqual(1.0, length, 0.01);
     }
+
+    [TestMethod]
+    public async Task PenetrationDataService_WhenExplicitlyOptedIn_ResolvesChurchillArmorShellAndMesh()
+    {
+        string? gameRoot = Environment.GetEnvironmentVariable("WOTB_TREADER_GAME_ROOT");
+        if (string.IsNullOrWhiteSpace(gameRoot))
+        {
+            Assert.Inconclusive(
+                "Set WOTB_TREADER_GAME_ROOT to opt in to read-only installed-game validation.");
+            return;
+        }
+
+        GameIntegrationOptions options = new()
+        {
+            GameInstallRoots = [gameRoot],
+            UseDefaultDiscoveryRoots = false,
+        };
+        PenetrationDataService service = new(
+            new GameInstallationDiscovery(options, NullLogger<GameInstallationDiscovery>.Instance),
+            new DvplReader(options),
+            NullLogger<PenetrationDataService>.Instance);
+
+        PenetrationContext? context = await service.ResolveAsync(
+            ChurchillProjection(),
+            CancellationToken.None);
+
+        // The real install resolves the Churchill I end-to-end: nation scan →
+        // armor XML → stock-gun shell + gun join → collision mesh.
+        Assert.IsNotNull(context);
+        Assert.IsTrue(context!.ArmorByEntity.TryGetValue(EnemyEntityId, out TankArmor armor));
+        // Hull front = the thickest primaryArmor group (186.7 for the Churchill
+        // I); side/rear stay 0 = unknown because the install declares no face
+        // mapping for them (fail-closed, never guessed).
+        Assert.AreEqual(186.7, armor.FrontMm, 1e-6);
+        Assert.AreEqual(0, armor.SideMm, 1e-9);
+        Assert.AreEqual(0, armor.RearMm, 1e-9);
+
+        ShellSpec shell = context.ViewerShell;
+        Assert.IsGreaterThan(0, shell.Penetration0Mm);
+        Assert.IsGreaterThan(0, shell.CaliberMm);
+
+        Assert.IsNotNull(context.MeshesByEntity);
+        Assert.IsTrue(context.MeshesByEntity!.TryGetValue(EnemyEntityId, out CollisionMesh? mesh));
+        Assert.IsNotNull(mesh);
+        Assert.IsGreaterThan(0, mesh.TriangleCount);
+
+        // Aim the camera head-on at the enemy: the cylinder pick + mesh
+        // raycast + verdict must resolve without a crash and attribute the
+        // badge to the aimed tank. The band is deliberately unasserted — the
+        // real mesh geometry is not pinned here, so a head-on shot may resolve
+        // to a determinate band or fail closed to Unknown.
+        OverlayCamera camera = new(X: 0, Y: 0, Z: 100, YawRadians: Math.PI, PitchRadians: 0, RollRadians: null);
+        OverlayTankState[] tanks = [new OverlayTankState(
+            EnemyEntityId, X: 0, Y: 0, Z: 0, YawRadians: 0,
+            HpFraction: 1.0, Alive: true, TeamNumber: 1,
+            PlayerName: null, ClanTag: null, TankName: null, TankClass: null,
+            DistanceMeters: 100)];
+
+        PenetrationBadge? badge = PenetrationAim.ResolveBadge(
+            camera,
+            tanks,
+            context.ArmorByEntity,
+            context.ViewerShell,
+            meshesByEntity: context.MeshesByEntity);
+
+        Assert.IsNotNull(badge);
+        Assert.AreEqual(EnemyEntityId, badge.Value.AimedEntityId);
+    }
+
+    private const long EnemyEntityId = 42;
+
+    private static ReplayDecodeProjection ChurchillProjection()
+    {
+        DecodeRunId runId = DecodeRunId.New();
+        BattleSessionId sessionId = BattleSessionId.New();
+        ParticipantId viewpointId = ParticipantId.New();
+        EvidenceReference evidence = new(
+            SourceArtifactId.New(),
+            "data.wotreplay",
+            Offset: 0,
+            Length: 1,
+            new ContentHash(new string('a', ContentHash.Sha256HexLength)));
+
+        DecodeRun decodeRun = new(
+            runId,
+            evidence.SourceArtifactId,
+            DecoderId: "test",
+            DecoderVersion: "1",
+            SchemaVersion: "1",
+            DecodeRunStatus.Succeeded,
+            ReplayCapability.Participants,
+            DateTimeOffset.UnixEpoch,
+            DateTimeOffset.UnixEpoch,
+            FailureCode: null,
+            FailureSummary: null);
+        BattleSession session = new(
+            sessionId,
+            runId,
+            GameVersion: "11.19.0.10",
+            ArenaIdentity: null,
+            MapId: null,
+            MapName: null,
+            BattleTimeUtc: null,
+            Duration: null,
+            viewpointId,
+            SchemaVersion: "1");
+        return new ReplayDecodeProjection(
+            decodeRun,
+            session,
+            Participants:
+            [
+                Participant(viewpointId, 7, "GB08_Churchill_I", sessionId, evidence),
+                Participant(ParticipantId.New(), EnemyEntityId, "GB08_Churchill_I", sessionId, evidence),
+            ],
+            Positions: [],
+            Events: [],
+            RawRecords: [],
+            Warnings: []);
+    }
+
+    private static Participant Participant(
+        ParticipantId id,
+        long entityId,
+        string tankId,
+        BattleSessionId sessionId,
+        EvidenceReference evidence) =>
+        new(
+            id,
+            sessionId,
+            AccountId: null,
+            EntityId: entityId,
+            TeamNumber: null,
+            PlayerName: null,
+            ClanTag: null,
+            VehicleCompactDescriptor: null,
+            tankId,
+            TankName: null,
+            TankClass.Unknown,
+            BotStatus.Unknown,
+            EvidenceConfidence.Unknown,
+            BattleStats: null,
+            evidence);
 
     [TestMethod]
     public async Task MetadataProvider_WhenExplicitlyOptedIn_ResolvesKnownVehicleAndMap()
