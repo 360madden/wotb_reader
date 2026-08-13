@@ -39,7 +39,7 @@ methodology the whole repo runs on.
 | **Aim line** (origin + direction) | ✅ replay, ⏳ live | Replay: camera pose CAM-013 (posA `+0x38` yz-swapped, yaw cos/sin `+0x50/+0x54`, pitch `+0x58`, basis `+0x80..0xA8`; aim point ~1.9 m above hull center). Live: T1 turret/gun discovery |
 | **Target state** (position, hull yaw, identity, tank model) | ✅ | Position + yaw `+0x30` verified chains; identity via roster join; tank model id decoded |
 | **Aim point on target** | build (PN-2) | Raycast the aim ray against the target's 3D hull (dimensions from static data) |
-| **Armor model + hull geometry per tank** | ✅ **PN-1 probed (2026-08-13)** | Vehicle XML (`Data/XML/item_defs/vehicles/{nation}/{tank}.xml.dvpl`) carries per-group hull + turret `<armor>` (e.g. Churchill I hull `armor_1..16` 93.4→16.7 mm, `primaryArmor`, turret 102→30 mm). Plate SLOPE/normal lives in the `.model` collision geometry (binary, unprobed) — nominal thickness works without it; true effective armor needs it |
+| **Armor model + hull geometry per tank** | ✅ **PN-1 probed (2026-08-13)** | Vehicle XML (`Data/XML/item_defs/vehicles/{nation}/{tank}.xml.dvpl`) carries per-group hull + turret `<armor>` (e.g. Churchill I hull `armor_1..16` 93.4→16.7 mm, `primaryArmor`, turret 102→30 mm). Plate SLOPE/normal is in the collision geometry — **PROBED 2026-08-13**: present at `Data/3d/Tanks/CollisionMeshes/{nation}-{tank}.scg.dvpl` (SCPG `PolygonGroup`, DAVA KeyedArchive binary; `.sc2.dvpl` is the SFV2 scene descriptor). Recoverable in principle; needs a KeyedArchive + polygon-group parser |
 | **Shell stats** (pen at range, caliber, normalization) | ✅ **PN-1 probed (2026-08-13)** | `components/shells.xml.dvpl` carries `caliber`/`kind`/`normalizationAngle`/`ricochetAngle` per shell; `components/guns.xml.dvpl` carries `piercingPower` (2-point range pair, e.g. "25 19"), shell `speed`, `maxDistance` |
 | **Loaded shell type** | ⛔ open question | No fire/shell-type packet in the inventory; the type-32 6-byte "shell signature" is an *effect-entity id* (0x30xxxx range), not a stat reference. See Open questions |
 | **Penetration math** | build (PN-2) | Pure module — see below |
@@ -89,9 +89,14 @@ verdict        = compare(effectiveArmor, penAtRange) + ricochet/overmatch rules
    the type-32 mirror's no-damage hits), NOT per-shot pen-vs-bounce-vs-absorb.
    That is sufficient for the geometry-first ricochet check and the full
    pen/no-pen classification; disambiguating bounce-vs-absorb needs the flag
-   byte. The raw bytes are already stored in each event's `Evidence`, so the
-   flag-byte analysis is an offline data-script (read `+0x12` from
-   `Evidence.EncodedBytes`), not a re-decode.
+   byte. The raw bytes ARE stored per event, but **the evidence offset is
+   relative to the DECOMPRESSED event-stream archive entry, not the raw
+   `.wotbreplay` file** (probed 2026-08-13: `EventStreamReader.Scan` runs over
+   `archive[EventStreamEntry]`, and offsets exceed the on-disk file size) — so
+   the flag-byte analysis must go through the archive + event-stream reader
+   (the decoder's own path), not a simple file seek. The cleanest route is a
+   small decoder-side surface change that surfaces the flag byte (and the
+   type-32 flags) at decode time.
 
 ## Phase plan
 
@@ -123,12 +128,12 @@ reader.
 
 - **PN-1 feasibility is RESOLVED — the data ships readable** (probed
   2026-08-13: vehicle XML + shells.xml + guns.xml, all DVPL/LZ4 → XML,
-  decompress cleanly with the existing `DvplReader` contract). The remaining
-  risk is the **plate slope/normal**, which lives in the `.model` collision
-  geometry (a binary format the probe did not touch) — without it the model
-  uses nominal thickness (a first-order approximation); with it, true
-  effective armor. If the `.model` format proves unreadable, the fallback is
-  a per-armor-group slope table (community-derived) — flagged, not assumed.
+  decompress cleanly with the existing `DvplReader` contract). The remaining risk is the **plate slope/normal**, which lives in the
+  `.scg` collision geometry (probed 2026-08-13: present, SCPG `PolygonGroup`
+  DAVA KeyedArchive binary) — without a parser for it the model uses nominal
+  thickness (a first-order approximation); with it, true effective armor. If
+  the KeyedArchive/polygon-group format proves unreadable, the fallback is a
+  per-armor-group slope table (community-derived) — flagged, not assumed.
 - **Blitz has a built-in reticle penetration indicator** (settings toggle).
   The overlay's value-add is the *numeric* readout (effective armor vs pen,
   actual %) and the aim-line-on-nameplate — not just re-deriving the color.
@@ -143,8 +148,11 @@ reader.
    {tank}.xml.dvpl` (per-group hull + turret armor), `.../{nation}/components/
    shells.xml.dvpl` (caliber/kind/normalizationAngle/ricochetAngle),
    `.../components/guns.xml.dvpl` (piercingPower pair + speed + maxDistance),
-   all DVPL/LZ4 → XML, decompress cleanly. The remaining sub-question is the
-   plate-slope geometry in the `.model` collision files (binary).
+   all DVPL/LZ4 → XML, decompress cleanly. The remaining sub-question is the plate-slope geometry — **PROBED
+   2026-08-13**: it is the `Data/3d/Tanks/CollisionMeshes/{nation}-{tank}.scg.dvpl`
+   SCPG `PolygonGroup` KeyedArchive binary (the `.model` string in the vehicle
+   XML resolves to these `.sc2`/`.scg` files), needing a KeyedArchive +
+   polygon-group parser.
 2. Does the type-8 flag byte / type-32 flag prefix distinguish pen vs bounce
    vs absorb per shot? **Status (2026-08-13):** the flag byte is unread and
    type-32 is raw-only today (see the validation loop's decode-lane status) —
