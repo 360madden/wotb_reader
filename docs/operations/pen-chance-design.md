@@ -125,6 +125,15 @@ verdict        = compare(effectiveArmor, penAtRange) + ricochet/overmatch rules
    the descriptor→tank-id resolution must go through the enrichment, not a
    raw SQL join).
 
+   **Shell direction is NOT decodable offline (probed 2026-08-13):** the
+   position stream carries no short-lived projectile entities — every entity
+   id has ≥500 samples (tanks, the duplicate-self streams, and debris, no
+   shells) — so the per-shot aim cannot be reconstructed from a projectile
+   trajectory. The remaining PN-4 aim sources are the attacker→victim
+   center-line (already shown too coarse, point 4) and the LIVE camera aim
+   (CAM-013) captured at shot time, which needs a live session — so PN-4's
+   offline geometry validation is blocked, not just deferred.
+
 ## Phase plan
 
 | Step | Deliverable | Gate |
@@ -176,7 +185,13 @@ reader.
   which is correct for the badge's hull-only verdicts; the turret/gun groups
   are in separate local spaces whose placement (and the per-part
   hull-vs-turret armor the vehicle XML DOES declare separately) needs the
-  `.sc2` SFV2 scene transforms, not yet parsed. The vehicle XML's
+  `.sc2` SFV2 scene transforms. **The `.sc2` was probed 2026-08-13:** it IS
+  an SFV2 scene descriptor carrying the per-part nodes (names `hull`,
+  `turret_01`, `gun_01`, …) and `TransformComponent`s with
+  `tc.localTranslation`/`tc.worldTranslation`, `tc.localRotation`,
+  `tc.localScale` — exactly the placement data the turret/gun groups need —
+  but its KeyedArchive binary (version 2, FastName-encoded keys) needs a
+  dedicated parser before it can be consumed. The vehicle XML's
   `primaryArmor` lists the FRONTAL ARC, not a clean face split (the Churchill
   turret's primary `armor_1 armor_3 armor_4` includes `armor_4` = 76, a side
   plate), so per-group side/rear THICKNESS still has no face mapping. Until
