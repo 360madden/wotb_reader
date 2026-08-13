@@ -244,11 +244,75 @@ public static class PenetrationAim
     }
 
     /// <summary>
+    /// Scores the penetration chance against one tank using the install
+    /// collision MESH (PN-5): the world aim ray is transformed into the tank's
+    /// local collision space (position offset + yaw rotation; the mesh faces
+    /// +Z forward), raycast against the triangle surface, and the struck
+    /// triangle's OUTWARD surface normal drives the incidence angle — the true
+    /// plate normal the four-face box approximated. The nominal face thickness
+    /// (front/side/rear) is still selected from the struck face, so the
+    /// effective-armor ANGLE is now geometric even while the thickness stays
+    /// nominal. <paramref name="face"/> receives the struck face classified
+    /// from the LOCAL surface normal (<see cref="StruckFace.Unknown"/> when
+    /// no hit or no facing). Fail-closed: no facing, no hit, or a degenerate
+    /// mesh yields <see cref="PenetrationBand.Unknown"/>.
+    /// </summary>
+    public static PenetrationVerdict EvaluateAgainstMesh(
+        AimRay ray,
+        OverlayTankState tank,
+        CollisionMesh mesh,
+        TankArmor armor,
+        ShellSpec shell,
+        out StruckFace face,
+        double margin = 0.1)
+    {
+        if (tank.YawRadians is not { } yaw
+            || !double.IsFinite(yaw)
+            || !double.IsFinite(tank.X) || !double.IsFinite(tank.Y)
+            || !double.IsFinite(tank.Z))
+        {
+            face = StruckFace.Unknown;
+            return new PenetrationVerdict(
+                PenetrationBand.Unknown, null, null, null, null, Ricochet: false);
+        }
+
+        (double originX, double originZ) = ToLocal(ray.OriginX - tank.X, ray.OriginZ - tank.Z, yaw);
+        (double dirX, double dirZ) = ToLocal(ray.DirectionX, ray.DirectionZ, yaw);
+        AimRay localRay = new(
+            originX, ray.OriginY - tank.Y, originZ,
+            dirX, ray.DirectionY, dirZ);
+
+        MeshHit? hit = CollisionRaycast.Raycast(localRay, mesh);
+        if (hit is null)
+        {
+            face = StruckFace.Unknown;
+            return new PenetrationVerdict(
+                PenetrationBand.Unknown, null, null, null, null, Ricochet: false);
+        }
+
+        face = ClassifyFaceFromNormal(hit.Value.NormalX, hit.Value.NormalZ);
+        double thickness = face switch
+        {
+            StruckFace.Front => armor.FrontMm,
+            StruckFace.Back => armor.RearMm,
+            _ => armor.SideMm,
+        };
+
+        ArmorPlate plate = new(
+            thickness,
+            hit.Value.NormalX, hit.Value.NormalY, hit.Value.NormalZ,
+            hit.Value.HitX, hit.Value.HitY, hit.Value.HitZ);
+        return ArmorPenetration.Evaluate(localRay, plate, shell, margin);
+    }
+
+    /// <summary>
     /// Resolves the full penetration badge for the current camera aim: build
     /// the aim ray, pick the nearest aimed tank, evaluate its struck face
     /// with that tank's armor and the shell, and wrap the verdict in a
-    /// <see cref="PenetrationBadge"/>. Returns null when the camera carries no
-    /// rotation or no tank is aimed at (no badge — never a fabricated one).
+    /// <see cref="PenetrationBadge"/>. When a collision mesh is available for
+    /// the aimed tank it is used for the true surface normal (PN-5); otherwise
+    /// the four-face box model applies. Returns null when the camera carries
+    /// no rotation or no tank is aimed at (no badge — never a fabricated one).
     /// A tank absent from <paramref name="armorByEntity"/> or whose struck
     /// face is unknown yields a badge with <see cref="PenetrationBand.Unknown"/>
     /// (or no badge), so the HUD cannot paint a verdict it cannot derive.
@@ -258,7 +322,8 @@ public static class PenetrationAim
         IReadOnlyList<OverlayTankState> tanks,
         IReadOnlyDictionary<long, TankArmor> armorByEntity,
         ShellSpec shell,
-        double margin = 0.1)
+        double margin = 0.1,
+        IReadOnlyDictionary<long, CollisionMesh>? meshesByEntity = null)
     {
         ArgumentNullException.ThrowIfNull(tanks);
         ArgumentNullException.ThrowIfNull(armorByEntity);
@@ -286,8 +351,54 @@ public static class PenetrationAim
                     PenetrationBand.Unknown, null, null, null, null, Ricochet: false));
         }
 
-        PenetrationVerdict verdict = EvaluateAgainst(ray.Value, tank, armor, shell, margin);
+        PenetrationVerdict verdict;
+        if (meshesByEntity is not null
+            && meshesByEntity.TryGetValue(aimedId.Value, out CollisionMesh? mesh))
+        {
+            verdict = EvaluateAgainstMesh(
+                ray.Value, tank, mesh, armor, shell, out StruckFace meshFace, margin);
+            if (meshFace != StruckFace.Unknown)
+            {
+                face = meshFace;
+            }
+        }
+        else
+        {
+            verdict = EvaluateAgainst(ray.Value, tank, armor, shell, margin);
+        }
+
         return new PenetrationBadge(aimedId.Value, face, verdict);
+    }
+
+    /// <summary>
+    /// Rotates a world-space XZ vector into the tank's local collision space
+    /// (the inverse of the yaw rotation; the local mesh faces +Z forward).
+    /// </summary>
+    private static (double X, double Z) ToLocal(double x, double z, double yaw)
+    {
+        double cos = Math.Cos(yaw);
+        double sin = Math.Sin(yaw);
+        return ((x * cos) - (z * sin), (x * sin) + (z * cos));
+    }
+
+    /// <summary>
+    /// Classifies a LOCAL surface normal into front/back/side: the mesh faces
+    /// +Z forward in local space, so the dominant axis of the outward normal
+    /// selects the face. (Sides are the two ±X normals, treated symmetrically.)
+    /// </summary>
+    private static StruckFace ClassifyFaceFromNormal(double nx, double nz)
+    {
+        double front = nz;
+        double back = -nz;
+        double sideA = nx;
+        double sideB = -nx;
+        double best = Math.Max(Math.Max(front, back), Math.Max(sideA, sideB));
+        if (best == front)
+        {
+            return StruckFace.Front;
+        }
+
+        return best == back ? StruckFace.Back : StruckFace.Side;
     }
 
     /// <summary>

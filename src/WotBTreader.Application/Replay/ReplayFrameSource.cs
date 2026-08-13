@@ -254,7 +254,11 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
                 ? tanks.Where(tank => tank.EntityId != ownId).ToList()
                 : tanks;
             penBadge = PenetrationAim.ResolveBadge(
-                camera, aimTargets, penetration.ArmorByEntity, penetration.ViewerShell);
+                camera,
+                aimTargets,
+                penetration.ArmorByEntity,
+                penetration.ViewerShell,
+                meshesByEntity: penetration.MeshesByEntity);
         }
 
         return new OverlayFrame(replayTime, camera, tanks, pips, kills, penBadge);

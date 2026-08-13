@@ -25,6 +25,7 @@ namespace WotBTreader.GameIntegration.Metadata;
 public sealed class PenetrationDataService : IOverlayPenetrationData
 {
     private const long MaxCharacters = 8 * 1024 * 1024;
+    private const long MaxMeshBytes = 16 * 1024 * 1024;
 
     private static readonly string[] Nations =
     [
@@ -44,6 +45,8 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
     private readonly Dictionary<string, Dictionary<string, ShellProfile>> _shellsByNation =
         new(StringComparer.Ordinal);
     private readonly Dictionary<string, Dictionary<string, GunShellProfile>> _gunsByNation =
+        new(StringComparer.Ordinal);
+    private readonly Dictionary<string, CollisionMesh?> _meshByTankId =
         new(StringComparer.Ordinal);
 
     public PenetrationDataService(
@@ -84,6 +87,7 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
         }
 
         Dictionary<long, TankArmor> armorByEntity = [];
+        Dictionary<long, CollisionMesh> meshesByEntity = [];
         foreach (Participant participant in projection.Participants)
         {
             if (participant.EntityId is not { } entityId || string.IsNullOrWhiteSpace(participant.TankId))
@@ -104,6 +108,15 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
             {
                 armorByEntity[entityId] = resolvedArmor;
             }
+
+            // Best-effort collision mesh: when present, the badge uses its true
+            // surface normal; when absent it falls back to the box model.
+            CollisionMesh? mesh = await ResolveMeshAsync(identity, nation, participant.TankId, cancellationToken)
+                .ConfigureAwait(false);
+            if (mesh is not null)
+            {
+                meshesByEntity[entityId] = mesh;
+            }
         }
 
         if (armorByEntity.Count == 0)
@@ -122,7 +135,10 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
             return null;
         }
 
-        return new PenetrationContext(armorByEntity, viewerShell.Value);
+        return new PenetrationContext(
+            armorByEntity,
+            viewerShell.Value,
+            meshesByEntity.Count > 0 ? meshesByEntity : null);
     }
 
     private static Participant? ResolveViewer(ReplayDecodeProjection projection)
@@ -194,6 +210,43 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
         }
 
         return nation;
+    }
+
+    private async ValueTask<CollisionMesh?> ResolveMeshAsync(
+        InstalledGameIdentity identity,
+        string nation,
+        string tankId,
+        CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            if (_meshByTankId.TryGetValue(tankId, out CollisionMesh? cached))
+            {
+                return cached;
+            }
+        }
+
+        CollisionMesh? mesh = null;
+        ReadOnlyMemory<byte>? payload = await ReadDvplAsync(
+            CollisionMeshPath(identity, nation, tankId), cancellationToken).ConfigureAwait(false);
+        if (payload is not null)
+        {
+            try
+            {
+                mesh = CollisionMeshParser.Parse(payload.Value.Span, MaxMeshBytes);
+            }
+            catch (InvalidDataException)
+            {
+                mesh = null;
+            }
+        }
+
+        lock (_gate)
+        {
+            _meshByTankId[tankId] = mesh;
+        }
+
+        return mesh;
     }
 
     private async ValueTask<TankArmor?> ResolveArmorAsync(
@@ -413,6 +466,9 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
     private static string ComponentPath(InstalledGameIdentity identity, string nation, string kind) =>
         Path.Combine(identity.ResourceRoot, "XML", "item_defs", "vehicles", nation, "components", $"{kind}.xml.dvpl");
 
+    private static string CollisionMeshPath(InstalledGameIdentity identity, string nation, string tankId) =>
+        Path.Combine(identity.ResourceRoot, "3d", "Tanks", "CollisionMeshes", $"{nation}-{tankId}.scg.dvpl");
+
     private void ClearCaches()
     {
         _nationByTankId.Clear();
@@ -420,5 +476,6 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
         _stockShellByTankId.Clear();
         _shellsByNation.Clear();
         _gunsByNation.Clear();
+        _meshByTankId.Clear();
     }
 }

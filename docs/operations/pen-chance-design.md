@@ -107,17 +107,23 @@ verdict        = compare(effectiveArmor, penAtRange) + ricochet/overmatch rules
    9/9 by 10° bucket) with 18/121 (15%) at ≥70°. A strict ricochet model
    would cluster penetrating shots sub-70°, so the hull-facing proxy washes
    out the plate-specific incidence. **Honest negative:** the geometry-first
-   check needs the actual aim plate (the PN-5 `.scg` polygon geometry) or the
+   check needs the actual aim plate (the `.scg` polygon geometry) or the
    live camera aim (CAM-013) — the center-line proxy cannot validate the
    ricochet rule. The scratch script is retained for the plate-level model.
+   **The mesh lane now ships (2026-08-13):** `CollisionMeshParser` reads the
+   `.scg` polygon groups (per-vertex normals) and
+   `CollisionRaycast`/`EvaluateAgainstMesh` turn the aim ray into the struck
+   triangle's true surface normal — the badge uses it when a mesh is present.
+   The remaining PN-4 prerequisite is a per-shot ATTACKER AIM (decoded or the
+   live camera), which the center-line proxy still lacks.
 
 ## Phase plan
 
 | Step | Deliverable | Gate |
 |---|---|---|
-| **PN-1** | Static-data extraction: tank armor models + hull geometry + gun/shell tables from the install's data files (read-only, evidence-first, CAM-009 style); a static store + verify script. **PROBED 2026-08-13 — the data is present and readable** (vehicle XML armor groups, shells.xml caliber/kind/normalization/ricochet, guns.xml piercingPower). Remaining: the plate-slope `.model` collision geometry (binary) | Offline |
+| **PN-1** | Static-data extraction: tank armor models + hull geometry + gun/shell tables from the install's data files (read-only, evidence-first, CAM-009 style); a static store + verify script. **PROBED 2026-08-13 — the data is present and readable** (vehicle XML armor groups, shells.xml caliber/kind/normalization/ricochet, guns.xml piercingPower). Collision geometry **PARSED 2026-08-13** (`CollisionMeshParser` + `CollisionRaycast`, verified on the real Churchill mesh) — the per-plate NORMAL is now available; the remaining sub-problem is mapping the XML armor groups to the mesh faces for per-plate THICKNESS | Offline |
 | **PN-2** | Pen math module: raycast, incidence, effective armor, ricochet/overmatch, pen-at-range, banded verdict — pure, unit-tested, synthetic fixtures. **DONE 2026-08-13** (`Core/Overlay/ArmorPenetration.cs`, 12 tests). Refinement: the probe found `normalizationAngle` (per-shell, not yet modeled) and `piercingPower`'s 2-point range pair (maps to pen0 + linear drop) | Offline |
-| **PN-3** | Replay-mode HUD: aim = camera pose (verified); pen badge (colored + numeric) on the aimed enemy's nameplate. **DONE 2026-08-13** — `PenetrationBadge`/`StruckFace`/`PenetrationAim.ResolveBadge` (Core), `IOverlayPenetrationData` + `PenetrationContext` (Application), `PenetrationDataService` (GameIntegration, reads the install armor/shell/gun data), badge threaded through the frame → projection → response, and rendered by the WPF HUD (reticle-centered, green/yellow/red + numeric). Honest limits: front-only armor (side/rear = 0 → Unknown, never guessed), stock AP shell (loaded shell not decodable), nominal thickness (no plate slope) | Offline, no launch |
+| **PN-3** | Replay-mode HUD: aim = camera pose (verified); pen badge (colored + numeric) on the aimed enemy's nameplate. **DONE 2026-08-13** — `PenetrationBadge`/`StruckFace`/`PenetrationAim.ResolveBadge` (Core), `IOverlayPenetrationData` + `PenetrationContext` (Application), `PenetrationDataService` (GameIntegration, reads the install armor/shell/gun + collision-mesh data), badge threaded through the frame → projection → response, and rendered by the WPF HUD (reticle-centered, green/yellow/red + numeric). Honest limits: front-only armor (side/rear = 0 → Unknown, never guessed), stock AP shell (loaded shell not decodable), thickness still nominal (the mesh surface NORMAL now drives the incidence angle — the true plate normal the box model approximated; per-plate thickness mapping is the remaining gap) | Offline, no launch |
 | **PN-4** | Validation loop: score the model vs decoded shot outcomes (geometry-first, then full); report hit-rate + per-shot margin | Offline, this is the proof |
 | **PN-5** | Live mode: T1 turret/gun aim + the same module, behind the X1 policy gate | Live-gated |
 
@@ -141,12 +147,14 @@ reader.
 
 - **PN-1 feasibility is RESOLVED — the data ships readable** (probed
   2026-08-13: vehicle XML + shells.xml + guns.xml, all DVPL/LZ4 → XML,
-  decompress cleanly with the existing `DvplReader` contract). The remaining risk is the **plate slope/normal**, which lives in the
-  `.scg` collision geometry (probed 2026-08-13: present, SCPG `PolygonGroup`
-  DAVA KeyedArchive binary) — without a parser for it the model uses nominal
-  thickness (a first-order approximation); with it, true effective armor. If
-  the KeyedArchive/polygon-group format proves unreadable, the fallback is a
-  per-armor-group slope table (community-derived) — flagged, not assumed.
+  decompress cleanly with the existing `DvplReader` contract).
+  **Plate slope/normal is RESOLVED (2026-08-13)** — `CollisionMeshParser`
+  reads the `.scg` SCPG `PolygonGroup` KeyedArchive (per-vertex normals,
+  uint16/uint32 indices) and `CollisionRaycast` raycasts the aim ray against
+  it; the badge now uses the struck triangle's true outward normal (verified
+  against the real Churchill mesh). The remaining gap is per-plate THICKNESS:
+  the XML armor groups don't declare their face mapping, so the model still
+  pairs the mesh normal with the nominal front/side/rear thickness.
 - **Blitz has a built-in reticle penetration indicator** (settings toggle).
   The overlay's value-add is the *numeric* readout (effective armor vs pen,
   actual %) and the aim-line-on-nameplate — not just re-deriving the color.
@@ -164,8 +172,9 @@ reader.
    all DVPL/LZ4 → XML, decompress cleanly. The remaining sub-question is the plate-slope geometry — **PROBED
    2026-08-13**: it is the `Data/3d/Tanks/CollisionMeshes/{nation}-{tank}.scg.dvpl`
    SCPG `PolygonGroup` KeyedArchive binary (the `.model` string in the vehicle
-   XML resolves to these `.sc2`/`.scg` files), needing a KeyedArchive +
-   polygon-group parser.
+   XML resolves to these `.sc2`/`.scg` files) — **PARSED 2026-08-13**:
+   `CollisionMeshParser` + `CollisionRaycast` now read it and the badge
+   consumes the per-vertex normals (verified against the real Churchill mesh).
 2. Does the type-8 flag byte / type-32 flag prefix distinguish pen vs bounce
    vs absorb per shot? **Status (2026-08-13):** the flag byte is unread and
    type-32 is raw-only today (see the validation loop's decode-lane status) —

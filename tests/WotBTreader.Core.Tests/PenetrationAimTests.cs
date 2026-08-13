@@ -207,4 +207,108 @@ public sealed class PenetrationAimTests
         Assert.IsNotNull(badge);
         Assert.AreEqual(PenetrationBand.Unknown, badge.Value.Verdict.Band);
     }
+
+    // A single-triangle collision mesh (indices 0,1,2 into the vertices).
+    private static CollisionMesh Mesh(params CollisionVertex[] vertices)
+    {
+        int[] indices = new int[vertices.Length];
+        for (int i = 0; i < vertices.Length; i++)
+        {
+            indices[i] = i;
+        }
+
+        return new CollisionMesh(vertices, indices);
+    }
+
+    // The tank's local FRONT plate: a triangle at local z=1 facing +Z (outward).
+    private static CollisionMesh FrontPlateMesh() => Mesh(
+        new CollisionVertex(-1, -1, 1, 0, 0, 1),
+        new CollisionVertex(1, -1, 1, 0, 0, 1),
+        new CollisionVertex(0, 1, 1, 0, 0, 1));
+
+    // The tank's local RIGHT-side plate: a triangle at local x=1 facing +X.
+    private static CollisionMesh SidePlateMesh() => Mesh(
+        new CollisionVertex(1, -1, -1, 1, 0, 0),
+        new CollisionVertex(1, -1, 1, 1, 0, 0),
+        new CollisionVertex(1, 1, 0, 1, 0, 0));
+
+    // A mesh with no triangle on the ray's path (a plate far off the axis).
+    private static CollisionMesh OffAxisMesh() => Mesh(
+        new CollisionVertex(10, -1, -1, 1, 0, 0),
+        new CollisionVertex(10, -1, 1, 1, 0, 0),
+        new CollisionVertex(10, 1, 0, 1, 0, 0));
+
+    [TestMethod]
+    public void EvaluateAgainstMesh_FrontHeadOn_UsesFrontArmor()
+    {
+        // Tank faces +Z; ray arrives from +Z (in front) toward -Z.
+        AimRay ray = new(0, 0, 100, 0, 0, -1);
+
+        PenetrationVerdict verdict = PenetrationAim.EvaluateAgainstMesh(
+            ray, Tank(1, 0, 0, yaw: 0), FrontPlateMesh(), Armor, new ShellSpec(200, 100),
+            out StruckFace face);
+
+        Assert.AreEqual(StruckFace.Front, face);
+        Assert.AreEqual(0.0, verdict.IncidenceRadians!.Value, 1e-9);
+        Assert.AreEqual(93.4, verdict.EffectiveArmorMm!.Value, 1e-9);
+        Assert.AreEqual(PenetrationBand.Pen, verdict.Band);
+    }
+
+    [TestMethod]
+    public void EvaluateAgainstMesh_SideShot_UsesSideArmor()
+    {
+        // Ray arrives from +X toward -X, striking the local +X side plate.
+        AimRay ray = new(100, 0, 0, -1, 0, 0);
+
+        PenetrationVerdict verdict = PenetrationAim.EvaluateAgainstMesh(
+            ray, Tank(1, 0, 0, yaw: 0), SidePlateMesh(), Armor, new ShellSpec(200, 100),
+            out StruckFace face);
+
+        Assert.AreEqual(StruckFace.Side, face);
+        Assert.AreEqual(53.4, verdict.EffectiveArmorMm!.Value, 1e-9);
+    }
+
+    [TestMethod]
+    public void EvaluateAgainstMesh_NoHit_Unknown()
+    {
+        // Ray through the tank center misses the off-axis plate entirely.
+        AimRay ray = new(0, 0, 100, 0, 0, -1);
+
+        PenetrationVerdict verdict = PenetrationAim.EvaluateAgainstMesh(
+            ray, Tank(1, 0, 0, yaw: 0), OffAxisMesh(), Armor, new ShellSpec(200, 100),
+            out StruckFace face);
+
+        Assert.AreEqual(StruckFace.Unknown, face);
+        Assert.AreEqual(PenetrationBand.Unknown, verdict.Band);
+    }
+
+    [TestMethod]
+    public void EvaluateAgainstMesh_NoHullYaw_Unknown()
+    {
+        AimRay ray = new(0, 0, 100, 0, 0, -1);
+
+        PenetrationVerdict verdict = PenetrationAim.EvaluateAgainstMesh(
+            ray, Tank(1, 0, 0, yaw: null), FrontPlateMesh(), Armor, new ShellSpec(200, 100),
+            out StruckFace face);
+
+        Assert.AreEqual(StruckFace.Unknown, face);
+        Assert.AreEqual(PenetrationBand.Unknown, verdict.Band);
+    }
+
+    [TestMethod]
+    public void ResolveBadge_WithMesh_UsesMeshFace()
+    {
+        OverlayCamera camera = Camera(yaw: Math.PI, pitch: 0, x: 0, z: 100);
+        OverlayTankState[] tanks = [Tank(1, 0, 0, yaw: 0)];
+        Dictionary<long, TankArmor> armor = new() { [1] = Armor };
+        Dictionary<long, CollisionMesh> meshes = new() { [1] = FrontPlateMesh() };
+
+        PenetrationBadge? badge = PenetrationAim.ResolveBadge(
+            camera, tanks, armor, new ShellSpec(200, 100), meshesByEntity: meshes);
+
+        Assert.IsNotNull(badge);
+        Assert.AreEqual(StruckFace.Front, badge.Value.Face);
+        Assert.AreEqual(93.4, badge.Value.Verdict.EffectiveArmorMm!.Value, 1e-9);
+        Assert.AreEqual(PenetrationBand.Pen, badge.Value.Verdict.Band);
+    }
 }

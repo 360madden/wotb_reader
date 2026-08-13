@@ -13,7 +13,8 @@ namespace WotBTreader.Application.Game;
 /// </summary>
 public sealed record PenetrationContext(
     IReadOnlyDictionary<long, TankArmor> ArmorByEntity,
-    ShellSpec ViewerShell)
+    ShellSpec ViewerShell,
+    IReadOnlyDictionary<long, CollisionMesh>? MeshesByEntity = null)
 {
     /// <summary>
     /// Derives the nominal <see cref="TankArmor"/> from a parsed vehicle armor
