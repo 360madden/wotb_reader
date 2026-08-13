@@ -494,6 +494,7 @@ src/WotBTreader.Core/OffsetModels.cs
 src/WotBTreader.Core/Overlay/AimGeometry.cs
 src/WotBTreader.Core/Overlay/ArmorPenetration.cs
 src/WotBTreader.Core/Overlay/OverlayFrameModels.cs
+src/WotBTreader.Core/Overlay/PenetrationAim.cs
 src/WotBTreader.Core/Overlay/WorldToScreen.cs
 src/WotBTreader.Core/TelemetryModels.cs
 src/WotBTreader.Core/WotBTreader.Core.csproj
@@ -745,6 +746,7 @@ tests/WotBTreader.Core.Tests/IdentifierTests.cs
 tests/WotBTreader.Core.Tests/MSTestSettings.cs
 tests/WotBTreader.Core.Tests/OffsetChainWalkerEquivalenceTests.cs
 tests/WotBTreader.Core.Tests/OffsetChainWalkerTests.cs
+tests/WotBTreader.Core.Tests/PenetrationAimTests.cs
 tests/WotBTreader.Core.Tests/RecordDiffingTests.cs
 tests/WotBTreader.Core.Tests/RingRecordRegionTests.cs
 tests/WotBTreader.Core.Tests/TrajectoryCorrelationScorerTests.cs
