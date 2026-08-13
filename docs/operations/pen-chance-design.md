@@ -194,6 +194,21 @@ bytes, the value-encoding walk is the remaining work.
   archives (seen as `KA` + version + subtype `02 01`). Identity transforms
   read as a quaternion `(0,0,0,1)` and scale `(1,1,1)` in float32 LE.
 
+**DAVA source reference (2026-08-13):** the container is DAVA `KeyedArchive`;
+`Sources/Internal/FileSystem/KeyedArchive.cpp` in the 2018-era
+`smile4u/dava.engine` fork documents the v1 format (`KA` + uint16 version +
+uint32 count + count × [key VariantType + value VariantType]), and
+`VariantType.cpp` documents the value encoding: a 1-byte TYPE then the
+payload. Type codes (the `eVariantType` order): 0 none, 1 bool, 2 int32,
+3 float, 4 string (uint32 len + bytes), 5 widestring, 6 byte-array (uint32
+len + bytes), 7 uint32, 8 keyed-archive (uint32 len + nested `KA`), 9 int64,
+10 uint64, 11..16 vector2/3/4 + matrix2/3/4, 17 color, 18 fastname (v1 =
+uint32 len + string; v2 = the 4-byte hash), 19 aabbox3, 20 filepath, 21
+float64, 22..25 int8/uint8/int16/uint16. The v2 archive (WoT Blitz's newer
+DAVA) keeps the key table + type codes but stores FastName VALUES as the
+4-byte hash; its exact per-value layout (type byte vs hash-in-band) is the
+remaining unknown to walk.
+
 **Remaining parser work (bounded now):** the value-encoding walk — FastName
 hash → key name, nested `KA` archives, and the `#hierarchy`/`#dataNodes`/
 `#sceneComponents` array semantics — to bind each `TransformComponent` to its
