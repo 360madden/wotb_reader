@@ -670,7 +670,8 @@ public class MainViewModel : INotifyPropertyChanged
                         badge.EffectiveArmorMm,
                         badge.PenetrationMmAtRange,
                         badge.Ricochet,
-                        PenShellLabel)
+                        PenShellLabel,
+                        badge.Face)
                     : null;
             _nameplates.Clear();
             _ownMarkers.Clear();

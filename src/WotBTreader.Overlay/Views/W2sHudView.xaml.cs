@@ -132,7 +132,17 @@ public sealed partial class W2sHudView : UserControl
 
         if (penBadge is not null)
         {
-            HudCanvas.Children.Add(BuildPenBadge(penBadge, viewportWidth, viewportHeight));
+            NameplateItem? aimed = null;
+            foreach (NameplateItem item in items)
+            {
+                if (item.EntityId == penBadge.AimedEntityId)
+                {
+                    aimed = item;
+                    break;
+                }
+            }
+
+            HudCanvas.Children.Add(BuildPenBadge(penBadge, aimed, viewportWidth, viewportHeight));
         }
 
         if (playbackProgress is not null)
@@ -223,22 +233,33 @@ public sealed partial class W2sHudView : UserControl
     }
 
     /// <summary>
-    /// Formats the penetration badge's text: the banded verdict plus the
-    /// numeric readout (penetration at range over effective armor, in mm)
-    /// when both are known. A ricochet overrides the band with its own label.
-    /// Pure and invariant-culture for unit tests.
+    /// Formats the penetration badge's text: the struck face (when known),
+    /// the banded verdict, and the numeric readout (penetration at range over
+    /// effective armor, in mm) when both are known. A ricochet overrides the
+    /// band with its own label. Pure and invariant-culture for unit tests.
     /// </summary>
     public static string PenBadgeLabel(
         string band,
         double? effectiveArmorMm,
         double? penetrationMmAtRange,
         bool ricochet,
-        string? shell = null)
+        string? shell = null,
+        string? face = null)
     {
         string prefix = string.IsNullOrEmpty(shell) ? string.Empty : $"[{shell}] ";
+        // Struck face token: the in-game armor terminology is front/side/rear
+        // (the wire value is the StruckFace enum name, where Back == rear).
+        string faceToken = face switch
+        {
+            "Front" => "FRONT",
+            "Back" => "REAR",
+            "Side" => "SIDE",
+            _ => string.Empty,
+        };
+        string facePart = string.IsNullOrEmpty(faceToken) ? string.Empty : faceToken + " ";
         if (ricochet)
         {
-            return prefix + "RICOCHET";
+            return prefix + facePart + "RICOCHET";
         }
 
         string verdict = band switch
@@ -254,6 +275,7 @@ public sealed partial class W2sHudView : UserControl
         {
             return string.Concat(
                 prefix,
+                facePart,
                 verdict,
                 "  ",
                 pen.ToString("F0", CultureInfo.InvariantCulture),
@@ -262,16 +284,21 @@ public sealed partial class W2sHudView : UserControl
                 " mm");
         }
 
-        return prefix + verdict;
+        return prefix + facePart + verdict;
     }
 
     /// <summary>
-    /// Builds the penetration indicator: a colored badge centered just below
-    /// the reticle showing the banded verdict and its numeric readout.
-    /// Unknown bands never reach here (the view model drops them).
+    /// Builds the penetration indicator: a colored badge showing the struck
+    /// face, the banded verdict, and its numeric readout. When the aimed
+    /// tank's nameplate is on screen the badge anchors to it (centred above
+    /// the plate), so the readout is visually tied to the tank being aimed
+    /// at; when the aimed tank is off-viewport it falls back to the reticle
+    /// position below centre. Unknown bands never reach here (the view model
+    /// drops them).
     /// </summary>
     private static Canvas BuildPenBadge(
         PenBadgeItem badge,
+        NameplateItem? aimed,
         double viewportWidth,
         double viewportHeight)
     {
@@ -294,7 +321,8 @@ public sealed partial class W2sHudView : UserControl
                     badge.EffectiveArmorMm,
                     badge.PenetrationMmAtRange,
                     badge.Ricochet,
-                    badge.Shell),
+                    badge.Shell,
+                    badge.Face),
                 FontSize = 12,
                 FontWeight = FontWeights.Bold,
                 Foreground = brush,
@@ -302,9 +330,28 @@ public sealed partial class W2sHudView : UserControl
         };
         label.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
 
+        double left;
+        double top;
+        if (aimed is not null)
+        {
+            // Anchor to the aimed tank: centre the badge on the nameplate and
+            // lift it above the plate's top edge so it reads as part of the
+            // tank being aimed at rather than a floating reticle element.
+            Rect plate = AnchorRect(aimed.ScreenX, aimed.ScreenY, viewportWidth, viewportHeight);
+            left = plate.Left + (NameplateWidth - label.DesiredSize.Width) / 2.0;
+            top = plate.Top - label.DesiredSize.Height - AnchorGap;
+        }
+        else
+        {
+            // Aimed tank is off-viewport (no nameplate): fall back to the
+            // reticle position just below centre.
+            left = viewportWidth / 2.0 - label.DesiredSize.Width / 2.0;
+            top = viewportHeight * 0.56;
+        }
+
         var root = new Canvas();
-        Canvas.SetLeft(root, Math.Max(0, viewportWidth / 2.0 - label.DesiredSize.Width / 2.0));
-        Canvas.SetTop(root, viewportHeight * 0.56);
+        Canvas.SetLeft(root, Math.Clamp(left, 0, Math.Max(0, viewportWidth - label.DesiredSize.Width)));
+        Canvas.SetTop(root, Math.Clamp(top, 0, Math.Max(0, viewportHeight - label.DesiredSize.Height)));
         root.Children.Add(label);
         return root;
     }

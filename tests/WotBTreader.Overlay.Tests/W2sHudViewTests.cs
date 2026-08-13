@@ -193,4 +193,22 @@ public sealed class W2sHudViewTests
             "[AP] NO PEN",
             W2sHudView.PenBadgeLabel("NoPen", null, null, ricochet: false, shell: "AP"));
     }
+
+    [TestMethod]
+    public void PenBadgeLabel_Face_IsIncluded()
+    {
+        Assert.AreEqual(
+            "FRONT PEN  92/93 mm",
+            W2sHudView.PenBadgeLabel("Pen", 93, 92, ricochet: false, face: "Front"));
+        Assert.AreEqual(
+            "REAR RICOCHET",
+            W2sHudView.PenBadgeLabel("NoPen", 93, 92, ricochet: true, face: "Back"));
+        Assert.AreEqual(
+            "[HEAT] SIDE NO PEN",
+            W2sHudView.PenBadgeLabel("NoPen", null, null, ricochet: false, shell: "HEAT", face: "Side"));
+        // Unknown/empty face adds no token.
+        Assert.AreEqual(
+            "NO PEN",
+            W2sHudView.PenBadgeLabel("NoPen", null, null, ricochet: false, face: "Unknown"));
+    }
 }

@@ -16,7 +16,8 @@ public sealed record PenBadgeItem(
     double? EffectiveArmorMm,
     double? PenetrationMmAtRange,
     bool Ricochet,
-    string? Shell = null);
+    string? Shell = null,
+    string? Face = null);
 
 /// <summary>
 /// One available shell the HUD can cycle the pen badge through: the install
