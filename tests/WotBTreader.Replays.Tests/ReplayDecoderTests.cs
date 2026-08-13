@@ -222,6 +222,73 @@ public sealed class ReplayDecoderTests
     }
 
     [TestMethod]
+    public async Task ShotImpactMirrorDecodesPenetratingAndNonPenetratingHits()
+    {
+        ReplayInput input = SyntheticReplayFactory.CreateInput(
+            SyntheticReplayFactory.CreateReplay(includeShotImpact: true));
+        WotbReplayProbe probe = new();
+        var probeResult = await probe.ProbeAsync(
+            input,
+            DecoderLimits.Default,
+            CancellationToken.None);
+        Assert.IsTrue(probeResult.IsSuccess, probeResult.Error?.Message);
+
+        WotbReplayDecoder decoder = new();
+        var decodeResult = await decoder.DecodeAsync(
+            new ReplayDecodeRequest(
+                input,
+                DecodeRunId.New(),
+                probeResult.Value!,
+                DecoderLimits.Default),
+            CancellationToken.None);
+        Assert.IsTrue(decodeResult.IsSuccess, decodeResult.Error?.Message);
+        ReplayDecodeProjection projection = decodeResult.Value!;
+
+        // Three damage-with-payload packets (2x `01 12` + 1x `01 11`) emit
+        // ShotImpact events; the `01 02` short companion stays raw.
+        CanonicalEvent[] impacts = projection.Events
+            .Where(ev => ev.Kind == CanonicalEventKind.ShotImpact)
+            .OrderBy(ev => ev.ReplayTime)
+            .ToArray();
+        Assert.HasCount(3, impacts);
+
+        // t=4.0: `01 12` penetrating hit on 200 (result 0x03).
+        using (JsonDocument values = JsonDocument.Parse(impacts[0].ValuesJson))
+        {
+            Assert.AreEqual(200, values.RootElement.GetProperty("victimEntityId").GetInt64());
+            Assert.AreEqual(3, values.RootElement.GetProperty("hitResult").GetInt32());
+            Assert.IsTrue(values.RootElement.GetProperty("penetrated").GetBoolean());
+        }
+
+        // t=4.1: `01 12` non-penetrating bounce on 100 (result 0x00).
+        using (JsonDocument values = JsonDocument.Parse(impacts[1].ValuesJson))
+        {
+            Assert.AreEqual(100, values.RootElement.GetProperty("victimEntityId").GetInt64());
+            Assert.AreEqual(0, values.RootElement.GetProperty("hitResult").GetInt32());
+            Assert.IsFalse(values.RootElement.GetProperty("penetrated").GetBoolean());
+        }
+
+        // t=4.2: `01 11` penetrating hit on 200 (result 0x03).
+        using (JsonDocument values = JsonDocument.Parse(impacts[2].ValuesJson))
+        {
+            Assert.AreEqual(200, values.RootElement.GetProperty("victimEntityId").GetInt64());
+            Assert.AreEqual(3, values.RootElement.GetProperty("hitResult").GetInt32());
+            Assert.IsTrue(values.RootElement.GetProperty("penetrated").GetBoolean());
+        }
+
+        // The short companion (`01 02`) is not a damage-with-payload variant,
+        // so it remains an unknown raw record (packetType 32) rather than
+        // emitting a ShotImpact.
+        Assert.IsTrue(projection.RawRecords.Any(
+            record => record.RecordKind == "event-stream.packet" &&
+                      record.PropertiesJson?.Contains(
+                          "\"packetType\":32",
+                          StringComparison.Ordinal) == true));
+        Assert.IsFalse(projection.Warnings.Any(
+            warning => warning.Contains("malformed", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [TestMethod]
     public async Task BasePlayerCreatePacketDecodesAsTypedRawRecordWithArenaIdentity()
     {
         ReplayInput input = SyntheticReplayFactory.CreateInput(

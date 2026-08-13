@@ -204,6 +204,25 @@ internal static class ReadContractMapping
             return "Destroyed";
         }
 
+        if (kind == CanonicalEventKind.ShotImpact)
+        {
+            try
+            {
+                using System.Text.Json.JsonDocument doc =
+                    System.Text.Json.JsonDocument.Parse(valuesJson);
+                if (doc.RootElement.TryGetProperty(
+                        "penetrated",
+                        out System.Text.Json.JsonElement penetrated))
+                {
+                    return penetrated.GetBoolean() ? "Shot: penetrated" : "Shot: bounced";
+                }
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                // Fall through to the enum name.
+            }
+        }
+
         return kind.ToString();
     }
 }

@@ -98,8 +98,32 @@ internal sealed record SpawnHealthObservation(
     int Health,
     BinaryEvidence Evidence);
 
+/// <summary>
+/// A decoded type-32 damage/impact event mirror (the <c>01 11</c>/<c>01 12</c>
+/// damage-with-payload variants). Layout (pinned 2026-08-13 on three distinct
+/// 11.19 replays): victim entity id u32 LE at +0x00, event flag u16 LE at
+/// +0x04 (<c>01 11</c> = 26 B, <c>01 12</c> = 27 B), a <c>00000098</c>/
+/// <c>00000099</c> marker word, a 2–3 byte flags region, the 6-byte shell
+/// signature, and a trailing 4-byte field whose FIRST byte is the hit result:
+/// <c>0x03</c> = penetrating, <c>0x00/0x01/0x02/0x04</c> = non-penetrating
+/// (bounce/absorb). <see cref="Penetrated"/> is the observed discriminator
+/// (<c>HitResult == 0x03</c>); the finer bounce-vs-absorb mapping of the other
+/// values is not yet pinned.
+/// </summary>
+internal sealed record ImpactObservation(
+    long Sequence,
+    TimeSpan ReplayTime,
+    long VictimEntityId,
+    byte HitResult,
+    bool Penetrated,
+    BinaryEvidence Evidence);
+
 internal static class EventPacketDecoders
 {
+    private const ushort ImpactFlagDamageA = 0x1101; // `01 11`, 26 B
+    private const ushort ImpactFlagDamageB = 0x1201; // `01 12`, 27 B
+    private const byte ImpactResultPenetrated = 0x03;
+
     public static bool TryReadArenaParticipants(
         EventPacket packet,
         DecoderLimits limits,
@@ -474,6 +498,59 @@ internal static class EventPacketDecoders
             postHitHealth,
             attacker,
             IsDestroy: postHitHealth == destroyHealth,
+            EvidenceForPacket(packet));
+        return true;
+    }
+
+    /// <summary>
+    /// Decodes a type-32 damage/impact event mirror's damage-with-payload
+    /// variants (<c>01 11</c> 26 B, <c>01 12</c> 27 B) into an
+    /// <see cref="ImpactObservation"/>. The hit-result byte (payload offset 18
+    /// for <c>01 11</c>, 19 for <c>01 12</c>) is <c>0x03</c> for a penetrating
+    /// hit; <c>Penetrated</c> is the observed discriminator. Fail-closed:
+    /// other type-32 variants (short companions <c>01 02</c>/<c>01 03</c>,
+    /// shell/effect <c>01 05</c>/<c>01 06</c>, snapshots <c>00 0f</c>/<c>00 10</c>)
+    /// return false and stay raw evidence.
+    /// </summary>
+    public static bool TryReadImpact(
+        EventPacket packet,
+        out ImpactObservation? impact,
+        out string? warning)
+    {
+        impact = null;
+        warning = null;
+        if (packet.Type != 32 || packet.Payload.Length < 26)
+        {
+            return false;
+        }
+
+        ReadOnlySpan<byte> payload = packet.Payload.Span;
+        ushort flag = BinaryPrimitives.ReadUInt16LittleEndian(payload[4..]);
+        int resultOffset = flag switch
+        {
+            ImpactFlagDamageA => 18,
+            ImpactFlagDamageB => 19,
+            _ => -1,
+        };
+        if (resultOffset < 0)
+        {
+            return false;
+        }
+
+        long victim = BinaryPrimitives.ReadUInt32LittleEndian(payload);
+        if (victim <= 0)
+        {
+            warning = "A type-32 impact packet carried a non-positive victim id.";
+            return false;
+        }
+
+        byte hitResult = payload[resultOffset];
+        impact = new ImpactObservation(
+            packet.Ordinal,
+            TimeSpan.FromSeconds(packet.ClockSeconds),
+            victim,
+            hitResult,
+            Penetrated: hitResult == ImpactResultPenetrated,
             EvidenceForPacket(packet));
         return true;
     }

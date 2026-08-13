@@ -23,7 +23,8 @@ public static class SyntheticReplayFactory
         ulong? basePlayerCreateArenaId = null,
         bool includeDestroyMarker = false,
         bool includeSpawnHealth = false,
-        bool includeHealthChange = false)
+        bool includeHealthChange = false,
+        bool includeShotImpact = false)
     {
         byte[] metadata = JsonSerializer.SerializeToUtf8Bytes(new
         {
@@ -49,7 +50,8 @@ public static class SyntheticReplayFactory
             basePlayerCreateArenaId,
             includeDestroyMarker,
             includeSpawnHealth,
-            includeHealthChange);
+            includeHealthChange,
+            includeShotImpact);
         return CreateArchive(
             (ReplayFormatConstants.MetadataEntry, metadata),
             (ReplayFormatConstants.BattleResultsEntry, battleResults),
@@ -114,7 +116,8 @@ public static class SyntheticReplayFactory
         ulong? basePlayerCreateArenaId = null,
         bool includeDestroyMarker = false,
         bool includeSpawnHealth = false,
-        bool includeHealthChange = false)
+        bool includeHealthChange = false,
+        bool includeShotImpact = false)
     {
         using MemoryStream output = new();
         WriteUInt32(output, ReplayFormatConstants.EventStreamMagic);
@@ -165,6 +168,18 @@ public static class SyntheticReplayFactory
             WritePacket(output, 10, 3.0f, CreatePositionPayload(100, 10, 20, 30, destroyMarker: true));
             WritePacket(output, 10, 3.1f, CreatePositionPayload(100, 10, 20, 30, destroyMarker: true));
             WritePacket(output, 10, 3.2f, CreatePositionPayload(999, 1, 2, 3, destroyMarker: true));
+        }
+
+        if (includeShotImpact)
+        {
+            // Type-32 damage-with-payload mirror: a penetrating `01 12` hit on
+            // 200 (result 0x03), a non-penetrating `01 12` bounce on 100
+            // (result 0x00), a penetrating `01 11` hit on 200 (result 0x03),
+            // and a short-companion `01 02` that must NOT emit a ShotImpact.
+            WritePacket(output, 32, 4.0f, CreateShotImpactPayload(200, 0x03, variantB: true));
+            WritePacket(output, 32, 4.1f, CreateShotImpactPayload(100, 0x00, variantB: true));
+            WritePacket(output, 32, 4.2f, CreateShotImpactPayload(200, 0x03, variantB: false));
+            WritePacket(output, 32, 4.3f, CreateShortCompanionPayload(100));
         }
 
         WritePacket(output, 14, 120.0f, []);
@@ -311,6 +326,47 @@ public static class SyntheticReplayFactory
         BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(8), 7);
         BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(0x0C), checked((ushort)postHitHealth));
         BinaryPrimitives.WriteInt32LittleEndian(payload.AsSpan(0x0E), attackerId);
+        return payload;
+    }
+
+    private static byte[] CreateShotImpactPayload(int victimId, byte hitResult, bool variantB)
+    {
+        // Type-32 damage-with-payload layout (pinned 2026-08-13): victim u32
+        // at +0x00, event flag u16 at +0x04 (`01 12` 27 B or `01 11` 26 B),
+        // a `00000099`/`00000098` marker word, a 2–3 byte flags region, the
+        // 6-byte shell signature, then a trailing 4-byte field whose FIRST
+        // byte is the hit result (0x03 = penetrating, else non-penetrating).
+        byte[] payload = new byte[variantB ? 27 : 26];
+        BinaryPrimitives.WriteUInt32LittleEndian(payload, checked((uint)victimId));
+        payload[4] = 0x01;
+        payload[5] = variantB ? (byte)0x12 : (byte)0x11;
+        payload[9] = variantB ? (byte)0x99 : (byte)0x98;
+        // Flags region (opaque stand-in) at +0x0A (3 B for `01 12`, 2 B for `01 11`).
+        payload[10] = 0x80;
+        payload[12] = 0x01;
+        // Shell signature (opaque stand-in) at +0x0D (`01 12`) / +0x0C (`01 11`).
+        int shellOffset = variantB ? 13 : 12;
+        payload[shellOffset] = 0xa6;
+        payload[shellOffset + 1] = 0xa5;
+        payload[shellOffset + 2] = 0xe0;
+        payload[shellOffset + 3] = 0xa2;
+        payload[shellOffset + 4] = 0xa8;
+        payload[shellOffset + 5] = 0xb1;
+        // Hit-result byte at +0x13 (`01 12`) / +0x12 (`01 11`).
+        payload[variantB ? 19 : 18] = hitResult;
+        return payload;
+    }
+
+    private static byte[] CreateShortCompanionPayload(int victimId)
+    {
+        // Type-32 `01 02` short companion (11 B): victim u32 + flag `01 02` +
+        // a small opaque tail. Not a damage-with-payload variant, so it must
+        // NOT emit a ShotImpact event.
+        byte[] payload = new byte[11];
+        BinaryPrimitives.WriteUInt32LittleEndian(payload, checked((uint)victimId));
+        payload[4] = 0x01;
+        payload[5] = 0x02;
+        payload[10] = 0x28;
         return payload;
     }
 

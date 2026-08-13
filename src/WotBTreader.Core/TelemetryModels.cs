@@ -14,6 +14,11 @@ public enum ReplayCapability
     Lifecycle = 1 << 7,
     InstalledGameMetadata = 1 << 8,
     UnknownRecordsPreserved = 1 << 9,
+    /// <summary>
+    /// The decode produced per-shot impact outcomes (type-32 damage mirror
+    /// <c>01 11</c>/<c>01 12</c> → <see cref="CanonicalEventKind.ShotImpact"/>).
+    /// </summary>
+    ShotImpact = 1 << 10,
 }
 
 public enum DecodeRunStatus
@@ -76,6 +81,18 @@ public enum CanonicalEventKind
     /// json: {"maxHealth": n}.
     /// </summary>
     MaxHealthObserved,
+    /// <summary>
+    /// One shell impact's outcome, read from the type-32 damage/impact event
+    /// mirror (the <c>01 11</c>/<c>01 12</c> damage-with-payload variants).
+    /// The payload's hit-result byte (offset 19 for <c>01 12</c>, 18 for
+    /// <c>01 11</c>) is <c>0x03</c> for a PENETRATING hit and
+    /// <c>0x00/0x01/0x02/0x04</c> for a NON-penetrating hit (bounce/absorb),
+    /// pinned 2026-08-13 on three distinct replays (~98% agreement with the
+    /// type-8 damage ledger; the ~1% outliers are post-destruction hits and
+    /// same-tick pen+bounce pairs). Values json:
+    /// {"victimEntityId": n, "hitResult": n, "penetrated": bool}.
+    /// </summary>
+    ShotImpact,
 }
 
 public enum CoordinateSpace

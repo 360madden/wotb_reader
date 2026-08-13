@@ -80,21 +80,17 @@ verdict        = compare(effectiveArmor, penAtRange) + ricochet/overmatch rules
    no-damage (bounce/absorb) outcomes. Report hit-rate, plus the per-shot
    margin (effective armor vs pen) to localize which plate/thickness
    assumption is wrong.
-3. **Decode-lane status (checked 2026-08-13, second pass):** the type-8 flag
-   byte `+0x12` is present in the layout but **NOT decoded today**
-   (`HealthChangeObservation` carries victim/postHitHealth/attacker/destroy
-   only), and type-32 is **not decoded into events** — BUT the type-32 mirror
-   IS persisted in the store's raw records and is extractable offline (source
-   artifact sha256 → `.wotbreplay` zip → decompressed `data.wotreplay` →
-   evidence offset/length; a scratch script does this against the live store).
-   Flag prefixes map cleanly (`01 11`/`01 12` damage-with-payload, `01 02`/
-   `01 03` short companion, `01 05`/`01 06` shell/effect, `00 0f`/`00 10`
-   snapshot). **The prefix does NOT separate pen from bounce** — the same
-   `01 12` fires for both, and a candidate bit-7 flags byte at +0x0A is not a
-   clean discriminator. So today's ground truth stays **damaging-hit vs
-   no-damage-hit** (type-8 damage vs the mirror's no-damage hits); the
-   damage-vs-bounce field is in the payload and needs a bounded decoder-side
-   layout pinning (no re-decode — the bytes are already persisted).
+3. **Decode-lane status (2026-08-13, shipped):** the type-32 impact mirror is
+   now **decoded into `CanonicalEventKind.ShotImpact`** (the `01 11`/`01 12`
+   damage-with-payload variants), carrying `victimEntityId` + `hitResult` +
+   `penetrated`. The hit-result byte (payload offset 19 for `01 12`, 18 for
+   `01 11`) is **pinned with two-replay repeatability**: <c>0x03</c> =
+   penetrating, <c>0x00/0x01/0x02/0x04</c> = non-penetrating (bounce/absorb),
+   ~98% agreement with the type-8 damage ledger across THREE distinct replays
+   (190/192 pen, 62/63 non-pen; the ~1% outliers are post-destruction hits
+   and same-tick pen+bounce pairs). The finer bounce-vs-absorb mapping of the
+   non-0x03 values is not yet pinned. The type-8 flag byte `+0x12` is still
+   unread — that is a separate, narrower question now.
 
 4. **PN-4 status (checked 2026-08-13): the cheap aim proxy is too coarse.**
    The live store (`%LOCALAPPDATA%\WotBTreader\treader.db`) DOES have yaw
@@ -174,23 +170,14 @@ reader.
    `CollisionMeshParser` + `CollisionRaycast` now read it and the badge
    consumes the per-vertex normals (verified against the real Churchill mesh).
 2. Does the type-8 flag byte / type-32 flag prefix distinguish pen vs bounce
-   vs absorb per shot? **Status (2026-08-13, second pass):** the type-32
-   impact mirror is **already persisted** in the decoded store's raw records
-   (66 386 packets across the live store) and is extractable offline — source
-   artifact (sha256) → `.wotbreplay` zip → decompressed `data.wotreplay` →
-   evidence offset/length. Flag prefixes map cleanly: `01 11` (26 B) and
-   `01 12` (27 B) = damage-with-payload, `01 02` (11 B) / `01 03` (12 B) =
-   short companion, `01 05` (14 B) / `01 06` (15 B) = shell/effect entities
-   (0x30xxxx), `00 0f` (24 B) / `00 10` (25 B) = state snapshot. **Honest
-   negative:** the prefix does NOT separate pen from bounce — the same `01 12`
-   fires for both (e.g. victim 3760569: damage at t=69.62/86.12/91.00 AND
-   no-damage at t=79.93/86.63), and a candidate bit-7 flags byte at payload
-   +0x0A is NOT a clean discriminator either (bit7 set: 24 damage vs 3
-   no-damage; bit7 clear: 16 damage vs 13 no-damage, 0.2 s window). The
-   damage-vs-bounce field is in the payload but needs a proper per-field
-   decode (the `00000099`/`00000098` marker word + a 1–3 byte flags region +
-   the 6-byte shell signature + two 4-byte trailing fields) — the remaining
-   work is a bounded decoder-side type-32 layout pinning, NOT a re-decode.
+   vs absorb per shot? **ANSWERED (partially) 2026-08-13:** the FLAG PREFIX
+   does not — the same `01 12` fires for both pen and bounce — but the payload's
+   HIT-RESULT byte (offset 19 for `01 12`, 18 for `01 11`) does: `0x03` =
+   penetrating, `0x00/0x01/0x02/0x04` = non-penetrating (pinned on three
+   distinct replays, ~98% agreement; shipped as `CanonicalEventKind.ShotImpact`
+   with `penetrated` = `hitResult == 0x03`). The finer bounce-vs-absorb
+   mapping of the non-0x03 values is NOT yet pinned — that is the remaining
+   sub-question, not the pen-vs-bounce split.
 3. Is the viewer's loaded shell recoverable at all from the stream (shell
    signature → stat mapping via game data), or is a manual override the only
    honest path?

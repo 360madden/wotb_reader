@@ -212,6 +212,7 @@ public sealed class WotbReplayDecoder : IReplayDecoder
             List<PositionObservation> positions = [];
             List<SpawnHealthObservation> spawnHealths = [];
             List<HealthChangeObservation> healthChanges = [];
+            List<ImpactObservation> impacts = [];
             List<EventPacket> battleEndPackets = [];
             foreach (EventPacket packet in eventStream.Packets)
             {
@@ -278,6 +279,21 @@ public sealed class WotbReplayDecoder : IReplayDecoder
                 else if (healthChangeWarning is not null)
                 {
                     warnings.Add(healthChangeWarning);
+                }
+
+                string? impactWarning = null;
+                if (!decoded &&
+                    EventPacketDecoders.TryReadImpact(
+                        packet,
+                        out ImpactObservation? impact,
+                        out impactWarning))
+                {
+                    decoded = true;
+                    impacts.Add(impact!);
+                }
+                else if (impactWarning is not null)
+                {
+                    warnings.Add(impactWarning);
                 }
 
                 string? spawnHealthWarning = null;
@@ -429,6 +445,7 @@ public sealed class WotbReplayDecoder : IReplayDecoder
                 positions,
                 spawnHealths,
                 healthChanges,
+                impacts,
                 battleEndPackets);
 
             ReplayCapability capabilities =
@@ -458,6 +475,11 @@ public sealed class WotbReplayDecoder : IReplayDecoder
             if (healthChanges.Count > 0)
             {
                 capabilities |= ReplayCapability.Damage;
+            }
+
+            if (impacts.Count > 0)
+            {
+                capabilities |= ReplayCapability.ShotImpact;
             }
 
             if (battleEndPackets.Count > 0)
@@ -842,6 +864,7 @@ public sealed class WotbReplayDecoder : IReplayDecoder
         IReadOnlyList<PositionObservation> positionObservations,
         IReadOnlyList<SpawnHealthObservation> spawnHealths,
         IReadOnlyList<HealthChangeObservation> healthChanges,
+        IReadOnlyList<ImpactObservation> impacts,
         IReadOnlyList<EventPacket> battleEndPackets)
     {
         List<EventDraft> drafts = [];
@@ -1060,6 +1083,33 @@ public sealed class WotbReplayDecoder : IReplayDecoder
                 }),
                 EvidenceConfidence.Exact,
                 ToEvidence(request, spawnHealth.Evidence)));
+        }
+
+        // Shot impacts: the type-32 damage-with-payload mirror's per-shot
+        // outcome (penetrating vs non-penetrating). The hit-result byte is
+        // pinned (0x03 = pen, 0x00/0x01/0x02/0x04 = non-pen, ~98% agreement
+        // with the type-8 damage ledger on three distinct replays). Emitted
+        // for the victim with a null participant id when it is not a roster
+        // entity (mirroring the Damage event's robustness — no evidence drop).
+        foreach (ImpactObservation impact in impacts.OrderBy(observation => observation.Sequence))
+        {
+            participantProjection.ParticipantByEntity.TryGetValue(
+                impact.VictimEntityId,
+                out ParticipantId impactParticipant);
+            drafts.Add(new EventDraft(
+                impact.ReplayTime,
+                impact.Sequence,
+                CanonicalEventKind.ShotImpact,
+                impactParticipant == default ? null : impactParticipant,
+                impact.VictimEntityId,
+                JsonSerializer.Serialize(new
+                {
+                    victimEntityId = impact.VictimEntityId,
+                    hitResult = (int)impact.HitResult,
+                    penetrated = impact.Penetrated,
+                }),
+                EvidenceConfidence.Exact,
+                ToEvidence(request, impact.Evidence)));
         }
 
         foreach (EventPacket packet in battleEndPackets)
