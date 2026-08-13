@@ -108,8 +108,22 @@ verdict        = compare(effectiveArmor, penAtRange) + ricochet/overmatch rules
    `.scg` polygon groups (per-vertex normals) and
    `CollisionRaycast`/`EvaluateAgainstMesh` turn the aim ray into the struck
    triangle's true surface normal — the badge uses it when a mesh is present.
-   The remaining PN-4 prerequisite is a per-shot ATTACKER AIM (decoded or the
-   live camera), which the center-line proxy still lacks.
+
+   **Attacker attribution (2026-08-13):** the type-8 subtype-8 packet (33 B)
+   carries the ATTACKER entity id at payload +0x0C (plus the victim twice +
+   the same 6-byte shell signature as the type-32 mirror). It fires for BOTH
+   penetrating and bouncing shots (verified on bounces at t=79.93/86.63 whose
+   shell signatures match the type-32 mirror), so it is the bounce-attribution
+   source the center-line proxy lacked. Caveat: coverage is PARTIAL — in the
+   sample run it produced 28 packets vs 69 type-32 shots and none before
+   t≈79.9 s, so it is not a complete per-shot attribution source; penetrating
+   shots are still attributed by the type-8 subtype-1 damage event (100%
+   coverage). **The full geometry-first validation should be a C# harness**
+   reusing `PenetrationDataService` + `CollisionRaycast` (the store's
+   `tank_id`/`tank_name` columns are inconsistent — a mix of `nation:id`
+   strings, raw compact descriptors, and meta.json player-vehicle names — so
+   the descriptor→tank-id resolution must go through the enrichment, not a
+   raw SQL join).
 
 ## Phase plan
 

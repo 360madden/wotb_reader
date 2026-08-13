@@ -159,6 +159,16 @@ Known packet types (decoded by `WotbReplayDecoder`):
 | Shot impact (type 32, `01 11`/`01 12`) | `CanonicalEventKind.ShotImpact` — victim u32 at +0x00, flag u16 at +0x04, hit-result byte at +0x13 (`01 12`) / +0x12 (`01 11`): `0x03` = penetrating, `0x00/0x01/0x02/0x04` = non-penetrating (pinned on three replays, ~98% agreement with the type-8 ledger). Values json: `{"victimEntityId", "hitResult", "penetrated"}`. The short companions (`01 02`/`01 03`) and shell/effect entities (`01 05`/`01 06`) stay raw |
 | Lifecycle (type 14) | `CanonicalEventKind.BattleEnded` |
 
+**Raw (undecoded) shot-attribution packet:** the type-8 subtype-8 packet
+(33 B) is the per-shot attribution mirror — victim u32 at +0x00, subtype 8
+u32 at +0x04, declared length 21 u32 at +0x08, **attacker u32 at +0x0C**,
+victim u32 again at +0x10, a 3-byte flags region, the 6-byte shell signature
+(at +0x17, matching the type-32 mirror's), and a 4-byte trailing field. It
+fires for BOTH penetrating and bouncing shots (verified on bounces whose
+shell signatures match the type-32 mirror) but is NOT complete — in the
+sample run 28 packets vs 69 type-32 shots, none before t≈79.9 s. It is
+captured raw (`packetType=8`, `entityMethodSubtype=8`), not yet decoded.
+
 **Packet-type inventory — structure evidence (2026-08-10, Oasis Palms
 11.19.0, 73 993 packets; counts are Oasis-only):**
 
