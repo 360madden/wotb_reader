@@ -56,17 +56,32 @@ verdict        = compare(effectiveArmor, penAtRange) + ricochet/overmatch rules
   a box/plate decomposition (per-plate thickness + normal) built from the
   tank's static armor model.
 - **Angle of incidence**: `dot(plateNormal, -rayDirection)` → effective armor.
-- **Ricochet (auto-bounce)**: AP/APCR shells bounce at impact angle ≥ 70°
-  (with a ~25% penetration loss on the bounce). **This rule is
-  shell-stat-independent geometry** — the single most validation-friendly
-  term.
+- **Ricochet (auto-bounce)**: AP/APCR shells bounce at impact angle ≥ 70° —
+  checked on the **raw** impact angle, **before** normalization (normalization
+  never digs a shell out of a bounce). A bouncing shell loses 25% of its
+  penetration, but for a single-target indicator that means NoPen on the
+  aimed tank. **This rule is shell-stat-independent geometry** — the single
+  most validation-friendly term.
 - **Overmatch**: shell caliber > 3× plate thickness → no ricochet at 70°.
+- **Normalization**: 5° (AP) / 2° (APCR) / 0° (HE/HEAT), applied only when
+  there is no ricochet, amplified by the **two-caliber rule** (caliber > 2×
+  thickness → norm × 1.4 × caliber / (2 × thickness)).
 - **Classification**: green/yellow/red from effective-armor-vs-pen (a banded
   deterministic verdict), plus an optional numeric %.
-- **RNG is a validation target, never assumed**: the real game randomizes
-  penetration (~±25%). PN-2 ships the deterministic classification; matching
-  the exact RNG band is a stretch goal measured against the validation loop,
-  not a first deliverable.
+- **RNG is a validation target, never assumed**: the live game randomizes
+  PENETRATION by **±5%** (Update 6.0+; the ±25% figure is the DAMAGE spread).
+  PN-2 ships the deterministic classification; matching the exact RNG band is
+  a stretch goal measured against the validation loop, not a first
+  deliverable.
+
+**Mechanics authority (2026-08-13):** the WoT Blitz support article
+"Armor Penetration Mechanics"
+(https://wargaming.net/support/en/products/wotb/article/15409/) — ricochet
+70° from the surface normal (AP/APCR; HEAT/HE never ricochet), 3-caliber
+overmatch, 25% pen loss on a bounce, 5°/2°/0° normalization, the two-caliber
+normalization amplification, ±5% penetration spread (Update 6.0+), ±25%
+damage spread. `ArmorPenetration` implements all of the single-target terms
+(ricochet ordering, overmatch, normalization + two-caliber, pen-at-range).
 
 ## PN-4: the validation loop (the proof)
 
@@ -139,7 +154,7 @@ verdict        = compare(effectiveArmor, penAtRange) + ricochet/overmatch rules
 | Step | Deliverable | Gate |
 |---|---|---|
 | **PN-1** | Static-data extraction: tank armor models + hull geometry + gun/shell tables from the install's data files (read-only, evidence-first, CAM-009 style); a static store + verify script. **PROBED 2026-08-13 — the data is present and readable** (vehicle XML armor groups, shells.xml caliber/kind/normalization/ricochet, guns.xml piercingPower). Collision geometry **PARSED 2026-08-13** (`CollisionMeshParser` + `CollisionRaycast`, verified on the real Churchill mesh) — the per-plate NORMAL is now available; the remaining sub-problem is mapping the XML armor groups to the mesh faces for per-plate THICKNESS | Offline |
-| **PN-2** | Pen math module: raycast, incidence, effective armor, ricochet/overmatch, pen-at-range, banded verdict — pure, unit-tested, synthetic fixtures. **DONE 2026-08-13** (`Core/Overlay/ArmorPenetration.cs`, 12 tests). Both probe findings are MODELED and wired: `normalizationAngle` → `ShellSpec.NormalizationDegrees` (reduces the incidence before ricochet/effective-armor) and `piercingPower`'s 2-point range pair → `ShellSpec.FromPiercingPower` (pen0 + linear drop over `maxDistance`) | Offline |
+| **PN-2** | Pen math module: raycast, incidence, effective armor, ricochet/overmatch, pen-at-range, banded verdict — pure, unit-tested, synthetic fixtures. **DONE 2026-08-13** (`Core/Overlay/ArmorPenetration.cs`, 18 tests). Both probe findings are MODELED and wired: `normalizationAngle` → `ShellSpec.NormalizationDegrees` (applied AFTER the raw-angle ricochet check, amplified by the two-caliber rule) and `piercingPower`'s 2-point range pair → `ShellSpec.FromPiercingPower` (pen0 + linear drop over `maxDistance`). **Mechanics corrected 2026-08-13** against the official support article: ricochet on the RAW angle (normalization never prevents a bounce) and penetration RNG is ±5% (not ±25%) | Offline |
 | **PN-3** | Replay-mode HUD: aim = camera pose (verified); pen badge (colored + numeric) on the aimed enemy's nameplate. **DONE 2026-08-13** — `PenetrationBadge`/`StruckFace`/`PenetrationAim.ResolveBadge` (Core), `IOverlayPenetrationData` + `PenetrationContext` (Application), `PenetrationDataService` (GameIntegration, reads the install armor/shell/gun + collision-mesh data), badge threaded through the frame → projection → response, and rendered by the WPF HUD (reticle-centered, green/yellow/red + numeric). Honest limits: front-only armor (side/rear = 0 → Unknown, never guessed), stock AP shell (loaded shell not decodable), thickness still nominal (the mesh surface NORMAL now drives the incidence angle — the true plate normal the box model approximated; per-plate thickness mapping is the remaining gap) | Offline, no launch |
 | **PN-4** | Validation loop: score the model vs decoded shot outcomes (geometry-first, then full); report hit-rate + per-shot margin | Offline, this is the proof |
 | **PN-5** | Live mode: T1 turret/gun aim + the same module, behind the X1 policy gate | Live-gated |
@@ -236,6 +251,12 @@ reader.
    honest path?
 4. What is Blitz's exact penetration-RNG band, and can the deterministic
    verdict be matched to it within the indicator's green/yellow/red bands?
+   **ANSWERED 2026-08-13:** penetration spread is **±5%** (Update 6.0+), per
+   the official "Armor Penetration Mechanics" support article; the ±25%
+   figure is the DAMAGE spread. The deterministic verdict is NOT matched to
+   the ±5% band — the green/yellow/red margin (default ±10%) is a display
+   threshold deliberately wider than the RNG; matching the exact ±5% band is
+   a PN-4 stretch goal.
 
 ## Evidence contract (fill on completion)
 

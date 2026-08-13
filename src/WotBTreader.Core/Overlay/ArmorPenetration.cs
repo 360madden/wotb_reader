@@ -33,13 +33,17 @@ public readonly record struct ArmorPlate(
 /// A shell's penetration profile: base penetration, caliber, linear
 /// penetration drop with distance, the auto-ricochet angle, and the shell
 /// normalization (degrees the shell "digs in", reducing the effective
-/// incidence). Ricochet and drop follow the WoT Blitz mechanics the PN design
-/// records — AP/APCR shells auto-bounce at an incidence angle ≥ 70° from the
-/// normal (suppressed by the 3× overmatch rule), penetration falls off with
-/// range, and normalization is applied before both. The ±25% penetration
-/// randomization the live game applies is NOT modeled here — it is a
-/// validation target, never assumed (see
-/// <c>docs/operations/pen-chance-design.md</c>).
+/// incidence). Ricochet, drop, and normalization follow the WoT Blitz
+/// mechanics the PN design records (the official "Armor Penetration
+/// Mechanics" support article): AP/APCR shells auto-bounce at an
+/// incidence angle ≥ 70° from the normal (suppressed by the 3× overmatch
+/// rule), penetration falls off with range, normalization is 5° (AP) /
+/// 2° (APCR) / 0° (HE/HEAT) and is amplified by the two-caliber rule,
+/// and the ricochet check runs on the RAW impact angle before
+/// normalization applies. The live game's ±5% penetration randomization
+/// (Update 6.0+) is NOT modeled here — it is a validation target, never
+/// assumed (the ±25% figure is the DAMAGE spread, not penetration). See
+/// <c>docs/operations/pen-chance-design.md</c>.
 /// </summary>
 public readonly record struct ShellSpec(
     double Penetration0Mm,
@@ -116,20 +120,23 @@ public readonly record struct PenetrationVerdict(
 
 /// <summary>
 /// Pure, fail-closed armor-penetration math for the overlay's penetration
-/// indicator. Ray-plane hit → angle of incidence → effective armor → ricochet
-/// (with overmatch) → penetration at range → a banded verdict.
+/// indicator. Ray-plane hit → angle of incidence → ricochet (on the RAW
+/// angle, with overmatch) → normalization (with the two-caliber rule) →
+/// effective armor → penetration at range → a banded verdict.
 ///
-/// Conventions:
+/// Conventions (the WoT Blitz mechanics, per the official "Armor
+/// Penetration Mechanics" support article):
 ///  - The incidence angle is measured FROM the plate normal: 0 = head-on
 ///    (best penetration), approaching 90° = grazing. Effective armor =
 ///    thickness / cos(incidence), so an angled plate multiplies its
 ///    protection — the standard WoT angling model.
-///  - Ricochet: AP/APCR shells auto-bounce when the incidence is ≥ the
+///  - Ricochet: AP/APCR shells auto-bounce when the RAW incidence is ≥ the
 ///    shell's ricochet angle (default 70°), UNLESS the caliber overmatches
-///    (caliber &gt; 3 × nominal plate thickness).
-///  - Normalization: the shell's normalization angle (per-shell, from the
-///    install data) reduces the incidence before the ricochet and
-///    effective-armor checks — a shell that "digs in" can avoid a ricochet.
+///    (caliber &gt; 3 × nominal plate thickness). Normalization applies ONLY
+///    when there is no ricochet — it never digs a shell out of a bounce.
+///  - Normalization: 5° (AP) / 2° (APCR) / 0° (HE/HEAT), from the install
+///    data. The two-caliber rule amplifies it when caliber &gt; 2 × plate
+///    thickness: resulting = base × 1.4 × caliber / (2 × thickness).
 ///  - Penetration drops linearly with distance; it never goes below zero.
 ///  - The band is deterministic: Pen when penetration &gt; effective × (1 +
 ///    margin), NoPen when penetration &lt; effective × (1 − margin), Marginal
@@ -248,6 +255,30 @@ public static class ArmorPenetration
     }
 
     /// <summary>
+    /// The effective incidence after shell normalization, including the
+    /// two-caliber rule: when the caliber is MORE than 2 × the nominal plate
+    /// thickness (ignoring the impact angle), the base normalization is
+    /// amplified to <c>base × 1.4 × caliber / (2 × thickness)</c>, per the
+    /// WoT Blitz mechanics. Floored at 0 (a shell cannot normalize past
+    /// head-on). Applied only when there is no ricochet — the ricochet check
+    /// runs on the raw angle first.
+    /// </summary>
+    private static double NormalizedIncidence(
+        double incidenceRadians,
+        double caliberMm,
+        double thickness,
+        double normalizationDegrees)
+    {
+        double normDegrees = normalizationDegrees;
+        if (caliberMm > 2.0 * thickness)
+        {
+            normDegrees = normalizationDegrees * 1.4 * caliberMm / (2.0 * thickness);
+        }
+
+        return Math.Max(0.0, incidenceRadians - normDegrees * Math.PI / 180.0);
+    }
+
+    /// <summary>
     /// Shell penetration at a distance, applying the linear drop. Never
     /// returns a negative value; invalid inputs return null.
     /// </summary>
@@ -300,14 +331,19 @@ public static class ArmorPenetration
             return Unknown();
         }
 
-        double normalizedIncidence = Math.Max(
-            0.0, incidence.Value - shell.NormalizationDegrees * Math.PI / 180.0);
-
+        // Ricochet is checked on the RAW impact angle — normalization is
+        // applied only when there is no ricochet (it never digs a shell out
+        // of a bounce), per the WoT Blitz mechanics.
         bool ricochet = Ricochets(
-            normalizedIncidence,
+            incidence.Value,
             shell.CaliberMm,
             plate.Thickness,
             shell.RicochetDegrees);
+
+        double normalizedIncidence = ricochet
+            ? incidence.Value
+            : NormalizedIncidence(
+                incidence.Value, shell.CaliberMm, plate.Thickness, shell.NormalizationDegrees);
 
         double? effective = EffectiveArmor(plate.Thickness, normalizedIncidence);
         double? penAtRange = PenetrationAtRange(

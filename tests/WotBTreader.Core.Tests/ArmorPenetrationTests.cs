@@ -172,22 +172,54 @@ public sealed class ArmorPenetrationTests
     }
 
     [TestMethod]
-    public void Normalization_DigsIn_AvoidsRicochet()
+    public void Normalization_DoesNotPreventRicochet()
     {
-        // 70° incidence with 5° normalization => 65° effective incidence:
-        // under the 70° ricochet threshold, so a high-pen shell penetrates.
+        // Blitz checks ricochet on the RAW impact angle: a 70° shot ricochets
+        // even with 5° normalization (normalization applies only when there is
+        // NO ricochet — it never digs a shell out of a bounce). Caliber 100
+        // does not overmatch 40 mm (100 ≤ 3×40), so the 70° bounce stands.
         PenetrationVerdict verdict = ArmorPenetration.Evaluate(
             RayFromZ(-100),
-            TiltedPlate(thickness: 10, phi: 70.0 * Math.PI / 180.0),
+            TiltedPlate(thickness: 40, phi: 70.0 * Math.PI / 180.0),
             new ShellSpec(
-                Penetration0Mm: 100,
+                Penetration0Mm: 1000,
                 CaliberMm: 100,
                 DropPerMeterMm: 0,
                 RicochetDegrees: 70,
                 NormalizationDegrees: 5));
 
-        Assert.IsFalse(verdict.Ricochet);
-        Assert.AreEqual(PenetrationBand.Pen, verdict.Band);
+        Assert.IsTrue(verdict.Ricochet);
+        Assert.AreEqual(PenetrationBand.NoPen, verdict.Band);
+    }
+
+    [TestMethod]
+    public void TwoCaliberRule_AmplifiesNormalization()
+    {
+        // Caliber 100 > 2×40 → resultingNorm = 5 × 1.4 × 100 / (2×40) = 8.75°.
+        // 20° incidence → 11.25° effective incidence (vs 15° with base 5°).
+        double expected = 40.0 / Math.Cos(11.25 * Math.PI / 180.0);
+
+        PenetrationVerdict verdict = ArmorPenetration.Evaluate(
+            RayFromZ(-100),
+            TiltedPlate(thickness: 40, phi: 20.0 * Math.PI / 180.0),
+            new ShellSpec(1000, 100, 0, 70, NormalizationDegrees: 5));
+
+        Assert.AreEqual(expected, verdict.EffectiveArmorMm!.Value, 1e-9);
+    }
+
+    [TestMethod]
+    public void TwoCaliberRule_Boundary_Exactly2x_NoAmplification()
+    {
+        // Caliber 100 == 2×50: "more than two times" is false, so the base 5°
+        // applies (20° → 15° effective incidence).
+        double expected = 50.0 / Math.Cos(15.0 * Math.PI / 180.0);
+
+        PenetrationVerdict verdict = ArmorPenetration.Evaluate(
+            RayFromZ(-100),
+            TiltedPlate(thickness: 50, phi: 20.0 * Math.PI / 180.0),
+            new ShellSpec(1000, 100, 0, 70, NormalizationDegrees: 5));
+
+        Assert.AreEqual(expected, verdict.EffectiveArmorMm!.Value, 1e-9);
     }
 
     [TestMethod]
