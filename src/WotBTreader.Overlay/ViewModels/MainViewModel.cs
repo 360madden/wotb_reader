@@ -490,6 +490,10 @@ public class MainViewModel : INotifyPropertyChanged
     /// the pen data is unavailable.</summary>
     public IReadOnlyList<PenShellOption> PenShells => _penShells;
 
+    /// <summary>True when the viewer has more than one shell to choose from
+    /// (the sidebar selector is only shown when a choice exists).</summary>
+    public bool HasPenShells => _penShells.Count > 1;
+
     /// <summary>The shell name the latest badge was scored with, or null.</summary>
     public string? PenShell => _penShell;
 
@@ -498,6 +502,26 @@ public class MainViewModel : INotifyPropertyChanged
     public string PenShellLabel => _penShells
         .FirstOrDefault(shell => string.Equals(shell.Name, _penShell, StringComparison.Ordinal))
         ?.ShortLabel ?? string.Empty;
+
+    /// <summary>
+    /// The shell the user has selected (or the active one when no explicit
+    /// choice yet) — the ComboBox's selected value. Setting it re-scores the
+    /// badge on the next frame refresh.
+    /// </summary>
+    public string? SelectedPenShellName
+    {
+        get => _selectedShell ?? _penShell;
+        set
+        {
+            if (string.Equals(_selectedShell, value, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _selectedShell = value;
+            OnPropertyChanged();
+        }
+    }
 
     /// <summary>
     /// Advances the selected shell to the next available option (wrap-around).
@@ -512,17 +536,18 @@ public class MainViewModel : INotifyPropertyChanged
         }
 
         int index = 0;
-        if (_penShell is { } current)
+        string? current = SelectedPenShellName;
+        if (current is { } name)
         {
-            int found = _penShells.FindIndex(shell => string.Equals(shell.Name, current, StringComparison.Ordinal));
+            int found = _penShells.FindIndex(
+                shell => string.Equals(shell.Name, name, StringComparison.Ordinal));
             if (found >= 0)
             {
                 index = (found + 1) % _penShells.Count;
             }
         }
 
-        _selectedShell = _penShells[index].Name;
-        OnPropertyChanged(nameof(PenShellLabel));
+        SelectedPenShellName = _penShells[index].Name;
     }
 
     /// <summary>Vertical field of view (degrees) used to project HUD frames.</summary>
@@ -623,7 +648,20 @@ public class MainViewModel : INotifyPropertyChanged
             _penShells.Clear();
             _penShells.AddRange(frame.PenShells.Select(shell => new PenShellOption(shell.Name, shell.Kind)));
             _penShell = frame.PenShell;
+
+            // A shell chosen on a previous session may not exist on this
+            // session's stock gun; drop it so the selector falls back to the
+            // stock shell instead of pinning a dead name.
+            if (_selectedShell is { } selected
+                && !_penShells.Any(shell => string.Equals(shell.Name, selected, StringComparison.Ordinal)))
+            {
+                _selectedShell = null;
+                OnPropertyChanged(nameof(SelectedPenShellName));
+            }
+
             OnPropertyChanged(nameof(PenShellLabel));
+            OnPropertyChanged(nameof(PenShells));
+            OnPropertyChanged(nameof(HasPenShells));
             PenBadge = frame.PenBadge is { } badge
                 && !string.Equals(badge.Band, "Unknown", StringComparison.Ordinal)
                     ? new PenBadgeItem(

@@ -163,6 +163,12 @@ public partial class MainWindow : System.Windows.Window, IDisposable
             // aim moves to a tank that is currently off-viewport); re-render.
             RenderW2sHud();
         }
+        else if (e.PropertyName == nameof(MainViewModel.SelectedPenShellName))
+        {
+            // Re-score the badge with the newly selected shell (sidebar
+            // selector or Q hotkey).
+            RefreshW2sFrame();
+        }
     }
 
     private void OnPlaybackTick(object? sender, EventArgs e)
@@ -283,9 +289,9 @@ public partial class MainWindow : System.Windows.Window, IDisposable
                 e.Handled = true;
                 break;
             case System.Windows.Input.Key.Q:
-                // Cycle the pen badge's shell (AP/APCR/HE/HEAT) and re-score.
+                // Cycle the pen badge's shell (AP/APCR/HE/HEAT); the
+                // SelectedPenShellName change handler re-scores the badge.
                 _viewModel.CycleShell();
-                RefreshW2sFrame();
                 e.Handled = true;
                 break;
             case System.Windows.Input.Key.Escape:

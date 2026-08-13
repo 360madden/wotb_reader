@@ -322,11 +322,38 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
+                    <!-- ── Pen shell selector (shown when the stock gun offers a choice) ── -->
+                    <Border Grid.Row="0" Margin="0,0,0,4" Padding="4,3"
+                            Background="#10FFFFFF" CornerRadius="4"
+                            Visibility="{Binding HasPenShells, Converter={StaticResource BoolToVisible}}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="🛡 Shell" FontSize="9" Foreground="#88FFFFFF"
+                                       VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <ComboBox ItemsSource="{Binding PenShells}"
+                                      SelectedValuePath="Name"
+                                      SelectedValue="{Binding SelectedPenShellName, Mode=TwoWay}"
+                                      MinWidth="150" FontSize="10"
+                                      Background="#22FFFFFF" Foreground="White"
+                                      BorderBrush="#44FFFFFF" Cursor="Hand">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock>
+                                            <Run Text="{Binding ShortLabel, Mode=OneWay}" FontWeight="SemiBold" Foreground="#AAFFAA"/>
+                                            <Run Text="  "/>
+                                            <Run Text="{Binding Name, Mode=OneWay}" Foreground="#CCFFFFFF"/>
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                        </StackPanel>
+                    </Border>
+
                     <!-- ── Participants header ── -->
-                    <Border Grid.Row="0" Margin="0,0,0,4" Padding="0,0,0,4"
+                    <Border Grid.Row="1" Margin="0,0,0,4" Padding="0,0,0,4"
                             BorderBrush="#22FFFFFF" BorderThickness="0,0,0,1">
                         <TextBlock FontSize="11" Foreground="#BBFFFFFF">
                             <Run Text="👥  Participants ("/>
@@ -336,7 +363,7 @@
                     </Border>
 
                     <!-- ── Participants list ── -->
-                    <ItemsControl Grid.Row="1" ItemsSource="{Binding Participants}" MaxHeight="110">
+                    <ItemsControl Grid.Row="2" ItemsSource="{Binding Participants}" MaxHeight="110">
                         <ItemsControl.Template>
                             <ControlTemplate>
                                 <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -379,13 +406,13 @@
                     </ItemsControl>
 
                     <!-- ── Event count ── -->
-                    <TextBlock Grid.Row="2" FontSize="10" Foreground="#88FFFFFF" Margin="0,4,0,0">
+                    <TextBlock Grid.Row="3" FontSize="10" Foreground="#88FFFFFF" Margin="0,4,0,0">
                         <Run Text="📊  Events: "/>
                         <Run Text="{Binding EventCount, Mode=OneWay}" Foreground="#88CCFF"/>
                     </TextBlock>
 
                     <!-- ── Battle stats bar ── -->
-                    <Border Grid.Row="3" Margin="0,4,0,0" Padding="4,3"
+                    <Border Grid.Row="4" Margin="0,4,0,0" Padding="4,3"
                             Background="#10FFFFFF" CornerRadius="4">
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -425,7 +452,7 @@
                     </Border>
 
                     <!-- ── Event feed ── -->
-                    <ItemsControl Grid.Row="4" ItemsSource="{Binding Events}" MaxHeight="72" Margin="0,3,0,0">
+                    <ItemsControl Grid.Row="5" ItemsSource="{Binding Events}" MaxHeight="72" Margin="0,3,0,0">
                         <ItemsControl.Template>
                             <ControlTemplate>
                                 <ScrollViewer VerticalScrollBarVisibility="Auto">
