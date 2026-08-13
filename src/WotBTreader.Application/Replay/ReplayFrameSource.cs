@@ -254,13 +254,19 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
             (ShellSpec viewerShell, string? activeShell) = penetration.SelectShell(shellName);
             penShell = activeShell;
 
-            long? ownEntityId = projection.Session?.ViewpointParticipantId is { } viewpointId
+            Participant? viewpoint = projection.Session?.ViewpointParticipantId is { } viewpointId
                 ? projection.Participants.FirstOrDefault(
-                    participant => participant.Id == viewpointId)?.EntityId
+                    participant => participant.Id == viewpointId)
                 : null;
-            IReadOnlyList<OverlayTankState> aimTargets = ownEntityId is { } ownId
-                ? tanks.Where(tank => tank.EntityId != ownId).ToList()
-                : tanks;
+            long? ownEntityId = viewpoint?.EntityId;
+            int? ownTeam = viewpoint?.TeamNumber;
+            // Own tank excluded; enemies only when the own team is known.
+            // A tank whose team is unknown stays eligible (fail-open toward
+            // showing — never hide a real enemy behind a decode gap).
+            IReadOnlyList<OverlayTankState> aimTargets = tanks
+                .Where(tank => ownEntityId is not { } ownId || tank.EntityId != ownId)
+                .Where(tank => ownTeam is not { } team || tank.TeamNumber != team)
+                .ToList();
             penBadge = PenetrationAim.ResolveBadge(
                 camera,
                 aimTargets,

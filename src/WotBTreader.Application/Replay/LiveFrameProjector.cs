@@ -78,23 +78,40 @@ public static class LiveFrameProjector
             (ShellSpec viewerShell, string? activeShell) = penetration.SelectShell(shellName);
             penShell = activeShell;
 
+            // Own team (from the decoded viewpoint participant) scopes the
+            // badge to ENEMY tanks; an unknown team (no session join) keeps
+            // every non-own tank eligible — fail-open toward showing, never
+            // hiding a real enemy behind a decode gap.
+            int? ownTeam = ownEntityId is { } ownId && participants is not null
+                && participants.TryGetValue(ownId, out Participant? ownParticipant)
+                ? ownParticipant.TeamNumber
+                : null;
+
             IReadOnlyList<OverlayTankState> aimTargets = frame.Tanks
                 .Where(IsProjectable)
                 .Where(tank => ownEntityId is null || tank.EntityId != ownEntityId.Value)
-                .Select(tank => new OverlayTankState(
-                    tank.EntityId,
-                    tank.X!.Value,
-                    tank.Y!.Value,
-                    tank.Z!.Value,
-                    tank.YawRadians is float yaw && float.IsFinite(yaw) ? (double?)yaw : null,
-                    HpFraction: 0,
-                    Alive: true,
-                    TeamNumber: null,
-                    PlayerName: null,
-                    ClanTag: null,
-                    TankName: null,
-                    TankClass: null,
-                    DistanceMeters: 0))
+                .Select(tank =>
+                {
+                    int? team = participants is not null
+                        && participants.TryGetValue(tank.EntityId, out Participant? target)
+                        ? target.TeamNumber
+                        : null;
+                    return new OverlayTankState(
+                        tank.EntityId,
+                        tank.X!.Value,
+                        tank.Y!.Value,
+                        tank.Z!.Value,
+                        tank.YawRadians is float yaw && float.IsFinite(yaw) ? (double?)yaw : null,
+                        HpFraction: 0,
+                        Alive: true,
+                        TeamNumber: team,
+                        PlayerName: null,
+                        ClanTag: null,
+                        TankName: null,
+                        TankClass: null,
+                        DistanceMeters: 0);
+                })
+                .Where(tank => ownTeam is not { } team || tank.TeamNumber != team)
                 .ToList();
 
             penBadge = PenetrationAim.ResolveBadge(

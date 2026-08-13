@@ -593,6 +593,37 @@ public sealed class ReplayFrameSourceTests
     }
 
     [TestMethod]
+    public void Frame_WithPenetrationContext_ExcludesAlliedTankFromAim()
+    {
+        // The badge scores ENEMY tanks only: a same-team tank directly under
+        // the aim must not produce a badge, even when it is the only other
+        // tank in view (allies are never penetration targets).
+        ParticipantId viewpointId = ParticipantId.New();
+        var projection = Projection(
+            viewpointId,
+            new[]
+            {
+                Participant(viewpointId, entityId: 1, "ViewpointTank", team: 1),
+                Participant(ParticipantId.New(), entityId: 2, "AllyTank", team: 1),
+            },
+            new[]
+            {
+                Sample(entityId: 1, seconds: 0, x: 0, y: 0, z: 100, yaw: Math.PI, pitch: 0),
+                Sample(entityId: 2, seconds: 0, x: 0, y: 0, z: 0, yaw: 0, pitch: 0),
+            },
+            events: []);
+
+        PenetrationContext context = new(
+            new Dictionary<long, TankArmor> { [2] = new(FrontMm: 93.4, SideMm: 0, RearMm: 0) },
+            new ShellSpec(Penetration0Mm: 200, CaliberMm: 100));
+
+        OverlayFrame frame = ReplayFrameSource.BuildFrame(
+            projection, TimeSpan.Zero, cameraOverride: null, context);
+
+        Assert.IsNull(frame.PenBadge);
+    }
+
+    [TestMethod]
     public void Frame_WithShellSelection_PicksRequestedShell()
     {
         // The stock AP shell pens the 93.4 mm plate head-on; the HE shell
