@@ -295,6 +295,7 @@ docs/operations/handoffs/2026-08-13-pen-live-badge-and-aim-scoping.md
 docs/operations/handoffs/2026-08-13-pen-per-face-thickness-not-feasible.md
 docs/operations/handoffs/2026-08-13-pen-shell-selector-scoring-harness-and-hud-polish.md
 docs/operations/handoffs/2026-08-13-pen-shotimpact-attacker-attribution-decoded.md
+docs/operations/handoffs/2026-08-14-item7-batch-measurement-persistence.md
 docs/operations/handoffs/2026-08-14-item7-camera-double-read-instrumentation.md
 docs/operations/handoffs/2026-08-14-launcher-preflight-order-audit.md
 docs/operations/handoffs/2026-08-14-minimap-arena-folder-mapping.md
@@ -388,6 +389,8 @@ research/memory-offsets-unknowncheats.md
 research/reforged-ue5.md
 research/replay-loading-mechanisms.md
 research/uploaded-replays.md
+scripts/batch-read-measurement.Tests.ps1
+scripts/batch-read-measurement.ps1
 scripts/camera-double-read-measurement.Tests.ps1
 scripts/camera-double-read-measurement.ps1
 scripts/capture-pen-aims.ps1
@@ -396,6 +399,7 @@ scripts/click-watch-offline.ps1
 scripts/ghidra-scan.py
 scripts/install-psscriptanalyzer.ps1
 scripts/invoke-avatar-stats-rehearsal.ps1
+scripts/invoke-batch-read-measurement-tests.ps1
 scripts/invoke-batch-rehearsal.ps1
 scripts/invoke-camera-double-read-measurement-tests.ps1
 scripts/invoke-camera-state-verify.ps1

@@ -199,10 +199,16 @@ the read discipline that makes atomicity unnecessary") gets its home here:
      ring-record dump's float32 triple at +0x10 and matches it to the
      nearest decoded position_sample — proven on real data: 42/42 pairs
      PASS, corruption detected, exit codes 0/1/3). The session itself still
-     needs one approved launch.
+     needs one approved launch. **Measurement persistence corrected
+     2026-08-14:** the driver now copies the endpoint's three timestamp-only
+     `Measurement` fields into every dump and derives the read-pass duration
+     plus post-read clock-snapshot lag. Missing, incomplete, reversed, or
+     pre-end clock timestamps fail closed; four PowerShell tests pin the
+     contract.
   4. ✅ **DONE 2026-08-11** — Measure the batch window + double-read spans →
      feed item 7. The batch response now carries the read-pass window +
-     snapshot moment (`Measurement`); the rehearsal run reports it. **The
+     snapshot moment (`Measurement`); as of 2026-08-14 the rehearsal dump
+     persists and validates it rather than discarding it. **The
      per-entity double-read spans themselves landed 2026-08-11 (item-7
      Branch B step 1)** — region + entity-base spans double-read with
      bounded retry and fail-closed exhaustion; per-entity span measurement

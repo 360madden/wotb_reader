@@ -110,6 +110,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot 'batch-read-measurement.ps1')
+
 function Write-Step([string]$Message) {
     Write-Host ("batch_rehearsal: " + $Message)
 }
@@ -425,6 +427,7 @@ if (-not $DumpsExist) {
                 "despite the clock attestation - refusing to write an " +
                 "unlabeled dump." -f $t)
         }
+        $measurement = ConvertTo-BatchReadMeasurementEvidence -Response $response
         $label = [double]$response.replayTimeSeconds
         # Force an array: Invoke-RestMethod (PS 5.1 ConvertFrom-Json) collapses
         # single-element JSON arrays to scalars, which would serialize back as
@@ -448,6 +451,7 @@ if (-not $DumpsExist) {
         $DumpTimesOut.Add(@{
             replayTimeSeconds       = $label
             sameDecodedClockProven  = [bool]$response.sameDecodedClockProven
+            measurement             = $measurement
             entities                = $regions
         })
     }

@@ -293,6 +293,12 @@ now samples that sanctioned endpoint once per round and records only bounded
 status/identity/module-root/stability counters; its dedicated Pester gate
 pins honest-negative and privacy-whitelist behavior. Offline work is complete;
 the clustered live measurement remains before the evidence claim.
+✅ **Item-7 Branch-B batch measurement persistence (2026-08-14):** the batch
+endpoint's read-pass measurement had been shipped and endpoint-tested, but the
+rehearsal dump silently discarded it. The driver now preserves only its three
+timestamps and derived pass/clock-lag durations, failing closed on missing or
+temporally inconsistent data. Offline readiness is complete; the clustered
+live run remains.
 ✅ **CAM-006 (2026-08-11): the pose is wired into the frame path** —
 `IOverlayFrameSource.GetFrameAsync` gains an optional `OverlayCamera?`
 (default null = viewpoint fallback), `ReplayFrameSource` passes it

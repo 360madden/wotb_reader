@@ -221,7 +221,11 @@ Extend the resolver's proven discipline to the batch surface:
    standard): N read passes over the batch surface; record the read-pass
    window per pass (`EntityRegionsReadMeasurement`); acceptance = 100%
    byte-identical double-reads, zero torn reads, zero index/chain instability
-   across both replays.
+   across both replays. **DRIVER READY 2026-08-14:** the rehearsal now
+   persists a validated timestamp-only measurement for every dump, including
+   `readPassMilliseconds` and `clockSnapshotLagMilliseconds`; missing or
+   temporally inconsistent measurements abort before evidence is written.
+   The live sessions remain.
 4. Camera pose + entity-base reads get the same double-read treatment — the
    entity-base span landed with step 1. **IMPLEMENTATION + INSTRUMENTATION
    DONE OFFLINE 2026-08-14:** CAM-005 had already made the camera path read
