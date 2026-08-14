@@ -234,6 +234,27 @@ two-caliber, pen-at-range).
    the endpoint now quantifies them honestly instead of asserting them.
    The scorer is the SAME scoring core the live CAM-013 aim will feed:
    PN-4's live session replaces only the aim source.
+   **Raw-descriptor root cause + TWO-REPLAY scorer result (2026-08-14):**
+   the "mix of `nation:tank` and raw integers" was STALE DATA, not a live
+   decoder bug — the `EnrichAsync` path already carries the corrected
+   country-id table (57bf929); the store's sessions were simply decoded
+   before that fix. Re-decoding the two ground-truth source artifacts
+   (`reprocess`) yields FULLY enriched `nation:tank` ids for every nation
+   (Oasis Palms 14/14; Dead Rail 13/14 — the one holdout is premium
+   `17425`, absent from the base `list.xml`, a known DLC-vehicle limit).
+   The scorer's raw-descriptor lane is now a legacy fallback for old
+   sessions, not a requirement for new decodes. **Two-replay scorer result:**
+   Oasis Palms `019ffdcd` 67 scored / 46 Unknown / **18 classified → 38.9%
+   band accuracy**, ricochetPrecision 0/6; Dead Rail (re-decode
+   `01a00028-ddb0…`) 78 scored / 8 skipped / **23 classified → 69.6% band
+   accuracy**, ricochetPrecision 4/6. The spread is the documented offline
+   limit in action: Oasis Palms is a single Churchill-vs-IS-7 match-up with
+   steep glacis hits the center-line proxy misreads, while Dead Rail's
+   varied roster (Vz. 55, BDR G1 B, M5A1 Stuart, …) lands more shots in
+   the model's front-arc regime. The scoring PIPELINE now runs
+   repeatably across two content-distinct replays; model ACCURACY still
+   varies with aim-source fidelity, so the live CAM-013 aim remains the
+   decisive PN-4 step.
 
 ## `.sc2` SFV2 format spec (PARSED 2026-08-13 — `SceneFileParser`)
 
