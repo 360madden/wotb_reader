@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 
 namespace WotBTreader.GameIntegration.Session;
 
@@ -14,6 +15,14 @@ internal interface IGameProcessModuleBaseAddressResolver
 /// </summary>
 internal sealed class WindowsGameProcessModuleBaseAddressResolver : IGameProcessModuleBaseAddressResolver
 {
+    private readonly ILogger<WindowsGameProcessModuleBaseAddressResolver> _logger;
+
+    public WindowsGameProcessModuleBaseAddressResolver(
+        ILogger<WindowsGameProcessModuleBaseAddressResolver> logger)
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
     public nint Resolve(int processId, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -27,14 +36,27 @@ internal sealed class WindowsGameProcessModuleBaseAddressResolver : IGameProcess
             using Process process = Process.GetProcessById(processId);
             nint baseAddress = process.MainModule?.BaseAddress ?? nint.Zero;
             cancellationToken.ThrowIfCancellationRequested();
+            if (baseAddress == nint.Zero)
+            {
+                _logger.LogWarning(
+                    new EventId(3160, "ModuleBaseAddressUnresolved"),
+                    "Module base resolved to zero for processId={ProcessId}; the next poll retries fail-closed.",
+                    processId);
+            }
+
             return baseAddress;
         }
         catch (OperationCanceledException)
         {
             throw;
         }
-        catch
+        catch (Exception exception)
         {
+            _logger.LogWarning(
+                new EventId(3161, "ModuleBaseAddressResolveFailed"),
+                exception,
+                "Module base resolution failed for processId={ProcessId}; returning zero (fail closed).",
+                processId);
             return nint.Zero;
         }
     }
