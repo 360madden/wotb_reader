@@ -44,13 +44,17 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
     private InstalledGameIdentity? _identity;
     private readonly Dictionary<string, (string Nation, string Tank)?> _locationByTankId =
         new(StringComparer.Ordinal);
-    private readonly Dictionary<string, TankArmor> _armorByTankId = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, IReadOnlyList<string>?> _gunShotsByTankId = new(StringComparer.Ordinal);
+    // Resource caches are keyed by nation + bare tank name. A bare tank name
+    // can legally exist in multiple nations; caching by the bare name would
+    // cross-contaminate armor, mesh, or stock-gun shots between vehicles.
+    private readonly Dictionary<string, TankArmor> _armorByLocation = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, StockGunProfile?> _stockGunByLocation =
+        new(StringComparer.Ordinal);
     private readonly Dictionary<string, Dictionary<string, ShellProfile>> _shellsByNation =
         new(StringComparer.Ordinal);
-    private readonly Dictionary<string, Dictionary<string, GunShellProfile>> _gunsByNation =
+    private readonly Dictionary<string, IReadOnlyList<GunShellProfile>> _gunsByNation =
         new(StringComparer.Ordinal);
-    private readonly Dictionary<string, IReadOnlyList<CollisionMeshPart>?> _meshByTankId =
+    private readonly Dictionary<string, IReadOnlyList<CollisionMeshPart>?> _meshByLocation =
         new(StringComparer.Ordinal);
 
     public PenetrationDataService(
@@ -289,9 +293,12 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
         (string Nation, string Tank)? location;
         if (explicitNation is not null)
         {
-            // The enrichment's `nation:tank` VehicleId names the nation
-            // explicitly; verify the file exists (fail-closed) and use it.
-            location = File.Exists(VehiclePath(identity, explicitNation, bareTank))
+            // Tank ids originate in replay data. Keep both path components
+            // constrained to one known install folder before probing a file;
+            // a malformed/untrusted id must never turn metadata lookup into a
+            // path traversal outside the game's resource root.
+            location = IsKnownNation(explicitNation) && IsSafeResourceComponent(bareTank)
+                && File.Exists(VehiclePath(identity, explicitNation, bareTank))
                 ? (explicitNation, bareTank)
                 : null;
         }
@@ -306,13 +313,16 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
         else
         {
             location = null;
-            foreach (string candidate in Nations)
+            if (IsSafeResourceComponent(bareTank))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (File.Exists(VehiclePath(identity, candidate, bareTank)))
+                foreach (string candidate in Nations)
                 {
-                    location = (candidate, bareTank);
-                    break;
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (File.Exists(VehiclePath(identity, candidate, bareTank)))
+                    {
+                        location = (candidate, bareTank);
+                        break;
+                    }
                 }
             }
         }
@@ -352,7 +362,12 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
         }
 
         (string? nation, string tank) = SplitTankId(vehicleResult.Value.VehicleId);
-        return nation is null ? null : (nation, tank);
+        nation ??= vehicleResult.Value.Nation;
+        return nation is not null
+            && IsKnownNation(nation)
+            && IsSafeResourceComponent(tank)
+            ? (nation, tank)
+            : null;
     }
 
     /// <summary>
@@ -372,15 +387,27 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
         return (null, tankId);
     }
 
+    private static bool IsKnownNation(string nation) =>
+        Nations.Contains(nation, StringComparer.Ordinal);
+
+    private static bool IsSafeResourceComponent(string value) =>
+        !string.IsNullOrWhiteSpace(value)
+        && value is not "." and not ".."
+        && value.IndexOfAny(['\\', '/', ':']) < 0;
+
+    private static string LocationCacheKey(string nation, string tankId) =>
+        nation + ":" + tankId;
+
     private async ValueTask<IReadOnlyList<CollisionMeshPart>?> ResolveMeshAsync(
         InstalledGameIdentity identity,
         string nation,
         string tankId,
         CancellationToken cancellationToken)
     {
+        string cacheKey = LocationCacheKey(nation, tankId);
         lock (_gate)
         {
-            if (_meshByTankId.TryGetValue(tankId, out IReadOnlyList<CollisionMeshPart>? cached))
+            if (_meshByLocation.TryGetValue(cacheKey, out IReadOnlyList<CollisionMeshPart>? cached))
             {
                 return cached;
             }
@@ -405,7 +432,7 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
 
         lock (_gate)
         {
-            _meshByTankId[tankId] = mesh;
+            _meshByLocation[cacheKey] = mesh;
         }
 
         return mesh;
@@ -417,9 +444,10 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
         string tankId,
         CancellationToken cancellationToken)
     {
+        string cacheKey = LocationCacheKey(nation, tankId);
         lock (_gate)
         {
-            if (_armorByTankId.TryGetValue(tankId, out TankArmor cached))
+            if (_armorByLocation.TryGetValue(cacheKey, out TankArmor cached))
             {
                 return cached;
             }
@@ -454,7 +482,7 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
 
         lock (_gate)
         {
-            _armorByTankId[tankId] = armor;
+            _armorByLocation[cacheKey] = armor;
         }
 
         return armor;
@@ -495,23 +523,34 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
         string tankId,
         CancellationToken cancellationToken)
     {
-        IReadOnlyList<string> shotNames = await ResolveStockGunShotsAsync(
+        StockGunProfile? stockGun = await ResolveStockGunAsync(
             identity, nation, tankId, cancellationToken).ConfigureAwait(false);
-        if (shotNames.Count == 0)
+        if (stockGun is null || stockGun.ShellNames.Count == 0)
         {
             return [];
         }
 
         Dictionary<string, ShellProfile> shells = await GetShellsAsync(identity, nation, cancellationToken)
             .ConfigureAwait(false);
-        Dictionary<string, GunShellProfile> guns = await GetGunsAsync(identity, nation, cancellationToken)
+        IReadOnlyList<GunShellProfile> guns = await GetGunsAsync(identity, nation, cancellationToken)
             .ConfigureAwait(false);
 
         List<ShellOption> options = [];
-        foreach (string shellName in shotNames)
+        foreach (string shellName in stockGun.ShellNames)
         {
-            if (!shells.TryGetValue(shellName, out ShellProfile? shell)
-                || !guns.TryGetValue(shellName, out GunShellProfile? gun))
+            if (!shells.TryGetValue(shellName, out ShellProfile? shell))
+            {
+                continue;
+            }
+
+            // Match BOTH the stock gun and shell. Shell names are global
+            // resources and may be reused by another gun with a different
+            // piercingPower pair; matching by shell alone can corrupt the
+            // badge's penetration profile.
+            GunShellProfile? gun = guns.FirstOrDefault(profile =>
+                string.Equals(profile.GunName, stockGun.GunName, StringComparison.Ordinal)
+                && string.Equals(profile.ShellName, shellName, StringComparison.Ordinal));
+            if (gun is null)
             {
                 continue;
             }
@@ -533,42 +572,43 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
         return options;
     }
 
-    private async ValueTask<IReadOnlyList<string>> ResolveStockGunShotsAsync(
+    private async ValueTask<StockGunProfile?> ResolveStockGunAsync(
         InstalledGameIdentity identity,
         string nation,
         string tankId,
         CancellationToken cancellationToken)
     {
+        string cacheKey = LocationCacheKey(nation, tankId);
         lock (_gate)
         {
-            if (_gunShotsByTankId.TryGetValue(tankId, out IReadOnlyList<string>? cached))
+            if (_stockGunByLocation.TryGetValue(cacheKey, out StockGunProfile? cached))
             {
-                return cached ?? [];
+                return cached;
             }
         }
 
         ReadOnlyMemory<byte>? payload = await ReadDvplAsync(
             VehiclePath(identity, nation, tankId), cancellationToken).ConfigureAwait(false);
-        IReadOnlyList<string> shotNames = [];
+        StockGunProfile? stockGun = null;
         if (payload is not null)
         {
             try
             {
-                shotNames = PenetrationDataParser.ParseGunShotNames(
+                stockGun = PenetrationDataParser.ParseStockGunProfile(
                     payload.Value.Span, MaxCharacters);
             }
             catch (Exception ex) when (ex is InvalidDataException or XmlException or DecoderFallbackException)
             {
-                shotNames = [];
+                stockGun = null;
             }
         }
 
         lock (_gate)
         {
-            _gunShotsByTankId[tankId] = shotNames;
+            _stockGunByLocation[cacheKey] = stockGun;
         }
 
-        return shotNames;
+        return stockGun;
     }
 
     private async ValueTask<Dictionary<string, ShellProfile>> GetShellsAsync(
@@ -611,31 +651,27 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
         return shells;
     }
 
-    private async ValueTask<Dictionary<string, GunShellProfile>> GetGunsAsync(
+    private async ValueTask<IReadOnlyList<GunShellProfile>> GetGunsAsync(
         InstalledGameIdentity identity,
         string nation,
         CancellationToken cancellationToken)
     {
         lock (_gate)
         {
-            if (_gunsByNation.TryGetValue(nation, out Dictionary<string, GunShellProfile>? cached))
+            if (_gunsByNation.TryGetValue(nation, out IReadOnlyList<GunShellProfile>? cached))
             {
                 return cached;
             }
         }
 
-        Dictionary<string, GunShellProfile> guns = new(StringComparer.Ordinal);
+        List<GunShellProfile> guns = [];
         ReadOnlyMemory<byte>? payload = await ReadDvplAsync(
             ComponentPath(identity, nation, "guns"), cancellationToken).ConfigureAwait(false);
         if (payload is not null)
         {
             try
             {
-                foreach (GunShellProfile gun in PenetrationDataParser.ParseGuns(payload.Value.Span, MaxCharacters))
-                {
-                    // A shell belongs to one gun's shot list; keep the first.
-                    guns.TryAdd(gun.ShellName, gun);
-                }
+                guns.AddRange(PenetrationDataParser.ParseGuns(payload.Value.Span, MaxCharacters));
             }
             catch (Exception ex) when (ex is InvalidDataException or XmlException or DecoderFallbackException)
             {
@@ -680,10 +716,10 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
     private void ClearCaches()
     {
         _locationByTankId.Clear();
-        _armorByTankId.Clear();
-        _gunShotsByTankId.Clear();
+        _armorByLocation.Clear();
+        _stockGunByLocation.Clear();
         _shellsByNation.Clear();
         _gunsByNation.Clear();
-        _meshByTankId.Clear();
+        _meshByLocation.Clear();
     }
 }

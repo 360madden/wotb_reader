@@ -1,7 +1,7 @@
 # PN-4 live aim-capture runbook (the decisive pen proof)
 
-**Status: PRE-STAGED — the code path is complete; this runbook is the turnkey
-session plan. Execute when a live launch is approved.**
+**Status: EXECUTED — PN-4 live proof passed on 2026-08-14. This runbook
+remains the repeatable regression procedure for future replays.**
 **Date:** 2026-08-14
 **Roadmap:** Phase 6 (`docs/operations/product-roadmap.md`, row PN-4)
 
@@ -12,16 +12,37 @@ playback, then feed those aims into the already-shipped `PenValidation.Score`
 core so the pen model is validated against the TRUE aim — the one thing the
 decoded replay stream cannot provide (no turret/gun aim exists offline).
 
-## Why this is the remaining step
+## Why this was the remaining step
 
-The pen badge + model are **IMPLEMENTED** (PN-1/2/3/5). The offline scorer
-(`PenOfflineScorer` + `GET/POST /discover/pen-offline-score/{id}`) has already
-scored three content-distinct replays at 38.9% / 69.6% / 71.9% band accuracy —
-but every offline shot uses the attacker→victim **center-line** proxy, which
-provably never reaches the ≥70° ricochet regime (all 67 Oasis shots <45°). The
-mesh raycast and face classification are verified correct; the residual error
-is aim-source fidelity, not the model. The live CAM-013 aim is the only aim
-source that reaches the real shot angle.
+The pen badge + model are **IMPLEMENTED** (PN-1/2/3/5). Before this run, the
+offline scorer (`PenOfflineScorer` + `GET/POST
+/discover/pen-offline-score/{id}`) had scored three content-distinct replays
+at 38.9% / 69.6% / 71.9% band accuracy, but every offline shot used the
+attacker→victim **center-line** proxy, which provably never reached the ≥70°
+ricochet regime (all 67 Oasis shots <45°). The mesh raycast and face
+classification were verified correct; the residual error was aim-source
+fidelity, not the model. The executed CAM-013 run supplied the missing true
+angle and closed this validation step.
+
+## Executed result (2026-08-14)
+
+The managed Dead Rail run reached `OfflineReplayVerified` after the canonical
+window move/resize and Watch Offline click. The capture recorded 150
+G2-proven samples from 9.4–278.9 replay seconds and stopped on
+`Denied / evidence.replay_completed` after writing its output. Against the
+same 78-shot decoded session, the center-line baseline was 69.565% band
+accuracy and 66.667% ricochet precision (4/6); the CAM-013 override report was
+72.727% and 80.000% (4/5).
+
+The procedure was then repeated on the content-distinct Oasis/Churchill
+session: 161 samples from 7.2–287.4 seconds, 67 shots / 2 skipped; baseline
+38.889% band accuracy with six predicted ricochets versus CAM-013 46.667% and
+zero predicted ricochets. Both runs stopped on the durable replay-completion
+state. These are PASS results for the aim-source validation, not a claim of
+perfect game prediction; the remaining Unknown side/rear cases, manual shell
+selection, and deterministic RNG limits stay as documented. The durable
+evidence is `handoffs/2026-08-14-pn4-live-aim-validation.md` and
+`handoffs/2026-08-14-pn4-second-replay-regression.md`.
 
 ## Prerequisites (all already true)
 
@@ -82,11 +103,14 @@ the offline behavior is unchanged. No aim overrides + no body = center-line.
 
 ## Pass criteria (record in the handoff)
 
-- The scored report's `ricochetPrecision` improves over the offline center-line
-  result (Dead Rail's 4/6 is the offline best; a live aim should raise it).
+- Compare `ricochetPrecision` with the offline center-line result whenever
+  both reports have a non-zero denominator. If the true aim removes every
+  predicted ricochet, report the metric as not applicable (`0/0`) rather than
+  treating it as an improvement or a regression.
 - The predicted-ricochet outliers that penetrated offline (87.5° Oasis /
-  72.5° Copperfield) are re-scored with the true incidence and either agree or
-  localize a real model term (plate/incidence), not an aim artifact.
+  72.5° Copperfield) are re-scored with the true incidence and either agree,
+  are removed as center-line artifacts, or localize a real model term
+  (plate/incidence) — never silently counted as a correct prediction.
 - Band accuracy is reported per-shot with margins so any remaining disagreement
   points at a specific term (loaded shell, side/rear nominal armor) rather than
   aim fidelity.

@@ -365,6 +365,47 @@ public sealed class PenetrationAimTests
     }
 
     [TestMethod]
+    public void EvaluateAgainstMesh_UnknownPartId_FailsClosed()
+    {
+        // Collision groups beyond the proven hull/turret/gun ids must not
+        // inherit hull armor. The face can still be localized, but the
+        // penetration verdict remains Unknown until that part is identified.
+        AimRay ray = new(0, 0, 100, 0, 0, -1);
+        TankArmor armor = new(FrontMm: 186.7, SideMm: 53.4, RearMm: 40, TurretFrontMm: 102);
+
+        PenetrationVerdict verdict = PenetrationAim.EvaluateAgainstMesh(
+            ray,
+            Tank(1, 0, 0, yaw: 0),
+            Parts(FrontPlateMesh(), partId: 7),
+            armor,
+            new ShellSpec(200, 100),
+            out StruckFace face);
+
+        Assert.AreEqual(StruckFace.Front, face);
+        Assert.AreEqual(PenetrationBand.Unknown, verdict.Band);
+        Assert.IsNull(verdict.EffectiveArmorMm);
+    }
+
+    [TestMethod]
+    public void ResolveBadge_WithMeshMiss_ReportsUnknownFace()
+    {
+        // When a mesh is present but the ray misses it, the box fallback must
+        // not leak its FRONT label into an Unknown mesh verdict.
+        OverlayCamera camera = Camera(yaw: Math.PI, pitch: 0, x: 0, z: 100);
+        OverlayTankState[] tanks = [Tank(1, 0, 0, yaw: 0)];
+        Dictionary<long, TankArmor> armor = new() { [1] = Armor };
+        Dictionary<long, IReadOnlyList<CollisionMeshPart>> meshes =
+            new() { [1] = Parts(OffAxisMesh()) };
+
+        PenetrationBadge? badge = PenetrationAim.ResolveBadge(
+            camera, tanks, armor, new ShellSpec(200, 100), meshesByEntity: meshes);
+
+        Assert.IsNotNull(badge);
+        Assert.AreEqual(StruckFace.Unknown, badge.Value.Face);
+        Assert.AreEqual(PenetrationBand.Unknown, badge.Value.Verdict.Band);
+    }
+
+    [TestMethod]
     public void ResolveBadge_WithMesh_UsesMeshFace()
     {
         OverlayCamera camera = Camera(yaw: Math.PI, pitch: 0, x: 0, z: 100);

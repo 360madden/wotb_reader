@@ -646,6 +646,9 @@ public class MainViewModel : INotifyPropertyChanged
             }
 
             LastFrameReplayTimeSeconds = frame.ReplayTimeSeconds;
+            string? previousSelectedShellName = SelectedPenShellName;
+            string? previousPenShell = _penShell;
+            string previousPenShellLabel = PenShellLabel;
             _penShells.Clear();
             _penShells.AddRange(frame.PenShells.Select(shell => new PenShellOption(shell.Name, shell.Kind)));
             _penShell = frame.PenShell;
@@ -657,10 +660,27 @@ public class MainViewModel : INotifyPropertyChanged
                 && !_penShells.Any(shell => string.Equals(shell.Name, selected, StringComparison.Ordinal)))
             {
                 _selectedShell = null;
+            }
+
+            // Notify only when the effective value changed. Raising
+            // SelectedPenShellName on every frame makes MainWindow request
+            // another frame, which becomes an unbounded request/render loop
+            // while the server keeps returning the same default shell.
+            if (!string.Equals(previousSelectedShellName, SelectedPenShellName, StringComparison.Ordinal))
+            {
                 OnPropertyChanged(nameof(SelectedPenShellName));
             }
 
-            OnPropertyChanged(nameof(PenShellLabel));
+            if (!string.Equals(previousPenShell, _penShell, StringComparison.Ordinal))
+            {
+                OnPropertyChanged(nameof(PenShell));
+            }
+
+            if (!string.Equals(previousPenShellLabel, PenShellLabel, StringComparison.Ordinal))
+            {
+                OnPropertyChanged(nameof(PenShellLabel));
+            }
+
             OnPropertyChanged(nameof(PenShells));
             OnPropertyChanged(nameof(HasPenShells));
             PenBadge = frame.PenBadge is { } badge
@@ -1274,6 +1294,15 @@ public class MainViewModel : INotifyPropertyChanged
             ApplyTimeFilter();
 
             ApplyMapBoundaries(selected);
+
+            // Detail loading sets the initial scrubber position directly so
+            // the full state can be assembled before publishing it. Notify
+            // the timeline after that state is ready; MainWindow uses this
+            // notification to request the first W2S frame, so the penetration
+            // badge is visible immediately after selecting a replay instead
+            // of waiting for playback or a manual scrub.
+            OnPropertyChanged(nameof(CurrentTime));
+            OnPropertyChanged(nameof(CurrentTimeSeconds));
 
             // Load minimap texture for this map. The same detail-load token
             // prevents a slower request for the previous selection winning.

@@ -139,11 +139,31 @@ internal static class PenetrationDataParser
         ReadOnlySpan<byte> payload,
         long maxCharacters)
     {
+        StockGunProfile? profile = ParseStockGunProfile(payload, maxCharacters);
+        return profile is { ShellNames.Count: > 0 }
+            ? profile.ShellNames[0]
+            : null;
+    }
+
+    /// <summary>
+    /// Reads the detailed vehicle definition's first (stock) gun identity and
+    /// all of its shot names. The identity is retained because guns.xml may
+    /// reuse a shell name with a different piercing profile on another gun.
+    /// </summary>
+    public static StockGunProfile? ParseStockGunProfile(
+        ReadOnlySpan<byte> payload,
+        long maxCharacters)
+    {
         XDocument document = Load(payload, maxCharacters);
         XElement? guns = document.Root?.Descendants("guns").FirstOrDefault();
         XElement? gun = guns?.Elements().FirstOrDefault();
-        XElement? shot = gun?.Element("shots")?.Elements().FirstOrDefault();
-        return shot?.Name.LocalName;
+        string? gunName = gun?.Name.LocalName;
+        List<string> shellNames = gun?.Element("shots")?.Elements()
+            .Select(shot => shot.Name.LocalName)
+            .ToList() ?? [];
+        return string.IsNullOrWhiteSpace(gunName) || shellNames.Count == 0
+            ? null
+            : new StockGunProfile(gunName, shellNames);
     }
 
     /// <summary>
@@ -158,11 +178,7 @@ internal static class PenetrationDataParser
         ReadOnlySpan<byte> payload,
         long maxCharacters)
     {
-        XDocument document = Load(payload, maxCharacters);
-        XElement? guns = document.Root?.Descendants("guns").FirstOrDefault();
-        XElement? gun = guns?.Elements().FirstOrDefault();
-        XElement? shots = gun?.Element("shots");
-        return shots?.Elements().Select(shot => shot.Name.LocalName).ToList() ?? [];
+        return ParseStockGunProfile(payload, maxCharacters)?.ShellNames ?? [];
     }
 
     /// <summary>

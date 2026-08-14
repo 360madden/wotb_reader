@@ -2049,6 +2049,44 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task ScorePenOffline_RejectsInvalidAimOverrideBeforeLoadingSession()
+    {
+        var sessions = new FakeSessionQueryRepository(
+            OperationResult.Failure<ReplayDecodeProjection>(
+                new ApplicationError("storage.session.not_found", "No such session.", Retryable: false)));
+        var scorer = new FakePenOfflineScorer(
+            new OfflinePenScoreReport(0, new PenValidationReport(0, 0, 0, 0, 0, 0, 0, []), []));
+        var request = new PenOfflineScoreRequest
+        {
+            AimOverrides =
+            [
+                new AimSampleRequest
+                {
+                    ReplayTimeTicks = -1,
+                    OriginX = double.NaN,
+                    OriginY = 0,
+                    OriginZ = 0,
+                    DirectionX = 0,
+                    DirectionY = 0,
+                    DirectionZ = -1,
+                },
+            ],
+        };
+
+        IResult result = await GameApiEndpoints.ScorePenOfflineAsync(
+            scorer,
+            sessions,
+            Guid.NewGuid(),
+            request,
+            TestContext.CancellationToken);
+
+        JsonElement response = BadRequestAnonymous(result);
+        Assert.AreEqual("discover.pen_invalid_aim_overrides", response.GetProperty("error").GetString());
+        Assert.IsNull(sessions.LastSessionId);
+        Assert.IsNull(scorer.LastProjection);
+    }
+
+    [TestMethod]
     public async Task ScorePenOffline_NotFoundForUnknownSession()
     {
         var sessions = new FakeSessionQueryRepository(

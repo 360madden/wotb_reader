@@ -70,13 +70,19 @@ function Get-CapApiContext {
     }
 }
 
-function Get-CapTerminalReason($Api) {
+function Get-CapState($Api) {
     # /state is a read-only GET, so it answers even while the discover gate
-    # denies. A terminal gate means the replay ended (or the game is gone),
-    # not a transient poll failure -- the capture should stop, not retry.
+    # denies. Keep this in one helper so the pre-gate wait and terminal check
+    # use identical request semantics.
+    return Invoke-RestMethod -Uri "$($Api.Base)/api/v1/game/state" `
+        -Headers $Api.Headers -TimeoutSec 5
+}
+
+function Get-CapTerminalReason($Api) {
+    # A terminal gate means the replay ended (or the game is gone), not a
+    # transient poll failure -- the capture should stop, not retry.
     try {
-        $st = Invoke-RestMethod -Uri "$($Api.Base)/api/v1/game/state" `
-            -Headers $Api.Headers -TimeoutSec 5
+        $st = Get-CapState $Api
         $vs = [string]$st.verificationState
         $rc = [string]$st.reasonCode
         if ($vs -eq 'Denied' -and $rc -eq 'evidence.replay_completed') {
@@ -142,12 +148,46 @@ $framesSkippedDuplicate = 0
 $errors = 0
 $flushEvery = [int][math]::Max(10, [int](30000 / [math]::Max(1, $CadenceMs)))
 
-$deadline = (Get-Date).AddSeconds($MaxSeconds)
+$deadline = $null
 $consecutiveFailures = 0
 $failureStartedAt = $null
 
 Write-Cap ("starting session=" + $BattleSessionId + " cadence_ms=" + $CadenceMs +
     " max_s=" + $MaxSeconds + " output=" + $OutputPath)
+
+# The launcher deliberately produces a pre-verification window while the
+# game syncs. Do not spend the capture's failure budget there: wait for the
+# positive gate once, then start the replay-time deadline and live-frame loop.
+$verified = $false
+$verificationDeadline = (Get-Date).AddSeconds(180)
+Write-Cap 'waiting_for_verified_gate'
+while ((Get-Date) -lt $verificationDeadline) {
+    try {
+        $api = Get-CapApiContext
+        $state = Get-CapState $api
+        $verificationState = [string]$state.verificationState
+        if ($verificationState -eq 'OfflineReplayVerified') {
+            $verified = $true
+            break
+        }
+        if ($verificationState -eq 'Denied' -or
+            $verificationState -eq 'GameAbsent' -or
+            $verificationState -eq 'EvidenceStale') {
+            Write-Cap ("stopping_terminal_gate_" + [string]$state.reasonCode)
+            exit 1
+        }
+    }
+    catch {
+        # The host/rendezvous may not exist until the launcher starts; retry.
+    }
+    Start-Sleep -Milliseconds 500
+}
+if (-not $verified) {
+    Write-Cap 'FAILED_verification_gate_timeout'
+    exit 1
+}
+Write-Cap 'gate_verified_starting_capture'
+$deadline = (Get-Date).AddSeconds($MaxSeconds)
 
 while ((Get-Date) -lt $deadline) {
     try {
@@ -156,6 +196,7 @@ while ((Get-Date) -lt $deadline) {
         $frame = Invoke-RestMethod -Uri "$($api.Base)/api/v1/game/discover/live-frame" `
             -Method Post -Headers $api.Headers -Body $body -TimeoutSec 5
         $consecutiveFailures = 0
+        $failureStartedAt = $null
         $framesSeen++
 
         $cameraResolved = $false
@@ -196,11 +237,17 @@ while ((Get-Date) -lt $deadline) {
         $fy = -([double]$cam.basis[4])
         $fz = -([double]$cam.basis[5])
         $len = [math]::Sqrt($fx * $fx + $fy * $fy + $fz * $fz)
-        if ($len -gt 1e-6) {
-            $fx /= $len
-            $fy /= $len
-            $fz /= $len
+        if ([double]::IsNaN($len) -or [double]::IsInfinity($len) -or $len -le 1e-6) {
+            # A resolved camera with a zero/non-finite basis is not an aim
+            # sample. Do not write a zero vector that the scorer would later
+            # silently replace with the center-line proxy.
+            $framesSkippedCamera++
+            Start-Sleep -Milliseconds $CadenceMs
+            continue
         }
+        $fx /= $len
+        $fy /= $len
+        $fz /= $len
 
         [void]$samples.Add(@{
             replayTimeTicks = $ticks

@@ -5,18 +5,18 @@ namespace WotBTreader.GameIntegration.Metadata;
 
 /// <summary>
 /// Parses the install's collision mesh (<c>CollisionMeshes/{nation}-{tank}.scg.dvpl</c>,
-/// already decompressed by <see cref="Dvpl.DvplReader"/>) into a
-/// <see cref="CollisionMesh"/>. The container is DAVA <c>SCPG</c> whose header
-/// count is the number of <c>PolygonGroup</c> <c>KeyedArchive</c>s — three on
-/// the real installs (keyed <c>#id</c> 1/3/5 = hull / turret / gun, each in its
-/// own Z-up local space: +X right, +Y forward, +Z up). This parser reads the
-/// FIRST group (the hull) only: a vertex array (position + normal, the
-/// <c>EVF_VERTEX</c>/<c>EVF_NORMAL</c> attributes) and a triangle index list
-/// (<c>indexFormat</c> 0 = uint16, 1 = uint32). The turret/gun groups are
-/// separate local spaces whose placement needs the <c>.sc2</c> SFV2 scene
-/// transforms, not yet parsed.
+/// already decompressed by <see cref="Dvpl.DvplReader"/>) into per-part
+/// <see cref="CollisionMesh"/> values. The container is DAVA <c>SCPG</c>
+/// whose header count is the number of <c>PolygonGroup</c>
+/// <c>KeyedArchive</c>s — three on the real installs (keyed <c>#id</c> 1/3/5
+/// = hull / turret / gun, all in the shared Z-up rest-pose space: +X right,
+/// +Y forward, +Z up). Each group contains a vertex array (position + normal,
+/// the <c>EVF_VERTEX</c>/<c>EVF_NORMAL</c> attributes) and a triangle index
+/// list (<c>indexFormat</c> 0 = uint16, 1 = uint32).
 ///
-/// Pure span-in → mesh-out. Every read is bounds-checked and fail-closed:
+/// The parser returns every polygon group; the consumer combines the groups
+/// after validating the collision scene's shared rest-pose transform. Pure
+/// span-in → mesh-out. Every read is bounds-checked and fail-closed:
 /// malformed, truncated, or over-limit input throws
 /// <see cref="InvalidDataException"/> rather than producing a partial mesh.
 /// </summary>
@@ -40,8 +40,9 @@ internal static class CollisionMeshParser
     private const int MaxIndices = 1 << 22;
 
     /// <summary>
-    /// Parses the FIRST polygon group (the hull on the real installs) only —
-    /// the legacy hull-only read surface.
+    /// Parses the first polygon group (the hull on the real installs) for the
+    /// legacy hull-only read surface. Use <see cref="ParseAll"/> for per-part
+    /// hull/turret/gun scoring.
     /// </summary>
     public static CollisionMesh Parse(ReadOnlySpan<byte> payload, long maxBytes)
     {
@@ -52,12 +53,12 @@ internal static class CollisionMeshParser
     }
 
     /// <summary>
-    /// Parses EVERY polygon group into per-part meshes sharing one Z-up
-    /// rest-pose space. The real installs carry three groups keyed
-    /// <c>#id</c> 1/3/5 = hull / turret / gun (the three <c>hitTester</c>
-    /// collision models); the collision <c>.sc2</c> scene descriptor carries
-    /// identity transforms for them (verified 2026-08-13), so the parts are
-    /// raycast as a union without per-part placement.
+    /// Parses EVERY polygon group into per-part meshes. The real installs
+    /// carry three groups keyed <c>#id</c> 1/3/5 = hull / turret / gun (the
+    /// three <c>hitTester</c> collision models); the collision <c>.sc2</c>
+    /// scene descriptor carries identity transforms for them (verified
+    /// 2026-08-13), so the consumer raycasts the parts as a union without
+    /// per-part placement.
     /// </summary>
     public static IReadOnlyList<CollisionMeshPart> ParseAll(
         ReadOnlySpan<byte> payload,

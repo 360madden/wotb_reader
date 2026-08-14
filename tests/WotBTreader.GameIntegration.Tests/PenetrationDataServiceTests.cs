@@ -248,6 +248,44 @@ public sealed class PenetrationDataServiceTests
     }
 
     [TestMethod]
+    public async Task ResolveTankAsync_MatchesGunProfileByStockGunIdentity()
+    {
+        // The same shell resource can be referenced by multiple guns. The
+        // stock gun's piercingPower must win; joining guns.xml by shell name
+        // alone would incorrectly select the first unrelated gun.
+        using Fixture fixture = new();
+        fixture.WriteUkVehicle(
+            "SharedProfileTank",
+            """
+            <root>
+              <hull><armor><armor_1>100</armor_1></armor><primaryArmor>armor_1</primaryArmor></hull>
+              <turrets0><Turret_1><guns><_stock_gun><shots><_shared_shell><shell>shared</shell></_shared_shell></shots></_stock_gun></guns></Turret_1></turrets0>
+            </root>
+            """);
+        fixture.WriteShells(
+            """
+            <root><_shared_shell><kind>ARMOR_PIERCING</kind><caliber>75</caliber><ricochetAngle>70</ricochetAngle></_shared_shell></root>
+            """);
+        fixture.WriteGuns(
+            """
+            <root><shared>
+              <_other_gun><shots><_shared_shell><maxDistance>700</maxDistance><piercingPower>10 5</piercingPower></_shared_shell></shots></_other_gun>
+              <_stock_gun><shots><_shared_shell><maxDistance>700</maxDistance><piercingPower>100 80</piercingPower></_shared_shell></shots></_stock_gun>
+            </shared></root>
+            """);
+
+        PenetrationDataService service = fixture.CreateService();
+        PenetrationTankData? data = await service.ResolveTankAsync(
+            "uk:SharedProfileTank",
+            CancellationToken.None);
+
+        Assert.IsNotNull(data);
+        Assert.HasCount(1, data!.Shells);
+        Assert.AreEqual(100, data.Shells[0].Spec.Penetration0Mm, 1e-9);
+        Assert.AreEqual((100.0 - 80.0) / 700.0, data.Shells[0].Spec.DropPerMeterMm, 1e-9);
+    }
+
+    [TestMethod]
     public async Task ResolveTankAsync_RawCompactDescriptor_ResolvesThroughMetadataIndex()
     {
         // The store can carry a RAW compact descriptor (the decode-time
@@ -323,6 +361,84 @@ public sealed class PenetrationDataServiceTests
         Assert.AreEqual(186.7, data!.Armor.FrontMm, 1e-9);
         Assert.AreEqual("_2pdr_AP_Mk.IXBT_2", data.Shells[0].Name);
         Assert.AreEqual(92, data.Shells[0].Spec.Penetration0Mm, 1e-9);
+    }
+
+    [TestMethod]
+    public async Task ResolveTankAsync_SameBareNameAcrossNations_UsesNationScopedCaches()
+    {
+        // The same bare tank filename can exist in multiple nation folders.
+        // Armor, mesh, and stock-gun shot caches must include the nation or a
+        // prior lookup can silently make the second vehicle use the first
+        // vehicle's profile.
+        using Fixture fixture = new();
+        fixture.WriteVehicle(
+            "uk",
+            "SharedTank",
+            """
+            <root>
+              <hull><armor><armor_1>100</armor_1></armor><primaryArmor>armor_1</primaryArmor></hull>
+              <turrets0><Turret_1><guns><Gun><shots><uk_shell><shell>shared</shell></uk_shell></shots></Gun></guns></Turret_1></turrets0>
+            </root>
+            """);
+        fixture.WriteShells(
+            "uk",
+            """
+            <root><uk_shell><kind>ARMOR_PIERCING</kind><caliber>75</caliber><ricochetAngle>70</ricochetAngle></uk_shell></root>
+            """);
+        fixture.WriteGuns(
+            "uk",
+            """
+            <root><shared><Gun><shots><uk_shell><maxDistance>700</maxDistance><piercingPower>100 80</piercingPower></uk_shell></shots></Gun></shared></root>
+            """);
+        fixture.WriteVehicle(
+            "usa",
+            "SharedTank",
+            """
+            <root>
+              <hull><armor><armor_1>200</armor_1></armor><primaryArmor>armor_1</primaryArmor></hull>
+              <turrets0><Turret_1><guns><Gun><shots><usa_shell><shell>shared</shell></usa_shell></shots></Gun></guns></Turret_1></turrets0>
+            </root>
+            """);
+        fixture.WriteShells(
+            "usa",
+            """
+            <root><usa_shell><kind>ARMOR_PIERCING_CR</kind><caliber>90</caliber><ricochetAngle>70</ricochetAngle></usa_shell></root>
+            """);
+        fixture.WriteGuns(
+            "usa",
+            """
+            <root><shared><Gun><shots><usa_shell><maxDistance>700</maxDistance><piercingPower>180 160</piercingPower></usa_shell></shots></Gun></shared></root>
+            """);
+
+        PenetrationDataService service = fixture.CreateService();
+        PenetrationTankData? uk = await service.ResolveTankAsync("uk:SharedTank", CancellationToken.None);
+        PenetrationTankData? usa = await service.ResolveTankAsync("usa:SharedTank", CancellationToken.None);
+
+        Assert.IsNotNull(uk);
+        Assert.IsNotNull(usa);
+        Assert.AreEqual(100, uk!.Armor.FrontMm, 1e-9);
+        Assert.AreEqual(200, usa!.Armor.FrontMm, 1e-9);
+        Assert.AreEqual("uk_shell", uk.Shells.Single().Name);
+        Assert.AreEqual("usa_shell", usa.Shells.Single().Name);
+        Assert.AreEqual(ShellKind.ArmorPiercing, uk.Shells[0].Kind);
+        Assert.AreEqual(ShellKind.ArmorPiercingCr, usa.Shells[0].Kind);
+    }
+
+    [TestMethod]
+    public async Task ResolveTankAsync_PathLikeTankId_FailsClosed()
+    {
+        // Tank ids are replay-derived input. Path separators and traversal
+        // components must never escape the installed resource root during a
+        // best-effort metadata lookup.
+        using Fixture fixture = new();
+        PenetrationDataService service = fixture.CreateService();
+
+        Assert.IsNull(await service.ResolveTankAsync(
+            "uk:../outside",
+            CancellationToken.None));
+        Assert.IsNull(await service.ResolveTankAsync(
+            "../outside",
+            CancellationToken.None));
     }
 
     [TestMethod]
@@ -450,21 +566,28 @@ public sealed class PenetrationDataServiceTests
         }
 
         public void WriteUkVehicle(string name, string armorXml) =>
+            WriteVehicle("uk", name, armorXml);
+
+        public void WriteVehicle(string nation, string name, string armorXml) =>
             DvplTestData.Write(
                 System.IO.Path.Combine(
-                    _dataRoot, "XML", "item_defs", "vehicles", "uk", $"{name}.xml.dvpl"),
+                    _dataRoot, "XML", "item_defs", "vehicles", nation, $"{name}.xml.dvpl"),
                 Encoding.UTF8.GetBytes(armorXml));
 
-        public void WriteShells(string xml) =>
+        public void WriteShells(string xml) => WriteShells("uk", xml);
+
+        public void WriteShells(string nation, string xml) =>
             DvplTestData.Write(
                 System.IO.Path.Combine(
-                    _dataRoot, "XML", "item_defs", "vehicles", "uk", "components", "shells.xml.dvpl"),
+                    _dataRoot, "XML", "item_defs", "vehicles", nation, "components", "shells.xml.dvpl"),
                 Encoding.UTF8.GetBytes(xml));
 
-        public void WriteGuns(string xml) =>
+        public void WriteGuns(string xml) => WriteGuns("uk", xml);
+
+        public void WriteGuns(string nation, string xml) =>
             DvplTestData.Write(
                 System.IO.Path.Combine(
-                    _dataRoot, "XML", "item_defs", "vehicles", "uk", "components", "guns.xml.dvpl"),
+                    _dataRoot, "XML", "item_defs", "vehicles", nation, "components", "guns.xml.dvpl"),
                 Encoding.UTF8.GetBytes(xml));
 
         public InstalledGameIdentity Identity => _identity;

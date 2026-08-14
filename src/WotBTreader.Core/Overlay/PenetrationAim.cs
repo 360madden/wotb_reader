@@ -1,11 +1,12 @@
 namespace WotBTreader.Core.Overlay;
 
 /// <summary>
-/// Nominal armor thickness per hull face, in millimeters — the first-order
-/// stand-in for the install's per-group armor XML until the plate-slope
-/// <c>.model</c> collision geometry is probed (PN-1's open sub-problem). The
-/// caller supplies front/side/rear from the vehicle definition's armor
-/// groups; side is symmetric (left == right). A face with thickness ≤ 0 is
+/// Nominal armor thickness per hull face, in millimeters. The parsed install
+/// collision mesh supplies the struck surface normal; this value supplies the
+/// nominal thickness because the accessible XML does not map its armor groups
+/// to individual collision faces. The caller supplies front/side/rear from
+/// the vehicle definition's armor groups; side is symmetric (left == right).
+/// A face with thickness ≤ 0 is
 /// UNKNOWN armor (not zero protection): <see cref="PenetrationAim"/> rejects
 /// it as <see cref="PenetrationBand.Unknown"/> rather than fabricating a
 /// will-penetrate verdict, so callers may pass 0 for a face whose nominal
@@ -74,7 +75,8 @@ public readonly record struct PenetrationBadge(
 ///    decoded replay the "camera" is the viewpoint tank's HULL facing (the
 ///    type-10 yaw — no turret/aim rotation exists in the replay stream, per
 ///    offline/replay-format.md), so the offline aim is the hull direction,
-///    not the gun. Live battle needs T1 turret discovery.
+///    not the gun. T1 remains optional research for exact gun-lock state; the
+///    CAM-013 live badge does not depend on it.
 /// </summary>
 public static class PenetrationAim
 {
@@ -355,6 +357,15 @@ public static class PenetrationAim
             return face == StruckFace.Front ? armor.TurretFrontMm : 0.0;
         }
 
+        // Only the known hull group may consume hull armor. A future or
+        // malformed collision group must not silently inherit hull thickness;
+        // its geometry is still useful for aim localization, but the verdict
+        // fails closed to Unknown until the part semantics are proven.
+        if (partId != 1)
+        {
+            return 0.0;
+        }
+
         return face switch
         {
             StruckFace.Front => armor.FrontMm,
@@ -416,10 +427,11 @@ public static class PenetrationAim
         {
             verdict = EvaluateAgainstMesh(
                 ray.Value, tank, parts, armor, shell, out StruckFace meshFace, margin);
-            if (meshFace != StruckFace.Unknown)
-            {
-                face = meshFace;
-            }
+            // A mesh miss or deck hit means that no supported hull face was
+            // actually struck. Do not retain the box-model face from above;
+            // that would serialize a misleading FRONT/SIDE/REAR label next
+            // to an honest Unknown verdict.
+            face = meshFace;
         }
         else
         {

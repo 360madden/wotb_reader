@@ -410,7 +410,7 @@ public sealed class MainViewModelTests
                 "mapId": null,
                 "mapName": null,
                 "battleTimeUtc": "2026-07-26T09:55:00+00:00",
-                "duration": "0:00:00",
+                "duration": "0:00:10",
                 "viewpointParticipantId": null
               },
               "participants": [
@@ -439,6 +439,14 @@ public sealed class MainViewModelTests
             return Task.FromResult(JsonResponse("""{"offset":0,"limit":200,"count":1,"items":[]}"""));
         });
         MainViewModel viewModel = CreateViewModel(handler);
+        List<string> changed = [];
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is not null)
+            {
+                changed.Add(args.PropertyName);
+            }
+        };
 
         // Populate _client via a refresh so the SelectedSession load has a client to use
         await viewModel.RefreshSessionsAsync();
@@ -449,6 +457,10 @@ public sealed class MainViewModelTests
         // Poll until the fire-and-forget detail load completes.
         await WaitForConditionAsync(() => viewModel.Points.Count > 0, TimeSpan.FromSeconds(2));
 
+        Assert.AreEqual(TimeSpan.FromSeconds(10), viewModel.CurrentTime);
+        Assert.IsTrue(
+            changed.Contains(nameof(MainViewModel.CurrentTimeSeconds)),
+            "Selecting a session must publish the initial timeline position so the W2S frame, including the pen badge, loads immediately.");
         Assert.AreEqual(2, viewModel.Points.Count);
         Assert.AreEqual(10.0, viewModel.Points[0].X);
         Assert.AreEqual(20.0, viewModel.Points[0].Y);
@@ -1062,6 +1074,85 @@ public sealed class MainViewModelTests
         Assert.AreEqual(-35.0, alpha.ScreenHeadingDegrees!.Value, 1e-9);
         Assert.IsTrue(viewModel.Nameplates.Any(item => item.EntityId == 5 && !item.Alive));
         Assert.AreEqual(200.0, viewModel.LastFrameReplayTimeSeconds!.Value, 1e-9);
+    }
+
+    [TestMethod]
+    public async Task RefreshOverlayFrameAsync_NotifiesSelectedShellWhenServerProvidesDefault()
+    {
+        // The server supplies the stock shell as the active default when the
+        // user has not chosen one. The bound ComboBox must receive a
+        // SelectedPenShellName notification or it can remain visually blank
+        // even though the badge is scored with the stock shell.
+        string frameJson = """
+            {
+              "replayTimeSeconds": 200.0,
+              "cameraX": 0.0, "cameraY": 0.0, "cameraZ": 0.0,
+              "cameraYawRadians": 0.5, "cameraPitchRadians": 0.0,
+              "tanks": [],
+              "penShells": [
+                { "name": "ap_shell", "kind": "ArmorPiercing" },
+                { "name": "he_shell", "kind": "HighExplosive" }
+              ],
+              "penShell": "ap_shell"
+            }
+            """;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            string path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/frame", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(JsonResponse(frameJson));
+            }
+
+            if (path.Contains(BattleSessionId.ToString("D"), StringComparison.Ordinal))
+            {
+                return Task.FromResult(JsonResponse("""{"session":null,"participants":[],"positions":[],"events":[]}"""));
+            }
+
+            return Task.FromResult(JsonResponse("""{"offset":0,"limit":200,"count":0,"items":[]}"""));
+        });
+        MainViewModel viewModel = CreateViewModel(handler);
+        List<string> changed = [];
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is not null)
+            {
+                changed.Add(args.PropertyName);
+            }
+        };
+
+        await viewModel.RefreshSessionsAsync();
+        viewModel.SelectedSession = new SessionRow(
+            BattleSessionId, "Test Map", null, Now, 1, 2);
+
+        await viewModel.RefreshOverlayFrameAsync(1920, 1080);
+
+        Assert.AreEqual("ap_shell", viewModel.SelectedPenShellName);
+        Assert.AreEqual("ap_shell", viewModel.PenShell);
+        Assert.IsTrue(
+            changed.Contains(nameof(MainViewModel.SelectedPenShellName)),
+            "The shell selector must be notified when the server's default becomes active.");
+        Assert.IsTrue(
+            changed.Contains(nameof(MainViewModel.PenShell)),
+            "The active shell property must notify bindings when the server changes it.");
+
+        int selectedShellNotifications = changed.Count(
+            name => name == nameof(MainViewModel.SelectedPenShellName));
+        int activeShellNotifications = changed.Count(
+            name => name == nameof(MainViewModel.PenShell));
+
+        // A stable server default must not notify again: MainWindow responds
+        // to SelectedPenShellName by fetching a frame, so repeated
+        // notifications would create an endless refresh loop.
+        await viewModel.RefreshOverlayFrameAsync(1920, 1080);
+
+        Assert.AreEqual(
+            selectedShellNotifications,
+            changed.Count(name => name == nameof(MainViewModel.SelectedPenShellName)));
+        Assert.AreEqual(
+            activeShellNotifications,
+            changed.Count(name => name == nameof(MainViewModel.PenShell)));
     }
 
     [TestMethod]

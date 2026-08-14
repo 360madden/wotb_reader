@@ -11,6 +11,7 @@ public sealed class PenetrationDataParserTests
 
     private static readonly string[] ExpectedPrimaryArmor =
         ["armor_2", "armor_3", "armor_4"];
+    private static readonly string[] ExpectedStockShells = ["_shared_shell"];
 
     [TestMethod]
     public void ParseVehicleArmor_HullAndTurret_ParsesGroupsAndPrimary()
@@ -286,6 +287,33 @@ public sealed class PenetrationDataParserTests
         Assert.AreEqual("_2pdr_AP_Mk.IXBT_2", shots[0]);
         Assert.AreEqual("_2pdr_APCNR_Mk.2", shots[1]);
         Assert.AreEqual("_2pdr_HE_Mk.1", shots[2]);
+    }
+
+    [TestMethod]
+    public void ParseStockGunProfile_PreservesGunIdentity()
+    {
+        StockGunProfile? profile = PenetrationDataParser.ParseStockGunProfile(
+            Encoding.UTF8.GetBytes(
+                """
+                <root>
+                  <turrets0>
+                    <Turret_1>
+                      <guns>
+                        <_stock_gun>
+                          <shots>
+                            <_shared_shell><shell>shared</shell></_shared_shell>
+                          </shots>
+                        </_stock_gun>
+                      </guns>
+                    </Turret_1>
+                  </turrets0>
+                </root>
+                """),
+            MaxCharacters);
+
+        Assert.IsNotNull(profile);
+        Assert.AreEqual("_stock_gun", profile!.GunName);
+        CollectionAssert.AreEqual(ExpectedStockShells, profile.ShellNames.ToArray());
     }
 
     [TestMethod]

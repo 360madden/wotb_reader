@@ -53,6 +53,16 @@ public sealed record VehicleArmorProfile(
     IReadOnlyList<string> TurretPrimaryArmorGroups);
 
 /// <summary>
+/// The first (stock) gun's identity and ordered shell names from a vehicle
+/// definition. The gun identity is required when joining to
+/// <c>components/guns.xml.dvpl</c>: a shell name can be shared by multiple
+/// guns with different piercing profiles.
+/// </summary>
+public sealed record StockGunProfile(
+    string GunName,
+    IReadOnlyList<string> ShellNames);
+
+/// <summary>
 /// A shell's penetration-relevant stats from <c>components/shells.xml.dvpl</c>.
 /// <see cref="Kind"/> is the shell family (ARMOR_PIERCING / _CR / HIGH_EXPLOSIVE
 /// / HOLLOW_CHARGE); ricochet and normalization are the degrees the game uses.

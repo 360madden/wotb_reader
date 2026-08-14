@@ -3,42 +3,40 @@
 **Purpose:** the durable, sequenced top-10 follow-up list for continued
 development. Anchored to `docs/operations/product-roadmap.md` (the forward
 plan), the ledger's *Next planned session* row, and the newest handoff.
-Refreshed at every session end — the session ritual closes with this list,
-so the next session (human or agent) starts from a current, ordered plan
-instead of re-deriving one.
+Refreshed after the PN-4 second-replay regression on 2026-08-14.
 
 **Sequencing rule:** live items are clustered to share ONE approved launch
-(one game start = max evidence); offline hardening runs in parallel with
-any live work; owner-gated items sit behind the evidence they consume.
+(one game start = max evidence); offline hardening runs in parallel with any
+live work; owner-gated items sit behind the evidence they consume.
 
 | # | Action | Roadmap anchor | Why now | Gate |
 |---|---|---|---|---|
-| 1 | **Live-verify the hardened clean-run completion marker** (driver exit 0 → marker file → chain re-run exits 7 fast) | OD-099 durable fix (`scripts/od-replay-completion.ps1`) | `623b9df` changed the driver's write condition; the clean-run path (schedule completes, no teardown) must be proven live end-to-end before building on it | 1 approved launch |
-| 2 | **Batch rehearsal re-run** — `invoke-batch-rehearsal.ps1 -LiveAcquire -EnumerateLive -Times 60,150,220 -FailOnMiss`, absolute replay path | Item 7 Branch B step 3 + X2/X2b rehearsal | Re-establishes the clean live verdict AND delivers the step-3 read-pass measurements (100% byte-identical, zero `region-unstable-snapshot`) | same launch as #1 |
-| 3 | **Branch B step-4 camera double-reads** — extend the camera verify tool (vision-only today) to measure double-read stability, capture live | Item 7 Branch B step 4 | Closes the last unclaimed live lane in the hardware-atomicity plan | same launch as #1 |
-| 4 | **Live-frame `DamageDealt` E2E** — mid-battle `GET /live/frame`, own-row is a real value (not honest-0) with exact decoded joins | X4 (G2 consumption) | Proves the published `vftableScan` chain read surface end-to-end | same launch as #1 |
-| 5 | **Approve + apply the `ConsistentDoubleRead` flag-flip proposal** | Item 7 Branch B step 2 (owner-gated shared contract, drafted) | Lets #2–3's measurements claim the flag; unblocks item-7 DoD | owner approval + gate |
-| 6 | **Pen-chance HUD (PN) — the badge + model are DONE; only the live aim-capture proof remains** (PN-4 offline is BLOCKED by the center-line aim proxy: the position stream has no projectile/turret aim, so the ≥70° ricochet regime is unreachable offline). PN-1/2/3/5 DONE: armor/shell/gun parsers, `.scg` mesh raycast (Z-up + steep-glacis classification fixed), per-part hull/turret/gun armor, pure pen math (raw-angle ricochet, two-caliber, ±5% RNG, HE never-ricochet), manual shell selector (<c>Q</c> / `?shell=`), badge wired end-to-end in BOTH replay and live frames (enemy-only + alive-only). Type-32 mirror DECODED into `ShotImpact` (~98% on three replays). **Offline scorer SHIPPED 2026-08-14** (`PenOfflineScorer` + `GET /discover/pen-offline-score/{id}`) — three-replay band accuracy 38.9% / 69.6% / **71.9%** (Oasis / Dead Rail / Copperfield), ricochetPrecision 0 except Dead Rail 4/6; the spread is the center-line aim in action (mesh + face classification verified correct — the side-hit Unknowns prove the raycast hits the right faces). **Live-aim SEAM SHIPPED 2026-08-14:** `ScoreAsync` accepts `IReadOnlyList<AimSample>` — the viewpoint's own shots take their aim from the nearest override (the live CAM-013 chase-camera aim), non-viewpoint shots keep center-line. Loaded-shell resolution is CLOSED (the 6-byte signature is an effect-entity id, not a stat); the `17425` holdout is version drift (absent from every install list.xml), not a DLC gap. **Feed path + runbook SHIPPED 2026-08-14:** the endpoint is now `POST` with an optional `aimOverrides` body (each `{replayTimeTicks, originX/Y/Z, directionX/Y/Z}` → `AimSample`); the turnkey session plan is `docs/operations/pn4-live-aim-capture-runbook.md`. **Remaining: the live PN-4 session itself** (run the capture loop, POST the aims, record the improved `ricochetPrecision` vs the offline center-line baseline) | Phase 6 (`docs/operations/pen-chance-design.md`) | PN-4 live validation (CAM-013 aim at shot time vs `ShotImpact`) is the only remaining pen proof; the scorer + aim seam + feed endpoint are the reusable core | offline DONE; PN-4 1 launch |
-| 7 | **L4 replayTime session** — chained clock (`GameCore 0x04095c88 → … → [BWServerConnection+0x58]+0x90`), `-ArmSourceOnFirstHit` (expected first hit = CRT copy site) | Phase 2 L4 (next discovery lane) | Unclaimed discovery lane; needs its own approved launch | 1 approved launch |
-| 8 | **T1 turret-facing + lock-on discovery** — live-behavioral per the pre-staged design (camera-yaw correlation as the discriminator) | Phase 2 T1 (last Phase-2 session type) | Closes the roadmap's discovery table; pre-staged `docs/operations/t1-turret-traversal-design.md` | 1 approved launch |
+| 1 | **Live-verify the hardened clean-run completion marker** (driver exit 0 -> marker file -> chain re-run exits 7 fast) | OD-099 durable fix (`scripts/od-replay-completion.ps1`) | The clean-run path still needs an end-to-end proof before more launch clusters rely on it | 1 approved launch |
+| 2 | **Batch rehearsal re-run** — `invoke-batch-rehearsal.ps1 -LiveAcquire -EnumerateLive -Times 60,150,220 -FailOnMiss`, absolute replay path | Item 7 Branch B step 3 + X2/X2b rehearsal | Re-establishes the clean live verdict and delivers the step-3 read-pass measurements | same launch as #1 |
+| 3 | **Branch B step-4 camera double-reads** — extend the camera verify tool to measure double-read stability | Item 7 Branch B step 4 | Closes the last unclaimed live lane in the hardware-atomicity plan | same launch as #1 |
+| 4 | **Live-frame `DamageDealt` E2E** — mid-battle `/live/frame`, own row is a real value with exact decoded joins | X4 G2 consumption | Proves the published avatar-stats chain at the shared frame seam | same launch as #1 |
+| 5 | **Approve + apply the `ConsistentDoubleRead` flag-flip proposal** | Item 7 Branch B step 2 | Converts the witnessed batch/camera measurements into the shared contract flag | owner approval + gate |
+| 6 | **Owner ship review for the PN prototype** — approve the evidence-backed badge, documented limits, and staged release diff | Phase 6 PN-4/PN-5; repeat proof: `2026-08-14-pn4-second-replay-regression.md` | Two content-distinct live replays now pass the aim-source regression; remaining work is review/package, not construction | owner review |
+| 7 | **T1 turret-facing + lock-on discovery** — live-behavioral traversal with camera-yaw correlation | Phase 2 T1 (`t1-turret-traversal-design.md`) | Optional exact gun-lock research; not a blocker for the CAM-013-based pen badge | 1 approved launch |
+| 8 | **L4 replayTime session** — chained clock and first-hit instruction snapshot | Phase 2 L4 | Unclaimed discovery lane after the overlay/PN proof work | 1 approved launch |
+| 9 | **Minimap texture mapping** (arena id -> name-based folder) | Phase 4 V4 gap | Re-enables texture-under-dots using the already-proven install-data extraction lane | offline |
+| 10 | **Attacker-side damage write trace** (runtime write-interceptor/instruction snapshot) | Phase 2 L3 residual | Closes the remaining write-path evidence after the published damage-dealt consumption lane | 1 approved launch |
 
 ## Wait-list (deliberately outside the top 10)
 
-- **P1 velocity `+0x28` promotion** (Phase 3; G0 record says NOT promoted —
-  revisit only if a live velocity consumer needs the field).
-- **Phase 5 live overlay (policy-gated)** — X5 spotting model etc.; requires
-  the policy gate, not just engineering.
-- **Launcher pre-flight reorder** (move the marker check before the CLI
-  version probe — out-of-scope finding, trivial, fold into #7).
-- **Attacker-side damage write trace** (runtime write-interceptor /
-  instruction-snapshot on the d0 increment sites — closes the L3 residual;
-  needs a launch, sits behind #1–4).
-- **G3+ publication generalization of `rehearse-offset-apply.py`** — only
-  when a new publication package appears.
-- **Minimap texture mapping (arena-id → name-based folder)** (Phase 4 V4 gap,
-  pinned by tests) — re-enabling texture-under-dots; now shares the PN-1
-  install game-data extraction capability, so it folds into the same
-  offline static-data lane.
+- **P1 velocity `+0x28` promotion** (Phase 3; G0 record says NOT promoted) —
+  revisit only if a live velocity consumer needs the field.
+- **Phase 5 live overlay policy work** — X5 spotting model etc.; requires its
+  policy gate, not just engineering.
+- **Launcher pre-flight reorder** — move the completion-marker check before
+  the CLI version probe; trivial, fold into a future launcher hardening pass.
+- **G3+ publication generalization of `rehearse-offset-apply.py`** — only when
+  a new publication package appears.
+- **Exact per-plate armor thickness mapping** — the accessible install data
+  does not map XML armor groups to collision faces; the badge stays honest
+  nominal/fail-closed.
+- **Loaded-shell resolution** — the replay signature is an effect-entity id;
+  the manual stock-gun shell selector remains the honest product behavior.
 
 ## Refresh procedure (session end)
 
@@ -47,6 +45,6 @@ any live work; owner-gated items sit behind the evidence they consume.
 2. Re-anchor against the roadmap: any newly completed roadmap row may open a
    new action; any newly approved launch may collapse live items.
 3. Keep the sequencing rule: cluster live items per launch, run offline
-   hardening in parallel, gate owner-gated items behind their evidence.
-4. If a session is live-launch-gated (no game running / no approval), say so
-   in the table — the list stays the offline-eligible subset.
+   hardening in parallel, and gate owner-gated items behind their evidence.
+4. If a session is live-launch-gated (no game running / no approval), say so in
+   the table — the list stays the offline-eligible subset.

@@ -300,6 +300,8 @@ docs/operations/handoffs/2026-08-14-pen-country-id-and-prefix-fix.md
 docs/operations/handoffs/2026-08-14-pen-minimal-implementation-complete.md
 docs/operations/handoffs/2026-08-14-pen-offline-armor-vs-pen-scorer.md
 docs/operations/handoffs/2026-08-14-pen-redecode-two-replay-validation.md
+docs/operations/handoffs/2026-08-14-pn4-live-aim-validation.md
+docs/operations/handoffs/2026-08-14-pn4-second-replay-regression.md
 docs/operations/handoffs/README.md
 docs/operations/item7-branch-b-step2-consistent-double-read-proposal.md
 docs/operations/item7-hardware-atomicity-proof-plan.md
@@ -383,6 +385,7 @@ research/memory-offsets-unknowncheats.md
 research/reforged-ue5.md
 research/replay-loading-mechanisms.md
 research/uploaded-replays.md
+scripts/capture-pen-aims.ps1
 scripts/click-hangar-replay.ps1
 scripts/click-watch-offline.ps1
 scripts/ghidra-scan.py

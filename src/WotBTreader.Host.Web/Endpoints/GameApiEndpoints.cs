@@ -18,6 +18,12 @@ namespace WotBTreader.Host.Web.Endpoints;
 /// </summary>
 internal static class GameApiEndpoints
 {
+    // A default 10 Hz capture over the launcher's 600-second safety window is
+    // 6,000 samples. Keep a generous bounded ceiling for faster captures while
+    // preventing an accidental/untrusted loopback request from allocating an
+    // unbounded aim list before the scorer can fail closed.
+    private const int MaximumPenAimOverrides = 100_000;
+
     public static IEndpointRouteBuilder MapGameApi(this IEndpointRouteBuilder builder)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -1372,6 +1378,13 @@ internal static class GameApiEndpoints
         ArgumentNullException.ThrowIfNull(scorer);
         ArgumentNullException.ThrowIfNull(sessions);
 
+        if (request?.AimOverrides is { } validatedOverrides
+            && (validatedOverrides.Count > MaximumPenAimOverrides
+                || validatedOverrides.Any(static sample => !IsValidPenAimSample(sample))))
+        {
+            return Results.BadRequest(new { error = "discover.pen_invalid_aim_overrides" });
+        }
+
         OperationResult<ReplayDecodeProjection> projection = await sessions
             .GetProjectionAsync(new BattleSessionId(battleSessionId), cancellationToken)
             .ConfigureAwait(false);
@@ -1400,6 +1413,16 @@ internal static class GameApiEndpoints
             .ConfigureAwait(false);
         return Results.Ok(report);
     }
+
+    private static bool IsValidPenAimSample(AimSampleRequest? sample) =>
+        sample is not null
+        && sample.ReplayTimeTicks >= 0
+        && double.IsFinite(sample.OriginX)
+        && double.IsFinite(sample.OriginY)
+        && double.IsFinite(sample.OriginZ)
+        && double.IsFinite(sample.DirectionX)
+        && double.IsFinite(sample.DirectionY)
+        && double.IsFinite(sample.DirectionZ);
 
     internal static async Task<IResult> CorrelateAsync(
         ITrajectoryGroundTruthProvider provider,
