@@ -154,7 +154,19 @@ two-caliber, pen-at-range).
    sample run it produced 28 packets vs 69 type-32 shots and none before
    t≈79.9 s, so it is not a complete per-shot attribution source; penetrating
    shots are still attributed by the type-8 subtype-1 damage event (100%
-   coverage). **The geometry-first SCORING harness now ships (2026-08-13):**
+   coverage). **The subtype-8 attribution is now DECODED (2026-08-13):** the
+   decoder emits the attacker as an optional `attackerEntityId` on every
+   `ShotImpact` canonical event, joined from the subtype-8 packet by
+   (victim, clock rounded to centiseconds) — null when no attribution exists,
+   never fabricated (synthetic-fixture test pins pen/bounce/null).
+   **Re-decode verification (2026-08-14):** a fresh decode of the ground-truth
+   session (`019ffdcd`) persisted 69 `ShotImpact` rows — **69/69 attributed**
+   (zero null attackers), and all **51/51 penetrating shots cross-check
+   EXACT against the independent type-8 subtype-1 damage ledger** (0
+   mismatches). The earlier "28 packets vs 69 shots" partial-coverage probe
+   is SUPERSEDED — the subtype-8 join covers every shot on the re-decoded
+   session.
+   **The geometry-first SCORING harness now ships (2026-08-13):**
    `PenValidation.Score` (Core) scores a list of `ScoredShot`s — the aim ray
    (from ANY source), the victim's tank state + collision parts + armor, the
    shell, and the decoded `penetrated` outcome — and reports the ricochet
@@ -176,6 +188,21 @@ two-caliber, pen-at-range).
    (CAM-013) captured at shot time, which needs a live session — so PN-4's
    offline geometry validation is blocked, not just deferred. `PenValidation`
    is the scoring core the live CAM-013 capture will feed.
+   **Offline PN-4: THREE of the four gaps CLEARED by a re-decode
+   (verified 2026-08-14, session `019ffdcd`):** (1) the bounce half now HAS
+   an attacker — `attackerEntityId` is decoded and 69/69 shots are
+   attributed (51/51 penetrating shots exact vs the damage ledger); (3) the
+   store now has 69 `ShotImpact` (kind=8) rows; (4) `position_samples.yaw`
+   is populated for all entities (26 822 samples, 0 null). The ONE remaining
+   gap is (2): the aim is the attacker→victim CENTER-LINE — no turret/gun
+   aim exists in the replay stream. **Refined finding (2026-08-14):** with
+   full attribution + yaw, the center-line incidence measured from the
+   DOMINANT face normal (front/rear/side, the ricochet-relevant angle) is
+   **< 45° for all 67 shots** (pen 50 / bounce 17; both groups median ~13°,
+   max 44.7°) — the ≥70° ricochet threshold is NEVER reached offline, so the
+   decoded bounces are armor-vs-pen failures, not angle. The center-line
+   proxy therefore cannot validate the ricochet rule; the LIVE CAM-013 aim
+   remains the only viable PN-4 source. Scratch: `.data/pn4-centerline-incidence.py`.
 
 ## `.sc2` SFV2 format spec (PARSED 2026-08-13 — `SceneFileParser`)
 
@@ -233,7 +260,7 @@ armor is a better approximation than hull-only, never exact offline.
 
 | Step | Deliverable | Gate |
 |---|---|---|
-| **PN-1** | Static-data extraction: tank armor models + hull geometry + gun/shell tables from the install's data files (read-only, evidence-first, CAM-009 style); a static store + verify script. **PROBED 2026-08-13 — the data is present and readable** (vehicle XML armor groups, shells.xml caliber/kind/normalization/ricochet, guns.xml piercingPower). Collision geometry **PARSED 2026-08-13** (`CollisionMeshParser` + `CollisionRaycast`, verified on the real Churchill mesh) — the per-plate NORMAL is now available; the remaining sub-problem is mapping the XML armor groups to the mesh faces for per-plate THICKNESS | Offline |
+| **PN-1** | Static-data extraction: tank armor models + hull geometry + gun/shell tables from the install's data files (read-only, evidence-first, CAM-009 style); a static store + verify script. **PROBED 2026-08-13 — the data is present and readable** (vehicle XML armor groups, shells.xml caliber/kind/normalization/ricochet, guns.xml piercingPower). Collision geometry **PARSED 2026-08-13** (`CollisionMeshParser` + `CollisionRaycast`, verified on the real Churchill mesh) — the per-plate NORMAL is now available. **Per-plate THICKNESS mapping is RESOLVED 2026-08-13: NOT FEASIBLE** — the armor XML groups carry thickness but no face geometry; the collision `.scg` ships only 2–11 PHYSICS parts (hull/turret/gun, not armor plates); and the per-plate `Hull.model`/`Turret.model` hit-test models are not shipped loose in the install (see Risks + Open question 1). The badge stays honest-nominal (front via `primaryArmor`, side/rear fail-closed Unknown) | Offline |
 | **PN-2** | Pen math module: raycast, incidence, effective armor, ricochet/overmatch, pen-at-range, banded verdict — pure, unit-tested, synthetic fixtures. **DONE 2026-08-13** (`Core/Overlay/ArmorPenetration.cs`, 18 tests). Both probe findings are MODELED and wired: `normalizationAngle` → `ShellSpec.NormalizationDegrees` (applied AFTER the raw-angle ricochet check, amplified by the two-caliber rule) and `piercingPower`'s 2-point range pair → `ShellSpec.FromPiercingPower` (pen0 + linear drop over `maxDistance`). **Mechanics corrected 2026-08-13** against the official support article: ricochet on the RAW angle (normalization never prevents a bounce) and penetration RNG is ±5% (not ±25%) | Offline |
 | **PN-3** | Replay-mode HUD: aim = camera pose (verified); pen badge (colored + numeric) on the aimed enemy's nameplate. **DONE 2026-08-13** — `PenetrationBadge`/`StruckFace`/`PenetrationAim.ResolveBadge` (Core), `IOverlayPenetrationData` + `PenetrationContext` (Application), `PenetrationDataService` (GameIntegration, reads the install armor/shell/gun + collision-mesh data), badge threaded through the frame → projection → response, and rendered by the WPF HUD (green/yellow/red + numeric, struck face FRONT/SIDE/REAR shown, anchored to the aimed tank's nameplate with a reticle fallback). **Per-part armor landed 2026-08-13:** `CollisionMeshParser.ParseAll` + `SceneFileParser` read all three `.scg` groups (hull/turret/gun, identity transforms → one shared space) and `EvaluateAgainstMesh` raycasts them as a union, scoring turret/gun hits against the turret's frontal `primaryArmor`. **Shell selector landed 2026-08-13:** the badge offers a MANUAL shell choice — `PenetrationContext` carries every shot of the viewer's stock gun (`ShellOption` name+kind+spec), the frame scores with the `?shell=`-selected shell, the response surfaces `PenShells`/`PenShell`, and the overlay hotkey <c>Q</c> or the sidebar ComboBox selects AP/APCR/HE/HEAT (short label on the badge). **Shell kind threaded 2026-08-13:** `ShellSpec.Kind` excludes HEAT from the 3-caliber overmatch rule. **Enemy-only filter landed 2026-08-13:** the badge scores only ENEMY tanks — both paths (replay `ReplayFrameSource`, live `LiveFrameProjector`) exclude the own tank AND same-team allies, scoping the aim to the viewpoint team's opponents; a tank with an unknown team stays eligible (fail-open toward showing, never hiding a real enemy behind a decode gap). **Alive-only filter landed 2026-08-13:** a destroyed tank is a wreck and never a penetration target — the replay path drops non-alive tanks and the live path drops a definitively-dead tank (alive byte 0, unknown/true stays eligible). Honest limits: nominal thickness per part (hull front/side/rear + turret front; side/rear of the turret/gun = 0 → Unknown, never guessed), the loaded shell is not decodable (the selector covers the stock gun's ammo, not the in-battle selection), thickness still nominal (the mesh surface NORMAL drives the incidence angle — the true plate normal; per-face thickness mapping is the remaining gap) | Offline, no launch |
 | **PN-4** | Validation loop: score the model vs decoded shot outcomes (geometry-first, then full); report hit-rate + per-shot margin | Offline, this is the proof |
@@ -264,7 +291,25 @@ reader.
   reads the `.scg` SCPG `PolygonGroup` KeyedArchive (per-vertex normals,
   uint16/uint32 indices) and `CollisionRaycast` raycasts the aim ray against
   it; the badge now uses the struck triangle's true outward normal (verified
-  against the real Churchill mesh). The remaining gap is per-plate THICKNESS.
+  against the real Churchill mesh).
+  **Per-plate THICKNESS mapping is NOT FEASIBLE from the accessible install
+  data (investigated 2026-08-13):** (1) the armor XML's `armor_1..16` hull /
+  `armor_1..14` turret groups carry a thickness number and a `primaryArmor`
+  frontal-name list, but NO per-group geometry and NO side/rear/top
+  declaration; (2) the collision `CollisionMeshes/{nation}-{tank}.scg` ships
+  2–11 polygon groups (Churchill = 3: hull/turret/gun) that are the PHYSICS
+  collision parts, not the 16 armor plates, and carry no armor-group
+  reference; (3) the collision `.sc2` carries identity placement transforms
+  only; (4) the visual model (`Tanks/{Nation}/{tank}.sc2`) has 114 render
+  polygon groups but its node table has NO `armor_*` names (only
+  hull/turret/gun/chassis/Instance-NNN); (5) the actual per-plate hit-test
+  models the XML references (`hitTester` → `collision/Hull.model` /
+  `Turret.model`) are NOT shipped as loose files — the install has no
+  `.pack` archives and no `Hull.model`/`Turret.model` tank files (only
+  9 unrelated UI `.model` files). So the badge keeps nominal per-part
+  thickness (front via `primaryArmor`; hull/turret side/rear fail-closed
+  Unknown) — the true surface normal drives the ANGLE, never a guessed
+  plate value.
   **Mesh orientation FIXED (2026-08-13):** the `.scg` collision mesh is stored
   Z-UP (+X right, +Y FORWARD, +Z up — its rear normal is −Y, deck normal +Z)
   while the decoded world/box model are Y-up; the first mesh raycast cast the
@@ -319,11 +364,19 @@ reader.
    XML resolves to these `.sc2`/`.scg` files) — **PARSED 2026-08-13**:
    `CollisionMeshParser` + `CollisionRaycast` now read it and the badge
    consumes the per-vertex normals (verified against the real Churchill mesh).
-   The remaining sub-question is now THICKNESS per face: the armor XML
-   carries per-group mm (`armor_1..16` hull / `armor_1..14` turret) but no
-   group→face mapping, and none of the standalone install files declare it
-   (see the PN-1 blocker note) — so the per-plate thickness mapping is the
-   open item, not the geometry.
+   The per-plate THICKNESS sub-question is **ANSWERED 2026-08-13: NOT
+   FEASIBLE from the accessible install data.** The armor XML carries
+   per-group mm (`armor_1..16` hull / `armor_1..14` turret) with a
+   `primaryArmor` frontal-name list but NO group→face geometry and no
+   side/rear/top declaration. The only collision geometry shipped loose is
+   `CollisionMeshes/{nation}-{tank}.scg` (2–11 PHYSICS parts: hull/turret/gun,
+   per-vertex normals, no armor-group reference) and its identity-transform
+   `.sc2`; the visual model's 114 render groups have no `armor_*` names; and
+   the per-plate `Hull.model`/`Turret.model` hit-test models referenced by
+   the XML's `hitTester` are NOT present as loose files (no `.pack`, no
+   `Hull.model`/`Turret.model` tank files). Nominal front (via
+   `primaryArmor`) + fail-closed side/rear is therefore the honest ceiling
+   unless the per-plate models become available from another source.
 2. Does the type-8 flag byte / type-32 flag prefix distinguish pen vs bounce
    vs absorb per shot? **ANSWERED (partially) 2026-08-13:** the FLAG PREFIX
    does not — the same `01 12` fires for both pen and bounce — but the payload's

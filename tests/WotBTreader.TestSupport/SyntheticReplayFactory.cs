@@ -180,6 +180,11 @@ public static class SyntheticReplayFactory
             WritePacket(output, 32, 4.1f, CreateShotImpactPayload(100, 0x00, variantB: true));
             WritePacket(output, 32, 4.2f, CreateShotImpactPayload(200, 0x03, variantB: false));
             WritePacket(output, 32, 4.3f, CreateShortCompanionPayload(100));
+            // Type-8 subtype-8 attributions: the attacker for the t=4.0 hit
+            // (100 shoots 200) and the t=4.1 bounce (200 shoots 100). The
+            // t=4.2 hit has NO attribution, so its attackerEntityId stays null.
+            WritePacket(output, 8, 4.0f, CreateShotAttributionPayload(200, 100));
+            WritePacket(output, 8, 4.1f, CreateShotAttributionPayload(100, 200));
         }
 
         WritePacket(output, 14, 120.0f, []);
@@ -354,6 +359,23 @@ public static class SyntheticReplayFactory
         payload[shellOffset + 5] = 0xb1;
         // Hit-result byte at +0x13 (`01 12`) / +0x12 (`01 11`).
         payload[variantB ? 19 : 18] = hitResult;
+        return payload;
+    }
+
+    private static byte[] CreateShotAttributionPayload(int victimId, int attackerId)
+    {
+        // Type-8 subtype-8 shot-attribution layout (pinned 2026-08-13, 33 B):
+        // victim u32 LE at +0x00, subtype 8 at +0x04, declared length 21 at
+        // +0x08, attacker u32 LE at +0x0C, victim again at +0x10, then a flag
+        // u16 + byte + 6-byte shell signature + trailing 4 bytes (opaque).
+        byte[] payload = new byte[33];
+        BinaryPrimitives.WriteUInt32LittleEndian(payload, checked((uint)victimId));
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(4), 8);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(8), 21);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(0x0C), checked((uint)attackerId));
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(0x10), checked((uint)victimId));
+        payload[20] = 0x01;
+        payload[22] = 0x01;
         return payload;
     }
 

@@ -118,6 +118,23 @@ internal sealed record ImpactObservation(
     bool Penetrated,
     BinaryEvidence Evidence);
 
+/// <summary>
+/// A decoded type-8 subtype-8 shot-attribution packet: the attacker entity id
+/// for one shell impact. Layout (pinned 2026-08-13 on real 11.19 replays, 33 B
+/// payload): victim u32 LE at +0x00, subtype 8 at +0x04, declared length 21 at
+/// +0x08, attacker u32 LE at +0x0C, the victim id again at +0x10, and a
+/// 6-byte shell signature at +0x17. It fires for BOTH penetrating and
+/// bouncing shots but with PARTIAL coverage (the bounce-attribution source the
+/// type-32 mirror lacks — the mirror carries the victim + hit result only),
+/// so a shot without a matching attribution stays attackerless.
+/// </summary>
+internal sealed record ShotAttributionObservation(
+    long Sequence,
+    TimeSpan ReplayTime,
+    long VictimEntityId,
+    long AttackerEntityId,
+    BinaryEvidence Evidence);
+
 internal static class EventPacketDecoders
 {
     private const ushort ImpactFlagDamageA = 0x1101; // `01 11`, 26 B
@@ -551,6 +568,50 @@ internal static class EventPacketDecoders
             victim,
             hitResult,
             Penetrated: hitResult == ImpactResultPenetrated,
+            EvidenceForPacket(packet));
+        return true;
+    }
+
+    /// <summary>
+    /// Decodes a type-8 subtype-8 shot-attribution packet into a
+    /// <see cref="ShotAttributionObservation"/>: the attacker entity id for one
+    /// shell impact (the bounce-attribution source the type-32 mirror lacks).
+    /// Fail-closed: non-type-8 packets, non-subtype-8 packets, or a
+    /// non-positive victim/attacker id return false (the packet stays raw
+    /// evidence, never a fabricated attribution).
+    /// </summary>
+    public static bool TryReadShotAttribution(
+        EventPacket packet,
+        out ShotAttributionObservation? attribution,
+        out string? warning)
+    {
+        attribution = null;
+        warning = null;
+        if (packet.Type != 8 || packet.Payload.Length < 16)
+        {
+            return false;
+        }
+
+        ReadOnlySpan<byte> payload = packet.Payload.Span;
+        uint subtype = BinaryPrimitives.ReadUInt32LittleEndian(payload[4..]);
+        if (subtype != 8)
+        {
+            return false;
+        }
+
+        long victim = BinaryPrimitives.ReadUInt32LittleEndian(payload);
+        long attacker = BinaryPrimitives.ReadUInt32LittleEndian(payload[0x0C..]);
+        if (victim <= 0 || attacker <= 0)
+        {
+            warning = "A shot-attribution packet carried a non-positive id.";
+            return false;
+        }
+
+        attribution = new ShotAttributionObservation(
+            packet.Ordinal,
+            TimeSpan.FromSeconds(packet.ClockSeconds),
+            victim,
+            attacker,
             EvidenceForPacket(packet));
         return true;
     }

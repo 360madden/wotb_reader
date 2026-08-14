@@ -213,6 +213,7 @@ public sealed class WotbReplayDecoder : IReplayDecoder
             List<SpawnHealthObservation> spawnHealths = [];
             List<HealthChangeObservation> healthChanges = [];
             List<ImpactObservation> impacts = [];
+            List<ShotAttributionObservation> shotAttributions = [];
             List<EventPacket> battleEndPackets = [];
             foreach (EventPacket packet in eventStream.Packets)
             {
@@ -294,6 +295,21 @@ public sealed class WotbReplayDecoder : IReplayDecoder
                 else if (impactWarning is not null)
                 {
                     warnings.Add(impactWarning);
+                }
+
+                string? attributionWarning = null;
+                if (!decoded &&
+                    EventPacketDecoders.TryReadShotAttribution(
+                        packet,
+                        out ShotAttributionObservation? attribution,
+                        out attributionWarning))
+                {
+                    decoded = true;
+                    shotAttributions.Add(attribution!);
+                }
+                else if (attributionWarning is not null)
+                {
+                    warnings.Add(attributionWarning);
                 }
 
                 string? spawnHealthWarning = null;
@@ -446,6 +462,7 @@ public sealed class WotbReplayDecoder : IReplayDecoder
                 spawnHealths,
                 healthChanges,
                 impacts,
+                shotAttributions,
                 battleEndPackets);
 
             ReplayCapability capabilities =
@@ -865,6 +882,7 @@ public sealed class WotbReplayDecoder : IReplayDecoder
         IReadOnlyList<SpawnHealthObservation> spawnHealths,
         IReadOnlyList<HealthChangeObservation> healthChanges,
         IReadOnlyList<ImpactObservation> impacts,
+        IReadOnlyList<ShotAttributionObservation> shotAttributions,
         IReadOnlyList<EventPacket> battleEndPackets)
     {
         List<EventDraft> drafts = [];
@@ -1091,11 +1109,27 @@ public sealed class WotbReplayDecoder : IReplayDecoder
         // with the type-8 damage ledger on three distinct replays). Emitted
         // for the victim with a null participant id when it is not a roster
         // entity (mirroring the Damage event's robustness — no evidence drop).
+        //
+        // Attacker attribution: the type-8 subtype-8 packet carries the
+        // attacker for one impact (fires for both pens and bounces, partial
+        // coverage) — joined by (victim, clock rounded to centiseconds), the
+        // same key the two-replay probe used. A shot without a matching
+        // attribution keeps attackerEntityId null (never fabricated).
+        Dictionary<(long Victim, long TimeCs), long> attackerByVictimTime = shotAttributions
+            .GroupBy(attribution => (
+                attribution.VictimEntityId,
+                TimeCs: QuantizeClock(attribution.ReplayTime)))
+            .ToDictionary(group => group.Key, group => group.First().AttackerEntityId);
         foreach (ImpactObservation impact in impacts.OrderBy(observation => observation.Sequence))
         {
             participantProjection.ParticipantByEntity.TryGetValue(
                 impact.VictimEntityId,
                 out ParticipantId impactParticipant);
+            long? attackerEntityId = attackerByVictimTime.TryGetValue(
+                (impact.VictimEntityId, QuantizeClock(impact.ReplayTime)),
+                out long resolvedAttacker)
+                ? resolvedAttacker
+                : null;
             drafts.Add(new EventDraft(
                 impact.ReplayTime,
                 impact.Sequence,
@@ -1107,6 +1141,7 @@ public sealed class WotbReplayDecoder : IReplayDecoder
                     victimEntityId = impact.VictimEntityId,
                     hitResult = (int)impact.HitResult,
                     penetrated = impact.Penetrated,
+                    attackerEntityId,
                 }),
                 EvidenceConfidence.Exact,
                 ToEvidence(request, impact.Evidence)));
@@ -1147,6 +1182,16 @@ public sealed class WotbReplayDecoder : IReplayDecoder
 
         return events;
     }
+
+    /// <summary>
+    /// Quantizes a replay clock to centiseconds — the join key that pairs a
+    /// type-8 subtype-8 attribution with its type-32 impact mirror (the two
+    /// fire at the same instant; rounding to 2 decimal places absorbs the
+    /// float clock's representation noise, the same key the two-replay probe
+    /// used).
+    /// </summary>
+    private static long QuantizeClock(TimeSpan time) =>
+        checked((long)Math.Round(time.TotalSeconds * 100.0));
 
     private static void AddRaw(
         List<RawRecord> records,

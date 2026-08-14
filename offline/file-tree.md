@@ -292,7 +292,9 @@ docs/operations/handoffs/2026-08-12-replay-completion-detection-and-l3-damage-de
 docs/operations/handoffs/2026-08-13-pen-chance-hud-pn3-shipped.md
 docs/operations/handoffs/2026-08-13-pen-collision-mesh-raycast-shipped.md
 docs/operations/handoffs/2026-08-13-pen-live-badge-and-aim-scoping.md
+docs/operations/handoffs/2026-08-13-pen-per-face-thickness-not-feasible.md
 docs/operations/handoffs/2026-08-13-pen-shell-selector-scoring-harness-and-hud-polish.md
+docs/operations/handoffs/2026-08-13-pen-shotimpact-attacker-attribution-decoded.md
 docs/operations/handoffs/README.md
 docs/operations/item7-branch-b-step2-consistent-double-read-proposal.md
 docs/operations/item7-hardware-atomicity-proof-plan.md

@@ -252,28 +252,36 @@ public sealed class ReplayDecoderTests
             .ToArray();
         Assert.HasCount(3, impacts);
 
-        // t=4.0: `01 12` penetrating hit on 200 (result 0x03).
+        // t=4.0: `01 12` penetrating hit on 200 (result 0x03), attributed to
+        // attacker 100 via the matching subtype-8 packet.
         using (JsonDocument values = JsonDocument.Parse(impacts[0].ValuesJson))
         {
             Assert.AreEqual(200, values.RootElement.GetProperty("victimEntityId").GetInt64());
             Assert.AreEqual(3, values.RootElement.GetProperty("hitResult").GetInt32());
             Assert.IsTrue(values.RootElement.GetProperty("penetrated").GetBoolean());
+            Assert.AreEqual(100, values.RootElement.GetProperty("attackerEntityId").GetInt64());
         }
 
-        // t=4.1: `01 12` non-penetrating bounce on 100 (result 0x00).
+        // t=4.1: `01 12` non-penetrating bounce on 100 (result 0x00),
+        // attributed to attacker 200.
         using (JsonDocument values = JsonDocument.Parse(impacts[1].ValuesJson))
         {
             Assert.AreEqual(100, values.RootElement.GetProperty("victimEntityId").GetInt64());
             Assert.AreEqual(0, values.RootElement.GetProperty("hitResult").GetInt32());
             Assert.IsFalse(values.RootElement.GetProperty("penetrated").GetBoolean());
+            Assert.AreEqual(200, values.RootElement.GetProperty("attackerEntityId").GetInt64());
         }
 
-        // t=4.2: `01 11` penetrating hit on 200 (result 0x03).
+        // t=4.2: `01 11` penetrating hit on 200 (result 0x03) with NO subtype-8
+        // attribution — attackerEntityId stays null, never fabricated.
         using (JsonDocument values = JsonDocument.Parse(impacts[2].ValuesJson))
         {
             Assert.AreEqual(200, values.RootElement.GetProperty("victimEntityId").GetInt64());
             Assert.AreEqual(3, values.RootElement.GetProperty("hitResult").GetInt32());
             Assert.IsTrue(values.RootElement.GetProperty("penetrated").GetBoolean());
+            Assert.AreEqual(
+                JsonValueKind.Null,
+                values.RootElement.GetProperty("attackerEntityId").ValueKind);
         }
 
         // The short companion (`01 02`) is not a damage-with-payload variant,
