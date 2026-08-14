@@ -12,7 +12,7 @@ live work; owner-gated items sit behind the evidence they consume.
 
 | # | Action | Roadmap anchor | Why now | Gate |
 |---|---|---|---|---|
-| 1 | **Owner ship review for the PN prototype** — approve the evidence-backed badge, documented limits, and committed release diff | Phase 6 PN-4/PN-5; repeat proof: `2026-08-14-pn4-second-replay-regression.md` | Two content-distinct live replays pass the aim-source regression; this restores the penetration UI as the active feature focus | owner review |
+| 1 | **Owner ship review for the `v0.2.0-alpha` PN prototype** — approve the evidence-backed badge, documented limits, and committed release diff; then run the five-step manual HUD smoke | Phase 6 PN-4/PN-5; repeat proof: `2026-08-14-pn4-second-replay-regression.md` | Two content-distinct live replays pass the aim-source regression; the versioned baseline makes subsequent fixes and capability increments traceable | owner review |
 | 2 | **Re-verdict the stored Oasis batch positions with a bounded bidirectional per-dump clock window** | X2 cross-check / OD-RECOVERY-100 honest negative | The read witness passed, but 8/41 moving samples exceeded the old +/-2 s matcher window; diagnose label skew without another launch | offline |
 | 3 | **Normalize completion-marker timestamp comparison across PowerShell 5.1 and 7** | OD-099 durable fix follow-up | The exact Windows-first chain correctly exits 7, but direct pwsh inspection auto-deserializes ISO UTC into `DateTime` and currently fails open | offline |
 | 4 | **Fix the batch driver's literal `{0}` progress placeholders and pin the operator output** | X2 rehearsal operability | The live cluster exposed PowerShell formatting-precedence mistakes that obscure counts/times without affecting artifacts | offline |

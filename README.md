@@ -9,10 +9,11 @@ presents them through a loopback Blazor dashboard and a transparent WPF HUD.
 
 [![CI](https://github.com/360madden/wotb_reader/actions/workflows/ci.yml/badge.svg)](https://github.com/360madden/wotb_reader/actions/workflows/ci.yml)
 [![.NET](https://img.shields.io/badge/.NET-10.0.302-512BD4?style=flat-square&logo=dotnet&logoColor=white)](global.json)
+[![Version](https://img.shields.io/badge/version-v0.2.0--alpha-6f42c1?style=flat-square)](docs/operations/handoffs/2026-08-14-penetration-prototype-v0.2.0-alpha.md)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6?style=flat-square&logo=windows&logoColor=white)](#requirements)
 [![License](https://img.shields.io/badge/license-MIT-3DA639?style=flat-square&logo=opensourceinitiative&logoColor=white)](LICENSE)
 
-[![Tests](https://img.shields.io/badge/tests-654%20passed%20%7C%200%20failed-2EA44F?style=flat-square&logo=checkmarx&logoColor=white)](#test-matrix)
+[![Tests](https://img.shields.io/badge/tests-1%2C206%20passed%20%7C%207%20local%20skips%20%7C%200%20failed-2EA44F?style=flat-square&logo=checkmarx&logoColor=white)](#test-matrix)
 [![Warnings](https://img.shields.io/badge/warnings-0-2EA44F?style=flat-square)](#quality-gate)
 [![Alpha hardening](https://img.shields.io/badge/alpha%20hardening-M0--M7%20complete-2EA44F?style=flat-square)](#-progress-to-completion)
 [![Memory access](https://img.shields.io/badge/process%20memory-fail--closed-D93F0B?style=flat-square&logo=shieldsdotio&logoColor=white)](#-safety-model)
@@ -56,6 +57,7 @@ services, runtime AI, or dynamic decoder DLLs.
 | 🗄️ | **Immutable store** | SQLite artifacts, decode runs, telemetry projections, and comparison runs with schema migrations |
 | 📊 | **Loopback dashboard** | Blazor Web App on `127.0.0.1:9182` — sessions, participants, events, battle stats, comparisons, diagnostics |
 | 🎯 | **Transparent HUD** | Borderless topmost WPF overlay: position plot, velocity trails, minimap grid, event feed, timeline scrubber |
+| 🛡️ | **Penetration prototype** | `v0.2.0-alpha`: fail-closed replay/live aim badge with manual stock-shell selection, collision-mesh incidence, and numeric penetration/effective-armor evidence |
 | 📡 | **Live push** | SignalR stream keeps the HUD and dashboard current as new replays are imported |
 | ⌨️ | **CLI** | `import`, `watch`, `inspect`, `reprocess`, `sessions`, `compare`, `export`, `doctor` |
 | 📁 | **Auto-import** | Directory watcher with stability delay and idempotent ingestion |
@@ -240,8 +242,12 @@ sessions. Remaining: live HUD smoke test against a real installation.
 All milestones were completed sequentially. The alpha release (`v0.1.0-alpha`) was
 verified with a full pipeline smoke test: synthetic replay import → publish → serve →
 API verification → overlay launch, passing the complete gate with 0 vulnerable packages.
-The remaining product work is evidence collection for dynamic offsets and a visual HUD
-smoke test against the installed game.
+
+The current `v0.2.0-alpha` baseline adds the quantified penetration-UI prototype:
+two content-distinct live replay validations, CAM-013 aim consumption, collision-mesh
+incidence, penetration math, and the fail-closed WPF badge. Owner ship review and the
+documented manual HUD smoke remain before release packaging. See the
+[`v0.2.0-alpha` handoff](docs/operations/handoffs/2026-08-14-penetration-prototype-v0.2.0-alpha.md).
 
 Full plan and per-milestone exit criteria: [`docs/architecture/roadmap.md`](docs/architecture/roadmap.md).
 
