@@ -297,6 +297,7 @@ docs/operations/handoffs/2026-08-13-pen-shell-selector-scoring-harness-and-hud-p
 docs/operations/handoffs/2026-08-13-pen-shotimpact-attacker-attribution-decoded.md
 docs/operations/handoffs/2026-08-14-pen-aim-override-seam-and-third-replay.md
 docs/operations/handoffs/2026-08-14-pen-country-id-and-prefix-fix.md
+docs/operations/handoffs/2026-08-14-pen-minimal-implementation-complete.md
 docs/operations/handoffs/2026-08-14-pen-offline-armor-vs-pen-scorer.md
 docs/operations/handoffs/2026-08-14-pen-redecode-two-replay-validation.md
 docs/operations/handoffs/README.md
@@ -327,6 +328,7 @@ docs/operations/offset-discovery-workflow.md
 docs/operations/offset-promotion-checklist.md
 docs/operations/parallel-workstreams.md
 docs/operations/pen-chance-design.md
+docs/operations/pn4-live-aim-capture-runbook.md
 docs/operations/product-roadmap.md
 docs/operations/record-diffing-groundwork.md
 docs/operations/replay-crosscheck.md

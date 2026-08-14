@@ -1,6 +1,6 @@
 # PN — Armor penetration chance HUD (design)
 
-**Status: IMPLEMENTED — the badge renders in BOTH replay and live frames (live aim = the CAM-013 chase-camera pose); per-part armor + mesh raycast + `.sc2` parser landed; live validation (PN-4) is the remaining proof.**
+**Status: IMPLEMENTED — the badge renders in BOTH replay and live frames (live aim = the CAM-013 chase-camera pose); per-part armor + mesh raycast + `.sc2` parser landed. The MINIMAL IMPLEMENTATION IS COMPLETE; the only remaining work is the live PN-4 validation proof, whose aim feed is now wired end-to-end (`POST /discover/pen-offline-score/{id}` accepts the captured CAM-013 aims) and pre-staged as `docs/operations/pn4-live-aim-capture-runbook.md`.**
 **Date:** 2026-08-13
 **Roadmap:** Phase 6 (`docs/operations/product-roadmap.md`)
 
@@ -279,6 +279,17 @@ two-caliber, pen-at-range).
    DRIFT, not a DLC gap — `ResourceOverlay` is already DLC-first, and
    `17425` (ussr vehicle-type 68) is absent from EVERY install list.xml
    (base + DLC packs carry no ussr list); no DLC-list change helps it.
+   **Aim-feed endpoint + runbook (2026-08-14):** the aim-override seam is
+   now reachable over HTTP — `POST /discover/pen-offline-score/{id}` accepts
+   an optional `aimOverrides` body (`{replayTimeTicks, originX/Y/Z,
+   directionX/Y/Z}` → `AimSample`; the scorer re-normalizes non-unit
+   directions and ignores overrides for non-viewpoint shots). The turnkey
+   live capture plan is `docs/operations/pn4-live-aim-capture-runbook.md`:
+   poll `/discover/camera-pose` (eye = (X,Z,Y) yz-swap, forward = −row1,
+   the same `BuildCamera` path the live badge uses), key each by the
+   G2-anchored live-frame clock, and POST them after the battle. This is
+   the LAST code piece before the live session — the minimal implementation
+   is complete and only the live proof remains.
 
 ## `.sc2` SFV2 format spec (PARSED 2026-08-13 — `SceneFileParser`)
 

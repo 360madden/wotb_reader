@@ -1964,13 +1964,88 @@ public sealed class GameApiEndpointsTests
             scorer,
             sessions,
             sessionId,
+            request: null,
             TestContext.CancellationToken);
 
         OfflinePenScoreReport response = Value<OfflinePenScoreReport>(result);
         Assert.AreEqual(1, response.Validation.TotalShots);
         Assert.AreEqual(1.0, response.Validation.BandAccuracy, 1e-9);
         Assert.IsNotNull(scorer.LastProjection);
+        Assert.IsNull(scorer.LastAimOverrides);
         Assert.AreEqual(sessionId, sessions.LastSessionId?.Value);
+    }
+
+    [TestMethod]
+    public async Task ScorePenOffline_ForwardsAimOverridesToScorer()
+    {
+        Guid sessionId = Guid.NewGuid();
+        var projection = new ReplayDecodeProjection(
+            new DecodeRun(
+                DecodeRunId.New(),
+                SourceArtifactId.New(),
+                DecoderId: "test",
+                DecoderVersion: "1",
+                SchemaVersion: "1",
+                DecodeRunStatus.Succeeded,
+                ReplayCapability.Positions,
+                DateTimeOffset.UnixEpoch,
+                DateTimeOffset.UnixEpoch,
+                FailureCode: null,
+                FailureSummary: null),
+            new BattleSession(
+                BattleSessionId.New(),
+                DecodeRunId.New(),
+                GameVersion: "11.19.0.10",
+                ArenaIdentity: null,
+                MapId: null,
+                MapName: null,
+                BattleTimeUtc: null,
+                Duration: null,
+                ViewpointParticipantId: null,
+                SchemaVersion: "1"),
+            Participants: [],
+            Positions: [],
+            Events: [],
+            RawRecords: [],
+            Warnings: []);
+        var sessions = new FakeSessionQueryRepository(OperationResult.Success(projection));
+        var scorer = new FakePenOfflineScorer(
+            new OfflinePenScoreReport(0, new PenValidationReport(0, 0, 0, 0, 0, 0, 0, []), []));
+        var request = new PenOfflineScoreRequest
+        {
+            AimOverrides =
+            [
+                new AimSampleRequest
+                {
+                    ReplayTimeTicks = 10_000_000L,
+                    OriginX = 1.0,
+                    OriginY = 2.0,
+                    OriginZ = 3.0,
+                    DirectionX = 0.0,
+                    DirectionY = 0.0,
+                    DirectionZ = -1.0,
+                },
+            ],
+        };
+
+        IResult result = await GameApiEndpoints.ScorePenOfflineAsync(
+            scorer,
+            sessions,
+            sessionId,
+            request,
+            TestContext.CancellationToken);
+
+        Assert.IsInstanceOfType<Ok<OfflinePenScoreReport>>(result);
+        Assert.IsNotNull(scorer.LastAimOverrides);
+        Assert.HasCount(1, scorer.LastAimOverrides);
+        AimSample mapped = scorer.LastAimOverrides[0];
+        Assert.AreEqual(TimeSpan.FromTicks(10_000_000L), mapped.ReplayTime);
+        Assert.AreEqual(1.0, mapped.Aim.OriginX, 1e-9);
+        Assert.AreEqual(2.0, mapped.Aim.OriginY, 1e-9);
+        Assert.AreEqual(3.0, mapped.Aim.OriginZ, 1e-9);
+        Assert.AreEqual(0.0, mapped.Aim.DirectionX, 1e-9);
+        Assert.AreEqual(0.0, mapped.Aim.DirectionY, 1e-9);
+        Assert.AreEqual(-1.0, mapped.Aim.DirectionZ, 1e-9);
     }
 
     [TestMethod]
@@ -1986,6 +2061,7 @@ public sealed class GameApiEndpointsTests
             scorer,
             sessions,
             Guid.NewGuid(),
+            request: null,
             TestContext.CancellationToken);
 
         JsonElement response = NotFoundAnonymous(result);
@@ -2790,12 +2866,15 @@ public sealed class GameApiEndpointsTests
     {
         public ReplayDecodeProjection? LastProjection { get; private set; }
 
+        public IReadOnlyList<AimSample>? LastAimOverrides { get; private set; }
+
         public ValueTask<OfflinePenScoreReport> ScoreAsync(
             ReplayDecodeProjection projection,
             IReadOnlyList<AimSample>? aimOverrides,
             CancellationToken cancellationToken)
         {
             LastProjection = projection;
+            LastAimOverrides = aimOverrides;
             return ValueTask.FromResult(report);
         }
     }

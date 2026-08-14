@@ -74,3 +74,45 @@ public sealed record LaunchResponse
     /// <summary>Human-readable message describing the outcome.</summary>
     public string Message { get; init; } = string.Empty;
 }
+
+/// <summary>
+/// Optional request body for <c>POST /discover/pen-offline-score/{id}</c>:
+/// supplies true aim observations (the live CAM-013 chase-camera pose captured
+/// at shot time) that replace the center-line proxy for the viewpoint tank's
+/// own shots. Omitted or empty = the center-line proxy for every shot (the
+/// offline behavior, unchanged).
+/// </summary>
+public sealed record PenOfflineScoreRequest
+{
+    /// <summary>
+    /// Aim observations sorted ascending by replay time, or null/empty to keep
+    /// the center-line proxy. Only the VIEWPOINT tank's shots consume them;
+    /// every other shot keeps the center-line proxy (fail-closed).
+    /// </summary>
+    public IReadOnlyList<AimSampleRequest>? AimOverrides { get; init; }
+}
+
+/// <summary>One aim observation: a replay-clock instant and a world-space ray.</summary>
+public sealed record AimSampleRequest
+{
+    /// <summary>Replay-clock instant in ticks (matches <c>ReplayTimeTicks</c>).</summary>
+    public long ReplayTimeTicks { get; init; }
+
+    /// <summary>Ray origin X (world units).</summary>
+    public double OriginX { get; init; }
+
+    /// <summary>Ray origin Y (up, world units).</summary>
+    public double OriginY { get; init; }
+
+    /// <summary>Ray origin Z (world units).</summary>
+    public double OriginZ { get; init; }
+
+    /// <summary>Ray direction X (normalized by the scorer if not unit).</summary>
+    public double DirectionX { get; init; }
+
+    /// <summary>Ray direction Y.</summary>
+    public double DirectionY { get; init; }
+
+    /// <summary>Ray direction Z.</summary>
+    public double DirectionZ { get; init; }
+}

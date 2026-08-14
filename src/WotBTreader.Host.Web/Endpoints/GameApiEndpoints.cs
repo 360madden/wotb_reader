@@ -8,6 +8,7 @@ using WotBTreader.Application.Results;
 using WotBTreader.Application.Storage;
 using WotBTreader.Core;
 using WotBTreader.Core.Discovery;
+using WotBTreader.Core.Overlay;
 
 namespace WotBTreader.Host.Web.Endpoints;
 
@@ -45,7 +46,7 @@ internal static class GameApiEndpoints
         group.MapPost("/discover/instruction-snapshot", CaptureInstructionSnapshotAsync);
         group.MapGet("/discover/trajectory/{battleSessionId:guid}", GetTrajectoryAsync);
         group.MapPost("/discover/correlate", CorrelateAsync);
-        group.MapGet("/discover/pen-offline-score/{battleSessionId:guid}", ScorePenOfflineAsync);
+        group.MapPost("/discover/pen-offline-score/{battleSessionId:guid}", ScorePenOfflineAsync);
         return builder;
     }
 
@@ -1365,6 +1366,7 @@ internal static class GameApiEndpoints
         IPenOfflineScorer scorer,
         ISessionQueryRepository sessions,
         Guid battleSessionId,
+        PenOfflineScoreRequest? request,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(scorer);
@@ -1381,8 +1383,20 @@ internal static class GameApiEndpoints
             });
         }
 
+        // Map the optional live aim observations into the scorer's AimSample
+        // list. The scorer re-normalizes non-unit directions (the pen math
+        // assumes unit rays) and ignores overrides for non-viewpoint shots.
+        IReadOnlyList<AimSample>? aimOverrides = request?.AimOverrides is { Count: > 0 } overrides
+            ? overrides.Select(static sample => new AimSample(
+                    TimeSpan.FromTicks(sample.ReplayTimeTicks),
+                    new AimRay(
+                        sample.OriginX, sample.OriginY, sample.OriginZ,
+                        sample.DirectionX, sample.DirectionY, sample.DirectionZ)))
+                .ToList()
+            : null;
+
         OfflinePenScoreReport report = await scorer
-            .ScoreAsync(projection.Value, aimOverrides: null, cancellationToken)
+            .ScoreAsync(projection.Value, aimOverrides, cancellationToken)
             .ConfigureAwait(false);
         return Results.Ok(report);
     }
