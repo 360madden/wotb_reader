@@ -1382,7 +1382,7 @@ internal static class GameApiEndpoints
         }
 
         OfflinePenScoreReport report = await scorer
-            .ScoreAsync(projection.Value, cancellationToken)
+            .ScoreAsync(projection.Value, aimOverrides: null, cancellationToken)
             .ConfigureAwait(false);
         return Results.Ok(report);
     }

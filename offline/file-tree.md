@@ -295,6 +295,7 @@ docs/operations/handoffs/2026-08-13-pen-live-badge-and-aim-scoping.md
 docs/operations/handoffs/2026-08-13-pen-per-face-thickness-not-feasible.md
 docs/operations/handoffs/2026-08-13-pen-shell-selector-scoring-harness-and-hud-polish.md
 docs/operations/handoffs/2026-08-13-pen-shotimpact-attacker-attribution-decoded.md
+docs/operations/handoffs/2026-08-14-pen-aim-override-seam-and-third-replay.md
 docs/operations/handoffs/2026-08-14-pen-country-id-and-prefix-fix.md
 docs/operations/handoffs/2026-08-14-pen-offline-armor-vs-pen-scorer.md
 docs/operations/handoffs/2026-08-14-pen-redecode-two-replay-validation.md

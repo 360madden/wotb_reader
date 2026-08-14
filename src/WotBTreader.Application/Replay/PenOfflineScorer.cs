@@ -6,6 +6,15 @@ using WotBTreader.Core.Overlay;
 namespace WotBTreader.Application.Replay;
 
 /// <summary>
+/// One externally-supplied aim observation for the scorer's aim-override
+/// seam: a replay-clock instant and the aim ray (camera/turret) at that
+/// instant. The live CAM-013 capture supplies these at shot time so the
+/// scorer validates the TRUE aim instead of the center-line proxy — the
+/// decisive PN-4 aim source the replay stream itself cannot provide.
+/// </summary>
+public readonly record struct AimSample(TimeSpan ReplayTime, AimRay Aim);
+
+/// <summary>
 /// One decoded shot's scoring row: the roster identities (with tank names for
 /// localization), the shell used, and either the scored model row or the
 /// reason the shot was skipped (no attacker attribution, unresolvable tank
@@ -48,8 +57,19 @@ public sealed record OfflinePenScoreReport(
 /// </summary>
 public interface IPenOfflineScorer
 {
+    /// <summary>
+    /// Scores the decoded session's shots. <paramref name="aimOverrides"/>
+    /// replaces the center-line proxy with true aim observations for the
+    /// VIEWPOINT tank's own shots (the CAM-013 camera is the viewer's chase
+    /// camera, so only viewer-fired shots have a true aim): a shot whose
+    /// attacker is the viewpoint tank uses the nearest override at-or-before
+    /// its replay time, falling back to the center-line when none exists.
+    /// Every other shot keeps the center-line proxy (fail-closed, never a
+    /// fabricated aim).
+    /// </summary>
     ValueTask<OfflinePenScoreReport> ScoreAsync(
         ReplayDecodeProjection projection,
+        IReadOnlyList<AimSample>? aimOverrides,
         CancellationToken cancellationToken);
 }
 
@@ -69,9 +89,15 @@ public sealed class PenOfflineScorer : IPenOfflineScorer
     /// <inheritdoc />
     public async ValueTask<OfflinePenScoreReport> ScoreAsync(
         ReplayDecodeProjection projection,
+        IReadOnlyList<AimSample>? aimOverrides,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(projection);
+
+        long? viewpointEntityId = ResolveViewpointEntityId(projection);
+        List<AimSample>? aimSamples = aimOverrides is null or { Count: 0 }
+            ? null
+            : aimOverrides.OrderBy(static sample => sample.ReplayTime).ToList();
 
         Dictionary<long, Participant> byEntity = [];
         foreach (Participant participant in projection.Participants)
@@ -161,7 +187,17 @@ public sealed class PenOfflineScorer : IPenOfflineScorer
                 continue;
             }
 
-            AimRay? aim = CenterLineAim(attackerSample, victimSample);
+            AimRay? aim = null;
+            if (attacker.EntityId == viewpointEntityId)
+            {
+                AimSample? overrideSample = FindAimAtOrBefore(aimSamples, ev.ReplayTime);
+                if (overrideSample is { } sample)
+                {
+                    aim = sample.Aim;
+                }
+            }
+
+            aim ??= CenterLineAim(attackerSample, victimSample);
             if (aim is null)
             {
                 skipped++;
@@ -292,6 +328,46 @@ public sealed class PenOfflineScorer : IPenOfflineScorer
         return new AimRay(
             originX, originY, originZ,
             dx / length, dy / length, dz / length);
+    }
+
+    private static long? ResolveViewpointEntityId(ReplayDecodeProjection projection)
+    {
+        if (projection.Session?.ViewpointParticipantId is not { } viewpointId)
+        {
+            return null;
+        }
+
+        return projection.Participants.FirstOrDefault(
+            participant => participant.Id == viewpointId)?.EntityId;
+    }
+
+    private static AimSample? FindAimAtOrBefore(
+        List<AimSample>? samples,
+        TimeSpan replayTime)
+    {
+        if (samples is null or { Count: 0 })
+        {
+            return null;
+        }
+
+        int low = 0;
+        int high = samples.Count - 1;
+        int found = -1;
+        while (low <= high)
+        {
+            int mid = low + ((high - low) / 2);
+            if (samples[mid].ReplayTime <= replayTime)
+            {
+                found = mid;
+                low = mid + 1;
+            }
+            else
+            {
+                high = mid - 1;
+            }
+        }
+
+        return found >= 0 ? samples[found] : null;
     }
 
     private static PositionSample? FindAtOrBefore(

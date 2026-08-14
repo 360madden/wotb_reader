@@ -2792,6 +2792,7 @@ public sealed class GameApiEndpointsTests
 
         public ValueTask<OfflinePenScoreReport> ScoreAsync(
             ReplayDecodeProjection projection,
+            IReadOnlyList<AimSample>? aimOverrides,
             CancellationToken cancellationToken)
         {
             LastProjection = projection;

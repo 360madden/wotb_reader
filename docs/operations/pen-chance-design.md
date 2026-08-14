@@ -255,6 +255,30 @@ two-caliber, pen-at-range).
    repeatably across two content-distinct replays; model ACCURACY still
    varies with aim-source fidelity, so the live CAM-013 aim remains the
    decisive PN-4 step.
+   **THIRD-REPLAY result + aim-override seam + closures (2026-08-14):**
+   (a) the Copperfield artifact (`019fc447`) was re-decoded (`01a0007f`):
+   100 `ShotImpact` events, 13/14 participants enriched (the same premium
+   `17425` holdout), and the scorer reports **71.9% band accuracy** (32
+   classified / 23 agree, ricochetPrecision 0/3) — three content-distinct
+   replays now span 38.9% → 69.6% → 71.9%, all pointing at the same
+   conclusion (center-line aim is the confound, not the model). (b) the
+   LIVE-AIM SEAM SHIPPED: `IPenOfflineScorer.ScoreAsync` now accepts an
+   optional `IReadOnlyList<AimSample>` — the VIEWPOINT tank's own shots
+   take their aim from the nearest override at-or-before the shot time
+   (the CAM-013 chase-camera aim captured live), every other shot keeps
+   the center-line proxy — so the live PN-4 session only has to supply
+   the captured aim rays, nothing else. 2 new tests. (c) the 87.5°
+   Oasis / 72.5° Copperfield predicted-ricochet outliers are CONFIRMED
+   center-line artifacts, not mesh-face misclassification: the mesh
+   raycast hits those faces correctly (the side-hit Unknowns prove it),
+   the center-line incidence is simply not the true shot angle — the
+   live camera aim is the only fix. (d) LOADED-SHELL resolution stays
+   CLOSED: the type-32/subtype-8 6-byte "shell signature" is an effect-
+   entity id (0x30xxxx), not a stat reference, so the manual shell
+   selector is the honest path. (e) the `17425` holdout is VERSION
+   DRIFT, not a DLC gap — `ResourceOverlay` is already DLC-first, and
+   `17425` (ussr vehicle-type 68) is absent from EVERY install list.xml
+   (base + DLC packs carry no ussr list); no DLC-list change helps it.
 
 ## `.sc2` SFV2 format spec (PARSED 2026-08-13 — `SceneFileParser`)
 
@@ -440,7 +464,11 @@ reader.
    sub-question, not the pen-vs-bounce split.
 3. Is the viewer's loaded shell recoverable at all from the stream (shell
    signature → stat mapping via game data), or is a manual override the only
-   honest path?
+   honest path? **ANSWERED (2026-08-13, re-confirmed 2026-08-14): NO.** The
+   only shell-related 6 bytes in the stream (type-32 mirror / type-8
+   subtype-8, offset +0x17) is an effect-ENTITY id in the 0x30xxxx range,
+   not a shell-kind/stat reference, and no other packet carries the loaded
+   ammo. The manual shell selector (stock-gun ammo) is the honest path.
 4. What is Blitz's exact penetration-RNG band, and can the deterministic
    verdict be matched to it within the indicator's green/yellow/red bands?
    **ANSWERED 2026-08-13:** penetration spread is **±5%** (Update 6.0+), per
