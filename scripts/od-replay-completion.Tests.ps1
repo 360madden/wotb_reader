@@ -138,4 +138,28 @@ Describe 'od-replay-completion smoke tests' {
         ($source.Contains('Confirm-OdOwnerOnlyFileAcl -Path $launchMarker')) |
             Should Be $true
     }
+
+    It 'reports only a bounded ACL condition for launcher diagnostics' {
+        $missing = Join-Path ([IO.Path]::GetTempPath()) (
+            'od-acl-diagnostic-missing-' + [guid]::NewGuid().ToString('N'))
+        $diagnostic = Get-OdOwnerOnlyDirectoryAclDiagnostic -Path $missing
+
+        $diagnostic | Should Match '^exception-[A-Za-z]+$'
+        $diagnostic.Contains($missing) | Should Be $false
+    }
+
+    It 'reports the verified-after-window condition for the exact ACL' {
+        $directory = Join-Path ([IO.Path]::GetTempPath()) (
+            'od-acl-diagnostic-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $directory | Out-Null
+        try {
+            Set-OdOwnerOnlyDirectoryAcl -Path $directory
+
+            Get-OdOwnerOnlyDirectoryAclDiagnostic -Path $directory |
+                Should Be 'verified-after-retry-window'
+        }
+        finally {
+            Remove-Item -LiteralPath $directory -Force -ErrorAction SilentlyContinue
+        }
+    }
 }

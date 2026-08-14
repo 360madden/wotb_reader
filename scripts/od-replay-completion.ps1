@@ -91,11 +91,11 @@ function Test-OdOwnerOnlyFileAcl([string]$Path) {
 function Test-OdOwnerOnlyDirectoryAcl([string]$Path) {
     try {
         $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
-        $directory = Get-Item -LiteralPath $Path
+        $directory = Get-Item -LiteralPath $Path -ErrorAction Stop
         if (($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
             return $false
         }
-        $acl = Get-Acl -LiteralPath $directory.FullName
+        $acl = Get-Acl -LiteralPath $directory.FullName -ErrorAction Stop
         $observedOwner = (New-Object Security.Principal.NTAccount($acl.Owner)).Translate(
             [Security.Principal.SecurityIdentifier])
         $rules = @($acl.GetAccessRules(
@@ -155,6 +155,52 @@ function Confirm-OdOwnerOnlyDirectoryAcl {
     }
 
     return $false
+}
+
+function Get-OdOwnerOnlyDirectoryAclDiagnostic([string]$Path) {
+    try {
+        $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
+        $directory = Get-Item -LiteralPath $Path -ErrorAction Stop
+        if (($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            return 'reparse-point'
+        }
+
+        $acl = Get-Acl -LiteralPath $directory.FullName -ErrorAction Stop
+        if (-not $acl.AreAccessRulesProtected) {
+            return 'inheritance-not-protected'
+        }
+
+        $observedOwner = (New-Object Security.Principal.NTAccount($acl.Owner)).Translate(
+            [Security.Principal.SecurityIdentifier])
+        if ($observedOwner -ne $owner) {
+            return 'owner-mismatch'
+        }
+
+        $rules = @($acl.GetAccessRules(
+            $true,
+            $false,
+            [Security.Principal.SecurityIdentifier]))
+        if ($rules.Count -ne 1) {
+            return 'rule-count-' + $rules.Count
+        }
+        if ($rules[0].IdentityReference -ne $owner) {
+            return 'rule-owner-mismatch'
+        }
+        if ($rules[0].AccessControlType -ne
+            [Security.AccessControl.AccessControlType]::Allow) {
+            return 'rule-not-allow'
+        }
+        if (($rules[0].FileSystemRights -band
+                [Security.AccessControl.FileSystemRights]::FullControl) -ne
+            [Security.AccessControl.FileSystemRights]::FullControl) {
+            return 'rights-not-full-control'
+        }
+
+        return 'verified-after-retry-window'
+    }
+    catch {
+        return 'exception-' + $_.Exception.GetType().Name
+    }
 }
 
 function Set-OdOwnerOnlyFileAcl([string]$Path) {

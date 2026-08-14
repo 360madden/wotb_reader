@@ -541,7 +541,9 @@ try {
     }
     Set-OdOwnerOnlyDirectoryAcl -Path $launchMarkerDirectory
     if (-not (Confirm-OdOwnerOnlyDirectoryAcl -Path $launchMarkerDirectory)) {
-        Write-Od 'FAILED_launch_marker_directory_acl'
+        $aclDiagnostic = Get-OdOwnerOnlyDirectoryAclDiagnostic `
+            -Path $launchMarkerDirectory
+        Write-Od ('FAILED_launch_marker_directory_acl reason=' + $aclDiagnostic)
         exit 1
     }
     $launchMarker = Join-Path $launchMarkerDirectory 'artifact.id'
