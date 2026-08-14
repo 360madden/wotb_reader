@@ -51,6 +51,28 @@ Describe 'Codex Sol-only model policy' {
         $result | Should BeNullOrEmpty
     }
 
+    It 'allows the extra-high strategist role without a spawn override' {
+        $result = Invoke-ModelHook @{
+            hook_event_name = 'PreToolUse'
+            model           = 'gpt-5.6-sol'
+            tool_name       = 'spawn_agent'
+            tool_input      = @{ agent_type = 'strategist'; task_name = 'roadmap' }
+        }
+
+        $result | Should BeNullOrEmpty
+    }
+
+    It 'allows the maximum-effort memory researcher without a spawn override' {
+        $result = Invoke-ModelHook @{
+            hook_event_name = 'PreToolUse'
+            model           = 'gpt-5.6-sol'
+            tool_name       = 'spawn_agent'
+            tool_input      = @{ agent_type = 'memory_researcher'; task_name = 'root_anchor' }
+        }
+
+        $result | Should BeNullOrEmpty
+    }
+
     It 'denies a non-Sol subagent model override' {
         $result = Invoke-ModelHook @{
             hook_event_name = 'PreToolUse'
@@ -81,5 +103,17 @@ Describe 'Codex Sol-only model policy' {
 
         $result.hookSpecificOutput.permissionDecision | Should Be 'deny'
         $result.hookSpecificOutput.permissionDecisionReason | Should Match 'reasoning override'
+    }
+
+    It 'denies an unreviewed role' {
+        $result = Invoke-ModelHook @{
+            hook_event_name = 'PreToolUse'
+            model           = 'gpt-5.6-sol'
+            tool_name       = 'spawn_agent'
+            tool_input      = @{ agent_type = 'ad_hoc_genius'; task_name = 'guess' }
+        }
+
+        $result.hookSpecificOutput.permissionDecision | Should Be 'deny'
+        $result.hookSpecificOutput.permissionDecisionReason | Should Match 'reviewed role matrix'
     }
 }

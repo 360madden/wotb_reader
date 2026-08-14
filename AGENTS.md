@@ -30,19 +30,36 @@ reviewed policy update before use.
 
 | Agent | Effort | Use for |
 |---|---:|---|
-| lead / `default` / `worker` | `medium` | normal planning, implementation, integration |
+| lead / `default` / `worker` | `medium` | routing, bounded implementation, integration of frozen decisions |
 | `explorer` | `low` | one read-only codebase question or evidence lookup |
 | `verifier` | `low` | smallest sufficient focused check after a unit |
 | `implementer_glue` | `medium` | bounded UI, DTO, HTTP, tests, or docs glue |
+| `systems_analyst` | `high` | difficult cross-project trace or multi-file root cause |
 | `decoder_auditor` | `high` | replay, binary, decoder, or contract evidence audit |
+| `strategist` | `xhigh` | long-range product, architecture, or experiment-campaign planning |
 | `security_auditor` | `xhigh` | loopback, mutation, privacy, ACL, or fail-closed audit |
+| `memory_researcher` | `max` | unknown offsets/root anchors or failed/conflicting reverse-engineering hypotheses |
 
 Repository sources of truth are `.codex/config.toml`, `.codex/agents/*.toml`,
 `.codex/hooks.json`, and `scripts/codex-agent-config-check.ps1`.
 
-- Default to the lead agent only. Delegate only when the user asks, an
-  applicable skill requires it, or at least two genuinely independent units
-  justify their extra context cost.
+- Route by uncertainty and consequence, not file type. A known offset-chain
+  implementation is medium; proving a known chain is high; discovering an
+  unknown root anchor is max.
+- Use low for deterministic lookups/checks, medium for frozen-design work,
+  high for multi-step causal analysis, xhigh for consequential planning or
+  security decisions with competing tradeoffs, and max for the hardest
+  quality-first single investigation.
+- Long-range planning must use Plan mode (`xhigh`) or `strategist`. Unknown
+  memory offsets, ownership roots, vtable/AOB anchors, and a reasoning-limited
+  failed xhigh investigation must use `memory_researcher`.
+- Do not escalate effort for missing access, absent live evidence, or a serial
+  dependency; more reasoning cannot remove an external blocker. After a failed
+  high/xhigh attempt, escalate only when competing hypotheses or reasoning
+  quality—not missing evidence—caused the failure.
+- Default to the lead agent for bounded work. Delegate one specialist whenever
+  a task matches a high/xhigh/max lane that the medium lead should not absorb.
+  Use multiple agents only for genuinely independent workstreams.
 - Do not delegate trivial answers, one-file mechanical edits, serial
   dependencies, or work whose coordination cost is likely higher than doing it
   once on the lead.
@@ -52,7 +69,9 @@ Repository sources of truth are `.codex/config.toml`, `.codex/agents/*.toml`,
   smallest useful history fork and require a compact evidence/result summary,
   not raw logs or broad narration.
 - Never override `model` or `model_reasoning_effort` in spawn calls. Role files
-  own the reviewed effort. `max` and `ultra` are not repository defaults.
+  own the reviewed effort. Max belongs only to `memory_researcher`. Ultra is
+  not a saved role: use it only when the owner explicitly requests a
+  multi-agent campaign and at least two deep workstreams are independent.
 - Subagents never stage, commit, or push. The lead owns integration and Git.
 - The lead retains shared-contract decisions. Use the named specialist for
   decoder/binary or security/privacy audits when that audit is required.
@@ -109,9 +128,12 @@ Wargaming statistics. Do not apply the private-data boundary to those facts.
 | Task | Load / route | Stop condition |
 |---|---|---|
 | Design interview explicitly requested | `.agents/skills/grill-me/SKILL.md` | no implementation before shared understanding |
+| Long-range roadmap, architecture, or experiment campaign | `strategist` (`xhigh`) plus current handoff/roadmap/blockers | strategist does not implement; lead owns the decision |
+| Difficult cross-project causal trace | `systems_analyst` (`high`) | analyst proves the path and rejected hypotheses before implementation |
 | Replay decode | `offline/replay-format.md`; `decoder_auditor` for audit | never execute pickle or ship dynamic decoder DLLs |
 | Telemetry data flow | `offline/data-flow.md` | never mutate an immutable decode run |
-| Offset or memory evidence | `offline/memory-offsets.md`, `offline/offset-discovery.md`, ledger | no promotion without the documented proof/approval gate |
+| Unknown offset, root anchor, pointer ownership, vtable/AOB, or conflicting memory evidence | `memory_researcher` (`max`) plus memory docs/ledger | no live action or promotion; return a bounded proof protocol to the lead |
+| Known-chain offset evidence or publication review | `systems_analyst` or `decoder_auditor` (`high`) | no promotion without documented proof and owner approval |
 | Game internals research | `research/README.md` | never touch the game install |
 | Architecture | `docs/architecture/overview.md`, architecture tests | preserve the enforced reference graph |
 | Loopback, mutation, privacy, ACL | read-only `security_auditor` | shared-contract changes require lead review |
@@ -148,7 +170,8 @@ and ASCII-only. See `docs/operations/cmd-wrapper-gotchas.md` for batch/cmd work.
 
 ## Last verified
 
-- 2026-08-14 — Sol-only model policy, role effort matrix, hook enforcement,
-  configuration gate, and fresh-session smoke verified. Full repository gate:
-  1,206 tests passed, 7 local opt-in skips, 0 build warnings, 0 errors; 5 policy
+- 2026-08-14 — corrected Sol-only effort ladder and routing verified: Plan and
+  strategy xhigh; systems/decoder high; unknown offset/root-anchor research
+  max; bounded work medium; lookup/verification low. Full repository gate:
+  1,206 tests passed, 7 local opt-in skips, 0 build warnings, 0 errors; 8 policy
   tests passed.

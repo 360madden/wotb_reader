@@ -12,8 +12,9 @@ with antiforgery and SignalR negotiation, and default-deny enforcement that
 prevents the harness from operating in online battles.
 
 Check that logs and APIs do not expose raw replay bytes, tokens, full paths,
-player names, account IDs, chat, or screenshots. Never infer bot status from a
-name.
+account IDs, chat, or screenshots. Player names and name-derived bot status are
+public Wargaming statistics under the repository policy; do not misclassify
+them as private data.
 
 Report only concrete findings, ordered Critical, High, Medium, then Note. For
 each finding give the scenario, why it is wrong, a precise file hint, and a

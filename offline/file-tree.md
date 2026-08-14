@@ -25,7 +25,10 @@ regenerate this file in the same change that adds, renames, or removes files.
 .codex/agents/default.toml
 .codex/agents/explorer.toml
 .codex/agents/implementer_glue.toml
+.codex/agents/memory_researcher.toml
 .codex/agents/security_auditor.toml
+.codex/agents/strategist.toml
+.codex/agents/systems_analyst.toml
 .codex/agents/verifier.toml
 .codex/agents/worker.toml
 .codex/config.toml
@@ -301,6 +304,7 @@ docs/operations/handoffs/2026-08-13-pen-per-face-thickness-not-feasible.md
 docs/operations/handoffs/2026-08-13-pen-shell-selector-scoring-harness-and-hud-polish.md
 docs/operations/handoffs/2026-08-13-pen-shotimpact-attacker-attribution-decoded.md
 docs/operations/handoffs/2026-08-14-batch-rendezvous-and-witness-hardening.md
+docs/operations/handoffs/2026-08-14-codex-reasoning-policy-correction.md
 docs/operations/handoffs/2026-08-14-codex-sol-agent-policy.md
 docs/operations/handoffs/2026-08-14-item7-batch-measurement-persistence.md
 docs/operations/handoffs/2026-08-14-item7-camera-double-read-instrumentation.md

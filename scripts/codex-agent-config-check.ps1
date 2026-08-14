@@ -74,7 +74,7 @@ function Assert-UniqueRawAssignment {
 $configText = Get-RequiredText -Path $projectConfig
 Assert-UniqueStringAssignment $configText 'model' $allowedModel '.codex/config.toml'
 Assert-UniqueStringAssignment $configText 'model_reasoning_effort' 'medium' '.codex/config.toml'
-Assert-UniqueStringAssignment $configText 'plan_mode_reasoning_effort' 'medium' '.codex/config.toml'
+Assert-UniqueStringAssignment $configText 'plan_mode_reasoning_effort' 'xhigh' '.codex/config.toml'
 Assert-UniqueStringAssignment $configText 'model_reasoning_summary' 'concise' '.codex/config.toml'
 Assert-UniqueStringAssignment $configText 'model_verbosity' 'low' '.codex/config.toml'
 Assert-UniqueRawAssignment $configText 'enabled' 'true' '.codex/config.toml'
@@ -86,6 +86,9 @@ $expectedRoles = [ordered]@{
     default          = 'medium'
     worker           = 'medium'
     explorer         = 'low'
+    systems_analyst  = 'high'
+    strategist       = 'xhigh'
+    memory_researcher = 'max'
     verifier         = 'low'
     implementer_glue = 'medium'
     decoder_auditor  = 'high'
@@ -129,4 +132,4 @@ if ($guideText -notmatch 'only allowed baseline and subagent model is \*\*`gpt-5
 
 Write-Host (
     "Codex agent config check passed: model=$allowedModel; " +
-    'lead=medium; roles=low/medium/high/xhigh; max-subagents=2.')
+    'lead=medium; plan=xhigh; roles=low/medium/high/xhigh/max; max-subagents=2.')
