@@ -191,7 +191,11 @@ public sealed class CompositionRootTests
         {
             ApplicationName = "WotBTreader.Bootstrap.Tests",
         });
-        builder.Services.AddWotBTreaderFoundation(new TreaderBootstrapOptions(root.Path));
+        // Point game user data at an isolated path so the startup scavenger
+        // cannot touch the real machine's replay staging folder.
+        builder.Services.AddWotBTreaderFoundation(new TreaderBootstrapOptions(
+            ApplicationDataRoot: root.Path,
+            GameUserDataRoot: Path.Combine(root.Path, "no-such-game-user-data")));
         using IHost host = builder.Build();
 
         await host.StartAsync(TestContext.CancellationToken);
@@ -201,6 +205,39 @@ public sealed class CompositionRootTests
             Assert.IsTrue(
                 File.Exists(paths.Database),
                 "Host startup must apply storage migrations before serving.");
+        }
+        finally
+        {
+            await host.StopAsync(TestContext.CancellationToken);
+        }
+    }
+
+    [TestMethod]
+    public async Task HostStartupScavengesOrphanedReplayStagingFiles()
+    {
+        using TemporaryRoot root = new();
+        string gameUserData = Path.Combine(root.Path, "wotblitz");
+        string replays = Path.Combine(gameUserData, "DAVAProject", "replays");
+        string staging = Path.Combine(replays, "wotbtreader-staging");
+        Directory.CreateDirectory(staging);
+        string orphan = Path.Combine(staging, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.wotbreplay");
+        File.WriteAllText(orphan, "orphan");
+
+        HostApplicationBuilder builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings
+        {
+            ApplicationName = "WotBTreader.Bootstrap.Tests",
+        });
+        builder.Services.AddWotBTreaderFoundation(new TreaderBootstrapOptions(
+            ApplicationDataRoot: root.Path,
+            GameUserDataRoot: gameUserData));
+        using IHost host = builder.Build();
+
+        await host.StartAsync(TestContext.CancellationToken);
+        try
+        {
+            Assert.IsFalse(
+                File.Exists(orphan),
+                "Host startup must scavenge orphaned staging files even when no launch happens.");
         }
         finally
         {

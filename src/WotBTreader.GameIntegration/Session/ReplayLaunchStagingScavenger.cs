@@ -8,7 +8,7 @@ namespace WotBTreader.GameIntegration.Session;
 /// folder. The dispose path cleans both on a graceful exit; this scavenger is
 /// the recovery for the hard-kill case, so duplicates never accumulate.
 /// </summary>
-internal static class ReplayLaunchStagingScavenger
+public static class ReplayLaunchStagingScavenger
 {
     /// <summary>
     /// Best-effort removal of every orphaned GUID-named stage file under

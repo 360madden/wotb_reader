@@ -54,6 +54,7 @@ public static class FoundationServiceCollectionExtensions
         services.AddSingleton<IDoctorService, DoctorService>();
         services.AddSingleton<IDiagnosticBundleService, DiagnosticBundleService>();
         services.AddHostedService<StorageInitializationHostedService>();
+        services.AddHostedService<ReplayLaunchStagingScavengerHostedService>();
         return services;
     }
 

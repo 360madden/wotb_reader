@@ -476,6 +476,7 @@ src/WotBTreader.Bootstrap/DependencyInjection/FoundationServiceCollectionExtensi
 src/WotBTreader.Bootstrap/Diagnostics/DiagnosticBundleService.cs
 src/WotBTreader.Bootstrap/Diagnostics/DoctorService.cs
 src/WotBTreader.Bootstrap/Logging/TreaderLogging.cs
+src/WotBTreader.Bootstrap/Startup/ReplayLaunchStagingScavengerHostedService.cs
 src/WotBTreader.Bootstrap/Startup/StorageInitializationHostedService.cs
 src/WotBTreader.Bootstrap/WotBTreader.Bootstrap.csproj
 src/WotBTreader.Bootstrap/packages.lock.json
