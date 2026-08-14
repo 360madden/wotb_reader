@@ -25,6 +25,11 @@ public sealed record VehicleMetadata(
     string GameVersion,
     ContentHash SourceHash);
 
+/// <summary>
+/// Exact-build map metadata. <paramref name="SceneResourcePath"/> preserves
+/// the install's relative <c>localName</c> scene path so resource consumers can
+/// resolve name-based assets from a numeric replay arena ID without guessing.
+/// </summary>
 public sealed record MapMetadata(
     string MapId,
     string DisplayName,
@@ -33,7 +38,8 @@ public sealed record MapMetadata(
     double? WorldMinZ,
     double? WorldMaxZ,
     string GameVersion,
-    ContentHash SourceHash);
+    ContentHash SourceHash,
+    string? SceneResourcePath = null);
 
 /// <summary>A named armor group and its nominal thickness in millimeters.</summary>
 public readonly record struct ArmorGroup(string Name, double ThicknessMm);

@@ -121,6 +121,9 @@ public sealed class InstalledGameMetadataProviderTests
         Assert.IsTrue(byNumber.IsSuccess);
         Assert.AreEqual("Rockfield", byName.Value!.DisplayName);
         Assert.AreEqual(byName.Value, byNumber.Value);
+        Assert.AreEqual(
+            "17_karelia_ka/17_karelia_ka.sc2",
+            byName.Value.SceneResourcePath);
         Assert.IsNull(byName.Value.WorldMinX);
         Assert.IsNull(byName.Value.WorldMaxX);
         Assert.IsNull(byName.Value.WorldMinZ);

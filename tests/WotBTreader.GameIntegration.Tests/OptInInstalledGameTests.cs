@@ -361,6 +361,9 @@ public sealed class OptInInstalledGameTests
         Assert.AreEqual(WotBTreader.Core.TankClass.Medium, vehicle.Value.TankClass);
         Assert.IsTrue(map.IsSuccess, map.Error?.Message);
         Assert.AreEqual("karelia", map.Value!.MapId);
+        Assert.AreEqual(
+            "17_karelia_ka/17_karelia_ka.sc2",
+            map.Value.SceneResourcePath);
 
         // The ground-truth replay's viewpoint tank: GB08_Churchill_I (uk list
         // index 11) → descriptor (11 << 8) | 81 = 2897. Before the country-id

@@ -166,6 +166,13 @@ When boundaries are available for a map, positions are normalised against the
 full map extent for stable minimap projection regardless of which area of the
 map a particular battle covered.
 
+Decoded numeric arena IDs are resolved through the exact-build installed map
+metadata before a texture is selected. `MapMetadata.SceneResourcePath`
+preserves the relative `maps.yaml.dvpl` `localName`; `MinimapTextureService`
+reduces that trusted scene path to one validated name-based minimap folder,
+preserving numeric variants such as `desert_train_02`. Unknown numeric IDs and
+invalid folder components fail closed to the dots-only panel.
+
 The community computes boundaries by observing extreme positions across
 thousands of replays. When boundaries are unavailable, `PlotTransform` falls
 back to per-session min/max fitting.

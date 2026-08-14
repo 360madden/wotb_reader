@@ -417,7 +417,8 @@ public sealed class InstalledGameMetadataProvider : IInstalledGameMetadataProvid
                         WorldMinZ: null,
                         WorldMaxZ: null,
                         context.Identity.ProductVersion,
-                        CombineHashes(definition.DefinitionHash, localizationHash));
+                        CombineHashes(definition.DefinitionHash, localizationHash),
+                        definition.LocalName);
 
                     maps.TryAdd(definition.MapId, metadata);
                     if (definition.NumericId is int numericId)

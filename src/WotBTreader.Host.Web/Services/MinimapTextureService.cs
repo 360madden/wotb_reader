@@ -3,7 +3,6 @@ using WotBTreader.Application.Game;
 using WotBTreader.Application.Results;
 using WotBTreader.Core;
 using WotBTreader.GameIntegration.Dvpl;
-using WotBTreader.GameIntegration.Discovery;
 
 namespace WotBTreader.Host.Web.Services;
 
@@ -13,17 +12,21 @@ namespace WotBTreader.Host.Web.Services;
 /// </summary>
 internal sealed class MinimapTextureService : IDisposable
 {
-    private readonly IGameInstallationDiscovery _discovery;
+    private const int MaximumFolderLength = 128;
+
+    private readonly IInstalledGameMetadataProvider _metadataProvider;
     private readonly IDvplReader _dvplReader;
     private readonly object _gate = new();
     private readonly Dictionary<string, CacheEntry> _cache = new(StringComparer.OrdinalIgnoreCase);
-    private InstalledGameIdentity? _lastIdentity;
+    private GameMetadataContext? _lastContext;
 
     public MinimapTextureService(
-        IGameInstallationDiscovery discovery,
+        IInstalledGameMetadataProvider metadataProvider,
         IDvplReader dvplReader)
     {
-        _discovery = discovery;
+        ArgumentNullException.ThrowIfNull(metadataProvider);
+        ArgumentNullException.ThrowIfNull(dvplReader);
+        _metadataProvider = metadataProvider;
         _dvplReader = dvplReader;
     }
 
@@ -38,26 +41,30 @@ internal sealed class MinimapTextureService : IDisposable
         if (string.IsNullOrWhiteSpace(mapId))
             return null;
 
-        string folder = MapMinimapFolder(mapId);
+        ResolvedMinimap? resolved = await ResolveMinimapAsync(mapId, cancellationToken);
+        if (resolved is null)
+            return null;
 
-        // Check cache, revalidating when the game identity changes.
-        InstalledGameIdentity? identity = await ResolveIdentityAsync(cancellationToken);
         lock (_gate)
         {
-            if (_cache.TryGetValue(folder, out CacheEntry? entry) &&
-                identity is not null &&
-                entry.ExecutableSha256 == identity.ExecutableSha256)
+            if (_cache.TryGetValue(resolved.Folder, out CacheEntry? entry) &&
+                entry.ExecutableSha256 == resolved.Identity.ExecutableSha256)
             {
                 return entry.PngBytes;
             }
         }
 
-        byte[]? pngBytes = await LoadMinimapAsync(folder, identity, cancellationToken);
-        if (pngBytes is not null && identity is not null)
+        byte[]? pngBytes = await LoadMinimapAsync(
+            resolved.Folder,
+            resolved.Identity,
+            cancellationToken);
+        if (pngBytes is not null)
         {
             lock (_gate)
             {
-                _cache[folder] = new CacheEntry(pngBytes, identity.ExecutableSha256);
+                _cache[resolved.Folder] = new CacheEntry(
+                    pngBytes,
+                    resolved.Identity.ExecutableSha256);
             }
         }
 
@@ -72,19 +79,89 @@ internal sealed class MinimapTextureService : IDisposable
         }
     }
 
-    private async ValueTask<InstalledGameIdentity?> ResolveIdentityAsync(CancellationToken cancellationToken)
+    private async ValueTask<ResolvedMinimap?> ResolveMinimapAsync(
+        string mapId,
+        CancellationToken cancellationToken)
     {
-        if (_lastIdentity is not null)
-            return _lastIdentity;
-
-        OperationResult<InstalledGameIdentity> result =
-            await _discovery.DiscoverAsync(cancellationToken);
-        if (result.IsSuccess)
+        GameMetadataContext? context;
+        lock (_gate)
         {
-            _lastIdentity = result.Value;
+            context = _lastContext;
         }
 
-        return _lastIdentity;
+        if (context is null)
+        {
+            context = await ProbeContextAsync(cancellationToken);
+            if (context is null)
+                return null;
+        }
+
+        OperationResult<MapMetadata> mapResult = await _metadataProvider
+            .ResolveMapAsync(context, mapId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!mapResult.IsSuccess &&
+            string.Equals(
+                mapResult.Error?.Code,
+                "game.metadata.context_stale",
+                StringComparison.Ordinal))
+        {
+            context = await ProbeContextAsync(cancellationToken, replaceExisting: true);
+            if (context is null)
+                return null;
+
+            mapResult = await _metadataProvider
+                .ResolveMapAsync(context, mapId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        string folderSource;
+        if (mapResult.IsSuccess && mapResult.Value is MapMetadata metadata)
+        {
+            folderSource = metadata.SceneResourcePath ?? metadata.MapId;
+        }
+        else
+        {
+            // Preserve support for already-name-based callers, but never guess
+            // a numeric arena mapping when installed metadata cannot resolve it.
+            string trimmed = mapId.Trim();
+            if (trimmed.Length == 0 || trimmed.All(IsAsciiDigit))
+                return null;
+
+            folderSource = trimmed;
+        }
+
+        string? folder = MapMinimapFolder(folderSource);
+        return folder is null
+            ? null
+            : new ResolvedMinimap(folder, context.Identity);
+    }
+
+    private async ValueTask<GameMetadataContext?> ProbeContextAsync(
+        CancellationToken cancellationToken,
+        bool replaceExisting = false)
+    {
+        if (!replaceExisting)
+        {
+            lock (_gate)
+            {
+                if (_lastContext is not null)
+                    return _lastContext;
+            }
+        }
+
+        OperationResult<GameMetadataContext> result = await _metadataProvider
+            .ProbeAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (result.IsSuccess)
+        {
+            lock (_gate)
+            {
+                _lastContext = result.Value;
+            }
+        }
+
+        return result.IsSuccess ? result.Value : null;
     }
 
     private async ValueTask<byte[]?> LoadMinimapAsync(
@@ -128,37 +205,42 @@ internal sealed class MinimapTextureService : IDisposable
     }
 
     /// <summary>
-    /// Maps a map ID like "02_desert_train_dt" to a minimap folder name like "desert_train".
-    /// Strips the leading numeric prefix and the trailing 2-letter suffix. Falls back
-    /// to trying progressively shorter suffixes for maps with non-standard naming.
+    /// Maps an installed scene path like
+    /// <c>02_desert_train_dt/02_desert_train_dt.sc2</c> to the matching minimap
+    /// folder. Numeric variants are preserved (for example,
+    /// <c>desert_train_02</c>), and invalid path components fail closed.
     /// </summary>
-    internal static string MapMinimapFolder(string mapId)
+    internal static string? MapMinimapFolder(string sceneResourcePath)
     {
-        ReadOnlySpan<char> span = mapId.AsSpan().Trim();
+        string normalized = sceneResourcePath.Trim().Replace('\\', '/');
+        if (normalized.Length == 0)
+            return null;
+
+        int separator = normalized.LastIndexOf('/');
+        ReadOnlySpan<char> span = normalized.AsSpan(separator + 1);
+        int extension = span.LastIndexOf('.');
+        if (extension > 0)
+            span = span[..extension];
 
         // Skip leading digits and underscore: "02_"
         int start = 0;
-        while (start < span.Length && (char.IsDigit(span[start]) || span[start] == '_'))
+        while (start < span.Length && (IsAsciiDigit(span[start]) || span[start] == '_'))
             start++;
 
-        // Try stripping trailing underscore-separated segments until we hit a
-        // reasonable name. Standard maps have a 2-char suffix ("_dt", "_ma"),
-        // but some have longer suffixes ("_night", "_old") or extra segments.
-        int end = span.Length;
+        if (start >= span.Length)
+            return null;
 
-        // Try: strip last underscore-separated segment if it looks like a suffix
-        // (short, non-numeric, or a known qualifier).
+        // Strip localization/scene suffixes while preserving a numeric map
+        // variant such as "_02" because the installed minimap may use it.
+        int end = span.Length;
         while (end > start)
         {
-            // Find last underscore before end.
             int lastUnderscore = span[..end].LastIndexOf('_');
             if (lastUnderscore <= start)
                 break;
 
             ReadOnlySpan<char> suffix = span[(lastUnderscore + 1)..end];
-            // If the suffix looks like a short code (2-3 chars), numeric variant ("01"),
-            // or a known qualifier ("night", "old"), strip it and try again.
-            if (suffix.Length <= 3 || IsAllDigits(suffix) || IsQualifier(suffix))
+            if (IsSceneSuffix(suffix) || IsQualifier(suffix))
             {
                 end = lastUnderscore;
             }
@@ -168,17 +250,35 @@ internal sealed class MinimapTextureService : IDisposable
             }
         }
 
-        if (start >= end)
-            return new string(span).ToLowerInvariant();
+        ReadOnlySpan<char> folder = span[start..end];
+        if (folder.Length is 0 or > MaximumFolderLength)
+            return null;
 
-        return span[start..end].ToString().ToLowerInvariant();
+        foreach (char character in folder)
+        {
+            if (!IsAsciiLetter(character) &&
+                !IsAsciiDigit(character) &&
+                character is not '_' and not '-')
+            {
+                return null;
+            }
+        }
+
+        return folder.ToString().ToLowerInvariant();
     }
 
-    private static bool IsAllDigits(ReadOnlySpan<char> s)
+    private static bool IsSceneSuffix(ReadOnlySpan<char> suffix)
     {
-        foreach (char c in s)
-            if (!char.IsDigit(c)) return false;
-        return s.Length > 0;
+        if (suffix.Length is < 2 or > 3)
+            return false;
+
+        foreach (char character in suffix)
+        {
+            if (!IsAsciiLetter(character))
+                return false;
+        }
+
+        return true;
     }
 
     private static bool IsQualifier(ReadOnlySpan<char> s)
@@ -186,5 +286,12 @@ internal sealed class MinimapTextureService : IDisposable
         return s is "night" or "old" or "day";
     }
 
+    private static bool IsAsciiLetter(char character) =>
+        character is >= 'a' and <= 'z' or >= 'A' and <= 'Z';
+
+    private static bool IsAsciiDigit(char character) =>
+        character is >= '0' and <= '9';
+
+    private sealed record ResolvedMinimap(string Folder, InstalledGameIdentity Identity);
     private sealed record CacheEntry(byte[] PngBytes, ContentHash ExecutableSha256);
 }
