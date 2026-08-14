@@ -1,5 +1,5 @@
 {
-  "description": "Sol-only model guardrails for root sessions and subagent spawns.",
+  "description": "Sol-only model and reviewed-role guardrails for root sessions and subagent spawns.",
   "hooks": {
     "SessionStart": [
       {

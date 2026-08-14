@@ -21,8 +21,10 @@ regenerate this file in the same change that adds, renames, or removes files.
 .agents/types/agent-definition.ts
 .agents/types/tools.ts
 .agents/types/util-types.ts
+.codex/agents/code_reviewer.toml
 .codex/agents/decoder_auditor.toml
 .codex/agents/default.toml
+.codex/agents/evidence_analyst.toml
 .codex/agents/explorer.toml
 .codex/agents/implementer_glue.toml
 .codex/agents/memory_researcher.toml
@@ -71,6 +73,7 @@ docs/operations/blockers/2026-07-26-replay-decoder.md
 docs/operations/blockers/README.md
 docs/operations/cam001-v7-evidence-template.md
 docs/operations/cmd-wrapper-gotchas.md
+docs/operations/codex-agent-roster.md
 docs/operations/g0-offset-table-draft.md
 docs/operations/g0-operator-checklist.md
 docs/operations/g0-post-publication-regression.md
@@ -304,6 +307,7 @@ docs/operations/handoffs/2026-08-13-pen-per-face-thickness-not-feasible.md
 docs/operations/handoffs/2026-08-13-pen-shell-selector-scoring-harness-and-hud-polish.md
 docs/operations/handoffs/2026-08-13-pen-shotimpact-attacker-attribution-decoded.md
 docs/operations/handoffs/2026-08-14-batch-rendezvous-and-witness-hardening.md
+docs/operations/handoffs/2026-08-14-codex-agent-roster-completeness.md
 docs/operations/handoffs/2026-08-14-codex-reasoning-policy-correction.md
 docs/operations/handoffs/2026-08-14-codex-sol-agent-policy.md
 docs/operations/handoffs/2026-08-14-item7-batch-measurement-persistence.md

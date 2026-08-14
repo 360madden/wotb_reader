@@ -83,16 +83,18 @@ Assert-UniqueStringAssignment $configText 'default_subagent_model' $allowedModel
 Assert-UniqueStringAssignment $configText 'default_subagent_reasoning_effort' 'medium' '.codex/config.toml'
 
 $expectedRoles = [ordered]@{
-    default          = 'medium'
-    worker           = 'medium'
-    explorer         = 'low'
-    systems_analyst  = 'high'
-    strategist       = 'xhigh'
-    memory_researcher = 'max'
-    verifier         = 'low'
-    implementer_glue = 'medium'
-    decoder_auditor  = 'high'
-    security_auditor = 'xhigh'
+    default           = @{ Effort = 'medium'; Sandbox = 'workspace-write' }
+    worker            = @{ Effort = 'medium'; Sandbox = 'workspace-write' }
+    explorer          = @{ Effort = 'low'; Sandbox = 'read-only' }
+    code_reviewer     = @{ Effort = 'high'; Sandbox = 'read-only' }
+    evidence_analyst  = @{ Effort = 'high'; Sandbox = 'read-only' }
+    systems_analyst   = @{ Effort = 'high'; Sandbox = 'read-only' }
+    strategist        = @{ Effort = 'xhigh'; Sandbox = 'read-only' }
+    memory_researcher = @{ Effort = 'max'; Sandbox = 'read-only' }
+    verifier          = @{ Effort = 'low'; Sandbox = 'workspace-write' }
+    implementer_glue  = @{ Effort = 'medium'; Sandbox = 'workspace-write' }
+    decoder_auditor   = @{ Effort = 'high'; Sandbox = 'read-only' }
+    security_auditor  = @{ Effort = 'xhigh'; Sandbox = 'read-only' }
 }
 
 $agentFiles = @(Get-ChildItem -LiteralPath $agentsRoot -File -Filter '*.toml')
@@ -103,12 +105,18 @@ if ($agentFiles.Count -ne $expectedRoles.Count) {
 foreach ($role in $expectedRoles.Keys) {
     $agentPath = Join-Path $agentsRoot "$role.toml"
     $agentText = Get-RequiredText -Path $agentPath
+    $roleSpec = $expectedRoles[$role]
     Assert-UniqueStringAssignment $agentText 'name' $role ".codex/agents/$role.toml"
     Assert-UniqueStringAssignment $agentText 'model' $allowedModel ".codex/agents/$role.toml"
     Assert-UniqueStringAssignment `
         $agentText `
         'model_reasoning_effort' `
-        $expectedRoles[$role] `
+        $roleSpec.Effort `
+        ".codex/agents/$role.toml"
+    Assert-UniqueStringAssignment `
+        $agentText `
+        'sandbox_mode' `
+        $roleSpec.Sandbox `
         ".codex/agents/$role.toml"
 }
 
@@ -125,6 +133,19 @@ if ($null -eq $hooks.hooks.SessionStart -or $null -eq $hooks.hooks.PreToolUse) {
 }
 
 [void] (Get-RequiredText -Path $hookScript)
+foreach ($role in $expectedRoles.Keys) {
+    $hookInput = @{
+        hook_event_name = 'PreToolUse'
+        model           = $allowedModel
+        tool_name       = 'spawn_agent'
+        tool_input      = @{ agent_type = $role; task_name = 'policy_check' }
+    } | ConvertTo-Json -Compress -Depth 5
+    $hookOutput = & $hookScript -InputJson $hookInput
+    if ($null -ne $hookOutput) {
+        throw "The spawn hook denied reviewed role '$role': $hookOutput"
+    }
+}
+
 $guideText = Get-RequiredText -Path $agentsGuide
 if ($guideText -notmatch 'only allowed baseline and subagent model is \*\*`gpt-5\.6-sol`\*\*') {
     throw 'AGENTS.md does not contain the canonical Sol-only policy statement.'
@@ -132,4 +153,5 @@ if ($guideText -notmatch 'only allowed baseline and subagent model is \*\*`gpt-5
 
 Write-Host (
     "Codex agent config check passed: model=$allowedModel; " +
-    'lead=medium; plan=xhigh; roles=low/medium/high/xhigh/max; max-subagents=2.')
+    'lead=medium; plan=xhigh; roles=12 low/medium/high/xhigh/max; ' +
+    'sandboxes=read-only/workspace-write; max-subagents=2.')

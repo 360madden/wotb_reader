@@ -28,20 +28,25 @@ or another model in a spawn request, saved profile, skill, or repository
 instruction. A different model requires a new explicit owner instruction and a
 reviewed policy update before use.
 
-| Agent | Effort | Use for |
-|---|---:|---|
-| lead / `default` / `worker` | `medium` | routing, bounded implementation, integration of frozen decisions |
-| `explorer` | `low` | one read-only codebase question or evidence lookup |
-| `verifier` | `low` | smallest sufficient focused check after a unit |
-| `implementer_glue` | `medium` | bounded UI, DTO, HTTP, tests, or docs glue |
-| `systems_analyst` | `high` | difficult cross-project trace or multi-file root cause |
-| `decoder_auditor` | `high` | replay, binary, decoder, or contract evidence audit |
-| `strategist` | `xhigh` | long-range product, architecture, or experiment-campaign planning |
-| `security_auditor` | `xhigh` | loopback, mutation, privacy, ACL, or fail-closed audit |
-| `memory_researcher` | `max` | unknown offsets/root anchors or failed/conflicting reverse-engineering hypotheses |
+| Agent | Effort | Sandbox | Use for |
+|---|---:|---|---|
+| lead / `default` / `worker` | `medium` | workspace-write | routing, bounded implementation, integration of frozen decisions |
+| `explorer` | `low` | read-only | one codebase question or evidence lookup |
+| `verifier` | `low` | workspace-write | smallest focused check; writes ignored build outputs only |
+| `implementer_glue` | `medium` | workspace-write | bounded UI, DTO, HTTP, tests, or docs glue |
+| `code_reviewer` | `high` | read-only | correctness review of a diff, branch, or defined scope |
+| `evidence_analyst` | `high` | read-only | clock/scorer/experiment and cross-replay evidence adjudication |
+| `systems_analyst` | `high` | read-only | difficult cross-project trace or multi-file root cause |
+| `decoder_auditor` | `high` | read-only | replay, binary, decoder, or contract evidence audit |
+| `strategist` | `xhigh` | read-only | long-range product, architecture, or experiment-campaign planning |
+| `security_auditor` | `xhigh` | read-only | loopback, mutation, privacy, ACL, or fail-closed audit |
+| `memory_researcher` | `max` | read-only | unknown offsets/root anchors or failed/conflicting reverse-engineering hypotheses |
 
 Repository sources of truth are `.codex/config.toml`, `.codex/agents/*.toml`,
 `.codex/hooks.json`, and `scripts/codex-agent-config-check.ps1`.
+The stable role boundaries and examples are in
+`docs/operations/codex-agent-roster.md`; keep detailed guidance there instead
+of growing this always-loaded file.
 
 - Route by uncertainty and consequence, not file type. A known offset-chain
   implementation is medium; proving a known chain is high; discovering an
@@ -60,6 +65,9 @@ Repository sources of truth are `.codex/config.toml`, `.codex/agents/*.toml`,
 - Default to the lead agent for bounded work. Delegate one specialist whenever
   a task matches a high/xhigh/max lane that the medium lead should not absorb.
   Use multiple agents only for genuinely independent workstreams.
+- Choose exactly one primary specialist for one question. Do not stack roles
+  merely because a task touches several modules; add a second role only for a
+  separate review dimension or an independent workstream.
 - Do not delegate trivial answers, one-file mechanical edits, serial
   dependencies, or work whose coordination cost is likely higher than doing it
   once on the lead.
@@ -130,6 +138,8 @@ Wargaming statistics. Do not apply the private-data boundary to those facts.
 | Design interview explicitly requested | `.agents/skills/grill-me/SKILL.md` | no implementation before shared understanding |
 | Long-range roadmap, architecture, or experiment campaign | `strategist` (`xhigh`) plus current handoff/roadmap/blockers | strategist does not implement; lead owns the decision |
 | Difficult cross-project causal trace | `systems_analyst` (`high`) | analyst proves the path and rejected hypotheses before implementation |
+| Local diff, branch, or bounded correctness review | `code_reviewer` (`high`) | reviewer reports concrete findings and does not edit |
+| Live/decoded experiment, scorer, clock alignment, or cross-replay claim | `evidence_analyst` (`high`) | immutable artifacts only; no artifact mutation, live action, or promotion |
 | Replay decode | `offline/replay-format.md`; `decoder_auditor` for audit | never execute pickle or ship dynamic decoder DLLs |
 | Telemetry data flow | `offline/data-flow.md` | never mutate an immutable decode run |
 | Unknown offset, root anchor, pointer ownership, vtable/AOB, or conflicting memory evidence | `memory_researcher` (`max`) plus memory docs/ledger | no live action or promotion; return a bounded proof protocol to the lead |
@@ -170,8 +180,9 @@ and ASCII-only. See `docs/operations/cmd-wrapper-gotchas.md` for batch/cmd work.
 
 ## Last verified
 
-- 2026-08-14 — corrected Sol-only effort ladder and routing verified: Plan and
-  strategy xhigh; systems/decoder high; unknown offset/root-anchor research
-  max; bounded work medium; lookup/verification low. Full repository gate:
-  1,206 tests passed, 7 local opt-in skips, 0 build warnings, 0 errors; 8 policy
-  tests passed.
+- 2026-08-14 — complete 12-role Sol-only roster and effort ladder verified:
+  Plan/strategy and security xhigh; correctness/evidence/systems/decoder high;
+  unknown offset/root-anchor research max; bounded work medium;
+  lookup/verification low. Every role has a checked read-only or
+  workspace-write sandbox. Full repository gate: 1,206 tests passed, 7 local
+  opt-in skips, 0 build warnings, 0 errors; 10 policy tests passed.

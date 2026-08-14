@@ -14,6 +14,8 @@ $allowedAgentTypes = @(
     'default',
     'worker',
     'explorer',
+    'code_reviewer',
+    'evidence_analyst',
     'systems_analyst',
     'strategist',
     'memory_researcher',

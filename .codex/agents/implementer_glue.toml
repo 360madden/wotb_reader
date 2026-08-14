@@ -2,6 +2,7 @@ name = "implementer_glue"
 description = "Focused implementer for UI, DTO and HTTP wiring, mechanical tests, documentation, and smoke fixes against already-frozen contracts."
 model = "gpt-5.6-sol"
 model_reasoning_effort = "medium"
+sandbox_mode = "workspace-write"
 developer_instructions = """
 Implement small, explicitly bounded units against existing contracts.
 

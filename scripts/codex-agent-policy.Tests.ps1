@@ -62,6 +62,28 @@ Describe 'Codex Sol-only model policy' {
         $result | Should BeNullOrEmpty
     }
 
+    It 'allows the high-effort correctness reviewer without a spawn override' {
+        $result = Invoke-ModelHook @{
+            hook_event_name = 'PreToolUse'
+            model           = 'gpt-5.6-sol'
+            tool_name       = 'spawn_agent'
+            tool_input      = @{ agent_type = 'code_reviewer'; task_name = 'review_diff' }
+        }
+
+        $result | Should BeNullOrEmpty
+    }
+
+    It 'allows the high-effort evidence analyst without a spawn override' {
+        $result = Invoke-ModelHook @{
+            hook_event_name = 'PreToolUse'
+            model           = 'gpt-5.6-sol'
+            tool_name       = 'spawn_agent'
+            tool_input      = @{ agent_type = 'evidence_analyst'; task_name = 'adjudicate' }
+        }
+
+        $result | Should BeNullOrEmpty
+    }
+
     It 'allows the maximum-effort memory researcher without a spawn override' {
         $result = Invoke-ModelHook @{
             hook_event_name = 'PreToolUse'
