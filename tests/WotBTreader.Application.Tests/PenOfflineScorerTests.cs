@@ -219,6 +219,60 @@ public sealed class PenOfflineScorerTests
     }
 
     [TestMethod]
+    public void NormalizeAim_NormalizesNonUnitAndRejectsDegenerate()
+    {
+        AimRay? unit = PenOfflineScorer.NormalizeAim(new AimRay(0, 0, 0, 0, 0, 2));
+        Assert.IsNotNull(unit);
+        Assert.AreEqual(1.0, unit.Value.DirectionZ, 1e-9);
+        Assert.AreEqual(0.0, unit.Value.DirectionY, 1e-9);
+        Assert.AreEqual(0.0, unit.Value.DirectionX, 1e-9);
+
+        Assert.IsNull(PenOfflineScorer.NormalizeAim(new AimRay(0, 0, 0, 0, 0, 0)));
+        Assert.IsNull(PenOfflineScorer.NormalizeAim(new AimRay(0, 0, 0, double.NaN, 0, 0)));
+    }
+
+    [TestMethod]
+    public async Task DegenerateAimOverrideFallsBackToCenterLine()
+    {
+        FakePenetrationData data = new();
+        data.Add("uk:A", armor: new TankArmor(20, 20, 20, 20), mesh: FrontQuad(), penMm: 200);
+        data.Add("uk:V", armor: new TankArmor(50, 50, 50, 50), mesh: FrontQuad(), penMm: 0);
+
+        ParticipantId attackerId = ParticipantId.New();
+        ParticipantId victimId = ParticipantId.New();
+        ReplayDecodeProjection projection = Projection(
+            participants:
+            [
+                Participant(entityId: 1, tankId: "uk:A", tankName: "Attacker Tank", attackerId),
+                Participant(entityId: 2, tankId: "uk:V", tankName: "Victim Tank", victimId),
+            ],
+            positions:
+            [
+                Sample(entityId: 1, seconds: 5.0, x: 0, z: -100),
+                Sample(entityId: 2, seconds: 5.0, x: 0, z: 0),
+            ],
+            events:
+            [
+                ShotEvent(sequence: 1, seconds: 5.0, attacker: 1, victim: 2, penetrated: true),
+            ],
+            viewpointParticipantId: attackerId);
+
+        // A zero-length direction cannot be normalized; the scorer must fall
+        // through to the center-line (head-on front hit => Pen), never NaN.
+        AimSample[] overrides =
+        [
+            new(TimeSpan.FromSeconds(5.0), new AimRay(0, 1.5, -100, 0, 0, 0)),
+        ];
+
+        PenOfflineScorer scorer = new(data);
+        OfflinePenScoreReport report = await scorer.ScoreAsync(projection, overrides, CancellationToken.None);
+
+        Assert.AreEqual(0, report.SkippedShots);
+        Assert.AreEqual(1, report.Validation.ClassifiedShots);
+        Assert.AreEqual(PenetrationBand.Pen, report.Validation.Rows.Single().Band);
+    }
+
+    [TestMethod]
     public async Task IgnoresAimOverrideForNonViewpointShot()
     {
         FakePenetrationData data = new();

@@ -107,6 +107,8 @@ internal sealed class ManagedReplayArtifactStager(
     private const int MaximumNameAttempts = 8;
     private const int BufferSize = 64 * 1024;
 
+    private int _orphansScavenged;
+
     private readonly ISourceArtifactStore _artifactStore =
         artifactStore ?? throw new ArgumentNullException(nameof(artifactStore));
     private readonly GameIntegrationOptions _options =
@@ -133,8 +135,14 @@ internal sealed class ManagedReplayArtifactStager(
 
         // Recover orphaned stage files + flat GUID clones left by a previous
         // host that was killed before its lease was disposed (the graceful
-        // dispose path cleans them; this covers the hard-kill case).
-        ReplayLaunchStagingScavenger.Scavenge(_options.ReplayLaunchStagingRoot);
+        // dispose path cleans them; this covers the hard-kill case). Scavenge
+        // ONCE per stager lifetime: a later stage in the SAME process may run
+        // while an earlier launch's lease is still active, so sweeping again
+        // would delete that active lease's staging file.
+        if (Interlocked.Exchange(ref _orphansScavenged, 1) == 0)
+        {
+            ReplayLaunchStagingScavenger.Scavenge(_options.ReplayLaunchStagingRoot);
+        }
 
         OperationResult<SourceArtifact> artifactResult;
         try

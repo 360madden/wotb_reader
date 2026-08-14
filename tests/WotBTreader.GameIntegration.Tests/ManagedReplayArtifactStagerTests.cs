@@ -140,6 +140,55 @@ public sealed class ManagedReplayArtifactStagerTests
     }
 
     [TestMethod]
+    public async Task StageAsync_ScavengesOrphansOncePerStagerLifetime()
+    {
+        string root = Path.Combine(
+            Path.GetTempPath(),
+            "wotb-stage-once-" + Guid.NewGuid().ToString("N"));
+        string staging = Path.Combine(
+            root,
+            "replays",
+            ReplayLaunchStagingPaths.StagingFolderName);
+        Directory.CreateDirectory(staging);
+        try
+        {
+            string orphan1 = Path.Combine(staging, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.wotbreplay");
+            System.IO.File.WriteAllText(orphan1, "orphan");
+
+            var platform = new Platform();
+            var stager = new ManagedReplayArtifactStager(
+                new Store(Artifact([1]), [1]),
+                new GameIntegrationOptions { ReplayLaunchStagingRoot = staging, MaxReplayLaunchBytes = 16 },
+                platform,
+                new Names("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.wotbreplay"));
+
+            // The first stage scavenges the pre-existing orphan.
+            OperationResult<ManagedReplayArtifactLease> first = await stager.StageAsync(ArtifactId, CancellationToken.None);
+            Assert.IsTrue(first.IsSuccess);
+            Assert.IsFalse(System.IO.File.Exists(orphan1));
+
+            // A new orphan appears before the second stage. The once-guard
+            // must leave it alone: a second launch in the same process may
+            // still hold the first launch's active lease.
+            string orphan2 = Path.Combine(staging, "cccccccccccccccccccccccccccccccc.wotbreplay");
+            System.IO.File.WriteAllText(orphan2, "orphan2");
+            OperationResult<ManagedReplayArtifactLease> second = await stager.StageAsync(ArtifactId, CancellationToken.None);
+            Assert.IsTrue(second.IsSuccess, "second failed: " + second.Error?.Code + " " + second.Error?.Message);
+            Assert.IsTrue(System.IO.File.Exists(orphan2), "a later stage must not re-scavenge");
+
+            await first.Value!.DisposeAsync();
+            await second.Value!.DisposeAsync();
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [TestMethod]
     public async Task StageAsync_ReturnsPinnedLeaseWithMetadataAndIdempotentCleanup()
     {
         byte[] bytes = [1, 2, 3];
@@ -192,17 +241,51 @@ public sealed class ManagedReplayArtifactStagerTests
     {
         private readonly OperationResult<SourceArtifact> _get;
         private readonly Stream? _stream;
+        private readonly byte[]? _reusableBytes;
         private readonly ApplicationError? _openError;
         public int OpenCalls { get; private set; }
         public Store(SourceArtifact? artifact = null, byte[]? bytes = null, ApplicationError? error = null, ApplicationError? openError = null)
-            : this(artifact, bytes is null ? null : new MemoryStream(bytes), error, openError) { }
-        public Store(SourceArtifact artifact, Stream stream) : this(artifact, stream, null, null) { }
-        private Store(SourceArtifact? artifact, Stream? stream, ApplicationError? error, ApplicationError? openError)
-        { _get = error is null ? OperationResult.Success(artifact!) : OperationResult.Failure<SourceArtifact>(error); _stream = stream; _openError = openError; }
+            : this(artifact, stream: null, reusableBytes: bytes, error, openError) { }
+        public Store(SourceArtifact artifact, Stream stream) : this(artifact, stream, reusableBytes: null, null, null) { }
+        private Store(
+            SourceArtifact? artifact,
+            Stream? stream,
+            byte[]? reusableBytes,
+            ApplicationError? error,
+            ApplicationError? openError)
+        {
+            _get = error is null ? OperationResult.Success(artifact!) : OperationResult.Failure<SourceArtifact>(error);
+            _stream = stream;
+            _reusableBytes = reusableBytes;
+            _openError = openError;
+        }
+
         public ValueTask<OperationResult<SourceImportOutcome>> ImportAsync(SourceImportRequest request, CancellationToken cancellationToken) => throw new NotSupportedException();
         public ValueTask<OperationResult<SourceArtifact>> GetAsync(SourceArtifactId artifactId, CancellationToken cancellationToken) => ValueTask.FromResult(_get);
         public ValueTask<OperationResult<Stream>> OpenReadAsync(SourceArtifactId artifactId, CancellationToken cancellationToken)
-        { OpenCalls++; return ValueTask.FromResult(_openError is null ? OperationResult.Success(_stream!) : OperationResult.Failure<Stream>(_openError)); }
+        {
+            OpenCalls++;
+            if (_openError is not null)
+            {
+                return ValueTask.FromResult(OperationResult.Failure<Stream>(_openError));
+            }
+
+            // Byte-backed stores hand out a fresh stream per open (a real
+            // store never reuses a consumed stream); Stream-backed stores
+            // (throwing/cancelling fixtures) keep their single instance.
+            if (_reusableBytes is not null)
+            {
+                return ValueTask.FromResult(OperationResult.Success<Stream>(new MemoryStream(_reusableBytes)));
+            }
+
+            if (_stream?.CanSeek == true)
+            {
+                _stream.Position = 0;
+            }
+
+            return ValueTask.FromResult(OperationResult.Success(_stream!));
+        }
+
         public ValueTask<IReadOnlyList<string>> ListUnreferencedContentHashesAsync(CancellationToken cancellationToken) => ValueTask.FromResult<IReadOnlyList<string>>([]);
     }
 

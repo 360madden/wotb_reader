@@ -193,7 +193,11 @@ public sealed class PenOfflineScorer : IPenOfflineScorer
                 AimSample? overrideSample = FindAimAtOrBefore(aimSamples, ev.ReplayTime);
                 if (overrideSample is { } sample)
                 {
-                    aim = sample.Aim;
+                    // The pen math assumes a UNIT direction (the incidence
+                    // cosine is a raw dot product), so a capture tool's
+                    // non-unit ray is normalized here; a degenerate ray falls
+                    // through to the center-line proxy.
+                    aim = NormalizeAim(sample.Aim);
                 }
             }
 
@@ -328,6 +332,22 @@ public sealed class PenOfflineScorer : IPenOfflineScorer
         return new AimRay(
             originX, originY, originZ,
             dx / length, dy / length, dz / length);
+    }
+
+    internal static AimRay? NormalizeAim(AimRay aim)
+    {
+        double length = Math.Sqrt(
+            (aim.DirectionX * aim.DirectionX)
+            + (aim.DirectionY * aim.DirectionY)
+            + (aim.DirectionZ * aim.DirectionZ));
+        if (!double.IsFinite(length) || length <= 1e-6)
+        {
+            return null;
+        }
+
+        return new AimRay(
+            aim.OriginX, aim.OriginY, aim.OriginZ,
+            aim.DirectionX / length, aim.DirectionY / length, aim.DirectionZ / length);
     }
 
     private static long? ResolveViewpointEntityId(ReplayDecodeProjection projection)

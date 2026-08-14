@@ -20,24 +20,33 @@ internal static class ReplayLaunchStagingScavenger
     /// </summary>
     public static void Scavenge(string? stagingRoot)
     {
+        // Best-effort by contract: a scavenge must never fail the launch that
+        // triggered it, so unexpected failures are swallowed here rather than
+        // propagated to the caller.
+        try
+        {
+            ScavengeCore(stagingRoot);
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or DirectoryNotFoundException
+                or ArgumentException
+                or NotSupportedException
+                or PathTooLongException)
+        {
+            // A locked or unreadable directory is left for the next pass.
+        }
+    }
+
+    private static void ScavengeCore(string? stagingRoot)
+    {
         if (string.IsNullOrWhiteSpace(stagingRoot))
         {
             return;
         }
 
-        string root;
-        try
-        {
-            root = Path.GetFullPath(stagingRoot);
-        }
-        catch (Exception exception) when (
-            exception is ArgumentException
-                or NotSupportedException
-                or PathTooLongException)
-        {
-            return;
-        }
-
+        string root = Path.GetFullPath(stagingRoot);
         if (!Directory.Exists(root))
         {
             return;
@@ -60,21 +69,12 @@ internal static class ReplayLaunchStagingScavenger
 
     private static void DeleteGuidStageFiles(string directory)
     {
-        IEnumerable<string> files;
-        try
-        {
-            files = Directory.EnumerateFiles(
-                directory,
-                "*.wotbreplay",
-                SearchOption.TopDirectoryOnly);
-        }
-        catch (Exception exception) when (
-            exception is IOException
-                or UnauthorizedAccessException
-                or DirectoryNotFoundException)
-        {
-            return;
-        }
+        // Directory.GetFiles materializes the listing before any deletion, so
+        // removing a file cannot perturb the enumeration mid-pass.
+        string[] files = Directory.GetFiles(
+            directory,
+            "*.wotbreplay",
+            SearchOption.TopDirectoryOnly);
 
         foreach (string file in files)
         {
