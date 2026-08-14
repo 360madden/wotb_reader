@@ -113,6 +113,50 @@ function Test-OdOwnerOnlyDirectoryAcl([string]$Path) {
     }
 }
 
+function Confirm-OdOwnerOnlyFileAcl {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [ValidateRange(1, 10)]
+        [int]$MaxAttempts = 5,
+        [ValidateRange(0, 1000)]
+        [int]$DelayMilliseconds = 100
+    )
+
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        if (Test-OdOwnerOnlyFileAcl -Path $Path) {
+            return $true
+        }
+        if ($attempt -lt $MaxAttempts -and $DelayMilliseconds -gt 0) {
+            Start-Sleep -Milliseconds $DelayMilliseconds
+        }
+    }
+
+    return $false
+}
+
+function Confirm-OdOwnerOnlyDirectoryAcl {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [ValidateRange(1, 10)]
+        [int]$MaxAttempts = 5,
+        [ValidateRange(0, 1000)]
+        [int]$DelayMilliseconds = 100
+    )
+
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        if (Test-OdOwnerOnlyDirectoryAcl -Path $Path) {
+            return $true
+        }
+        if ($attempt -lt $MaxAttempts -and $DelayMilliseconds -gt 0) {
+            Start-Sleep -Milliseconds $DelayMilliseconds
+        }
+    }
+
+    return $false
+}
+
 function Set-OdOwnerOnlyFileAcl([string]$Path) {
     $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
     # icacls instead of .NET Set-Acl (BLK-0026 root cause): Set-Acl throws
@@ -148,7 +192,7 @@ function Write-OdCompletionMarker {
             New-Item -ItemType Directory -Path $dir -Force | Out-Null
         }
         Set-OdOwnerOnlyDirectoryAcl -Path $dir
-        if (-not (Test-OdOwnerOnlyDirectoryAcl -Path $dir)) {
+        if (-not (Confirm-OdOwnerOnlyDirectoryAcl -Path $dir)) {
             return $false
         }
         $fingerprint = Get-OdReplayFingerprint -ReplayPath $ReplayPath
@@ -170,7 +214,7 @@ function Write-OdCompletionMarker {
             $marker,
             (New-Object Text.UTF8Encoding($false)))
         Set-OdOwnerOnlyFileAcl -Path $markerPath
-        if (-not (Test-OdOwnerOnlyFileAcl -Path $markerPath)) {
+        if (-not (Confirm-OdOwnerOnlyFileAcl -Path $markerPath)) {
             Remove-Item -LiteralPath $markerPath -Force -ErrorAction SilentlyContinue
             return $false
         }

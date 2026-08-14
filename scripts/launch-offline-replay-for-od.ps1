@@ -540,7 +540,7 @@ try {
         New-Item -ItemType Directory -Path $launchMarkerDirectory | Out-Null
     }
     Set-OdOwnerOnlyDirectoryAcl -Path $launchMarkerDirectory
-    if (-not (Test-OdOwnerOnlyDirectoryAcl -Path $launchMarkerDirectory)) {
+    if (-not (Confirm-OdOwnerOnlyDirectoryAcl -Path $launchMarkerDirectory)) {
         Write-Od 'FAILED_launch_marker_directory_acl'
         exit 1
     }
@@ -551,7 +551,7 @@ try {
         $artifactId,
         (New-Object Text.UTF8Encoding($false)))
     Set-OdOwnerOnlyFileAcl -Path $launchMarker
-    if (-not (Test-OdOwnerOnlyFileAcl -Path $launchMarker)) {
+    if (-not (Confirm-OdOwnerOnlyFileAcl -Path $launchMarker)) {
         Remove-Item -LiteralPath $launchMarker -Force -ErrorAction SilentlyContinue
         Write-Od 'FAILED_launch_marker_acl'
         exit 1

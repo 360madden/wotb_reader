@@ -101,4 +101,41 @@ Describe 'od-replay-completion smoke tests' {
         ($completionIndex -ge 0) | Should Be $true
         ($probeIndex -gt $completionIndex) | Should Be $true
     }
+
+    It 'retries a transient directory ACL verification without weakening it' {
+        $script:directoryAclChecks = 0
+        Mock Test-OdOwnerOnlyDirectoryAcl {
+            $script:directoryAclChecks++
+            return $script:directoryAclChecks -ge 2
+        }
+
+        Confirm-OdOwnerOnlyDirectoryAcl `
+            -Path $script:tempReplay -MaxAttempts 3 -DelayMilliseconds 0 |
+            Should Be $true
+        $script:directoryAclChecks | Should Be 2
+    }
+
+    It 'fails closed when a file ACL never verifies' {
+        $script:fileAclChecks = 0
+        Mock Test-OdOwnerOnlyFileAcl {
+            $script:fileAclChecks++
+            return $false
+        }
+
+        Confirm-OdOwnerOnlyFileAcl `
+            -Path $script:tempReplay -MaxAttempts 3 -DelayMilliseconds 0 |
+            Should Be $false
+        $script:fileAclChecks | Should Be 3
+    }
+
+    It 'launcher confirms marker ACLs with the bounded retry helpers' {
+        $launcher = Join-Path $here 'launch-offline-replay-for-od.ps1'
+        $source = Get-Content -LiteralPath $launcher -Raw
+
+        ($source.Contains(
+                'Confirm-OdOwnerOnlyDirectoryAcl -Path $launchMarkerDirectory')) |
+            Should Be $true
+        ($source.Contains('Confirm-OdOwnerOnlyFileAcl -Path $launchMarker')) |
+            Should Be $true
+    }
 }

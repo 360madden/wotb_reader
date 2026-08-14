@@ -3,7 +3,7 @@
 **Purpose:** the durable, sequenced top-10 follow-up list for continued
 development. Anchored to `docs/operations/product-roadmap.md` (the forward
 plan), the ledger's *Next planned session* row, and the newest handoff.
-Refreshed after the Item-7 batch measurement persistence fix on 2026-08-14.
+Refreshed after the launch-marker ACL confirmation hardening on 2026-08-14.
 
 **Sequencing rule:** live items are clustered to share ONE approved launch
 (one game start = max evidence); offline hardening runs in parallel with any
