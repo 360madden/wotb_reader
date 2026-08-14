@@ -87,4 +87,18 @@ Describe 'od-replay-completion smoke tests' {
             'od-completion-smoke-missing-' + [guid]::NewGuid().ToString('N') + '.wotbreplay')
         Write-OdCompletionMarker -ReplayPath $missing -Reason 'smoke' | Should Be $false
     }
+
+    It 'launcher checks the persisted marker before the CLI version probe' {
+        $launcher = Join-Path $here 'launch-offline-replay-for-od.ps1'
+        $source = Get-Content -LiteralPath $launcher -Raw
+        $completionIndex = $source.IndexOf(
+            'if (Test-OdReplayCompleted -ReplayPath $ReplayPath)',
+            [StringComparison]::Ordinal)
+        $probeIndex = $source.IndexOf(
+            '$probeOut = & $cli probe',
+            [StringComparison]::Ordinal)
+
+        ($completionIndex -ge 0) | Should Be $true
+        ($probeIndex -gt $completionIndex) | Should Be $true
+    }
 }

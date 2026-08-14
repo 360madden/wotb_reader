@@ -3,7 +3,7 @@
 **Purpose:** the durable, sequenced top-10 follow-up list for continued
 development. Anchored to `docs/operations/product-roadmap.md` (the forward
 plan), the ledger's *Next planned session* row, and the newest handoff.
-Refreshed after the minimap arena-folder mapping closed on 2026-08-14.
+Refreshed after the launcher pre-flight ordering audit on 2026-08-14.
 
 **Sequencing rule:** live items are clustered to share ONE approved launch
 (one game start = max evidence); offline hardening runs in parallel with any
@@ -20,7 +20,7 @@ live work; owner-gated items sit behind the evidence they consume.
 | 7 | **T1 turret-facing + lock-on discovery** — live-behavioral traversal with camera-yaw correlation | Phase 2 T1 (`t1-turret-traversal-design.md`) | Optional exact gun-lock research; not a blocker for the CAM-013-based pen badge | 1 approved launch |
 | 8 | **L4 replayTime session** — chained clock and first-hit instruction snapshot | Phase 2 L4 | Unclaimed discovery lane after the overlay/PN proof work | 1 approved launch |
 | 9 | **Attacker-side damage write trace** (runtime write-interceptor/instruction snapshot) | Phase 2 L3 residual | Closes the remaining write-path evidence after the published damage-dealt consumption lane | 1 approved launch |
-| 10 | **Launcher pre-flight reorder** — check the persisted completion marker before the CLI version probe | OD-099 lifecycle hardening | Avoids unnecessary install probing for a replay already known complete; the remaining independent offline item | offline |
+| 10 | **Minimap terrain-alignment smoke** — run the HUD against a decoded replay for a texture-bearing map | Phase 4 V4 follow-up | Arena `1` transport is install-proven, but dot-versus-terrain alignment needs a compatible replay frame | compatible texture-bearing replay |
 
 ## Wait-list (deliberately outside the top 10)
 
@@ -28,10 +28,6 @@ live work; owner-gated items sit behind the evidence they consume.
   revisit only if a live velocity consumer needs the field.
 - **Phase 5 live overlay policy work** — X5 spotting model etc.; requires its
   policy gate, not just engineering.
-- **Minimap terrain-alignment smoke** — run the HUD against a decoded replay
-  for a texture-bearing map; arena `1` transport is proven, but the two current
-  ground-truth replays intentionally remain dots-only because their textures
-  are absent from this exact install.
 - **G3+ publication generalization of `rehearse-offset-apply.py`** — only when
   a new publication package appears.
 - **Exact per-plate armor thickness mapping** — the accessible install data
