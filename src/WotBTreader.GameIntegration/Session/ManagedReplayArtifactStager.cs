@@ -131,6 +131,11 @@ internal sealed class ManagedReplayArtifactStager(
             return StagingUnavailable();
         }
 
+        // Recover orphaned stage files + flat GUID clones left by a previous
+        // host that was killed before its lease was disposed (the graceful
+        // dispose path cleans them; this covers the hard-kill case).
+        ReplayLaunchStagingScavenger.Scavenge(_options.ReplayLaunchStagingRoot);
+
         OperationResult<SourceArtifact> artifactResult;
         try
         {
