@@ -22,10 +22,15 @@ regenerate this file in the same change that adds, renames, or removes files.
 .agents/types/tools.ts
 .agents/types/util-types.ts
 .codex/agents/decoder_auditor.toml
+.codex/agents/default.toml
+.codex/agents/explorer.toml
 .codex/agents/implementer_glue.toml
 .codex/agents/security_auditor.toml
 .codex/agents/verifier.toml
+.codex/agents/worker.toml
 .codex/config.toml
+.codex/hooks.json
+.codex/hooks/enforce-sol-model.ps1
 .editorconfig
 .freebuff/settings.json
 .gitattributes
@@ -296,6 +301,7 @@ docs/operations/handoffs/2026-08-13-pen-per-face-thickness-not-feasible.md
 docs/operations/handoffs/2026-08-13-pen-shell-selector-scoring-harness-and-hud-polish.md
 docs/operations/handoffs/2026-08-13-pen-shotimpact-attacker-attribution-decoded.md
 docs/operations/handoffs/2026-08-14-batch-rendezvous-and-witness-hardening.md
+docs/operations/handoffs/2026-08-14-codex-sol-agent-policy.md
 docs/operations/handoffs/2026-08-14-item7-batch-measurement-persistence.md
 docs/operations/handoffs/2026-08-14-item7-camera-double-read-instrumentation.md
 docs/operations/handoffs/2026-08-14-item7-live-cluster-and-contract.md
@@ -309,6 +315,7 @@ docs/operations/handoffs/2026-08-14-pen-country-id-and-prefix-fix.md
 docs/operations/handoffs/2026-08-14-pen-minimal-implementation-complete.md
 docs/operations/handoffs/2026-08-14-pen-offline-armor-vs-pen-scorer.md
 docs/operations/handoffs/2026-08-14-pen-redecode-two-replay-validation.md
+docs/operations/handoffs/2026-08-14-penetration-prototype-v0.2.0-alpha.md
 docs/operations/handoffs/2026-08-14-pn4-live-aim-validation.md
 docs/operations/handoffs/2026-08-14-pn4-second-replay-regression.md
 docs/operations/handoffs/README.md
@@ -402,6 +409,8 @@ scripts/camera-double-read-measurement.ps1
 scripts/capture-pen-aims.ps1
 scripts/click-hangar-replay.ps1
 scripts/click-watch-offline.ps1
+scripts/codex-agent-config-check.ps1
+scripts/codex-agent-policy.Tests.ps1
 scripts/ghidra-scan.py
 scripts/install-psscriptanalyzer.ps1
 scripts/invoke-avatar-stats-rehearsal.ps1
@@ -409,6 +418,7 @@ scripts/invoke-batch-read-measurement-tests.ps1
 scripts/invoke-batch-rehearsal.ps1
 scripts/invoke-camera-double-read-measurement-tests.ps1
 scripts/invoke-camera-state-verify.ps1
+scripts/invoke-codex-agent-policy-tests.ps1
 scripts/invoke-csharp-write-trace.ps1
 scripts/invoke-facing-session.ps1
 scripts/invoke-fresh44-crossbattle.ps1

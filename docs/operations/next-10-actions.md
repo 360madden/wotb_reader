@@ -4,7 +4,9 @@
 development. Anchored to `docs/operations/product-roadmap.md` (the forward
 plan), the ledger's *Next planned session* row, and the newest handoff.
 Refreshed after the two-replay Item-7 cluster, batch witness contract apply,
-batch-driver live-support hardening, and PN workflow re-anchor on 2026-08-14.
+batch-driver live-support hardening, PN workflow re-anchor, and the Sol-only
+Codex agent-policy hardening on 2026-08-14. The agent-policy work changes how
+the list is executed, not the product ordering below.
 
 **Sequencing rule:** live items are clustered to share ONE approved launch
 (one game start = max evidence); offline hardening runs in parallel with any

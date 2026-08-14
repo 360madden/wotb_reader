@@ -1,0 +1,31 @@
+{
+  "description": "Sol-only model guardrails for root sessions and subagent spawns.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "^(startup|resume|clear|compact)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command '& { $repoRoot = git rev-parse --show-toplevel; & (Join-Path $repoRoot \".codex/hooks/enforce-sol-model.ps1\") }'",
+            "timeout": 10,
+            "statusMessage": "Checking the Sol-only model policy"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "^(spawn_agent|collaboration[._]spawn_agent|functions[._]collaboration[._]spawn_agent)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command '& { $repoRoot = git rev-parse --show-toplevel; & (Join-Path $repoRoot \".codex/hooks/enforce-sol-model.ps1\") }'",
+            "timeout": 10,
+            "statusMessage": "Checking the Sol-only subagent policy"
+          }
+        ]
+      }
+    ]
+  }
+}
