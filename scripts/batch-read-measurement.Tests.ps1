@@ -5,6 +5,7 @@ $ErrorActionPreference = 'Stop'
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $here 'batch-read-measurement.ps1')
+. (Join-Path $here 'batch-rehearsal-support.ps1')
 
 function New-SyntheticBatchResponse {
     param(
@@ -57,6 +58,99 @@ Describe 'batch read-pass measurement evidence' {
             -Clock '2026-08-14T20:00:00.0110000+00:00'
 
         { ConvertTo-BatchReadMeasurementEvidence -Response $response } |
+            Should Throw
+    }
+}
+
+function New-SyntheticBatchRegion {
+    param(
+        [string] $Status = 'Resolved',
+        [bool] $Consistent = $true,
+        [int] $RegionAttempts = 1,
+        [bool] $RegionTear = $false,
+        [int] $EntityBaseAttempts = 0,
+        [bool] $EntityBaseTear = $false
+    )
+
+    return [pscustomobject]@{
+        entityId                  = 42
+        status                    = $Status
+        consistentDoubleRead      = $Consistent
+        regionReadAttempts        = $RegionAttempts
+        regionTearObserved        = $RegionTear
+        entityBaseAttempts        = $EntityBaseAttempts
+        entityBaseTearObserved    = $EntityBaseTear
+        regionBase64              = 'AA=='
+    }
+}
+
+Describe 'batch rehearsal live support' {
+    It 'retries the transient rendezvous replacement window' {
+        $script:rendezvousAttempts = 0
+        $candidateReader = {
+            $script:rendezvousAttempts++
+            if ($script:rendezvousAttempts -lt 3) { return $null }
+            return [pscustomobject]@{
+                Value = [pscustomobject]@{
+                    baseUri   = 'http://127.0.0.1:9182/'
+                    capability = 'synthetic'
+                }
+                LastWriteTimeUtc = [DateTime]::UtcNow
+            }
+        }
+
+        $result = Get-RehearsalRendezvous -MaxAttempts 3 `
+            -DelayMilliseconds 0 -CandidateReader $candidateReader
+
+        $script:rendezvousAttempts | Should Be 3
+        $result.baseUri | Should Be 'http://127.0.0.1:9182/'
+    }
+
+    It 'rejects a non-loopback rendezvous' {
+        $candidateReader = {
+            [pscustomobject]@{
+                Value = [pscustomobject]@{
+                    baseUri   = 'https://example.invalid/'
+                    capability = 'synthetic'
+                }
+                LastWriteTimeUtc = [DateTime]::UtcNow
+            }
+        }
+
+        Get-RehearsalRendezvous -MaxAttempts 1 -DelayMilliseconds 0 `
+            -CandidateReader $candidateReader | Should Be $null
+    }
+
+    It 'summarizes the post-contract witness without sensitive fields' {
+        $evidence = ConvertTo-BatchReadWitnessEvidence -Regions @(
+            (New-SyntheticBatchRegion),
+            (New-SyntheticBatchRegion -RegionAttempts 2 -RegionTear $true `
+                -EntityBaseAttempts 2 -EntityBaseTear $true))
+
+        $evidence.regions | Should Be 2
+        $evidence.resolved | Should Be 2
+        $evidence.consistentDoubleReads | Should Be 2
+        $evidence.regionTearsObserved | Should Be 1
+        $evidence.entityBaseTearsObserved | Should Be 1
+        $evidence.maxRegionReadAttempts | Should Be 2
+        $evidence.Keys -contains 'entityId' | Should Be $false
+        $evidence.Keys -contains 'regionBase64' | Should Be $false
+    }
+
+    It 'fails closed when the new witness fields are missing' {
+        $oldHostRegion = [pscustomobject]@{
+            status               = 'Resolved'
+            consistentDoubleRead = $false
+        }
+
+        { ConvertTo-BatchReadWitnessEvidence -Regions @($oldHostRegion) } |
+            Should Throw
+    }
+
+    It 'fails closed when a resolved item lacks the stable witness' {
+        $region = New-SyntheticBatchRegion -Consistent $false
+
+        { ConvertTo-BatchReadWitnessEvidence -Regions @($region) } |
             Should Throw
     }
 }

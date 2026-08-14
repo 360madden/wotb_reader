@@ -88,7 +88,7 @@ Invoke-CheckedNative -FilePath powershell -ArgumentList @(
     'Bypass',
     '-File',
     (Join-Path $PSScriptRoot 'invoke-batch-read-measurement-tests.ps1')
-) -Description 'Batch read-pass measurement Pester smoke tests'
+) -Description 'Batch read-pass + witness support Pester smoke tests'
 
 Invoke-CheckedNative -FilePath python -ArgumentList @(
     (Join-Path $PSScriptRoot 'python\offline_check.py'),

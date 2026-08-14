@@ -232,6 +232,11 @@ Extend the resolver's proven discipline to the batch surface:
    unstable-snapshot exhaustion. These captures PRECEDED step 2 by minutes,
    so their response shape cannot show whether a transient mismatch retried;
    the post-apply tear-telemetry pass remains before the no-tear claim.
+   **DRIVER HARDENED 2026-08-14:** rendezvous reads retry the publisher's
+   bounded replacement window, and every retained dump now validates and
+   summarizes the post-contract attempt/tear fields. A pre-contract host,
+   missing field, false resolved witness, or inconsistent tear count fails
+   before evidence is written.
 4. Camera pose + entity-base reads get the same double-read treatment — the
    entity-base span landed with step 1. **IMPLEMENTATION + INSTRUMENTATION
    DONE OFFLINE 2026-08-14:** CAM-005 had already made the camera path read

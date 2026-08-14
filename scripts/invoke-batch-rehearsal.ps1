@@ -111,6 +111,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 . (Join-Path $PSScriptRoot 'batch-read-measurement.ps1')
+. (Join-Path $PSScriptRoot 'batch-rehearsal-support.ps1')
 
 function Write-Step([string]$Message) {
     Write-Host ("batch_rehearsal: " + $Message)
@@ -166,34 +167,6 @@ else {
 Write-Step ("Dump times: " + (($DumpTimes | ForEach-Object { "{0:0.0}s" -f $_ }) -join ', '))
 
 # ---- Live API helpers (rendezvous + gated call) -------------------------
-function Get-RehearsalRendezvous {
-    try {
-        $directory = Join-Path $env:LOCALAPPDATA 'WotBTreader\rendezvous'
-        $file = Get-ChildItem -LiteralPath $directory -File -ErrorAction Stop |
-            Sort-Object LastWriteTimeUtc -Descending |
-            Select-Object -First 1
-        if ($null -eq $file -or
-            $file.LastWriteTimeUtc -lt [DateTime]::UtcNow.AddMinutes(-10)) {
-            return $null
-        }
-        $value = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json
-        if (-not $value.PSObject.Properties['baseUri'] -or
-            -not $value.PSObject.Properties['capability'] -or
-            [string]::IsNullOrWhiteSpace([string]$value.baseUri) -or
-            [string]::IsNullOrWhiteSpace([string]$value.capability)) {
-            return $null
-        }
-        $uri = [Uri][string]$value.baseUri
-        if (-not $uri.IsLoopback -or $uri.Scheme -ne 'http') {
-            return $null
-        }
-        return $value
-    }
-    catch {
-        return $null
-    }
-}
-
 function Invoke-RehearsalApi {
     param(
         [string]$Method,
@@ -436,6 +409,7 @@ if (-not $DumpsExist) {
         if ($regions.Count -lt 1) {
             throw ("entity-regions at {0:0.0}s returned no regions." -f $t)
         }
+        $witness = ConvertTo-BatchReadWitnessEvidence -Regions $regions
         $resolvedCount = 0
         foreach ($region in $regions) {
             if ($region.status -eq 'Resolved') { $resolvedCount++ }
@@ -452,6 +426,7 @@ if (-not $DumpsExist) {
             replayTimeSeconds       = $label
             sameDecodedClockProven  = [bool]$response.sameDecodedClockProven
             measurement             = $measurement
+            witness                 = $witness
             entities                = $regions
         })
     }

@@ -7094,3 +7094,28 @@ read, repeat the bounded batch pass on both content-distinct replays under the
 new DTO and require `ConsistentDoubleRead=true`, `RegionReadAttempts=1`,
 `RegionTearObserved=false`, and `EntityBaseTearObserved=false` for every
 resolved item. Until then, keep `HardwareAtomicReadProven=false`.
+
+## OD-RECOVERY-101 result — 2026-08-14 (batch live-support hardening)
+
+status: Closed offline prerequisite; no live session
+
+The batch driver now tolerates the rendezvous publisher's bounded replacement
+window with five attempts separated by 100 ms while retaining the freshness,
+HTTP loopback, base-URI, and capability gates. Exhaustion still fails closed.
+Before retaining any dump, the driver validates the post-contract stable-pair,
+attempt-count, and tear-observation fields. The stored witness summary contains
+counts and maxima only; it excludes entity ids, addresses, raw region bytes,
+paths, and capability material.
+
+Synthetic coverage passed 9/9, including third-attempt recovery, remote-URI
+rejection, stable and torn-then-settled summaries, missing-field rejection,
+and false stable-witness rejection. The full `scripts/validate.ps1` milestone
+gate passed with 1,206 tests, 7 local opt-in skips, a zero-warning/zero-error
+Release build, and all repository, script, offline-pack, ledger, and offset
+checks green. No host or game process was started.
+
+This infrastructure work does not advance the PN penetration UI. Repository
+continuation is re-anchored to the PN owner ship review. When Item 7 resumes,
+the next planned live session remains the post-contract two-replay batch pass;
+keep `HardwareAtomicReadProven=false` until every resolved item directly shows
+attempt count one and both tear flags false.

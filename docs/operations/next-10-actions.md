@@ -3,8 +3,8 @@
 **Purpose:** the durable, sequenced top-10 follow-up list for continued
 development. Anchored to `docs/operations/product-roadmap.md` (the forward
 plan), the ledger's *Next planned session* row, and the newest handoff.
-Refreshed after the two-replay Item-7 cluster and owner-approved batch witness
-contract apply on 2026-08-14.
+Refreshed after the two-replay Item-7 cluster, batch witness contract apply,
+batch-driver live-support hardening, and PN workflow re-anchor on 2026-08-14.
 
 **Sequencing rule:** live items are clustered to share ONE approved launch
 (one game start = max evidence); offline hardening runs in parallel with any
@@ -12,11 +12,11 @@ live work; owner-gated items sit behind the evidence they consume.
 
 | # | Action | Roadmap anchor | Why now | Gate |
 |---|---|---|---|---|
-| 1 | **Harden the batch driver's rendezvous rotation race and witness validation** — bounded retry when the rendezvous file is briefly absent; require the post-contract attempt/tear fields before evidence is retained | Item 7 Branch B post-contract prerequisite | Oasis lost one otherwise valid schedule to the publisher's transient replacement window; the next live pass must also fail closed on a pre-contract host | offline |
+| 1 | **Owner ship review for the PN prototype** — approve the evidence-backed badge, documented limits, and committed release diff | Phase 6 PN-4/PN-5; repeat proof: `2026-08-14-pn4-second-replay-regression.md` | Two content-distinct live replays pass the aim-source regression; this restores the penetration UI as the active feature focus | owner review |
 | 2 | **Re-verdict the stored Oasis batch positions with a bounded bidirectional per-dump clock window** | X2 cross-check / OD-RECOVERY-100 honest negative | The read witness passed, but 8/41 moving samples exceeded the old +/-2 s matcher window; diagnose label skew without another launch | offline |
 | 3 | **Normalize completion-marker timestamp comparison across PowerShell 5.1 and 7** | OD-099 durable fix follow-up | The exact Windows-first chain correctly exits 7, but direct pwsh inspection auto-deserializes ISO UTC into `DateTime` and currently fails open | offline |
-| 4 | **Post-contract two-replay batch witness** — require every resolved item `ConsistentDoubleRead=true`, `RegionReadAttempts=1`, `RegionTearObserved=false`, `EntityBaseTearObserved=false` | Item 7 Branch B step 3 | Two-replay timing and camera proof are complete; direct no-transient-tear wire evidence is the remaining item-7 gate | 2 approved launches after #1-3 |
-| 5 | **Owner ship review for the PN prototype** — approve the evidence-backed badge, documented limits, and staged release diff | Phase 6 PN-4/PN-5; repeat proof: `2026-08-14-pn4-second-replay-regression.md` | Two content-distinct live replays pass the aim-source regression; remaining work is review/package | owner review |
+| 4 | **Fix the batch driver's literal `{0}` progress placeholders and pin the operator output** | X2 rehearsal operability | The live cluster exposed PowerShell formatting-precedence mistakes that obscure counts/times without affecting artifacts | offline |
+| 5 | **Post-contract two-replay batch witness** — require every resolved item `ConsistentDoubleRead=true`, `RegionReadAttempts=1`, `RegionTearObserved=false`, `EntityBaseTearObserved=false` | Item 7 Branch B step 3 | Two-replay timing and camera proof are complete; direct no-transient-tear wire evidence is the remaining item-7 gate | 2 approved launches after #2-4 |
 | 6 | **T1 turret-facing + lock-on discovery** — live-behavioral traversal with camera-yaw correlation | Phase 2 T1 (`t1-turret-traversal-design.md`) | Optional exact gun-lock research; not a blocker for the CAM-013-based pen badge | 1 approved launch |
 | 7 | **L4 replayTime session** — chained clock and first-hit instruction snapshot | Phase 2 L4 | Unclaimed discovery lane after the overlay/PN proof work | 1 approved launch |
 | 8 | **Attacker-side damage write trace** (runtime write-interceptor/instruction snapshot) | Phase 2 L3 residual | Closes the remaining write-path evidence after the published damage-dealt consumption lane | 1 approved launch |

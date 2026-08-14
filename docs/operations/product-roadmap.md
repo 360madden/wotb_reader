@@ -308,6 +308,9 @@ contract now exposes `RegionReadAttempts`, `RegionTearObserved`, and
 delivered stable pair (owner-approved apply, same day). Because the live
 captures preceded that wire change, one post-apply two-replay pass still has
 to observe zero transient tears before hardware atomicity can be claimed.
+The driver prerequisite is now hardened: bounded rendezvous replacement
+retries plus fail-closed validation/privacy-safe aggregation of every new
+attempt/tear field (9/9 PowerShell tests).
 ✅ **CAM-006 (2026-08-11): the pose is wired into the frame path** —
 `IOverlayFrameSource.GetFrameAsync` gains an optional `OverlayCamera?`
 (default null = viewpoint fallback), `ReplayFrameSource` passes it
