@@ -18,17 +18,29 @@ public sealed class InstalledGameMetadataProvider : IInstalledGameMetadataProvid
 {
     private const string ProviderVersion = "wotb-installed-metadata/1.0.0";
 
+    // The country compact id each nation contributes to a vehicle compact
+    // descriptor: descriptor = (vehicleTypeId << 8) | countryId, where
+    // countryId = (index << 4) | 1 and index is the game's Country enum
+    // order (germany = 0, ussr = 1, usa = 2, china = 3, france = 4,
+    // uk = 5, japan = 6, european = 7, other = 8). Pinned 2026-08-14
+    // against the ground-truth 11.19.0.10 replay + install: germany = 1
+    // (PzIV `0`/Nashorn `46`), usa = 33 (M4_Sherman `4` → `1057`),
+    // uk = 81 (GB08_Churchill_I `11` → `2897`, GB63_TOG_II `210` →
+    // `53841`); the 0xN1 spacing is observed across the session's
+    // descriptors (1/17/33/81/97/113/129). The earlier 0–8 enumeration
+    // matched only germany and silently dropped every other nation's tanks
+    // from the vehicle-name/armor enrichment.
     private static readonly (string Name, int Id)[] Nations =
     [
-        ("ussr", 0),
+        ("ussr", 17),
         ("germany", 1),
-        ("usa", 2),
-        ("china", 3),
-        ("france", 4),
-        ("uk", 5),
-        ("japan", 6),
-        ("european", 7),
-        ("other", 8),
+        ("usa", 33),
+        ("china", 49),
+        ("france", 65),
+        ("uk", 81),
+        ("japan", 97),
+        ("european", 113),
+        ("other", 129),
     ];
 
     private readonly IGameInstallationDiscovery _discovery;

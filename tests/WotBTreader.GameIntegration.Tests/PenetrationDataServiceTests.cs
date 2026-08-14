@@ -103,6 +103,78 @@ public sealed class PenetrationDataServiceTests
     }
 
     [TestMethod]
+    public async Task ResolveAsync_NationPrefixedTankId_ResolvesArmorAndShell()
+    {
+        // The decoder emits the enrichment's `nation:tank` VehicleId form
+        // (e.g. `uk:GB08_Churchill_I`); the service must split the prefix and
+        // resolve the BARE tank file name instead of treating the whole string
+        // as the file name (which would never match an install path).
+        using Fixture fixture = new();
+        fixture.WriteUkVehicle(
+            "GB08_Churchill_I",
+            armorXml: """
+                <root>
+                  <hull>
+                    <armor>
+                      <armor_1>93.4</armor_1>
+                      <armor_2>186.7</armor_2>
+                    </armor>
+                    <primaryArmor>armor_2</primaryArmor>
+                  </hull>
+                  <turrets0>
+                    <Turret_1>
+                      <guns>
+                        <_2pdr_Gun_Mk_XT>
+                          <shots>
+                            <_2pdr_AP_Mk.IXBT_2><shell>shared</shell></_2pdr_AP_Mk.IXBT_2>
+                          </shots>
+                        </_2pdr_Gun_Mk_XT>
+                      </guns>
+                    </Turret_1>
+                  </turrets0>
+                </root>
+                """);
+        fixture.WriteShells(
+            """
+            <root>
+              <_2pdr_AP_Mk.IXBT_2>
+                <kind>ARMOR_PIERCING</kind>
+                <caliber>40</caliber>
+                <normalizationAngle>5</normalizationAngle>
+                <ricochetAngle>70</ricochetAngle>
+              </_2pdr_AP_Mk.IXBT_2>
+            </root>
+            """);
+        fixture.WriteGuns(
+            """
+            <root>
+              <ids><_2pdr_Gun_Mk_XT>1024</_2pdr_Gun_Mk_XT></ids>
+              <shared>
+                <_2pdr_Gun_Mk_XT>
+                  <shots>
+                    <_2pdr_AP_Mk.IXBT_2>
+                      <speed>850</speed>
+                      <maxDistance>720</maxDistance>
+                      <piercingPower>92 72</piercingPower>
+                    </_2pdr_AP_Mk.IXBT_2>
+                  </shots>
+                </_2pdr_Gun_Mk_XT>
+              </shared>
+            </root>
+            """);
+
+        PenetrationDataService service = fixture.CreateService();
+        PenetrationContext? context = await service.ResolveAsync(
+            Projection("uk:GB08_Churchill_I"),
+            CancellationToken.None);
+
+        Assert.IsNotNull(context);
+        Assert.IsTrue(context!.ArmorByEntity.TryGetValue(EnemyEntityId, out TankArmor armor));
+        Assert.AreEqual(186.7, armor.FrontMm, 1e-9);
+        Assert.AreEqual(92, context.ViewerShell.Penetration0Mm, 1e-9);
+    }
+
+    [TestMethod]
     public async Task ResolveAsync_NoInstall_ReturnsNull()
     {
         // The discovery fails (no game found), so the context is null — never

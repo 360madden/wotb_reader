@@ -97,6 +97,11 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
                 continue;
             }
 
+            // The decoded TankId is the enrichment's `nation:tank` VehicleId
+            // (e.g. `germany:PzIV`) or a raw compact descriptor when the
+            // descriptor did not resolve. Split the prefix so the downstream
+            // path builders use the BARE tank file name.
+            (_, string tankId) = SplitTankId(participant.TankId);
             string? nation = await ResolveNationAsync(identity, participant.TankId, cancellationToken)
                 .ConfigureAwait(false);
             if (nation is null)
@@ -104,7 +109,7 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
                 continue;
             }
 
-            TankArmor? armor = await ResolveArmorAsync(identity, nation, participant.TankId, cancellationToken)
+            TankArmor? armor = await ResolveArmorAsync(identity, nation, tankId, cancellationToken)
                 .ConfigureAwait(false);
             if (armor is { } resolvedArmor)
             {
@@ -114,7 +119,7 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
             // Best-effort collision meshes: when present, the badge uses their
             // true surface normals; when absent it falls back to the box model.
             IReadOnlyList<CollisionMeshPart>? mesh = await ResolveMeshAsync(
-                identity, nation, participant.TankId, cancellationToken).ConfigureAwait(false);
+                identity, nation, tankId, cancellationToken).ConfigureAwait(false);
             if (mesh is not null && mesh.Count > 0)
             {
                 meshesByEntity[entityId] = mesh;
@@ -197,15 +202,27 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
             }
         }
 
-        string? nation = null;
-        foreach (string candidate in Nations)
+        (string? explicitNation, string bareTank) = SplitTankId(tankId);
+        string? nation;
+        if (explicitNation is not null)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            string path = VehiclePath(identity, candidate, tankId);
-            if (File.Exists(path))
+            // The enrichment's `nation:tank` VehicleId names the nation
+            // explicitly; verify the file exists (fail-closed) and use it.
+            nation = File.Exists(VehiclePath(identity, explicitNation, bareTank))
+                ? explicitNation
+                : null;
+        }
+        else
+        {
+            nation = null;
+            foreach (string candidate in Nations)
             {
-                nation = candidate;
-                break;
+                cancellationToken.ThrowIfCancellationRequested();
+                if (File.Exists(VehiclePath(identity, candidate, bareTank)))
+                {
+                    nation = candidate;
+                    break;
+                }
             }
         }
 
@@ -215,6 +232,23 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
         }
 
         return nation;
+    }
+
+    /// <summary>
+    /// Splits a tank id that carries an explicit nation prefix (the
+    /// enrichment's <c>nation:tank</c> VehicleId form, e.g.
+    /// <c>germany:PzIV</c>) into its nation and bare tank file name. A bare
+    /// name (no colon) yields a null nation and the id unchanged.
+    /// </summary>
+    private static (string? Nation, string Tank) SplitTankId(string tankId)
+    {
+        int colon = tankId.IndexOf(':');
+        if (colon > 0 && colon < tankId.Length - 1)
+        {
+            return (tankId[..colon], tankId[(colon + 1)..]);
+        }
+
+        return (null, tankId);
     }
 
     private async ValueTask<IReadOnlyList<CollisionMeshPart>?> ResolveMeshAsync(
@@ -315,6 +349,7 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
             return [];
         }
 
+        (_, string tankId) = SplitTankId(viewer.TankId);
         string? nation = await ResolveNationAsync(identity, viewer.TankId, cancellationToken)
             .ConfigureAwait(false);
         if (nation is null)
@@ -323,7 +358,7 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
         }
 
         IReadOnlyList<string> shotNames = await ResolveStockGunShotsAsync(
-            identity, nation, viewer.TankId, cancellationToken).ConfigureAwait(false);
+            identity, nation, tankId, cancellationToken).ConfigureAwait(false);
         if (shotNames.Count == 0)
         {
             return [];

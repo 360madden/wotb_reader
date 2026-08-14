@@ -344,7 +344,7 @@ public sealed class OptInInstalledGameTests
         Assert.IsNotNull(context.Value);
         var vehicle = await provider.ResolveVehicleAsync(
             context.Value,
-            compactDescriptor: (4 << 8) | 2,
+            compactDescriptor: (4 << 8) | 33,
             CancellationToken.None);
         var map = await provider.ResolveMapAsync(
             context.Value,
@@ -356,5 +356,16 @@ public sealed class OptInInstalledGameTests
         Assert.AreEqual(WotBTreader.Core.TankClass.Medium, vehicle.Value.TankClass);
         Assert.IsTrue(map.IsSuccess, map.Error?.Message);
         Assert.AreEqual("karelia", map.Value!.MapId);
+
+        // The ground-truth replay's viewpoint tank: GB08_Churchill_I (uk list
+        // index 11) → descriptor (11 << 8) | 81 = 2897. Before the country-id
+        // table fix uk was enumerated as 5, so this descriptor never matched
+        // and the viewpoint fell back to a raw numeric id (armor unresolved).
+        var churchill = await provider.ResolveVehicleAsync(
+            context.Value,
+            compactDescriptor: 2897,
+            CancellationToken.None);
+        Assert.IsTrue(churchill.IsSuccess, churchill.Error?.Message);
+        Assert.AreEqual("uk:GB08_Churchill_I", churchill.Value!.VehicleId);
     }
 }

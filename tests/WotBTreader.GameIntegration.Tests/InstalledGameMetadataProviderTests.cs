@@ -12,7 +12,10 @@ namespace WotBTreader.GameIntegration.Tests;
 [TestClass]
 public sealed class InstalledGameMetadataProviderTests
 {
-    private const int UsaNationId = 2;
+    // The usa country compact id (33 = (2 << 4) | 1) — pinned 2026-08-14
+    // against the ground-truth replay descriptors (usa M4_Sherman index 4 →
+    // descriptor 1057). The old 0–8 enumeration matched only germany.
+    private const int UsaNationId = 33;
     private const int VehicleTypeId = 4;
     private const int CompactDescriptor = (VehicleTypeId << 8) | UsaNationId;
 

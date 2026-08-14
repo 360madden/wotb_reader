@@ -178,6 +178,16 @@ two-caliber, pen-at-range).
    columns are inconsistent — a mix of `nation:id` strings, raw compact
    descriptors, and meta.json player-vehicle names — so the descriptor→tank-id
    resolution must go through the enrichment, not a raw SQL join).
+   **Country-id + prefix fix landed (2026-08-14):** the enrichment's vehicle
+   compact descriptor uses <c>descriptor = (vehicleTypeId &lt;&lt; 8) | countryId</c>
+   with <c>countryId = (index &lt;&lt; 4) | 1</c> in the game's Country order
+   (germany=1, ussr=17, usa=33, china=49, france=65, uk=81, japan=97,
+   european=113, other=129) — the old 0–8 enumeration matched only germany
+   and silently dropped every other nation's armor/mesh/name. And
+   `PenetrationDataService` now splits the `nation:tank` prefix so the
+   enriched VehicleId resolves to the bare tank file name. Pinned against
+   the real install (usa `1057` → M4_Sherman, uk `2897` → GB08_Churchill_I;
+   338 GameIntegration tests incl. opt-in green).
 
    **Shell direction is NOT decodable offline (probed 2026-08-13):** the
    position stream carries no short-lived projectile entities — every entity
