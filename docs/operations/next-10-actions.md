@@ -3,7 +3,7 @@
 **Purpose:** the durable, sequenced top-10 follow-up list for continued
 development. Anchored to `docs/operations/product-roadmap.md` (the forward
 plan), the ledger's *Next planned session* row, and the newest handoff.
-Refreshed after the launcher pre-flight ordering audit on 2026-08-14.
+Refreshed after the Item-7 camera measurement instrumentation on 2026-08-14.
 
 **Sequencing rule:** live items are clustered to share ONE approved launch
 (one game start = max evidence); offline hardening runs in parallel with any
@@ -13,7 +13,7 @@ live work; owner-gated items sit behind the evidence they consume.
 |---|---|---|---|---|
 | 1 | **Live-verify the hardened clean-run completion marker** (driver exit 0 -> marker file -> chain re-run exits 7 fast) | OD-099 durable fix (`scripts/od-replay-completion.ps1`) | The clean-run path still needs an end-to-end proof before more launch clusters rely on it | 1 approved launch |
 | 2 | **Batch rehearsal re-run** — `invoke-batch-rehearsal.ps1 -LiveAcquire -EnumerateLive -Times 60,150,220 -FailOnMiss`, absolute replay path | Item 7 Branch B step 3 + X2/X2b rehearsal | Re-establishes the clean live verdict and delivers the step-3 read-pass measurements | same launch as #1 |
-| 3 | **Branch B step-4 camera double-reads** — extend the camera verify tool to measure double-read stability | Item 7 Branch B step 4 | Closes the last unclaimed live lane in the hardware-atomicity plan | same launch as #1 |
+| 3 | **Branch B step-4 camera measurement** — run the pre-staged CAM-001 v7 driver and require every camera-pose probe resolved, identity-gated, module-rooted, byte-identical, with zero `pose-double-read` failures | Item 7 Branch B step 4 | Coordinator discipline and privacy-bounded aggregation are offline-complete; the live witness is the last unclaimed half | same launch as #1 |
 | 4 | **Live-frame `DamageDealt` E2E** — mid-battle `/live/frame`, own row is a real value with exact decoded joins | X4 G2 consumption | Proves the published avatar-stats chain at the shared frame seam | same launch as #1 |
 | 5 | **Approve + apply the `ConsistentDoubleRead` flag-flip proposal** | Item 7 Branch B step 2 | Converts the witnessed batch/camera measurements into the shared contract flag | owner approval + gate |
 | 6 | **Owner ship review for the PN prototype** — approve the evidence-backed badge, documented limits, and staged release diff | Phase 6 PN-4/PN-5; repeat proof: `2026-08-14-pn4-second-replay-regression.md` | Two content-distinct live replays now pass the aim-source regression; remaining work is review/package, not construction | owner review |

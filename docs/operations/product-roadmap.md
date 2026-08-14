@@ -286,6 +286,13 @@ instead of dereferencing garbage.
 every hop, pose region double-read), version-pinned in Core
 (`Type10CameraPoseLayout`), 7 unit tests, `IMemoryScanDiscoverer`
 extracted for testability.
+✅ **Item-7 Branch-B camera instrumentation (2026-08-14):** CAM-005's
+coordinator path already reads the complete pose region twice, requires
+byte equality, and fails closed at `pose-double-read`. The CAM-001 v7 driver
+now samples that sanctioned endpoint once per round and records only bounded
+status/identity/module-root/stability counters; its dedicated Pester gate
+pins honest-negative and privacy-whitelist behavior. Offline work is complete;
+the clustered live measurement remains before the evidence claim.
 ✅ **CAM-006 (2026-08-11): the pose is wired into the frame path** —
 `IOverlayFrameSource.GetFrameAsync` gains an optional `OverlayCamera?`
 (default null = viewpoint fallback), `ReplayFrameSource` passes it

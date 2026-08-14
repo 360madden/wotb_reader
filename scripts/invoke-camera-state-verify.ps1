@@ -61,7 +61,9 @@
        single viewpoint entity (same binding as the od-073 family).
     3. Learns the runtime module base from a pattern scan, then scans the
        verified process for the avatar vftable dword (base + 0x3277e8c).
-    4. Walks [avatar+0x154] -> [br+0x2C] -> [cam+0x28] via the server-owned
+    4. Samples the sanctioned /discover/camera-pose surface once per round,
+       retaining only its identity/stability witnesses for Item-7 Branch B,
+       then walks [avatar+0x154] -> [br+0x2C] -> [cam+0x28] via the server-owned
        read endpoint, with identity gates on the camera vftables
        (ReplayCameraController base+0x326dd0c, GameCamera base+0x32dafa0 -
        CAM-002 verified), then reads the GameCamera pose fields.
@@ -143,6 +145,8 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+. (Join-Path $PSScriptRoot 'camera-double-read-measurement.ps1')
 
 if ($WaitVerifiedSeconds -lt 1 -or $WaitVerifiedSeconds -gt 300 -or
     $StageDelaySeconds -lt 0 -or $StageDelaySeconds -gt 180 -or
@@ -769,6 +773,7 @@ $anchorAddress = 0L
 $chain = @()
 $cameraFields = @{}
 $roundSamples = @()
+$cameraDoubleReadState = New-CameraDoubleReadMeasurementState
 $scanAttempts = 0
 $roundsFiniteAllFields = 0
 $roundsYawCorrelated = 0
@@ -792,6 +797,16 @@ $calSample = $null
 
 for ($round = 0; $round -lt $ReadCount; $round++) {
     try {
+        # Item-7 Branch-B step 4: the sanctioned camera-pose read performs
+        # two byte-for-byte pose-region reads and fails closed at
+        # `pose-double-read` on a mismatch. Persist only its bounded witness;
+        # the response's process addresses and duplicate pose values stay out
+        # of the aggregate.
+        $cameraPoseRead = Invoke-OdApi -Method 'Post' `
+            -RelativePath '/api/v1/game/discover/camera-pose'
+        $cameraDoubleReadProbe = Add-CameraDoubleReadMeasurement `
+            -State $cameraDoubleReadState -Response $cameraPoseRead
+
         # 1. Anchor scan (base-relative). Probe with the preferred-base
         #    pattern first: when ASLR is off this succeeds immediately; when
         #    on, the probe's response still reports the runtime module base
@@ -1171,6 +1186,7 @@ for ($round = 0; $round -lt $ReadCount; $round++) {
             decodedTank       = $roundDecodedTank
             alignedDecodedSeconds = $alignedDecodedSeconds
             memoryTankSource  = $memoryTankSource
+            cameraPoseDoubleRead = $cameraDoubleReadProbe
         }
         # CAM-001 v7 root-cause follow-up: persist the full view-basis region
         # (+0x80..0xB0, 12 floats -- stride-4 3x4 view matrix verified
@@ -1240,6 +1256,8 @@ $cameraStateVerified = $chain.Count -eq 3 -and $cameraIdentityVerified -and
     $roundsFiniteAllFields -eq $ReadCount -and $basisFinite
 $yawCorrelated = $roundsYawCorrelated -ge 1
 $positionCorrelated = $roundsPositionCorrelated -ge 1
+$cameraDoubleReadMeasurement = Complete-CameraDoubleReadMeasurement `
+    -State $cameraDoubleReadState -ExpectedProbes $ReadCount
 
 $verdict = if ($cameraStateVerified -and $positionCorrelated) {
     'camera-state-consistent'
@@ -1283,6 +1301,7 @@ $aggregate = [ordered]@{
     groundTruthBoundToLaunchArtifact = $true
     groundTruthSelection  = $groundTruthSelection
     cameraStateVerified   = $cameraStateVerified
+    cameraPoseDoubleRead  = $cameraDoubleReadMeasurement
     offsetTablePromotionReady = $false
     privacy = [ordered]@{
         entityIdsPersisted    = $false
@@ -1312,5 +1331,6 @@ Write-Host ('cam001: verdict=' + $verdict +
     ' offset_norm=' + [string]$offsetNorm +
     ' extra_offset_norm=' + [string]$offsetNormC +
     ' tank_source=' + $memoryTankSource +
+    ' camera_double_read=' + [string]$cameraDoubleReadMeasurement.allResolvedConsistent +
     ' aligned_s=' + [string]$alignedDecodedSeconds)
 exit 0

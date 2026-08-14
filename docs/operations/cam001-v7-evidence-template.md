@@ -138,7 +138,12 @@ Preconditions (same class as 087/088/089):
 - `cam001-v7-aggregate.json` (schema `wotbtreader.cam001.camera-state-verify.v7`):
   per-round memory camera pose (posA `+0x38` + yaw `atan2(sin,cos)` + pitch
   `+0x58`), memory tank (when the resolver/walk resolved), decoded tank at
-  the yaw-aligned time, aligned seconds, tank source.
+  the yaw-aligned time, aligned seconds, tank source. **Item-7 additive
+  witness (2026-08-14):** each round also carries a whitelisted
+  `cameraPoseDoubleRead` result from the sanctioned camera endpoint, and the
+  aggregate carries bounded probe/resolved/identity/stability/tear counters.
+  Endpoint process addresses and its duplicate coordinates/basis are not
+  copied into this witness.
 - The validator output: per-round look-at angle, center distance across the
   FOV band, pitch diagnostic (`expectedPitchDeg` vs `memoryPitchDeg`), and
   the aggregate verdict (exit 0 = verified / 1 = failed / 2 = missing).
@@ -150,7 +155,11 @@ camera aims at the tank), **center distance small** (projected tank near
 viewport center across the FOV band), and the **pitch diagnostic coherent**
 (memory pitch ≈ pitch required to aim at the tank). The CAM-001 script
 verdict is `camera-state-consistent` (chain length 3 + identity + finite
-rounds + ≥ 1 yaw- and position-correlated round).
+rounds + ≥ 1 yaw- and position-correlated round). The independent Item-7
+camera acceptance is `cameraPoseDoubleRead.allResolvedConsistent = true`:
+every planned endpoint probe resolved with all three identity gates,
+`moduleRooted`, and `ConsistentDoubleRead`, with zero `pose-double-read`
+failures. This additive witness does not change the established CAM verdict.
 
 **Validator corrections (2026-08-11, root-cause follow-up):**
 

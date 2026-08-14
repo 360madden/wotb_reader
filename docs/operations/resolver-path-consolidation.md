@@ -142,9 +142,12 @@ cross-link, and the planning handoff.
 - **Execution plan pre-staged 2026-08-12:**
   `docs/operations/item7-hardware-atomicity-proof-plan.md` — Branch A
   (static write-size proof via hash-bound Ghidra) + Branch B (extend the
-  resolver's double-read + index-stability discipline to the batch region
-  spans, which today are read once with `ConsistentDoubleRead: false`
-  explicitly not claimable); the `HardwareAtomicReadProven` flag flip is a
+  resolver's double-read + stability discipline to the batch region spans;
+  the reads now run twice with bounded retry while
+  `ConsistentDoubleRead: false` remains explicitly not claimable pending the
+  shared-contract review. Camera-pose double-read instrumentation is
+  offline-complete as of 2026-08-14 and awaits its bounded live witness. The
+  `HardwareAtomicReadProven` flag flip is a
   shared-contract proposal, never applied without owner review.
 
 ## Per-target layout convention (`Type10<X>Layout`)

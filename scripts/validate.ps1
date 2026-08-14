@@ -74,6 +74,14 @@ Invoke-CheckedNative -FilePath powershell -ArgumentList @(
     (Join-Path $PSScriptRoot 'invoke-od-replay-selection-tests.ps1')
 ) -Description 'Replay-selection + staging-refusal Pester smoke tests'
 
+Invoke-CheckedNative -FilePath powershell -ArgumentList @(
+    '-NoProfile',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-File',
+    (Join-Path $PSScriptRoot 'invoke-camera-double-read-measurement-tests.ps1')
+) -Description 'Camera double-read measurement Pester smoke tests'
+
 Invoke-CheckedNative -FilePath python -ArgumentList @(
     (Join-Path $PSScriptRoot 'python\offline_check.py'),
     '--check-fresh'

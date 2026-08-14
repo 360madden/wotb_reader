@@ -223,8 +223,16 @@ Extend the resolver's proven discipline to the batch surface:
    byte-identical double-reads, zero torn reads, zero index/chain instability
    across both replays.
 4. Camera pose + entity-base reads get the same double-read treatment — the
-   entity-base span landed with step 1; the camera pose read remains for the
-   live half.
+   entity-base span landed with step 1. **IMPLEMENTATION + INSTRUMENTATION
+   DONE OFFLINE 2026-08-14:** CAM-005 had already made the camera path read
+   the pose region twice, require `SequenceEqual`, fail closed at
+   `pose-double-read`, and return `ConsistentDoubleRead: true` only for a
+   matching pair. The CAM-001 v7 driver now probes that sanctioned endpoint
+   once per round and records only status, identity/module-rooted gates, the
+   stability flag, and bounded counters (never endpoint addresses or duplicate
+   pose coordinates). Acceptance is every scheduled probe `Resolved`, all
+   identity gates true, every `ConsistentDoubleRead` true, and zero
+   `pose-double-read` failures. **The bounded live measurement remains.**
 
 ## Contract change (shared-contract proposal — NOT applied here)
 
