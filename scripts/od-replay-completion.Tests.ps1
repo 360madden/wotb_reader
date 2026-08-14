@@ -162,4 +162,15 @@ Describe 'od-replay-completion smoke tests' {
             Remove-Item -LiteralPath $directory -Force -ErrorAction SilentlyContinue
         }
     }
+
+    It 'does not depend on Get-Acl module auto-loading' {
+        $helper = Get-Content -LiteralPath (
+            Join-Path $here 'od-replay-completion.ps1') -Raw
+
+        $helper.Contains('Get-Acl') | Should Be $false
+        $helper.Contains('[Security.AccessControl.DirectorySecurity]::new') |
+            Should Be $true
+        $helper.Contains('[Security.AccessControl.FileSecurity]::new') |
+            Should Be $true
+    }
 }

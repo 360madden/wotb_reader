@@ -70,7 +70,9 @@ function Get-OdReplayFingerprint([string]$ReplayPath) {
 function Test-OdOwnerOnlyFileAcl([string]$Path) {
     try {
         $owner = [Security.Principal.WindowsIdentity]::GetCurrent().User
-        $acl = Get-Acl -LiteralPath $Path
+        $sections = [Security.AccessControl.AccessControlSections]::Access -bor
+            [Security.AccessControl.AccessControlSections]::Owner
+        $acl = [Security.AccessControl.FileSecurity]::new($Path, $sections)
         $observedOwner = (New-Object Security.Principal.NTAccount($acl.Owner)).Translate(
             [Security.Principal.SecurityIdentifier])
         $rules = @($acl.GetAccessRules(
@@ -95,7 +97,11 @@ function Test-OdOwnerOnlyDirectoryAcl([string]$Path) {
         if (($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
             return $false
         }
-        $acl = Get-Acl -LiteralPath $directory.FullName -ErrorAction Stop
+        $sections = [Security.AccessControl.AccessControlSections]::Access -bor
+            [Security.AccessControl.AccessControlSections]::Owner
+        $acl = [Security.AccessControl.DirectorySecurity]::new(
+            $directory.FullName,
+            $sections)
         $observedOwner = (New-Object Security.Principal.NTAccount($acl.Owner)).Translate(
             [Security.Principal.SecurityIdentifier])
         $rules = @($acl.GetAccessRules(
@@ -165,7 +171,11 @@ function Get-OdOwnerOnlyDirectoryAclDiagnostic([string]$Path) {
             return 'reparse-point'
         }
 
-        $acl = Get-Acl -LiteralPath $directory.FullName -ErrorAction Stop
+        $sections = [Security.AccessControl.AccessControlSections]::Access -bor
+            [Security.AccessControl.AccessControlSections]::Owner
+        $acl = [Security.AccessControl.DirectorySecurity]::new(
+            $directory.FullName,
+            $sections)
         if (-not $acl.AreAccessRulesProtected) {
             return 'inheritance-not-protected'
         }

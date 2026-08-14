@@ -299,6 +299,7 @@ docs/operations/handoffs/2026-08-14-item7-batch-measurement-persistence.md
 docs/operations/handoffs/2026-08-14-item7-camera-double-read-instrumentation.md
 docs/operations/handoffs/2026-08-14-launch-marker-acl-confirmation-retry.md
 docs/operations/handoffs/2026-08-14-launch-marker-acl-diagnostic.md
+docs/operations/handoffs/2026-08-14-launch-marker-acl-module-root-cause.md
 docs/operations/handoffs/2026-08-14-launcher-preflight-order-audit.md
 docs/operations/handoffs/2026-08-14-minimap-arena-folder-mapping.md
 docs/operations/handoffs/2026-08-14-pen-aim-override-seam-and-third-replay.md
