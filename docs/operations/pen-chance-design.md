@@ -213,6 +213,27 @@ two-caliber, pen-at-range).
    decoded bounces are armor-vs-pen failures, not angle. The center-line
    proxy therefore cannot validate the ricochet rule; the LIVE CAM-013 aim
    remains the only viable PN-4 source. Scratch: `.data/pn4-centerline-incidence.py`.
+   **The OFFLINE ARMOR-VS-PEN SCORER SHIPPED (2026-08-14) and produced the
+   first model-vs-ground-truth result:** `PenOfflineScorer` (Application)
+   drives the REAL `PenValidation.Score` over every decoded `ShotImpact`
+   event with an attacker: the attacker's stock shell + the victim's nominal
+   armor/mesh (via the new per-tank `IOverlayPenetrationData.ResolveTankAsync`
+   lane, which now ALSO resolves raw compact descriptors through the
+   installed-game metadata index — the store's `tank_id` is a mix of
+   `nation:tank` and un-enriched integers) + the attacker→victim center-line
+   aim, exposed as `GET /api/v1/game/discover/pen-offline-score/{sessionId}`.
+   **First run (session `019ffdcd`, the 69-shot ground truth):** 67 scored /
+   2 skipped (no position sample at shot time); 46 verdicts Unknown (the
+   struck faces were SIDE hits — the nominal side armor is 0/unknown by
+   design, verified the mesh raycast itself hits those faces correctly);
+   18 determinate Pen/NoPen — **7 agreements, 38.9% band accuracy**; all 6
+   predicted ricochets (steep sloped-plate hits, incl. 87.5° at ~30 m)
+   actually PENETRATED (ricochetPrecision 0). The disagreements are the
+   documented offline limits in action — center-line aim (no turret aim),
+   stock-shell proxy (loaded ammo unknown), front-only nominal armor — and
+   the endpoint now quantifies them honestly instead of asserting them.
+   The scorer is the SAME scoring core the live CAM-013 aim will feed:
+   PN-4's live session replaces only the aim source.
 
 ## `.sc2` SFV2 format spec (PARSED 2026-08-13 — `SceneFileParser`)
 

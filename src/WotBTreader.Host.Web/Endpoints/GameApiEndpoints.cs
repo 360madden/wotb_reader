@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using WotBTreader.ApiContracts;
 using WotBTreader.Application.Capture;
 using WotBTreader.Application.Game;
+using WotBTreader.Application.Replay;
 using WotBTreader.Application.Results;
 using WotBTreader.Application.Storage;
 using WotBTreader.Core;
@@ -44,6 +45,7 @@ internal static class GameApiEndpoints
         group.MapPost("/discover/instruction-snapshot", CaptureInstructionSnapshotAsync);
         group.MapGet("/discover/trajectory/{battleSessionId:guid}", GetTrajectoryAsync);
         group.MapPost("/discover/correlate", CorrelateAsync);
+        group.MapGet("/discover/pen-offline-score/{battleSessionId:guid}", ScorePenOfflineAsync);
         return builder;
     }
 
@@ -1357,6 +1359,32 @@ internal static class GameApiEndpoints
                     sample.X,
                     sample.Y,
                     sample.Z)).ToList())).ToList()));
+    }
+
+    internal static async Task<IResult> ScorePenOfflineAsync(
+        IPenOfflineScorer scorer,
+        ISessionQueryRepository sessions,
+        Guid battleSessionId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(scorer);
+        ArgumentNullException.ThrowIfNull(sessions);
+
+        OperationResult<ReplayDecodeProjection> projection = await sessions
+            .GetProjectionAsync(new BattleSessionId(battleSessionId), cancellationToken)
+            .ConfigureAwait(false);
+        if (!projection.IsSuccess || projection.Value is null)
+        {
+            return Results.NotFound(new
+            {
+                error = projection.Error?.Code ?? "session.not_found",
+            });
+        }
+
+        OfflinePenScoreReport report = await scorer
+            .ScoreAsync(projection.Value, cancellationToken)
+            .ConfigureAwait(false);
+        return Results.Ok(report);
     }
 
     internal static async Task<IResult> CorrelateAsync(

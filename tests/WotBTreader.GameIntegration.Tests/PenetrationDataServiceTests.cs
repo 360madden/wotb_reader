@@ -175,6 +175,170 @@ public sealed class PenetrationDataServiceTests
     }
 
     [TestMethod]
+    public async Task ResolveTankAsync_NationPrefixedTankId_ResolvesArmorAndShells()
+    {
+        // The offline PN-4 scorer lane: ONE tank (any roster tank, not the
+        // viewer) resolved by its decoded `nation:tank` VehicleId must yield
+        // armor + the stock gun's shells.
+        using Fixture fixture = new();
+        fixture.WriteUkVehicle(
+            "GB08_Churchill_I",
+            armorXml: """
+                <root>
+                  <hull>
+                    <armor>
+                      <armor_1>93.4</armor_1>
+                      <armor_2>186.7</armor_2>
+                    </armor>
+                    <primaryArmor>armor_2</primaryArmor>
+                  </hull>
+                  <turrets0>
+                    <Turret_1>
+                      <guns>
+                        <_2pdr_Gun_Mk_XT>
+                          <shots>
+                            <_2pdr_AP_Mk.IXBT_2><shell>shared</shell></_2pdr_AP_Mk.IXBT_2>
+                          </shots>
+                        </_2pdr_Gun_Mk_XT>
+                      </guns>
+                    </Turret_1>
+                  </turrets0>
+                </root>
+                """);
+        fixture.WriteShells(
+            """
+            <root>
+              <icons><ap>x.png 0 0</ap></icons>
+              <_2pdr_AP_Mk.IXBT_2>
+                <kind>ARMOR_PIERCING</kind>
+                <caliber>40</caliber>
+                <normalizationAngle>5</normalizationAngle>
+                <ricochetAngle>70</ricochetAngle>
+              </_2pdr_AP_Mk.IXBT_2>
+            </root>
+            """);
+        fixture.WriteGuns(
+            """
+            <root>
+              <ids><_2pdr_Gun_Mk_XT>1024</_2pdr_Gun_Mk_XT></ids>
+              <shared>
+                <_2pdr_Gun_Mk_XT>
+                  <shots>
+                    <_2pdr_AP_Mk.IXBT_2>
+                      <speed>850</speed>
+                      <maxDistance>720</maxDistance>
+                      <piercingPower>92 72</piercingPower>
+                    </_2pdr_AP_Mk.IXBT_2>
+                  </shots>
+                </_2pdr_Gun_Mk_XT>
+              </shared>
+            </root>
+            """);
+
+        PenetrationDataService service = fixture.CreateService();
+        PenetrationTankData? data = await service.ResolveTankAsync(
+            "uk:GB08_Churchill_I",
+            CancellationToken.None);
+
+        Assert.IsNotNull(data);
+        Assert.AreEqual(186.7, data!.Armor.FrontMm, 1e-9);
+        Assert.HasCount(1, data.Shells);
+        Assert.AreEqual("_2pdr_AP_Mk.IXBT_2", data.Shells[0].Name);
+        Assert.AreEqual(92, data.Shells[0].Spec.Penetration0Mm, 1e-9);
+    }
+
+    [TestMethod]
+    public async Task ResolveTankAsync_RawCompactDescriptor_ResolvesThroughMetadataIndex()
+    {
+        // The store can carry a RAW compact descriptor (the decode-time
+        // enrichment missed): `2897` must resolve through the installed-game
+        // metadata index to `uk:GB08_Churchill_I` before the armor/shell
+        // lanes run — the offline scorer's 69-shot session depends on it.
+        using Fixture fixture = new();
+        fixture.WriteUkVehicle(
+            "GB08_Churchill_I",
+            armorXml: """
+                <root>
+                  <hull>
+                    <armor>
+                      <armor_1>93.4</armor_1>
+                      <armor_2>186.7</armor_2>
+                    </armor>
+                    <primaryArmor>armor_2</primaryArmor>
+                  </hull>
+                  <turrets0>
+                    <Turret_1>
+                      <guns>
+                        <_2pdr_Gun_Mk_XT>
+                          <shots>
+                            <_2pdr_AP_Mk.IXBT_2><shell>shared</shell></_2pdr_AP_Mk.IXBT_2>
+                          </shots>
+                        </_2pdr_Gun_Mk_XT>
+                      </guns>
+                    </Turret_1>
+                  </turrets0>
+                </root>
+                """);
+        fixture.WriteShells(
+            """
+            <root>
+              <icons><ap>x.png 0 0</ap></icons>
+              <_2pdr_AP_Mk.IXBT_2>
+                <kind>ARMOR_PIERCING</kind>
+                <caliber>40</caliber>
+                <normalizationAngle>5</normalizationAngle>
+                <ricochetAngle>70</ricochetAngle>
+              </_2pdr_AP_Mk.IXBT_2>
+            </root>
+            """);
+        fixture.WriteGuns(
+            """
+            <root>
+              <ids><_2pdr_Gun_Mk_XT>1024</_2pdr_Gun_Mk_XT></ids>
+              <shared>
+                <_2pdr_Gun_Mk_XT>
+                  <shots>
+                    <_2pdr_AP_Mk.IXBT_2>
+                      <speed>850</speed>
+                      <maxDistance>720</maxDistance>
+                      <piercingPower>92 72</piercingPower>
+                    </_2pdr_AP_Mk.IXBT_2>
+                  </shots>
+                </_2pdr_Gun_Mk_XT>
+              </shared>
+            </root>
+            """);
+
+        PenetrationDataService service = new(
+            new StubDiscovery(fixture.Identity),
+            new DvplReader(new GameIntegrationOptions { UseDefaultDiscoveryRoots = false }),
+            new DescriptorStubMetadataProvider(2897, "uk:GB08_Churchill_I"),
+            NullLogger<PenetrationDataService>.Instance);
+
+        PenetrationTankData? data = await service.ResolveTankAsync(
+            "2897",
+            CancellationToken.None);
+
+        Assert.IsNotNull(data);
+        Assert.AreEqual(186.7, data!.Armor.FrontMm, 1e-9);
+        Assert.AreEqual("_2pdr_AP_Mk.IXBT_2", data.Shells[0].Name);
+        Assert.AreEqual(92, data.Shells[0].Spec.Penetration0Mm, 1e-9);
+    }
+
+    [TestMethod]
+    public async Task ResolveTankAsync_UnknownTank_ReturnsNull()
+    {
+        using Fixture fixture = new();
+
+        PenetrationDataService service = fixture.CreateService();
+        PenetrationTankData? data = await service.ResolveTankAsync(
+            "uk:Not_A_Real_Tank",
+            CancellationToken.None);
+
+        Assert.IsNull(data);
+    }
+
+    [TestMethod]
     public async Task ResolveAsync_NoInstall_ReturnsNull()
     {
         // The discovery fails (no game found), so the context is null — never
@@ -183,6 +347,7 @@ public sealed class PenetrationDataServiceTests
         PenetrationDataService service = new(
             new FailingDiscovery(),
             new DvplReader(new GameIntegrationOptions { UseDefaultDiscoveryRoots = false }),
+            new StubMetadataProvider(),
             NullLogger<PenetrationDataService>.Instance);
 
         PenetrationContext? context = await service.ResolveAsync(projection, CancellationToken.None);
@@ -302,9 +467,12 @@ public sealed class PenetrationDataServiceTests
                     _dataRoot, "XML", "item_defs", "vehicles", "uk", "components", "guns.xml.dvpl"),
                 Encoding.UTF8.GetBytes(xml));
 
+        public InstalledGameIdentity Identity => _identity;
+
         public PenetrationDataService CreateService() => new(
             new StubDiscovery(_identity),
             new DvplReader(new GameIntegrationOptions { UseDefaultDiscoveryRoots = false }),
+            new StubMetadataProvider(),
             NullLogger<PenetrationDataService>.Instance);
 
         public void Dispose() => _temporary.Dispose();
@@ -331,5 +499,76 @@ public sealed class PenetrationDataServiceTests
                 OperationResult.Failure<InstalledGameIdentity>(
                     new ApplicationError("game.not_found", "no game")));
         }
+    }
+
+    /// <summary>
+    /// A metadata index with ONE descriptor→VehicleId mapping (the raw
+    /// compact-descriptor lane). Everything else fails closed.
+    /// </summary>
+    private sealed class DescriptorStubMetadataProvider(int descriptor, string vehicleId)
+        : IInstalledGameMetadataProvider
+    {
+        public ValueTask<OperationResult<GameMetadataContext>> ProbeAsync(
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult(OperationResult.Success(new GameMetadataContext(
+                new InstalledGameIdentity(
+                    "C:\\game\\wotblitz.exe",
+                    "11.19.0.10",
+                    DvplTestData.HashOf(0xaa),
+                    "C:\\game\\Data",
+                    DlcRoots: []),
+                ProviderVersion: "test",
+                SourceSetHash: DvplTestData.HashOf(0xbb),
+                LoadedAtUtc: DateTimeOffset.UnixEpoch)));
+
+        public ValueTask<OperationResult<VehicleMetadata>> ResolveVehicleAsync(
+            GameMetadataContext context,
+            int compactDescriptor,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult(compactDescriptor == descriptor
+                ? OperationResult.Success(new VehicleMetadata(
+                    descriptor,
+                    vehicleId,
+                    DisplayName: "test",
+                    TankClass: TankClass.Heavy,
+                    Nation: "uk",
+                    GameVersion: "11.19.0.10",
+                    SourceHash: DvplTestData.HashOf(0xcc)))
+                : OperationResult.Failure<VehicleMetadata>(
+                    new ApplicationError("metadata.vehicle_not_found", "no vehicle")));
+
+        public ValueTask<OperationResult<MapMetadata>> ResolveMapAsync(
+            GameMetadataContext context,
+            string mapId,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult(OperationResult.Failure<MapMetadata>(
+                new ApplicationError("metadata.map_not_found", "no map")));
+    }
+
+    /// <summary>
+    /// A metadata index with no vehicle table: every descriptor resolution
+    /// fails closed. The fixture installs are resolved by the nation scan /
+    /// explicit-prefix lanes, so no index is needed for those tests.
+    /// </summary>
+    private sealed class StubMetadataProvider : IInstalledGameMetadataProvider
+    {
+        public ValueTask<OperationResult<GameMetadataContext>> ProbeAsync(
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult(OperationResult.Failure<GameMetadataContext>(
+                new ApplicationError("metadata.unavailable", "no index")));
+
+        public ValueTask<OperationResult<VehicleMetadata>> ResolveVehicleAsync(
+            GameMetadataContext context,
+            int compactDescriptor,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult(OperationResult.Failure<VehicleMetadata>(
+                new ApplicationError("metadata.unavailable", "no index")));
+
+        public ValueTask<OperationResult<MapMetadata>> ResolveMapAsync(
+            GameMetadataContext context,
+            string mapId,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult(OperationResult.Failure<MapMetadata>(
+                new ApplicationError("metadata.unavailable", "no index")));
     }
 }

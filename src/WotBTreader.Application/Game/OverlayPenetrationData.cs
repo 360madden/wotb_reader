@@ -82,6 +82,19 @@ public sealed record PenetrationContext(
 }
 
 /// <summary>
+/// The install-derived inputs for ONE roster tank (any tank — attacker or
+/// victim — not just the viewer): nominal armor, the best-effort collision
+/// mesh, and the stock gun's shell options. Drives the offline PN-4 scorer,
+/// which validates the pen model against decoded shot outcomes. Fail-closed:
+/// null when the install is absent, the tank's armor cannot be resolved, or
+/// its stock gun has no shells — never a fabricated profile.
+/// </summary>
+public sealed record PenetrationTankData(
+    TankArmor Armor,
+    IReadOnlyList<CollisionMeshPart>? Mesh,
+    IReadOnlyList<ShellOption> Shells);
+
+/// <summary>
 /// Supplies the install-static penetration data (armor + shell) the overlay
 /// frame needs to render the pen indicator. Implementations read the game
 /// install read-only (the <c>PenetrationDataParser</c> lane); a null result
@@ -98,5 +111,17 @@ public interface IOverlayPenetrationData
     /// </summary>
     ValueTask<PenetrationContext?> ResolveAsync(
         ReplayDecodeProjection projection,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Resolves the penetration inputs for ONE tank by its decoded TankId
+    /// (the enrichment's <c>nation:tank</c> VehicleId form or a bare name).
+    /// Used by the offline PN-4 scorer to validate the pen model against
+    /// decoded shot outcomes for arbitrary attacker/victim pairs. Fail-closed:
+    /// null when the install is absent or the tank's armor/shells cannot be
+    /// resolved.
+    /// </summary>
+    ValueTask<PenetrationTankData?> ResolveTankAsync(
+        string tankId,
         CancellationToken cancellationToken);
 }

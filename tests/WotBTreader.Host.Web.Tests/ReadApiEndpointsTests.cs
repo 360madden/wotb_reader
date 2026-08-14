@@ -1789,6 +1789,11 @@ public sealed class ReadApiEndpointsTests
             ReplayDecodeProjection projection,
             CancellationToken cancellationToken) =>
             ValueTask.FromResult(context);
+
+        public ValueTask<PenetrationTankData?> ResolveTankAsync(
+            string tankId,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult<PenetrationTankData?>(null);
     }
 
     private sealed class FakeOverlayFrames(

@@ -41,6 +41,7 @@ public sealed class CompositionRootTests
         typeof(IReplayClockSource),
         typeof(ITelemetryCaptureWriter),
         typeof(IInstalledGameMetadataProvider),
+        typeof(IPenOfflineScorer),
         typeof(IGameSessionState),
         typeof(IGameReplayLauncher),
         typeof(IGameMemoryObserver),

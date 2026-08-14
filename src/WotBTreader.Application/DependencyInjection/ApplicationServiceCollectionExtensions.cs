@@ -20,6 +20,8 @@ public static class ApplicationServiceCollectionExtensions
             sp.GetRequiredService<ISessionQueryRepository>(),
             sp.GetRequiredService<IProjectionCache>(),
             sp.GetService<IOverlayPenetrationData>()));
+        services.AddSingleton<IPenOfflineScorer>(sp => new PenOfflineScorer(
+            sp.GetRequiredService<IOverlayPenetrationData>()));
         services.AddSingleton<IOffsetTableReader>(sp =>
         {
             string offsetsPath = Path.Combine(

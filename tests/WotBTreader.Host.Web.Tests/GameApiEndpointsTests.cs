@@ -6,10 +6,12 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using WotBTreader.ApiContracts;
 using WotBTreader.Application.Capture;
 using WotBTreader.Application.Game;
+using WotBTreader.Application.Replay;
 using WotBTreader.Application.Results;
 using WotBTreader.Application.Storage;
 using WotBTreader.Core;
 using WotBTreader.Core.Discovery;
+using WotBTreader.Core.Overlay;
 using WotBTreader.Host.Web.Endpoints;
 
 namespace WotBTreader.Host.Web.Tests;
@@ -1901,6 +1903,96 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task ScorePenOffline_ReturnsReportForScoredSession()
+    {
+        Guid sessionId = Guid.NewGuid();
+        var projection = new ReplayDecodeProjection(
+            new DecodeRun(
+                DecodeRunId.New(),
+                SourceArtifactId.New(),
+                DecoderId: "test",
+                DecoderVersion: "1",
+                SchemaVersion: "1",
+                DecodeRunStatus.Succeeded,
+                ReplayCapability.Positions,
+                DateTimeOffset.UnixEpoch,
+                DateTimeOffset.UnixEpoch,
+                FailureCode: null,
+                FailureSummary: null),
+            new BattleSession(
+                BattleSessionId.New(),
+                DecodeRunId.New(),
+                GameVersion: "11.19.0.10",
+                ArenaIdentity: null,
+                MapId: null,
+                MapName: null,
+                BattleTimeUtc: null,
+                Duration: null,
+                ViewpointParticipantId: null,
+                SchemaVersion: "1"),
+            Participants: [],
+            Positions: [],
+            Events: [],
+            RawRecords: [],
+            Warnings: []);
+        var sessions = new FakeSessionQueryRepository(
+            OperationResult.Success(projection));
+        var scorer = new FakePenOfflineScorer(
+            new OfflinePenScoreReport(
+                SkippedShots: 0,
+                new PenValidationReport(
+                    TotalShots: 1,
+                    PredictedRicochet: 0,
+                    RicochetAgreements: 0,
+                    RicochetPrecision: 0,
+                    ClassifiedShots: 1,
+                    BandAgreements: 1,
+                    BandAccuracy: 1.0,
+                    Rows:
+                    [
+                        new PenValidationShotRow(
+                            Penetrated: true,
+                            PredictedRicochet: false,
+                            Band: PenetrationBand.Pen,
+                            IncidenceDegrees: 0,
+                            EffectiveArmorMm: 50,
+                            PenetrationMmAtRange: 200),
+                    ]),
+                Shots: []));
+
+        IResult result = await GameApiEndpoints.ScorePenOfflineAsync(
+            scorer,
+            sessions,
+            sessionId,
+            TestContext.CancellationToken);
+
+        OfflinePenScoreReport response = Value<OfflinePenScoreReport>(result);
+        Assert.AreEqual(1, response.Validation.TotalShots);
+        Assert.AreEqual(1.0, response.Validation.BandAccuracy, 1e-9);
+        Assert.IsNotNull(scorer.LastProjection);
+        Assert.AreEqual(sessionId, sessions.LastSessionId?.Value);
+    }
+
+    [TestMethod]
+    public async Task ScorePenOffline_NotFoundForUnknownSession()
+    {
+        var sessions = new FakeSessionQueryRepository(
+            OperationResult.Failure<ReplayDecodeProjection>(
+                new ApplicationError("storage.session.not_found", "No such session.", Retryable: false)));
+        var scorer = new FakePenOfflineScorer(
+            new OfflinePenScoreReport(0, new PenValidationReport(0, 0, 0, 0, 0, 0, 0, []), []));
+
+        IResult result = await GameApiEndpoints.ScorePenOfflineAsync(
+            scorer,
+            sessions,
+            Guid.NewGuid(),
+            TestContext.CancellationToken);
+
+        JsonElement response = NotFoundAnonymous(result);
+        Assert.AreEqual("storage.session.not_found", response.GetProperty("error").GetString());
+    }
+
+    [TestMethod]
     public async Task TrajectoryNotFoundForUnknownSession()
     {
         var provider = new FakeTrajectoryProvider(OperationResult.Failure<TrajectoryGroundTruth>(
@@ -2667,6 +2759,43 @@ public sealed class GameApiEndpointsTests
         {
             LastCancellationToken = cancellationToken;
             return ValueTask.FromResult(result);
+        }
+    }
+
+    private sealed class FakeSessionQueryRepository(OperationResult<ReplayDecodeProjection> result)
+        : ISessionQueryRepository
+    {
+        public BattleSessionId? LastSessionId { get; private set; }
+
+        public ValueTask<IReadOnlyList<DecodeRunSummary>> ListAsync(
+            int offset,
+            int limit,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult<IReadOnlyList<DecodeRunSummary>>([]);
+
+        public ValueTask<OperationResult<ReplayDecodeProjection>> GetProjectionAsync(
+            BattleSessionId battleSessionId,
+            CancellationToken cancellationToken)
+        {
+            LastSessionId = battleSessionId;
+            return ValueTask.FromResult(result);
+        }
+
+        public ValueTask<IReadOnlyList<MapBoundary>> GetMapBoundariesAsync(
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult<IReadOnlyList<MapBoundary>>([]);
+    }
+
+    private sealed class FakePenOfflineScorer(OfflinePenScoreReport report) : IPenOfflineScorer
+    {
+        public ReplayDecodeProjection? LastProjection { get; private set; }
+
+        public ValueTask<OfflinePenScoreReport> ScoreAsync(
+            ReplayDecodeProjection projection,
+            CancellationToken cancellationToken)
+        {
+            LastProjection = projection;
+            return ValueTask.FromResult(report);
         }
     }
 

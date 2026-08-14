@@ -171,6 +171,11 @@ public sealed class OptInInstalledGameTests
         PenetrationDataService service = new(
             new GameInstallationDiscovery(options, NullLogger<GameInstallationDiscovery>.Instance),
             new DvplReader(options),
+            new InstalledGameMetadataProvider(
+                new GameInstallationDiscovery(options, NullLogger<GameInstallationDiscovery>.Instance),
+                new DvplReader(options),
+                options,
+                NullLogger<InstalledGameMetadataProvider>.Instance),
             NullLogger<PenetrationDataService>.Instance);
 
         PenetrationContext? context = await service.ResolveAsync(

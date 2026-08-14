@@ -37,11 +37,13 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
 
     private readonly IGameInstallationDiscovery _discovery;
     private readonly IDvplReader _dvplReader;
+    private readonly IInstalledGameMetadataProvider _metadataProvider;
     private readonly ILogger<PenetrationDataService> _logger;
     private readonly object _gate = new();
 
     private InstalledGameIdentity? _identity;
-    private readonly Dictionary<string, string?> _nationByTankId = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (string Nation, string Tank)?> _locationByTankId =
+        new(StringComparer.Ordinal);
     private readonly Dictionary<string, TankArmor> _armorByTankId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, IReadOnlyList<string>?> _gunShotsByTankId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Dictionary<string, ShellProfile>> _shellsByNation =
@@ -54,13 +56,16 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
     public PenetrationDataService(
         IGameInstallationDiscovery discovery,
         IDvplReader dvplReader,
+        IInstalledGameMetadataProvider metadataProvider,
         ILogger<PenetrationDataService> logger)
     {
         ArgumentNullException.ThrowIfNull(discovery);
         ArgumentNullException.ThrowIfNull(dvplReader);
+        ArgumentNullException.ThrowIfNull(metadataProvider);
         ArgumentNullException.ThrowIfNull(logger);
         _discovery = discovery;
         _dvplReader = dvplReader;
+        _metadataProvider = metadataProvider;
         _logger = logger;
     }
 
@@ -71,21 +76,11 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
     {
         ArgumentNullException.ThrowIfNull(projection);
 
-        InstalledGameIdentity? identity = await GetIdentityAsync(cancellationToken).ConfigureAwait(false);
+        InstalledGameIdentity? identity =
+            await EnsureIdentityAsync(cancellationToken).ConfigureAwait(false);
         if (identity is null)
         {
             return null;
-        }
-
-        lock (_gate)
-        {
-            if (_identity is null
-                || !string.Equals(_identity.ExecutableSha256.Value, identity.ExecutableSha256.Value, StringComparison.Ordinal)
-                || !string.Equals(_identity.ResourceRoot, identity.ResourceRoot, StringComparison.OrdinalIgnoreCase))
-            {
-                ClearCaches();
-                _identity = identity;
-            }
         }
 
         Dictionary<long, TankArmor> armorByEntity = [];
@@ -99,17 +94,17 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
 
             // The decoded TankId is the enrichment's `nation:tank` VehicleId
             // (e.g. `germany:PzIV`) or a raw compact descriptor when the
-            // descriptor did not resolve. Split the prefix so the downstream
-            // path builders use the BARE tank file name.
-            (_, string tankId) = SplitTankId(participant.TankId);
-            string? nation = await ResolveNationAsync(identity, participant.TankId, cancellationToken)
-                .ConfigureAwait(false);
-            if (nation is null)
+            // enrichment missed. Both forms resolve to the install's
+            // nation + bare tank file name.
+            (string Nation, string Tank)? location =
+                await ResolveTankLocationAsync(identity, participant.TankId, cancellationToken)
+                    .ConfigureAwait(false);
+            if (location is not { } resolved)
             {
                 continue;
             }
 
-            TankArmor? armor = await ResolveArmorAsync(identity, nation, tankId, cancellationToken)
+            TankArmor? armor = await ResolveArmorAsync(identity, resolved.Nation, resolved.Tank, cancellationToken)
                 .ConfigureAwait(false);
             if (armor is { } resolvedArmor)
             {
@@ -119,7 +114,7 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
             // Best-effort collision meshes: when present, the badge uses their
             // true surface normals; when absent it falls back to the box model.
             IReadOnlyList<CollisionMeshPart>? mesh = await ResolveMeshAsync(
-                identity, nation, tankId, cancellationToken).ConfigureAwait(false);
+                identity, resolved.Nation, resolved.Tank, cancellationToken).ConfigureAwait(false);
             if (mesh is not null && mesh.Count > 0)
             {
                 meshesByEntity[entityId] = mesh;
@@ -151,6 +146,56 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
             shells);
     }
 
+    /// <inheritdoc />
+    public async ValueTask<PenetrationTankData?> ResolveTankAsync(
+        string tankId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(tankId))
+        {
+            return null;
+        }
+
+        InstalledGameIdentity? identity =
+            await EnsureIdentityAsync(cancellationToken).ConfigureAwait(false);
+        if (identity is null)
+        {
+            return null;
+        }
+
+        (string Nation, string Tank)? location =
+            await ResolveTankLocationAsync(identity, tankId, cancellationToken)
+                .ConfigureAwait(false);
+        if (location is not { } resolved)
+        {
+            return null;
+        }
+
+        TankArmor? armor = await ResolveArmorAsync(identity, resolved.Nation, resolved.Tank, cancellationToken)
+            .ConfigureAwait(false);
+        if (armor is not { } resolvedArmor)
+        {
+            return null;
+        }
+
+        IReadOnlyList<CollisionMeshPart>? mesh =
+            await ResolveMeshAsync(identity, resolved.Nation, resolved.Tank, cancellationToken)
+                .ConfigureAwait(false);
+
+        IReadOnlyList<ShellOption> shells =
+            await BuildShellOptionsAsync(identity, resolved.Nation, resolved.Tank, cancellationToken)
+                .ConfigureAwait(false);
+        if (shells.Count == 0)
+        {
+            return null;
+        }
+
+        return new PenetrationTankData(
+            resolvedArmor,
+            mesh is { Count: > 0 } ? mesh : null,
+            shells);
+    }
+
     private static Participant? ResolveViewer(ReplayDecodeProjection projection)
     {
         if (projection.Session?.ViewpointParticipantId is not { } viewpointId)
@@ -160,6 +205,35 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
 
         return projection.Participants.FirstOrDefault(
             participant => participant.Id == viewpointId);
+    }
+
+    /// <summary>
+    /// Returns the cached installed-game identity, discovering it once and
+    /// clearing the per-tank caches when the identity changes (a different
+    /// install or version invalidates every cached profile).
+    /// </summary>
+    private async ValueTask<InstalledGameIdentity?> EnsureIdentityAsync(
+        CancellationToken cancellationToken)
+    {
+        InstalledGameIdentity? identity =
+            await GetIdentityAsync(cancellationToken).ConfigureAwait(false);
+        if (identity is null)
+        {
+            return null;
+        }
+
+        lock (_gate)
+        {
+            if (_identity is null
+                || !string.Equals(_identity.ExecutableSha256.Value, identity.ExecutableSha256.Value, StringComparison.Ordinal)
+                || !string.Equals(_identity.ResourceRoot, identity.ResourceRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                ClearCaches();
+                _identity = identity;
+            }
+        }
+
+        return identity;
     }
 
     private async ValueTask<InstalledGameIdentity?> GetIdentityAsync(CancellationToken cancellationToken)
@@ -189,38 +263,55 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
         return result.Value;
     }
 
-    private async ValueTask<string?> ResolveNationAsync(
+    /// <summary>
+    /// Resolves a decoded TankId to the install's (nation, bare tank file
+    /// name) for all three forms the store carries: the enrichment's
+    /// <c>nation:tank</c> VehicleId (nation verified by the vehicle file's
+    /// existence), a raw integer compact descriptor (resolved through the
+    /// installed-game metadata index, which owns the descriptor→VehicleId
+    /// table), and a bare tank name (scanned across the known nations).
+    /// Fail-closed: null when no form resolves. Cached per input string.
+    /// </summary>
+    private async ValueTask<(string Nation, string Tank)?> ResolveTankLocationAsync(
         InstalledGameIdentity identity,
         string tankId,
         CancellationToken cancellationToken)
     {
         lock (_gate)
         {
-            if (_nationByTankId.TryGetValue(tankId, out string? cached))
+            if (_locationByTankId.TryGetValue(tankId, out (string, string)? cached))
             {
                 return cached;
             }
         }
 
         (string? explicitNation, string bareTank) = SplitTankId(tankId);
-        string? nation;
+        (string Nation, string Tank)? location;
         if (explicitNation is not null)
         {
             // The enrichment's `nation:tank` VehicleId names the nation
             // explicitly; verify the file exists (fail-closed) and use it.
-            nation = File.Exists(VehiclePath(identity, explicitNation, bareTank))
-                ? explicitNation
+            location = File.Exists(VehiclePath(identity, explicitNation, bareTank))
+                ? (explicitNation, bareTank)
                 : null;
+        }
+        else if (int.TryParse(bareTank, out int descriptor))
+        {
+            // A raw compact descriptor (the decode-time enrichment missed):
+            // resolve it through the installed-game metadata index, which
+            // owns the descriptor → `nation:tank` table.
+            location = await ResolveDescriptorLocationAsync(identity, descriptor, cancellationToken)
+                .ConfigureAwait(false);
         }
         else
         {
-            nation = null;
+            location = null;
             foreach (string candidate in Nations)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (File.Exists(VehiclePath(identity, candidate, bareTank)))
                 {
-                    nation = candidate;
+                    location = (candidate, bareTank);
                     break;
                 }
             }
@@ -228,10 +319,40 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
 
         lock (_gate)
         {
-            _nationByTankId[tankId] = nation;
+            _locationByTankId[tankId] = location;
         }
 
-        return nation;
+        return location;
+    }
+
+    /// <summary>
+    /// Resolves a raw vehicle compact descriptor to its (nation, tank file
+    /// name) through the installed-game metadata index. The provider probes
+    /// and caches its own descriptor snapshot per executable identity, so the
+    /// per-tank probe here is cheap after the first resolution.
+    /// </summary>
+    private async ValueTask<(string Nation, string Tank)?> ResolveDescriptorLocationAsync(
+        InstalledGameIdentity identity,
+        int descriptor,
+        CancellationToken cancellationToken)
+    {
+        OperationResult<GameMetadataContext> contextResult =
+            await _metadataProvider.ProbeAsync(cancellationToken).ConfigureAwait(false);
+        if (!contextResult.IsSuccess || contextResult.Value is null)
+        {
+            return null;
+        }
+
+        OperationResult<VehicleMetadata> vehicleResult = await _metadataProvider
+            .ResolveVehicleAsync(contextResult.Value, descriptor, cancellationToken)
+            .ConfigureAwait(false);
+        if (!vehicleResult.IsSuccess || vehicleResult.Value is null)
+        {
+            return null;
+        }
+
+        (string? nation, string tank) = SplitTankId(vehicleResult.Value.VehicleId);
+        return nation is null ? null : (nation, tank);
     }
 
     /// <summary>
@@ -349,14 +470,31 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
             return [];
         }
 
-        (_, string tankId) = SplitTankId(viewer.TankId);
-        string? nation = await ResolveNationAsync(identity, viewer.TankId, cancellationToken)
-            .ConfigureAwait(false);
-        if (nation is null)
+        (string Nation, string Tank)? location =
+            await ResolveTankLocationAsync(identity, viewer.TankId, cancellationToken)
+                .ConfigureAwait(false);
+        if (location is not { } resolved)
         {
             return [];
         }
 
+        return await BuildShellOptionsAsync(identity, resolved.Nation, resolved.Tank, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Builds the stock gun's shell options for one tank: the vehicle XML's
+    /// shot names joined against the nation's shells.xml (per-shell physics)
+    /// and guns.xml (per-shot piercing profile). Shared by the viewer-shell
+    /// lane (<see cref="ResolveAsync"/>) and the per-tank lane
+    /// (<see cref="ResolveTankAsync"/>).
+    /// </summary>
+    private async ValueTask<IReadOnlyList<ShellOption>> BuildShellOptionsAsync(
+        InstalledGameIdentity identity,
+        string nation,
+        string tankId,
+        CancellationToken cancellationToken)
+    {
         IReadOnlyList<string> shotNames = await ResolveStockGunShotsAsync(
             identity, nation, tankId, cancellationToken).ConfigureAwait(false);
         if (shotNames.Count == 0)
@@ -541,7 +679,7 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
 
     private void ClearCaches()
     {
-        _nationByTankId.Clear();
+        _locationByTankId.Clear();
         _armorByTankId.Clear();
         _gunShotsByTankId.Clear();
         _shellsByNation.Clear();

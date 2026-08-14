@@ -296,6 +296,7 @@ docs/operations/handoffs/2026-08-13-pen-per-face-thickness-not-feasible.md
 docs/operations/handoffs/2026-08-13-pen-shell-selector-scoring-harness-and-hud-polish.md
 docs/operations/handoffs/2026-08-13-pen-shotimpact-attacker-attribution-decoded.md
 docs/operations/handoffs/2026-08-14-pen-country-id-and-prefix-fix.md
+docs/operations/handoffs/2026-08-14-pen-offline-armor-vs-pen-scorer.md
 docs/operations/handoffs/README.md
 docs/operations/item7-branch-b-step2-consistent-double-read-proposal.md
 docs/operations/item7-hardware-atomicity-proof-plan.md
@@ -450,6 +451,7 @@ src/WotBTreader.Application/Properties/AssemblyInfo.cs
 src/WotBTreader.Application/Replay/LiveFrameProjector.cs
 src/WotBTreader.Application/Replay/OffsetTableReader.cs
 src/WotBTreader.Application/Replay/OverlayFrameProjection.cs
+src/WotBTreader.Application/Replay/PenOfflineScorer.cs
 src/WotBTreader.Application/Replay/ProjectionCache.cs
 src/WotBTreader.Application/Replay/ReplayContracts.cs
 src/WotBTreader.Application/Replay/ReplayDecoderRegistry.cs
@@ -727,6 +729,7 @@ tests/WotBTreader.Application.Tests/LiveFrameProjectorTests.cs
 tests/WotBTreader.Application.Tests/MSTestSettings.cs
 tests/WotBTreader.Application.Tests/OffsetTableReaderTests.cs
 tests/WotBTreader.Application.Tests/OverlayFrameProjectorTests.cs
+tests/WotBTreader.Application.Tests/PenOfflineScorerTests.cs
 tests/WotBTreader.Application.Tests/PenetrationContextTests.cs
 tests/WotBTreader.Application.Tests/ProjectionCacheTests.cs
 tests/WotBTreader.Application.Tests/ReplayDecoderRegistryTests.cs
