@@ -99,6 +99,9 @@ if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
 # immutable fingerprint instead.
 . (Join-Path $scriptDir 'od-replay-completion.ps1')
 
+# Replay-selection + staging-refusal helpers (pure path logic, Pester-pinned).
+. (Join-Path $scriptDir 'od-replay-selection.ps1')
+
 if ($EnableInstructionSnapshot -and $KeepExistingHost) {
     Write-Host 'od_launch: FAILED_instruction_snapshot_requires_new_host'
     exit 1
@@ -296,12 +299,7 @@ try {
     if ([string]::IsNullOrWhiteSpace($ReplayPath)) {
         # Top-level originals only: never recurse into wotbtreader-staging, and
         # prefer human-named files over GUID stage leftovers in the flat list.
-        $candidates = @(Get-ChildItem -LiteralPath $replaysDir -Filter '*.wotbreplay' -File -ErrorAction SilentlyContinue)
-        $originals = @($candidates | Where-Object {
-            $_.Name -notmatch '^[0-9a-fA-F]{32}\.wotbreplay$'
-        })
-        $pickFrom = if ($originals.Count -gt 0) { $originals } else { $candidates }
-        $replay = $pickFrom | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        $replay = Select-OdReplay -ReplaysDir $replaysDir
         if (-not $replay) {
             Write-Od 'FAILED_no_wotbreplay_in_game_folder'
             exit 1
@@ -314,8 +312,7 @@ try {
     }
 
     # Refuse launching a path that lives inside the staging folder as "source of truth".
-    $fullReplay = [IO.Path]::GetFullPath($ReplayPath)
-    if ($fullReplay.StartsWith([IO.Path]::GetFullPath($stagingDir) + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+    if (Test-OdReplayIsStagingCopy -ReplayPath $ReplayPath -StagingDir $stagingDir) {
         Write-Od 'FAILED_replay_is_staging_copy_use_original'
         exit 1
     }
