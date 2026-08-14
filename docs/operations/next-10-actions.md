@@ -3,7 +3,8 @@
 **Purpose:** the durable, sequenced top-10 follow-up list for continued
 development. Anchored to `docs/operations/product-roadmap.md` (the forward
 plan), the ledger's *Next planned session* row, and the newest handoff.
-Refreshed after the launch-marker ACL module root-cause fix on 2026-08-14.
+Refreshed after the two-replay Item-7 cluster and owner-approved batch witness
+contract apply on 2026-08-14.
 
 **Sequencing rule:** live items are clustered to share ONE approved launch
 (one game start = max evidence); offline hardening runs in parallel with any
@@ -11,16 +12,16 @@ live work; owner-gated items sit behind the evidence they consume.
 
 | # | Action | Roadmap anchor | Why now | Gate |
 |---|---|---|---|---|
-| 1 | **Live-verify the hardened clean-run completion marker** (driver exit 0 -> marker file -> chain re-run exits 7 fast) | OD-099 durable fix (`scripts/od-replay-completion.ps1`) | The clean-run path still needs an end-to-end proof before more launch clusters rely on it | 1 approved launch |
-| 2 | **Batch rehearsal re-run** — `invoke-batch-rehearsal.ps1 -LiveAcquire -EnumerateLive -Times 60,150,220 -FailOnMiss`, absolute replay path; retain only dumps with all three validated read-pass measurements | Item 7 Branch B step 3 + X2/X2b rehearsal | The driver now preserves the endpoint measurement instead of discarding it; the live run can finally deliver the claimed evidence | same launch as #1 |
-| 3 | **Branch B step-4 camera measurement** — run the pre-staged CAM-001 v7 driver and require every camera-pose probe resolved, identity-gated, module-rooted, byte-identical, with zero `pose-double-read` failures | Item 7 Branch B step 4 | Coordinator discipline and privacy-bounded aggregation are offline-complete; the live witness is the last unclaimed half | same launch as #1 |
-| 4 | **Live-frame `DamageDealt` E2E** — mid-battle `/live/frame`, own row is a real value with exact decoded joins | X4 G2 consumption | Proves the published avatar-stats chain at the shared frame seam | same launch as #1 |
-| 5 | **Approve + apply the `ConsistentDoubleRead` flag-flip proposal** | Item 7 Branch B step 2 | Converts the witnessed batch/camera measurements into the shared contract flag | owner approval + gate |
-| 6 | **Owner ship review for the PN prototype** — approve the evidence-backed badge, documented limits, and staged release diff | Phase 6 PN-4/PN-5; repeat proof: `2026-08-14-pn4-second-replay-regression.md` | Two content-distinct live replays now pass the aim-source regression; remaining work is review/package, not construction | owner review |
-| 7 | **T1 turret-facing + lock-on discovery** — live-behavioral traversal with camera-yaw correlation | Phase 2 T1 (`t1-turret-traversal-design.md`) | Optional exact gun-lock research; not a blocker for the CAM-013-based pen badge | 1 approved launch |
-| 8 | **L4 replayTime session** — chained clock and first-hit instruction snapshot | Phase 2 L4 | Unclaimed discovery lane after the overlay/PN proof work | 1 approved launch |
-| 9 | **Attacker-side damage write trace** (runtime write-interceptor/instruction snapshot) | Phase 2 L3 residual | Closes the remaining write-path evidence after the published damage-dealt consumption lane | 1 approved launch |
-| 10 | **Minimap terrain-alignment smoke** — run the HUD against a decoded replay for a texture-bearing map | Phase 4 V4 follow-up | Arena `1` transport is install-proven, but dot-versus-terrain alignment needs a compatible replay frame | compatible texture-bearing replay |
+| 1 | **Harden the batch driver's rendezvous rotation race and witness validation** — bounded retry when the rendezvous file is briefly absent; require the post-contract attempt/tear fields before evidence is retained | Item 7 Branch B post-contract prerequisite | Oasis lost one otherwise valid schedule to the publisher's transient replacement window; the next live pass must also fail closed on a pre-contract host | offline |
+| 2 | **Re-verdict the stored Oasis batch positions with a bounded bidirectional per-dump clock window** | X2 cross-check / OD-RECOVERY-100 honest negative | The read witness passed, but 8/41 moving samples exceeded the old +/-2 s matcher window; diagnose label skew without another launch | offline |
+| 3 | **Normalize completion-marker timestamp comparison across PowerShell 5.1 and 7** | OD-099 durable fix follow-up | The exact Windows-first chain correctly exits 7, but direct pwsh inspection auto-deserializes ISO UTC into `DateTime` and currently fails open | offline |
+| 4 | **Post-contract two-replay batch witness** — require every resolved item `ConsistentDoubleRead=true`, `RegionReadAttempts=1`, `RegionTearObserved=false`, `EntityBaseTearObserved=false` | Item 7 Branch B step 3 | Two-replay timing and camera proof are complete; direct no-transient-tear wire evidence is the remaining item-7 gate | 2 approved launches after #1-3 |
+| 5 | **Owner ship review for the PN prototype** — approve the evidence-backed badge, documented limits, and staged release diff | Phase 6 PN-4/PN-5; repeat proof: `2026-08-14-pn4-second-replay-regression.md` | Two content-distinct live replays pass the aim-source regression; remaining work is review/package | owner review |
+| 6 | **T1 turret-facing + lock-on discovery** — live-behavioral traversal with camera-yaw correlation | Phase 2 T1 (`t1-turret-traversal-design.md`) | Optional exact gun-lock research; not a blocker for the CAM-013-based pen badge | 1 approved launch |
+| 7 | **L4 replayTime session** — chained clock and first-hit instruction snapshot | Phase 2 L4 | Unclaimed discovery lane after the overlay/PN proof work | 1 approved launch |
+| 8 | **Attacker-side damage write trace** (runtime write-interceptor/instruction snapshot) | Phase 2 L3 residual | Closes the remaining write-path evidence after the published damage-dealt consumption lane | 1 approved launch |
+| 9 | **Minimap terrain-alignment smoke** — run the HUD against a decoded replay for a texture-bearing map | Phase 4 V4 follow-up | Arena `1` transport is install-proven, but dot-versus-terrain alignment needs a compatible replay frame | compatible texture-bearing replay |
+| 10 | **Phase-5 live-overlay policy gate** — define the evidence and fail-closed rules for any spotting/visibility model before implementation | Phase 5 X5 | Prevents engineering a visibility claim whose policy/evidence boundary is still undecided | owner design review |
 
 ## Wait-list (deliberately outside the top 10)
 

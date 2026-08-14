@@ -168,9 +168,12 @@ the read discipline that makes atomicity unnecessary") gets its home here:
   entity-base span are each read twice per attempt with a bounded retry
   (fail-closed `region-unstable-snapshot` / `entity-base-unstable-snapshot`
   exhaustion) — the per-span `SequenceEqual` is the stability witness (for
-  ring records the leading time field sits inside the span). The flag still
-  travels `ConsistentDoubleRead: false`; per-entity span MEASUREMENT fields
-  and the flag flip remain in the owner-gated shared-contract proposal.
+  ring records the leading time field sits inside the span). **Shared contract
+  applied 2026-08-14:** a delivered stable pair now reports
+  `ConsistentDoubleRead: true`, `RegionReadAttempts` exposes the bounded
+  attempt count, and `RegionTearObserved` / `EntityBaseTearObserved` preserve
+  any mismatched attempt instead of hiding it. Failed/exhausted items stay
+  false; the single-read endpoint stays false.
 - The batch is also where **one-coherent-pass** semantics get designed: a
   single reader pass over all entities at ~the same wall time is the only
   shape that can later claim "all 14 tanks seen within X ms" — which is what
@@ -211,9 +214,10 @@ the read discipline that makes atomicity unnecessary") gets its home here:
      persists and validates it rather than discarding it. **The
      per-entity double-read spans themselves landed 2026-08-11 (item-7
      Branch B step 1)** — region + entity-base spans double-read with
-     bounded retry and fail-closed exhaustion; per-entity span measurement
-     fields + the `ConsistentDoubleRead` flip stay in the owner-gated
-     shared-contract proposal.
+     bounded retry and fail-closed exhaustion. **Step 2 applied 2026-08-14:**
+     the batch response now exposes the stable-pair flag, attempt count, and
+     both tear-observed fields. A post-apply live pass is still required to
+     observe those new fields directly before the item-7 proof can close.
 
 ## Open questions (recorded, not decided)
 

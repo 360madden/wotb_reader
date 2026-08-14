@@ -1152,11 +1152,14 @@ internal static class GameApiEndpoints
                     ModuleRooted = region.ModuleRooted,
                     EntityIdentityRevalidated = region.EntityIdentityRevalidated,
                     ConsistentDoubleRead = region.ConsistentDoubleRead,
+                    RegionReadAttempts = region.RegionReadAttempts,
+                    RegionTearObserved = region.RegionTearObserved,
                     EntityBaseRegionBase64 = region.EntityBaseRegionBytes is null
                         ? null
                         : Convert.ToBase64String(region.EntityBaseRegionBytes),
                     EntityBaseFailureStage = region.EntityBaseFailureStage,
                     EntityBaseAttempts = region.EntityBaseAttempts,
+                    EntityBaseTearObserved = region.EntityBaseTearObserved,
                 })
                 .ToList(),
             Measurement = read.Measurement is null

@@ -598,7 +598,10 @@ public sealed record EntityRegionReadResultItem(
     bool ConsistentDoubleRead,
     byte[]? EntityBaseRegionBytes = null,
     string? EntityBaseFailureStage = null,
-    int EntityBaseAttempts = 0);
+    int EntityBaseAttempts = 0,
+    int RegionReadAttempts = 0,
+    bool RegionTearObserved = false,
+    bool EntityBaseTearObserved = false);
 
 /// <summary>
 /// Wall-clock measurement of the batch read pass (the item-7 atomicity

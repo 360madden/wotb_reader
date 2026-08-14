@@ -502,6 +502,8 @@ occurred.
 | `OD-RECOVERY-098` | 2026-08-12 | **G1 pitch/roll publication APPLIED (operator-approved via the rehearsal-proven draft).** `playerPitch` / `playerRoll` published `Verified` via the ring-record chain — the IDENTICAL module-rooted walk as `playerPositionX` (position `+0x10` and the rotation triple roll `+0x28` / pitch `+0x2C` / yaw `+0x30` proven on the SAME ring record) with final hops `recordOffset 44` (float32 hull pitch at `+0x2C`) / `recordOffset 40` (float32 hull roll at `+0x28`). `offsets` stay 0 by design. Evidence: rotation-triple reconciliation — `yaw-diff --field pitch|roll` re-verdicts the SAME immutable OD-088/089 dumps: Oasis 48/48 + Dead Rail 56/56 each, score 1.0, flatness 1.0 (record-span 0x38-trimmed; `--record-span` excludes the next ring entry's byte-near-identical sibling decoy — the full-region `0x60` roll decoy documented), `twoReplayRepeatability = true`; the rotation triple is now FULLY published | Operator-approved apply of `docs/operations/g1-pitch-roll-publication-draft.md` §3: table chains verbatim from the canonical walkable draft (fidelity-enforced identity), offsets 0, fieldValidation entries (StaticAnalysis item-7 Branch A rotation sub-proof + DynamicScan reconciliation), notes; pack doc documented the triple. Post-edit gates: `offset_check.py --check-schema` chains-validated **8 fields** (position family + yaw + HP + damageDealt + pitch + roll — the draft's "7" expectation predates the G2 apply) + fidelity 8/8, `report-offset-evidence.ps1` verified=8 exit 0, `offline_check.py --refresh`, ChainedFields exclusion test, `validate.ps1` exit 0 | `Hit` | `playerPitch`/`playerRoll` → `Verified` (chained, offsets 0); **EIGHT fields now Verified via chains**; rotation triple fully published | No resolver / read surface touched; chained fields still excluded from observation reads. Next: damage-dealt consumption (read surface for the live frame's own row); item 7 LAST |
 | `OD-RECOVERY-099` | 2026-08-12 | **L3 damage-dealt LIVE in-session re-verification (Oasis, session `019ff74f`) — HIT at offset 0x0 with the FIXED driver at DEFAULT lag tolerance (no explicit override): the first fully in-session positive on the increment lane.** Live chain launch (single monitor; ground-truth `20260802_1615__mrkool1138_GB08_Churchill_I_8565111466734423.wotbreplay`), 20 region dumps on the avatar-stats anchor; **every probe resolved `status='Resolved' candidates=1` across the whole battle** (the gated AOB scan + identity re-gate — the SAME read path the live frame's damage-dealt consumption uses — proven live end-to-end). Verdict: **offset 0x0, score 1.0, flatness 1.0, 5/5 exact sums (152/144/151/170/1; the first 134 at 177.82 s predates the formable capture span — same class as OD-095/096), Strict >= 2 → HIT**, matched windows (203.33, 248.007]..(273.325, 276.485] | **Replay-completion detection VERIFIED LIVE end-to-end:** battle end recognized IN-SESSION via the teardown status (`AvatarAnchorNotFound` at dump target 259.3 s) — the driver stopped the dump schedule cleanly and ran the verdict on the captured dumps (no error, no hang), chain exit 0. **Durable completion-loop finding (live-observed): the game EXITS ON ITS OWN ~1-2 min after the Battle Results screen** (blitz log stops mid-results-page texture load at `BattleResultsPersonalPageController`, no crash event in the Application log, no shutdown lines, replay file mtime/size untouched); nothing in the launcher / clicker / driver / chain closes it (all four audited — zero game-kill paths post-launch). Consequence: the cross-session `evidence.replay_completed` gate denial (the design's re-run signal for `FAILED_replay_already_completed`) is IN-MEMORY and dies with the process — effectively unobservable on re-run; the RELIABLE completion signal is the in-session teardown statuses (`AvatarAnchorNotFound` / `GateNotSatisfied` / session-inactive) after a verified start. Recommended durable fix (owner-gated design change): persist a completion marker when the in-session detection fires, and have the launcher/clicker/driver pre-flights consult it instead of the ephemeral gate denial — **IMPLEMENTED 2026-08-12 (offline): `scripts/od-replay-completion.ps1`** (dot-sourced by all four tools; fingerprint-keyed marker under `%LOCALAPPDATA%\WotBTreader\od-completion\`, owner-only ACL; driver writes when the dump schedule FINISHES (definitive teardown OR all targets completed, never on the ≤40 s near-end fallback), launcher on in-window gate denial; launcher/clicker/driver/chain pre-flights consult and fail fast; replaced replay = fresh, corrupt marker fails open; offline-verified write→read→invalidate) | Live chain (`scripts/invoke-od-replay-chain.ps1` -> launcher -> clicker -> hp-diffing driver `-LiveAcquire -Track damage-dealt -RegionAnchor avatar-stats`, session `019ff74f-fd4c-7a30-8686-f71c18db4b22`, victim = own viewpoint 3760577) + decoded timeline cross-check + blitz-log / process / Windows-event-log forensics on the game exit | **HIT (offset 0x0)** in-session at default lag (12 s); completion detection live-verified; `evidence.replay_completed` re-run signal found unreachable by design (game exits) | damage-dealt lane re-proven live with the consumption seam's exact read path (5/5 exact sums, score 1.0 / flatness 1.0); snapshots `.data/hp-snapshots-019ff74f-*-cand0.json`; completion = in-session teardown statuses, NOT the ephemeral gate denial | No offsets / resolver / read surface touched (publication unchanged since OD-097/098). Next: consume the finding — persisted completion marker (owner-gated design change); then item 7 Branch B live steps 3-4 and the batch `-LiveAcquire` rehearsal re-run remain as approved-launch items |
 
+| `OD-RECOVERY-100` | 2026-08-14 | **Item-7 live cluster + batch witness contract apply.** Two compatible content-distinct launches reached `OfflineReplayVerified`. Camera Branch B closed across Dead Rail + Oasis: 12/12 probes resolved, module-rooted, all three identity gates true, byte-identical, zero `pose-double-read` failures. Batch timing persisted on both replays: Dead Rail 3 passes / 21 of 21 resolved / 7.889–13.372 ms; Oasis 3 passes / 41 of 42 resolved / 21.448–24.054 ms; every pass same-decoded-clock attested, clock-snapshot lag <= 0.001 ms, zero unstable-snapshot exhaustion. The owner-approved step-2 contract was then applied: stable batch pairs report `ConsistentDoubleRead=true`; `RegionReadAttempts`, `RegionTearObserved`, and `EntityBaseTearObserved` flow through coordinator + HTTP DTO. Failed/exhausted items remain false; single-read and hardware-atomic flags unchanged. Completion marker also verified live: teardown -> persisted marker -> same-replay chain exit 7 in 335 ms with game 0 -> 0. Live frame own-row `DamageDealt=145` at 158.9 s with 13/13 present decoded joins exact, zero mismatches | Approved two-launch cluster; CAM-001 bounded aggregate; batch rehearsal measured artifacts; live-frame summary cross-check; damage-dealt chains; focused GameIntegration 11/11 + Host.Web 4/4; full gate 1,206 tests / 7 skips / 0 failures | `Partial` for item 7 / `Hit` for camera, completion marker, and live-frame damage | camera two-replay proof closed; batch two-replay timing measured; shared witness contract applied; `HardwareAtomicReadProven=false` | Honest limits: Dead Rail enumeration 7/14; Oasis position matcher 33/41 under the old +/-2 s window; live batch wire artifacts preceded the tear-field apply and therefore cannot prove zero transient retries. Next: harden transient rendezvous reads, then post-apply two-replay batch pass with attempts=1 and both tear flags false |
+
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
 
@@ -7025,3 +7027,70 @@ HP publication is READY (operator approval only) via
 LAST. Lesson recorded: a non-team-1 victim can never resolve via
 entity-region, and a memory-LEAD replay defeats the one-directional lag
 attribution — the bounded bidirectional window is required.
+
+## OD-RECOVERY-100 result — 2026-08-14 (Item-7 live cluster + batch witness contract)
+
+status: Partial (camera two-replay witness closed; batch timing two-replay;
+post-contract no-tear batch pass remains)
+
+**Authorization and scope.** Two approved content-distinct 11.19.0 replay
+launches reached `OfflineReplayVerified` with the managed reason
+`session.offline_replay_verified`. The game process was absent before each
+launch, and the repository-owned host was stopped after both games exited.
+No install asset, offset table, resolver path, or runtime address changed.
+
+**Camera Branch B — closed.** Dead Rail session
+`01a0021f-e7f3-7434-9286-d9ea0a3eaca1` and Oasis session
+`01a00228-024c-7e6e-afb0-2dc12e52b061` each delivered six scheduled
+camera-pose probes. All 12 were `Resolved`, module-rooted, passed the avatar,
+camera, and camera-state identity gates, returned
+`ConsistentDoubleRead=true`, and produced zero `pose-double-read` failures.
+This satisfies the Phase-4 two-replay camera acceptance.
+
+**Batch read-pass timing — measured on two replays.** Dead Rail persisted
+three seven-entity passes at replay labels 61.86 / 149.29 / 221.62 s:
+21/21 resolved, measurements 8.796 / 7.889 / 13.372 ms, clock-snapshot lag
+0 ms, and decoded position cross-check 21/21. Its mid-battle enumeration was
+the known honest partial (7/14, precision 1.0, recall 0.5); the initial
+`-FailOnMiss` run stopped before memory reads, and only the complete subset
+run is retained.
+
+Oasis's first 20/90/180 schedule lost rendezvous transiently before its third
+target and wrote no artifact. The same authorized session was retried at
+190/220/250: labels 199.53 / 220.70 / 250.88 s, measurements 24.054 /
+21.448 / 23.808 ms, clock lag 0.001 / 0 / 0 ms, resolved 14/14 + 13/14 +
+14/14, one `EntityNotFound`, zero unstable-snapshot exhaustion. Its position
+cross-check was an honest 33/41 under the existing +/-2 s window (one skipped,
+eight moving samples outside the window); no position verdict is promoted.
+
+**Shared witness contract — owner-approved and applied after the sessions.**
+The batch coordinator now computes `ConsistentDoubleRead=true` only for the
+stable pair it delivers. `RegionReadAttempts` and `RegionTearObserved` expose
+the primary-span bounded retry; `EntityBaseTearObserved` complements the
+existing entity-base attempt count. Torn-then-settled reads remain successful
+but honest, exhaustion fails the item with the flag false, and the single-read
+surface stays false. Focused validation: GameIntegration 11/11 and Host.Web
+4/4. Full milestone gate: 1,206 tests passed, 7 local opt-in skips, Release
+build 0 warnings / 0 errors, and all repository/offline/ledger/offset checks
+passed.
+
+Because both live artifacts preceded this wire change by minutes, they prove
+that stable pairs were ultimately delivered and no retry exhausted, but they
+cannot prove that no transient mismatch retried. Therefore
+`HardwareAtomicReadProven` remains false. The remaining acceptance is a
+post-change two-replay batch pass with every resolved item reporting attempts
+1 and both tear flags false.
+
+**Adjacent cluster closures.** Dead Rail's live frame at 158.9 s carried a
+real own-row `DamageDealt=145`; all 13 decoded roster rows present joined
+exactly (zero mismatches). Both damage-dealt chains ended on definitive
+in-session teardown, persisted their completion markers, and returned strict
+HIT verdicts (score 1.0, flatness 1.0). The Dead Rail same-replay rerun then
+exited 7 from the marker in 335 ms with game count 0 -> 0, closing the durable
+clean-run completion loop.
+
+Next planned session: after hardening the batch driver's transient rendezvous
+read, repeat the bounded batch pass on both content-distinct replays under the
+new DTO and require `ConsistentDoubleRead=true`, `RegionReadAttempts=1`,
+`RegionTearObserved=false`, and `EntityBaseTearObserved=false` for every
+resolved item. Until then, keep `HardwareAtomicReadProven=false`.

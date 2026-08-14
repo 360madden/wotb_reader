@@ -1,7 +1,7 @@
-# Item-7 Branch B step 2 — `ConsistentDoubleRead` shared-contract proposal (PROPOSED)
+# Item-7 Branch B step 2 — `ConsistentDoubleRead` shared contract (APPLIED)
 
-> **STATUS: PROPOSED 2026-08-12 — owner review required. NOT APPLIED.** This
-> is the shared-contract change deferred by the item-7 plan
+> **STATUS: APPLIED 2026-08-14 — owner-approved.** This is the shared-contract
+> change deferred by the item-7 plan
 > (`docs/operations/item7-hardware-atomicity-proof-plan.md`, Branch B step 2).
 > Branch B step 1 (the double-read discipline) is DONE: the batch region span
 > and the entity-base span are each read TWICE per attempt with a bounded
@@ -9,10 +9,9 @@
 > (`region-unstable-snapshot` / `entity-base-unstable-snapshot`); the per-span
 > `SequenceEqual` is the stability witness (the ring record's leading time
 > field sits inside the span). `ConsistentDoubleRead` still travels **false**
-> on batch items — this proposal makes it claimable and adds the per-entity
-> span measurement fields. Apply ONLY after owner approval, as a single
-> conventional commit; nothing here touches the resolver, the read surface,
-> the offset table, or any runtime read offset.
+> on batch items before this apply; it is now claimable and the per-entity
+> span measurement fields are exposed. Nothing here touches the resolver,
+> the read surface, the offset table, or any runtime read offset.
 
 ## 1. What is proposed
 
@@ -98,15 +97,20 @@ claim:
    honest boundary.
 4. Approve the checklist clause update in the same change.
 
-## 6. Sequencing after approval
+## 6. Applied result and remaining live gate
 
-1. Apply (the change above) + full `validate.ps1` gate.
-2. Branch B live steps 3-4 (bounded live sessions, Oasis + Dead Rail,
-   Phase-4 standard): N read passes over the batch surface; acceptance =
-   100% byte-identical double-reads, zero torn reads, zero instability
-   across both replays — with `RegionTearObserved`/`RegionReadAttempts` now
-   measurable per pass.
-3. Record the live evidence + honest-negative discipline unchanged.
+The application contract, coordinator, API DTO/endpoint mapping, and focused
+tests were applied on 2026-08-14. Stable pairs report true; torn-then-settled
+pairs report attempts greater than one plus `RegionTearObserved=true`; an
+exhausted pair fails the item with the flag false; entity-base tears are
+reported independently. The single-read surface remains false.
+
+The same day's two-replay live cluster measured six batch passes and twelve
+camera probes, but it ran immediately BEFORE this apply: the artifacts prove
+the delivered batch items resolved without unstable-snapshot exhaustion, yet
+cannot prove that no transient retry occurred because the new tear fields did
+not exist on their wire shape. Therefore `HardwareAtomicReadProven` remains
+false and one post-apply Phase-4 two-replay batch pass is still required.
 
 ## 7. NOT in scope
 

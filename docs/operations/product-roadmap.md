@@ -291,14 +291,23 @@ coordinator path already reads the complete pose region twice, requires
 byte equality, and fails closed at `pose-double-read`. The CAM-001 v7 driver
 now samples that sanctioned endpoint once per round and records only bounded
 status/identity/module-root/stability counters; its dedicated Pester gate
-pins honest-negative and privacy-whitelist behavior. Offline work is complete;
-the clustered live measurement remains before the evidence claim.
+pins honest-negative and privacy-whitelist behavior. **Two-replay live proof
+closed 2026-08-14:** Dead Rail + Oasis each returned 6/6 resolved,
+module-rooted, all three identity gates true, byte-identical, with zero
+`pose-double-read` failures (12/12 total).
 ✅ **Item-7 Branch-B batch measurement persistence (2026-08-14):** the batch
 endpoint's read-pass measurement had been shipped and endpoint-tested, but the
 rehearsal dump silently discarded it. The driver now preserves only its three
 timestamps and derived pass/clock-lag durations, failing closed on missing or
 temporally inconsistent data. Offline readiness is complete; the clustered
-live run remains.
+live run was the next gate. **Two-replay timing captured 2026-08-14:** six persisted
+passes were 7.889–24.054 ms, every pass clock-attested, 62/63 requested
+entities resolved, and zero unstable-snapshot exhaustion. The shared batch
+contract now exposes `RegionReadAttempts`, `RegionTearObserved`, and
+`EntityBaseTearObserved` and computes `ConsistentDoubleRead=true` for the
+delivered stable pair (owner-approved apply, same day). Because the live
+captures preceded that wire change, one post-apply two-replay pass still has
+to observe zero transient tears before hardware atomicity can be claimed.
 ✅ **CAM-006 (2026-08-11): the pose is wired into the frame path** —
 `IOverlayFrameSource.GetFrameAsync` gains an optional `OverlayCamera?`
 (default null = viewpoint fallback), `ReplayFrameSource` passes it

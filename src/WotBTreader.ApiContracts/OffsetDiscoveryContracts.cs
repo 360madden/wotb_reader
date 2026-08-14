@@ -473,9 +473,12 @@ public sealed record EntityRegionReadItemResponse
     public bool ModuleRooted { get; init; }
     public bool EntityIdentityRevalidated { get; init; }
     public bool ConsistentDoubleRead { get; init; }
+    public int RegionReadAttempts { get; init; }
+    public bool RegionTearObserved { get; init; }
     public string? EntityBaseRegionBase64 { get; init; }
     public string? EntityBaseFailureStage { get; init; }
     public int EntityBaseAttempts { get; init; }
+    public bool EntityBaseTearObserved { get; init; }
 }
 
 /// <summary>

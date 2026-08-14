@@ -212,11 +212,11 @@ Extend the resolver's proven discipline to the batch surface:
    `RegionAlwaysTornFailsRegionOnly` (never settles → item fails closed, batch
    resolved), plus the read-count assertions in the existing batch tests now
    document the double-read (2 reads per span).
-2. Only then set `ConsistentDoubleRead: true` on the region items (today it is
-   hardcoded false and "not claimable" — the flag becomes claimable only when
-   the discipline lands). **NOT APPLIED** — the flag flip is the shared-contract
-   proposal (below); the discipline (step 1) runs with the flag still false
-   (fail-closed).
+2. Only then set `ConsistentDoubleRead: true` on the region items.
+   **APPLIED 2026-08-14 (owner-approved):** stable delivered pairs now report
+   true; `RegionReadAttempts`, `RegionTearObserved`, and
+   `EntityBaseTearObserved` expose the bounded retry witness. Exhaustion stays
+   fail-closed and false; the single-read surface remains false.
 3. Bounded live sessions (approved launches, Oasis + Dead Rail, Phase-4
    standard): N read passes over the batch surface; record the read-pass
    window per pass (`EntityRegionsReadMeasurement`); acceptance = 100%
@@ -225,7 +225,13 @@ Extend the resolver's proven discipline to the batch surface:
    persists a validated timestamp-only measurement for every dump, including
    `readPassMilliseconds` and `clockSnapshotLagMilliseconds`; missing or
    temporally inconsistent measurements abort before evidence is written.
-   The live sessions remain.
+   **TWO-REPLAY TIMING CAPTURED 2026-08-14:** Dead Rail persisted three
+   7-entity passes (8.796 / 7.889 / 13.372 ms; 21/21 resolved) and Oasis
+   persisted three full-roster requests (24.054 / 21.448 / 23.808 ms;
+   41/42 resolved, one `EntityNotFound`), every pass clock-attested and zero
+   unstable-snapshot exhaustion. These captures PRECEDED step 2 by minutes,
+   so their response shape cannot show whether a transient mismatch retried;
+   the post-apply tear-telemetry pass remains before the no-tear claim.
 4. Camera pose + entity-base reads get the same double-read treatment — the
    entity-base span landed with step 1. **IMPLEMENTATION + INSTRUMENTATION
    DONE OFFLINE 2026-08-14:** CAM-005 had already made the camera path read
@@ -236,15 +242,17 @@ Extend the resolver's proven discipline to the batch surface:
    stability flag, and bounded counters (never endpoint addresses or duplicate
    pose coordinates). Acceptance is every scheduled probe `Resolved`, all
    identity gates true, every `ConsistentDoubleRead` true, and zero
-   `pose-double-read` failures. **The bounded live measurement remains.**
+   `pose-double-read` failures. **TWO-REPLAY LIVE MEASUREMENT COMPLETE
+   2026-08-14:** Dead Rail and Oasis each delivered 6/6 resolved probes,
+   module-rooted with all three identity gates true, 6/6 byte-identical, and
+   zero `pose-double-read` failures. Branch B camera step 4 is closed.
 
 ## Contract change (shared-contract proposal — NOT applied here)
 
-When the evidence lands, `HardwareAtomicReadProven` flips from hardcoded-false
-to computed-true and `ConsistentDoubleRead` becomes claimable on region items.
-This is a shared-contract change: proposed to the owner for review before any
-edit (the resolver-path-consolidation deferred-decision pattern), and the
-checklist's "requires it false" clause is updated in the same proposal.
+`ConsistentDoubleRead` is now claimable on stable batch region items, with the
+owner-approved shared contract applied on 2026-08-14. This reporting change
+does not flip `HardwareAtomicReadProven`: it remains hardcoded-false until the
+post-apply two-replay tear telemetry satisfies this plan's definition of done.
 
 ## Honest-negative discipline
 
@@ -271,8 +279,8 @@ read-pass window measured; owner-approved contract change; full gate green.
    changing any gate): HP sub-proof (16-bit setters), position + rotation
    sub-proofs (MOVQ+MOV ring writer, chain-anchored), ring handoff
    characterized.
-3. Branch B discipline extension + bounded live sessions — **step 1 DONE
-   2026-08-11** (region + entity-base double-read, offline); steps 3-4 need
-   the approved live sessions.
-4. Shared-contract proposal (flag flip) + owner approval.
+3. Branch B discipline extension + bounded live sessions — **steps 1, 2, and
+   camera step 4 DONE**; the two-replay batch timing exists, but one post-apply
+   two-replay pass must directly record the new retry/tear fields.
+4. Shared-contract proposal (flag flip) + owner approval — **DONE 2026-08-14**.
 5. Full gate + records.

@@ -173,6 +173,13 @@ either read. A 12-byte float triple cannot be read as one x86 atomic unit, so
 Acceptance — `HardwareAtomicReadProven` becomes `true` only from evidence, not
 hardcoding:
 
+The batch surface's `ConsistentDoubleRead` flag became computed-true for a
+delivered byte-identical pair on 2026-08-14, with retry/tear telemetry exposed
+per entity. This does **not** change the resolver poll's existing requirement
+that `hardwareAtomicReadProven` remain false, nor does it itself prove hardware
+atomicity; the post-change two-replay tear telemetry in the item-7 plan still
+has to land first.
+
 - Mechanism A (write-observation): reuse the guard-page interceptor family
   (OD-RECOVERY-046/047/048 machinery, `tools/WriteInterceptor`) in the same
   battle to prove no write to the ring record's position bytes occurred across

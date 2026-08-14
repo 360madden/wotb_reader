@@ -2519,14 +2519,17 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             // or mid-write changes the bytes and retries. The retry is
             // bounded by layout.MaxAttempts and fail-closed: an exhausted
             // region is an item failure (stage region-unstable-snapshot),
-            // never a silent single read. ConsistentDoubleRead stays false
-            // until the owner-approved shared-contract proposal (Branch B
-            // step 2 — this step only performs the discipline).
+            // never a silent single read. Branch B step 2 exposes the
+            // delivered pair as ConsistentDoubleRead and reports whether a
+            // mismatched attempt was observed before the stable pair won.
             byte[]? regionBytes = null;
             string? regionFailureStage = null;
+            int regionReadAttempts = 0;
+            bool regionTearObserved = false;
             int maxRegionAttempts = Math.Max(1, layout.MaxAttempts);
             for (int attempt = 1; attempt <= maxRegionAttempts && regionBytes is null; attempt++)
             {
+                regionReadAttempts = attempt;
                 OperationResult<byte[]> firstRegionRead = await reader.ReadAsync(
                     (nint)regionBaseAddress.Value,
                     entity.RegionLength,
@@ -2565,9 +2568,13 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 {
                     regionBytes = firstRegionRead.Value;
                 }
-                else if (attempt == maxRegionAttempts)
+                else
                 {
-                    regionFailureStage = "region-unstable-snapshot";
+                    regionTearObserved = true;
+                    if (attempt == maxRegionAttempts)
+                    {
+                        regionFailureStage = "region-unstable-snapshot";
+                    }
                 }
             }
 
@@ -2583,7 +2590,9 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     resolved.NodesVisited,
                     resolved.ModuleRooted,
                     EntityIdentityRevalidated: false,
-                    ConsistentDoubleRead: false);
+                    ConsistentDoubleRead: false,
+                    RegionReadAttempts: regionReadAttempts,
+                    RegionTearObserved: regionTearObserved);
                 continue;
             }
 
@@ -2595,6 +2604,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             byte[]? entityBaseBytes = null;
             string? entityBaseFailureStage = null;
             int entityBaseAttempts = 0;
+            bool entityBaseTearObserved = false;
             if (entity.EntityBaseRegionLength is int entityBaseLength)
             {
                 if (resolved.EntityAddress is not uint entityAddress)
@@ -2648,9 +2658,13 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                         {
                             entityBaseBytes = entityBaseFirst.Value;
                         }
-                        else if (attempt == maxEntityBaseAttempts)
+                        else
                         {
-                            entityBaseFailureStage = "entity-base-unstable-snapshot";
+                            entityBaseTearObserved = true;
+                            if (attempt == maxEntityBaseAttempts)
+                            {
+                                entityBaseFailureStage = "entity-base-unstable-snapshot";
+                            }
                         }
                     }
                 }
@@ -2666,10 +2680,13 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 resolved.NodesVisited,
                 resolved.ModuleRooted,
                 EntityIdentityRevalidated: false,
-                ConsistentDoubleRead: false,
+                ConsistentDoubleRead: true,
                 EntityBaseRegionBytes: entityBaseBytes,
                 EntityBaseFailureStage: entityBaseFailureStage,
-                EntityBaseAttempts: entityBaseAttempts);
+                EntityBaseAttempts: entityBaseAttempts,
+                RegionReadAttempts: regionReadAttempts,
+                RegionTearObserved: regionTearObserved,
+                EntityBaseTearObserved: entityBaseTearObserved);
         }
 
         // Phase 3: ONE replay-clock label + same-decoded-clock
