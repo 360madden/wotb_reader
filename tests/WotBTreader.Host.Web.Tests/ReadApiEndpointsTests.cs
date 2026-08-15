@@ -20,6 +20,43 @@ namespace WotBTreader.Host.Web.Tests;
 public sealed class ReadApiEndpointsTests
 {
     [TestMethod]
+    public async Task PenetrationDiagnostics_MapsRedactedManifestAndResolutionReport()
+    {
+        ContentHash hash = new(new string('a', ContentHash.Sha256HexLength));
+        PenetrationDiagnosticsSnapshot snapshot = new(
+            new PenetrationCompatibilityManifest(
+                "manifest-1",
+                "penetration-manifest/v1",
+                "penetration-provider/0.3.0-alpha",
+                "11.19.0.10",
+                hash,
+                "11.19.0.10",
+                PenetrationCompatibilityStatus.Exact,
+                [new PenetrationSourceFingerprint(
+                    "vehicle", "XML/item_defs/vehicles/uk/tank.xml.dvpl", hash, 123)]),
+            new PenetrationResolutionReport(
+                2, 2, 1, 1, 0, 1,
+                [new PenetrationResolutionIssue(42, "uk:tank", "armor.mesh_unresolved")]));
+
+        IResult result = await ReadApiEndpoints.GetPenetrationDiagnosticsAsync(
+            new FakePenetrationDiagnostics(snapshot),
+            TestContext.CancellationToken);
+
+        PenetrationDiagnosticsResponse response = Value<PenetrationDiagnosticsResponse>(result);
+        Assert.IsNotNull(response.Manifest);
+        Assert.AreEqual("manifest-1", response.Manifest!.ManifestId);
+        Assert.AreEqual("Exact", response.Manifest.CompatibilityStatus);
+        Assert.HasCount(1, response.Manifest.Sources);
+        Assert.AreEqual("XML/item_defs/vehicles/uk/tank.xml.dvpl",
+            response.Manifest.Sources[0].RelativePath);
+        Assert.IsFalse(Path.IsPathRooted(response.Manifest.Sources[0].RelativePath));
+        Assert.IsNotNull(response.ResolutionReport);
+        Assert.AreEqual(2, response.ResolutionReport!.RosterEntities);
+        Assert.AreEqual("armor.mesh_unresolved",
+            response.ResolutionReport.Issues.Single().DiagnosticCode);
+    }
+
+    [TestMethod]
     public async Task OverlayFrame_ProjectsVisibleTanksAndDropsBehindCamera()
     {
         // Camera at the origin facing +Z (yaw 0); one tank 100m ahead, one
@@ -408,6 +445,7 @@ public sealed class ReadApiEndpointsTests
             scanner,
             sessions: new FakeSessionQueries([], projection: null),
             penetrationData: FakePenetrationData.None,
+            associationSource: FakeAssociationSource.Missing,
             sessionId: null,
             fov: 90,
             width: 1920,
@@ -493,6 +531,7 @@ public sealed class ReadApiEndpointsTests
             scanner,
             sessions: new FakeSessionQueries([], projection: null),
             penetrationData: FakePenetrationData.None,
+            associationSource: FakeAssociationSource.Missing,
             sessionId: null,
             fov: 90,
             width: 1920,
@@ -553,12 +592,15 @@ public sealed class ReadApiEndpointsTests
             RawRecords: [],
             Warnings: []);
 
+        Guid requestedSession = Guid.NewGuid();
+        roster = BindSession(roster, requestedSession);
         IResult result = await ReadApiEndpoints.GetLiveFrameAsync(
             new DefaultHttpContext(),
             scanner,
             sessions: new FakeSessionQueries([], projection: roster),
             penetrationData: FakePenetrationData.None,
-            sessionId: Guid.NewGuid(),
+            associationSource: FakeAssociationSource.Verified(requestedSession),
+            sessionId: requestedSession,
             fov: 90,
             width: 1920,
             height: 1080,
@@ -598,6 +640,7 @@ public sealed class ReadApiEndpointsTests
             scanner,
             sessions: new FakeSessionQueries([], projection: null),
             penetrationData: FakePenetrationData.None,
+            associationSource: FakeAssociationSource.Missing,
             sessionId: null,
             fov: 90,
             width: 1920,
@@ -608,6 +651,55 @@ public sealed class ReadApiEndpointsTests
         OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
         Assert.AreEqual(150.5, frame.ReplayTimeSeconds, 1e-9);
         Assert.IsNull(scanner.LastLiveFrameSessionId);
+    }
+
+    [TestMethod]
+    public async Task LiveFrame_AssociationRevokedDuringReadReturnsNeutralAssessment()
+    {
+        CameraScannerStub scanner = new(
+            OperationResult.Failure<CameraPoseReadResult>(
+                new ApplicationError("unused", "Unused.")),
+            OperationResult.Success(new LiveFrameReadResult(
+                CompletedAtUtc: DateTimeOffset.UtcNow,
+                GameVersion: "11.19.0.10",
+                Type10EntityPositionStatus.Resolved,
+                FailureStage: null,
+                ReplayTimeSeconds: 1,
+                SameDecodedClockProven: true,
+                Camera: null,
+                Tanks: [],
+                RosterCandidatesSeen: 0,
+                RosterFilteredOut: 0)));
+        Guid sessionGuid = Guid.NewGuid();
+        ReplayDecodeProjection roster = BindSession(
+            new ReplayDecodeProjection(
+                DecodeRunFixture(),
+                Session: null,
+                Participants: [],
+                Positions: [],
+                Events: [],
+                RawRecords: [],
+                Warnings: []),
+            sessionGuid);
+
+        IResult result = await ReadApiEndpoints.GetLiveFrameAsync(
+            new DefaultHttpContext(),
+            scanner,
+            sessions: new FakeSessionQueries([], projection: roster),
+            penetrationData: FakePenetrationData.None,
+            associationSource: FakeAssociationSource.InvalidAfterAcquire(sessionGuid),
+            sessionId: null,
+            fov: 90,
+            width: 1920,
+            height: 1080,
+            shell: null,
+            cancellationToken: TestContext.CancellationToken);
+
+        OverlayFrameResponse frame = Value<OverlayFrameResponse>(result);
+        Assert.IsNull(frame.PenBadge);
+        Assert.IsNotNull(frame.Penetration);
+        Assert.AreEqual("not_ready", frame.Penetration.Status);
+        Assert.AreEqual("session.association_stale", frame.Penetration.PrimaryReason);
     }
 
     [TestMethod]
@@ -691,11 +783,13 @@ public sealed class ReadApiEndpointsTests
                 RosterFilteredOut: 2)));
 
         Guid sessionGuid = Guid.NewGuid();
+        roster = BindSession(roster, sessionGuid);
         IResult result = await ReadApiEndpoints.GetLiveFrameAsync(
             new DefaultHttpContext(),
             scanner,
             sessions: new FakeSessionQueries([], projection: roster),
             penetrationData: FakePenetrationData.None,
+            associationSource: FakeAssociationSource.Verified(sessionGuid),
             sessionId: sessionGuid,
             fov: 90,
             width: 1920,
@@ -811,14 +905,21 @@ public sealed class ReadApiEndpointsTests
             Shells:
             [
                 new ShellOption("ap_shell", ShellKind.ArmorPiercing, shell),
-            ]);
+            ],
+            Provenance: new PenetrationInputProvenance(
+                ArmorInputProvenance.ExactTriangleSurface,
+                WeaponInputProvenance.ExactLoadedShell,
+                AimInputProvenance.ExactGunRay),
+            CompatibilityManifestId: "synthetic/test");
 
         Guid sessionGuid = Guid.NewGuid();
+        roster = BindSession(roster, sessionGuid);
         IResult result = await ReadApiEndpoints.GetLiveFrameAsync(
             new DefaultHttpContext(),
             scanner,
             sessions: new FakeSessionQueries([], projection: roster),
             penetrationData: new FakePenetrationData(context),
+            associationSource: FakeAssociationSource.Verified(sessionGuid),
             sessionId: sessionGuid,
             fov: 90,
             width: 1920,
@@ -927,14 +1028,21 @@ public sealed class ReadApiEndpointsTests
             Shells:
             [
                 new ShellOption("ap_shell", ShellKind.ArmorPiercing, shell),
-            ]);
+            ],
+            Provenance: new PenetrationInputProvenance(
+                ArmorInputProvenance.ExactTriangleSurface,
+                WeaponInputProvenance.ExactLoadedShell,
+                AimInputProvenance.ExactGunRay),
+            CompatibilityManifestId: "synthetic/test");
 
         Guid sessionGuid = Guid.NewGuid();
+        roster = BindSession(roster, sessionGuid);
         IResult result = await ReadApiEndpoints.GetLiveFrameAsync(
             new DefaultHttpContext(),
             scanner,
             sessions: new FakeSessionQueries([], projection: roster),
             penetrationData: new FakePenetrationData(context),
+            associationSource: FakeAssociationSource.Verified(sessionGuid),
             sessionId: sessionGuid,
             fov: 90,
             width: 1920,
@@ -1040,14 +1148,21 @@ public sealed class ReadApiEndpointsTests
             Shells:
             [
                 new ShellOption("ap_shell", ShellKind.ArmorPiercing, shell),
-            ]);
+            ],
+            Provenance: new PenetrationInputProvenance(
+                ArmorInputProvenance.ExactTriangleSurface,
+                WeaponInputProvenance.ExactLoadedShell,
+                AimInputProvenance.ExactGunRay),
+            CompatibilityManifestId: "synthetic/test");
 
         Guid sessionGuid = Guid.NewGuid();
+        roster = BindSession(roster, sessionGuid);
         IResult result = await ReadApiEndpoints.GetLiveFrameAsync(
             new DefaultHttpContext(),
             scanner,
             sessions: new FakeSessionQueries([], projection: roster),
             penetrationData: new FakePenetrationData(context),
+            associationSource: FakeAssociationSource.Verified(sessionGuid),
             sessionId: sessionGuid,
             fov: 90,
             width: 1920,
@@ -1105,12 +1220,15 @@ public sealed class ReadApiEndpointsTests
             RawRecords: [],
             Warnings: []);
 
+        Guid requestedSession = Guid.NewGuid();
+        roster = BindSession(roster, requestedSession);
         IResult result = await ReadApiEndpoints.GetLiveFrameAsync(
             new DefaultHttpContext(),
             scanner,
             sessions: new FakeSessionQueries([], projection: roster),
             penetrationData: FakePenetrationData.None,
-            sessionId: Guid.NewGuid(),
+            associationSource: FakeAssociationSource.Verified(requestedSession),
+            sessionId: requestedSession,
             fov: 90,
             width: 1920,
             height: 1080,
@@ -1158,12 +1276,14 @@ public sealed class ReadApiEndpointsTests
                 RosterCandidatesSeen: 14,
                 RosterFilteredOut: 2)));
 
+        Guid requestedSession = Guid.NewGuid();
         IResult result = await ReadApiEndpoints.GetLiveFrameAsync(
             new DefaultHttpContext(),
             scanner,
             sessions: new FakeSessionQueries([], projection: null),
             penetrationData: FakePenetrationData.None,
-            sessionId: Guid.NewGuid(),
+            associationSource: FakeAssociationSource.Verified(requestedSession),
+            sessionId: requestedSession,
             fov: 90,
             width: 1920,
             height: 1080,
@@ -1202,6 +1322,7 @@ public sealed class ReadApiEndpointsTests
             scanner,
             sessions: new FakeSessionQueries([], projection: null),
             penetrationData: FakePenetrationData.None,
+            associationSource: FakeAssociationSource.Missing,
             sessionId: null,
             fov: 90,
             width: 1920,
@@ -1227,6 +1348,7 @@ public sealed class ReadApiEndpointsTests
             scanner,
             sessions: new FakeSessionQueries([], projection: null),
             penetrationData: FakePenetrationData.None,
+            associationSource: FakeAssociationSource.Missing,
             sessionId: null,
             fov: 90,
             width: 1920,
@@ -1249,6 +1371,7 @@ public sealed class ReadApiEndpointsTests
             scanner,
             sessions: new FakeSessionQueries([], projection: null),
             penetrationData: FakePenetrationData.None,
+            associationSource: FakeAssociationSource.Missing,
             sessionId: null,
             fov: 0,
             width: 1920,
@@ -1374,6 +1497,17 @@ public sealed class ReadApiEndpointsTests
     [DataRow("internal.unknown", StatusCodes.Status500InternalServerError)]
     public void ErrorCodesMapToStableStatusCodes(string code, int expected) =>
         Assert.AreEqual(expected, ReadApiEndpoints.MapStatusCode(code));
+
+    [TestMethod]
+    [DataRow(PenetrationReadinessReason.None, "none")]
+    [DataRow(PenetrationReadinessReason.ManagedReplayAssociationMismatch, "session.association_mismatch")]
+    [DataRow(PenetrationReadinessReason.ResourceDrift, "build.resource_drift")]
+    [DataRow(PenetrationReadinessReason.TargetTeamUnknown, "team.target_unknown")]
+    [DataRow(PenetrationReadinessReason.ArmorSurfaceMiss, "armor.surface_miss")]
+    public void PenetrationReasonsMapToStableWireCodes(
+        PenetrationReadinessReason reason,
+        string expected) =>
+        Assert.AreEqual(expected, ReadApiEndpoints.ReadinessReasonCode(reason));
 
     [TestMethod]
     public void ParticipantResponseNeverCarriesTheAccountIdentifier()
@@ -1514,6 +1648,25 @@ public sealed class ReadApiEndpointsTests
             DateTimeOffset.UnixEpoch.AddSeconds(2),
             null,
             null);
+
+    private static ReplayDecodeProjection BindSession(
+        ReplayDecodeProjection projection,
+        Guid battleSessionId)
+    {
+        ParticipantId? viewpoint = projection.Session?.ViewpointParticipantId;
+        BattleSession session = new(
+            new BattleSessionId(battleSessionId),
+            projection.DecodeRun.Id,
+            projection.Session?.GameVersion ?? "11.19.0.10",
+            projection.Session?.ArenaIdentity,
+            projection.Session?.MapId,
+            projection.Session?.MapName,
+            projection.Session?.BattleTimeUtc,
+            projection.Session?.Duration,
+            viewpoint,
+            projection.Session?.SchemaVersion ?? "1");
+        return projection with { Session = session };
+    }
 
     private static Participant ParticipantFixture() =>
         new(
@@ -1794,6 +1947,59 @@ public sealed class ReadApiEndpointsTests
             string tankId,
             CancellationToken cancellationToken) =>
             ValueTask.FromResult<PenetrationTankData?>(null);
+    }
+
+    private sealed class FakePenetrationDiagnostics(PenetrationDiagnosticsSnapshot snapshot)
+        : IPenetrationDiagnosticsSource
+    {
+        public ValueTask<PenetrationDiagnosticsSnapshot> GetSnapshotAsync(
+            CancellationToken cancellationToken) => ValueTask.FromResult(snapshot);
+    }
+
+    private sealed class FakeAssociationSource(
+        ManagedReplayAssociationAcquireResult result)
+        : IManagedReplayAssociationLeaseSource
+    {
+        public static FakeAssociationSource Missing { get; } = new(
+            new ManagedReplayAssociationAcquireResult(
+                ManagedReplayAssociationStatus.Missing,
+                "session.association_missing",
+                Lease: null));
+
+        public static FakeAssociationSource Verified(Guid battleSessionId) => new(
+            new ManagedReplayAssociationAcquireResult(
+                ManagedReplayAssociationStatus.Verified,
+                "session.association_verified",
+                new FakeAssociationLease(new BattleSessionId(battleSessionId))));
+
+        public static FakeAssociationSource InvalidAfterAcquire(Guid battleSessionId) => new(
+            new ManagedReplayAssociationAcquireResult(
+                ManagedReplayAssociationStatus.Verified,
+                "session.association_verified",
+                new FakeAssociationLease(
+                    new BattleSessionId(battleSessionId),
+                    isCurrent: false)));
+
+        public ValueTask<ManagedReplayAssociationAcquireResult> AcquireAsync(
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(result);
+        }
+    }
+
+    private sealed class FakeAssociationLease(
+        BattleSessionId battleSessionId,
+        bool isCurrent = true)
+        : IManagedReplayAssociationLease
+    {
+        public BattleSessionId BattleSessionId { get; } = battleSessionId;
+
+        public ValueTask<bool> IsCurrentAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(isCurrent);
+        }
     }
 
     private sealed class FakeOverlayFrames(

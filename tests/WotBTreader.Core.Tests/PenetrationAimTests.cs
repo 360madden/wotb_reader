@@ -8,8 +8,14 @@ public sealed class PenetrationAimTests
     private static OverlayCamera Camera(double yaw = 0, double pitch = 0, double x = 0, double z = -100) =>
         new(x, 0, z, yaw, pitch, null);
 
-    private static OverlayTankState Tank(long id, double x, double z, double? yaw = 0) =>
-        new(id, x, 0, z, yaw, HpFraction: 1.0, Alive: true, TeamNumber: 1,
+    private static OverlayTankState Tank(
+        long id,
+        double x,
+        double z,
+        double? yaw = 0,
+        int? team = 1,
+        bool alive = true) =>
+        new(id, x, 0, z, yaw, HpFraction: 1.0, Alive: alive, TeamNumber: team,
             PlayerName: null, ClanTag: null, TankName: null, TankClass: null,
             DistanceMeters: 0);
 
@@ -68,6 +74,62 @@ public sealed class PenetrationAimTests
         OverlayTankState[] tanks = [Tank(1, 0, 0)];
 
         Assert.IsNull(PenetrationAim.AimedTankId(vertical, tanks));
+    }
+
+    [TestMethod]
+    public void Assess_NearerAllyOccludesEnemy()
+    {
+        OverlayTankState[] tanks =
+        [
+            Tank(1, 0, -90, team: 1),
+            Tank(2, 0, 0, team: 1),
+            Tank(3, 0, 20, team: 2),
+        ];
+        Dictionary<long, TankArmor> armor = new() { [2] = Armor, [3] = Armor };
+
+        PenetrationAssessment assessment = PenetrationAim.Assess(
+            Camera(), tanks, ownEntityId: 1, ownTeam: 1, armor, new ShellSpec(200, 100));
+
+        Assert.AreEqual(PenetrationAssessmentStatus.NotReady, assessment.Status);
+        Assert.AreEqual(PenetrationReadinessReason.TargetNotEnemy, assessment.PrimaryReason);
+        Assert.IsNull(assessment.Badge);
+    }
+
+    [TestMethod]
+    public void Assess_UnknownTargetTeam_FailsClosed()
+    {
+        OverlayTankState[] tanks = [Tank(1, 0, -90, team: 1), Tank(2, 0, 0, team: null)];
+        Dictionary<long, TankArmor> armor = new() { [2] = Armor };
+
+        PenetrationAssessment assessment = PenetrationAim.Assess(
+            Camera(), tanks, ownEntityId: 1, ownTeam: 1, armor, new ShellSpec(200, 100));
+
+        Assert.AreEqual(PenetrationReadinessReason.TargetTeamUnknown, assessment.PrimaryReason);
+    }
+
+    [TestMethod]
+    public void Assess_UnknownOwnTeam_FailsClosed()
+    {
+        OverlayTankState[] tanks = [Tank(1, 0, -90, team: null), Tank(2, 0, 0, team: 2)];
+        Dictionary<long, TankArmor> armor = new() { [2] = Armor };
+
+        PenetrationAssessment assessment = PenetrationAim.Assess(
+            Camera(), tanks, ownEntityId: 1, ownTeam: null, armor, new ShellSpec(200, 100));
+
+        Assert.AreEqual(PenetrationReadinessReason.OwnTeamUnknown, assessment.PrimaryReason);
+    }
+
+    [TestMethod]
+    public void Assess_ProvenEnemy_ReturnsReadyBadge()
+    {
+        OverlayTankState[] tanks = [Tank(1, 0, -90, team: 1), Tank(2, 0, 0, team: 2)];
+        Dictionary<long, TankArmor> armor = new() { [2] = Armor };
+
+        PenetrationAssessment assessment = PenetrationAim.Assess(
+            Camera(), tanks, ownEntityId: 1, ownTeam: 1, armor, new ShellSpec(200, 100));
+
+        Assert.AreEqual(PenetrationAssessmentStatus.Ready, assessment.Status);
+        Assert.AreEqual(2L, assessment.Badge!.Value.AimedEntityId);
     }
 
     [TestMethod]

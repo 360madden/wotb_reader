@@ -478,6 +478,11 @@ public sealed record OverlayFrameResponse
     /// verdict it cannot derive.</summary>
     public OverlayPenBadgeResponse? PenBadge { get; init; }
 
+    /// <summary>Additive v0.3 readiness envelope. Unlike <see cref="PenBadge"/>,
+    /// this explains why no colored verdict is available. Null means the host
+    /// predates the readiness contract.</summary>
+    public OverlayPenetrationAssessmentResponse? Penetration { get; init; }
+
     /// <summary>The viewer's available shells (stock gun's shots), so the HUD
     /// can cycle the pen-badge shell. Empty when the pen data is unavailable.</summary>
     public IReadOnlyList<PenShellOptionResponse> PenShells { get; init; } = [];
@@ -529,6 +534,72 @@ public sealed record OverlayPenBadgeResponse
     /// <summary>True when the shot would auto-bounce (≥ the ricochet angle and
     /// not overmatched).</summary>
     public bool Ricochet { get; init; }
+}
+
+/// <summary>Fail-closed penetration readiness and optional ready verdict.</summary>
+public sealed record OverlayPenetrationAssessmentResponse
+{
+    /// <summary><c>ready</c> or <c>not_ready</c>.</summary>
+    public string Status { get; init; } = string.Empty;
+
+    /// <summary>Stable primary wire reason; <c>none</c> when ready.</summary>
+    public string PrimaryReason { get; init; } = string.Empty;
+
+    /// <summary>Ordered, deduplicated stable blocking reasons.</summary>
+    public IReadOnlyList<string> Reasons { get; init; } = [];
+
+    /// <summary>Assessment/model contract version.</summary>
+    public string ModelVersion { get; init; } = string.Empty;
+
+    /// <summary>Exact compatibility manifest identity when available.</summary>
+    public string? CompatibilityManifestId { get; init; }
+
+    /// <summary>Determinate verdict when ready; null for every not-ready state.</summary>
+    public OverlayPenBadgeResponse? Badge { get; init; }
+}
+
+public sealed record PenetrationDiagnosticsResponse
+{
+    public PenetrationCompatibilityManifestResponse? Manifest { get; init; }
+    public PenetrationResolutionReportResponse? ResolutionReport { get; init; }
+}
+
+public sealed record PenetrationCompatibilityManifestResponse
+{
+    public string ManifestId { get; init; } = string.Empty;
+    public string SchemaVersion { get; init; } = string.Empty;
+    public string ProviderVersion { get; init; } = string.Empty;
+    public string InstalledProductVersion { get; init; } = string.Empty;
+    public string ExecutableSha256 { get; init; } = string.Empty;
+    public string? ReplayGameVersion { get; init; }
+    public string CompatibilityStatus { get; init; } = string.Empty;
+    public IReadOnlyList<PenetrationSourceFingerprintResponse> Sources { get; init; } = [];
+}
+
+public sealed record PenetrationSourceFingerprintResponse
+{
+    public string SourceKind { get; init; } = string.Empty;
+    public string RelativePath { get; init; } = string.Empty;
+    public string Sha256 { get; init; } = string.Empty;
+    public long ByteLength { get; init; }
+}
+
+public sealed record PenetrationResolutionReportResponse
+{
+    public int RosterEntities { get; init; }
+    public int VehicleIdsPresent { get; init; }
+    public int VehiclesResolved { get; init; }
+    public int ArmorModelsResolved { get; init; }
+    public int MeshesResolved { get; init; }
+    public int WeaponStatesResolved { get; init; }
+    public IReadOnlyList<PenetrationResolutionIssueResponse> Issues { get; init; } = [];
+}
+
+public sealed record PenetrationResolutionIssueResponse
+{
+    public long? EntityId { get; init; }
+    public string? VehicleId { get; init; }
+    public string DiagnosticCode { get; init; } = string.Empty;
 }
 
 /// <summary>One kill-feed entry: the destroyed tank and, when attributable,

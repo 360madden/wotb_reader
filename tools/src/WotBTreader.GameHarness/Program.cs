@@ -195,19 +195,19 @@ static async Task<int> CheckGateAsync(
         string? verificationState = state.TryGetProperty("verificationState", out JsonElement vs)
             ? vs.GetString()
             : null;
+        string? reasonCode = state.TryGetProperty("reasonCode", out JsonElement rc)
+            ? rc.GetString()
+            : null;
 
-        if (verificationState == "OfflineReplayVerified")
+        if (HarnessGatePolicy.IsVerified(verificationState, reasonCode))
         {
             Console.WriteLine($"{command}: offline-session gate satisfied — memory access permitted.");
             return 0;
         }
 
-        string reasonCode = state.TryGetProperty("reasonCode", out JsonElement rc)
-            ? rc.GetString() ?? "unknown"
-            : "unknown";
         Console.Error.WriteLine(
             $"{command}: gate not satisfied — verification state is '{verificationState ?? "null"}' " +
-            $"(reason: {reasonCode}). Launch a replay before scanning.");
+            $"(reason: {reasonCode ?? "unknown"}). Launch a replay before scanning.");
         return (int)HarnessExitCode.ConflictOrBusy;
     }
     catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
@@ -1443,4 +1443,17 @@ Gate: all discover commands require the web host to have a
       verified offline replay session (launch one via the
       dashboard first).
 ");
+}
+
+internal static class HarnessGatePolicy
+{
+    public static bool IsVerified(string? verificationState, string? reasonCode) =>
+        string.Equals(
+            verificationState,
+            "OfflineReplayVerified",
+            StringComparison.Ordinal)
+        && string.Equals(
+            reasonCode,
+            "session.offline_replay_verified",
+            StringComparison.Ordinal);
 }

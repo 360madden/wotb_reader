@@ -30,6 +30,8 @@ public static class GameIntegrationServiceCollectionExtensions
         services.TryAddSingleton<IGameInstallationDiscovery, GameInstallationDiscovery>();
         services.TryAddSingleton<IInstalledGameMetadataProvider, InstalledGameMetadataProvider>();
         services.TryAddSingleton<IOverlayPenetrationData, PenetrationDataService>();
+        services.TryAddSingleton<IPenetrationDiagnosticsSource>(sp =>
+            (PenetrationDataService)sp.GetRequiredService<IOverlayPenetrationData>());
         services.TryAddSingleton<IBlitzReplayLifecycleParser, BlitzReplayLifecycleParser>();
         services.TryAddTransient<IBlitzReplayLogMonitor, BlitzReplayLogMonitor>();
 
@@ -57,6 +59,8 @@ public static class GameIntegrationServiceCollectionExtensions
         services.TryAddSingleton<IGameSessionState>(
             sp => sp.GetRequiredService<GameSessionCoordinator>());
         services.TryAddSingleton<IGameReplayLauncher>(
+            sp => sp.GetRequiredService<GameSessionCoordinator>());
+        services.TryAddSingleton<IManagedReplayAssociationLeaseSource>(
             sp => sp.GetRequiredService<GameSessionCoordinator>());
         services.TryAddSingleton<IGameMemoryObserver>(
             sp => sp.GetRequiredService<GameSessionCoordinator>());

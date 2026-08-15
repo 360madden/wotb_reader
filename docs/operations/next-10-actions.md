@@ -3,10 +3,8 @@
 **Purpose:** the durable, sequenced top-10 follow-up list for continued
 development. Anchored to `docs/operations/product-roadmap.md` (the forward
 plan), the ledger's *Next planned session* row, and the newest handoff.
-Refreshed after the two-replay Item-7 cluster, batch witness contract apply,
-batch-driver live-support hardening, PN workflow re-anchor, and the completed
-12-role Sol-only Codex roster/sandbox policy on 2026-08-14. The agent-policy
-work changes how the list is executed, not the product ordering below.
+Refreshed after the penetration v0.3 fidelity audit, safe operability slice,
+exact-build hard-joint negative, and BLK-0027 registration on 2026-08-15.
 
 **Sequencing rule:** live items are clustered to share ONE approved launch
 (one game start = max evidence); offline hardening runs in parallel with any
@@ -14,16 +12,16 @@ live work; owner-gated items sit behind the evidence they consume.
 
 | # | Action | Roadmap anchor | Why now | Gate |
 |---|---|---|---|---|
-| 1 | **Owner ship review for the `v0.2.0-alpha` PN prototype** — approve the evidence-backed badge, documented limits, and committed release diff; then run the five-step manual HUD smoke | Phase 6 PN-4/PN-5; repeat proof: `2026-08-14-pn4-second-replay-regression.md` | Two content-distinct live replays pass the aim-source regression; the versioned baseline makes subsequent fixes and capability increments traceable | owner review |
-| 2 | **Re-verdict the stored Oasis batch positions with a bounded bidirectional per-dump clock window** | X2 cross-check / OD-RECOVERY-100 honest negative | The read witness passed, but 8/41 moving samples exceeded the old +/-2 s matcher window; diagnose label skew without another launch | offline |
-| 3 | **Normalize completion-marker timestamp comparison across PowerShell 5.1 and 7** | OD-099 durable fix follow-up | The exact Windows-first chain correctly exits 7, but direct pwsh inspection auto-deserializes ISO UTC into `DateTime` and currently fails open | offline |
-| 4 | **Fix the batch driver's literal `{0}` progress placeholders and pin the operator output** | X2 rehearsal operability | The live cluster exposed PowerShell formatting-precedence mistakes that obscure counts/times without affecting artifacts | offline |
-| 5 | **Post-contract two-replay batch witness** — require every resolved item `ConsistentDoubleRead=true`, `RegionReadAttempts=1`, `RegionTearObserved=false`, `EntityBaseTearObserved=false` | Item 7 Branch B step 3 | Two-replay timing and camera proof are complete; direct no-transient-tear wire evidence is the remaining item-7 gate | 2 approved launches after #2-4 |
-| 6 | **T1 turret-facing + lock-on discovery** — live-behavioral traversal with camera-yaw correlation | Phase 2 T1 (`t1-turret-traversal-design.md`) | Optional exact gun-lock research; not a blocker for the CAM-013-based pen badge | 1 approved launch |
-| 7 | **L4 replayTime session** — chained clock and first-hit instruction snapshot | Phase 2 L4 | Unclaimed discovery lane after the overlay/PN proof work | 1 approved launch |
-| 8 | **Attacker-side damage write trace** (runtime write-interceptor/instruction snapshot) | Phase 2 L3 residual | Closes the remaining write-path evidence after the published damage-dealt consumption lane | 1 approved launch |
-| 9 | **Minimap terrain-alignment smoke** — run the HUD against a decoded replay for a texture-bearing map | Phase 4 V4 follow-up | Arena `1` transport is install-proven, but dot-versus-terrain alignment needs a compatible replay frame | compatible texture-bearing replay |
-| 10 | **Phase-5 live-overlay policy gate** — define the evidence and fail-closed rules for any spotting/visibility model before implementation | Phase 5 X5 | Prevents engineering a visibility claim whose policy/evidence boundary is still undecided | owner design review |
+| 1 | **Finish the bounded exact-build loaded-shell/configured-gun and gun-ray source verdict** | Phase 6 v0.3 G1; BLK-0027 | These are the remaining static discriminators before any managed-offline capture design | offline static evidence |
+| 2 | **Freeze and security-review the smallest managed-offline capture contract for every viable exact source** | Phase 6 v0.3 G1/G2 | No memory surface may expand from a symbolic hypothesis or expose addresses/private identity | positive static owner + security review |
+| 3 | **Investigate one alternative authoritative armor/layer owner**; do not revisit the rejected hard-joint visualization path | Phase 6 v0.3 item 1/7; BLK-0027 | Exact thickness and physical ordering are the largest remaining product blockers | offline static evidence first |
+| 4 | **Implement exact weapon, aim, and armor ports only for proven cohorts** | Phase 6 v0.3 G4 | Provenance gates already prevent nominal/manual/camera data from masquerading as exact | G1/G2 pass |
+| 5 | **Build the immutable representative penetration corpus** — at least 12 replays, 500 eligible shots, and 30 rows per important cohort | Phase 6 v0.3 G5/G6 | Coverage and accuracy cannot be claimed from the old two-replay confounded sample | exact inputs implemented |
+| 6 | **Run primary cohort coverage/accuracy/ricochet/interval gates with exact unknown accounting** | Phase 6 v0.3 items 3/4/8/9 | Release thresholds are frozen in `penetration-v0.3-plan.md` | #5 complete |
+| 7 | **Harden final rendezvous capability-file ACL verification** | security follow-up | Parent ACLs are verified, but final `web.json` needs protected owner-only ACL and post-move reparse/DACL verification | offline Windows test |
+| 8 | **Re-verdict the stored Oasis batch positions with a bounded bidirectional per-dump clock window** | X2 / OD-RECOVERY-100 | Preserves the next independent offline evidence lane without consuming a launch | offline |
+| 9 | **Post-contract two-replay batch witness** with attempts 1 and both tear flags false | Item 7 Branch B | Direct no-transient-tear wire evidence remains the item-7 gate | 2 approved launches after #8 |
+| 10 | **Owner HUD smoke and v0.3 ship review** only after the exact-input corpus passes | Phase 6 v0.3 G6 | The current slice is intentionally neutral on real data and is not a completed fidelity release | #1-6 and full gate |
 
 ## Wait-list (deliberately outside the top 10)
 
@@ -33,11 +31,10 @@ live work; owner-gated items sit behind the evidence they consume.
   policy gate, not just engineering.
 - **G3+ publication generalization of `rehearse-offset-apply.py`** — only when
   a new publication package appears.
-- **Exact per-plate armor thickness mapping** — the accessible install data
-  does not map XML armor groups to collision faces; the badge stays honest
-  nominal/fail-closed.
-- **Loaded-shell resolution** — the replay signature is an effect-entity id;
-  the manual stock-gun shell selector remains the honest product behavior.
+- **Exact per-plate armor thickness mapping** is now BLK-0027, not an accepted
+  nominal fallback. The hard-joint visualization hypothesis is rejected.
+- **Loaded-shell and exact gun-ray resolution** remain G1 blockers; manual
+  shell selection and CAM-013 are diagnostics-only in v0.3.
 
 ## Refresh procedure (session end)
 

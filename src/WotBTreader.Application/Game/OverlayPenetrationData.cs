@@ -3,6 +3,96 @@ using WotBTreader.Core.Overlay;
 
 namespace WotBTreader.Application.Game;
 
+public enum ArmorInputProvenance
+{
+    Unknown = 0,
+    NominalSummary,
+    ExactTriangleSurface,
+    ExactOrderedLayers,
+}
+
+public enum WeaponInputProvenance
+{
+    Unknown = 0,
+    StaticStockMetadata,
+    ManualSelection,
+    ExactLoadedShell,
+}
+
+public enum AimInputProvenance
+{
+    Unknown = 0,
+    HullYawProxy,
+    CameraForwardProxy,
+    ExactGunRay,
+}
+
+public enum PenetrationCompatibilityStatus
+{
+    Missing = 0,
+    Exact,
+    ReplayBuildIncomplete,
+    ReplayBuildMismatch,
+    ResourceDrift,
+}
+
+public sealed record PenetrationSourceFingerprint(
+    string SourceKind,
+    string RelativePath,
+    ContentHash Sha256,
+    long ByteLength);
+
+public sealed record PenetrationCompatibilityManifest(
+    string ManifestId,
+    string SchemaVersion,
+    string ProviderVersion,
+    string InstalledProductVersion,
+    ContentHash ExecutableSha256,
+    string? ReplayGameVersion,
+    PenetrationCompatibilityStatus CompatibilityStatus,
+    IReadOnlyList<PenetrationSourceFingerprint> Sources);
+
+public sealed record PenetrationResolutionIssue(
+    long? EntityId,
+    string? VehicleId,
+    string DiagnosticCode);
+
+public sealed record PenetrationResolutionReport(
+    int RosterEntities,
+    int VehicleIdsPresent,
+    int VehiclesResolved,
+    int ArmorModelsResolved,
+    int MeshesResolved,
+    int WeaponStatesResolved,
+    IReadOnlyList<PenetrationResolutionIssue> Issues);
+
+public sealed record PenetrationDiagnosticsSnapshot(
+    PenetrationCompatibilityManifest? Manifest,
+    PenetrationResolutionReport? ResolutionReport);
+
+/// <summary>Read-only, redacted diagnostics for the last penetration resolve.</summary>
+public interface IPenetrationDiagnosticsSource
+{
+    ValueTask<PenetrationDiagnosticsSnapshot> GetSnapshotAsync(
+        CancellationToken cancellationToken);
+}
+
+public sealed record PenetrationInputProvenance(
+    ArmorInputProvenance Armor,
+    WeaponInputProvenance Weapon,
+    AimInputProvenance Aim)
+{
+    public static PenetrationInputProvenance Unproven { get; } = new(
+        ArmorInputProvenance.Unknown,
+        WeaponInputProvenance.Unknown,
+        AimInputProvenance.Unknown);
+
+    public bool IsReady =>
+        Armor >= ArmorInputProvenance.ExactTriangleSurface
+        && Weapon == WeaponInputProvenance.ExactLoadedShell
+        && Aim == AimInputProvenance.ExactGunRay;
+}
+
 /// <summary>
 /// The install-derived inputs the pen badge needs for one session: the
 /// nominal armor per roster entity (front/side/rear) and the viewpoint
@@ -15,8 +105,14 @@ public sealed record PenetrationContext(
     IReadOnlyDictionary<long, TankArmor> ArmorByEntity,
     ShellSpec ViewerShell,
     IReadOnlyDictionary<long, IReadOnlyList<CollisionMeshPart>>? MeshesByEntity = null,
-    IReadOnlyList<ShellOption>? Shells = null)
+    IReadOnlyList<ShellOption>? Shells = null,
+    PenetrationInputProvenance? Provenance = null,
+    string? CompatibilityManifestId = null,
+    PenetrationCompatibilityStatus CompatibilityStatus =
+        PenetrationCompatibilityStatus.Missing)
 {
+    public PenetrationInputProvenance InputProvenance =>
+        Provenance ?? PenetrationInputProvenance.Unproven;
     /// <summary>The viewer's available shells (empty when none resolved). The
     /// first option is the stock shell and equals <see cref="ViewerShell"/>.</summary>
     public IReadOnlyList<ShellOption> AvailableShells => Shells ?? [];
@@ -92,7 +188,12 @@ public sealed record PenetrationContext(
 public sealed record PenetrationTankData(
     TankArmor Armor,
     IReadOnlyList<CollisionMeshPart>? Mesh,
-    IReadOnlyList<ShellOption> Shells);
+    IReadOnlyList<ShellOption> Shells,
+    PenetrationInputProvenance? Provenance = null)
+{
+    public PenetrationInputProvenance InputProvenance =>
+        Provenance ?? PenetrationInputProvenance.Unproven;
+}
 
 /// <summary>
 /// Supplies the install-static penetration data (armor + shell) the overlay

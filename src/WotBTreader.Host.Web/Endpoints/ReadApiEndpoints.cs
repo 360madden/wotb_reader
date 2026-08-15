@@ -42,8 +42,56 @@ internal static class ReadApiEndpoints
         group.MapGet("/decode-runs/{decodeRunId:guid}", GetDecodeRunAsync);
         group.MapGet("/sessions/{battleSessionId:guid}/frame", GetOverlayFrameAsync);
         group.MapGet("/live/frame", GetLiveFrameAsync);
+        group.MapGet("/penetration/diagnostics", GetPenetrationDiagnosticsAsync);
         return builder;
     }
+
+    internal static async Task<IResult> GetPenetrationDiagnosticsAsync(
+        IPenetrationDiagnosticsSource diagnostics,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(diagnostics);
+        PenetrationDiagnosticsSnapshot snapshot = await diagnostics
+            .GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        return Results.Ok(MapPenetrationDiagnostics(snapshot));
+    }
+
+    private static PenetrationDiagnosticsResponse MapPenetrationDiagnostics(
+        PenetrationDiagnosticsSnapshot snapshot) => new()
+        {
+            Manifest = snapshot.Manifest is null ? null : new PenetrationCompatibilityManifestResponse
+            {
+                ManifestId = snapshot.Manifest.ManifestId,
+                SchemaVersion = snapshot.Manifest.SchemaVersion,
+                ProviderVersion = snapshot.Manifest.ProviderVersion,
+                InstalledProductVersion = snapshot.Manifest.InstalledProductVersion,
+                ExecutableSha256 = snapshot.Manifest.ExecutableSha256.Value,
+                ReplayGameVersion = snapshot.Manifest.ReplayGameVersion,
+                CompatibilityStatus = snapshot.Manifest.CompatibilityStatus.ToString(),
+                Sources = [.. snapshot.Manifest.Sources.Select(source => new PenetrationSourceFingerprintResponse
+                {
+                    SourceKind = source.SourceKind,
+                    RelativePath = source.RelativePath,
+                    Sha256 = source.Sha256.Value,
+                    ByteLength = source.ByteLength,
+                })],
+            },
+            ResolutionReport = snapshot.ResolutionReport is null ? null : new PenetrationResolutionReportResponse
+            {
+                RosterEntities = snapshot.ResolutionReport.RosterEntities,
+                VehicleIdsPresent = snapshot.ResolutionReport.VehicleIdsPresent,
+                VehiclesResolved = snapshot.ResolutionReport.VehiclesResolved,
+                ArmorModelsResolved = snapshot.ResolutionReport.ArmorModelsResolved,
+                MeshesResolved = snapshot.ResolutionReport.MeshesResolved,
+                WeaponStatesResolved = snapshot.ResolutionReport.WeaponStatesResolved,
+                Issues = [.. snapshot.ResolutionReport.Issues.Select(issue => new PenetrationResolutionIssueResponse
+                {
+                    EntityId = issue.EntityId,
+                    VehicleId = issue.VehicleId,
+                    DiagnosticCode = issue.DiagnosticCode,
+                })],
+            },
+        };
 
     internal static async Task<IResult> GetDoctorAsync(
         IDoctorService doctor,
@@ -280,6 +328,7 @@ internal static class ReadApiEndpoints
         IGameMemoryScanner scanner,
         ISessionQueryRepository sessions,
         IOverlayPenetrationData penetrationData,
+        IManagedReplayAssociationLeaseSource associationSource,
         Guid? sessionId,
         double? fov,
         double? width,
@@ -290,6 +339,7 @@ internal static class ReadApiEndpoints
         ArgumentNullException.ThrowIfNull(scanner);
         ArgumentNullException.ThrowIfNull(sessions);
         ArgumentNullException.ThrowIfNull(penetrationData);
+        ArgumentNullException.ThrowIfNull(associationSource);
 
         double resolvedFov = fov ?? 90.0;
         if (!double.IsFinite(resolvedFov) || resolvedFov <= 0 || resolvedFov >= 180)
@@ -324,16 +374,25 @@ internal static class ReadApiEndpoints
         // on the live frame). Loaded BEFORE the frame read so the decoded
         // own entity id can drive the frame's own-row damage-dealt
         // consumption.
+        ManagedReplayAssociationAcquireResult association =
+            await associationSource.AcquireAsync(cancellationToken).ConfigureAwait(false);
+        IManagedReplayAssociationLease? associationLease = association.Lease;
+        BattleSessionId? associatedSessionId = associationLease?.BattleSessionId;
+        bool queryMismatch = sessionId is { } assertedSession
+            && associatedSessionId != new BattleSessionId(assertedSession);
+
         IReadOnlyDictionary<long, Participant>? participants = null;
         long? ownEntityId = null;
         PenetrationContext? penetration = null;
-        if (sessionId is { } requestedSession)
+        bool associatedProjectionMissing = false;
+        if (associatedSessionId is { } requestedSession && !queryMismatch)
         {
             OperationResult<ReplayDecodeProjection> rosterResult =
                 await sessions.GetProjectionAsync(
-                    new BattleSessionId(requestedSession),
+                    requestedSession,
                     cancellationToken).ConfigureAwait(false);
-            if (rosterResult.IsSuccess && rosterResult.Value is not null)
+            if (rosterResult.IsSuccess
+                && rosterResult.Value?.Session?.Id == requestedSession)
             {
                 participants = rosterResult.Value.Participants
                     .Where(participant => participant.EntityId is not null)
@@ -360,6 +419,10 @@ internal static class ReadApiEndpoints
                         ?.EntityId;
                 }
             }
+            else
+            {
+                associatedProjectionMissing = true;
+            }
         }
 
         // Forward the session id into the discover call so the batch core's
@@ -371,7 +434,7 @@ internal static class ReadApiEndpoints
         // own-row damage-dealt read (honest, fail-closed).
         OperationResult<LiveFrameReadResult> frameResult = await scanner.ReadLiveFrameAsync(
             new WotBTreader.Application.Game.LiveFrameReadRequest(
-                sessionId is { } forwarded ? new BattleSessionId(forwarded) : null,
+                associatedSessionId,
                 ownEntityId),
             cancellationToken).ConfigureAwait(false);
         if (!frameResult.IsSuccess || frameResult.Value is null)
@@ -404,6 +467,36 @@ internal static class ReadApiEndpoints
             penetration,
             ownEntityId,
             shell);
+        PenetrationReadinessReason? associationReason = queryMismatch
+            ? PenetrationReadinessReason.ManagedReplayAssociationMismatch
+            : association.Status switch
+            {
+                ManagedReplayAssociationStatus.Missing =>
+                    PenetrationReadinessReason.ManagedReplayAssociationMissing,
+                ManagedReplayAssociationStatus.PendingVerification =>
+                    PenetrationReadinessReason.ManagedReplayAssociationPending,
+                ManagedReplayAssociationStatus.Stale =>
+                    PenetrationReadinessReason.ManagedReplayAssociationStale,
+                _ => null,
+            };
+        associationReason ??= associatedProjectionMissing
+            ? PenetrationReadinessReason.DecodedSessionMissing
+            : null;
+        if (associationLease is not null
+            && !await associationLease.IsCurrentAsync(cancellationToken).ConfigureAwait(false))
+        {
+            associationReason = PenetrationReadinessReason.ManagedReplayAssociationStale;
+        }
+
+        if (associationReason is { } notReadyReason)
+        {
+            projection = projection with
+            {
+                PenBadge = null,
+                Penetration = PenetrationAssessment.NotReady(notReadyReason),
+            };
+        }
+
         return Results.Ok(ToOverlayFrameResponse(projection, ownEntityId));
     }
 
@@ -471,17 +564,13 @@ internal static class ReadApiEndpoints
             KillerEntityId = kill.KillerEntityId,
             ReplayTimeSeconds = kill.ReplayTime.TotalSeconds,
         })],
-            PenBadge = projection.PenBadge is { } badge
-                ? new OverlayPenBadgeResponse
-                {
-                    AimedEntityId = badge.AimedEntityId,
-                    Face = badge.Face.ToString(),
-                    Band = badge.Verdict.Band.ToString(),
-                    EffectiveArmorMm = badge.Verdict.EffectiveArmorMm,
-                    PenetrationMmAtRange = badge.Verdict.PenetrationMmAtRange,
-                    Ricochet = badge.Verdict.Ricochet,
-                }
-                : null,
+            PenBadge = MapPenBadge(
+                projection.Penetration is null
+                    ? projection.PenBadge
+                    : projection.Penetration.Badge),
+            Penetration = projection.Penetration is null
+                ? null
+                : MapPenetrationAssessment(projection.Penetration),
             PenShells = [.. (projection.PenShells ?? []).Select(shell => new PenShellOptionResponse
             {
                 Name = shell.Name,
@@ -489,6 +578,69 @@ internal static class ReadApiEndpoints
             })],
             PenShell = projection.PenShell,
         };
+
+    private static OverlayPenetrationAssessmentResponse MapPenetrationAssessment(
+        PenetrationAssessment assessment) =>
+        new()
+        {
+            Status = assessment.Status == PenetrationAssessmentStatus.Ready
+                ? "ready"
+                : "not_ready",
+            PrimaryReason = ReadinessReasonCode(assessment.PrimaryReason),
+            Reasons = [.. assessment.Reasons.Select(ReadinessReasonCode)],
+            ModelVersion = assessment.ModelVersion,
+            CompatibilityManifestId = assessment.CompatibilityManifestId,
+            Badge = MapPenBadge(assessment.Badge),
+        };
+
+    private static OverlayPenBadgeResponse? MapPenBadge(PenetrationBadge? badge) =>
+        badge is { } value
+            ? new OverlayPenBadgeResponse
+            {
+                AimedEntityId = value.AimedEntityId,
+                Face = value.Face.ToString(),
+                Band = value.Verdict.Band.ToString(),
+                EffectiveArmorMm = value.Verdict.EffectiveArmorMm,
+                PenetrationMmAtRange = value.Verdict.PenetrationMmAtRange,
+                Ricochet = value.Verdict.Ricochet,
+            }
+            : null;
+
+    internal static string ReadinessReasonCode(PenetrationReadinessReason reason) => reason switch
+    {
+        PenetrationReadinessReason.None => "none",
+        PenetrationReadinessReason.ManagedReplayAssociationMissing => "session.association_missing",
+        PenetrationReadinessReason.ManagedReplayAssociationPending => "session.association_pending",
+        PenetrationReadinessReason.ManagedReplayAssociationStale => "session.association_stale",
+        PenetrationReadinessReason.ManagedReplayAssociationMismatch => "session.association_mismatch",
+        PenetrationReadinessReason.DecodedSessionMissing => "session.decoded_missing",
+        PenetrationReadinessReason.DecodedSourceMismatch => "session.source_mismatch",
+        PenetrationReadinessReason.BuildIdentityMissing => "build.identity_missing",
+        PenetrationReadinessReason.BuildUnsupported => "build.unsupported",
+        PenetrationReadinessReason.ReplayBuildIncomplete => "build.replay_incomplete",
+        PenetrationReadinessReason.ReplayBuildMismatch => "build.replay_mismatch",
+        PenetrationReadinessReason.ResourceManifestMissing => "build.manifest_missing",
+        PenetrationReadinessReason.ResourceDrift => "build.resource_drift",
+        PenetrationReadinessReason.ClockStale => "clock.stale",
+        PenetrationReadinessReason.AimUnavailable => "aim.unavailable",
+        PenetrationReadinessReason.AimStale => "aim.stale",
+        PenetrationReadinessReason.NoTarget => "target.none",
+        PenetrationReadinessReason.TargetDead => "target.dead",
+        PenetrationReadinessReason.OwnEntityUnknown => "team.own_entity_unknown",
+        PenetrationReadinessReason.OwnTeamUnknown => "team.own_unknown",
+        PenetrationReadinessReason.TargetTeamUnknown => "team.target_unknown",
+        PenetrationReadinessReason.TargetNotEnemy => "team.target_not_enemy",
+        PenetrationReadinessReason.WeaponStateUnavailable => "weapon.unavailable",
+        PenetrationReadinessReason.WeaponStateStale => "weapon.stale",
+        PenetrationReadinessReason.WeaponUnsupported => "weapon.unsupported",
+        PenetrationReadinessReason.VehicleUnresolved => "vehicle.unresolved",
+        PenetrationReadinessReason.ArmorModelUnavailable => "armor.model_unavailable",
+        PenetrationReadinessReason.ArmorSurfaceMiss => "armor.surface_miss",
+        PenetrationReadinessReason.ArmorLayerUnsupported => "armor.layer_unsupported",
+        PenetrationReadinessReason.InvalidInput => "input.invalid",
+        PenetrationReadinessReason.InternalFailure => "internal.failure",
+        _ => "internal.unknown",
+    };
 
     /// <summary>
     /// CAM-005 seam: reads the gate-verified GameCamera pose (the CAM-001

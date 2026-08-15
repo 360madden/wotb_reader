@@ -94,6 +94,76 @@ public sealed class OptInInstalledGameTests
     }
 
     [TestMethod]
+    public async Task CollisionHardJointKeys_WhenExplicitlyOptedIn_AreStablePerTriangleAcrossVehicles()
+    {
+        string? gameRoot = Environment.GetEnvironmentVariable("WOTB_TREADER_GAME_ROOT");
+        if (string.IsNullOrWhiteSpace(gameRoot))
+        {
+            Assert.Inconclusive(
+                "Set WOTB_TREADER_GAME_ROOT to opt in to read-only installed-game validation.");
+            return;
+        }
+
+        string[] meshNames =
+        [
+            "uk-GB08_Churchill_I.scg.dvpl",
+            "germany-Maus.scg.dvpl",
+            "france-AMX_M4_1945.scg.dvpl",
+        ];
+        GameIntegrationOptions options = new()
+        {
+            GameInstallRoots = [gameRoot],
+            UseDefaultDiscoveryRoots = false,
+        };
+        DvplReader reader = new(options);
+        List<string> failures = [];
+
+        foreach (string meshName in meshNames)
+        {
+            string path = System.IO.Path.Combine(
+                gameRoot, "Data", "3d", "Tanks", "CollisionMeshes", meshName);
+            if (!File.Exists(path))
+            {
+                Assert.Inconclusive($"The required collision mesh is not installed: {meshName}.");
+            }
+
+            var result = await reader.ReadAsync(path, CancellationToken.None);
+            Assert.IsTrue(result.IsSuccess, $"{meshName}: {result.Error?.Message}");
+            IReadOnlyList<CollisionMeshPart> parts = CollisionMeshParser.ParseAll(
+                result.Value!.Data.Span,
+                maxBytes: 16 * 1024 * 1024);
+
+            foreach (CollisionMeshPart part in parts)
+            {
+                CollisionPartHardJointAnalysis analysis = CollisionHardJointAnalyzer.Analyze(part);
+                int stable = analysis.Triangles.Count(
+                    triangle => triangle.Kind == TriangleHardJointKeyKind.StableKey);
+                int mixed = analysis.Triangles.Count(
+                    triangle => triangle.Kind == TriangleHardJointKeyKind.MixedKeys);
+                int missing = analysis.Triangles.Count(
+                    triangle => triangle.Kind == TriangleHardJointKeyKind.NoKey);
+                if (stable == 0 || mixed != 0 || missing != 0 || analysis.KeyCardinality == 0)
+                {
+                    failures.Add(
+                        $"{meshName} part {part.PartId}: stable={stable}, mixed={mixed}, "
+                        + $"missing={missing}, keys=[{string.Join(',', analysis.KeyDomain)}]");
+                }
+            }
+        }
+
+        Assert.IsEmpty(
+            failures,
+            "Hard-joint keys must be present and stable on every triangle. "
+            + string.Join("; ", failures));
+
+        // Exact installed build probed 2026-08-14: 14 parts and 3,424
+        // triangles all carried one stable integral key; none were mixed or
+        // missing. Key domains varied by vehicle/part and were subsets of
+        // 1..16. This proves a deterministic surface-key channel, not its
+        // armor-group or thickness semantics.
+    }
+
+    [TestMethod]
     public async Task SceneFileParser_WhenExplicitlyOptedIn_ReadsRealSceneTransforms()
     {
         string? gameRoot = Environment.GetEnvironmentVariable("WOTB_TREADER_GAME_ROOT");

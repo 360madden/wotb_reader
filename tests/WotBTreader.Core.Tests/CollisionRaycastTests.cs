@@ -46,6 +46,27 @@ public sealed class CollisionRaycastTests
         Assert.AreEqual(0.0, hit.Value.NormalX, 1e-9);
         Assert.AreEqual(0.0, hit.Value.NormalY, 1e-9);
         Assert.AreEqual(1.0, hit.Value.NormalZ, 1e-9);
+        Assert.AreEqual(0, hit.Value.TriangleIndex);
+        Assert.IsNull(hit.Value.SurfaceKey);
+    }
+
+    [TestMethod]
+    public void Raycast_StableIntegralHardJointCarriesOpaqueSurfaceKey()
+    {
+        CollisionMesh mesh = new(
+        [
+            new(0, 0, 0, 0, 0, 1, HardJointIndex: 7),
+            new(1, 0, 0, 0, 0, 1, HardJointIndex: 7),
+            new(0, 1, 0, 0, 0, 1, HardJointIndex: 7),
+        ],
+        [0, 1, 2]);
+
+        MeshHit? hit = CollisionRaycast.Raycast(
+            new AimRay(0, 0, -1, 0, 0, 1),
+            mesh);
+
+        Assert.IsNotNull(hit);
+        Assert.AreEqual(7, hit.Value.SurfaceKey);
     }
 
     [TestMethod]
@@ -97,6 +118,11 @@ public sealed class CollisionRaycastTests
 
         Assert.IsNotNull(hit);
         Assert.AreEqual(1.0, hit.Value.Distance, 1e-9);
+
+        IReadOnlyList<MeshHit> all = CollisionRaycast.RaycastAll(ray, mesh);
+        Assert.HasCount(2, all);
+        Assert.AreEqual(1.0, all[0].Distance, 1e-9);
+        Assert.AreEqual(3.0, all[1].Distance, 1e-9);
     }
 
     [TestMethod]

@@ -81,7 +81,8 @@ public sealed record OverlayFrameProjection(
     IReadOnlyList<OverlayKill> Kills,
     PenetrationBadge? PenBadge = null,
     IReadOnlyList<ShellOption>? PenShells = null,
-    string? PenShell = null);
+    string? PenShell = null,
+    PenetrationAssessment? Penetration = null);
 
 /// <summary>
 /// Projects an <see cref="OverlayFrame"/> to viewport pixels via
@@ -212,7 +213,8 @@ public static class OverlayFrameProjector
             frame.Kills,
             frame.PenBadge,
             frame.PenShells,
-            frame.PenShell);
+            frame.PenShell,
+            frame.Penetration);
     }
 
     private static double DistanceMeters(OverlayBeacon beacon, OverlayCamera camera)

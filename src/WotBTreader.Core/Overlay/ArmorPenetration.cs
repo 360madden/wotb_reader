@@ -154,16 +154,16 @@ public enum PenetrationBand
     /// degenerate geometry).</summary>
     Unknown = 0,
 
-    /// <summary>Red — the effective armor exceeds the shell's penetration at
-    /// this range, or the shot ricochets.</summary>
+    /// <summary>Red — even the top of the supported penetration roll interval
+    /// is below effective armor, or the shot ricochets.</summary>
     NoPen = 1,
 
-    /// <summary>Yellow — effective armor and penetration are within the
-    /// caller's margin band of each other.</summary>
+    /// <summary>Yellow — the supported penetration roll interval crosses the
+    /// effective-armor boundary. This is uncertainty, not a claimed chance.</summary>
     Marginal = 2,
 
-    /// <summary>Green — penetration at range comfortably beats the effective
-    /// armor.</summary>
+    /// <summary>Green — even the bottom of the supported penetration roll
+    /// interval beats effective armor.</summary>
     Pen = 3,
 }
 
@@ -199,9 +199,12 @@ public readonly record struct PenetrationVerdict(
 ///    HE/HEAT 0). The two-caliber rule amplifies it when caliber &gt; 2 ×
 ///    plate thickness: resulting = base × 1.4 × caliber / (2 × thickness).
 ///  - Penetration drops linearly with distance; it never goes below zero.
-///  - The band is deterministic: Pen when penetration &gt; effective × (1 +
-///    margin), NoPen when penetration &lt; effective × (1 − margin), Marginal
-///    in between, and NoPen on any ricochet.
+///  - The official support material establishes a ±5% penetration spread but
+///    does not establish a probability distribution. The band is therefore
+///    interval-bounded: Pen only when the minimum roll beats effective armor,
+///    NoPen only when the maximum roll is below it, Marginal when the interval
+///    crosses the boundary, and NoPen on any ricochet. No probability is
+///    inferred.
 ///
 /// Fail-closed throughout: non-finite or degenerate inputs produce
 /// <see cref="PenetrationBand.Unknown"/> (or null) — a NaN can never become a
@@ -378,16 +381,16 @@ public static class ArmorPenetration
     /// <param name="ray">The aim ray (world-space origin + unit direction).</param>
     /// <param name="plate">The armor plate being evaluated.</param>
     /// <param name="shell">The shell's penetration profile.</param>
-    /// <param name="margin">Symmetric classification band as a fraction of
-    /// effective armor (default 0.1 = ±10%). Must be ≥ 0.</param>
+    /// <param name="margin">Supported symmetric penetration-roll spread as a
+    /// fraction of penetration (default 0.05 = ±5%). Must be in [0, 1).</param>
     public static PenetrationVerdict Evaluate(
         AimRay ray,
         ArmorPlate plate,
         ShellSpec shell,
-        double margin = 0.1)
+        double margin = 0.05)
     {
         if (!Finite(ray) || !Finite(plate) || !Finite(shell)
-            || !double.IsFinite(margin) || margin < 0
+            || !double.IsFinite(margin) || margin < 0 || margin >= 1
             || plate.Thickness <= 0
             || shell.Penetration0Mm <= 0 || shell.CaliberMm <= 0
             || shell.DropPerMeterMm < 0
@@ -441,11 +444,11 @@ public static class ArmorPenetration
         {
             band = PenetrationBand.NoPen;
         }
-        else if (penAtRange.Value > effective.Value * (1.0 + margin))
+        else if (penAtRange.Value * (1.0 - margin) > effective.Value)
         {
             band = PenetrationBand.Pen;
         }
-        else if (penAtRange.Value < effective.Value * (1.0 - margin))
+        else if (penAtRange.Value * (1.0 + margin) < effective.Value)
         {
             band = PenetrationBand.NoPen;
         }

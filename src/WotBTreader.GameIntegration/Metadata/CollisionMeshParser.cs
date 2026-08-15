@@ -187,7 +187,12 @@ internal static class CollisionMeshParser
         }
 
         // Position and normal are the first two attributes (bits 0 and 1), so
-        // their offsets are fixed: position at 0, normal at 12 bytes.
+        // their offsets are fixed: position at 0, normal at 12 bytes. The hard
+        // joint index follows every lower-bit attribute that is present; in
+        // the observed 0x207 layout that places it after the packed color.
+        int? hardJointIndexOffset = (vertexFormat & FlagHardJointIndex) != 0
+            ? VertexAttributeOffset(vertexFormat, FlagHardJointIndex)
+            : null;
         CollisionVertex[] parsed = new CollisionVertex[vertexCount];
         ReadOnlySpan<byte> vertexSpan = vertices.Span;
         for (int i = 0; i < vertexCount; i++)
@@ -199,7 +204,11 @@ internal static class CollisionMeshParser
                 BitConverter.ToSingle(vertexSpan.Slice(baseOffset + 8, 4)),
                 BitConverter.ToSingle(vertexSpan.Slice(baseOffset + 12, 4)),
                 BitConverter.ToSingle(vertexSpan.Slice(baseOffset + 16, 4)),
-                BitConverter.ToSingle(vertexSpan.Slice(baseOffset + 20, 4)));
+                BitConverter.ToSingle(vertexSpan.Slice(baseOffset + 20, 4)),
+                hardJointIndexOffset.HasValue
+                    ? BitConverter.ToSingle(
+                        vertexSpan.Slice(baseOffset + hardJointIndexOffset.Value, 4))
+                    : null);
         }
 
         if (indexCount <= 0 || indexCount > MaxIndices || indexCount % 3 != 0)
@@ -264,6 +273,11 @@ internal static class CollisionMeshParser
         }
 
         return stride;
+    }
+
+    private static int VertexAttributeOffset(int vertexFormat, int attributeFlag)
+    {
+        return VertexStride(vertexFormat & (attributeFlag - 1));
     }
 
     private ref struct Reader(ReadOnlySpan<byte> span)

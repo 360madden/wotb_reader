@@ -87,6 +87,7 @@ public sealed class GameApiEndpointsTests
 
         IResult result = await GameApiEndpoints.LaunchGameAsync(
             launcher,
+            MissingSessionRepository(),
             new GameLaunchRequest { SourceArtifactId = sourceArtifactId },
             TestContext.CancellationToken);
 
@@ -105,6 +106,7 @@ public sealed class GameApiEndpointsTests
 
         IResult result = await GameApiEndpoints.LaunchGameAsync(
             launcher,
+            MissingSessionRepository(),
             new GameLaunchRequest { SourceArtifactId = artifactId.ToString("D") },
             TestContext.CancellationToken);
 
@@ -114,6 +116,58 @@ public sealed class GameApiEndpointsTests
         Assert.IsNotNull(launcher.Request);
         Assert.AreEqual(artifactId, launcher.Request.SourceArtifactId.Value);
         Assert.AreEqual(TestContext.CancellationToken, launcher.LastCancellationToken);
+    }
+
+    [TestMethod]
+    public async Task LaunchBindsExactCompletedSessionToExactArtifact()
+    {
+        SourceArtifactId artifactId = SourceArtifactId.New();
+        BattleSessionId sessionId = BattleSessionId.New();
+        ReplayDecodeProjection projection = LaunchProjection(artifactId, sessionId);
+        var launcher = new FakeGameReplayLauncher(OperationResult.Success(
+            new GameReplayLaunchOutcome(DateTimeOffset.UnixEpoch)));
+
+        IResult result = await GameApiEndpoints.LaunchGameAsync(
+            launcher,
+            new FakeSessionQueryRepository(OperationResult.Success(projection)),
+            new GameLaunchRequest
+            {
+                SourceArtifactId = artifactId.ToString(),
+                BattleSessionId = sessionId.ToString(),
+            },
+            TestContext.CancellationToken);
+
+        GameLaunchResponse response = Value<GameLaunchResponse>(result);
+        Assert.IsTrue(response.Success);
+        Assert.IsNotNull(launcher.Request);
+        Assert.AreEqual(artifactId, launcher.Request.SourceArtifactId);
+        Assert.AreEqual(sessionId, launcher.Request.BattleSessionId);
+    }
+
+    [TestMethod]
+    public async Task LaunchRejectsSessionFromDifferentArtifactWithoutCallingLauncher()
+    {
+        SourceArtifactId requestedArtifact = SourceArtifactId.New();
+        BattleSessionId sessionId = BattleSessionId.New();
+        ReplayDecodeProjection projection = LaunchProjection(
+            SourceArtifactId.New(),
+            sessionId);
+        var launcher = new FakeGameReplayLauncher(OperationResult.Success(
+            new GameReplayLaunchOutcome(DateTimeOffset.UnixEpoch)));
+
+        IResult result = await GameApiEndpoints.LaunchGameAsync(
+            launcher,
+            new FakeSessionQueryRepository(OperationResult.Success(projection)),
+            new GameLaunchRequest
+            {
+                SourceArtifactId = requestedArtifact.ToString(),
+                BattleSessionId = sessionId.ToString(),
+            },
+            TestContext.CancellationToken);
+
+        GameLaunchResponse response = BadRequestValue<GameLaunchResponse>(result);
+        Assert.AreEqual("launch.replay_association.invalid", response.Message);
+        Assert.IsNull(launcher.Request);
     }
 
     [TestMethod]
@@ -802,6 +856,7 @@ public sealed class GameApiEndpointsTests
 
         IResult result = await GameApiEndpoints.LaunchGameAsync(
             launcher,
+            MissingSessionRepository(),
             new GameLaunchRequest { SourceArtifactId = Guid.CreateVersion7().ToString("D") },
             TestContext.CancellationToken);
 
@@ -2882,6 +2937,47 @@ public sealed class GameApiEndpointsTests
             return ValueTask.FromResult(result);
         }
     }
+
+    private static ReplayDecodeProjection LaunchProjection(
+        SourceArtifactId sourceArtifactId,
+        BattleSessionId battleSessionId)
+    {
+        DecodeRun run = new(
+            DecodeRunId.New(),
+            sourceArtifactId,
+            "test",
+            "1",
+            "1",
+            DecodeRunStatus.Succeeded,
+            ReplayCapability.Metadata,
+            DateTimeOffset.UnixEpoch,
+            DateTimeOffset.UnixEpoch.AddSeconds(1),
+            FailureCode: null,
+            FailureSummary: null);
+        BattleSession session = new(
+            battleSessionId,
+            run.Id,
+            "11.19.0.10",
+            ArenaIdentity: null,
+            MapId: null,
+            MapName: null,
+            BattleTimeUtc: null,
+            Duration: null,
+            ViewpointParticipantId: null,
+            SchemaVersion: "1");
+        return new ReplayDecodeProjection(
+            run,
+            session,
+            Participants: [],
+            Positions: [],
+            Events: [],
+            RawRecords: [],
+            Warnings: []);
+    }
+
+    private static FakeSessionQueryRepository MissingSessionRepository() => new(
+        OperationResult.Failure<ReplayDecodeProjection>(
+            new ApplicationError("session.not_found", "Session not found.")));
 
     private sealed class FakeSessionQueryRepository(OperationResult<ReplayDecodeProjection> result)
         : ISessionQueryRepository

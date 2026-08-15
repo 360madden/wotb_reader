@@ -5,7 +5,10 @@ namespace WotBTreader.Core.Overlay;
 /// space plus its unit surface normal (the DAVA <c>EVF_VERTEX</c> +
 /// <c>EVF_NORMAL</c> attributes). The normal is what the pen model needs to
 /// compute the true incidence angle — the four-face hull box's facing-derived
-/// normals were shown too coarse (PN-4's honest negative).
+/// normals were shown too coarse (PN-4's honest negative). When present,
+/// <see cref="HardJointIndex"/> preserves the raw DAVA
+/// <c>EVF_HARD_JOINTINDEX</c> float; it is metadata only and does not imply an
+/// armor group or thickness.
 /// </summary>
 public readonly record struct CollisionVertex(
     double X,
@@ -13,7 +16,8 @@ public readonly record struct CollisionVertex(
     double Z,
     double NormalX,
     double NormalY,
-    double NormalZ);
+    double NormalZ,
+    double? HardJointIndex = null);
 
 /// <summary>
 /// A tank collision surface: vertices with surface normals plus a triangle

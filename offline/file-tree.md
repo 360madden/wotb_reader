@@ -326,6 +326,7 @@ docs/operations/handoffs/2026-08-14-pen-redecode-two-replay-validation.md
 docs/operations/handoffs/2026-08-14-penetration-prototype-v0.2.0-alpha.md
 docs/operations/handoffs/2026-08-14-pn4-live-aim-validation.md
 docs/operations/handoffs/2026-08-14-pn4-second-replay-regression.md
+docs/operations/handoffs/2026-08-15-penetration-v03-safety-and-blockers.md
 docs/operations/handoffs/README.md
 docs/operations/item7-branch-b-step2-consistent-double-read-proposal.md
 docs/operations/item7-hardware-atomicity-proof-plan.md
@@ -354,6 +355,7 @@ docs/operations/offset-discovery-workflow.md
 docs/operations/offset-promotion-checklist.md
 docs/operations/parallel-workstreams.md
 docs/operations/pen-chance-design.md
+docs/operations/penetration-v0.3-plan.md
 docs/operations/pn4-live-aim-capture-runbook.md
 docs/operations/product-roadmap.md
 docs/operations/record-diffing-groundwork.md
@@ -555,6 +557,7 @@ src/WotBTreader.Core/Overlay/CollisionRaycast.cs
 src/WotBTreader.Core/Overlay/OverlayFrameModels.cs
 src/WotBTreader.Core/Overlay/PenValidation.cs
 src/WotBTreader.Core/Overlay/PenetrationAim.cs
+src/WotBTreader.Core/Overlay/PenetrationAssessment.cs
 src/WotBTreader.Core/Overlay/WorldToScreen.cs
 src/WotBTreader.Core/TelemetryModels.cs
 src/WotBTreader.Core/WotBTreader.Core.csproj
@@ -573,6 +576,7 @@ src/WotBTreader.GameIntegration/Logs/BlitzReplayLogMonitor.cs
 src/WotBTreader.GameIntegration/Logs/LifecycleEventJournal.cs
 src/WotBTreader.GameIntegration/Logs/LifecycleFeedContracts.cs
 src/WotBTreader.GameIntegration/Logs/ReplayLogContracts.cs
+src/WotBTreader.GameIntegration/Metadata/CollisionHardJointAnalyzer.cs
 src/WotBTreader.GameIntegration/Metadata/CollisionMeshParser.cs
 src/WotBTreader.GameIntegration/Metadata/InstalledGameMetadataProvider.cs
 src/WotBTreader.GameIntegration/Metadata/MetadataResourceParser.cs
@@ -817,6 +821,7 @@ tests/WotBTreader.Core.Tests/OffsetChainWalkerEquivalenceTests.cs
 tests/WotBTreader.Core.Tests/OffsetChainWalkerTests.cs
 tests/WotBTreader.Core.Tests/PenValidationTests.cs
 tests/WotBTreader.Core.Tests/PenetrationAimTests.cs
+tests/WotBTreader.Core.Tests/PenetrationAssessmentTests.cs
 tests/WotBTreader.Core.Tests/RecordDiffingTests.cs
 tests/WotBTreader.Core.Tests/RingRecordRegionTests.cs
 tests/WotBTreader.Core.Tests/TrajectoryCorrelationScorerTests.cs

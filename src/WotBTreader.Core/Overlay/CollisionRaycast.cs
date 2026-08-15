@@ -13,7 +13,9 @@ public readonly record struct MeshHit(
     double HitZ,
     double NormalX,
     double NormalY,
-    double NormalZ);
+    double NormalZ,
+    int TriangleIndex = -1,
+    int? SurfaceKey = null);
 
 /// <summary>
 /// Pure ray→triangle-mesh intersection (Möller–Trumbore), returning the
@@ -89,11 +91,87 @@ public static class CollisionRaycast
                 ray.OriginZ + ray.DirectionZ * t,
                 nx,
                 ny,
-                nz);
+                nz,
+                i,
+                StableSurfaceKey(a, b, c));
         }
 
         return best;
     }
+
+    /// <summary>
+    /// Returns every valid triangle intersection ordered nearest-first. This
+    /// is a geometry primitive only: callers must not interpret the sequence
+    /// as physical armor layers without an independently proven surface and
+    /// interaction model.
+    /// </summary>
+    public static IReadOnlyList<MeshHit> RaycastAll(AimRay ray, CollisionMesh mesh)
+    {
+        if (!Finite(ray) || mesh.Vertices.Count == 0)
+        {
+            return [];
+        }
+
+        List<MeshHit> hits = [];
+        for (int triangleIndex = 0; triangleIndex < mesh.TriangleCount; triangleIndex++)
+        {
+            int offset = triangleIndex * 3;
+            int ia = mesh.TriangleIndices[offset];
+            int ib = mesh.TriangleIndices[offset + 1];
+            int ic = mesh.TriangleIndices[offset + 2];
+            if (ia < 0 || ia >= mesh.Vertices.Count
+                || ib < 0 || ib >= mesh.Vertices.Count
+                || ic < 0 || ic >= mesh.Vertices.Count)
+            {
+                continue;
+            }
+
+            CollisionVertex a = mesh.Vertices[ia];
+            CollisionVertex b = mesh.Vertices[ib];
+            CollisionVertex c = mesh.Vertices[ic];
+            if (!Finite(a) || !Finite(b) || !Finite(c)
+                || !TryIntersect(ray, a, b, c, out double distance, out _, out _)
+                || distance <= 0
+                || !TrySurfaceNormal(a, b, c, out double nx, out double ny, out double nz))
+            {
+                continue;
+            }
+
+            hits.Add(new MeshHit(
+                distance,
+                ray.OriginX + ray.DirectionX * distance,
+                ray.OriginY + ray.DirectionY * distance,
+                ray.OriginZ + ray.DirectionZ * distance,
+                nx,
+                ny,
+                nz,
+                triangleIndex,
+                StableSurfaceKey(a, b, c)));
+        }
+
+        hits.Sort(static (left, right) => left.Distance.CompareTo(right.Distance));
+        return hits.AsReadOnly();
+    }
+
+    private static int? StableSurfaceKey(
+        CollisionVertex first,
+        CollisionVertex second,
+        CollisionVertex third)
+    {
+        int? a = IntegralKey(first.HardJointIndex);
+        int? b = IntegralKey(second.HardJointIndex);
+        int? c = IntegralKey(third.HardJointIndex);
+        return a.HasValue && a == b && a == c ? a : null;
+    }
+
+    private static int? IntegralKey(double? value) =>
+        value.HasValue
+        && double.IsFinite(value.Value)
+        && value.Value >= int.MinValue
+        && value.Value <= int.MaxValue
+        && Math.Truncate(value.Value) == value.Value
+            ? (int)value.Value
+            : null;
 
     /// <summary>
     /// Möller–Trumbore ray-triangle intersection. On success <paramref name="t"/>

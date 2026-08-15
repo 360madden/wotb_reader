@@ -843,3 +843,50 @@ folder for the full numbering convention and document map.
   exceed the launcher's default 90-second window wait (`FAILED_no_window`);
   use `-WindowWaitSeconds` for cold boots. Full plan and evidence:
   `docs/operations/blk-0026-diagnosis-plan.md`.
+
+## BLK-0027 — Penetration v0.3 lacks authoritative exact armor and primary validation inputs
+
+- First observed: `2026-08-15T03:08:29Z`
+- Status: open; safe product behavior implemented, fidelity claim blocked
+- Impact: penetration items 1, 2, 3, 4, 5, 7, and 8 cannot meet the v0.3
+  completion thresholds. Real frames must remain neutral `NotReady`; nominal
+  armor, manual/static shells, and camera direction are excluded from the
+  primary scorer cohort.
+- Evidence: exact-build static analysis of `TankFactory::CreateArmorComponent`
+  and `PushNormalsArmorConfiguration` proved that the optional collision-mesh
+  hard-joint value is consumed only by a visualization mesh rebuild. The sole
+  current builder passes an empty lookup map; no `armor_N` name join, explicit
+  millimeter unit, ordered ray traversal, or physical layer accumulation is
+  present. The scalar consumer applies a separate per-part scale and emits
+  `ArmorNodeMaterial`, so mapping the stable 1..16 sample domain to XML armor
+  groups would be an unsupported guess.
+- Weapon/aim evidence: exact-build RTTI and constructors identify
+  `VehicleGun` and `VehicleGunRotator` as the strongest sibling owners under
+  the avatar/game-logic family. Static analysis does not identify a loaded
+  shell field, configured-gun identity, turret yaw/elevation, muzzle origin,
+  or shot direction. `AvatarGunAgent` is a small bridge rather than a credible
+  state owner; replay shot signatures and CAM-013 remain rejected as exact
+  shell/ray sources.
+- Decision: do not connect `HardJointIndex` to XML thickness and do not count
+  the sampled stable triangle keys as exact armor coverage. Keep exact face
+  thickness and ordered layers unavailable until a current-build producer,
+  explicit units, and physical ordering are independently proven.
+- Implemented containment: readiness/provenance contracts prohibit colored
+  real-data verdicts without exact triangle armor, exact loaded shell, and an
+  exact gun ray; scorer primary eligibility requires the same exact inputs.
+  Exact-build manifests re-hash every consumed DVPL source, diagnostics expose
+  only relative paths/hashes/counts, and unknown/allied targets fail closed.
+- Exit gate: prove all three exact runtime/static inputs (armor/layers,
+  configured gun+loaded shell, shot-synchronous muzzle/gun ray), then build at
+  least 12 content-distinct replays and 500 unconfounded eligible shots meeting
+  the thresholds in `penetration-v0.3-plan.md`. A live managed-offline capture
+  is permitted only after its bounded source contract and security review are
+  complete; no broader scan or online operation is authorized.
+- Smallest weapon/aim discriminator: under one fresh `OfflineReplayVerified`
+  lease, require unique viewpoint-owned vtable matches for `VehicleGun` and
+  `VehicleGunRotator`; demonstrate shell A->B->A transitions resolving to
+  exact installed shell identities; independently correlate stationary-hull
+  turret yaw and gun elevation; then require finite normalized shot rays that
+  join decoded targets/impacts and repeat on a second content-distinct replay.
+  Ambiguous ownership, camera-only correlation, or post-shot-only changes are
+  decisive no-go outcomes.

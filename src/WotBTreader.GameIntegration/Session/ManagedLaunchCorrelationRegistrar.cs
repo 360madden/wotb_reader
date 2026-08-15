@@ -1,4 +1,5 @@
 using WotBTreader.Application.Results;
+using WotBTreader.Core;
 using WotBTreader.GameIntegration.Logs;
 
 namespace WotBTreader.GameIntegration.Session;
@@ -14,7 +15,8 @@ internal interface IManagedLaunchCorrelationRegistrar
 {
     OperationResult<ManagedGameLaunchContext> Register(
         ManagedLaunchPreparation preparation,
-        SuspendedGameProcessLease suspendedLease);
+        SuspendedGameProcessLease suspendedLease,
+        BattleSessionId? battleSessionId = null);
 }
 
 internal sealed class ManagedLaunchCorrelationRegistrar
@@ -22,11 +24,11 @@ internal sealed class ManagedLaunchCorrelationRegistrar
 {
     public OperationResult<ManagedGameLaunchContext> Register(
         ManagedLaunchPreparation preparation,
-        SuspendedGameProcessLease suspendedLease)
+        SuspendedGameProcessLease suspendedLease,
+        BattleSessionId? battleSessionId = null)
     {
         ArgumentNullException.ThrowIfNull(preparation);
         ArgumentNullException.ThrowIfNull(suspendedLease);
-
         if (suspendedLease.ProcessId <= 0)
         {
             return Failure("game.launch.correlation_invalid_pid");
@@ -49,6 +51,12 @@ internal sealed class ManagedLaunchCorrelationRegistrar
         if (suspendedLease.HandedOff)
         {
             return Failure("game.launch.correlation_already_handed_off");
+        }
+
+        ManagedReplayArtifactLease? artifactLease = suspendedLease.ArtifactLease;
+        if (artifactLease is null)
+        {
+            return Failure("game.launch.correlation_artifact_unavailable");
         }
 
         LifecycleFeedBaseline baseline = preparation.LifecycleBaseline;
@@ -94,7 +102,10 @@ internal sealed class ManagedLaunchCorrelationRegistrar
             suspendedLease.CreationTimeUtcTicks,
             baseline.Sources,
             baseline.Sequence,
-            baseline.CapturedAtUtc);
+            baseline.CapturedAtUtc,
+            artifactLease.SourceArtifactId,
+            artifactLease.Sha256,
+            battleSessionId);
 
         return OperationResult.Success(context);
     }

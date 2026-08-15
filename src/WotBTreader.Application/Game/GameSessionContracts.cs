@@ -51,7 +51,43 @@ public interface IGameSessionState
 /// The adapter owns launch correlation and never accepts caller-supplied
 /// process or executable identity.
 /// </summary>
-public sealed record GameReplayLaunchRequest(SourceArtifactId SourceArtifactId);
+public sealed record GameReplayLaunchRequest(
+    SourceArtifactId SourceArtifactId,
+    BattleSessionId? BattleSessionId = null);
+
+public enum ManagedReplayAssociationStatus
+{
+    Missing = 0,
+    PendingVerification,
+    Verified,
+    Stale,
+}
+
+/// <summary>
+/// Ephemeral proof that a decoded battle session belongs to the currently
+/// verified managed replay. The adapter keeps its launch epoch private.
+/// </summary>
+public interface IManagedReplayAssociationLease
+{
+    BattleSessionId BattleSessionId { get; }
+
+    ValueTask<bool> IsCurrentAsync(CancellationToken cancellationToken);
+}
+
+public sealed record ManagedReplayAssociationAcquireResult(
+    ManagedReplayAssociationStatus Status,
+    string ReasonCode,
+    IManagedReplayAssociationLease? Lease);
+
+/// <summary>
+/// Acquires an association lease owned by the guarded game-session adapter.
+/// The lease is metadata correlation, never process-read authorization.
+/// </summary>
+public interface IManagedReplayAssociationLeaseSource
+{
+    ValueTask<ManagedReplayAssociationAcquireResult> AcquireAsync(
+        CancellationToken cancellationToken);
+}
 
 /// <summary>Safe result of a managed replay launch request.</summary>
 public sealed record GameReplayLaunchOutcome(DateTimeOffset RequestedAtUtc);

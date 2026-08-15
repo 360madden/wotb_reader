@@ -72,27 +72,25 @@ public static class LiveFrameProjector
         PenetrationBadge? penBadge = null;
         IReadOnlyList<ShellOption> penShells = [];
         string? penShell = null;
+        int? ownTeam = ownEntityId is { } knownOwnId && participants is not null
+            && participants.TryGetValue(knownOwnId, out Participant? knownOwnParticipant)
+            ? knownOwnParticipant.TeamNumber
+            : null;
+        PenetrationAssessment penAssessment = PenetrationAim.BuildAimRay(camera) is null
+            ? PenetrationAssessment.NotReady(PenetrationReadinessReason.AimUnavailable)
+            : ownEntityId is null
+                ? PenetrationAssessment.NotReady(PenetrationReadinessReason.OwnEntityUnknown)
+                : ownTeam is null
+                    ? PenetrationAssessment.NotReady(PenetrationReadinessReason.OwnTeamUnknown)
+                    : PenetrationAssessment.NotReady(PenetrationReadinessReason.WeaponStateUnavailable);
         if (penetration is not null)
         {
             penShells = penetration.AvailableShells;
             (ShellSpec viewerShell, string? activeShell) = penetration.SelectShell(shellName);
             penShell = activeShell;
 
-            // Own team (from the decoded viewpoint participant) scopes the
-            // badge to ENEMY tanks; an unknown team (no session join) keeps
-            // every non-own tank eligible — fail-open toward showing, never
-            // hiding a real enemy behind a decode gap.
-            int? ownTeam = ownEntityId is { } ownId && participants is not null
-                && participants.TryGetValue(ownId, out Participant? ownParticipant)
-                ? ownParticipant.TeamNumber
-                : null;
-
-            IReadOnlyList<OverlayTankState> aimTargets = frame.Tanks
+            IReadOnlyList<OverlayTankState> physicalTargets = frame.Tanks
                 .Where(IsProjectable)
-                .Where(tank => ownEntityId is null || tank.EntityId != ownEntityId.Value)
-                // A definitively-dead tank (alive byte 0) is a wreck, never
-                // a penetration target; unknown/true stays eligible.
-                .Where(tank => tank.Alive is not false)
                 .Select(tank =>
                 {
                     int? team = participants is not null
@@ -106,7 +104,7 @@ public static class LiveFrameProjector
                         tank.Z!.Value,
                         tank.YawRadians is float yaw && float.IsFinite(yaw) ? (double?)yaw : null,
                         HpFraction: 0,
-                        Alive: true,
+                        Alive: tank.Alive is not false,
                         TeamNumber: team,
                         PlayerName: null,
                         ClanTag: null,
@@ -114,15 +112,46 @@ public static class LiveFrameProjector
                         TankClass: null,
                         DistanceMeters: 0);
                 })
-                .Where(tank => ownTeam is not { } team || tank.TeamNumber != team)
                 .ToList();
 
-            penBadge = PenetrationAim.ResolveBadge(
-                camera,
-                aimTargets,
-                penetration.ArmorByEntity,
-                viewerShell,
-                meshesByEntity: penetration.MeshesByEntity);
+            PenetrationInputProvenance provenance = penetration.InputProvenance;
+            penAssessment = penetration.CompatibilityStatus
+                == PenetrationCompatibilityStatus.ResourceDrift
+                ? PenetrationAssessment.NotReady(PenetrationReadinessReason.ResourceDrift)
+                : penetration.CompatibilityStatus
+                    == PenetrationCompatibilityStatus.ReplayBuildIncomplete
+                    ? PenetrationAssessment.NotReady(
+                        PenetrationReadinessReason.ReplayBuildIncomplete)
+                    : penetration.CompatibilityStatus
+                        == PenetrationCompatibilityStatus.ReplayBuildMismatch
+                        ? PenetrationAssessment.NotReady(
+                            PenetrationReadinessReason.ReplayBuildMismatch)
+                        : string.IsNullOrWhiteSpace(penetration.CompatibilityManifestId)
+                ? PenetrationAssessment.NotReady(
+                    PenetrationReadinessReason.ResourceManifestMissing)
+                : provenance.Aim != AimInputProvenance.ExactGunRay
+                    ? PenetrationAssessment.NotReady(PenetrationReadinessReason.AimUnavailable)
+                : ownEntityId is null
+                    ? PenetrationAssessment.NotReady(PenetrationReadinessReason.OwnEntityUnknown)
+                    : ownTeam is null
+                        ? PenetrationAssessment.NotReady(PenetrationReadinessReason.OwnTeamUnknown)
+                        : provenance.Weapon != WeaponInputProvenance.ExactLoadedShell
+                            ? PenetrationAssessment.NotReady(
+                                PenetrationReadinessReason.WeaponStateUnavailable)
+                            : provenance.Armor < ArmorInputProvenance.ExactTriangleSurface
+                                ? PenetrationAssessment.NotReady(
+                                    PenetrationReadinessReason.ArmorLayerUnsupported)
+                                : PenetrationAim.Assess(
+                                    camera,
+                                    physicalTargets,
+                                    ownEntityId,
+                                    ownTeam,
+                                    penetration.ArmorByEntity,
+                                    viewerShell,
+                                    meshesByEntity: penetration.MeshesByEntity);
+            penAssessment = penAssessment.WithCompatibilityManifest(
+                penetration.CompatibilityManifestId);
+            penBadge = penAssessment.Badge;
         }
 
         return new OverlayFrameProjection(
@@ -138,7 +167,8 @@ public static class LiveFrameProjector
             Kills: [],
             PenBadge: penBadge,
             PenShells: penShells,
-            PenShell: penShell);
+            PenShell: penShell,
+            Penetration: penAssessment);
     }
 
     private static OverlayCamera BuildCamera(CameraPoseReadResult? pose)

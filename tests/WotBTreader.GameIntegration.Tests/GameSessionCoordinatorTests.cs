@@ -50,6 +50,65 @@ public sealed class GameSessionCoordinatorTests
     }
 
     [TestMethod]
+    public async Task Association_BoundLaunchTransitionsFromPendingToVerified()
+    {
+        BattleSessionId battleSessionId = BattleSessionId.New();
+        var (coordinator, _) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(battleSessionId: battleSessionId));
+
+        ManagedReplayAssociationAcquireResult pending =
+            await coordinator.AcquireAsync(CancellationToken.None);
+        Assert.AreEqual(ManagedReplayAssociationStatus.PendingVerification, pending.Status);
+        Assert.IsNull(pending.Lease);
+
+        coordinator.ApplyEvidence(CreateValidEvidence());
+        ManagedReplayAssociationAcquireResult verified =
+            await coordinator.AcquireAsync(CancellationToken.None);
+        Assert.AreEqual(ManagedReplayAssociationStatus.Verified, verified.Status);
+        Assert.IsNotNull(verified.Lease);
+        Assert.AreEqual(battleSessionId, verified.Lease.BattleSessionId);
+        Assert.IsTrue(await verified.Lease.IsCurrentAsync(CancellationToken.None));
+    }
+
+    [TestMethod]
+    public async Task Association_ExpiryMakesFreshAndExistingLeasesStale()
+    {
+        BattleSessionId battleSessionId = BattleSessionId.New();
+        var (coordinator, timeProvider) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(battleSessionId: battleSessionId));
+        coordinator.ApplyEvidence(CreateValidEvidence());
+        IManagedReplayAssociationLease lease =
+            (await coordinator.AcquireAsync(CancellationToken.None)).Lease!;
+
+        timeProvider.Advance(TimeSpan.FromSeconds(16));
+
+        Assert.IsFalse(await lease.IsCurrentAsync(CancellationToken.None));
+        ManagedReplayAssociationAcquireResult stale =
+            await coordinator.AcquireAsync(CancellationToken.None);
+        Assert.AreEqual(ManagedReplayAssociationStatus.Stale, stale.Status);
+        Assert.AreEqual("session.association_stale", stale.ReasonCode);
+        Assert.IsNull(stale.Lease);
+    }
+
+    [TestMethod]
+    public async Task Association_NewLaunchInvalidatesPriorLeaseEvenForSameSession()
+    {
+        BattleSessionId battleSessionId = BattleSessionId.New();
+        var (coordinator, _) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(battleSessionId: battleSessionId));
+        coordinator.ApplyEvidence(CreateValidEvidence());
+        IManagedReplayAssociationLease oldLease =
+            (await coordinator.AcquireAsync(CancellationToken.None)).Lease!;
+
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(battleSessionId: battleSessionId));
+
+        Assert.IsFalse(await oldLease.IsCurrentAsync(CancellationToken.None));
+        ManagedReplayAssociationAcquireResult pending =
+            await coordinator.AcquireAsync(CancellationToken.None);
+        Assert.AreEqual(ManagedReplayAssociationStatus.PendingVerification, pending.Status);
+    }
+
+    [TestMethod]
     public async Task EvidenceWithoutARealWindow_IsDenied()
     {
         var (coordinator, _) = CreateCoordinator();
@@ -252,7 +311,10 @@ public sealed class GameSessionCoordinatorTests
     [TestMethod]
     public async Task StopEvidence_RevokesVerifiedState()
     {
-        var (coordinator, _) = CreateVerifiedCoordinator();
+        BattleSessionId sessionId = BattleSessionId.New();
+        var (coordinator, _) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(battleSessionId: sessionId));
+        coordinator.ApplyEvidence(CreateValidEvidence());
 
         coordinator.ApplyEvidence(CreateValidEvidence() with
         {
@@ -266,12 +328,19 @@ public sealed class GameSessionCoordinatorTests
         GameSessionSnapshot snapshot =
             await coordinator.GetSnapshotAsync(CancellationToken.None);
         Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+        ManagedReplayAssociationAcquireResult association =
+            await coordinator.AcquireAsync(CancellationToken.None);
+        Assert.AreEqual(ManagedReplayAssociationStatus.Stale, association.Status);
+        Assert.IsNull(association.Lease);
     }
 
     [TestMethod]
     public async Task OnlineBattleEvidence_RevokesVerifiedState()
     {
-        var (coordinator, _) = CreateVerifiedCoordinator();
+        BattleSessionId sessionId = BattleSessionId.New();
+        var (coordinator, _) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(battleSessionId: sessionId));
+        coordinator.ApplyEvidence(CreateValidEvidence());
 
         coordinator.ApplyEvidence(CreateValidEvidence() with
         {
@@ -285,6 +354,10 @@ public sealed class GameSessionCoordinatorTests
         GameSessionSnapshot snapshot =
             await coordinator.GetSnapshotAsync(CancellationToken.None);
         Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+        ManagedReplayAssociationAcquireResult association =
+            await coordinator.AcquireAsync(CancellationToken.None);
+        Assert.AreEqual(ManagedReplayAssociationStatus.Stale, association.Status);
+        Assert.IsNull(association.Lease);
     }
 
     [TestMethod]
@@ -303,7 +376,10 @@ public sealed class GameSessionCoordinatorTests
     [TestMethod]
     public async Task ProcessExit_RevokesVerifiedState()
     {
-        var (coordinator, _) = CreateVerifiedCoordinator();
+        BattleSessionId sessionId = BattleSessionId.New();
+        var (coordinator, _) = CreateCoordinator();
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(battleSessionId: sessionId));
+        coordinator.ApplyEvidence(CreateValidEvidence());
 
         coordinator.ApplyEvidence(CreateValidEvidence() with
         {
@@ -314,6 +390,10 @@ public sealed class GameSessionCoordinatorTests
         GameSessionSnapshot snapshot =
             await coordinator.GetSnapshotAsync(CancellationToken.None);
         Assert.AreEqual(GameSessionVerificationState.Denied, snapshot.State);
+        ManagedReplayAssociationAcquireResult association =
+            await coordinator.AcquireAsync(CancellationToken.None);
+        Assert.AreEqual(ManagedReplayAssociationStatus.Stale, association.Status);
+        Assert.IsNull(association.Lease);
     }
 
     [TestMethod]
@@ -3183,7 +3263,8 @@ public sealed class GameSessionCoordinatorTests
     private static ManagedGameLaunchContext CreateManagedLaunch(
         IReadOnlyList<LifecycleSourceCursor>? sourceBaselines = null,
         string productVersion = "11.18.0.7",
-        ContentHash? executableSha256 = null) =>
+        ContentHash? executableSha256 = null,
+        BattleSessionId? battleSessionId = null) =>
         new(
             LaunchCorrelation,
             new InstalledGameIdentity(
@@ -3196,7 +3277,10 @@ public sealed class GameSessionCoordinatorTests
             processStartIdentity: 42,
             sourceBaselines ?? [new LifecycleSourceCursor(Hash('a'), 1, 100)],
             sourceSequenceBaseline: 10,
-            lifecycleBaselineCapturedAtUtc: StartTime.AddMinutes(-1));
+            lifecycleBaselineCapturedAtUtc: StartTime.AddMinutes(-1),
+            SourceArtifactId.New(),
+            Hash('b'),
+            battleSessionId);
 
     private static ContentHash Hash(char value) => new(new string(value, 64));
 
@@ -3239,7 +3323,8 @@ public sealed class GameSessionCoordinatorTests
     {
         public OperationResult<ManagedGameLaunchContext> Register(
             ManagedLaunchPreparation preparation,
-            SuspendedGameProcessLease suspendedLease) =>
+            SuspendedGameProcessLease suspendedLease,
+            BattleSessionId? battleSessionId) =>
             throw new NotSupportedException("StubCorrelationRegistrar is not intended for LaunchAsync tests.");
     }
 

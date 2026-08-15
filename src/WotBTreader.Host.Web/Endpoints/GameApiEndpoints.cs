@@ -111,16 +111,18 @@ internal static class GameApiEndpoints
             await gameProcessLauncher.LaunchAsync(cancellationToken).ConfigureAwait(false);
 
         return result.IsSuccess
-            ? Results.Ok(new { pid = result.Value!.ProcessId, launchedAtUtc = result.Value.LaunchedAtUtc })
+            ? Results.Ok(new { launchedAtUtc = result.Value!.LaunchedAtUtc })
             : Results.BadRequest(new { error = result.Error?.Code ?? "start.failed" });
     }
 
     internal static async Task<IResult> LaunchGameAsync(
         IGameReplayLauncher gameReplayLauncher,
+        ISessionQueryRepository sessions,
         GameLaunchRequest request,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(gameReplayLauncher);
+        ArgumentNullException.ThrowIfNull(sessions);
         ArgumentNullException.ThrowIfNull(request);
 
         if (!Guid.TryParse(request.SourceArtifactId, out Guid sourceArtifactId) || sourceArtifactId == Guid.Empty)
@@ -132,10 +134,51 @@ internal static class GameApiEndpoints
             });
         }
 
+        BattleSessionId? battleSessionId = null;
+        if (request.BattleSessionId is not null)
+        {
+            if (!Guid.TryParse(request.BattleSessionId, out Guid parsedSessionId)
+                || parsedSessionId == Guid.Empty)
+            {
+                return Results.BadRequest(new GameLaunchResponse
+                {
+                    Success = false,
+                    Message = "launch.battle_session.invalid",
+                });
+            }
+
+            battleSessionId = new BattleSessionId(parsedSessionId);
+            OperationResult<ReplayDecodeProjection> projectionResult =
+                await sessions.GetProjectionAsync(
+                    battleSessionId.Value,
+                    cancellationToken).ConfigureAwait(false);
+            ReplayDecodeProjection? projection = projectionResult.Value;
+            if (!projectionResult.IsSuccess
+                || projection is null
+                || projection.Session?.Id != battleSessionId
+                || projection.Session.DecodeRunId != projection.DecodeRun.Id
+                || projection.DecodeRun.Status != DecodeRunStatus.Succeeded
+                || projection.DecodeRun.CompletedAtUtc is null
+                || projection.DecodeRun.FailureCode is not null
+                || projection.DecodeRun.FailureSummary is not null
+                || projection.DecodeRun.SourceArtifactId.Value != sourceArtifactId)
+            {
+                return Results.BadRequest(new GameLaunchResponse
+                {
+                    Success = false,
+                    Message = "launch.replay_association.invalid",
+                });
+            }
+        }
+
         try
         {
             OperationResult<GameReplayLaunchOutcome> result = await gameReplayLauncher
-                .LaunchAsync(new GameReplayLaunchRequest(new SourceArtifactId(sourceArtifactId)), cancellationToken)
+                .LaunchAsync(
+                    new GameReplayLaunchRequest(
+                        new SourceArtifactId(sourceArtifactId),
+                        battleSessionId),
+                    cancellationToken)
                 .ConfigureAwait(false);
 
             return result.IsSuccess

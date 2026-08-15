@@ -431,6 +431,23 @@ turret (T1 premise), so the camera pose IS the aim line — no new memory
 discovery. The decoded type-8/type-32 stream gives pen-vs-bounce ground truth
 for the validation loop. Design: `docs/operations/pen-chance-design.md`.
 
+### Phase 6 fidelity correction — 2026-08-15
+
+The v0.2 rows above are historical prototype milestones, not v0.3 fidelity
+claims. The v0.3 audit proved that nominal XML front armor, manual/static shell
+selection, and CAM-013 camera direction are confounded inputs and cannot
+produce a ready colored verdict or enter the primary accuracy cohort.
+
+The collision hard-joint lane was characterized across real meshes but rejected
+as an armor-thickness source by exact-build code analysis: its current consumer
+is a push-normal visualization configuration, its sole builder supplies an
+empty map, and neither millimeter units nor ordered physical layers exist in
+that chain. Exact armor/layers remain blocked under BLK-0027. The safe v0.3
+operability work is implemented: explicit neutral readiness, exact managed
+artifact/session association, strict enemy proof, +/-5% interval semantics,
+input provenance, primary-scorer confound isolation, and exact-build/source
+diagnostics. See `penetration-v0.3-plan.md` for thresholds and current status.
+
 ## Cross-links
 
 - Legacy research detail: `docs/operations/offset-discovery-roadmap.md`

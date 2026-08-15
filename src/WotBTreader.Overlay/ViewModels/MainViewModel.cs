@@ -77,6 +77,7 @@ public class MainViewModel : INotifyPropertyChanged
     private readonly ObservableCollection<KillItem> _killFeed = [];
     private readonly ObservableCollection<ScoreboardItem> _scoreboard = [];
     private PenBadgeItem? _penBadge;
+    private string _penReadinessLabel = string.Empty;
     private readonly List<PenShellOption> _penShells = [];
     private string? _penShell;
     private string? _selectedShell;
@@ -486,6 +487,26 @@ public class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>Neutral explanation shown when v0.3 cannot produce a colored
+    /// penetration verdict. Empty while a ready badge is displayed.</summary>
+    public string PenReadinessLabel
+    {
+        get => _penReadinessLabel;
+        private set
+        {
+            if (string.Equals(_penReadinessLabel, value, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _penReadinessLabel = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasPenReadiness));
+        }
+    }
+
+    public bool HasPenReadiness => !string.IsNullOrEmpty(_penReadinessLabel);
+
     /// <summary>The viewer's available shells (stock gun's shots), empty when
     /// the pen data is unavailable.</summary>
     public IReadOnlyList<PenShellOption> PenShells => _penShells;
@@ -608,10 +629,9 @@ public class MainViewModel : INotifyPropertyChanged
     {
         TreaderApiClient? client = _client;
         SessionRow? session = _selectedSession;
-        // Live mode needs no selected session to serve the frame (it comes
-        // from the gated memory surface); the selection is still forwarded
-        // when present so the per-id decoded-roster join can name the live
-        // tanks (own-team ids; anonymous otherwise — never guessed).
+        // Live mode needs no selected session. The host owns the exact
+        // managed-replay/session association and uses it for roster joins;
+        // mutable WPF selection must never select live penetration inputs.
         if (client is null || (!IsLiveMode && session is null))
         {
             return;
@@ -626,7 +646,7 @@ public class MainViewModel : INotifyPropertyChanged
         {
             OverlayFrameResponse? frame = IsLiveMode
                 ? await client.GetLiveFrameAsync(
-                    session?.BattleSessionId,
+                    sessionId: null,
                     _hudFovDegrees,
                     viewportWidth,
                     viewportHeight,
@@ -640,8 +660,18 @@ public class MainViewModel : INotifyPropertyChanged
                     viewportHeight,
                     _selectedShell,
                     cts.Token).ConfigureAwait(true);
-            if (generation != _frameLoadGeneration || frame is null)
+            if (generation != _frameLoadGeneration)
             {
+                return;
+            }
+
+            if (frame is null)
+            {
+                if (IsLiveMode)
+                {
+                    ClearPenetrationState("PEN — LIVE FRAME UNAVAILABLE");
+                }
+
                 return;
             }
 
@@ -683,7 +713,10 @@ public class MainViewModel : INotifyPropertyChanged
 
             OnPropertyChanged(nameof(PenShells));
             OnPropertyChanged(nameof(HasPenShells));
-            PenBadge = frame.PenBadge is { } badge
+            OverlayPenBadgeResponse? responseBadge = frame.Penetration is null
+                ? frame.PenBadge
+                : frame.Penetration.Badge;
+            PenBadge = responseBadge is { } badge
                 && !string.Equals(badge.Band, "Unknown", StringComparison.Ordinal)
                     ? new PenBadgeItem(
                         badge.AimedEntityId,
@@ -694,6 +727,12 @@ public class MainViewModel : INotifyPropertyChanged
                         PenShellLabel,
                         badge.Face)
                     : null;
+            PenReadinessLabel = frame.Penetration switch
+            {
+                null => "PEN — LEGACY HOST",
+                { Status: "ready" } => string.Empty,
+                { } assessment => PenetrationReadinessLabel(assessment.PrimaryReason),
+            };
             _nameplates.Clear();
             _ownMarkers.Clear();
             _beacons.Clear();
@@ -819,6 +858,53 @@ public class MainViewModel : INotifyPropertyChanged
             }
         }
     }
+
+    private void ClearPenetrationState(string readinessLabel)
+    {
+        PenBadge = null;
+        PenReadinessLabel = readinessLabel;
+        _penShells.Clear();
+        _penShell = null;
+        OnPropertyChanged(nameof(PenShells));
+        OnPropertyChanged(nameof(HasPenShells));
+        OnPropertyChanged(nameof(PenShell));
+        OnPropertyChanged(nameof(PenShellLabel));
+        OnPropertyChanged(nameof(SelectedPenShellName));
+    }
+
+    internal static string PenetrationReadinessLabel(string? reason) => reason switch
+    {
+        "session.association_missing" => "PEN — SESSION NOT BOUND",
+        "session.association_pending" => "PEN — SESSION PENDING",
+        "session.association_stale" => "PEN — SESSION STALE",
+        "session.association_mismatch" => "PEN — SESSION MISMATCH",
+        "session.decoded_missing" => "PEN — SESSION DATA MISSING",
+        "session.source_mismatch" => "PEN — REPLAY MISMATCH",
+        "build.identity_missing" => "PEN — BUILD UNKNOWN",
+        "build.unsupported" => "PEN — BUILD UNSUPPORTED",
+        "build.replay_incomplete" => "PEN — REPLAY BUILD INCOMPLETE",
+        "build.replay_mismatch" => "PEN — BUILD MISMATCH",
+        "build.manifest_missing" => "PEN — MANIFEST MISSING",
+        "build.resource_drift" => "PEN — RESOURCE DRIFT",
+        "clock.stale" => "PEN — CLOCK STALE",
+        "aim.unavailable" => "PEN — AIM UNAVAILABLE",
+        "aim.stale" => "PEN — AIM STALE",
+        "target.none" => "PEN — NO TARGET",
+        "target.dead" => "PEN — TARGET DESTROYED",
+        "team.own_entity_unknown" => "PEN — VIEWPOINT UNKNOWN",
+        "team.own_unknown" => "PEN — OWN TEAM UNKNOWN",
+        "team.target_unknown" => "PEN — TARGET TEAM UNKNOWN",
+        "team.target_not_enemy" => "PEN — TARGET IS NOT ENEMY",
+        "weapon.unavailable" => "PEN — WEAPON UNKNOWN",
+        "weapon.stale" => "PEN — WEAPON STALE",
+        "weapon.unsupported" => "PEN — WEAPON UNSUPPORTED",
+        "vehicle.unresolved" => "PEN — VEHICLE UNKNOWN",
+        "armor.model_unavailable" => "PEN — ARMOR SOURCE MISSING",
+        "armor.surface_miss" => "PEN — ARMOR SURFACE UNKNOWN",
+        "armor.layer_unsupported" => "PEN — ARMOR LAYER UNSUPPORTED",
+        "input.invalid" => "PEN — INVALID INPUT",
+        _ => "PEN — NOT READY",
+    };
 
     /// <summary>
     /// Rebuilds <see cref="MinimapItems"/> from the frame's tanks and the

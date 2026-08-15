@@ -42,8 +42,10 @@ public sealed class CompositionRootTests
         typeof(ITelemetryCaptureWriter),
         typeof(IInstalledGameMetadataProvider),
         typeof(IPenOfflineScorer),
+        typeof(IPenetrationDiagnosticsSource),
         typeof(IGameSessionState),
         typeof(IGameReplayLauncher),
+        typeof(IManagedReplayAssociationLeaseSource),
         typeof(IGameMemoryObserver),
         typeof(IGameMemoryScanner),
         typeof(IGameProcessLauncher),
@@ -84,10 +86,13 @@ public sealed class CompositionRootTests
 
         IGameSessionState state = provider.GetRequiredService<IGameSessionState>();
         IGameReplayLauncher launcher = provider.GetRequiredService<IGameReplayLauncher>();
+        IManagedReplayAssociationLeaseSource association =
+            provider.GetRequiredService<IManagedReplayAssociationLeaseSource>();
         IGameMemoryObserver observer = provider.GetRequiredService<IGameMemoryObserver>();
         IGameMemoryScanner scanner = provider.GetRequiredService<IGameMemoryScanner>();
 
         Assert.IsTrue(ReferenceEquals(state, launcher));
+        Assert.IsTrue(ReferenceEquals(state, association));
         Assert.IsTrue(ReferenceEquals(state, observer));
         Assert.IsTrue(ReferenceEquals(state, scanner));
     }

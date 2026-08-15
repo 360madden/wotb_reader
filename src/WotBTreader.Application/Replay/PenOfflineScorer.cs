@@ -12,7 +12,10 @@ namespace WotBTreader.Application.Replay;
 /// scorer validates the TRUE aim instead of the center-line proxy — the
 /// decisive PN-4 aim source the replay stream itself cannot provide.
 /// </summary>
-public readonly record struct AimSample(TimeSpan ReplayTime, AimRay Aim);
+public readonly record struct AimSample(
+    TimeSpan ReplayTime,
+    AimRay Aim,
+    AimInputProvenance Provenance = AimInputProvenance.Unknown);
 
 /// <summary>
 /// One decoded shot's scoring row: the roster identities (with tank names for
@@ -30,7 +33,9 @@ public sealed record OfflinePenShot(
     string? VictimTankName,
     string? ShellName,
     PenValidationShotRow? Row,
-    string? Error);
+    string? Error,
+    IReadOnlyList<string>? Confounds = null,
+    bool PrimaryEligible = false);
 
 /// <summary>
 /// The offline PN-4 result for one decoded session: the scored model report
@@ -40,7 +45,10 @@ public sealed record OfflinePenShot(
 public sealed record OfflinePenScoreReport(
     int SkippedShots,
     PenValidationReport Validation,
-    IReadOnlyList<OfflinePenShot> Shots);
+    IReadOnlyList<OfflinePenShot> Shots,
+    int PrimaryEligibleShots = 0,
+    int ConfoundedShots = 0,
+    PenValidationReport? PrimaryValidation = null);
 
 /// <summary>
 /// Validates the deterministic pen model against DECODED shot outcomes
@@ -130,6 +138,7 @@ public sealed class PenOfflineScorer : IPenOfflineScorer
 
         List<OfflinePenShot> shots = [];
         List<ScoredShot> scorable = [];
+        List<ScoredShot> primaryScorable = [];
         int skipped = 0;
 
         foreach (CanonicalEvent ev in projection.Events)
@@ -188,6 +197,7 @@ public sealed class PenOfflineScorer : IPenOfflineScorer
             }
 
             AimRay? aim = null;
+            bool exactAim = false;
             if (attacker.EntityId == viewpointEntityId)
             {
                 AimSample? overrideSample = FindAimAtOrBefore(aimSamples, ev.ReplayTime);
@@ -198,6 +208,8 @@ public sealed class PenOfflineScorer : IPenOfflineScorer
                     // non-unit ray is normalized here; a degenerate ray falls
                     // through to the center-line proxy.
                     aim = NormalizeAim(sample.Aim);
+                    exactAim = aim is not null
+                        && sample.Provenance == AimInputProvenance.ExactGunRay;
                 }
             }
 
@@ -225,13 +237,38 @@ public sealed class PenOfflineScorer : IPenOfflineScorer
                 DistanceMeters: 0);
 
             ShellOption shell = attackerData.Shells[0];
-            scorable.Add(new ScoredShot(
+            ScoredShot scored = new(
                 aim.Value,
                 victimState,
                 victimData.Mesh ?? [],
                 victimData.Armor,
                 shell.Spec,
-                penetrated));
+                penetrated);
+            scorable.Add(scored);
+            List<string> confounds = [];
+            if (!exactAim)
+            {
+                confounds.Add("aim.exact_gun_ray_missing");
+            }
+
+            if (attackerData.InputProvenance.Weapon
+                != WeaponInputProvenance.ExactLoadedShell)
+            {
+                confounds.Add("weapon.loaded_shell_unproven");
+            }
+
+            if (victimData.InputProvenance.Armor
+                < ArmorInputProvenance.ExactOrderedLayers)
+            {
+                confounds.Add("armor.ordered_layers_unproven");
+            }
+
+            bool primaryEligible = confounds.Count == 0;
+            if (primaryEligible)
+            {
+                primaryScorable.Add(scored);
+            }
+
             shots.Add(new OfflinePenShot(
                 ev.Sequence,
                 ev.ReplayTime,
@@ -241,10 +278,13 @@ public sealed class PenOfflineScorer : IPenOfflineScorer
                 victim.TankName,
                 shell.Name,
                 Row: null,
-                Error: null));
+                Error: null,
+                Confounds: confounds.AsReadOnly(),
+                PrimaryEligible: primaryEligible));
         }
 
         PenValidationReport validation = PenValidation.Score(scorable);
+        PenValidationReport primaryValidation = PenValidation.Score(primaryScorable);
 
         // Fill the scored rows back into the shot list in order.
         int rowIndex = 0;
@@ -256,7 +296,13 @@ public sealed class PenOfflineScorer : IPenOfflineScorer
                 : shot);
         }
 
-        return new OfflinePenScoreReport(skipped, validation, completed);
+        return new OfflinePenScoreReport(
+            skipped,
+            validation,
+            completed,
+            PrimaryEligibleShots: primaryScorable.Count,
+            ConfoundedShots: scorable.Count - primaryScorable.Count,
+            PrimaryValidation: primaryValidation);
     }
 
     private static bool TryReadShot(

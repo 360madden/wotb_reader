@@ -1,4 +1,5 @@
 using System.Text;
+using System.Security.Cryptography;
 using System.Xml;
 using Microsoft.Extensions.Logging;
 using WotBTreader.Application.Game;
@@ -24,8 +25,9 @@ namespace WotBTreader.GameIntegration.Metadata;
 /// failure yields null so the frame omits the badge rather than fabricating
 /// a verdict.
 /// </summary>
-public sealed class PenetrationDataService : IOverlayPenetrationData
+public sealed class PenetrationDataService : IOverlayPenetrationData, IPenetrationDiagnosticsSource
 {
+    private const string ProviderVersion = "penetration-provider/0.3.0-alpha";
     private const long MaxCharacters = 8 * 1024 * 1024;
     private const long MaxMeshBytes = 16 * 1024 * 1024;
 
@@ -56,6 +58,10 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
         new(StringComparer.Ordinal);
     private readonly Dictionary<string, IReadOnlyList<CollisionMeshPart>?> _meshByLocation =
         new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ConsumedSourceState> _consumedSources =
+        new(StringComparer.OrdinalIgnoreCase);
+    private bool _resourceDriftPending;
+    private PenetrationDiagnosticsSnapshot _diagnostics = new(null, null);
 
     public PenetrationDataService(
         IGameInstallationDiscovery discovery,
@@ -84,17 +90,35 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
             await EnsureIdentityAsync(cancellationToken).ConfigureAwait(false);
         if (identity is null)
         {
+            lock (_gate)
+            {
+                _diagnostics = new PenetrationDiagnosticsSnapshot(null, null);
+            }
             return null;
         }
 
         Dictionary<long, TankArmor> armorByEntity = [];
         Dictionary<long, IReadOnlyList<CollisionMeshPart>> meshesByEntity = [];
+        List<PenetrationResolutionIssue> issues = [];
+        int rosterEntities = 0;
+        int vehicleIdsPresent = 0;
+        int vehiclesResolved = 0;
         foreach (Participant participant in projection.Participants)
         {
-            if (participant.EntityId is not { } entityId || string.IsNullOrWhiteSpace(participant.TankId))
+            if (participant.EntityId is not { } entityId)
             {
                 continue;
             }
+
+            rosterEntities++;
+            if (string.IsNullOrWhiteSpace(participant.TankId))
+            {
+                issues.Add(new PenetrationResolutionIssue(
+                    entityId, null, "vehicle.id_missing"));
+                continue;
+            }
+
+            vehicleIdsPresent++;
 
             // The decoded TankId is the enrichment's `nation:tank` VehicleId
             // (e.g. `germany:PzIV`) or a raw compact descriptor when the
@@ -105,14 +129,23 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
                     .ConfigureAwait(false);
             if (location is not { } resolved)
             {
+                issues.Add(new PenetrationResolutionIssue(
+                    entityId, participant.TankId, "vehicle.unresolved"));
                 continue;
             }
+
+            vehiclesResolved++;
 
             TankArmor? armor = await ResolveArmorAsync(identity, resolved.Nation, resolved.Tank, cancellationToken)
                 .ConfigureAwait(false);
             if (armor is { } resolvedArmor)
             {
                 armorByEntity[entityId] = resolvedArmor;
+            }
+            else
+            {
+                issues.Add(new PenetrationResolutionIssue(
+                    entityId, participant.TankId, "armor.model_unresolved"));
             }
 
             // Best-effort collision meshes: when present, the badge uses their
@@ -123,10 +156,19 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
             {
                 meshesByEntity[entityId] = mesh;
             }
+            else
+            {
+                issues.Add(new PenetrationResolutionIssue(
+                    entityId, participant.TankId, "armor.mesh_unresolved"));
+            }
         }
 
         if (armorByEntity.Count == 0)
         {
+            PublishDiagnostics(identity, projection.Session?.GameVersion,
+                PenetrationCompatibilityStatus.Missing, null, rosterEntities,
+                vehicleIdsPresent, vehiclesResolved, 0, meshesByEntity.Count,
+                0, issues);
             return null;
         }
 
@@ -140,14 +182,55 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
             : await ResolveViewerShellsAsync(identity, viewer, cancellationToken).ConfigureAwait(false);
         if (shells.Count == 0)
         {
+            issues.Add(new PenetrationResolutionIssue(
+                viewer?.EntityId, viewer?.TankId, "weapon.state_unresolved"));
+            PublishDiagnostics(identity, projection.Session?.GameVersion,
+                PenetrationCompatibilityStatus.Missing, null, rosterEntities,
+                vehicleIdsPresent, vehiclesResolved, armorByEntity.Count,
+                meshesByEntity.Count, 0, issues);
             return null;
         }
+
+        PenetrationCompatibilityStatus compatibility = CompareBuilds(
+            projection.Session?.GameVersion,
+            identity.ProductVersion);
+        lock (_gate)
+        {
+            if (_resourceDriftPending)
+            {
+                compatibility = PenetrationCompatibilityStatus.ResourceDrift;
+                _resourceDriftPending = false;
+            }
+        }
+        string? manifestId = compatibility == PenetrationCompatibilityStatus.Exact
+            ? CreateManifestId(identity, projection.Session?.GameVersion)
+            : null;
+
+        PublishDiagnostics(identity, projection.Session?.GameVersion, compatibility,
+            manifestId, rosterEntities, vehicleIdsPresent, vehiclesResolved,
+            armorByEntity.Count, meshesByEntity.Count, 1, issues);
 
         return new PenetrationContext(
             armorByEntity,
             shells[0].Spec,
             meshesByEntity.Count > 0 ? meshesByEntity : null,
-            shells);
+            shells,
+            new PenetrationInputProvenance(
+                ArmorInputProvenance.NominalSummary,
+                WeaponInputProvenance.ManualSelection,
+                AimInputProvenance.Unknown),
+            manifestId,
+            compatibility);
+    }
+
+    public ValueTask<PenetrationDiagnosticsSnapshot> GetSnapshotAsync(
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            return ValueTask.FromResult(_diagnostics);
+        }
     }
 
     /// <inheritdoc />
@@ -197,7 +280,11 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
         return new PenetrationTankData(
             resolvedArmor,
             mesh is { Count: > 0 } ? mesh : null,
-            shells);
+            shells,
+            new PenetrationInputProvenance(
+                ArmorInputProvenance.NominalSummary,
+                WeaponInputProvenance.StaticStockMetadata,
+                AimInputProvenance.Unknown));
     }
 
     private static Participant? ResolveViewer(ReplayDecodeProjection projection)
@@ -226,14 +313,19 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
             return null;
         }
 
+        bool sourceDrift = await HasConsumedSourceDriftAsync(cancellationToken)
+            .ConfigureAwait(false);
+
         lock (_gate)
         {
             if (_identity is null
                 || !string.Equals(_identity.ExecutableSha256.Value, identity.ExecutableSha256.Value, StringComparison.Ordinal)
-                || !string.Equals(_identity.ResourceRoot, identity.ResourceRoot, StringComparison.OrdinalIgnoreCase))
+                || !string.Equals(_identity.ResourceRoot, identity.ResourceRoot, StringComparison.OrdinalIgnoreCase)
+                || sourceDrift)
             {
                 ClearCaches();
                 _identity = identity;
+                _resourceDriftPending = sourceDrift;
             }
         }
 
@@ -242,14 +334,6 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
 
     private async ValueTask<InstalledGameIdentity?> GetIdentityAsync(CancellationToken cancellationToken)
     {
-        lock (_gate)
-        {
-            if (_identity is not null)
-            {
-                return _identity;
-            }
-        }
-
         OperationResult<InstalledGameIdentity> result =
             await _discovery.DiscoverAsync(cancellationToken).ConfigureAwait(false);
         if (!result.IsSuccess || result.Value is null)
@@ -699,9 +783,21 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
 
         OperationResult<DvplPayload> result =
             await _dvplReader.ReadAsync(path, cancellationToken).ConfigureAwait(false);
-        return result.IsSuccess && result.Value is not null
-            ? result.Value.Data
-            : null;
+        if (!result.IsSuccess || result.Value is null)
+        {
+            return null;
+        }
+
+        lock (_gate)
+        {
+            FileInfo source = new(path);
+            _consumedSources[path] = new ConsumedSourceState(
+                result.Value.SourceHash,
+                source.Length,
+                source.LastWriteTimeUtc);
+        }
+
+        return result.Value.Data;
     }
 
     private static string VehiclePath(InstalledGameIdentity identity, string nation, string tankId) =>
@@ -721,5 +817,182 @@ public sealed class PenetrationDataService : IOverlayPenetrationData
         _shellsByNation.Clear();
         _gunsByNation.Clear();
         _meshByLocation.Clear();
+        _consumedSources.Clear();
     }
+
+    private static PenetrationCompatibilityStatus CompareBuilds(
+        string? replayBuild,
+        string installedBuild)
+    {
+        if (string.IsNullOrWhiteSpace(replayBuild))
+        {
+            return PenetrationCompatibilityStatus.ReplayBuildIncomplete;
+        }
+
+        if (string.Equals(replayBuild, installedBuild, StringComparison.Ordinal))
+        {
+            return PenetrationCompatibilityStatus.Exact;
+        }
+
+        int replayComponents = replayBuild.Count(character => character == '.') + 1;
+        int installedComponents = installedBuild.Count(character => character == '.') + 1;
+        return replayComponents < installedComponents
+            && installedBuild.StartsWith(replayBuild + ".", StringComparison.Ordinal)
+                ? PenetrationCompatibilityStatus.ReplayBuildIncomplete
+                : PenetrationCompatibilityStatus.ReplayBuildMismatch;
+    }
+
+    private string? CreateManifestId(
+        InstalledGameIdentity identity,
+        string? replayGameVersion)
+    {
+        string[] sources;
+        lock (_gate)
+        {
+            if (_consumedSources.Count == 0)
+            {
+                return null;
+            }
+
+            sources = _consumedSources
+                .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(pair =>
+                    SafeRelativePath(identity.ResourceRoot, pair.Key)
+                    + "=" + pair.Value.Hash.Value)
+                .ToArray();
+        }
+
+        string material = string.Join(
+            "\n",
+            [
+                ProviderVersion,
+                identity.ProductVersion,
+                identity.ExecutableSha256.Value,
+                replayGameVersion ?? string.Empty,
+                .. sources,
+            ]);
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(material)));
+    }
+
+    private async ValueTask<bool> HasConsumedSourceDriftAsync(
+        CancellationToken cancellationToken)
+    {
+        KeyValuePair<string, ConsumedSourceState>[] sources;
+        lock (_gate)
+        {
+            sources = [.. _consumedSources];
+        }
+
+        foreach ((string path, ConsumedSourceState expected) in sources)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            FileInfo current = new(path);
+            if (!current.Exists
+                || current.Length != expected.ByteLength
+                || current.LastWriteTimeUtc != expected.LastWriteTimeUtc)
+            {
+                return true;
+            }
+
+            OperationResult<DvplPayload> result = await _dvplReader
+                .ReadAsync(path, cancellationToken).ConfigureAwait(false);
+            if (!result.IsSuccess || result.Value is null
+                || !string.Equals(result.Value.SourceHash.Value, expected.Hash.Value,
+                    StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void PublishDiagnostics(
+        InstalledGameIdentity identity,
+        string? replayGameVersion,
+        PenetrationCompatibilityStatus compatibility,
+        string? manifestId,
+        int rosterEntities,
+        int vehicleIdsPresent,
+        int vehiclesResolved,
+        int armorModelsResolved,
+        int meshesResolved,
+        int weaponStatesResolved,
+        IReadOnlyList<PenetrationResolutionIssue> issues)
+    {
+        lock (_gate)
+        {
+            IReadOnlyList<PenetrationSourceFingerprint> sources =
+            [
+                .. _consumedSources
+                    .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+                    .Select(pair => new PenetrationSourceFingerprint(
+                        SourceKind(pair.Key),
+                        SafeRelativePath(identity.ResourceRoot, pair.Key),
+                        pair.Value.Hash,
+                        pair.Value.ByteLength)),
+            ];
+            string resolvedManifestId = manifestId ?? CreateDiagnosticManifestId(
+                identity, replayGameVersion, compatibility, sources);
+            _diagnostics = new PenetrationDiagnosticsSnapshot(
+                new PenetrationCompatibilityManifest(
+                    resolvedManifestId,
+                    "penetration-manifest/v1",
+                    ProviderVersion,
+                    identity.ProductVersion,
+                    identity.ExecutableSha256,
+                    replayGameVersion,
+                    compatibility,
+                    sources),
+                new PenetrationResolutionReport(
+                    rosterEntities,
+                    vehicleIdsPresent,
+                    vehiclesResolved,
+                    armorModelsResolved,
+                    meshesResolved,
+                    weaponStatesResolved,
+                    [.. issues]));
+        }
+    }
+
+    private static string CreateDiagnosticManifestId(
+        InstalledGameIdentity identity,
+        string? replayGameVersion,
+        PenetrationCompatibilityStatus compatibility,
+        IReadOnlyList<PenetrationSourceFingerprint> sources)
+    {
+        string material = string.Join('\n',
+        [
+            ProviderVersion,
+            identity.ProductVersion,
+            identity.ExecutableSha256.Value,
+            replayGameVersion ?? string.Empty,
+            compatibility.ToString(),
+            .. sources.Select(source => source.RelativePath + "=" + source.Sha256.Value),
+        ]);
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(material)));
+    }
+
+    private static string SafeRelativePath(string resourceRoot, string path)
+    {
+        string relative = Path.GetRelativePath(resourceRoot, path).Replace('\\', '/');
+        return relative.StartsWith("../", StringComparison.Ordinal)
+            || Path.IsPathRooted(relative)
+                ? Path.GetFileName(path)
+                : relative;
+    }
+
+    private static string SourceKind(string path) =>
+        Path.GetFileName(path) switch
+        {
+            "guns.xml.dvpl" => "gun",
+            "shells.xml.dvpl" => "shell",
+            _ when path.EndsWith(".scg.dvpl", StringComparison.OrdinalIgnoreCase) => "collision_mesh",
+            _ => "vehicle",
+        };
+
+    private sealed record ConsumedSourceState(
+        ContentHash Hash,
+        long ByteLength,
+        DateTime LastWriteTimeUtc);
 }

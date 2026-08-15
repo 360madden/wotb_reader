@@ -63,6 +63,51 @@ public sealed class PenOfflineScorerTests
         Assert.AreEqual("ap", shot.ShellName);
         Assert.IsNull(shot.Error);
         Assert.IsNotNull(shot.Row);
+        Assert.IsFalse(shot.PrimaryEligible);
+        Assert.AreEqual(0, report.PrimaryEligibleShots);
+        Assert.AreEqual(1, report.ConfoundedShots);
+        string[] confounds = shot.Confounds!.ToArray();
+        CollectionAssert.Contains(confounds, "aim.exact_gun_ray_missing");
+        CollectionAssert.Contains(confounds, "weapon.loaded_shell_unproven");
+        CollectionAssert.Contains(confounds, "armor.ordered_layers_unproven");
+    }
+
+    [TestMethod]
+    public async Task ExactProvenancePopulatesUnconfoundedPrimaryCohort()
+    {
+        FakePenetrationData data = new();
+        data.Add("uk:A", new TankArmor(20, 20, 20, 20), FrontQuad(), 200, exact: true);
+        data.Add("uk:V", new TankArmor(50, 50, 50, 50), FrontQuad(), 0, exact: true);
+        ParticipantId attackerParticipantId = ParticipantId.New();
+        ReplayDecodeProjection projection = Projection(
+            participants:
+            [
+                Participant(1, "uk:A", "Attacker Tank", attackerParticipantId),
+                Participant(2, "uk:V", "Victim Tank"),
+            ],
+            positions:
+            [
+                Sample(1, 5.0, 0, -100),
+                Sample(2, 5.0, 0, 0),
+            ],
+            events: [ShotEvent(1, 5.0, 1, 2, penetrated: true)],
+            viewpointParticipantId: attackerParticipantId);
+        AimSample[] exactAim =
+        [
+            new(
+                TimeSpan.FromSeconds(5),
+                new AimRay(0, 1.5, -100, 0, -1.5, 100),
+                AimInputProvenance.ExactGunRay),
+        ];
+
+        OfflinePenScoreReport report = await new PenOfflineScorer(data)
+            .ScoreAsync(projection, exactAim, CancellationToken.None);
+
+        Assert.AreEqual(1, report.PrimaryEligibleShots);
+        Assert.AreEqual(0, report.ConfoundedShots);
+        Assert.AreEqual(1, report.PrimaryValidation!.TotalShots);
+        Assert.IsTrue(report.Shots.Single().PrimaryEligible);
+        Assert.IsEmpty(report.Shots.Single().Confounds!);
     }
 
     [TestMethod]
@@ -443,13 +488,24 @@ public sealed class PenOfflineScorerTests
     {
         private readonly Dictionary<string, PenetrationTankData> _byTankId = new(StringComparer.Ordinal);
 
-        public void Add(string tankId, TankArmor armor, IReadOnlyList<CollisionMeshPart> mesh, double penMm)
+        public void Add(
+            string tankId,
+            TankArmor armor,
+            IReadOnlyList<CollisionMeshPart> mesh,
+            double penMm,
+            bool exact = false)
         {
             ShellSpec spec = new(penMm, CaliberMm: 75, RicochetDegrees: 70, NormalizationDegrees: 5);
             _byTankId[tankId] = new PenetrationTankData(
                 armor,
                 mesh,
-                [new ShellOption("ap", ShellKind.ArmorPiercing, spec)]);
+                [new ShellOption("ap", ShellKind.ArmorPiercing, spec)],
+                exact
+                    ? new PenetrationInputProvenance(
+                        ArmorInputProvenance.ExactOrderedLayers,
+                        WeaponInputProvenance.ExactLoadedShell,
+                        AimInputProvenance.Unknown)
+                    : null);
         }
 
         public ValueTask<PenetrationContext?> ResolveAsync(

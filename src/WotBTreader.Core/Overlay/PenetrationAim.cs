@@ -84,6 +84,77 @@ public static class PenetrationAim
     public const double DefaultTankRadiusMeters = 1.5;
 
     /// <summary>
+    /// Builds a fail-closed assessment in two stages: first select the nearest
+    /// physical alive, non-own tank under the aim ray, then prove that exact
+    /// target is an enemy before scoring it. Allies and unknown-team tanks are
+    /// deliberately not removed before the physical pick; otherwise an enemy
+    /// geometrically behind an ally could receive the verdict.
+    /// </summary>
+    public static PenetrationAssessment Assess(
+        OverlayCamera camera,
+        IReadOnlyList<OverlayTankState> tanks,
+        long? ownEntityId,
+        int? ownTeam,
+        IReadOnlyDictionary<long, TankArmor> armorByEntity,
+        ShellSpec shell,
+        IReadOnlyDictionary<long, IReadOnlyList<CollisionMeshPart>>? meshesByEntity = null)
+    {
+        AimRay? ray = BuildAimRay(camera);
+        if (ray is null)
+        {
+            return PenetrationAssessment.NotReady(PenetrationReadinessReason.AimUnavailable);
+        }
+
+        if (ownEntityId is null)
+        {
+            return PenetrationAssessment.NotReady(PenetrationReadinessReason.OwnEntityUnknown);
+        }
+
+        if (ownTeam is null)
+        {
+            return PenetrationAssessment.NotReady(PenetrationReadinessReason.OwnTeamUnknown);
+        }
+
+        IReadOnlyList<OverlayTankState> physicalTargets = tanks
+            .Where(tank => tank.EntityId != ownEntityId.Value && tank.Alive)
+            .ToList();
+        long? aimedEntityId = AimedTankId(ray.Value, physicalTargets);
+        if (aimedEntityId is null)
+        {
+            return PenetrationAssessment.NotReady(PenetrationReadinessReason.NoTarget);
+        }
+
+        OverlayTankState aimed = physicalTargets.First(tank => tank.EntityId == aimedEntityId.Value);
+        if (aimed.TeamNumber is null)
+        {
+            return PenetrationAssessment.NotReady(PenetrationReadinessReason.TargetTeamUnknown);
+        }
+
+        if (aimed.TeamNumber.Value == ownTeam.Value)
+        {
+            return PenetrationAssessment.NotReady(PenetrationReadinessReason.TargetNotEnemy);
+        }
+
+        if (!armorByEntity.ContainsKey(aimed.EntityId))
+        {
+            return PenetrationAssessment.NotReady(PenetrationReadinessReason.ArmorModelUnavailable);
+        }
+
+        PenetrationBadge? badge = ResolveBadge(
+            camera,
+            [aimed],
+            armorByEntity,
+            shell,
+            meshesByEntity: meshesByEntity);
+        if (badge is null || badge.Value.Verdict.Band == PenetrationBand.Unknown)
+        {
+            return PenetrationAssessment.NotReady(PenetrationReadinessReason.ArmorSurfaceMiss);
+        }
+
+        return PenetrationAssessment.Ready(badge.Value);
+    }
+
+    /// <summary>
     /// Builds the world-space aim ray from a camera pose, using the same
     /// forward convention as <see cref="WorldToScreen"/> (yaw 0 → +Z; forward
     /// = (sin yaw·cos pitch, sin pitch, cos yaw·cos pitch)). Fail-closed:
@@ -218,7 +289,7 @@ public static class PenetrationAim
         OverlayTankState tank,
         TankArmor armor,
         ShellSpec shell,
-        double margin = 0.1)
+        double margin = 0.05)
     {
         (double Nx, double Nz)[] faces = FaceNormals(tank);
         double best = double.NegativeInfinity;
@@ -282,7 +353,7 @@ public static class PenetrationAim
         TankArmor armor,
         ShellSpec shell,
         out StruckFace face,
-        double margin = 0.1)
+        double margin = 0.05)
     {
         if (tank.YawRadians is not { } yaw
             || !double.IsFinite(yaw)
@@ -391,7 +462,7 @@ public static class PenetrationAim
         IReadOnlyList<OverlayTankState> tanks,
         IReadOnlyDictionary<long, TankArmor> armorByEntity,
         ShellSpec shell,
-        double margin = 0.1,
+        double margin = 0.05,
         IReadOnlyDictionary<long, IReadOnlyList<CollisionMeshPart>>? meshesByEntity = null)
     {
         ArgumentNullException.ThrowIfNull(tanks);

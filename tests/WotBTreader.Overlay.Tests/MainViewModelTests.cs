@@ -1156,6 +1156,128 @@ public sealed class MainViewModelTests
     }
 
     [TestMethod]
+    public async Task RefreshOverlayFrameAsync_NotReadyAssessmentSuppressesLegacyColoredBadge()
+    {
+        string frameJson = """
+            {
+              "replayTimeSeconds": 200.0,
+              "cameraX": 0.0, "cameraY": 0.0, "cameraZ": 0.0,
+              "cameraYawRadians": 0.5, "cameraPitchRadians": 0.0,
+              "tanks": [],
+              "penBadge": {
+                "aimedEntityId": 2,
+                "face": "Front",
+                "band": "Pen",
+                "effectiveArmorMm": 90.0,
+                "penetrationMmAtRange": 120.0,
+                "ricochet": false
+              },
+              "penetration": {
+                "status": "not_ready",
+                "primaryReason": "team.target_unknown",
+                "reasons": ["team.target_unknown"],
+                "modelVersion": "penetration/0.3.0-alpha",
+                "badge": null
+              }
+            }
+            """;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            string path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/frame", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(JsonResponse(frameJson));
+            }
+
+            if (path.Contains(BattleSessionId.ToString("D"), StringComparison.Ordinal))
+            {
+                return Task.FromResult(JsonResponse("""{"session":null,"participants":[],"positions":[],"events":[]}"""));
+            }
+
+            return Task.FromResult(JsonResponse("""{"offset":0,"limit":200,"count":0,"items":[]}"""));
+        });
+        MainViewModel viewModel = CreateViewModel(handler);
+
+        await viewModel.RefreshSessionsAsync();
+        viewModel.SelectedSession = new SessionRow(
+            BattleSessionId, "Test Map", null, Now, 1, 2);
+        await viewModel.RefreshOverlayFrameAsync(1920, 1080);
+
+        Assert.IsNull(viewModel.PenBadge);
+        Assert.AreEqual("PEN — TARGET TEAM UNKNOWN", viewModel.PenReadinessLabel);
+        Assert.IsTrue(viewModel.HasPenReadiness);
+    }
+
+    [TestMethod]
+    [DataRow("session.association_missing", "PEN — SESSION NOT BOUND")]
+    [DataRow("build.replay_mismatch", "PEN — BUILD MISMATCH")]
+    [DataRow("armor.surface_miss", "PEN — ARMOR SURFACE UNKNOWN")]
+    [DataRow("unexpected.reason", "PEN — NOT READY")]
+    public void PenetrationReadinessLabel_MapsStableNeutralText(
+        string reason,
+        string expected) =>
+        Assert.AreEqual(expected, MainViewModel.PenetrationReadinessLabel(reason));
+
+    [TestMethod]
+    public async Task RefreshOverlayFrameAsync_LiveFailureClearsPriorPenetrationVerdict()
+    {
+        string readyFrame = """
+            {
+              "replayTimeSeconds": 150.5,
+              "tanks": [],
+              "penShells": [{ "name": "ap_shell", "kind": "ArmorPiercing" }],
+              "penShell": "ap_shell",
+              "penetration": {
+                "status": "ready",
+                "primaryReason": "none",
+                "reasons": [],
+                "modelVersion": "penetration/0.3.0-alpha",
+                "badge": {
+                  "aimedEntityId": 2,
+                  "face": "Front",
+                  "band": "Pen",
+                  "effectiveArmorMm": 90.0,
+                  "penetrationMmAtRange": 120.0,
+                  "ricochet": false
+                }
+              }
+            }
+            """;
+        int liveCalls = 0;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith(
+                "/live/frame",
+                StringComparison.OrdinalIgnoreCase))
+            {
+                liveCalls++;
+                return Task.FromResult(liveCalls == 1
+                    ? JsonResponse(readyFrame)
+                    : new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+            }
+
+            return Task.FromResult(JsonResponse(
+                """{"offset":0,"limit":200,"count":0,"items":[]}"""));
+        });
+        MainViewModel viewModel = CreateViewModel(handler);
+        await viewModel.RefreshSessionsAsync();
+        viewModel.IsLiveMode = true;
+
+        await viewModel.RefreshOverlayFrameAsync(1920, 1080);
+        Assert.IsNotNull(viewModel.PenBadge);
+        Assert.AreEqual("ap_shell", viewModel.PenShell);
+
+        await viewModel.RefreshOverlayFrameAsync(1920, 1080);
+
+        Assert.IsNull(viewModel.PenBadge);
+        Assert.AreEqual("PEN — LIVE FRAME UNAVAILABLE", viewModel.PenReadinessLabel);
+        Assert.IsNull(viewModel.PenShell);
+        Assert.IsEmpty(viewModel.PenShells);
+    }
+
+    [TestMethod]
     public async Task RefreshOverlayFrameAsync_LiveModeCarriesL1HealthIntoNameplate()
     {
         string frameJson = """
@@ -1200,12 +1322,10 @@ public sealed class MainViewModelTests
     }
 
     [TestMethod]
-    public async Task RefreshOverlayFrameAsync_LiveModeForwardsSelectedSessionForRosterJoin()
+    public async Task RefreshOverlayFrameAsync_LiveModeDoesNotLetSelectionChooseRosterJoin()
     {
-        // Live mode forwards the selected session id so the server can name
-        // the live tanks via the per-id decoded-roster join (design
-        // live-roster-name-join-design.md); the joined name lands in the
-        // nameplate.
+        // Live mode is auto-bound by the server's managed replay association.
+        // Mutable UI selection must never choose the decoded roster join.
         string frameJson = """
             {
               "replayTimeSeconds": 150.5,
@@ -1237,12 +1357,8 @@ public sealed class MainViewModelTests
         await viewModel.RefreshOverlayFrameAsync(1920, 1080);
 
         Assert.IsNotNull(liveFrameUri);
-        string sessionParam = liveFrameUri!.Query
-            .TrimStart('?')
-            .Split('&', StringSplitOptions.RemoveEmptyEntries)
-            .Single(part => part.StartsWith("sessionId=", StringComparison.OrdinalIgnoreCase))
-            ["sessionId=".Length..];
-        Assert.AreEqual(BattleSessionId, Guid.Parse(sessionParam));
+        Assert.IsFalse(
+            liveFrameUri!.Query.Contains("sessionId=", StringComparison.OrdinalIgnoreCase));
         NameplateItem tank = viewModel.Nameplates.Single();
         Assert.AreEqual("pilot", tank.Label);
         Assert.AreEqual(1, tank.TeamNumber);

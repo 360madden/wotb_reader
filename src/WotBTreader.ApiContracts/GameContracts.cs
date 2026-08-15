@@ -30,6 +30,13 @@ public sealed record GameLaunchRequest
 {
     /// <summary>Identifier of a replay artifact managed by the application.</summary>
     public string SourceArtifactId { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Exact decoded battle session associated with the replay artifact.
+    /// Omitted legacy launches remain valid but cannot produce penetration
+    /// readiness.
+    /// </summary>
+    public string? BattleSessionId { get; init; }
 }
 
 /// <summary>Result of a game launch attempt.</summary>

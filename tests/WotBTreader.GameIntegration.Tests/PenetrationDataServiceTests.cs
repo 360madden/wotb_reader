@@ -100,6 +100,55 @@ public sealed class PenetrationDataServiceTests
         Assert.AreEqual(5, shell.NormalizationDegrees, 1e-9);
         // Drop = (92 - 72) / 720.
         Assert.AreEqual((92.0 - 72.0) / 720.0, shell.DropPerMeterMm, 1e-9);
+        Assert.AreEqual(
+            PenetrationCompatibilityStatus.Exact,
+            context.CompatibilityStatus);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(context.CompatibilityManifestId));
+        Assert.AreEqual(
+            ArmorInputProvenance.NominalSummary,
+            context.InputProvenance.Armor);
+        Assert.AreEqual(
+            WeaponInputProvenance.ManualSelection,
+            context.InputProvenance.Weapon);
+        Assert.AreEqual(AimInputProvenance.Unknown, context.InputProvenance.Aim);
+
+        PenetrationDiagnosticsSnapshot diagnostics = await service.GetSnapshotAsync(
+            CancellationToken.None);
+        Assert.IsNotNull(diagnostics.Manifest);
+        Assert.AreEqual(context.CompatibilityManifestId, diagnostics.Manifest!.ManifestId);
+        Assert.AreEqual("11.19.0.10", diagnostics.Manifest.ReplayGameVersion);
+        Assert.AreEqual(PenetrationCompatibilityStatus.Exact,
+            diagnostics.Manifest.CompatibilityStatus);
+        Assert.IsGreaterThanOrEqualTo(3, diagnostics.Manifest.Sources.Count);
+        Assert.IsTrue(diagnostics.Manifest.Sources.All(source =>
+            !Path.IsPathRooted(source.RelativePath)
+            && !source.RelativePath.Contains("..", StringComparison.Ordinal)));
+        Assert.IsTrue(diagnostics.Manifest.Sources.Any(source =>
+            source.SourceKind == "vehicle"));
+        Assert.IsTrue(diagnostics.Manifest.Sources.Any(source =>
+            source.SourceKind == "shell"));
+        Assert.IsTrue(diagnostics.Manifest.Sources.Any(source =>
+            source.SourceKind == "gun"));
+        Assert.IsNotNull(diagnostics.ResolutionReport);
+        Assert.AreEqual(2, diagnostics.ResolutionReport!.RosterEntities);
+        Assert.AreEqual(2, diagnostics.ResolutionReport.VehicleIdsPresent);
+        Assert.AreEqual(2, diagnostics.ResolutionReport.VehiclesResolved);
+        Assert.AreEqual(2, diagnostics.ResolutionReport.ArmorModelsResolved);
+        Assert.AreEqual(1, diagnostics.ResolutionReport.WeaponStatesResolved);
+
+        ReplayDecodeProjection incompleteProjection = Projection("GB08_Churchill_I");
+        incompleteProjection = incompleteProjection with
+        {
+            Session = incompleteProjection.Session! with { GameVersion = "11.19.0" },
+        };
+        PenetrationContext? incomplete = await service.ResolveAsync(
+            incompleteProjection,
+            CancellationToken.None);
+        Assert.IsNotNull(incomplete);
+        Assert.AreEqual(
+            PenetrationCompatibilityStatus.ReplayBuildIncomplete,
+            incomplete.CompatibilityStatus);
+        Assert.IsNull(incomplete.CompatibilityManifestId);
     }
 
     [TestMethod]

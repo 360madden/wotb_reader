@@ -69,7 +69,10 @@ internal sealed class ManagedGameLaunchContext
         long processStartIdentity,
         IReadOnlyList<LifecycleSourceCursor> lifecycleSourceBaselines,
         long sourceSequenceBaseline,
-        DateTimeOffset lifecycleBaselineCapturedAtUtc)
+        DateTimeOffset lifecycleBaselineCapturedAtUtc,
+        SourceArtifactId sourceArtifactId,
+        ContentHash sourceArtifactSha256,
+        BattleSessionId? battleSessionId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(launchCorrelation);
         ArgumentNullException.ThrowIfNull(trustedGameIdentity);
@@ -80,6 +83,11 @@ internal sealed class ManagedGameLaunchContext
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(
             lifecycleBaselineCapturedAtUtc,
             DateTimeOffset.MinValue);
+        ArgumentNullException.ThrowIfNull(sourceArtifactSha256);
+        if (sourceArtifactId.Value == Guid.Empty)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sourceArtifactId));
+        }
 
         LifecycleSourceCursor[] snapshot = [.. lifecycleSourceBaselines];
         _sourceBaselines = new Dictionary<string, LifecycleSourceCursor>(
@@ -106,6 +114,9 @@ internal sealed class ManagedGameLaunchContext
         LifecycleSourceBaselines = Array.AsReadOnly(snapshot);
         SourceSequenceBaseline = sourceSequenceBaseline;
         LifecycleBaselineCapturedAtUtc = lifecycleBaselineCapturedAtUtc;
+        SourceArtifactId = sourceArtifactId;
+        SourceArtifactSha256 = sourceArtifactSha256;
+        BattleSessionId = battleSessionId;
     }
 
     public string LaunchCorrelation { get; }
@@ -122,6 +133,12 @@ internal sealed class ManagedGameLaunchContext
 
     public DateTimeOffset LifecycleBaselineCapturedAtUtc { get; }
 
+    public SourceArtifactId SourceArtifactId { get; }
+
+    public ContentHash SourceArtifactSha256 { get; }
+
+    public BattleSessionId? BattleSessionId { get; }
+
     public bool TryGetSourceBaseline(
         string sourceIdentity,
         out LifecycleSourceCursor? sourceBaseline) =>
@@ -135,7 +152,8 @@ internal sealed class ManagedGameLaunchContext
 /// identity never leave this adapter.
 /// </summary>
 internal sealed class GameSessionCoordinator : IGameSessionState,
-    IGameReplayLauncher, IGameMemoryObserver, IGameMemoryScanner, IAsyncDisposable, IDisposable
+    IGameReplayLauncher, IManagedReplayAssociationLeaseSource, IGameMemoryObserver,
+    IGameMemoryScanner, IAsyncDisposable, IDisposable
 {
     private readonly Lock _gate = new();
     private readonly TimeProvider _timeProvider;
@@ -175,6 +193,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         "session.initial");
     private AuthorizedObservation? _authorization;
     private ManagedGameLaunchContext? _managedLaunch;
+    private bool _associationStale;
     private EvidenceCursor? _lastCursor;
     private long _authorizationGeneration;
     private DateTimeOffset _lastHeartbeatLoggedAtUtc = DateTimeOffset.MinValue;
@@ -251,6 +270,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             ObjectDisposedException.ThrowIf(_disposed, typeof(GameSessionCoordinator));
             Revoke();
             _managedLaunch = launch;
+            _associationStale = false;
             _lastCursor = null;
             _snapshot = CreateSnapshot(
                 GameSessionVerificationState.Unknown,
@@ -427,6 +447,77 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         }
     }
 
+    public ValueTask<ManagedReplayAssociationAcquireResult> AcquireAsync(
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_gate)
+        {
+            ExpireAuthorizationIfNeeded();
+            if (_managedLaunch?.BattleSessionId is not { } battleSessionId)
+            {
+                return ValueTask.FromResult(new ManagedReplayAssociationAcquireResult(
+                    _associationStale
+                        ? ManagedReplayAssociationStatus.Stale
+                        : ManagedReplayAssociationStatus.Missing,
+                    _associationStale
+                        ? "session.association_stale"
+                        : "session.association_missing",
+                    Lease: null));
+            }
+
+            if (_snapshot.State != GameSessionVerificationState.OfflineReplayVerified
+                || !string.Equals(
+                    _snapshot.ReasonCode,
+                    "session.offline_replay_verified",
+                    StringComparison.Ordinal)
+                || _authorization is null)
+            {
+                bool pending = _snapshot.State is GameSessionVerificationState.Unknown
+                    or GameSessionVerificationState.GamePresentUnverified;
+                return ValueTask.FromResult(new ManagedReplayAssociationAcquireResult(
+                    pending
+                        ? ManagedReplayAssociationStatus.PendingVerification
+                        : ManagedReplayAssociationStatus.Stale,
+                    pending ? "session.association_pending" : "session.association_stale",
+                    Lease: null));
+            }
+
+            IManagedReplayAssociationLease lease = new ManagedReplayAssociationLease(
+                this,
+                _managedLaunch,
+                _authorization.Generation,
+                battleSessionId);
+            return ValueTask.FromResult(new ManagedReplayAssociationAcquireResult(
+                ManagedReplayAssociationStatus.Verified,
+                "session.association_verified",
+                lease));
+        }
+    }
+
+    private ValueTask<bool> IsAssociationCurrentAsync(
+        ManagedGameLaunchContext launch,
+        long authorizationGeneration,
+        BattleSessionId battleSessionId,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            ExpireAuthorizationIfNeeded();
+            bool current = ReferenceEquals(_managedLaunch, launch)
+                && _managedLaunch.BattleSessionId == battleSessionId
+                && _snapshot.State == GameSessionVerificationState.OfflineReplayVerified
+                && string.Equals(
+                    _snapshot.ReasonCode,
+                    "session.offline_replay_verified",
+                    StringComparison.Ordinal)
+                && _authorization?.Generation == authorizationGeneration;
+            return ValueTask.FromResult(current);
+        }
+    }
+
     public async ValueTask<OperationResult<GameReplayLaunchOutcome>> LaunchAsync(
         GameReplayLaunchRequest request,
         CancellationToken cancellationToken)
@@ -569,7 +660,10 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             LogLaunchStage("correlation", "started");
             // ── 5. Register correlation ──
             OperationResult<ManagedGameLaunchContext> correlationResult =
-                _correlationRegistrar.Register(preparation, suspendedLease);
+                _correlationRegistrar.Register(
+                    preparation,
+                    suspendedLease,
+                    request.BattleSessionId);
             if (!correlationResult.IsSuccess)
             {
                 LogLaunchStage("correlation", "failed", correlationResult.Error?.Code);
@@ -1269,6 +1363,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     {
         Revoke();
 
+        if (_managedLaunch?.BattleSessionId is not null)
+        {
+            _associationStale = true;
+        }
+
         CancellationTokenSource? monitoringCts = _activeMonitoringCts;
         Task? monitoringTask = _activeMonitoringTask;
         _activeMonitoringCts = null;
@@ -1434,6 +1533,23 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         DateTimeOffset ExpiresAtUtc,
         OffsetTable? OffsetTable,
         AuthorizationReadGate ReadGate);
+
+    private sealed class ManagedReplayAssociationLease(
+        GameSessionCoordinator owner,
+        ManagedGameLaunchContext launch,
+        long authorizationGeneration,
+        BattleSessionId battleSessionId)
+        : IManagedReplayAssociationLease
+    {
+        public BattleSessionId BattleSessionId { get; } = battleSessionId;
+
+        public ValueTask<bool> IsCurrentAsync(CancellationToken cancellationToken) =>
+            owner.IsAssociationCurrentAsync(
+                launch,
+                authorizationGeneration,
+                BattleSessionId,
+                cancellationToken);
+    }
 
     private sealed record EvidenceCursor(
         string SourceIdentity,
@@ -4344,8 +4460,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             {
                 _logger.LogWarning(
                     new EventId(3140, "ManagedLaunchLifecycleEvidenceTimeout"),
-                    "Managed replay launch timed out waiting for correlated lifecycle evidence; processId={ProcessId}, processTerminated={ProcessTerminated}, timeoutSeconds={TimeoutSeconds}.",
-                    processId,
+                    "Managed replay launch timed out waiting for correlated lifecycle evidence; processTerminated={ProcessTerminated}, timeoutSeconds={TimeoutSeconds}.",
                     terminated,
                     _options.LifecycleEvidenceTimeout.TotalSeconds);
             }

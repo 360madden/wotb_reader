@@ -103,6 +103,22 @@ public sealed class ArmorPenetrationTests
     }
 
     [TestMethod]
+    [DataRow(94.0, PenetrationBand.Pen)]
+    [DataRow(100.0, PenetrationBand.Marginal)]
+    [DataRow(106.0, PenetrationBand.NoPen)]
+    public void OfficialFivePercentSpreadProducesIntervalBoundedBand(
+        double effectiveArmorMm,
+        PenetrationBand expected)
+    {
+        PenetrationVerdict verdict = ArmorPenetration.Evaluate(
+            RayFromZ(-100),
+            TiltedPlate(thickness: effectiveArmorMm, phi: 0),
+            Shell(penetration0: 100));
+
+        Assert.AreEqual(expected, verdict.Band);
+    }
+
+    [TestMethod]
     public void PenetrationBelowEffective_NoPen()
     {
         PenetrationVerdict verdict = ArmorPenetration.Evaluate(

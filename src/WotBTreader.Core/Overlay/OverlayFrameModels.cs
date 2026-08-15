@@ -103,7 +103,8 @@ public sealed record OverlayFrame(
     IReadOnlyList<OverlayKill> Kills,
     PenetrationBadge? PenBadge = null,
     IReadOnlyList<ShellOption>? PenShells = null,
-    string? PenShell = null)
+    string? PenShell = null,
+    PenetrationAssessment? Penetration = null)
 {
     /// <summary>Frame with an empty kill feed — for fixtures that only
     /// exercise the nameplate/pip layers.</summary>

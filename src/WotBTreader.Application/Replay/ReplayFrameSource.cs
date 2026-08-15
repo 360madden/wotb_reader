@@ -248,37 +248,75 @@ public sealed class ReplayFrameSource : IOverlayFrameSource
         PenetrationBadge? penBadge = null;
         IReadOnlyList<ShellOption> penShells = [];
         string? penShell = null;
+        Participant? viewpoint = projection.Session?.ViewpointParticipantId is { } viewpointId
+            ? projection.Participants.FirstOrDefault(
+                participant => participant.Id == viewpointId)
+            : null;
+        long? ownEntityId = viewpoint?.EntityId;
+        int? ownTeam = viewpoint?.TeamNumber;
+        PenetrationAssessment penAssessment = PenetrationAim.BuildAimRay(camera) is null
+            ? PenetrationAssessment.NotReady(PenetrationReadinessReason.AimUnavailable)
+            : ownEntityId is null
+                ? PenetrationAssessment.NotReady(PenetrationReadinessReason.OwnEntityUnknown)
+                : ownTeam is null
+                    ? PenetrationAssessment.NotReady(PenetrationReadinessReason.OwnTeamUnknown)
+                    : PenetrationAssessment.NotReady(PenetrationReadinessReason.WeaponStateUnavailable);
         if (penetration is not null)
         {
             penShells = penetration.AvailableShells;
             (ShellSpec viewerShell, string? activeShell) = penetration.SelectShell(shellName);
             penShell = activeShell;
 
-            Participant? viewpoint = projection.Session?.ViewpointParticipantId is { } viewpointId
-                ? projection.Participants.FirstOrDefault(
-                    participant => participant.Id == viewpointId)
-                : null;
-            long? ownEntityId = viewpoint?.EntityId;
-            int? ownTeam = viewpoint?.TeamNumber;
-            // Own tank excluded; enemies only when the own team is known;
-            // destroyed wrecks are never a target. A tank whose team is
-            // unknown stays eligible (fail-open toward showing — never hide
-            // a real enemy behind a decode gap).
-            IReadOnlyList<OverlayTankState> aimTargets = tanks
-                .Where(tank => ownEntityId is not { } ownId || tank.EntityId != ownId)
-                .Where(tank => ownTeam is not { } team || tank.TeamNumber != team)
-                .Where(tank => tank.Alive)
-                .ToList();
-            penBadge = PenetrationAim.ResolveBadge(
-                camera,
-                aimTargets,
-                penetration.ArmorByEntity,
-                viewerShell,
-                meshesByEntity: penetration.MeshesByEntity);
+            PenetrationInputProvenance provenance = penetration.InputProvenance;
+            penAssessment = penetration.CompatibilityStatus
+                == PenetrationCompatibilityStatus.ResourceDrift
+                ? PenetrationAssessment.NotReady(PenetrationReadinessReason.ResourceDrift)
+                : penetration.CompatibilityStatus
+                    == PenetrationCompatibilityStatus.ReplayBuildIncomplete
+                    ? PenetrationAssessment.NotReady(
+                        PenetrationReadinessReason.ReplayBuildIncomplete)
+                    : penetration.CompatibilityStatus
+                        == PenetrationCompatibilityStatus.ReplayBuildMismatch
+                        ? PenetrationAssessment.NotReady(
+                            PenetrationReadinessReason.ReplayBuildMismatch)
+                        : string.IsNullOrWhiteSpace(penetration.CompatibilityManifestId)
+                ? PenetrationAssessment.NotReady(
+                    PenetrationReadinessReason.ResourceManifestMissing)
+                : provenance.Aim != AimInputProvenance.ExactGunRay
+                    ? PenetrationAssessment.NotReady(PenetrationReadinessReason.AimUnavailable)
+                : ownEntityId is null
+                    ? PenetrationAssessment.NotReady(PenetrationReadinessReason.OwnEntityUnknown)
+                    : ownTeam is null
+                        ? PenetrationAssessment.NotReady(PenetrationReadinessReason.OwnTeamUnknown)
+                        : provenance.Weapon != WeaponInputProvenance.ExactLoadedShell
+                            ? PenetrationAssessment.NotReady(
+                                PenetrationReadinessReason.WeaponStateUnavailable)
+                            : provenance.Armor < ArmorInputProvenance.ExactTriangleSurface
+                                ? PenetrationAssessment.NotReady(
+                                    PenetrationReadinessReason.ArmorLayerUnsupported)
+                                : PenetrationAim.Assess(
+                                    camera,
+                                    tanks,
+                                    ownEntityId,
+                                    ownTeam,
+                                    penetration.ArmorByEntity,
+                                    viewerShell,
+                                    meshesByEntity: penetration.MeshesByEntity);
+            penAssessment = penAssessment.WithCompatibilityManifest(
+                penetration.CompatibilityManifestId);
+            penBadge = penAssessment.Badge;
         }
 
         return new OverlayFrame(
-            replayTime, camera, tanks, pips, kills, penBadge, penShells, penShell);
+            replayTime,
+            camera,
+            tanks,
+            pips,
+            kills,
+            penBadge,
+            penShells,
+            penShell,
+            penAssessment);
     }
 
     /// <summary>

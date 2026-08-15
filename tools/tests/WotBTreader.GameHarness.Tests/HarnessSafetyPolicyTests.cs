@@ -8,6 +8,18 @@ namespace WotBTreader.GameHarness.Tests;
 [TestClass]
 public sealed class HarnessSafetyPolicyTests
 {
+    [TestMethod]
+    [DataRow("OfflineReplayVerified", "session.offline_replay_verified", true)]
+    [DataRow("OfflineReplayVerified", null, false)]
+    [DataRow("OfflineReplayVerified", "evidence.expired", false)]
+    [DataRow("GamePresentUnverified", "session.offline_replay_verified", false)]
+    [DataRow(null, null, false)]
+    public void HarnessGateRequiresExactStateAndReason(
+        string? state,
+        string? reasonCode,
+        bool expected) =>
+        Assert.AreEqual(expected, HarnessGatePolicy.IsVerified(state, reasonCode));
+
     private static readonly DateTimeOffset Now =
         new(2026, 7, 26, 12, 0, 0, TimeSpan.Zero);
 

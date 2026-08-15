@@ -581,7 +581,12 @@ public sealed class ReplayFrameSourceTests
 
         PenetrationContext context = new(
             new Dictionary<long, TankArmor> { [2] = new(FrontMm: 93.4, SideMm: 0, RearMm: 0) },
-            new ShellSpec(Penetration0Mm: 200, CaliberMm: 100));
+            new ShellSpec(Penetration0Mm: 200, CaliberMm: 100),
+            Provenance: new PenetrationInputProvenance(
+                ArmorInputProvenance.ExactTriangleSurface,
+                WeaponInputProvenance.ExactLoadedShell,
+                AimInputProvenance.ExactGunRay),
+            CompatibilityManifestId: "synthetic/test");
 
         OverlayFrame frame = ReplayFrameSource.BuildFrame(
             projection, TimeSpan.Zero, cameraOverride: null, context);
@@ -615,7 +620,12 @@ public sealed class ReplayFrameSourceTests
 
         PenetrationContext context = new(
             new Dictionary<long, TankArmor> { [2] = new(FrontMm: 93.4, SideMm: 0, RearMm: 0) },
-            new ShellSpec(Penetration0Mm: 200, CaliberMm: 100));
+            new ShellSpec(Penetration0Mm: 200, CaliberMm: 100),
+            Provenance: new PenetrationInputProvenance(
+                ArmorInputProvenance.ExactTriangleSurface,
+                WeaponInputProvenance.ExactLoadedShell,
+                AimInputProvenance.ExactGunRay),
+            CompatibilityManifestId: "synthetic/test");
 
         OverlayFrame frame = ReplayFrameSource.BuildFrame(
             projection, TimeSpan.Zero, cameraOverride: null, context);
@@ -650,7 +660,12 @@ public sealed class ReplayFrameSourceTests
 
         PenetrationContext context = new(
             new Dictionary<long, TankArmor> { [2] = new(FrontMm: 93.4, SideMm: 0, RearMm: 0) },
-            new ShellSpec(Penetration0Mm: 200, CaliberMm: 100));
+            new ShellSpec(Penetration0Mm: 200, CaliberMm: 100),
+            Provenance: new PenetrationInputProvenance(
+                ArmorInputProvenance.ExactTriangleSurface,
+                WeaponInputProvenance.ExactLoadedShell,
+                AimInputProvenance.ExactGunRay),
+            CompatibilityManifestId: "synthetic/test");
 
         OverlayFrame frame = ReplayFrameSource.BuildFrame(
             projection, TimeSpan.Zero, cameraOverride: null, context);
@@ -686,7 +701,12 @@ public sealed class ReplayFrameSourceTests
         PenetrationContext context = new(
             new Dictionary<long, TankArmor> { [2] = new(FrontMm: 93.4, SideMm: 0, RearMm: 0) },
             ap.Spec,
-            Shells: [ap, he]);
+            Shells: [ap, he],
+            Provenance: new PenetrationInputProvenance(
+                ArmorInputProvenance.ExactTriangleSurface,
+                WeaponInputProvenance.ExactLoadedShell,
+                AimInputProvenance.ExactGunRay),
+            CompatibilityManifestId: "synthetic/test");
 
         OverlayFrame frame = ReplayFrameSource.BuildFrame(
             projection, TimeSpan.Zero, cameraOverride: null, context, shellName: "he_shell");
