@@ -5,8 +5,10 @@ using WotBTreader.Application.Capture;
 using WotBTreader.Application.Game;
 using WotBTreader.Application.Replay;
 using WotBTreader.Application.Results;
+using WotBTreader.Application.Storage;
 using WotBTreader.Core;
 using WotBTreader.Core.Discovery;
+using WotBTreader.Core.Overlay;
 using WotBTreader.GameIntegration.Discovery;
 using WotBTreader.GameIntegration.Logs;
 using WotBTreader.GameIntegration.Session;
@@ -3177,6 +3179,235 @@ public sealed class GameSessionCoordinatorTests
         Assert.IsNotNull(observation.ReplayTimeSeconds);
     }
 
+    [TestMethod]
+    public async Task PenetrationCapture_MissingOfflineGateNeverReadsDecodeOrSource()
+    {
+        var repository = new RecordingDecodeRunRepository([]);
+        var source = new RecordingPenetrationCaptureSource(ValidCaptureAggregate());
+        var (coordinator, _) = CreateCoordinator(
+            decodeRunRepository: repository,
+            captureEvidenceSource: source);
+
+        OperationResult<PenetrationCaptureEvaluation> result = await coordinator
+            .CaptureAsync(
+                new PenetrationCaptureRequest(DecodeRunId.New()),
+                CancellationToken.None);
+
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual("capture.gate_not_satisfied", result.Error?.Code);
+        Assert.AreEqual(0, repository.GetCount);
+        Assert.AreEqual(0, source.CallCount);
+    }
+
+    [TestMethod]
+    public async Task PenetrationCapture_WrongExactBuildUsesEvaluatorAndNeverReadsSource()
+    {
+        BattleSessionId sessionId = BattleSessionId.New();
+        DecodeRunId runId = DecodeRunId.New();
+        ManagedGameLaunchContext launch = CreateManagedLaunch(
+            battleSessionId: sessionId);
+        var repository = new RecordingDecodeRunRepository(
+            [CreateCaptureSummary(launch, runId, sessionId, launch.TrustedGameIdentity.ProductVersion)]);
+        var source = new RecordingPenetrationCaptureSource(ValidCaptureAggregate());
+        var (coordinator, _) = CreateCoordinator(
+            decodeRunRepository: repository,
+            captureEvidenceSource: source);
+        coordinator.RecordManagedLaunch(launch);
+        coordinator.ApplyEvidence(CreateValidEvidence());
+
+        OperationResult<PenetrationCaptureEvaluation> result = await coordinator
+            .CaptureAsync(new PenetrationCaptureRequest(runId), CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(
+            PenetrationCaptureStatus.Rejected,
+            result.Value?.Status);
+        Assert.AreEqual(
+            PenetrationCaptureReason.BuildIdentityMismatch,
+            result.Value?.PrimaryReason);
+        Assert.AreEqual(0, source.CallCount);
+    }
+
+    [TestMethod]
+    public async Task PenetrationCapture_ProviderBoundsAreRejectedByPureEvaluator()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        BattleSessionId sessionId = BattleSessionId.New();
+        DecodeRunId runId = DecodeRunId.New();
+        ManagedGameLaunchContext launch = CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash,
+            battleSessionId: sessionId);
+        var repository = new RecordingDecodeRunRepository(
+            [CreateCaptureSummary(launch, runId, sessionId, layout.GameVersion)]);
+        var source = new RecordingPenetrationCaptureSource(
+            ValidCaptureAggregate() with
+            {
+                IndividualReadBytes = PenetrationCaptureLimits.MaxIndividualReadBytes + 1,
+            });
+        var (coordinator, _) = CreateCoordinator(
+            decodeRunRepository: repository,
+            captureEvidenceSource: source);
+        coordinator.RecordManagedLaunch(launch);
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<PenetrationCaptureEvaluation> result = await coordinator
+            .CaptureAsync(new PenetrationCaptureRequest(runId), CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(PenetrationCaptureStatus.Rejected, result.Value?.Status);
+        Assert.IsTrue(result.Value!.Reasons.Contains(PenetrationCaptureReason.BoundsExceeded));
+    }
+
+    [TestMethod]
+    public async Task PenetrationCapture_CancellationStopsTheCoordinatorSource()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        BattleSessionId sessionId = BattleSessionId.New();
+        DecodeRunId runId = DecodeRunId.New();
+        ManagedGameLaunchContext launch = CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash,
+            battleSessionId: sessionId);
+        var repository = new RecordingDecodeRunRepository(
+            [CreateCaptureSummary(launch, runId, sessionId, layout.GameVersion)]);
+        var source = new BlockingPenetrationCaptureSource();
+        var (coordinator, _) = CreateCoordinator(
+            decodeRunRepository: repository,
+            captureEvidenceSource: source);
+        coordinator.RecordManagedLaunch(launch);
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+        using CancellationTokenSource cancellation = new();
+
+        Task<OperationResult<PenetrationCaptureEvaluation>> capture = coordinator
+            .CaptureAsync(new PenetrationCaptureRequest(runId), cancellation.Token)
+            .AsTask();
+        await source.Started.Task;
+        cancellation.Cancel();
+
+        await Assert.ThrowsExactlyAsync<TaskCanceledException>(async () =>
+            await capture);
+    }
+
+    [TestMethod]
+    public async Task PenetrationCapture_TwoContentDistinctPositiveRunsReachPromotionReady()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        BattleSessionId firstSessionId = BattleSessionId.New();
+        BattleSessionId secondSessionId = BattleSessionId.New();
+        DecodeRunId firstRunId = DecodeRunId.New();
+        DecodeRunId secondRunId = DecodeRunId.New();
+        ManagedGameLaunchContext firstLaunch = CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash,
+            sourceArtifactSha256: Hash('b'),
+            battleSessionId: firstSessionId);
+        ManagedGameLaunchContext secondLaunch = CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash,
+            sourceArtifactSha256: Hash('c'),
+            battleSessionId: secondSessionId);
+        var repository = new RecordingDecodeRunRepository(
+        [
+            CreateCaptureSummary(firstLaunch, firstRunId, firstSessionId, layout.GameVersion),
+            CreateCaptureSummary(secondLaunch, secondRunId, secondSessionId, layout.GameVersion),
+        ]);
+        var source = new RecordingPenetrationCaptureSource(ValidCaptureAggregate());
+        var (coordinator, _) = CreateCoordinator(
+            decodeRunRepository: repository,
+            captureEvidenceSource: source);
+
+        coordinator.RecordManagedLaunch(firstLaunch);
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+        OperationResult<PenetrationCaptureEvaluation> first = await coordinator
+            .CaptureAsync(new PenetrationCaptureRequest(firstRunId), CancellationToken.None);
+
+        coordinator.RecordManagedLaunch(secondLaunch);
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+        OperationResult<PenetrationCaptureEvaluation> second = await coordinator
+            .CaptureAsync(new PenetrationCaptureRequest(secondRunId), CancellationToken.None);
+
+        Assert.IsTrue(first.IsSuccess);
+        Assert.AreEqual(PenetrationCaptureStatus.PositiveAwaitingRepeat, first.Value?.Status);
+        Assert.IsTrue(second.IsSuccess);
+        Assert.AreEqual(PenetrationCaptureStatus.PromotionReady, second.Value?.Status);
+        Assert.IsTrue(second.Value?.CanPromoteExactInputs);
+    }
+
+    private static PenetrationCaptureSourceAggregate ValidCaptureAggregate() =>
+        new(
+            OwnerCandidateCount: 1,
+            ObservationRounds: 32,
+            IndividualReadBytes: 320,
+            BatchReadBytes: 4096,
+            new PenetrationCaptureEvidence(
+                OwnerUnique: true,
+                OwnerStable: true,
+                ConfiguredGunJoined: true,
+                ShellAbaTransitionObserved: true,
+                ShellStatesObserved: 3,
+                ShellIdentityMatches: 3,
+                AimSamples: 8,
+                FiniteAimSamples: 8,
+                TurretYawIndependent: true,
+                GunElevationIndependent: true,
+                RaySamples: 8,
+                FiniteRaySamples: 8,
+                NormalizedRaySamples: 8,
+                JoinedRaySamples: 4,
+                CameraFallbackUsed: false,
+                PostShotOnlyObservation: false,
+                RawObservationRetained: false));
+
+    private static DecodeRunSummary CreateCaptureSummary(
+        ManagedGameLaunchContext launch,
+        DecodeRunId runId,
+        BattleSessionId sessionId,
+        string gameVersion) =>
+        new(
+            new DecodeRun(
+                runId,
+                launch.SourceArtifactId,
+                DecoderId: "synthetic",
+                DecoderVersion: "1",
+                SchemaVersion: "1",
+                DecodeRunStatus.Succeeded,
+                ReplayCapability.Participants | ReplayCapability.ShotImpact,
+                StartTime.AddSeconds(-30),
+                StartTime.AddSeconds(-1),
+                FailureCode: null,
+                FailureSummary: null),
+            new BattleSession(
+                sessionId,
+                runId,
+                gameVersion,
+                ArenaIdentity: null,
+                MapId: null,
+                MapName: null,
+                BattleTimeUtc: null,
+                Duration: TimeSpan.FromMinutes(3),
+                ViewpointParticipantId: null,
+                SchemaVersion: "1"),
+            ParticipantCount: 0,
+            PositionCount: 0,
+            EventCount: 0,
+            RawRecordCount: 0);
+
     private static (GameSessionCoordinator Coordinator, ManualTimeProvider TimeProvider)
         CreateCoordinator(
             IManagedLaunchPreparer? preparer = null,
@@ -3192,6 +3423,8 @@ public sealed class GameSessionCoordinatorTests
             IBlitzReplayLifecycleFeed? lifecycleFeed = null,
             IInstructionSnapshotRunner? instructionSnapshotRunner = null,
             IMemoryScanDiscoverer? scanDiscoverer = null,
+            IDecodeRunRepository? decodeRunRepository = null,
+            IPenetrationCaptureEvidenceSource? captureEvidenceSource = null,
             GameIntegrationOptions? options = null)
     {
         var timeProvider = new ManualTimeProvider(StartTime);
@@ -3212,7 +3445,9 @@ public sealed class GameSessionCoordinatorTests
             scanDiscoverer ?? new MemoryScanDiscoverer(timeProvider, NullLogger<MemoryScanDiscoverer>.Instance),
             new MemoryScanEngine(timeProvider, NullLogger<MemoryScanEngine>.Instance),
             lifecycleFeed ?? new StubLifecycleFeed(),
-            instructionSnapshotRunner ?? new StubInstructionSnapshotRunner()), timeProvider);
+            instructionSnapshotRunner ?? new StubInstructionSnapshotRunner(),
+            decodeRunRepository,
+            captureEvidenceSource), timeProvider);
     }
 
     private static (GameSessionCoordinator Coordinator, ManualTimeProvider TimeProvider)
@@ -3264,6 +3499,7 @@ public sealed class GameSessionCoordinatorTests
         IReadOnlyList<LifecycleSourceCursor>? sourceBaselines = null,
         string productVersion = "11.18.0.7",
         ContentHash? executableSha256 = null,
+        ContentHash? sourceArtifactSha256 = null,
         BattleSessionId? battleSessionId = null) =>
         new(
             LaunchCorrelation,
@@ -3279,7 +3515,7 @@ public sealed class GameSessionCoordinatorTests
             sourceSequenceBaseline: 10,
             lifecycleBaselineCapturedAtUtc: StartTime.AddMinutes(-1),
             SourceArtifactId.New(),
-            Hash('b'),
+            sourceArtifactSha256 ?? Hash('b'),
             battleSessionId);
 
     private static ContentHash Hash(char value) => new(new string(value, 64));
@@ -3367,6 +3603,80 @@ public sealed class GameSessionCoordinatorTests
             CancellationToken cancellationToken) =>
             ValueTask.FromResult(OperationResult.Failure<ManagedLaunchPreparation>(
                 new ApplicationError(errorCode, "Test failure.", Retryable: false)));
+    }
+
+    private sealed class RecordingDecodeRunRepository(
+        IEnumerable<DecodeRunSummary> summaries) : IDecodeRunRepository
+    {
+        private readonly Dictionary<DecodeRunId, DecodeRunSummary> _summaries =
+            summaries.ToDictionary(summary => summary.DecodeRun.Id);
+
+        public int GetCount { get; private set; }
+
+        public ValueTask<OperationResult<DecodeRun>> StartAsync(
+            DecodeRun decodeRun,
+            CancellationToken cancellationToken) =>
+            ValueTask.FromResult(OperationResult.Success(decodeRun));
+
+        public ValueTask<OperationResult<DecodeRunSummary>> CommitAsync(
+            ReplayDecodeProjection projection,
+            CancellationToken cancellationToken) =>
+            throw new AssertFailedException("CommitAsync was not expected during capture.");
+
+        public ValueTask<OperationResult<DecodeRun>> FailAsync(
+            DecodeRunId decodeRunId,
+            DecodeRunStatus finalStatus,
+            string failureCode,
+            string failureSummary,
+            DateTimeOffset completedAtUtc,
+            CancellationToken cancellationToken) =>
+            throw new AssertFailedException("FailAsync was not expected during capture.");
+
+        public ValueTask<OperationResult<DecodeRunSummary>> GetAsync(
+            DecodeRunId decodeRunId,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            GetCount++;
+            return ValueTask.FromResult(
+                _summaries.TryGetValue(decodeRunId, out DecodeRunSummary? summary)
+                    ? OperationResult.Success(summary)
+                    : OperationResult.Failure<DecodeRunSummary>(
+                        new ApplicationError("storage.not_found", "Synthetic decode run not found.")));
+        }
+    }
+
+    private sealed class RecordingPenetrationCaptureSource(
+        PenetrationCaptureSourceAggregate aggregate) : IPenetrationCaptureEvidenceSource
+    {
+        public int CallCount { get; private set; }
+        public PenetrationCaptureReadContext? LastContext { get; private set; }
+
+        public ValueTask<OperationResult<PenetrationCaptureSourceAggregate>> CaptureAsync(
+            PenetrationCaptureReadContext context,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CallCount++;
+            LastContext = context;
+            return ValueTask.FromResult(OperationResult.Success(aggregate));
+        }
+    }
+
+    private sealed class BlockingPenetrationCaptureSource
+        : IPenetrationCaptureEvidenceSource
+    {
+        public TaskCompletionSource<bool> Started { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async ValueTask<OperationResult<PenetrationCaptureSourceAggregate>> CaptureAsync(
+            PenetrationCaptureReadContext context,
+            CancellationToken cancellationToken)
+        {
+            Started.TrySetResult(true);
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return OperationResult.Success(ValidCaptureAggregate());
+        }
     }
 
     private sealed class FixedModuleBaseResolver(nint baseAddress) : IGameProcessModuleBaseAddressResolver

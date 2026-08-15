@@ -344,7 +344,10 @@ docs/operations/handoffs/2026-08-15-hud-startup-failure-resolution.md
 docs/operations/handoffs/2026-08-15-hud-tracking-live-verified.md
 docs/operations/handoffs/2026-08-15-hud-ui-logging.md
 docs/operations/handoffs/2026-08-15-hud-ui-versioning.md
+docs/operations/handoffs/2026-08-15-penetration-v03-coordinator-capture-adapter.md
+docs/operations/handoffs/2026-08-15-penetration-v03-evaluator-and-armor-triage.md
 docs/operations/handoffs/2026-08-15-penetration-v03-safety-and-blockers.md
+docs/operations/handoffs/2026-08-15-penetration-v03-source-verdict-and-capture-contract.md
 docs/operations/handoffs/README.md
 docs/operations/item7-branch-b-step2-consistent-double-read-proposal.md
 docs/operations/item7-hardware-atomicity-proof-plan.md
@@ -373,7 +376,9 @@ docs/operations/offset-discovery-workflow.md
 docs/operations/offset-promotion-checklist.md
 docs/operations/parallel-workstreams.md
 docs/operations/pen-chance-design.md
+docs/operations/pen-v03-alternative-armor-owner-triage.md
 docs/operations/penetration-v0.3-plan.md
+docs/operations/penetration-v03-managed-capture-contract.md
 docs/operations/pn4-live-aim-capture-runbook.md
 docs/operations/product-roadmap.md
 docs/operations/record-diffing-groundwork.md
@@ -511,6 +516,7 @@ src/WotBTreader.Application/Diagnostics/TreaderDiagnostics.cs
 src/WotBTreader.Application/Game/GameMetadataContracts.cs
 src/WotBTreader.Application/Game/GameSessionContracts.cs
 src/WotBTreader.Application/Game/OverlayPenetrationData.cs
+src/WotBTreader.Application/Game/PenetrationCaptureContracts.cs
 src/WotBTreader.Application/Properties/AssemblyInfo.cs
 src/WotBTreader.Application/Replay/LiveFrameProjector.cs
 src/WotBTreader.Application/Replay/OffsetTableReader.cs
@@ -576,6 +582,7 @@ src/WotBTreader.Core/Overlay/OverlayFrameModels.cs
 src/WotBTreader.Core/Overlay/PenValidation.cs
 src/WotBTreader.Core/Overlay/PenetrationAim.cs
 src/WotBTreader.Core/Overlay/PenetrationAssessment.cs
+src/WotBTreader.Core/Overlay/PenetrationCaptureContract.cs
 src/WotBTreader.Core/Overlay/WorldToScreen.cs
 src/WotBTreader.Core/TelemetryModels.cs
 src/WotBTreader.Core/WotBTreader.Core.csproj
@@ -610,6 +617,7 @@ src/WotBTreader.GameIntegration/Session/GameSessionCoordinator.cs
 src/WotBTreader.GameIntegration/Session/ManagedLaunchCorrelationRegistrar.cs
 src/WotBTreader.GameIntegration/Session/ManagedLaunchPreparer.cs
 src/WotBTreader.GameIntegration/Session/ManagedReplayArtifactStager.cs
+src/WotBTreader.GameIntegration/Session/PenetrationCaptureEvidenceSource.cs
 src/WotBTreader.GameIntegration/Session/ReplayLaunchStagingPaths.cs
 src/WotBTreader.GameIntegration/Session/ReplayLaunchStagingScavenger.cs
 src/WotBTreader.GameIntegration/Session/SuspendedGameProcessLaunch.cs
@@ -843,6 +851,7 @@ tests/WotBTreader.Core.Tests/OffsetChainWalkerTests.cs
 tests/WotBTreader.Core.Tests/PenValidationTests.cs
 tests/WotBTreader.Core.Tests/PenetrationAimTests.cs
 tests/WotBTreader.Core.Tests/PenetrationAssessmentTests.cs
+tests/WotBTreader.Core.Tests/PenetrationCaptureContractTests.cs
 tests/WotBTreader.Core.Tests/RecordDiffingTests.cs
 tests/WotBTreader.Core.Tests/RingRecordRegionTests.cs
 tests/WotBTreader.Core.Tests/TrajectoryCorrelationScorerTests.cs

@@ -191,3 +191,27 @@ Items 1, 2, 3, 4, 5, 7, and 8 are not complete and must not be relabeled:
 
 The product therefore renders v0.3 as `NotReady` on real data instead of
 retaining the v0.2 nominal/manual/camera verdict under a stronger label.
+
+### G1 exact-input source verdict and capture boundary — 2026-08-15
+
+The exact-build static investigation is complete as a bounded **no-go for
+immediate wiring**. RTTI identifies `VehicleGun`, `VehicleGunRotator`, and
+`AvatarGunAgent`, but static evidence does not prove viewpoint ownership,
+configured-gun identity, loaded-shell identity, turret/gun transforms, muzzle
+origin, or shot direction. The rejected hard-joint visualization path remains
+closed and is not revisited.
+
+The next step is the owner-approved exact-build capture described by the
+frozen, privacy-reviewed managed-offline contract:
+[`penetration-v03-managed-capture-contract.md`](penetration-v03-managed-capture-contract.md).
+The coordinator-owned `IPenetrationCapture` adapter is now implemented. It
+accepts only a decode-run identity and fixed phase intent, rechecks the
+`OfflineReplayVerified` lifecycle, managed artifact/session association,
+completed decode run, module identity, and exact executable build, then passes
+only a bounded aggregate to the pure `PenetrationCaptureEvaluator`. Its
+production source is deliberately neutral until semantic fields are proven;
+no exact-input port or colored v0.3 verdict is enabled. Owner approval is
+still required before a live source implementation or capture. The separate
+armor-owner triage is recorded in
+[`pen-v03-alternative-armor-owner-triage.md`](pen-v03-alternative-armor-owner-triage.md)
+and remains a no-go until a producer proves physical layer semantics.

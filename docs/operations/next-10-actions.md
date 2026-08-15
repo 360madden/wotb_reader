@@ -4,7 +4,11 @@
 development. Anchored to `docs/operations/product-roadmap.md` (the forward
 plan), the ledger's *Next planned session* row, and the newest handoff.
 Refreshed after the penetration v0.3 fidelity audit, safe operability slice,
-exact-build hard-joint negative, BLK-0027 registration, the serialized HUD empty/replay smoke check, HUD game-window diagnostics, HUD render-health/export work, replay playback-continuity hardening, and the game-window startup diagnosis on 2026-08-15.
+exact-build hard-joint negative, bounded exact-input source verdict, managed
+capture contract implementation, BLK-0027 registration, the serialized HUD empty/replay
+smoke check, HUD game-window diagnostics, HUD render-health/export work, replay
+playback-continuity hardening, and the game-window startup diagnosis on
+2026-08-15.
 
 **Sequencing rule:** live items are clustered to share ONE approved launch
 (one game start = max evidence); offline hardening runs in parallel with any
@@ -12,9 +16,9 @@ live work; owner-gated items sit behind the evidence they consume.
 
 | # | Action | Roadmap anchor | Why now | Gate |
 |---|---|---|---|---|
-| 1 | **Finish the bounded exact-build loaded-shell/configured-gun and gun-ray source verdict** | Phase 6 v0.3 G1; BLK-0027 | These are the remaining static discriminators before any managed-offline capture design | offline static evidence |
-| 2 | **Freeze and security-review the smallest managed-offline capture contract for every viable exact source** | Phase 6 v0.3 G1/G2 | No memory surface may expand from a symbolic hypothesis or expose addresses/private identity | positive static owner + security review |
-| 3 | **Investigate one alternative authoritative armor/layer owner**; do not revisit the rejected hard-joint visualization path | Phase 6 v0.3 item 1/7; BLK-0027 | Exact thickness and physical ordering are the largest remaining product blockers | offline static evidence first |
+| 1 | **Run the owner-approved bounded managed-offline source capture** for configured gun, loaded shell, and gun ray | Phase 6 v0.3 G1/G2; BLK-0027 | The coordinator-owned adapter, exact decode/session gates, fixed bounds, and pure evaluator are implemented; the production source remains neutral until the exact fields are proven | owner approval + exact-build offline gate |
+| 2 | **Adjudicate the capture verdict and promote only proven exact fields** | Phase 6 v0.3 G2/G4 | No shared weapon/aim contract or colored badge may be enabled from ambiguous or partial evidence | two content-distinct positive repeats |
+| 3 | **Choose whether to fund a deeper exact-build `ArmorComponent`/`ArmorConfiguration` producer trace**; do not revisit the rejected hard-joint visualization path | Phase 6 v0.3 item 1/7; BLK-0027 | Bounded RTTI triage found no authoritative producer; another live read would be speculative without a producer hypothesis | offline producer evidence or explicit no-go |
 | 4 | **Implement exact weapon, aim, and armor ports only for proven cohorts** | Phase 6 v0.3 G4 | Provenance gates already prevent nominal/manual/camera data from masquerading as exact | G1/G2 pass |
 | 5 | **Build the immutable representative penetration corpus** — at least 12 replays, 500 eligible shots, and 30 rows per important cohort | Phase 6 v0.3 G5/G6 | Coverage and accuracy cannot be claimed from the old two-replay confounded sample | exact inputs implemented |
 | 6 | **Run primary cohort coverage/accuracy/ricochet/interval gates with exact unknown accounting** | Phase 6 v0.3 items 3/4/8/9 | Release thresholds are frozen in `penetration-v0.3-plan.md` | #5 complete |

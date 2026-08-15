@@ -48,6 +48,7 @@ public sealed class CompositionRootTests
         typeof(IManagedReplayAssociationLeaseSource),
         typeof(IGameMemoryObserver),
         typeof(IGameMemoryScanner),
+        typeof(IPenetrationCapture),
         typeof(IGameProcessLauncher),
     ];
 
@@ -90,11 +91,13 @@ public sealed class CompositionRootTests
             provider.GetRequiredService<IManagedReplayAssociationLeaseSource>();
         IGameMemoryObserver observer = provider.GetRequiredService<IGameMemoryObserver>();
         IGameMemoryScanner scanner = provider.GetRequiredService<IGameMemoryScanner>();
+        IPenetrationCapture capture = provider.GetRequiredService<IPenetrationCapture>();
 
         Assert.IsTrue(ReferenceEquals(state, launcher));
         Assert.IsTrue(ReferenceEquals(state, association));
         Assert.IsTrue(ReferenceEquals(state, observer));
         Assert.IsTrue(ReferenceEquals(state, scanner));
+        Assert.IsTrue(ReferenceEquals(state, capture));
     }
 
     [TestMethod]

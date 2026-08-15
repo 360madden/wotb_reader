@@ -52,6 +52,7 @@ public static class GameIntegrationServiceCollectionExtensions
         services.TryAddSingleton<IManagedLaunchCorrelationRegistrar, ManagedLaunchCorrelationRegistrar>();
         services.TryAddSingleton<IThreadResumePlatform, WindowsThreadResumePlatform>();
         services.TryAddSingleton<IGuardedMemoryReaderFactory, GuardedMemoryReaderFactory>();
+        services.TryAddSingleton<IPenetrationCaptureEvidenceSource, UnavailablePenetrationCaptureEvidenceSource>();
         services.TryAddSingleton<IInstructionSnapshotRunner, WindowsInstructionSnapshotRunner>();
         services.TryAddSingleton<IMemoryScanDiscoverer, MemoryScanDiscoverer>();
         services.TryAddSingleton<MemoryScanEngine>();
@@ -65,6 +66,8 @@ public static class GameIntegrationServiceCollectionExtensions
         services.TryAddSingleton<IGameMemoryObserver>(
             sp => sp.GetRequiredService<GameSessionCoordinator>());
         services.TryAddSingleton<IGameMemoryScanner>(
+            sp => sp.GetRequiredService<GameSessionCoordinator>());
+        services.TryAddSingleton<IPenetrationCapture>(
             sp => sp.GetRequiredService<GameSessionCoordinator>());
         services.TryAddSingleton<IGameProcessLauncher, GameProcessLauncher>();
 

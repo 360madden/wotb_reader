@@ -174,6 +174,8 @@ public sealed class NativeAccessBoundaryTests
             typeof(GameReplayLaunchOutcome),
             typeof(IGameMemoryObserver),
             typeof(GameMemoryObservation),
+            typeof(IPenetrationCapture),
+            typeof(PenetrationCaptureRequest),
         ];
         string[] forbiddenNames =
         [

@@ -5,8 +5,10 @@ using WotBTreader.Application.Capture;
 using WotBTreader.Application.Game;
 using WotBTreader.Application.Replay;
 using WotBTreader.Application.Results;
+using WotBTreader.Application.Storage;
 using WotBTreader.Core;
 using WotBTreader.Core.Discovery;
+using WotBTreader.Core.Overlay;
 using WotBTreader.GameIntegration.Discovery;
 using WotBTreader.GameIntegration.Logs;
 using WotBTreader.UltimateScanner;
@@ -153,7 +155,7 @@ internal sealed class ManagedGameLaunchContext
 /// </summary>
 internal sealed class GameSessionCoordinator : IGameSessionState,
     IGameReplayLauncher, IManagedReplayAssociationLeaseSource, IGameMemoryObserver,
-    IGameMemoryScanner, IAsyncDisposable, IDisposable
+    IGameMemoryScanner, IPenetrationCapture, IAsyncDisposable, IDisposable
 {
     private readonly Lock _gate = new();
     private readonly TimeProvider _timeProvider;
@@ -180,7 +182,10 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     private readonly IOffsetTableReader _offsetTableReader;
     private readonly IMemoryScanDiscoverer _scanDiscoverer;
     private readonly IInstructionSnapshotRunner _instructionSnapshotRunner;
+    private readonly IDecodeRunRepository? _decodeRunRepository;
+    private readonly IPenetrationCaptureEvidenceSource _penetrationCaptureEvidenceSource;
     private const int MaximumReadAddresses = 2000;
+    private readonly SemaphoreSlim _penetrationCaptureGate = new(1, 1);
     private readonly IBlitzReplayLifecycleFeed _lifecycleFeed;
     private readonly MemoryScanEngine _scanEngine;
     private readonly CancellationTokenSource _lifetimeCts = new();
@@ -197,6 +202,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     private EvidenceCursor? _lastCursor;
     private long _authorizationGeneration;
     private DateTimeOffset _lastHeartbeatLoggedAtUtc = DateTimeOffset.MinValue;
+    private PenetrationCaptureHistory? _previousPenetrationCapture;
 
     // Active launch leases owned by the coordinator until the session is revoked.
     private WindowsTrustedExecutableLaunchLease? _activeExecutableLease;
@@ -224,7 +230,9 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         IMemoryScanDiscoverer scanDiscoverer,
         MemoryScanEngine scanEngine,
         IBlitzReplayLifecycleFeed lifecycleFeed,
-        IInstructionSnapshotRunner instructionSnapshotRunner)
+        IInstructionSnapshotRunner instructionSnapshotRunner,
+        IDecodeRunRepository? decodeRunRepository = null,
+        IPenetrationCaptureEvidenceSource? penetrationCaptureEvidenceSource = null)
     {
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _options = options ?? throw new ArgumentNullException(nameof(options));
@@ -245,6 +253,9 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         _lifecycleFeed = lifecycleFeed ?? throw new ArgumentNullException(nameof(lifecycleFeed));
         _instructionSnapshotRunner = instructionSnapshotRunner
             ?? throw new ArgumentNullException(nameof(instructionSnapshotRunner));
+        _decodeRunRepository = decodeRunRepository;
+        _penetrationCaptureEvidenceSource = penetrationCaptureEvidenceSource
+            ?? new UnavailablePenetrationCaptureEvidenceSource();
     }
 
     /// <summary>
@@ -495,6 +506,378 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 lease));
         }
     }
+
+    /// <summary>
+    /// Executes the coordinator-owned penetration source capture. The public
+    /// request carries only a decode-run identity and phase intent; managed
+    /// process identity, artifact identity, build identity, module base, and
+    /// every future read location remain inside this adapter.
+    /// </summary>
+    public async ValueTask<OperationResult<PenetrationCaptureEvaluation>> CaptureAsync(
+        PenetrationCaptureRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (request.DecodeRunId.Value == Guid.Empty
+            || request.PhaseIntent != PenetrationCapturePhaseIntent.FullExactInputVerdict)
+        {
+            return OperationResult.Failure<PenetrationCaptureEvaluation>(
+                new ApplicationError(
+                    "capture.invalid_request",
+                    "The managed capture request is invalid.",
+                    Retryable: false));
+        }
+
+        await _penetrationCaptureGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await CapturePenetrationCoreAsync(request, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            _penetrationCaptureGate.Release();
+        }
+    }
+
+    private async ValueTask<OperationResult<PenetrationCaptureEvaluation>>
+        CapturePenetrationCoreAsync(
+            PenetrationCaptureRequest request,
+            CancellationToken cancellationToken)
+    {
+        CaptureAuthorization? authorization = GetCaptureAuthorization(cancellationToken);
+        if (authorization is null)
+        {
+            return GateCheck<PenetrationCaptureEvaluation>(
+                "capture.gate_not_satisfied",
+                "The offline-session gate is not satisfied.");
+        }
+
+        if (_decodeRunRepository is null)
+        {
+            return OperationResult.Failure<PenetrationCaptureEvaluation>(
+                new ApplicationError(
+                    "capture.decode_run_unavailable",
+                    "The managed decode evidence repository is unavailable.",
+                    Retryable: true));
+        }
+
+        using CancellationTokenSource captureTimeout = new();
+        captureTimeout.CancelAfter(PenetrationCaptureLimits.MaxCaptureDuration);
+        using CancellationTokenSource captureCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                authorization.AuthorizationToken,
+                captureTimeout.Token);
+        DateTimeOffset startedAtUtc = _timeProvider.GetUtcNow();
+
+        OperationResult<DecodeRunSummary> decodeResult;
+        try
+        {
+            decodeResult = await _decodeRunRepository.GetAsync(
+                    request.DecodeRunId,
+                    captureCancellation.Token)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return GateCheck<PenetrationCaptureEvaluation>(
+                "capture.gate_not_satisfied",
+                "The offline-session gate is no longer satisfied.");
+        }
+        catch
+        {
+            return OperationResult.Failure<PenetrationCaptureEvaluation>(
+                new ApplicationError(
+                    "capture.decode_run_unavailable",
+                    "The managed decode evidence could not be read.",
+                    Retryable: true));
+        }
+
+        if (!decodeResult.IsSuccess || decodeResult.Value is null)
+        {
+            return OperationResult.Failure<PenetrationCaptureEvaluation>(
+                decodeResult.Error ?? new ApplicationError(
+                    "capture.decode_run_unavailable",
+                    "The managed decode evidence could not be read.",
+                    Retryable: true));
+        }
+
+        DecodeRunSummary summary = decodeResult.Value;
+        if (summary.DecodeRun.Id != request.DecodeRunId)
+        {
+            return CaptureFailure(
+                "capture.decode_run_identity_mismatch",
+                "The returned decode evidence did not match the requested run.");
+        }
+
+        if (summary.DecodeRun.Status != DecodeRunStatus.Succeeded
+            || summary.DecodeRun.CompletedAtUtc is null
+            || summary.DecodeRun.FailureCode is not null
+            || summary.DecodeRun.FailureSummary is not null)
+        {
+            return CaptureFailure(
+                "capture.decode_run_incomplete",
+                "The managed decode run is not a completed successful run.");
+        }
+
+        if (summary.DecodeRun.SourceArtifactId != authorization.Launch.SourceArtifactId)
+        {
+            return CaptureFailure(
+                "capture.artifact_association_mismatch",
+                "The decoded artifact is not the artifact owned by this launch.");
+        }
+
+        if (summary.Session is not { } session
+            || authorization.Launch.BattleSessionId is not { } battleSessionId
+            || session.Id != battleSessionId
+            || session.DecodeRunId != request.DecodeRunId)
+        {
+            return CaptureFailure(
+                "capture.session_association_mismatch",
+                "The decoded battle session is not the session owned by this launch.");
+        }
+
+        PenetrationCaptureBuildIdentity expectedBuild =
+            PenetrationCaptureBuildIdentity.WotBlitz1119010;
+        PenetrationCaptureBuildIdentity observedBuild = new(
+            authorization.Authorization.ProductVersion,
+            authorization.Authorization.ExecutableSha256);
+
+        if (!string.Equals(
+                session.GameVersion,
+                observedBuild.GameVersion,
+                StringComparison.Ordinal))
+        {
+            return CaptureFailure(
+                "capture.decode_build_mismatch",
+                "The decoded session build does not match the authorized process build.");
+        }
+
+        // A wrong executable version/hash is returned through the pure
+        // evaluator, not through a source call. This keeps unsupported builds
+        // neutral and proves that no source read is widened to find a nearby
+        // client.
+        if (observedBuild != expectedBuild)
+        {
+            PenetrationCaptureRun wrongBuildRun = CreateCaptureRun(
+                observedBuild,
+                startedAtUtc,
+                _timeProvider.GetUtcNow(),
+                EmptyCaptureAggregate());
+            return OperationResult.Success(
+                PenetrationCaptureEvaluator.Evaluate(wrongBuildRun, expectedBuild));
+        }
+
+        nint moduleBase = _moduleBaseAddressResolver.Resolve(
+            authorization.Authorization.ProcessId,
+            captureCancellation.Token);
+        captureCancellation.Token.ThrowIfCancellationRequested();
+        if (moduleBase == nint.Zero)
+        {
+            return GateCheck<PenetrationCaptureEvaluation>(
+                "capture.gate_not_satisfied",
+                "The exact managed module identity is not currently available.");
+        }
+
+        PenetrationCaptureReadContext context = new(
+            PenetrationCapturePhaseIntent.FullExactInputVerdict,
+            expectedBuild,
+            CreateAuthorizedMemoryObservation(authorization.Authorization),
+            moduleBase.ToInt64());
+
+        OperationResult<PenetrationCaptureSourceAggregate> sourceResult;
+        try
+        {
+            sourceResult = await _penetrationCaptureEvidenceSource
+                .CaptureAsync(context, captureCancellation.Token)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (
+            !cancellationToken.IsCancellationRequested
+            && captureTimeout.IsCancellationRequested)
+        {
+            return CaptureFailure(
+                "capture.duration_exceeded",
+                "The managed capture exceeded its fixed duration bound.");
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return GateCheck<PenetrationCaptureEvaluation>(
+                "capture.gate_not_satisfied",
+                "The offline-session gate is no longer satisfied.");
+        }
+
+        if (!IsCaptureAuthorizationCurrent(authorization))
+        {
+            return GateCheck<PenetrationCaptureEvaluation>(
+                "capture.gate_not_satisfied",
+                "The offline-session gate is no longer satisfied.");
+        }
+
+        if (!sourceResult.IsSuccess || sourceResult.Value is null)
+        {
+            return OperationResult.Failure<PenetrationCaptureEvaluation>(
+                sourceResult.Error ?? new ApplicationError(
+                    "capture.source_unavailable",
+                    "The exact-input capture source is unavailable.",
+                    Retryable: true));
+        }
+
+        PenetrationCaptureRun run = CreateCaptureRun(
+            observedBuild,
+            startedAtUtc,
+            _timeProvider.GetUtcNow(),
+            sourceResult.Value);
+        PenetrationCaptureEvaluation evaluation = EvaluateAndTrack(
+            run,
+            authorization.Launch.SourceArtifactSha256,
+            expectedBuild);
+        return OperationResult.Success(evaluation);
+    }
+
+    private static OperationResult<PenetrationCaptureEvaluation> CaptureFailure(
+        string code,
+        string message) =>
+        OperationResult.Failure<PenetrationCaptureEvaluation>(
+            new ApplicationError(code, message, Retryable: false));
+
+    private static PenetrationCaptureSourceAggregate EmptyCaptureAggregate() =>
+        new(
+            OwnerCandidateCount: 0,
+            ObservationRounds: 0,
+            IndividualReadBytes: 0,
+            BatchReadBytes: 0,
+            new PenetrationCaptureEvidence(
+                OwnerUnique: false,
+                OwnerStable: false,
+                ConfiguredGunJoined: false,
+                ShellAbaTransitionObserved: false,
+                ShellStatesObserved: 0,
+                ShellIdentityMatches: 0,
+                AimSamples: 0,
+                FiniteAimSamples: 0,
+                TurretYawIndependent: false,
+                GunElevationIndependent: false,
+                RaySamples: 0,
+                FiniteRaySamples: 0,
+                NormalizedRaySamples: 0,
+                JoinedRaySamples: 0,
+                CameraFallbackUsed: false,
+                PostShotOnlyObservation: false,
+                RawObservationRetained: false));
+
+    private static PenetrationCaptureRun CreateCaptureRun(
+        PenetrationCaptureBuildIdentity observedBuild,
+        DateTimeOffset startedAtUtc,
+        DateTimeOffset completedAtUtc,
+        PenetrationCaptureSourceAggregate aggregate) =>
+        new(
+            PenetrationCaptureVerificationState.OfflineReplayVerified,
+            PenetrationCaptureLimits.RequiredVerificationReasonCode,
+            ManagedAssociationCurrent: true,
+            ExactArtifactBound: true,
+            DecodeRunComplete: true,
+            ProcessIdentityMatches: true,
+            observedBuild,
+            completedAtUtc - startedAtUtc,
+            aggregate.OwnerCandidateCount,
+            aggregate.ObservationRounds,
+            aggregate.IndividualReadBytes,
+            aggregate.BatchReadBytes,
+            aggregate.Evidence);
+
+    private PenetrationCaptureEvaluation EvaluateAndTrack(
+        PenetrationCaptureRun current,
+        ContentHash artifactSha256,
+        PenetrationCaptureBuildIdentity expectedBuild)
+    {
+        lock (_gate)
+        {
+            PenetrationCaptureHistory? prior = _previousPenetrationCapture;
+            if (prior is null)
+            {
+                PenetrationCaptureEvaluation first =
+                    PenetrationCaptureEvaluator.Evaluate(current, expectedBuild);
+                if (first.Status == PenetrationCaptureStatus.PositiveAwaitingRepeat)
+                {
+                    _previousPenetrationCapture = new(current, artifactSha256);
+                }
+
+                return first;
+            }
+
+            bool contentDistinct = prior.ArtifactSha256 != artifactSha256;
+            PenetrationCaptureRun repeat = current with
+            {
+                ContentDistinctFromPrior = contentDistinct,
+            };
+            PenetrationCaptureEvaluation evaluation =
+                PenetrationCaptureEvaluator.Evaluate(prior.Run, expectedBuild, repeat);
+            if (evaluation.Status == PenetrationCaptureStatus.PromotionReady)
+            {
+                // Promotion is a one-time in-memory witness. A process restart
+                // or any later capture requires a fresh two-replay proof.
+                _previousPenetrationCapture = null;
+            }
+
+            return evaluation;
+        }
+    }
+
+    private CaptureAuthorization? GetCaptureAuthorization(
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            ExpireAuthorizationIfNeeded();
+            if (_snapshot.State != GameSessionVerificationState.OfflineReplayVerified
+                || _authorization is null
+                || _authorizationCts is null
+                || _managedLaunch?.BattleSessionId is null)
+            {
+                return null;
+            }
+
+            return new CaptureAuthorization(
+                _managedLaunch,
+                _authorization,
+                _authorizationCts.Token);
+        }
+    }
+
+    private bool IsCaptureAuthorizationCurrent(CaptureAuthorization authorization)
+    {
+        authorization.AuthorizationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            ExpireAuthorizationIfNeeded();
+            authorization.AuthorizationToken.ThrowIfCancellationRequested();
+            return ReferenceEquals(_managedLaunch, authorization.Launch)
+                && _snapshot.State == GameSessionVerificationState.OfflineReplayVerified
+                && _authorization is not null
+                && _authorization.Generation == authorization.Authorization.Generation
+                && ReferenceEquals(
+                    _authorization.ReadGate,
+                    authorization.Authorization.ReadGate);
+        }
+    }
+
+    private static AuthorizedMemoryObservation CreateAuthorizedMemoryObservation(
+        AuthorizedObservation authorization) =>
+        new(
+            authorization.ProcessId,
+            authorization.ProcessStartIdentity,
+            authorization.CanonicalExecutablePath,
+            authorization.ProductVersion,
+            authorization.ExecutableSha256,
+            authorization.ExpiresAtUtc,
+            authorization.ReadGate)
+        {
+            Generation = authorization.Generation,
+        };
 
     private ValueTask<bool> IsAssociationCurrentAsync(
         ManagedGameLaunchContext launch,
@@ -1533,6 +1916,15 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         DateTimeOffset ExpiresAtUtc,
         OffsetTable? OffsetTable,
         AuthorizationReadGate ReadGate);
+
+    private sealed record CaptureAuthorization(
+        ManagedGameLaunchContext Launch,
+        AuthorizedObservation Authorization,
+        CancellationToken AuthorizationToken);
+
+    private sealed record PenetrationCaptureHistory(
+        PenetrationCaptureRun Run,
+        ContentHash ArtifactSha256);
 
     private sealed class ManagedReplayAssociationLease(
         GameSessionCoordinator owner,
