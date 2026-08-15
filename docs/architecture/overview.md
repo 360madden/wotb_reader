@@ -2,7 +2,7 @@
 
 Status: accepted alpha architecture — hardening milestones complete
 
-Last updated: 2026-07-31
+Last updated: 2026-08-15
 
 The project owner identifies as a junior developer at Wargaming.net. This is
 a personal, independently maintained project; see
@@ -124,12 +124,111 @@ Launch, Refresh, Dashboard, Close buttons, and a session list. The
 
 ### Game window tracking (implemented ✅)
 
-P/Invoke `FindWindowW`/`GetWindowRect`/`SetWindowPos` with a 500ms
-`DispatcherTimer` (`_windowTrackTimer`). When the "World of Tanks Blitz"
-game window is found, the overlay repositions itself to match its bounds.
+The tracker polls the visible top-level window of the `wotblitz.exe` process
+with `GetWindowRect`/`SetWindowPos` on a 500ms `DispatcherTimer`
+(`_windowTrackTimer`). It deliberately does not require one exact caption: the
+installed client currently reports `WoT Blitz`, while older builds reported
+`World of Tanks Blitz`. A visible game process with zero or multiple eligible
+windows remains fail-closed rather than selecting an arbitrary window. Minimized
+or splash-sized bounds below 320×200 are also rejected until a usable game
+surface exists.
 The timer starts in the `MainWindow` constructor and runs for the window's
 lifetime, so tracking works regardless of how the game was started; it stops on
 dispose. Tracking is window-geometry only and opens no process handle.
+
+The diagnostics banner also exposes an explicit game-window alignment state:
+waiting for the target window, aligned, bounds unavailable, invalid bounds, or
+alignment failed. The overlay only reports `aligned` after `GetWindowRect` and
+`SetWindowPos` both succeed, so a visible HUD is not mistaken for a correctly
+positioned HUD. Missing-window polling is recorded through the rate-limited
+privacy-safe HUD logger.
+
+The same banner reports wall-clock frame age, last refresh latency, and counts
+of rendered nameplates, minimap dots, and beacons. These diagnostics are
+presentation-only and refresh on the existing sidebar timer; they never expose
+raw replay values or memory addresses. The timer does not re-fetch decoded
+replay details: those projections are immutable after import, so playback is
+not reset or interrupted by background diagnostics work. Manual Refresh and
+SignalR session-list updates remain the explicit refresh paths.
+
+### HUD UI versioning
+
+The WPF presentation surface carries an independent semantic version, currently
+**HUD UI v0.6.0-alpha**. The version is shown in the overlay sidebar and tracks
+visible layout, rendering, and interaction changes only. It is intentionally
+separate from the product version (`0.2.0-alpha`), the penetration feature
+version (`v0.3`), and the loopback/API contract versions.
+
+Versioning rules:
+
+- **MAJOR**: incompatible HUD interaction or rendering-contract change;
+- **MINOR**: additive HUD capability or visible surface;
+- **PATCH**: visual, accessibility, or correctness fix without a new surface;
+- **alpha**: the HUD is operationally testable but still subject to evidence-
+  gated product limitations and manual visual-smoke requirements.
+
+The displayed version must be bumped with the same change that alters the HUD
+surface, so screenshots, smoke-test notes, and user reports can identify the
+presentation build without exposing private paths or runtime data.
+
+### HUD runtime state and diagnostics
+
+The sidebar exposes a fail-closed runtime state banner rather than relying on a
+single free-form status string. `MainViewModel.RuntimeState` is an explicit
+state machine covering startup, host discovery, no-session/no-data, replay
+loading/ready/paused/playing, stale-frame retention, live loading/ready/
+unavailable, and fatal startup failure. The banner also shows a safe detail
+message and a frame marker such as `No replay frame received`, `Frame @ 120.0s`,
+or `Last replay frame retained`.
+
+State transitions preserve the existing data-safety rules:
+
+- no host or invalid/stale rendezvous never presents session data;
+- changing sessions or replay/live mode clears frame-derived collections before
+  a new request can publish;
+- a failed refresh may retain a last-good frame, but the banner explicitly
+  marks it stale rather than presenting it as current;
+- malformed or unavailable live frames show `Live unavailable` and clear the
+  penetration verdict; and
+- startup exceptions enter `FatalError` with only a safe exception type shown
+  to the user.
+
+The banner is presentation-only. It does not add a control plane, expose
+capability tokens, or change the shared API contract.
+
+The session list also has explicit empty-state copy. It distinguishes a host
+that has returned no replay sessions from a map filter that matches nothing,
+and provides the next safe user action instead of leaving a blank list.
+
+### HUD logging
+
+The standalone WPF process initializes its own structured HUD logger because it
+is intentionally outside the `Bootstrap` host composition root. It writes
+privacy-safe JSON-lines records to the user's local application-data `logs`
+directory as `hud-YYYYMMDD.jsonl`, rolling at 20 MiB and retaining at most 14
+files. A numeric suffix is used when a day's file reaches the size limit.
+
+The logger records process/window lifecycle, rendezvous and host availability,
+session/detail loads, frame outcomes, SignalR lifecycle, live-observation
+availability, dashboard actions, and unhandled failures. It records event
+names, modes, counts, booleans, dimensions, and exception type names only. It
+does not write exception messages or stacks, capability tokens, URLs/query
+strings, paths, session/account/artifact identifiers, player telemetry values,
+or arbitrary object graphs. Sensitive property names are redacted as a second
+boundary even if a future caller accidentally supplies one.
+
+Frame, memory, stream, and polling events are rate-limited to one record per
+five seconds per event name. The next admitted record carries a bounded
+`suppressedCount` so a high-frequency failure or stale-frame pattern remains
+diagnosable without turning a 20 fps HUD into an unbounded log writer. If the
+log directory or sink fails, logging disables itself and the HUD continues
+running; diagnostics must never become a new startup dependency.
+
+The toolbar's diagnostics export writes a bounded JSON document containing the
+safe HUD state and aggregated event names/counts/timestamps from up to 14 local
+HUD log files. It does not copy raw log properties, replay data, paths, URLs,
+identifiers, or credentials, and export failures remain visible without
+exposing exception text.
 
 ### Game launch mechanism
 
@@ -138,8 +237,11 @@ authenticated Host.Web control plane. The accepted target resolves a managed
 artifact or session identifier server-side, stages without overwriting user
 files, and launches only through the positively verified game executable.
 `GameIntegration` owns the discovery and launch implementation behind
-application ports. Caller-supplied full paths, hardcoded installation paths,
-and unverified shell-handler fallbacks are not part of the target.
+application ports. Plain game starts set the executable directory as the
+working directory so the installed client's relative WGC/native dependencies
+resolve even when the host was started elsewhere. Caller-supplied full paths,
+hardcoded installation paths, and unverified shell-handler fallbacks are not
+part of the target.
 
 ### Historical implementation delta: WebView2 + transparency
 
@@ -195,7 +297,9 @@ cockpit:
 | Collapsible sidebar | Shrink to controls-only strip via « button |
 | Sidebar opacity | Cycle 85%→50%→20% transparency via 👁 button |
 | Keyboard shortcuts | Space=play/pause, ←→=scrub ±5s, 1-5=speed, Esc=close |
-| Game window tracking | P/Invoke FindWindowW/SetWindowPos; overlay follows WoT Blitz window |
+| Game window tracking | Injectable Win32 seam; explicit alignment state and rate-limited diagnostics |
+| Render health | Frame age, refresh latency, and rendered collection counts in the diagnostics banner |
+| Diagnostics export | Bounded privacy-safe JSON summary from the toolbar |
 
 ### What the overlay is NOT
 

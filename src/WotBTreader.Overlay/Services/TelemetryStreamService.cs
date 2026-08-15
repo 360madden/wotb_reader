@@ -1,12 +1,14 @@
 using Microsoft.AspNetCore.SignalR.Client;
 using WotBTreader.ApiContracts;
+using WotBTreader.Overlay.Logging;
 
 namespace WotBTreader.Overlay.Services;
 
 /// <summary>
 /// Connects to the web host's SignalR telemetry hub and surfaces session
 /// lifecycle events so the overlay can refresh without polling.
-/// Connection failures are silent — the caller must fall back to polling.
+/// Connection failures are logged without transport details; the caller must
+/// fall back to polling.
 /// </summary>
 public interface ITelemetryStreamService : IDisposable, IAsyncDisposable
 {
@@ -40,6 +42,7 @@ internal sealed class TelemetryStreamService : ITelemetryStreamService
 {
     private readonly object _gate = new();
     private readonly SemaphoreSlim _connectGate = new(1, 1);
+    private readonly IHudLogger _logger;
     private HubConnection? _connection;
     private Uri? _connectedUri;
     private CancellationTokenSource? _streamCts;
@@ -47,6 +50,11 @@ internal sealed class TelemetryStreamService : ITelemetryStreamService
     private CancellationTokenSource? _connectOperationCts;
     private Task? _disposeTask;
     private bool _disposed;
+
+    public TelemetryStreamService(IHudLogger? logger = null)
+    {
+        _logger = logger ?? NullHudLogger.Instance;
+    }
 
     public event EventHandler? SessionListChanged;
     public event EventHandler<GameMemoryResponse>? MemoryObservationReceived;
@@ -59,6 +67,9 @@ internal sealed class TelemetryStreamService : ITelemetryStreamService
     public async Task ConnectAsync(Uri baseUri, string? capability, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(baseUri);
+        _logger.Information(
+            "hud.stream.connect_requested",
+            ("hasCapability", !string.IsNullOrEmpty(capability)));
         await _connectGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         CancellationTokenSource? connectOperationCts = null;
         try
@@ -142,8 +153,9 @@ internal sealed class TelemetryStreamService : ITelemetryStreamService
             {
                 await connection.StartAsync(cancellationToken).ConfigureAwait(false);
             }
-            catch
+            catch (Exception exception)
             {
+                _logger.Failure("hud.stream.connect_failed", exception);
                 bool disposeHere;
                 lock (_gate)
                 {
@@ -209,6 +221,7 @@ internal sealed class TelemetryStreamService : ITelemetryStreamService
 
             previousStream?.Cancel();
             previousStream?.Dispose();
+            _logger.Information("hud.stream.connected");
             _ = ConsumeStreamAsync(connection, streamCts.Token);
         }
         finally
@@ -307,6 +320,7 @@ internal sealed class TelemetryStreamService : ITelemetryStreamService
 
             CancelStream();
             await DisposeConnectionAsync(connection).ConfigureAwait(false);
+            _logger.Information("hud.stream.disposed");
         }
         finally
         {
@@ -347,6 +361,9 @@ internal sealed class TelemetryStreamService : ITelemetryStreamService
                 // Heartbeats and gaps carry no new session data.
                 if (item.Kind is "event" or "snapshot")
                 {
+                    _logger.Information(
+                        "hud.stream.session_change",
+                        ("kind", item.Kind));
                     SessionListChanged?.Invoke(this, EventArgs.Empty);
                 }
             }
@@ -357,16 +374,19 @@ internal sealed class TelemetryStreamService : ITelemetryStreamService
         }
         catch (Exception ex)
         {
+            _logger.Failure("hud.stream.consume_failed", ex);
             // Network drops, serialisation errors, and hub disconnects are
             // all benign here — the caller polls as a fallback, and
             // AutomaticReconnect will restore the connection separately.
-            System.Diagnostics.Debug.WriteLine(
-                $"[TelemetryStream] Stream consume failed: {ex.GetType().Name}");
         }
     }
 
     private Task OnConnectionClosed(HubConnection closedConnection, Exception? exception)
     {
+        _logger.Warning(
+            "hud.stream.closed",
+            ("hasError", exception is not null),
+            ("exceptionType", exception?.GetType().Name));
         // The connection closed. AutomaticReconnect will attempt to restore
         // it. An old connection must not cancel the replacement stream.
         CancelStream(closedConnection);
@@ -375,6 +395,7 @@ internal sealed class TelemetryStreamService : ITelemetryStreamService
 
     private Task OnReconnected(HubConnection reconnectedConnection, string? connectionId)
     {
+        _logger.Information("hud.stream.reconnected");
         // Start a fresh stream subscription after reconnection. Never call
         // CancelStream while holding _gate: CancelStream takes the same lock.
         lock (_gate)
@@ -398,12 +419,13 @@ internal sealed class TelemetryStreamService : ITelemetryStreamService
             _streamCts = streamCts;
         }
 
-        _ = ConsumeStreamAsync(reconnectedConnection, streamCts.Token).ContinueWith(static t =>
+        _ = ConsumeStreamAsync(reconnectedConnection, streamCts.Token).ContinueWith(t =>
         {
             if (t.IsFaulted && t.Exception is not null)
             {
-                System.Diagnostics.Debug.WriteLine(
-                    $"[TelemetryStream] Reconnected stream failed: {t.Exception.InnerException?.Message}");
+                _logger.Failure(
+                    "hud.stream.reconnected_consume_failed",
+                    t.Exception.InnerException);
             }
         }, TaskContinuationOptions.OnlyOnFaulted);
         return Task.CompletedTask;
@@ -411,6 +433,7 @@ internal sealed class TelemetryStreamService : ITelemetryStreamService
 
     private void OnMemoryObservation(GameMemoryResponse observation)
     {
+        _logger.Information("hud.stream.memory_observation_received");
         MemoryObservationReceived?.Invoke(this, observation);
     }
 

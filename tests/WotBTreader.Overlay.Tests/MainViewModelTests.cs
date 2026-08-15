@@ -35,6 +35,136 @@ public sealed class MainViewModelTests
     }
 
     [TestMethod]
+    public void GameWindowState_DefaultsToWaitingAndIsNotTracked()
+    {
+        MainViewModel viewModel = CreateViewModel();
+
+        Assert.AreEqual(HudGameWindowState.NotFound, viewModel.GameWindowState);
+        Assert.IsFalse(viewModel.IsGameWindowTracked);
+        Assert.AreEqual(
+            "Game window: waiting for WoT Blitz",
+            viewModel.GameWindowStatusLabel);
+        Assert.AreEqual(
+            System.Windows.Media.Colors.Gold,
+            ((System.Windows.Media.SolidColorBrush)viewModel.GameWindowStatusAccent).Color);
+    }
+
+    [TestMethod]
+    public void GameWindowState_TrackingAndFailureStatesPublishSafePresentation()
+    {
+        MainViewModel viewModel = CreateViewModel();
+        List<string> changed = [];
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is not null)
+            {
+                changed.Add(args.PropertyName);
+            }
+        };
+
+        viewModel.SetGameWindowState(HudGameWindowState.Tracking);
+
+        Assert.IsTrue(viewModel.IsGameWindowTracked);
+        Assert.AreEqual("Game window: aligned", viewModel.GameWindowStatusLabel);
+        Assert.AreEqual(
+            System.Windows.Media.Colors.LimeGreen,
+            ((System.Windows.Media.SolidColorBrush)viewModel.GameWindowStatusAccent).Color);
+        CollectionAssert.Contains(changed, nameof(MainViewModel.GameWindowState));
+        CollectionAssert.Contains(changed, nameof(MainViewModel.IsGameWindowTracked));
+        CollectionAssert.Contains(changed, nameof(MainViewModel.GameWindowStatusLabel));
+        CollectionAssert.Contains(changed, nameof(MainViewModel.GameWindowStatusAccent));
+
+        viewModel.SetGameWindowState(HudGameWindowState.BoundsUnavailable);
+
+        Assert.IsFalse(viewModel.IsGameWindowTracked);
+        Assert.AreEqual(
+            "Game window: bounds unavailable",
+            viewModel.GameWindowStatusLabel);
+        Assert.AreEqual(
+            System.Windows.Media.Colors.OrangeRed,
+            ((System.Windows.Media.SolidColorBrush)viewModel.GameWindowStatusAccent).Color);
+
+        viewModel.SetGameWindowState(HudGameWindowState.Ambiguous);
+
+        Assert.IsFalse(viewModel.IsGameWindowTracked);
+        Assert.AreEqual("Game window: multiple matches", viewModel.GameWindowStatusLabel);
+    }
+
+    [TestMethod]
+    public async Task RenderHealth_ReportsFrameAgeLatencyAndRenderedCollections()
+    {
+        const string frameJson = """
+            {
+              "replayTimeSeconds": 3.0,
+              "tanks": [],
+              "beacons": [],
+              "pips": []
+            }
+            """;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/frame", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(JsonResponse(frameJson));
+            }
+
+            return Task.FromResult(JsonResponse("""{"offset":0,"limit":200,"count":0,"items":[]}"""));
+        });
+        FakeTimeProvider clock = new(Now);
+        MainViewModel viewModel = CreateViewModel(handler, timeProvider: clock);
+
+        Assert.AreEqual("Frame age: — · refresh: —", viewModel.FrameHealthLabel);
+        Assert.AreEqual("Render: waiting for frame", viewModel.RenderHealthLabel);
+
+        await viewModel.RefreshSessionsAsync();
+        viewModel.SelectedSession = new SessionRow(
+            BattleSessionId,
+            "Test Map",
+            null,
+            Now,
+            0,
+            0);
+        await viewModel.RefreshOverlayFrameAsync(1920, 1080);
+
+        StringAssert.StartsWith(viewModel.FrameHealthLabel, "Frame age: 0.0s · refresh: ");
+        Assert.AreEqual(
+            "Render: 0 nameplates · 0 minimap dots · 0 beacons",
+            viewModel.RenderHealthLabel);
+
+        clock.Advance(TimeSpan.FromSeconds(3.2));
+        viewModel.RefreshRenderHealth();
+
+        StringAssert.StartsWith(viewModel.FrameHealthLabel, "Frame age: 3.2s · refresh: ");
+    }
+
+    [TestMethod]
+    public void RefreshRenderHealth_OnlyRefreshesDiagnosticBindings()
+    {
+        MainViewModel viewModel = CreateViewModel();
+        List<string> changed = [];
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is not null)
+            {
+                changed.Add(args.PropertyName);
+            }
+        };
+        HudRuntimeState stateBefore = viewModel.RuntimeState;
+        TimeSpan timeBefore = viewModel.CurrentTime;
+        bool playingBefore = viewModel.IsPlaying;
+
+        viewModel.RefreshRenderHealth();
+
+        CollectionAssert.AreEquivalent(
+            new[] { nameof(MainViewModel.FrameHealthLabel), nameof(MainViewModel.RenderHealthLabel) },
+            changed);
+        Assert.AreEqual(stateBefore, viewModel.RuntimeState);
+        Assert.AreEqual(timeBefore, viewModel.CurrentTime);
+        Assert.AreEqual(playingBefore, viewModel.IsPlaying);
+    }
+
+    [TestMethod]
     public async Task RefreshSessionsAsync_MissingRendezvous_ReportsWaitingWithNoSessions()
     {
         MainViewModel viewModel = CreateViewModel();
@@ -46,6 +176,8 @@ public sealed class MainViewModelTests
         Assert.IsTrue(
             viewModel.Status.Contains("wait", StringComparison.OrdinalIgnoreCase),
             "Status should mention waiting for the rendezvous record.");
+        Assert.AreEqual(HudRuntimeState.WaitingForHost, viewModel.RuntimeState);
+        Assert.AreEqual("Waiting for host", viewModel.RuntimeStateLabel);
     }
 
     [TestMethod]
@@ -58,6 +190,8 @@ public sealed class MainViewModelTests
 
         Assert.AreEqual(0, viewModel.Sessions.Count);
         Assert.IsFalse(string.IsNullOrWhiteSpace(viewModel.Status));
+        Assert.AreEqual(HudRuntimeState.HostRecordStale, viewModel.RuntimeState);
+        Assert.AreEqual("Host record stale", viewModel.RuntimeStateLabel);
     }
 
     [TestMethod]
@@ -114,6 +248,44 @@ public sealed class MainViewModelTests
         Assert.AreEqual(500, viewModel.Sessions[0].PositionCount);
         Assert.AreEqual("aa10bb20-cc30-dd40-ee50-ff60aa70bb80", viewModel.Sessions[0].SourceArtifactId);
         Assert.AreEqual("1 session(s)", viewModel.Status);
+        Assert.AreEqual(HudRuntimeState.NoSessionSelected, viewModel.RuntimeState);
+        Assert.IsFalse(viewModel.HasSessionListEmptyState);
+    }
+
+    [TestMethod]
+    public async Task SearchText_NoMatchShowsActionableEmptyState()
+    {
+        string sessionsJson = $$"""
+            {
+              "offset": 0,
+              "limit": 200,
+              "count": 1,
+              "items": [
+                {
+                  "decodeRun": {},
+                  "session": {
+                    "battleSessionId": "{{BattleSessionId:D}}",
+                    "mapName": "Synthetic Ridge"
+                  }
+                }
+              ]
+            }
+            """;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((_, _) => Task.FromResult(JsonResponse(sessionsJson)));
+        MainViewModel viewModel = CreateViewModel(handler);
+
+        await viewModel.RefreshSessionsAsync();
+        Assert.IsFalse(viewModel.HasSessionListEmptyState);
+
+        viewModel.SearchText = "missing-map";
+
+        Assert.IsTrue(viewModel.HasSessionListEmptyState);
+        Assert.AreEqual("No matching sessions", viewModel.SessionListEmptyStateTitle);
+        Assert.AreEqual("Clear the map filter to show all sessions.", viewModel.SessionListEmptyStateDetail);
+
+        viewModel.SearchText = string.Empty;
+        Assert.IsFalse(viewModel.HasSessionListEmptyState);
     }
 
     [TestMethod]
@@ -207,6 +379,11 @@ public sealed class MainViewModelTests
 
         Assert.AreEqual(0, viewModel.Sessions.Count);
         Assert.AreEqual("0 session(s)", viewModel.Status);
+        Assert.AreEqual(HudRuntimeState.NoSessions, viewModel.RuntimeState);
+        Assert.IsTrue(viewModel.HasSessionListEmptyState);
+        Assert.AreEqual("No replay sessions", viewModel.SessionListEmptyStateTitle);
+        Assert.AreEqual("Import a replay, then refresh this HUD.", viewModel.SessionListEmptyStateDetail);
+        Assert.AreEqual("No sessions", viewModel.RuntimeStateLabel);
     }
 
     [TestMethod]
@@ -849,6 +1026,26 @@ public sealed class MainViewModelTests
     }
 
     [TestMethod]
+    public void HudUiVersionLabel_UsesIndependentPresentationVersion()
+    {
+        MainViewModel viewModel = CreateViewModel();
+
+        Assert.AreEqual("HUD UI v0.6.0-alpha", viewModel.HudUiVersionLabel);
+    }
+
+    [TestMethod]
+    public void RuntimeState_DefaultsToStartingWithSafeDiagnostics()
+    {
+        MainViewModel viewModel = CreateViewModel();
+
+        Assert.AreEqual(HudRuntimeState.Starting, viewModel.RuntimeState);
+        Assert.AreEqual("Starting", viewModel.RuntimeStateLabel);
+        Assert.AreEqual("Preparing overlay", viewModel.RuntimeStateDetail);
+        Assert.AreEqual("No frame received", viewModel.FrameStatusLabel);
+        Assert.IsNotNull(viewModel.RuntimeStateAccent);
+    }
+
+    [TestMethod]
     public void SpeedLabel_FormatsAllSpeedsCorrectly()
     {
         MainViewModel viewModel = CreateViewModel();
@@ -978,6 +1175,10 @@ public sealed class MainViewModelTests
 
         Assert.AreEqual("0 session(s)", viewModel.Status);
         Assert.AreEqual(0, viewModel.Sessions.Count);
+        Assert.AreEqual(HudRuntimeState.NoSessions, viewModel.RuntimeState);
+        Assert.IsTrue(viewModel.HasSessionListEmptyState);
+        Assert.AreEqual("No replay sessions", viewModel.SessionListEmptyStateTitle);
+        Assert.AreEqual("Import a replay, then refresh this HUD.", viewModel.SessionListEmptyStateDetail);
     }
 
     private static async Task WaitForConditionAsync(
@@ -1062,6 +1263,9 @@ public sealed class MainViewModelTests
         await viewModel.RefreshOverlayFrameAsync(1920, 1080);
 
         // Own tank (distance 0), behind-camera, and off-viewport are excluded.
+        Assert.AreEqual(HudRuntimeState.ReplayPaused, viewModel.RuntimeState);
+        Assert.AreEqual("Replay paused", viewModel.RuntimeStateLabel);
+        Assert.AreEqual("Frame @ 200.0s", viewModel.FrameStatusLabel);
         Assert.AreEqual(2, viewModel.Nameplates.Count);
         NameplateItem alpha = viewModel.Nameplates.Single(item => item.EntityId == 2);
         Assert.AreEqual("Alpha", alpha.Label);
@@ -1217,6 +1421,58 @@ public sealed class MainViewModelTests
     }
 
     [TestMethod]
+    public async Task RefreshOverlayFrameAsync_MalformedReadyAssessmentFailsClosed()
+    {
+        string frameJson = """
+            {
+              "replayTimeSeconds": 200.0,
+              "cameraX": 0.0, "cameraY": 0.0, "cameraZ": 0.0,
+              "cameraYawRadians": 0.5, "cameraPitchRadians": 0.0,
+              "tanks": [],
+              "penetration": {
+                "status": "ready",
+                "primaryReason": "none",
+                "reasons": [],
+                "modelVersion": "penetration/0.3.0-alpha",
+                "badge": {
+                  "aimedEntityId": 2,
+                  "face": "Unknown",
+                  "band": "Pen",
+                  "effectiveArmorMm": 90.0,
+                  "penetrationMmAtRange": 120.0,
+                  "ricochet": false
+                }
+              }
+            }
+            """;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            string path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/frame", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(JsonResponse(frameJson));
+            }
+
+            if (path.Contains(BattleSessionId.ToString("D"), StringComparison.Ordinal))
+            {
+                return Task.FromResult(JsonResponse("""{"session":null,"participants":[],"positions":[],"events":[]}"""));
+            }
+
+            return Task.FromResult(JsonResponse("""{"offset":0,"limit":200,"count":0,"items":[]}"""));
+        });
+        MainViewModel viewModel = CreateViewModel(handler);
+
+        await viewModel.RefreshSessionsAsync();
+        viewModel.SelectedSession = new SessionRow(
+            BattleSessionId, "Test Map", null, Now, 1, 2);
+        await viewModel.RefreshOverlayFrameAsync(1920, 1080);
+
+        Assert.IsNull(viewModel.PenBadge);
+        Assert.AreEqual("PEN — INVALID INPUT", viewModel.PenReadinessLabel);
+    }
+
+    [TestMethod]
     [DataRow("Pen", true)]
     [DataRow("Marginal", true)]
     [DataRow("NoPen", true)]
@@ -1227,6 +1483,34 @@ public sealed class MainViewModelTests
         string band,
         bool expected) =>
         Assert.AreEqual(expected, MainViewModel.IsRenderablePenetrationBand(band));
+
+    [TestMethod]
+    [DataRow("Pen", "Front", false, true)]
+    [DataRow("Marginal", "Side", false, true)]
+    [DataRow("NoPen", "Back", true, true)]
+    [DataRow("Pen", "Unknown", false, false)]
+    [DataRow("Pen", "Front", true, false)]
+    [DataRow("NoPen", "Front", false, true)]
+    public void IsRenderablePenetrationBadge_RejectsContradictoryModernPayloads(
+        string band,
+        string face,
+        bool ricochet,
+        bool expected)
+    {
+        OverlayPenBadgeResponse badge = new()
+        {
+            AimedEntityId = 42,
+            Band = band,
+            Face = face,
+            Ricochet = ricochet,
+            EffectiveArmorMm = 90,
+            PenetrationMmAtRange = 120,
+        };
+
+        Assert.AreEqual(
+            expected,
+            MainViewModel.IsRenderablePenetrationBadge(badge, requireKnownFace: true));
+    }
 
     [TestMethod]
     [DataRow("session.association_missing", "PEN — SESSION NOT BOUND")]
@@ -1285,15 +1569,130 @@ public sealed class MainViewModelTests
         viewModel.IsLiveMode = true;
 
         await viewModel.RefreshOverlayFrameAsync(1920, 1080);
+        Assert.AreEqual(HudRuntimeState.LiveReady, viewModel.RuntimeState);
         Assert.IsNotNull(viewModel.PenBadge);
         Assert.AreEqual("ap_shell", viewModel.PenShell);
 
         await viewModel.RefreshOverlayFrameAsync(1920, 1080);
 
+        Assert.AreEqual(HudRuntimeState.LiveUnavailable, viewModel.RuntimeState);
+        Assert.AreEqual("Live unavailable", viewModel.RuntimeStateLabel);
+        Assert.AreEqual("Last live frame retained", viewModel.FrameStatusLabel);
         Assert.IsNull(viewModel.PenBadge);
         Assert.AreEqual("PEN — LIVE FRAME UNAVAILABLE", viewModel.PenReadinessLabel);
         Assert.IsNull(viewModel.PenShell);
         Assert.IsEmpty(viewModel.PenShells);
+    }
+
+    [TestMethod]
+    public async Task RefreshOverlayFrameAsync_ReplayFailureMarksLastGoodFrameStale()
+    {
+        const string frameJson = """
+            {
+              "replayTimeSeconds": 42.0,
+              "tanks": []
+            }
+            """;
+        int frameCalls = 0;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            string path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/frame", StringComparison.OrdinalIgnoreCase))
+            {
+                frameCalls++;
+                return Task.FromResult(frameCalls == 1
+                    ? JsonResponse(frameJson)
+                    : new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+            }
+
+            if (path.Contains(BattleSessionId.ToString("D"), StringComparison.Ordinal))
+            {
+                return Task.FromResult(JsonResponse(
+                    """{"session":{"battleSessionId":"3fa85f64-5717-4562-b3fc-2c963f66afa6","mapName":"Test Map"},"participants":[],"positions":[],"events":[]}"""));
+            }
+
+            return Task.FromResult(JsonResponse("""{"offset":0,"limit":200,"count":0,"items":[]}"""));
+        });
+        MainViewModel viewModel = CreateViewModel(handler);
+        await viewModel.RefreshSessionsAsync();
+        viewModel.SelectedSession = new SessionRow(BattleSessionId, "Test Map", null, Now, 0, 0);
+        await WaitForConditionAsync(
+            () => viewModel.RuntimeState == HudRuntimeState.ReplayReady,
+            TimeSpan.FromSeconds(2));
+
+        await viewModel.RefreshOverlayFrameAsync(1920, 1080);
+        Assert.AreEqual(HudRuntimeState.ReplayPaused, viewModel.RuntimeState);
+
+        await viewModel.RefreshOverlayFrameAsync(1920, 1080);
+
+        Assert.AreEqual(HudRuntimeState.FrameStale, viewModel.RuntimeState);
+        Assert.AreEqual("Frame stale", viewModel.RuntimeStateLabel);
+        Assert.AreEqual("Last replay frame retained", viewModel.FrameStatusLabel);
+        Assert.AreEqual(42.0, viewModel.LastFrameReplayTimeSeconds);
+    }
+
+    [TestMethod]
+    public async Task SelectingNoSession_ClearsPriorPenetrationFrameImmediately()
+    {
+        string readyFrame = """
+            {
+              "replayTimeSeconds": 150.5,
+              "cameraX": 0.0, "cameraY": 0.0, "cameraZ": 0.0,
+              "cameraYawRadians": 0.5, "cameraPitchRadians": 0.0,
+              "tanks": [
+                { "entityId": 2, "playerName": "Enemy", "tankName": "Tank", "teamNumber": 2, "hpFraction": 1.0, "alive": true, "distanceMeters": 50.0, "screenX": 800.0, "screenY": 400.0, "depth": 40.0, "inViewport": true }
+              ],
+              "penetration": {
+                "status": "ready",
+                "primaryReason": "none",
+                "reasons": [],
+                "modelVersion": "penetration/0.3.0-alpha",
+                "badge": {
+                  "aimedEntityId": 2,
+                  "face": "Front",
+                  "band": "Pen",
+                  "effectiveArmorMm": 90.0,
+                  "penetrationMmAtRange": 120.0,
+                  "ricochet": false
+                }
+              }
+            }
+            """;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            string path = request.RequestUri!.AbsolutePath;
+            if (path.EndsWith("/frame", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(JsonResponse(readyFrame));
+            }
+
+            if (path.Contains(BattleSessionId.ToString("D"), StringComparison.Ordinal))
+            {
+                return Task.FromResult(JsonResponse("""
+                    {"session":{"battleSessionId":"3fa85f64-5717-4562-b3fc-2c963f66afa6","mapName":"Test Map","duration":"00:01:00"},"participants":[],"positions":[],"events":[]}
+                    """));
+            }
+
+            return Task.FromResult(JsonResponse("""{"offset":0,"limit":200,"count":0,"items":[]}"""));
+        });
+        MainViewModel viewModel = CreateViewModel(handler);
+
+        await viewModel.RefreshSessionsAsync();
+        viewModel.SelectedSession = new SessionRow(
+            BattleSessionId, "Test Map", null, Now, 1, 2);
+        await viewModel.RefreshOverlayFrameAsync(1920, 1080);
+        Assert.IsNotNull(viewModel.PenBadge);
+        Assert.HasCount(1, viewModel.Nameplates);
+
+        viewModel.SelectedSession = null;
+
+        Assert.IsNull(viewModel.PenBadge);
+        Assert.IsEmpty(viewModel.Nameplates);
+        Assert.IsEmpty(viewModel.PenShells);
+        Assert.AreEqual(HudRuntimeState.NoSessionSelected, viewModel.RuntimeState);
+        Assert.AreEqual("PEN — SESSION NOT SELECTED", viewModel.PenReadinessLabel);
     }
 
     [TestMethod]
@@ -1932,13 +2331,20 @@ public sealed class MainViewModelTests
         Assert.AreEqual(0, viewModel.Nameplates.Count);
     }
 
-    private MainViewModel CreateViewModel(FakeHttpMessageHandler? handler = null, MockTelemetryStreamService? streamService = null)
+    private MainViewModel CreateViewModel(
+        FakeHttpMessageHandler? handler = null,
+        MockTelemetryStreamService? streamService = null,
+        TimeProvider? timeProvider = null)
     {
         RendezvousLocator locator = new(new FakeTimeProvider(Now), _rendezvousPath, isProcessAlive: _ => true);
         Func<Uri, string?, TreaderApiClient> factory = handler is not null
             ? (baseUri, capability) => new TreaderApiClient(baseUri, handler, capability)
             : FailFactory;
-        return new MainViewModel(locator, factory, streamService);
+        return new MainViewModel(
+            locator,
+            factory,
+            streamService,
+            timeProvider: timeProvider);
     }
 
     private static TreaderApiClient FailFactory(Uri baseUri, string? capability) =>
@@ -1946,7 +2352,11 @@ public sealed class MainViewModelTests
 
     private sealed class FakeTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
-        public override DateTimeOffset GetUtcNow() => utcNow;
+        private DateTimeOffset _utcNow = utcNow;
+
+        public override DateTimeOffset GetUtcNow() => _utcNow;
+
+        public void Advance(TimeSpan amount) => _utcNow += amount;
     }
 
     private sealed class MockTelemetryStreamService : ITelemetryStreamService

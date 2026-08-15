@@ -34,12 +34,15 @@ internal sealed class GameProcessLauncher : IGameProcessLauncher
 
         try
         {
-            Process process = Process.Start(new ProcessStartInfo
+            using Process? process = Process.Start(CreateStartInfo(identity));
+            if (process is null)
             {
-                FileName = identity.ExecutablePath,
-                UseShellExecute = true,
-                WindowStyle = ProcessWindowStyle.Normal,
-            })!;
+                return OperationResult.Failure<GameProcessLaunchOutcome>(
+                    new ApplicationError(
+                        "game.launch.process_start_failed",
+                        "The game process could not be started.",
+                        Retryable: true));
+            }
 
             return OperationResult.Success(
                 new GameProcessLaunchOutcome(process.Id, DateTimeOffset.UtcNow));
@@ -55,5 +58,30 @@ internal sealed class GameProcessLauncher : IGameProcessLauncher
                     $"Could not start the game process: {exception.Message}",
                     Retryable: true));
         }
+    }
+
+    /// <summary>
+    /// Builds the normal Windows launch settings. The working directory is
+    /// deliberately the installed executable's directory: the client resolves
+    /// its WGC bridge and native runtime resources relative to that directory,
+    /// not relative to the host process or caller's current directory.
+    /// </summary>
+    internal static ProcessStartInfo CreateStartInfo(InstalledGameIdentity identity)
+    {
+        ArgumentNullException.ThrowIfNull(identity);
+        string? workingDirectory = Path.GetDirectoryName(identity.ExecutablePath);
+        if (string.IsNullOrWhiteSpace(workingDirectory))
+        {
+            throw new InvalidOperationException(
+                "The installed executable has no usable working directory.");
+        }
+
+        return new ProcessStartInfo
+        {
+            FileName = identity.ExecutablePath,
+            WorkingDirectory = workingDirectory,
+            UseShellExecute = true,
+            WindowStyle = ProcessWindowStyle.Normal,
+        };
     }
 }

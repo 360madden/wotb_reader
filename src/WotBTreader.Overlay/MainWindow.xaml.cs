@@ -1,10 +1,13 @@
 using System.Diagnostics;
-using System.Runtime.InteropServices;
+using System.IO;
+using Microsoft.Win32;
 using System.Windows;
 using System.Windows.Threading;
 using WotBTreader.ApiContracts;
+using WotBTreader.Overlay.Logging;
 using WotBTreader.Overlay.Services;
 using WotBTreader.Overlay.ViewModels;
+using WotBTreader.Overlay.Windowing;
 
 namespace WotBTreader.Overlay;
 
@@ -20,23 +23,33 @@ namespace WotBTreader.Overlay;
 /// </summary>
 public partial class MainWindow : System.Windows.Window, IDisposable
 {
-    private const string GameWindowTitle = "World of Tanks Blitz";
-
     private readonly MainViewModel _viewModel;
     private readonly TelemetryStreamService _streamService;
     private readonly DispatcherTimer _refreshTimer;
     private readonly DispatcherTimer _windowTrackTimer;
     private readonly DispatcherTimer _playbackTimer;
     private readonly DispatcherTimer _hpPulseTimer;
+    private readonly IHudLogger _logger;
+    private readonly IGameWindowTracker _gameWindowTracker;
+    private readonly bool _ownsLogger;
     private bool _disposed;
 
-    public MainWindow()
+    public MainWindow(IHudLogger? logger = null)
+        : this(logger, null)
     {
-        _streamService = new TelemetryStreamService();
+    }
+
+    internal MainWindow(IHudLogger? logger, IGameWindowTracker? gameWindowTracker)
+    {
+        _logger = logger ?? HudLoggerFactory.CreateDefault();
+        _gameWindowTracker = gameWindowTracker ?? new Win32GameWindowTracker();
+        _ownsLogger = logger is null;
+        _streamService = new TelemetryStreamService(_logger);
         _viewModel = new MainViewModel(
             new Discovery.RendezvousLocator(),
             static (baseUri, capability) => new TreaderApiClient(baseUri, capability: capability),
-            _streamService);
+            _streamService,
+            _logger);
         DataContext = _viewModel;
         InitializeComponent();
 
@@ -61,6 +74,9 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         // when HP is below 30% to signal critical health.
         _hpPulseTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
         _hpPulseTimer.Tick += OnHpPulseTick;
+        _logger.Information(
+            "hud.window.created",
+            ("hudUiVersion", _viewModel.HudUiVersionLabel));
     }
 
     /// <summary>The MainViewModel, exposed for test access.</summary>
@@ -84,6 +100,12 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         _playbackTimer.Stop();
         _hpPulseTimer.Stop();
         _streamService.Dispose();
+        _logger.Information("hud.window.disposed");
+        if (_ownsLogger && _logger is IDisposable disposableLogger)
+        {
+            disposableLogger.Dispose();
+        }
+
         GC.SuppressFinalize(this);
     }
 
@@ -91,13 +113,15 @@ public partial class MainWindow : System.Windows.Window, IDisposable
 
     private async void OnLoaded(object sender, System.Windows.RoutedEventArgs e)
     {
+        _logger.Information("hud.window.loaded");
         try
         {
             await _viewModel.RefreshSessionsAsync();
         }
         catch (Exception ex)
         {
-            _viewModel.Status = $"Startup error: {ex.GetType().Name}";
+            _logger.Failure("hud.window.startup_failed", ex);
+            _viewModel.SetFatalState($"Startup error: {ex.GetType().Name}");
         }
     }
 
@@ -115,10 +139,11 @@ public partial class MainWindow : System.Windows.Window, IDisposable
 
     private void OnRefreshTimerTick(object? sender, EventArgs e)
     {
-        if (!_viewModel.IsLiveMode && _viewModel.SelectedSession is not null)
-        {
-            _ = _viewModel.RefreshSelectedAsync();
-        }
+        // Decoded replay details are immutable after import. Re-fetching them
+        // every two seconds reset playback to the end, interrupted play state,
+        // and produced unnecessary HTTP/SQLite work. Manual Refresh and the
+        // SignalR session-list path remain the explicit refresh mechanisms.
+        _viewModel.RefreshRenderHealth();
     }
 
     private void OnHudItemsChanged(object? sender,
@@ -132,6 +157,9 @@ public partial class MainWindow : System.Windows.Window, IDisposable
     {
         if (e.PropertyName == nameof(MainViewModel.IsPlaying))
         {
+            _logger.Information(
+                "hud.playback.state_changed",
+                ("playing", _viewModel.IsPlaying));
             if (_viewModel.IsPlaying)
             {
                 PlayButton.Content = "⏸";
@@ -424,11 +452,51 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         Close();
     }
 
+    private void ExportDiagnostics(object sender, System.Windows.RoutedEventArgs e)
+    {
+        SaveFileDialog dialog = new()
+        {
+            AddExtension = true,
+            DefaultExt = ".json",
+            Filter = "HUD diagnostics (*.json)|*.json",
+            FileName = "wotbtreader-hud-diagnostics.json",
+            OverwritePrompt = true,
+            Title = "Export privacy-safe HUD diagnostics",
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            _logger.Information("hud.diagnostics.export_cancelled");
+            return;
+        }
+
+        try
+        {
+            HudDiagnosticsExportResult result = HudDiagnosticsExporter.Export(
+                dialog.FileName,
+                _viewModel.CreateDiagnosticsSnapshot(),
+                HudLoggerFactory.GetDefaultLogDirectory());
+            _viewModel.Status = "Diagnostics exported";
+            _logger.Information(
+                "hud.diagnostics.exported",
+                ("logFileCount", result.LogFileCount),
+                ("logRecordCount", result.LogRecordCount),
+                ("eventTypeCount", result.EventTypeCount));
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            _viewModel.Status = "Diagnostics export failed";
+            _logger.Failure("hud.diagnostics.export_failed", exception);
+        }
+    }
+
     private void OpenDashboardInBrowser(object sender, System.Windows.RoutedEventArgs e)
     {
         string baseUri = _viewModel.BaseUri;
         if (string.IsNullOrEmpty(baseUri))
         {
+            _logger.Warning("hud.dashboard.open_skipped", ("reason", "host_not_connected"));
             _viewModel.Status = "No host connection — cannot open dashboard.";
             return;
         }
@@ -440,10 +508,12 @@ public partial class MainWindow : System.Windows.Window, IDisposable
                 FileName = baseUri,
                 UseShellExecute = true,
             });
+            _logger.Information("hud.dashboard.open_requested");
         }
         catch (Exception ex) when (
             ex is InvalidOperationException or System.ComponentModel.Win32Exception)
         {
+            _logger.Failure("hud.dashboard.open_failed", ex);
             // Browser launch failed silently — the dashboard is a convenience feature.
         }
     }
@@ -457,45 +527,55 @@ public partial class MainWindow : System.Windows.Window, IDisposable
             DragMove();
     }
 
-    // ── Game window tracking (P/Invoke) ──────────────────────
-
-#pragma warning disable CA2101
-
-    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    private static extern IntPtr FindWindowW(string? lpClassName, string lpWindowName);
-
-    [DllImport("user32.dll")]
-    private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
-
-    [DllImport("user32.dll")]
-    private static extern bool SetWindowPos(
-        IntPtr hWnd, IntPtr hWndInsertAfter,
-        int x, int y, int cx, int cy, uint uFlags);
-
-#pragma warning restore CA2101
-
-    private static readonly IntPtr HWND_TOPMOST = new(-1);
-    private const uint SWP_NOACTIVATE = 0x0010;
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct RECT
-    {
-        public int Left, Top, Right, Bottom;
-    }
+    // ── Game window tracking ─────────────────────────────────
 
     private void OnTrackGameWindow(object? sender, EventArgs e)
     {
-        IntPtr hwnd = FindWindowW(null, GameWindowTitle);
-        IsTrackingGameWindow = hwnd != IntPtr.Zero;
-        if (hwnd == IntPtr.Zero) return;
-        if (!GetWindowRect(hwnd, out RECT rect)) return;
-
-        int w = rect.Right - rect.Left;
-        int h = rect.Bottom - rect.Top;
-        if (w <= 0 || h <= 0) return;
-
-        _ = SetWindowPos(
+        bool wasTracking = IsTrackingGameWindow;
+        GameWindowTrackingResult result = GameWindowTrackingCoordinator.Track(
+            _gameWindowTracker,
             new System.Windows.Interop.WindowInteropHelper(this).Handle,
-            HWND_TOPMOST, rect.Left, rect.Top, w, h, SWP_NOACTIVATE);
+            wasTracking);
+
+        IsTrackingGameWindow = result.IsTracking;
+        _viewModel.SetGameWindowState(result.State);
+        if (result.State == ViewModels.HudGameWindowState.NotFound)
+        {
+            if (wasTracking)
+            {
+                _logger.Warning("hud.game_window.lost");
+            }
+            else
+            {
+                // This event is rate-limited by the HUD logger so a missing
+                // game window remains diagnosable without writing every timer
+                // tick to disk.
+                _logger.Warning("hud.game_window.not_found");
+            }
+        }
+        else if (result.State == ViewModels.HudGameWindowState.Ambiguous)
+        {
+            _logger.Warning("hud.game_window.ambiguous");
+        }
+        else if (result.State == ViewModels.HudGameWindowState.BoundsUnavailable)
+        {
+            _logger.Warning("hud.game_window.bounds_unavailable");
+        }
+        else if (result.State == ViewModels.HudGameWindowState.BoundsInvalid)
+        {
+            _logger.Warning("hud.game_window.bounds_invalid");
+        }
+        else if (result.State == ViewModels.HudGameWindowState.RepositionFailed)
+        {
+            _logger.Warning("hud.game_window.reposition_failed");
+        }
+
+        if (result.TrackingStarted && result.Bounds is GameWindowBounds bounds)
+        {
+            _logger.Information(
+                "hud.game_window.tracking_started",
+                ("width", bounds.Width),
+                ("height", bounds.Height));
+        }
     }
 }

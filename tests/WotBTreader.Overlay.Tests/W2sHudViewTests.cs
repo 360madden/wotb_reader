@@ -178,6 +178,9 @@ public sealed class W2sHudViewTests
         Assert.AreEqual(
             string.Empty,
             W2sHudView.PenBadgeLabel("Unknown", null, null, ricochet: false));
+        Assert.AreEqual(
+            string.Empty,
+            W2sHudView.PenBadgeLabel("Unknown", 93, 92, ricochet: true));
     }
 
     [TestMethod]

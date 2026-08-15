@@ -257,11 +257,6 @@ public sealed partial class W2sHudView : UserControl
             _ => string.Empty,
         };
         string facePart = string.IsNullOrEmpty(faceToken) ? string.Empty : faceToken + " ";
-        if (ricochet)
-        {
-            return prefix + facePart + "RICOCHET";
-        }
-
         string verdict = band switch
         {
             "Pen" => "PEN",
@@ -269,6 +264,18 @@ public sealed partial class W2sHudView : UserControl
             "NoPen" => "NO PEN",
             _ => "",
         };
+
+        // Keep the pure formatter fail-closed too: a malformed band must not
+        // produce a numeric-looking readout or a standalone ricochet label.
+        if (string.IsNullOrEmpty(verdict))
+        {
+            return string.Empty;
+        }
+
+        if (ricochet)
+        {
+            return prefix + facePart + "RICOCHET";
+        }
 
         if (effectiveArmorMm is double eff
             && penetrationMmAtRange is double pen)

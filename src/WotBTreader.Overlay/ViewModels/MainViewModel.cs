@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Net.Http;
 using System.Text.Json;
 using System.Windows.Input;
@@ -7,9 +8,45 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using WotBTreader.ApiContracts;
 using WotBTreader.Overlay.Discovery;
+using WotBTreader.Overlay.Logging;
 using WotBTreader.Overlay.Services;
 
 namespace WotBTreader.Overlay.ViewModels;
+
+/// <summary>Explicit lifecycle state shown by the HUD diagnostics banner.</summary>
+public enum HudRuntimeState
+{
+    Starting,
+    WaitingForHost,
+    LoadingSessions,
+    HostRecordStale,
+    HostRecordInvalid,
+    HostUnreachable,
+    NoSessions,
+    NoSessionSelected,
+    SessionLoading,
+    ReplayFrameLoading,
+    ReplayReady,
+    ReplayPaused,
+    ReplayPlaying,
+    ReplayUnavailable,
+    FrameStale,
+    LiveLoading,
+    LiveReady,
+    LiveUnavailable,
+    FatalError,
+}
+
+/// <summary>Safe presentation state for alignment with the target game window.</summary>
+public enum HudGameWindowState
+{
+    NotFound,
+    Ambiguous,
+    Tracking,
+    BoundsUnavailable,
+    BoundsInvalid,
+    RepositionFailed,
+}
 
 /// <summary>
 /// Drives the overlay: finds the local web host via its rendezvous record,
@@ -20,10 +57,13 @@ public class MainViewModel : INotifyPropertyChanged
 {
     private const int PageLimit = 200;
     private const int MaxPlottedPoints = 2000;
+    private const string HudUiVersion = "0.6.0-alpha";
 
     private readonly RendezvousLocator _locator;
     private readonly Func<Uri, string?, TreaderApiClient> _apiClientFactory;
     private readonly ITelemetryStreamService? _streamService;
+    private readonly IHudLogger _logger;
+    private readonly TimeProvider _timeProvider;
 
     private TreaderApiClient? _client;
     private Uri? _clientBaseUri;
@@ -31,6 +71,14 @@ public class MainViewModel : INotifyPropertyChanged
     private long _detailLoadGeneration;
     private SessionRow? _selectedSession;
     private string _status = string.Empty;
+    private HudRuntimeState _runtimeState = HudRuntimeState.Starting;
+    private string _runtimeStateDetail = "Preparing overlay";
+    private Brush _runtimeStateAccent = Brushes.SlateGray;
+    private string _frameStatusLabel = "No frame received";
+    private HudGameWindowState _gameWindowState = HudGameWindowState.NotFound;
+    private DateTimeOffset? _lastFrameLoadedAtUtc;
+    private double? _lastFrameRefreshLatencyMs;
+    private readonly string _hudUiVersionLabel = $"HUD UI v{HudUiVersion}";
     private bool _isRefreshingSessions;
     private readonly SynchronizationContext? _syncContext;
     private CancellationTokenSource? _liveObservationTimeoutCts;
@@ -98,12 +146,17 @@ public class MainViewModel : INotifyPropertyChanged
     public MainViewModel(
         RendezvousLocator locator,
         Func<Uri, string?, TreaderApiClient> apiClientFactory,
-        ITelemetryStreamService? streamService = null)
+        ITelemetryStreamService? streamService = null,
+        IHudLogger? logger = null,
+        TimeProvider? timeProvider = null)
     {
         _locator = locator ?? throw new ArgumentNullException(nameof(locator));
         _apiClientFactory = apiClientFactory ?? throw new ArgumentNullException(nameof(apiClientFactory));
         _streamService = streamService;
+        _logger = logger ?? NullHudLogger.Instance;
+        _timeProvider = timeProvider ?? TimeProvider.System;
         _syncContext = SynchronizationContext.Current;
+        _logger.Information("hud.viewmodel.created", ("hudUiVersion", HudUiVersion));
         RefreshCommand = new RelayCommand(_ => _ = RefreshSessionsAsync());
         PlayPauseCommand = new RelayCommand(_ => TogglePlayPause());
         JumpToStartCommand = new RelayCommand(_ => JumpToStart());
@@ -130,6 +183,23 @@ public class MainViewModel : INotifyPropertyChanged
     /// <see cref="SearchText"/> changes. Bound by the session ListBox.
     /// </summary>
     public ObservableCollection<SessionRow> FilteredSessions { get; } = new();
+
+    /// <summary>True when the session list has no visible rows and needs an empty-state message.</summary>
+    public bool HasSessionListEmptyState => FilteredSessions.Count == 0;
+
+    /// <summary>Short explanation for an empty session list or a filter miss.</summary>
+    public string SessionListEmptyStateTitle => _runtimeState == HudRuntimeState.LoadingSessions
+        ? "Loading replay sessions…"
+        : Sessions.Count == 0
+            ? "No replay sessions"
+            : "No matching sessions";
+
+    /// <summary>Next action the user can take when the session list is empty.</summary>
+    public string SessionListEmptyStateDetail => _runtimeState == HudRuntimeState.LoadingSessions
+        ? "Waiting for the local host to respond."
+        : Sessions.Count == 0
+            ? "Import a replay, then refresh this HUD."
+            : "Clear the map filter to show all sessions.";
 
     /// <summary>
     /// Case-insensitive search text for filtering the session list.
@@ -204,6 +274,153 @@ public class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>Machine-readable lifecycle state used by the visible diagnostics banner.</summary>
+    public HudRuntimeState RuntimeState => _runtimeState;
+
+    /// <summary>Short, user-facing label for <see cref="RuntimeState"/>.</summary>
+    public string RuntimeStateLabel => _runtimeState switch
+    {
+        HudRuntimeState.Starting => "Starting",
+        HudRuntimeState.WaitingForHost => "Waiting for host",
+        HudRuntimeState.LoadingSessions => "Connecting",
+        HudRuntimeState.HostRecordStale => "Host record stale",
+        HudRuntimeState.HostRecordInvalid => "Host record invalid",
+        HudRuntimeState.HostUnreachable => "Host unreachable",
+        HudRuntimeState.NoSessions => "No sessions",
+        HudRuntimeState.NoSessionSelected => "Select a session",
+        HudRuntimeState.SessionLoading => "Loading session",
+        HudRuntimeState.ReplayFrameLoading => "Loading frame",
+        HudRuntimeState.ReplayReady => "Replay ready",
+        HudRuntimeState.ReplayPaused => "Replay paused",
+        HudRuntimeState.ReplayPlaying => "Replay playing",
+        HudRuntimeState.ReplayUnavailable => "Replay unavailable",
+        HudRuntimeState.FrameStale => "Frame stale",
+        HudRuntimeState.LiveLoading => "Live loading",
+        HudRuntimeState.LiveReady => "Live ready",
+        HudRuntimeState.LiveUnavailable => "Live unavailable",
+        HudRuntimeState.FatalError => "Startup failure",
+        _ => "Unknown state",
+    };
+
+    /// <summary>Safe explanatory detail for the current runtime state.</summary>
+    public string RuntimeStateDetail => _runtimeStateDetail;
+
+    /// <summary>Accent brush used by the diagnostics banner to distinguish state severity.</summary>
+    public Brush RuntimeStateAccent => _runtimeStateAccent;
+
+    /// <summary>Whether a frame is current, retained, or not yet available.</summary>
+    public string FrameStatusLabel
+    {
+        get => _frameStatusLabel;
+        private set
+        {
+            if (string.Equals(_frameStatusLabel, value, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _frameStatusLabel = value;
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>Current wall-clock age and last request latency for the rendered frame.</summary>
+    public string FrameHealthLabel
+    {
+        get
+        {
+            if (_lastFrameLoadedAtUtc is not DateTimeOffset loadedAt
+                || _lastFrameRefreshLatencyMs is not double latencyMs)
+            {
+                return "Frame age: — · refresh: —";
+            }
+
+            double ageSeconds = Math.Max(
+                0,
+                (_timeProvider.GetUtcNow() - loadedAt).TotalSeconds);
+            return $"Frame age: {ageSeconds:0.0}s · refresh: {latencyMs:0} ms";
+        }
+    }
+
+    /// <summary>Counts of the latest rendered HUD collections for diagnostics.</summary>
+    public string RenderHealthLabel => _lastFrameLoadedAtUtc is null
+        ? "Render: waiting for frame"
+        : $"Render: {_nameplates.Count} nameplates · {_minimapItems.Count} minimap dots · {_beacons.Count} beacons";
+
+    /// <summary>Refreshes time-based render-health bindings without mutating telemetry state.</summary>
+    internal void RefreshRenderHealth()
+    {
+        OnPropertyChanged(nameof(FrameHealthLabel));
+        OnPropertyChanged(nameof(RenderHealthLabel));
+    }
+
+    /// <summary>Builds the bounded state snapshot used by the diagnostics exporter.</summary>
+    internal HudDiagnosticsSnapshot CreateDiagnosticsSnapshot() => new(
+        HudUiVersionLabel,
+        RuntimeState.ToString(),
+        RuntimeStateDetail,
+        FrameStatusLabel,
+        GameWindowStatusLabel,
+        FrameHealthLabel,
+        RenderHealthLabel,
+        IsLiveMode ? "live" : "replay",
+        Sessions.Count,
+        SelectedSession is not null);
+
+    /// <summary>Safe presentation state for the game-window alignment line.</summary>
+    public HudGameWindowState GameWindowState => _gameWindowState;
+
+    /// <summary>True only after the overlay has successfully aligned to the game window.</summary>
+    public bool IsGameWindowTracked => _gameWindowState == HudGameWindowState.Tracking;
+
+    /// <summary>Short, user-facing status for the game-window alignment line.</summary>
+    public string GameWindowStatusLabel => _gameWindowState switch
+    {
+        HudGameWindowState.NotFound => "Game window: waiting for WoT Blitz",
+        HudGameWindowState.Ambiguous => "Game window: multiple matches",
+        HudGameWindowState.Tracking => "Game window: aligned",
+        HudGameWindowState.BoundsUnavailable => "Game window: bounds unavailable",
+        HudGameWindowState.BoundsInvalid => "Game window: invalid bounds",
+        HudGameWindowState.RepositionFailed => "Game window: alignment failed",
+        _ => "Game window: unknown",
+    };
+
+    /// <summary>Accent color for the game-window alignment line.</summary>
+    public Brush GameWindowStatusAccent => _gameWindowState == HudGameWindowState.Tracking
+        ? Brushes.LimeGreen
+        : _gameWindowState == HudGameWindowState.NotFound
+            ? Brushes.Gold
+            : Brushes.OrangeRed;
+
+    /// <summary>Updates the safe game-window alignment state without exposing HWNDs or paths.</summary>
+    internal void SetGameWindowState(HudGameWindowState state)
+    {
+        if (_gameWindowState == state)
+        {
+            return;
+        }
+
+        _gameWindowState = state;
+        OnPropertyChanged(nameof(GameWindowState));
+        OnPropertyChanged(nameof(IsGameWindowTracked));
+        OnPropertyChanged(nameof(GameWindowStatusLabel));
+        OnPropertyChanged(nameof(GameWindowStatusAccent));
+    }
+
+    /// <summary>Marks an unrecoverable startup failure for the visible HUD banner.</summary>
+    internal void SetFatalState(string detail)
+    {
+        SetRuntimeState(HudRuntimeState.FatalError, detail);
+        Status = detail;
+    }
+
+    /// <summary>
+    /// Independent semantic version of the WPF HUD presentation surface.
+    /// This tracks visible layout, rendering, and interaction changes; it is
+    /// intentionally separate from the product and wire-contract versions.
+    /// </summary>
+    public string HudUiVersionLabel => _hudUiVersionLabel;
+
     /// <summary>
     /// The loopback base URI of the web host, set once the rendezvous record
     /// is discovered and validated. Empty string until the first successful
@@ -223,8 +440,26 @@ public class MainViewModel : INotifyPropertyChanged
         get => _selectedSession;
         set
         {
+            Guid? previousSessionId = _selectedSession?.BattleSessionId;
+            Guid? nextSessionId = value?.BattleSessionId;
             _selectedSession = value;
             OnPropertyChanged();
+            if (previousSessionId != nextSessionId)
+            {
+                _logger.Information(
+                    "hud.session.selection_changed",
+                    ("hasSelection", value is not null));
+            }
+
+            // A badge belongs to one exact decoded session. Drop the previous
+            // frame before the new detail/frame request can complete; otherwise
+            // a short selection transition can show the old verdict over the
+            // newly selected replay.
+            if (previousSessionId != nextSessionId)
+            {
+                ClearSessionState(
+                    value is null ? "PEN — SESSION NOT SELECTED" : "PEN — LOADING");
+            }
 
             if (_isRefreshingSessions)
             {
@@ -420,6 +655,14 @@ public class MainViewModel : INotifyPropertyChanged
         {
             _isPlaying = value;
             OnPropertyChanged();
+            if (!_isLiveMode
+                && _lastFrameReplayTimeSeconds.HasValue
+                && _runtimeState is HudRuntimeState.ReplayPaused or HudRuntimeState.ReplayPlaying)
+            {
+                SetRuntimeState(
+                    value ? HudRuntimeState.ReplayPlaying : HudRuntimeState.ReplayPaused,
+                    value ? "Replay is playing" : "Replay is paused");
+            }
         }
     }
 
@@ -612,6 +855,31 @@ public class MainViewModel : INotifyPropertyChanged
         {
             if (value == _isLiveMode) return;
             _isLiveMode = value;
+            SetRuntimeState(
+                value
+                    ? HudRuntimeState.LiveLoading
+                    : _selectedSession is null
+                        ? HudRuntimeState.NoSessionSelected
+                        : HudRuntimeState.ReplayFrameLoading,
+                value
+                    ? "Waiting for a live telemetry frame"
+                    : _selectedSession is null
+                        ? "Choose a replay session"
+                        : "Waiting for a replay frame");
+            _logger.Information(
+                "hud.mode.changed",
+                ("mode", value ? "live" : "replay"));
+
+            // Replay and live frames have different association and evidence
+            // lifetimes. Never leave a replay badge visible while the live
+            // request is pending (or vice versa).
+            InvalidateOverlayFrame();
+            ClearOverlayFrameState(
+                value
+                    ? "PEN — LIVE FRAME LOADING"
+                    : _selectedSession is null
+                        ? "PEN — SESSION NOT SELECTED"
+                        : "PEN — LOADING");
             OnPropertyChanged();
         }
     }
@@ -635,7 +903,25 @@ public class MainViewModel : INotifyPropertyChanged
         // live memory source or its inputs.
         if (client is null || (!IsLiveMode && session is null))
         {
+            SetRuntimeState(
+                IsLiveMode
+                    ? HudRuntimeState.HostUnreachable
+                    : HudRuntimeState.NoSessionSelected,
+                IsLiveMode
+                    ? "A running host is required for live telemetry"
+                    : "Choose a replay session to render a frame");
             return;
+        }
+
+        if (IsLiveMode && _runtimeState != HudRuntimeState.LiveReady)
+        {
+            SetRuntimeState(HudRuntimeState.LiveLoading, "Waiting for a live telemetry frame");
+        }
+        else if (!IsLiveMode
+            && !LastFrameReplayTimeSeconds.HasValue
+            && _runtimeState != HudRuntimeState.ReplayFrameLoading)
+        {
+            SetRuntimeState(HudRuntimeState.ReplayFrameLoading, "Building the first replay frame");
         }
 
         long generation = Interlocked.Increment(ref _frameLoadGeneration);
@@ -643,6 +929,7 @@ public class MainViewModel : INotifyPropertyChanged
         _frameLoadCts?.Dispose();
         CancellationTokenSource cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _frameLoadCts = cts;
+        long requestStartTimestamp = Stopwatch.GetTimestamp();
         try
         {
             OverlayFrameResponse? frame = IsLiveMode
@@ -668,15 +955,31 @@ public class MainViewModel : INotifyPropertyChanged
 
             if (frame is null)
             {
+                _logger.Warning(
+                    "hud.frame.unavailable",
+                    ("mode", IsLiveMode ? "live" : "replay"));
                 if (IsLiveMode)
                 {
                     ClearPenetrationState("PEN — LIVE FRAME UNAVAILABLE");
                 }
 
+                MarkFrameUnavailable();
+                return;
+            }
+
+            if (!double.IsFinite(frame.ReplayTimeSeconds))
+            {
+                _logger.Warning("hud.frame.invalid", ("reason", "non_finite_replay_time"));
+                MarkFrameUnavailable();
                 return;
             }
 
             LastFrameReplayTimeSeconds = frame.ReplayTimeSeconds;
+            _lastFrameLoadedAtUtc = _timeProvider.GetUtcNow();
+            _lastFrameRefreshLatencyMs = Stopwatch.GetElapsedTime(requestStartTimestamp).TotalMilliseconds;
+            FrameStatusLabel = IsLiveMode
+                ? $"Live frame @ {frame.ReplayTimeSeconds:0.0}s"
+                : $"Frame @ {frame.ReplayTimeSeconds:0.0}s";
             string? previousSelectedShellName = SelectedPenShellName;
             string? previousPenShell = _penShell;
             string previousPenShellLabel = PenShellLabel;
@@ -716,32 +1019,40 @@ public class MainViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(HasPenShells));
             // A v0.3 readiness envelope is authoritative: only a matching
             // ready status may carry a colored badge. A malformed or hostile
-            // not-ready response with a badge must still fail closed. Legacy
-            // hosts remain supported through the additive PenBadge field.
-            OverlayPenBadgeResponse? responseBadge = frame.Penetration switch
+            // response must still fail closed. Legacy hosts remain supported
+            // through the additive PenBadge field, but the modern envelope
+            // additionally requires a known struck face and consistent
+            // ricochet/band data.
+            bool modernReady = frame.Penetration is
             {
-                null => frame.PenBadge,
-                { Status: "ready", PrimaryReason: "none", Badge: { } readyBadge } => readyBadge,
-                _ => null,
+                Status: "ready",
+                PrimaryReason: "none",
+                Badge: { }
             };
-            PenBadge = responseBadge is { } badge
-                && IsRenderablePenetrationBand(badge.Band)
-                    ? new PenBadgeItem(
-                        badge.AimedEntityId,
-                        badge.Band,
-                        badge.EffectiveArmorMm,
-                        badge.PenetrationMmAtRange,
-                        badge.Ricochet,
-                        PenShellLabel,
-                        badge.Face)
-                    : null;
-            PenReadinessLabel = frame.Penetration switch
-            {
-                null => "PEN — LEGACY HOST",
-                { Status: "ready", PrimaryReason: "none", Badge: { Band: var band } } when
-                    IsRenderablePenetrationBand(band) => string.Empty,
-                { } assessment => PenetrationReadinessLabel(assessment.PrimaryReason),
-            };
+            bool hasModernAssessment = frame.Penetration is not null;
+            OverlayPenBadgeResponse? responseBadge = hasModernAssessment
+                ? modernReady ? frame.Penetration!.Badge : null
+                : frame.PenBadge;
+            bool renderableBadge = responseBadge is { } candidate
+                && IsRenderablePenetrationBadge(candidate, hasModernAssessment);
+            PenBadge = renderableBadge
+                ? new PenBadgeItem(
+                    responseBadge!.AimedEntityId,
+                    responseBadge.Band,
+                    responseBadge.EffectiveArmorMm,
+                    responseBadge.PenetrationMmAtRange,
+                    responseBadge.Ricochet,
+                    PenShellLabel,
+                    responseBadge.Face)
+                : null;
+            PenReadinessLabel = frame.Penetration is null
+                ? "PEN — LEGACY HOST"
+                : modernReady && renderableBadge
+                    ? string.Empty
+                    : frame.Penetration.Status == "ready"
+                        && frame.Penetration.PrimaryReason == "none"
+                        ? PenetrationReadinessLabel("input.invalid")
+                        : PenetrationReadinessLabel(frame.Penetration.PrimaryReason);
             _nameplates.Clear();
             _ownMarkers.Clear();
             _beacons.Clear();
@@ -849,14 +1160,52 @@ public class MainViewModel : INotifyPropertyChanged
                     pip.ScreenX,
                     pip.ScreenY));
             }
+
+            RefreshRenderHealth();
+            SetRuntimeState(
+                IsLiveMode
+                    ? HudRuntimeState.LiveReady
+                    : IsPlaying
+                        ? HudRuntimeState.ReplayPlaying
+                        : HudRuntimeState.ReplayPaused,
+                IsLiveMode
+                    ? "Live telemetry frame is current"
+                    : IsPlaying
+                        ? "Replay is playing"
+                        : "Replay is paused");
+            _logger.Information(
+                "hud.frame.loaded",
+                ("mode", IsLiveMode ? "live" : "replay"),
+                ("tankCount", frame.Tanks.Count),
+                ("visibleTankCount", _nameplates.Count),
+                ("beaconCount", _beacons.Count),
+                ("minimapTankCount", _minimapItems.Count),
+                ("hasPenBadge", renderableBadge),
+                ("latencyMs", Math.Round(_lastFrameRefreshLatencyMs.Value, 1)));
         }
         catch (OperationCanceledException)
         {
             // Superseded or cancelled: keep the previous frame.
         }
-        catch (HttpRequestException)
+        catch (HttpRequestException exception)
         {
-            // Host unavailable: keep the previous frame on screen.
+            _logger.Failure(
+                "hud.frame.request_failed",
+                exception,
+                ("mode", IsLiveMode ? "live" : "replay"));
+            MarkFrameUnavailable();
+            // Host unavailable: keep the previous frame on screen and make that
+            // retained/stale condition visible in the banner.
+        }
+        catch (Exception exception) when (exception is JsonException or ObjectDisposedException)
+        {
+            _logger.Failure(
+                "hud.frame.response_invalid",
+                exception,
+                ("mode", IsLiveMode ? "live" : "replay"));
+            MarkFrameUnavailable();
+            // Invalid or disposed responses are rejected without replacing the
+            // last known-good frame.
         }
         finally
         {
@@ -874,6 +1223,7 @@ public class MainViewModel : INotifyPropertyChanged
         PenReadinessLabel = readinessLabel;
         _penShells.Clear();
         _penShell = null;
+        _selectedShell = null;
         OnPropertyChanged(nameof(PenShells));
         OnPropertyChanged(nameof(HasPenShells));
         OnPropertyChanged(nameof(PenShell));
@@ -883,6 +1233,117 @@ public class MainViewModel : INotifyPropertyChanged
 
     internal static bool IsRenderablePenetrationBand(string? band) =>
         band is "Pen" or "Marginal" or "NoPen";
+
+    internal static bool IsRenderablePenetrationBadge(
+        OverlayPenBadgeResponse badge,
+        bool requireKnownFace)
+    {
+        if (!IsRenderablePenetrationBand(badge.Band)
+            || (requireKnownFace
+                && badge.Face is not ("Front" or "Back" or "Side"))
+            || (badge.Ricochet && badge.Band != "NoPen"))
+        {
+            return false;
+        }
+
+        return IsFiniteNonNegative(badge.EffectiveArmorMm)
+            && IsFiniteNonNegative(badge.PenetrationMmAtRange);
+    }
+
+    private static bool IsFiniteNonNegative(double? value) =>
+        value is null || double.IsFinite(value.Value) && value.Value >= 0;
+
+    private void InvalidateOverlayFrame()
+    {
+        Interlocked.Increment(ref _frameLoadGeneration);
+        CancellationTokenSource? previous = Interlocked.Exchange(
+            ref _frameLoadCts,
+            null);
+        previous?.Cancel();
+        previous?.Dispose();
+    }
+
+    private void SetRuntimeState(HudRuntimeState state, string detail)
+    {
+        if (_runtimeState != state)
+        {
+            _runtimeState = state;
+            _runtimeStateAccent = RuntimeStateAccentFor(state);
+            OnPropertyChanged(nameof(RuntimeState));
+            OnPropertyChanged(nameof(RuntimeStateLabel));
+            OnPropertyChanged(nameof(RuntimeStateAccent));
+            OnPropertyChanged(nameof(SessionListEmptyStateTitle));
+            OnPropertyChanged(nameof(SessionListEmptyStateDetail));
+        }
+
+        if (!string.Equals(_runtimeStateDetail, detail, StringComparison.Ordinal))
+        {
+            _runtimeStateDetail = detail;
+            OnPropertyChanged(nameof(RuntimeStateDetail));
+        }
+    }
+
+    private static SolidColorBrush RuntimeStateAccentFor(HudRuntimeState state) => state switch
+    {
+        HudRuntimeState.ReplayReady
+            or HudRuntimeState.ReplayPaused
+            or HudRuntimeState.ReplayPlaying
+            or HudRuntimeState.LiveReady => Brushes.LimeGreen,
+        HudRuntimeState.WaitingForHost
+            or HudRuntimeState.LoadingSessions
+            or HudRuntimeState.SessionLoading
+            or HudRuntimeState.ReplayFrameLoading
+            or HudRuntimeState.LiveLoading
+            or HudRuntimeState.Starting => Brushes.DeepSkyBlue,
+        HudRuntimeState.FrameStale
+            or HudRuntimeState.NoSessions
+            or HudRuntimeState.NoSessionSelected => Brushes.Gold,
+        _ => Brushes.OrangeRed,
+    };
+
+    private void MarkFrameUnavailable()
+    {
+        if (IsLiveMode)
+        {
+            FrameStatusLabel = LastFrameReplayTimeSeconds is double
+                ? "Last live frame retained"
+                : "No live frame received";
+            SetRuntimeState(HudRuntimeState.LiveUnavailable, "Live telemetry frame is unavailable");
+            return;
+        }
+
+        if (LastFrameReplayTimeSeconds is double)
+        {
+            FrameStatusLabel = "Last replay frame retained";
+            SetRuntimeState(HudRuntimeState.FrameStale, "Showing the last good replay frame");
+        }
+        else
+        {
+            FrameStatusLabel = "No replay frame received";
+            SetRuntimeState(HudRuntimeState.ReplayUnavailable, "No usable replay frame is available");
+        }
+    }
+
+    private void ClearOverlayFrameState(string readinessLabel)
+    {
+        _nameplates.Clear();
+        _ownMarkers.Clear();
+        _beacons.Clear();
+        _pips.Clear();
+        _minimapItems.Clear();
+        _minimapBeacons.Clear();
+        _killFeed.Clear();
+        _scoreboard.Clear();
+        _minimapCameraX = null;
+        _minimapCameraZ = null;
+        _minimapCameraYaw = null;
+        OnPropertyChanged(nameof(MinimapCameraX));
+        OnPropertyChanged(nameof(MinimapCameraZ));
+        OnPropertyChanged(nameof(MinimapCameraYawRadians));
+        LastFrameReplayTimeSeconds = null;
+        FrameStatusLabel = "No frame received";
+        ClearPenetrationState(readinessLabel);
+    }
 
     internal static string PenetrationReadinessLabel(string? reason) => reason switch
     {
@@ -1207,8 +1668,8 @@ public class MainViewModel : INotifyPropertyChanged
         bool hostChanged = !ReferenceEquals(clientAtRefreshStart, _client);
         Guid? selectionAfterRefresh = _selectedSession?.BattleSessionId;
         if (refreshSucceeded
-            && (hostChanged
-                || (selectionAfterRefresh.HasValue && selectionAfterRefresh != selectionAtRefreshStart)))
+            && selectionAfterRefresh.HasValue
+            && (hostChanged || selectionAfterRefresh != selectionAtRefreshStart))
         {
             StartSelectedSessionRefresh();
         }
@@ -1228,15 +1689,27 @@ public class MainViewModel : INotifyPropertyChanged
         RendezvousResult rendezvous = _locator.Locate();
         if (rendezvous.Status != RendezvousStatus.Found || rendezvous.Record is null)
         {
-            Status = rendezvous.Status switch
+            _logger.Warning(
+                "hud.host.rendezvous_unavailable",
+                ("status", rendezvous.Status.ToString()));
+            HudRuntimeState runtimeState = rendezvous.Status switch
+            {
+                RendezvousStatus.NotFound => HudRuntimeState.WaitingForHost,
+                RendezvousStatus.Stale => HudRuntimeState.HostRecordStale,
+                _ => HudRuntimeState.HostRecordInvalid,
+            };
+            string status = rendezvous.Status switch
             {
                 RendezvousStatus.NotFound => "Waiting for host…",
                 RendezvousStatus.Stale => "Host record expired",
                 _ => "Host record invalid",
             };
+            SetRuntimeState(runtimeState, status);
+            Status = status;
             return false;
         }
 
+        SetRuntimeState(HudRuntimeState.LoadingSessions, "Loading replay sessions");
         try
         {
             TreaderApiClient client = GetOrCreateClient(new Uri(rendezvous.Record.BaseUri, UriKind.Absolute));
@@ -1268,6 +1741,21 @@ public class MainViewModel : INotifyPropertyChanged
             ReconcileSelectedSession(selectedSessionId);
             ApplySearchFilter();
             Status = $"{Sessions.Count} session(s)";
+            SetRuntimeState(
+                _selectedSession is not null
+                    ? HudRuntimeState.ReplayReady
+                    : Sessions.Count == 0
+                        ? HudRuntimeState.NoSessions
+                        : HudRuntimeState.NoSessionSelected,
+                _selectedSession is not null
+                    ? "Replay session retained; loading details when needed"
+                    : Sessions.Count == 0
+                        ? "Import a replay to create a session"
+                        : "Choose a replay session to begin");
+            _logger.Information(
+                "hud.sessions.refresh_completed",
+                ("sessionCount", Sessions.Count),
+                ("selected", _selectedSession is not null));
 
             // Fetch map boundaries lazily on first successful session refresh.
             if (!_boundariesFetched)
@@ -1283,6 +1771,8 @@ public class MainViewModel : INotifyPropertyChanged
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or ObjectDisposedException)
         {
+            _logger.Failure("hud.sessions.refresh_failed", ex);
+            SetRuntimeState(HudRuntimeState.HostUnreachable, "The local host did not answer");
             Status = "Host unreachable";
             return false;
         }
@@ -1290,6 +1780,13 @@ public class MainViewModel : INotifyPropertyChanged
 
     private void StartSelectedSessionRefresh()
     {
+        SetRuntimeState(
+            _selectedSession is null
+                ? HudRuntimeState.NoSessionSelected
+                : HudRuntimeState.SessionLoading,
+            _selectedSession is null
+                ? "Choose a replay session to begin"
+                : "Loading the selected replay");
         InvalidateDetailLoad();
         // Let RefreshSelectedAsync own and dispose the CTS for a real load. When
         // selection is null, it returns through the no-selection path without
@@ -1335,10 +1832,21 @@ public class MainViewModel : INotifyPropertyChanged
         TreaderApiClient? client = _client;
         if (selected is null || client is null)
         {
-            ClearSessionState();
+            SetRuntimeState(
+                selected is null
+                    ? HudRuntimeState.NoSessionSelected
+                    : HudRuntimeState.HostUnreachable,
+                selected is null
+                    ? "Choose a replay session to begin"
+                    : "A running host is required for the selected replay");
+            ClearSessionState(
+                selected is null
+                    ? "PEN — SESSION NOT SELECTED"
+                    : "PEN — HOST NOT CONNECTED");
             return;
         }
 
+        SetRuntimeState(HudRuntimeState.SessionLoading, "Loading the selected replay");
         CancellationTokenSource? ownedLoadCts = null;
         if (cancellationToken == CancellationToken.None)
         {
@@ -1352,6 +1860,9 @@ public class MainViewModel : INotifyPropertyChanged
         }
 
         long detailLoadGeneration = Interlocked.Increment(ref _detailLoadGeneration);
+        _logger.Information(
+            "hud.session.detail_requested",
+            ("hasSelection", true));
         try
         {
             SessionDetailResponse? detail = await client.GetSessionDetailAsync(selected.BattleSessionId, cancellationToken);
@@ -1366,6 +1877,8 @@ public class MainViewModel : INotifyPropertyChanged
 
             if (detail is null)
             {
+                _logger.Warning("hud.session.detail_empty");
+                SetRuntimeState(HudRuntimeState.ReplayUnavailable, "The selected replay returned no detail data");
                 ClearSessionState();
                 return;
             }
@@ -1388,10 +1901,16 @@ public class MainViewModel : INotifyPropertyChanged
             Participants = detail.Participants;
             EventCount = detail.EventCount;
             Events = detail.Events;
+            _logger.Information(
+                "hud.session.detail_loaded",
+                ("participantCount", detail.Participants.Count),
+                ("positionCount", detail.Positions.Count),
+                ("eventCount", detail.Events.Count));
 
             ApplyTimeFilter();
 
             ApplyMapBoundaries(selected);
+            SetRuntimeState(HudRuntimeState.ReplayReady, "Replay loaded; waiting for the first frame");
 
             // Detail loading sets the initial scrubber position directly so
             // the full state can be assembled before publishing it. Notify
@@ -1444,18 +1963,22 @@ public class MainViewModel : INotifyPropertyChanged
                     detailLoadGeneration,
                     CancellationToken.None))
             {
+                _logger.Failure("hud.session.detail_timeout", null, ("hasSelection", true));
+                SetRuntimeState(HudRuntimeState.HostUnreachable, "The host timed out loading the replay");
                 Status = "Host unreachable";
                 ClearSessionState();
             }
         }
         catch (Exception ex) when (ex is HttpRequestException or JsonException or ObjectDisposedException)
         {
+            _logger.Failure("hud.session.detail_failed", ex);
             if (IsCurrentDetailLoad(
                     selected,
                     client,
                     detailLoadGeneration,
                     CancellationToken.None))
             {
+                SetRuntimeState(HudRuntimeState.HostUnreachable, "The host could not load the replay");
                 Status = "Host unreachable";
                 ClearSessionState();
             }
@@ -1562,11 +2085,12 @@ public class MainViewModel : INotifyPropertyChanged
                 }
             }
             else if (IsCurrentDetailLoad(
-                    selected,
-                    client,
-                    detailLoadGeneration,
-                    cancellationToken))
+                selected,
+                client,
+                detailLoadGeneration,
+                cancellationToken))
             {
+                _logger.Warning("hud.minimap.unavailable");
                 MinimapImageSource = null;
             }
         }
@@ -1587,6 +2111,7 @@ public class MainViewModel : INotifyPropertyChanged
         catch (Exception ex) when (
             ex is HttpRequestException or System.IO.IOException or NotSupportedException)
         {
+            _logger.Warning("hud.minimap.load_failed", ("exceptionType", ex.GetType().Name));
             if (IsCurrentDetailLoad(
                     selected,
                     client,
@@ -1602,8 +2127,9 @@ public class MainViewModel : INotifyPropertyChanged
     /// Clears all session-derived state so stale data never lingers on screen
     /// after session deselection, null detail responses, or API errors.
     /// </summary>
-    private void ClearSessionState()
+    private void ClearSessionState(string penetrationReadinessLabel = "PEN — SESSION DATA UNAVAILABLE")
     {
+        InvalidateOverlayFrame();
         _allPositions = [];
         Points.Clear();
         Participants = [];
@@ -1615,6 +2141,7 @@ public class MainViewModel : INotifyPropertyChanged
         IsPlaying = false;
         MinimapImageSource = null;
         ApplyMapBoundaries(null);
+        ClearOverlayFrameState(penetrationReadinessLabel);
     }
 
     protected void OnPropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string? name = null)
@@ -1644,6 +2171,9 @@ public class MainViewModel : INotifyPropertyChanged
         _client = _apiClientFactory(baseUri, _locator.Locate().Record?.Capability);
         _clientBaseUri = baseUri;
         OnPropertyChanged(nameof(BaseUri));
+        _logger.Information(
+            "hud.host.connected",
+            ("replacedExistingClient", oldClient is not null));
         oldClient?.Dispose();
         return _client;
     }
@@ -1659,11 +2189,10 @@ public class MainViewModel : INotifyPropertyChanged
         }
         catch (Exception exception)
         {
+            _logger.Failure("hud.stream.connect_failed", exception);
             // SignalR is an optional push path; polling remains authoritative.
             // Observe startup failures so they cannot become unobserved task
             // exceptions or replace the user-safe status with transport detail.
-            System.Diagnostics.Debug.WriteLine(
-                $"[TelemetryStream] Connect failed: {exception.GetType().Name}");
         }
     }
 
@@ -1704,9 +2233,17 @@ public class MainViewModel : INotifyPropertyChanged
     {
         if (observation.Availability != "Available")
         {
+            _logger.Warning(
+                "hud.memory.unavailable",
+                ("availability", observation.Availability));
             return;
         }
 
+        _logger.Information(
+            "hud.memory.observation",
+            ("hasPosition", observation.PlayerPositionX.HasValue && observation.PlayerPositionZ.HasValue),
+            ("hasHp", observation.PlayerHP.HasValue),
+            ("hasReplayTime", observation.ReplayTimeSeconds.HasValue));
         HasLiveMemoryObservation = true;
 
         // Reset the liveness timeout: if no observation arrives within
@@ -1741,6 +2278,7 @@ public class MainViewModel : INotifyPropertyChanged
                     }
 
                     timeoutSource.Dispose();
+                    viewModel._logger.Warning("hud.memory.stale");
                     viewModel.HasLiveMemoryObservation = false;
                 }
 
@@ -1839,6 +2377,9 @@ public class MainViewModel : INotifyPropertyChanged
                     _mapBoundaries[b.MapId] = b;
                 }
 
+                _logger.Information(
+                    "hud.map.boundaries_loaded",
+                    ("boundaryCount", boundaries.Count));
                 ApplyMapBoundaries(SelectedSession);
             }
 
@@ -1856,6 +2397,7 @@ public class MainViewModel : INotifyPropertyChanged
             ex is HttpRequestException or TaskCanceledException
             or JsonException or ObjectDisposedException)
         {
+            _logger.Warning("hud.map.boundaries_failed", ("exceptionType", ex.GetType().Name));
             // Permit a later refresh to retry an optional catalogue request,
             // but never let an obsolete host reset the current host's state.
             if (!ReferenceEquals(_client, client))
@@ -1881,8 +2423,9 @@ public class MainViewModel : INotifyPropertyChanged
                 MarkRetry();
             }
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.Warning("hud.map.boundaries_failed", ("exceptionType", ex.GetType().Name));
             // This optional fire-and-forget request must never surface an
             // unobserved task fault or expose machine details to the UI.
             void MarkRetry()
@@ -1967,9 +2510,14 @@ public class MainViewModel : INotifyPropertyChanged
             {
                 _selectedSession = null;
                 OnPropertyChanged(nameof(SelectedSession));
+                SetRuntimeState(HudRuntimeState.NoSessionSelected, "Choose a replay session to begin");
                 InvalidateDetailLoad();
                 ClearSessionState();
             }
         }
+
+        OnPropertyChanged(nameof(HasSessionListEmptyState));
+        OnPropertyChanged(nameof(SessionListEmptyStateTitle));
+        OnPropertyChanged(nameof(SessionListEmptyStateDetail));
     }
 }
