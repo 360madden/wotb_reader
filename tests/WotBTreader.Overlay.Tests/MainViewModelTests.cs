@@ -1177,7 +1177,14 @@ public sealed class MainViewModelTests
                 "primaryReason": "team.target_unknown",
                 "reasons": ["team.target_unknown"],
                 "modelVersion": "penetration/0.3.0-alpha",
-                "badge": null
+                "badge": {
+                  "aimedEntityId": 2,
+                  "face": "Front",
+                  "band": "Pen",
+                  "effectiveArmorMm": 90.0,
+                  "penetrationMmAtRange": 120.0,
+                  "ricochet": false
+                }
               }
             }
             """;
@@ -1208,6 +1215,18 @@ public sealed class MainViewModelTests
         Assert.AreEqual("PEN — TARGET TEAM UNKNOWN", viewModel.PenReadinessLabel);
         Assert.IsTrue(viewModel.HasPenReadiness);
     }
+
+    [TestMethod]
+    [DataRow("Pen", true)]
+    [DataRow("Marginal", true)]
+    [DataRow("NoPen", true)]
+    [DataRow("Unknown", false)]
+    [DataRow("", false)]
+    [DataRow("pen", false)]
+    public void IsRenderablePenetrationBand_RejectsUnknownOrMalformedValues(
+        string band,
+        bool expected) =>
+        Assert.AreEqual(expected, MainViewModel.IsRenderablePenetrationBand(band));
 
     [TestMethod]
     [DataRow("session.association_missing", "PEN — SESSION NOT BOUND")]
@@ -1322,10 +1341,11 @@ public sealed class MainViewModelTests
     }
 
     [TestMethod]
-    public async Task RefreshOverlayFrameAsync_LiveModeDoesNotLetSelectionChooseRosterJoin()
+    public async Task RefreshOverlayFrameAsync_LiveModeUsesSelectionOnlyAsAssociationAssertion()
     {
         // Live mode is auto-bound by the server's managed replay association.
-        // Mutable UI selection must never choose the decoded roster join.
+        // A selected session is sent only as an assertion so the host can join
+        // decoded identity; it must never choose a different live source.
         string frameJson = """
             {
               "replayTimeSeconds": 150.5,
@@ -1357,8 +1377,8 @@ public sealed class MainViewModelTests
         await viewModel.RefreshOverlayFrameAsync(1920, 1080);
 
         Assert.IsNotNull(liveFrameUri);
-        Assert.IsFalse(
-            liveFrameUri!.Query.Contains("sessionId=", StringComparison.OrdinalIgnoreCase));
+        Assert.IsTrue(
+            liveFrameUri!.Query.Contains($"sessionId={BattleSessionId:D}", StringComparison.OrdinalIgnoreCase));
         NameplateItem tank = viewModel.Nameplates.Single();
         Assert.AreEqual("pilot", tank.Label);
         Assert.AreEqual(1, tank.TeamNumber);

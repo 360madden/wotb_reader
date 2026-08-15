@@ -10,6 +10,7 @@ multi_agent = true
 
 [agents]
 enabled = true
-max_concurrent_threads_per_session = 2
+# Six concurrent agent threads per session; one specialist remains the normal case.
+max_concurrent_threads_per_session = 6
 default_subagent_model = "gpt-5.6-sol"
 default_subagent_reasoning_effort = "medium"

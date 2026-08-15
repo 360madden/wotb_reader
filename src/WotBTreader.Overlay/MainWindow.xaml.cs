@@ -115,8 +115,10 @@ public partial class MainWindow : System.Windows.Window, IDisposable
 
     private void OnRefreshTimerTick(object? sender, EventArgs e)
     {
-        if (_viewModel.SelectedSession is not null)
+        if (!_viewModel.IsLiveMode && _viewModel.SelectedSession is not null)
+        {
             _ = _viewModel.RefreshSelectedAsync();
+        }
     }
 
     private void OnHudItemsChanged(object? sender,
@@ -144,6 +146,24 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         else if (e.PropertyName == nameof(MainViewModel.CurrentTimeSeconds))
         {
             // Scrubbing while paused must also move the projected nameplates.
+            RefreshW2sFrame();
+        }
+        else if (e.PropertyName == nameof(MainViewModel.IsLiveMode))
+        {
+            // Live mode is a frame source, not a timeline state. Reuse the
+            // 20 fps playback tick for live polling even when playback is
+            // paused, and stop it again when neither mode needs it.
+            if (_viewModel.IsLiveMode)
+            {
+                _playbackTimer.Start();
+            }
+            else if (!_viewModel.IsPlaying)
+            {
+                _playbackTimer.Stop();
+            }
+
+            // Switching modes must refresh immediately, including when no
+            // replay session is selected and the live frame is the only source.
             RefreshW2sFrame();
         }
         else if (e.PropertyName == nameof(MainViewModel.HasLiveMemoryObservation))

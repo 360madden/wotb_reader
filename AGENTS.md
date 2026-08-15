@@ -71,8 +71,9 @@ of growing this always-loaded file.
 - Do not delegate trivial answers, one-file mechanical edits, serial
   dependencies, or work whose coordination cost is likely higher than doing it
   once on the lead.
-- Start with one specialist. At most two subagents may be open concurrently.
-  Prefer read-heavy parallelism; keep overlapping writers sequential.
+- Start with one specialist. The project session cap is six concurrent agent
+  threads; one specialist remains the normal case. Prefer read-heavy parallelism
+  and keep overlapping writers sequential.
 - Give each subagent one bounded question or disjoint file ownership. Use the
   smallest useful history fork and require a compact evidence/result summary,
   not raw logs or broad narration.

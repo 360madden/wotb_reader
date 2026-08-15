@@ -1,6 +1,6 @@
 # Codex agent roster and routing contract
 
-**Date:** 2026-08-14 (UTC)
+**Date:** 2026-08-15 (UTC)
 
 **Status:** active project policy
 
@@ -29,9 +29,10 @@ may reapply a live parent permission override to a child.
 5. The lead integrates results, owns shared-contract decisions, runs the final
    gate, and alone stages, commits, pushes, publishes, or operates live sessions.
 
-Subagents cost additional tokens. The concurrency cap is two, but one is the
-normal case. Parallelism is for independent read-heavy work or disjoint writers,
-not for duplicating the same investigation.
+Subagents cost additional tokens. The project session cap is six concurrent
+agent threads, but one specialist is the normal case. Parallelism is for
+independent read-heavy work or disjoint writers, not for duplicating the same
+investigation.
 
 ## Reviewed roster
 
@@ -125,9 +126,10 @@ reviewed roster and spend tokens without a distinct decision boundary:
 ## Enforcement and evaluation
 
 The repository gate requires exactly the reviewed role files, pins every role to
-Sol, validates its effort and sandbox, and proves the spawn hook accepts every
-reviewed role. Hook tests also deny another model, spawn-time effort overrides,
-and unreviewed roles. Natural-language routing cannot be made perfectly
+Sol, validates its effort and sandbox, enforces the six-thread project session
+cap, and proves the spawn hook accepts every reviewed role. Hook tests also deny
+another model, spawn-time effort overrides, and unreviewed roles.
+Natural-language routing cannot be made perfectly
 fail-closed by a hook, so representative routing smokes and real-task outcome
 tracking remain necessary.
 

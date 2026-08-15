@@ -629,9 +629,10 @@ public class MainViewModel : INotifyPropertyChanged
     {
         TreaderApiClient? client = _client;
         SessionRow? session = _selectedSession;
-        // Live mode needs no selected session. The host owns the exact
-        // managed-replay/session association and uses it for roster joins;
-        // mutable WPF selection must never select live penetration inputs.
+        // Live mode may operate without a selected session. When a selection
+        // exists, pass it only as the host's association assertion so the
+        // server can join decoded names/team identity; it never selects the
+        // live memory source or its inputs.
         if (client is null || (!IsLiveMode && session is null))
         {
             return;
@@ -646,7 +647,7 @@ public class MainViewModel : INotifyPropertyChanged
         {
             OverlayFrameResponse? frame = IsLiveMode
                 ? await client.GetLiveFrameAsync(
-                    sessionId: null,
+                    sessionId: session?.BattleSessionId,
                     _hudFovDegrees,
                     viewportWidth,
                     viewportHeight,
@@ -713,11 +714,18 @@ public class MainViewModel : INotifyPropertyChanged
 
             OnPropertyChanged(nameof(PenShells));
             OnPropertyChanged(nameof(HasPenShells));
-            OverlayPenBadgeResponse? responseBadge = frame.Penetration is null
-                ? frame.PenBadge
-                : frame.Penetration.Badge;
+            // A v0.3 readiness envelope is authoritative: only a matching
+            // ready status may carry a colored badge. A malformed or hostile
+            // not-ready response with a badge must still fail closed. Legacy
+            // hosts remain supported through the additive PenBadge field.
+            OverlayPenBadgeResponse? responseBadge = frame.Penetration switch
+            {
+                null => frame.PenBadge,
+                { Status: "ready", PrimaryReason: "none", Badge: { } readyBadge } => readyBadge,
+                _ => null,
+            };
             PenBadge = responseBadge is { } badge
-                && !string.Equals(badge.Band, "Unknown", StringComparison.Ordinal)
+                && IsRenderablePenetrationBand(badge.Band)
                     ? new PenBadgeItem(
                         badge.AimedEntityId,
                         badge.Band,
@@ -730,7 +738,8 @@ public class MainViewModel : INotifyPropertyChanged
             PenReadinessLabel = frame.Penetration switch
             {
                 null => "PEN — LEGACY HOST",
-                { Status: "ready" } => string.Empty,
+                { Status: "ready", PrimaryReason: "none", Badge: { Band: var band } } when
+                    IsRenderablePenetrationBand(band) => string.Empty,
                 { } assessment => PenetrationReadinessLabel(assessment.PrimaryReason),
             };
             _nameplates.Clear();
@@ -871,6 +880,9 @@ public class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(PenShellLabel));
         OnPropertyChanged(nameof(SelectedPenShellName));
     }
+
+    internal static bool IsRenderablePenetrationBand(string? band) =>
+        band is "Pen" or "Marginal" or "NoPen";
 
     internal static string PenetrationReadinessLabel(string? reason) => reason switch
     {

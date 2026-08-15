@@ -78,7 +78,8 @@ Assert-UniqueStringAssignment $configText 'plan_mode_reasoning_effort' 'xhigh' '
 Assert-UniqueStringAssignment $configText 'model_reasoning_summary' 'concise' '.codex/config.toml'
 Assert-UniqueStringAssignment $configText 'model_verbosity' 'low' '.codex/config.toml'
 Assert-UniqueRawAssignment $configText 'enabled' 'true' '.codex/config.toml'
-Assert-UniqueRawAssignment $configText 'max_concurrent_threads_per_session' '2' '.codex/config.toml'
+Assert-UniqueRawAssignment $configText 'max_concurrent_threads_per_session' '6' '.codex/config.toml'
+
 Assert-UniqueStringAssignment $configText 'default_subagent_model' $allowedModel '.codex/config.toml'
 Assert-UniqueStringAssignment $configText 'default_subagent_reasoning_effort' 'medium' '.codex/config.toml'
 
@@ -154,4 +155,4 @@ if ($guideText -notmatch 'only allowed baseline and subagent model is \*\*`gpt-5
 Write-Host (
     "Codex agent config check passed: model=$allowedModel; " +
     'lead=medium; plan=xhigh; roles=12 low/medium/high/xhigh/max; ' +
-    'sandboxes=read-only/workspace-write; max-subagents=2.')
+    'sandboxes=read-only/workspace-write; max-threads=6.')
