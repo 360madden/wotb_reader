@@ -165,16 +165,19 @@ state to an explicit "no valid value" marker. Proving turret yaw vs gun
 elevation vs aim point still requires tracing the write/read sites of these
 fields through the rotator's vtable methods (the next memory-research step).
 
-### Aim-state sync finding (still not per-field proven)
+### Aim-state sync finding (refined — still not per-field proven)
 
 A third hash-bound pass decompiled the rotator's vtable methods. Slot 1
 (`FUN_01ac4f70`) reads a controller at **`rotator + 0x148`** (vtable methods
-`+0x13c`/`+0x164`/`+0xa4`) and copies an aim-state block into
-**`rotator + 0x1A8..+0x1C0`** — including `+0x1BC`, which the constructor
-sentineled to `-100500.0f` and which therefore receives a live runtime value.
-This confirms `+0x1A8..+0x1C0` is a live aim-state block synced from the
-controller, but **which member is turret yaw vs gun elevation vs aim point is
-still unproven** — that requires either tracing the controller's aim math
-(`FUN_01aa7140`) or the live controlled-transition correlation that G1 items
-2/5 already demand (downstream of the walk's live validation).
+`+0x13c`/`+0x164`/`+0xa4`) and copies a struct into
+**`rotator + 0x1A8..+0x1C0`**, including the constructor-sentineled `+0x1BC`.
+A fourth pass decompiled the struct's producer (`FUN_01aa7140`): it is a
+**batch/iteration computation** (integer `ceil(count/step)` over counts at
+`param_3+0xec/+0xf4/+0xfc/+0x10c`), not clean angle math. So `+0x1A8..+0x1C0`
+carries a batch-shaped state (flag + counts + list), and the per-field
+semantics of the surrounding aim-shaped fields (`+0x84`, `+0x134/+0x138`,
+`+0x1BC`) remain unproven. Static tracing alone cannot cleanly separate
+**turret yaw vs gun elevation vs aim point**; that now requires the live
+controlled-transition correlation G1 items 2/5 already mandate (downstream of
+the walk's live validation).
 
