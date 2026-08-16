@@ -1038,3 +1038,12 @@ folder for the full numbering convention and document map.
   same-hull/changed-marker steps). Elevation isolation and shot join were
   not run. BLK-0027 stays open until a second content-distinct repeat plus
   those remaining proofs.
+
+- Phase 2–4 second live snapshot (`2026-08-16`, content-distinct,
+  nothing promoted): battle `01a00cf7-895b-7653-8fa1-07d0fff73310`
+  (1045525-byte original vs the first 1100265-byte original) returned
+  38/40 walk-confirmed finite/unit/stable marker snapshots; reload enum
+  `0`; marker yaw 6 bins vs hull 1 bin (10 independent windows). The
+  hull-independent published-marker-yaw signature now has
+  `twoReplayRepeatability = true`. Elevation isolation, shot join, and
+  loaded shell remain. BLK-0027 stays open.

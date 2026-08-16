@@ -1,10 +1,10 @@
 # Penetration v0.3 — semantic-field live snapshot (first replay)
 
 **Date:** 2026-08-16 (UTC)
-**Status:** first-replay live snapshot positive for published marker +
+**Status:** two-replay live snapshot positive for published marker +
 reload enum + hull-independent marker yaw bins; nothing promoted
-**Blocker:** `BLK-0027` (open — second content-distinct replay, elevation
-isolation, shot join, and loaded shell remain)
+**Blocker:** `BLK-0027` (open — elevation isolation, shot join, and loaded
+shell remain)
 
 ## What changed
 
@@ -58,3 +58,20 @@ not a loaded-shell identity.
 
 Repeat the same script on a second content-distinct replay. Then add
 pitch-only isolation and a decoded shot join before any G2 contract.
+
+## Amendment — second content-distinct replay (`2026-08-16`)
+
+A second managed offline replay (distinct file size 1045525 vs 1100265;
+battle session `01a00cf7-895b-7653-8fa1-07d0fff73310`) reached
+`OfflineReplayVerified`. One 40-sample pass:
+
+| Samples | Walk | Reload in 0..9 | Marker finite/unit/stable | Marker yaw bins | Hull yaw bins | Independent windows |
+|---:|---:|---:|---:|---:|---:|---:|
+| 40 | 38 | 38 (enum 0) | 38/38/38 | 6 | 1 | 10 |
+
+Two samples were honest non-confirms (walk not fully Resolved). The 38
+positives reproduce the first replay: published marker stays finite/unit/
+two-pass-stable and its yaw bins move while hull yaw stays in one bin.
+`twoReplayRepeatability` for that hull-independent marker-yaw signature is
+now true. Elevation isolation, shot join, and loaded shell remain open.
+Nothing was promoted. Game and host were stopped after the read.
