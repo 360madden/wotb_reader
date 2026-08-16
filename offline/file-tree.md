@@ -349,6 +349,7 @@ docs/operations/handoffs/2026-08-15-penetration-v03-evaluator-and-armor-triage.m
 docs/operations/handoffs/2026-08-15-penetration-v03-safety-and-blockers.md
 docs/operations/handoffs/2026-08-15-penetration-v03-source-verdict-and-capture-contract.md
 docs/operations/handoffs/2026-08-16-hud-visual-and-interaction-ship.md
+docs/operations/handoffs/2026-08-16-sqlite-pooling-race-fix.md
 docs/operations/handoffs/README.md
 docs/operations/item7-branch-b-step2-consistent-double-read-proposal.md
 docs/operations/item7-hardware-atomicity-proof-plan.md
