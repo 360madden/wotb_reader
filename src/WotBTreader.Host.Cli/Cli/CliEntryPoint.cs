@@ -127,7 +127,13 @@ public static class CliEntryPoint
         LocalApplicationPaths paths = LocalApplicationPaths.Create(dataRoot);
         paths.EnsureDirectoriesExist();
         builder.AddTreaderLogging(paths, "cli");
-        builder.Services.AddWotBTreaderFoundation(new TreaderBootstrapOptions(dataRoot));
+        // The CLI runs a single command per process, so connection pooling buys
+        // nothing and only leaves file handles open until the process exits. It
+        // also forces tests that reuse the process to clear the global pool, which
+        // races with parallel invocations. Non-pooled connections close on dispose.
+        builder.Services.AddWotBTreaderFoundation(new TreaderBootstrapOptions(
+            ApplicationDataRoot: dataRoot,
+            SqliteConnectionPooling: false));
         builder.Services.AddScoped<CliCommandRouter>();
         return builder.Build();
     }

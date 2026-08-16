@@ -45,7 +45,7 @@ internal sealed class SqliteStorageContext
         {
             DataSource = Paths.DatabasePath,
             Mode = SqliteOpenMode.ReadWriteCreate,
-            Pooling = true,
+            Pooling = _options.Pooling,
             ForeignKeys = true,
             DefaultTimeout = timeoutSeconds,
         };

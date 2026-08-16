@@ -18,6 +18,13 @@ public sealed record SqliteStorageOptions
     /// <summary>Gets the SQLite busy timeout used by every connection.</summary>
     public TimeSpan BusyTimeout { get; init; } = TimeSpan.FromSeconds(10);
 
+    /// <summary>
+    /// Gets whether connections are pooled. Single-shot hosts (such as the CLI)
+    /// disable pooling so every connection releases its file handle on dispose
+    /// instead of lingering in the process-global pool.
+    /// </summary>
+    public bool Pooling { get; init; } = true;
+
     /// <summary>Creates the production default rooted in the current user's local application data.</summary>
     public static SqliteStorageOptions CreateDefault()
     {

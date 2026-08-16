@@ -1,5 +1,4 @@
 using System.Security.Cryptography;
-using Microsoft.Data.Sqlite;
 using WotBTreader.Application.Results;
 using WotBTreader.Application.Storage;
 using WotBTreader.Core;
@@ -15,6 +14,7 @@ internal sealed class StorageTestScope : IAsyncDisposable
         {
             ApplicationDataRoot = root,
             BusyTimeout = TimeSpan.FromSeconds(15),
+            Pooling = false,
         };
         Paths = new SqliteStoragePaths(Options);
         Context = new SqliteStorageContext(Options, Paths);
@@ -108,7 +108,8 @@ internal sealed class StorageTestScope : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        SqliteConnection.ClearAllPools();
+        // Connections are non-pooled (Options.Pooling = false), so each one
+        // releases its file handle on dispose and no global pool drain is needed.
         if (!Directory.Exists(Root))
         {
             return;
@@ -134,7 +135,6 @@ internal sealed class StorageTestScope : IAsyncDisposable
             catch (IOException) when (attempt < 4)
             {
                 await Task.Delay(TimeSpan.FromMilliseconds(20 * (attempt + 1)));
-                SqliteConnection.ClearAllPools();
             }
         }
     }

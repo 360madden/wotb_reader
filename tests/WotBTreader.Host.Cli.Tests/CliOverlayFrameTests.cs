@@ -168,7 +168,7 @@ public sealed class CliOverlayFrameTests
         Assert.AreEqual(0, bootstrap.ExitCode, bootstrap.Diagnostic);
 
         string databasePath = Path.Combine(root.Path, "treader.db");
-        await using SqliteConnection connection = new($"Data Source={databasePath}");
+        await using SqliteConnection connection = new($"Data Source={databasePath};Pooling=False");
         await connection.OpenAsync(TestContext.CancellationToken);
         await using SqliteCommand command = connection.CreateCommand();
         command.CommandText =

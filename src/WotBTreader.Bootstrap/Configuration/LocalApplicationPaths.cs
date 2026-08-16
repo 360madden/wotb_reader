@@ -167,4 +167,5 @@ public sealed record TreaderBootstrapOptions(
     TimeSpan? OfflineReplayEvidenceLifetime = null,
     TimeSpan? LifecycleEvidenceTimeout = null,
     string? InstructionSnapshotHelperPath = null,
-    string? InstructionSnapshotHelperSha256 = null);
+    string? InstructionSnapshotHelperSha256 = null,
+    bool? SqliteConnectionPooling = null);

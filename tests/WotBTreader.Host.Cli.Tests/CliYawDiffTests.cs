@@ -285,7 +285,7 @@ public sealed class CliYawDiffTests
         string databasePath = Path.Combine(root.Path, "treader.db");
         Assert.IsTrue(File.Exists(databasePath), $"database not created at {databasePath}");
 
-        await using SqliteConnection connection = new($"Data Source={databasePath}");
+        await using SqliteConnection connection = new($"Data Source={databasePath};Pooling=False");
         await connection.OpenAsync(TestContext.CancellationToken);
         await using (SqliteCommand command = connection.CreateCommand())
         {
@@ -315,7 +315,7 @@ public sealed class CliYawDiffTests
 
         // Yaw ground truth: 0 rad until t=10s, then 1.2 rad (the step that
         // makes the memory-lead case unambiguous), sampled every second.
-        await using (SqliteConnection yawConnection = new($"Data Source={databasePath}"))
+        await using (SqliteConnection yawConnection = new($"Data Source={databasePath};Pooling=False"))
         {
             await yawConnection.OpenAsync(TestContext.CancellationToken);
             await using SqliteCommand command = yawConnection.CreateCommand();

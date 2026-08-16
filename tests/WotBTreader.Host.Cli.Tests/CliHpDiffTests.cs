@@ -62,7 +62,7 @@ public sealed class CliHpDiffTests
         // increment direction keys on attackerEntityId): the target deals 450
         // at 1s and 120 at 2s; the 3s Destroyed carries no damage.
         await using (SqliteConnection connection =
-                     new($"Data Source={Path.Combine(root.Path, "treader.db")}"))
+                     new($"Data Source={Path.Combine(root.Path, "treader.db")};Pooling=False"))
         {
             await connection.OpenAsync(TestContext.CancellationToken);
             await using SqliteCommand command = connection.CreateCommand();
@@ -179,7 +179,7 @@ public sealed class CliHpDiffTests
         string databasePath = Path.Combine(root.Path, "treader.db");
         Assert.IsTrue(File.Exists(databasePath), $"database not created at {databasePath}");
 
-        await using SqliteConnection connection = new($"Data Source={databasePath}");
+        await using SqliteConnection connection = new($"Data Source={databasePath};Pooling=False");
         await connection.OpenAsync(TestContext.CancellationToken);
         await using (SqliteCommand command = connection.CreateCommand())
         {

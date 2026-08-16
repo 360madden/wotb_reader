@@ -46,6 +46,7 @@ public static class FoundationServiceCollectionExtensions
             ApplicationDataRoot = paths.Root,
             ContentRoot = paths.ContentStore,
             DatabasePath = paths.Database,
+            Pooling = options.SqliteConnectionPooling ?? true,
         });
         services.AddReplayDecoding();
         services.AddCaptureLogs();

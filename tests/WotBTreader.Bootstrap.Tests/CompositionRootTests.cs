@@ -1,4 +1,3 @@
-using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using WotBTreader.Application.Capture;
@@ -10,6 +9,7 @@ using WotBTreader.Application.Streaming;
 using WotBTreader.Bootstrap.Configuration;
 using WotBTreader.Bootstrap.DependencyInjection;
 using WotBTreader.GameIntegration;
+using WotBTreader.Storage.Sqlite;
 
 namespace WotBTreader.Bootstrap.Tests;
 
@@ -192,6 +192,37 @@ public sealed class CompositionRootTests
     }
 
     [TestMethod]
+    public void FoundationDefaultsToPooledSqliteConnections()
+    {
+        using TemporaryRoot root = new();
+        ServiceCollection services = new();
+        services.AddWotBTreaderFoundation(new TreaderBootstrapOptions(
+            ApplicationDataRoot: root.Path));
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        SqliteStorageOptions options =
+            provider.GetRequiredService<SqliteStorageOptions>();
+
+        Assert.IsTrue(options.Pooling);
+    }
+
+    [TestMethod]
+    public void FoundationPropagatesNonPooledSqliteConnections()
+    {
+        using TemporaryRoot root = new();
+        ServiceCollection services = new();
+        services.AddWotBTreaderFoundation(new TreaderBootstrapOptions(
+            ApplicationDataRoot: root.Path,
+            SqliteConnectionPooling: false));
+        using ServiceProvider provider = services.BuildServiceProvider();
+
+        SqliteStorageOptions options =
+            provider.GetRequiredService<SqliteStorageOptions>();
+
+        Assert.IsFalse(options.Pooling);
+    }
+
+    [TestMethod]
     public async Task HostStartupInitializesStorageSchema()
     {
         using TemporaryRoot root = new();
@@ -203,7 +234,8 @@ public sealed class CompositionRootTests
         // cannot touch the real machine's replay staging folder.
         builder.Services.AddWotBTreaderFoundation(new TreaderBootstrapOptions(
             ApplicationDataRoot: root.Path,
-            GameUserDataRoot: Path.Combine(root.Path, "no-such-game-user-data")));
+            GameUserDataRoot: Path.Combine(root.Path, "no-such-game-user-data"),
+            SqliteConnectionPooling: false));
         using IHost host = builder.Build();
 
         await host.StartAsync(TestContext.CancellationToken);
@@ -237,7 +269,8 @@ public sealed class CompositionRootTests
         });
         builder.Services.AddWotBTreaderFoundation(new TreaderBootstrapOptions(
             ApplicationDataRoot: root.Path,
-            GameUserDataRoot: gameUserData));
+            GameUserDataRoot: gameUserData,
+            SqliteConnectionPooling: false));
         using IHost host = builder.Build();
 
         await host.StartAsync(TestContext.CancellationToken);
@@ -258,7 +291,9 @@ public sealed class CompositionRootTests
     private static ServiceProvider BuildProvider(TemporaryRoot root)
     {
         ServiceCollection services = new();
-        services.AddWotBTreaderFoundation(new TreaderBootstrapOptions(root.Path));
+        services.AddWotBTreaderFoundation(new TreaderBootstrapOptions(
+            ApplicationDataRoot: root.Path,
+            SqliteConnectionPooling: false));
         return services.BuildServiceProvider(new ServiceProviderOptions
         {
             ValidateOnBuild = true,
@@ -277,9 +312,9 @@ public sealed class CompositionRootTests
 
         public void Dispose()
         {
-            // Pooled SQLite connections keep the database file handle open after
-            // the owning provider is disposed, so the pool must be drained first.
-            SqliteConnection.ClearAllPools();
+            // Every SQLite connection is non-pooled (the bootstrap options used
+            // here disable pooling), so each one releases its file handle on
+            // dispose and no global pool drain is needed.
             for (int attempt = 0; attempt < 5 && Directory.Exists(Path); attempt++)
             {
                 try
@@ -290,7 +325,6 @@ public sealed class CompositionRootTests
                 catch (IOException) when (attempt < 4)
                 {
                     Thread.Sleep(TimeSpan.FromMilliseconds(20 * (attempt + 1)));
-                    SqliteConnection.ClearAllPools();
                 }
             }
         }

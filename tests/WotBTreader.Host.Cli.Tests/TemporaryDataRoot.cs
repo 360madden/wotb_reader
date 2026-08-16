@@ -1,5 +1,3 @@
-using Microsoft.Data.Sqlite;
-
 namespace WotBTreader.Host.Cli.Tests;
 
 /// <summary>
@@ -19,12 +17,12 @@ internal sealed class TemporaryDataRoot : IDisposable
 
     public void Dispose()
     {
-        // Pooled SQLite connections keep the database file handle open after the
-        // owning host is disposed, so the pool must be drained first. The Serilog
-        // file sink can also outlive host disposal briefly, so deletion is
-        // retried and then abandoned: a temporary directory that survives is not
-        // worth failing an otherwise passing assertion over.
-        SqliteConnection.ClearAllPools();
+        // Every SQLite connection in this process is non-pooled (the CLI host
+        // disables pooling and seeding opens non-pooled connections), so each one
+        // releases its file handle on dispose and no global pool drain is needed.
+        // The Serilog file sink can still outlive host disposal briefly, so
+        // deletion is retried and then abandoned: a temporary directory that
+        // survives is not worth failing an otherwise passing assertion over.
         for (int attempt = 0; attempt < 10 && Directory.Exists(Path); attempt++)
         {
             try
@@ -35,7 +33,6 @@ internal sealed class TemporaryDataRoot : IDisposable
             catch (IOException)
             {
                 Thread.Sleep(TimeSpan.FromMilliseconds(50 * (attempt + 1)));
-                SqliteConnection.ClearAllPools();
             }
             catch (UnauthorizedAccessException)
             {
