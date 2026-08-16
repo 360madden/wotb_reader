@@ -3229,6 +3229,70 @@ public sealed class GameSessionCoordinatorTests
     }
 
     [TestMethod]
+    public async Task PenetrationCapture_ThreePartSessionVersionIsAcceptedForSameBuildFamily()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        BattleSessionId sessionId = BattleSessionId.New();
+        DecodeRunId runId = DecodeRunId.New();
+        ManagedGameLaunchContext launch = CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash,
+            battleSessionId: sessionId);
+        // Real replays carry a three-part metadata version ("11.19.0") while
+        // the executable reports the full four-part patch ("11.19.0.10").
+        var repository = new RecordingDecodeRunRepository(
+            [CreateCaptureSummary(launch, runId, sessionId, "11.19.0")]);
+        var source = new RecordingPenetrationCaptureSource(ValidCaptureAggregate());
+        var (coordinator, _) = CreateCoordinator(
+            decodeRunRepository: repository,
+            captureEvidenceSource: source);
+        coordinator.RecordManagedLaunch(launch);
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<PenetrationCaptureEvaluation> result = await coordinator
+            .CaptureAsync(new PenetrationCaptureRequest(runId), CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(1, source.CallCount);
+        Assert.AreEqual(PenetrationCaptureStatus.PositiveAwaitingRepeat, result.Value?.Status);
+    }
+
+    [TestMethod]
+    public async Task PenetrationCapture_DifferentSessionVersionFamilyIsRejectedBeforeSource()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        BattleSessionId sessionId = BattleSessionId.New();
+        DecodeRunId runId = DecodeRunId.New();
+        ManagedGameLaunchContext launch = CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash,
+            battleSessionId: sessionId);
+        var repository = new RecordingDecodeRunRepository(
+            [CreateCaptureSummary(launch, runId, sessionId, "11.18.0")]);
+        var source = new RecordingPenetrationCaptureSource(ValidCaptureAggregate());
+        var (coordinator, _) = CreateCoordinator(
+            decodeRunRepository: repository,
+            captureEvidenceSource: source);
+        coordinator.RecordManagedLaunch(launch);
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<PenetrationCaptureEvaluation> result = await coordinator
+            .CaptureAsync(new PenetrationCaptureRequest(runId), CancellationToken.None);
+
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual("capture.decode_build_mismatch", result.Error?.Code);
+        Assert.AreEqual(0, source.CallCount);
+    }
+
+    [TestMethod]
     public async Task PenetrationCapture_ProviderBoundsAreRejectedByPureEvaluator()
     {
         Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;

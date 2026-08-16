@@ -645,10 +645,9 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             authorization.Authorization.ProductVersion,
             authorization.Authorization.ExecutableSha256);
 
-        if (!string.Equals(
+        if (!IsSessionBuildCompatibleWithProcess(
                 session.GameVersion,
-                observedBuild.GameVersion,
-                StringComparison.Ordinal))
+                observedBuild.GameVersion))
         {
             return CaptureFailure(
                 "capture.decode_build_mismatch",
@@ -742,6 +741,29 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         string message) =>
         OperationResult.Failure<PenetrationCaptureEvaluation>(
             new ApplicationError(code, message, Retryable: false));
+
+    private static bool IsSessionBuildCompatibleWithProcess(
+        string sessionGameVersion,
+        string processGameVersion)
+    {
+        if (string.Equals(sessionGameVersion, processGameVersion, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        // A replay's embedded metadata version omits the patch component
+        // ("11.19.0" for a client whose executable reports "11.19.0.10"), so
+        // exact string equality can never pass for real decoded sessions. A
+        // shorter session version that is a dotted prefix of the process
+        // version is the same build family (the executable hash pins the exact
+        // patch); any other divergence stays a fail-closed mismatch.
+        int sessionComponents = sessionGameVersion.Count(character => character == '.') + 1;
+        int processComponents = processGameVersion.Count(character => character == '.') + 1;
+        return sessionComponents < processComponents
+            && processGameVersion.StartsWith(
+                sessionGameVersion + ".",
+                StringComparison.Ordinal);
+    }
 
     private static PenetrationCaptureSourceAggregate EmptyCaptureAggregate() =>
         new(
