@@ -240,6 +240,20 @@ now derived hash-bound (`pen-ownership-walk-proof-protocol.md`): the
 at `+0x1fc` (rotator is avatar-only via the `+0x200` marker), with the
 rotator's `+0x10` back-pointer and the inherited `+0x04` entity link. The
 bounded five-read live-validation protocol (unique rotator → owner → forward
-round-trip → gun vtable → entity HP, two passes, fail closed) remains to be
-run before the phase 2–4 semantic field offsets (configured gun, loaded shell,
-turret yaw, gun elevation, muzzle ray) are derived.
+round-trip → gun vtable → entity HP, two passes, fail closed) passed on
+2026-08-16 (H1 CONFIRMED). The phase 2–4 static derivation is now recorded
+in [`pen-weapon-semantic-fields.md`](pen-weapon-semantic-fields.md):
+reload/state on `VehicleGun +0x3C`, published gun-marker ray on
+`rotator+0x50`, 4×4 at `+0xEC`. Loaded shell and named turret-yaw /
+gun-elevation floats remain unproven. The next gate is the live
+controlled-transition protocol in that doc, not another constructor dump.
+
+### Phase 2–4 semantic field static derivation — 2026-08-16
+
+Ownership is live-proven. Hash-bound named-method tracing showed the primary
+vtables are not the domain method set. `GetGunMarkerPosition` /
+`Update` publish a client gun-marker ray at `VehicleGunRotator +0x50` and
+rebuild `+0xEC` as a 4×4. `updateVehicleGunReloadTime` writes a reload/state
+enum at `VehicleGun +0x3C`, not a shell id. Turret yaw vs gun elevation is
+still not separable on the rotator itself. Nothing is promoted; real frames
+stay `NotReady`.

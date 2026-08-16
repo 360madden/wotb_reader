@@ -1,7 +1,9 @@
 # Penetration v0.3 — viewpoint-vehicle → gun/rotator ownership walk
 
 **Date:** 2026-08-16 (UTC)
-**Status:** static derivation complete (hash-bound); live validation not yet run
+**Status:** static derivation complete (hash-bound); live validation CONFIRMED
+2026-08-16; phase 2–4 field derivation recorded in
+`pen-weapon-semantic-fields.md` (semantics still unpromoted)
 **Blocker:** `BLK-0027` (still open — this walk is the discriminator that turns
 the census's `BoundsExceeded` negative into a proven viewpoint owner)
 
@@ -114,19 +116,21 @@ vtable check fails (wrong family — fail closed); or the two passes disagree
 
 ## What remains after the walk passes
 
-The walk only establishes *ownership*. The next static steps are the
-**phase 2–4 semantic field offsets** inside the now-proven objects:
+The walk only establishes *ownership*. The phase 2–4 static derivation is
+now recorded in
+[`pen-weapon-semantic-fields.md`](pen-weapon-semantic-fields.md):
 
-- `VehicleGun`: configured-gun identity and loaded-shell state (controlled
-  shell-swap transitions).
-- `VehicleGunRotator`: turret yaw and gun elevation (the `+0x4d/+0x4e`
-  `0xc7c44a00` constant and the `FollowAimListener` inheritance are leads).
-- shot-synchronous muzzle origin + direction (ray).
+- `VehicleGun +0x3C/+0x40/+0x44` are reload/state, not loaded-shell identity
+  (shell remains a static no-go on these objects).
+- `VehicleGunRotator +0x50` is the published `GetGunMarkerPosition` ray
+  (candidate shot ray; not promoted; not a muzzle proof).
+- Turret yaw vs gun elevation is still not a named rotator float; the live
+  targeting protobuf and a sibling `+0x10/+0x14` pair are the next
+  discriminators.
 
-None of these are derived yet, so `ConfiguredGunUnproven`,
-`ShellTransitionUnproven`, `TurretYawUnproven`, `GunElevationUnproven`, and the
-ray reasons remain honest. This document records the walk and its proof
-protocol only.
+`ConfiguredGunUnproven`, `ShellTransitionUnproven`, `TurretYawUnproven`,
+`GunElevationUnproven`, and the ray reasons remain honest until the live
+protocol in that doc passes twice.
 
 ## Phase 2–4 candidate field layout (static facts, semantics UNPROVEN)
 

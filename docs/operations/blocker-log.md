@@ -1026,3 +1026,17 @@ folder for the full numbering convention and document map.
   honest gap (it is not part of H1). The ownership-walk discriminator is now
   closed; BLK-0027 stays open until the phase 2–4 shell/aim/ray fields are
   derived and the capture verdict can be adjudicated.
+
+- Phase 2–4 static derivation (`2026-08-16`, hash-bound, nothing promoted):
+  primary `VehicleGun` / `VehicleGunRotator` vtables are dtor+RTTI only;
+  named methods own the domain. `FUN_01dd4b20` writes `VehicleGun +0x3C`
+  as a reload/state enum (`0..8`, ctor `9` = unset) with progress/time at
+  `+0x40/+0x44` — not a shell identity (static no-go for G1 item 2 on these
+  objects). `VehicleGunRotator::GetGunMarkerPosition` writes a working ray
+  at `+0x28`; `Update` publishes it at `+0x50` (pos + dir + scalar) and
+  rebuilds a 4×4 at `+0xEC..+0x128`. Turret yaw vs gun elevation is still
+  not a named rotator float (sibling `+0x10/+0x14` via `rotator+0x4`, plus
+  four targeting-protobuf floats). Full protocol:
+  `pen-weapon-semantic-fields.md`. BLK-0027 stays open until the live
+  controlled-transition + shot-join protocol passes on two content-distinct
+  replays.
