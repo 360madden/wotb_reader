@@ -351,6 +351,7 @@ docs/operations/handoffs/2026-08-15-penetration-v03-source-verdict-and-capture-c
 docs/operations/handoffs/2026-08-16-hud-visual-and-interaction-ship.md
 docs/operations/handoffs/2026-08-16-od-recovery-102-oasis-batch-reverdict.md
 docs/operations/handoffs/2026-08-16-pen-capture-owner-census-source.md
+docs/operations/handoffs/2026-08-16-pen-ownership-walk-live-validation.md
 docs/operations/handoffs/2026-08-16-pen-ownership-walk-static.md
 docs/operations/handoffs/2026-08-16-rendezvous-webjson-acl-hardening.md
 docs/operations/handoffs/2026-08-16-sqlite-pooling-race-fix.md

@@ -1,7 +1,9 @@
 # Penetration v0.3 — ownership-walk live-validation phase (shared-contract proposal)
 
 **Date:** 2026-08-16 (UTC)
-**Status:** proposal only — no contract edited, no read surface expanded
+**Status:** implemented and merged (2026-08-16) — additive `PenOwnershipWalk`
+anchor shipped with coordinator + endpoint tests; the live run that consumes
+it is still pending (next-10-actions item 1)
 **Blocker:** `BLK-0027` (open — this phase is the live half of
 next-10-actions item 1)
 **Depends on:** `pen-ownership-walk-proof-protocol.md` (static chain, done)
@@ -90,9 +92,30 @@ investigation passes, and it still does not enable shell/aim/ray fields or a
 colored badge. The phase 2–4 semantic field derivation remains after this
 validation per the plan ordering.
 
-## Owner decision needed
+## Decision and audit record (2026-08-16)
 
-Approve the additive anchor (option above), or prefer folding the five reads
-into the existing `pen-capture` census phase instead (a larger `PenetrationCaptureEvidence`
-delta). Either way, a read-only `security_auditor` pass runs before any
-implementation, and one exact-build managed offline replay is required to run it.
+The additive-anchor option was implemented (the smaller, isolated delta above),
+with one hardening over the original draft: before walking the rotator's
+pointers the coordinator re-reads the object's own vftable under the same
+guarded lease (`pen-walk-identity-read` / `pen-walk-identity-mismatch`),
+mirroring the `avatar-stats` anchor's "never dereference off an unauthenticated
+object" discipline.
+
+Security/privacy audit (lead-performed; no dedicated agent spawn available in
+this environment):
+
+- **Loopback/capability:** no new endpoint, listener, or credential file; the
+  anchor rides the existing loopback `ReadEntityRegionAsync` surface and the
+  existing gated scan authorization, and the coordinator re-validates the gate
+  (`IsScanAuthorizationCurrent`) immediately after the walk.
+- **Privacy:** the response carries verdict booleans/counts only; `RegionBytes`
+  is `null` for this anchor, no address/pointer/id is returned, and the new
+  path logs nothing (BLK-0018 discipline).
+- **Mutation:** read-only; no write or input path is touched.
+- **Fail-closed:** scan miss → `NotFound`; identity re-read miss/mismatch →
+  `ReadFailed`/`Mismatch`; any chain read miss or round-trip/gun-vftable/HP
+  disagreement → `Mismatch`; two-pass disagreement → `Unstable`. A torn or
+  hostile read can only lower the verdict.
+
+One exact-build managed offline replay is still required to actually run the
+anchor and confirm H1 live; that live run remains the open gate on item 1.

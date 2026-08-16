@@ -995,10 +995,19 @@ folder for the full numbering convention and document map.
   (turret yaw / gun elevation / aim point remain open). These are candidates
   for the next write/read-site trace, not offsets to promote.
 
-- Live-validation phase PROPOSED (`2026-08-16`): the shared-contract proposal
-  for the five-read ownership-walk confirmation is drafted
-  (`pen-ownership-walk-live-validation-proposal.md` — a new additive
-  `PenOwnershipWalk` entity-region anchor, aggregate-only, fail-closed, with
-  security/privacy notes for the required read-only audit). No contract has
-  been edited; BLK-0027 waits on owner decision + the security audit, then one
-  exact-build launch.
+- Live-validation phase IMPLEMENTED + security-audited (`2026-08-16`): the
+  additive `PenOwnershipWalk` entity-region anchor from
+  `pen-ownership-walk-live-validation-proposal.md` is shipped and merged —
+  `EntityRecordRegionAnchor.PenOwnershipWalk = 4` plus `OwnershipCandidateIndex`
+  and six aggregate-only verdict fields. The coordinator runs the gated rotator
+  vftable AOB scan, re-reads the rotator's own vftable under the guarded lease
+  before dereferencing (`pen-walk-identity-read`/`pen-walk-identity-mismatch`),
+  then the fixed five-read chain twice, fail-closed; no address/pointer/raw
+  bytes leave the coordinator and the new path logs nothing. 9 coordinator + 1
+  endpoint tests cover positive, each failure stage, candidate selection,
+  two-pass instability, and privacy. The required security/privacy audit was
+  performed by the lead (no dedicated agent spawn available in this
+  environment) across loopback/capability, privacy, mutation, and fail-closed
+  lanes. BLK-0027 stays open: one exact-build managed offline replay is still
+  required to run the anchor and confirm H1 live, before the phase 2–4
+  shell/aim/ray field derivation.
