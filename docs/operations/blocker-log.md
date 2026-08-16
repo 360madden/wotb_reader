@@ -986,3 +986,11 @@ folder for the full numbering convention and document map.
   live-validation protocol is recorded in
   `pen-ownership-walk-proof-protocol.md`; BLK-0027 stays open until it is
   live-validated and the phase 2–4 shell/aim/ray fields are derived.
+
+- Phase 2–4 candidate layouts (`2026-08-16`, hash-bound, semantics unproven):
+  `VehicleGun +0x38=100.0f, +0x3C=9, +0x40=1.0f`; `VehicleGunRotator
+  +0x84=Vector3(0,0,0)`, `+0xEC` zeroed 0x40-byte block,
+  `+0x134/+0x138=-100500.0f`, `+0x1BC=Vector3(-100500,…)`. The `-100500.0f`
+  sentinel marks aim-shaped rotator fields, but no semantic field is proven
+  (turret yaw / gun elevation / aim point remain open). These are candidates
+  for the next write/read-site trace, not offsets to promote.

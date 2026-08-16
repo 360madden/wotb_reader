@@ -49,6 +49,17 @@ field and does not change the `NotReady` badge.
 - No product code or shared contract changed.
 - Full `scripts/validate.ps1` gate: green (see terminal output).
 
+## Phase 2–4 candidate layouts (same day, semantics unproven)
+
+A follow-up hash-bound pass (`DumpRange.java`) mapped the constructor field
+writes to concrete byte offsets, recorded as candidates in the proof-protocol
+doc. Highlights: `VehicleGun +0x38 = 100.0f` / `+0x3C = 9` / `+0x40 = 1.0f`;
+`VehicleGunRotator +0x84 = Vector3(0,0,0)`, `+0xEC` zeroed 0x40-byte block,
+`+0x134/+0x138 = -100500.0f`, `+0x1BC = Vector3(-100500,…)`. The `-100500.0f`
+sentinel appears in both aim-shaped fields, but **no semantic is proven** —
+turret yaw vs gun elevation vs aim point still needs the rotator-method
+write/read-site trace.
+
 ## Next step
 
 Run the live-validation protocol on one exact-build managed offline replay

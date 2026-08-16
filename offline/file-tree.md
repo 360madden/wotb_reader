@@ -1105,6 +1105,7 @@ tools/ghidra-scripts/DumpCallers.java
 tools/ghidra-scripts/DumpChain.java
 tools/ghidra-scripts/DumpFunctions.java
 tools/ghidra-scripts/DumpHierarchy.java
+tools/ghidra-scripts/DumpRange.java
 tools/ghidra-scripts/DumpRawBytes.java
 tools/ghidra-scripts/DumpRawWindow.java
 tools/ghidra-scripts/DumpVtableSlots.java

@@ -127,3 +127,41 @@ None of these are derived yet, so `ConfiguredGunUnproven`,
 `ShellTransitionUnproven`, `TurretYawUnproven`, `GunElevationUnproven`, and the
 ray reasons remain honest. This document records the walk and its proof
 protocol only.
+
+## Phase 2–4 candidate field layout (static facts, semantics UNPROVEN)
+
+A second hash-bound pass (`DumpRange.java`, evidence
+`.build/ghidra-evidence-weapon-install/range-disasm.txt`) mapped the
+constructor field writes to concrete byte offsets. These are **candidate
+layouts only** — the constructor proves the offset and the initial value, not
+what the field means at runtime. Nothing here is promoted or read.
+
+### VehicleGun (size `0x64`)
+
+| Offset | Init | Candidate reading |
+|---|---|---|
+| `+0x0` | primary vftable `0x32dacf4` | object identity |
+| `+0x8` / `+0xC` | secondary sub-vtables (different addresses) | multiple inheritance |
+| `+0x38` | `100.0f` | possibly reload/rate; unproven |
+| `+0x3C` | `9` (int) | possibly shell count/caliber; unproven |
+| `+0x40` | `1.0f` | unproven |
+| `+0x48` | allocated 8-byte object | listener/state; unproven |
+
+### VehicleGunRotator (size `0x1f0`)
+
+| Offset | Init | Candidate reading |
+|---|---|---|
+| `+0x0` | primary vftable `0x32eeb40` | object identity |
+| `+0x10` | owner `this` (AvatarGameLogic) | reverse ownership pointer (proven) |
+| `+0x84` | Vector3 `(0,0,0)` | possible aim/rotation state; unproven |
+| `+0xEC` | 0x40-byte block zeroed | possible transform matrix; unproven |
+| `+0x130` | ctor arg `param_4` (vehicle descr) | descriptor link |
+| `+0x134` / `+0x138` | `-100500.0f` each, `+0x13C` = 0 | possible aim angle pair; unproven |
+| `+0x1BC` | Vector3 `(-100500,-100500,-100500)` | possible aim/target sentinel; unproven |
+
+The `-100500.0f` (`0xc7c44a00`) sentinel appears in both the `+0x134/+0x138`
+scalar pair and the `+0x1BC` vector, so the rotator initializes aim-shaped
+state to an explicit "no valid value" marker. Proving turret yaw vs gun
+elevation vs aim point still requires tracing the write/read sites of these
+fields through the rotator's vtable methods (the next memory-research step).
+
