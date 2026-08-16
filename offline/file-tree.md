@@ -354,6 +354,7 @@ docs/operations/handoffs/2026-08-16-pen-capture-owner-census-source.md
 docs/operations/handoffs/2026-08-16-pen-ownership-walk-live-validation.md
 docs/operations/handoffs/2026-08-16-pen-ownership-walk-live.md
 docs/operations/handoffs/2026-08-16-pen-ownership-walk-static.md
+docs/operations/handoffs/2026-08-16-pen-semantic-fields-live.md
 docs/operations/handoffs/2026-08-16-rendezvous-webjson-acl-hardening.md
 docs/operations/handoffs/2026-08-16-sqlite-pooling-race-fix.md
 docs/operations/handoffs/README.md
@@ -452,6 +453,7 @@ scripts/camera-double-read-measurement.ps1
 scripts/capture-pen-aims.ps1
 scripts/capture-pen-census.ps1
 scripts/capture-pen-ownership-walk.ps1
+scripts/capture-pen-semantic-fields.ps1
 scripts/click-hangar-replay.ps1
 scripts/click-watch-offline.ps1
 scripts/codex-agent-config-check.ps1

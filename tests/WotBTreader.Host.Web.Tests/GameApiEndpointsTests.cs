@@ -1324,6 +1324,68 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task EntityRegion_PenSemanticFieldsAnchor_ForwardsAndEchoesAggregates()
+    {
+        var scanner = new FakeGameMemoryScanner
+        {
+            EntityRegionResult = OperationResult.Success(
+                new EntityRecordRegionReadResult(
+                    DateTimeOffset.UnixEpoch.AddSeconds(1),
+                    "11.19.0.10",
+                    Type10EntityPositionStatus.Resolved,
+                    4242,
+                    ReplayTimeSeconds: 1.5,
+                    RegionBytes: null,
+                    FailureStage: null,
+                    Attempts: 4,
+                    NodesVisited: 0,
+                    ModuleRooted: true,
+                    EntityIdentityRevalidated: false,
+                    ConsistentDoubleRead: true,
+                    SameDecodedClockProven: false,
+                    PenOwnershipRotatorCandidateCount: 1,
+                    PenOwnershipOwnerPointerReadable: true,
+                    PenOwnershipForwardRoundTripConfirmed: true,
+                    PenOwnershipGunVtableConfirmed: true,
+                    PenOwnershipEntityHpPlausible: true,
+                    PenOwnershipTwoPassStable: true,
+                    PenSemanticReloadEnumInRange: true,
+                    PenSemanticMarkerFinite: true,
+                    PenSemanticMarkerDirectionUnit: true,
+                    PenSemanticTwoPassStable: true,
+                    PenSemanticReloadEnum: 2,
+                    PenSemanticMarkerYawRadians: 0.1,
+                    PenSemanticMarkerPitchRadians: -0.05,
+                    PenSemanticHullYawRadians: 0.2)),
+        };
+
+        IResult result = await GameApiEndpoints.ReadEntityRegionAsync(
+            scanner,
+            new WotBTreader.ApiContracts.EntityRecordRegionReadRequest
+            {
+                EntityId = 4242,
+                RegionLength = 16,
+                RegionAnchor = "pen-semantic-fields",
+            },
+            TestContext.CancellationToken);
+
+        EntityRecordRegionReadResponse response = Value<EntityRecordRegionReadResponse>(result);
+        Assert.AreEqual("Resolved", response.Status);
+        Assert.AreEqual(
+            EntityRecordRegionAnchor.PenSemanticFields,
+            scanner.LastEntityRegionRequest?.RegionAnchor);
+        Assert.IsTrue(response.PenSemanticReloadEnumInRange);
+        Assert.IsTrue(response.PenSemanticMarkerFinite);
+        Assert.IsTrue(response.PenSemanticMarkerDirectionUnit);
+        Assert.IsTrue(response.PenSemanticTwoPassStable);
+        Assert.AreEqual(2, response.PenSemanticReloadEnum);
+        Assert.AreEqual(0.1, response.PenSemanticMarkerYawRadians);
+        Assert.AreEqual(-0.05, response.PenSemanticMarkerPitchRadians);
+        Assert.AreEqual(0.2, response.PenSemanticHullYawRadians);
+        Assert.IsNull(response.RegionBase64);
+    }
+
+    [TestMethod]
     public async Task CameraPose_ResolvedReturnsPoseWithIdentityFlags()
     {
         var scanner = new FakeGameMemoryScanner

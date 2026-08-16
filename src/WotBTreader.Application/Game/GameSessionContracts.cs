@@ -514,6 +514,16 @@ public enum EntityRecordRegionAnchor
     /// coordinator. See docs/operations/pen-ownership-walk-proof-protocol.md.
     /// </summary>
     PenOwnershipWalk = 4,
+
+    /// <summary>
+    /// Phase 2–4 semantic-field snapshot (penetration v0.3). Reuses the
+    /// ownership walk, then two-pass reads the published gun-marker at
+    /// rotator +0x50 and the VehicleGun reload/state block. Returns
+    /// aggregate flags plus investigation yaw/pitch/enum diagnostics.
+    /// No raw region bytes or addresses leave. See
+    /// docs/operations/pen-weapon-semantic-fields.md.
+    /// </summary>
+    PenSemanticFields = 5,
 }
 
 /// <summary>
@@ -612,6 +622,32 @@ public sealed record EntityRecordRegionReadRequest(
     /// Entity +0xB8 stores current HP as a signed int16 (OD-087/091, Verified).
     /// </summary>
     public const int EntityHealthOffset = 0xB8;
+
+    /// <summary>
+    /// Published GetGunMarkerPosition copy on VehicleGunRotator (pos3 + dir3
+    /// + scalar). Hash-bound static derivation, unpromoted.
+    /// </summary>
+    public const int PenMarkerPublishedOffset = 0x50;
+
+    /// <summary>Seven float32 values: xyz, direction xyz, range-like scalar.</summary>
+    public const int PenMarkerPublishedLength = 28;
+
+    /// <summary>VehicleGun reload/state enum (int32). Ctor 9 = unset; live 0..8.</summary>
+    public const int PenGunReloadEnumOffset = 0x3C;
+
+    /// <summary>VehicleGun reload progress float32.</summary>
+    public const int PenGunReloadProgressOffset = 0x40;
+
+    /// <summary>VehicleGun reload time float32.</summary>
+    public const int PenGunReloadTimeOffset = 0x44;
+
+    /// <summary>VehicleGun reload flag byte.</summary>
+    public const int PenGunReloadFlagOffset = 0x4C;
+
+    /// <summary>
+    /// Entity-base hull yaw float32 (rotation triple +0x48/+0x4C/+0x50).
+    /// </summary>
+    public const int EntityHullYawOffset = 0x50;
 }
 
 /// <summary>
@@ -639,7 +675,15 @@ public sealed record EntityRecordRegionReadResult(
     bool PenOwnershipForwardRoundTripConfirmed = false,
     bool PenOwnershipGunVtableConfirmed = false,
     bool PenOwnershipEntityHpPlausible = false,
-    bool PenOwnershipTwoPassStable = false);
+    bool PenOwnershipTwoPassStable = false,
+    bool PenSemanticReloadEnumInRange = false,
+    bool PenSemanticMarkerFinite = false,
+    bool PenSemanticMarkerDirectionUnit = false,
+    bool PenSemanticTwoPassStable = false,
+    int? PenSemanticReloadEnum = null,
+    double? PenSemanticMarkerYawRadians = null,
+    double? PenSemanticMarkerPitchRadians = null,
+    double? PenSemanticHullYawRadians = null);
 
 /// <summary>
 /// One entity region in a batch read (mirrors the single-read fields).

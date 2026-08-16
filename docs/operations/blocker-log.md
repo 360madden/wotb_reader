@@ -1026,3 +1026,15 @@ folder for the full numbering convention and document map.
   honest gap (it is not part of H1). The ownership-walk discriminator is now
   closed; BLK-0027 stays open until the phase 2–4 shell/aim/ray fields are
   derived and the capture verdict can be adjudicated.
+
+- Phase 2–4 first live snapshot (`2026-08-16`, one replay, nothing
+  promoted): additive `pen-semantic-fields` entity-region anchor
+  two-pass-reads the published marker at `rotator+0x50` and VehicleGun
+  reload/state at `+0x3C`. One `OfflineReplayVerified` battle
+  (`01a00cf2-358b-75b4-8186-579afba06758`) returned 56/56 walk-confirmed,
+  finite, unit, two-pass-stable snapshots. Reload enum values `0`/`3`/`9`
+  (in range, changing — not a shell id). A 40-sample window showed marker
+  yaw in 4 of 16 bins while hull yaw stayed in 1 bin (8
+  same-hull/changed-marker steps). Elevation isolation and shot join were
+  not run. BLK-0027 stays open until a second content-distinct repeat plus
+  those remaining proofs.

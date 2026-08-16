@@ -1000,6 +1000,14 @@ internal static class GameApiEndpoints
             PenOwnershipGunVtableConfirmed = read.PenOwnershipGunVtableConfirmed,
             PenOwnershipEntityHpPlausible = read.PenOwnershipEntityHpPlausible,
             PenOwnershipTwoPassStable = read.PenOwnershipTwoPassStable,
+            PenSemanticReloadEnumInRange = read.PenSemanticReloadEnumInRange,
+            PenSemanticMarkerFinite = read.PenSemanticMarkerFinite,
+            PenSemanticMarkerDirectionUnit = read.PenSemanticMarkerDirectionUnit,
+            PenSemanticTwoPassStable = read.PenSemanticTwoPassStable,
+            PenSemanticReloadEnum = read.PenSemanticReloadEnum,
+            PenSemanticMarkerYawRadians = read.PenSemanticMarkerYawRadians,
+            PenSemanticMarkerPitchRadians = read.PenSemanticMarkerPitchRadians,
+            PenSemanticHullYawRadians = read.PenSemanticHullYawRadians,
         });
     }
 
@@ -1377,6 +1385,9 @@ internal static class GameApiEndpoints
                 return true;
             case "pen-ownership-walk":
                 anchor = EntityRecordRegionAnchor.PenOwnershipWalk;
+                return true;
+            case "pen-semantic-fields":
+                anchor = EntityRecordRegionAnchor.PenSemanticFields;
                 return true;
             default:
                 anchor = EntityRecordRegionAnchor.RingRecord;

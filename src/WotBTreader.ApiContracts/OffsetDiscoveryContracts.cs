@@ -385,8 +385,9 @@ public sealed record EntityRecordRegionReadRequest
     /// the gated vftable AOB scan for the entity-Avatar instead), or
     /// <c>pen-ownership-walk</c> (the viewpoint-vehicle ownership walk: the
     /// coordinator scans for the unique VehicleGunRotator and runs the fixed
-    /// five-read chain, returning only aggregate booleans/counts). Unknown
-    /// values fail closed (no dump).
+    /// five-read chain, returning only aggregate booleans/counts), or
+    /// <c>pen-semantic-fields</c> (ownership walk plus two-pass published
+    /// gun-marker / reload-enum snapshot). Unknown values fail closed (no dump).
     /// </summary>
     public string? RegionAnchor { get; init; }
 
@@ -471,6 +472,52 @@ public sealed record EntityRecordRegionReadResponse
     /// identical verdicts.
     /// </summary>
     public bool PenOwnershipTwoPassStable { get; init; }
+
+    /// <summary>
+    /// For <c>pen-semantic-fields</c>: VehicleGun +0x3C is in 0..9.
+    /// </summary>
+    public bool PenSemanticReloadEnumInRange { get; init; }
+
+    /// <summary>
+    /// For <c>pen-semantic-fields</c>: published marker floats are finite.
+    /// </summary>
+    public bool PenSemanticMarkerFinite { get; init; }
+
+    /// <summary>
+    /// For <c>pen-semantic-fields</c>: published marker direction length is
+    /// near 1.
+    /// </summary>
+    public bool PenSemanticMarkerDirectionUnit { get; init; }
+
+    /// <summary>
+    /// For <c>pen-semantic-fields</c>: two-pass marker + reload + hull yaw
+    /// reads were byte-identical.
+    /// </summary>
+    public bool PenSemanticTwoPassStable { get; init; }
+
+    /// <summary>
+    /// For <c>pen-semantic-fields</c>: the VehicleGun reload/state enum, or
+    /// null when unread.
+    /// </summary>
+    public int? PenSemanticReloadEnum { get; init; }
+
+    /// <summary>
+    /// For <c>pen-semantic-fields</c>: atan2(dir.x, dir.z) of the published
+    /// marker, or null when unread/non-finite.
+    /// </summary>
+    public double? PenSemanticMarkerYawRadians { get; init; }
+
+    /// <summary>
+    /// For <c>pen-semantic-fields</c>: asin(dir.y) of the published marker,
+    /// or null when unread/non-finite.
+    /// </summary>
+    public double? PenSemanticMarkerPitchRadians { get; init; }
+
+    /// <summary>
+    /// For <c>pen-semantic-fields</c>: entity-base hull yaw, or null when
+    /// unread/non-finite.
+    /// </summary>
+    public double? PenSemanticHullYawRadians { get; init; }
 }
 
 /// <summary>
