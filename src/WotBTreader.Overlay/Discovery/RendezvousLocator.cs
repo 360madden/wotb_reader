@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.IO;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Text.Json;
 
 namespace WotBTreader.Overlay.Discovery;
@@ -18,8 +20,8 @@ public sealed record RendezvousResult(RendezvousStatus Status, RendezvousRecord?
 
 /// <summary>
 /// Locates the running web host via its rendezvous JSON file under LocalApplicationData.
-/// Validates schema version, loopback-only base address, expiry, and that the record
-/// is a regular file (reparse points are rejected).
+/// Validates schema version, loopback-only base address, expiry, that the record is a
+/// regular file (reparse points are rejected), and that it is owned by the current user.
 /// </summary>
 public sealed class RendezvousLocator
 {
@@ -29,17 +31,20 @@ public sealed class RendezvousLocator
     private readonly string _rendezvousPath;
     private readonly Func<int, bool> _isProcessAlive;
     private readonly Func<string, bool> _isReparsePoint;
+    private readonly Func<string, bool> _isOwnerOnly;
 
     public RendezvousLocator(
         TimeProvider? timeProvider = null,
         string? rendezvousPath = null,
         Func<int, bool>? isProcessAlive = null,
-        Func<string, bool>? isReparsePoint = null)
+        Func<string, bool>? isReparsePoint = null,
+        Func<string, bool>? isOwnerOnly = null)
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
         _rendezvousPath = rendezvousPath ?? ResolveDefaultPath();
         _isProcessAlive = isProcessAlive ?? DefaultIsProcessAlive;
         _isReparsePoint = isReparsePoint ?? DefaultIsReparsePoint;
+        _isOwnerOnly = isOwnerOnly ?? DefaultIsOwnerOnly;
     }
 
     private static string ResolveDefaultPath()
@@ -67,6 +72,14 @@ public sealed class RendezvousLocator
                 RendezvousStatus.Invalid,
                 null,
                 "record is not a regular file");
+        }
+
+        if (!_isOwnerOnly(_rendezvousPath))
+        {
+            return new RendezvousResult(
+                RendezvousStatus.Invalid,
+                null,
+                "record is not owned by the current user");
         }
 
         RendezvousRecord? record;
@@ -140,6 +153,31 @@ public sealed class RendezvousLocator
             // Fail closed: if the link target cannot be established, the
             // record is untrusted.
             return true;
+        }
+    }
+
+    private static bool DefaultIsOwnerOnly(string path)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            // Non-Windows access is already gated by the owner-only directory
+            // mode; there is no DACL owner to compare against.
+            return true;
+        }
+
+        try
+        {
+            FileSecurity security = new FileInfo(path).GetAccessControl(
+                AccessControlSections.Owner);
+            SecurityIdentifier? current = WindowsIdentity.GetCurrent().User;
+            return current is not null &&
+                current.Equals(security.GetOwner(typeof(SecurityIdentifier)));
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException)
+        {
+            // Fail closed: an unreadable owner means the record is untrusted.
+            return false;
         }
     }
 

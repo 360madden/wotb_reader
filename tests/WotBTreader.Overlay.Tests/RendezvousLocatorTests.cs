@@ -139,6 +139,19 @@ public sealed class RendezvousLocatorTests
     }
 
     [TestMethod]
+    public void Locate_NonOwnerRecord_ReturnsInvalid()
+    {
+        WriteRecord("1.0", LoopbackBaseUri, Now.AddMinutes(-1), Now.AddMinutes(5));
+        RendezvousLocator locator = CreateLocator(isOwnerOnly: _ => false);
+
+        RendezvousResult result = locator.Locate();
+
+        Assert.AreEqual(RendezvousStatus.Invalid, result.Status);
+        Assert.IsNull(result.Record);
+        AssertReasonContainsNoSecrets(result);
+    }
+
+    [TestMethod]
     public void Locate_RealSymlinkRecord_ReturnsInvalid()
     {
         string target = Path.Combine(_tempDir, "target.json");
@@ -166,12 +179,15 @@ public sealed class RendezvousLocatorTests
         AssertReasonContainsNoSecrets(result);
     }
 
-    private RendezvousLocator CreateLocator(Func<string, bool>? isReparsePoint = null) =>
+    private RendezvousLocator CreateLocator(
+        Func<string, bool>? isReparsePoint = null,
+        Func<string, bool>? isOwnerOnly = null) =>
         new(
             new FakeTimeProvider(Now),
             _rendezvousPath,
             isProcessAlive: _ => true,
-            isReparsePoint: isReparsePoint);
+            isReparsePoint: isReparsePoint,
+            isOwnerOnly: isOwnerOnly);
 
     private void WriteRecord(string schemaVersion, string baseUri, DateTimeOffset issuedAtUtc, DateTimeOffset expiresAtUtc)
     {
