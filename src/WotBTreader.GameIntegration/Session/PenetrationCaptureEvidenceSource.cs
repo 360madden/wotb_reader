@@ -7,8 +7,6 @@ using WotBTreader.UltimateScanner;
 
 namespace WotBTreader.GameIntegration.Session;
 
-#pragma warning disable CA1873
-
 /// <summary>
 /// Coordinator-owned read context for the one admitted capture phase. It is
 /// internal so no host can provide a process identity, module base, address,
@@ -152,12 +150,15 @@ internal sealed class ExactBuildOwnerCensusCaptureEvidenceSource
             && a.AvatarGunAgent == b.AvatarGunAgent;
 
         // Privacy-safe census only: counts, never addresses, ids, or paths.
-        _logger.LogInformation(
-            "Penetration owner census: vehicleGun={VehicleGunCount}, vehicleGunRotator={VehicleGunRotatorCount}, avatarGunAgent={AvatarGunAgentCount}, stable={Stable}",
-            a.VehicleGun,
-            a.VehicleGunRotator,
-            a.AvatarGunAgent,
-            stable);
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            _logger.LogInformation(
+                "Penetration owner census: vehicleGun={VehicleGunCount}, vehicleGunRotator={VehicleGunRotatorCount}, avatarGunAgent={AvatarGunAgentCount}, stable={Stable}",
+                a.VehicleGun,
+                a.VehicleGunRotator,
+                a.AvatarGunAgent,
+                stable);
+        }
 
         int ownerCandidates = a.VehicleGun + a.VehicleGunRotator;
         bool unique = a.VehicleGun == 1 && a.VehicleGunRotator == 1;
