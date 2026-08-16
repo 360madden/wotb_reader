@@ -708,6 +708,15 @@ try {
         exit 4
     }
 
+    # Fail fast when the game died right after Watch Offline: a playback crash
+    # (e.g. the ListenerHolderBase assert) leaves the process gone, and the
+    # launch used to hang in the post-watch/clock-anchor HTTP calls instead of
+    # reporting the dead game.
+    if (-not (Get-Process -Name wotblitz -ErrorAction SilentlyContinue)) {
+        Write-Od 'FAILED_game_died_after_watch'
+        exit 3
+    }
+
     $api = Get-ApiContext
     $post = Invoke-RestMethod -Uri "$($api.Base)/api/v1/game/state" -Headers $api.Headers
     Write-Od ("post_watch_vs=" + $post.verificationState + " reason=" + $post.reasonCode)
@@ -740,6 +749,12 @@ try {
     # caller records the honest negative). A monotonicity conflict (a caller
     # already appended) is ignored.
     try {
+        # The game can die during playback between the post-watch gate and this
+        # anchor (the same assert class); fail the anchor (non-fatal) instead
+        # of hanging on the sessions/clock HTTP calls.
+        if (-not (Get-Process -Name wotblitz -ErrorAction SilentlyContinue)) {
+            throw 'game_died_before_clock_anchor'
+        }
         $sessions = Invoke-RestMethod -Uri "$($api.Base)/api/v1/sessions?limit=200" -Headers $api.Headers
         $artifactSessions = @($sessions.items | Where-Object {
             $null -ne $_.session -and
@@ -833,7 +848,12 @@ try {
         }
     }
     catch {
-        Write-Od 'clock_anchor append_failed (flag stays false; launch continues)'
+        if ([string]$_.Exception.Message -eq 'game_died_before_clock_anchor') {
+            Write-Od 'clock_anchor skipped_game_died (flag stays false; launch continues)'
+        }
+        else {
+            Write-Od 'clock_anchor append_failed (flag stays false; launch continues)'
+        }
     }
 
     Write-Od 'OK OfflineReplayVerified'
