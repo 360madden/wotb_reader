@@ -347,6 +347,23 @@ folder for the full numbering convention and document map.
   ACL and proves the resulting directory is protected, current-user-owned, and
   contains exactly one explicit allow rule.
 
+## Amendment — BLK-0014 file-level ACL hardening (`2026-08-16T13:35:00Z`)
+
+- Status: follow-up hardening complete; the directory-level property is
+  extended to the published record itself.
+- Gap: the rendezvous directory was protected and verified owner-only, but the
+  final `web.json` carried only an *inherited* ACL and was never re-verified
+  after the temporary file was renamed into place.
+- Resolution: `RendezvousPublisher` pins an explicit protected owner-only
+  descriptor onto the temporary file before it becomes the record and
+  re-verifies the final `web.json` after the move (rejects reparse points and
+  re-reads the DACL; non-Windows enforces mode `0600`). Verification failure
+  fails the publish closed and the lease rotates on the next cycle.
+- Evidence: Bootstrap tests sever a permissive inherited parent ACL on the
+  file, reject a file with an extra WorldSid ACE, reject a missing file, and
+  reject a symbolic-link reparse point where the environment permits one; the
+  full `scripts/validate.ps1` gate passes.
+
 ## BLK-0015 — Unverified process-memory attachment bypassed offline evidence
 
 - First observed: `2026-07-28T22:00:00Z`

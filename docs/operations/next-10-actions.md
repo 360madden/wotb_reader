@@ -10,8 +10,10 @@ smoke check, HUD game-window diagnostics, HUD render-health/export work, replay
 playback-continuity hardening, the game-window startup diagnosis, and the
 HUD v0.7.0-alpha visual + interaction ship (frame-driven combat animations,
 scrubbable in-HUD playback bar, low-HP killable-target pulse, and the 20-round
-fail-closed hardening pass), and the Oasis batch position re-verdict
-(OD-RECOVERY-102, bounded bidirectional per-dump clock window) on 2026-08-16.
+fail-closed hardening pass), the Oasis batch position re-verdict
+(OD-RECOVERY-102, bounded bidirectional per-dump clock window), and the
+rendezvous capability-file ACL hardening (explicit protected owner-only
+`web.json` ACL with post-move reparse/DACL verification) on 2026-08-16.
 
 **Sequencing rule:** live items are clustered to share ONE approved launch
 (one game start = max evidence); offline hardening runs in parallel with any
@@ -25,9 +27,8 @@ live work; owner-gated items sit behind the evidence they consume.
 | 4 | **Implement exact weapon, aim, and armor ports only for proven cohorts** | Phase 6 v0.3 G4 | Provenance gates already prevent nominal/manual/camera data from masquerading as exact | G1/G2 pass |
 | 5 | **Build the immutable representative penetration corpus** — at least 12 replays, 500 eligible shots, and 30 rows per important cohort | Phase 6 v0.3 G5/G6 | Coverage and accuracy cannot be claimed from the old two-replay confounded sample | exact inputs implemented |
 | 6 | **Run primary cohort coverage/accuracy/ricochet/interval gates with exact unknown accounting** | Phase 6 v0.3 items 3/4/8/9 | Release thresholds are frozen in `penetration-v0.3-plan.md` | #5 complete |
-| 7 | **Harden final rendezvous capability-file ACL verification** | security follow-up | Parent ACLs are verified, but final `web.json` needs protected owner-only ACL and post-move reparse/DACL verification | offline Windows test |
-| 8 | **Post-contract two-replay batch witness** with attempts 1 and both tear flags false | Item 7 Branch B | Direct no-transient-tear wire evidence remains the item-7 gate | 2 approved launches |
-| 9 | **Complete the HUD live visual ship review** (code ship is done at v0.7.0-alpha) | HUD M0/M1; Phase 6 v0.3 G6 for penetration release | Code-level visuals, combat animations, scrubbing, and low-HP cues are merged; exclusive fullscreen, a second DPI scale, scene contrast, and penetration fidelity still need one owner-supervised live pass | one owner-supervised visual pass across actual fullscreen/DPI/scenes; #1-6 and full gate remain required for penetration release |
+| 7 | **Post-contract two-replay batch witness** with attempts 1 and both tear flags false | Item 7 Branch B | Direct no-transient-tear wire evidence remains the item-7 gate | 2 approved launches |
+| 8 | **Complete the HUD live visual ship review** (code ship is done at v0.7.0-alpha) | HUD M0/M1; Phase 6 v0.3 G6 for penetration release | Code-level visuals, combat animations, scrubbing, and low-HP cues are merged; exclusive fullscreen, a second DPI scale, scene contrast, and penetration fidelity still need one owner-supervised live pass | one owner-supervised visual pass across actual fullscreen/DPI/scenes; #1-6 and full gate remain required for penetration release |
 
 ## Wait-list (deliberately outside the top 10)
 
