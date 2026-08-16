@@ -12,9 +12,17 @@ docs/operations/live-roster-read-design.md):
                 scripts/invoke-batch-rehearsal.ps1), decode each ring-record
                 dump's position float32 triple at +0x10, and compare it
                 against the decoded position sample nearest the batch's
-                replay-clock label. Prints the verdict table; exit 0 = all
-                compared pairs match within the tolerance, 1 = at least one
-                miss, 2 = nothing comparable (no verdict).
+                replay-clock label. --session is the authoritative decoded
+                ground-truth session; when the dumps carry a different
+                sessionId (e.g. a managed-launch label from an item-7 cluster
+                capture) the tool warns and still cross-checks against the
+                named decoded session. --window re-matches moving tanks
+                within a BOUNDED BIDIRECTIONAL window around the label
+                (per-dump, per-entity) and reports the implied per-dump
+                offset median + spread so the memory-apply lag is measured,
+                not hidden. Prints the verdict table; exit 0 = all compared
+                pairs match within the tolerance, 1 = at least one miss,
+                2 = nothing comparable (no verdict).
   --enumeration read a live roster-enumeration file (schema
                 wotbtreader.od.batch-rehearsal.roster-enum.v1, written by
                 scripts/invoke-batch-rehearsal.ps1 -EnumerateLive) and
@@ -38,6 +46,7 @@ import base64
 import json
 import math
 import sqlite3
+import statistics
 import struct
 import sys
 from pathlib import Path
@@ -152,6 +161,7 @@ def _position_from_dump(base64_payload: str) -> tuple[float, float, float] | Non
 def compare(
     connection: sqlite3.Connection,
     dumps_path: str,
+    session_id: str,
     tolerance: float,
     window_s: float = 0.0,
 ) -> int:
@@ -159,14 +169,22 @@ def compare(
         dumps = json.load(handle)
     if dumps.get("schema") != DUMP_SCHEMA:
         raise SystemExit(f"error: {dumps_path} is not a {DUMP_SCHEMA} file")
-    session_id = dumps.get("sessionId")
-    if not session_id:
+    dumps_session = dumps.get("sessionId")
+    if not dumps_session:
         raise SystemExit("error: dumps file has no sessionId")
+    if dumps_session != session_id:
+        print(
+            f"batch-rehearsal: dumps carry sessionId {dumps_session} but the "
+            f"ground-truth session is {session_id} - cross-checking against the "
+            f"named decoded session (a managed-launch label is expected for "
+            f"cluster captures)."
+        )
 
     compared = 0
     matched = 0
     skipped = 0
     misses: list[str] = []
+    windowed_offsets: list[float] = []
     print(f"batch-rehearsal: session {session_id} "
           f"(anchor {dumps.get('regionAnchor')}, tolerance {tolerance:g} m)")
     for time_entry in dumps.get("times", []):
@@ -204,9 +222,10 @@ def compare(
             if not ok and window_s > 0:
                 # The label is a clock ESTIMATE; a moving tank's memory
                 # position can sit a fraction of a second away within the G2
-                # uncertainty. Re-match within the bounded window and report
-                # the implied offset - the verdict then reads "aligned within
-                # the clock's own uncertainty", with the skew measured.
+                # uncertainty. Re-match within the bounded bidirectional
+                # window (per-dump, per-entity) and report the implied
+                # offset - the verdict then reads "aligned within the
+                # clock's own uncertainty", with the skew measured.
                 windowed = _best_sample_in_window(
                     connection, session_id, entity_id, label, window_s, memory)
                 if windowed is not None:
@@ -214,6 +233,7 @@ def compare(
                     offset_note = f" (window {window_s:g}s: {wdelta:.2f} m @ {woffset:+.1f}s)"
                     if wdelta <= tolerance:
                         ok = True
+                        windowed_offsets.append(woffset)
             matched += 1 if ok else 0
             if not ok:
                 misses.append(
@@ -225,6 +245,13 @@ def compare(
 
     print(f"batch-rehearsal: matched {matched}/{compared} compared pairs "
           f"({skipped} skipped, no verdict)")
+    if windowed_offsets:
+        median = statistics.median(windowed_offsets)
+        spread = max(windowed_offsets) - min(windowed_offsets)
+        print(f"batch-rehearsal: {len(windowed_offsets)} window-rescued "
+              f"match(es) - implied per-dump offset median {median:+.2f}s, "
+              f"spread {spread:.2f}s (memory-behind negative, memory-ahead "
+              f"positive)")
     if compared == 0:
         print("batch-rehearsal: NO-VERDICT - nothing comparable")
         return 2
@@ -312,7 +339,9 @@ def _self_test_compare() -> int:
         INSERT INTO battle_sessions (id, duration_ticks) VALUES ('s', 100000000);
         INSERT INTO position_samples VALUES
             ('a', 's', 1, 50000000, 10.0, 20.0, 30.0),
-            ('b', 's', 2, 50000000, 40.0, 50.0, 60.0);
+            ('b', 's', 2, 50000000, 40.0, 50.0, 60.0),
+            ('c', 's', 3, 10000000, 70.0, 80.0, 90.0),
+            ('d', 's', 3, 50000000, 99.0, 99.0, 99.0);
         """
     )
 
@@ -321,13 +350,13 @@ def _self_test_compare() -> int:
         struct.pack_into("<fff", blob, POSITION_OFFSET, x, y, z)
         return base64.b64encode(bytes(blob)).decode("ascii")
 
-    def dumps_file(entities: list) -> str:
+    def dumps_file(entities: list, session_id: str = "s") -> str:
         path = Path(tempfile.gettempdir()) / "batch-rehearsal-self-test.json"
         path.write_text(
             json.dumps(
                 {
                     "schema": DUMP_SCHEMA,
-                    "sessionId": "s",
+                    "sessionId": session_id,
                     "regionAnchor": "ring-record",
                     "regionLength": 64,
                     "times": [
@@ -350,7 +379,7 @@ def _self_test_compare() -> int:
             {"entityId": 2, "status": "Resolved", "regionBase64": payload(40.0, 50.0, 60.0)},
         ]
     )
-    assert compare(connection, clean, 2.0) == 0
+    assert compare(connection, clean, "s", 2.0) == 0
     # A Resolved entity with ground truth but a truncated dump must FAIL the
     # verdict (regression-pins the unreadable-dump bug class).
     truncated = dumps_file(
@@ -358,7 +387,25 @@ def _self_test_compare() -> int:
             {"entityId": 1, "status": "Resolved", "regionBase64": base64.b64encode(b"1234").decode("ascii")},
         ]
     )
-    assert compare(connection, truncated, 2.0) == 1
+    assert compare(connection, truncated, "s", 2.0) == 1
+    # A moving tank whose memory position sits OUTSIDE the nearest sample but
+    # INSIDE the bounded bidirectional window must be rescued, with its
+    # implied per-dump offset reported (memory-behind = negative offset).
+    windowed = dumps_file(
+        [
+            {"entityId": 3, "status": "Resolved", "regionBase64": payload(70.0, 80.0, 90.0)},
+        ]
+    )
+    assert compare(connection, windowed, "s", 2.0, window_s=5.0) == 0
+    # A dumps file carrying a managed-launch session label must still
+    # cross-check against the named decoded session (with a warning).
+    managed = dumps_file(
+        [
+            {"entityId": 1, "status": "Resolved", "regionBase64": payload(10.0, 20.0, 30.0)},
+        ],
+        session_id="01a00228-024c-7e6e-afb0-2dc12e52b061",
+    )
+    assert compare(connection, managed, "s", 2.0) == 0
     return 0
 
 
@@ -473,7 +520,7 @@ def main() -> int:
         raise SystemExit("error: --tolerance must be positive")
     if args.window < 0:
         raise SystemExit("error: --window must be non-negative")
-    return compare(connection, args.dumps, args.tolerance, args.window)
+    return compare(connection, args.dumps, args.session, args.tolerance, args.window)
 
 
 if __name__ == "__main__":

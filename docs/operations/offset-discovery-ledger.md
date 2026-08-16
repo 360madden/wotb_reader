@@ -503,6 +503,7 @@ occurred.
 | `OD-RECOVERY-099` | 2026-08-12 | **L3 damage-dealt LIVE in-session re-verification (Oasis, session `019ff74f`) — HIT at offset 0x0 with the FIXED driver at DEFAULT lag tolerance (no explicit override): the first fully in-session positive on the increment lane.** Live chain launch (single monitor; ground-truth `20260802_1615__mrkool1138_GB08_Churchill_I_8565111466734423.wotbreplay`), 20 region dumps on the avatar-stats anchor; **every probe resolved `status='Resolved' candidates=1` across the whole battle** (the gated AOB scan + identity re-gate — the SAME read path the live frame's damage-dealt consumption uses — proven live end-to-end). Verdict: **offset 0x0, score 1.0, flatness 1.0, 5/5 exact sums (152/144/151/170/1; the first 134 at 177.82 s predates the formable capture span — same class as OD-095/096), Strict >= 2 → HIT**, matched windows (203.33, 248.007]..(273.325, 276.485] | **Replay-completion detection VERIFIED LIVE end-to-end:** battle end recognized IN-SESSION via the teardown status (`AvatarAnchorNotFound` at dump target 259.3 s) — the driver stopped the dump schedule cleanly and ran the verdict on the captured dumps (no error, no hang), chain exit 0. **Durable completion-loop finding (live-observed): the game EXITS ON ITS OWN ~1-2 min after the Battle Results screen** (blitz log stops mid-results-page texture load at `BattleResultsPersonalPageController`, no crash event in the Application log, no shutdown lines, replay file mtime/size untouched); nothing in the launcher / clicker / driver / chain closes it (all four audited — zero game-kill paths post-launch). Consequence: the cross-session `evidence.replay_completed` gate denial (the design's re-run signal for `FAILED_replay_already_completed`) is IN-MEMORY and dies with the process — effectively unobservable on re-run; the RELIABLE completion signal is the in-session teardown statuses (`AvatarAnchorNotFound` / `GateNotSatisfied` / session-inactive) after a verified start. Recommended durable fix (owner-gated design change): persist a completion marker when the in-session detection fires, and have the launcher/clicker/driver pre-flights consult it instead of the ephemeral gate denial — **IMPLEMENTED 2026-08-12 (offline): `scripts/od-replay-completion.ps1`** (dot-sourced by all four tools; fingerprint-keyed marker under `%LOCALAPPDATA%\WotBTreader\od-completion\`, owner-only ACL; driver writes when the dump schedule FINISHES (definitive teardown OR all targets completed, never on the ≤40 s near-end fallback), launcher on in-window gate denial; launcher/clicker/driver/chain pre-flights consult and fail fast; replaced replay = fresh, corrupt marker fails open; offline-verified write→read→invalidate) | Live chain (`scripts/invoke-od-replay-chain.ps1` -> launcher -> clicker -> hp-diffing driver `-LiveAcquire -Track damage-dealt -RegionAnchor avatar-stats`, session `019ff74f-fd4c-7a30-8686-f71c18db4b22`, victim = own viewpoint 3760577) + decoded timeline cross-check + blitz-log / process / Windows-event-log forensics on the game exit | **HIT (offset 0x0)** in-session at default lag (12 s); completion detection live-verified; `evidence.replay_completed` re-run signal found unreachable by design (game exits) | damage-dealt lane re-proven live with the consumption seam's exact read path (5/5 exact sums, score 1.0 / flatness 1.0); snapshots `.data/hp-snapshots-019ff74f-*-cand0.json`; completion = in-session teardown statuses, NOT the ephemeral gate denial | No offsets / resolver / read surface touched (publication unchanged since OD-097/098). Next: consume the finding — persisted completion marker (owner-gated design change); then item 7 Branch B live steps 3-4 and the batch `-LiveAcquire` rehearsal re-run remain as approved-launch items |
 
 | `OD-RECOVERY-100` | 2026-08-14 | **Item-7 live cluster + batch witness contract apply.** Two compatible content-distinct launches reached `OfflineReplayVerified`. Camera Branch B closed across Dead Rail + Oasis: 12/12 probes resolved, module-rooted, all three identity gates true, byte-identical, zero `pose-double-read` failures. Batch timing persisted on both replays: Dead Rail 3 passes / 21 of 21 resolved / 7.889–13.372 ms; Oasis 3 passes / 41 of 42 resolved / 21.448–24.054 ms; every pass same-decoded-clock attested, clock-snapshot lag <= 0.001 ms, zero unstable-snapshot exhaustion. The owner-approved step-2 contract was then applied: stable batch pairs report `ConsistentDoubleRead=true`; `RegionReadAttempts`, `RegionTearObserved`, and `EntityBaseTearObserved` flow through coordinator + HTTP DTO. Failed/exhausted items remain false; single-read and hardware-atomic flags unchanged. Completion marker also verified live: teardown -> persisted marker -> same-replay chain exit 7 in 335 ms with game 0 -> 0. Live frame own-row `DamageDealt=145` at 158.9 s with 13/13 present decoded joins exact, zero mismatches | Approved two-launch cluster; CAM-001 bounded aggregate; batch rehearsal measured artifacts; live-frame summary cross-check; damage-dealt chains; focused GameIntegration 11/11 + Host.Web 4/4; full gate 1,206 tests / 7 skips / 0 failures | `Partial` for item 7 / `Hit` for camera, completion marker, and live-frame damage | camera two-replay proof closed; batch two-replay timing measured; shared witness contract applied; `HardwareAtomicReadProven=false` | Honest limits: Dead Rail enumeration 7/14; Oasis position matcher 33/41 under the old +/-2 s window; live batch wire artifacts preceded the tear-field apply and therefore cannot prove zero transient retries. Next: harden transient rendezvous reads, then post-apply two-replay batch pass with attempts=1 and both tear flags false |
+| `OD-RECOVERY-102` | 2026-08-16 | Re-verdict the stored Oasis batch positions (item-7 cluster capture) with a bounded bidirectional per-dump clock window | Offline `scripts/python/batch-rehearsal-crosscheck.py --compare` (extended: `--session` is the authoritative decoded ground truth with a managed-label mismatch warning, and window-rescued matches report their implied per-dump offset median + spread) on the immutable `.data/cluster-batch-retry-20260814-2123.json` vs decoded Oasis Palms session `019fee20-9315-70b7-a92c-379f41f69532` | `Hit` (offline re-verdict; no live session) | The honest 33/41 negative under the ±2 s G2 window (OD-RECOVERY-100) re-verdicts to **41/41 PASS** under a bounded ±5 s bidirectional per-dump window: all 16 window-rescued matches land at **0.00 m** with a consistent implied per-dump offset of **−4.24 s (spread 0.11 s, memory-behind)** — the documented Oasis memory-apply lag (yaw +4.8 s, OD-088), now reproduced on the batch POSITION field; the 8 prior misses were the label skew, not read failures | No position verdict is promoted (a cross-check, not a publication); the ±2 s same-decoded-clock bound remains the strict alignment gate; the lag is measured, not eliminated; `HardwareAtomicReadProven` stays false |
 
 `OD-RECOVERY-001-BLOCKED` is the append-only superseding record for the planned
 `OD-RECOVERY-001` row above. It does not represent a failed position scan.
@@ -7119,3 +7120,55 @@ continuation is re-anchored to the PN owner ship review. When Item 7 resumes,
 the next planned live session remains the post-contract two-replay batch pass;
 keep `HardwareAtomicReadProven=false` until every resolved item directly shows
 attempt count one and both tear flags false.
+
+## OD-RECOVERY-102 result — 2026-08-16 (Oasis batch position re-verdict)
+
+status: Hit (offline re-verdict; no live session, no promotion)
+
+**Scope.** Item 8 of `docs/operations/next-10-actions.md` — re-verdict the
+stored Oasis batch positions from the item-7 live cluster with a bounded
+bidirectional per-dump clock window, so the lane is closed without spending
+another approved launch. The capture is the immutable
+`.data/cluster-batch-retry-20260814-2123.json` (session label
+`01a00228-024c-7e6e-afb0-2dc12e52b061`, the managed-launch id); ground truth
+is the decoded Oasis Palms session `019fee20-9315-70b7-a92c-379f41f69532`
+(14-tank roster, entity ids 3760565..3760578).
+
+**Reproduction first.** Under the existing ±2 s same-decoded-clock window the
+tool reproduces OD-RECOVERY-100 exactly: **33/41 matched** (1 `EntityNotFound`
+skipped), 8 moving samples outside the window at 10.25–29.61 m from the
+nearest decoded sample. This confirms the right ground truth and that the
+stored capture is the one the cluster session cross-checked.
+
+**Re-verdict.** Under a bounded ±5 s bidirectional per-dump window the SAME
+immutable dumps re-verdict to **41/41 PASS**. All 16 window-rescued matches
+land at **0.00 m** against the decoded trajectory with a consistent implied
+per-dump offset of **−4.24 s, spread 0.11 s** (memory-behind: the memory
+position at label t equals the decoded position at t − 4.24 s). This is the
+same Oasis memory-apply lag the yaw lane measured (+4.8 s median,
+OD-RECOVERY-088), now reproduced byte-exact on the batch POSITION field
+(`+0x10` float32 triple). Because the batch reads all 14 entities in ONE
+`/discover/entity-regions` call under ONE G2 clock attestation, the per-dump
+skew is essentially uniform (0.11 s spread) — the tighter, more decisive
+version of the per-dump yaw spread (13.1 s across separate
+`/discover/entity-region` calls).
+
+**What this does and does not establish.** The honest negative is resolved: the
+8 prior misses were the label skew, not read failures, and the batch surface's
+position read is byte-exact once the ~4.2 s lag is admitted. No position
+verdict is promoted — this is a cross-check, not a publication — and the ±2 s
+same-decoded-clock bound remains the strict alignment gate. The lag is
+measured, not eliminated; `HardwareAtomicReadProven` stays false.
+
+**Tooling.** `batch-rehearsal-crosscheck.py --compare` now treats `--session`
+as the authoritative decoded ground-truth session (the dumps may carry a
+managed-launch label, in which case it warns and still cross-checks), and
+window-rescued matches report their implied per-dump offset median + spread.
+Defaults are unchanged (tolerance 2 m, window 2 s) so the OD-086/100
+reproductions stay identical. Self-test extended with a window-rescue and a
+session-mismatch case; `python scripts/python/batch-rehearsal-crosscheck.py
+--self-test` passes.
+
+Next planned session: unchanged — the post-contract two-replay batch pass
+with `ConsistentDoubleRead=true`, `RegionReadAttempts=1`, and both tear flags
+false (item 7 Branch B, approved launches only).
