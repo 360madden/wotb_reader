@@ -18,7 +18,8 @@ public sealed record RendezvousResult(RendezvousStatus Status, RendezvousRecord?
 
 /// <summary>
 /// Locates the running web host via its rendezvous JSON file under LocalApplicationData.
-/// Validates schema version, loopback-only base address, and expiry.
+/// Validates schema version, loopback-only base address, expiry, and that the record
+/// is a regular file (reparse points are rejected).
 /// </summary>
 public sealed class RendezvousLocator
 {
@@ -27,15 +28,18 @@ public sealed class RendezvousLocator
     private readonly TimeProvider _timeProvider;
     private readonly string _rendezvousPath;
     private readonly Func<int, bool> _isProcessAlive;
+    private readonly Func<string, bool> _isReparsePoint;
 
     public RendezvousLocator(
         TimeProvider? timeProvider = null,
         string? rendezvousPath = null,
-        Func<int, bool>? isProcessAlive = null)
+        Func<int, bool>? isProcessAlive = null,
+        Func<string, bool>? isReparsePoint = null)
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
         _rendezvousPath = rendezvousPath ?? ResolveDefaultPath();
         _isProcessAlive = isProcessAlive ?? DefaultIsProcessAlive;
+        _isReparsePoint = isReparsePoint ?? DefaultIsReparsePoint;
     }
 
     private static string ResolveDefaultPath()
@@ -55,6 +59,14 @@ public sealed class RendezvousLocator
         if (!File.Exists(_rendezvousPath))
         {
             return new RendezvousResult(RendezvousStatus.NotFound, null, "host not running");
+        }
+
+        if (_isReparsePoint(_rendezvousPath))
+        {
+            return new RendezvousResult(
+                RendezvousStatus.Invalid,
+                null,
+                "record is not a regular file");
         }
 
         RendezvousRecord? record;
@@ -108,6 +120,26 @@ public sealed class RendezvousLocator
         catch
         {
             return false;
+        }
+    }
+
+    private static bool DefaultIsReparsePoint(string path)
+    {
+        try
+        {
+            // LinkTarget is null for a regular file and non-null for a
+            // symlink/junction (a reparse point). The publisher already
+            // refuses to write a reparse-point record; the reader mirrors
+            // that so a substituted path cannot redirect the client to an
+            // arbitrary target.
+            return new FileInfo(path).LinkTarget is not null;
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException)
+        {
+            // Fail closed: if the link target cannot be established, the
+            // record is untrusted.
+            return true;
         }
     }
 

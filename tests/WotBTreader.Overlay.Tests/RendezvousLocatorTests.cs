@@ -125,7 +125,53 @@ public sealed class RendezvousLocatorTests
         AssertReasonContainsNoSecrets(result);
     }
 
-    private RendezvousLocator CreateLocator() => new(new FakeTimeProvider(Now), _rendezvousPath, isProcessAlive: _ => true);
+    [TestMethod]
+    public void Locate_ReparsePointRecord_ReturnsInvalid()
+    {
+        WriteRecord("1.0", LoopbackBaseUri, Now.AddMinutes(-1), Now.AddMinutes(5));
+        RendezvousLocator locator = CreateLocator(isReparsePoint: _ => true);
+
+        RendezvousResult result = locator.Locate();
+
+        Assert.AreEqual(RendezvousStatus.Invalid, result.Status);
+        Assert.IsNull(result.Record);
+        AssertReasonContainsNoSecrets(result);
+    }
+
+    [TestMethod]
+    public void Locate_RealSymlinkRecord_ReturnsInvalid()
+    {
+        string target = Path.Combine(_tempDir, "target.json");
+        WriteRecord("1.0", LoopbackBaseUri, Now.AddMinutes(-1), Now.AddMinutes(5));
+        File.Move(_rendezvousPath, target);
+        try
+        {
+            File.CreateSymbolicLink(_rendezvousPath, target);
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or PlatformNotSupportedException)
+        {
+            Assert.Inconclusive(
+                "Symbolic-link creation is unavailable; the reparse branch cannot be exercised.");
+            return;
+        }
+
+        RendezvousLocator locator = CreateLocator();
+
+        RendezvousResult result = locator.Locate();
+
+        Assert.AreEqual(RendezvousStatus.Invalid, result.Status);
+        AssertReasonContainsNoSecrets(result);
+    }
+
+    private RendezvousLocator CreateLocator(Func<string, bool>? isReparsePoint = null) =>
+        new(
+            new FakeTimeProvider(Now),
+            _rendezvousPath,
+            isProcessAlive: _ => true,
+            isReparsePoint: isReparsePoint);
 
     private void WriteRecord(string schemaVersion, string baseUri, DateTimeOffset issuedAtUtc, DateTimeOffset expiresAtUtc)
     {
