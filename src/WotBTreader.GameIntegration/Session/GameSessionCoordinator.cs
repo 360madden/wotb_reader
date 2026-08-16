@@ -2477,6 +2477,15 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     $"The avatar-stats candidate index must be within 0..{EntityRecordRegionReadRequest.MaxAvatarCandidates - 1}."));
         }
 
+        if (request.OwnershipCandidateIndex is int ownershipIndex &&
+            (ownershipIndex < 0 || ownershipIndex >= EntityRecordRegionReadRequest.MaxOwnershipCandidates))
+        {
+            return OperationResult.Failure<EntityRecordRegionReadResult>(
+                new ApplicationError(
+                    "discover.entity_region.invalid_ownership_candidate",
+                    $"The pen-ownership-walk candidate index must be within 0..{EntityRecordRegionReadRequest.MaxOwnershipCandidates - 1}."));
+        }
+
         (AuthorizedMemoryObservation? observation, long baseAddress, CancellationToken authorizationToken, bool ok) =
             GetScanAuthorization(cancellationToken);
         if (!ok)
@@ -2538,7 +2547,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             // instead (the L3 damage-dealt family is on that object, not the
             // entity record).
             Type10EntityPositionAddressResult? resolved = null;
-            if (request.RegionAnchor != EntityRecordRegionAnchor.AvatarStats)
+            if (request.RegionAnchor != EntityRecordRegionAnchor.AvatarStats
+                && request.RegionAnchor != EntityRecordRegionAnchor.PenOwnershipWalk)
             {
                 OperationResult<Type10EntityPositionAddressResult> resolveResult =
                     await readerResult.Value.ResolveEntityPositionAddressAsync(
@@ -2659,6 +2669,42 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                         AvatarCandidateCount: avatarCandidateCount));
                 }
                 regionBaseAddress = avatarAddress + EntityRecordRegionReadRequest.AvatarStatsQuadOffset;
+            }
+            else if (request.RegionAnchor == EntityRecordRegionAnchor.PenOwnershipWalk)
+            {
+                PenOwnershipWalkResolution walk = await ResolvePenOwnershipWalkAsync(
+                    readerResult.Value,
+                    observation!,
+                    baseAddress,
+                    request.OwnershipCandidateIndex,
+                    readCancellation.Token).ConfigureAwait(false);
+                if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+                {
+                    return GateCheck<EntityRecordRegionReadResult>(
+                        "discover.gate_not_satisfied",
+                        "The offline-session gate is no longer satisfied.");
+                }
+
+                return OperationResult.Success(new EntityRecordRegionReadResult(
+                    _timeProvider.GetUtcNow(),
+                    layout.GameVersion,
+                    walk.Status,
+                    request.EntityId,
+                    replayTimeSeconds,
+                    null,
+                    walk.FailureStage,
+                    walk.Attempts,
+                    0,
+                    true,
+                    EntityIdentityRevalidated: false,
+                    ConsistentDoubleRead: false,
+                    SameDecodedClockProven: sameDecodedClockProven,
+                    PenOwnershipRotatorCandidateCount: walk.RotatorCandidateCount,
+                    PenOwnershipOwnerPointerReadable: walk.OwnerPointerReadable,
+                    PenOwnershipForwardRoundTripConfirmed: walk.ForwardRoundTripConfirmed,
+                    PenOwnershipGunVtableConfirmed: walk.GunVtableConfirmed,
+                    PenOwnershipEntityHpPlausible: walk.EntityHpPlausible,
+                    PenOwnershipTwoPassStable: walk.TwoPassStable));
             }
             else
             {
@@ -3880,6 +3926,300 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             null,
             1,
             candidates.Count);
+    }
+
+    private sealed record PenOwnershipWalkResolution(
+        Type10EntityPositionStatus Status,
+        string? FailureStage,
+        int Attempts,
+        int RotatorCandidateCount,
+        bool OwnerPointerReadable,
+        bool ForwardRoundTripConfirmed,
+        bool GunVtableConfirmed,
+        bool EntityHpPlausible,
+        bool TwoPassStable);
+
+    private readonly record struct OwnershipWalkPassVerdict(
+        bool OwnerPointerReadable,
+        bool ForwardRoundTripConfirmed,
+        bool GunVtableConfirmed,
+        bool EntityHpPlausible);
+
+    /// <summary>
+    /// The pen-ownership-walk anchor resolution (penetration v0.3 H1). Gated
+    /// vftable AOB scan for the unique VehicleGunRotator
+    /// (<c>moduleBase + <see cref="EntityRecordRegionReadRequest.VehicleGunRotatorVftableRva"/></c>),
+    /// then the fixed five-read chain (rotator→owner→forward round-trip→gun
+    /// vftable→entity HP) twice, fail-closed. Only aggregate booleans/counts
+    /// are produced — no address, pointer, id, or raw bytes leave this method.
+    /// </summary>
+    private async ValueTask<PenOwnershipWalkResolution> ResolvePenOwnershipWalkAsync(
+        IAuthorizedMemoryReader reader,
+        AuthorizedMemoryObservation observation,
+        long baseAddress,
+        int? candidateIndex,
+        CancellationToken cancellationToken)
+    {
+        uint expectedRotatorVftable = (uint)(baseAddress + EntityRecordRegionReadRequest.VehicleGunRotatorVftableRva);
+        uint expectedGunVftable = (uint)(baseAddress + EntityRecordRegionReadRequest.VehicleGunVftableRva);
+
+        byte[] expected = new byte[sizeof(uint)];
+        BinaryPrimitives.WriteUInt32LittleEndian(expected, expectedRotatorVftable);
+        MemoryScanRequest request = new(
+            FieldName: "pen-ownership-walk-rotator-vftable",
+            FieldType: "Bytes",
+            ExpectedValue: expected,
+            ToleranceMask: null,
+            MaxCandidates: EntityRecordRegionReadRequest.MaxOwnershipCandidates,
+            MinRegionSize: 4096,
+            Alignment: 4);
+        OperationResult<MemoryScanResult> scanResult = await Task.Run(
+            () => _scanDiscoverer.Scan(
+                observation,
+                baseAddress,
+                request,
+                cancellationToken,
+                "aob"),
+            cancellationToken).ConfigureAwait(false);
+        if (!scanResult.IsSuccess || scanResult.Value is null)
+        {
+            return new PenOwnershipWalkResolution(
+                Type10EntityPositionStatus.ReadFailed,
+                "pen-walk-scan",
+                1,
+                0,
+                false,
+                false,
+                false,
+                false,
+                false);
+        }
+
+        IReadOnlyList<MemoryScanCandidate> candidates = scanResult.Value.Candidates;
+        if (candidates.Count == 0)
+        {
+            return new PenOwnershipWalkResolution(
+                Type10EntityPositionStatus.PenOwnershipWalkNotFound,
+                "pen-walk-not-found",
+                1,
+                0,
+                false,
+                false,
+                false,
+                false,
+                false);
+        }
+
+        int index = candidateIndex ?? 0;
+        if (index < 0 || index >= candidates.Count)
+        {
+            return new PenOwnershipWalkResolution(
+                Type10EntityPositionStatus.PenOwnershipWalkNotFound,
+                "pen-walk-candidate-out-of-range",
+                1,
+                candidates.Count,
+                false,
+                false,
+                false,
+                false,
+                false);
+        }
+
+        long rotatorAddress = candidates[index].AbsoluteAddress;
+
+        // Identity re-gate: the AOB scan matched the exact vftable dword, but
+        // the discipline re-reads the object's vftable under the SAME guarded
+        // lease before walking its pointers (never dereference off an
+        // unauthenticated object — the avatar-stats anchor applies the same
+        // re-read before trusting its quad).
+        uint? rotatorVftable = await ReadPointerAsync(
+            reader,
+            rotatorAddress,
+            cancellationToken).ConfigureAwait(false);
+        if (rotatorVftable is null)
+        {
+            return new PenOwnershipWalkResolution(
+                Type10EntityPositionStatus.ReadFailed,
+                "pen-walk-identity-read",
+                1,
+                candidates.Count,
+                false,
+                false,
+                false,
+                false,
+                false);
+        }
+
+        if (rotatorVftable.Value != expectedRotatorVftable)
+        {
+            return new PenOwnershipWalkResolution(
+                Type10EntityPositionStatus.PenOwnershipWalkMismatch,
+                "pen-walk-identity-mismatch",
+                1,
+                candidates.Count,
+                false,
+                false,
+                false,
+                false,
+                false);
+        }
+
+        OwnershipWalkPassVerdict? first = await RunOwnershipWalkPassAsync(
+            reader,
+            rotatorAddress,
+            expectedRotatorVftable,
+            expectedGunVftable,
+            cancellationToken).ConfigureAwait(false);
+        if (first is null)
+        {
+            return new PenOwnershipWalkResolution(
+                Type10EntityPositionStatus.ReadFailed,
+                "pen-walk-pass1-read",
+                2,
+                candidates.Count,
+                false,
+                false,
+                false,
+                false,
+                false);
+        }
+
+        OwnershipWalkPassVerdict? second = await RunOwnershipWalkPassAsync(
+            reader,
+            rotatorAddress,
+            expectedRotatorVftable,
+            expectedGunVftable,
+            cancellationToken).ConfigureAwait(false);
+        if (second is null)
+        {
+            return new PenOwnershipWalkResolution(
+                Type10EntityPositionStatus.ReadFailed,
+                "pen-walk-pass2-read",
+                2,
+                candidates.Count,
+                false,
+                false,
+                false,
+                false,
+                false);
+        }
+
+        bool stable = first.Value == second.Value;
+        OwnershipWalkPassVerdict verdict = first.Value;
+        bool allConfirmed = verdict.OwnerPointerReadable
+            && verdict.ForwardRoundTripConfirmed
+            && verdict.GunVtableConfirmed
+            && verdict.EntityHpPlausible;
+        Type10EntityPositionStatus status = !stable
+            ? Type10EntityPositionStatus.PenOwnershipWalkUnstable
+            : allConfirmed
+                ? Type10EntityPositionStatus.Resolved
+                : Type10EntityPositionStatus.PenOwnershipWalkMismatch;
+        return new PenOwnershipWalkResolution(
+            status,
+            stable ? (allConfirmed ? null : "pen-walk-mismatch") : "pen-walk-unstable",
+            2,
+            candidates.Count,
+            verdict.OwnerPointerReadable,
+            verdict.ForwardRoundTripConfirmed,
+            verdict.GunVtableConfirmed,
+            verdict.EntityHpPlausible,
+            stable);
+    }
+
+    /// <summary>
+    /// One ownership-walk pass: the five fixed reads. Returns null only when a
+    /// guarded read cannot complete (never fabricates a verdict); otherwise
+    /// returns the per-step booleans, where any false member is a fail-closed
+    /// mismatch, not a positive.
+    /// </summary>
+    private static async ValueTask<OwnershipWalkPassVerdict?> RunOwnershipWalkPassAsync(
+        IAuthorizedMemoryReader reader,
+        long rotatorAddress,
+        uint expectedRotatorVftable,
+        uint expectedGunVftable,
+        CancellationToken cancellationToken)
+    {
+        // 1. rotator +0x10 -> owner.
+        long ownerAddress = rotatorAddress + EntityRecordRegionReadRequest.PenOwnershipRotatorOwnerOffset;
+        uint? owner = await ReadPointerAsync(reader, ownerAddress, cancellationToken).ConfigureAwait(false);
+        if (owner is null)
+        {
+            return null;
+        }
+        if (owner.Value == 0)
+        {
+            return new OwnershipWalkPassVerdict(false, false, false, false);
+        }
+
+        // 2. owner +0x1fc -> rotator (forward round-trip).
+        uint? ownerRotator = await ReadPointerAsync(
+            reader,
+            owner.Value + EntityRecordRegionReadRequest.PenOwnershipOwnerRotatorOffset,
+            cancellationToken).ConfigureAwait(false);
+        if (ownerRotator is null)
+        {
+            return null;
+        }
+        bool forwardConfirmed = ownerRotator.Value == (uint)rotatorAddress;
+
+        // 3. owner +0x204 -> gun; gun+0 -> vftable identity.
+        uint? gun = await ReadPointerAsync(
+            reader,
+            owner.Value + EntityRecordRegionReadRequest.PenOwnershipOwnerGunOffset,
+            cancellationToken).ConfigureAwait(false);
+        bool gunConfirmed = false;
+        if (gun is not null && gun.Value != 0)
+        {
+            uint? gunVftable = await ReadPointerAsync(reader, gun.Value, cancellationToken).ConfigureAwait(false);
+            if (gunVftable is null)
+            {
+                return null;
+            }
+            gunConfirmed = gunVftable.Value == expectedGunVftable;
+        }
+
+        // 4. owner +0x04 -> entity; entity +0xB8 -> HP int16 (alive = >= 0).
+        uint? entity = await ReadPointerAsync(
+            reader,
+            owner.Value + EntityRecordRegionReadRequest.PenOwnershipOwnerEntityOffset,
+            cancellationToken).ConfigureAwait(false);
+        bool hpPlausible = false;
+        if (entity is not null && entity.Value != 0)
+        {
+            OperationResult<byte[]> hpRead = await reader.ReadAsync(
+                (nint)(entity.Value + EntityRecordRegionReadRequest.EntityHealthOffset),
+                sizeof(short),
+                cancellationToken).ConfigureAwait(false);
+            if (!hpRead.IsSuccess || hpRead.Value is null || hpRead.Value.Length != sizeof(short))
+            {
+                return null;
+            }
+            short hp = BinaryPrimitives.ReadInt16LittleEndian(hpRead.Value);
+            hpPlausible = hp >= 0;
+        }
+
+        return new OwnershipWalkPassVerdict(true, forwardConfirmed, gunConfirmed, hpPlausible);
+    }
+
+    /// <summary>
+    /// Reads one uint32 pointer-sized word under the guarded lease; null on
+    /// read failure (the caller fails closed).
+    /// </summary>
+    private static async ValueTask<uint?> ReadPointerAsync(
+        IAuthorizedMemoryReader reader,
+        long address,
+        CancellationToken cancellationToken)
+    {
+        OperationResult<byte[]> result = await reader.ReadAsync(
+            (nint)address,
+            sizeof(uint),
+            cancellationToken).ConfigureAwait(false);
+        if (!result.IsSuccess || result.Value is null || result.Value.Length != sizeof(uint))
+        {
+            return null;
+        }
+        return BinaryPrimitives.ReadUInt32LittleEndian(result.Value);
     }
 
     /// <summary>

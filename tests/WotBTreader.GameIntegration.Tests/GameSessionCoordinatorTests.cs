@@ -1663,6 +1663,428 @@ public sealed class GameSessionCoordinatorTests
         Assert.AreEqual("discover.entity_region.invalid_avatar_candidate", result.Error?.Code);
     }
 
+    // ---- pen-ownership-walk anchor (penetration v0.3 H1, 2026-08-16) ----
+
+    // The coordinator's test module base is 0x10000000 (FixedModuleBaseResolver);
+    // the weapon-family vftable RVAs are hash-bound 11.19.0.10 findings.
+    private const uint TestVehicleGunRotatorVftable = 0x10000000 + 0x32eeb40;
+    private const uint TestVehicleGunVftable = 0x10000000 + 0x32dacf4;
+
+    private static MemoryScanResult CreateOwnershipWalkScanResult(params long[] candidateAddresses) => new(
+        DateTimeOffset.UnixEpoch,
+        BaseAddress: 0x10000000,
+        RegionsScanned: 1,
+        BytesScanned: 4096,
+        Candidates:
+            candidateAddresses.Select(address => new MemoryScanCandidate(
+                AbsoluteAddress: address,
+                BaseDisplacement: 0,
+                ObservedValue: BitConverter.GetBytes(TestVehicleGunRotatorVftable),
+                ValueSummary: "pen-ownership-walk-rotator-vftable")).ToArray(),
+        TotalMatchesBeforeTruncation: candidateAddresses.Length);
+
+    [TestMethod]
+    public async Task EntityRegionRead_PenOwnershipWalk_ConfirmsChainTwoPasses()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long rotatorAddress = 0x25001000;
+        const uint ownerAddress = 0x25002000;
+        const uint gunAddress = 0x25003000;
+        const uint entityAddress = 0x25004000;
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            // rotator +0x0 -> VehicleGunRotator vftable (identity re-read).
+            [rotatorAddress] = BitConverter.GetBytes(TestVehicleGunRotatorVftable),
+            // rotator +0x10 -> owner (back-pointer).
+            [rotatorAddress + 0x10] = BitConverter.GetBytes(ownerAddress),
+            // owner +0x1fc -> rotator (forward round-trip).
+            [ownerAddress + 0x1fc] = BitConverter.GetBytes((uint)rotatorAddress),
+            // owner +0x204 -> gun.
+            [ownerAddress + 0x204] = BitConverter.GetBytes(gunAddress),
+            // gun +0x0 -> VehicleGun vftable.
+            [gunAddress] = BitConverter.GetBytes(TestVehicleGunVftable),
+            // owner +0x04 -> entity.
+            [ownerAddress + 0x04] = BitConverter.GetBytes(entityAddress),
+            // entity +0xB8 -> current HP int16 (alive).
+            [entityAddress + 0xB8] = BitConverter.GetBytes((short)1234),
+        });
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.PenOwnershipWalk),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, result.Value?.Status);
+        Assert.AreEqual(1, result.Value?.PenOwnershipRotatorCandidateCount);
+        Assert.IsTrue(result.Value?.PenOwnershipOwnerPointerReadable);
+        Assert.IsTrue(result.Value?.PenOwnershipForwardRoundTripConfirmed);
+        Assert.IsTrue(result.Value?.PenOwnershipGunVtableConfirmed);
+        Assert.IsTrue(result.Value?.PenOwnershipEntityHpPlausible);
+        Assert.IsTrue(result.Value?.PenOwnershipTwoPassStable);
+        // No raw region bytes leave for this anchor (verdicts only).
+        Assert.IsNull(result.Value?.RegionBytes);
+        // The AOB scan targeted the VehicleGunRotator vftable.
+        Assert.AreEqual("pen-ownership-walk-rotator-vftable", scan.LastRequest?.FieldName);
+        CollectionAssert.AreEqual(
+            BitConverter.GetBytes(TestVehicleGunRotatorVftable),
+            scan.LastRequest?.ExpectedValue);
+        // Identity re-read + two passes × six reads, in the fixed chain order.
+        Assert.HasCount(13, factory.Reader.Reads);
+        Assert.AreEqual(rotatorAddress, factory.Reader.Reads[0].Address);
+        Assert.AreEqual(rotatorAddress + 0x10, factory.Reader.Reads[1].Address);
+        Assert.AreEqual(rotatorAddress + 0x10, factory.Reader.Reads[7].Address);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_PenOwnershipWalk_SelectsRequestedCandidate()
+    {
+        // Two rotator candidates; OwnershipCandidateIndex=1 must anchor the walk
+        // on the SECOND candidate, not the first (the first has no scripted chain).
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long rotatorA = 0x25001000;
+        const long rotatorB = 0x25001100;
+        const uint ownerAddress = 0x25002000;
+        const uint gunAddress = 0x25003000;
+        const uint entityAddress = 0x25004000;
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            [rotatorB] = BitConverter.GetBytes(TestVehicleGunRotatorVftable),
+            [rotatorB + 0x10] = BitConverter.GetBytes(ownerAddress),
+            [ownerAddress + 0x1fc] = BitConverter.GetBytes((uint)rotatorB),
+            [ownerAddress + 0x204] = BitConverter.GetBytes(gunAddress),
+            [gunAddress] = BitConverter.GetBytes(TestVehicleGunVftable),
+            [ownerAddress + 0x04] = BitConverter.GetBytes(entityAddress),
+            [entityAddress + 0xB8] = BitConverter.GetBytes((short)1234),
+        });
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorA, rotatorB));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.PenOwnershipWalk,
+                    OwnershipCandidateIndex: 1),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, result.Value?.Status);
+        Assert.AreEqual(2, result.Value?.PenOwnershipRotatorCandidateCount);
+        Assert.IsTrue(result.Value?.PenOwnershipForwardRoundTripConfirmed);
+        // The walk anchored on the second candidate, not the first.
+        Assert.AreEqual(rotatorB, factory.Reader.Reads[0].Address);
+        Assert.AreEqual(rotatorB + 0x10, factory.Reader.Reads[1].Address);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_PenOwnershipWalk_IdentityMismatchFailsClosed()
+    {
+        // The scan returned a candidate, but the guarded re-read of the
+        // object's vftable disagrees -> the walk must not dereference it.
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long rotatorAddress = 0x25001000;
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            [rotatorAddress] = BitConverter.GetBytes(0xDEADBEEFu),
+        });
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.PenOwnershipWalk),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.PenOwnershipWalkMismatch, result.Value?.Status);
+        Assert.AreEqual("pen-walk-identity-mismatch", result.Value?.FailureStage);
+        Assert.IsFalse(result.Value?.PenOwnershipOwnerPointerReadable);
+        Assert.IsFalse(result.Value?.PenOwnershipTwoPassStable);
+        // Only the identity re-read ran; no pointer was dereferenced.
+        Assert.HasCount(1, factory.Reader.Reads);
+        Assert.AreEqual(rotatorAddress, factory.Reader.Reads[0].Address);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_PenOwnershipWalk_NoRotatorFailsClosed()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>());
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult());
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.PenOwnershipWalk),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.PenOwnershipWalkNotFound, result.Value?.Status);
+        Assert.AreEqual("pen-walk-not-found", result.Value?.FailureStage);
+        Assert.AreEqual(0, result.Value?.PenOwnershipRotatorCandidateCount);
+        Assert.IsFalse(result.Value?.PenOwnershipTwoPassStable);
+        Assert.IsEmpty(factory.Reader.Reads);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_PenOwnershipWalk_RoundTripMismatchFailsClosed()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long rotatorAddress = 0x25001000;
+        const uint ownerAddress = 0x25002000;
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            [rotatorAddress] = BitConverter.GetBytes(TestVehicleGunRotatorVftable),
+            [rotatorAddress + 0x10] = BitConverter.GetBytes(ownerAddress),
+            // owner +0x1fc points at a DIFFERENT object.
+            [ownerAddress + 0x1fc] = BitConverter.GetBytes(0x25009999u),
+            [ownerAddress + 0x204] = BitConverter.GetBytes(0x25003000u),
+            [0x25003000] = BitConverter.GetBytes(TestVehicleGunVftable),
+            [ownerAddress + 0x04] = BitConverter.GetBytes(0x25004000u),
+            [0x25004000 + 0xB8] = BitConverter.GetBytes((short)1234),
+        });
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.PenOwnershipWalk),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.PenOwnershipWalkMismatch, result.Value?.Status);
+        Assert.AreEqual("pen-walk-mismatch", result.Value?.FailureStage);
+        Assert.IsTrue(result.Value?.PenOwnershipOwnerPointerReadable);
+        Assert.IsFalse(result.Value?.PenOwnershipForwardRoundTripConfirmed);
+        Assert.IsTrue(result.Value?.PenOwnershipTwoPassStable);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_PenOwnershipWalk_GunVtableMismatchFailsClosed()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long rotatorAddress = 0x25001000;
+        const uint ownerAddress = 0x25002000;
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            [rotatorAddress] = BitConverter.GetBytes(TestVehicleGunRotatorVftable),
+            [rotatorAddress + 0x10] = BitConverter.GetBytes(ownerAddress),
+            [ownerAddress + 0x1fc] = BitConverter.GetBytes((uint)rotatorAddress),
+            [ownerAddress + 0x204] = BitConverter.GetBytes(0x25003000u),
+            // gun's first dword is NOT the VehicleGun vftable.
+            [0x25003000] = BitConverter.GetBytes(0xDEADBEEFu),
+            [ownerAddress + 0x04] = BitConverter.GetBytes(0x25004000u),
+            [0x25004000 + 0xB8] = BitConverter.GetBytes((short)1234),
+        });
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.PenOwnershipWalk),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.PenOwnershipWalkMismatch, result.Value?.Status);
+        Assert.IsTrue(result.Value?.PenOwnershipForwardRoundTripConfirmed);
+        Assert.IsFalse(result.Value?.PenOwnershipGunVtableConfirmed);
+        Assert.IsTrue(result.Value?.PenOwnershipTwoPassStable);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_PenOwnershipWalk_ReadFailureFailsClosed()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long rotatorAddress = 0x25001000;
+        // The owner pointer read is scripted, but the round-trip read misses
+        // (owner+0x1fc is not in the pages) -> the pass returns null and the
+        // walk fails closed with ReadFailed, never a positive verdict.
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            [rotatorAddress] = BitConverter.GetBytes(TestVehicleGunRotatorVftable),
+            [rotatorAddress + 0x10] = BitConverter.GetBytes(0x25002000u),
+        });
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.PenOwnershipWalk),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.ReadFailed, result.Value?.Status);
+        Assert.AreEqual("pen-walk-pass1-read", result.Value?.FailureStage);
+        Assert.IsFalse(result.Value?.PenOwnershipOwnerPointerReadable);
+        Assert.IsFalse(result.Value?.PenOwnershipTwoPassStable);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_PenOwnershipWalk_UnstablePassesFailsClosed()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long rotatorAddress = 0x25001000;
+        const uint ownerAddress = 0x25002000;
+        // First pass sees a round-trip hit; the second pass sees a mismatch,
+        // so the two passes disagree -> Unstable, no promotion.
+        var factory = new ToggleOwnershipWalkReaderFactory(
+            new Dictionary<long, byte[]>
+            {
+                [rotatorAddress] = BitConverter.GetBytes(TestVehicleGunRotatorVftable),
+                [rotatorAddress + 0x10] = BitConverter.GetBytes(ownerAddress),
+                [ownerAddress + 0x1fc] = BitConverter.GetBytes((uint)rotatorAddress),
+                [ownerAddress + 0x204] = BitConverter.GetBytes(0x25003000u),
+                [0x25003000] = BitConverter.GetBytes(TestVehicleGunVftable),
+                [ownerAddress + 0x04] = BitConverter.GetBytes(0x25004000u),
+                [0x25004000 + 0xB8] = BitConverter.GetBytes((short)1234),
+            },
+            new Dictionary<long, byte[]>
+            {
+                [rotatorAddress + 0x10] = BitConverter.GetBytes(ownerAddress),
+                [ownerAddress + 0x1fc] = BitConverter.GetBytes(0x25009999u),
+                [ownerAddress + 0x204] = BitConverter.GetBytes(0x25003000u),
+                [0x25003000] = BitConverter.GetBytes(TestVehicleGunVftable),
+                [ownerAddress + 0x04] = BitConverter.GetBytes(0x25004000u),
+                [0x25004000 + 0xB8] = BitConverter.GetBytes((short)1234),
+            });
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.PenOwnershipWalk),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.PenOwnershipWalkUnstable, result.Value?.Status);
+        Assert.AreEqual("pen-walk-unstable", result.Value?.FailureStage);
+        Assert.IsFalse(result.Value?.PenOwnershipTwoPassStable);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_PenOwnershipWalk_InvalidCandidateIndexFailsBeforeGate()
+    {
+        var factory = new StubMemoryReaderFactory(); // throws if created
+        var (coordinator, _) = CreateCoordinator(memoryReaderFactory: factory);
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.PenOwnershipWalk,
+                    OwnershipCandidateIndex: 8),
+                CancellationToken.None);
+
+        Assert.IsFalse(result.IsSuccess);
+        Assert.AreEqual("discover.entity_region.invalid_ownership_candidate", result.Error?.Code);
+    }
+
     [TestMethod]
     public async Task EntityRegionsRead_ExactBuildReturnsBytesInRequestOrder()
     {
@@ -3978,6 +4400,75 @@ public sealed class GameSessionCoordinatorTests
                     Entities: [],
                     TraversalLimited: false)));
         }
+    }
+
+    private sealed class ToggleOwnershipWalkReaderFactory(
+        IReadOnlyDictionary<long, byte[]> firstPass,
+        IReadOnlyDictionary<long, byte[]> secondPass) : IGuardedMemoryReaderFactory
+    {
+        public ToggleOwnershipWalkReader Reader { get; } = new(firstPass, secondPass);
+
+        public ValueTask<OperationResult<IAuthorizedMemoryReader>> CreateAsync(
+            AuthorizedMemoryObservation observation,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(OperationResult.Success<IAuthorizedMemoryReader>(Reader));
+        }
+    }
+
+    private sealed class ToggleOwnershipWalkReader(
+        IReadOnlyDictionary<long, byte[]> firstPass,
+        IReadOnlyDictionary<long, byte[]> secondPass) : IAuthorizedMemoryReader
+    {
+        private readonly Dictionary<long, int> _hits = [];
+
+        public ValueTask<OperationResult<byte[]>> ReadAsync(
+            nint address,
+            int length,
+            CancellationToken cancellationToken)
+        {
+            long key = address.ToInt64();
+            _hits.TryGetValue(key, out int hit);
+            _hits[key] = hit + 1;
+            IReadOnlyDictionary<long, byte[]> pages = hit == 0 ? firstPass : secondPass;
+            if (pages.TryGetValue(key, out byte[]? page) && page.Length >= length)
+            {
+                return ValueTask.FromResult(OperationResult.Success(
+                    page.AsSpan(0, length).ToArray()));
+            }
+
+            return ValueTask.FromResult(OperationResult.Failure<byte[]>(
+                new ApplicationError(
+                    "test.toggle_read_miss",
+                    "Toggle read miss at 0x" + key.ToString("X", CultureInfo.InvariantCulture))));
+        }
+
+        public ValueTask<OperationResult<IReadOnlyList<MemoryReadItem>>> ReadBatchAsync(
+            IReadOnlyList<nint> addresses,
+            int length,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public ValueTask<OperationResult<Type10EntityPositionResult>> ResolveEntityPositionAsync(
+            nint moduleBase,
+            int entityId,
+            Type10EntityPositionLayout layout,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public ValueTask<OperationResult<Type10EntityPositionAddressResult>> ResolveEntityPositionAddressAsync(
+            nint moduleBase,
+            int entityId,
+            Type10EntityPositionLayout layout,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public ValueTask<OperationResult<EntityRosterResult>> EnumerateEntitiesAsync(
+            nint moduleBase,
+            Type10EntityPositionLayout layout,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 
     private sealed class FakeScanDiscoverer(MemoryScanResult result) : IMemoryScanDiscoverer

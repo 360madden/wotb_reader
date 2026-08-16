@@ -382,7 +382,10 @@ public sealed record EntityRecordRegionReadRequest
     /// <c>avatar-stats</c> (the entity-factory Avatar's uint32 battle-stats
     /// quad at <c>[avatar+0x118..0x124]</c> — the L3 damage-dealt family;
     /// for this anchor <c>entityId</c> is ignored and the coordinator runs
-    /// the gated vftable AOB scan for the entity-Avatar instead). Unknown
+    /// the gated vftable AOB scan for the entity-Avatar instead), or
+    /// <c>pen-ownership-walk</c> (the viewpoint-vehicle ownership walk: the
+    /// coordinator scans for the unique VehicleGunRotator and runs the fixed
+    /// five-read chain, returning only aggregate booleans/counts). Unknown
     /// values fail closed (no dump).
     /// </summary>
     public string? RegionAnchor { get; init; }
@@ -396,6 +399,12 @@ public sealed record EntityRecordRegionReadRequest
     /// Defaults to 0. Ignored for entity-keyed anchors.
     /// </summary>
     public int? AvatarCandidateIndex { get; init; }
+
+    /// <summary>
+    /// For <c>pen-ownership-walk</c> probes: which rotator scan candidate
+    /// (0..7) to validate. Defaults to 0. Ignored for other anchors.
+    /// </summary>
+    public int? OwnershipCandidateIndex { get; init; }
 }
 
 /// <summary>
@@ -426,6 +435,42 @@ public sealed record EntityRecordRegionReadResponse
     /// own-counter discrimination.
     /// </summary>
     public int AvatarCandidateCount { get; init; }
+
+    /// <summary>
+    /// For <c>pen-ownership-walk</c> probes: how many VehicleGunRotator scan
+    /// candidates the scan found (0 for other anchors).
+    /// </summary>
+    public int PenOwnershipRotatorCandidateCount { get; init; }
+
+    /// <summary>
+    /// For <c>pen-ownership-walk</c> probes: the rotator's +0x10 owner
+    /// pointer resolved to a non-null value.
+    /// </summary>
+    public bool PenOwnershipOwnerPointerReadable { get; init; }
+
+    /// <summary>
+    /// For <c>pen-ownership-walk</c> probes: the owner's +0x1fc field points
+    /// back to the same rotator (forward round-trip).
+    /// </summary>
+    public bool PenOwnershipForwardRoundTripConfirmed { get; init; }
+
+    /// <summary>
+    /// For <c>pen-ownership-walk</c> probes: the owner's +0x204 points to an
+    /// object whose first dword is the VehicleGun vftable.
+    /// </summary>
+    public bool PenOwnershipGunVtableConfirmed { get; init; }
+
+    /// <summary>
+    /// For <c>pen-ownership-walk</c> probes: the owner's +0x04 entity pointer
+    /// resolves to a non-negative current-HP int16 at +0xB8.
+    /// </summary>
+    public bool PenOwnershipEntityHpPlausible { get; init; }
+
+    /// <summary>
+    /// For <c>pen-ownership-walk</c> probes: the two passes produced
+    /// identical verdicts.
+    /// </summary>
+    public bool PenOwnershipTwoPassStable { get; init; }
 }
 
 /// <summary>

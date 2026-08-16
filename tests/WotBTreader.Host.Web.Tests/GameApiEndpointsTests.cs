@@ -1266,6 +1266,64 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task EntityRegion_PenOwnershipWalkAnchor_ForwardsIndexAndEchoesAggregateOnly()
+    {
+        // The pen-ownership-walk anchor (penetration v0.3 H1) parses, forwards
+        // the candidate index, and echoes only the aggregate verdict booleans
+        // back — no raw region bytes may leave the endpoint.
+        var scanner = new FakeGameMemoryScanner
+        {
+            EntityRegionResult = OperationResult.Success(
+                new EntityRecordRegionReadResult(
+                    DateTimeOffset.UnixEpoch.AddSeconds(1),
+                    "11.19.0.10",
+                    Type10EntityPositionStatus.Resolved,
+                    4242,
+                    ReplayTimeSeconds: 1.5,
+                    RegionBytes: null,
+                    FailureStage: null,
+                    Attempts: 2,
+                    NodesVisited: 0,
+                    ModuleRooted: true,
+                    EntityIdentityRevalidated: false,
+                    ConsistentDoubleRead: false,
+                    SameDecodedClockProven: false,
+                    PenOwnershipRotatorCandidateCount: 1,
+                    PenOwnershipOwnerPointerReadable: true,
+                    PenOwnershipForwardRoundTripConfirmed: true,
+                    PenOwnershipGunVtableConfirmed: true,
+                    PenOwnershipEntityHpPlausible: true,
+                    PenOwnershipTwoPassStable: true)),
+        };
+
+        IResult result = await GameApiEndpoints.ReadEntityRegionAsync(
+            scanner,
+            new WotBTreader.ApiContracts.EntityRecordRegionReadRequest
+            {
+                EntityId = 4242,
+                RegionLength = 16,
+                RegionAnchor = "pen-ownership-walk",
+                OwnershipCandidateIndex = 3,
+            },
+            TestContext.CancellationToken);
+
+        EntityRecordRegionReadResponse response = Value<EntityRecordRegionReadResponse>(result);
+        Assert.AreEqual("Resolved", response.Status);
+        Assert.AreEqual(
+            EntityRecordRegionAnchor.PenOwnershipWalk,
+            scanner.LastEntityRegionRequest?.RegionAnchor);
+        Assert.AreEqual(3, scanner.LastEntityRegionRequest?.OwnershipCandidateIndex);
+        Assert.AreEqual(1, response.PenOwnershipRotatorCandidateCount);
+        Assert.IsTrue(response.PenOwnershipOwnerPointerReadable);
+        Assert.IsTrue(response.PenOwnershipForwardRoundTripConfirmed);
+        Assert.IsTrue(response.PenOwnershipGunVtableConfirmed);
+        Assert.IsTrue(response.PenOwnershipEntityHpPlausible);
+        Assert.IsTrue(response.PenOwnershipTwoPassStable);
+        // Privacy: the ownership walk never carries raw region bytes.
+        Assert.IsNull(response.RegionBase64);
+    }
+
+    [TestMethod]
     public async Task CameraPose_ResolvedReturnsPoseWithIdentityFlags()
     {
         var scanner = new FakeGameMemoryScanner

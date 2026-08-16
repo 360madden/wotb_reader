@@ -965,7 +965,8 @@ internal static class GameApiEndpoints
                     request.RegionLength,
                     battleSessionId,
                     anchor,
-                    request.AvatarCandidateIndex),
+                    request.AvatarCandidateIndex,
+                    request.OwnershipCandidateIndex),
                 cancellationToken)
             .ConfigureAwait(false);
         if (!result.IsSuccess || result.Value is null)
@@ -993,6 +994,12 @@ internal static class GameApiEndpoints
             ModuleRooted = read.ModuleRooted,
             SameDecodedClockProven = read.SameDecodedClockProven,
             AvatarCandidateCount = read.AvatarCandidateCount,
+            PenOwnershipRotatorCandidateCount = read.PenOwnershipRotatorCandidateCount,
+            PenOwnershipOwnerPointerReadable = read.PenOwnershipOwnerPointerReadable,
+            PenOwnershipForwardRoundTripConfirmed = read.PenOwnershipForwardRoundTripConfirmed,
+            PenOwnershipGunVtableConfirmed = read.PenOwnershipGunVtableConfirmed,
+            PenOwnershipEntityHpPlausible = read.PenOwnershipEntityHpPlausible,
+            PenOwnershipTwoPassStable = read.PenOwnershipTwoPassStable,
         });
     }
 
@@ -1367,6 +1374,9 @@ internal static class GameApiEndpoints
                 return true;
             case "avatar-stats":
                 anchor = EntityRecordRegionAnchor.AvatarStats;
+                return true;
+            case "pen-ownership-walk":
+                anchor = EntityRecordRegionAnchor.PenOwnershipWalk;
                 return true;
             default:
                 anchor = EntityRecordRegionAnchor.RingRecord;

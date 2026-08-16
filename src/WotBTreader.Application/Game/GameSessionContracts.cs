@@ -503,6 +503,17 @@ public enum EntityRecordRegionAnchor
     /// built-in control windows).
     /// </summary>
     AvatarStats = 3,
+
+    /// <summary>
+    /// The viewpoint-vehicle ownership walk (penetration v0.3, H1). Ignores
+    /// <see cref="EntityRecordRegionReadRequest.EntityId"/>: the coordinator
+    /// runs the gated vftable AOB scan for the unique VehicleGunRotator
+    /// (<c>moduleBase + 0x32eeb40</c>), then the fixed five-read chain
+    /// (rotator→owner→forward round-trip→gun vftable→entity HP) and returns
+    /// only aggregate booleans/counts. No address or pointer leaves the
+    /// coordinator. See docs/operations/pen-ownership-walk-proof-protocol.md.
+    /// </summary>
+    PenOwnershipWalk = 4,
 }
 
 /// <summary>
@@ -520,7 +531,8 @@ public sealed record EntityRecordRegionReadRequest(
     int RegionLength,
     BattleSessionId? BattleSessionId = null,
     EntityRecordRegionAnchor RegionAnchor = EntityRecordRegionAnchor.RingRecord,
-    int? AvatarCandidateIndex = null)
+    int? AvatarCandidateIndex = null,
+    int? OwnershipCandidateIndex = null)
 {
     /// <summary>
     /// Maximum region size the L0 seam will read. 4 KB bounds the dump to a
@@ -556,6 +568,50 @@ public sealed record EntityRecordRegionReadRequest(
     /// Length of the battle-stats quad (four uint32 values).
     /// </summary>
     public const int AvatarStatsQuadLength = 0x10;
+
+    /// <summary>
+    /// Maximum scan candidates the <see cref="EntityRecordRegionAnchor.PenOwnershipWalk"/>
+    /// anchor will enumerate (one rotator is expected; the cap bounds a
+    /// hostile/ambiguous scan).
+    /// </summary>
+    public const int MaxOwnershipCandidates = 8;
+
+    /// <summary>
+    /// VehicleGunRotator primary vftable RVA (11.19.0.10, hash-bound
+    /// <c>1cda5c31…</c>, see pen-ownership-walk-proof-protocol.md).
+    /// </summary>
+    public const uint VehicleGunRotatorVftableRva = 0x32eeb40;
+
+    /// <summary>
+    /// VehicleGun primary vftable RVA (11.19.0.10, hash-bound
+    /// <c>1cda5c31…</c>, see pen-ownership-walk-proof-protocol.md).
+    /// </summary>
+    public const uint VehicleGunVftableRva = 0x32dacf4;
+
+    /// <summary>
+    /// VehicleGunRotator +0x10 stores its owner (the AvatarGameLogic object).
+    /// </summary>
+    public const int PenOwnershipRotatorOwnerOffset = 0x10;
+
+    /// <summary>
+    /// AvatarGameLogic +0x1fc stores the VehicleGunRotator (refptr).
+    /// </summary>
+    public const int PenOwnershipOwnerRotatorOffset = 0x1fc;
+
+    /// <summary>
+    /// AvatarGameLogic +0x204 stores the VehicleGun (raw pointer).
+    /// </summary>
+    public const int PenOwnershipOwnerGunOffset = 0x204;
+
+    /// <summary>
+    /// VehicleGameLogic +0x04 stores the entity (OD-068 slot +0x04 getter).
+    /// </summary>
+    public const int PenOwnershipOwnerEntityOffset = 0x04;
+
+    /// <summary>
+    /// Entity +0xB8 stores current HP as a signed int16 (OD-087/091, Verified).
+    /// </summary>
+    public const int EntityHealthOffset = 0xB8;
 }
 
 /// <summary>
@@ -577,7 +633,13 @@ public sealed record EntityRecordRegionReadResult(
     bool EntityIdentityRevalidated,
     bool ConsistentDoubleRead,
     bool SameDecodedClockProven,
-    int AvatarCandidateCount = 0);
+    int AvatarCandidateCount = 0,
+    int PenOwnershipRotatorCandidateCount = 0,
+    bool PenOwnershipOwnerPointerReadable = false,
+    bool PenOwnershipForwardRoundTripConfirmed = false,
+    bool PenOwnershipGunVtableConfirmed = false,
+    bool PenOwnershipEntityHpPlausible = false,
+    bool PenOwnershipTwoPassStable = false);
 
 /// <summary>
 /// One entity region in a batch read (mirrors the single-read fields).

@@ -110,6 +110,27 @@ public enum Type10EntityPositionStatus
     /// unauthenticated object.
     /// </summary>
     AvatarIdentityMismatch,
+
+    /// <summary>
+    /// The <c>pen-ownership-walk</c> anchor scan found no VehicleGunRotator
+    /// candidate, or the requested candidate index is out of range.
+    /// Fail-closed: no ownership verdict is fabricated.
+    /// </summary>
+    PenOwnershipWalkNotFound,
+
+    /// <summary>
+    /// The <c>pen-ownership-walk</c> anchor's five-read chain did not confirm
+    /// (a pointer did not resolve, or the gun vftable / entity HP check
+    /// failed). Fail-closed: a non-confirming read can never become a
+    /// positive ownership verdict.
+    /// </summary>
+    PenOwnershipWalkMismatch,
+
+    /// <summary>
+    /// The <c>pen-ownership-walk</c> anchor's two passes disagreed, so the
+    /// ownership verdict is withheld (fail-closed).
+    /// </summary>
+    PenOwnershipWalkUnstable,
 }
 
 /// <summary>
