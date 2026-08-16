@@ -45,6 +45,12 @@ check is injectable so the rejection logic is tested deterministically, while
 the default implementation uses `FileSystemInfo.LinkTarget` (and fails closed
 when the link target cannot be established).
 
+**Privacy audit (capability token handling):** the capability is header-only
+throughout the overlay/CLI/PowerShell path and is never logged, returned by an
+API, or placed in a URL. The one gap found and fixed: the publisher's
+failure catch logged the full exception, whose message can carry the private
+`%LocalAppData%` rendezvous/temp path — it now logs the exception type only.
+
 ## Validation
 
 - Bootstrap regression tests: a permissive inherited parent ACL is severed on
