@@ -570,7 +570,38 @@ try {
 
     # Always re-read capability immediately before launch (rendezvous rotates ~5 min).
     $api = Get-ApiContext
-    $body = @{ sourceArtifactId = $artifactId } | ConvertTo-Json
+
+    # Name the artifact's just-imported decode session in the launch so the
+    # coordinator can grant penetration readiness. The capture gate requires
+    # the managed launch to carry a battle session id (GetCaptureAuthorization
+    # returns null for a legacy session-less launch, so /discover/pen-capture
+    # would always be denied with capture.gate_not_satisfied). The import above
+    # both ingests AND decodes, so the newest decode run for this artifact is
+    # the one this launch replays; sessions are listed newest-first.
+    $battleSessionId = $null
+    try {
+        $sessionsPre = Invoke-RestMethod -Uri "$($api.Base)/api/v1/sessions?limit=200" -Headers $api.Headers -TimeoutSec 30
+        $artifactSessionsPre = @($sessionsPre.items | Where-Object {
+            $null -ne $_.session -and
+            [string]$_.decodeRun.sourceArtifactId -eq $artifactId
+        })
+        if ($artifactSessionsPre.Count -gt 0) {
+            $battleSessionId = [string]$artifactSessionsPre[0].session.battleSessionId
+            Write-Od ('launch_session_named=true battleSession=' + $battleSessionId)
+        }
+        else {
+            Write-Od 'launch_session_named=false (no decode session; legacy launch, no penetration readiness)'
+        }
+    }
+    catch {
+        Write-Od 'launch_session_lookup_failed (legacy launch, no penetration readiness)'
+    }
+
+    $launchBody = @{ sourceArtifactId = $artifactId }
+    if (-not [string]::IsNullOrWhiteSpace($battleSessionId)) {
+        $launchBody.battleSessionId = $battleSessionId
+    }
+    $body = $launchBody | ConvertTo-Json
     Write-Od 'managed_launch'
     try {
         $launch = Invoke-RestMethod -Uri "$($api.Base)/api/v1/game/launch" -Method Post -Headers $api.Headers -Body $body -TimeoutSec 30

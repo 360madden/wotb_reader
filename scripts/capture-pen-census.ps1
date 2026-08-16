@@ -90,7 +90,30 @@ function Invoke-PenApi {
         $arguments.Body = $Body | ConvertTo-Json -Depth 6 -Compress
     }
 
-    return Invoke-RestMethod @arguments
+    try {
+        return Invoke-RestMethod @arguments
+    }
+    catch [System.Net.WebException] {
+        # Surface the host's error body (e.g. capture.gate_not_satisfied) so a
+        # rejected capture is diagnosable instead of an opaque 400. Body read
+        # is best-effort only; the status code is the authoritative signal.
+        $response = $_.Exception.Response
+        if ($null -ne $response) {
+            $bodyText = ''
+            try {
+                $stream = $response.GetResponseStream()
+                if ($null -ne $stream) {
+                    $reader = New-Object IO.StreamReader($stream)
+                    $bodyText = $reader.ReadToEnd()
+                    $reader.Close()
+                }
+            }
+            catch { }
+            throw ('pen_api_http_error status=' + [int]$response.StatusCode +
+                ' body=' + $bodyText)
+        }
+        throw
+    }
 }
 
 function Get-LaunchArtifactId {
