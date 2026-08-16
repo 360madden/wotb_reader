@@ -57,6 +57,12 @@ public sealed partial class W2sHudView : UserControl
     internal const double PenPulseOvershoot = 0.08;
     internal const int PenPulseFrames = 10;
 
+    // Low-HP nameplate pulse tuning: a killable target's HP-bar edge glows
+    // red, pulsing between full and min intensity over ~24 frames (≈ 1.2s).
+    internal const double LowHpThreshold = 0.25;
+    internal const double LowHpPulseMinAlpha = 0.35;
+    internal const int LowHpPulsePeriodFrames = 24;
+
     // ── Team / state palette ────────────────────────────────
     private static readonly Brush Team1Brush = Solid("#4FA8FF");
     private static readonly Brush Team2Brush = Solid("#FF6B6B");
@@ -85,6 +91,7 @@ public sealed partial class W2sHudView : UserControl
     private static readonly Brush PipDamageBrush = Solid("#FFC24B");
     private static readonly Brush PipKillBrush = Solid("#FF6B6B");
     private static readonly Brush HpGhostBrush = Solid("#A6FFFFFF");
+    private static readonly Brush LowHpGlowBrush = Solid("#FF5252");
     private static readonly Brush PlaybackFillBrush = Solid("#CCFFFFFF");
     private static readonly Brush MinimapVignette = RadialVignette();
 
@@ -98,6 +105,9 @@ public sealed partial class W2sHudView : UserControl
 
     /// <summary>Lagging HP fill fraction per tank, for the damage-ghost trail.</summary>
     private Dictionary<long, double> _hpGhosts = new();
+
+    /// <summary>Frames-since-low-HP per tank, for the killable-target edge pulse.</summary>
+    private Dictionary<long, int> _lowHpAges = new();
 
     /// <summary>Frames-since-arrival per kill-feed victim, for the slide-in.</summary>
     private Dictionary<long, int> _killAges = new();
@@ -206,10 +216,31 @@ public sealed partial class W2sHudView : UserControl
 
         _hpGhosts = nextHpGhosts;
 
+        // Per-entity low-HP state: an alive tank in the killable band pulses
+        // its HP-bar edge; leaving the band or viewport drops it out so the
+        // pulse restarts cleanly. Keyed by entity id, rebuilt per frame.
+        Dictionary<long, int> nextLowHpAges = new();
         foreach (NameplateItem item in items)
         {
+            double hp = double.IsFinite(item.HpFraction)
+                ? Math.Clamp(item.HpFraction, 0, 1)
+                : 0;
+            if (item.Alive && hp > 0 && hp <= LowHpThreshold)
+            {
+                nextLowHpAges[item.EntityId] =
+                    _lowHpAges.TryGetValue(item.EntityId, out int previous) ? previous + 1 : 0;
+            }
+        }
+
+        _lowHpAges = nextLowHpAges;
+
+        foreach (NameplateItem item in items)
+        {
+            double? lowHpPulseAlpha = nextLowHpAges.TryGetValue(item.EntityId, out int lowHpAge)
+                ? LowHpPulseAlpha(lowHpAge, LowHpPulsePeriodFrames)
+                : null;
             HudCanvas.Children.Add(
-                BuildNameplate(item, nextHpGhosts[item.EntityId], viewportWidth, viewportHeight));
+                BuildNameplate(item, nextHpGhosts[item.EntityId], lowHpPulseAlpha, viewportWidth, viewportHeight));
         }
 
         foreach (OwnMarkerItem marker in ownMarkers)
@@ -1221,6 +1252,7 @@ public sealed partial class W2sHudView : UserControl
     private static Border BuildNameplate(
         NameplateItem item,
         double ghostFraction,
+        double? lowHpPulseAlpha,
         double viewportWidth,
         double viewportHeight)
     {
@@ -1330,6 +1362,22 @@ public sealed partial class W2sHudView : UserControl
             VerticalAlignment = VerticalAlignment.Top,
         };
         hpTrackGrid.Children.Add(hpFill);
+
+        // Killable-target cue: an alive tank in the low-HP band gets a soft
+        // red outline over the HP bar whose opacity pulses each frame. The
+        // pulse is computed by the owner and passed in, so this builder stays
+        // pure layout (and the effect survives the clear-and-rebuild model).
+        if (lowHpPulseAlpha is double pulseAlpha)
+        {
+            hpTrackGrid.Children.Add(new Border
+            {
+                BorderBrush = LowHpGlowBrush,
+                BorderThickness = new Thickness(1.5),
+                CornerRadius = new CornerRadius(2),
+                Opacity = Math.Clamp(pulseAlpha, 0, 1),
+            });
+        }
+
         hpTrack.Child = hpTrackGrid;
         content.Children.Add(hpTrack);
 
@@ -1369,6 +1417,29 @@ public sealed partial class W2sHudView : UserControl
         double t = Math.Clamp((double)ageFrames / durationFrames, 0, 1);
         double eased = 1.0 - ((1.0 - t) * (1.0 - t));
         return (PipRisePixels * eased, 1.0 - t);
+    }
+
+    /// <summary>
+    /// Pulse intensity for the low-HP killable-target cue: a triangle wave
+    /// between full (1.0) and <see cref="LowHpPulseMinAlpha"/>, so the red
+    /// edge breathes instead of blinking harshly. Pure for unit tests.
+    /// </summary>
+    public static double LowHpPulseAlpha(int ageFrames, int periodFrames)
+    {
+        if (periodFrames <= 0)
+        {
+            return 1.0;
+        }
+
+        int frame = ageFrames % periodFrames;
+        if (frame < 0)
+        {
+            frame += periodFrames;
+        }
+
+        double t = (double)frame / periodFrames;
+        double triangle = 1.0 - (2.0 * Math.Abs(t - 0.5));
+        return LowHpPulseMinAlpha + ((1.0 - LowHpPulseMinAlpha) * (1.0 - triangle));
     }
 
     /// <summary>

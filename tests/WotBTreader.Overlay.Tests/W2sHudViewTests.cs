@@ -382,6 +382,39 @@ public sealed class W2sHudViewTests
     }
 
     [TestMethod]
+    public void LowHpPulseAlpha_StartsFullAndBreathes()
+    {
+        const int period = 24;
+        // Birth frame is full intensity.
+        Assert.AreEqual(1.0, W2sHudView.LowHpPulseAlpha(ageFrames: 0, periodFrames: period), 1e-9);
+        // Mid-period dips to the min intensity.
+        Assert.AreEqual(
+            W2sHudView.LowHpPulseMinAlpha,
+            W2sHudView.LowHpPulseAlpha(ageFrames: period / 2, periodFrames: period),
+            1e-9);
+        // Full period wraps back to full intensity.
+        Assert.AreEqual(1.0, W2sHudView.LowHpPulseAlpha(ageFrames: period, periodFrames: period), 1e-9);
+    }
+
+    [TestMethod]
+    public void LowHpPulseAlpha_StaysWithinBounds()
+    {
+        for (int age = 0; age < 96; age++)
+        {
+            double alpha = W2sHudView.LowHpPulseAlpha(ageFrames: age, periodFrames: 24);
+            Assert.IsTrue(alpha >= W2sHudView.LowHpPulseMinAlpha);
+            Assert.IsTrue(alpha <= 1.0);
+        }
+    }
+
+    [TestMethod]
+    public void LowHpPulseAlpha_DegeneratePeriod_FailsClosed()
+    {
+        Assert.AreEqual(1.0, W2sHudView.LowHpPulseAlpha(ageFrames: 3, periodFrames: 0), 1e-9);
+        Assert.AreEqual(1.0, W2sHudView.LowHpPulseAlpha(ageFrames: 3, periodFrames: -4), 1e-9);
+    }
+
+    [TestMethod]
     public void PenBadgeLabel_BandedVerdictWithNumericReadout()
     {
         Assert.AreEqual(
