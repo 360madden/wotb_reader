@@ -107,8 +107,16 @@ if ($EnableInstructionSnapshot -and $KeepExistingHost) {
     exit 1
 }
 
+$odLaunchLog = Join-Path $env:TEMP 'od-launch.log'
+Remove-Item -LiteralPath $odLaunchLog -Force -ErrorAction SilentlyContinue
+
 function Write-Od([string]$Message) {
-    Write-Host ("od_launch: " + $Message)
+    $line = "od_launch: " + $Message
+    Write-Host $line
+    # Progress tee so a hang mid-launch is diagnosable after the fact: every
+    # step lands in %TEMP%\od-launch.log even when stdout is swallowed by a
+    # caller timeout. ASCII-only (repo PowerShell policy).
+    Add-Content -LiteralPath $odLaunchLog -Value $line -Encoding ascii
 }
 
 # Owner-only ACL helpers (Test/Set-OdOwnerOnly*) are dot-sourced from
@@ -565,7 +573,7 @@ try {
     $body = @{ sourceArtifactId = $artifactId } | ConvertTo-Json
     Write-Od 'managed_launch'
     try {
-        $launch = Invoke-RestMethod -Uri "$($api.Base)/api/v1/game/launch" -Method Post -Headers $api.Headers -Body $body
+        $launch = Invoke-RestMethod -Uri "$($api.Base)/api/v1/game/launch" -Method Post -Headers $api.Headers -Body $body -TimeoutSec 30
     }
     catch {
         Write-Od 'FAILED_launch_http'
@@ -598,7 +606,7 @@ try {
     # sync-dim ready gate and must not spam focus during LookingForDialog.
 
     $api = Get-ApiContext
-    $pre = Invoke-RestMethod -Uri "$($api.Base)/api/v1/game/state" -Headers $api.Headers
+    $pre = Invoke-RestMethod -Uri "$($api.Base)/api/v1/game/state" -Headers $api.Headers -TimeoutSec 30
     Write-Od ("pre_watch_vs=" + $pre.verificationState + " reason=" + $pre.reasonCode)
 
     if ($pre.verificationState -eq 'Denied') {
@@ -718,7 +726,7 @@ try {
     }
 
     $api = Get-ApiContext
-    $post = Invoke-RestMethod -Uri "$($api.Base)/api/v1/game/state" -Headers $api.Headers
+    $post = Invoke-RestMethod -Uri "$($api.Base)/api/v1/game/state" -Headers $api.Headers -TimeoutSec 30
     Write-Od ("post_watch_vs=" + $post.verificationState + " reason=" + $post.reasonCode)
     if ($post.verificationState -ne 'OfflineReplayVerified') {
         # Same distinguishable completion as the pre-watch check: the replay may
@@ -755,7 +763,7 @@ try {
         if (-not (Get-Process -Name wotblitz -ErrorAction SilentlyContinue)) {
             throw 'game_died_before_clock_anchor'
         }
-        $sessions = Invoke-RestMethod -Uri "$($api.Base)/api/v1/sessions?limit=200" -Headers $api.Headers
+        $sessions = Invoke-RestMethod -Uri "$($api.Base)/api/v1/sessions?limit=200" -Headers $api.Headers -TimeoutSec 30
         $artifactSessions = @($sessions.items | Where-Object {
             $null -ne $_.session -and
             [string]$_.decodeRun.sourceArtifactId -eq $artifactId
@@ -837,7 +845,7 @@ try {
                 source             = 'CaptureLog'
                 uncertaintyTicks   = [TimeSpan]::FromSeconds(1).Ticks
             } | ConvertTo-Json
-            $clock = Invoke-RestMethod -Uri "$($api.Base)/api/v1/game/discover/clock-segment" -Method Post -Headers $api.Headers -Body $clockBody
+            $clock = Invoke-RestMethod -Uri "$($api.Base)/api/v1/game/discover/clock-segment" -Method Post -Headers $api.Headers -Body $clockBody -TimeoutSec 30
             Write-Od ('clock_anchor appended sequence=' + $clock.sequence +
                 ' uncertainty_s=' + ([TimeSpan]::FromTicks([long]$clock.uncertaintyTicks).TotalSeconds) +
                 ' battleSession=' + $battleSessionId +
