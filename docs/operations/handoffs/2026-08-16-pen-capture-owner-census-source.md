@@ -84,3 +84,24 @@ gun per tank, so the census alone cannot attribute viewpoint ownership). The
 per-family counts are the research signal that drives the next static step:
 the viewpoint-vehicle → `VehicleGun`/`VehicleGunRotator` ownership walk, then
 the shell/aim/ray field offsets for phases 2–4.
+
+## Live attempt — honest negative (2026-08-16)
+
+The first live census attempt did not reach the capture. The Dead Rail replay
+was re-launched (its OD completion marker was preserved under a `.bak` suffix
+for the re-launch and restored afterward), and the managed launch reached
+`lifecycle_evidence outcome=verified` in the host log — but the game then
+assert-crashed during replay playback. The newest blitz log ends with an
+`ASSERT_END` from `ListenerHolderBase.cpp:15` and an AkAudio (`AK::`) write
+stack, and the coordinator correctly denied the session with
+`evidence.monitor_unhealthy` because the `wotblitz.exe` process was gone. The
+launcher then hung past its bounded steps rather than failing fast (a
+pre-existing launcher robustness gap for mid-flow game death, not a census
+bug), so the run was stopped and the environment cleaned up: host stopped,
+completion marker restored, no stray game/host processes.
+
+This is an environment negative, not a code negative: the census source and
+endpoint remain verified offline, and no census aggregate was produced or
+promoted. The next live attempt should either retry after a clean game restart
+(try the Oasis replay as the alternate battle) or first diagnose the
+`ListenerHolderBase` assert.

@@ -922,9 +922,18 @@ folder for the full numbering convention and document map.
   `IPenetrationCaptureEvidenceSource` production registration is now
   `ExactBuildOwnerCensusCaptureEvidenceSource` (no longer the neutral stub): it
   runs two gated vftable AOB census passes over Private|Mapped regions and
-  reports only privacy-safe per-family counts + unique/stable flags; shell/aim/
+  reports only privacy-safe per-family counts + unique/stable flags;  shell/aim/
   ray phases remain unproven so every real capture stays `NotReady`. A new
   capability-gated `POST /api/v1/game/discover/pen-capture` endpoint triggers
   the serialized capture from an opaque `decodeRunId`. The blocker remains
   open: the live census capture, the viewpoint-ownership walk, and the shell/
   aim/ray field proofs are still outstanding.
+
+- Live attempt (`2026-08-16`, honest negative): the first census launch
+  (Dead Rail re-launch) reached `lifecycle_evidence outcome=verified` but the
+  game then assert-crashed during replay playback (`ListenerHolderBase.cpp:15`,
+  AkAudio write stack in the newest blitz log) and the coordinator denied
+  `evidence.monitor_unhealthy`; no census aggregate was produced. The launcher
+  hung past its bounded steps on the mid-flow game death (pre-existing
+  robustness gap). Environment cleaned up; the census source and endpoint stay
+  merged and verified offline, and no census result is promoted.
