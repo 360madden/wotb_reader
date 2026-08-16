@@ -7,8 +7,10 @@ Refreshed after the penetration v0.3 fidelity audit, safe operability slice,
 exact-build hard-joint negative, bounded exact-input source verdict, managed
 capture contract implementation, BLK-0027 registration, the serialized HUD empty/replay
 smoke check, HUD game-window diagnostics, HUD render-health/export work, replay
-playback-continuity hardening, and the game-window startup diagnosis on
-2026-08-15.
+playback-continuity hardening, the game-window startup diagnosis, and the
+HUD v0.7.0-alpha visual + interaction ship (frame-driven combat animations,
+scrubbable in-HUD playback bar, low-HP killable-target pulse, and the 20-round
+fail-closed hardening pass) on 2026-08-16.
 
 **Sequencing rule:** live items are clustered to share ONE approved launch
 (one game start = max evidence); offline hardening runs in parallel with any
@@ -25,7 +27,7 @@ live work; owner-gated items sit behind the evidence they consume.
 | 7 | **Harden final rendezvous capability-file ACL verification** | security follow-up | Parent ACLs are verified, but final `web.json` needs protected owner-only ACL and post-move reparse/DACL verification | offline Windows test |
 | 8 | **Re-verdict the stored Oasis batch positions with a bounded bidirectional per-dump clock window** | X2 / OD-RECOVERY-100 | Preserves the next independent offline evidence lane without consuming a launch | offline |
 | 9 | **Post-contract two-replay batch witness** with attempts 1 and both tear flags false | Item 7 Branch B | Direct no-transient-tear wire evidence remains the item-7 gate | 2 approved launches after #8 |
-| 10 | **Complete the HUD v0.6 visual ship review** | HUD M0/M1; Phase 6 v0.3 G6 for penetration release | Normal, large, maximized, borderless work-area, and active-DPI geometry are live-verified; exclusive fullscreen, a second DPI scale, scene contrast, and penetration fidelity remain separate gates | one owner-supervised visual pass across actual fullscreen/DPI/scenes; #1-6 and full gate remain required for penetration release |
+| 10 | **Complete the HUD live visual ship review** (code ship is done at v0.7.0-alpha) | HUD M0/M1; Phase 6 v0.3 G6 for penetration release | Code-level visuals, combat animations, scrubbing, and low-HP cues are merged; exclusive fullscreen, a second DPI scale, scene contrast, and penetration fidelity still need one owner-supervised live pass | one owner-supervised visual pass across actual fullscreen/DPI/scenes; #1-6 and full gate remain required for penetration release |
 
 ## Wait-list (deliberately outside the top 10)
 
