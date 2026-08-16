@@ -40,10 +40,11 @@ The capability is still never logged or persisted anywhere except the record
 itself; no path, token, or ACL text enters diagnostics.
 
 **Reader-side follow-up:** `RendezvousLocator` (the overlay client) now rejects
-a reparse-point record before reading it, mirroring the publisher's rule. The
-check is injectable so the rejection logic is tested deterministically, while
-the default implementation uses `FileSystemInfo.LinkTarget` (and fails closed
-when the link target cannot be established).
+a reparse-point record before reading it and a record whose Windows owner is
+not the current user, mirroring the publisher's rule. Both checks are
+injectable so the rejection logic is tested deterministically; the defaults
+use `FileSystemInfo.LinkTarget` and `FileSecurity` owner comparison (each
+fails closed when the property cannot be read).
 
 **Privacy audit (capability token handling):** the capability is header-only
 throughout the overlay/CLI/PowerShell path and is never logged, returned by an
