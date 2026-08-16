@@ -152,6 +152,14 @@ The two census passes agreed (`stable=True`), so the vftable RVAs
 (`VehicleGun 0x32dacf4`, `VehicleGunRotator 0x32eeb40`, `AvatarGunAgent
 0x324dae8`) are now LIVE-proven against the real battle heap.
 
+**Reproducibility (same day, second content-distinct battle).** The Dead
+Rail replay (Dead Rail map) produced the identical census:
+`vehicleGun=42, vehicleGunRotator=1, avatarGunAgent=1, stable=True`,
+`OwnerCandidateCount=43`, `Rejected / BoundsExceeded`. The exact 42/1/1
+pattern across two battles strongly supports the interpretation that the
+single rotator/agent pair is the viewpoint's live gun controller, while the
+42 `VehicleGun` records are one per battle vehicle.
+
 ## Capture pipeline fixes (2026-08-16)
 
 Three code gaps blocked the live capture and were fixed in this session:

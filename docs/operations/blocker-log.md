@@ -961,3 +961,13 @@ folder for the full numbering convention and document map.
   the capture build check accepts a three-part session version that is a dotted
   prefix of the process version (was `capture.decode_build_mismatch`), and the
   launcher's HTTP calls are bounded with 30s timeouts.
+
+- Reproducibility (`2026-08-16`, second content-distinct battle): the Dead
+  Rail replay (Dead Rail map) returned the identical census —
+  `vehicleGun=42, vehicleGunRotator=1, avatarGunAgent=1, stable=True`,
+  `OwnerCandidateCount=43`, `Rejected / BoundsExceeded`. The exact 42/1/1
+  pattern across two battles strongly supports reading the single
+  rotator/agent pair as the viewpoint's live gun controller (42 one-per-vehicle
+  `VehicleGun` records). The census remains the first discriminator, not a
+  resolution: BLK-0027 stays open until the ownership walk + shell/aim/ray
+  proofs land.
