@@ -10,6 +10,7 @@ public sealed class WindowsReplayLaunchStagingPlatformTests
     {
         if (!OperatingSystem.IsWindows())
         {
+            Assert.Inconclusive("This test exercises a Windows-only code path.");
             return;
         }
 
@@ -61,6 +62,7 @@ public sealed class WindowsReplayLaunchStagingPlatformTests
     {
         if (!OperatingSystem.IsWindows())
         {
+            Assert.Inconclusive("This test exercises a Windows-only code path.");
             return;
         }
 

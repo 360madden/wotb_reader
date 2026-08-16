@@ -49,6 +49,7 @@ public sealed class LocalApplicationPathsTests
     {
         if (!OperatingSystem.IsWindows())
         {
+            Assert.Inconclusive("This test exercises a Windows-only code path.");
             return;
         }
 
@@ -135,6 +136,7 @@ public sealed class LocalApplicationPathsTests
     {
         if (!OperatingSystem.IsWindows())
         {
+            Assert.Inconclusive("This test exercises a Windows-only code path.");
             return;
         }
 
@@ -146,6 +148,7 @@ public sealed class LocalApplicationPathsTests
     {
         if (!OperatingSystem.IsWindows())
         {
+            Assert.Inconclusive("This test exercises a Windows-only code path.");
             return;
         }
 
@@ -168,6 +171,7 @@ public sealed class LocalApplicationPathsTests
     {
         if (!OperatingSystem.IsWindows())
         {
+            Assert.Inconclusive("This test exercises a Windows-only code path.");
             return;
         }
 
@@ -314,8 +318,9 @@ public sealed class LocalApplicationPathsTests
                     or UnauthorizedAccessException
                     or PlatformNotSupportedException)
             {
-                // Symbolic-link creation needs developer mode or elevation; the
-                // reparse branch is unreachable without it, so skip gracefully.
+                Assert.Inconclusive(
+                    "Symbolic-link creation needs developer mode or elevation; " +
+                    "the reparse branch cannot be exercised without it.");
                 return;
             }
 

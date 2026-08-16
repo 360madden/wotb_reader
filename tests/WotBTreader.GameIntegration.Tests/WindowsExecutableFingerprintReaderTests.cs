@@ -12,6 +12,7 @@ public sealed class WindowsExecutableFingerprintReaderTests
     {
         if (!OperatingSystem.IsWindows())
         {
+            Assert.Inconclusive("This test exercises a Windows-only code path.");
             return;
         }
 

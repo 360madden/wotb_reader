@@ -13,6 +13,7 @@ public sealed class WindowsTrustedExecutableLaunchLeaseTests
     {
         if (!OperatingSystem.IsWindows())
         {
+            Assert.Inconclusive("This test exercises a Windows-only code path.");
             return;
         }
 
@@ -53,6 +54,7 @@ public sealed class WindowsTrustedExecutableLaunchLeaseTests
     {
         if (!OperatingSystem.IsWindows())
         {
+            Assert.Inconclusive("This test exercises a Windows-only code path.");
             return;
         }
 
