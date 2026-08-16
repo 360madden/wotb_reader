@@ -341,14 +341,14 @@ public sealed class BlitzReplayLifecycleFeedTests
     }
 
     [TestMethod]
-    public async Task ReadAfterAsync_TruncateAndRegrowPastOffsetEmitsRewriteReset()
+    public async Task ReadAfterAsync_FullOverwriteEmitsRewriteReset()
     {
         string initial = new('a', 512);
         await using TestFeed fixture = await TestFeed.CreateAsync(initial);
         LifecycleFeedBaseline baseline =
             await fixture.Feed.CaptureBaselineAsync(CancellationToken.None);
 
-        await File.WriteAllTextAsync(fixture.LogPath, new string('b', 512));
+        await RewriteInPlaceAsync(fixture.LogPath, new string('b', 512));
         LifecycleFeedReadResult events = await fixture.WaitForAsync(
             baseline.Sequence,
             static feedEvents => feedEvents.Any(feedEvent =>
@@ -369,7 +369,7 @@ public sealed class BlitzReplayLifecycleFeedTests
         LifecycleFeedBaseline baseline =
             await fixture.Feed.CaptureBaselineAsync(CancellationToken.None);
 
-        await File.WriteAllTextAsync(
+        await RewriteInPlaceAsync(
             fixture.LogPath,
             new string('b', 256) + new string('a', 256));
         LifecycleFeedReadResult events = await fixture.WaitForAsync(
@@ -413,6 +413,22 @@ public sealed class BlitzReplayLifecycleFeedTests
         Assert.IsTrue(events.Events.Any(static item =>
             item.Kind == LifecycleFeedEventKind.Fault
             && item.Reason == LifecycleFeedReason.ProducerFault));
+    }
+
+    private static async Task RewriteInPlaceAsync(string path, string content)
+    {
+        // Overwrite the existing bytes in place (FileMode.Open) rather than
+        // File.WriteAllTextAsync, which truncates then rewrites and lets the
+        // tail reader observe the transient empty state as SourceTruncated
+        // instead of the rewrite reset the tests pin.
+        byte[] bytes = System.Text.Encoding.UTF8.GetBytes(content);
+        await using FileStream stream = new(
+            path,
+            FileMode.Open,
+            FileAccess.Write,
+            FileShare.ReadWrite | FileShare.Delete);
+        await stream.WriteAsync(bytes);
+        await stream.FlushAsync();
     }
 
     private sealed class TestFeed : IAsyncDisposable
