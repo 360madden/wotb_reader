@@ -143,6 +143,29 @@ function Get-LaunchArtifactId {
     }
 }
 
+function Get-LauncherFatalError {
+    # Best-effort fast fail: the launcher tees its progress into
+    # %TEMP%\od-launch.log (see launch-offline-replay-for-od.ps1). A FAILED_
+    # line means the managed launch already gave up, so polling the gate for
+    # the full bound would only waste it. Absent log = keep polling (the script
+    # also works against a host the launcher did not start).
+    $log = Join-Path $env:TEMP 'od-launch.log'
+    if (-not (Test-Path -LiteralPath $log)) {
+        return $null
+    }
+    try {
+        $match = Select-String -LiteralPath $log -Pattern '^od_launch: FAILED_' |
+            Select-Object -Last 1
+        if ($null -eq $match) {
+            return $null
+        }
+        return $match.Line.Trim()
+    }
+    catch {
+        return $null
+    }
+}
+
 # ---- 1. Gate poll ----------------------------------------------------------
 Write-Host 'pen_census: waiting_for_verified_gate'
 $deadline = [DateTime]::UtcNow.AddSeconds($WaitVerifiedSeconds)
@@ -157,6 +180,13 @@ while ([DateTime]::UtcNow -lt $deadline) {
         }
     }
     catch { }
+
+    $launcherFatal = Get-LauncherFatalError
+    if ($null -ne $launcherFatal) {
+        Write-Host ('pen_census: FAILED_launcher=' + $launcherFatal)
+        exit 1
+    }
+
     Start-Sleep -Seconds 1
 }
 if (-not $verified) {
