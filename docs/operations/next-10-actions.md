@@ -15,8 +15,10 @@ fail-closed hardening pass), the Oasis batch position re-verdict
 rendezvous capability-file ACL hardening (explicit protected owner-only
 `web.json` ACL with post-move reparse/DACL verification), and the penetration
 owner-census evidence source (hash-bound `VehicleGun`/`VehicleGunRotator`/
-`AvatarGunAgent` vftable RVAs + gated census + `pen-capture` endpoint) on
-2026-08-16.
+`AvatarGunAgent` vftable RVAs + gated census + `pen-capture` endpoint), and
+the first live owner-census capture (43 candidates, `vehicleGun=42 /
+vehicleGunRotator=1 / avatarGunAgent=1`, stable; honest ambiguous-ownership
+negative) on 2026-08-16.
 
 **Sequencing rule:** live items are clustered to share ONE approved launch
 (one game start = max evidence); offline hardening runs in parallel with any
@@ -24,8 +26,8 @@ live work; owner-gated items sit behind the evidence they consume.
 
 | # | Action | Roadmap anchor | Why now | Gate |
 |---|---|---|---|---|
-| 1 | **Run the owner-approved bounded managed-offline owner-census capture** and adjudicate the count/unique/stable result | Phase 6 v0.3 G1/G2; BLK-0027 | The exact-build owner-census source (hash-bound vftable RVAs) and the `pen-capture` endpoint are implemented; the live census + viewpoint-ownership walk + shell/aim/ray field proofs remain | one exact-build managed-offline launch |
-| 2 | **Adjudicate the capture verdict and promote only proven exact fields** | Phase 6 v0.3 G2/G4 | No shared weapon/aim contract or colored badge may be enabled from ambiguous or partial evidence | two content-distinct positive repeats |
+| 1 | **Derive and live-validate the viewpoint-vehicle → `VehicleGun`/`VehicleGunRotator` ownership walk** | Phase 6 v0.3 G1/G2; BLK-0027 | The live census found 42 `VehicleGun`, 1 `VehicleGunRotator`, 1 `AvatarGunAgent` (stable) — the single rotator/agent pair is the candidate viewpoint owner; the walk must pin which gun/rotator the viewpoint vehicle owns before field offsets are trusted | offline producer evidence; one exact-build launch to validate |
+| 2 | **Adjudicate the capture verdict and promote only proven exact fields** | Phase 6 v0.3 G2/G4 | The first census result is an honest ambiguous-ownership negative (43 candidates, nothing promoted); no shared weapon/aim contract or colored badge may be enabled until the walk + shell/aim/ray proofs land | two content-distinct positive repeats |
 | 3 | **Choose whether to fund a deeper exact-build `ArmorComponent`/`ArmorConfiguration` producer trace**; do not revisit the rejected hard-joint visualization path | Phase 6 v0.3 item 1/7; BLK-0027 | Bounded RTTI triage found no authoritative producer; another live read would be speculative without a producer hypothesis | offline producer evidence or explicit no-go |
 | 4 | **Implement exact weapon, aim, and armor ports only for proven cohorts** | Phase 6 v0.3 G4 | Provenance gates already prevent nominal/manual/camera data from masquerading as exact | G1/G2 pass |
 | 5 | **Build the immutable representative penetration corpus** — at least 12 replays, 500 eligible shots, and 30 rows per important cohort | Phase 6 v0.3 G5/G6 | Coverage and accuracy cannot be claimed from the old two-replay confounded sample | exact inputs implemented |

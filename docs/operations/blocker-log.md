@@ -944,3 +944,20 @@ folder for the full numbering convention and document map.
   the clock-anchor HTTP calls (non-fatal skip), so a playback assert costs
   seconds instead of a full bounded-step hang. The census blocker itself stays
   open; this only removes the environment-failure tax on each retry.
+
+- Live census result (`2026-08-16`, first real capture): the owner-census
+  discriminator is now LIVE-proven. A managed offline launch (Churchill I,
+  map Oasis Palms, exact build `11.19.0.10` hash `1cda5c31…`) reached
+  `OfflineReplayVerified` and the capture endpoint returned
+  `Rejected / BoundsExceeded` with `OwnerCandidateCount=43` and all
+  weapon/shell/ray flags false. The two census passes agreed
+  (`stable=True`) with per-family counts `vehicleGun=42,
+  vehicleGunRotator=1, avatarGunAgent=1` — 42 live gun records (one per
+  vehicle) but exactly one rotator/agent pair, which is the candidate
+  viewpoint owner for the next static walk. `43 > MaxOwnerCandidates=4` is the
+  expected ambiguous-ownership outcome; nothing is promoted and the blocker
+  stays open. Three code gaps were fixed to reach this result: the launcher
+  now names `battleSessionId` in `/game/launch` (was `capture.gate_not_satisfied`),
+  the capture build check accepts a three-part session version that is a dotted
+  prefix of the process version (was `capture.decode_build_mismatch`), and the
+  launcher's HTTP calls are bounded with 30s timeouts.

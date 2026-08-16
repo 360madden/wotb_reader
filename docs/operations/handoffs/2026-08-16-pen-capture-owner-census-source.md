@@ -1,10 +1,10 @@
 # Penetration v0.3 owner-census evidence source
 
 **Date:** 2026-08-16 (UTC)
-**Status:** exact-build owner-census source + capture endpoint implemented; the
-live census capture itself remains the next owner-approved step
-**Blocker:** `BLK-0027` (open — this is the first discriminator step, not a
-resolution)
+**Status:** exact-build owner-census source + capture endpoint implemented AND
+live-captured against a managed offline replay (first real census result)
+**Blocker:** `BLK-0027` (open — the census discriminator is now live-proven; the
+viewpoint-ownership walk and shell/aim/ray proofs remain)
 
 ## What changed
 
@@ -116,3 +116,64 @@ clock-anchor HTTP calls. A playback assert that kills the game now exits with
 degrades to `clock_anchor skipped_game_died` (non-fatal, flag stays false)
 instead of hanging on the sessions/clock HTTP calls. The bounded-step timeout
 remains as the outer safety net. Full `scripts/validate.ps1` gate green.
+
+## Live census capture — SUCCESS (2026-08-16)
+
+The first REAL census result was produced end to end (Churchill I replay,
+map Oasis Palms, exact build `11.19.0.10` hash `1cda5c31…`):
+
+```
+status=Rejected
+primary_reason=BoundsExceeded
+owner_candidate_count=43
+exact_weapon_owner_proven=False / exact_loaded_shell_proven=False / exact_gun_ray_proven=False
+reasons=BoundsExceeded, OwnerNotUnique, ConfiguredGunUnproven, ShellTransitionUnproven,
+        ShellIdentityUnproven, AimSamplesInsufficient, TurretYawUnproven,
+        GunElevationUnproven, RaySamplesInsufficient, RayTargetJoinInsufficient
+```
+
+Host log census line (privacy-safe counts only):
+`vehicleGun=42, vehicleGunRotator=1, avatarGunAgent=1, stable=True`.
+
+Interpretation (the signal the census was built to produce):
+
+- **42 `VehicleGun` instances** = one live gun record per battle vehicle (the
+  census cannot distinguish the viewpoint gun from the other 41);
+- **exactly 1 `VehicleGunRotator` and 1 `AvatarGunAgent`** = the only live
+  rotator/agent pair. In an offline replay only the viewpoint vehicle keeps a
+  live gun controller, so this pair is the natural candidate for the next
+  static step: the viewpoint-vehicle → `VehicleGun`/`VehicleGunRotator`
+  ownership walk.
+- `OwnerCandidateCount=43 > MaxOwnerCandidates=4` makes the evaluator flag
+  `BoundsExceeded` and `OwnerNotUnique` — the expected honest negative; nothing
+  was promoted.
+
+The two census passes agreed (`stable=True`), so the vftable RVAs
+(`VehicleGun 0x32dacf4`, `VehicleGunRotator 0x32eeb40`, `AvatarGunAgent
+0x324dae8`) are now LIVE-proven against the real battle heap.
+
+## Capture pipeline fixes (2026-08-16)
+
+Three code gaps blocked the live capture and were fixed in this session:
+
+1. **`capture.gate_not_satisfied`** — the launcher POSTed `/game/launch` with
+   only `sourceArtifactId`, so the coordinator's managed launch never carried a
+   battle session and `GetCaptureAuthorization` always returned null. The
+   launcher now resolves the just-imported decode session (newest-first) and
+   names its `battleSessionId` in the launch body
+   (`fa15719`).
+2. **`capture.decode_build_mismatch`** — real replay metadata carries the
+   three-part `"11.19.0"` while the executable reports `"11.19.0.10"`; the
+   capture's exact string equality could never pass. The coordinator now treats
+   a shorter session version that is a dotted prefix of the process version as
+   the same build family (the exe hash still pins the patch)
+   (`5004ad1`, plus two regression tests).
+3. **Launcher HTTP hang** — the launcher's `Invoke-RestMethod` calls had no
+   timeout, so a blocking local host endpoint hung the launch past its bounded
+   steps. All five calls now carry 30s timeouts and `Write-Od` tees into
+   `%TEMP%\od-launch.log` (`b5eb6de`).
+
+A reusable `scripts/capture-pen-census.ps1` now polls the verified gate itself,
+binds the artifact to its decode run, and POSTs `/discover/pen-capture`
+decoupled from the launcher so a launcher hang cannot starve the battle window
+(`b60b9e1`).
