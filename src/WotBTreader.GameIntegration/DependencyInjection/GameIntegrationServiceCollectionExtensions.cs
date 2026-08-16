@@ -52,7 +52,7 @@ public static class GameIntegrationServiceCollectionExtensions
         services.TryAddSingleton<IManagedLaunchCorrelationRegistrar, ManagedLaunchCorrelationRegistrar>();
         services.TryAddSingleton<IThreadResumePlatform, WindowsThreadResumePlatform>();
         services.TryAddSingleton<IGuardedMemoryReaderFactory, GuardedMemoryReaderFactory>();
-        services.TryAddSingleton<IPenetrationCaptureEvidenceSource, UnavailablePenetrationCaptureEvidenceSource>();
+        services.TryAddSingleton<IPenetrationCaptureEvidenceSource, ExactBuildOwnerCensusCaptureEvidenceSource>();
         services.TryAddSingleton<IInstructionSnapshotRunner, WindowsInstructionSnapshotRunner>();
         services.TryAddSingleton<IMemoryScanDiscoverer, MemoryScanDiscoverer>();
         services.TryAddSingleton<MemoryScanEngine>();

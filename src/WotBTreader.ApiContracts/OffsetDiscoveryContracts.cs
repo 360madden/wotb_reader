@@ -863,3 +863,34 @@ public sealed record TrajectoryFamilyResponse(
     List<string> AxesCovered,
     bool Complete,
     List<FamilyMemberResponse> Members);
+
+/// <summary>
+/// Request to run one serialized, coordinator-owned penetration capture. The
+/// caller names only the decoded run; the coordinator owns process identity,
+/// module base, and every read location. POST
+/// /api/v1/game/discover/pen-capture.
+/// </summary>
+public sealed record PenetrationCaptureRequest
+{
+    public string? DecodeRunId { get; init; }
+}
+
+/// <summary>
+/// Privacy-safe evaluation of one managed-offline penetration capture. No
+/// address, process id, path, token, or raw observation is represented.
+/// </summary>
+public sealed record PenetrationCaptureResponse
+{
+    public string Status { get; init; } = string.Empty;
+    public string PrimaryReason { get; init; } = string.Empty;
+    public IReadOnlyList<string> Reasons { get; init; } = [];
+    public bool ExactWeaponOwnerProven { get; init; }
+    public bool ExactLoadedShellProven { get; init; }
+    public bool ExactGunRayProven { get; init; }
+    public int OwnerCandidateCount { get; init; }
+    public int ShellStatesObserved { get; init; }
+    public int ShellIdentityMatches { get; init; }
+    public int AimSamples { get; init; }
+    public int RaySamples { get; init; }
+    public int JoinedRaySamples { get; init; }
+}

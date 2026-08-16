@@ -2693,6 +2693,115 @@ public sealed class GameApiEndpointsTests
         Assert.IsNotNull(clock.Appended);
     }
 
+    [TestMethod]
+    [DataRow("")]
+    [DataRow("not-a-guid")]
+    public async Task CapturePenetrationAsync_InvalidDecodeRunId_ReturnsBadRequest(string decodeRunId)
+    {
+        var capture = new FakePenetrationCapture();
+
+        IResult result = await GameApiEndpoints.CapturePenetrationAsync(
+            capture,
+            new WotBTreader.ApiContracts.PenetrationCaptureRequest { DecodeRunId = decodeRunId },
+            TestContext.CancellationToken);
+
+        JsonElement body = BadRequestAnonymous(result);
+        Assert.AreEqual(
+            "pen_capture.invalid_decode_run_id",
+            body.GetProperty("error").GetString());
+        Assert.IsNull(capture.LastRequest);
+    }
+
+    [TestMethod]
+    public async Task CapturePenetrationAsync_ValidRequest_MapsEvaluation()
+    {
+        Guid decodeRunId = Guid.NewGuid();
+        var evaluation = new PenetrationCaptureEvaluation(
+            PenetrationCaptureStatus.Rejected,
+            PenetrationCaptureReason.OwnerNotUnique,
+            [
+                PenetrationCaptureReason.OwnerNotUnique,
+                PenetrationCaptureReason.OwnerUnstable,
+            ],
+            ExactWeaponOwnerProven: false,
+            ExactLoadedShellProven: false,
+            ExactGunRayProven: false,
+            new PenetrationCaptureSummary(
+                OwnerCandidateCount: 14,
+                ShellStatesObserved: 0,
+                ShellIdentityMatches: 0,
+                AimSamples: 0,
+                RaySamples: 0,
+                JoinedRaySamples: 0));
+        var capture = new FakePenetrationCapture(
+            OperationResult.Success(evaluation));
+
+        IResult result = await GameApiEndpoints.CapturePenetrationAsync(
+            capture,
+            new WotBTreader.ApiContracts.PenetrationCaptureRequest
+            {
+                DecodeRunId = decodeRunId.ToString(),
+            },
+            TestContext.CancellationToken);
+
+        WotBTreader.ApiContracts.PenetrationCaptureResponse response =
+            Value<WotBTreader.ApiContracts.PenetrationCaptureResponse>(result);
+        Assert.AreEqual("Rejected", response.Status);
+        Assert.AreEqual("OwnerNotUnique", response.PrimaryReason);
+        Assert.HasCount(2, response.Reasons);
+        Assert.IsFalse(response.ExactWeaponOwnerProven);
+        Assert.IsFalse(response.ExactLoadedShellProven);
+        Assert.IsFalse(response.ExactGunRayProven);
+        Assert.AreEqual(14, response.OwnerCandidateCount);
+        Assert.IsNotNull(capture.LastRequest);
+        Assert.AreEqual(decodeRunId, capture.LastRequest!.DecodeRunId.Value);
+        Assert.AreEqual(TestContext.CancellationToken, capture.LastCancellationToken);
+    }
+
+    [TestMethod]
+    public async Task CapturePenetrationAsync_SourceFailure_ReturnsError()
+    {
+        var capture = new FakePenetrationCapture(
+            OperationResult.Failure<PenetrationCaptureEvaluation>(
+                new ApplicationError("capture.gate_not_satisfied", "gate", Retryable: false)));
+
+        IResult result = await GameApiEndpoints.CapturePenetrationAsync(
+            capture,
+            new WotBTreader.ApiContracts.PenetrationCaptureRequest
+            {
+                DecodeRunId = Guid.NewGuid().ToString(),
+            },
+            TestContext.CancellationToken);
+
+        JsonElement body = BadRequestAnonymous(result);
+        Assert.AreEqual("capture.gate_not_satisfied", body.GetProperty("error").GetString());
+    }
+
+    private sealed class FakePenetrationCapture(
+        OperationResult<PenetrationCaptureEvaluation>? result = null)
+        : IPenetrationCapture
+    {
+        public WotBTreader.Application.Game.PenetrationCaptureRequest? LastRequest { get; private set; }
+        public CancellationToken LastCancellationToken { get; private set; }
+
+        public ValueTask<OperationResult<PenetrationCaptureEvaluation>> CaptureAsync(
+            WotBTreader.Application.Game.PenetrationCaptureRequest request,
+            CancellationToken cancellationToken)
+        {
+            LastRequest = request;
+            LastCancellationToken = cancellationToken;
+            return ValueTask.FromResult(result ?? OperationResult.Success(
+                new PenetrationCaptureEvaluation(
+                    PenetrationCaptureStatus.Rejected,
+                    PenetrationCaptureReason.OwnerNotUnique,
+                    [PenetrationCaptureReason.OwnerNotUnique],
+                    ExactWeaponOwnerProven: false,
+                    ExactLoadedShellProven: false,
+                    ExactGunRayProven: false,
+                    new PenetrationCaptureSummary(0, 0, 0, 0, 0, 0))));
+        }
+    }
+
     private static T Value<T>(IResult result)
     {
         Assert.IsInstanceOfType<Ok<T>>(result);

@@ -101,5 +101,9 @@ public sealed class GameIntegrationRegistrationTests
             ServiceLifetime.Singleton,
             services.Single(item =>
                 item.ServiceType == typeof(IGuardedMemoryReaderFactory)).Lifetime);
+        Assert.AreEqual(
+            typeof(ExactBuildOwnerCensusCaptureEvidenceSource),
+            services.Single(item =>
+                item.ServiceType == typeof(IPenetrationCaptureEvidenceSource)).ImplementationType);
     }
 }

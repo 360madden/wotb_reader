@@ -53,6 +53,7 @@ internal static class GameApiEndpoints
         group.MapGet("/discover/trajectory/{battleSessionId:guid}", GetTrajectoryAsync);
         group.MapPost("/discover/correlate", CorrelateAsync);
         group.MapPost("/discover/pen-offline-score/{battleSessionId:guid}", ScorePenOfflineAsync);
+        group.MapPost("/discover/pen-capture", CapturePenetrationAsync);
         return builder;
     }
 
@@ -1295,6 +1296,55 @@ internal static class GameApiEndpoints
             CameraStateIdentityVerified = pose.CameraStateIdentityVerified,
             ConsistentDoubleRead = pose.ConsistentDoubleRead,
             ModuleRooted = pose.ModuleRooted,
+        });
+    }
+
+    internal static async Task<IResult> CapturePenetrationAsync(
+        IPenetrationCapture penetrationCapture,
+        WotBTreader.ApiContracts.PenetrationCaptureRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(penetrationCapture);
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (!Guid.TryParse(request.DecodeRunId, out Guid decodeRunId) ||
+            decodeRunId == Guid.Empty)
+        {
+            return Results.BadRequest(new { error = "pen_capture.invalid_decode_run_id" });
+        }
+
+        OperationResult<PenetrationCaptureEvaluation> result = await penetrationCapture
+            .CaptureAsync(
+                new WotBTreader.Application.Game.PenetrationCaptureRequest(
+                    new DecodeRunId(decodeRunId)),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!result.IsSuccess || result.Value is null)
+        {
+            return Results.BadRequest(new
+            {
+                error = result.Error?.Code ?? "pen_capture.failed",
+            });
+        }
+
+        PenetrationCaptureEvaluation evaluation = result.Value;
+        return Results.Ok(new WotBTreader.ApiContracts.PenetrationCaptureResponse
+        {
+            Status = evaluation.Status.ToString(),
+            PrimaryReason = evaluation.PrimaryReason.ToString(),
+            Reasons = evaluation.Reasons
+                .Select(reason => reason.ToString())
+                .ToArray(),
+            ExactWeaponOwnerProven = evaluation.ExactWeaponOwnerProven,
+            ExactLoadedShellProven = evaluation.ExactLoadedShellProven,
+            ExactGunRayProven = evaluation.ExactGunRayProven,
+            OwnerCandidateCount = evaluation.Summary.OwnerCandidateCount,
+            ShellStatesObserved = evaluation.Summary.ShellStatesObserved,
+            ShellIdentityMatches = evaluation.Summary.ShellIdentityMatches,
+            AimSamples = evaluation.Summary.AimSamples,
+            RaySamples = evaluation.Summary.RaySamples,
+            JoinedRaySamples = evaluation.Summary.JoinedRaySamples,
         });
     }
 
