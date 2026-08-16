@@ -22,9 +22,12 @@ that restriction. Two gaps remained at the *file* layer:
   applies an explicit protected owner-only descriptor (Windows: current-user
   owner plus one non-inherited FullControl Allow ACE with inheritance severed;
   other platforms: mode `0600`) and positively re-reads it.
-- `VerifyRendezvousFile(path)` — re-reads the final file after the rename and
-  fails closed unless it is a real (non-reparse) file with exactly the
-  protected owner-only DACL/mode above.
+- `VerifyRendezvousFile(path)` — opens the final file by handle without
+  following reparse points, then fails closed unless the pinned object is a
+  real (non-reparse) file whose owner/DACL is exactly the protected owner-only
+  descriptor above. The DACL is read from the open handle
+  (`GetKernelObjectSecurity`), so a same-user pathname swap cannot redirect
+  the verification between the reparse check and the DACL read.
 
 `RendezvousPublisher.PublishAsync` now calls `ProtectRendezvousFile` on the
 temporary file before it becomes the record and `VerifyRendezvousFile` on the
@@ -39,9 +42,10 @@ itself; no path, token, or ACL text enters diagnostics.
 ## Validation
 
 - Bootstrap regression tests: a permissive inherited parent ACL is severed on
-  the file; the post-move verifier accepts the freshly protected file, rejects
-  a file carrying an extra WorldSid ACE, rejects a missing file, and rejects a
-  symbolic-link reparse point where the environment can create one.
+  the file; the handle-pinned post-move verifier accepts the freshly protected
+  file, rejects a file carrying an extra WorldSid ACE, rejects a missing file,
+  and rejects a symbolic-link reparse point where the environment can create
+  one.
 - `scripts/validate.ps1` passed end to end: 0 build warnings/errors, all test
   projects green (Bootstrap 21), repository/privacy scan, Codex policy,
   PowerShell hygiene, offline links/file-tree, blocker/ledger consistency, and

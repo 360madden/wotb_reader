@@ -357,8 +357,10 @@ folder for the full numbering convention and document map.
 - Resolution: `RendezvousPublisher` pins an explicit protected owner-only
   descriptor onto the temporary file before it becomes the record and
   re-verifies the final `web.json` after the move (rejects reparse points and
-  re-reads the DACL; non-Windows enforces mode `0600`). Verification failure
-  fails the publish closed and the lease rotates on the next cycle.
+  re-reads the DACL from an open handle via `GetKernelObjectSecurity`, so a
+  same-user pathname swap cannot redirect the verification; non-Windows
+  enforces mode `0600`). Verification failure fails the publish closed and the
+  lease rotates on the next cycle.
 - Evidence: Bootstrap tests sever a permissive inherited parent ACL on the
   file, reject a file with an extra WorldSid ACE, reject a missing file, and
   reject a symbolic-link reparse point where the environment permits one; the
