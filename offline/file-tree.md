@@ -354,6 +354,7 @@ docs/operations/handoffs/2026-08-16-pen-capture-owner-census-source.md
 docs/operations/handoffs/2026-08-16-pen-ownership-walk-live-validation.md
 docs/operations/handoffs/2026-08-16-pen-ownership-walk-live.md
 docs/operations/handoffs/2026-08-16-pen-ownership-walk-static.md
+docs/operations/handoffs/2026-08-16-pen-weapon-semantic-fields.md
 docs/operations/handoffs/2026-08-16-rendezvous-webjson-acl-hardening.md
 docs/operations/handoffs/2026-08-16-sqlite-pooling-race-fix.md
 docs/operations/handoffs/README.md
@@ -387,6 +388,7 @@ docs/operations/pen-chance-design.md
 docs/operations/pen-ownership-walk-live-validation-proposal.md
 docs/operations/pen-ownership-walk-proof-protocol.md
 docs/operations/pen-v03-alternative-armor-owner-triage.md
+docs/operations/pen-weapon-semantic-fields.md
 docs/operations/penetration-v0.3-plan.md
 docs/operations/penetration-v03-managed-capture-contract.md
 docs/operations/pn4-live-aim-capture-runbook.md
@@ -1145,6 +1147,8 @@ tools/ghidra-scripts/TraceAvatarHealthListener.java
 tools/ghidra-scripts/TraceEntityRegistryPosition.java
 tools/ghidra-scripts/TraceReplayClock.java
 tools/ghidra-scripts/TraceType10MovementPosition.java
+tools/ghidra-scripts/TraceWeaponNamedMethods.java
+tools/ghidra-scripts/TraceWeaponSemanticFields.java
 tools/ghidra-scripts/VerifyPlayerHpChain.java
 tools/ghidra-scripts/VerifyTransformRecord.java
 tools/ghidra-scripts/callers-disasm.txt

@@ -18,7 +18,9 @@ owner-census evidence source (hash-bound `VehicleGun`/`VehicleGunRotator`/
 `AvatarGunAgent` vftable RVAs + gated census + `pen-capture` endpoint), and
 the first live owner-census capture (43 candidates, `vehicleGun=42 /
 vehicleGunRotator=1 / avatarGunAgent=1`, stable; honest ambiguous-ownership
-negative) on 2026-08-16.
+negative), the ownership-walk H1 live confirmation, and the phase 2–4
+semantic-field static derivation (reload enum + published gun-marker ray;
+loaded shell and yaw/elevation still unproven) on 2026-08-16.
 
 **Sequencing rule:** live items are clustered to share ONE approved launch
 (one game start = max evidence); offline hardening runs in parallel with any
@@ -26,7 +28,7 @@ live work; owner-gated items sit behind the evidence they consume.
 
 | # | Action | Roadmap anchor | Why now | Gate |
 |---|---|---|---|---|
-| 1 | **Derive the phase 2–4 shell/aim/ray semantic fields** (configured gun, loaded shell, turret yaw, gun elevation, muzzle ray) against the now-proven owner objects | Phase 6 v0.3 G1 items 2/5; BLK-0027 | The ownership walk is now live-proven (`2026-08-16-pen-ownership-walk-live.md`, `Resolved`, 1 rotator, all four chain booleans, two-pass stable): `AvatarGameLogic +0x1fc → VehicleGunRotator`, `+0x204 → VehicleGun`, `rotator+0x10 → owner`, `+0x04 → entity`. Per the plan ordering, the semantic field derivation (which field is turret yaw vs gun elevation vs aim point; configured gun + loaded shell) now proceeds, with the live controlled-transition correlation still required to prove per-field semantics | static write/read-site trace first; then the live controlled turret/gun transitions |
+| 1 | **Run the live controlled-transition protocol** on the statically derived candidates (published gun-marker at `rotator+0x50`, reload enum at `VehicleGun+0x3C`, sibling `+0x10/+0x14` angles; shell expected honest-negative on these objects) | Phase 6 v0.3 G1 items 2/5; BLK-0027 | Static write/read-site derivation is recorded in `pen-weapon-semantic-fields.md`. Primary vtables are dtor/RTTI only; `GetGunMarkerPosition` publishes a ray at `+0x50`; `+0x3C` is reload/state, not shell id; yaw vs elevation is still not a named rotator float. Live isolation and a decoded shot join are now the gate | one approved `OfflineReplayVerified` launch; two content-distinct positives before any G2 contract |
 | 2 | **Adjudicate the capture verdict and promote only proven exact fields** | Phase 6 v0.3 G2/G4 | The first census result is an honest ambiguous-ownership negative (43 candidates, nothing promoted); no shared weapon/aim contract or colored badge may be enabled until the walk + shell/aim/ray proofs land | two content-distinct positive repeats |
 | 3 | **Choose whether to fund a deeper exact-build `ArmorComponent`/`ArmorConfiguration` producer trace**; do not revisit the rejected hard-joint visualization path | Phase 6 v0.3 item 1/7; BLK-0027 | Bounded RTTI triage found no authoritative producer; another live read would be speculative without a producer hypothesis | offline producer evidence or explicit no-go |
 | 4 | **Implement exact weapon, aim, and armor ports only for proven cohorts** | Phase 6 v0.3 G4 | Provenance gates already prevent nominal/manual/camera data from masquerading as exact | G1/G2 pass |
