@@ -351,6 +351,7 @@ docs/operations/handoffs/2026-08-15-penetration-v03-source-verdict-and-capture-c
 docs/operations/handoffs/2026-08-16-hud-visual-and-interaction-ship.md
 docs/operations/handoffs/2026-08-16-od-recovery-102-oasis-batch-reverdict.md
 docs/operations/handoffs/2026-08-16-pen-capture-owner-census-source.md
+docs/operations/handoffs/2026-08-16-pen-ownership-walk-static.md
 docs/operations/handoffs/2026-08-16-rendezvous-webjson-acl-hardening.md
 docs/operations/handoffs/2026-08-16-sqlite-pooling-race-fix.md
 docs/operations/handoffs/README.md
@@ -381,6 +382,7 @@ docs/operations/offset-discovery-workflow.md
 docs/operations/offset-promotion-checklist.md
 docs/operations/parallel-workstreams.md
 docs/operations/pen-chance-design.md
+docs/operations/pen-ownership-walk-proof-protocol.md
 docs/operations/pen-v03-alternative-armor-owner-triage.md
 docs/operations/penetration-v0.3-plan.md
 docs/operations/penetration-v03-managed-capture-contract.md
@@ -1126,6 +1128,8 @@ tools/ghidra-scripts/FindVftableRefs.java
 tools/ghidra-scripts/FindVftableViaCol.java
 tools/ghidra-scripts/FindVtableDispatch.java
 tools/ghidra-scripts/FindVtableInstallers.java
+tools/ghidra-scripts/FindWeaponVtableInstallers.java
+tools/ghidra-scripts/ListCallers.java
 tools/ghidra-scripts/ResolveVftableClass.java
 tools/ghidra-scripts/ScanAllClockOffsetStores.java
 tools/ghidra-scripts/ScanAvatarStatsQuadStoreWidths.java

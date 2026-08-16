@@ -230,3 +230,16 @@ the shell/aim/ray phases remain unproven. `POST
 opaque `decodeRunId`. The live census capture, the viewpoint-ownership walk,
 and the shell/aim/ray field proofs remain outstanding; no exact input is
 promoted or wired into the badge yet.
+
+### Ownership walk static derivation — 2026-08-16
+
+The census counts distinct objects (primary vftable dword once per object; the
+`+0x8`/`+0xC` slots are secondary sub-vtables). The static half of the walk is
+now derived hash-bound (`pen-ownership-walk-proof-protocol.md`): the
+`AvatarGameLogic` object owns `VehicleGun` at `+0x204` and `VehicleGunRotator`
+at `+0x1fc` (rotator is avatar-only via the `+0x200` marker), with the
+rotator's `+0x10` back-pointer and the inherited `+0x04` entity link. The
+bounded five-read live-validation protocol (unique rotator → owner → forward
+round-trip → gun vtable → entity HP, two passes, fail closed) remains to be
+run before the phase 2–4 semantic field offsets (configured gun, loaded shell,
+turret yaw, gun elevation, muzzle ray) are derived.

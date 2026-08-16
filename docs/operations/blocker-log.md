@@ -971,3 +971,18 @@ folder for the full numbering convention and document map.
   `VehicleGun` records). The census remains the first discriminator, not a
   resolution: BLK-0027 stays open until the ownership walk + shell/aim/ray
   proofs land.
+
+- Ownership walk static derivation (`2026-08-16`, hash-bound): the census
+  counts DISTINCT objects (each weapon object carries its primary vftable
+  dword once at `+0x0`; `+0x8`/`+0xC` are secondary sub-vtables), so 42
+  `VehicleGun` = 42 live objects, not 14×3 slots. The `AvatarGameLogic` ctor
+  (`FUN_01683b00`) stores the viewpoint `VehicleGun` at `+0x204` and sets the
+  avatar marker `+0x200 = 1`; `VehicleGameLogic::onEnterWorld`
+  (`FUN_016ea010`) stores the `VehicleGunRotator` (refptr) at `+0x1fc` only
+  when that marker is set (matching the exactly-one rotator); and the rotator
+  ctor stores its owner at `+0x10`. The candidate chain is
+  `viewpoint entity <-[+0x04]- AvatarGameLogic` with `+0x1fc -> rotator` and
+  `+0x204 -> gun`, plus the `rotator+0x10 -> owner` back-pointer. The bounded
+  live-validation protocol is recorded in
+  `pen-ownership-walk-proof-protocol.md`; BLK-0027 stays open until it is
+  live-validated and the phase 2–4 shell/aim/ray fields are derived.
