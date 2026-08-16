@@ -59,23 +59,23 @@ public sealed class ValueConvertersTests
     // ── TeamToColorConverter ──────────────────────────────────
 
     [TestMethod]
-    public void TeamToColor_Team1_ReturnsDodgerBlue()
+    public void TeamToColor_Team1_ReturnsAllyBlue()
     {
         TeamToColorConverter converter = new();
 
         object result = converter.Convert(1, typeof(Color), null, CultureInfo.InvariantCulture);
 
-        Assert.AreEqual(Colors.DodgerBlue, result);
+        Assert.AreEqual(Color.FromRgb(0x4F, 0xA8, 0xFF), result);
     }
 
     [TestMethod]
-    public void TeamToColor_Team2_ReturnsOrangeRed()
+    public void TeamToColor_Team2_ReturnsEnemyRed()
     {
         TeamToColorConverter converter = new();
 
         object result = converter.Convert(2, typeof(Color), null, CultureInfo.InvariantCulture);
 
-        Assert.AreEqual(Colors.OrangeRed, result);
+        Assert.AreEqual(Color.FromRgb(0xFF, 0x6B, 0x6B), result);
     }
 
     [TestMethod]

@@ -152,6 +152,22 @@ public sealed class PlotTransformTests
         Assert.AreEqual(200, result[1].X, Tolerance);
     }
 
+    [TestMethod]
+    public void Fit_NonFiniteWorldBounds_FallsBackToPerSessionExtents()
+    {
+        // Infinity bounds satisfy "max > min" but produce NaN canvas math; they
+        // must be treated as invalid and fall back to per-session extents.
+        IReadOnlyList<(double X, double Y, int TeamNumber)> result = PlotTransform.Fit(
+            [new PlotPoint(0, 0, 1), new PlotPoint(10, 20, 2)],
+            210, 120, 10,
+            worldMinX: 0, worldMaxX: double.PositiveInfinity,
+            worldMinZ: 0, worldMaxZ: 1000);
+
+        Assert.AreEqual(2, result.Count);
+        Assert.AreEqual(10, result[0].X, Tolerance);
+        Assert.AreEqual(200, result[1].X, Tolerance);
+    }
+
     private static void AssertIsPaddingEdge(double value, double padding, double extent)
     {
         bool atLowEdge = Math.Abs(value - padding) <= Tolerance;

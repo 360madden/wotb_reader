@@ -1030,7 +1030,7 @@ public sealed class MainViewModelTests
     {
         MainViewModel viewModel = CreateViewModel();
 
-        Assert.AreEqual("HUD UI v0.6.0-alpha", viewModel.HudUiVersionLabel);
+        Assert.AreEqual("HUD UI v0.7.0-alpha", viewModel.HudUiVersionLabel);
     }
 
     [TestMethod]
@@ -2329,6 +2329,117 @@ public sealed class MainViewModelTests
         await viewModel.RefreshOverlayFrameAsync(1920, 1080);
 
         Assert.AreEqual(0, viewModel.Nameplates.Count);
+    }
+
+    [TestMethod]
+    public void SanitizationHelpers_HandleNonFiniteAndOutOfRangeValues()
+    {
+        Assert.IsTrue(MainViewModel.HasUsableProjection(10, 20, inViewport: true));
+        Assert.IsFalse(MainViewModel.HasUsableProjection(null, 20, inViewport: true));
+        Assert.IsFalse(MainViewModel.HasUsableProjection(double.NaN, 20, inViewport: true));
+        Assert.IsFalse(MainViewModel.HasUsableProjection(10, double.PositiveInfinity, inViewport: true));
+        Assert.IsFalse(MainViewModel.HasUsableProjection(10, 20, inViewport: false));
+
+        Assert.AreEqual(1.0, MainViewModel.SanitizeHpFraction(2.5), 1e-9);
+        Assert.AreEqual(0.0, MainViewModel.SanitizeHpFraction(-0.5), 1e-9);
+        Assert.AreEqual(0.0, MainViewModel.SanitizeHpFraction(double.NaN), 1e-9);
+        Assert.AreEqual(0.5, MainViewModel.SanitizeHpFraction(0.5), 1e-9);
+
+        Assert.AreEqual(42.0, MainViewModel.SanitizeDistanceMeters(42.0), 1e-9);
+        Assert.AreEqual(0.0, MainViewModel.SanitizeDistanceMeters(double.NaN), 1e-9);
+
+        Assert.AreEqual(7.0, MainViewModel.SanitizeDepth(7.0), 1e-9);
+        Assert.AreEqual(double.MaxValue, MainViewModel.SanitizeDepth(double.NaN), 1e-9);
+        Assert.AreEqual(double.MaxValue, MainViewModel.SanitizeDepth(null), 1e-9);
+
+        Assert.AreEqual(0.0, MainViewModel.ClampNormalized(-1.0), 1e-9);
+        Assert.AreEqual(1.0, MainViewModel.ClampNormalized(2.0), 1e-9);
+        Assert.AreEqual(0.0, MainViewModel.ClampNormalized(double.NaN), 1e-9);
+
+        Assert.IsFalse(MainViewModel.IsUsableBoundary(new MapBoundaryResponse
+        {
+            MinX = 0,
+            MaxX = double.PositiveInfinity,
+            MinZ = 0,
+            MaxZ = 1,
+        }));
+        Assert.IsTrue(MainViewModel.IsUsableBoundary(new MapBoundaryResponse
+        {
+            MinX = 0,
+            MaxX = 100,
+            MinZ = 0,
+            MaxZ = 100,
+        }));
+    }
+
+    [TestMethod]
+    public async Task RefreshOverlayFrameAsync_ClampsOutOfRangeHpFraction()
+    {
+        const string frameJson = """
+            {
+              "replayTimeSeconds": 200.0,
+              "tanks": [
+                { "entityId": 2, "playerName": "Hot", "tankName": null, "clanTag": null, "teamNumber": 2, "hpFraction": 2.5, "alive": true, "distanceMeters": 120.0, "screenX": 800.0, "screenY": 400.0, "depth": 80.0, "inViewport": true }
+              ],
+              "beacons": [],
+              "pips": []
+            }
+            """;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/frame", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(JsonResponse(frameJson));
+            }
+
+            return Task.FromResult(JsonResponse("""{"offset":0,"limit":200,"count":0,"items":[]}"""));
+        });
+        MainViewModel viewModel = CreateViewModel(handler);
+
+        await viewModel.RefreshSessionsAsync();
+        viewModel.SelectedSession = new SessionRow(BattleSessionId, "Test Map", null, Now, 0, 0);
+        await viewModel.RefreshOverlayFrameAsync(1920, 1080);
+
+        Assert.AreEqual(1, viewModel.Nameplates.Count);
+        Assert.AreEqual(1.0, viewModel.Nameplates[0].HpFraction, 1e-9);
+    }
+
+    [TestMethod]
+    public async Task RefreshRenderHealth_FlipsStaleLiveFrameToUnavailable()
+    {
+        const string frameJson = """
+            {
+              "replayTimeSeconds": 3.0,
+              "tanks": [],
+              "beacons": [],
+              "pips": []
+            }
+            """;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/live/frame", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult(JsonResponse(frameJson));
+            }
+
+            return Task.FromResult(JsonResponse("""{"offset":0,"limit":200,"count":0,"items":[]}"""));
+        });
+        FakeTimeProvider clock = new(Now);
+        MainViewModel viewModel = CreateViewModel(handler, timeProvider: clock);
+
+        await viewModel.RefreshSessionsAsync();
+        viewModel.IsLiveMode = true;
+        await viewModel.RefreshOverlayFrameAsync(1920, 1080);
+
+        Assert.AreEqual(HudRuntimeState.LiveReady, viewModel.RuntimeState);
+
+        clock.Advance(TimeSpan.FromSeconds(11));
+        viewModel.RefreshRenderHealth();
+
+        Assert.AreEqual(HudRuntimeState.LiveUnavailable, viewModel.RuntimeState);
+        Assert.AreEqual("Last live frame retained", viewModel.FrameStatusLabel);
     }
 
     private MainViewModel CreateViewModel(

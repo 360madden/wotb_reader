@@ -14,31 +14,98 @@ namespace WotBTreader.Overlay.Views;
 /// client rect) with the label and HP bar drawn just above the point.
 /// Team coloring follows the game's ally/enemy convention (blue/red); the
 /// HP bar is green→red by fraction, greyed when the tank is destroyed.
+///
+/// Visual language: dark "glass" panels with a single-pixel light border and
+/// a team-color accent, so plates stay readable over arbitrary game footage
+/// without obscuring it. All shared brushes are frozen at static-init time so
+/// the per-frame rebuild allocates only layout objects, not paint resources.
 /// </summary>
 public sealed partial class W2sHudView : UserControl
 {
-    private const double NameplateWidth = 64;
-    private const double NameplateHeight = 20;
-    private const double HpBarWidth = 56;
-    private const double HpBarHeight = 4;
-    private const double LabelFontSize = 11;
+    // AnchorRect's width/height/gap are the plate's unit-test contract; keep
+    // them in sync with the geometry asserted in W2sHudViewTests.
+    private const double NameplateWidth = 96;
+    private const double NameplateHeight = 22;
     private const double AnchorGap = 6;
+    private const double HpBarWidth = 84;
+    private const double HpBarHeight = 5;
+    private const double LabelFontSize = 12;
+    private const double MetaFontSize = 8.5;
     private const double BeaconDotRadius = 5;
     private const double BeaconLabelFontSize = 10;
     private const double HeadingArrowLength = 10;
     private const double HeadingArrowHalfWidth = 5;
 
-    private static readonly Brush Team1Brush = CreateBrush("#33A2FF");
-    private static readonly Brush Team2Brush = CreateBrush("#FF5A5A");
-    private static readonly Brush NeutralBrush = CreateBrush("#CCCCCC");
-    private static readonly Brush DeadBrush = CreateBrush("#666666");
-    private static readonly Brush HpGoodBrush = CreateBrush("#00E066");
-    private static readonly Brush HpMidBrush = CreateBrush("#E0B000");
-    private static readonly Brush HpLowBrush = CreateBrush("#E03030");
-    private static readonly Brush LabelBackground = CreateBrush("#B0101018");
-    private static readonly Brush PenBadgePenBrush = CreateBrush("#00E066");
-    private static readonly Brush PenBadgeMarginalBrush = CreateBrush("#E0B000");
-    private static readonly Brush PenBadgeNoPenBrush = CreateBrush("#E03030");
+    // Combat-pip rise-and-fade tuning: a pip rises 14px and fades out over
+    // ~16 rendered frames (≈ 0.8s at the 20 fps playback tick).
+    internal const double PipRisePixels = 14;
+    internal const int PipAnimationFrames = 16;
+
+    // HP damage-ghost tuning: after a hit the pale "recent damage" bar lags
+    // above the live fill and eases down toward it over ~15 frames (≈ 0.75s).
+    internal const double HpGhostEaseRate = 0.35;
+    internal const double HpGhostSnapThreshold = 0.005;
+
+    // Kill-feed entry animation: the newest entry slides in from the left and
+    // fades up over ~8 frames (≈ 0.4s).
+    internal const double FeedSlidePixels = 8;
+    internal const int FeedAnimationFrames = 8;
+
+    // Pen-badge pulse tuning: a verdict change pops the badge by ~8% and it
+    // eases back to full size over ~10 frames (≈ 0.5s).
+    internal const double PenPulseOvershoot = 0.08;
+    internal const int PenPulseFrames = 10;
+
+    // ── Team / state palette ────────────────────────────────
+    private static readonly Brush Team1Brush = Solid("#4FA8FF");
+    private static readonly Brush Team2Brush = Solid("#FF6B6B");
+    private static readonly Brush NeutralBrush = Solid("#C8D0DA");
+    private static readonly Brush DeadBrush = Solid("#6F7887");
+
+    // ── Health palette (vertical gradients read as lit glass) ──
+    private static readonly Brush HpGoodBrush = VerticalGradient("#5BEFAA", "#1BC46A");
+    private static readonly Brush HpMidBrush = VerticalGradient("#FFDD80", "#E9A93C");
+    private static readonly Brush HpLowBrush = VerticalGradient("#FF8585", "#E6355C");
+
+    // ── Glass / ink palette ─────────────────────────────────
+    private static readonly Brush PanelGlass = VerticalGradient("#F0141B28", "#C60A0D17");
+    private static readonly Brush PanelBorderBrush = Solid("#3DFFFFFF");
+    private static readonly Brush HpTrackBrush = Solid("#66000000");
+    private static readonly Brush HpTrackBorderBrush = Solid("#2EFFFFFF");
+    private static readonly Brush InkBrush = Solid("#F4F7FA");
+    private static readonly Brush MutedBrush = Solid("#A9B4C0");
+    private static readonly Brush FaintBrush = Solid("#7C8794");
+    private static readonly Brush OutlineBrush = Solid("#CC000000");
+
+    // ── Verdict / pip / playback accents ────────────────────
+    private static readonly Brush PenVerdictBrush = Solid("#2BE67D");
+    private static readonly Brush MarginalVerdictBrush = Solid("#F5C34B");
+    private static readonly Brush NoPenVerdictBrush = Solid("#FF5252");
+    private static readonly Brush PipDamageBrush = Solid("#FFC24B");
+    private static readonly Brush PipKillBrush = Solid("#FF6B6B");
+    private static readonly Brush HpGhostBrush = Solid("#A6FFFFFF");
+    private static readonly Brush PlaybackFillBrush = Solid("#CCFFFFFF");
+    private static readonly Brush MinimapVignette = RadialVignette();
+
+    /// <summary>
+    /// Pip age in rendered frames, keyed by (entity, kind, damage) so a hit or
+    /// death popup animates across consecutive frames even though the canvas
+    /// is cleared and rebuilt every frame. Pips absent from the current frame
+    /// drop out of the map, so a later identical hit restarts its pop.
+    /// </summary>
+    private Dictionary<(long EntityId, string Kind, int Damage), int> _pipAges = new();
+
+    /// <summary>Lagging HP fill fraction per tank, for the damage-ghost trail.</summary>
+    private Dictionary<long, double> _hpGhosts = new();
+
+    /// <summary>Frames-since-arrival per kill-feed victim, for the slide-in.</summary>
+    private Dictionary<long, int> _killAges = new();
+
+    /// <summary>Last rendered pen-badge verdict text, to detect verdict changes.</summary>
+    private string? _lastPenStateKey;
+
+    /// <summary>Frames since the last pen verdict change (<see cref="int.MaxValue"/> = settled).</summary>
+    private int _penPulseAge = int.MaxValue;
 
     public W2sHudView()
     {
@@ -99,14 +166,39 @@ public sealed partial class W2sHudView : UserControl
             HudCanvas.Children.Add(BuildBeacon(beacon));
         }
 
+        Dictionary<(long EntityId, string Kind, int Damage), int> nextPipAges = new();
         foreach (PipItem pip in pips)
         {
-            HudCanvas.Children.Add(BuildPip(pip));
+            var key = (pip.EntityId, pip.Kind, pip.Damage);
+            int age = _pipAges.TryGetValue(key, out int previous) ? previous + 1 : 0;
+            nextPipAges[key] = age;
+            HudCanvas.Children.Add(BuildPip(pip, age));
         }
+
+        _pipAges = nextPipAges;
+
+        // Per-entity HP damage-ghost state: the pale trail behind the live
+        // fill eases down toward the current fraction after each hit, then
+        // snaps forward on heal/regen. Rebuilt per frame so tanks that leave
+        // the viewport drop out and restart at their live value.
+        Dictionary<long, double> nextHpGhosts = new();
+        foreach (NameplateItem item in items)
+        {
+            double target = double.IsFinite(item.HpFraction)
+                ? Math.Clamp(item.HpFraction, 0, 1)
+                : 0;
+            double ghost = _hpGhosts.TryGetValue(item.EntityId, out double previous)
+                ? HpGhostEase(previous, target)
+                : target;
+            nextHpGhosts[item.EntityId] = ghost;
+        }
+
+        _hpGhosts = nextHpGhosts;
 
         foreach (NameplateItem item in items)
         {
-            HudCanvas.Children.Add(BuildNameplate(item, viewportWidth, viewportHeight));
+            HudCanvas.Children.Add(
+                BuildNameplate(item, nextHpGhosts[item.EntityId], viewportWidth, viewportHeight));
         }
 
         foreach (OwnMarkerItem marker in ownMarkers)
@@ -120,9 +212,21 @@ public sealed partial class W2sHudView : UserControl
                 BuildMinimap(minimap, minimapBeacons, cameraX, cameraZ, cameraYawRadians, viewportWidth, viewportHeight, minimapImage));
         }
 
+        // Per-entry kill age so the newest kill slides in and fades up across
+        // consecutive frames while older entries stay settled. Rebuilt each
+        // frame (empty when the feed is empty) so the map stays bounded.
+        Dictionary<long, int> nextKillAges = new();
+        foreach (KillItem kill in killFeed)
+        {
+            int age = _killAges.TryGetValue(kill.VictimEntityId, out int previous) ? previous + 1 : 0;
+            nextKillAges[kill.VictimEntityId] = age;
+        }
+
+        _killAges = nextKillAges;
+
         if (killFeed.Count > 0)
         {
-            HudCanvas.Children.Add(BuildKillFeed(killFeed));
+            HudCanvas.Children.Add(BuildKillFeed(killFeed, nextKillAges));
         }
 
         if (scoreboard.Count > 0)
@@ -142,7 +246,32 @@ public sealed partial class W2sHudView : UserControl
                 }
             }
 
-            HudCanvas.Children.Add(BuildPenBadge(penBadge, aimed, viewportWidth, viewportHeight));
+            // Pulse the badge whenever its verdict text changes (a real pen
+            // state change), so the readout visibly reacts to the shot you
+            // can or cannot take. The badge also re-pulses on reappearance.
+            string stateKey = PenBadgeLabel(
+                penBadge.Band,
+                penBadge.EffectiveArmorMm,
+                penBadge.PenetrationMmAtRange,
+                penBadge.Ricochet,
+                penBadge.Shell,
+                penBadge.Face);
+            if (!string.Equals(stateKey, _lastPenStateKey, StringComparison.Ordinal))
+            {
+                _lastPenStateKey = stateKey;
+                _penPulseAge = 0;
+            }
+            else if (_penPulseAge < int.MaxValue)
+            {
+                _penPulseAge++;
+            }
+
+            HudCanvas.Children.Add(BuildPenBadge(penBadge, aimed, _penPulseAge, viewportWidth, viewportHeight));
+        }
+        else
+        {
+            _lastPenStateKey = null;
+            _penPulseAge = int.MaxValue;
         }
 
         if (playbackProgress is not null)
@@ -153,23 +282,48 @@ public sealed partial class W2sHudView : UserControl
 
     /// <summary>
     /// Builds the scoreboard panel: every roster tank's cumulative damage
-    /// dealt and kills at the current frame time, pinned to the top-right
-    /// corner, sorted by the view model (damage dealt, highest first). Rows
-    /// are team-colored (blue/red), greyed when the tank is destroyed.
+    /// dealt, damage taken and kills at the current frame time, pinned to the
+    /// top-right corner, sorted by the view model (damage dealt, highest
+    /// first). Rows are team-colored (blue/red), greyed and struck through
+    /// when the tank is destroyed. A header row labels the numeric columns.
     /// </summary>
-    private static Canvas BuildScoreboard(IReadOnlyList<ScoreboardItem> scoreboard)
+    private static Border BuildScoreboard(IReadOnlyList<ScoreboardItem> scoreboard)
     {
         const double margin = 12;
         const double rowHeight = 16;
-        const double panelWidth = 292;
-        const double maxRows = 14;
+        const double headerHeight = 18;
+        const double panelWidth = 300;
+        const int maxRows = 14;
 
-        var panel = new Canvas
+        var root = new Border
         {
-            Background = CreateBrush("#80101820"),
+            Width = panelWidth,
+            Background = PanelGlass,
+            BorderBrush = PanelBorderBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(4, 4, 4, 6),
         };
-        Canvas.SetRight(panel, margin);
-        Canvas.SetTop(panel, margin);
+        var stack = new StackPanel();
+        root.Child = stack;
+
+        // Header row.
+        var header = new Grid { Height = headerHeight, Margin = new Thickness(6, 0, 6, 1) };
+        AddColumnSet(header, star: true, 56, 56, 34);
+        AddHeaderCell(header, 0, "NAME", TextAlignment.Left);
+        AddHeaderCell(header, 1, "DMG", TextAlignment.Right);
+        AddHeaderCell(header, 2, "TAKEN", TextAlignment.Right);
+        AddHeaderCell(header, 3, "KILLS", TextAlignment.Right);
+        stack.Children.Add(header);
+
+        // Divider under the header.
+        stack.Children.Add(new Rectangle
+        {
+            Height = 1,
+            Fill = PanelBorderBrush,
+            Opacity = 0.5,
+            Margin = new Thickness(6, 0, 6, 2),
+        });
 
         int shown = 0;
         foreach (ScoreboardItem row in scoreboard)
@@ -183,53 +337,92 @@ public sealed partial class W2sHudView : UserControl
                 ? (row.TeamNumber == 1 ? Team1Brush : row.TeamNumber == 2 ? Team2Brush : NeutralBrush)
                 : DeadBrush;
 
-            var line = new StackPanel
+            var line = new Grid { Height = rowHeight, Margin = new Thickness(6, 0, 6, 1) };
+            AddColumnSet(line, star: true, 56, 56, 34);
+
+            var nameCell = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
-                Margin = new Thickness(6, 1, 6, 1),
+                VerticalAlignment = VerticalAlignment.Center,
             };
-            line.Children.Add(new TextBlock
+            nameCell.Children.Add(new Ellipse
+            {
+                Width = 6,
+                Height = 6,
+                Fill = brush,
+                Margin = new Thickness(0, 0, 5, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+            nameCell.Children.Add(new TextBlock
             {
                 Text = row.PlayerName,
                 FontSize = 11,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = brush,
-                Width = 128,
                 TextTrimming = TextTrimming.CharacterEllipsis,
+                TextDecorations = row.Alive ? null : TextDecorations.Strikethrough,
+                VerticalAlignment = VerticalAlignment.Center,
             });
-            line.Children.Add(new TextBlock
-            {
-                Text = row.DamageDealt.ToString(CultureInfo.InvariantCulture),
-                FontSize = 11,
-                Foreground = brush,
-                Width = 52,
-                TextAlignment = TextAlignment.Right,
-            });
-            line.Children.Add(new TextBlock
-            {
-                Text = row.DamageTaken.ToString(CultureInfo.InvariantCulture),
-                FontSize = 11,
-                Foreground = brush,
-                Width = 52,
-                TextAlignment = TextAlignment.Right,
-            });
-            line.Children.Add(new TextBlock
-            {
-                Text = row.Kills.ToString(CultureInfo.InvariantCulture),
-                FontSize = 11,
-                Foreground = brush,
-                Width = 32,
-                TextAlignment = TextAlignment.Right,
-            });
+            Grid.SetColumn(nameCell, 0);
+            line.Children.Add(nameCell);
 
-            Canvas.SetTop(line, shown * rowHeight);
-            panel.Children.Add(line);
+            AddScoreCell(line, 1, row.DamageDealt.ToString(CultureInfo.InvariantCulture), brush);
+            AddScoreCell(line, 2, row.DamageTaken.ToString(CultureInfo.InvariantCulture), brush);
+            AddScoreCell(line, 3, row.Kills.ToString(CultureInfo.InvariantCulture), brush);
+
+            stack.Children.Add(line);
             shown++;
         }
 
-        panel.Width = panelWidth;
-        panel.Height = shown * rowHeight + 4;
-        return panel;
+        Canvas.SetRight(root, margin);
+        Canvas.SetTop(root, margin);
+        return root;
+    }
+
+    /// <summary>
+    /// Adds four scoreboard columns; the first is star-sized (name), the
+    /// remaining three fixed-width right-aligned numeric columns.
+    /// </summary>
+    private static void AddColumnSet(Grid grid, bool star, params double[] widths)
+    {
+        if (star)
+        {
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        }
+
+        foreach (double width in widths)
+        {
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(width) });
+        }
+    }
+
+    private static void AddHeaderCell(Grid grid, int column, string text, TextAlignment alignment)
+    {
+        var cell = new TextBlock
+        {
+            Text = text,
+            FontSize = 8,
+            FontWeight = FontWeights.Bold,
+            Foreground = FaintBrush,
+            TextAlignment = alignment,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        Grid.SetColumn(cell, column);
+        grid.Children.Add(cell);
+    }
+
+    private static void AddScoreCell(Grid grid, int column, string text, Brush brush)
+    {
+        var cell = new TextBlock
+        {
+            Text = text,
+            FontSize = 11,
+            Foreground = brush,
+            TextAlignment = TextAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        Grid.SetColumn(cell, column);
+        grid.Children.Add(cell);
     }
 
     /// <summary>
@@ -295,7 +488,7 @@ public sealed partial class W2sHudView : UserControl
     }
 
     /// <summary>
-    /// Builds the penetration indicator: a colored badge showing the struck
+    /// Builds the penetration indicator: a colored pill showing the struck
     /// face, the banded verdict, and its numeric readout. When the aimed
     /// tank's nameplate is on screen the badge anchors to it (centred above
     /// the plate), so the readout is visually tied to the tank being aimed
@@ -306,34 +499,51 @@ public sealed partial class W2sHudView : UserControl
     private static Canvas BuildPenBadge(
         PenBadgeItem badge,
         NameplateItem? aimed,
+        int pulseAge,
         double viewportWidth,
         double viewportHeight)
     {
         Brush brush = badge.Band switch
         {
-            "Pen" => PenBadgePenBrush,
-            "Marginal" => PenBadgeMarginalBrush,
-            _ => PenBadgeNoPenBrush,
+            "Pen" => PenVerdictBrush,
+            "Marginal" => MarginalVerdictBrush,
+            _ => NoPenVerdictBrush,
         };
 
+        var content = new StackPanel { Orientation = Orientation.Horizontal };
+        content.Children.Add(new TextBlock
+        {
+            Text = "\u25C6",
+            FontSize = 9,
+            Foreground = brush,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 5, 0),
+        });
+        content.Children.Add(new TextBlock
+        {
+            Text = PenBadgeLabel(
+                badge.Band,
+                badge.EffectiveArmorMm,
+                badge.PenetrationMmAtRange,
+                badge.Ricochet,
+                badge.Shell,
+                badge.Face),
+            FontSize = 12,
+            FontWeight = FontWeights.Bold,
+            Foreground = brush,
+        });
+
+        double pulseScale = PenPulseScale(pulseAge, PenPulseFrames);
         var label = new Border
         {
-            Background = CreateBrush("#D0101018"),
-            CornerRadius = new CornerRadius(3),
-            Padding = new Thickness(5, 1, 5, 1),
-            Child = new TextBlock
-            {
-                Text = PenBadgeLabel(
-                    badge.Band,
-                    badge.EffectiveArmorMm,
-                    badge.PenetrationMmAtRange,
-                    badge.Ricochet,
-                    badge.Shell,
-                    badge.Face),
-                FontSize = 12,
-                FontWeight = FontWeights.Bold,
-                Foreground = brush,
-            },
+            Background = PanelGlass,
+            BorderBrush = brush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(8, 2, 8, 2),
+            Child = content,
+            RenderTransformOrigin = new Point(0.5, 0.5),
+            RenderTransform = new ScaleTransform(pulseScale, pulseScale),
         };
         label.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
 
@@ -366,8 +576,9 @@ public sealed partial class W2sHudView : UserControl
     /// <summary>
     /// Builds the playback progress bar: a thin track pinned to the bottom-
     /// centre of the overlay with a filled portion proportional to playback
-    /// progress and a small time label above the left end. Only drawn while a
-    /// session is selected and its duration is known.
+    /// progress, a position knob on the leading edge, and a centred time
+    /// label above the track. Only drawn while a session is selected and its
+    /// duration is known.
     /// </summary>
     private static Canvas BuildPlaybackBar(
         double progress,
@@ -376,43 +587,64 @@ public sealed partial class W2sHudView : UserControl
     {
         const double barWidth = 320;
         const double barHeight = 3;
+        const double knobSize = 7;
         const double margin = 12;
         const double gap = 40;
         double trackWidth = Math.Min(barWidth, Math.Max(0, viewportWidth - (2 * margin) - gap));
         double left = (viewportWidth - trackWidth) / 2.0;
         double bottom = margin;
         double fillWidth = PlaybackFillWidth(trackWidth, progress);
+        const double trackTop = (knobSize - barHeight) / 2.0;
 
         var panel = new Canvas
         {
             Width = trackWidth,
-            Height = barHeight,
+            Height = knobSize,
         };
         Canvas.SetLeft(panel, left);
         Canvas.SetBottom(panel, bottom);
 
         // Track.
-        panel.Children.Add(new Rectangle
+        var track = new Rectangle
         {
             Width = trackWidth,
             Height = barHeight,
             RadiusX = 1.5,
             RadiusY = 1.5,
-            Fill = CreateBrush("#66101820"),
-        });
+            Fill = HpTrackBrush,
+            Stroke = HpTrackBorderBrush,
+            StrokeThickness = 1,
+        };
+        Canvas.SetTop(track, trackTop);
+        panel.Children.Add(track);
 
         // Fill.
         if (fillWidth > 0)
         {
-            panel.Children.Add(new Rectangle
+            var fill = new Rectangle
             {
-                Width = fillWidth,
+                Width = Math.Max(barHeight, fillWidth),
                 Height = barHeight,
                 RadiusX = 1.5,
                 RadiusY = 1.5,
-                Fill = CreateBrush("#CCFFFFFF"),
+                Fill = PlaybackFillBrush,
                 HorizontalAlignment = HorizontalAlignment.Left,
-            });
+            };
+            Canvas.SetTop(fill, trackTop);
+            panel.Children.Add(fill);
+
+            // Leading-edge knob.
+            var knob = new Ellipse
+            {
+                Width = knobSize,
+                Height = knobSize,
+                Fill = PlaybackFillBrush,
+                Stroke = OutlineBrush,
+                StrokeThickness = 1,
+            };
+            Canvas.SetLeft(knob, Math.Clamp(fillWidth - knobSize / 2.0, 0, trackWidth - knobSize));
+            Canvas.SetTop(knob, 0);
+            panel.Children.Add(knob);
         }
 
         if (!string.IsNullOrWhiteSpace(label))
@@ -421,7 +653,8 @@ public sealed partial class W2sHudView : UserControl
             {
                 Text = label,
                 FontSize = 10,
-                Foreground = CreateBrush("#BFFFFFFF"),
+                Foreground = InkBrush,
+                HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, -16, 0, 0),
             };
             panel.Children.Add(text);
@@ -464,23 +697,66 @@ public sealed partial class W2sHudView : UserControl
         $"{damageDealt.ToString(CultureInfo.InvariantCulture)} dmg · {kills.ToString(CultureInfo.InvariantCulture)} kills";
 
     /// <summary>
-    /// Builds the kill-feed panel: the most recent entries as a stacked list
-    /// pinned to the bottom-left corner, "Killer → Victim" with a time tag,
-    /// newest first (the view model already orders it). Environmental kills
-    /// render the victim with an em-dash killer label.
+    /// Formats the nameplate's single muted meta line: exact HP (when the
+    /// type-5 max-HP broadcast decoded), range, then cumulative damage and
+    /// kills. Parts are joined with " · " and numbers stay invariant-culture.
+    /// Pure for unit tests.
     /// </summary>
-    private static Canvas BuildKillFeed(IReadOnlyList<KillItem> killFeed)
+    public static string NameplateMetaLabel(
+        double distanceMeters,
+        long maxHealth,
+        long currentHealth,
+        long damageDealt,
+        long kills)
+    {
+        var parts = new List<string>();
+        if (maxHealth > 0)
+        {
+            parts.Add(
+                $"{Math.Max(currentHealth, 0).ToString(CultureInfo.InvariantCulture)}/{maxHealth.ToString(CultureInfo.InvariantCulture)} HP");
+        }
+
+        double safeDistance = double.IsFinite(distanceMeters) ? distanceMeters : 0;
+        parts.Add($"{safeDistance.ToString("F0", CultureInfo.InvariantCulture)} m");
+        parts.Add(NameplateTotalsLabel(damageDealt, kills));
+        return string.Join(" · ", parts);
+    }
+
+    /// <summary>
+    /// Builds the kill-feed panel: the most recent entries as a stacked list
+    /// pinned to the bottom-left corner, "Killer → Victim" with a right-
+    /// aligned time tag, newest first (the view model already orders it).
+    /// Environmental kills render the victim with an em-dash killer label.
+    /// </summary>
+    private static Border BuildKillFeed(
+        IReadOnlyList<KillItem> killFeed,
+        Dictionary<long, int> ages)
     {
         const int maxEntries = 8;
         const double margin = 12;
         const double entryHeight = 18;
+        const double panelWidth = 262;
 
-        var panel = new Canvas
+        var root = new Border
         {
-            Background = CreateBrush("#80101820"),
+            Width = panelWidth,
+            Background = PanelGlass,
+            BorderBrush = PanelBorderBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(4, 3, 6, 5),
         };
-        Canvas.SetLeft(panel, margin);
-        Canvas.SetBottom(panel, margin);
+        var stack = new StackPanel();
+        root.Child = stack;
+
+        stack.Children.Add(new TextBlock
+        {
+            Text = "KILL FEED",
+            FontSize = 8,
+            FontWeight = FontWeights.Bold,
+            Foreground = FaintBrush,
+            Margin = new Thickness(6, 0, 0, 2),
+        });
 
         int shown = 0;
         foreach (KillItem kill in killFeed)
@@ -490,37 +766,85 @@ public sealed partial class W2sHudView : UserControl
                 break;
             }
 
-            var text = new TextBlock
+            var line = new Grid { Height = entryHeight, Margin = new Thickness(6, 0, 0, 0) };
+            line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(44) });
+
+            // Newest entries slide in from the left and fade up; older ones
+            // are already settled. A missing age means "settled".
+            (double slideOffset, double opacity) = FeedEntryAnimation(
+                ages.TryGetValue(kill.VictimEntityId, out int age) ? age : int.MaxValue,
+                FeedAnimationFrames);
+            line.RenderTransform = new TranslateTransform(slideOffset, 0);
+            line.Opacity = opacity;
+
+            // A malformed kill timestamp must not render as "NaNs".
+            double killTime = double.IsFinite(kill.ReplayTimeSeconds)
+                ? kill.ReplayTimeSeconds
+                : 0;
+
+            var summary = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            summary.Children.Add(new TextBlock
             {
-                Text = $"{kill.KillerLabel} → {kill.VictimLabel}  {kill.ReplayTimeSeconds:F0}s",
+                Text = kill.KillerLabel,
                 FontSize = 11,
                 FontWeight = FontWeights.SemiBold,
-                Foreground = CreateBrush("#E8E8E8"),
-                Margin = new Thickness(6, 1, 6, 1),
+                Foreground = InkBrush,
+                MaxWidth = 108,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            });
+            summary.Children.Add(new TextBlock
+            {
+                Text = "  →  ",
+                FontSize = 11,
+                Foreground = FaintBrush,
+            });
+            summary.Children.Add(new TextBlock
+            {
+                Text = kill.VictimLabel,
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = PipKillBrush,
+                MaxWidth = 108,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            });
+            Grid.SetColumn(summary, 0);
+            line.Children.Add(summary);
+
+            var time = new TextBlock
+            {
+                Text = $"{killTime:F0}s",
+                FontSize = 9,
+                Foreground = FaintBrush,
+                TextAlignment = TextAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Center,
             };
-            Canvas.SetTop(text, shown * entryHeight);
-            panel.Children.Add(text);
+            Grid.SetColumn(time, 1);
+            line.Children.Add(time);
+
+            stack.Children.Add(line);
             shown++;
         }
 
-        panel.Width = 240;
-        panel.Height = shown * entryHeight + 6;
-        return panel;
+        Canvas.SetLeft(root, margin);
+        Canvas.SetBottom(root, margin);
+        return root;
     }
 
     /// <summary>
     /// Builds the god-view minimap panel: a fixed-size square pinned to the
     /// bottom-right corner, with the map texture as background, one dot per
-    /// tank at its normalized position (team-colored; grey when destroyed)
-    /// and a white ring for the camera. The camera marker is only drawn when
-    /// the viewpoint position is known. The texture is stretched to the panel
-    /// so dots in normalized coordinates align with terrain features; a
-    /// non-square boundary therefore distorts the texture rather than the
-    /// dots (dot alignment is the invariant that matters). Pure layout math is
-    /// unit-tested via <see cref="MinimapMath"/>, <see cref="MinimapDotRect"/>
+    /// tank at its normalized position (team-colored; grey when destroyed),
+    /// a translucent view-cone plus white ring for the camera, and a soft
+    /// vignette so dots read over bright map areas. The camera marker is only
+    /// drawn when the viewpoint position is known. The texture is stretched to
+    /// the panel so dots in normalized coordinates align with terrain
+    /// features; a non-square boundary therefore distorts the texture rather
+    /// than the dots (dot alignment is the invariant that matters). Pure layout
+    /// math is unit-tested via <see cref="MinimapMath"/>, <see cref="MinimapDotRect"/>
     /// and <see cref="MinimapImageRect"/>.
     /// </summary>
-    private static Canvas BuildMinimap(
+    private static Border BuildMinimap(
         IReadOnlyList<MinimapItem> minimap,
         IReadOnlyList<MinimapBeaconItem> minimapBeacons,
         double? cameraX,
@@ -530,7 +854,7 @@ public sealed partial class W2sHudView : UserControl
         double viewportHeight,
         ImageSource? minimapImage)
     {
-        const double panelSize = 150;
+        const double panelSize = 164;
         const double margin = 12;
         const double dotRadius = 4;
 
@@ -538,10 +862,8 @@ public sealed partial class W2sHudView : UserControl
         {
             Width = panelSize,
             Height = panelSize,
-            Background = CreateBrush("#80101820"),
+            Clip = new RectangleGeometry(new Rect(0, 0, panelSize, panelSize), 9, 9),
         };
-        Canvas.SetRight(panel, margin);
-        Canvas.SetBottom(panel, margin);
 
         // Map texture under the dots: stretched to the panel square, matching
         // the 0..1 normalized coordinate space the dots and beacons share.
@@ -555,13 +877,21 @@ public sealed partial class W2sHudView : UserControl
                 Opacity = 0.55,
                 Stretch = Stretch.Fill,
             });
+
+            // Soft vignette so the dots and cone keep contrast on bright maps.
+            panel.Children.Add(new Rectangle
+            {
+                Width = panelSize,
+                Height = panelSize,
+                Fill = MinimapVignette,
+            });
         }
 
         // Beacons next (under the tank dots): small diamonds in their own
         // marker color, so POIs read even where they overlap tanks.
         foreach (MinimapBeaconItem beacon in minimapBeacons)
         {
-            Brush markerBrush = CreateBrush(beacon.Color);
+            Brush markerBrush = MarkerBrush(beacon.Color);
             var diamond = new Polygon
             {
                 Points = new PointCollection
@@ -572,13 +902,40 @@ public sealed partial class W2sHudView : UserControl
                     new Point(-5, 0),
                 },
                 Fill = markerBrush,
-                Stroke = CreateBrush("#CC000000"),
+                Stroke = OutlineBrush,
                 StrokeThickness = 1,
                 RenderTransform = new TranslateTransform(
                     beacon.NormalizedX * panelSize,
                     beacon.NormalizedZ * panelSize),
             };
             panel.Children.Add(diamond);
+        }
+
+        // Camera view-cone under the tank dots, so tanks cover it when close.
+        if (cameraX is not null && cameraZ is not null)
+        {
+            double cx = cameraX.Value * panelSize;
+            double cz = cameraZ.Value * panelSize;
+
+            if (cameraYawRadians is double yaw && double.IsFinite(yaw))
+            {
+                const double coneLength = 16;
+                const double coneHalfBase = 7;
+                Point apex = CameraTickApex(cameraX.Value, cameraZ.Value, yaw, panelSize, coneLength);
+                double px = Math.Sin(yaw);
+                double pz = Math.Cos(yaw);
+                var cone = new Polygon
+                {
+                    Points = new PointCollection
+                    {
+                        new Point(cx + pz * coneHalfBase, cz - px * coneHalfBase),
+                        apex,
+                        new Point(cx - pz * coneHalfBase, cz + px * coneHalfBase),
+                    },
+                    Fill = Solid("#2EFFFFFF"),
+                };
+                panel.Children.Add(cone);
+            }
         }
 
         foreach (MinimapItem item in minimap)
@@ -590,6 +947,8 @@ public sealed partial class W2sHudView : UserControl
                 Fill = item.Alive
                     ? (item.TeamNumber == 1 ? Team1Brush : item.TeamNumber == 2 ? Team2Brush : NeutralBrush)
                     : DeadBrush,
+                Stroke = OutlineBrush,
+                StrokeThickness = 1,
             };
             Canvas.SetLeft(dot, item.NormalizedX * panelSize - dotRadius);
             Canvas.SetTop(dot, item.NormalizedZ * panelSize - dotRadius);
@@ -602,42 +961,28 @@ public sealed partial class W2sHudView : UserControl
             {
                 Width = dotRadius * 2 + 3,
                 Height = dotRadius * 2 + 3,
-                Stroke = CreateBrush("#FFFFFF"),
+                Stroke = Solid("#FFFFFFFF"),
                 StrokeThickness = 1.5,
                 Fill = null,
             };
             Canvas.SetLeft(ring, cameraX.Value * panelSize - (dotRadius + 1.5));
             Canvas.SetTop(ring, cameraZ.Value * panelSize - (dotRadius + 1.5));
             panel.Children.Add(ring);
-
-            // Camera facing tick: a short line from the ring toward the
-            // viewpoint's facing direction. Yaw convention (packet): 0 faces
-            // +Z, +pi/2 faces +X; the minimap maps world X to panel right and
-            // world Z to panel down, so the panel delta is (sin yaw, cos yaw)
-            // scaled by the tick length.
-            if (cameraYawRadians is double yaw && double.IsFinite(yaw))
-            {
-                const double tickLength = 14;
-                double cx = cameraX.Value * panelSize;
-                double cz = cameraZ.Value * panelSize;
-                double px = Math.Sin(yaw) * tickLength;
-                double pz = Math.Cos(yaw) * tickLength;
-
-                var tick = new Polygon
-                {
-                    Points = new PointCollection
-                    {
-                        new Point(cx + pz * 0.35, cz - px * 0.35),
-                        new Point(cx + px, cz + pz),
-                        new Point(cx - pz * 0.35, cz + px * 0.35),
-                    },
-                    Fill = CreateBrush("#FFFFFFFF"),
-                };
-                panel.Children.Add(tick);
-            }
         }
 
-        return panel;
+        var root = new Border
+        {
+            Width = panelSize,
+            Height = panelSize,
+            Background = PanelGlass,
+            BorderBrush = PanelBorderBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
+            Child = panel,
+        };
+        Canvas.SetRight(root, margin);
+        Canvas.SetBottom(root, margin);
+        return root;
     }
 
     /// <summary>
@@ -677,6 +1022,7 @@ public sealed partial class W2sHudView : UserControl
     /// The own-tank edge marker: a small chevron whose apex points toward
     /// the player's hull (angle from <see cref="OwnMarkerItem"/>, 0 = +X,
     /// +π/2 = +Y in viewport pixels), anchored at the clamped viewport edge.
+    /// A faint halo keeps it visible over bright game footage.
     /// </summary>
     private static Canvas BuildOwnMarker(OwnMarkerItem marker)
     {
@@ -689,8 +1035,8 @@ public sealed partial class W2sHudView : UserControl
                 new Point(-size * 0.45, size * 0.55),
                 new Point(size * 0.45, size * 0.55),
             ],
-            Fill = CreateBrush("#E6FFFFFF"),
-            Stroke = CreateBrush("#CC000000"),
+            Fill = Solid("#E6FFFFFF"),
+            Stroke = OutlineBrush,
             StrokeThickness = 1.5,
             RenderTransform = new RotateTransform(
                 marker.AngleRadians * 180.0 / Math.PI),
@@ -699,17 +1045,39 @@ public sealed partial class W2sHudView : UserControl
         var root = new Canvas();
         Canvas.SetLeft(root, marker.ScreenX);
         Canvas.SetTop(root, marker.ScreenY);
+        root.Children.Add(new Ellipse
+        {
+            Width = 26,
+            Height = 26,
+            Fill = Solid("#1AFFFFFF"),
+            RenderTransform = new TranslateTransform(-13, -13),
+        });
         root.Children.Add(chevron);
         return root;
     }
 
     private static Canvas BuildBeacon(BeaconItem beacon)
     {
-        Brush markerBrush = CreateBrush(beacon.Color);
+        Brush markerBrush = MarkerBrush(beacon.Color);
 
         var root = new Canvas();
         Canvas.SetLeft(root, beacon.ScreenX);
         Canvas.SetTop(root, beacon.ScreenY);
+
+        // Halo diamond under the pin for contrast over busy footage.
+        var halo = new Polygon
+        {
+            Points = new PointCollection
+            {
+                new Point(0, -9),
+                new Point(9, 0),
+                new Point(0, 9),
+                new Point(-9, 0),
+            },
+            Fill = Solid("#26FFFFFF"),
+            RenderTransform = new TranslateTransform(0, 0),
+        };
+        root.Children.Add(halo);
 
         // Pin: a filled circle with a dark outline, centered on the anchor.
         root.Children.Add(new Ellipse
@@ -717,7 +1085,7 @@ public sealed partial class W2sHudView : UserControl
             Width = BeaconDotRadius * 2,
             Height = BeaconDotRadius * 2,
             Fill = markerBrush,
-            Stroke = CreateBrush("#CC000000"),
+            Stroke = OutlineBrush,
             StrokeThickness = 1,
             RenderTransform = new TranslateTransform(-BeaconDotRadius, -BeaconDotRadius),
         });
@@ -725,9 +1093,11 @@ public sealed partial class W2sHudView : UserControl
         // Label above the pin.
         var label = new Border
         {
-            Background = CreateBrush("#B0101018"),
-            CornerRadius = new CornerRadius(3),
-            Padding = new Thickness(3, 0, 3, 0),
+            Background = PanelGlass,
+            BorderBrush = PanelBorderBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(5),
+            Padding = new Thickness(5, 1, 5, 1),
             Margin = new Thickness(0, -2, 0, 0),
             Child = new TextBlock
             {
@@ -741,26 +1111,54 @@ public sealed partial class W2sHudView : UserControl
         };
         label.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
         Canvas.SetLeft(label, -label.DesiredSize.Width / 2.0);
-        Canvas.SetTop(label, -BeaconDotRadius - 16);
+        Canvas.SetTop(label, -BeaconDotRadius - 18);
         root.Children.Add(label);
 
         return root;
     }
 
-    private static StackPanel BuildNameplate(
+    private static Border BuildNameplate(
         NameplateItem item,
+        double ghostFraction,
         double viewportWidth,
         double viewportHeight)
     {
         Rect rect = AnchorRect(item.ScreenX, item.ScreenY, viewportWidth, viewportHeight);
+        Brush teamBrush = item.Alive
+            ? (item.TeamNumber == 1 ? Team1Brush : item.TeamNumber == 2 ? Team2Brush : NeutralBrush)
+            : DeadBrush;
 
-        var root = new StackPanel
+        var panel = new Border
         {
-            Orientation = Orientation.Vertical,
             Width = NameplateWidth,
+            Background = PanelGlass,
+            BorderBrush = PanelBorderBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
         };
-        Canvas.SetLeft(root, rect.Left);
-        Canvas.SetTop(root, rect.Top);
+        Canvas.SetLeft(panel, rect.Left);
+        Canvas.SetTop(panel, rect.Top);
+
+        var grid = new Grid();
+        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(2.5) });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        panel.Child = grid;
+
+        // Team-color accent strip across the top edge (grey when destroyed).
+        grid.Children.Add(new Border
+        {
+            Height = 2.5,
+            Background = teamBrush,
+            CornerRadius = new CornerRadius(6, 6, 0, 0),
+            VerticalAlignment = VerticalAlignment.Top,
+        });
+
+        var content = new StackPanel
+        {
+            Margin = new Thickness(5, 3, 5, 4),
+        };
+        Grid.SetRow(content, 1);
+        grid.Children.Add(content);
 
         // Facing arrow: a screen-space heading (0 = away from the viewer)
         // drawn above the label, rotated to the tank's hull direction. No
@@ -768,104 +1166,180 @@ public sealed partial class W2sHudView : UserControl
         // a facing that projects to a single pixel).
         if (item.ScreenHeadingDegrees is double heading && double.IsFinite(heading))
         {
-            root.Children.Add(BuildHeadingArrow(heading));
+            content.Children.Add(BuildHeadingArrow(heading, teamBrush));
         }
 
-        var label = new Border
-        {
-            Background = LabelBackground,
-            CornerRadius = new CornerRadius(3),
-            Padding = new Thickness(4, 1, 4, 1),
-        };
-        var text = new TextBlock
+        content.Children.Add(new TextBlock
         {
             Text = item.Label,
             FontSize = LabelFontSize,
             FontWeight = FontWeights.SemiBold,
-            Foreground = item.Alive
-                ? (item.TeamNumber == 1 ? Team1Brush : item.TeamNumber == 2 ? Team2Brush : NeutralBrush)
-                : DeadBrush,
+            Foreground = teamBrush,
             TextAlignment = TextAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis,
-            MaxWidth = NameplateWidth,
-        };
-        label.Child = text;
-        root.Children.Add(label);
+            TextDecorations = item.Alive ? null : TextDecorations.Strikethrough,
+            MaxWidth = NameplateWidth - 12,
+        });
 
-        // HP bar: fraction-scaled fill, color by health.
+        // HP bar: fraction-scaled fill, color by health, gradient-filled.
+        // The fill is sized against the track's inner area (border inset), so
+        // a full-health bar reaches the inner edge without overflowing and a
+        // NaN fraction from a malformed frame degrades to an empty bar.
         var hpTrack = new Border
         {
             Width = HpBarWidth,
             Height = HpBarHeight,
-            Background = CreateBrush("#55000000"),
-            CornerRadius = new CornerRadius(2),
-            Margin = new Thickness((NameplateWidth - HpBarWidth) / 2.0, 2, 0, 0),
-            Child = new Border
+            Background = HpTrackBrush,
+            BorderBrush = HpTrackBorderBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(3),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 2, 0, 0),
+        };
+        double hpFraction = double.IsFinite(item.HpFraction)
+            ? Math.Clamp(item.HpFraction, 0, 1)
+            : 0;
+        double innerWidth = Math.Max(0, HpBarWidth - 2);
+        var hpTrackGrid = new Grid();
+
+        // Damage ghost: the pale trail behind the live fill shows the health
+        // that was just lost, easing down each frame. Suppressed on destroyed
+        // tanks (their plate is greyscaled, so a ghost would read as noise).
+        double ghost = double.IsFinite(ghostFraction) ? Math.Clamp(ghostFraction, 0, 1) : 0;
+        if (item.Alive && ghost > hpFraction)
+        {
+            hpTrackGrid.Children.Add(new Border
             {
-                Width = Math.Clamp(HpBarWidth * Math.Clamp(item.HpFraction, 0, 1), 0, HpBarWidth),
-                Height = HpBarHeight,
-                Background = item.Alive
-                    ? HpColor(item.HpFraction)
-                    : DeadBrush,
+                Width = innerWidth * ghost,
+                Height = Math.Max(0, HpBarHeight - 2),
+                Background = HpGhostBrush,
                 CornerRadius = new CornerRadius(2),
                 HorizontalAlignment = HorizontalAlignment.Left,
-            },
-        };
-        root.Children.Add(hpTrack);
-
-        // Exact HP readout ("438 / 700") from the decoded ledger, shown under
-        // the bar when the type-5 max-HP broadcast decoded for this tank.
-        if (item.MaxHealth > 0)
-        {
-            root.Children.Add(new TextBlock
-            {
-                Text = $"{Math.Max(item.CurrentHealth, 0)} / {item.MaxHealth}",
-                FontSize = 8,
-                Foreground = item.Alive ? CreateBrush("#CCFFFFFF") : DeadBrush,
-                TextAlignment = TextAlignment.Center,
-                Margin = new Thickness(0, 1, 0, 0),
+                VerticalAlignment = VerticalAlignment.Top,
             });
         }
 
-        // Distance label under the bar.
-        root.Children.Add(new TextBlock
+        var hpFill = new Border
         {
-            Text = $"{item.DistanceMeters:F0} m",
-            FontSize = 9,
-            Foreground = CreateBrush("#AAFFFFFF"),
+            Width = innerWidth * hpFraction,
+            Height = Math.Max(0, HpBarHeight - 2),
+            Background = item.Alive ? HpColor(hpFraction) : DeadBrush,
+            CornerRadius = new CornerRadius(2),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+        };
+        hpTrackGrid.Children.Add(hpFill);
+        hpTrack.Child = hpTrackGrid;
+        content.Children.Add(hpTrack);
+
+        // Muted meta line: exact HP (when known), range, damage, kills.
+        content.Children.Add(new TextBlock
+        {
+            Text = NameplateMetaLabel(
+                item.DistanceMeters,
+                item.MaxHealth,
+                item.CurrentHealth,
+                item.DamageDealt,
+                item.Kills),
+            FontSize = MetaFontSize,
+            Foreground = MutedBrush,
             TextAlignment = TextAlignment.Center,
-            Margin = new Thickness(0, 1, 0, 0),
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            MaxWidth = NameplateWidth - 12,
+            Margin = new Thickness(0, 2, 0, 0),
         });
 
-        // Totals line: cumulative damage dealt + kills at the frame time.
-        // Kept under the distance so the plate height stays stable.
-        root.Children.Add(new TextBlock
-        {
-            Text = NameplateTotalsLabel(item.DamageDealt, item.Kills),
-            FontSize = 8,
-            Foreground = CreateBrush("#99FFFFFF"),
-            TextAlignment = TextAlignment.Center,
-            Margin = new Thickness(0, 1, 0, 0),
-        });
-
-        return root;
+        return panel;
     }
 
-    private static Border BuildPip(PipItem pip)
+    /// <summary>
+    /// Rise-and-fade progress for a combat pip: a linear fade-out combined
+    /// with an ease-out vertical rise, parameterized by the pip's age in
+    /// frames. Pure for unit tests; age is tracked per rendered frame so the
+    /// effect survives the HUD's clear-and-rebuild render model.
+    /// </summary>
+    public static (double RiseOffset, double Opacity) PipAnimation(int ageFrames, int durationFrames)
     {
-        // Damage pips read "+N", death pips read "\u2716" (a dark skull-like
-        // marker); both float just above the affected tank's anchor.
+        if (durationFrames <= 0)
+        {
+            return (0, 0);
+        }
+
+        double t = Math.Clamp((double)ageFrames / durationFrames, 0, 1);
+        double eased = 1.0 - ((1.0 - t) * (1.0 - t));
+        return (PipRisePixels * eased, 1.0 - t);
+    }
+
+    /// <summary>
+    /// One step of the HP damage-ghost easing: after a hit the ghost lags
+    /// above the live fill and eases down toward it; on heal/regen it snaps
+    /// forward so the ghost never trails *behind* the live bar. Finite-safe
+    /// and pure for unit tests.
+    /// </summary>
+    public static double HpGhostEase(double ghost, double target)
+    {
+        double g = double.IsFinite(ghost) ? ghost : 0;
+        double t = double.IsFinite(target) ? Math.Clamp(target, 0, 1) : 0;
+        if (t >= g)
+        {
+            return t;
+        }
+
+        double next = g + ((t - g) * HpGhostEaseRate);
+        return Math.Abs(next - t) < HpGhostSnapThreshold ? t : next;
+    }
+
+    /// <summary>
+    /// Slide-and-fade progress for a kill-feed entry: the newest entry slides
+    /// in from the left and fades up, easing out; older entries settle to
+    /// their full position and opacity. Pure for unit tests.
+    /// </summary>
+    public static (double SlideOffset, double Opacity) FeedEntryAnimation(int ageFrames, int durationFrames)
+    {
+        if (durationFrames <= 0)
+        {
+            return (0, 1);
+        }
+
+        double t = Math.Clamp((double)ageFrames / durationFrames, 0, 1);
+        double eased = 1.0 - ((1.0 - t) * (1.0 - t));
+        return (-FeedSlidePixels * (1.0 - eased), eased);
+    }
+
+    /// <summary>
+    /// Pulse scale for the pen badge on a verdict change: a brief overshoot
+    /// that eases back to 1.0. Pure for unit tests; a settled badge (age at
+    /// or past the pulse window) stays at full size.
+    /// </summary>
+    public static double PenPulseScale(int ageFrames, int durationFrames)
+    {
+        if (durationFrames <= 0)
+        {
+            return 1.0;
+        }
+
+        double t = Math.Clamp((double)ageFrames / durationFrames, 0, 1);
+        double eased = 1.0 - ((1.0 - t) * (1.0 - t));
+        return 1.0 + (PenPulseOvershoot * (1.0 - eased));
+    }
+
+    private static Border BuildPip(PipItem pip, int ageFrames)
+    {
+        // Damage pips read "+N", death pips read "✕" (a dark skull-like
+        // marker); both rise and fade above the affected tank's anchor.
         bool isDamage = string.Equals(pip.Kind, "Damage", StringComparison.Ordinal);
         string text = isDamage ? $"+{pip.Damage}" : "\u2716";
-        Brush brush = isDamage
-            ? CreateBrush("#FFB000")
-            : CreateBrush("#FF5A5A");
+        Brush brush = isDamage ? PipDamageBrush : PipKillBrush;
+        (double riseOffset, double opacity) = PipAnimation(ageFrames, PipAnimationFrames);
 
         var pipBorder = new Border
         {
-            Background = CreateBrush("#D0101018"),
-            CornerRadius = new CornerRadius(3),
-            Padding = new Thickness(4, 0, 4, 0),
+            Background = PanelGlass,
+            BorderBrush = brush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(5),
+            Padding = new Thickness(5, 1, 5, 1),
+            Opacity = opacity,
             Child = new TextBlock
             {
                 Text = text,
@@ -876,18 +1350,20 @@ public sealed partial class W2sHudView : UserControl
         };
         pipBorder.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
         Canvas.SetLeft(pipBorder, pip.ScreenX - pipBorder.DesiredSize.Width / 2.0);
-        Canvas.SetTop(pipBorder, pip.ScreenY - pipBorder.DesiredSize.Height - 4);
+        Canvas.SetTop(
+            pipBorder,
+            pip.ScreenY - pipBorder.DesiredSize.Height - 4 - riseOffset);
         return pipBorder;
     }
 
-    private static Canvas BuildHeadingArrow(double headingDegrees)
+    private static Canvas BuildHeadingArrow(double headingDegrees, Brush teamBrush)
     {
         // Arrow drawn pointing UP (away from the viewer) at 0 degrees;
         // RotateTransform turns it to the tank's screen-space hull heading
         // (positive = clockwise, matching the packet's yaw convention).
         var canvas = new Canvas
         {
-            Width = NameplateWidth,
+            Width = NameplateWidth - 12,
             Height = HeadingArrowLength + 2,
             RenderTransformOrigin = new Point(0.5, 0.5),
             RenderTransform = new RotateTransform(headingDegrees),
@@ -896,12 +1372,12 @@ public sealed partial class W2sHudView : UserControl
         {
             Points = new PointCollection
             {
-                new Point(NameplateWidth / 2.0, 0),
-                new Point(NameplateWidth / 2.0 - HeadingArrowHalfWidth, HeadingArrowLength),
-                new Point(NameplateWidth / 2.0 + HeadingArrowHalfWidth, HeadingArrowLength),
+                new Point(canvas.Width / 2.0, 0),
+                new Point(canvas.Width / 2.0 - HeadingArrowHalfWidth, HeadingArrowLength),
+                new Point(canvas.Width / 2.0 + HeadingArrowHalfWidth, HeadingArrowLength),
             },
-            Fill = NeutralBrush,
-            Stroke = CreateBrush("#CC000000"),
+            Fill = teamBrush,
+            Stroke = OutlineBrush,
             StrokeThickness = 0.75,
         };
         canvas.Children.Add(arrow);
@@ -911,9 +1387,74 @@ public sealed partial class W2sHudView : UserControl
     private static Brush HpColor(double fraction) =>
         fraction > 0.5 ? HpGoodBrush : fraction > 0.25 ? HpMidBrush : HpLowBrush;
 
-    private static SolidColorBrush CreateBrush(string hex)
+    // ── Frozen paint helpers (zero per-frame resource churn) ──
+
+    /// <summary>
+    /// Parses an HTML-style hex color for a beacon/marker, returning null for
+    /// null, empty, or malformed input — the fail-closed marker-color
+    /// contract, unit-tested.
+    /// </summary>
+    internal static Color? ResolveMarkerColor(string? hex)
     {
-        Color color = (Color)ColorConverter.ConvertFromString(hex);
-        return new SolidColorBrush(color);
+        if (string.IsNullOrWhiteSpace(hex))
+        {
+            return null;
+        }
+
+        try
+        {
+            return ColorOf(hex);
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Resolves a beacon/marker brush with a fail-closed fallback: a hostile
+    /// or corrupt frame renders neutral instead of crashing the HUD.
+    /// </summary>
+    private static Brush MarkerBrush(string? hex) =>
+        ResolveMarkerColor(hex) is Color color
+            ? Freeze(new SolidColorBrush(color))
+            : NeutralBrush;
+
+    private static Color ColorOf(string hex) =>
+        (Color)ColorConverter.ConvertFromString(hex);
+
+    private static SolidColorBrush Solid(string hex) =>
+        Freeze(new SolidColorBrush(ColorOf(hex)));
+
+    private static LinearGradientBrush VerticalGradient(string topHex, string bottomHex)
+    {
+        var brush = new LinearGradientBrush
+        {
+            StartPoint = new Point(0, 0),
+            EndPoint = new Point(0, 1),
+        };
+        brush.GradientStops.Add(new GradientStop(ColorOf(topHex), 0));
+        brush.GradientStops.Add(new GradientStop(ColorOf(bottomHex), 1));
+        return Freeze(brush);
+    }
+
+    private static RadialGradientBrush RadialVignette()
+    {
+        var brush = new RadialGradientBrush
+        {
+            Center = new Point(0.5, 0.5),
+            GradientOrigin = new Point(0.5, 0.5),
+            RadiusX = 0.8,
+            RadiusY = 0.8,
+        };
+        brush.GradientStops.Add(new GradientStop(Color.FromArgb(0, 0, 0, 0), 0.55));
+        brush.GradientStops.Add(new GradientStop(Color.FromArgb(96, 0, 0, 0), 1.0));
+        return Freeze(brush);
+    }
+
+    private static T Freeze<T>(T freezable) where T : Freezable
+    {
+        freezable.Freeze();
+        return freezable;
     }
 }

@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.Net.Http;
 using System.Text.Json;
 using System.Windows.Input;
@@ -57,7 +58,7 @@ public class MainViewModel : INotifyPropertyChanged
 {
     private const int PageLimit = 200;
     private const int MaxPlottedPoints = 2000;
-    private const string HudUiVersion = "0.6.0-alpha";
+    private const string HudUiVersion = "0.7.0-alpha";
 
     private readonly RendezvousLocator _locator;
     private readonly Func<Uri, string?, TreaderApiClient> _apiClientFactory;
@@ -83,6 +84,22 @@ public class MainViewModel : INotifyPropertyChanged
     private readonly SynchronizationContext? _syncContext;
     private CancellationTokenSource? _liveObservationTimeoutCts;
     private static readonly TimeSpan LiveObservationTimeout = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// Upper bound for one frame fetch. Frame requests are superseded every
+    /// ~50 ms during playback, so this only fires when the host accepts the
+    /// connection but never answers — without it a hung host would silently
+    /// keep the last frame on screen forever.
+    /// </summary>
+    private static readonly TimeSpan FrameRequestTimeout = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// How long a successful frame may age before a currently "ready" state
+    /// flips to its retained/stale equivalent. Live mode polls continuously
+    /// and replay mode polls while playing; a paused replay is exempt because
+    /// it deliberately holds its last frame.
+    /// </summary>
+    private static readonly TimeSpan FrameStalenessThreshold = TimeSpan.FromSeconds(10);
 
     private Dictionary<string, MapBoundaryResponse> _mapBoundaries = new(StringComparer.OrdinalIgnoreCase);
     private bool _boundariesFetched;
@@ -352,6 +369,42 @@ public class MainViewModel : INotifyPropertyChanged
     {
         OnPropertyChanged(nameof(FrameHealthLabel));
         OnPropertyChanged(nameof(RenderHealthLabel));
+        RefreshFrameStaleness();
+    }
+
+    /// <summary>
+    /// Flips a "current" frame state to its retained/stale equivalent once the
+    /// last successful frame has aged past <see cref="FrameStalenessThreshold"/>.
+    /// During active playback each frame request is superseded every ~50 ms, so
+    /// a hung host would otherwise never surface a timeout or error — the age
+    /// watchdog is what turns that silence into a visible retained-frame state.
+    /// </summary>
+    private void RefreshFrameStaleness()
+    {
+        if (_lastFrameLoadedAtUtc is not DateTimeOffset loadedAt)
+        {
+            return;
+        }
+
+        double ageSeconds = (_timeProvider.GetUtcNow() - loadedAt).TotalSeconds;
+        if (ageSeconds < FrameStalenessThreshold.TotalSeconds)
+        {
+            return;
+        }
+
+        if (IsLiveMode)
+        {
+            if (_runtimeState == HudRuntimeState.LiveReady)
+            {
+                FrameStatusLabel = "Last live frame retained";
+                SetRuntimeState(HudRuntimeState.LiveUnavailable, "Live telemetry frame is stale");
+            }
+        }
+        else if (_isPlaying && _runtimeState == HudRuntimeState.ReplayPlaying)
+        {
+            FrameStatusLabel = "Last replay frame retained";
+            SetRuntimeState(HudRuntimeState.FrameStale, "Showing the last good replay frame");
+        }
     }
 
     /// <summary>Builds the bounded state snapshot used by the diagnostics exporter.</summary>
@@ -929,6 +982,7 @@ public class MainViewModel : INotifyPropertyChanged
         _frameLoadCts?.Dispose();
         CancellationTokenSource cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _frameLoadCts = cts;
+        cts.CancelAfter(FrameRequestTimeout);
         long requestStartTimestamp = Stopwatch.GetTimestamp();
         try
         {
@@ -1078,7 +1132,7 @@ public class MainViewModel : INotifyPropertyChanged
             foreach (OverlayTankResponse tank in frame.Tanks
                 .OrderByDescending(tank => tank.Depth))
             {
-                if (tank.ScreenX is null || tank.ScreenY is null || !tank.InViewport)
+                if (!HasUsableProjection(tank.ScreenX, tank.ScreenY, tank.InViewport))
                 {
                     continue;
                 }
@@ -1095,16 +1149,23 @@ public class MainViewModel : INotifyPropertyChanged
                     continue;
                 }
 
+                // Fail-closed presentation sanitation: a malformed frame must
+                // never inject NaN/out-of-range geometry into WPF layout (a
+                // NaN HP fraction or depth would otherwise crash the render).
+                double hpFraction = SanitizeHpFraction(tank.HpFraction);
+                double distanceMeters = SanitizeDistanceMeters(tank.DistanceMeters);
+                double depth = SanitizeDepth(tank.Depth);
+
                 _nameplates.Add(new NameplateItem(
                     tank.EntityId,
-                    tank.ScreenX.Value,
-                    tank.ScreenY.Value,
+                    tank.ScreenX.GetValueOrDefault(),
+                    tank.ScreenY.GetValueOrDefault(),
                     tank.PlayerName ?? tank.TankName ?? $"Tank {tank.EntityId}",
                     tank.TeamNumber,
-                    tank.HpFraction,
+                    hpFraction,
                     tank.Alive,
-                    tank.DistanceMeters,
-                    tank.Depth ?? double.MaxValue,
+                    distanceMeters,
+                    depth,
                     tank.ScreenHeadingDegrees,
                     tank.DamageDealt,
                     tank.Kills,
@@ -1138,21 +1199,26 @@ public class MainViewModel : INotifyPropertyChanged
 
             foreach (OverlayBeaconResponse beacon in frame.Beacons)
             {
-                if (beacon.ScreenX is null || beacon.ScreenY is null || !beacon.InViewport)
+                if (!HasUsableProjection(beacon.ScreenX, beacon.ScreenY, beacon.InViewport))
                 {
                     continue;
                 }
 
                 _beacons.Add(new BeaconItem(
                     beacon.Name,
-                    beacon.ScreenX.Value,
-                    beacon.ScreenY.Value,
+                    beacon.ScreenX.GetValueOrDefault(),
+                    beacon.ScreenY.GetValueOrDefault(),
                     beacon.Color,
-                    beacon.DistanceMeters));
+                    SanitizeDistanceMeters(beacon.DistanceMeters)));
             }
 
             foreach (OverlayPipResponse pip in frame.Pips)
             {
+                if (!double.IsFinite(pip.ScreenX) || !double.IsFinite(pip.ScreenY))
+                {
+                    continue;
+                }
+
                 _pips.Add(new PipItem(
                     pip.EntityId,
                     pip.Kind,
@@ -1183,9 +1249,21 @@ public class MainViewModel : INotifyPropertyChanged
                 ("hasPenBadge", renderableBadge),
                 ("latencyMs", Math.Round(_lastFrameRefreshLatencyMs.Value, 1)));
         }
+        catch (OperationCanceledException) when (
+            generation != _frameLoadGeneration || cancellationToken.IsCancellationRequested)
+        {
+            // Superseded by a newer frame request or cancelled by the caller:
+            // keep the previous frame.
+        }
         catch (OperationCanceledException)
         {
-            // Superseded or cancelled: keep the previous frame.
+            // The request timed out (no successor, caller token not cancelled).
+            // Surface staleness instead of silently pinning the last frame.
+            _logger.Failure(
+                "hud.frame.request_timeout",
+                null,
+                ("mode", IsLiveMode ? "live" : "replay"));
+            MarkFrameUnavailable();
         }
         catch (HttpRequestException exception)
         {
@@ -1391,6 +1469,11 @@ public class MainViewModel : INotifyPropertyChanged
         double minX = _worldMinX, maxX = _worldMaxX, minZ = _worldMinZ, maxZ = _worldMaxZ;
         foreach (OverlayTankResponse tank in frame.Tanks)
         {
+            if (!double.IsFinite(tank.WorldX) || !double.IsFinite(tank.WorldZ))
+            {
+                continue;
+            }
+
             (double U, double V)? normalized = MinimapMath.Normalize(
                 tank.WorldX, tank.WorldZ, minX, maxX, minZ, maxZ);
             if (normalized is null)
@@ -1400,14 +1483,19 @@ public class MainViewModel : INotifyPropertyChanged
 
             _minimapItems.Add(new MinimapItem(
                 tank.EntityId,
-                normalized.Value.U,
-                normalized.Value.V,
+                ClampNormalized(normalized.Value.U),
+                ClampNormalized(normalized.Value.V),
                 tank.TeamNumber,
                 tank.Alive));
         }
 
         foreach (OverlayBeaconResponse beacon in frame.Beacons)
         {
+            if (!double.IsFinite(beacon.WorldX) || !double.IsFinite(beacon.WorldZ))
+            {
+                continue;
+            }
+
             (double U, double V)? normalized = MinimapMath.Normalize(
                 beacon.WorldX, beacon.WorldZ, minX, maxX, minZ, maxZ);
             if (normalized is null)
@@ -1418,30 +1506,67 @@ public class MainViewModel : INotifyPropertyChanged
             _minimapBeacons.Add(new MinimapBeaconItem(
                 beacon.Name,
                 beacon.Color,
-                normalized.Value.U,
-                normalized.Value.V));
+                ClampNormalized(normalized.Value.U),
+                ClampNormalized(normalized.Value.V)));
         }
 
         // Camera marker: the raw world camera position normalizes against
         // the SAME boundary as the dots — a raw value scaled by panel pixels
         // would land meters off-panel. Fail-closed: no boundary extent or no
         // camera evidence → no ring (null).
-        _minimapCameraYaw = frame.CameraYawRadians;
-        if (frame.CameraX is double rawCameraX && frame.CameraZ is double rawCameraZ)
+        double? cameraX = frame.CameraX is double cx && double.IsFinite(cx) ? cx : null;
+        double? cameraZ = frame.CameraZ is double cz && double.IsFinite(cz) ? cz : null;
+        double? cameraYaw = frame.CameraYawRadians is double yaw && double.IsFinite(yaw) ? yaw : null;
+
+        double? normalizedCameraX = null;
+        double? normalizedCameraZ = null;
+        if (cameraX is not null && cameraZ is not null)
         {
             (double U, double V)? normalized = MinimapMath.Normalize(
-                rawCameraX, rawCameraZ, minX, maxX, minZ, maxZ);
+                cameraX.Value, cameraZ.Value, minX, maxX, minZ, maxZ);
             if (normalized is not null)
             {
-                _minimapCameraX = normalized.Value.U;
-                _minimapCameraZ = normalized.Value.V;
-                return;
+                normalizedCameraX = ClampNormalized(normalized.Value.U);
+                normalizedCameraZ = ClampNormalized(normalized.Value.V);
             }
         }
 
-        _minimapCameraX = null;
-        _minimapCameraZ = null;
+        _minimapCameraX = normalizedCameraX;
+        _minimapCameraZ = normalizedCameraZ;
+        _minimapCameraYaw = normalizedCameraX is null ? null : cameraYaw;
+        OnPropertyChanged(nameof(MinimapCameraX));
+        OnPropertyChanged(nameof(MinimapCameraZ));
+        OnPropertyChanged(nameof(MinimapCameraYawRadians));
     }
+
+    /// <summary>
+    /// Clamps a normalized 0..1 coordinate into the panel; the normalizer
+    /// deliberately leaves out-of-boundary values un-clamped and this HUD is
+    /// the caller that pins them to the edge at draw time.
+    /// </summary>
+    internal static double ClampNormalized(double value) =>
+        double.IsFinite(value) ? Math.Clamp(value, 0, 1) : 0;
+
+    /// <summary>
+    /// A projection is renderable only when it is marked in-viewport and both
+    /// screen coordinates are present and finite — fail closed on corrupt frames.
+    /// </summary>
+    internal static bool HasUsableProjection(double? screenX, double? screenY, bool inViewport) =>
+        inViewport
+        && screenX is double x && double.IsFinite(x)
+        && screenY is double y && double.IsFinite(y);
+
+    /// <summary>HP fraction clamped to 0..1; a NaN value degrades to an empty bar.</summary>
+    internal static double SanitizeHpFraction(double hpFraction) =>
+        double.IsFinite(hpFraction) ? Math.Clamp(hpFraction, 0, 1) : 0;
+
+    /// <summary>Finite distance passes through; NaN degrades to 0 rather than "NaN m".</summary>
+    internal static double SanitizeDistanceMeters(double distanceMeters) =>
+        double.IsFinite(distanceMeters) ? distanceMeters : 0;
+
+    /// <summary>Finite depth passes through; null/NaN sorts last (painter's order).</summary>
+    internal static double SanitizeDepth(double? depth) =>
+        depth is double d && double.IsFinite(d) ? d : double.MaxValue;
 
     /// <summary>
     /// Rebuilds <see cref="KillFeed"/> from the frame's kill list, newest
@@ -1503,7 +1628,14 @@ public class MainViewModel : INotifyPropertyChanged
     /// </summary>
     public void ScrubToEventTime(TimeSpan time)
     {
-        CurrentTime = time;
+        // Event rows come from host data; clamp like ScrubRelative so a
+        // malformed or out-of-range event time can never push the scrubber
+        // (and its frame request) outside [0, Duration].
+        if (_duration <= TimeSpan.Zero) return;
+        TimeSpan target = time;
+        if (target < TimeSpan.Zero) target = TimeSpan.Zero;
+        if (target > _duration) target = _duration;
+        CurrentTime = target;
     }
 
     /// <summary>
@@ -1610,14 +1742,23 @@ public class MainViewModel : INotifyPropertyChanged
         KillsTeam2 = kills2;
     }
 
-    private static int ParseDamageFromSummary(string summary)
+    private static int ParseDamageFromSummary(string? summary)
     {
-        // Summary format: "Damage: N HP"
+        // Summary format: "Damage: N HP". Fail closed on null/empty text and
+        // parse invariant so a locale with digit-group separators can never
+        // misread the wire number.
+        if (string.IsNullOrEmpty(summary))
+        {
+            return 0;
+        }
+
         int colon = summary.IndexOf(':');
         int hp = summary.LastIndexOf(" HP", StringComparison.Ordinal);
         if (colon < 0 || hp <= colon) return 0;
-        string num = summary.AsSpan(colon + 1, hp - colon - 1).Trim().ToString();
-        return int.TryParse(num, out int result) ? result : 0;
+        ReadOnlySpan<char> num = summary.AsSpan(colon + 1, hp - colon - 1).Trim();
+        return int.TryParse(num, NumberStyles.Integer, CultureInfo.InvariantCulture, out int result)
+            ? result
+            : 0;
     }
 
     private void ApplyTimeFilter()
@@ -1636,11 +1777,23 @@ public class MainViewModel : INotifyPropertyChanged
             ? new List<PositionSampleResponse>(_allPositions)
             : _allPositions.Where(p => p.ReplayTime <= _currentTime).ToList();
 
-        int stride = Math.Max(1, source.Count / MaxPlottedPoints);
+        // Decimate to at most MaxPlottedPoints by sampling evenly. Ceiling
+        // keeps the stride large enough that count/stride never exceeds the
+        // cap (integer division previously under-decimated counts in the
+        // (cap, 2*cap] range, e.g. 2,500 points at stride 1).
+        int stride = Math.Max(1, (int)Math.Ceiling((double)source.Count / MaxPlottedPoints));
         Points.Clear();
         for (int i = 0; i < source.Count; i += stride)
         {
             PositionSampleResponse sample = source[i];
+
+            // A NaN sample poisons the plot extent computation and produces
+            // NaN canvas coordinates; drop it fail-closed.
+            if (!double.IsFinite(sample.RawX) || !double.IsFinite(sample.RawZ))
+            {
+                continue;
+            }
+
             int teamNumber = 0;
             if (sample.ParticipantId is not null)
                 _teamByParticipantId.TryGetValue(sample.ParticipantId, out teamNumber);
@@ -1651,36 +1804,51 @@ public class MainViewModel : INotifyPropertyChanged
     public async Task RefreshSessionsAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-
-        Guid? selectionAtRefreshStart = _selectedSession?.BattleSessionId;
-        TreaderApiClient? clientAtRefreshStart = _client;
-        _isRefreshingSessions = true;
-        bool refreshSucceeded;
         try
         {
-            refreshSucceeded = await RefreshSessionsCoreAsync(cancellationToken);
-        }
-        finally
-        {
-            _isRefreshingSessions = false;
-        }
+            Guid? selectionAtRefreshStart = _selectedSession?.BattleSessionId;
+            TreaderApiClient? clientAtRefreshStart = _client;
+            _isRefreshingSessions = true;
+            bool refreshSucceeded;
+            try
+            {
+                refreshSucceeded = await RefreshSessionsCoreAsync(cancellationToken);
+            }
+            finally
+            {
+                _isRefreshingSessions = false;
+            }
 
-        bool hostChanged = !ReferenceEquals(clientAtRefreshStart, _client);
-        Guid? selectionAfterRefresh = _selectedSession?.BattleSessionId;
-        if (refreshSucceeded
-            && selectionAfterRefresh.HasValue
-            && (hostChanged || selectionAfterRefresh != selectionAtRefreshStart))
-        {
-            StartSelectedSessionRefresh();
-        }
+            bool hostChanged = !ReferenceEquals(clientAtRefreshStart, _client);
+            Guid? selectionAfterRefresh = _selectedSession?.BattleSessionId;
+            if (refreshSucceeded
+                && selectionAfterRefresh.HasValue
+                && (hostChanged || selectionAfterRefresh != selectionAtRefreshStart))
+            {
+                StartSelectedSessionRefresh();
+            }
 
-        // After a successful refresh, connect the stream service so future
-        // session list changes arrive via push instead of polling.
-        if (refreshSucceeded && _clientBaseUri is not null && _streamService is not null)
+            // After a successful refresh, connect the stream service so future
+            // session list changes arrive via push instead of polling.
+            if (refreshSucceeded && _clientBaseUri is not null && _streamService is not null)
+            {
+                _ = ConnectStreamSafelyAsync(
+                    _clientBaseUri,
+                    _locator.Locate().Record?.Capability);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            _ = ConnectStreamSafelyAsync(
-                _clientBaseUri,
-                _locator.Locate().Record?.Capability);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Fire-and-forget callers (RefreshCommand, the SignalR stream push)
+            // must never surface an unobserved fault. Fail closed with a
+            // user-safe status instead of leaking transport details.
+            _logger.Failure("hud.sessions.refresh_unexpected_failed", ex);
+            SetRuntimeState(HudRuntimeState.HostUnreachable, "The local host did not answer");
+            Status = "Host unreachable";
         }
     }
 
@@ -1722,7 +1890,9 @@ public class MainViewModel : INotifyPropertyChanged
                 foreach (SessionSummaryResponse summary in page.Items)
                 {
                     BattleSessionResponse? session = summary.Session;
-                    if (session is null || !Guid.TryParse(session.BattleSessionId, out Guid battleSessionId))
+                    if (session is null
+                        || summary.DecodeRun is null
+                        || !Guid.TryParse(session.BattleSessionId, out Guid battleSessionId))
                     {
                         continue;
                     }
@@ -1972,6 +2142,23 @@ public class MainViewModel : INotifyPropertyChanged
         catch (Exception ex) when (ex is HttpRequestException or JsonException or ObjectDisposedException)
         {
             _logger.Failure("hud.session.detail_failed", ex);
+            if (IsCurrentDetailLoad(
+                    selected,
+                    client,
+                    detailLoadGeneration,
+                    CancellationToken.None))
+            {
+                SetRuntimeState(HudRuntimeState.HostUnreachable, "The host could not load the replay");
+                Status = "Host unreachable";
+                ClearSessionState();
+            }
+        }
+        catch (Exception ex)
+        {
+            // Fail-closed: an unexpected fault (e.g. a malformed host response
+            // hitting a contract assumption) must not become an unobserved task
+            // exception; surface a user-safe status and clear stale state.
+            _logger.Failure("hud.session.detail_unexpected_failed", ex);
             if (IsCurrentDetailLoad(
                     selected,
                     client,
@@ -2292,14 +2479,16 @@ public class MainViewModel : INotifyPropertyChanged
                 }
             }, (this, timeoutCts), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
 
-        if (observation.PlayerPositionX.HasValue)
+        // Fail-closed memory sanitation: a NaN/uninitialized read must not
+        // poison the live dot or trail with NaN canvas coordinates.
+        if (observation.PlayerPositionX is float px && float.IsFinite(px))
         {
-            LivePlayerPositionX = observation.PlayerPositionX.Value;
+            LivePlayerPositionX = px;
         }
 
-        if (observation.PlayerPositionZ.HasValue)
+        if (observation.PlayerPositionZ is float pz && float.IsFinite(pz))
         {
-            LivePlayerPositionZ = observation.PlayerPositionZ.Value;
+            LivePlayerPositionZ = pz;
         }
 
         if (observation.PlayerHP.HasValue)
@@ -2307,26 +2496,24 @@ public class MainViewModel : INotifyPropertyChanged
             LivePlayerHP = observation.PlayerHP.Value;
         }
 
-        if (observation.ReplayTimeSeconds.HasValue)
+        if (observation.ReplayTimeSeconds is double rt && double.IsFinite(rt))
         {
-            LiveReplayTimeSeconds = observation.ReplayTimeSeconds.Value;
+            LiveReplayTimeSeconds = rt;
         }
 
-        if (observation.PlayerYaw.HasValue)
+        if (observation.PlayerYaw is float yaw && float.IsFinite(yaw))
         {
-            LivePlayerYaw = observation.PlayerYaw.Value;
+            LivePlayerYaw = yaw;
         }
 
-        // Append to the velocity trail when we have both position values.
-        if (observation.PlayerPositionX.HasValue && observation.PlayerPositionZ.HasValue)
+        // Append to the velocity trail when we have two finite position values.
+        if (observation.PlayerPositionX is float x && float.IsFinite(x)
+            && observation.PlayerPositionZ is float z && float.IsFinite(z))
         {
             // Skip duplicate positions (no movement).
             PlotPoint? last = LivePlayerTrail.Count > 0
                 ? LivePlayerTrail[^1]
                 : null;
-
-            double x = observation.PlayerPositionX.Value;
-            double z = observation.PlayerPositionZ.Value;
 
             if (last is null || last.X != x || last.Y != z)
             {
@@ -2451,7 +2638,8 @@ public class MainViewModel : INotifyPropertyChanged
     private void ApplyMapBoundaries(SessionRow? session)
     {
         if (session?.MapId is not null
-            && _mapBoundaries.TryGetValue(session.MapId, out MapBoundaryResponse? b))
+            && _mapBoundaries.TryGetValue(session.MapId, out MapBoundaryResponse? b)
+            && IsUsableBoundary(b))
         {
             WorldMinX = b.MinX;
             WorldMaxX = b.MaxX;
@@ -2463,6 +2651,16 @@ public class MainViewModel : INotifyPropertyChanged
             WorldMinX = WorldMaxX = WorldMinZ = WorldMaxZ = 0;
         }
     }
+
+    /// <summary>
+    /// A boundary is usable only when every extent is finite and positive.
+    /// NaN/Infinity catalogue rows would otherwise poison the minimap and
+    /// plot normalization (NaN extents are not caught by the > 0 check).
+    /// </summary>
+    internal static bool IsUsableBoundary(MapBoundaryResponse b) =>
+        double.IsFinite(b.MinX) && double.IsFinite(b.MaxX)
+        && double.IsFinite(b.MinZ) && double.IsFinite(b.MaxZ)
+        && b.MaxX > b.MinX && b.MaxZ > b.MinZ;
 
     /// <summary>
     /// Filters <see cref="Sessions"/> into <see cref="FilteredSessions"/>

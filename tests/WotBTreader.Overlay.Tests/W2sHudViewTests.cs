@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Media;
 using WotBTreader.Overlay.Views;
 
 namespace WotBTreader.Overlay.Tests;
@@ -9,14 +10,14 @@ public sealed class W2sHudViewTests
     [TestMethod]
     public void AnchorRect_CentresPlateAboveProjectedPoint()
     {
-        // 64x20 plate centred horizontally, 6px above the point (540).
+        // 96x22 plate centred horizontally, 6px above the point (540).
         Rect rect = W2sHudView.AnchorRect(
             screenX: 960, screenY: 540, viewportWidth: 1920, viewportHeight: 1080);
 
-        Assert.AreEqual(960 - 32, rect.Left, 1e-9);
-        Assert.AreEqual(540 - 20 - 6, rect.Top, 1e-9);
-        Assert.AreEqual(64, rect.Width, 1e-9);
-        Assert.AreEqual(20, rect.Height, 1e-9);
+        Assert.AreEqual(960 - 48, rect.Left, 1e-9);
+        Assert.AreEqual(540 - 22 - 6, rect.Top, 1e-9);
+        Assert.AreEqual(96, rect.Width, 1e-9);
+        Assert.AreEqual(22, rect.Height, 1e-9);
     }
 
     [TestMethod]
@@ -32,7 +33,7 @@ public sealed class W2sHudViewTests
 
         // A point near the right edge clamps to the far side.
         Rect right = W2sHudView.AnchorRect(screenX: 1919, screenY: 540, viewportWidth: 1920, viewportHeight: 1080);
-        Assert.AreEqual(1920 - 64, right.Left, 1e-9);
+        Assert.AreEqual(1920 - 96, right.Left, 1e-9);
     }
 
     [TestMethod]
@@ -148,6 +149,201 @@ public sealed class W2sHudViewTests
     {
         Assert.AreEqual("1200 dmg · 2 kills", W2sHudView.NameplateTotalsLabel(1200, 2));
         Assert.AreEqual("0 dmg · 0 kills", W2sHudView.NameplateTotalsLabel(0, 0));
+    }
+
+    [TestMethod]
+    public void NameplateMetaLabel_JoinsHpRangeAndTotals()
+    {
+        // Exact HP, range, then damage/kills in one muted line.
+        Assert.AreEqual(
+            "438/700 HP · 210 m · 1200 dmg · 2 kills",
+            W2sHudView.NameplateMetaLabel(
+                distanceMeters: 210, maxHealth: 700, currentHealth: 438, damageDealt: 1200, kills: 2));
+    }
+
+    [TestMethod]
+    public void NameplateMetaLabel_OmitsHpWhenMaxUnknown()
+    {
+        // No type-5 max-HP evidence -> HP part is dropped, rest remains.
+        Assert.AreEqual(
+            "210 m · 0 dmg · 0 kills",
+            W2sHudView.NameplateMetaLabel(
+                distanceMeters: 210, maxHealth: 0, currentHealth: 0, damageDealt: 0, kills: 0));
+    }
+
+    [TestMethod]
+    public void NameplateMetaLabel_NonFiniteDistance_DegradesToZero()
+    {
+        // A NaN distance must not render as "NaN m" in the meta line.
+        Assert.AreEqual(
+            "0 m · 0 dmg · 0 kills",
+            W2sHudView.NameplateMetaLabel(
+                distanceMeters: double.NaN, maxHealth: 0, currentHealth: 0, damageDealt: 0, kills: 0));
+    }
+
+    [TestMethod]
+    public void ResolveMarkerColor_ValidHex_ReturnsColor()
+    {
+        Assert.AreEqual(Color.FromRgb(0xFF, 0x00, 0x00), W2sHudView.ResolveMarkerColor("#FF0000"));
+        Assert.AreEqual(Color.FromRgb(0xFF, 0xD7, 0x00), W2sHudView.ResolveMarkerColor("#FFD700"));
+    }
+
+    [TestMethod]
+    public void ResolveMarkerColor_NullEmptyOrMalformed_ReturnsNull()
+    {
+        Assert.IsNull(W2sHudView.ResolveMarkerColor(null));
+        Assert.IsNull(W2sHudView.ResolveMarkerColor(string.Empty));
+        Assert.IsNull(W2sHudView.ResolveMarkerColor("   "));
+        Assert.IsNull(W2sHudView.ResolveMarkerColor("banana"));
+    }
+
+    [TestMethod]
+    public void PipAnimation_BirthIsFullOpacityAtAnchor()
+    {
+        (double rise, double opacity) = W2sHudView.PipAnimation(ageFrames: 0, durationFrames: 16);
+
+        Assert.AreEqual(0, rise, 1e-9);
+        Assert.AreEqual(1, opacity, 1e-9);
+    }
+
+    [TestMethod]
+    public void PipAnimation_EndOfLifeIsFullyRisenAndFaded()
+    {
+        (double rise, double opacity) = W2sHudView.PipAnimation(ageFrames: 16, durationFrames: 16);
+
+        Assert.AreEqual(W2sHudView.PipRisePixels, rise, 1e-9);
+        Assert.AreEqual(0, opacity, 1e-9);
+    }
+
+    [TestMethod]
+    public void PipAnimation_EaseOutRisesFasterThanLinear()
+    {
+        // At the midpoint the eased rise is ahead of a linear 50% rise.
+        (double rise, _) = W2sHudView.PipAnimation(ageFrames: 8, durationFrames: 16);
+
+        Assert.AreEqual(W2sHudView.PipRisePixels * 0.75, rise, 1e-9);
+    }
+
+    [TestMethod]
+    public void PipAnimation_ClampsOutOfRangeAges()
+    {
+        // Over-aged pips stay fully risen and faded.
+        (double rise, double opacity) = W2sHudView.PipAnimation(ageFrames: 100, durationFrames: 16);
+        Assert.AreEqual(W2sHudView.PipRisePixels, rise, 1e-9);
+        Assert.AreEqual(0, opacity, 1e-9);
+
+        // A negative age clamps back to birth.
+        (double rise2, double opacity2) = W2sHudView.PipAnimation(ageFrames: -5, durationFrames: 16);
+        Assert.AreEqual(0, rise2, 1e-9);
+        Assert.AreEqual(1, opacity2, 1e-9);
+    }
+
+    [TestMethod]
+    public void PipAnimation_ZeroDuration_IsFullyFaded()
+    {
+        (double rise, double opacity) = W2sHudView.PipAnimation(ageFrames: 3, durationFrames: 0);
+
+        Assert.AreEqual(0, rise, 1e-9);
+        Assert.AreEqual(0, opacity, 1e-9);
+    }
+
+    [TestMethod]
+    public void HpGhostEase_DamageLagsAboveLiveFill()
+    {
+        // A hit from full to 50%: the ghost stays above the live fill and
+        // eases only partway down in one step.
+        double ghost = W2sHudView.HpGhostEase(1.0, 0.5);
+
+        Assert.IsTrue(ghost > 0.5);
+        Assert.IsTrue(ghost < 1.0);
+    }
+
+    [TestMethod]
+    public void HpGhostEase_SettlesToTargetOverFrames()
+    {
+        double ghost = 1.0;
+        for (int i = 0; i < 100; i++)
+        {
+            ghost = W2sHudView.HpGhostEase(ghost, 0.5);
+        }
+
+        Assert.AreEqual(0.5, ghost, 1e-9);
+    }
+
+    [TestMethod]
+    public void HpGhostEase_HealSnapsForward()
+    {
+        // Regen must move the ghost up instantly so it never lags behind.
+        Assert.AreEqual(0.8, W2sHudView.HpGhostEase(0.5, 0.8), 1e-9);
+    }
+
+    [TestMethod]
+    public void HpGhostEase_NonFiniteInputsAreSafe()
+    {
+        Assert.AreEqual(0, W2sHudView.HpGhostEase(double.NaN, double.NaN), 1e-9);
+        Assert.AreEqual(1, W2sHudView.HpGhostEase(double.PositiveInfinity, 1.0), 1e-9);
+        Assert.AreEqual(0.5, W2sHudView.HpGhostEase(double.NegativeInfinity, 0.5), 1e-9);
+    }
+
+    [TestMethod]
+    public void FeedEntryAnimation_BirthIsOffLeftAndFaded()
+    {
+        (double slide, double opacity) = W2sHudView.FeedEntryAnimation(ageFrames: 0, durationFrames: 8);
+
+        Assert.AreEqual(-W2sHudView.FeedSlidePixels, slide, 1e-9);
+        Assert.AreEqual(0, opacity, 1e-9);
+    }
+
+    [TestMethod]
+    public void FeedEntryAnimation_SettlesToPositionAndOpacity()
+    {
+        (double slide, double opacity) = W2sHudView.FeedEntryAnimation(ageFrames: 8, durationFrames: 8);
+
+        Assert.AreEqual(0, slide, 1e-9);
+        Assert.AreEqual(1, opacity, 1e-9);
+    }
+
+    [TestMethod]
+    public void FeedEntryAnimation_OverAgeStaysSettled()
+    {
+        (double slide, double opacity) = W2sHudView.FeedEntryAnimation(ageFrames: 100, durationFrames: 8);
+
+        Assert.AreEqual(0, slide, 1e-9);
+        Assert.AreEqual(1, opacity, 1e-9);
+    }
+
+    [TestMethod]
+    public void FeedEntryAnimation_ZeroDurationIsSettled()
+    {
+        (double slide, double opacity) = W2sHudView.FeedEntryAnimation(ageFrames: 3, durationFrames: 0);
+
+        Assert.AreEqual(0, slide, 1e-9);
+        Assert.AreEqual(1, opacity, 1e-9);
+    }
+
+    [TestMethod]
+    public void PenPulseScale_BirthOvershoots()
+    {
+        double scale = W2sHudView.PenPulseScale(ageFrames: 0, durationFrames: 10);
+
+        Assert.AreEqual(1.0 + W2sHudView.PenPulseOvershoot, scale, 1e-9);
+    }
+
+    [TestMethod]
+    public void PenPulseScale_SettlesToFullSize()
+    {
+        Assert.AreEqual(1.0, W2sHudView.PenPulseScale(ageFrames: 10, durationFrames: 10), 1e-9);
+        Assert.AreEqual(1.0, W2sHudView.PenPulseScale(ageFrames: 100, durationFrames: 10), 1e-9);
+        Assert.AreEqual(1.0, W2sHudView.PenPulseScale(ageFrames: 0, durationFrames: 0), 1e-9);
+    }
+
+    [TestMethod]
+    public void PenPulseScale_EasesOutTowardFullSize()
+    {
+        double halfway = W2sHudView.PenPulseScale(ageFrames: 5, durationFrames: 10);
+
+        Assert.IsTrue(halfway > 1.0);
+        Assert.IsTrue(halfway < 1.0 + W2sHudView.PenPulseOvershoot);
     }
 
     [TestMethod]

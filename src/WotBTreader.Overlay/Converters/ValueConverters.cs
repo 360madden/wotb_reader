@@ -20,7 +20,7 @@ public sealed class NullToCollapsedConverter : IValueConverter
 
 /// <summary>
 /// Maps team number (int) to a <see cref="Color"/> for the participant dot:
-/// 1 → DodgerBlue, 2 → OrangeRed, other → Gray.
+/// 1 → ally blue (matches the HUD nameplate palette), 2 → enemy red, other → Gray.
 /// </summary>
 public sealed class TeamToColorConverter : IValueConverter
 {
@@ -29,8 +29,8 @@ public sealed class TeamToColorConverter : IValueConverter
         int team = value is int i ? i : 0;
         return team switch
         {
-            1 => Colors.DodgerBlue,
-            2 => Colors.OrangeRed,
+            1 => Color.FromRgb(0x4F, 0xA8, 0xFF),
+            2 => Color.FromRgb(0xFF, 0x6B, 0x6B),
             _ => Colors.Gray,
         };
     }

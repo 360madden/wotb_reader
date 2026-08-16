@@ -47,6 +47,8 @@ public static class PlotTransform
         double minX, maxX, minZ, maxZ;
         bool useWorld = worldMinX.HasValue && worldMaxX.HasValue
             && worldMinZ.HasValue && worldMaxZ.HasValue
+            && double.IsFinite(worldMinX.Value) && double.IsFinite(worldMaxX.Value)
+            && double.IsFinite(worldMinZ.Value) && double.IsFinite(worldMaxZ.Value)
             && worldMaxX.Value > worldMinX.Value
             && worldMaxZ.Value > worldMinZ.Value;
 

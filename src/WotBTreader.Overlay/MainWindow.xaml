@@ -24,18 +24,19 @@
             <Setter Property="FontSize" Value="11"/>
             <Setter Property="Padding" Value="0"/>
             <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Foreground" Value="#CCFFFFFF"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="border" Background="#33FFFFFF" CornerRadius="4"
-                                BorderThickness="0" Padding="{TemplateBinding Padding}">
+                        <Border x:Name="border" Background="#26FFFFFF" CornerRadius="4"
+                                BorderBrush="#1FFFFFFF" BorderThickness="1"
+                                Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#55FFFFFF"/>
+                                <Setter TargetName="border" Property="Background" Value="#4DFFFFFF"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="#4DA6FF"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="border" Property="Background" Value="#22FFFFFF"/>
@@ -65,9 +66,9 @@
                                 <Setter TargetName="border" Property="Background" Value="#22FFFFFF"/>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#33446688"/>
-                                <Setter TargetName="border" Property="BorderBrush" Value="#3366AA"/>
-                                <Setter TargetName="border" Property="BorderThickness" Value="0,0,0,0"/>
+                                <Setter TargetName="border" Property="Background" Value="#334FA8FF"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="#4DA6FF"/>
+                                <Setter TargetName="border" Property="BorderThickness" Value="2,0,0,0"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -79,6 +80,72 @@
         <Style TargetType="ScrollBar">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Width" Value="5"/>
+        </Style>
+
+        <!-- ═══ Shared dark slider (timeline scrubber + FOV) ═══ -->
+        <Style x:Key="HudSlider" TargetType="Slider">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid>
+                            <Track x:Name="PART_Track" Height="4">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="Slider.DecreaseLarge">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate>
+                                                <Rectangle Fill="#4FA8FF" RadiusX="2" RadiusY="2"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Width="12" Height="16" Cursor="Hand">
+                                        <Thumb.Template>
+                                            <ControlTemplate>
+                                                <Border Background="#8FD0FF" CornerRadius="4"
+                                                        BorderBrush="#33FFFFFF" BorderThickness="1"/>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="Slider.IncreaseLarge">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate>
+                                                <Rectangle Fill="#22FFFFFF" RadiusX="2" RadiusY="2"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ═══ Dark ComboBox items (shell selector dropdown) ═══ -->
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Foreground" Value="#E8EEF5"/>
+            <Setter Property="Padding" Value="6,3"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="border" Background="#14171F" CornerRadius="3"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#2E4FA8FF"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#334FA8FF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <!-- ═══ Converters ═══ -->
@@ -102,20 +169,33 @@
 
         <!-- ═══ Live HP overlay — bottom-left corner of the window ═══ -->
         <Border HorizontalAlignment="Left" VerticalAlignment="Bottom"
-                Margin="16,0,0,16" Padding="10,6" CornerRadius="6"
-                Background="#CC0D0D14" BorderBrush="#44FFFFFF" BorderThickness="1"
+                Margin="16,0,0,16" Padding="12,7" CornerRadius="8"
+                BorderBrush="#3DFFFFFF" BorderThickness="1"
                 Visibility="{Binding HasLiveMemoryObservation, Converter={StaticResource BoolToVisible}}"
                 IsHitTestVisible="False">
+            <Border.Effect>
+                <DropShadowEffect Color="#000000" BlurRadius="14" ShadowDepth="2" Opacity="0.45"/>
+            </Border.Effect>
+            <Border.Background>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                    <GradientStop Color="#F0141B28" Offset="0"/>
+                    <GradientStop Color="#C60A0D17" Offset="1"/>
+                </LinearGradientBrush>
+            </Border.Background>
             <StackPanel Orientation="Horizontal">
-                <TextBlock Text="❤️" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <TextBlock FontSize="16" FontWeight="Bold" Foreground="#00FF64"
+                <Border Background="#2600FF64" CornerRadius="7" Padding="4,2" Margin="0,0,8,0"
+                        VerticalAlignment="Center">
+                    <TextBlock Text="❤" FontSize="12" Foreground="#43E07A"
+                               VerticalAlignment="Center" FontWeight="Bold"/>
+                </Border>
+                <TextBlock x:Name="LiveHpValueText" FontSize="16" FontWeight="Bold" Foreground="#43E07A"
                            VerticalAlignment="Center" FontFamily="Consolas">
                     <Run Text="{Binding LivePlayerHP, Mode=OneWay, TargetNullValue='—', StringFormat={}{0}}"/>
                     <Run Text=" HP" FontSize="11" Foreground="#88FFFFFF" FontWeight="Normal"/>
                 </TextBlock>
-                <Border Width="1" Margin="8,2" Background="#22FFFFFF" VerticalAlignment="Stretch"/>
+                <Border Width="1" Margin="10,2" Background="#2EFFFFFF" VerticalAlignment="Stretch"/>
                 <StackPanel VerticalAlignment="Center">
-                    <TextBlock FontSize="9" Foreground="#66FFFFFF">
+                    <TextBlock FontSize="9" Foreground="#A9B4C0">
                         <Run Text="⏱ "/>
                         <Run Text="{Binding LiveReplayTimeSeconds, Mode=OneWay, StringFormat={}{0:F1}}"/>
                         <Run Text="s"/>
@@ -134,8 +214,8 @@
             </Border.Effect>
             <Border.Background>
                 <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                    <GradientStop Color="#DD1A1A24" Offset="0"/>
-                    <GradientStop Color="#DD0D0D14" Offset="1"/>
+                    <GradientStop Color="#E6141B28" Offset="0"/>
+                    <GradientStop Color="#DD0A0D17" Offset="1"/>
                 </LinearGradientBrush>
             </Border.Background>
             <Grid>
@@ -159,7 +239,7 @@
                                 Command="{Binding JumpToStartCommand}" Width="24" Height="24" FontSize="10"/>
                         <Button x:Name="PlayButton" Content="▶" ToolTip="Play / Pause (Space)" Style="{StaticResource ToolbarButton}"
                                 Command="{Binding PlayPauseCommand}" Width="28" Height="24" FontSize="12"
-                                Foreground="#33AAFF" Margin="2,0,0,0"/>
+                                Foreground="#4FA8FF" Margin="2,0,0,0"/>
                         <Button Content="⏭" ToolTip="Jump to end (End)" Style="{StaticResource ToolbarButton}"
                                 Command="{Binding JumpToEndCommand}" Width="24" Height="24" FontSize="10"
                                 Margin="2,0,0,0"/>
@@ -174,7 +254,8 @@
                             <Slider Width="80" Minimum="40" Maximum="120"
                                     Value="{Binding HudFovDegrees, Mode=TwoWay}"
                                     ToolTip="Vertical field of view used to project the HUD"
-                                    Height="18" VerticalAlignment="Center" Cursor="Hand"/>
+                                    Height="18" VerticalAlignment="Center" Cursor="Hand"
+                                    Style="{StaticResource HudSlider}"/>
                         </StackPanel>
 
                         <!-- Live HUD mode: the gated composed live frame (LiveFrameSource seam) -->
@@ -273,8 +354,19 @@
                 </StackPanel>
 
                 <!-- ═══ Row 2: Search ═══ -->
-                <Border Grid.Row="2" Margin="0,0,0,4" Background="#1AFFFFFF"
-                        CornerRadius="4" BorderBrush="#22FFFFFF" BorderThickness="1">
+                <Border Grid.Row="2" Margin="0,0,0,4" CornerRadius="4" BorderThickness="1">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Background" Value="#1AFFFFFF"/>
+                            <Setter Property="BorderBrush" Value="#22FFFFFF"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                    <Setter Property="BorderBrush" Value="#4DA6FF"/>
+                                    <Setter Property="Background" Value="#22FFFFFF"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
                     <Grid>
                         <TextBlock Text="🔍  Filter maps…" IsHitTestVisible="False"
                                    Foreground="#44FFFFFF" FontSize="11" VerticalAlignment="Center"
@@ -354,44 +446,8 @@
                                 Maximum="{Binding Duration.TotalSeconds, Mode=OneWay}"
                                 Value="{Binding CurrentTimeSeconds}"
                                 IsSnapToTickEnabled="True" TickFrequency="1"
-                                Height="18" Cursor="Hand"
-                                VerticalAlignment="Center">
-                            <Slider.Template>
-                                <ControlTemplate TargetType="Slider">
-                                    <Grid>
-                                        <Track x:Name="PART_Track" Height="4">
-                                            <Track.DecreaseRepeatButton>
-                                                <RepeatButton Command="Slider.DecreaseLarge">
-                                                    <RepeatButton.Template>
-                                                        <ControlTemplate>
-                                                            <Rectangle Fill="#33AAFF" RadiusX="2" RadiusY="2"/>
-                                                        </ControlTemplate>
-                                                    </RepeatButton.Template>
-                                                </RepeatButton>
-                                            </Track.DecreaseRepeatButton>
-                                            <Track.Thumb>
-                                                <Thumb Width="10" Height="16" Cursor="Hand">
-                                                    <Thumb.Template>
-                                                        <ControlTemplate>
-                                                            <Rectangle Fill="#66CCFF" RadiusX="3" RadiusY="3"/>
-                                                        </ControlTemplate>
-                                                    </Thumb.Template>
-                                                </Thumb>
-                                            </Track.Thumb>
-                                            <Track.IncreaseRepeatButton>
-                                                <RepeatButton Command="Slider.IncreaseLarge">
-                                                    <RepeatButton.Template>
-                                                        <ControlTemplate>
-                                                            <Rectangle Fill="#22FFFFFF" RadiusX="2" RadiusY="2"/>
-                                                        </ControlTemplate>
-                                                    </RepeatButton.Template>
-                                                </RepeatButton>
-                                            </Track.IncreaseRepeatButton>
-                                        </Track>
-                                    </Grid>
-                                </ControlTemplate>
-                            </Slider.Template>
-                        </Slider>
+                                Height="18" Cursor="Hand" Style="{StaticResource HudSlider}"
+                                VerticalAlignment="Center"/>
                     </Grid>
                 </Border>
 

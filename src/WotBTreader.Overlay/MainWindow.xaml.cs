@@ -33,6 +33,14 @@ public partial class MainWindow : System.Windows.Window, IDisposable
     private readonly IGameWindowTracker _gameWindowTracker;
     private readonly bool _ownsLogger;
     private bool _disposed;
+    private bool _hudRenderPending;
+    private bool _hpPulseOn;
+    private int _sidebarAnimationGeneration;
+
+    private static readonly System.Windows.Media.Brush LiveHpHealthyBrush =
+        new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x43, 0xE0, 0x7A));
+    private static readonly System.Windows.Media.Brush LiveHpCriticalBrush =
+        new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xF5, 0xC3, 0x4B));
 
     public MainWindow(IHudLogger? logger = null)
         : this(logger, null)
@@ -149,7 +157,28 @@ public partial class MainWindow : System.Windows.Window, IDisposable
     private void OnHudItemsChanged(object? sender,
         System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
     {
-        RenderW2sHud();
+        ScheduleHudRender();
+    }
+
+    /// <summary>
+    /// Coalesces the many collection-change notifications produced by a single
+    /// frame rebuild into one canvas render. Rebuilding the whole canvas on
+    /// every Add/Clear (dozens per frame at 20 fps) previously caused a
+    /// per-frame render storm; the dispatcher collapses them to one pass.
+    /// </summary>
+    private void ScheduleHudRender()
+    {
+        if (_hudRenderPending)
+        {
+            return;
+        }
+
+        _hudRenderPending = true;
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, (Action)(() =>
+        {
+            _hudRenderPending = false;
+            RenderW2sHud();
+        }));
     }
 
     private void OnViewModelPropertyChanged(object? sender,
@@ -203,6 +232,8 @@ public partial class MainWindow : System.Windows.Window, IDisposable
             else
             {
                 _hpPulseTimer.Stop();
+                _hpPulseOn = false;
+                SetLiveHpPulseColor(pulseOn: false);
             }
         }
         else if (e.PropertyName == nameof(MainViewModel.PenBadge))
@@ -221,8 +252,10 @@ public partial class MainWindow : System.Windows.Window, IDisposable
 
     private void OnPlaybackTick(object? sender, EventArgs e)
     {
+        // AdvancePlayback publishes CurrentTimeSeconds, which triggers the
+        // same frame refresh via OnViewModelPropertyChanged; issuing a second
+        // request here doubled the HTTP/frame load every tick.
         _viewModel.AdvancePlayback();
-        RefreshW2sFrame();
     }
 
     /// <summary>
@@ -274,28 +307,34 @@ public partial class MainWindow : System.Windows.Window, IDisposable
 
     private void OnHpPulseTick(object? sender, EventArgs e)
     {
-        // Pulse the HP text block foreground between green and yellow when
-        // HP is critically low (below ~30% of a typical heavy/medium tank).
+        // Pulse the HP value foreground between green and amber while HP is
+        // critically low (~30% of a typical Blitz heavy/medium). The timer
+        // keeps running while a live observation is active so a tank that
+        // drops into the critical band later still starts pulsing (the old
+        // logic stopped the timer as soon as HP was healthy and never
+        // restarted it).
+        const double approximateMaxHp = 2500;
         if (!_viewModel.HasLiveMemoryObservation || _viewModel.LivePlayerHP is not int hp)
         {
             _hpPulseTimer.Stop();
+            _hpPulseOn = false;
+            SetLiveHpPulseColor(pulseOn: false);
             return;
         }
 
-        // Approximate max HP for a typical Blitz heavy/medium.
-        const int approximateMaxHp = 2500;
-        if (hp > approximateMaxHp * 0.3)
+        bool critical = hp <= approximateMaxHp * 0.3;
+        _hpPulseOn = critical && !_hpPulseOn;
+        SetLiveHpPulseColor(critical && _hpPulseOn);
+    }
+
+    private void SetLiveHpPulseColor(bool pulseOn)
+    {
+        if (LiveHpValueText is null)
         {
-            _hpPulseTimer.Stop();
             return;
         }
 
-        // The HP overlay uses the XAML-defined foreground (#00FF64) which
-        // we can't easily modify from code-behind without breaking bindings.
-        // The pulse is handled by the FastPlotRenderer's live-player glow
-        // which draws a pulsing green ring at the player's position — this
-        // visual feedback is more visible than a text color change on a
-        // transparent overlay.
+        LiveHpValueText.Foreground = pulseOn ? LiveHpCriticalBrush : LiveHpHealthyBrush;
     }
 
     // ── Keyboard shortcuts ──────────────────────────────────
@@ -358,6 +397,11 @@ public partial class MainWindow : System.Windows.Window, IDisposable
     {
         _sidebarExpanded = !_sidebarExpanded;
 
+        // A re-expand started while the fade-out is still animating must win:
+        // its Completed handler would otherwise collapse the just-restored
+        // panels and leave the sidebar visible but empty.
+        int generation = ++_sidebarAnimationGeneration;
+
         if (_sidebarExpanded)
         {
             // Make panels visible first, then animate opacity from 0 → 0.92.
@@ -380,6 +424,11 @@ public partial class MainWindow : System.Windows.Window, IDisposable
                 SidebarBorder.Opacity, 0, TimeSpan.FromMilliseconds(200));
             fadeOut.Completed += (_, _) =>
             {
+                if (generation != _sidebarAnimationGeneration)
+                {
+                    return;
+                }
+
                 SessionsListBox.Visibility = System.Windows.Visibility.Collapsed;
                 TimelineGrid.Visibility = System.Windows.Visibility.Collapsed;
                 DetailGrid.Visibility = System.Windows.Visibility.Collapsed;
