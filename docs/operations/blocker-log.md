@@ -912,3 +912,19 @@ folder for the full numbering convention and document map.
   join decoded targets/impacts and repeat on a second content-distinct replay.
   Ambiguous ownership, camera-only correlation, or post-shot-only changes are
   decisive no-go outcomes.
+
+- Progress amendment (`2026-08-16`, owner-approved live lane): the first
+  discriminator step is now implemented offline. The three weapon-family
+  vftable RVAs are derived hash-bound from their RTTI complete object locators
+  via `FindVftableViaCol.java` (executable SHA-256 `1cda5c31…`): `VehicleGun`
+  `0x32dacf4` (COL `0x35ce9e0`), `VehicleGunRotator` `0x32eeb40` (COL
+  `0x35e06a8`), `AvatarGunAgent` `0x324dae8` (COL `0x35317c0`). The
+  `IPenetrationCaptureEvidenceSource` production registration is now
+  `ExactBuildOwnerCensusCaptureEvidenceSource` (no longer the neutral stub): it
+  runs two gated vftable AOB census passes over Private|Mapped regions and
+  reports only privacy-safe per-family counts + unique/stable flags; shell/aim/
+  ray phases remain unproven so every real capture stays `NotReady`. A new
+  capability-gated `POST /api/v1/game/discover/pen-capture` endpoint triggers
+  the serialized capture from an opaque `decodeRunId`. The blocker remains
+  open: the live census capture, the viewpoint-ownership walk, and the shell/
+  aim/ray field proofs are still outstanding.

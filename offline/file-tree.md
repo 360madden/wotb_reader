@@ -350,6 +350,7 @@ docs/operations/handoffs/2026-08-15-penetration-v03-safety-and-blockers.md
 docs/operations/handoffs/2026-08-15-penetration-v03-source-verdict-and-capture-contract.md
 docs/operations/handoffs/2026-08-16-hud-visual-and-interaction-ship.md
 docs/operations/handoffs/2026-08-16-od-recovery-102-oasis-batch-reverdict.md
+docs/operations/handoffs/2026-08-16-pen-capture-owner-census-source.md
 docs/operations/handoffs/2026-08-16-rendezvous-webjson-acl-hardening.md
 docs/operations/handoffs/2026-08-16-sqlite-pooling-race-fix.md
 docs/operations/handoffs/README.md
@@ -884,6 +885,7 @@ tests/WotBTreader.GameIntegration.Tests/ManagedLaunchCorrelationRegistrarTests.c
 tests/WotBTreader.GameIntegration.Tests/ManagedLaunchPreparerTests.cs
 tests/WotBTreader.GameIntegration.Tests/ManagedReplayArtifactStagerTests.cs
 tests/WotBTreader.GameIntegration.Tests/OptInInstalledGameTests.cs
+tests/WotBTreader.GameIntegration.Tests/PenetrationCaptureEvidenceSourceTests.cs
 tests/WotBTreader.GameIntegration.Tests/PenetrationDataParserTests.cs
 tests/WotBTreader.GameIntegration.Tests/PenetrationDataServiceTests.cs
 tests/WotBTreader.GameIntegration.Tests/ReplayLaunchStagingPathsTests.cs

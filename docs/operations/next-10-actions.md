@@ -13,7 +13,10 @@ scrubbable in-HUD playback bar, low-HP killable-target pulse, and the 20-round
 fail-closed hardening pass), the Oasis batch position re-verdict
 (OD-RECOVERY-102, bounded bidirectional per-dump clock window), and the
 rendezvous capability-file ACL hardening (explicit protected owner-only
-`web.json` ACL with post-move reparse/DACL verification) on 2026-08-16.
+`web.json` ACL with post-move reparse/DACL verification), and the penetration
+owner-census evidence source (hash-bound `VehicleGun`/`VehicleGunRotator`/
+`AvatarGunAgent` vftable RVAs + gated census + `pen-capture` endpoint) on
+2026-08-16.
 
 **Sequencing rule:** live items are clustered to share ONE approved launch
 (one game start = max evidence); offline hardening runs in parallel with any
@@ -21,7 +24,7 @@ live work; owner-gated items sit behind the evidence they consume.
 
 | # | Action | Roadmap anchor | Why now | Gate |
 |---|---|---|---|---|
-| 1 | **Run the owner-approved bounded managed-offline source capture** for configured gun, loaded shell, and gun ray | Phase 6 v0.3 G1/G2; BLK-0027 | The coordinator-owned adapter, exact decode/session gates, fixed bounds, and pure evaluator are implemented; the production source remains neutral until the exact fields are proven | owner approval + exact-build offline gate |
+| 1 | **Run the owner-approved bounded managed-offline owner-census capture** and adjudicate the count/unique/stable result | Phase 6 v0.3 G1/G2; BLK-0027 | The exact-build owner-census source (hash-bound vftable RVAs) and the `pen-capture` endpoint are implemented; the live census + viewpoint-ownership walk + shell/aim/ray field proofs remain | one exact-build managed-offline launch |
 | 2 | **Adjudicate the capture verdict and promote only proven exact fields** | Phase 6 v0.3 G2/G4 | No shared weapon/aim contract or colored badge may be enabled from ambiguous or partial evidence | two content-distinct positive repeats |
 | 3 | **Choose whether to fund a deeper exact-build `ArmorComponent`/`ArmorConfiguration` producer trace**; do not revisit the rejected hard-joint visualization path | Phase 6 v0.3 item 1/7; BLK-0027 | Bounded RTTI triage found no authoritative producer; another live read would be speculative without a producer hypothesis | offline producer evidence or explicit no-go |
 | 4 | **Implement exact weapon, aim, and armor ports only for proven cohorts** | Phase 6 v0.3 G4 | Provenance gates already prevent nominal/manual/camera data from masquerading as exact | G1/G2 pass |

@@ -215,3 +215,18 @@ still required before a live source implementation or capture. The separate
 armor-owner triage is recorded in
 [`pen-v03-alternative-armor-owner-triage.md`](pen-v03-alternative-armor-owner-triage.md)
 and remains a no-go until a producer proves physical layer semantics.
+
+### Owner-census source implemented — 2026-08-16
+
+With owner approval granted, the contract's "smallest proven exact-build
+evidence implementation" is now in place. The three weapon-family vftable RVAs
+are derived hash-bound (`FindVftableViaCol.java`, SHA-256 `1cda5c31…`):
+`VehicleGun` `0x32dacf4`, `VehicleGunRotator` `0x32eeb40`, `AvatarGunAgent`
+`0x324dae8`. `ExactBuildOwnerCensusCaptureEvidenceSource` performs the Phase-1
+owner census via the gated vftable AOB scan (two passes, aggregate-only,
+privacy-safe counts) and is the registered `IPenetrationCaptureEvidenceSource`;
+the shell/aim/ray phases remain unproven. `POST
+/api/v1/game/discover/pen-capture` triggers the serialized capture from an
+opaque `decodeRunId`. The live census capture, the viewpoint-ownership walk,
+and the shell/aim/ray field proofs remain outstanding; no exact input is
+promoted or wired into the badge yet.
