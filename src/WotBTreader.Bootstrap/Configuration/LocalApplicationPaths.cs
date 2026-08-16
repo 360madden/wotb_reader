@@ -155,7 +155,7 @@ public sealed record LocalApplicationPaths(
             directory.Create(security);
         }
 
-        VerifyWindowsOwnerOnlyDirectory(directory, owner);
+        VerifyWindowsOwnerOnlyDirectory(path);
     }
 
     [SupportedOSPlatform("windows")]
@@ -329,11 +329,13 @@ public sealed record LocalApplicationPaths(
     private static class NativeMethods
     {
         internal const uint GenericRead = 0x8000_0000;
+        internal const uint ReadControl = 0x0002_0000;
         internal const uint FileShareRead = 0x0000_0001;
         internal const uint FileShareWrite = 0x0000_0002;
         internal const uint FileShareDelete = 0x0000_0004;
         internal const uint OpenExisting = 3;
         internal const uint FileFlagOpenReparsePoint = 0x0020_0000;
+        internal const uint FileFlagBackupSemantics = 0x0200_0000;
         internal const int ErrorFileNotFound = 2;
         internal const int ErrorPathNotFound = 3;
         internal const uint OwnerSecurityInformation = 0x0000_0001;
@@ -396,43 +398,111 @@ public sealed record LocalApplicationPaths(
     }
 
     [SupportedOSPlatform("windows")]
-    private static void VerifyWindowsOwnerOnlyDirectory(
-        DirectoryInfo directory,
+    private static void VerifyWindowsOwnerOnlyDirectory(string path)
+    {
+        SecurityIdentifier owner = WindowsIdentity.GetCurrent().User
+            ?? throw new InvalidOperationException(
+                "The current Windows account has no security identifier.");
+
+        // Pin the directory object by handle and open without following
+        // reparse points, so a same-user swap of the pathname cannot redirect
+        // the verification between the reparse check and the DACL read.
+        SafeFileHandle handle = NativeMethods.CreateFileW(
+            path,
+            NativeMethods.GenericRead | NativeMethods.ReadControl,
+            NativeMethods.FileShareRead |
+            NativeMethods.FileShareWrite |
+            NativeMethods.FileShareDelete,
+            lpSecurityAttributes: nint.Zero,
+            NativeMethods.OpenExisting,
+            NativeMethods.FileFlagBackupSemantics |
+            NativeMethods.FileFlagOpenReparsePoint,
+            hTemplateFile: nint.Zero);
+        try
+        {
+            if (handle.IsInvalid)
+            {
+                int error = Marshal.GetLastPInvokeError();
+                throw new IOException(
+                    $"The rendezvous directory could not be opened (Win32 error {error}).");
+            }
+
+            if (!NativeMethods.GetFileInformationByHandle(
+                    handle,
+                    out NativeFileInformation information) ||
+                (information.FileAttributes & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new UnauthorizedAccessException(
+                    "The rendezvous directory must not be a reparse point.");
+            }
+
+            VerifyWindowsOwnerOnlyDirectorySecurity(handle, owner);
+        }
+        finally
+        {
+            handle.Dispose();
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void VerifyWindowsOwnerOnlyDirectorySecurity(
+        SafeFileHandle handle,
         SecurityIdentifier expectedOwner)
     {
-        directory.Refresh();
-        if (!directory.Exists ||
-            (directory.Attributes & FileAttributes.ReparsePoint) != 0)
+        uint requestedInformation =
+            NativeMethods.OwnerSecurityInformation |
+            NativeMethods.DaclSecurityInformation;
+        if (!NativeMethods.GetKernelObjectSecurity(
+                handle,
+                requestedInformation,
+                securityDescriptor: null,
+                length: 0,
+                out uint required) &&
+            Marshal.GetLastPInvokeError() !=
+                NativeMethods.ErrorInsufficientBuffer)
         {
             throw new UnauthorizedAccessException(
-                "The rendezvous directory identity could not be verified.");
+                "The rendezvous directory security is unavailable.");
         }
 
-        DirectorySecurity actual = directory.GetAccessControl(
-            AccessControlSections.Access | AccessControlSections.Owner);
-        if (!actual.AreAccessRulesProtected ||
-            !expectedOwner.Equals(actual.GetOwner(typeof(SecurityIdentifier))))
+        if (required == 0 || required > 64 * 1024)
         {
             throw new UnauthorizedAccessException(
-                "The rendezvous directory owner or inheritance boundary is unsafe.");
+                "The rendezvous directory security is invalid.");
         }
 
-        AuthorizationRuleCollection rules = actual.GetAccessRules(
-            includeExplicit: true,
-            includeInherited: true,
-            targetType: typeof(SecurityIdentifier));
-        if (rules.Count != 1 ||
-            rules[0] is not FileSystemAccessRule rule ||
-            rule.IsInherited ||
-            rule.AccessControlType != AccessControlType.Allow ||
-            !expectedOwner.Equals(rule.IdentityReference) ||
-            (rule.FileSystemRights & FileSystemRights.FullControl) !=
-                FileSystemRights.FullControl ||
-            rule.InheritanceFlags !=
-                (InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit))
+        byte[] bytes = new byte[required];
+        if (!NativeMethods.GetKernelObjectSecurity(
+                handle,
+                requestedInformation,
+                bytes,
+                checked((uint)bytes.Length),
+                out _))
         {
             throw new UnauthorizedAccessException(
-                "The rendezvous directory access rules are not owner-only.");
+                "The rendezvous directory security is unavailable.");
+        }
+
+        var descriptor = new RawSecurityDescriptor(bytes, offset: 0);
+        RawAcl? dacl = descriptor.DiscretionaryAcl;
+        if (descriptor.Owner is null ||
+            !expectedOwner.Equals(descriptor.Owner) ||
+            (descriptor.ControlFlags &
+                ControlFlags.DiscretionaryAclProtected) == 0 ||
+            dacl is null ||
+            dacl.Count != 1 ||
+            dacl[0] is not CommonAce ace ||
+            ace.IsInherited ||
+            ace.AceQualifier != AceQualifier.AccessAllowed ||
+            !expectedOwner.Equals(ace.SecurityIdentifier) ||
+            (ace.AccessMask & (int)FileSystemRights.FullControl) !=
+                (int)FileSystemRights.FullControl ||
+            ace.InheritanceFlags !=
+                (InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit) ||
+            ace.PropagationFlags != PropagationFlags.None)
+        {
+            throw new UnauthorizedAccessException(
+                "The rendezvous directory security is not owner-only.");
         }
     }
 }

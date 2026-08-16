@@ -56,6 +56,57 @@ public sealed class LocalApplicationPathsTests
         VerifyWindowsRendezvousResecuring();
     }
 
+    [TestMethod]
+    public void EnsureRendezvousDirectory_RejectsReparsePoint()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Inconclusive("This test exercises a Windows-only code path.");
+            return;
+        }
+
+        VerifyWindowsRendezvousRejectsReparsePoint();
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void VerifyWindowsRendezvousRejectsReparsePoint()
+    {
+        string root = Path.Combine(
+            Path.GetTempPath(),
+            $"wotbtreader-rdv-dir-reparse-{Guid.CreateVersion7():N}");
+        string target = Path.Combine(root, "target");
+        string rendezvous = Path.Combine(root, "rendezvous");
+
+        try
+        {
+            Directory.CreateDirectory(target);
+            try
+            {
+                Directory.CreateSymbolicLink(rendezvous, target);
+            }
+            catch (Exception exception) when (
+                exception is IOException
+                    or UnauthorizedAccessException
+                    or PlatformNotSupportedException)
+            {
+                Assert.Inconclusive(
+                    "Symbolic-link creation is unavailable; the reparse branch cannot be exercised.");
+                return;
+            }
+
+            LocalApplicationPaths paths = CreatePaths(root, rendezvous);
+            Assert.ThrowsExactly<UnauthorizedAccessException>(
+                () => paths.EnsureRendezvousDirectory());
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
     [SupportedOSPlatform("windows")]
     private static void VerifyWindowsRendezvousResecuring()
     {
