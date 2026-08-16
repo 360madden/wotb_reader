@@ -65,10 +65,13 @@ internal sealed class RendezvousPublisher(
             {
                 // The rendezvous record is a discoverability aid. Failure must not
                 // take down a dashboard that is already safely bound to loopback.
+                // Log only the exception type: the exception message can carry the
+                // full private rendezvous/temp path (and the record itself must
+                // never surface the capability token).
                 logger.LogError(
                     PublishFailedEvent,
-                    exception,
-                    "Could not publish the local web rendezvous record.");
+                    "Could not publish the local web rendezvous record ({ExceptionType}).",
+                    exception.GetType().Name);
             }
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
