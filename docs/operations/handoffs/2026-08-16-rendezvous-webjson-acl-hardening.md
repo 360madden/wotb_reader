@@ -39,6 +39,12 @@ never accepts a published record it has not positively verified.
 The capability is still never logged or persisted anywhere except the record
 itself; no path, token, or ACL text enters diagnostics.
 
+**Reader-side follow-up:** `RendezvousLocator` (the overlay client) now rejects
+a reparse-point record before reading it, mirroring the publisher's rule. The
+check is injectable so the rejection logic is tested deterministically, while
+the default implementation uses `FileSystemInfo.LinkTarget` (and fails closed
+when the link target cannot be established).
+
 ## Validation
 
 - Bootstrap regression tests: a permissive inherited parent ACL is severed on
@@ -46,10 +52,13 @@ itself; no path, token, or ACL text enters diagnostics.
   file, rejects a file carrying an extra WorldSid ACE, rejects a missing file,
   and rejects a symbolic-link reparse point where the environment can create
   one.
+- Overlay `RendezvousLocatorTests`: an injected reparse-point record is
+  rejected as `Invalid`; a real symlink is rejected where the environment can
+  create one (honestly skipped otherwise).
 - `scripts/validate.ps1` passed end to end: 0 build warnings/errors, all test
-  projects green (Bootstrap 21), repository/privacy scan, Codex policy,
-  PowerShell hygiene, offline links/file-tree, blocker/ledger consistency, and
-  offset schema/chains validation.
+  projects green, repository/privacy scan, Codex policy, PowerShell hygiene,
+  offline links/file-tree, blocker/ledger consistency, and offset
+  schema/chains validation.
 
 ## Next
 

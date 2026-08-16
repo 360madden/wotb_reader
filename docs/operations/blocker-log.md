@@ -365,6 +365,9 @@ folder for the full numbering convention and document map.
   file, reject a file with an extra WorldSid ACE, reject a missing file, and
   reject a symbolic-link reparse point where the environment permits one; the
   full `scripts/validate.ps1` gate passes.
+- Reader-side follow-up (`2026-08-16`): `RendezvousLocator` rejects a
+  reparse-point record on read as well, so the overlay no longer follows a
+  substituted symlink to an arbitrary target.
 
 ## BLK-0015 — Unverified process-memory attachment bypassed offline evidence
 
