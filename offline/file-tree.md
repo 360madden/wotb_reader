@@ -445,6 +445,7 @@ scripts/batch-rehearsal-support.ps1
 scripts/camera-double-read-measurement.Tests.ps1
 scripts/camera-double-read-measurement.ps1
 scripts/capture-pen-aims.ps1
+scripts/capture-pen-census.ps1
 scripts/click-hangar-replay.ps1
 scripts/click-watch-offline.ps1
 scripts/codex-agent-config-check.ps1
