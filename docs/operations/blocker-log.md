@@ -1011,3 +1011,18 @@ folder for the full numbering convention and document map.
   lanes. BLK-0027 stays open: one exact-build managed offline replay is still
   required to run the anchor and confirm H1 live, before the phase 2–4
   shell/aim/ray field derivation.
+
+- Live validation RESULT (`2026-08-16`, H1 CONFIRMED): one exact-build
+  managed offline replay (Churchill I, Oasis Palms, `1cda5c31…`; battle
+  session `01a00ba4-91b8-783a-a894-b800cb35407e`) reached
+  `OfflineReplayVerified` and the `pen-ownership-walk` anchor returned
+  `Resolved` with `rotator_candidate_count=1` and all four chain booleans
+  true across both passes (`two_pass_stable`). The single live
+  `VehicleGunRotator`'s `+0x10` resolves to the `AvatarGameLogic` owner,
+  whose `+0x1fc` round-trips to the same rotator, `+0x204` points to a live
+  `VehicleGun` (vftable `0x32dacf4` confirmed), and `+0x04` resolves to an
+  entity with plausible HP at `+0xB8`. Nothing was promoted; the optional
+  same-decoded-clock label did not fire (`False`) and is recorded as an
+  honest gap (it is not part of H1). The ownership-walk discriminator is now
+  closed; BLK-0027 stays open until the phase 2–4 shell/aim/ray fields are
+  derived and the capture verdict can be adjudicated.
