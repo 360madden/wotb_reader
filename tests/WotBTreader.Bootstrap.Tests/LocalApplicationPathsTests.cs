@@ -130,6 +130,207 @@ public sealed class LocalApplicationPathsTests
         }
     }
 
+    [TestMethod]
+    public void ProtectRendezvousFile_TightensPermissiveInheritedAcl()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        VerifyWindowsFileProtection();
+    }
+
+    [TestMethod]
+    public void VerifyRendezvousFile_RejectsPermissiveAcl()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        VerifyWindowsFileRejectsPermissiveAcl();
+    }
+
+    [TestMethod]
+    public void VerifyRendezvousFile_RejectsMissingFile()
+    {
+        string root = Path.Combine(
+            Path.GetTempPath(),
+            $"wotbtreader-rdv-file-missing-{Guid.CreateVersion7():N}");
+        string missing = Path.Combine(root, "rendezvous", "web.json");
+        Assert.ThrowsExactly<FileNotFoundException>(
+            () => LocalApplicationPaths.VerifyRendezvousFile(missing));
+    }
+
+    [TestMethod]
+    public void VerifyRendezvousFile_RejectsReparsePoint()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        VerifyWindowsFileRejectsReparsePoint();
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void VerifyWindowsFileProtection()
+    {
+        string root = Path.Combine(
+            Path.GetTempPath(),
+            $"wotbtreader-rdv-file-acl-{Guid.CreateVersion7():N}");
+        string rendezvous = Path.Combine(root, "rendezvous");
+        string file = Path.Combine(rendezvous, "web.json");
+        SecurityIdentifier owner = WindowsIdentity.GetCurrent().User
+            ?? throw new InvalidOperationException(
+                "The current Windows account has no security identifier.");
+
+        try
+        {
+            // The permissive parent grants World read so the assertion proves
+            // inheritance was severed on the file, not merely hidden behind a
+            // parent that already happened to be private.
+            var permissiveParent = new DirectorySecurity();
+            permissiveParent.SetAccessRuleProtection(
+                isProtected: true,
+                preserveInheritance: false);
+            permissiveParent.AddAccessRule(new FileSystemAccessRule(
+                owner,
+                FileSystemRights.FullControl,
+                InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                PropagationFlags.None,
+                AccessControlType.Allow));
+            permissiveParent.AddAccessRule(new FileSystemAccessRule(
+                new SecurityIdentifier(WellKnownSidType.WorldSid, null),
+                FileSystemRights.ReadAndExecute,
+                InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                PropagationFlags.None,
+                AccessControlType.Allow));
+            new DirectoryInfo(root).Create(permissiveParent);
+            Directory.CreateDirectory(rendezvous);
+            File.WriteAllText(file, "{\"schemaVersion\":\"1.0\"}");
+
+            LocalApplicationPaths.ProtectRendezvousFile(file);
+
+            FileSecurity actual = new FileInfo(file).GetAccessControl(
+                AccessControlSections.Access | AccessControlSections.Owner);
+            Assert.IsTrue(
+                actual.AreAccessRulesProtected,
+                "Rendezvous file ACL inheritance must be disabled.");
+            Assert.AreEqual(
+                owner,
+                actual.GetOwner(typeof(SecurityIdentifier)),
+                "The rendezvous file must be owned by the current user.");
+
+            AuthorizationRuleCollection rules = actual.GetAccessRules(
+                includeExplicit: true,
+                includeInherited: true,
+                targetType: typeof(SecurityIdentifier));
+            Assert.HasCount(
+                1,
+                rules,
+                "Only the current user's explicit allow rule may remain on the file.");
+            Assert.IsInstanceOfType<FileSystemAccessRule>(rules[0]);
+            var rule = (FileSystemAccessRule)rules[0]!;
+            Assert.AreEqual(owner, rule.IdentityReference);
+            Assert.IsFalse(rule.IsInherited);
+            Assert.AreEqual(AccessControlType.Allow, rule.AccessControlType);
+            Assert.AreEqual(
+                FileSystemRights.FullControl,
+                rule.FileSystemRights & FileSystemRights.FullControl);
+
+            // The post-move verification must accept the freshly protected file.
+            LocalApplicationPaths.VerifyRendezvousFile(file);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void VerifyWindowsFileRejectsPermissiveAcl()
+    {
+        string root = Path.Combine(
+            Path.GetTempPath(),
+            $"wotbtreader-rdv-file-verify-{Guid.CreateVersion7():N}");
+        string rendezvous = Path.Combine(root, "rendezvous");
+        string file = Path.Combine(rendezvous, "web.json");
+        SecurityIdentifier owner = WindowsIdentity.GetCurrent().User
+            ?? throw new InvalidOperationException(
+                "The current Windows account has no security identifier.");
+
+        try
+        {
+            Directory.CreateDirectory(rendezvous);
+            File.WriteAllText(file, "{}");
+            var permissive = new FileSecurity();
+            permissive.AddAccessRule(new FileSystemAccessRule(
+                owner,
+                FileSystemRights.FullControl,
+                AccessControlType.Allow));
+            permissive.AddAccessRule(new FileSystemAccessRule(
+                new SecurityIdentifier(WellKnownSidType.WorldSid, null),
+                FileSystemRights.ReadAndExecute,
+                AccessControlType.Allow));
+            new FileInfo(file).SetAccessControl(permissive);
+
+            Assert.ThrowsExactly<UnauthorizedAccessException>(
+                () => LocalApplicationPaths.VerifyRendezvousFile(file));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void VerifyWindowsFileRejectsReparsePoint()
+    {
+        string root = Path.Combine(
+            Path.GetTempPath(),
+            $"wotbtreader-rdv-file-reparse-{Guid.CreateVersion7():N}");
+        string rendezvous = Path.Combine(root, "rendezvous");
+        string target = Path.Combine(root, "target.txt");
+        string link = Path.Combine(rendezvous, "web.json");
+
+        try
+        {
+            Directory.CreateDirectory(rendezvous);
+            File.WriteAllText(target, "{}");
+            try
+            {
+                File.CreateSymbolicLink(link, target);
+            }
+            catch (Exception exception) when (
+                exception is IOException
+                    or UnauthorizedAccessException
+                    or PlatformNotSupportedException)
+            {
+                // Symbolic-link creation needs developer mode or elevation; the
+                // reparse branch is unreachable without it, so skip gracefully.
+                return;
+            }
+
+            Assert.ThrowsExactly<UnauthorizedAccessException>(
+                () => LocalApplicationPaths.VerifyRendezvousFile(link));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
     private static LocalApplicationPaths CreatePaths(
         string root,
         string rendezvous) =>

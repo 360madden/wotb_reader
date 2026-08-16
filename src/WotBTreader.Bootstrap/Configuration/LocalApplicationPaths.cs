@@ -60,6 +60,41 @@ public sealed record LocalApplicationPaths(
     /// </remarks>
     public void EnsureRendezvousDirectory() => EnsureOwnerOnlyDirectory(Rendezvous);
 
+    /// <summary>
+    /// Applies and verifies an explicit owner-only ACL/mode to a rendezvous
+    /// file before a capability is written into it. On Windows the descriptor
+    /// is set with protected inheritance and re-read positively; reparse
+    /// points are rejected. The caller must have already secured the parent
+    /// directory with <see cref="EnsureRendezvousDirectory"/>.
+    /// </summary>
+    public static void ProtectRendezvousFile(string filePath)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            ProtectWindowsOwnerOnlyFile(filePath);
+            return;
+        }
+
+        ProtectUnixOwnerOnlyFile(filePath);
+    }
+
+    /// <summary>
+    /// Re-verifies a final rendezvous file (for example after the temporary
+    /// file is moved into place) so the published capability record is known
+    /// to be a real, owner-only file. On Windows this rejects reparse points
+    /// and re-reads the DACL from disk.
+    /// </summary>
+    public static void VerifyRendezvousFile(string filePath)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            VerifyWindowsOwnerOnlyFile(filePath);
+            return;
+        }
+
+        VerifyUnixOwnerOnlyFile(filePath);
+    }
+
     private static void EnsureOwnerOnlyDirectory(string path)
     {
         if (OperatingSystem.IsWindows())
@@ -116,6 +151,127 @@ public sealed record LocalApplicationPaths(
         }
 
         VerifyWindowsOwnerOnlyDirectory(directory, owner);
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void ProtectWindowsOwnerOnlyFile(string path)
+    {
+        SecurityIdentifier owner = WindowsIdentity.GetCurrent().User
+            ?? throw new InvalidOperationException(
+                "The current Windows account has no security identifier.");
+        var file = new FileInfo(path);
+        if (!file.Exists)
+        {
+            throw new FileNotFoundException(
+                "The rendezvous file does not exist.",
+                path);
+        }
+
+        file.Refresh();
+        if ((file.Attributes & FileAttributes.ReparsePoint) != 0)
+        {
+            throw new UnauthorizedAccessException(
+                "The rendezvous file must not be a reparse point.");
+        }
+
+        var security = new FileSecurity();
+        security.SetOwner(owner);
+        security.SetAccessRuleProtection(
+            isProtected: true,
+            preserveInheritance: false);
+        security.AddAccessRule(new FileSystemAccessRule(
+            owner,
+            FileSystemRights.FullControl,
+            AccessControlType.Allow));
+        file.SetAccessControl(security);
+
+        VerifyWindowsOwnerOnlyFile(file, owner);
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void VerifyWindowsOwnerOnlyFile(string path)
+    {
+        SecurityIdentifier owner = WindowsIdentity.GetCurrent().User
+            ?? throw new InvalidOperationException(
+                "The current Windows account has no security identifier.");
+        var file = new FileInfo(path);
+        if (!file.Exists)
+        {
+            throw new FileNotFoundException(
+                "The rendezvous file does not exist.",
+                path);
+        }
+
+        file.Refresh();
+        if ((file.Attributes & FileAttributes.ReparsePoint) != 0)
+        {
+            throw new UnauthorizedAccessException(
+                "The rendezvous file must not be a reparse point.");
+        }
+
+        VerifyWindowsOwnerOnlyFile(file, owner);
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void VerifyWindowsOwnerOnlyFile(
+        FileInfo file,
+        SecurityIdentifier expectedOwner)
+    {
+        FileSecurity actual = file.GetAccessControl(
+            AccessControlSections.Access | AccessControlSections.Owner);
+        if (!actual.AreAccessRulesProtected ||
+            !expectedOwner.Equals(actual.GetOwner(typeof(SecurityIdentifier))))
+        {
+            throw new UnauthorizedAccessException(
+                "The rendezvous file owner or inheritance boundary is unsafe.");
+        }
+
+        AuthorizationRuleCollection rules = actual.GetAccessRules(
+            includeExplicit: true,
+            includeInherited: true,
+            targetType: typeof(SecurityIdentifier));
+        if (rules.Count != 1 ||
+            rules[0] is not FileSystemAccessRule rule ||
+            rule.IsInherited ||
+            rule.AccessControlType != AccessControlType.Allow ||
+            !expectedOwner.Equals(rule.IdentityReference) ||
+            (rule.FileSystemRights & FileSystemRights.FullControl) !=
+                FileSystemRights.FullControl ||
+            rule.InheritanceFlags != InheritanceFlags.None ||
+            rule.PropagationFlags != PropagationFlags.None)
+        {
+            throw new UnauthorizedAccessException(
+                "The rendezvous file access rules are not owner-only.");
+        }
+    }
+
+    [UnsupportedOSPlatform("windows")]
+    private static void ProtectUnixOwnerOnlyFile(string path)
+    {
+        if (!File.Exists(path))
+        {
+            throw new FileNotFoundException(
+                "The rendezvous file does not exist.",
+                path);
+        }
+
+        const UnixFileMode ownerOnly =
+            UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        File.SetUnixFileMode(path, ownerOnly);
+        VerifyUnixOwnerOnlyFile(path);
+    }
+
+    [UnsupportedOSPlatform("windows")]
+    private static void VerifyUnixOwnerOnlyFile(string path)
+    {
+        const UnixFileMode ownerOnly =
+            UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        UnixFileMode actual = File.GetUnixFileMode(path);
+        if (actual != ownerOnly)
+        {
+            throw new UnauthorizedAccessException(
+                "The rendezvous file could not be verified as owner-only.");
+        }
     }
 
     [SupportedOSPlatform("windows")]

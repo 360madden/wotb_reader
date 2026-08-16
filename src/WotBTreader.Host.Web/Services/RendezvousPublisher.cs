@@ -159,7 +159,19 @@ internal sealed class RendezvousPublisher(
                 await stream.FlushAsync(cancellationToken);
             }
 
+            // The directory's owner-only ACL protects this file only through
+            // inheritance. Pin an explicit, protected owner-only descriptor
+            // onto the temporary file before it becomes the published record
+            // so the capability never ships under a merely-inherited ACL.
+            LocalApplicationPaths.ProtectRendezvousFile(temporaryFile);
+
             File.Move(temporaryFile, rendezvousFile, overwrite: true);
+
+            // After the rename, positively re-verify the final record: it must
+            // still be a real file (not a reparse point) with a protected,
+            // current-user-only DACL. A failure propagates and the publisher
+            // rotates the lease again on the next cycle.
+            LocalApplicationPaths.VerifyRendezvousFile(rendezvousFile);
         }
         finally
         {
