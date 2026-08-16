@@ -240,7 +240,7 @@ public sealed record LocalApplicationPaths(
                     "The rendezvous file must not be a reparse point.");
             }
 
-            VerifyWindowsOwnerOnlyFileSecurity(handle, owner);
+            VerifyWindowsOwnerOnlySecurity(handle, owner, InheritanceFlags.None);
         }
         finally
         {
@@ -249,9 +249,10 @@ public sealed record LocalApplicationPaths(
     }
 
     [SupportedOSPlatform("windows")]
-    private static void VerifyWindowsOwnerOnlyFileSecurity(
+    private static void VerifyWindowsOwnerOnlySecurity(
         SafeFileHandle handle,
-        SecurityIdentifier expectedOwner)
+        SecurityIdentifier expectedOwner,
+        InheritanceFlags expectedInheritanceFlags)
     {
         uint requestedInformation =
             NativeMethods.OwnerSecurityInformation |
@@ -266,13 +267,13 @@ public sealed record LocalApplicationPaths(
                 NativeMethods.ErrorInsufficientBuffer)
         {
             throw new UnauthorizedAccessException(
-                "The rendezvous file security is unavailable.");
+                "The rendezvous security is unavailable.");
         }
 
         if (required == 0 || required > 64 * 1024)
         {
             throw new UnauthorizedAccessException(
-                "The rendezvous file security is invalid.");
+                "The rendezvous security is invalid.");
         }
 
         byte[] bytes = new byte[required];
@@ -284,7 +285,7 @@ public sealed record LocalApplicationPaths(
                 out _))
         {
             throw new UnauthorizedAccessException(
-                "The rendezvous file security is unavailable.");
+                "The rendezvous security is unavailable.");
         }
 
         var descriptor = new RawSecurityDescriptor(bytes, offset: 0);
@@ -301,11 +302,11 @@ public sealed record LocalApplicationPaths(
             !expectedOwner.Equals(ace.SecurityIdentifier) ||
             (ace.AccessMask & (int)FileSystemRights.FullControl) !=
                 (int)FileSystemRights.FullControl ||
-            ace.InheritanceFlags != InheritanceFlags.None ||
+            ace.InheritanceFlags != expectedInheritanceFlags ||
             ace.PropagationFlags != PropagationFlags.None)
         {
             throw new UnauthorizedAccessException(
-                "The rendezvous file security is not owner-only.");
+                "The rendezvous security is not owner-only.");
         }
     }
 
@@ -436,7 +437,10 @@ public sealed record LocalApplicationPaths(
                     "The rendezvous directory must not be a reparse point.");
             }
 
-            VerifyWindowsOwnerOnlyDirectorySecurity(handle, owner);
+            VerifyWindowsOwnerOnlySecurity(
+                handle,
+                owner,
+                InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit);
         }
         finally
         {
@@ -444,67 +448,7 @@ public sealed record LocalApplicationPaths(
         }
     }
 
-    [SupportedOSPlatform("windows")]
-    private static void VerifyWindowsOwnerOnlyDirectorySecurity(
-        SafeFileHandle handle,
-        SecurityIdentifier expectedOwner)
-    {
-        uint requestedInformation =
-            NativeMethods.OwnerSecurityInformation |
-            NativeMethods.DaclSecurityInformation;
-        if (!NativeMethods.GetKernelObjectSecurity(
-                handle,
-                requestedInformation,
-                securityDescriptor: null,
-                length: 0,
-                out uint required) &&
-            Marshal.GetLastPInvokeError() !=
-                NativeMethods.ErrorInsufficientBuffer)
-        {
-            throw new UnauthorizedAccessException(
-                "The rendezvous directory security is unavailable.");
-        }
 
-        if (required == 0 || required > 64 * 1024)
-        {
-            throw new UnauthorizedAccessException(
-                "The rendezvous directory security is invalid.");
-        }
-
-        byte[] bytes = new byte[required];
-        if (!NativeMethods.GetKernelObjectSecurity(
-                handle,
-                requestedInformation,
-                bytes,
-                checked((uint)bytes.Length),
-                out _))
-        {
-            throw new UnauthorizedAccessException(
-                "The rendezvous directory security is unavailable.");
-        }
-
-        var descriptor = new RawSecurityDescriptor(bytes, offset: 0);
-        RawAcl? dacl = descriptor.DiscretionaryAcl;
-        if (descriptor.Owner is null ||
-            !expectedOwner.Equals(descriptor.Owner) ||
-            (descriptor.ControlFlags &
-                ControlFlags.DiscretionaryAclProtected) == 0 ||
-            dacl is null ||
-            dacl.Count != 1 ||
-            dacl[0] is not CommonAce ace ||
-            ace.IsInherited ||
-            ace.AceQualifier != AceQualifier.AccessAllowed ||
-            !expectedOwner.Equals(ace.SecurityIdentifier) ||
-            (ace.AccessMask & (int)FileSystemRights.FullControl) !=
-                (int)FileSystemRights.FullControl ||
-            ace.InheritanceFlags !=
-                (InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit) ||
-            ace.PropagationFlags != PropagationFlags.None)
-        {
-            throw new UnauthorizedAccessException(
-                "The rendezvous directory security is not owner-only.");
-        }
-    }
 }
 
 public sealed record TreaderBootstrapOptions(
