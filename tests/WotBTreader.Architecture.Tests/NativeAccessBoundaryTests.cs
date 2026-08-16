@@ -101,6 +101,29 @@ public sealed class NativeAccessBoundaryTests
     }
 
     [TestMethod]
+    public void RendezvousPublisher_LogsExceptionTypeNotRawException()
+    {
+        string path = Path.Combine(
+            ProjectCatalog.RepositoryRoot(),
+            "src",
+            "WotBTreader.Host.Web",
+            "Services",
+            "RendezvousPublisher.cs");
+        string compact = string.Concat(
+            File.ReadAllText(path).Where(static c => !char.IsWhiteSpace(c)));
+
+        Assert.IsTrue(
+            compact.Contains("exception.GetType().Name", StringComparison.Ordinal),
+            "RendezvousPublisher must log the exception type, not the exception object.");
+        Assert.IsFalse(
+            compact.Contains(
+                "LogError(PublishFailedEvent,exception,",
+                StringComparison.Ordinal),
+            "RendezvousPublisher must not pass the raw exception to the log " +
+            "(its message can carry the private rendezvous/temp path).");
+    }
+
+    [TestMethod]
     public void UltimateScanner_DiagnosticsDoNotIncludeFullExecutablePaths()
     {
         string sourceRoot = Path.Combine(
