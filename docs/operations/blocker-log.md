@@ -937,3 +937,10 @@ folder for the full numbering convention and document map.
   hung past its bounded steps on the mid-flow game death (pre-existing
   robustness gap). Environment cleaned up; the census source and endpoint stay
   merged and verified offline, and no census result is promoted.
+
+- Resolution (`2026-08-16`, launcher robustness): the mid-flow game-death hang
+  is fixed — `scripts/launch-offline-replay-for-od.ps1` now checks for a live
+  `wotblitz.exe` after the Watch Offline success (exit 3 on death) and before
+  the clock-anchor HTTP calls (non-fatal skip), so a playback assert costs
+  seconds instead of a full bounded-step hang. The census blocker itself stays
+  open; this only removes the environment-failure tax on each retry.

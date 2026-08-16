@@ -105,3 +105,14 @@ endpoint remain verified offline, and no census aggregate was produced or
 promoted. The next live attempt should either retry after a clean game restart
 (try the Oasis replay as the alternate battle) or first diagnose the
 `ListenerHolderBase` assert.
+
+## Launcher robustness fix (2026-08-16)
+
+The pre-existing hang on mid-flow game death was fixed in
+`scripts/launch-offline-replay-for-od.ps1`: the launcher now checks for a live
+`wotblitz.exe` right after the Watch Offline success and again before the
+clock-anchor HTTP calls. A playback assert that kills the game now exits with
+`FAILED_game_died_after_watch` (exit 3) in seconds, and the clock-anchor block
+degrades to `clock_anchor skipped_game_died` (non-fatal, flag stays false)
+instead of hanging on the sessions/clock HTTP calls. The bounded-step timeout
+remains as the outer safety net. Full `scripts/validate.ps1` gate green.
