@@ -62,7 +62,11 @@ write/read-site trace.
 
 ## Next step
 
-Run the live-validation protocol on one exact-build managed offline replay
-(the launcher + a new capture phase), adjudicate H1, and only then start the
-phase 2–4 semantic field derivation (configured gun, loaded shell, turret yaw,
-gun elevation, muzzle ray) inside the now-proven owner objects.
+The shared-contract proposal for the live-validation read phase is drafted in
+[`pen-ownership-walk-live-validation-proposal.md`](pen-ownership-walk-live-validation-proposal.md)
+(a new additive `PenOwnershipWalk` entity-region anchor, aggregate-only, with
+security/privacy notes for the required read-only audit). After owner approval
++ the security audit, implement the anchor, then run it on one exact-build
+managed offline replay, adjudicate H1, and only then start the phase 2–4
+semantic field derivation (configured gun, loaded shell, turret yaw, gun
+elevation, muzzle ray).

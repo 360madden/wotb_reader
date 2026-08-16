@@ -382,6 +382,7 @@ docs/operations/offset-discovery-workflow.md
 docs/operations/offset-promotion-checklist.md
 docs/operations/parallel-workstreams.md
 docs/operations/pen-chance-design.md
+docs/operations/pen-ownership-walk-live-validation-proposal.md
 docs/operations/pen-ownership-walk-proof-protocol.md
 docs/operations/pen-v03-alternative-armor-owner-triage.md
 docs/operations/penetration-v0.3-plan.md

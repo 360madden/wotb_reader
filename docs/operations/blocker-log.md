@@ -994,3 +994,11 @@ folder for the full numbering convention and document map.
   sentinel marks aim-shaped rotator fields, but no semantic field is proven
   (turret yaw / gun elevation / aim point remain open). These are candidates
   for the next write/read-site trace, not offsets to promote.
+
+- Live-validation phase PROPOSED (`2026-08-16`): the shared-contract proposal
+  for the five-read ownership-walk confirmation is drafted
+  (`pen-ownership-walk-live-validation-proposal.md` — a new additive
+  `PenOwnershipWalk` entity-region anchor, aggregate-only, fail-closed, with
+  security/privacy notes for the required read-only audit). No contract has
+  been edited; BLK-0027 waits on owner decision + the security audit, then one
+  exact-build launch.
