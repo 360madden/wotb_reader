@@ -165,3 +165,16 @@ state to an explicit "no valid value" marker. Proving turret yaw vs gun
 elevation vs aim point still requires tracing the write/read sites of these
 fields through the rotator's vtable methods (the next memory-research step).
 
+### Aim-state sync finding (still not per-field proven)
+
+A third hash-bound pass decompiled the rotator's vtable methods. Slot 1
+(`FUN_01ac4f70`) reads a controller at **`rotator + 0x148`** (vtable methods
+`+0x13c`/`+0x164`/`+0xa4`) and copies an aim-state block into
+**`rotator + 0x1A8..+0x1C0`** — including `+0x1BC`, which the constructor
+sentineled to `-100500.0f` and which therefore receives a live runtime value.
+This confirms `+0x1A8..+0x1C0` is a live aim-state block synced from the
+controller, but **which member is turret yaw vs gun elevation vs aim point is
+still unproven** — that requires either tracing the controller's aim math
+(`FUN_01aa7140`) or the live controlled-transition correlation that G1 items
+2/5 already demand (downstream of the walk's live validation).
+

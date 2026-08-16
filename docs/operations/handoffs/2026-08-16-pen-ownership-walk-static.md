@@ -58,7 +58,11 @@ doc. Highlights: `VehicleGun +0x38 = 100.0f` / `+0x3C = 9` / `+0x40 = 1.0f`;
 `+0x134/+0x138 = -100500.0f`, `+0x1BC = Vector3(-100500,…)`. The `-100500.0f`
 sentinel appears in both aim-shaped fields, but **no semantic is proven** —
 turret yaw vs gun elevation vs aim point still needs the rotator-method
-write/read-site trace.
+write/read-site trace. A third pass decompiled the rotator vtable methods and
+found slot 1 (`FUN_01ac4f70`) syncing an aim-state block into `+0x1A8..+0x1C0`
+from the controller at `rotator+0x148` (so `+0x1BC` receives a live runtime
+value), but per-field meaning still needs the controller math trace or the
+live controlled-transition correlation.
 
 ## Next step
 
