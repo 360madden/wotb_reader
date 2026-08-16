@@ -164,8 +164,10 @@
                             LivePlayerZ="{Binding LivePlayerPositionZ}"
                             LivePlayerTrail="{Binding LivePlayerTrail}"/>
 
-        <!-- ═══ W2S HUD — projected nameplates over the game view ═══ -->
-        <views:W2sHudView x:Name="W2sHudView" IsHitTestVisible="False"/>
+        <!-- ═══ W2S HUD — projected nameplates over the game view ═══
+             The HUD canvas itself stays click-through; only the playback-bar
+             scrub region inside it is hit-testable. -->
+        <views:W2sHudView x:Name="W2sHudView"/>
 
         <!-- ═══ Live HP overlay — bottom-left corner of the window ═══ -->
         <Border HorizontalAlignment="Left" VerticalAlignment="Bottom"

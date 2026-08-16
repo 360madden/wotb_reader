@@ -1133,6 +1133,89 @@ public sealed class MainViewModelTests
     }
 
     [TestMethod]
+    public void ScrubToFraction_ZeroDuration_IsNoOp()
+    {
+        MainViewModel viewModel = CreateViewModel();
+
+        // No session loaded, duration is zero — should be no-op.
+        viewModel.ScrubToFraction(0.5);
+        Assert.AreEqual(TimeSpan.Zero, viewModel.CurrentTime);
+    }
+
+    [TestMethod]
+    public async Task ScrubToFraction_WithDuration_ClampsAndSetsTime()
+    {
+        string detailJson = """
+            {
+              "decodeRun": {
+                "decodeRunId": "6b1c9e52-3d4a-4f7b-9c0d-1e2f3a4b5c6d",
+                "sourceArtifactId": "aa10bb20-cc30-dd40-ee50-ff60aa70bb80",
+                "decoderId": "wotb-replay",
+                "decoderVersion": "1.2.3",
+                "schemaVersion": "1.0",
+                "status": "succeeded",
+                "capabilities": [],
+                "startedAtUtc": "2026-07-26T10:00:00+00:00",
+                "completedAtUtc": null,
+                "failureCode": null,
+                "failureSummary": null
+              },
+              "session": {
+                "battleSessionId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+                "gameVersion": null,
+                "arenaIdentity": null,
+                "mapId": null,
+                "mapName": null,
+                "battleTimeUtc": null,
+                "duration": "0:00:10",
+                "viewpointParticipantId": null
+              },
+              "participants": [],
+              "positions": [],
+              "positionsTruncated": false,
+              "totalPositionCount": 0,
+              "eventCount": 0,
+              "rawRecordCount": 0,
+              "warnings": []
+            }
+            """;
+        WriteRendezvousRecord(Now.AddMinutes(-1), Now.AddMinutes(5));
+        FakeHttpMessageHandler handler = new((request, _) =>
+        {
+            string path = request.RequestUri!.AbsolutePath;
+            if (path.Contains(BattleSessionId.ToString("D"), StringComparison.Ordinal))
+            {
+                return Task.FromResult(JsonResponse(detailJson));
+            }
+
+            return Task.FromResult(JsonResponse("""{"offset":0,"limit":200,"count":1,"items":[]}"""));
+        });
+        MainViewModel viewModel = CreateViewModel(handler);
+
+        await viewModel.RefreshSessionsAsync();
+        viewModel.SelectedSession = new SessionRow(
+            BattleSessionId, "Test Map", null, Now, 1, 2);
+
+        await WaitForConditionAsync(
+            () => viewModel.Duration > TimeSpan.Zero,
+            TimeSpan.FromSeconds(2));
+
+        // Detail load starts at the end (10s). Scrubbing by fraction must map
+        // and clamp to absolute positions within [0, Duration].
+        viewModel.ScrubToFraction(0.5);
+        Assert.AreEqual(TimeSpan.FromSeconds(5), viewModel.CurrentTime);
+
+        viewModel.ScrubToFraction(1.5);
+        Assert.AreEqual(TimeSpan.FromSeconds(10), viewModel.CurrentTime);
+
+        viewModel.ScrubToFraction(-0.25);
+        Assert.AreEqual(TimeSpan.Zero, viewModel.CurrentTime);
+
+        viewModel.ScrubToFraction(double.NaN);
+        Assert.AreEqual(TimeSpan.Zero, viewModel.CurrentTime);
+    }
+
+    [TestMethod]
     public void SetPlaybackSpeed_AcceptsDefinedSpeeds()
     {
         MainViewModel viewModel = CreateViewModel();

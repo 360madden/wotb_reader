@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using WotBTreader.Overlay.ViewModels;
@@ -106,6 +107,16 @@ public sealed partial class W2sHudView : UserControl
 
     /// <summary>Frames since the last pen verdict change (<see cref="int.MaxValue"/> = settled).</summary>
     private int _penPulseAge = int.MaxValue;
+
+    /// <summary>True while the pointer is dragging the playback bar scrub region.</summary>
+    private bool _scrubbing;
+
+    /// <summary>
+    /// Raised while the user drags (or clicks) the in-HUD playback bar, with
+    /// the requested position as a 0..1 fraction of the timeline. The owner
+    /// (MainWindow) maps it to a view-model scrub.
+    /// </summary>
+    public event Action<double>? PlaybackScrubRequested;
 
     public W2sHudView()
     {
@@ -277,6 +288,11 @@ public sealed partial class W2sHudView : UserControl
         if (playbackProgress is not null)
         {
             HudCanvas.Children.Add(BuildPlaybackBar(playbackProgress.Value, playbackLabel, viewportWidth));
+            PositionPlaybackScrubRegion(viewportWidth, viewportHeight);
+        }
+        else
+        {
+            PlaybackScrubRegion.Visibility = Visibility.Collapsed;
         }
     }
 
@@ -672,6 +688,39 @@ public sealed partial class W2sHudView : UserControl
         Math.Clamp(progress, 0, 1) * trackWidth;
 
     /// <summary>
+    /// Computes the playback bar's scrub hit band in viewport coordinates
+    /// (top-left origin), mirroring <see cref="BuildPlaybackBar"/>'s horizontal
+    /// geometry but with a taller band so the track is easy to grab. Pure for
+    /// unit tests. The returned rect's width equals the bar's track width.
+    /// </summary>
+    public static Rect PlaybackScrubRegionRect(double viewportWidth, double viewportHeight)
+    {
+        const double barWidth = 320;
+        const double margin = 12;
+        const double gap = 40;
+        const double bandHeight = 24;
+        double trackWidth = Math.Min(barWidth, Math.Max(0, viewportWidth - (2 * margin) - gap));
+        double left = (viewportWidth - trackWidth) / 2.0;
+        double top = viewportHeight - margin - bandHeight;
+        return new Rect(left, top, trackWidth, bandHeight);
+    }
+
+    /// <summary>
+    /// Maps a pointer X (relative to the scrub band's left edge) to a 0..1
+    /// timeline fraction, clamping so drags past either end stay at the ends.
+    /// Pure for unit tests; a non-positive band width fails closed to 0.
+    /// </summary>
+    public static double PlaybackScrubFraction(double pointerX, double trackWidth)
+    {
+        if (!double.IsFinite(trackWidth) || trackWidth <= 0)
+        {
+            return 0;
+        }
+
+        return Math.Clamp(pointerX / trackWidth, 0, 1);
+    }
+
+    /// <summary>
     /// Formats a playback time label "m:ss / m:ss" for the HUD progress bar,
     /// for unit tests. Null when the duration is unknown or non-positive.
     /// </summary>
@@ -687,6 +736,58 @@ public sealed partial class W2sHudView : UserControl
 
     private static string FormatClock(double seconds) =>
         $"{TimeSpan.FromSeconds(Math.Max(0, seconds)):m\\:ss}";
+
+    /// <summary>
+    /// Positions the persistent scrub hit band over the playback bar so the
+    /// user can click/drag to seek. Called on every render with the same
+    /// geometry, so it stays aligned with the rebuilt track.
+    /// </summary>
+    private void PositionPlaybackScrubRegion(double viewportWidth, double viewportHeight)
+    {
+        Rect rect = PlaybackScrubRegionRect(viewportWidth, viewportHeight);
+        PlaybackScrubRegion.Width = rect.Width;
+        PlaybackScrubRegion.Height = rect.Height;
+        PlaybackScrubRegion.Margin = new Thickness(rect.Left, 0, 0, viewportHeight - rect.Bottom);
+        PlaybackScrubRegion.Visibility = Visibility.Visible;
+    }
+
+    private void PlaybackScrubRegion_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        _scrubbing = true;
+        PlaybackScrubRegion.CaptureMouse();
+        RequestScrub(e.GetPosition(PlaybackScrubRegion));
+        e.Handled = true;
+    }
+
+    private void PlaybackScrubRegion_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_scrubbing)
+        {
+            return;
+        }
+
+        RequestScrub(e.GetPosition(PlaybackScrubRegion));
+        e.Handled = true;
+    }
+
+    private void PlaybackScrubRegion_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!_scrubbing)
+        {
+            return;
+        }
+
+        _scrubbing = false;
+        PlaybackScrubRegion.ReleaseMouseCapture();
+        RequestScrub(e.GetPosition(PlaybackScrubRegion));
+        e.Handled = true;
+    }
+
+    private void RequestScrub(Point pointer)
+    {
+        PlaybackScrubRequested?.Invoke(
+            PlaybackScrubFraction(pointer.X, PlaybackScrubRegion.ActualWidth));
+    }
 
     /// <summary>
     /// Formats the compact nameplate totals line (damage dealt + kills),

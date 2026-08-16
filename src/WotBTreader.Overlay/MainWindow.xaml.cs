@@ -61,6 +61,7 @@ public partial class MainWindow : System.Windows.Window, IDisposable
         DataContext = _viewModel;
         InitializeComponent();
 
+        W2sHudView.PlaybackScrubRequested += OnPlaybackScrubRequested;
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
         _viewModel.Nameplates.CollectionChanged += OnHudItemsChanged;
         _viewModel.Beacons.CollectionChanged += OnHudItemsChanged;
@@ -100,6 +101,7 @@ public partial class MainWindow : System.Windows.Window, IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        W2sHudView.PlaybackScrubRequested -= OnPlaybackScrubRequested;
         _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
         _viewModel.Nameplates.CollectionChanged -= OnHudItemsChanged;
         _viewModel.Beacons.CollectionChanged -= OnHudItemsChanged;
@@ -303,6 +305,16 @@ public partial class MainWindow : System.Windows.Window, IDisposable
             label,
             ActualWidth,
             ActualHeight);
+    }
+
+    /// <summary>
+    /// Handles a click/drag on the in-HUD playback bar: maps the 0..1 fraction
+    /// to an absolute timeline position. The view model clamps and refreshes
+    /// the frame, so scrubbing while paused updates the projection immediately.
+    /// </summary>
+    private void OnPlaybackScrubRequested(double fraction)
+    {
+        _viewModel.ScrubToFraction(fraction);
     }
 
     private void OnHpPulseTick(object? sender, EventArgs e)

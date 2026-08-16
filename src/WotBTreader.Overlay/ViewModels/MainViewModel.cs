@@ -1652,6 +1652,18 @@ public class MainViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
+    /// Scrubs the timeline to a 0..1 fraction of the duration.
+    /// Used by the in-HUD playback bar drag; a non-finite or out-of-range
+    /// fraction clamps so the scrubber never leaves [0, Duration].
+    /// </summary>
+    public void ScrubToFraction(double fraction)
+    {
+        if (_duration <= TimeSpan.Zero) return;
+        double clamped = double.IsFinite(fraction) ? Math.Clamp(fraction, 0, 1) : 0;
+        CurrentTime = TimeSpan.FromSeconds(_duration.TotalSeconds * clamped);
+    }
+
+    /// <summary>
     /// Sets playback speed directly. Used by keyboard shortcuts (1-5 keys).
     /// Only accepts the five defined speed levels.
     /// </summary>

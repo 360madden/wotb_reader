@@ -130,6 +130,41 @@ public sealed class W2sHudViewTests
     }
 
     [TestMethod]
+    public void PlaybackScrubFraction_MapsAndClamps()
+    {
+        Assert.AreEqual(0.0, W2sHudView.PlaybackScrubFraction(pointerX: 0, trackWidth: 320), 1e-9);
+        Assert.AreEqual(0.5, W2sHudView.PlaybackScrubFraction(pointerX: 160, trackWidth: 320), 1e-9);
+        Assert.AreEqual(1.0, W2sHudView.PlaybackScrubFraction(pointerX: 320, trackWidth: 320), 1e-9);
+        // Drags past either end clamp instead of seeking outside the timeline.
+        Assert.AreEqual(1.0, W2sHudView.PlaybackScrubFraction(pointerX: 900, trackWidth: 320), 1e-9);
+        Assert.AreEqual(0.0, W2sHudView.PlaybackScrubFraction(pointerX: -40, trackWidth: 320), 1e-9);
+    }
+
+    [TestMethod]
+    public void PlaybackScrubFraction_DegenerateWidth_FailsClosed()
+    {
+        Assert.AreEqual(0.0, W2sHudView.PlaybackScrubFraction(pointerX: 100, trackWidth: 0), 1e-9);
+        Assert.AreEqual(0.0, W2sHudView.PlaybackScrubFraction(pointerX: 100, trackWidth: -5), 1e-9);
+        Assert.AreEqual(0.0, W2sHudView.PlaybackScrubFraction(pointerX: 100, trackWidth: double.NaN), 1e-9);
+    }
+
+    [TestMethod]
+    public void PlaybackScrubRegionRect_MatchesTrackAndCenters()
+    {
+        // 320px cap: the band spans the full track width, centred horizontally.
+        Rect full = W2sHudView.PlaybackScrubRegionRect(viewportWidth: 1920, viewportHeight: 1080);
+        Assert.AreEqual(320, full.Width, 1e-9);
+        Assert.AreEqual((1920 - 320) / 2.0, full.Left, 1e-9);
+        // Bottom band edge sits at the 12px margin above the window bottom.
+        Assert.AreEqual(1080 - 12, full.Bottom, 1e-9);
+
+        // A narrow viewport shrinks the track so the band never overflows.
+        Rect narrow = W2sHudView.PlaybackScrubRegionRect(viewportWidth: 80, viewportHeight: 1080);
+        Assert.AreEqual(80 - 24 - 40, narrow.Width, 1e-9);
+        Assert.AreEqual((80 - narrow.Width) / 2.0, narrow.Left, 1e-9);
+    }
+
+    [TestMethod]
     public void FormatPlaybackLabel_ClockStyle()
     {
         Assert.AreEqual("0:47 / 4:12", W2sHudView.FormatPlaybackLabel(47, 252));
