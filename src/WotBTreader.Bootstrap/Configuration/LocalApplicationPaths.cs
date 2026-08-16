@@ -1,6 +1,9 @@
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
 using System.Runtime.Versioning;
 using System.Security.AccessControl;
 using System.Security.Principal;
+using Microsoft.Win32.SafeHandles;
 
 namespace WotBTreader.Bootstrap.Configuration;
 
@@ -81,8 +84,10 @@ public sealed record LocalApplicationPaths(
     /// <summary>
     /// Re-verifies a final rendezvous file (for example after the temporary
     /// file is moved into place) so the published capability record is known
-    /// to be a real, owner-only file. On Windows this rejects reparse points
-    /// and re-reads the DACL from disk.
+    /// to be a real, owner-only file. On Windows the file object is pinned by
+    /// handle (opened without following reparse points) and its DACL is read
+    /// from that handle, so a same-user pathname swap cannot redirect the
+    /// verification.
     /// </summary>
     public static void VerifyRendezvousFile(string filePath)
     {
@@ -185,7 +190,7 @@ public sealed record LocalApplicationPaths(
             AccessControlType.Allow));
         file.SetAccessControl(security);
 
-        VerifyWindowsOwnerOnlyFile(file, owner);
+        VerifyWindowsOwnerOnlyFile(path);
     }
 
     [SupportedOSPlatform("windows")]
@@ -194,55 +199,171 @@ public sealed record LocalApplicationPaths(
         SecurityIdentifier owner = WindowsIdentity.GetCurrent().User
             ?? throw new InvalidOperationException(
                 "The current Windows account has no security identifier.");
-        var file = new FileInfo(path);
-        if (!file.Exists)
-        {
-            throw new FileNotFoundException(
-                "The rendezvous file does not exist.",
-                path);
-        }
 
-        file.Refresh();
-        if ((file.Attributes & FileAttributes.ReparsePoint) != 0)
+        // Pin the file object by handle and open without following reparse
+        // points, so a same-user swap of the pathname cannot redirect the
+        // verification to a different file between the reparse check and the
+        // DACL read.
+        SafeFileHandle handle = NativeMethods.CreateFileW(
+            path,
+            NativeMethods.GenericRead,
+            NativeMethods.FileShareRead |
+            NativeMethods.FileShareWrite |
+            NativeMethods.FileShareDelete,
+            lpSecurityAttributes: nint.Zero,
+            NativeMethods.OpenExisting,
+            NativeMethods.FileFlagOpenReparsePoint,
+            hTemplateFile: nint.Zero);
+        try
         {
-            throw new UnauthorizedAccessException(
-                "The rendezvous file must not be a reparse point.");
-        }
+            if (handle.IsInvalid)
+            {
+                int error = Marshal.GetLastPInvokeError();
+                if (error is NativeMethods.ErrorFileNotFound
+                    or NativeMethods.ErrorPathNotFound)
+                {
+                    throw new FileNotFoundException(
+                        "The rendezvous file does not exist.",
+                        path);
+                }
 
-        VerifyWindowsOwnerOnlyFile(file, owner);
+                throw new IOException(
+                    $"The rendezvous file could not be opened (Win32 error {error}).");
+            }
+
+            if (!NativeMethods.GetFileInformationByHandle(
+                    handle,
+                    out NativeFileInformation information) ||
+                (information.FileAttributes & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new UnauthorizedAccessException(
+                    "The rendezvous file must not be a reparse point.");
+            }
+
+            VerifyWindowsOwnerOnlyFileSecurity(handle, owner);
+        }
+        finally
+        {
+            handle.Dispose();
+        }
     }
 
     [SupportedOSPlatform("windows")]
-    private static void VerifyWindowsOwnerOnlyFile(
-        FileInfo file,
+    private static void VerifyWindowsOwnerOnlyFileSecurity(
+        SafeFileHandle handle,
         SecurityIdentifier expectedOwner)
     {
-        FileSecurity actual = file.GetAccessControl(
-            AccessControlSections.Access | AccessControlSections.Owner);
-        if (!actual.AreAccessRulesProtected ||
-            !expectedOwner.Equals(actual.GetOwner(typeof(SecurityIdentifier))))
+        uint requestedInformation =
+            NativeMethods.OwnerSecurityInformation |
+            NativeMethods.DaclSecurityInformation;
+        if (!NativeMethods.GetKernelObjectSecurity(
+                handle,
+                requestedInformation,
+                securityDescriptor: null,
+                length: 0,
+                out uint required) &&
+            Marshal.GetLastPInvokeError() !=
+                NativeMethods.ErrorInsufficientBuffer)
         {
             throw new UnauthorizedAccessException(
-                "The rendezvous file owner or inheritance boundary is unsafe.");
+                "The rendezvous file security is unavailable.");
         }
 
-        AuthorizationRuleCollection rules = actual.GetAccessRules(
-            includeExplicit: true,
-            includeInherited: true,
-            targetType: typeof(SecurityIdentifier));
-        if (rules.Count != 1 ||
-            rules[0] is not FileSystemAccessRule rule ||
-            rule.IsInherited ||
-            rule.AccessControlType != AccessControlType.Allow ||
-            !expectedOwner.Equals(rule.IdentityReference) ||
-            (rule.FileSystemRights & FileSystemRights.FullControl) !=
-                FileSystemRights.FullControl ||
-            rule.InheritanceFlags != InheritanceFlags.None ||
-            rule.PropagationFlags != PropagationFlags.None)
+        if (required == 0 || required > 64 * 1024)
         {
             throw new UnauthorizedAccessException(
-                "The rendezvous file access rules are not owner-only.");
+                "The rendezvous file security is invalid.");
         }
+
+        byte[] bytes = new byte[required];
+        if (!NativeMethods.GetKernelObjectSecurity(
+                handle,
+                requestedInformation,
+                bytes,
+                checked((uint)bytes.Length),
+                out _))
+        {
+            throw new UnauthorizedAccessException(
+                "The rendezvous file security is unavailable.");
+        }
+
+        var descriptor = new RawSecurityDescriptor(bytes, offset: 0);
+        RawAcl? dacl = descriptor.DiscretionaryAcl;
+        if (descriptor.Owner is null ||
+            !expectedOwner.Equals(descriptor.Owner) ||
+            (descriptor.ControlFlags &
+                ControlFlags.DiscretionaryAclProtected) == 0 ||
+            dacl is null ||
+            dacl.Count != 1 ||
+            dacl[0] is not CommonAce ace ||
+            ace.IsInherited ||
+            ace.AceQualifier != AceQualifier.AccessAllowed ||
+            !expectedOwner.Equals(ace.SecurityIdentifier) ||
+            (ace.AccessMask & (int)FileSystemRights.FullControl) !=
+                (int)FileSystemRights.FullControl ||
+            ace.InheritanceFlags != InheritanceFlags.None ||
+            ace.PropagationFlags != PropagationFlags.None)
+        {
+            throw new UnauthorizedAccessException(
+                "The rendezvous file security is not owner-only.");
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly struct NativeFileInformation
+    {
+        private readonly uint _fileAttributes;
+        private readonly FILETIME _creationTime;
+        private readonly FILETIME _lastAccessTime;
+        private readonly FILETIME _lastWriteTime;
+        private readonly uint _volumeSerialNumber;
+        private readonly uint _fileSizeHigh;
+        private readonly uint _fileSizeLow;
+        private readonly uint _numberOfLinks;
+        private readonly uint _fileIndexHigh;
+        private readonly uint _fileIndexLow;
+
+        public FileAttributes FileAttributes => (FileAttributes)_fileAttributes;
+    }
+
+    private static class NativeMethods
+    {
+        internal const uint GenericRead = 0x8000_0000;
+        internal const uint FileShareRead = 0x0000_0001;
+        internal const uint FileShareWrite = 0x0000_0002;
+        internal const uint FileShareDelete = 0x0000_0004;
+        internal const uint OpenExisting = 3;
+        internal const uint FileFlagOpenReparsePoint = 0x0020_0000;
+        internal const int ErrorFileNotFound = 2;
+        internal const int ErrorPathNotFound = 3;
+        internal const uint OwnerSecurityInformation = 0x0000_0001;
+        internal const uint DaclSecurityInformation = 0x0000_0004;
+        internal const int ErrorInsufficientBuffer = 122;
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        internal static extern SafeFileHandle CreateFileW(
+            string lpFileName,
+            uint dwDesiredAccess,
+            uint dwShareMode,
+            nint lpSecurityAttributes,
+            uint dwCreationDisposition,
+            uint dwFlagsAndAttributes,
+            nint hTemplateFile);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool GetFileInformationByHandle(
+            SafeFileHandle hFile,
+            out NativeFileInformation lpFileInformation);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool GetKernelObjectSecurity(
+            SafeFileHandle handle,
+            uint securityInformation,
+            byte[]? securityDescriptor,
+            uint length,
+            out uint lengthNeeded);
     }
 
     [UnsupportedOSPlatform("windows")]
