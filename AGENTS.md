@@ -105,6 +105,16 @@ Freebuff session except on explicit owner request. The `.codex/`
 enforcement chain (.codex/hooks, role files, policy tests, config check) is
 unchanged and applies whenever the session runs inside a Codex harness.
 
+## Freebuff local state (repo-inert `.freebuff/`)
+
+`.freebuff/` is generated local state owned by the Freebuff desktop app
+(project id, settings, SQLite db, worktrees). Nothing under it is tracked:
+it is gitignored wholesale, absent from fresh clones, and re-created by the
+app on first boot — no setup or regeneration step is required after a clone,
+and it never produces an `offline/file-tree.md` change. The regular
+add/rename/remove refresh rule (`offline_check.py --refresh` after staging
+new paths) applies to repository files only.
+
 ## Session ritual
 
 **Start**
@@ -201,6 +211,10 @@ and ASCII-only. See `docs/operations/cmd-wrapper-gotchas.md` for batch/cmd work.
 
 ## Last verified
 
+- 2026-08-17 — fresh-clone harness check: `.freebuff/` absent on disk and
+  0 tracked files in a fresh clone, clean status, offline gate (71 files,
+  120 links, 0 broken) PASS in the bare clone; AGENTS.md now documents the
+  repo-inert regeneration contract.
 - 2026-08-17 — owner-approved policy amendment: the allowed model set is now
   `gpt-5.6-sol` (all lanes) plus `deepseek-v4-pro` (bounded lanes:
   lead/default/worker, explorer, verifier, implementer glue). Enforcement
