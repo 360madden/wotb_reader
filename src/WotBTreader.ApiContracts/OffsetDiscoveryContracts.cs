@@ -385,8 +385,9 @@ public sealed record EntityRecordRegionReadRequest
     /// the gated vftable AOB scan for the entity-Avatar instead), or
     /// <c>pen-ownership-walk</c> (the viewpoint-vehicle ownership walk: the
     /// coordinator scans for the unique VehicleGunRotator and runs the fixed
-    /// five-read chain, returning only aggregate booleans/counts). Unknown
-    /// values fail closed (no dump).
+    /// five-read chain, returning only aggregate booleans/counts), or
+    /// <c>pen-semantic-fields</c> (ownership walk plus two-pass published
+    /// gun-marker / reload-enum snapshot). Unknown values fail closed (no dump).
     /// </summary>
     public string? RegionAnchor { get; init; }
 
@@ -471,6 +472,178 @@ public sealed record EntityRecordRegionReadResponse
     /// identical verdicts.
     /// </summary>
     public bool PenOwnershipTwoPassStable { get; init; }
+
+    /// <summary>
+    /// For <c>pen-semantic-fields</c>: VehicleGun +0x3C is in 0..9.
+    /// </summary>
+    public bool PenSemanticReloadEnumInRange { get; init; }
+
+    /// <summary>
+    /// For <c>pen-semantic-fields</c>: published marker floats are finite.
+    /// </summary>
+    public bool PenSemanticMarkerFinite { get; init; }
+
+    /// <summary>
+    /// For <c>pen-semantic-fields</c>: published marker direction length is
+    /// near 1.
+    /// </summary>
+    public bool PenSemanticMarkerDirectionUnit { get; init; }
+
+    /// <summary>
+    /// For <c>pen-semantic-fields</c>: two-pass marker + reload + hull yaw
+    /// reads were byte-identical.
+    /// </summary>
+    public bool PenSemanticTwoPassStable { get; init; }
+
+    /// <summary>
+    /// For <c>pen-semantic-fields</c>: the VehicleGun reload/state enum, or
+    /// null when unread.
+    /// </summary>
+    public int? PenSemanticReloadEnum { get; init; }
+
+    /// <summary>
+    /// For <c>pen-semantic-fields</c>: atan2(dir.x, dir.z) of the published
+    /// marker after the CAM-010 Y/Z convention, or null when unread/non-finite.
+    /// </summary>
+    public double? PenSemanticMarkerYawRadians { get; init; }
+
+    /// <summary>
+    /// For <c>pen-semantic-fields</c>: asin(dir.y) of the published marker
+    /// after the CAM-010 Y/Z convention, or null when unread/non-finite.
+    /// </summary>
+    public double? PenSemanticMarkerPitchRadians { get; init; }
+
+    /// <summary>
+    /// For <c>pen-semantic-fields</c>: entity-base hull yaw, or null when
+    /// unread/non-finite.
+    /// </summary>
+    public double? PenSemanticHullYawRadians { get; init; }
+
+    /// <summary>
+    /// Hull-relative marker-origin height in meters (decoded Y), or null.
+    /// Not a world coordinate.
+    /// </summary>
+    public double? PenSemanticOriginHeightMeters { get; init; }
+
+    /// <summary>
+    /// Hull-relative horizontal |XZ| offset of the marker origin, meters.
+    /// </summary>
+    public double? PenSemanticOriginHorizontalMeters { get; init; }
+
+    /// <summary>
+    /// True when height is in 0.3..4.0 m and horizontal offset is ≤ 6 m.
+    /// </summary>
+    public bool PenSemanticOriginInBand { get; init; }
+
+    /// <summary>Hull-relative origin X meters (decoded space, not world).</summary>
+    public double? PenSemanticOriginRelX { get; init; }
+
+    /// <summary>Hull-relative origin Y meters (decoded space, not world).</summary>
+    public double? PenSemanticOriginRelY { get; init; }
+
+    /// <summary>Hull-relative origin Z meters (decoded space, not world).</summary>
+    public double? PenSemanticOriginRelZ { get; init; }
+
+    /// <summary>
+    /// GetGunMarkerPosition start reconstructed with distance=scalar/2
+    /// (param3=1) is in the hull-relative muzzle band.
+    /// </summary>
+    public bool PenSemanticMuzzleDistanceHalfInBand { get; init; }
+
+    /// <summary>
+    /// GetGunMarkerPosition start reconstructed with distance=scalar
+    /// (param3=0.5) is in the hull-relative muzzle band.
+    /// </summary>
+    public bool PenSemanticMuzzleDistanceScalarInBand { get; init; }
+
+    public double? PenSemanticMuzzleDistanceHalfHeightMeters { get; init; }
+
+    public double? PenSemanticMuzzleDistanceHalfHorizontalMeters { get; init; }
+
+    public double? PenSemanticMuzzleDistanceScalarHeightMeters { get; init; }
+
+    public double? PenSemanticMuzzleDistanceScalarHorizontalMeters { get; init; }
+
+    /// <summary>
+    /// Hull-relative height of rotator+0x11C matrix translation (decoded Y).
+    /// </summary>
+    public double? PenSemanticMatrixOriginHeightMeters { get; init; }
+
+    /// <summary>
+    /// Hull-relative horizontal |XZ| of rotator+0x11C matrix translation.
+    /// </summary>
+    public double? PenSemanticMatrixOriginHorizontalMeters { get; init; }
+
+    /// <summary>
+    /// True when the matrix-translation origin is in the muzzle band.
+    /// </summary>
+    public bool PenSemanticMatrixOriginInBand { get; init; }
+
+    /// <summary>
+    /// AmmoController current-shell index, or null when unread. 0 is also
+    /// the no-match default. Not a loaded-shell identity.
+    /// </summary>
+    public int? PenSemanticAmmoShellIndex { get; init; }
+
+    /// <summary>
+    /// True when the current-shell index is in 0..15.
+    /// </summary>
+    public bool PenSemanticAmmoShellIndexInRange { get; init; }
+
+    /// <summary>
+    /// True when AmmoController+0x40 and rotator+0x130 hold the same
+    /// vehicleTypeDescriptor pointer. Addresses never leave.
+    /// </summary>
+    public bool PenSemanticAmmoDescrRoundTripConfirmed { get; init; }
+
+    /// <summary>
+    /// Compact-item nation enum from the indexed shell slot, or null.
+    /// Not a world coordinate and not eShellKind.
+    /// </summary>
+    public int? PenSemanticAmmoShellNation { get; init; }
+
+    /// <summary>
+    /// Compact-item id from the indexed shell slot, or null.
+    /// </summary>
+    public int? PenSemanticAmmoShellItemId { get; init; }
+
+    /// <summary>
+    /// True when the compact-shell nation/id pair was two-pass-readable.
+    /// </summary>
+    public bool PenSemanticAmmoShellIdentReadable { get; init; }
+
+    /// <summary>
+    /// True when the nation enum is in 0..15.
+    /// </summary>
+    public bool PenSemanticAmmoShellNationInRange { get; init; }
+
+    /// <summary>
+    /// eShellKind on the compact ident (Shell+0x114), or null. 0 is kUnknown.
+    /// </summary>
+    public int? PenSemanticAmmoShellKind { get; init; }
+
+    /// <summary>
+    /// True when eShellKind is in 0..5.
+    /// </summary>
+    public bool PenSemanticAmmoShellKindInRange { get; init; }
+
+    /// <summary>
+    /// Compact-shell pointer-array length (weapons+0x1B0..+0x1B4).
+    /// Count 1 means index 0 is the only slot.
+    /// </summary>
+    public int? PenSemanticAmmoMagazineCount { get; init; }
+
+    /// <summary>
+    /// Bit i is set when any magazine slot has in-range eShellKind i.
+    /// Diagnostic occupancy, not the current selection.
+    /// </summary>
+    public int? PenSemanticAmmoMagazineKindMask { get; init; }
+
+    /// <summary>
+    /// Number of magazine slots whose eShellKind was two-pass-readable
+    /// and in 0..5.
+    /// </summary>
+    public int? PenSemanticAmmoMagazineKindReadableSlots { get; init; }
 }
 
 /// <summary>

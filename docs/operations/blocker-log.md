@@ -1026,3 +1026,122 @@ folder for the full numbering convention and document map.
   honest gap (it is not part of H1). The ownership-walk discriminator is now
   closed; BLK-0027 stays open until the phase 2–4 shell/aim/ray fields are
   derived and the capture verdict can be adjudicated.
+
+- Phase 2–4 first live snapshot (`2026-08-16`, one replay, nothing
+  promoted): additive `pen-semantic-fields` entity-region anchor
+  two-pass-reads the published marker at `rotator+0x50` and VehicleGun
+  reload/state at `+0x3C`. One `OfflineReplayVerified` battle
+  (`01a00cf2-358b-75b4-8186-579afba06758`) returned 56/56 walk-confirmed,
+  finite, unit, two-pass-stable snapshots. Reload enum values `0`/`3`/`9`
+  (in range, changing — not a shell id). A 40-sample window showed marker
+  yaw in 4 of 16 bins while hull yaw stayed in 1 bin (8
+  same-hull/changed-marker steps). Elevation isolation and shot join were
+  not run. BLK-0027 stays open until a second content-distinct repeat plus
+  those remaining proofs.
+
+- Phase 2–4 second live snapshot (`2026-08-16`, content-distinct,
+  nothing promoted): battle `01a00cf7-895b-7653-8fa1-07d0fff73310`
+  (1045525-byte original vs the first 1100265-byte original) returned
+  38/40 walk-confirmed finite/unit/stable marker snapshots; reload enum
+  `0`; marker yaw 6 bins vs hull 1 bin (10 independent windows). The
+  hull-independent published-marker-yaw signature now has
+  `twoReplayRepeatability = true`. Elevation isolation, shot join, and
+  loaded shell remain. BLK-0027 stays open.
+
+- Elevation + shot-join first attempt (`2026-08-16`): capture script now
+  scores yaw-stable/pitch-changing windows and persists G2 yaw/pitch
+  samples. Battle `01a00d08` produced 5 elevation-independent windows
+  (first live elevation discriminator; one replay only). `marker-join`
+  on that persist file: 5 viewpoint ShotImpacts, 0 joined, 5
+  `lagExceeded` at 250 ms and at 10 s — the sampled G2 span (~8-119 s)
+  did not cover those shots at the join lag. Not a muzzle proof. BLK-0027
+  stays open.
+
+- Elevation two-replay + shot-window join (`2026-08-16`): process-local
+  walk cache (vtable re-read, AOB on miss) plus `marker-shots` alignment.
+  Oasis Palms battle `01a00d22` (content-distinct from Dead Rail
+  `01a00d08`) produced 6 then 8 elevation-independent windows — elevation
+  isolation now has `twoReplayRepeatability = true`. Merged G2 persist
+  covered 5/7 viewpoint shots within 250 ms; those five all missed the
+  10° center-line join (`joined=0`, `lagExceeded=2` for the two late
+  shots). Clock-synchronous capture is shown; the published marker is
+  not ExactGunRay. Loaded shell and exact armor remain. BLK-0027 stays
+  open.
+
+- Published-marker Y/Z convention (`2026-08-16`): `marker-join` degree
+  diagnostics on the Oasis persist scored Y/Z-swapped marker dir 4/5
+  (median 3.8°) vs unswapped center-line 0/5 (median 22.5°). Dead Rail
+  `01a00d32` repeat: 2/2 Y/Z-swapped (median 1.9°) vs 0/2 unswapped
+  (median 87.5°). Two-replay evidence that `rotator+0x50` dir is
+  engine `(x, z, y-up)`. Not ExactGunRay (origin unread; one Oasis
+  miss). Loaded-shell identity: no remaining live-ready field (`+0x3C`
+  reload machine). Exact armor: explicit v0.3 no-go until a producer
+  is named. BLK-0027 stays open.
+
+- Read-time Y/Z swap + hull-relative origin (`2026-08-16`): coordinator
+  converts marker pos/dir to decoded space and reports height /
+  horizontal / in-band only (no world XYZ). Origin-to-victim join is
+  wired for persist `originRel*`. First live Oasis `01a00d40`: 0/64
+  in-band (height ~41 m, horizontal ~80–230 m) — published pos3 is not
+  a muzzle. BLK-0027 stays open.
+
+- GetGunMarkerPosition start reconstruction (`2026-08-16`): formula
+  `start = hit - dir * (scalar/(2*param3))` from `FUN_01ec12b0`. Dead
+  Rail `01a00d53` 0/24 in-band for param3=1 and 0.5; reconstructed
+  start sat centimeters from the published hit. Scalar is not a long
+  range. Next is `FUN_0133a410` static. BLK-0027 stays open.
+
+- Rotator+0x11C matrix T live no-go (`2026-08-17`): `FUN_0133a410`
+  start pos is output+0 (transformed point), not matrix T. Oasis
+  `01a00d60` 0/32 matrix_origin_in_band (height −145.08 m, horizontal
+  226.88 m, constant). T is not a muzzle. Start stays stack-only
+  (`FUN_01ed2040` / `FUN_01ec1030` caller buffer). Next is the
+  `rotator+0x130` point graph. Loaded shell and exact armor remain.
+  BLK-0027 stays open.
+
+- Rotator+0x130 is vehicleTypeDescriptor (`2026-08-17`): ctor param_4
+  / vehicle+0x68 / AmmoController+0x40. Descr+0x1c+0x140 is XML
+  `gunPosition` (static). Start stays stack-only. AmmoController is
+  embedded at AvatarGameLogic+0x4B4; ProcessCurrentShells writes a
+  current-shell **index** at +0x38 (0 = also no-match). Index is
+  named, not identity. Exact armor remains. BLK-0027 stays open.
+
+- AmmoController index live (`2026-08-17`): Dead Rail `01a00d6f`
+  32/32 walk, 32/32 descr round-trip, 32/32 index in-range, values
+  `{0}` only. Round-trip is live-proven; 0 is ambiguous (first shell
+  vs no-match). `+0x11C` 0/32 again. Next is compact-shell +0x20/+0x24
+  static. Exact armor remains. BLK-0027 stays open.
+
+- Compact-item nation/id (`2026-08-17`): ProcessCurrentShells compare
+  keys are nation (`+0x20`) and id (`+0x24`), not eShellKind. Oasis
+  `01a00d7a` 32/32 ident readable, nation 5, id 71, index `{0}`. Slot 0
+  is populated. Not ExactLoadedShell. Next is kind mapping. Exact
+  armor remains. BLK-0027 stays open.
+
+- eShellKind at Shell+0x114 (`2026-08-17`): XML `kind` store named
+  (0..5). Dead Rail `01a00d86` 32/32 kind=3 (kArmorPiercing) on slot 0
+  (nation 5 / id 71, same first-slot pair as Oasis). First-slot XML
+  kind, not a proven selection. Not ExactLoadedShell. Exact armor
+  remains. BLK-0027 stays open.
+
+- Magazine count live (`2026-08-17`): weapons `+0x1B0..+0x1B4`
+  pointer-array length. Dead Rail `01a00d92` 32/32 count=3, index
+  `{0}`, kind=3. Not a single-shell loadout. Not ExactLoadedShell.
+  Exact armor remains. BLK-0027 stays open.
+
+- Mixed magazine occupancy (`2026-08-17`): Oasis `01a00d96` walks
+  all three slots: kind mask 44 = kinds 2/3/5 (HE, AP, APCR),
+  readable 3/3, across early and mid-battle bursts. Current index
+  stayed `{0}` / kind 3. Count=3 now has two-replay repeatability
+  (Dead Rail + Oasis). Occupancy is not selection. Next is A->B->A
+  on this mixed magazine. Exact armor remains. BLK-0027 stays open.
+
+- Type-32 6-byte field is per-shot (`2026-08-17`): both Churchill
+  originals have 7/7 and 5/5 unique `shellSignatureHex` values. Not
+  eShellKind. Not a decoded shell type. BLK-0027 stays open.
+
+- Oasis full-battle index hunt (`2026-08-17`): `01a00e21` 932 samples
+  / 926 G2, index `{0}` / kind 3 only, magazine 3 / mask 44, reload
+  0 and 3 (122 samples firing). Clock 14.1–219.2 s; late shots
+  ~245–274 s not covered. No A->B->A on this window. Exact armor
+  remains. BLK-0027 stays open.

@@ -204,6 +204,22 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     private DateTimeOffset _lastHeartbeatLoggedAtUtc = DateTimeOffset.MinValue;
     private PenetrationCaptureHistory? _previousPenetrationCapture;
 
+    // Process-local ownership-walk reuse: rotator address only, never logged
+    // or returned. Keyed by authorization generation + module base +
+    // candidate index + expected vftable. The next sample re-reads the
+    // rotator's vftable under the lease and re-runs the five-read chain;
+    // mismatch drops the cache and AOB-scans again.
+    private readonly record struct CachedPenOwnershipWalk(
+        long Generation,
+        long ModuleBase,
+        int CandidateIndex,
+        uint ExpectedRotatorVftable,
+        long RotatorAddress,
+        int CandidateCount);
+
+    private readonly Lock _penWalkCacheLock = new();
+    private CachedPenOwnershipWalk? _cachedPenWalk;
+
     // Active launch leases owned by the coordinator until the session is revoked.
     private WindowsTrustedExecutableLaunchLease? _activeExecutableLease;
     private ManagedReplayArtifactLease? _activeArtifactLease;
@@ -1756,6 +1772,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     {
         _authorization?.ReadGate.Revoke();
         _authorization = null;
+        ClearPenOwnershipWalkCache();
         _authorizationCts?.Cancel();
         // Do not dispose this CTS here. Scan setup creates its linked source
         // under _gate; retaining the canceled source avoids a dispose/register
@@ -2548,7 +2565,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             // entity record).
             Type10EntityPositionAddressResult? resolved = null;
             if (request.RegionAnchor != EntityRecordRegionAnchor.AvatarStats
-                && request.RegionAnchor != EntityRecordRegionAnchor.PenOwnershipWalk)
+                && request.RegionAnchor != EntityRecordRegionAnchor.PenOwnershipWalk
+                && request.RegionAnchor != EntityRecordRegionAnchor.PenSemanticFields)
             {
                 OperationResult<Type10EntityPositionAddressResult> resolveResult =
                     await readerResult.Value.ResolveEntityPositionAddressAsync(
@@ -2705,6 +2723,77 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     PenOwnershipGunVtableConfirmed: walk.GunVtableConfirmed,
                     PenOwnershipEntityHpPlausible: walk.EntityHpPlausible,
                     PenOwnershipTwoPassStable: walk.TwoPassStable));
+            }
+            else if (request.RegionAnchor == EntityRecordRegionAnchor.PenSemanticFields)
+            {
+                PenSemanticFieldsResolution fields = await ResolvePenSemanticFieldsAsync(
+                    readerResult.Value,
+                    observation!,
+                    baseAddress,
+                    request.OwnershipCandidateIndex,
+                    readCancellation.Token).ConfigureAwait(false);
+                if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+                {
+                    return GateCheck<EntityRecordRegionReadResult>(
+                        "discover.gate_not_satisfied",
+                        "The offline-session gate is no longer satisfied.");
+                }
+
+                return OperationResult.Success(new EntityRecordRegionReadResult(
+                    _timeProvider.GetUtcNow(),
+                    layout.GameVersion,
+                    fields.Status,
+                    request.EntityId,
+                    replayTimeSeconds,
+                    null,
+                    fields.FailureStage,
+                    fields.Attempts,
+                    0,
+                    true,
+                    EntityIdentityRevalidated: false,
+                    ConsistentDoubleRead: fields.TwoPassStable,
+                    SameDecodedClockProven: sameDecodedClockProven,
+                    PenOwnershipRotatorCandidateCount: fields.RotatorCandidateCount,
+                    PenOwnershipOwnerPointerReadable: fields.OwnerPointerReadable,
+                    PenOwnershipForwardRoundTripConfirmed: fields.ForwardRoundTripConfirmed,
+                    PenOwnershipGunVtableConfirmed: fields.GunVtableConfirmed,
+                    PenOwnershipEntityHpPlausible: fields.EntityHpPlausible,
+                    PenOwnershipTwoPassStable: fields.WalkTwoPassStable,
+                    PenSemanticReloadEnumInRange: fields.ReloadEnumInRange,
+                    PenSemanticMarkerFinite: fields.MarkerFinite,
+                    PenSemanticMarkerDirectionUnit: fields.MarkerDirectionUnit,
+                    PenSemanticTwoPassStable: fields.TwoPassStable,
+                    PenSemanticReloadEnum: fields.ReloadEnum,
+                    PenSemanticMarkerYawRadians: fields.MarkerYawRadians,
+                    PenSemanticMarkerPitchRadians: fields.MarkerPitchRadians,
+                    PenSemanticHullYawRadians: fields.HullYawRadians,
+                    PenSemanticOriginHeightMeters: fields.OriginHeightMeters,
+                    PenSemanticOriginHorizontalMeters: fields.OriginHorizontalMeters,
+                    PenSemanticOriginInBand: fields.OriginInBand,
+                    PenSemanticOriginRelX: fields.OriginRelX,
+                    PenSemanticOriginRelY: fields.OriginRelY,
+                    PenSemanticOriginRelZ: fields.OriginRelZ,
+                    PenSemanticMuzzleDistanceHalfInBand: fields.MuzzleDistanceHalfInBand,
+                    PenSemanticMuzzleDistanceScalarInBand: fields.MuzzleDistanceScalarInBand,
+                    PenSemanticMuzzleDistanceHalfHeightMeters: fields.MuzzleDistanceHalfHeightMeters,
+                    PenSemanticMuzzleDistanceHalfHorizontalMeters: fields.MuzzleDistanceHalfHorizontalMeters,
+                    PenSemanticMuzzleDistanceScalarHeightMeters: fields.MuzzleDistanceScalarHeightMeters,
+                    PenSemanticMuzzleDistanceScalarHorizontalMeters: fields.MuzzleDistanceScalarHorizontalMeters,
+                    PenSemanticMatrixOriginHeightMeters: fields.MatrixOriginHeightMeters,
+                    PenSemanticMatrixOriginHorizontalMeters: fields.MatrixOriginHorizontalMeters,
+                    PenSemanticMatrixOriginInBand: fields.MatrixOriginInBand,
+                    PenSemanticAmmoShellIndex: fields.AmmoShellIndex,
+                    PenSemanticAmmoShellIndexInRange: fields.AmmoShellIndexInRange,
+                    PenSemanticAmmoDescrRoundTripConfirmed: fields.AmmoDescrRoundTripConfirmed,
+                    PenSemanticAmmoShellNation: fields.AmmoShellNation,
+                    PenSemanticAmmoShellItemId: fields.AmmoShellItemId,
+                    PenSemanticAmmoShellIdentReadable: fields.AmmoShellIdentReadable,
+                    PenSemanticAmmoShellNationInRange: fields.AmmoShellNationInRange,
+                    PenSemanticAmmoShellKind: fields.AmmoShellKind,
+                    PenSemanticAmmoShellKindInRange: fields.AmmoShellKindInRange,
+                    PenSemanticAmmoMagazineCount: fields.AmmoMagazineCount,
+                    PenSemanticAmmoMagazineKindMask: fields.AmmoMagazineKindMask,
+                    PenSemanticAmmoMagazineKindReadableSlots: fields.AmmoMagazineKindReadableSlots));
             }
             else
             {
@@ -3937,21 +4026,30 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         bool ForwardRoundTripConfirmed,
         bool GunVtableConfirmed,
         bool EntityHpPlausible,
-        bool TwoPassStable);
+        bool TwoPassStable,
+        long RotatorAddress = 0,
+        long GunAddress = 0,
+        long EntityAddress = 0);
 
     private readonly record struct OwnershipWalkPassVerdict(
         bool OwnerPointerReadable,
         bool ForwardRoundTripConfirmed,
         bool GunVtableConfirmed,
-        bool EntityHpPlausible);
+        bool EntityHpPlausible,
+        long OwnerAddress = 0,
+        long GunAddress = 0,
+        long EntityAddress = 0);
 
     /// <summary>
     /// The pen-ownership-walk anchor resolution (penetration v0.3 H1). Gated
     /// vftable AOB scan for the unique VehicleGunRotator
     /// (<c>moduleBase + <see cref="EntityRecordRegionReadRequest.VehicleGunRotatorVftableRva"/></c>),
     /// then the fixed five-read chain (rotator→owner→forward round-trip→gun
-    /// vftable→entity HP) twice, fail-closed. Only aggregate booleans/counts
-    /// are produced — no address, pointer, id, or raw bytes leave this method.
+    /// vftable→entity HP) twice, fail-closed. A confirmed walk may be reused
+    /// on the next sample after a vftable re-read under the same lease;
+    /// mismatch drops the cache and scans again. Only aggregate
+    /// booleans/counts are produced — no address, pointer, id, or raw bytes
+    /// leave this method.
     /// </summary>
     private async ValueTask<PenOwnershipWalkResolution> ResolvePenOwnershipWalkAsync(
         IAuthorizedMemoryReader reader,
@@ -3962,6 +4060,30 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     {
         uint expectedRotatorVftable = (uint)(baseAddress + EntityRecordRegionReadRequest.VehicleGunRotatorVftableRva);
         uint expectedGunVftable = (uint)(baseAddress + EntityRecordRegionReadRequest.VehicleGunVftableRva);
+        int index = candidateIndex ?? 0;
+
+        if (TryGetCachedPenWalk(
+                observation.Generation,
+                baseAddress,
+                index,
+                expectedRotatorVftable,
+                out long cachedRotator,
+                out int cachedCandidateCount))
+        {
+            PenOwnershipWalkResolution cached = await WalkAuthenticatedRotatorAsync(
+                reader,
+                cachedRotator,
+                expectedRotatorVftable,
+                expectedGunVftable,
+                cachedCandidateCount,
+                cancellationToken).ConfigureAwait(false);
+            if (cached.Status == Type10EntityPositionStatus.Resolved)
+            {
+                return cached;
+            }
+
+            ClearPenOwnershipWalkCache();
+        }
 
         byte[] expected = new byte[sizeof(uint)];
         BinaryPrimitives.WriteUInt32LittleEndian(expected, expectedRotatorVftable);
@@ -4010,7 +4132,6 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 false);
         }
 
-        int index = candidateIndex ?? 0;
         if (index < 0 || index >= candidates.Count)
         {
             return new PenOwnershipWalkResolution(
@@ -4026,12 +4147,45 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         }
 
         long rotatorAddress = candidates[index].AbsoluteAddress;
+        PenOwnershipWalkResolution walked = await WalkAuthenticatedRotatorAsync(
+            reader,
+            rotatorAddress,
+            expectedRotatorVftable,
+            expectedGunVftable,
+            candidates.Count,
+            cancellationToken).ConfigureAwait(false);
+        if (walked.Status == Type10EntityPositionStatus.Resolved)
+        {
+            StorePenOwnershipWalkCache(
+                observation.Generation,
+                baseAddress,
+                index,
+                expectedRotatorVftable,
+                rotatorAddress,
+                candidates.Count);
+        }
+        else
+        {
+            ClearPenOwnershipWalkCache();
+        }
 
+        return walked;
+    }
+
+    private static async ValueTask<PenOwnershipWalkResolution> WalkAuthenticatedRotatorAsync(
+        IAuthorizedMemoryReader reader,
+        long rotatorAddress,
+        uint expectedRotatorVftable,
+        uint expectedGunVftable,
+        int candidateCount,
+        CancellationToken cancellationToken)
+    {
         // Identity re-gate: the AOB scan matched the exact vftable dword, but
         // the discipline re-reads the object's vftable under the SAME guarded
         // lease before walking its pointers (never dereference off an
         // unauthenticated object — the avatar-stats anchor applies the same
-        // re-read before trusting its quad).
+        // re-read before trusting its quad). A cached rotator uses this
+        // same re-read so a recycled object cannot be walked.
         uint? rotatorVftable = await ReadPointerAsync(
             reader,
             rotatorAddress,
@@ -4042,7 +4196,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 Type10EntityPositionStatus.ReadFailed,
                 "pen-walk-identity-read",
                 1,
-                candidates.Count,
+                candidateCount,
                 false,
                 false,
                 false,
@@ -4056,7 +4210,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 Type10EntityPositionStatus.PenOwnershipWalkMismatch,
                 "pen-walk-identity-mismatch",
                 1,
-                candidates.Count,
+                candidateCount,
                 false,
                 false,
                 false,
@@ -4076,7 +4230,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 Type10EntityPositionStatus.ReadFailed,
                 "pen-walk-pass1-read",
                 2,
-                candidates.Count,
+                candidateCount,
                 false,
                 false,
                 false,
@@ -4096,7 +4250,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 Type10EntityPositionStatus.ReadFailed,
                 "pen-walk-pass2-read",
                 2,
-                candidates.Count,
+                candidateCount,
                 false,
                 false,
                 false,
@@ -4119,12 +4273,71 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             status,
             stable ? (allConfirmed ? null : "pen-walk-mismatch") : "pen-walk-unstable",
             2,
-            candidates.Count,
+            candidateCount,
             verdict.OwnerPointerReadable,
             verdict.ForwardRoundTripConfirmed,
             verdict.GunVtableConfirmed,
             verdict.EntityHpPlausible,
-            stable);
+            stable,
+            rotatorAddress,
+            verdict.GunAddress,
+            verdict.EntityAddress);
+    }
+
+    private bool TryGetCachedPenWalk(
+        long generation,
+        long moduleBase,
+        int candidateIndex,
+        uint expectedRotatorVftable,
+        out long rotatorAddress,
+        out int candidateCount)
+    {
+        lock (_penWalkCacheLock)
+        {
+            if (_cachedPenWalk is { } cached
+                && cached.Generation == generation
+                && cached.ModuleBase == moduleBase
+                && cached.CandidateIndex == candidateIndex
+                && cached.ExpectedRotatorVftable == expectedRotatorVftable
+                && cached.RotatorAddress != 0)
+            {
+                rotatorAddress = cached.RotatorAddress;
+                candidateCount = cached.CandidateCount;
+                return true;
+            }
+        }
+
+        rotatorAddress = 0;
+        candidateCount = 0;
+        return false;
+    }
+
+    private void StorePenOwnershipWalkCache(
+        long generation,
+        long moduleBase,
+        int candidateIndex,
+        uint expectedRotatorVftable,
+        long rotatorAddress,
+        int candidateCount)
+    {
+        lock (_penWalkCacheLock)
+        {
+            _cachedPenWalk = new CachedPenOwnershipWalk(
+                generation,
+                moduleBase,
+                candidateIndex,
+                expectedRotatorVftable,
+                rotatorAddress,
+                candidateCount);
+        }
+    }
+
+    private void ClearPenOwnershipWalkCache()
+    {
+        lock (_penWalkCacheLock)
+        {
+            _cachedPenWalk = null;
+        }
     }
 
     /// <summary>
@@ -4199,7 +4412,668 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             hpPlausible = hp >= 0;
         }
 
-        return new OwnershipWalkPassVerdict(true, forwardConfirmed, gunConfirmed, hpPlausible);
+        return new OwnershipWalkPassVerdict(
+            true,
+            forwardConfirmed,
+            gunConfirmed,
+            hpPlausible,
+            owner.Value,
+            gun ?? 0,
+            entity ?? 0);
+    }
+
+    private sealed record PenSemanticFieldsResolution(
+        Type10EntityPositionStatus Status,
+        string? FailureStage,
+        int Attempts,
+        int RotatorCandidateCount,
+        bool OwnerPointerReadable,
+        bool ForwardRoundTripConfirmed,
+        bool GunVtableConfirmed,
+        bool EntityHpPlausible,
+        bool WalkTwoPassStable,
+        bool ReloadEnumInRange,
+        bool MarkerFinite,
+        bool MarkerDirectionUnit,
+        bool TwoPassStable,
+        int? ReloadEnum,
+        double? MarkerYawRadians,
+        double? MarkerPitchRadians,
+        double? HullYawRadians,
+        double? OriginHeightMeters = null,
+        double? OriginHorizontalMeters = null,
+        bool OriginInBand = false,
+        double? OriginRelX = null,
+        double? OriginRelY = null,
+        double? OriginRelZ = null,
+        bool MuzzleDistanceHalfInBand = false,
+        bool MuzzleDistanceScalarInBand = false,
+        double? MuzzleDistanceHalfHeightMeters = null,
+        double? MuzzleDistanceHalfHorizontalMeters = null,
+        double? MuzzleDistanceScalarHeightMeters = null,
+        double? MuzzleDistanceScalarHorizontalMeters = null,
+        double? MatrixOriginHeightMeters = null,
+        double? MatrixOriginHorizontalMeters = null,
+        bool MatrixOriginInBand = false,
+        int? AmmoShellIndex = null,
+        bool AmmoShellIndexInRange = false,
+        bool AmmoDescrRoundTripConfirmed = false,
+        int? AmmoShellNation = null,
+        int? AmmoShellItemId = null,
+        bool AmmoShellIdentReadable = false,
+        bool AmmoShellNationInRange = false,
+        int? AmmoShellKind = null,
+        bool AmmoShellKindInRange = false,
+        int? AmmoMagazineCount = null,
+        int? AmmoMagazineKindMask = null,
+        int? AmmoMagazineKindReadableSlots = null);
+
+    /// <summary>
+    /// Phase 2–4 snapshot: ownership walk, then two-pass reads of the
+    /// published gun-marker, VehicleGun reload/state, entity hull yaw/pos,
+    /// and rotator+0x11C matrix translation. Addresses stay
+    /// coordinator-owned. Investigation yaw/pitch/enum and hull-relative
+    /// scalars may leave as diagnostics; raw region bytes do not.
+    /// </summary>
+    private async ValueTask<PenSemanticFieldsResolution> ResolvePenSemanticFieldsAsync(
+        IAuthorizedMemoryReader reader,
+        AuthorizedMemoryObservation observation,
+        long baseAddress,
+        int? candidateIndex,
+        CancellationToken cancellationToken)
+    {
+        PenOwnershipWalkResolution walk = await ResolvePenOwnershipWalkAsync(
+            reader,
+            observation,
+            baseAddress,
+            candidateIndex,
+            cancellationToken).ConfigureAwait(false);
+
+        if (walk.Status != Type10EntityPositionStatus.Resolved ||
+            walk.RotatorAddress == 0 ||
+            walk.GunAddress == 0 ||
+            walk.EntityAddress == 0)
+        {
+            return new PenSemanticFieldsResolution(
+                walk.Status,
+                walk.FailureStage ?? "pen-fields-walk",
+                walk.Attempts,
+                walk.RotatorCandidateCount,
+                walk.OwnerPointerReadable,
+                walk.ForwardRoundTripConfirmed,
+                walk.GunVtableConfirmed,
+                walk.EntityHpPlausible,
+                walk.TwoPassStable,
+                false,
+                false,
+                false,
+                false,
+                null,
+                null,
+                null,
+                null);
+        }
+
+        byte[]? marker1 = await ReadExactAsync(
+            reader,
+            walk.RotatorAddress + EntityRecordRegionReadRequest.PenMarkerPublishedOffset,
+            EntityRecordRegionReadRequest.PenMarkerPublishedLength,
+            cancellationToken).ConfigureAwait(false);
+        byte[]? reload1 = await ReadExactAsync(
+            reader,
+            walk.GunAddress + EntityRecordRegionReadRequest.PenGunReloadEnumOffset,
+            20,
+            cancellationToken).ConfigureAwait(false);
+        byte[]? hull1 = await ReadExactAsync(
+            reader,
+            walk.EntityAddress + EntityRecordRegionReadRequest.EntityHullYawOffset,
+            sizeof(float),
+            cancellationToken).ConfigureAwait(false);
+        byte[]? hullPos1 = await ReadExactAsync(
+            reader,
+            walk.EntityAddress + EntityRecordRegionReadRequest.EntityHullPositionOffset,
+            EntityRecordRegionReadRequest.EntityHullPositionLength,
+            cancellationToken).ConfigureAwait(false);
+        byte[]? matrix1 = await ReadExactAsync(
+            reader,
+            walk.RotatorAddress + EntityRecordRegionReadRequest.PenRotatorMatrixTranslationOffset,
+            EntityRecordRegionReadRequest.PenRotatorMatrixTranslationLength,
+            cancellationToken).ConfigureAwait(false);
+        byte[]? marker2 = await ReadExactAsync(
+            reader,
+            walk.RotatorAddress + EntityRecordRegionReadRequest.PenMarkerPublishedOffset,
+            EntityRecordRegionReadRequest.PenMarkerPublishedLength,
+            cancellationToken).ConfigureAwait(false);
+        byte[]? reload2 = await ReadExactAsync(
+            reader,
+            walk.GunAddress + EntityRecordRegionReadRequest.PenGunReloadEnumOffset,
+            20,
+            cancellationToken).ConfigureAwait(false);
+        byte[]? hull2 = await ReadExactAsync(
+            reader,
+            walk.EntityAddress + EntityRecordRegionReadRequest.EntityHullYawOffset,
+            sizeof(float),
+            cancellationToken).ConfigureAwait(false);
+        byte[]? hullPos2 = await ReadExactAsync(
+            reader,
+            walk.EntityAddress + EntityRecordRegionReadRequest.EntityHullPositionOffset,
+            EntityRecordRegionReadRequest.EntityHullPositionLength,
+            cancellationToken).ConfigureAwait(false);
+        byte[]? matrix2 = await ReadExactAsync(
+            reader,
+            walk.RotatorAddress + EntityRecordRegionReadRequest.PenRotatorMatrixTranslationOffset,
+            EntityRecordRegionReadRequest.PenRotatorMatrixTranslationLength,
+            cancellationToken).ConfigureAwait(false);
+
+        if (marker1 is null || reload1 is null || hull1 is null || hullPos1 is null ||
+            matrix1 is null ||
+            marker2 is null || reload2 is null || hull2 is null || hullPos2 is null ||
+            matrix2 is null)
+        {
+            return new PenSemanticFieldsResolution(
+                Type10EntityPositionStatus.ReadFailed,
+                "pen-fields-read",
+                walk.Attempts + 1,
+                walk.RotatorCandidateCount,
+                walk.OwnerPointerReadable,
+                walk.ForwardRoundTripConfirmed,
+                walk.GunVtableConfirmed,
+                walk.EntityHpPlausible,
+                walk.TwoPassStable,
+                false,
+                false,
+                false,
+                false,
+                null,
+                null,
+                null,
+                null);
+        }
+
+        bool stable = marker1.AsSpan().SequenceEqual(marker2)
+            && reload1.AsSpan().SequenceEqual(reload2)
+            && hull1.AsSpan().SequenceEqual(hull2)
+            && hullPos1.AsSpan().SequenceEqual(hullPos2)
+            && matrix1.AsSpan().SequenceEqual(matrix2);
+
+        int reloadEnum = BinaryPrimitives.ReadInt32LittleEndian(reload1);
+        bool reloadInRange = reloadEnum >= 0 && reloadEnum <= 9;
+
+        // Published marker pos/dir are engine (x, z, y-up) — CAM-010 and the
+        // two-replay shot-join. Convert to decoded (x, y-up, z) before yaw/pitch
+        // or hull-relative origin scalars. World XYZ never leave this method.
+        float enginePx = BinaryPrimitives.ReadSingleLittleEndian(marker1.AsSpan(0, 4));
+        float enginePz = BinaryPrimitives.ReadSingleLittleEndian(marker1.AsSpan(4, 4));
+        float enginePy = BinaryPrimitives.ReadSingleLittleEndian(marker1.AsSpan(8, 4));
+        float engineDx = BinaryPrimitives.ReadSingleLittleEndian(marker1.AsSpan(12, 4));
+        float engineDz = BinaryPrimitives.ReadSingleLittleEndian(marker1.AsSpan(16, 4));
+        float engineDy = BinaryPrimitives.ReadSingleLittleEndian(marker1.AsSpan(20, 4));
+        float px = enginePx;
+        float py = enginePy;
+        float pz = enginePz;
+        float dx = engineDx;
+        float dy = engineDy;
+        float dz = engineDz;
+        float scalar = BinaryPrimitives.ReadSingleLittleEndian(marker1.AsSpan(24, 4));
+        bool markerFinite = float.IsFinite(px) && float.IsFinite(py) && float.IsFinite(pz)
+            && float.IsFinite(dx) && float.IsFinite(dy) && float.IsFinite(dz)
+            && float.IsFinite(scalar);
+        double dirLength = Math.Sqrt((dx * (double)dx) + (dy * (double)dy) + (dz * (double)dz));
+        bool markerUnit = markerFinite && dirLength >= 0.85 && dirLength <= 1.15;
+
+        double? markerYaw = null;
+        double? markerPitch = null;
+        if (markerFinite && dirLength > 1e-6)
+        {
+            markerYaw = Math.Atan2(dx, dz);
+            double ny = Math.Clamp(dy / dirLength, -1.0, 1.0);
+            markerPitch = Math.Asin(ny);
+        }
+
+        float hullYaw = BinaryPrimitives.ReadSingleLittleEndian(hull1);
+        double? hullYawRadians = float.IsFinite(hullYaw) ? hullYaw : null;
+
+        float hullX = BinaryPrimitives.ReadSingleLittleEndian(hullPos1.AsSpan(0, 4));
+        float hullY = BinaryPrimitives.ReadSingleLittleEndian(hullPos1.AsSpan(4, 4));
+        float hullZ = BinaryPrimitives.ReadSingleLittleEndian(hullPos1.AsSpan(8, 4));
+        double? originHeight = null;
+        double? originHorizontal = null;
+        bool originInBand = false;
+        double? originRelX = null;
+        double? originRelY = null;
+        double? originRelZ = null;
+        if (markerFinite
+            && float.IsFinite(hullX) && float.IsFinite(hullY) && float.IsFinite(hullZ))
+        {
+            double relX = px - (double)hullX;
+            double relY = py - (double)hullY;
+            double relZ = pz - (double)hullZ;
+            originRelX = relX;
+            originRelY = relY;
+            originRelZ = relZ;
+            originHeight = relY;
+            originHorizontal = Math.Sqrt((relX * relX) + (relZ * relZ));
+            originInBand = originHeight >= EntityRecordRegionReadRequest.PenOriginHeightMinMeters
+                && originHeight <= EntityRecordRegionReadRequest.PenOriginHeightMaxMeters
+                && originHorizontal <= EntityRecordRegionReadRequest.PenOriginHorizontalMaxMeters;
+        }
+
+        bool muzzleHalfInBand = false;
+        bool muzzleScalarInBand = false;
+        double? muzzleHalfHeight = null;
+        double? muzzleHalfHorizontal = null;
+        double? muzzleScalarHeight = null;
+        double? muzzleScalarHorizontal = null;
+        if (markerFinite && markerUnit && float.IsFinite(scalar)
+            && float.IsFinite(hullX) && float.IsFinite(hullY) && float.IsFinite(hullZ))
+        {
+            ScoreMuzzleReconstruction(
+                px, py, pz, dx, dy, dz, scalar, 1.0, hullX, hullY, hullZ,
+                out muzzleHalfHeight, out muzzleHalfHorizontal, out muzzleHalfInBand);
+            ScoreMuzzleReconstruction(
+                px, py, pz, dx, dy, dz, scalar, 0.5, hullX, hullY, hullZ,
+                out muzzleScalarHeight, out muzzleScalarHorizontal, out muzzleScalarInBand);
+        }
+
+        // FUN_01ed2040 copies FUN_0133a410's 64-byte matrix to rotator+0xEC.
+        // FUN_0271a330 treats matrix+0x30 as translation => rotator+0x11C.
+        // Same engine (x, z, y-up) as the published marker. Unpromoted.
+        double? matrixHeight = null;
+        double? matrixHorizontal = null;
+        bool matrixInBand = false;
+        if (float.IsFinite(hullX) && float.IsFinite(hullY) && float.IsFinite(hullZ))
+        {
+            float engineMx = BinaryPrimitives.ReadSingleLittleEndian(matrix1.AsSpan(0, 4));
+            float engineMz = BinaryPrimitives.ReadSingleLittleEndian(matrix1.AsSpan(4, 4));
+            float engineMy = BinaryPrimitives.ReadSingleLittleEndian(matrix1.AsSpan(8, 4));
+            float mx = engineMx;
+            float my = engineMy;
+            float mz = engineMz;
+            if (float.IsFinite(mx) && float.IsFinite(my) && float.IsFinite(mz))
+            {
+                double relX = mx - (double)hullX;
+                double relY = my - (double)hullY;
+                double relZ = mz - (double)hullZ;
+                matrixHeight = relY;
+                matrixHorizontal = Math.Sqrt((relX * relX) + (relZ * relZ));
+                matrixInBand = matrixHeight >= EntityRecordRegionReadRequest.PenOriginHeightMinMeters
+                    && matrixHeight <= EntityRecordRegionReadRequest.PenOriginHeightMaxMeters
+                    && matrixHorizontal <= EntityRecordRegionReadRequest.PenOriginHorizontalMaxMeters;
+            }
+        }
+
+        int? ammoIndex = null;
+        bool ammoInRange = false;
+        bool ammoDescrRoundTrip = false;
+        int? ammoNation = null;
+        int? ammoItemId = null;
+        bool ammoIdentReadable = false;
+        bool ammoNationInRange = false;
+        int? ammoKind = null;
+        bool ammoKindInRange = false;
+        int? ammoMagazineCount = null;
+        int? ammoMagazineKindMask = null;
+        int? ammoMagazineKindReadableSlots = null;
+        byte[]? ownerPtr1 = await ReadExactAsync(
+            reader,
+            walk.RotatorAddress + EntityRecordRegionReadRequest.PenOwnershipRotatorOwnerOffset,
+            sizeof(uint),
+            cancellationToken).ConfigureAwait(false);
+        byte[]? ownerPtr2 = await ReadExactAsync(
+            reader,
+            walk.RotatorAddress + EntityRecordRegionReadRequest.PenOwnershipRotatorOwnerOffset,
+            sizeof(uint),
+            cancellationToken).ConfigureAwait(false);
+        if (ownerPtr1 is not null &&
+            ownerPtr2 is not null &&
+            ownerPtr1.AsSpan().SequenceEqual(ownerPtr2))
+        {
+            uint owner = BinaryPrimitives.ReadUInt32LittleEndian(ownerPtr1);
+            if (owner != 0)
+            {
+                long ammoBase = owner + EntityRecordRegionReadRequest.PenAmmoControllerEmbeddedOffset;
+                byte[]? ammoIdx1 = await ReadExactAsync(
+                    reader,
+                    ammoBase + EntityRecordRegionReadRequest.PenAmmoCurrentShellIndexOffset,
+                    sizeof(int),
+                    cancellationToken).ConfigureAwait(false);
+                byte[]? ammoIdx2 = await ReadExactAsync(
+                    reader,
+                    ammoBase + EntityRecordRegionReadRequest.PenAmmoCurrentShellIndexOffset,
+                    sizeof(int),
+                    cancellationToken).ConfigureAwait(false);
+                if (ammoIdx1 is not null &&
+                    ammoIdx2 is not null &&
+                    ammoIdx1.AsSpan().SequenceEqual(ammoIdx2))
+                {
+                    int idx = BinaryPrimitives.ReadInt32LittleEndian(ammoIdx1);
+                    ammoIndex = idx;
+                    ammoInRange = idx >= 0
+                        && idx <= EntityRecordRegionReadRequest.PenAmmoShellIndexMaxInclusive;
+                }
+
+                byte[]? descrAmmo1 = await ReadExactAsync(
+                    reader,
+                    ammoBase + EntityRecordRegionReadRequest.PenAmmoVehicleTypeDescriptorOffset,
+                    sizeof(uint),
+                    cancellationToken).ConfigureAwait(false);
+                byte[]? descrAmmo2 = await ReadExactAsync(
+                    reader,
+                    ammoBase + EntityRecordRegionReadRequest.PenAmmoVehicleTypeDescriptorOffset,
+                    sizeof(uint),
+                    cancellationToken).ConfigureAwait(false);
+                byte[]? descrRot1 = await ReadExactAsync(
+                    reader,
+                    walk.RotatorAddress
+                        + EntityRecordRegionReadRequest.PenRotatorVehicleTypeDescriptorOffset,
+                    sizeof(uint),
+                    cancellationToken).ConfigureAwait(false);
+                byte[]? descrRot2 = await ReadExactAsync(
+                    reader,
+                    walk.RotatorAddress
+                        + EntityRecordRegionReadRequest.PenRotatorVehicleTypeDescriptorOffset,
+                    sizeof(uint),
+                    cancellationToken).ConfigureAwait(false);
+                uint descrRot = 0;
+                if (descrAmmo1 is not null &&
+                    descrAmmo2 is not null &&
+                    descrRot1 is not null &&
+                    descrRot2 is not null &&
+                    descrAmmo1.AsSpan().SequenceEqual(descrAmmo2) &&
+                    descrRot1.AsSpan().SequenceEqual(descrRot2))
+                {
+                    uint descrAmmo = BinaryPrimitives.ReadUInt32LittleEndian(descrAmmo1);
+                    descrRot = BinaryPrimitives.ReadUInt32LittleEndian(descrRot1);
+                    ammoDescrRoundTrip = descrAmmo != 0 && descrAmmo == descrRot;
+                }
+
+                if (ammoIndex is int shellIndex &&
+                    descrRot != 0 &&
+                    shellIndex >= 0)
+                {
+                    CompactShellIdentityRead ident = await TryReadCompactShellIdentityAsync(
+                        reader,
+                        descrRot,
+                        shellIndex,
+                        cancellationToken).ConfigureAwait(false);
+                    ammoNation = ident.Nation;
+                    ammoItemId = ident.ItemId;
+                    ammoIdentReadable = ident.Readable;
+                    ammoNationInRange = ident.NationInRange;
+                    ammoKind = ident.Kind;
+                    ammoKindInRange = ident.KindInRange;
+                    ammoMagazineCount = ident.MagazineCount;
+                    ammoMagazineKindMask = ident.KindMask;
+                    ammoMagazineKindReadableSlots = ident.KindReadableSlots;
+                }
+            }
+        }
+
+        Type10EntityPositionStatus status = !stable
+            ? Type10EntityPositionStatus.PenOwnershipWalkUnstable
+            : Type10EntityPositionStatus.Resolved;
+        return new PenSemanticFieldsResolution(
+            status,
+            stable ? null : "pen-fields-unstable",
+            walk.Attempts + 2,
+            walk.RotatorCandidateCount,
+            walk.OwnerPointerReadable,
+            walk.ForwardRoundTripConfirmed,
+            walk.GunVtableConfirmed,
+            walk.EntityHpPlausible,
+            walk.TwoPassStable,
+            reloadInRange,
+            markerFinite,
+            markerUnit,
+            stable,
+            reloadEnum,
+            markerYaw,
+            markerPitch,
+            hullYawRadians,
+            originHeight,
+            originHorizontal,
+            originInBand,
+            originRelX,
+            originRelY,
+            originRelZ,
+            muzzleHalfInBand,
+            muzzleScalarInBand,
+            muzzleHalfHeight,
+            muzzleHalfHorizontal,
+            muzzleScalarHeight,
+            muzzleScalarHorizontal,
+            matrixHeight,
+            matrixHorizontal,
+            matrixInBand,
+            ammoIndex,
+            ammoInRange,
+            ammoDescrRoundTrip,
+            ammoNation,
+            ammoItemId,
+            ammoIdentReadable,
+            ammoNationInRange,
+            ammoKind,
+            ammoKindInRange,
+            ammoMagazineCount,
+            ammoMagazineKindMask,
+            ammoMagazineKindReadableSlots);
+    }
+
+    private readonly record struct CompactShellIdentityRead(
+        int? Nation,
+        int? ItemId,
+        bool Readable,
+        bool NationInRange,
+        int? Kind,
+        bool KindInRange,
+        int? MagazineCount,
+        int? KindMask,
+        int? KindReadableSlots);
+
+    private static async ValueTask<CompactShellIdentityRead> TryReadCompactShellIdentityAsync(
+        IAuthorizedMemoryReader reader,
+        uint descriptorAddress,
+        int shellIndex,
+        CancellationToken cancellationToken)
+    {
+        CompactShellIdentityRead unread = new(
+            null, null, false, false, null, false, null, null, null);
+        uint? weapons = await ReadStableUInt32Async(
+            reader,
+            descriptorAddress + EntityRecordRegionReadRequest.PenVehicleTypeDescriptorWeaponsOffset,
+            cancellationToken).ConfigureAwait(false);
+        if (weapons is null or 0)
+        {
+            return unread;
+        }
+
+        uint? begin = await ReadStableUInt32Async(
+            reader,
+            weapons.Value + EntityRecordRegionReadRequest.PenWeaponsCompactShellArrayBeginOffset,
+            cancellationToken).ConfigureAwait(false);
+        uint? end = await ReadStableUInt32Async(
+            reader,
+            weapons.Value + EntityRecordRegionReadRequest.PenWeaponsCompactShellArrayEndOffset,
+            cancellationToken).ConfigureAwait(false);
+        if (begin is null or 0 ||
+            end is null ||
+            end.Value < begin.Value)
+        {
+            return unread;
+        }
+
+        int count = (int)((end.Value - begin.Value) / sizeof(uint));
+        if (count < 0 ||
+            count > EntityRecordRegionReadRequest.PenAmmoShellIndexMaxInclusive + 1)
+        {
+            return unread;
+        }
+
+        int? nation = null;
+        int? itemId = null;
+        bool identReadable = false;
+        bool nationInRange = false;
+        int? currentKind = null;
+        bool currentKindInRange = false;
+        int kindMask = 0;
+        int kindReadableSlots = 0;
+
+        for (int slot = 0; slot < count; slot++)
+        {
+            uint? item = await ReadStableUInt32Async(
+                reader,
+                begin.Value + (uint)(slot * sizeof(uint)),
+                cancellationToken).ConfigureAwait(false);
+            if (item is null or 0)
+            {
+                continue;
+            }
+
+            uint? ident = await ReadStableUInt32Async(
+                reader,
+                item.Value + EntityRecordRegionReadRequest.PenCompactShellIdentOffset,
+                cancellationToken).ConfigureAwait(false);
+            if (ident is null or 0)
+            {
+                continue;
+            }
+
+            uint? kindRaw = await ReadStableUInt32Async(
+                reader,
+                ident.Value + EntityRecordRegionReadRequest.PenCompactItemShellKindOffset,
+                cancellationToken).ConfigureAwait(false);
+            if (kindRaw is not null)
+            {
+                int slotKind = (int)kindRaw.Value;
+                if (slotKind >= 0 &&
+                    slotKind <= EntityRecordRegionReadRequest.PenCompactItemShellKindMaxInclusive)
+                {
+                    kindReadableSlots++;
+                    kindMask |= 1 << slotKind;
+                }
+
+                if (slot == shellIndex)
+                {
+                    currentKind = slotKind;
+                    currentKindInRange = slotKind >= 0
+                        && slotKind <= EntityRecordRegionReadRequest.PenCompactItemShellKindMaxInclusive;
+                }
+            }
+
+            if (slot != shellIndex)
+            {
+                continue;
+            }
+
+            uint? nationRaw = await ReadStableUInt32Async(
+                reader,
+                ident.Value + EntityRecordRegionReadRequest.PenCompactItemNationOffset,
+                cancellationToken).ConfigureAwait(false);
+            uint? itemIdRaw = await ReadStableUInt32Async(
+                reader,
+                ident.Value + EntityRecordRegionReadRequest.PenCompactItemIdOffset,
+                cancellationToken).ConfigureAwait(false);
+            if (nationRaw is null || itemIdRaw is null)
+            {
+                continue;
+            }
+
+            nation = (int)nationRaw.Value;
+            itemId = (int)itemIdRaw.Value;
+            identReadable = true;
+            nationInRange = nation >= 0
+                && nation <= EntityRecordRegionReadRequest.PenCompactItemNationMaxInclusive;
+        }
+
+        return new CompactShellIdentityRead(
+            nation,
+            itemId,
+            identReadable,
+            nationInRange,
+            currentKind,
+            currentKindInRange,
+            count,
+            kindMask,
+            kindReadableSlots);
+    }
+
+    private static void ScoreMuzzleReconstruction(
+        float hitX,
+        float hitY,
+        float hitZ,
+        float dirX,
+        float dirY,
+        float dirZ,
+        float scalar,
+        double param3,
+        float hullX,
+        float hullY,
+        float hullZ,
+        out double? height,
+        out double? horizontal,
+        out bool inBand)
+    {
+        height = null;
+        horizontal = null;
+        inBand = false;
+        if (!GunMarkerMuzzle.TryReconstructStart(
+                hitX, hitY, hitZ, dirX, dirY, dirZ, scalar, param3,
+                out double startX, out double startY, out double startZ))
+        {
+            return;
+        }
+
+        double relX = startX - hullX;
+        double relY = startY - hullY;
+        double relZ = startZ - hullZ;
+        height = relY;
+        horizontal = Math.Sqrt((relX * relX) + (relZ * relZ));
+        inBand = height >= EntityRecordRegionReadRequest.PenOriginHeightMinMeters
+            && height <= EntityRecordRegionReadRequest.PenOriginHeightMaxMeters
+            && horizontal <= EntityRecordRegionReadRequest.PenOriginHorizontalMaxMeters;
+    }
+
+    private static async ValueTask<byte[]?> ReadExactAsync(
+        IAuthorizedMemoryReader reader,
+        long address,
+        int length,
+        CancellationToken cancellationToken)
+    {
+        OperationResult<byte[]> result = await reader.ReadAsync(
+            (nint)address,
+            length,
+            cancellationToken).ConfigureAwait(false);
+        if (!result.IsSuccess || result.Value is null || result.Value.Length != length)
+        {
+            return null;
+        }
+
+        return result.Value;
+    }
+
+    private static async ValueTask<uint?> ReadStableUInt32Async(
+        IAuthorizedMemoryReader reader,
+        long address,
+        CancellationToken cancellationToken)
+    {
+        byte[]? first = await ReadExactAsync(
+            reader,
+            address,
+            sizeof(uint),
+            cancellationToken).ConfigureAwait(false);
+        byte[]? second = await ReadExactAsync(
+            reader,
+            address,
+            sizeof(uint),
+            cancellationToken).ConfigureAwait(false);
+        if (first is null ||
+            second is null ||
+            !first.AsSpan().SequenceEqual(second))
+        {
+            return null;
+        }
+
+        return BinaryPrimitives.ReadUInt32LittleEndian(first);
     }
 
     /// <summary>

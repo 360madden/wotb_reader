@@ -354,6 +354,7 @@ docs/operations/handoffs/2026-08-16-pen-capture-owner-census-source.md
 docs/operations/handoffs/2026-08-16-pen-ownership-walk-live-validation.md
 docs/operations/handoffs/2026-08-16-pen-ownership-walk-live.md
 docs/operations/handoffs/2026-08-16-pen-ownership-walk-static.md
+docs/operations/handoffs/2026-08-16-pen-semantic-fields-live.md
 docs/operations/handoffs/2026-08-16-rendezvous-webjson-acl-hardening.md
 docs/operations/handoffs/2026-08-16-sqlite-pooling-race-fix.md
 docs/operations/handoffs/README.md
@@ -452,6 +453,7 @@ scripts/camera-double-read-measurement.ps1
 scripts/capture-pen-aims.ps1
 scripts/capture-pen-census.ps1
 scripts/capture-pen-ownership-walk.ps1
+scripts/capture-pen-semantic-fields.ps1
 scripts/click-hangar-replay.ps1
 scripts/click-watch-offline.ps1
 scripts/codex-agent-config-check.ps1
@@ -530,11 +532,13 @@ src/WotBTreader.Application/Game/GameSessionContracts.cs
 src/WotBTreader.Application/Game/OverlayPenetrationData.cs
 src/WotBTreader.Application/Game/PenetrationCaptureContracts.cs
 src/WotBTreader.Application/Properties/AssemblyInfo.cs
+src/WotBTreader.Application/Replay/GunMarkerMuzzle.cs
 src/WotBTreader.Application/Replay/LiveFrameProjector.cs
 src/WotBTreader.Application/Replay/OffsetTableReader.cs
 src/WotBTreader.Application/Replay/OverlayFrameProjection.cs
 src/WotBTreader.Application/Replay/PenOfflineScorer.cs
 src/WotBTreader.Application/Replay/ProjectionCache.cs
+src/WotBTreader.Application/Replay/PublishedMarkerShotJoin.cs
 src/WotBTreader.Application/Replay/ReplayContracts.cs
 src/WotBTreader.Application/Replay/ReplayDecoderRegistry.cs
 src/WotBTreader.Application/Replay/ReplayFrameSource.cs
@@ -816,6 +820,7 @@ src/WotBTreader.Storage.Sqlite/StorageLog.cs
 src/WotBTreader.Storage.Sqlite/WotBTreader.Storage.Sqlite.csproj
 src/WotBTreader.Storage.Sqlite/packages.lock.json
 test.cmd
+tests/WotBTreader.Application.Tests/GunMarkerMuzzleTests.cs
 tests/WotBTreader.Application.Tests/LiveFrameProjectorTests.cs
 tests/WotBTreader.Application.Tests/MSTestSettings.cs
 tests/WotBTreader.Application.Tests/OffsetTableReaderTests.cs
@@ -823,6 +828,7 @@ tests/WotBTreader.Application.Tests/OverlayFrameProjectorTests.cs
 tests/WotBTreader.Application.Tests/PenOfflineScorerTests.cs
 tests/WotBTreader.Application.Tests/PenetrationContextTests.cs
 tests/WotBTreader.Application.Tests/ProjectionCacheTests.cs
+tests/WotBTreader.Application.Tests/PublishedMarkerShotJoinTests.cs
 tests/WotBTreader.Application.Tests/ReplayDecoderRegistryTests.cs
 tests/WotBTreader.Application.Tests/ReplayFrameSourceTests.cs
 tests/WotBTreader.Application.Tests/ReplayIngestionServiceTests.cs

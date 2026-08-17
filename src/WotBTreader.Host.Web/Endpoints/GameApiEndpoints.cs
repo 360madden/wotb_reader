@@ -1000,6 +1000,41 @@ internal static class GameApiEndpoints
             PenOwnershipGunVtableConfirmed = read.PenOwnershipGunVtableConfirmed,
             PenOwnershipEntityHpPlausible = read.PenOwnershipEntityHpPlausible,
             PenOwnershipTwoPassStable = read.PenOwnershipTwoPassStable,
+            PenSemanticReloadEnumInRange = read.PenSemanticReloadEnumInRange,
+            PenSemanticMarkerFinite = read.PenSemanticMarkerFinite,
+            PenSemanticMarkerDirectionUnit = read.PenSemanticMarkerDirectionUnit,
+            PenSemanticTwoPassStable = read.PenSemanticTwoPassStable,
+            PenSemanticReloadEnum = read.PenSemanticReloadEnum,
+            PenSemanticMarkerYawRadians = read.PenSemanticMarkerYawRadians,
+            PenSemanticMarkerPitchRadians = read.PenSemanticMarkerPitchRadians,
+            PenSemanticHullYawRadians = read.PenSemanticHullYawRadians,
+            PenSemanticOriginHeightMeters = read.PenSemanticOriginHeightMeters,
+            PenSemanticOriginHorizontalMeters = read.PenSemanticOriginHorizontalMeters,
+            PenSemanticOriginInBand = read.PenSemanticOriginInBand,
+            PenSemanticOriginRelX = read.PenSemanticOriginRelX,
+            PenSemanticOriginRelY = read.PenSemanticOriginRelY,
+            PenSemanticOriginRelZ = read.PenSemanticOriginRelZ,
+            PenSemanticMuzzleDistanceHalfInBand = read.PenSemanticMuzzleDistanceHalfInBand,
+            PenSemanticMuzzleDistanceScalarInBand = read.PenSemanticMuzzleDistanceScalarInBand,
+            PenSemanticMuzzleDistanceHalfHeightMeters = read.PenSemanticMuzzleDistanceHalfHeightMeters,
+            PenSemanticMuzzleDistanceHalfHorizontalMeters = read.PenSemanticMuzzleDistanceHalfHorizontalMeters,
+            PenSemanticMuzzleDistanceScalarHeightMeters = read.PenSemanticMuzzleDistanceScalarHeightMeters,
+            PenSemanticMuzzleDistanceScalarHorizontalMeters = read.PenSemanticMuzzleDistanceScalarHorizontalMeters,
+            PenSemanticMatrixOriginHeightMeters = read.PenSemanticMatrixOriginHeightMeters,
+            PenSemanticMatrixOriginHorizontalMeters = read.PenSemanticMatrixOriginHorizontalMeters,
+            PenSemanticMatrixOriginInBand = read.PenSemanticMatrixOriginInBand,
+            PenSemanticAmmoShellIndex = read.PenSemanticAmmoShellIndex,
+            PenSemanticAmmoShellIndexInRange = read.PenSemanticAmmoShellIndexInRange,
+            PenSemanticAmmoDescrRoundTripConfirmed = read.PenSemanticAmmoDescrRoundTripConfirmed,
+            PenSemanticAmmoShellNation = read.PenSemanticAmmoShellNation,
+            PenSemanticAmmoShellItemId = read.PenSemanticAmmoShellItemId,
+            PenSemanticAmmoShellIdentReadable = read.PenSemanticAmmoShellIdentReadable,
+            PenSemanticAmmoShellNationInRange = read.PenSemanticAmmoShellNationInRange,
+            PenSemanticAmmoShellKind = read.PenSemanticAmmoShellKind,
+            PenSemanticAmmoShellKindInRange = read.PenSemanticAmmoShellKindInRange,
+            PenSemanticAmmoMagazineCount = read.PenSemanticAmmoMagazineCount,
+            PenSemanticAmmoMagazineKindMask = read.PenSemanticAmmoMagazineKindMask,
+            PenSemanticAmmoMagazineKindReadableSlots = read.PenSemanticAmmoMagazineKindReadableSlots,
         });
     }
 
@@ -1377,6 +1412,9 @@ internal static class GameApiEndpoints
                 return true;
             case "pen-ownership-walk":
                 anchor = EntityRecordRegionAnchor.PenOwnershipWalk;
+                return true;
+            case "pen-semantic-fields":
+                anchor = EntityRecordRegionAnchor.PenSemanticFields;
                 return true;
             default:
                 anchor = EntityRecordRegionAnchor.RingRecord;

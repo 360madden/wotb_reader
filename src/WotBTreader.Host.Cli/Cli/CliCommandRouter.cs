@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using WotBTreader.Application.Capture;
 using WotBTreader.Application.Diagnostics;
@@ -45,6 +46,8 @@ public sealed class CliCommandRouter
         "watch",
         "hp-diff",
         "yaw-diff",
+        "marker-join",
+        "marker-shots",
         "overlay-frame",
         "overlay-strip",
         "beacon",
@@ -121,6 +124,8 @@ public sealed class CliCommandRouter
             "watch" => await WatchAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "hp-diff" => await HpDiffAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "yaw-diff" => await YawDiffAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
+            "marker-join" => await MarkerJoinAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
+            "marker-shots" => await MarkerShotsAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "overlay-frame" => await OverlayFrameAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "overlay-strip" => await OverlayStripAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "beacon" => await BeaconAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
@@ -1192,6 +1197,237 @@ public sealed class CliCommandRouter
         return Success(data, $"Beacon '{name}' removed.", correlationId);
     }
 
+    /// <summary>
+    /// Lists decoded viewpoint-attacker ShotImpact replay-clock times so a
+    /// live capture can start near the first shot. Seconds only; not
+    /// ExactGunRay and not a join.
+    /// </summary>
+    private async ValueTask<CliExecution> MarkerShotsAsync(
+        CliInvocation invocation,
+        Guid correlationId,
+        CancellationToken cancellationToken)
+    {
+        if (invocation.Positionals.Count != 0)
+        {
+            return Invalid(
+                "cli.marker-shots.arguments",
+                "marker-shots takes no positional arguments.",
+                correlationId);
+        }
+
+        if (!invocation.Options.TryGetValue("session", out string? sessionText) ||
+            !Guid.TryParse(sessionText, out Guid sessionGuid))
+        {
+            return Invalid(
+                "cli.marker-shots.session",
+                "marker-shots requires --session <battle-session-guid>.",
+                correlationId);
+        }
+
+        OperationResult<ReplayDecodeProjection> projection = await _sessions
+            .GetProjectionAsync(new BattleSessionId(sessionGuid), cancellationToken)
+            .ConfigureAwait(false);
+        if (!projection.IsSuccess || projection.Value is null)
+        {
+            return FromResult(projection, correlationId, "Viewpoint shot times listed.");
+        }
+
+        IReadOnlyList<TimeSpan> times = PublishedMarkerShotJoin.ListViewpointShotTimes(projection.Value);
+        double[] seconds = new double[times.Count];
+        for (int i = 0; i < times.Count; i++)
+        {
+            seconds[i] = times[i].TotalSeconds;
+        }
+
+        IReadOnlyList<ViewpointShellSignatureCount> signatures =
+            PublishedMarkerShotJoin.ListViewpointShellSignatures(projection.Value);
+        object data = new
+        {
+            command = "marker-shots",
+            sessionId = sessionGuid,
+            viewpointShots = seconds.Length,
+            shotReplaySeconds = seconds,
+            distinctShellSignatures = signatures.Count,
+            shellSignatures = signatures.Select(row => new { hex = row.Hex, count = row.Count }),
+        };
+        string message = seconds.Length == 0
+            ? "marker-shots viewpointShots=0"
+            : "marker-shots viewpointShots=" + seconds.Length.ToString(CultureInfo.InvariantCulture)
+                + " first=" + seconds[0].ToString("0.000", CultureInfo.InvariantCulture)
+                + " last=" + seconds[^1].ToString("0.000", CultureInfo.InvariantCulture)
+                + " distinctSigs=" + signatures.Count.ToString(CultureInfo.InvariantCulture)
+                + ".";
+        return Success(data, message, correlationId);
+    }
+
+    /// <summary>
+    /// Angular/clock join of persisted G2 published-marker samples to
+    /// decoded viewpoint ShotImpact events. Count-only; not ExactGunRay.
+    /// </summary>
+    private async ValueTask<CliExecution> MarkerJoinAsync(
+        CliInvocation invocation,
+        Guid correlationId,
+        CancellationToken cancellationToken)
+    {
+        if (invocation.Positionals.Count != 1)
+        {
+            return Invalid(
+                "cli.marker-join.arguments",
+                "marker-join requires one positional: the samples JSON file path.",
+                correlationId);
+        }
+
+        if (!invocation.Options.TryGetValue("session", out string? sessionText) ||
+            !Guid.TryParse(sessionText, out Guid sessionGuid))
+        {
+            return Invalid(
+                "cli.marker-join.session",
+                "marker-join requires --session <battle-session-guid>.",
+                correlationId);
+        }
+
+        string samplesPath = invocation.Positionals[0];
+        if (!File.Exists(samplesPath))
+        {
+            return Invalid(
+                "cli.marker-join.samples_missing",
+                "The samples JSON file was not found.",
+                correlationId,
+                CliExitCode.InvalidInput);
+        }
+
+        List<PublishedMarkerSample> samples;
+        try
+        {
+            string json = await File.ReadAllTextAsync(samplesPath, cancellationToken).ConfigureAwait(false);
+            using JsonDocument document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return Invalid(
+                    "cli.marker-join.samples_shape",
+                    "The samples file must be a JSON array.",
+                    correlationId,
+                    CliExitCode.InvalidInput);
+            }
+
+            samples = [];
+            foreach (JsonElement item in document.RootElement.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                if (!item.TryGetProperty("replayTimeSeconds", out JsonElement timeEl) ||
+                    !timeEl.TryGetDouble(out double seconds) ||
+                    !double.IsFinite(seconds) ||
+                    !item.TryGetProperty("sameDecodedClockProven", out JsonElement clockEl) ||
+                    clockEl.ValueKind != JsonValueKind.True)
+                {
+                    continue;
+                }
+
+                if (!item.TryGetProperty("markerYawRadians", out JsonElement yawEl) ||
+                    !yawEl.TryGetDouble(out double yaw) ||
+                    !double.IsFinite(yaw) ||
+                    !item.TryGetProperty("markerPitchRadians", out JsonElement pitchEl) ||
+                    !pitchEl.TryGetDouble(out double pitch) ||
+                    !double.IsFinite(pitch))
+                {
+                    continue;
+                }
+
+                double? relX = ReadOptionalFinite(item, "originRelX");
+                double? relY = ReadOptionalFinite(item, "originRelY");
+                double? relZ = ReadOptionalFinite(item, "originRelZ");
+                samples.Add(new PublishedMarkerSample(
+                    TimeSpan.FromSeconds(seconds),
+                    yaw,
+                    pitch,
+                    SameDecodedClockProven: true,
+                    relX,
+                    relY,
+                    relZ));
+            }
+        }
+        catch (JsonException)
+        {
+            return Invalid(
+                "cli.marker-join.samples_json",
+                "The samples file is not valid JSON.",
+                correlationId,
+                CliExitCode.InvalidInput);
+        }
+
+        TimeSpan maxLag = PublishedMarkerShotJoin.MaxLag;
+        if (invocation.Options.TryGetValue("max-lag-ms", out string? lagText))
+        {
+            if (!int.TryParse(lagText, out int lagMs) || lagMs < 0 || lagMs > 10_000)
+            {
+                return Invalid(
+                    "cli.marker-join.max_lag",
+                    "--max-lag-ms must be an integer between 0 and 10000.",
+                    correlationId);
+            }
+
+            maxLag = TimeSpan.FromMilliseconds(lagMs);
+        }
+
+        OperationResult<ReplayDecodeProjection> projection = await _sessions
+            .GetProjectionAsync(new BattleSessionId(sessionGuid), cancellationToken)
+            .ConfigureAwait(false);
+        if (!projection.IsSuccess || projection.Value is null)
+        {
+            return FromResult(projection, correlationId, "Marker join evaluated.");
+        }
+
+        PublishedMarkerJoinSummary summary = PublishedMarkerShotJoin.Evaluate(
+            projection.Value,
+            samples,
+            maxLag);
+        PublishedMarkerJoinDiagnostics diagnostics = PublishedMarkerShotJoin.Diagnose(
+            projection.Value,
+            samples,
+            maxLag);
+        object data = new
+        {
+            command = "marker-join",
+            sessionId = sessionGuid,
+            sampleCount = samples.Count,
+            maxLagMilliseconds = (int)maxLag.TotalMilliseconds,
+            viewpointShots = summary.ViewpointShots,
+            joined = summary.Joined,
+            noSampleBefore = summary.NoSampleBefore,
+            lagExceeded = summary.LagExceeded,
+            missingAttacker = summary.MissingAttacker,
+            missingViewpoint = summary.MissingViewpoint,
+            missingPosition = summary.MissingPosition,
+            compared = diagnostics.Compared,
+            joinedCenter15 = diagnostics.JoinedCenter15,
+            joinedCenter19 = diagnostics.JoinedCenter19,
+            joinedYzsSwap15 = diagnostics.JoinedYzsSwap15,
+            joinedYzsSwap19 = diagnostics.JoinedYzsSwap19,
+            joinedOriginToVictim = diagnostics.JoinedOriginToVictim,
+            errorLt10 = diagnostics.ErrorLt10,
+            error10To20 = diagnostics.Error10To20,
+            error20To45 = diagnostics.Error20To45,
+            errorGe45 = diagnostics.ErrorGe45,
+            medianErrorDegrees = diagnostics.MedianErrorDegrees,
+            maxErrorDegrees = diagnostics.MaxErrorDegrees,
+            medianYzsSwapErrorDegrees = diagnostics.MedianYzsSwapErrorDegrees,
+            maxYzsSwapErrorDegrees = diagnostics.MaxYzsSwapErrorDegrees,
+        };
+        return Success(
+            data,
+            "Marker join viewpointShots=" + summary.ViewpointShots
+                + " joined=" + summary.Joined
+                + " compared=" + diagnostics.Compared.ToString(CultureInfo.InvariantCulture)
+                + " medianDeg=" + FormatOptionalDegrees(diagnostics.MedianErrorDegrees)
+                + " yzSwapJoined=" + diagnostics.JoinedYzsSwap15.ToString(CultureInfo.InvariantCulture)
+                + ".",
+            correlationId);
+    }
+
     /// <summary>Runs non-mutating health checks and returns the report.</summary>
     private async ValueTask<CliExecution> DoctorAsync(
         CliInvocation invocation,
@@ -2097,6 +2333,23 @@ public sealed class CliCommandRouter
             error.Retryable,
             result.Warnings);
     }
+
+    private static double? ReadOptionalFinite(JsonElement item, string name)
+    {
+        if (!item.TryGetProperty(name, out JsonElement el)
+            || !el.TryGetDouble(out double value)
+            || !double.IsFinite(value))
+        {
+            return null;
+        }
+
+        return value;
+    }
+
+    private static string FormatOptionalDegrees(double? degrees) =>
+        degrees is { } value
+            ? value.ToString("0.0", CultureInfo.InvariantCulture)
+            : "none";
 
     /// <summary>Builds a successful CLI execution envelope.</summary>
     private static CliExecution Success(

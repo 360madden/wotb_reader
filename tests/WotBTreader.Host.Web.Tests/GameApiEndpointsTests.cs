@@ -1324,6 +1324,107 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task EntityRegion_PenSemanticFieldsAnchor_ForwardsAndEchoesAggregates()
+    {
+        var scanner = new FakeGameMemoryScanner
+        {
+            EntityRegionResult = OperationResult.Success(
+                new EntityRecordRegionReadResult(
+                    DateTimeOffset.UnixEpoch.AddSeconds(1),
+                    "11.19.0.10",
+                    Type10EntityPositionStatus.Resolved,
+                    4242,
+                    ReplayTimeSeconds: 1.5,
+                    RegionBytes: null,
+                    FailureStage: null,
+                    Attempts: 4,
+                    NodesVisited: 0,
+                    ModuleRooted: true,
+                    EntityIdentityRevalidated: false,
+                    ConsistentDoubleRead: true,
+                    SameDecodedClockProven: false,
+                    PenOwnershipRotatorCandidateCount: 1,
+                    PenOwnershipOwnerPointerReadable: true,
+                    PenOwnershipForwardRoundTripConfirmed: true,
+                    PenOwnershipGunVtableConfirmed: true,
+                    PenOwnershipEntityHpPlausible: true,
+                    PenOwnershipTwoPassStable: true,
+                    PenSemanticReloadEnumInRange: true,
+                    PenSemanticMarkerFinite: true,
+                    PenSemanticMarkerDirectionUnit: true,
+                    PenSemanticTwoPassStable: true,
+                    PenSemanticReloadEnum: 2,
+                    PenSemanticMarkerYawRadians: 0.1,
+                    PenSemanticMarkerPitchRadians: -0.05,
+                    PenSemanticHullYawRadians: 0.2,
+                    PenSemanticOriginHeightMeters: 1.5,
+                    PenSemanticOriginHorizontalMeters: 0.4,
+                    PenSemanticOriginInBand: true,
+                    PenSemanticOriginRelX: 0.1,
+                    PenSemanticOriginRelY: 1.5,
+                    PenSemanticOriginRelZ: -0.2,
+                    PenSemanticMatrixOriginHeightMeters: 1.4,
+                    PenSemanticMatrixOriginHorizontalMeters: 0.3,
+                    PenSemanticMatrixOriginInBand: true,
+                    PenSemanticAmmoShellIndex: 2,
+                    PenSemanticAmmoShellIndexInRange: true,
+                    PenSemanticAmmoDescrRoundTripConfirmed: true,
+                    PenSemanticAmmoShellNation: 1,
+                    PenSemanticAmmoShellItemId: 12345,
+                    PenSemanticAmmoShellIdentReadable: true,
+                    PenSemanticAmmoShellNationInRange: true,
+                    PenSemanticAmmoShellKind: 3,
+                    PenSemanticAmmoShellKindInRange: true,
+                    PenSemanticAmmoMagazineCount: 3,
+                    PenSemanticAmmoMagazineKindMask: 14,
+                    PenSemanticAmmoMagazineKindReadableSlots: 3)),
+        };
+
+        IResult result = await GameApiEndpoints.ReadEntityRegionAsync(
+            scanner,
+            new WotBTreader.ApiContracts.EntityRecordRegionReadRequest
+            {
+                EntityId = 4242,
+                RegionLength = 16,
+                RegionAnchor = "pen-semantic-fields",
+            },
+            TestContext.CancellationToken);
+
+        EntityRecordRegionReadResponse response = Value<EntityRecordRegionReadResponse>(result);
+        Assert.AreEqual("Resolved", response.Status);
+        Assert.AreEqual(
+            EntityRecordRegionAnchor.PenSemanticFields,
+            scanner.LastEntityRegionRequest?.RegionAnchor);
+        Assert.IsTrue(response.PenSemanticReloadEnumInRange);
+        Assert.IsTrue(response.PenSemanticMarkerFinite);
+        Assert.IsTrue(response.PenSemanticMarkerDirectionUnit);
+        Assert.IsTrue(response.PenSemanticTwoPassStable);
+        Assert.AreEqual(2, response.PenSemanticReloadEnum);
+        Assert.AreEqual(0.1, response.PenSemanticMarkerYawRadians);
+        Assert.AreEqual(-0.05, response.PenSemanticMarkerPitchRadians);
+        Assert.AreEqual(0.2, response.PenSemanticHullYawRadians);
+        Assert.AreEqual(1.5, response.PenSemanticOriginHeightMeters);
+        Assert.AreEqual(0.4, response.PenSemanticOriginHorizontalMeters);
+        Assert.IsTrue(response.PenSemanticOriginInBand);
+        Assert.AreEqual(1.4, response.PenSemanticMatrixOriginHeightMeters);
+        Assert.AreEqual(0.3, response.PenSemanticMatrixOriginHorizontalMeters);
+        Assert.IsTrue(response.PenSemanticMatrixOriginInBand);
+        Assert.AreEqual(2, response.PenSemanticAmmoShellIndex);
+        Assert.IsTrue(response.PenSemanticAmmoShellIndexInRange);
+        Assert.IsTrue(response.PenSemanticAmmoDescrRoundTripConfirmed);
+        Assert.AreEqual(1, response.PenSemanticAmmoShellNation);
+        Assert.AreEqual(12345, response.PenSemanticAmmoShellItemId);
+        Assert.IsTrue(response.PenSemanticAmmoShellIdentReadable);
+        Assert.IsTrue(response.PenSemanticAmmoShellNationInRange);
+        Assert.AreEqual(3, response.PenSemanticAmmoShellKind);
+        Assert.IsTrue(response.PenSemanticAmmoShellKindInRange);
+        Assert.AreEqual(3, response.PenSemanticAmmoMagazineCount);
+        Assert.AreEqual(14, response.PenSemanticAmmoMagazineKindMask);
+        Assert.AreEqual(3, response.PenSemanticAmmoMagazineKindReadableSlots);
+        Assert.IsNull(response.RegionBase64);
+    }
+
+    [TestMethod]
     public async Task CameraPose_ResolvedReturnsPoseWithIdentityFlags()
     {
         var scanner = new FakeGameMemoryScanner
