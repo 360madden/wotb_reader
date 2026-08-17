@@ -12,9 +12,12 @@ lean.
 |-------|--------|--------------|
 | `grill-me` | user-invoked only (`grill-me`, "grill me on this plan") | A stateless, relentless interview that sharpens a plan or design before anyone acts on it. Writes no files. |
 | `grilling` | `grilling`, or model-invoked as the core of `grill-me` | The interview mechanism itself: design tree, frontier rounds, `❓`/`➡️` question format, facts-vs-decisions split, confirmation gate. |
+| `autorun` | Freebuff Auto tab (builtin, `metadata: freebuff-builtin: autorun`) | Standing instructions for the agent deciding what an Auto tab does next: drive the request to a genuinely finished, merged state, then continue as far as scope allows. Tracked only for harness reproducibility; not a plan-sharpening interview skill and not loadable on demand. |
 
-`grill-me` deliberately does nothing without the `grilling` core — install
-them together (both ship here).
+`autorun` is a Freebuff harness builtin — the other agents never invoke it by
+name; it ships in this repo so the Auto-tab behavior is reproducible across
+clones. `grill-me` deliberately does nothing without the `grilling` core —
+install them together (both ship here).
 
 ## Usage notes for this repo
 

@@ -38,8 +38,6 @@ regenerate this file in the same change that adds, renames, or removes files.
 .codex/hooks.json
 .codex/hooks/enforce-allowed-models.ps1
 .editorconfig
-.freebuff/project-id
-.freebuff/settings.json
 .gitattributes
 .github/dependabot.yml
 .github/workflows/ci.yml
@@ -361,7 +359,11 @@ docs/operations/handoffs/2026-08-16-pen-ownership-walk-live.md
 docs/operations/handoffs/2026-08-16-pen-ownership-walk-static.md
 docs/operations/handoffs/2026-08-16-rendezvous-webjson-acl-hardening.md
 docs/operations/handoffs/2026-08-16-sqlite-pooling-race-fix.md
+docs/operations/handoffs/2026-08-17-codex-docs-verification.md
+docs/operations/handoffs/2026-08-17-codex-drill.md
+docs/operations/handoffs/2026-08-17-codex-two-model-policy.md
 docs/operations/handoffs/2026-08-17-doc-staleness-sweep.md
+docs/operations/handoffs/2026-08-17-harness-scope-policy.md
 docs/operations/handoffs/2026-08-17-observation-auth-heartbeat.md
 docs/operations/handoffs/2026-08-17-pen-capture-bughunt-15-rounds.md
 docs/operations/handoffs/2026-08-17-pen-gun-descriptor-trace.md

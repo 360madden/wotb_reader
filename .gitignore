@@ -86,3 +86,6 @@ memory-offsets/scanner-state.json
 *.rendezvous.json
 appsettings.Local.json
 launchSettings.Local.json
+
+# Freebuff harness state (generated locally by the desktop app; repo-inert)
+.freebuff/
