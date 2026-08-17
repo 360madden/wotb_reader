@@ -233,11 +233,19 @@ Write-Host ('pen_census: shell_states=' + $response.ShellStatesObserved +
     ' ray=' + $response.RaySamples +
     ' joined_ray=' + $response.JoinedRaySamples)
 
-if ($response.Status -eq 'Rejected' -or $response.Status -eq 'NotReady') {
-    Write-Host 'pen_census: honest_negative (no field promoted)'
-}
-else {
-    Write-Host 'pen_census: positive_verdict (record + promote per gates)'
+switch ($response.Status) {
+    'Rejected' {
+        Write-Host 'pen_census: honest_negative (no field promoted)'
+    }
+    'PositiveAwaitingRepeat' {
+        Write-Host 'pen_census: positive_awaiting_repeat (not promoted; a second content-distinct run is required)'
+    }
+    'PromotionReady' {
+        Write-Host 'pen_census: promotion_ready (record + promote per gates)'
+    }
+    default {
+        Write-Host ('pen_census: unknown_status=' + $response.Status)
+    }
 }
 
 exit 0

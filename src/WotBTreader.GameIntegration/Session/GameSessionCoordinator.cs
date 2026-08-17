@@ -4168,8 +4168,14 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             reader,
             owner.Value + EntityRecordRegionReadRequest.PenOwnershipOwnerGunOffset,
             cancellationToken).ConfigureAwait(false);
+        if (gun is null)
+        {
+            // A guarded read that cannot complete is a read failure, not a
+            // mismatch: fail closed and never fabricate a false verdict.
+            return null;
+        }
         bool gunConfirmed = false;
-        if (gun is not null && gun.Value != 0)
+        if (gun.Value != 0)
         {
             uint? gunVftable = await ReadPointerAsync(reader, gun.Value, cancellationToken).ConfigureAwait(false);
             if (gunVftable is null)
@@ -4184,8 +4190,14 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             reader,
             owner.Value + EntityRecordRegionReadRequest.PenOwnershipOwnerEntityOffset,
             cancellationToken).ConfigureAwait(false);
+        if (entity is null)
+        {
+            // A guarded read that cannot complete is a read failure, not a
+            // mismatch: fail closed and never fabricate a false verdict.
+            return null;
+        }
         bool hpPlausible = false;
-        if (entity is not null && entity.Value != 0)
+        if (entity.Value != 0)
         {
             OperationResult<byte[]> hpRead = await reader.ReadAsync(
                 (nint)(entity.Value + EntityRecordRegionReadRequest.EntityHealthOffset),
