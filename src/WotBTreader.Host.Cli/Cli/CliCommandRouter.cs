@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using WotBTreader.Application.Capture;
 using WotBTreader.Application.Diagnostics;
@@ -45,6 +46,7 @@ public sealed class CliCommandRouter
         "watch",
         "hp-diff",
         "yaw-diff",
+        "marker-join",
         "overlay-frame",
         "overlay-strip",
         "beacon",
@@ -121,6 +123,7 @@ public sealed class CliCommandRouter
             "watch" => await WatchAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "hp-diff" => await HpDiffAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "yaw-diff" => await YawDiffAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
+            "marker-join" => await MarkerJoinAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "overlay-frame" => await OverlayFrameAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "overlay-strip" => await OverlayStripAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "beacon" => await BeaconAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
@@ -1190,6 +1193,149 @@ public sealed class CliCommandRouter
             name,
         };
         return Success(data, $"Beacon '{name}' removed.", correlationId);
+    }
+
+    /// <summary>
+    /// Angular/clock join of persisted G2 published-marker samples to
+    /// decoded viewpoint ShotImpact events. Count-only; not ExactGunRay.
+    /// </summary>
+    private async ValueTask<CliExecution> MarkerJoinAsync(
+        CliInvocation invocation,
+        Guid correlationId,
+        CancellationToken cancellationToken)
+    {
+        if (invocation.Positionals.Count != 1)
+        {
+            return Invalid(
+                "cli.marker-join.arguments",
+                "marker-join requires one positional: the samples JSON file path.",
+                correlationId);
+        }
+
+        if (!invocation.Options.TryGetValue("session", out string? sessionText) ||
+            !Guid.TryParse(sessionText, out Guid sessionGuid))
+        {
+            return Invalid(
+                "cli.marker-join.session",
+                "marker-join requires --session <battle-session-guid>.",
+                correlationId);
+        }
+
+        string samplesPath = invocation.Positionals[0];
+        if (!File.Exists(samplesPath))
+        {
+            return Invalid(
+                "cli.marker-join.samples_missing",
+                "The samples JSON file was not found.",
+                correlationId,
+                CliExitCode.InvalidInput);
+        }
+
+        List<PublishedMarkerSample> samples;
+        try
+        {
+            string json = await File.ReadAllTextAsync(samplesPath, cancellationToken).ConfigureAwait(false);
+            using JsonDocument document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return Invalid(
+                    "cli.marker-join.samples_shape",
+                    "The samples file must be a JSON array.",
+                    correlationId,
+                    CliExitCode.InvalidInput);
+            }
+
+            samples = [];
+            foreach (JsonElement item in document.RootElement.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                if (!item.TryGetProperty("replayTimeSeconds", out JsonElement timeEl) ||
+                    !timeEl.TryGetDouble(out double seconds) ||
+                    !double.IsFinite(seconds) ||
+                    !item.TryGetProperty("sameDecodedClockProven", out JsonElement clockEl) ||
+                    clockEl.ValueKind != JsonValueKind.True)
+                {
+                    continue;
+                }
+
+                if (!item.TryGetProperty("markerYawRadians", out JsonElement yawEl) ||
+                    !yawEl.TryGetDouble(out double yaw) ||
+                    !double.IsFinite(yaw) ||
+                    !item.TryGetProperty("markerPitchRadians", out JsonElement pitchEl) ||
+                    !pitchEl.TryGetDouble(out double pitch) ||
+                    !double.IsFinite(pitch))
+                {
+                    continue;
+                }
+
+                samples.Add(new PublishedMarkerSample(
+                    TimeSpan.FromSeconds(seconds),
+                    yaw,
+                    pitch,
+                    SameDecodedClockProven: true));
+            }
+        }
+        catch (JsonException)
+        {
+            return Invalid(
+                "cli.marker-join.samples_json",
+                "The samples file is not valid JSON.",
+                correlationId,
+                CliExitCode.InvalidInput);
+        }
+
+        TimeSpan maxLag = PublishedMarkerShotJoin.MaxLag;
+        if (invocation.Options.TryGetValue("max-lag-ms", out string? lagText))
+        {
+            if (!int.TryParse(lagText, out int lagMs) || lagMs < 0 || lagMs > 10_000)
+            {
+                return Invalid(
+                    "cli.marker-join.max_lag",
+                    "--max-lag-ms must be an integer between 0 and 10000.",
+                    correlationId);
+            }
+
+            maxLag = TimeSpan.FromMilliseconds(lagMs);
+        }
+
+        OperationResult<ReplayDecodeProjection> projection = await _sessions
+            .GetProjectionAsync(new BattleSessionId(sessionGuid), cancellationToken)
+            .ConfigureAwait(false);
+        if (!projection.IsSuccess || projection.Value is null)
+        {
+            return FromResult(projection, correlationId, "Marker join evaluated.");
+        }
+
+        PublishedMarkerJoinSummary summary = PublishedMarkerShotJoin.Evaluate(
+            projection.Value,
+            samples,
+            maxLag);
+        object data = new
+        {
+            command = "marker-join",
+            sessionId = sessionGuid,
+            sampleCount = samples.Count,
+            maxLagMilliseconds = (int)maxLag.TotalMilliseconds,
+            viewpointShots = summary.ViewpointShots,
+            joined = summary.Joined,
+            noSampleBefore = summary.NoSampleBefore,
+            lagExceeded = summary.LagExceeded,
+            missingAttacker = summary.MissingAttacker,
+            missingViewpoint = summary.MissingViewpoint,
+            missingPosition = summary.MissingPosition,
+        };
+        return Success(
+            data,
+            "Marker join viewpointShots=" + summary.ViewpointShots
+                + " joined=" + summary.Joined
+                + " lagExceeded=" + summary.LagExceeded
+                + " noSampleBefore=" + summary.NoSampleBefore
+                + ".",
+            correlationId);
     }
 
     /// <summary>Runs non-mutating health checks and returns the report.</summary>

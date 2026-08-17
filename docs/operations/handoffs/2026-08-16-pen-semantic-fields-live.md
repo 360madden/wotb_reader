@@ -75,3 +75,25 @@ two-pass-stable and its yaw bins move while hull yaw stays in one bin.
 `twoReplayRepeatability` for that hull-independent marker-yaw signature is
 now true. Elevation isolation, shot join, and loaded shell remain open.
 Nothing was promoted. Game and host were stopped after the read.
+
+## Amendment — elevation isolation + first shot-join attempt (`2026-08-16`)
+
+The capture script now bins published marker pitch over `[-pi/2, pi/2]` and
+persists G2-attested yaw/pitch samples. `PublishedMarkerShotJoin` plus CLI
+`marker-join` count viewpoint-attacker ShotImpact joins (10 deg, default
+250 ms lag). This is an angular/clock join, not ExactGunRay.
+
+One denser pass (battle `01a00d08-b886-7f86-b97d-6eb1eb60d0e1`, 64 samples
+at 200 ms request cadence):
+
+- walk 62/64; marker finite/unit/stable 62; turret-independent windows 9
+- **elevation_independent_windows = 5** (hull 1 yaw bin, marker pitch 8 bins)
+- g2_clock_samples = 60; persisted sample replay-time span ~8-119 s
+- marker-join: viewpointShots=5, joined=0, lagExceeded=5 at 250 ms and at
+  10 s. The 5 viewpoint shots did not fall inside a 10 s at-or-before
+  window of the persisted G2 span. Honest: shot-synchronous join is not
+  shown; the AOB-per-sample capture is too coarse and/or ended before
+  those shots.
+
+Nothing promoted. Elevation isolation is a first-replay script positive
+and still needs a content-distinct repeat. Shot join remains open.

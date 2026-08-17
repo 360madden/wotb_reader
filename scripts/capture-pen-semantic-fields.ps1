@@ -10,8 +10,9 @@
   regionAnchor=pen-semantic-fields on a bounded cadence. The coordinator
   reuses the ownership walk and two-pass-reads the published gun-marker
   and VehicleGun reload/state block. This script prints only counts,
-  enum histograms, and 16-sector yaw bins -- never addresses, tokens,
-  paths, or raw coordinates.
+  enum histograms, and 16-sector yaw/pitch bins -- never addresses,
+  tokens, paths, or world XYZ. Walk-confirmed same-clock samples are
+  overwritten to %TEMP%\pen-semantic-fields-samples.json.
 
 .EXITCODES
   0  At least one snapshot completed and the summary was printed.
@@ -28,7 +29,7 @@ param(
     [int]$Samples = 16,
 
     [ValidateRange(100, 5000)]
-    [int]$CadenceMs = 750,
+    [int]$CadenceMs = 200,
 
     [ValidateRange(0, 7)]
     [int]$OwnershipCandidateIndex = 0,
@@ -176,6 +177,42 @@ function Get-YawBin([double]$Radians) {
     return $bin
 }
 
+function Get-PitchBin([double]$Radians) {
+    $halfPi = [math]::PI / 2.0
+    $clamped = $Radians
+    if ($clamped -lt (-1.0 * $halfPi)) { $clamped = -1.0 * $halfPi }
+    if ($clamped -gt $halfPi) { $clamped = $halfPi }
+    $span = [math]::PI
+    $shifted = $clamped + $halfPi
+    $bin = [int][math]::Floor(($shifted / $span) * 16.0)
+    if ($bin -lt 0) { return 0 }
+    if ($bin -gt 15) { return 15 }
+    return $bin
+}
+
+function Test-FiniteNumber([object]$Value) {
+    if ($null -eq $Value) { return $false }
+    try {
+        $number = [double]$Value
+    }
+    catch {
+        return $false
+    }
+    return -not ([double]::IsNaN($number) -or [double]::IsInfinity($number))
+}
+
+function ConvertTo-JsonArray([System.Collections.ICollection]$Items) {
+    if ($null -eq $Items -or $Items.Count -eq 0) {
+        return '[]'
+    }
+
+    $parts = New-Object System.Collections.ArrayList
+    foreach ($item in $Items) {
+        [void]$parts.Add(($item | ConvertTo-Json -Compress -Depth 4))
+    }
+    return '[' + ($parts -join ',') + ']'
+}
+
 Write-Host 'pen_fields: waiting_for_verified_gate'
 $deadline = [DateTime]::UtcNow.AddSeconds($WaitVerifiedSeconds)
 $verified = $false
@@ -231,11 +268,18 @@ $markerUnit = 0
 $twoPassStable = 0
 $enumSeen = New-Object 'System.Collections.Generic.HashSet[int]'
 $markerYawBins = New-Object 'System.Collections.Generic.HashSet[int]'
+$markerPitchBins = New-Object 'System.Collections.Generic.HashSet[int]'
 $hullYawBins = New-Object 'System.Collections.Generic.HashSet[int]'
 $independentWindows = 0
+$elevationIndependentWindows = 0
+$g2ClockSamples = 0
 $lastHullBin = $null
 $lastMarkerBin = $null
+$lastMarkerPitchBin = $null
 $sameHullStreak = 0
+$persistedSamples = New-Object System.Collections.ArrayList
+$samplesPath = [System.IO.Path]::GetFullPath(
+    (Join-Path $env:TEMP 'pen-semantic-fields-samples.json'))
 
 for ($i = 0; $i -lt $Samples; $i++) {
     try {
@@ -267,14 +311,56 @@ for ($i = 0; $i -lt $Samples; $i++) {
         }
 
         $markerBin = $null
+        $markerPitchBin = $null
         $hullBin = $null
         if ($null -ne $response.PenSemanticMarkerYawRadians) {
             $markerBin = Get-YawBin ([double]$response.PenSemanticMarkerYawRadians)
             [void]$markerYawBins.Add($markerBin)
         }
+        if (Test-FiniteNumber $response.PenSemanticMarkerPitchRadians) {
+            $markerPitchBin = Get-PitchBin ([double]$response.PenSemanticMarkerPitchRadians)
+            [void]$markerPitchBins.Add($markerPitchBin)
+        }
         if ($null -ne $response.PenSemanticHullYawRadians) {
             $hullBin = Get-YawBin ([double]$response.PenSemanticHullYawRadians)
             [void]$hullYawBins.Add($hullBin)
+        }
+
+        $qualityOk = $walkOk -and
+            ($response.PenSemanticMarkerFinite -eq $true) -and
+            ($response.PenSemanticMarkerDirectionUnit -eq $true) -and
+            ($response.PenSemanticTwoPassStable -eq $true)
+        $sameClock = ($response.SameDecodedClockProven -eq $true)
+        $replayTimeFinite = Test-FiniteNumber $response.ReplayTimeSeconds
+        if ($sameClock -and $replayTimeFinite) {
+            $g2ClockSamples++
+        }
+
+        if ($walkOk -and $sameClock -and $replayTimeFinite) {
+            $reloadEnum = $null
+            if ($null -ne $response.PenSemanticReloadEnum) {
+                $reloadEnum = [int]$response.PenSemanticReloadEnum
+            }
+            $markerYawValue = $null
+            $markerPitchValue = $null
+            $hullYawValue = $null
+            if (Test-FiniteNumber $response.PenSemanticMarkerYawRadians) {
+                $markerYawValue = [double]$response.PenSemanticMarkerYawRadians
+            }
+            if (Test-FiniteNumber $response.PenSemanticMarkerPitchRadians) {
+                $markerPitchValue = [double]$response.PenSemanticMarkerPitchRadians
+            }
+            if (Test-FiniteNumber $response.PenSemanticHullYawRadians) {
+                $hullYawValue = [double]$response.PenSemanticHullYawRadians
+            }
+            [void]$persistedSamples.Add([ordered]@{
+                    replayTimeSeconds      = [double]$response.ReplayTimeSeconds
+                    markerYawRadians       = $markerYawValue
+                    markerPitchRadians     = $markerPitchValue
+                    hullYawRadians         = $hullYawValue
+                    reloadEnum             = $reloadEnum
+                    sameDecodedClockProven = $true
+                })
         }
 
         if ($null -ne $hullBin -and $null -ne $lastHullBin -and $hullBin -eq $lastHullBin) {
@@ -283,12 +369,20 @@ for ($i = 0; $i -lt $Samples; $i++) {
                 $null -ne $lastMarkerBin -and $markerBin -ne $lastMarkerBin) {
                 $independentWindows++
             }
+            if ($sameHullStreak -ge 2 -and $qualityOk -and
+                $null -ne $markerBin -and $null -ne $lastMarkerBin -and
+                $markerBin -eq $lastMarkerBin -and
+                $null -ne $markerPitchBin -and $null -ne $lastMarkerPitchBin -and
+                $markerPitchBin -ne $lastMarkerPitchBin) {
+                $elevationIndependentWindows++
+            }
         }
         else {
             $sameHullStreak = 0
         }
         $lastHullBin = $hullBin
         $lastMarkerBin = $markerBin
+        $lastMarkerPitchBin = $markerPitchBin
     }
     catch {
         $errors++
@@ -317,6 +411,16 @@ Write-Host ('pen_fields: reload_enum_values=' + $enumList)
 Write-Host ('pen_fields: marker_yaw_bins=' + $markerYawBins.Count)
 Write-Host ('pen_fields: hull_yaw_bins=' + $hullYawBins.Count)
 Write-Host ('pen_fields: turret_independent_windows=' + $independentWindows)
+Write-Host ('pen_fields: marker_pitch_bins=' + $markerPitchBins.Count)
+Write-Host ('pen_fields: elevation_independent_windows=' + $elevationIndependentWindows)
+Write-Host ('pen_fields: g2_clock_samples=' + $g2ClockSamples)
+
+$samplesJson = ConvertTo-JsonArray $persistedSamples
+[IO.File]::WriteAllText(
+    $samplesPath,
+    $samplesJson,
+    (New-Object Text.ASCIIEncoding))
+Write-Host ('pen_fields: samples_file=' + $samplesPath)
 
 if ($ok -eq 0) {
     Write-Host 'pen_fields: FAILED_no_snapshots'

@@ -537,6 +537,7 @@ src/WotBTreader.Application/Replay/OffsetTableReader.cs
 src/WotBTreader.Application/Replay/OverlayFrameProjection.cs
 src/WotBTreader.Application/Replay/PenOfflineScorer.cs
 src/WotBTreader.Application/Replay/ProjectionCache.cs
+src/WotBTreader.Application/Replay/PublishedMarkerShotJoin.cs
 src/WotBTreader.Application/Replay/ReplayContracts.cs
 src/WotBTreader.Application/Replay/ReplayDecoderRegistry.cs
 src/WotBTreader.Application/Replay/ReplayFrameSource.cs
@@ -825,6 +826,7 @@ tests/WotBTreader.Application.Tests/OverlayFrameProjectorTests.cs
 tests/WotBTreader.Application.Tests/PenOfflineScorerTests.cs
 tests/WotBTreader.Application.Tests/PenetrationContextTests.cs
 tests/WotBTreader.Application.Tests/ProjectionCacheTests.cs
+tests/WotBTreader.Application.Tests/PublishedMarkerShotJoinTests.cs
 tests/WotBTreader.Application.Tests/ReplayDecoderRegistryTests.cs
 tests/WotBTreader.Application.Tests/ReplayFrameSourceTests.cs
 tests/WotBTreader.Application.Tests/ReplayIngestionServiceTests.cs

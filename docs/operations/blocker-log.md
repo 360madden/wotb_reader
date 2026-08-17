@@ -1047,3 +1047,12 @@ folder for the full numbering convention and document map.
   hull-independent published-marker-yaw signature now has
   `twoReplayRepeatability = true`. Elevation isolation, shot join, and
   loaded shell remain. BLK-0027 stays open.
+
+- Elevation + shot-join first attempt (`2026-08-16`): capture script now
+  scores yaw-stable/pitch-changing windows and persists G2 yaw/pitch
+  samples. Battle `01a00d08` produced 5 elevation-independent windows
+  (first live elevation discriminator; one replay only). `marker-join`
+  on that persist file: 5 viewpoint ShotImpacts, 0 joined, 5
+  `lagExceeded` at 250 ms and at 10 s — the sampled G2 span (~8-119 s)
+  did not cover those shots at the join lag. Not a muzzle proof. BLK-0027
+  stays open.
