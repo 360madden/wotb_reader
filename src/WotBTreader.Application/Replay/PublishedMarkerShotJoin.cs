@@ -27,6 +27,26 @@ public sealed record PublishedMarkerJoinSummary(
     int MissingPosition);
 
 /// <summary>
+/// Count-only hypothesis scores for clock-covered viewpoint shots.
+/// Center-1.5 is the existing hull proxy; center-1.9 and yz-swap are
+/// diagnostics, not ExactGunRay and not CAM-013 success.
+/// </summary>
+public sealed record PublishedMarkerJoinDiagnostics(
+    int Compared,
+    int JoinedCenter15,
+    int JoinedCenter19,
+    int JoinedYzsSwap15,
+    int JoinedYzsSwap19,
+    int ErrorLt10,
+    int Error10To20,
+    int Error20To45,
+    int ErrorGe45,
+    double? MedianErrorDegrees,
+    double? MaxErrorDegrees,
+    double? MedianYzsSwapErrorDegrees,
+    double? MaxYzsSwapErrorDegrees);
+
+/// <summary>
 /// Joins G2-attested published-marker yaw/pitch samples to decoded
 /// viewpoint-attacker ShotImpact events. Angular/clock join only - not
 /// ExactGunRay and not CAM-013.
@@ -101,36 +121,8 @@ public static class PublishedMarkerShotJoin
                 MissingPosition: 0);
         }
 
-        Dictionary<long, List<PositionSample>> samplesByEntity = [];
-        foreach (PositionSample sample in projection.Positions)
-        {
-            if (sample.EntityId is { } entityId)
-            {
-                if (!samplesByEntity.TryGetValue(entityId, out List<PositionSample>? entitySamples))
-                {
-                    entitySamples = [];
-                    samplesByEntity[entityId] = entitySamples;
-                }
-
-                entitySamples.Add(sample);
-            }
-        }
-
-        foreach (List<PositionSample> entitySamples in samplesByEntity.Values)
-        {
-            entitySamples.Sort(static (left, right) => left.ReplayTime.CompareTo(right.ReplayTime));
-        }
-
-        List<PublishedMarkerSample> clocked = [];
-        foreach (PublishedMarkerSample sample in samples)
-        {
-            if (sample.SameDecodedClockProven)
-            {
-                clocked.Add(sample);
-            }
-        }
-
-        clocked.Sort(static (left, right) => left.ReplayTime.CompareTo(right.ReplayTime));
+        Dictionary<long, List<PositionSample>> samplesByEntity = IndexPositions(projection);
+        List<PublishedMarkerSample> clocked = ClockedSamples(samples);
 
         int viewpointShots = 0;
         int joined = 0;
@@ -181,7 +173,7 @@ public static class PublishedMarkerShotJoin
             }
 
             if (!TryMarkerDirection(marker.Value, out double markerDx, out double markerDy, out double markerDz)
-                || !TryCenterLineDirection(attackerSample, victimSample, out double centerDx, out double centerDy, out double centerDz))
+                || !TryCenterLineDirection(attackerSample, victimSample, AimHeightMeters, out double centerDx, out double centerDy, out double centerDz))
             {
                 lagExceeded++;
                 continue;
@@ -206,6 +198,223 @@ public static class PublishedMarkerShotJoin
             MissingAttacker: missingAttacker,
             MissingViewpoint: 0,
             MissingPosition: missingPosition);
+    }
+
+    /// <summary>
+    /// Score clock-covered viewpoint shots against alternate direction
+    /// hypotheses. Degrees only; no coordinates.
+    /// </summary>
+    public static PublishedMarkerJoinDiagnostics Diagnose(
+        ReplayDecodeProjection projection,
+        IReadOnlyList<PublishedMarkerSample> samples,
+        TimeSpan? maxLag = null)
+    {
+        ArgumentNullException.ThrowIfNull(projection);
+        ArgumentNullException.ThrowIfNull(samples);
+        TimeSpan lagLimit = maxLag ?? MaxLag;
+        if (lagLimit < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxLag));
+        }
+
+        if (ResolveViewpointEntityId(projection) is not { } viewpointId)
+        {
+            return EmptyDiagnostics();
+        }
+
+        Dictionary<long, List<PositionSample>> samplesByEntity = IndexPositions(projection);
+        List<PublishedMarkerSample> clocked = ClockedSamples(samples);
+
+        List<double> center15Errors = [];
+        List<double> yzSwapErrors = [];
+        int joined15 = 0;
+        int joined19 = 0;
+        int joinedYzs15 = 0;
+        int joinedYzs19 = 0;
+        int lt10 = 0;
+        int from10To20 = 0;
+        int from20To45 = 0;
+        int ge45 = 0;
+
+        foreach (CanonicalEvent ev in projection.Events)
+        {
+            if (ev.Kind != CanonicalEventKind.ShotImpact
+                || !TryReadShot(ev.ValuesJson, out long attackerId, out long victimId, out _)
+                || attackerId != viewpointId)
+            {
+                continue;
+            }
+
+            PositionSample? attackerSample = FindAtOrBefore(samplesByEntity, attackerId, ev.ReplayTime);
+            PositionSample? victimSample = FindAtOrBefore(samplesByEntity, victimId, ev.ReplayTime);
+            PublishedMarkerSample? marker = FindMarkerAtOrBefore(clocked, ev.ReplayTime);
+            if (attackerSample is null
+                || victimSample is null
+                || marker is null
+                || ev.ReplayTime - marker.Value.ReplayTime > lagLimit
+                || !TryMarkerDirection(marker.Value, out double markerDx, out double markerDy, out double markerDz)
+                || !TryCenterLineDirection(attackerSample, victimSample, 1.5, out double c15x, out double c15y, out double c15z)
+                || !TryCenterLineDirection(attackerSample, victimSample, 1.9, out double c19x, out double c19y, out double c19z))
+            {
+                continue;
+            }
+
+            double err15 = AngleDegrees(markerDx, markerDy, markerDz, c15x, c15y, c15z);
+            double err19 = AngleDegrees(markerDx, markerDy, markerDz, c19x, c19y, c19z);
+            double errYzs15 = AngleDegrees(markerDx, markerDz, markerDy, c15x, c15y, c15z);
+            double errYzs19 = AngleDegrees(markerDx, markerDz, markerDy, c19x, c19y, c19z);
+            center15Errors.Add(err15);
+            yzSwapErrors.Add(errYzs15);
+
+            if (err15 <= 10.0)
+            {
+                joined15++;
+                lt10++;
+            }
+            else if (err15 < 20.0)
+            {
+                from10To20++;
+            }
+            else if (err15 < 45.0)
+            {
+                from20To45++;
+            }
+            else
+            {
+                ge45++;
+            }
+
+            if (err19 <= 10.0)
+            {
+                joined19++;
+            }
+
+            if (errYzs15 <= 10.0)
+            {
+                joinedYzs15++;
+            }
+
+            if (errYzs19 <= 10.0)
+            {
+                joinedYzs19++;
+            }
+        }
+
+        return new PublishedMarkerJoinDiagnostics(
+            Compared: center15Errors.Count,
+            JoinedCenter15: joined15,
+            JoinedCenter19: joined19,
+            JoinedYzsSwap15: joinedYzs15,
+            JoinedYzsSwap19: joinedYzs19,
+            ErrorLt10: lt10,
+            Error10To20: from10To20,
+            Error20To45: from20To45,
+            ErrorGe45: ge45,
+            MedianErrorDegrees: Median(center15Errors),
+            MaxErrorDegrees: Max(center15Errors),
+            MedianYzsSwapErrorDegrees: Median(yzSwapErrors),
+            MaxYzsSwapErrorDegrees: Max(yzSwapErrors));
+    }
+
+    private static PublishedMarkerJoinDiagnostics EmptyDiagnostics() =>
+        new(
+            Compared: 0,
+            JoinedCenter15: 0,
+            JoinedCenter19: 0,
+            JoinedYzsSwap15: 0,
+            JoinedYzsSwap19: 0,
+            ErrorLt10: 0,
+            Error10To20: 0,
+            Error20To45: 0,
+            ErrorGe45: 0,
+            MedianErrorDegrees: null,
+            MaxErrorDegrees: null,
+            MedianYzsSwapErrorDegrees: null,
+            MaxYzsSwapErrorDegrees: null);
+
+    private static Dictionary<long, List<PositionSample>> IndexPositions(ReplayDecodeProjection projection)
+    {
+        Dictionary<long, List<PositionSample>> samplesByEntity = [];
+        foreach (PositionSample sample in projection.Positions)
+        {
+            if (sample.EntityId is { } entityId)
+            {
+                if (!samplesByEntity.TryGetValue(entityId, out List<PositionSample>? entitySamples))
+                {
+                    entitySamples = [];
+                    samplesByEntity[entityId] = entitySamples;
+                }
+
+                entitySamples.Add(sample);
+            }
+        }
+
+        foreach (List<PositionSample> entitySamples in samplesByEntity.Values)
+        {
+            entitySamples.Sort(static (left, right) => left.ReplayTime.CompareTo(right.ReplayTime));
+        }
+
+        return samplesByEntity;
+    }
+
+    private static List<PublishedMarkerSample> ClockedSamples(IReadOnlyList<PublishedMarkerSample> samples)
+    {
+        List<PublishedMarkerSample> clocked = [];
+        foreach (PublishedMarkerSample sample in samples)
+        {
+            if (sample.SameDecodedClockProven)
+            {
+                clocked.Add(sample);
+            }
+        }
+
+        clocked.Sort(static (left, right) => left.ReplayTime.CompareTo(right.ReplayTime));
+        return clocked;
+    }
+
+    private static double AngleDegrees(
+        double ax,
+        double ay,
+        double az,
+        double bx,
+        double by,
+        double bz)
+    {
+        double dot = Math.Clamp((ax * bx) + (ay * by) + (az * bz), -1.0, 1.0);
+        return Math.Acos(dot) * (180.0 / Math.PI);
+    }
+
+    private static double? Median(List<double> values)
+    {
+        if (values.Count == 0)
+        {
+            return null;
+        }
+
+        values.Sort();
+        int mid = values.Count / 2;
+        return values.Count % 2 == 1
+            ? values[mid]
+            : (values[mid - 1] + values[mid]) / 2.0;
+    }
+
+    private static double? Max(List<double> values)
+    {
+        if (values.Count == 0)
+        {
+            return null;
+        }
+
+        double max = values[0];
+        for (int i = 1; i < values.Count; i++)
+        {
+            if (values[i] > max)
+            {
+                max = values[i];
+            }
+        }
+
+        return max;
     }
 
     // Same JSON contract as PenOfflineScorer.TryReadShot: victimEntityId,
@@ -324,16 +533,17 @@ public static class PublishedMarkerShotJoin
         return TryNormalize(ref dx, ref dy, ref dz);
     }
 
-    // Attacker hull + 1.5 m Y toward victim hull (PenOfflineScorer.CenterLineAim).
+    // Attacker hull + aim-height Y toward victim hull (PenOfflineScorer.CenterLineAim).
     private static bool TryCenterLineDirection(
         PositionSample attacker,
         PositionSample victim,
+        double aimHeightMeters,
         out double dx,
         out double dy,
         out double dz)
     {
         double originX = attacker.RawX;
-        double originY = attacker.RawY + AimHeightMeters;
+        double originY = attacker.RawY + aimHeightMeters;
         double originZ = attacker.RawZ;
         dx = victim.RawX - originX;
         dy = victim.RawY - originY;

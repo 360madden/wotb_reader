@@ -1067,3 +1067,13 @@ folder for the full numbering convention and document map.
   shots). Clock-synchronous capture is shown; the published marker is
   not ExactGunRay. Loaded shell and exact armor remain. BLK-0027 stays
   open.
+
+- Published-marker Y/Z convention (`2026-08-16`): `marker-join` degree
+  diagnostics on the Oasis persist scored Y/Z-swapped marker dir 4/5
+  (median 3.8°) vs unswapped center-line 0/5 (median 22.5°). Dead Rail
+  `01a00d32` repeat: 2/2 Y/Z-swapped (median 1.9°) vs 0/2 unswapped
+  (median 87.5°). Two-replay evidence that `rotator+0x50` dir is
+  engine `(x, z, y-up)`. Not ExactGunRay (origin unread; one Oasis
+  miss). Loaded-shell identity: no remaining live-ready field (`+0x3C`
+  reload machine). Exact armor: explicit v0.3 no-go until a producer
+  is named. BLK-0027 stays open.

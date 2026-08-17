@@ -1,11 +1,11 @@
 # Penetration v0.3 — semantic-field live snapshot (first replay)
 
 **Date:** 2026-08-16 (UTC)
-**Status:** two-replay elevation isolation positive; shot-window capture
-covers viewpoint ShotImpacts within 250 ms; 0/5 angular joins; nothing
-promoted
-**Blocker:** `BLK-0027` (open — published marker is not the 10°
-center-line; loaded shell and exact armor remain)
+**Status:** two-replay elevation isolation positive; published-marker
+direction matches the hull-to-victim line after a Y/Z swap (Oasis 4/5,
+Dead Rail 2/2); nothing promoted
+**Blocker:** `BLK-0027` (open — muzzle origin unproven; loaded shell and
+exact armor remain no-go)
 
 ## What changed
 
@@ -136,3 +136,41 @@ viewpoint shots at 177.8, 245.4, 253.2, 253.2, 260.3, 267.1, 274.0 s):
 
 Nothing promoted. Badge stays `NotReady`. Game and host were stopped
 after the reads. Reload enums `0`/`3` again — still not a shell id.
+
+## Amendment — Y/Z convention + Dead Rail repeat (`2026-08-16`)
+
+`marker-join` now emits count-only degree diagnostics (center-1.5,
+center-1.9, Y/Z-swapped marker dir, median/max). ShotImpact has no
+decoded hit point; the center-line remains a proxy, not ExactGunRay.
+
+Oasis persist (session `01a00d22`, 5 compared shots):
+
+| Hypothesis | Joined ≤10° | Median deg | Max deg |
+|---|---:|---:|---:|
+| Center 1.5 m / 1.9 m | 0 / 5 | 22.5 | 60.3 |
+| Marker dir Y/Z swapped vs 1.5 m | **4 / 5** | **3.8** | 33.9 |
+
+Dead Rail managed replay (1100265-byte original, battle
+`01a00d32-fef4-7b9c-b726-e96758ad9c53`, `OfflineReplayVerified`; 128
+walk-confirmed samples; 2/5 shots inside 250 ms):
+
+| Hypothesis | Joined ≤10° | Median deg | Max deg |
+|---|---:|---:|---:|
+| Center 1.5 m / 1.9 m | 0 / 2 | 87.5 | 88.4 |
+| Marker dir Y/Z swapped vs 1.5 m | **2 / 2** | **1.9** | 3.6 |
+
+The published `rotator+0x50` direction floats are in the CAM-010 engine
+convention `(x, z, y-up)`. After swapping Y/Z they match decoded
+`(x, y-up, z)` hull-to-victim at shot time on two content-distinct
+replays (6/7 clock-covered shots ≤10°). One Oasis miss stayed at 33.9°
+even after the swap — honest (proxy target or a shot not aimed at hull
+center).
+
+Not ExactGunRay: muzzle origin is unread; the join target is still the
+center-line proxy; coordinator yaw/pitch diagnostics stay on the raw
+byte convention until an owner-reviewed read-time swap. CAM-013 was not
+a success criterion. Nothing promoted.
+
+Loaded shell: `+0x3C` remains a reload enum. Exact armor remains a v0.3
+no-go until a producer is named. Game and host were stopped after the
+Dead Rail read.

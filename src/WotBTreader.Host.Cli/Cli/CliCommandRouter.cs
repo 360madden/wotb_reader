@@ -1374,6 +1374,10 @@ public sealed class CliCommandRouter
             projection.Value,
             samples,
             maxLag);
+        PublishedMarkerJoinDiagnostics diagnostics = PublishedMarkerShotJoin.Diagnose(
+            projection.Value,
+            samples,
+            maxLag);
         object data = new
         {
             command = "marker-join",
@@ -1387,13 +1391,27 @@ public sealed class CliCommandRouter
             missingAttacker = summary.MissingAttacker,
             missingViewpoint = summary.MissingViewpoint,
             missingPosition = summary.MissingPosition,
+            compared = diagnostics.Compared,
+            joinedCenter15 = diagnostics.JoinedCenter15,
+            joinedCenter19 = diagnostics.JoinedCenter19,
+            joinedYzsSwap15 = diagnostics.JoinedYzsSwap15,
+            joinedYzsSwap19 = diagnostics.JoinedYzsSwap19,
+            errorLt10 = diagnostics.ErrorLt10,
+            error10To20 = diagnostics.Error10To20,
+            error20To45 = diagnostics.Error20To45,
+            errorGe45 = diagnostics.ErrorGe45,
+            medianErrorDegrees = diagnostics.MedianErrorDegrees,
+            maxErrorDegrees = diagnostics.MaxErrorDegrees,
+            medianYzsSwapErrorDegrees = diagnostics.MedianYzsSwapErrorDegrees,
+            maxYzsSwapErrorDegrees = diagnostics.MaxYzsSwapErrorDegrees,
         };
         return Success(
             data,
             "Marker join viewpointShots=" + summary.ViewpointShots
                 + " joined=" + summary.Joined
-                + " lagExceeded=" + summary.LagExceeded
-                + " noSampleBefore=" + summary.NoSampleBefore
+                + " compared=" + diagnostics.Compared.ToString(CultureInfo.InvariantCulture)
+                + " medianDeg=" + FormatOptionalDegrees(diagnostics.MedianErrorDegrees)
+                + " yzSwapJoined=" + diagnostics.JoinedYzsSwap15.ToString(CultureInfo.InvariantCulture)
                 + ".",
             correlationId);
     }
@@ -2303,6 +2321,11 @@ public sealed class CliCommandRouter
             error.Retryable,
             result.Warnings);
     }
+
+    private static string FormatOptionalDegrees(double? degrees) =>
+        degrees is { } value
+            ? value.ToString("0.0", CultureInfo.InvariantCulture)
+            : "none";
 
     /// <summary>Builds a successful CLI execution envelope.</summary>
     private static CliExecution Success(

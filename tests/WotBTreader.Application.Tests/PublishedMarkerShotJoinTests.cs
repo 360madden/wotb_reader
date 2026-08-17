@@ -165,6 +165,47 @@ public sealed class PublishedMarkerShotJoinTests
     }
 
     [TestMethod]
+    public void DiagnoseReportsNearZeroErrorWhenMarkerMatchesCenterLine()
+    {
+        ParticipantId viewpointId = ParticipantId.New();
+        ReplayDecodeProjection projection = StandardProjection(
+            viewpointId,
+            ShotEvent(sequence: 1, seconds: 5.0, attacker: 1, victim: 2, penetrated: true));
+
+        PublishedMarkerJoinDiagnostics diagnostics = PublishedMarkerShotJoin.Diagnose(
+            projection,
+            [MarkerAimedAtVictim(TimeSpan.FromSeconds(5.0))]);
+
+        Assert.AreEqual(1, diagnostics.Compared);
+        Assert.AreEqual(1, diagnostics.JoinedCenter15);
+        Assert.AreEqual(1, diagnostics.ErrorLt10);
+        Assert.IsNotNull(diagnostics.MedianErrorDegrees);
+        Assert.IsLessThan(1.0, diagnostics.MedianErrorDegrees.Value);
+        Assert.AreEqual(0, diagnostics.JoinedYzsSwap15);
+    }
+
+    [TestMethod]
+    public void DiagnosePutsNinetyDegreeMissInGe45Bucket()
+    {
+        ParticipantId viewpointId = ParticipantId.New();
+        ReplayDecodeProjection projection = StandardProjection(
+            viewpointId,
+            ShotEvent(sequence: 1, seconds: 5.0, attacker: 1, victim: 2, penetrated: true));
+        PublishedMarkerSample aimed = MarkerAimedAtVictim(TimeSpan.FromSeconds(5.0));
+        PublishedMarkerSample off = aimed with { MarkerYawRadians = aimed.MarkerYawRadians + (Math.PI / 2.0) };
+
+        PublishedMarkerJoinDiagnostics diagnostics = PublishedMarkerShotJoin.Diagnose(
+            projection,
+            [off]);
+
+        Assert.AreEqual(1, diagnostics.Compared);
+        Assert.AreEqual(0, diagnostics.JoinedCenter15);
+        Assert.AreEqual(1, diagnostics.ErrorGe45);
+        Assert.IsNotNull(diagnostics.MedianErrorDegrees);
+        Assert.IsGreaterThan(80.0, diagnostics.MedianErrorDegrees.Value);
+    }
+
+    [TestMethod]
     public void ListViewpointShotTimesReturnsSortedViewpointAttackerTimesOnly()
     {
         ParticipantId viewpointId = ParticipantId.New();
