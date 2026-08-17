@@ -517,11 +517,12 @@ public enum EntityRecordRegionAnchor
 
     /// <summary>
     /// Phase 2–4 semantic-field snapshot (penetration v0.3). Reuses the
-    /// ownership walk, then two-pass reads the published gun-marker at
-    /// rotator +0x50 and the VehicleGun reload/state block. Returns
-    /// aggregate flags plus investigation yaw/pitch/enum diagnostics.
-    /// No raw region bytes or addresses leave. See
-    /// docs/operations/pen-weapon-semantic-fields.md.
+    /// ownership walk (process-local cached rotator after a confirmed walk,
+    /// vftable re-validated under the lease; AOB on miss or mismatch), then
+    /// two-pass reads the published gun-marker at rotator +0x50 and the
+    /// VehicleGun reload/state block. Returns aggregate flags plus
+    /// investigation yaw/pitch/enum diagnostics. No raw region bytes or
+    /// addresses leave. See docs/operations/pen-weapon-semantic-fields.md.
     /// </summary>
     PenSemanticFields = 5,
 }

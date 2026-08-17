@@ -39,6 +39,42 @@ public static class PublishedMarkerShotJoin
 
     public static TimeSpan MaxLag { get; } = TimeSpan.FromMilliseconds(250);
 
+    /// <summary>
+    /// Decoded replay-clock times of viewpoint-attacker ShotImpact events.
+    /// Count and seconds only; no coordinates or entity ids.
+    /// </summary>
+    public static IReadOnlyList<TimeSpan> ListViewpointShotTimes(ReplayDecodeProjection projection)
+    {
+        ArgumentNullException.ThrowIfNull(projection);
+        long? viewpointEntityId = ResolveViewpointEntityId(projection);
+        if (viewpointEntityId is not { } viewpointId)
+        {
+            return [];
+        }
+
+        List<TimeSpan> times = [];
+        foreach (CanonicalEvent ev in projection.Events)
+        {
+            if (ev.Kind != CanonicalEventKind.ShotImpact)
+            {
+                continue;
+            }
+
+            if (!TryReadShot(ev.ValuesJson, out long attackerId, out _, out _))
+            {
+                continue;
+            }
+
+            if (attackerId == viewpointId)
+            {
+                times.Add(ev.ReplayTime);
+            }
+        }
+
+        times.Sort();
+        return times;
+    }
+
     public static PublishedMarkerJoinSummary Evaluate(
         ReplayDecodeProjection projection,
         IReadOnlyList<PublishedMarkerSample> samples,

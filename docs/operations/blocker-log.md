@@ -1056,3 +1056,14 @@ folder for the full numbering convention and document map.
   `lagExceeded` at 250 ms and at 10 s — the sampled G2 span (~8-119 s)
   did not cover those shots at the join lag. Not a muzzle proof. BLK-0027
   stays open.
+
+- Elevation two-replay + shot-window join (`2026-08-16`): process-local
+  walk cache (vtable re-read, AOB on miss) plus `marker-shots` alignment.
+  Oasis Palms battle `01a00d22` (content-distinct from Dead Rail
+  `01a00d08`) produced 6 then 8 elevation-independent windows — elevation
+  isolation now has `twoReplayRepeatability = true`. Merged G2 persist
+  covered 5/7 viewpoint shots within 250 ms; those five all missed the
+  10° center-line join (`joined=0`, `lagExceeded=2` for the two late
+  shots). Clock-synchronous capture is shown; the published marker is
+  not ExactGunRay. Loaded shell and exact armor remain. BLK-0027 stays
+  open.

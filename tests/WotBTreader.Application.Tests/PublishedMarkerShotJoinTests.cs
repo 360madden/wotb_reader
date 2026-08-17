@@ -165,6 +165,36 @@ public sealed class PublishedMarkerShotJoinTests
     }
 
     [TestMethod]
+    public void ListViewpointShotTimesReturnsSortedViewpointAttackerTimesOnly()
+    {
+        ParticipantId viewpointId = ParticipantId.New();
+        ReplayDecodeProjection projection = Projection(
+            participants:
+            [
+                Participant(entityId: 1, tankId: "uk:A", tankName: "Attacker Tank", viewpointId),
+                Participant(entityId: 2, tankId: "uk:V", tankName: "Victim Tank"),
+            ],
+            positions:
+            [
+                Sample(entityId: 1, seconds: 5.0, x: 0, z: -100),
+                Sample(entityId: 2, seconds: 5.0, x: 0, z: 0),
+            ],
+            events:
+            [
+                ShotEvent(sequence: 1, seconds: 40.0, attacker: 1, victim: 2, penetrated: true),
+                ShotEvent(sequence: 2, seconds: 12.5, attacker: 2, victim: 1, penetrated: false),
+                ShotEvent(sequence: 3, seconds: 18.25, attacker: 1, victim: 2, penetrated: false),
+            ],
+            viewpointParticipantId: viewpointId);
+
+        IReadOnlyList<TimeSpan> times = PublishedMarkerShotJoin.ListViewpointShotTimes(projection);
+
+        Assert.HasCount(2, times);
+        Assert.AreEqual(TimeSpan.FromSeconds(18.25), times[0]);
+        Assert.AreEqual(TimeSpan.FromSeconds(40.0), times[1]);
+    }
+
+    [TestMethod]
     public void MarkerAimed90DegreesOffDoesNotJoin()
     {
         ParticipantId viewpointId = ParticipantId.New();

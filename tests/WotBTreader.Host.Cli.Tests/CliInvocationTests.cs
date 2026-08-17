@@ -102,4 +102,18 @@ public sealed class CliInvocationTests
         Assert.AreEqual("s.json", result.Value.Positionals[0]);
         Assert.AreEqual("400", result.Value.Options["max-lag-ms"]);
     }
+
+    [TestMethod]
+    public void Parse_MarkerShotsSessionConsumesTheFollowingToken()
+    {
+        var result = CliInvocation.Parse(
+            ["marker-shots", "--session", "01a00d08-b886-7f86-b97d-6eb1eb60d0e1", "--json"]);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.IsNotNull(result.Value);
+        Assert.AreEqual("marker-shots", result.Value.Command);
+        Assert.HasCount(0, result.Value.Positionals);
+        Assert.AreEqual("01a00d08-b886-7f86-b97d-6eb1eb60d0e1", result.Value.Options["session"]);
+        Assert.IsTrue(result.Value.Json);
+    }
 }

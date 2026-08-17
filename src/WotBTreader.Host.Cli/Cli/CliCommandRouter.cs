@@ -47,6 +47,7 @@ public sealed class CliCommandRouter
         "hp-diff",
         "yaw-diff",
         "marker-join",
+        "marker-shots",
         "overlay-frame",
         "overlay-strip",
         "beacon",
@@ -124,6 +125,7 @@ public sealed class CliCommandRouter
             "hp-diff" => await HpDiffAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "yaw-diff" => await YawDiffAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "marker-join" => await MarkerJoinAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
+            "marker-shots" => await MarkerShotsAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "overlay-frame" => await OverlayFrameAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "overlay-strip" => await OverlayStripAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
             "beacon" => await BeaconAsync(invocation, correlationId, cancellationToken).ConfigureAwait(false),
@@ -1193,6 +1195,64 @@ public sealed class CliCommandRouter
             name,
         };
         return Success(data, $"Beacon '{name}' removed.", correlationId);
+    }
+
+    /// <summary>
+    /// Lists decoded viewpoint-attacker ShotImpact replay-clock times so a
+    /// live capture can start near the first shot. Seconds only; not
+    /// ExactGunRay and not a join.
+    /// </summary>
+    private async ValueTask<CliExecution> MarkerShotsAsync(
+        CliInvocation invocation,
+        Guid correlationId,
+        CancellationToken cancellationToken)
+    {
+        if (invocation.Positionals.Count != 0)
+        {
+            return Invalid(
+                "cli.marker-shots.arguments",
+                "marker-shots takes no positional arguments.",
+                correlationId);
+        }
+
+        if (!invocation.Options.TryGetValue("session", out string? sessionText) ||
+            !Guid.TryParse(sessionText, out Guid sessionGuid))
+        {
+            return Invalid(
+                "cli.marker-shots.session",
+                "marker-shots requires --session <battle-session-guid>.",
+                correlationId);
+        }
+
+        OperationResult<ReplayDecodeProjection> projection = await _sessions
+            .GetProjectionAsync(new BattleSessionId(sessionGuid), cancellationToken)
+            .ConfigureAwait(false);
+        if (!projection.IsSuccess || projection.Value is null)
+        {
+            return FromResult(projection, correlationId, "Viewpoint shot times listed.");
+        }
+
+        IReadOnlyList<TimeSpan> times = PublishedMarkerShotJoin.ListViewpointShotTimes(projection.Value);
+        double[] seconds = new double[times.Count];
+        for (int i = 0; i < times.Count; i++)
+        {
+            seconds[i] = times[i].TotalSeconds;
+        }
+
+        object data = new
+        {
+            command = "marker-shots",
+            sessionId = sessionGuid,
+            viewpointShots = seconds.Length,
+            shotReplaySeconds = seconds,
+        };
+        string message = seconds.Length == 0
+            ? "marker-shots viewpointShots=0"
+            : "marker-shots viewpointShots=" + seconds.Length.ToString(CultureInfo.InvariantCulture)
+                + " first=" + seconds[0].ToString("0.000", CultureInfo.InvariantCulture)
+                + " last=" + seconds[^1].ToString("0.000", CultureInfo.InvariantCulture)
+                + ".";
+        return Success(data, message, correlationId);
     }
 
     /// <summary>

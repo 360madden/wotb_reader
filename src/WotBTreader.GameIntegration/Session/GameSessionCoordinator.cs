@@ -204,6 +204,22 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     private DateTimeOffset _lastHeartbeatLoggedAtUtc = DateTimeOffset.MinValue;
     private PenetrationCaptureHistory? _previousPenetrationCapture;
 
+    // Process-local ownership-walk reuse: rotator address only, never logged
+    // or returned. Keyed by authorization generation + module base +
+    // candidate index + expected vftable. The next sample re-reads the
+    // rotator's vftable under the lease and re-runs the five-read chain;
+    // mismatch drops the cache and AOB-scans again.
+    private readonly record struct CachedPenOwnershipWalk(
+        long Generation,
+        long ModuleBase,
+        int CandidateIndex,
+        uint ExpectedRotatorVftable,
+        long RotatorAddress,
+        int CandidateCount);
+
+    private readonly Lock _penWalkCacheLock = new();
+    private CachedPenOwnershipWalk? _cachedPenWalk;
+
     // Active launch leases owned by the coordinator until the session is revoked.
     private WindowsTrustedExecutableLaunchLease? _activeExecutableLease;
     private ManagedReplayArtifactLease? _activeArtifactLease;
@@ -1756,6 +1772,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     {
         _authorization?.ReadGate.Revoke();
         _authorization = null;
+        ClearPenOwnershipWalkCache();
         _authorizationCts?.Cancel();
         // Do not dispose this CTS here. Scan setup creates its linked source
         // under _gate; retaining the canceled source avoids a dispose/register
@@ -4001,8 +4018,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     /// vftable AOB scan for the unique VehicleGunRotator
     /// (<c>moduleBase + <see cref="EntityRecordRegionReadRequest.VehicleGunRotatorVftableRva"/></c>),
     /// then the fixed five-read chain (rotator→owner→forward round-trip→gun
-    /// vftable→entity HP) twice, fail-closed. Only aggregate booleans/counts
-    /// are produced — no address, pointer, id, or raw bytes leave this method.
+    /// vftable→entity HP) twice, fail-closed. A confirmed walk may be reused
+    /// on the next sample after a vftable re-read under the same lease;
+    /// mismatch drops the cache and scans again. Only aggregate
+    /// booleans/counts are produced — no address, pointer, id, or raw bytes
+    /// leave this method.
     /// </summary>
     private async ValueTask<PenOwnershipWalkResolution> ResolvePenOwnershipWalkAsync(
         IAuthorizedMemoryReader reader,
@@ -4013,6 +4033,30 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
     {
         uint expectedRotatorVftable = (uint)(baseAddress + EntityRecordRegionReadRequest.VehicleGunRotatorVftableRva);
         uint expectedGunVftable = (uint)(baseAddress + EntityRecordRegionReadRequest.VehicleGunVftableRva);
+        int index = candidateIndex ?? 0;
+
+        if (TryGetCachedPenWalk(
+                observation.Generation,
+                baseAddress,
+                index,
+                expectedRotatorVftable,
+                out long cachedRotator,
+                out int cachedCandidateCount))
+        {
+            PenOwnershipWalkResolution cached = await WalkAuthenticatedRotatorAsync(
+                reader,
+                cachedRotator,
+                expectedRotatorVftable,
+                expectedGunVftable,
+                cachedCandidateCount,
+                cancellationToken).ConfigureAwait(false);
+            if (cached.Status == Type10EntityPositionStatus.Resolved)
+            {
+                return cached;
+            }
+
+            ClearPenOwnershipWalkCache();
+        }
 
         byte[] expected = new byte[sizeof(uint)];
         BinaryPrimitives.WriteUInt32LittleEndian(expected, expectedRotatorVftable);
@@ -4061,7 +4105,6 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 false);
         }
 
-        int index = candidateIndex ?? 0;
         if (index < 0 || index >= candidates.Count)
         {
             return new PenOwnershipWalkResolution(
@@ -4077,12 +4120,45 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         }
 
         long rotatorAddress = candidates[index].AbsoluteAddress;
+        PenOwnershipWalkResolution walked = await WalkAuthenticatedRotatorAsync(
+            reader,
+            rotatorAddress,
+            expectedRotatorVftable,
+            expectedGunVftable,
+            candidates.Count,
+            cancellationToken).ConfigureAwait(false);
+        if (walked.Status == Type10EntityPositionStatus.Resolved)
+        {
+            StorePenOwnershipWalkCache(
+                observation.Generation,
+                baseAddress,
+                index,
+                expectedRotatorVftable,
+                rotatorAddress,
+                candidates.Count);
+        }
+        else
+        {
+            ClearPenOwnershipWalkCache();
+        }
 
+        return walked;
+    }
+
+    private static async ValueTask<PenOwnershipWalkResolution> WalkAuthenticatedRotatorAsync(
+        IAuthorizedMemoryReader reader,
+        long rotatorAddress,
+        uint expectedRotatorVftable,
+        uint expectedGunVftable,
+        int candidateCount,
+        CancellationToken cancellationToken)
+    {
         // Identity re-gate: the AOB scan matched the exact vftable dword, but
         // the discipline re-reads the object's vftable under the SAME guarded
         // lease before walking its pointers (never dereference off an
         // unauthenticated object — the avatar-stats anchor applies the same
-        // re-read before trusting its quad).
+        // re-read before trusting its quad). A cached rotator uses this
+        // same re-read so a recycled object cannot be walked.
         uint? rotatorVftable = await ReadPointerAsync(
             reader,
             rotatorAddress,
@@ -4093,7 +4169,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 Type10EntityPositionStatus.ReadFailed,
                 "pen-walk-identity-read",
                 1,
-                candidates.Count,
+                candidateCount,
                 false,
                 false,
                 false,
@@ -4107,7 +4183,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 Type10EntityPositionStatus.PenOwnershipWalkMismatch,
                 "pen-walk-identity-mismatch",
                 1,
-                candidates.Count,
+                candidateCount,
                 false,
                 false,
                 false,
@@ -4127,7 +4203,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 Type10EntityPositionStatus.ReadFailed,
                 "pen-walk-pass1-read",
                 2,
-                candidates.Count,
+                candidateCount,
                 false,
                 false,
                 false,
@@ -4147,7 +4223,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 Type10EntityPositionStatus.ReadFailed,
                 "pen-walk-pass2-read",
                 2,
-                candidates.Count,
+                candidateCount,
                 false,
                 false,
                 false,
@@ -4170,7 +4246,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             status,
             stable ? (allConfirmed ? null : "pen-walk-mismatch") : "pen-walk-unstable",
             2,
-            candidates.Count,
+            candidateCount,
             verdict.OwnerPointerReadable,
             verdict.ForwardRoundTripConfirmed,
             verdict.GunVtableConfirmed,
@@ -4179,6 +4255,62 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             rotatorAddress,
             verdict.GunAddress,
             verdict.EntityAddress);
+    }
+
+    private bool TryGetCachedPenWalk(
+        long generation,
+        long moduleBase,
+        int candidateIndex,
+        uint expectedRotatorVftable,
+        out long rotatorAddress,
+        out int candidateCount)
+    {
+        lock (_penWalkCacheLock)
+        {
+            if (_cachedPenWalk is { } cached
+                && cached.Generation == generation
+                && cached.ModuleBase == moduleBase
+                && cached.CandidateIndex == candidateIndex
+                && cached.ExpectedRotatorVftable == expectedRotatorVftable
+                && cached.RotatorAddress != 0)
+            {
+                rotatorAddress = cached.RotatorAddress;
+                candidateCount = cached.CandidateCount;
+                return true;
+            }
+        }
+
+        rotatorAddress = 0;
+        candidateCount = 0;
+        return false;
+    }
+
+    private void StorePenOwnershipWalkCache(
+        long generation,
+        long moduleBase,
+        int candidateIndex,
+        uint expectedRotatorVftable,
+        long rotatorAddress,
+        int candidateCount)
+    {
+        lock (_penWalkCacheLock)
+        {
+            _cachedPenWalk = new CachedPenOwnershipWalk(
+                generation,
+                moduleBase,
+                candidateIndex,
+                expectedRotatorVftable,
+                rotatorAddress,
+                candidateCount);
+        }
+    }
+
+    private void ClearPenOwnershipWalkCache()
+    {
+        lock (_penWalkCacheLock)
+        {
+            _cachedPenWalk = null;
+        }
     }
 
     /// <summary>

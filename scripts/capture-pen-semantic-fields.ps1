@@ -8,11 +8,15 @@
   Polls OfflineReplayVerified, binds the launch artifact to its decoded
   session, then POSTs /api/v1/game/discover/entity-region with
   regionAnchor=pen-semantic-fields on a bounded cadence. The coordinator
-  reuses the ownership walk and two-pass-reads the published gun-marker
-  and VehicleGun reload/state block. This script prints only counts,
-  enum histograms, and 16-sector yaw/pitch bins -- never addresses,
-  tokens, paths, or world XYZ. Walk-confirmed same-clock samples are
-  overwritten to %TEMP%\pen-semantic-fields-samples.json.
+  reuses a process-local ownership-walk cache (vtable re-validated) and
+  two-pass-reads the published gun-marker and VehicleGun reload/state
+  block. When AlignToViewpointShots is true (default), marker-shots
+  supplies viewpoint ShotImpact replay-seconds and the script waits for
+  that window after an optional elevation stretch unless
+  -NoAlignToViewpointShots is set. This script prints
+  only counts, enum histograms, and 16-sector yaw/pitch bins -- never
+  addresses, tokens, paths, or world XYZ. Walk-confirmed same-clock
+  samples are overwritten to %TEMP%\pen-semantic-fields-samples.json.
 
 .EXITCODES
   0  At least one snapshot completed and the summary was printed.
@@ -25,11 +29,25 @@ param(
     [ValidateRange(1, 600)]
     [int]$WaitVerifiedSeconds = 300,
 
-    [ValidateRange(1, 64)]
-    [int]$Samples = 16,
+    [ValidateRange(1, 128)]
+    [int]$Samples = 64,
 
-    [ValidateRange(100, 5000)]
+    [ValidateRange(50, 5000)]
     [int]$CadenceMs = 200,
+
+    [ValidateRange(0, 64)]
+    [int]$ElevationSamples = 24,
+
+    [switch]$NoAlignToViewpointShots,
+
+    [ValidateRange(0, 30)]
+    [int]$ShotLeadSeconds = 1,
+
+    [ValidateRange(0, 30)]
+    [int]$ShotTrailSeconds = 1,
+
+    [ValidateRange(10, 600)]
+    [int]$WaitReplayTimeoutSeconds = 400,
 
     [ValidateRange(0, 7)]
     [int]$OwnershipCandidateIndex = 0,
@@ -41,7 +59,13 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-. (Join-Path $PSScriptRoot 'od-replay-completion.ps1')
+$scriptDir = $PSScriptRoot
+if ([string]::IsNullOrWhiteSpace($scriptDir)) {
+    $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+}
+$repoRoot = (Resolve-Path (Join-Path $scriptDir '..')).Path
+
+. (Join-Path $scriptDir 'od-replay-completion.ps1')
 
 function Get-Rendezvous {
     try {
@@ -202,6 +226,60 @@ function ConvertTo-JsonArray([System.Collections.ICollection]$Items) {
     return '[' + ($parts -join ',') + ']'
 }
 
+function Get-ViewpointShotSeconds {
+    param([string]$SessionId)
+
+    $cli = Join-Path $repoRoot 'src\WotBTreader.Host.Cli\bin\Release\net10.0\WotBTreader.Host.Cli.exe'
+    if (-not (Test-Path -LiteralPath $cli)) {
+        Write-Host 'pen_fields: shot_times_cli_missing'
+        return @()
+    }
+
+    $oldEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $out = & $cli marker-shots --session $SessionId --json 2>$null |
+            ForEach-Object { "$_" }
+    }
+    finally {
+        $ErrorActionPreference = $oldEap
+    }
+
+    $json = ($out -join "`n")
+    if ([string]::IsNullOrWhiteSpace($json)) {
+        Write-Host 'pen_fields: shot_times_empty'
+        return @()
+    }
+
+    try {
+        $envelope = $json | ConvertFrom-Json
+    }
+    catch {
+        Write-Host 'pen_fields: shot_times_parse_failed'
+        return @()
+    }
+
+    if ($envelope.success -ne $true) {
+        Write-Host 'pen_fields: shot_times_cli_failed'
+        return @()
+    }
+
+    $raw = @()
+    if ($null -ne $envelope.data -and
+        $null -ne $envelope.data.shotReplaySeconds) {
+        $raw = @($envelope.data.shotReplaySeconds)
+    }
+
+    $times = New-Object System.Collections.ArrayList
+    foreach ($item in $raw) {
+        if (Test-FiniteNumber $item) {
+            [void]$times.Add([double]$item)
+        }
+    }
+
+    return @($times)
+}
+
 Write-Host 'pen_fields: waiting_for_verified_gate'
 $deadline = [DateTime]::UtcNow.AddSeconds($WaitVerifiedSeconds)
 $verified = $false
@@ -248,29 +326,33 @@ if ($artifactSessions.Count -eq 0) {
 $battleSessionId = [string]$artifactSessions[0].session.battleSessionId
 Write-Host ('pen_fields: bound_battle_session=' + $battleSessionId)
 
-$ok = 0
-$errors = 0
-$walkConfirmed = 0
-$reloadInRange = 0
-$markerFinite = 0
-$markerUnit = 0
-$twoPassStable = 0
-$enumSeen = New-Object 'System.Collections.Generic.HashSet[int]'
-$markerYawBins = New-Object 'System.Collections.Generic.HashSet[int]'
-$markerPitchBins = New-Object 'System.Collections.Generic.HashSet[int]'
-$hullYawBins = New-Object 'System.Collections.Generic.HashSet[int]'
-$independentWindows = 0
-$elevationIndependentWindows = 0
-$g2ClockSamples = 0
-$lastHullBin = $null
-$lastMarkerBin = $null
-$lastMarkerPitchBin = $null
-$sameHullStreak = 0
-$persistedSamples = New-Object System.Collections.ArrayList
+$script:ok = 0
+$script:errors = 0
+$script:walkConfirmed = 0
+$script:reloadInRange = 0
+$script:markerFinite = 0
+$script:markerUnit = 0
+$script:twoPassStable = 0
+$script:enumSeen = New-Object 'System.Collections.Generic.HashSet[int]'
+$script:markerYawBins = New-Object 'System.Collections.Generic.HashSet[int]'
+$script:markerPitchBins = New-Object 'System.Collections.Generic.HashSet[int]'
+$script:hullYawBins = New-Object 'System.Collections.Generic.HashSet[int]'
+$script:independentWindows = 0
+$script:elevationIndependentWindows = 0
+$script:g2ClockSamples = 0
+$script:lastHullBin = $null
+$script:lastMarkerBin = $null
+$script:lastMarkerPitchBin = $null
+$script:sameHullStreak = 0
+$script:lastReplayTimeSeconds = $null
+$script:stopRequested = $false
+$script:persistedSamples = New-Object System.Collections.ArrayList
 $samplesPath = [System.IO.Path]::GetFullPath(
     (Join-Path $env:TEMP 'pen-semantic-fields-samples.json'))
 
-for ($i = 0; $i -lt $Samples; $i++) {
+function Invoke-PenSemanticSample {
+    param([int]$Index)
+
     try {
         $body = @{
             entityId                = 0
@@ -282,7 +364,11 @@ for ($i = 0; $i -lt $Samples; $i++) {
         $response = Invoke-PenApi -Method 'Post' `
             -RelativePath '/api/v1/game/discover/entity-region' `
             -Body $body
-        $ok++
+        $script:ok++
+
+        if (Test-FiniteNumber $response.ReplayTimeSeconds) {
+            $script:lastReplayTimeSeconds = [double]$response.ReplayTimeSeconds
+        }
 
         $walkOk = ($response.Status -eq 'Resolved') -and
             ($response.PenOwnershipOwnerPointerReadable -eq $true) -and
@@ -290,13 +376,13 @@ for ($i = 0; $i -lt $Samples; $i++) {
             ($response.PenOwnershipGunVtableConfirmed -eq $true) -and
             ($response.PenOwnershipEntityHpPlausible -eq $true) -and
             ($response.PenOwnershipTwoPassStable -eq $true)
-        if ($walkOk) { $walkConfirmed++ }
-        if ($response.PenSemanticReloadEnumInRange -eq $true) { $reloadInRange++ }
-        if ($response.PenSemanticMarkerFinite -eq $true) { $markerFinite++ }
-        if ($response.PenSemanticMarkerDirectionUnit -eq $true) { $markerUnit++ }
-        if ($response.PenSemanticTwoPassStable -eq $true) { $twoPassStable++ }
+        if ($walkOk) { $script:walkConfirmed++ }
+        if ($response.PenSemanticReloadEnumInRange -eq $true) { $script:reloadInRange++ }
+        if ($response.PenSemanticMarkerFinite -eq $true) { $script:markerFinite++ }
+        if ($response.PenSemanticMarkerDirectionUnit -eq $true) { $script:markerUnit++ }
+        if ($response.PenSemanticTwoPassStable -eq $true) { $script:twoPassStable++ }
         if ($null -ne $response.PenSemanticReloadEnum) {
-            [void]$enumSeen.Add([int]$response.PenSemanticReloadEnum)
+            [void]$script:enumSeen.Add([int]$response.PenSemanticReloadEnum)
         }
 
         $markerBin = $null
@@ -304,15 +390,15 @@ for ($i = 0; $i -lt $Samples; $i++) {
         $hullBin = $null
         if ($null -ne $response.PenSemanticMarkerYawRadians) {
             $markerBin = Get-YawBin ([double]$response.PenSemanticMarkerYawRadians)
-            [void]$markerYawBins.Add($markerBin)
+            [void]$script:markerYawBins.Add($markerBin)
         }
         if (Test-FiniteNumber $response.PenSemanticMarkerPitchRadians) {
             $markerPitchBin = Get-PitchBin ([double]$response.PenSemanticMarkerPitchRadians)
-            [void]$markerPitchBins.Add($markerPitchBin)
+            [void]$script:markerPitchBins.Add($markerPitchBin)
         }
         if ($null -ne $response.PenSemanticHullYawRadians) {
             $hullBin = Get-YawBin ([double]$response.PenSemanticHullYawRadians)
-            [void]$hullYawBins.Add($hullBin)
+            [void]$script:hullYawBins.Add($hullBin)
         }
 
         $qualityOk = $walkOk -and
@@ -322,7 +408,7 @@ for ($i = 0; $i -lt $Samples; $i++) {
         $sameClock = ($response.SameDecodedClockProven -eq $true)
         $replayTimeFinite = Test-FiniteNumber $response.ReplayTimeSeconds
         if ($sameClock -and $replayTimeFinite) {
-            $g2ClockSamples++
+            $script:g2ClockSamples++
         }
 
         if ($walkOk -and $sameClock -and $replayTimeFinite) {
@@ -342,7 +428,7 @@ for ($i = 0; $i -lt $Samples; $i++) {
             if (Test-FiniteNumber $response.PenSemanticHullYawRadians) {
                 $hullYawValue = [double]$response.PenSemanticHullYawRadians
             }
-            [void]$persistedSamples.Add([ordered]@{
+            [void]$script:persistedSamples.Add([ordered]@{
                     replayTimeSeconds      = [double]$response.ReplayTimeSeconds
                     markerYawRadians       = $markerYawValue
                     markerPitchRadians     = $markerPitchValue
@@ -352,39 +438,175 @@ for ($i = 0; $i -lt $Samples; $i++) {
                 })
         }
 
-        if ($null -ne $hullBin -and $null -ne $lastHullBin -and $hullBin -eq $lastHullBin) {
-            $sameHullStreak++
-            if ($sameHullStreak -ge 2 -and $null -ne $markerBin -and
-                $null -ne $lastMarkerBin -and $markerBin -ne $lastMarkerBin) {
-                $independentWindows++
+        if ($null -ne $hullBin -and $null -ne $script:lastHullBin -and
+            $hullBin -eq $script:lastHullBin) {
+            $script:sameHullStreak++
+            if ($script:sameHullStreak -ge 2 -and $null -ne $markerBin -and
+                $null -ne $script:lastMarkerBin -and
+                $markerBin -ne $script:lastMarkerBin) {
+                $script:independentWindows++
             }
-            if ($sameHullStreak -ge 2 -and $qualityOk -and
-                $null -ne $markerBin -and $null -ne $lastMarkerBin -and
-                $markerBin -eq $lastMarkerBin -and
-                $null -ne $markerPitchBin -and $null -ne $lastMarkerPitchBin -and
-                $markerPitchBin -ne $lastMarkerPitchBin) {
-                $elevationIndependentWindows++
+            if ($script:sameHullStreak -ge 2 -and $qualityOk -and
+                $null -ne $markerBin -and $null -ne $script:lastMarkerBin -and
+                $markerBin -eq $script:lastMarkerBin -and
+                $null -ne $markerPitchBin -and
+                $null -ne $script:lastMarkerPitchBin -and
+                $markerPitchBin -ne $script:lastMarkerPitchBin) {
+                $script:elevationIndependentWindows++
             }
         }
         else {
-            $sameHullStreak = 0
+            $script:sameHullStreak = 0
         }
-        $lastHullBin = $hullBin
-        $lastMarkerBin = $markerBin
-        $lastMarkerPitchBin = $markerPitchBin
+        $script:lastHullBin = $hullBin
+        $script:lastMarkerBin = $markerBin
+        $script:lastMarkerPitchBin = $markerPitchBin
+        return $true
     }
     catch {
-        $errors++
-        Write-Host ('pen_fields: sample_error i=' + $i + ' ' + $_.Exception.Message)
+        $script:errors++
+        Write-Host ('pen_fields: sample_error i=' + $Index + ' ' + $_.Exception.Message)
         $terminal = Get-LauncherFatalError
         if ($null -ne $terminal) {
             Write-Host ('pen_fields: stopping_launcher=' + $terminal)
+            $script:stopRequested = $true
+        }
+        return $false
+    }
+}
+
+function Invoke-PenSemanticBurst {
+    param(
+        [int]$Count,
+        [double]$StopAfterSeconds = -1
+    )
+
+    for ($i = 0; $i -lt $Count; $i++) {
+        if ($script:stopRequested) { break }
+        [void](Invoke-PenSemanticSample -Index $i)
+        if ($StopAfterSeconds -ge 0 -and
+            $null -ne $script:lastReplayTimeSeconds -and
+            $script:lastReplayTimeSeconds -ge $StopAfterSeconds) {
             break
         }
+        Start-Sleep -Milliseconds $CadenceMs
+    }
+}
+
+function Wait-PenReplaySeconds {
+    param(
+        [double]$TargetSeconds,
+        [int]$TimeoutSeconds
+    )
+
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    $lastPrint = [DateTime]::MinValue
+    while ([DateTime]::UtcNow -lt $deadline) {
+        if ($script:stopRequested) { return $false }
+        try {
+            $body = @{
+                entityId                = 0
+                regionLength            = $RegionLength
+                regionAnchor            = 'pen-semantic-fields'
+                battleSessionId         = $battleSessionId
+                ownershipCandidateIndex = $OwnershipCandidateIndex
+            }
+            $response = Invoke-PenApi -Method 'Post' `
+                -RelativePath '/api/v1/game/discover/entity-region' `
+                -Body $body
+            if (Test-FiniteNumber $response.ReplayTimeSeconds) {
+                $now = [double]$response.ReplayTimeSeconds
+                $script:lastReplayTimeSeconds = $now
+                if (([DateTime]::UtcNow - $lastPrint).TotalSeconds -ge 10) {
+                    Write-Host ('pen_fields: waiting_replay_seconds=' +
+                        ([math]::Round($now, 1)) +
+                        ' target=' + ([math]::Round($TargetSeconds, 1)))
+                    $lastPrint = [DateTime]::UtcNow
+                }
+                if (($now + 0.05) -ge $TargetSeconds) {
+                    return $true
+                }
+            }
+        }
+        catch {
+            Write-Host ('pen_fields: wait_error ' + $_.Exception.Message)
+            $terminal = Get-LauncherFatalError
+            if ($null -ne $terminal) {
+                Write-Host ('pen_fields: stopping_launcher=' + $terminal)
+                $script:stopRequested = $true
+                return $false
+            }
+        }
+        Start-Sleep -Milliseconds 500
     }
 
-    Start-Sleep -Milliseconds $CadenceMs
+    Write-Host 'pen_fields: wait_timeout'
+    return $false
 }
+
+$shotSeconds = @()
+if (-not $NoAlignToViewpointShots) {
+    $shotSeconds = @(Get-ViewpointShotSeconds -SessionId $battleSessionId)
+}
+
+if ($shotSeconds.Count -gt 0) {
+    $firstShot = [double]$shotSeconds[0]
+    $lastShot = [double]$shotSeconds[$shotSeconds.Count - 1]
+    Write-Host ('pen_fields: viewpoint_shots=' + $shotSeconds.Count +
+        ' first=' + ([math]::Round($firstShot, 3)) +
+        ' last=' + ([math]::Round($lastShot, 3)))
+}
+else {
+    Write-Host 'pen_fields: viewpoint_shots=0'
+}
+
+$elevationCount = $ElevationSamples
+if ($elevationCount -gt $Samples) { $elevationCount = $Samples }
+if ($elevationCount -gt 0) {
+    Write-Host ('pen_fields: elevation_phase samples=' + $elevationCount)
+    Invoke-PenSemanticBurst -Count $elevationCount
+}
+
+$remaining = $Samples - $script:ok
+if ($remaining -lt 0) { $remaining = 0 }
+if ($shotSeconds.Count -gt 0 -and $remaining -gt 0 -and
+    -not $script:stopRequested) {
+    $waitUntil = [double]$shotSeconds[0] - [double]$ShotLeadSeconds
+    if ($waitUntil -lt 0) { $waitUntil = 0 }
+    $stopAfter = [double]$shotSeconds[$shotSeconds.Count - 1] +
+        [double]$ShotTrailSeconds
+    Write-Host ('pen_fields: shot_phase wait_until=' +
+        ([math]::Round($waitUntil, 3)) +
+        ' stop_after=' + ([math]::Round($stopAfter, 3)))
+    $reached = Wait-PenReplaySeconds -TargetSeconds $waitUntil `
+        -TimeoutSeconds $WaitReplayTimeoutSeconds
+    if ($reached) {
+        Invoke-PenSemanticBurst -Count $remaining -StopAfterSeconds $stopAfter
+    }
+    else {
+        Write-Host 'pen_fields: shot_window_not_reached'
+    }
+}
+elseif ($remaining -gt 0 -and -not $script:stopRequested) {
+    Write-Host ('pen_fields: unaligned_phase samples=' + $remaining)
+    Invoke-PenSemanticBurst -Count $remaining
+}
+
+$ok = $script:ok
+$errors = $script:errors
+$walkConfirmed = $script:walkConfirmed
+$reloadInRange = $script:reloadInRange
+$markerFinite = $script:markerFinite
+$markerUnit = $script:markerUnit
+$twoPassStable = $script:twoPassStable
+$enumSeen = $script:enumSeen
+$markerYawBins = $script:markerYawBins
+$hullYawBins = $script:hullYawBins
+$independentWindows = $script:independentWindows
+$markerPitchBins = $script:markerPitchBins
+$elevationIndependentWindows = $script:elevationIndependentWindows
+$g2ClockSamples = $script:g2ClockSamples
+$persistedSamples = $script:persistedSamples
 
 $enumList = ($enumSeen | Sort-Object) -join ','
 if ([string]::IsNullOrWhiteSpace($enumList)) { $enumList = 'none' }

@@ -1,10 +1,11 @@
 # Penetration v0.3 — semantic-field live snapshot (first replay)
 
 **Date:** 2026-08-16 (UTC)
-**Status:** two-replay live snapshot positive for published marker +
-reload enum + hull-independent marker yaw bins; nothing promoted
-**Blocker:** `BLK-0027` (open — elevation isolation, shot join, and loaded
-shell remain)
+**Status:** two-replay elevation isolation positive; shot-window capture
+covers viewpoint ShotImpacts within 250 ms; 0/5 angular joins; nothing
+promoted
+**Blocker:** `BLK-0027` (open — published marker is not the 10°
+center-line; loaded shell and exact armor remain)
 
 ## What changed
 
@@ -97,3 +98,41 @@ at 200 ms request cadence):
 
 Nothing promoted. Elevation isolation is a first-replay script positive
 and still needs a content-distinct repeat. Shot join remains open.
+
+## Amendment — walk cache, second-replay elevation, shot-window join (`2026-08-16`)
+
+The coordinator now reuses a confirmed ownership-walk rotator across
+samples: process-local cache keyed by authorization generation, module
+base, candidate index, and expected vftable. The next sample re-reads
+the rotator's vftable under the lease and re-runs the five-read chain;
+mismatch drops the cache and AOB-scans again. Addresses never leave.
+`marker-shots` lists viewpoint ShotImpact replay-seconds. The capture
+script takes an elevation stretch, then waits on the G2 clock for the
+first viewpoint shot.
+
+One content-distinct Oasis Palms managed offline replay (1045525-byte
+original vs the Dead Rail elevation pass on `01a00d08`; battle
+`01a00d22-c7b8-73ce-94a7-adc9ff853fdf`) reached `OfflineReplayVerified`.
+
+Elevation pass (24 samples, then a later 128-sample window):
+
+- walk 63/64 then 125/128; marker finite/unit on every sample
+- **elevation_independent_windows = 6** then **8** (hull 1 yaw bin,
+  marker pitch 5 bins)
+- `twoReplayRepeatability` for hull-stable / pitch-changing isolation
+  is now true (Dead Rail 5 windows, Oasis 6+)
+
+Shot join on the merged G2 persist (188 samples, span ~23-262 s; 7
+viewpoint shots at 177.8, 245.4, 253.2, 253.2, 260.3, 267.1, 274.0 s):
+
+- 5/7 shots had an at-or-before sample within 250 ms (118, 71, 18, 18,
+  158 ms)
+- 2/7 late shots were outside the persist span (`lagExceeded`)
+- `marker-join` at 250 ms and 1000 ms: viewpointShots=7, joined=0,
+  lagExceeded=2. The five clock-covered shots reached the 10° check and
+  all missed. Honest: capture can now be shot-synchronous; the published
+  marker is not the 10° attacker-hull-to-victim center line. Not
+  ExactGunRay. CAM-013 was not a success criterion.
+
+Nothing promoted. Badge stays `NotReady`. Game and host were stopped
+after the reads. Reload enums `0`/`3` again — still not a shell id.
