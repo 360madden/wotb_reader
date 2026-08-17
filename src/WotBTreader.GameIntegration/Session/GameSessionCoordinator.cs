@@ -2772,7 +2772,13 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     PenSemanticOriginInBand: fields.OriginInBand,
                     PenSemanticOriginRelX: fields.OriginRelX,
                     PenSemanticOriginRelY: fields.OriginRelY,
-                    PenSemanticOriginRelZ: fields.OriginRelZ));
+                    PenSemanticOriginRelZ: fields.OriginRelZ,
+                    PenSemanticMuzzleDistanceHalfInBand: fields.MuzzleDistanceHalfInBand,
+                    PenSemanticMuzzleDistanceScalarInBand: fields.MuzzleDistanceScalarInBand,
+                    PenSemanticMuzzleDistanceHalfHeightMeters: fields.MuzzleDistanceHalfHeightMeters,
+                    PenSemanticMuzzleDistanceHalfHorizontalMeters: fields.MuzzleDistanceHalfHorizontalMeters,
+                    PenSemanticMuzzleDistanceScalarHeightMeters: fields.MuzzleDistanceScalarHeightMeters,
+                    PenSemanticMuzzleDistanceScalarHorizontalMeters: fields.MuzzleDistanceScalarHorizontalMeters));
             }
             else
             {
@@ -4424,7 +4430,13 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         bool OriginInBand = false,
         double? OriginRelX = null,
         double? OriginRelY = null,
-        double? OriginRelZ = null);
+        double? OriginRelZ = null,
+        bool MuzzleDistanceHalfInBand = false,
+        bool MuzzleDistanceScalarInBand = false,
+        double? MuzzleDistanceHalfHeightMeters = null,
+        double? MuzzleDistanceHalfHorizontalMeters = null,
+        double? MuzzleDistanceScalarHeightMeters = null,
+        double? MuzzleDistanceScalarHorizontalMeters = null);
 
     /// <summary>
     /// Phase 2–4 snapshot: ownership walk, then two-pass reads of the
@@ -4602,6 +4614,23 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 && originHorizontal <= EntityRecordRegionReadRequest.PenOriginHorizontalMaxMeters;
         }
 
+        bool muzzleHalfInBand = false;
+        bool muzzleScalarInBand = false;
+        double? muzzleHalfHeight = null;
+        double? muzzleHalfHorizontal = null;
+        double? muzzleScalarHeight = null;
+        double? muzzleScalarHorizontal = null;
+        if (markerFinite && markerUnit && float.IsFinite(scalar)
+            && float.IsFinite(hullX) && float.IsFinite(hullY) && float.IsFinite(hullZ))
+        {
+            ScoreMuzzleReconstruction(
+                px, py, pz, dx, dy, dz, scalar, 1.0, hullX, hullY, hullZ,
+                out muzzleHalfHeight, out muzzleHalfHorizontal, out muzzleHalfInBand);
+            ScoreMuzzleReconstruction(
+                px, py, pz, dx, dy, dz, scalar, 0.5, hullX, hullY, hullZ,
+                out muzzleScalarHeight, out muzzleScalarHorizontal, out muzzleScalarInBand);
+        }
+
         Type10EntityPositionStatus status = !stable
             ? Type10EntityPositionStatus.PenOwnershipWalkUnstable
             : Type10EntityPositionStatus.Resolved;
@@ -4628,7 +4657,49 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             originInBand,
             originRelX,
             originRelY,
-            originRelZ);
+            originRelZ,
+            muzzleHalfInBand,
+            muzzleScalarInBand,
+            muzzleHalfHeight,
+            muzzleHalfHorizontal,
+            muzzleScalarHeight,
+            muzzleScalarHorizontal);
+    }
+
+    private static void ScoreMuzzleReconstruction(
+        float hitX,
+        float hitY,
+        float hitZ,
+        float dirX,
+        float dirY,
+        float dirZ,
+        float scalar,
+        double param3,
+        float hullX,
+        float hullY,
+        float hullZ,
+        out double? height,
+        out double? horizontal,
+        out bool inBand)
+    {
+        height = null;
+        horizontal = null;
+        inBand = false;
+        if (!GunMarkerMuzzle.TryReconstructStart(
+                hitX, hitY, hitZ, dirX, dirY, dirZ, scalar, param3,
+                out double startX, out double startY, out double startZ))
+        {
+            return;
+        }
+
+        double relX = startX - hullX;
+        double relY = startY - hullY;
+        double relZ = startZ - hullZ;
+        height = relY;
+        horizontal = Math.Sqrt((relX * relX) + (relZ * relZ));
+        inBand = height >= EntityRecordRegionReadRequest.PenOriginHeightMinMeters
+            && height <= EntityRecordRegionReadRequest.PenOriginHeightMaxMeters
+            && horizontal <= EntityRecordRegionReadRequest.PenOriginHorizontalMaxMeters;
     }
 
     private static async ValueTask<byte[]?> ReadExactAsync(

@@ -716,7 +716,13 @@ public sealed record EntityRecordRegionReadResult(
     bool PenSemanticOriginInBand = false,
     double? PenSemanticOriginRelX = null,
     double? PenSemanticOriginRelY = null,
-    double? PenSemanticOriginRelZ = null);
+    double? PenSemanticOriginRelZ = null,
+    bool PenSemanticMuzzleDistanceHalfInBand = false,
+    bool PenSemanticMuzzleDistanceScalarInBand = false,
+    double? PenSemanticMuzzleDistanceHalfHeightMeters = null,
+    double? PenSemanticMuzzleDistanceHalfHorizontalMeters = null,
+    double? PenSemanticMuzzleDistanceScalarHeightMeters = null,
+    double? PenSemanticMuzzleDistanceScalarHorizontalMeters = null);
 
 /// <summary>
 /// One entity region in a batch read (mirrors the single-read fields).

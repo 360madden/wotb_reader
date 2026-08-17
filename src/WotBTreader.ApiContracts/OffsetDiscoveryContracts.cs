@@ -543,6 +543,26 @@ public sealed record EntityRecordRegionReadResponse
 
     /// <summary>Hull-relative origin Z meters (decoded space, not world).</summary>
     public double? PenSemanticOriginRelZ { get; init; }
+
+    /// <summary>
+    /// GetGunMarkerPosition start reconstructed with distance=scalar/2
+    /// (param3=1) is in the hull-relative muzzle band.
+    /// </summary>
+    public bool PenSemanticMuzzleDistanceHalfInBand { get; init; }
+
+    /// <summary>
+    /// GetGunMarkerPosition start reconstructed with distance=scalar
+    /// (param3=0.5) is in the hull-relative muzzle band.
+    /// </summary>
+    public bool PenSemanticMuzzleDistanceScalarInBand { get; init; }
+
+    public double? PenSemanticMuzzleDistanceHalfHeightMeters { get; init; }
+
+    public double? PenSemanticMuzzleDistanceHalfHorizontalMeters { get; init; }
+
+    public double? PenSemanticMuzzleDistanceScalarHeightMeters { get; init; }
+
+    public double? PenSemanticMuzzleDistanceScalarHorizontalMeters { get; init; }
 }
 
 /// <summary>

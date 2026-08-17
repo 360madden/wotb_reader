@@ -341,6 +341,8 @@ $script:independentWindows = 0
 $script:elevationIndependentWindows = 0
 $script:g2ClockSamples = 0
 $script:originInBand = 0
+$script:muzzleHalfInBand = 0
+$script:muzzleScalarInBand = 0
 $script:lastHullBin = $null
 $script:lastMarkerBin = $null
 $script:lastMarkerPitchBin = $null
@@ -413,6 +415,12 @@ function Invoke-PenSemanticSample {
         }
         if ($response.PenSemanticOriginInBand -eq $true) {
             $script:originInBand++
+        }
+        if ($response.PenSemanticMuzzleDistanceHalfInBand -eq $true) {
+            $script:muzzleHalfInBand++
+        }
+        if ($response.PenSemanticMuzzleDistanceScalarInBand -eq $true) {
+            $script:muzzleScalarInBand++
         }
 
         if ($walkOk -and $sameClock -and $replayTimeFinite) {
@@ -626,6 +634,8 @@ $markerPitchBins = $script:markerPitchBins
 $elevationIndependentWindows = $script:elevationIndependentWindows
 $g2ClockSamples = $script:g2ClockSamples
 $originInBand = $script:originInBand
+$muzzleHalfInBand = $script:muzzleHalfInBand
+$muzzleScalarInBand = $script:muzzleScalarInBand
 $persistedSamples = $script:persistedSamples
 
 $enumList = ($enumSeen | Sort-Object) -join ','
@@ -646,6 +656,8 @@ Write-Host ('pen_fields: marker_pitch_bins=' + $markerPitchBins.Count)
 Write-Host ('pen_fields: elevation_independent_windows=' + $elevationIndependentWindows)
 Write-Host ('pen_fields: g2_clock_samples=' + $g2ClockSamples)
 Write-Host ('pen_fields: origin_in_band=' + $originInBand)
+Write-Host ('pen_fields: muzzle_dhalf_in_band=' + $muzzleHalfInBand)
+Write-Host ('pen_fields: muzzle_dscalar_in_band=' + $muzzleScalarInBand)
 
 $samplesJson = ConvertTo-JsonArray $persistedSamples
 [IO.File]::WriteAllText(

@@ -206,3 +206,28 @@ One clock-covered viewpoint shot joined at 33.9° to the hull center-line
 Honest: direction convention stands; muzzle origin is **not** the
 published pos3. A different origin field is required. Nothing promoted.
 Game and host were stopped.
+
+## Amendment — GetGunMarkerPosition start reconstruction (`2026-08-16`)
+
+Hash-bound `FUN_01ec12b0` (`GetGunMarkerPosition`) ray-marches from a
+start pose produced by `FUN_0133a410` and publishes the **hit** at
+`rotator+0x50`. The decompile writes
+`scalar = 2 * |hit-start| * param3`. `GunMarkerMuzzle.TryReconstructStart`
+implements that formula. The coordinator scores two param3 hypotheses
+(1.0 ⇒ distance=scalar/2, 0.5 ⇒ distance=scalar) as hull-relative
+in-band flags. The start pose itself is stack-local in `FUN_01ed2040`
+and is not a second published field at `+0x50`.
+
+Dead Rail `01a00d53` (`OfflineReplayVerified`, 24/24 walk-confirmed):
+
+- published-pos in-band 0/24
+- reconstruct param3=1 in-band **0/24**
+- reconstruct param3=0.5 in-band **0/24**
+- one snapshot: published height ~27.5 m / horizontal ~207 m; both
+  reconstructions differed by centimeters (published 7th float is not a
+  long `2*|hit-start|` range)
+
+Honest: start reconstruction from the published scalar is a **no-go**.
+Next static follow is `FUN_0133a410` / rotator `+0xEC` matrix — do not
+live-read an unproven translation slot. Nothing promoted. Game and host
+stopped.

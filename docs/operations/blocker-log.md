@@ -1084,3 +1084,9 @@ folder for the full numbering convention and document map.
   wired for persist `originRel*`. First live Oasis `01a00d40`: 0/64
   in-band (height ~41 m, horizontal ~80–230 m) — published pos3 is not
   a muzzle. BLK-0027 stays open.
+
+- GetGunMarkerPosition start reconstruction (`2026-08-16`): formula
+  `start = hit - dir * (scalar/(2*param3))` from `FUN_01ec12b0`. Dead
+  Rail `01a00d53` 0/24 in-band for param3=1 and 0.5; reconstructed
+  start sat centimeters from the published hit. Scalar is not a long
+  range. Next is `FUN_0133a410` static. BLK-0027 stays open.

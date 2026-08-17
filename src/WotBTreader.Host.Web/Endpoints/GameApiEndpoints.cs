@@ -1014,6 +1014,12 @@ internal static class GameApiEndpoints
             PenSemanticOriginRelX = read.PenSemanticOriginRelX,
             PenSemanticOriginRelY = read.PenSemanticOriginRelY,
             PenSemanticOriginRelZ = read.PenSemanticOriginRelZ,
+            PenSemanticMuzzleDistanceHalfInBand = read.PenSemanticMuzzleDistanceHalfInBand,
+            PenSemanticMuzzleDistanceScalarInBand = read.PenSemanticMuzzleDistanceScalarInBand,
+            PenSemanticMuzzleDistanceHalfHeightMeters = read.PenSemanticMuzzleDistanceHalfHeightMeters,
+            PenSemanticMuzzleDistanceHalfHorizontalMeters = read.PenSemanticMuzzleDistanceHalfHorizontalMeters,
+            PenSemanticMuzzleDistanceScalarHeightMeters = read.PenSemanticMuzzleDistanceScalarHeightMeters,
+            PenSemanticMuzzleDistanceScalarHorizontalMeters = read.PenSemanticMuzzleDistanceScalarHorizontalMeters,
         });
     }
 

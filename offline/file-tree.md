@@ -532,6 +532,7 @@ src/WotBTreader.Application/Game/GameSessionContracts.cs
 src/WotBTreader.Application/Game/OverlayPenetrationData.cs
 src/WotBTreader.Application/Game/PenetrationCaptureContracts.cs
 src/WotBTreader.Application/Properties/AssemblyInfo.cs
+src/WotBTreader.Application/Replay/GunMarkerMuzzle.cs
 src/WotBTreader.Application/Replay/LiveFrameProjector.cs
 src/WotBTreader.Application/Replay/OffsetTableReader.cs
 src/WotBTreader.Application/Replay/OverlayFrameProjection.cs
@@ -819,6 +820,7 @@ src/WotBTreader.Storage.Sqlite/StorageLog.cs
 src/WotBTreader.Storage.Sqlite/WotBTreader.Storage.Sqlite.csproj
 src/WotBTreader.Storage.Sqlite/packages.lock.json
 test.cmd
+tests/WotBTreader.Application.Tests/GunMarkerMuzzleTests.cs
 tests/WotBTreader.Application.Tests/LiveFrameProjectorTests.cs
 tests/WotBTreader.Application.Tests/MSTestSettings.cs
 tests/WotBTreader.Application.Tests/OffsetTableReaderTests.cs
