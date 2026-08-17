@@ -130,6 +130,17 @@ reviewed roster and spend tokens without a distinct decision boundary:
 - Live operator: the safety, lifecycle, and single-game locks require one lead,
   not a delegated role.
 
+## Harness scope (Freebuff sessions)
+
+When work is driven by Freebuff, the session is single-agent: the lead is the
+only agent, and nothing in this roster is spawned, claimed, or attempted from
+such a session. The lanes and effort ladder remain useful as read-only
+reasoning framing for lead-performed planning. Launching the Codex CLI or
+OpenCode from inside a Freebuff session happens only on an explicit,
+per-invocation owner request (the 2026-08-17 harness drill was the first such
+exception). The `.codex/` enforcement chain and this roster remain the
+contract for Codex harnesses and are unchanged by this scope.
+
 ## Enforcement and evaluation
 
 **Harness compatibility note (2026-08-17, from the first real harness drill):**

@@ -94,6 +94,17 @@ of growing this always-loaded file.
 - The lead retains shared-contract decisions. Use the named specialist for
   decoder/binary or security/privacy audits when that audit is required.
 
+## Harness scope (owner-approved 2026-08-17)
+
+This delegation contract applies to harnesses that run delegation: the
+Codex TUI/desktop and OpenCode with a configured provider. Sessions driven
+by Freebuff are single-agent lead sessions — the session lead is the only
+agent there. The lead performs all roles as read-only reasoning framing and
+never spawns, claims spawns, or launches Codex/OpenCode runs from inside a
+Freebuff session except on explicit owner request. The `.codex/`
+enforcement chain (.codex/hooks, role files, policy tests, config check) is
+unchanged and applies whenever the session runs inside a Codex harness.
+
 ## Session ritual
 
 **Start**
