@@ -187,3 +187,22 @@ rel X/Y/Z for an origin-to-victim join. World XYZ are not logged.
 `marker-join` accepts optional `originRel*` on persist samples and
 counts `joinedOriginToVictim`. Not ExactGunRay until a live origin
 band + origin-to-victim repeat. Nothing promoted.
+
+## Amendment — first live origin read (`2026-08-16`)
+
+Oasis Palms battle `01a00d40-5be8-7e46-addb-a6935ca968ea`
+(`OfflineReplayVerified`, 64/64 walk-confirmed, marker finite/unit/stable).
+After the read-time Y/Z swap:
+
+- `origin_in_band=0` on all 64 G2 samples
+- hull-relative height median ~41 m (min ~38, max ~43)
+- hull-relative horizontal median ~133 m (min ~79, max ~231)
+
+The published `+0x50` **position** is not a muzzle next to the hull. It
+behaves like a distant gun-marker / aim point (GetGunMarkerPosition).
+One clock-covered viewpoint shot joined at 33.9° to the hull center-line
+(same order as the prior Oasis miss). `joinedOriginToVictim=0`.
+
+Honest: direction convention stands; muzzle origin is **not** the
+published pos3. A different origin field is required. Nothing promoted.
+Game and host were stopped.

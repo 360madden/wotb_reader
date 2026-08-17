@@ -1081,11 +1081,6 @@ folder for the full numbering convention and document map.
 - Read-time Y/Z swap + hull-relative origin (`2026-08-16`): coordinator
   converts marker pos/dir to decoded space and reports height /
   horizontal / in-band only (no world XYZ). Origin-to-victim join is
-  wired for persist `originRel*`. Live origin proof still required.
-  BLK-0027 stays open.
-
-- Read-time Y/Z swap + hull-relative origin (`2026-08-16`): coordinator
-  converts marker pos/dir to decoded space and reports height /
-  horizontal / in-band only (no world XYZ). Origin-to-victim join is
-  wired for persist `originRel*`. Live origin proof still required.
-  BLK-0027 stays open.
+  wired for persist `originRel*`. First live Oasis `01a00d40`: 0/64
+  in-band (height ~41 m, horizontal ~80–230 m) — published pos3 is not
+  a muzzle. BLK-0027 stays open.

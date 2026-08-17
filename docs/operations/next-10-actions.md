@@ -26,7 +26,7 @@ live work; owner-gated items sit behind the evidence they consume.
 
 | # | Action | Roadmap anchor | Why now | Gate |
 |---|---|---|---|---|
-| 1 | **Live-prove hull-relative marker origin** (in-band height/horizontal + origin-to-victim join) on two content-distinct replays | Phase 6 v0.3 G1 item 5; BLK-0027 | Read-time Y/Z swap is implemented from the two-replay dir proof. Origin scalars are ready but not live-proven. Still not ExactGunRay | do not promote; do not log world XYZ |
+| 1 | **Find a muzzle-origin field that is not `rotator+0x50` pos3** (static first). Published pos is a distant gun-marker, not hull-relative muzzle | Phase 6 v0.3 G1 item 5; BLK-0027 | First live origin read: 0/64 in-band; height ~41 m; horizontal ~80–230 m. Dir Y/Z convention still stands | do not treat marker pos as muzzle; do not promote |
 | 2 | **Adjudicate the capture verdict and promote only proven exact fields** | Phase 6 v0.3 G2/G4 | The first census result is an honest ambiguous-ownership negative (43 candidates, nothing promoted); no shared weapon/aim contract or colored badge may be enabled until the walk + shell/aim/ray proofs land | two content-distinct positive repeats |
 | 3 | **Keep exact armor as a v0.3 no-go** until an offline producer names surface identity, thickness/units, order, and interaction; do not live-read RTTI-only families | Phase 6 v0.3 item 1/7; BLK-0027 | Cheap static triage already closed; no remaining four-fact producer hypothesis. Phase cannot complete without a plan change or that producer | no live armor scan |
 | 4 | **Implement exact weapon, aim, and armor ports only for proven cohorts** | Phase 6 v0.3 G4 | Provenance gates already prevent nominal/manual/camera data from masquerading as exact | G1/G2 pass |
