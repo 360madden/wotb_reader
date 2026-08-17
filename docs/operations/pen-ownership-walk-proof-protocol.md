@@ -142,9 +142,9 @@ what the field means at runtime. Nothing here is promoted or read.
 |---|---|---|
 | `+0x0` | primary vftable `0x32dacf4` | object identity |
 | `+0x8` / `+0xC` | secondary sub-vtables (different addresses) | multiple inheritance |
-| `+0x38` | `100.0f` | possibly reload/rate; unproven |
-| `+0x3C` | `9` (int) | possibly shell count/caliber; unproven |
-| `+0x40` | `1.0f` | unproven |
+| `+0x38` | `100.0f` | ctor/factory hardcoded default — refuted as per-instance config (see trace below) |
+| `+0x3C` | `9` (int) | ctor/factory hardcoded default — refuted as per-instance config (see trace below) |
+| `+0x40` | `1.0f` | ctor/factory hardcoded default — refuted as per-instance config (see trace below) |
 | `+0x48` | allocated 8-byte object | listener/state; unproven |
 
 ### VehicleGunRotator (size `0x1f0`)
@@ -180,4 +180,45 @@ semantics of the surrounding aim-shaped fields (`+0x84`, `+0x134/+0x138`,
 **turret yaw vs gun elevation vs aim point**; that now requires the live
 controlled-transition correlation G1 items 2/5 already mandate (downstream of
 the walk's live validation).
+
+### Configured-gun / loaded-shell static trace (2026-08-17)
+
+A write/read-site trace (`TraceGunFieldAccess.java` and
+`DumpGunLifecycle.java`, evidence `.build/ghidra-evidence-gun-fields/`,
+hash-bound `1cda5c31…`) followed the `VehicleGun` field block through its
+virtual methods, ctor, allocating factory, and the callers that create it.
+Three findings:
+
+1. **`+0x38 = 100.0f`, `+0x3C = 9`, `+0x40 = 1.0f` are class-level defaults,
+   not per-instance configured-gun / loaded-shell identity.** Both the
+   in-place ctor `FUN_01da8bb0` (`param_1[0xe] = 0x42c80000`,
+   `param_1[0xf] = 9`, `param_1[0x10] = 0x3f800000`) and the allocating
+   factory `FUN_01d9cc30` write the identical hardcoded constants for every
+   instance, so they cannot carry the per-vehicle gun/shell state. This
+   refutes the earlier "possibly reload/rate / shell count/caliber" guesses.
+
+2. **The ownership chain is re-confirmed at the source.** `FUN_01683b00`
+   (`AvatarGameLogic` ctor) sets the `+0x200` marker, `operator_new(100)` →
+   `FUN_01da8bb0` → stores the gun at **`+0x204`** (`param_1[0x81]`) and
+   zeroes `+0x208`. It does not overwrite the gun's `+0x38/+0x3C/+0x40` after
+   construction, so the gun keeps its defaults at creation.
+
+3. **The `GunStatusPresenter` path is a batch/iteration presenter, not the
+   combat gun config.** `FUN_01da3f20` (GunStatusPresenter ctor) owns a
+   `VehicleGun` (allocating-factory result stored at presenter `+0x4`) and
+   computes a count through `FUN_01650750` =
+   `ceil( *(desc+0x1a0) / *(desc+0x19c) )` — the same integer-ceil-over-counts
+   batch pattern seen in the rotator producer, not a shell count.
+
+`FUN_016ea010` (`VehicleGameLogic::onEnterWorld`) additionally confirms the
+descriptor link: it reads the vehicle descriptor at **`+0x68`**
+(`param_1[0x1a]`) and `descr->maxHealth` at `+0x34`.
+
+**Conclusion:** the configured-gun and loaded-shell identity does **not** live
+in the `VehicleGun` field block (`+0x38/+0x3C/+0x40` are defaults) nor in the
+presenter's batch count. It must be applied at equip time from the gun
+descriptor, or observed via the live controlled shell-swap. Per-field
+configured-gun/loaded-shell semantics therefore remain unproven and now need
+either a deeper gun-descriptor producer trace or the live controlled
+shell-swap transitions G1 item 2 already mandates.
 
