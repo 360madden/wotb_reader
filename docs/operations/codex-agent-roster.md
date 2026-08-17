@@ -132,6 +132,25 @@ reviewed roster and spend tokens without a distinct decision boundary:
 
 ## Enforcement and evaluation
 
+**Harness compatibility note (2026-08-17, from the first real harness drill):**
+the repo contract allows `deepseek-v4-pro` (bounded lanes) and `gpt-5.6-sol`
+(all lanes), but this machine's installed harnesses constrain which models can
+actually run. The Codex CLI (`codex-cli 0.147.0`) is authenticated to a
+ChatGPT account, which serves OpenAI models only: `deepseek-v4-pro` is
+rejected with `400 invalid_request_error` at session start, and `gpt-5.6-sol`
+hit the account's usage limit ("try again at Aug 20, 2026 8:46 PM"). The
+SessionStart hook admitted both models in the real harness (no denial event;
+`thread.started` fired) — the platform, not the enforcement, is the blocker.
+The project `.codex/config.toml` session default (`model=deepseek-v4-pro`)
+therefore fails every Codex session under ChatGPT-account auth until a
+provider that serves deepseek models is configured at user level, or sessions
+pass `-m gpt-5.6-sol` (when credits allow). The OpenCode CLI is installed but
+has no provider configured (both project and user `opencode` configs are
+bare), so the flash-era parallel path is not currently serviceable either.
+Role-file model/effort is applied only by a spawn path (interactive TUI /
+desktop); `codex exec` has no agent-role selection, so the role-owned model
+and effort have not yet been observed on a live run.
+
 The repository gate requires exactly the reviewed role files, pins every role to
 Sol, validates its effort and sandbox, enforces the six-thread project session
 cap, and proves the spawn hook accepts every reviewed role. Hook tests also deny
