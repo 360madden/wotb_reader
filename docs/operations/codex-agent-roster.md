@@ -56,7 +56,7 @@ investigation.
 | `decoder_auditor` | high | read-only | replay/binary limits, pickle/protobuf safety, provenance, and immutable decode contracts | general code review or memory-root discovery |
 | `strategist` | xhigh | read-only | consequential long-range roadmap, architecture, or evidence campaign | implementing the selected route |
 | `security_auditor` | xhigh | read-only | loopback trust, ACLs, mutation, privacy, and fail-closed boundaries | general maintainability or product prioritization |
-| `memory_researcher` | max | read-only | hardest unknown offset/root/vtable/AOB and conflicting ownership hypotheses | known-chain implementation, live scanning, or routine review |
+| `memory_researcher` | xhigh | read-only | hardest unknown offset/root/vtable/AOB and conflicting ownership hypotheses | known-chain implementation, live scanning, or routine review |
 
 `verifier` receives workspace-write only because .NET and repository checks write
 ignored build outputs. Its instructions prohibit tracked source changes. All
@@ -88,7 +88,7 @@ analysts and reviewers are read-only by both configuration and instruction.
 | Audit pickle bounds and unknown-record provenance | `decoder_auditor` / high |
 | Plan the next three overlay/evidence milestones under scarce launches | `strategist` / xhigh |
 | Audit rendezvous ACL and loopback rebinding denial | `security_auditor` / xhigh |
-| Resolve competing roots for an unknown camera or entity family | `memory_researcher` / max |
+| Resolve competing roots for an unknown camera or entity family | `memory_researcher` / xhigh |
 | Run the focused tests after an implementation unit | `verifier` / low |
 
 ## Escalation and token discipline
@@ -96,15 +96,15 @@ analysts and reviewers are read-only by both configuration and instruction.
 - Low is for deterministic retrieval and checks. Medium is the balanced default
   for bounded implementation and integration. High is for complex logic,
   assumption checking, edge cases, review, and interacting evidence. Xhigh is
-  for consequential planning or security tradeoffs. Max is for the hardest one-
-  problem memory discovery with competing hypotheses.
+  for consequential planning, security tradeoffs, and the hardest one-problem
+  memory discovery with competing hypotheses.
 - Do not escalate because access, a replay, approval, or another serial input is
   missing. More reasoning does not remove an external blocker.
 - A failed high or xhigh pass may escalate only with a changed hypothesis,
   explicit falsification, stop conditions, and outcome-to-decision mapping.
 - Ultra is not a saved project role. It is owner-requested only and useful when
   at least two deep lanes are truly independent; a single hard investigation
-  stays on the max `memory_researcher` path.
+  stays on the xhigh `memory_researcher` path.
 - Return compact conclusions and evidence references, not raw search output or
   complete logs. Close a specialist after its bounded question is answered.
 

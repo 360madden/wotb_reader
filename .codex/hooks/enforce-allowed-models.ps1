@@ -10,7 +10,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # The role files (.codex/agents/*.toml) own each lane's model:
-#   gpt-5.6-sol        - all lanes (specialists: high/xhigh/max)
+#   gpt-5.6-sol        - all lanes (specialists: high/xhigh)
 #   deepseek-v4-pro    - bounded lanes (lead/default/worker, explorer,
 #                        verifier, implementer_glue)
 # This hook only rejects sessions/spawns that try to sidestep the review:

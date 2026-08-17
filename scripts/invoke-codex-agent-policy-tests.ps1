@@ -1,4 +1,4 @@
-# Gate entry point for the Sol-only Codex agent-policy Pester tests.
+# Gate entry point for the allowed-models Codex agent-policy Pester tests.
 
 $result = Invoke-Pester `
     -Script (Join-Path $PSScriptRoot 'codex-agent-policy.Tests.ps1') `

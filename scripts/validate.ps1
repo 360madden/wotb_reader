@@ -48,7 +48,7 @@ Invoke-CheckedNative -FilePath powershell -ArgumentList @(
     'Bypass',
     '-File',
     (Join-Path $PSScriptRoot 'codex-agent-config-check.ps1')
-) -Description 'Codex Sol-only agent configuration gate'
+) -Description 'Codex allowed-models agent configuration gate'
 
 Invoke-CheckedNative -FilePath powershell -ArgumentList @(
     '-NoProfile',
@@ -56,7 +56,7 @@ Invoke-CheckedNative -FilePath powershell -ArgumentList @(
     'Bypass',
     '-File',
     (Join-Path $PSScriptRoot 'invoke-codex-agent-policy-tests.ps1')
-) -Description 'Codex Sol-only agent-policy Pester smoke tests'
+) -Description 'Codex allowed-models agent-policy Pester smoke tests'
 
 Invoke-CheckedNative -FilePath powershell -ArgumentList @(
     '-NoProfile',

@@ -48,7 +48,7 @@ instruction and a reviewed policy update before use.
 | `decoder_auditor` | `gpt-5.6-sol` | `high` | `read-only` | replay, binary, decoder, or contract evidence audit |
 | `strategist` | `gpt-5.6-sol` | `xhigh` | `read-only` | long-range product, architecture, or experiment-campaign planning |
 | `security_auditor` | `gpt-5.6-sol` | `xhigh` | `read-only` | loopback, mutation, privacy, ACL, or fail-closed audit |
-| `memory_researcher` | `gpt-5.6-sol` | `max` | `read-only` | unknown offsets/root anchors or failed/conflicting reverse-engineering hypotheses |
+| `memory_researcher` | `gpt-5.6-sol` | `xhigh` | `read-only` | unknown offsets/root anchors or failed/conflicting reverse-engineering hypotheses |
 
 Repository sources of truth are `.codex/config.toml`, `.codex/agents/*.toml`,
 `.codex/hooks.json`, and `scripts/codex-agent-config-check.ps1`.
@@ -58,11 +58,11 @@ of growing this always-loaded file.
 
 - Route by uncertainty and consequence, not file type. A known offset-chain
   implementation is medium; proving a known chain is high; discovering an
-  unknown root anchor is max.
+  unknown root anchor is xhigh.
 - Use low for deterministic lookups/checks, medium for frozen-design work,
   high for multi-step causal analysis, xhigh for consequential planning or
-  security decisions with competing tradeoffs, and max for the hardest
-  quality-first single investigation.
+  security decisions with competing tradeoffs, and the highest effort (xhigh)
+  for the hardest quality-first single investigation.
 - Long-range planning must use Plan mode (`xhigh`) or `strategist`. Unknown
   memory offsets, ownership roots, vtable/AOB anchors, and a reasoning-limited
   failed xhigh investigation must use `memory_researcher`.
@@ -71,7 +71,7 @@ of growing this always-loaded file.
   high/xhigh attempt, escalate only when competing hypotheses or reasoning
   quality—not missing evidence—caused the failure.
 - Default to the lead agent for bounded work. Delegate one specialist whenever
-  a task matches a high/xhigh/max lane that the medium lead should not absorb.
+  a task matches a high/xhigh lane that the medium lead should not absorb.
   Use multiple agents only for genuinely independent workstreams.
 - Choose exactly one primary specialist for one question. Do not stack roles
   merely because a task touches several modules; add a second role only for a
@@ -86,9 +86,10 @@ of growing this always-loaded file.
   smallest useful history fork and require a compact evidence/result summary,
   not raw logs or broad narration.
 - Never override `model` or `model_reasoning_effort` in spawn calls. Role files
-  own the reviewed effort. Max belongs only to `memory_researcher`. Ultra is
-  not a saved role: use it only when the owner explicitly requests a
-  multi-agent campaign and at least two deep workstreams are independent.
+  own the reviewed effort. The highest effort tier on the schema (xhigh)
+  belongs only to `memory_researcher`. Ultra is not a saved role: use it only
+  when the owner explicitly requests a multi-agent campaign and at least two
+  deep workstreams are independent.
 - Subagents never stage, commit, or push. The lead owns integration and Git.
 - The lead retains shared-contract decisions. Use the named specialist for
   decoder/binary or security/privacy audits when that audit is required.
@@ -151,7 +152,7 @@ Wargaming statistics. Do not apply the private-data boundary to those facts.
 | Live/decoded experiment, scorer, clock alignment, or cross-replay claim | `evidence_analyst` (`high`) | immutable artifacts only; no artifact mutation, live action, or promotion |
 | Replay decode | `offline/replay-format.md`; `decoder_auditor` for audit | never execute pickle or ship dynamic decoder DLLs |
 | Telemetry data flow | `offline/data-flow.md` | never mutate an immutable decode run |
-| Unknown offset, root anchor, pointer ownership, vtable/AOB, or conflicting memory evidence | `memory_researcher` (`max`) plus memory docs/ledger | no live action or promotion; return a bounded proof protocol to the lead |
+| Unknown offset, root anchor, pointer ownership, vtable/AOB, or conflicting memory evidence | `memory_researcher` (`xhigh`) plus memory docs/ledger | no live action or promotion; return a bounded proof protocol to the lead |
 | Known-chain offset evidence or publication review | `systems_analyst` or `decoder_auditor` (`high`) | no promotion without documented proof and owner approval |
 | Game internals research | `research/README.md` | never touch the game install |
 | Architecture | `docs/architecture/overview.md`, architecture tests | preserve the enforced reference graph |

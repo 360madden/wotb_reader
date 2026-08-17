@@ -14,3 +14,55 @@ enabled = true
 max_concurrent_threads_per_session = 6
 default_subagent_model = "deepseek-v4-pro"
 default_subagent_reasoning_effort = "medium"
+
+# Reviewed role declarations: each role points at its TOML layer
+# (agents.<name>.config_file, relative to this file, per the Codex config
+# reference). The role file owns the model and effort; spawn-time overrides
+# are denied by .codex/hooks/enforce-allowed-models.ps1.
+[agents.default]
+description = "Bounded lead/worker for routing and frozen-architecture implementation."
+config_file = "./agents/default.toml"
+
+[agents.worker]
+description = "Medium-effort bounded implementation worker for one owned code unit."
+config_file = "./agents/worker.toml"
+
+[agents.explorer]
+description = "Low-effort read-only explorer for one codebase question or evidence lookup."
+config_file = "./agents/explorer.toml"
+
+[agents.verifier]
+description = "Smallest focused check; writes ignored build outputs only."
+config_file = "./agents/verifier.toml"
+
+[agents.implementer_glue]
+description = "Bounded UI, DTO, HTTP, tests, or docs glue against frozen contracts."
+config_file = "./agents/implementer_glue.toml"
+
+[agents.code_reviewer]
+description = "Correctness review of a diff, branch, or defined scope."
+config_file = "./agents/code_reviewer.toml"
+
+[agents.evidence_analyst]
+description = "Clock/scorer/experiment and cross-replay evidence adjudication."
+config_file = "./agents/evidence_analyst.toml"
+
+[agents.systems_analyst]
+description = "Difficult cross-project trace or multi-file root cause."
+config_file = "./agents/systems_analyst.toml"
+
+[agents.decoder_auditor]
+description = "Replay, binary, decoder, or contract evidence audit."
+config_file = "./agents/decoder_auditor.toml"
+
+[agents.strategist]
+description = "Long-range product, architecture, or experiment-campaign planning."
+config_file = "./agents/strategist.toml"
+
+[agents.security_auditor]
+description = "Loopback, mutation, privacy, ACL, or fail-closed audit."
+config_file = "./agents/security_auditor.toml"
+
+[agents.memory_researcher]
+description = "Unknown offsets/root anchors or failed/conflicting reverse-engineering hypotheses."
+config_file = "./agents/memory_researcher.toml"

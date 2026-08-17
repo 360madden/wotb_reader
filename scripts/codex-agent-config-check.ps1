@@ -105,7 +105,7 @@ $expectedRoles = [ordered]@{
     evidence_analyst  = @{ Effort = 'high'; Sandbox = 'read-only' }
     systems_analyst   = @{ Effort = 'high'; Sandbox = 'read-only' }
     strategist        = @{ Effort = 'xhigh'; Sandbox = 'read-only' }
-    memory_researcher = @{ Effort = 'max'; Sandbox = 'read-only' }
+    memory_researcher = @{ Effort = 'xhigh'; Sandbox = 'read-only' }
     verifier          = @{ Effort = 'low'; Sandbox = 'workspace-write' }
     implementer_glue  = @{ Effort = 'medium'; Sandbox = 'workspace-write' }
     decoder_auditor   = @{ Effort = 'high'; Sandbox = 'read-only' }
@@ -115,6 +115,23 @@ $expectedRoles = [ordered]@{
 $agentFiles = @(Get-ChildItem -LiteralPath $agentsRoot -File -Filter '*.toml')
 if ($agentFiles.Count -ne $expectedRoles.Count) {
     throw "Expected $($expectedRoles.Count) reviewed Codex agent files; found $($agentFiles.Count)."
+}
+
+# Docs-driven contract: every reviewed role must ALSO be registered in
+# .codex/config.toml via an [agents.<name>] table with a config_file pointing
+# at its role layer (agents.<name>.config_file, relative to the declaring
+# config file, per the Codex config reference).
+foreach ($role in $expectedRoles.Keys) {
+    $headerPattern = '(?m)^\[agents\.' + [regex]::Escape($role) + '\]\s*$'
+    if ($configText -notmatch $headerPattern) {
+        throw "Role '$role' is not registered in .codex/config.toml ([agents.$role] table missing)."
+    }
+
+    $roleLayer = "./agents/$role.toml"
+    $registerPattern = '(?m)^config_file\s*=\s*\"' + [regex]::Escape($roleLayer) + '\"'
+    if ($configText -notmatch $registerPattern) {
+        throw "Role '$role' has no config_file registration for $roleLayer in .codex/config.toml."
+    }
 }
 
 foreach ($role in $expectedRoles.Keys) {
@@ -168,5 +185,5 @@ if ($guideText -notmatch 'allowed baseline and subagent models are') {
 
 Write-Host (
     'Codex agent config check passed: allowed-models=' + ($allowedModels -join ',') + '; ' +
-    'lead=medium; plan=xhigh; roles=12 low/medium/high/xhigh/max; ' +
+    'lead=medium; plan=xhigh; roles=12 registered low/medium/high/xhigh; ' +
     'sandboxes=read-only/workspace-write; max-threads=6.')

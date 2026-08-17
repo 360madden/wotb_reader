@@ -119,7 +119,7 @@ Describe 'Codex allowed-model policy' {
         $result | Should BeNullOrEmpty
     }
 
-    It 'allows the maximum-effort memory researcher without a spawn override' {
+    It 'allows the xhigh-effort memory researcher without a spawn override' {
         $result = Invoke-ModelHook @{
             hook_event_name = 'PreToolUse'
             model           = 'gpt-5.6-sol'
