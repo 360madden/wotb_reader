@@ -304,8 +304,8 @@ dotnet test tests/WotBTreader.Core.Tests -c Release --filter "FullyQualifiedName
 ```
 
 - Tests are MSTest 4 on Microsoft.Testing.Platform. Some installed-game tests skip by default (local opt-in).
-- 12+ test projects; full gate green (2026-08-12): 1045 passed, 0 failed,
-  3 local opt-in skips (installed-game/probe tests skip by default).
+- 12+ test projects; full gate green (2026-08-14): 1206 passed, 0 failed,
+  7 local opt-in skips (installed-game/probe tests skip by default).
 - All architecture hardening milestones (M0–M7) are complete. The alpha release
   (`v0.1.0-alpha`) passed the full gate; later changes added offset evidence tooling
   and stricter cancellation/hash validation without promoting candidate offsets.
@@ -382,6 +382,35 @@ native-access allowlist (its VM-read interop is the only sanctioned surface).
 Breaking any rule above fails the build. The scanner remains behind the offline
 replay gate; candidate-only offset evidence cannot authorize runtime reads.
 
+## Penetration v0.3 (active track, BLK-0027)
+
+- **Owner objects live-proven (2026-08-16):** `AvatarGameLogic +0x1fc →
+  VehicleGunRotator`, `+0x204 → VehicleGun`, `rotator+0x10 → owner`, `+0x04 →
+  entity` (hash-bound vftable RVAs; live census 43 candidates, honest
+  ambiguous-ownership negative — nothing promoted).
+- **Config lives in descriptors, not `VehicleGun`:** `VehicleGun +0x38/3C/40`
+  are ctor defaults, never per-instance config. `Gun` (vftable `0x31a7080`,
+  0x21C) / `Shell` (vftable `0x31a1e14`, 0x158) / `VehicleDescr` (`0x31a3510`)
+  parsed by `GunsReader`/`ShellsReader`. Named: `Shell +0x11c` damage.armor,
+  `+0x120` damage.devices, kind `+0x114`/caliber `+0x118`, normalization
+  `+0x148`/ricochet `+0x14c` (cos), explosionRadius `+0x150`,
+  piercingPowerLossFactorByDistance `+0x154`; `Shot` = 0x44 B with
+  `defaultPortion +0x24`, `speed +0x28`, `gravity +0x2c`, `maxDistance +0x30`,
+  `isATGM +0x40`.
+- **`piercingPower` destination resolved (2026-08-17, byte-verified):** a
+  2-float `std::vector<float>` at **`Gun +0x34`** (cursor `+0x38`, end
+  `+0x3C`, cap `+0x40`; `FUN_00813a30` = `vector<float>::push_back`);
+  `pumpGunReloadTimes` → separate vector at `Gun +0x1C4`.
+- **Remaining gap:** the runtime **shell-index link** (which `Shell` is
+  loaded at fire time) — candidates `AmmoController` (vftable `0x327d3e0`,
+  `ProcessCurrentSh_`/`ResetAmmo_`) and `InventoryAmmoControllerNew`
+  (`0x32b108c`, `DoAp_/Refr_`), held by `VehicleGun` listener blocks. Next:
+  decompile `AmmoController::ProcessCurrentShell` (same headless pattern
+  below) or the live controlled shell-swap correlation.
+- **Gates frozen in `docs/operations/penetration-v0.3-plan.md`;** nothing is
+  promoted without content-distinct positive repeats; release thresholds
+  (12+ replays, 500 eligible shots) in the same plan.
+
 ## Conventions
 
 - **Testing:** MSTest 4, synthetic fixtures only in CI. Private replays/captures/DBs stay in gitignored paths.
@@ -394,6 +423,16 @@ replay gate; candidate-only offset evidence cannot authorize runtime reads.
 - **Blockers:** append `docs/operations/blocker-log.md` (immutable UTC).
 - **Handoffs:** append under `docs/operations/handoffs/` per format in the handoff README. Correct with amendments, never rewrite.
 
+## Harness note (owner-approved 2026-08-17)
+
+Freebuff sessions are **single-agent lead sessions**: no spawning and no
+launching Codex/OpenCode runs except on explicit owner request (AGENTS.md
+"Harness scope" + `docs/operations/codex-agent-roster.md`). The two-model
+Codex contract (gpt-5.6-sol all lanes, deepseek-v4-pro bounded lanes) applies
+only inside delegation-capable harnesses. `.freebuff/` is repo-inert app
+state (gitignored, regenerated on first boot — never commit or refresh it);
+`.agents/skills/` carries `grill-me`/`grilling`/`autorun` skills.
+
 ## Gotchas
 
 - `.gitignore` patterns match **case-insensitively on Windows**. Runtime-data patterns (`*.sqlite`, `diagnostics/`, `dist/`) can hide real source folders. Add explicit `!` unignore rules when creating paths that collide with runtime-data patterns.
@@ -403,5 +442,17 @@ replay gate; candidate-only offset evidence cannot authorize runtime reads.
 - SignalR callbacks run on non-UI threads without a `SynchronizationContext`. Any ObservableCollection mutations from SignalR callbacks must be marshalled via `SynchronizationContext.Post`.
 
 - **cmd.exe wrapper scripts** have failure modes that survive casual review — delayed expansion corrupts `!` in filenames, unquoted `%~dp0` breaks on paths with spaces, whitespace input crashes arithmetic checks, and missing `setlocal` leaks env vars. See `docs/operations/cmd-wrapper-gotchas.md` for the full catalogue and review checklist. Always route cmd/batch reviews through a thinker agent.
+- **Ghidra static analysis (canonical for pen/decoder work):** runs against
+  the pinned build (hash `1cda5c31…`) via headless sessions launched by
+  wrappers under `.build/ghidra-run-*.bat` (JAVA_HOME + `analyzeHeadless.bat`
+  + `-postScript <script>.java <rvavs>`); scripts live in
+  `tools/ghidra-scripts/` (`DumpRange`, `DumpFunctions`, `DumpDescriptorVtables`,
+  `TraceShellGunProducers`, …) and write evidence to git-ignored
+  `.build/ghidra-evidence-*/`. **Serialize runs** with
+  `python scripts/workstream-lock.py acquire/release ghidra-project --purpose "…"`
+  (the Ghidra project DB is single-writer). Fresh runs take ~1 min once the
+  JVM is warm; a cold start can exceed 10 min — run detached
+  (`cmd //c "start /b cmd /c <wrapper>"`), never as a single foreground call
+  that a session timeout kills mid-write.
 - **PowerShell scripts must pass the PSScriptAnalyzer gate** (`scripts/invoke-scriptanalyzer.ps1`, wired into `validate.ps1` + CI). Pinned 1.25.0 installs via `scripts/install-psscriptanalyzer.ps1`; settings in `tools/psscriptanalyzer-settings.psd1`; repo custom rules (ban `[double]::IsFinite` and PS7-only operators `??`/`&&`/`||`) in `tools/psscriptanalyzer-custom-rules.psm1`. The 5.1 host reads **BOM-less UTF-8 as ANSI**: non-ASCII bytes can silently corrupt strings at runtime (an em-dash's trailing byte `0x94` parses as `"` and terminates the string — this actually broke `tools/compute-exe-hash.ps1`). Keep every `.ps1` ASCII-only, or the gate's `PSUseBOMForUnicodeEncodedFile` + runtime mojibake will bite. Also: custom script rules must be typed with a **concrete AST node** (e.g. `[ScriptBlockAst]`), never the abstract `[Ast]` — PSScriptAnalyzer matches rules to nodes by type-name substring and silently never invokes `[Ast]`-typed rules; `-CustomRulePath` **replaces** the default rule set unless `-IncludeDefaultRules` is passed.
 - **Basher (terminal agent) timeouts are a recurring waste pattern.** Default 30s timeout is never enough for .NET commands. Use these timeouts: `dotnet build` → 300s, `dotnet test` (full suite) → 300s, `dotnet test` (single project) → 120s, `dotnet publish` → 180s. Never run interactive `.cmd` wrappers through basher — use direct `dotnet` commands. Verify prerequisites (CLI built, packages restored) before running dependent commands.
