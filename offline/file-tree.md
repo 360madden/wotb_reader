@@ -369,6 +369,7 @@ docs/operations/handoffs/2026-08-17-pen-capture-bughunt-15-rounds.md
 docs/operations/handoffs/2026-08-17-pen-gun-descriptor-trace.md
 docs/operations/handoffs/2026-08-17-pen-gun-shell-descriptor-layout.md
 docs/operations/handoffs/2026-08-17-pen-gun-shell-static.md
+docs/operations/handoffs/2026-08-17-pen-piercing-power-destination.md
 docs/operations/handoffs/2026-08-17-recovery-module.md
 docs/operations/handoffs/2026-08-17-scan-lease-bughunt.md
 docs/operations/handoffs/README.md
