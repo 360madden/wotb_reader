@@ -17,6 +17,9 @@ work, read only the sources relevant to the request:
    `docs/operations/blocker-log.md` and
    `docs/operations/offset-promotion-checklist.md` as needed.
 4. `offline/README.md` for the focused repository index.
+5. For build-drift work (a new game build, `decode_build_mismatch`, or a
+   live lane that refuses reads), read `RECOVERY/` first — the triage script
+   and the evidence-first re-verification playbook.
 
 These documents are authoritative over older handoffs or remembered status.
 

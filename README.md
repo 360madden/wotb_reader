@@ -339,6 +339,7 @@ Test counts current as of 2026-08-09.
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Historical feature-delivery ledger |
 | [`docs/decisions/`](docs/decisions/) | ADRs — modular monolith, evidence and offline safety |
 | [`docs/operations/blocker-log.md`](docs/operations/blocker-log.md) | Immutable blocker record (BLK-0001 … BLK-0027) |
+| [`RECOVERY/`](RECOVERY/) | Build-drift module: triage script + re-verification playbook for when the game build changes |
 | [`docs/operations/handoffs/`](docs/operations/handoffs/) | Append-only session handoffs |
 | [`docs/testing/fixture-policy.md`](docs/testing/fixture-policy.md) | Fixture sanitization rules |
 | [`docs/formats/`](docs/formats/) | Telemetry capture NDJSON v1 format |

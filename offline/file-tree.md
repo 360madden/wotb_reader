@@ -16,6 +16,7 @@ regenerate this file in the same change that adds, renames, or removes files.
 %~dp0.data/content/5d/5ddc80f52425057ed01e267bb6e29693a9bab38707460aa4a9d7345952313f29
 %~dp0.data/logs/wotbtreader-20260727.json
 .agents/skills/README.md
+.agents/skills/autorun/SKILL.md
 .agents/skills/grill-me/SKILL.md
 .agents/skills/grilling/SKILL.md
 .agents/types/agent-definition.ts
@@ -37,6 +38,7 @@ regenerate this file in the same change that adds, renames, or removes files.
 .codex/hooks.json
 .codex/hooks/enforce-sol-model.ps1
 .editorconfig
+.freebuff/project-id
 .freebuff/settings.json
 .gitattributes
 .github/dependabot.yml
@@ -52,6 +54,9 @@ Directory.Packages.props
 LICENSE
 NuGet.Config
 README.md
+RECOVERY/README.md
+RECOVERY/build-drift-recovery.md
+RECOVERY/invoke-build-drift-triage.ps1
 THIRD-PARTY-NOTICES.md
 WotBTreader.sln
 build.cmd
@@ -356,6 +361,13 @@ docs/operations/handoffs/2026-08-16-pen-ownership-walk-live.md
 docs/operations/handoffs/2026-08-16-pen-ownership-walk-static.md
 docs/operations/handoffs/2026-08-16-rendezvous-webjson-acl-hardening.md
 docs/operations/handoffs/2026-08-16-sqlite-pooling-race-fix.md
+docs/operations/handoffs/2026-08-17-doc-staleness-sweep.md
+docs/operations/handoffs/2026-08-17-observation-auth-heartbeat.md
+docs/operations/handoffs/2026-08-17-pen-capture-bughunt-15-rounds.md
+docs/operations/handoffs/2026-08-17-pen-gun-descriptor-trace.md
+docs/operations/handoffs/2026-08-17-pen-gun-shell-descriptor-layout.md
+docs/operations/handoffs/2026-08-17-pen-gun-shell-static.md
+docs/operations/handoffs/2026-08-17-scan-lease-bughunt.md
 docs/operations/handoffs/README.md
 docs/operations/item7-branch-b-step2-consistent-double-read-proposal.md
 docs/operations/item7-hardware-atomicity-proof-plan.md
@@ -1107,7 +1119,9 @@ tools/ghidra-scripts/ConfirmAvatarStatsQuadSites.java
 tools/ghidra-scripts/ConfirmHealthFieldStores.java
 tools/ghidra-scripts/DumpCallers.java
 tools/ghidra-scripts/DumpChain.java
+tools/ghidra-scripts/DumpDescriptorVtables.java
 tools/ghidra-scripts/DumpFunctions.java
+tools/ghidra-scripts/DumpGunLifecycle.java
 tools/ghidra-scripts/DumpHierarchy.java
 tools/ghidra-scripts/DumpRange.java
 tools/ghidra-scripts/DumpRawBytes.java
@@ -1135,6 +1149,7 @@ tools/ghidra-scripts/FindVtableDispatch.java
 tools/ghidra-scripts/FindVtableInstallers.java
 tools/ghidra-scripts/FindWeaponVtableInstallers.java
 tools/ghidra-scripts/ListCallers.java
+tools/ghidra-scripts/ListGunSymbols.java
 tools/ghidra-scripts/ResolveVftableClass.java
 tools/ghidra-scripts/ScanAllClockOffsetStores.java
 tools/ghidra-scripts/ScanAvatarStatsQuadStoreWidths.java
@@ -1143,7 +1158,10 @@ tools/ghidra-scripts/ScanHealthFieldStoreWidths.java
 tools/ghidra-scripts/ScanRttiHealthClasses.java
 tools/ghidra-scripts/TraceAvatarHealthListener.java
 tools/ghidra-scripts/TraceEntityRegistryPosition.java
+tools/ghidra-scripts/TraceGunEquipWriters.java
+tools/ghidra-scripts/TraceGunFieldAccess.java
 tools/ghidra-scripts/TraceReplayClock.java
+tools/ghidra-scripts/TraceShellGunProducers.java
 tools/ghidra-scripts/TraceType10MovementPosition.java
 tools/ghidra-scripts/VerifyPlayerHpChain.java
 tools/ghidra-scripts/VerifyTransformRecord.java
