@@ -261,3 +261,82 @@ identity). The configured-gun identity and shell list live in the `Gun` /
 loaded-shell semantics still need either the `Gun`/`Shell` descriptor field
 layout + the runtime shell-index link, or the live controlled shell-swap.
 
+### Gun/Shell descriptor field layout (2026-08-17, static)
+
+A vtable decompile (`DumpDescriptorVtables.java`) plus a producer trace
+(`TraceShellGunProducers.java`, evidence `.build/ghidra-evidence-gun-fields/`,
+hash-bound `1cda5c31…`) names the descriptor fields. **Static evidence only —
+nothing here is promoted; a live read is still required for promotion.**
+
+**`Shell` descriptor** (vftable RVA `0x31a1e14`, size `0x158` = 344 bytes;
+allocated inside `std::_Ref_count_obj2<Shell>`, so the `Shell` object starts
+at `+0xC` of the `0x164`-byte allocation). Offsets are relative to the Shell
+object base. Producer: `ShellsReader` attribute handler `FUN_00840570`
+(`0x440570`), which writes the config keys below; defaults come from the
+allocating factory `FUN_0083b650` (`0x43b650`).
+
+| Offset | Type | Config key | Default | Meaning |
+|---|---|---|---|---|
+| `+0x114` | int (`eShellKind`) | `kind` | `0` | shell kind |
+| `+0x118` | int | `caliber` | `0x7fffffff` | caliber (mm) |
+| `+0x11c` | float | `damage.armor` | `-100500.0f` | HP damage to armor (per-shell damage) |
+| `+0x120` | float | `damage.devices` | `-100500.0f` | device (module) damage |
+| `+0x124` | float | *(none in handler)* | `0.25f` | **unproven** |
+| `+0x128` | float | *(none in handler)* | `0.05f` | **unproven** |
+| `+0x12c` | bool | `isTracer` | `false` | tracer shell |
+| `+0x130` | string | `effects` | `""` | effects name |
+| `+0x148` | float | `normalizationAngle` | `0.0` | normalization (deg→rad) |
+| `+0x14c` | float | `ricochetAngle` | `0.0` | stored as `cos(angle)` |
+| `+0x150` | float | `explosionRadius` | `-100500.0f` | HE splash radius (m) |
+| `+0x154` | float | `piercingPowerLossFactorByDistance` | `0.0` | penetration falloff/m |
+
+`eShellKind` (registered by `FUN_007c6780`): `0=kUnknown`,
+`1=kHollowCharge` (HEAT), `2=kHighExplosive` (HE), `3=kArmorPiercing` (AP),
+`4=kArmorPiercingHe` (APHE), `5=kArmorPiercingCr` (APCR).
+
+Shell finalize (`FUN_00840480`, `0x440480`): when `kind == 2` (HE) and
+`+0x150 <= 0`, derive `explosionRadius = caliber² / 5555.0f`
+(`_DAT_035aa7dc == 5555.0f`). `ricochetAngle`/`normalizationAngle` are
+multiplied by the degrees→radians constant `DAT_035a0e84` at parse time.
+
+**`Gun` descriptor** (vftable RVA `0x31a7080`, size `0x21c` = 540 bytes).
+Producer: `GunsReader::ParseBaseGunInfo` = `FUN_008120e0` (`0x4120e0`);
+accessor `Gun::GetShotsPerMinute` = `FUN_0080bc20` (`0x40bc20`).
+
+| Offset | Type | Config key | Meaning |
+|---|---|---|---|
+| `+0x114` | string | — | gun name/id |
+| `+0x12c` | map | — | shell map (by id) |
+| `+0x15c` | float | `impulse` | recoil impulse |
+| `+0x174/+0x178/+0x17c` | Vector3 | `extraPitchLimits.front` | pitch-limit front |
+| `+0x180/+0x184/+0x188` | Vector3 | `extraPitchLimits.back` | pitch-limit back |
+| `+0x18c` | float | `extraPitchLimits.transition` | pitch-limit transition |
+| `+0x190` | float | `rotationSpeed` | turret rotation speed |
+| `+0x194` | float | — | reload parameter (fire rate) |
+| `+0x19c`, `+0x1a0` | ptr (20 B) | — | burst count arrays |
+| `+0x1ac` | ptr (16 B) | `turretRotation`/`afterShot`/`whileGunDamaged` | 4-float aim/recoil array |
+| `+0x1b0..+0x1b8` | vector | — | `vector<Shot>` (Shot = `0x44` B) |
+| `+0x1c0` | bool | `pumpGunMode` | pump/burst fire flag |
+| `+0x1c4..+0x1cc` | vector<float> | `pumpGunReloadTimes` | pump reload times |
+
+`Gun::GetShotsPerMinute` combines `+0x19c/+0x1a0` (burst counts), `+0x1c4`
+(reload times), `+0x194`, and `DAT_035919f4 == 60.0f` (per-minute constant).
+
+**Penetration is not a `Shell` field.** The `piercingPower` config key is
+parsed in `GunsReader::ParseBaseGunInfo` (the `Gun` handler), not in the
+`ShellsReader` handler, and is read as a space-separated float curve
+(`FUN_00813a30` push into a temporary vector). The same `Gun` handler also
+parses the per-shot ballistic entries of the `vector<Shot>` (`+0x1b0..+0x1b8`,
+`Shot` = `0x44` B), writing `defaultPortion` → `Shot+0x24`, `speed` → `+0x28`,
+`gravity` → `+0x2c`, `maxDistance` → `+0x30`, `isATGM` → `+0x40`. The exact
+store offset of the parsed `piercingPower` curve is **not confirmed by this
+pass** (the handler parses it into a temporary and the destination write is
+not resolved), so penetration cannot yet be named to a concrete offset.
+
+**Honest remaining gap:** (1) the runtime **shell-index link** — how the game
+selects which `Shell` descriptor (and which `+0x11c/+0x120` damage pair) is
+loaded into the shot path at fire time — is not yet derived; (2) the
+`piercingPower` (penetration) destination offset. The static field names above
+are producer-side; confirming them requires either the shot-path consumer
+trace or the live controlled shell-swap.
+
