@@ -222,3 +222,42 @@ configured-gun/loaded-shell semantics therefore remain unproven and now need
 either a deeper gun-descriptor producer trace or the live controlled
 shell-swap transitions G1 item 2 already mandates.
 
+### Gun-descriptor architecture (2026-08-17)
+
+An equip-writer trace (`TraceGunEquipWriters.java`) plus a symbol pass
+(`ListGunSymbols.java`, evidence `.build/ghidra-evidence-gun-fields/`,
+hash-bound `1cda5c31…`) resolve **where** the configured gun / loaded shell
+actually live:
+
+- **No gun-aware function writes the `VehicleGun` field block after
+  construction.** The only writers of `+0x38/+0x3C/+0x40` are the ctor and
+  allocating factory, which hardcode `100.0f / 9 / 1.0f`. There is therefore
+  **no equip-time write** of the per-instance gun config into the 100-byte
+  `VehicleGun` object (the `+0x38/+0x3C/+0x40` writes in the
+  `AvatarGameLogic` ctor land on the avatar's own sub-objects, not the gun at
+  `+0x204`).
+- The configuration lives in separate **descriptor classes**, surfaced by
+  RTTI and config-key symbols:
+  - `Gun` (vftable RVA `0x31a7080`) — the gun descriptor; XML keys `maxAmmo`,
+    `pumpGunMode`, `pumpGunReloadTimes`, and `Gun::GetShotsPerMinute`;
+    parsed by `GunsReader::ParseBaseGunInfo`.
+  - `Shell` (vftable RVA `0x31a1e14`) and `eShellKind` — the shell descriptor
+    with the five shell kinds `ARMOR_PIERCING`, `ARMOR_PIERCING_CR`,
+    `ARMOR_PIERCING_HE`, `HIGH_EXPLOSIVE`, `HOLLOW_CHARGE`; parsed by
+    `ShellsReader`.
+  - `Turret` / `TurretsReader` — the turret descriptor.
+  - `VehicleDescr` (vftable RVA `0x31a3510`) — the vehicle descriptor with
+    config sections `.chassi/.engine/.fuelTank/.turret/.gun` and
+    `MakeConfigFromVehicle`; `s_vehicleGun`, `s_vehicleTurret`, `s_shells`.
+- Aim angles are a separate concern: `CurrentGunAnglesComponent` /
+  `DestinationGunAnglesComponent` and `GetGunAngle` / `SetGunAngle` /
+  `GetTurretAngle` / `SetTurretAngle` / `turretRotation` are the
+  yaw/elevation producers and consumers.
+
+**Conclusion (refined):** `VehicleGun` is the runtime fire/reload state
+machine; its `+0x38/+0x3C/+0x40` are hardcoded defaults (not loaded-shell
+identity). The configured-gun identity and shell list live in the `Gun` /
+`Shell` descriptors reachable from `VehicleDescr`. Per-field configured-gun /
+loaded-shell semantics still need either the `Gun`/`Shell` descriptor field
+layout + the runtime shell-index link, or the live controlled shell-swap.
+
