@@ -105,18 +105,7 @@ function Invoke-PenApi {
     catch [System.Net.WebException] {
         $response = $_.Exception.Response
         if ($null -ne $response) {
-            $bodyText = ''
-            try {
-                $stream = $response.GetResponseStream()
-                if ($null -ne $stream) {
-                    $reader = New-Object IO.StreamReader($stream)
-                    $bodyText = $reader.ReadToEnd()
-                    $reader.Close()
-                }
-            }
-            catch { }
-            throw ('pen_api_http_error status=' + [int]$response.StatusCode +
-                ' body=' + $bodyText)
+            throw ('pen_api_http_error status=' + [int]$response.StatusCode)
         }
         throw
     }
@@ -420,7 +409,7 @@ $samplesJson = ConvertTo-JsonArray $persistedSamples
     $samplesPath,
     $samplesJson,
     (New-Object Text.ASCIIEncoding))
-Write-Host ('pen_fields: samples_file=' + $samplesPath)
+Write-Host 'pen_fields: samples_file=pen-semantic-fields-samples.json'
 
 if ($ok -eq 0) {
     Write-Host 'pen_fields: FAILED_no_snapshots'
