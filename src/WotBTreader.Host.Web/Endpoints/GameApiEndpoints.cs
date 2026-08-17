@@ -1008,6 +1008,12 @@ internal static class GameApiEndpoints
             PenSemanticMarkerYawRadians = read.PenSemanticMarkerYawRadians,
             PenSemanticMarkerPitchRadians = read.PenSemanticMarkerPitchRadians,
             PenSemanticHullYawRadians = read.PenSemanticHullYawRadians,
+            PenSemanticOriginHeightMeters = read.PenSemanticOriginHeightMeters,
+            PenSemanticOriginHorizontalMeters = read.PenSemanticOriginHorizontalMeters,
+            PenSemanticOriginInBand = read.PenSemanticOriginInBand,
+            PenSemanticOriginRelX = read.PenSemanticOriginRelX,
+            PenSemanticOriginRelY = read.PenSemanticOriginRelY,
+            PenSemanticOriginRelZ = read.PenSemanticOriginRelZ,
         });
     }
 

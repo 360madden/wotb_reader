@@ -11,7 +11,10 @@ public readonly record struct PublishedMarkerSample(
     TimeSpan ReplayTime,
     double MarkerYawRadians,
     double MarkerPitchRadians,
-    bool SameDecodedClockProven);
+    bool SameDecodedClockProven,
+    double? OriginRelX = null,
+    double? OriginRelY = null,
+    double? OriginRelZ = null);
 
 /// <summary>
 /// Count-only outcome of joining published-marker samples to viewpoint
@@ -37,6 +40,7 @@ public sealed record PublishedMarkerJoinDiagnostics(
     int JoinedCenter19,
     int JoinedYzsSwap15,
     int JoinedYzsSwap19,
+    int JoinedOriginToVictim,
     int ErrorLt10,
     int Error10To20,
     int Error20To45,
@@ -231,6 +235,7 @@ public static class PublishedMarkerShotJoin
         int joined19 = 0;
         int joinedYzs15 = 0;
         int joinedYzs19 = 0;
+        int joinedOrigin = 0;
         int lt10 = 0;
         int from10To20 = 0;
         int from20To45 = 0;
@@ -298,6 +303,23 @@ public static class PublishedMarkerShotJoin
             {
                 joinedYzs19++;
             }
+
+            if (marker.Value.OriginRelX is { } relX
+                && marker.Value.OriginRelY is { } relY
+                && marker.Value.OriginRelZ is { } relZ
+                && TryOriginToVictimDirection(
+                    attackerSample,
+                    victimSample,
+                    relX,
+                    relY,
+                    relZ,
+                    out double ox,
+                    out double oy,
+                    out double oz)
+                && AngleDegrees(markerDx, markerDy, markerDz, ox, oy, oz) <= 10.0)
+            {
+                joinedOrigin++;
+            }
         }
 
         return new PublishedMarkerJoinDiagnostics(
@@ -306,6 +328,7 @@ public static class PublishedMarkerShotJoin
             JoinedCenter19: joined19,
             JoinedYzsSwap15: joinedYzs15,
             JoinedYzsSwap19: joinedYzs19,
+            JoinedOriginToVictim: joinedOrigin,
             ErrorLt10: lt10,
             Error10To20: from10To20,
             Error20To45: from20To45,
@@ -323,6 +346,7 @@ public static class PublishedMarkerShotJoin
             JoinedCenter19: 0,
             JoinedYzsSwap15: 0,
             JoinedYzsSwap19: 0,
+            JoinedOriginToVictim: 0,
             ErrorLt10: 0,
             Error10To20: 0,
             Error20To45: 0,
@@ -545,6 +569,25 @@ public static class PublishedMarkerShotJoin
         double originX = attacker.RawX;
         double originY = attacker.RawY + aimHeightMeters;
         double originZ = attacker.RawZ;
+        dx = victim.RawX - originX;
+        dy = victim.RawY - originY;
+        dz = victim.RawZ - originZ;
+        return TryNormalize(ref dx, ref dy, ref dz);
+    }
+
+    private static bool TryOriginToVictimDirection(
+        PositionSample attacker,
+        PositionSample victim,
+        double relX,
+        double relY,
+        double relZ,
+        out double dx,
+        out double dy,
+        out double dz)
+    {
+        double originX = attacker.RawX + relX;
+        double originY = attacker.RawY + relY;
+        double originZ = attacker.RawZ + relZ;
         dx = victim.RawX - originX;
         dy = victim.RawY - originY;
         dz = victim.RawZ - originZ;

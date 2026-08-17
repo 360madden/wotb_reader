@@ -1356,7 +1356,13 @@ public sealed class GameApiEndpointsTests
                     PenSemanticReloadEnum: 2,
                     PenSemanticMarkerYawRadians: 0.1,
                     PenSemanticMarkerPitchRadians: -0.05,
-                    PenSemanticHullYawRadians: 0.2)),
+                    PenSemanticHullYawRadians: 0.2,
+                    PenSemanticOriginHeightMeters: 1.5,
+                    PenSemanticOriginHorizontalMeters: 0.4,
+                    PenSemanticOriginInBand: true,
+                    PenSemanticOriginRelX: 0.1,
+                    PenSemanticOriginRelY: 1.5,
+                    PenSemanticOriginRelZ: -0.2)),
         };
 
         IResult result = await GameApiEndpoints.ReadEntityRegionAsync(
@@ -1382,6 +1388,9 @@ public sealed class GameApiEndpointsTests
         Assert.AreEqual(0.1, response.PenSemanticMarkerYawRadians);
         Assert.AreEqual(-0.05, response.PenSemanticMarkerPitchRadians);
         Assert.AreEqual(0.2, response.PenSemanticHullYawRadians);
+        Assert.AreEqual(1.5, response.PenSemanticOriginHeightMeters);
+        Assert.AreEqual(0.4, response.PenSemanticOriginHorizontalMeters);
+        Assert.IsTrue(response.PenSemanticOriginInBand);
         Assert.IsNull(response.RegionBase64);
     }
 

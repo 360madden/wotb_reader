@@ -2766,7 +2766,13 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     PenSemanticReloadEnum: fields.ReloadEnum,
                     PenSemanticMarkerYawRadians: fields.MarkerYawRadians,
                     PenSemanticMarkerPitchRadians: fields.MarkerPitchRadians,
-                    PenSemanticHullYawRadians: fields.HullYawRadians));
+                    PenSemanticHullYawRadians: fields.HullYawRadians,
+                    PenSemanticOriginHeightMeters: fields.OriginHeightMeters,
+                    PenSemanticOriginHorizontalMeters: fields.OriginHorizontalMeters,
+                    PenSemanticOriginInBand: fields.OriginInBand,
+                    PenSemanticOriginRelX: fields.OriginRelX,
+                    PenSemanticOriginRelY: fields.OriginRelY,
+                    PenSemanticOriginRelZ: fields.OriginRelZ));
             }
             else
             {
@@ -4412,7 +4418,13 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         int? ReloadEnum,
         double? MarkerYawRadians,
         double? MarkerPitchRadians,
-        double? HullYawRadians);
+        double? HullYawRadians,
+        double? OriginHeightMeters = null,
+        double? OriginHorizontalMeters = null,
+        bool OriginInBand = false,
+        double? OriginRelX = null,
+        double? OriginRelY = null,
+        double? OriginRelZ = null);
 
     /// <summary>
     /// Phase 2–4 snapshot: ownership walk, then two-pass reads of the
@@ -4474,6 +4486,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             walk.EntityAddress + EntityRecordRegionReadRequest.EntityHullYawOffset,
             sizeof(float),
             cancellationToken).ConfigureAwait(false);
+        byte[]? hullPos1 = await ReadExactAsync(
+            reader,
+            walk.EntityAddress + EntityRecordRegionReadRequest.EntityHullPositionOffset,
+            EntityRecordRegionReadRequest.EntityHullPositionLength,
+            cancellationToken).ConfigureAwait(false);
         byte[]? marker2 = await ReadExactAsync(
             reader,
             walk.RotatorAddress + EntityRecordRegionReadRequest.PenMarkerPublishedOffset,
@@ -4489,9 +4506,14 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             walk.EntityAddress + EntityRecordRegionReadRequest.EntityHullYawOffset,
             sizeof(float),
             cancellationToken).ConfigureAwait(false);
+        byte[]? hullPos2 = await ReadExactAsync(
+            reader,
+            walk.EntityAddress + EntityRecordRegionReadRequest.EntityHullPositionOffset,
+            EntityRecordRegionReadRequest.EntityHullPositionLength,
+            cancellationToken).ConfigureAwait(false);
 
-        if (marker1 is null || reload1 is null || hull1 is null ||
-            marker2 is null || reload2 is null || hull2 is null)
+        if (marker1 is null || reload1 is null || hull1 is null || hullPos1 is null ||
+            marker2 is null || reload2 is null || hull2 is null || hullPos2 is null)
         {
             return new PenSemanticFieldsResolution(
                 Type10EntityPositionStatus.ReadFailed,
@@ -4515,17 +4537,27 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
 
         bool stable = marker1.AsSpan().SequenceEqual(marker2)
             && reload1.AsSpan().SequenceEqual(reload2)
-            && hull1.AsSpan().SequenceEqual(hull2);
+            && hull1.AsSpan().SequenceEqual(hull2)
+            && hullPos1.AsSpan().SequenceEqual(hullPos2);
 
         int reloadEnum = BinaryPrimitives.ReadInt32LittleEndian(reload1);
         bool reloadInRange = reloadEnum >= 0 && reloadEnum <= 9;
 
-        float dx = BinaryPrimitives.ReadSingleLittleEndian(marker1.AsSpan(12, 4));
-        float dy = BinaryPrimitives.ReadSingleLittleEndian(marker1.AsSpan(16, 4));
-        float dz = BinaryPrimitives.ReadSingleLittleEndian(marker1.AsSpan(20, 4));
-        float px = BinaryPrimitives.ReadSingleLittleEndian(marker1.AsSpan(0, 4));
-        float py = BinaryPrimitives.ReadSingleLittleEndian(marker1.AsSpan(4, 4));
-        float pz = BinaryPrimitives.ReadSingleLittleEndian(marker1.AsSpan(8, 4));
+        // Published marker pos/dir are engine (x, z, y-up) — CAM-010 and the
+        // two-replay shot-join. Convert to decoded (x, y-up, z) before yaw/pitch
+        // or hull-relative origin scalars. World XYZ never leave this method.
+        float enginePx = BinaryPrimitives.ReadSingleLittleEndian(marker1.AsSpan(0, 4));
+        float enginePz = BinaryPrimitives.ReadSingleLittleEndian(marker1.AsSpan(4, 4));
+        float enginePy = BinaryPrimitives.ReadSingleLittleEndian(marker1.AsSpan(8, 4));
+        float engineDx = BinaryPrimitives.ReadSingleLittleEndian(marker1.AsSpan(12, 4));
+        float engineDz = BinaryPrimitives.ReadSingleLittleEndian(marker1.AsSpan(16, 4));
+        float engineDy = BinaryPrimitives.ReadSingleLittleEndian(marker1.AsSpan(20, 4));
+        float px = enginePx;
+        float py = enginePy;
+        float pz = enginePz;
+        float dx = engineDx;
+        float dy = engineDy;
+        float dz = engineDz;
         float scalar = BinaryPrimitives.ReadSingleLittleEndian(marker1.AsSpan(24, 4));
         bool markerFinite = float.IsFinite(px) && float.IsFinite(py) && float.IsFinite(pz)
             && float.IsFinite(dx) && float.IsFinite(dy) && float.IsFinite(dz)
@@ -4544,6 +4576,31 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
 
         float hullYaw = BinaryPrimitives.ReadSingleLittleEndian(hull1);
         double? hullYawRadians = float.IsFinite(hullYaw) ? hullYaw : null;
+
+        float hullX = BinaryPrimitives.ReadSingleLittleEndian(hullPos1.AsSpan(0, 4));
+        float hullY = BinaryPrimitives.ReadSingleLittleEndian(hullPos1.AsSpan(4, 4));
+        float hullZ = BinaryPrimitives.ReadSingleLittleEndian(hullPos1.AsSpan(8, 4));
+        double? originHeight = null;
+        double? originHorizontal = null;
+        bool originInBand = false;
+        double? originRelX = null;
+        double? originRelY = null;
+        double? originRelZ = null;
+        if (markerFinite
+            && float.IsFinite(hullX) && float.IsFinite(hullY) && float.IsFinite(hullZ))
+        {
+            double relX = px - (double)hullX;
+            double relY = py - (double)hullY;
+            double relZ = pz - (double)hullZ;
+            originRelX = relX;
+            originRelY = relY;
+            originRelZ = relZ;
+            originHeight = relY;
+            originHorizontal = Math.Sqrt((relX * relX) + (relZ * relZ));
+            originInBand = originHeight >= EntityRecordRegionReadRequest.PenOriginHeightMinMeters
+                && originHeight <= EntityRecordRegionReadRequest.PenOriginHeightMaxMeters
+                && originHorizontal <= EntityRecordRegionReadRequest.PenOriginHorizontalMaxMeters;
+        }
 
         Type10EntityPositionStatus status = !stable
             ? Type10EntityPositionStatus.PenOwnershipWalkUnstable
@@ -4565,7 +4622,13 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             reloadEnum,
             markerYaw,
             markerPitch,
-            hullYawRadians);
+            hullYawRadians,
+            originHeight,
+            originHorizontal,
+            originInBand,
+            originRelX,
+            originRelY,
+            originRelZ);
     }
 
     private static async ValueTask<byte[]?> ReadExactAsync(

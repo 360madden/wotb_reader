@@ -185,6 +185,29 @@ public sealed class PublishedMarkerShotJoinTests
     }
 
     [TestMethod]
+    public void DiagnoseJoinsOriginToVictimWhenRelMatchesGunHeight()
+    {
+        ParticipantId viewpointId = ParticipantId.New();
+        ReplayDecodeProjection projection = StandardProjection(
+            viewpointId,
+            ShotEvent(sequence: 1, seconds: 5.0, attacker: 1, victim: 2, penetrated: true));
+        PublishedMarkerSample sample = MarkerAimedAtVictim(TimeSpan.FromSeconds(5.0)) with
+        {
+            OriginRelX = 0,
+            OriginRelY = 1.5,
+            OriginRelZ = 0,
+        };
+
+        PublishedMarkerJoinDiagnostics diagnostics = PublishedMarkerShotJoin.Diagnose(
+            projection,
+            [sample]);
+
+        Assert.AreEqual(1, diagnostics.Compared);
+        Assert.AreEqual(1, diagnostics.JoinedCenter15);
+        Assert.AreEqual(1, diagnostics.JoinedOriginToVictim);
+    }
+
+    [TestMethod]
     public void DiagnosePutsNinetyDegreeMissInGe45Bucket()
     {
         ParticipantId viewpointId = ParticipantId.New();

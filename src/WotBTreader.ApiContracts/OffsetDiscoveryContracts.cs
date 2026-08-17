@@ -503,13 +503,13 @@ public sealed record EntityRecordRegionReadResponse
 
     /// <summary>
     /// For <c>pen-semantic-fields</c>: atan2(dir.x, dir.z) of the published
-    /// marker, or null when unread/non-finite.
+    /// marker after the CAM-010 Y/Z convention, or null when unread/non-finite.
     /// </summary>
     public double? PenSemanticMarkerYawRadians { get; init; }
 
     /// <summary>
-    /// For <c>pen-semantic-fields</c>: asin(dir.y) of the published marker,
-    /// or null when unread/non-finite.
+    /// For <c>pen-semantic-fields</c>: asin(dir.y) of the published marker
+    /// after the CAM-010 Y/Z convention, or null when unread/non-finite.
     /// </summary>
     public double? PenSemanticMarkerPitchRadians { get; init; }
 
@@ -518,6 +518,31 @@ public sealed record EntityRecordRegionReadResponse
     /// unread/non-finite.
     /// </summary>
     public double? PenSemanticHullYawRadians { get; init; }
+
+    /// <summary>
+    /// Hull-relative marker-origin height in meters (decoded Y), or null.
+    /// Not a world coordinate.
+    /// </summary>
+    public double? PenSemanticOriginHeightMeters { get; init; }
+
+    /// <summary>
+    /// Hull-relative horizontal |XZ| offset of the marker origin, meters.
+    /// </summary>
+    public double? PenSemanticOriginHorizontalMeters { get; init; }
+
+    /// <summary>
+    /// True when height is in 0.3..4.0 m and horizontal offset is ≤ 6 m.
+    /// </summary>
+    public bool PenSemanticOriginInBand { get; init; }
+
+    /// <summary>Hull-relative origin X meters (decoded space, not world).</summary>
+    public double? PenSemanticOriginRelX { get; init; }
+
+    /// <summary>Hull-relative origin Y meters (decoded space, not world).</summary>
+    public double? PenSemanticOriginRelY { get; init; }
+
+    /// <summary>Hull-relative origin Z meters (decoded space, not world).</summary>
+    public double? PenSemanticOriginRelZ { get; init; }
 }
 
 /// <summary>

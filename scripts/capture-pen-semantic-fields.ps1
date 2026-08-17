@@ -340,6 +340,7 @@ $script:hullYawBins = New-Object 'System.Collections.Generic.HashSet[int]'
 $script:independentWindows = 0
 $script:elevationIndependentWindows = 0
 $script:g2ClockSamples = 0
+$script:originInBand = 0
 $script:lastHullBin = $null
 $script:lastMarkerBin = $null
 $script:lastMarkerPitchBin = $null
@@ -410,6 +411,9 @@ function Invoke-PenSemanticSample {
         if ($sameClock -and $replayTimeFinite) {
             $script:g2ClockSamples++
         }
+        if ($response.PenSemanticOriginInBand -eq $true) {
+            $script:originInBand++
+        }
 
         if ($walkOk -and $sameClock -and $replayTimeFinite) {
             $reloadEnum = $null
@@ -428,6 +432,18 @@ function Invoke-PenSemanticSample {
             if (Test-FiniteNumber $response.PenSemanticHullYawRadians) {
                 $hullYawValue = [double]$response.PenSemanticHullYawRadians
             }
+            $originRelX = $null
+            $originRelY = $null
+            $originRelZ = $null
+            if (Test-FiniteNumber $response.PenSemanticOriginRelX) {
+                $originRelX = [double]$response.PenSemanticOriginRelX
+            }
+            if (Test-FiniteNumber $response.PenSemanticOriginRelY) {
+                $originRelY = [double]$response.PenSemanticOriginRelY
+            }
+            if (Test-FiniteNumber $response.PenSemanticOriginRelZ) {
+                $originRelZ = [double]$response.PenSemanticOriginRelZ
+            }
             [void]$script:persistedSamples.Add([ordered]@{
                     replayTimeSeconds      = [double]$response.ReplayTimeSeconds
                     markerYawRadians       = $markerYawValue
@@ -435,6 +451,9 @@ function Invoke-PenSemanticSample {
                     hullYawRadians         = $hullYawValue
                     reloadEnum             = $reloadEnum
                     sameDecodedClockProven = $true
+                    originRelX             = $originRelX
+                    originRelY             = $originRelY
+                    originRelZ             = $originRelZ
                 })
         }
 
@@ -606,6 +625,7 @@ $independentWindows = $script:independentWindows
 $markerPitchBins = $script:markerPitchBins
 $elevationIndependentWindows = $script:elevationIndependentWindows
 $g2ClockSamples = $script:g2ClockSamples
+$originInBand = $script:originInBand
 $persistedSamples = $script:persistedSamples
 
 $enumList = ($enumSeen | Sort-Object) -join ','
@@ -625,6 +645,7 @@ Write-Host ('pen_fields: turret_independent_windows=' + $independentWindows)
 Write-Host ('pen_fields: marker_pitch_bins=' + $markerPitchBins.Count)
 Write-Host ('pen_fields: elevation_independent_windows=' + $elevationIndependentWindows)
 Write-Host ('pen_fields: g2_clock_samples=' + $g2ClockSamples)
+Write-Host ('pen_fields: origin_in_band=' + $originInBand)
 
 $samplesJson = ConvertTo-JsonArray $persistedSamples
 [IO.File]::WriteAllText(

@@ -2,10 +2,10 @@
 
 **Date:** 2026-08-16 (UTC)
 **Status:** two-replay elevation isolation positive; published-marker
-direction matches the hull-to-victim line after a Y/Z swap (Oasis 4/5,
-Dead Rail 2/2); nothing promoted
-**Blocker:** `BLK-0027` (open — muzzle origin unproven; loaded shell and
-exact armor remain no-go)
+dir Y/Z convention applied at read; hull-relative origin scalars added;
+nothing promoted
+**Blocker:** `BLK-0027` (open — origin not yet live-proven; loaded shell
+and exact armor remain no-go)
 
 ## What changed
 
@@ -174,3 +174,16 @@ a success criterion. Nothing promoted.
 Loaded shell: `+0x3C` remains a reload enum. Exact armor remains a v0.3
 no-go until a producer is named. Game and host were stopped after the
 Dead Rail read.
+
+## Amendment — read-time Y/Z swap + hull-relative origin (`2026-08-16`)
+
+The coordinator now converts published marker pos/dir from engine
+`(x, z, y-up)` to decoded `(x, y-up, z)` before yaw/pitch (the
+two-replay shot-join convention). It also two-pass-reads entity-base
+hull position and reports only hull-relative origin scalars: height,
+horizontal |XZ|, in-band (0.3–4.0 m height, ≤6 m horizontal), and
+rel X/Y/Z for an origin-to-victim join. World XYZ are not logged.
+
+`marker-join` accepts optional `originRel*` on persist samples and
+counts `joinedOriginToVictim`. Not ExactGunRay until a live origin
+band + origin-to-victim repeat. Nothing promoted.

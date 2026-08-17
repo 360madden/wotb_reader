@@ -1670,6 +1670,15 @@ public sealed class GameSessionCoordinatorTests
     private const uint TestVehicleGunRotatorVftable = 0x10000000 + 0x32eeb40;
     private const uint TestVehicleGunVftable = 0x10000000 + 0x32dacf4;
 
+    private static byte[] HullPositionBytes(float x, float y, float z)
+    {
+        byte[] page = new byte[12];
+        BinaryPrimitives.WriteSingleLittleEndian(page.AsSpan(0, 4), x);
+        BinaryPrimitives.WriteSingleLittleEndian(page.AsSpan(4, 4), y);
+        BinaryPrimitives.WriteSingleLittleEndian(page.AsSpan(8, 4), z);
+        return page;
+    }
+
     private static MemoryScanResult CreateOwnershipWalkScanResult(params long[] candidateAddresses) => new(
         DateTimeOffset.UnixEpoch,
         BaseAddress: 0x10000000,
@@ -2097,9 +2106,10 @@ public sealed class GameSessionCoordinatorTests
         BinaryPrimitives.WriteSingleLittleEndian(marker.AsSpan(0, 4), 10f);
         BinaryPrimitives.WriteSingleLittleEndian(marker.AsSpan(4, 4), 2f);
         BinaryPrimitives.WriteSingleLittleEndian(marker.AsSpan(8, 4), 4f);
+        // Engine (x, z, y-up) = (0, 1, 0) → decoded forward (0, 0, 1).
         BinaryPrimitives.WriteSingleLittleEndian(marker.AsSpan(12, 4), 0f);
-        BinaryPrimitives.WriteSingleLittleEndian(marker.AsSpan(16, 4), 0f);
-        BinaryPrimitives.WriteSingleLittleEndian(marker.AsSpan(20, 4), 1f);
+        BinaryPrimitives.WriteSingleLittleEndian(marker.AsSpan(16, 4), 1f);
+        BinaryPrimitives.WriteSingleLittleEndian(marker.AsSpan(20, 4), 0f);
         BinaryPrimitives.WriteSingleLittleEndian(marker.AsSpan(24, 4), 100f);
         byte[] reload = new byte[20];
         BinaryPrimitives.WriteInt32LittleEndian(reload, 2);
@@ -2117,6 +2127,7 @@ public sealed class GameSessionCoordinatorTests
             [rotatorAddress + 0x50] = marker,
             [gunAddress + 0x3C] = reload,
             [entityAddress + 0x50] = BitConverter.GetBytes(0.25f),
+            [entityAddress + 0x3C] = HullPositionBytes(10f, 2.5f, 2f),
         });
         var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
         var (coordinator, _) = CreateCoordinator(
@@ -2150,6 +2161,9 @@ public sealed class GameSessionCoordinatorTests
         Assert.AreEqual(0.0, result.Value?.PenSemanticMarkerYawRadians);
         Assert.AreEqual(0.0, result.Value?.PenSemanticMarkerPitchRadians);
         Assert.AreEqual(0.25, result.Value?.PenSemanticHullYawRadians);
+        Assert.AreEqual(1.5, result.Value?.PenSemanticOriginHeightMeters);
+        Assert.AreEqual(0.0, result.Value?.PenSemanticOriginHorizontalMeters);
+        Assert.IsTrue(result.Value?.PenSemanticOriginInBand);
         Assert.IsNull(result.Value?.RegionBytes);
     }
 
@@ -2179,6 +2193,7 @@ public sealed class GameSessionCoordinatorTests
             [rotatorAddress + 0x50] = marker,
             [gunAddress + 0x3C] = reload,
             [entityAddress + 0x50] = BitConverter.GetBytes(0f),
+            [entityAddress + 0x3C] = HullPositionBytes(0f, 0f, 0f),
         });
         var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
         var (coordinator, _) = CreateCoordinator(
@@ -2234,6 +2249,7 @@ public sealed class GameSessionCoordinatorTests
             [rotatorAddress + 0x50] = marker,
             [gunAddress + 0x3C] = reload,
             [entityAddress + 0x50] = BitConverter.GetBytes(0.25f),
+            [entityAddress + 0x3C] = HullPositionBytes(0f, 0f, 0f),
         });
         var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
         var (coordinator, _) = CreateCoordinator(
@@ -2289,6 +2305,7 @@ public sealed class GameSessionCoordinatorTests
             [rotatorAddress + 0x50] = marker,
             [gunAddress + 0x3C] = reload,
             [entityAddress + 0x50] = BitConverter.GetBytes(0.25f),
+            [entityAddress + 0x3C] = HullPositionBytes(0f, 0f, 0f),
         };
         var factory = new ScriptedCameraReaderFactory(pages);
         var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));

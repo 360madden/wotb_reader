@@ -1332,11 +1332,17 @@ public sealed class CliCommandRouter
                     continue;
                 }
 
+                double? relX = ReadOptionalFinite(item, "originRelX");
+                double? relY = ReadOptionalFinite(item, "originRelY");
+                double? relZ = ReadOptionalFinite(item, "originRelZ");
                 samples.Add(new PublishedMarkerSample(
                     TimeSpan.FromSeconds(seconds),
                     yaw,
                     pitch,
-                    SameDecodedClockProven: true));
+                    SameDecodedClockProven: true,
+                    relX,
+                    relY,
+                    relZ));
             }
         }
         catch (JsonException)
@@ -1396,6 +1402,7 @@ public sealed class CliCommandRouter
             joinedCenter19 = diagnostics.JoinedCenter19,
             joinedYzsSwap15 = diagnostics.JoinedYzsSwap15,
             joinedYzsSwap19 = diagnostics.JoinedYzsSwap19,
+            joinedOriginToVictim = diagnostics.JoinedOriginToVictim,
             errorLt10 = diagnostics.ErrorLt10,
             error10To20 = diagnostics.Error10To20,
             error20To45 = diagnostics.Error20To45,
@@ -2320,6 +2327,18 @@ public sealed class CliCommandRouter
             correlationId,
             error.Retryable,
             result.Warnings);
+    }
+
+    private static double? ReadOptionalFinite(JsonElement item, string name)
+    {
+        if (!item.TryGetProperty(name, out JsonElement el)
+            || !el.TryGetDouble(out double value)
+            || !double.IsFinite(value))
+        {
+            return null;
+        }
+
+        return value;
     }
 
     private static string FormatOptionalDegrees(double? degrees) =>

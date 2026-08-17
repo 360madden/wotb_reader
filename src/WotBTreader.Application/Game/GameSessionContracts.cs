@@ -520,9 +520,11 @@ public enum EntityRecordRegionAnchor
     /// ownership walk (process-local cached rotator after a confirmed walk,
     /// vftable re-validated under the lease; AOB on miss or mismatch), then
     /// two-pass reads the published gun-marker at rotator +0x50 and the
-    /// VehicleGun reload/state block. Returns aggregate flags plus
-    /// investigation yaw/pitch/enum diagnostics. No raw region bytes or
-    /// addresses leave. See docs/operations/pen-weapon-semantic-fields.md.
+    /// VehicleGun reload/state block. Marker pos/dir are converted from
+    /// engine (x, z, y-up) to decoded (x, y-up, z) before yaw/pitch and
+    /// hull-relative origin scalars. Returns aggregate flags plus
+    /// investigation diagnostics. No raw region bytes, addresses, or world
+    /// XYZ leave. See docs/operations/pen-weapon-semantic-fields.md.
     /// </summary>
     PenSemanticFields = 5,
 }
@@ -649,6 +651,30 @@ public sealed record EntityRecordRegionReadRequest(
     /// Entity-base hull yaw float32 (rotation triple +0x48/+0x4C/+0x50).
     /// </summary>
     public const int EntityHullYawOffset = 0x50;
+
+    /// <summary>
+    /// Entity-base hull position float32 triple (copy layout +0x3C/+0x40/+0x44).
+    /// Decoded-space (x, y-up, z). Used only to form hull-relative origin
+    /// scalars; world XYZ never leave the coordinator.
+    /// </summary>
+    public const int EntityHullPositionOffset = 0x3C;
+
+    /// <summary>Three float32 hull-position components.</summary>
+    public const int EntityHullPositionLength = 12;
+
+    /// <summary>
+    /// Inclusive band for a plausible gun/muzzle height above hull center,
+    /// in meters. Diagnostic only — not a published chain.
+    /// </summary>
+    public const double PenOriginHeightMinMeters = 0.3;
+
+    /// <summary>Inclusive upper band for origin height above hull, meters.</summary>
+    public const double PenOriginHeightMaxMeters = 4.0;
+
+    /// <summary>
+    /// Maximum horizontal hull-to-marker offset, meters, treated as in-band.
+    /// </summary>
+    public const double PenOriginHorizontalMaxMeters = 6.0;
 }
 
 /// <summary>
@@ -684,7 +710,13 @@ public sealed record EntityRecordRegionReadResult(
     int? PenSemanticReloadEnum = null,
     double? PenSemanticMarkerYawRadians = null,
     double? PenSemanticMarkerPitchRadians = null,
-    double? PenSemanticHullYawRadians = null);
+    double? PenSemanticHullYawRadians = null,
+    double? PenSemanticOriginHeightMeters = null,
+    double? PenSemanticOriginHorizontalMeters = null,
+    bool PenSemanticOriginInBand = false,
+    double? PenSemanticOriginRelX = null,
+    double? PenSemanticOriginRelY = null,
+    double? PenSemanticOriginRelZ = null);
 
 /// <summary>
 /// One entity region in a batch read (mirrors the single-read fields).
