@@ -4977,9 +4977,15 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         {
             ExpireAuthorizationIfNeeded();
             cancellationToken.ThrowIfCancellationRequested();
+            // Compare generation + read gate, not whole-record identity: the
+            // liveness heartbeat replaces the AuthorizedObservation record
+            // with `with { ExpiresAtUtc = ... }` on every beat. A whole-record
+            // ReferenceEquals would treat that benign expiry extension as a
+            // revocation and flicker every overlapping poll to Unknown.
             return _snapshot.State == GameSessionVerificationState.OfflineReplayVerified
                 && _authorization is not null
-                && ReferenceEquals(_authorization, observation);
+                && _authorization.Generation == observation.Generation
+                && ReferenceEquals(_authorization.ReadGate, observation.ReadGate);
         }
     }
 

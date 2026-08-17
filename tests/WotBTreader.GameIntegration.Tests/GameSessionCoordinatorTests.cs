@@ -3689,6 +3689,37 @@ public sealed class GameSessionCoordinatorTests
     }
 
     [TestMethod]
+    public async Task MemoryObservation_SurvivesLivenessHeartbeatDuringRead()
+    {
+        // The ~500ms liveness heartbeat extends a verified authorization by
+        // replacing the AuthorizedObservation record via `with { ExpiresAtUtc }`
+        // (same generation, same read gate). An observation already in flight
+        // must not treat that benign extension as revocation, or every poll
+        // that overlaps a beat flickers to Unknown.
+        GameSessionCoordinator? coordinatorRef = null;
+        ManagedGameLaunchContext launch = CreateManagedLaunch();
+        var readerFactory = new HeartbeatTriggeringReaderFactory(
+            () => coordinatorRef!,
+            launch,
+            CreateValidProcess());
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: readerFactory,
+            offsetTableReader: new FixedOffsetTableReader(CreateObservationFixtureTable()));
+        coordinatorRef = coordinator;
+        coordinator.RecordManagedLaunch(launch);
+        coordinator.ApplyEvidence(CreateValidEvidence());
+
+        GameMemoryObservation observation =
+            await coordinator.ObserveAsync(CancellationToken.None);
+
+        Assert.AreEqual(
+            GameMemoryObservationAvailability.Available,
+            observation.Availability);
+        Assert.IsNotNull(observation.ReplayTimeSeconds);
+        Assert.IsTrue(readerFactory.HeartbeatTriggered);
+    }
+
+    [TestMethod]
     public async Task PenetrationCapture_MissingOfflineGateNeverReadsDecodeOrSource()
     {
         var repository = new RecordingDecodeRunRepository([]);
@@ -4940,6 +4971,30 @@ public sealed class GameSessionCoordinatorTests
             Type10EntityPositionLayout layout,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
+    }
+
+    private sealed class HeartbeatTriggeringReaderFactory(
+        Func<GameSessionCoordinator> coordinator,
+        ManagedGameLaunchContext launch,
+        GameProcessEvidence processEvidence)
+        : IGuardedMemoryReaderFactory
+    {
+        private readonly RecordingObservationReader _reader = new();
+        public bool HeartbeatTriggered { get; private set; }
+
+        public ValueTask<OperationResult<IAuthorizedMemoryReader>> CreateAsync(
+            AuthorizedMemoryObservation observation,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            // Interleave a liveness heartbeat between the observation's
+            // authorization capture and its final fail-closed re-check: this
+            // replaces the AuthorizedObservation record mid-read.
+            coordinator().RefreshVerifiedEvidence(launch, processEvidence, CancellationToken.None);
+            HeartbeatTriggered = true;
+            return ValueTask.FromResult(
+                OperationResult.Success<IAuthorizedMemoryReader>(_reader));
+        }
     }
 
     private sealed class StubReplayClockSource : IReplayClockSource
