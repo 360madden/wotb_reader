@@ -165,6 +165,37 @@ public sealed class UltimateScannerUnitTests
     }
 
     [TestMethod]
+    public void NeighborhoodProbeOffsetsAreReferenceAlignedAndIncludeTheReference()
+    {
+        foreach (int window in new[] { 3, 7, 64, 65, 100, 4096 })
+        {
+            foreach (int stride in new[] { 4, 8 })
+            {
+                int[] offsets = MemoryScanDiscoverer
+                    .EnumerateNeighborhoodProbeOffsets(window, stride, window * 2)
+                    .ToArray();
+
+                // Every probe is a complete value inside the read buffer and is
+                // aligned to the reference address, never to the window start.
+                Assert.IsTrue(
+                    offsets.All(offset => offset >= 0
+                        && offset + stride <= window * 2
+                        && offset % stride == window % stride),
+                    $"window={window}, stride={stride}: probe is misaligned or out of range");
+
+                // The reference (displacement zero) is probed exactly when a
+                // stride-wide value can fit centered at it. Striding from zero
+                // silently skipped it for non-multiple windows.
+                bool fitsAtReference = window >= stride;
+                Assert.AreEqual(
+                    fitsAtReference,
+                    offsets.Contains(window),
+                    $"window={window}, stride={stride}: reference inclusion mismatch");
+            }
+        }
+    }
+
+    [TestMethod]
     public void AuthorizationReadGate_RevocationPreventsSubsequentNativeOperation()
     {
         var gate = new AuthorizationReadGate();

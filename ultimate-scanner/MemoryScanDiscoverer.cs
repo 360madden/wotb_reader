@@ -312,7 +312,7 @@ internal sealed class MemoryScanDiscoverer : IMemoryScanDiscoverer
         }
 
         List<MemoryScanCandidate> candidates = [];
-        for (int offset = 0; offset <= bytes.Length - 4; offset += 4)
+        foreach (int offset in EnumerateNeighborhoodProbeOffsets(window, 4, bytes.Length))
         {
             cancellationToken.ThrowIfCancellationRequested();
             long absoluteAddress = start + offset;
@@ -358,7 +358,7 @@ internal sealed class MemoryScanDiscoverer : IMemoryScanDiscoverer
 
         if (request.IncludeDouble)
         {
-            for (int offset = 0; offset <= bytes.Length - 8; offset += 8)
+            foreach (int offset in EnumerateNeighborhoodProbeOffsets(window, 8, bytes.Length))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 double value = BitConverter.ToDouble(bytes, offset);
@@ -719,6 +719,28 @@ internal sealed class MemoryScanDiscoverer : IMemoryScanDiscoverer
             offset += length;
         }
         return true;
+    }
+
+    /// <summary>
+    /// Enumerates the buffer offsets at which a <paramref name="stride"/>-byte
+    /// value is probed in a neighborhood scan, aligned to the reference address
+    /// so the reference itself (displacement zero) is always included whenever
+    /// a full value fits. The read buffer covers [reference - window,
+    /// reference + window), so a probe at offset is reference-aligned when
+    /// <c>offset % stride == window % stride</c>. Striding from a zero offset
+    /// instead silently skips the reference whenever <paramref name="window"/>
+    /// is not an exact multiple of the value width.
+    /// </summary>
+    internal static IEnumerable<int> EnumerateNeighborhoodProbeOffsets(
+        int window,
+        int stride,
+        int bufferLength)
+    {
+        int first = window % stride;
+        for (int offset = first; offset + stride <= bufferLength; offset += stride)
+        {
+            yield return offset;
+        }
     }
 
     internal static bool Matches(ReadOnlySpan<byte> observed, byte[] expected, byte[]? tolerance)
