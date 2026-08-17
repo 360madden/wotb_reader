@@ -17,9 +17,23 @@ $codexRoot = Join-Path $repo '.codex'
 $projectConfig = Join-Path $codexRoot 'config.toml'
 $agentsRoot = Join-Path $codexRoot 'agents'
 $hooksPath = Join-Path $codexRoot 'hooks.json'
-$hookScript = Join-Path $codexRoot 'hooks\enforce-sol-model.ps1'
+$hookScript = Join-Path $codexRoot 'hooks\enforce-allowed-models.ps1'
 $agentsGuide = Join-Path $repo 'AGENTS.md'
-$allowedModel = 'gpt-5.6-sol'
+$allowedModels = @('gpt-5.6-sol', 'deepseek-v4-pro')
+$modelForRole = @{
+    'default'           = 'deepseek-v4-pro'
+    'worker'            = 'deepseek-v4-pro'
+    'explorer'          = 'deepseek-v4-pro'
+    'verifier'          = 'deepseek-v4-pro'
+    'implementer_glue'  = 'deepseek-v4-pro'
+    'code_reviewer'     = 'gpt-5.6-sol'
+    'evidence_analyst'  = 'gpt-5.6-sol'
+    'systems_analyst'   = 'gpt-5.6-sol'
+    'decoder_auditor'   = 'gpt-5.6-sol'
+    'strategist'        = 'gpt-5.6-sol'
+    'security_auditor'  = 'gpt-5.6-sol'
+    'memory_researcher' = 'gpt-5.6-sol'
+}
 
 function Get-RequiredText {
     param([Parameter(Mandatory)][string] $Path)
@@ -72,7 +86,7 @@ function Assert-UniqueRawAssignment {
 }
 
 $configText = Get-RequiredText -Path $projectConfig
-Assert-UniqueStringAssignment $configText 'model' $allowedModel '.codex/config.toml'
+Assert-UniqueStringAssignment $configText 'model' 'deepseek-v4-pro' '.codex/config.toml'
 Assert-UniqueStringAssignment $configText 'model_reasoning_effort' 'medium' '.codex/config.toml'
 Assert-UniqueStringAssignment $configText 'plan_mode_reasoning_effort' 'xhigh' '.codex/config.toml'
 Assert-UniqueStringAssignment $configText 'model_reasoning_summary' 'concise' '.codex/config.toml'
@@ -80,7 +94,7 @@ Assert-UniqueStringAssignment $configText 'model_verbosity' 'low' '.codex/config
 Assert-UniqueRawAssignment $configText 'enabled' 'true' '.codex/config.toml'
 Assert-UniqueRawAssignment $configText 'max_concurrent_threads_per_session' '6' '.codex/config.toml'
 
-Assert-UniqueStringAssignment $configText 'default_subagent_model' $allowedModel '.codex/config.toml'
+Assert-UniqueStringAssignment $configText 'default_subagent_model' 'deepseek-v4-pro' '.codex/config.toml'
 Assert-UniqueStringAssignment $configText 'default_subagent_reasoning_effort' 'medium' '.codex/config.toml'
 
 $expectedRoles = [ordered]@{
@@ -108,7 +122,7 @@ foreach ($role in $expectedRoles.Keys) {
     $agentText = Get-RequiredText -Path $agentPath
     $roleSpec = $expectedRoles[$role]
     Assert-UniqueStringAssignment $agentText 'name' $role ".codex/agents/$role.toml"
-    Assert-UniqueStringAssignment $agentText 'model' $allowedModel ".codex/agents/$role.toml"
+    Assert-UniqueStringAssignment $agentText 'model' $modelForRole[$role] ".codex/agents/$role.toml"
     Assert-UniqueStringAssignment `
         $agentText `
         'model_reasoning_effort' `
@@ -137,7 +151,7 @@ if ($null -eq $hooks.hooks.SessionStart -or $null -eq $hooks.hooks.PreToolUse) {
 foreach ($role in $expectedRoles.Keys) {
     $hookInput = @{
         hook_event_name = 'PreToolUse'
-        model           = $allowedModel
+        model           = $modelForRole[$role]
         tool_name       = 'spawn_agent'
         tool_input      = @{ agent_type = $role; task_name = 'policy_check' }
     } | ConvertTo-Json -Compress -Depth 5
@@ -148,11 +162,11 @@ foreach ($role in $expectedRoles.Keys) {
 }
 
 $guideText = Get-RequiredText -Path $agentsGuide
-if ($guideText -notmatch 'only allowed baseline and subagent model is \*\*`gpt-5\.6-sol`\*\*') {
-    throw 'AGENTS.md does not contain the canonical Sol-only policy statement.'
+if ($guideText -notmatch 'allowed baseline and subagent models are') {
+    throw 'AGENTS.md does not contain the canonical allowed-model policy statement.'
 }
 
 Write-Host (
-    "Codex agent config check passed: model=$allowedModel; " +
+    'Codex agent config check passed: allowed-models=' + ($allowedModels -join ',') + '; ' +
     'lead=medium; plan=xhigh; roles=12 low/medium/high/xhigh/max; ' +
     'sandboxes=read-only/workspace-write; max-threads=6.')

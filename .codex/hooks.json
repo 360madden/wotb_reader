@@ -1,5 +1,5 @@
 {
-  "description": "Sol-only model and reviewed-role guardrails for root sessions and subagent spawns.",
+  "description": "Reviewed-model and reviewed-role guardrails for root sessions and subagent spawns (gpt-5.6-sol all lanes; deepseek-v4-pro bounded lanes; overrides denied).",
   "hooks": {
     "SessionStart": [
       {
@@ -7,9 +7,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command '& { $repoRoot = git rev-parse --show-toplevel; & (Join-Path $repoRoot \".codex/hooks/enforce-sol-model.ps1\") }'",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command '& { $repoRoot = git rev-parse --show-toplevel; & (Join-Path $repoRoot \".codex/hooks/enforce-allowed-models.ps1\") }'",
             "timeout": 10,
-            "statusMessage": "Checking the Sol-only model policy"
+            "statusMessage": "Checking the allowed-model policy"
           }
         ]
       }
@@ -20,9 +20,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command '& { $repoRoot = git rev-parse --show-toplevel; & (Join-Path $repoRoot \".codex/hooks/enforce-sol-model.ps1\") }'",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -Command '& { $repoRoot = git rev-parse --show-toplevel; & (Join-Path $repoRoot \".codex/hooks/enforce-allowed-models.ps1\") }'",
             "timeout": 10,
-            "statusMessage": "Checking the Sol-only subagent policy"
+            "statusMessage": "Checking the allowed-model subagent policy"
           }
         ]
       }

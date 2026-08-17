@@ -1,10 +1,13 @@
-# Pester smoke tests for the repository's Sol-only Codex hook.
+# Pester smoke tests for the repository's allowed-model Codex hook.
+# Allowed models: gpt-5.6-sol (all lanes) and deepseek-v4-pro (bounded
+# lanes only). Spawn-time model/reasoning overrides and unreviewed roles
+# are always denied; role files own each lane's model.
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
-$hook = Join-Path $here '..\.codex\hooks\enforce-sol-model.ps1'
+$hook = Join-Path $here '..\.codex\hooks\enforce-allowed-models.ps1'
 
 function Invoke-ModelHook {
     param([Parameter(Mandatory)][hashtable] $InputObject)
@@ -18,7 +21,7 @@ function Invoke-ModelHook {
     return ($output | Out-String).Trim() | ConvertFrom-Json
 }
 
-Describe 'Codex Sol-only model policy' {
+Describe 'Codex allowed-model policy' {
     It 'allows a Sol root session without adding context' {
         $result = Invoke-ModelHook @{
             hook_event_name = 'SessionStart'
@@ -29,7 +32,17 @@ Describe 'Codex Sol-only model policy' {
         $result | Should BeNullOrEmpty
     }
 
-    It 'stops a root session on another model' {
+    It 'allows a deepseek-v4-pro root session without adding context' {
+        $result = Invoke-ModelHook @{
+            hook_event_name = 'SessionStart'
+            model           = 'deepseek-v4-pro'
+            source          = 'startup'
+        }
+
+        $result | Should BeNullOrEmpty
+    }
+
+    It 'stops a root session on a model outside the reviewed set' {
         $result = Invoke-ModelHook @{
             hook_event_name = 'SessionStart'
             model           = 'gpt-5.6-terra'
@@ -37,7 +50,7 @@ Describe 'Codex Sol-only model policy' {
         }
 
         $result.continue | Should Be $false
-        $result.stopReason | Should Match 'requires gpt-5.6-sol'
+        $result.stopReason | Should Match 'reviewed models'
     }
 
     It 'allows a spawn that inherits the reviewed role configuration' {
@@ -46,6 +59,28 @@ Describe 'Codex Sol-only model policy' {
             model           = 'gpt-5.6-sol'
             tool_name       = 'spawn_agent'
             tool_input      = @{ agent_type = 'explorer'; task_name = 'map_path' }
+        }
+
+        $result | Should BeNullOrEmpty
+    }
+
+    It 'allows a bounded-lane spawn from a deepseek-v4-pro lead session' {
+        $result = Invoke-ModelHook @{
+            hook_event_name = 'PreToolUse'
+            model           = 'deepseek-v4-pro'
+            tool_name       = 'spawn_agent'
+            tool_input      = @{ agent_type = 'worker'; task_name = 'bounded_change' }
+        }
+
+        $result | Should BeNullOrEmpty
+    }
+
+    It 'allows a glue spawn from a deepseek lead session without an override' {
+        $result = Invoke-ModelHook @{
+            hook_event_name = 'PreToolUse'
+            model           = 'deepseek-v4-pro'
+            tool_name       = 'spawn_agent'
+            tool_input      = @{ agent_type = 'implementer_glue'; task_name = 'dto_glue' }
         }
 
         $result | Should BeNullOrEmpty
@@ -95,14 +130,14 @@ Describe 'Codex Sol-only model policy' {
         $result | Should BeNullOrEmpty
     }
 
-    It 'denies a non-Sol subagent model override' {
+    It 'denies any subagent model override, even to a reviewed model' {
         $result = Invoke-ModelHook @{
             hook_event_name = 'PreToolUse'
-            model           = 'gpt-5.6-sol'
+            model           = 'deepseek-v4-pro'
             tool_name       = 'spawn_agent'
             tool_input      = @{
                 agent_type = 'worker'
-                model      = 'gpt-5.6-terra'
+                model      = 'gpt-5.6-sol'
                 task_name  = 'change'
             }
         }
@@ -117,9 +152,9 @@ Describe 'Codex Sol-only model policy' {
             model           = 'gpt-5.6-sol'
             tool_name       = 'spawn_agent'
             tool_input      = @{
-                agent_type      = 'verifier'
+                agent_type       = 'verifier'
                 reasoning_effort = 'xhigh'
-                task_name       = 'verify'
+                task_name        = 'verify'
             }
         }
 

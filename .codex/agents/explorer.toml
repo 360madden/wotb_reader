@@ -1,6 +1,6 @@
 name = "explorer"
-description = "Low-effort read-only Sol explorer for one specific codebase question or evidence lookup."
-model = "gpt-5.6-sol"
+description = "Low-effort read-only deepseek-v4-pro explorer for one specific codebase question or evidence lookup."
+model = "deepseek-v4-pro"
 model_reasoning_effort = "low"
 sandbox_mode = "read-only"
 developer_instructions = """

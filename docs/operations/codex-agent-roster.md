@@ -11,9 +11,16 @@ This is the stable, detailed roster for Codex development in this repository.
 files under `.codex/agents/`, `.codex/hooks.json`, and
 `scripts/codex-agent-config-check.ps1` mechanically define and check the setup.
 
-All root and subagent sessions use `gpt-5.6-sol`. Roles change reasoning effort,
-instructions, and their default sandbox, not the model. A role file's sandbox is
-the intended project default; a stricter parent permission still wins, and Codex
+Two models are allowed (owner-approved 2026-08-17): `gpt-5.6-sol` for all
+lanes, and `deepseek-v4-pro` for the bounded lanes only (lead
+`default`/`worker`, `explorer`, `verifier`, `implementer_glue` — effort
+`medium` or less). The specialist lanes (`code_reviewer`, `evidence_analyst`,
+`systems_analyst`, `decoder_auditor`, `strategist`, `security_auditor`,
+`memory_researcher`) stay `gpt-5.6-sol` only. A role file owns its model and
+its reasoning effort; roles change effort, instructions, and default sandbox,
+not their model. Spawn-time model/reasoning overrides are denied by
+`.codex/hooks/enforce-allowed-models.ps1`. A role file's sandbox is the
+intended project default; a stricter parent permission still wins, and Codex
 may reapply a live parent permission override to a child.
 
 ## Selection algorithm

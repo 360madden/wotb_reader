@@ -1,7 +1,7 @@
 ---
 description: Focused implementation of mechanical UI, DTO, test, and documentation units against frozen repository contracts.
 mode: all
-model: opencode/deepseek-v4-flash-free
+model: opencode/deepseek-v4-pro
 temperature: 0.1
 permission:
   external_directory: deny

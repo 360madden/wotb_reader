@@ -25,25 +25,30 @@ These documents are authoritative over older handoffs or remembered status.
 
 ## Codex model and delegation policy
 
-The only allowed baseline and subagent model is **`gpt-5.6-sol`**. Change the
-reasoning effort, not the model. Do not select Terra, Luna, an external provider,
-or another model in a spawn request, saved profile, skill, or repository
-instruction. A different model requires a new explicit owner instruction and a
-reviewed policy update before use.
+The allowed baseline and subagent models are **`gpt-5.6-sol`** (all lanes)
+and **`deepseek-v4-pro`** (bounded lanes only: lead `default`/`worker`,
+`explorer`, `verifier`, `implementer_glue` — effort `medium` or less). The
+specialist lanes (`code_reviewer`, `evidence_analyst`, `systems_analyst`,
+`decoder_auditor`, `strategist`, `security_auditor`, `memory_researcher`)
+stay `gpt-5.6-sol` only. A role file owns its model; change reasoning effort,
+not a role's model, and never select Terra, Luna, an external provider, or a
+model outside the two-model set in a spawn request, saved profile, skill, or
+repository instruction. Changing the allowed set requires a new explicit owner
+instruction and a reviewed policy update before use.
 
-| Agent | Effort | Sandbox | Use for |
-|---|---:|---|---|
-| lead / `default` / `worker` | `medium` | workspace-write | routing, bounded implementation, integration of frozen decisions |
-| `explorer` | `low` | read-only | one codebase question or evidence lookup |
-| `verifier` | `low` | workspace-write | smallest focused check; writes ignored build outputs only |
-| `implementer_glue` | `medium` | workspace-write | bounded UI, DTO, HTTP, tests, or docs glue |
-| `code_reviewer` | `high` | read-only | correctness review of a diff, branch, or defined scope |
-| `evidence_analyst` | `high` | read-only | clock/scorer/experiment and cross-replay evidence adjudication |
-| `systems_analyst` | `high` | read-only | difficult cross-project trace or multi-file root cause |
-| `decoder_auditor` | `high` | read-only | replay, binary, decoder, or contract evidence audit |
-| `strategist` | `xhigh` | read-only | long-range product, architecture, or experiment-campaign planning |
-| `security_auditor` | `xhigh` | read-only | loopback, mutation, privacy, ACL, or fail-closed audit |
-| `memory_researcher` | `max` | read-only | unknown offsets/root anchors or failed/conflicting reverse-engineering hypotheses |
+| Agent | Model | Effort | Sandbox | Use for |
+|---|---|---|---|---|
+| lead / `default` / `worker` | `deepseek-v4-pro` | `medium` | `workspace-write` | routing, bounded implementation, integration of frozen decisions |
+| `explorer` | `deepseek-v4-pro` | `low` | `read-only` | one codebase question or evidence lookup |
+| `verifier` | `deepseek-v4-pro` | `low` | `workspace-write` | smallest focused check; writes ignored build outputs only |
+| `implementer_glue` | `deepseek-v4-pro` | `medium` | `workspace-write` | bounded UI, DTO, HTTP, tests, or docs glue |
+| `code_reviewer` | `gpt-5.6-sol` | `high` | `read-only` | correctness review of a diff, branch, or defined scope |
+| `evidence_analyst` | `gpt-5.6-sol` | `high` | `read-only` | clock/scorer/experiment and cross-replay evidence adjudication |
+| `systems_analyst` | `gpt-5.6-sol` | `high` | `read-only` | difficult cross-project trace or multi-file root cause |
+| `decoder_auditor` | `gpt-5.6-sol` | `high` | `read-only` | replay, binary, decoder, or contract evidence audit |
+| `strategist` | `gpt-5.6-sol` | `xhigh` | `read-only` | long-range product, architecture, or experiment-campaign planning |
+| `security_auditor` | `gpt-5.6-sol` | `xhigh` | `read-only` | loopback, mutation, privacy, ACL, or fail-closed audit |
+| `memory_researcher` | `gpt-5.6-sol` | `max` | `read-only` | unknown offsets/root anchors or failed/conflicting reverse-engineering hypotheses |
 
 Repository sources of truth are `.codex/config.toml`, `.codex/agents/*.toml`,
 `.codex/hooks.json`, and `scripts/codex-agent-config-check.ps1`.
@@ -184,9 +189,15 @@ and ASCII-only. See `docs/operations/cmd-wrapper-gotchas.md` for batch/cmd work.
 
 ## Last verified
 
-- 2026-08-14 — complete 12-role Sol-only roster and effort ladder verified:
-  Plan/strategy and security xhigh; correctness/evidence/systems/decoder high;
-  unknown offset/root-anchor research max; bounded work medium;
+- 2026-08-17 — owner-approved policy amendment: the allowed model set is now
+  `gpt-5.6-sol` (all lanes) plus `deepseek-v4-pro` (bounded lanes:
+  lead/default/worker, explorer, verifier, implementer glue). Enforcement
+  extended: `.codex/hooks/enforce-allowed-models.ps1`, role toml pins,
+  `scripts/codex-agent-config-check.ps1`, and the updated Pester policy tests
+  re-run green.
+- 2026-08-14 — complete 12-role Sol-only roster and effort ladder verified (at
+  the time): Plan/strategy and security xhigh; correctness/evidence/systems/
+  decoder high; unknown offset/root-anchor research max; bounded work medium;
   lookup/verification low. Every role has a checked read-only or
   workspace-write sandbox. Full repository gate: 1,206 tests passed, 7 local
   opt-in skips, 0 build warnings, 0 errors; 10 policy tests passed.

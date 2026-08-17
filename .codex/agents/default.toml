@@ -1,6 +1,6 @@
 name = "default"
-description = "General-purpose Sol subagent for a bounded unit that does not fit a more specific role."
-model = "gpt-5.6-sol"
+description = "General-purpose deepseek-v4-pro subagent for a bounded unit that does not fit a more specific role."
+model = "deepseek-v4-pro"
 model_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 developer_instructions = """

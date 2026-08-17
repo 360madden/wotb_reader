@@ -9,7 +9,17 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$allowedModel = 'gpt-5.6-sol'
+# The role files (.codex/agents/*.toml) own each lane's model:
+#   gpt-5.6-sol        - all lanes (specialists: high/xhigh/max)
+#   deepseek-v4-pro    - bounded lanes (lead/default/worker, explorer,
+#                        verifier, implementer_glue)
+# This hook only rejects sessions/spawns that try to sidestep the review:
+# an out-of-set session model, any spawn-time model or reasoning override,
+# or an unreviewed role.
+$allowedModels = @(
+    'gpt-5.6-sol',
+    'deepseek-v4-pro'
+)
 $allowedAgentTypes = @(
     'default',
     'worker',
@@ -52,15 +62,16 @@ function Write-ToolDenial {
 
     [ordered]@{
         hookSpecificOutput = [ordered]@{
-            hookEventName          = 'PreToolUse'
-            permissionDecision     = 'deny'
+            hookEventName            = 'PreToolUse'
+            permissionDecision       = 'deny'
             permissionDecisionReason = $Reason
         }
     } | ConvertTo-Json -Compress -Depth 4
 }
 
-if ($activeModel -ne $allowedModel) {
-    $reason = "This repository requires $allowedModel; active model '$activeModel' is denied."
+$allowedModelText = ($allowedModels -join ' or ')
+if ($activeModel -notin $allowedModels) {
+    $reason = "This repository requires one of the reviewed models ($allowedModelText); active model '$activeModel' is denied."
     if ($eventName -eq 'SessionStart') {
         Write-SessionDenial -Reason $reason
         return
@@ -85,10 +96,10 @@ if ($null -eq $toolInput) {
 $requestedModelProperty = $toolInput.PSObject.Properties['model']
 if ($null -ne $requestedModelProperty -and
     $null -ne $requestedModelProperty.Value -and
-    [string] $requestedModelProperty.Value -ne $allowedModel) {
+    -not [string]::IsNullOrWhiteSpace([string] $requestedModelProperty.Value)) {
     Write-ToolDenial -Reason (
         "Subagent model override '$($requestedModelProperty.Value)' is denied; " +
-        "use the role's $allowedModel configuration.")
+        'use the reviewed role configuration.')
     return
 }
 

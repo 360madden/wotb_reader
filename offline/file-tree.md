@@ -36,7 +36,7 @@ regenerate this file in the same change that adds, renames, or removes files.
 .codex/agents/worker.toml
 .codex/config.toml
 .codex/hooks.json
-.codex/hooks/enforce-sol-model.ps1
+.codex/hooks/enforce-allowed-models.ps1
 .editorconfig
 .freebuff/project-id
 .freebuff/settings.json
@@ -367,6 +367,7 @@ docs/operations/handoffs/2026-08-17-pen-capture-bughunt-15-rounds.md
 docs/operations/handoffs/2026-08-17-pen-gun-descriptor-trace.md
 docs/operations/handoffs/2026-08-17-pen-gun-shell-descriptor-layout.md
 docs/operations/handoffs/2026-08-17-pen-gun-shell-static.md
+docs/operations/handoffs/2026-08-17-recovery-module.md
 docs/operations/handoffs/2026-08-17-scan-lease-bughunt.md
 docs/operations/handoffs/README.md
 docs/operations/item7-branch-b-step2-consistent-double-read-proposal.md
