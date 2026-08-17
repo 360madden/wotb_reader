@@ -260,6 +260,9 @@ public sealed class ReplayDecoderTests
             Assert.AreEqual(3, values.RootElement.GetProperty("hitResult").GetInt32());
             Assert.IsTrue(values.RootElement.GetProperty("penetrated").GetBoolean());
             Assert.AreEqual(100, values.RootElement.GetProperty("attackerEntityId").GetInt64());
+            Assert.AreEqual(
+                "a6a5e0a2a8b1",
+                values.RootElement.GetProperty("shellSignatureHex").GetString());
         }
 
         // t=4.1: `01 12` non-penetrating bounce on 100 (result 0x00),

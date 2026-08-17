@@ -116,6 +116,7 @@ internal sealed record ImpactObservation(
     long VictimEntityId,
     byte HitResult,
     bool Penetrated,
+    string ShellSignatureHex,
     BinaryEvidence Evidence);
 
 /// <summary>
@@ -562,12 +563,19 @@ internal static class EventPacketDecoders
         }
 
         byte hitResult = payload[resultOffset];
+        int signatureOffset = flag == ImpactFlagDamageA ? 12 : 13;
+        if (payload.Length < signatureOffset + 6)
+        {
+            return false;
+        }
+
         impact = new ImpactObservation(
             packet.Ordinal,
             TimeSpan.FromSeconds(packet.ClockSeconds),
             victim,
             hitResult,
             Penetrated: hitResult == ImpactResultPenetrated,
+            Convert.ToHexString(payload.Slice(signatureOffset, 6)).ToLowerInvariant(),
             EvidenceForPacket(packet));
         return true;
     }

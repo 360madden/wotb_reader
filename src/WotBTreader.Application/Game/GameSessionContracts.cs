@@ -663,6 +663,96 @@ public sealed record EntityRecordRegionReadRequest(
     public const int EntityHullPositionLength = 12;
 
     /// <summary>
+    /// VehicleGunRotator +0xEC is the 64-byte matrix copied from
+    /// FUN_0133a410 output+0x18 (FUN_01ed2040 / FUN_01ec1030). FUN_0271a330
+    /// reads translation at matrix+0x30. That slot is rotator+0x11C (three
+    /// float32, engine x/z/y-up). Live hull-relative is not a muzzle
+    /// (Oasis 0/32 in-band). Start pos is FUN_0133a410 output+0, stack-only.
+    /// Unpromoted.
+    /// </summary>
+    public const int PenRotatorMatrixTranslationOffset = 0x11C;
+
+    /// <summary>Three float32 matrix-translation components.</summary>
+    public const int PenRotatorMatrixTranslationLength = 12;
+
+    /// <summary>
+    /// VehicleGunRotator ctor stores vehicleTypeDescriptor at +0x130
+    /// (param_4; "nullptr != vehicleDescr"). Same pointer as vehicle+0x68
+    /// and AmmoController+0x40. Static config, not a live pose. Unpromoted.
+    /// </summary>
+    public const int PenRotatorVehicleTypeDescriptorOffset = 0x130;
+
+    /// <summary>
+    /// AmmoController is embedded on AvatarGameLogic at +0x4B4
+    /// (ResetAmmo thiscall). Unpromoted.
+    /// </summary>
+    public const int PenAmmoControllerEmbeddedOffset = 0x4B4;
+
+    /// <summary>
+    /// AmmoController::ProcessCurrentShells writes the matched compact-shell
+    /// index at +0x38 (0 is also the no-match default). Unpromoted.
+    /// </summary>
+    public const int PenAmmoCurrentShellIndexOffset = 0x38;
+
+    /// <summary>
+    /// AmmoController +0x40 holds vehicleTypeDescriptor (ResetAmmo assert).
+    /// </summary>
+    public const int PenAmmoVehicleTypeDescriptorOffset = 0x40;
+
+    /// <summary>
+    /// Inclusive diagnostic cap for the current-shell index. Not a published
+    /// magazine size.
+    /// </summary>
+    public const int PenAmmoShellIndexMaxInclusive = 15;
+
+    /// <summary>
+    /// vehicleTypeDescriptor +0x20 is the weapons/ammo tables object
+    /// (AmmoController::ResetAmmo). Unpromoted.
+    /// </summary>
+    public const int PenVehicleTypeDescriptorWeaponsOffset = 0x20;
+
+    /// <summary>
+    /// Weapons object +0x1B0/+0x1B4 is the compact-shell pointer array
+    /// begin/end used by ProcessCurrentShells. Unpromoted.
+    /// </summary>
+    public const int PenWeaponsCompactShellArrayBeginOffset = 0x1B0;
+
+    /// <summary>Compact-shell pointer array end (exclusive).</summary>
+    public const int PenWeaponsCompactShellArrayEndOffset = 0x1B4;
+
+    /// <summary>
+    /// Compact-shell slot +0x1C is the item identity object whose +0x20/+0x24
+    /// ProcessCurrentShells compares. Unpromoted.
+    /// </summary>
+    public const int PenCompactShellIdentOffset = 0x1C;
+
+    /// <summary>
+    /// Compact item +0x20 is nation (FUN_007f8d30 name table; 0..8, 10, 15).
+    /// Same slot VehicleDescr prints as ", nation: ". Unpromoted.
+    /// </summary>
+    public const int PenCompactItemNationOffset = 0x20;
+
+    /// <summary>
+    /// Compact item +0x24 is item id (printed as ", id: "). Unpromoted.
+    /// Not eShellKind (AP/HE/HEAT).
+    /// </summary>
+    public const int PenCompactItemIdOffset = 0x24;
+
+    /// <summary>Inclusive diagnostic cap for the nation enum.</summary>
+    public const int PenCompactItemNationMaxInclusive = 15;
+
+    /// <summary>
+    /// Shell (VehicleComponent) +0x114 is eShellKind written from XML
+    /// "kind" (FUN_00840570 / FUN_0090b930). 0=kUnknown, 1=kHollowCharge,
+    /// 2=kHighExplosive, 3=kArmorPiercing, 4=kArmorPiercingHe,
+    /// 5=kArmorPiercingCr. Unpromoted.
+    /// </summary>
+    public const int PenCompactItemShellKindOffset = 0x114;
+
+    /// <summary>Inclusive diagnostic cap for eShellKind.</summary>
+    public const int PenCompactItemShellKindMaxInclusive = 5;
+
+    /// <summary>
     /// Inclusive band for a plausible gun/muzzle height above hull center,
     /// in meters. Diagnostic only — not a published chain.
     /// </summary>
@@ -722,7 +812,22 @@ public sealed record EntityRecordRegionReadResult(
     double? PenSemanticMuzzleDistanceHalfHeightMeters = null,
     double? PenSemanticMuzzleDistanceHalfHorizontalMeters = null,
     double? PenSemanticMuzzleDistanceScalarHeightMeters = null,
-    double? PenSemanticMuzzleDistanceScalarHorizontalMeters = null);
+    double? PenSemanticMuzzleDistanceScalarHorizontalMeters = null,
+    double? PenSemanticMatrixOriginHeightMeters = null,
+    double? PenSemanticMatrixOriginHorizontalMeters = null,
+    bool PenSemanticMatrixOriginInBand = false,
+    int? PenSemanticAmmoShellIndex = null,
+    bool PenSemanticAmmoShellIndexInRange = false,
+    bool PenSemanticAmmoDescrRoundTripConfirmed = false,
+    int? PenSemanticAmmoShellNation = null,
+    int? PenSemanticAmmoShellItemId = null,
+    bool PenSemanticAmmoShellIdentReadable = false,
+    bool PenSemanticAmmoShellNationInRange = false,
+    int? PenSemanticAmmoShellKind = null,
+    bool PenSemanticAmmoShellKindInRange = false,
+    int? PenSemanticAmmoMagazineCount = null,
+    int? PenSemanticAmmoMagazineKindMask = null,
+    int? PenSemanticAmmoMagazineKindReadableSlots = null);
 
 /// <summary>
 /// One entity region in a batch read (mirrors the single-read fields).

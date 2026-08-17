@@ -45,6 +45,36 @@ public sealed class PublishedMarkerShotJoinTests
     }
 
     [TestMethod]
+    public void ViewpointShellSignaturesAreDistinctHexCounts()
+    {
+        ParticipantId viewpointId = ParticipantId.New();
+        ReplayDecodeProjection projection = Projection(
+            participants:
+            [
+                Participant(entityId: 1, tankId: "uk:A", tankName: "Attacker Tank", viewpointId),
+                Participant(entityId: 2, tankId: "uk:V", tankName: "Victim Tank"),
+            ],
+            positions: [],
+            events:
+            [
+                ShotEvent(1, 5.0, attacker: 1, victim: 2, penetrated: true, "aabbccddeeff"),
+                ShotEvent(2, 6.0, attacker: 1, victim: 2, penetrated: false, "aabbccddeeff"),
+                ShotEvent(3, 7.0, attacker: 1, victim: 3, penetrated: true, "001122334455"),
+                ShotEvent(4, 8.0, attacker: 2, victim: 1, penetrated: true, "deadbeef0000"),
+            ],
+            viewpointParticipantId: viewpointId);
+
+        IReadOnlyList<ViewpointShellSignatureCount> rows =
+            PublishedMarkerShotJoin.ListViewpointShellSignatures(projection);
+
+        Assert.HasCount(2, rows);
+        Assert.AreEqual("001122334455", rows[0].Hex);
+        Assert.AreEqual(1, rows[0].Count);
+        Assert.AreEqual("aabbccddeeff", rows[1].Hex);
+        Assert.AreEqual(2, rows[1].Count);
+    }
+
+    [TestMethod]
     public void MissingAttackerInJsonCountsMissingAttacker()
     {
         ParticipantId viewpointId = ParticipantId.New();
@@ -425,8 +455,13 @@ public sealed class PublishedMarkerShotJoinTests
         double seconds,
         long attacker,
         long victim,
-        bool penetrated) =>
-        new(
+        bool penetrated,
+        string? shellSignatureHex = null)
+    {
+        string hexJson = shellSignatureHex is null
+            ? string.Empty
+            : $",\"shellSignatureHex\":\"{shellSignatureHex}\"";
+        return new CanonicalEvent(
             CanonicalEventId.New(),
             RunId,
             SessionId,
@@ -435,9 +470,10 @@ public sealed class PublishedMarkerShotJoinTests
             TimeSpan.FromSeconds(seconds),
             ParticipantId: null,
             EntityId: victim,
-            $"{{\"victimEntityId\":{victim},\"hitResult\":{(penetrated ? 3 : 0)},\"penetrated\":{(penetrated ? "true" : "false")},\"attackerEntityId\":{attacker}}}",
+            $"{{\"victimEntityId\":{victim},\"hitResult\":{(penetrated ? 3 : 0)},\"penetrated\":{(penetrated ? "true" : "false")},\"attackerEntityId\":{attacker}{hexJson}}}",
             EvidenceConfidence.Exact,
             Evidence);
+    }
 
     private static CanonicalEvent ShotEventMissingAttacker(
         long sequence,

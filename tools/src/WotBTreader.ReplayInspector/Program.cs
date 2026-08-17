@@ -240,6 +240,13 @@ internal static class ReplayInspector
                     positions = projection.Positions.Count,
                     events = projection.Events.Count,
                     rawRecords = projection.RawRecords.Count,
+                    viewpointShots = PublishedMarkerShotJoin
+                        .ListViewpointShotTimes(projection).Count,
+                    distinctViewpointShellSignatures = PublishedMarkerShotJoin
+                        .ListViewpointShellSignatures(projection).Count,
+                    viewpointShellSignatures = PublishedMarkerShotJoin
+                        .ListViewpointShellSignatures(projection)
+                        .Select(row => new { hex = row.Hex, count = row.Count }),
                 },
                 sensitiveFieldsIncluded = includeSensitive,
             };

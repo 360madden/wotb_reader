@@ -1239,18 +1239,23 @@ public sealed class CliCommandRouter
             seconds[i] = times[i].TotalSeconds;
         }
 
+        IReadOnlyList<ViewpointShellSignatureCount> signatures =
+            PublishedMarkerShotJoin.ListViewpointShellSignatures(projection.Value);
         object data = new
         {
             command = "marker-shots",
             sessionId = sessionGuid,
             viewpointShots = seconds.Length,
             shotReplaySeconds = seconds,
+            distinctShellSignatures = signatures.Count,
+            shellSignatures = signatures.Select(row => new { hex = row.Hex, count = row.Count }),
         };
         string message = seconds.Length == 0
             ? "marker-shots viewpointShots=0"
             : "marker-shots viewpointShots=" + seconds.Length.ToString(CultureInfo.InvariantCulture)
                 + " first=" + seconds[0].ToString("0.000", CultureInfo.InvariantCulture)
                 + " last=" + seconds[^1].ToString("0.000", CultureInfo.InvariantCulture)
+                + " distinctSigs=" + signatures.Count.ToString(CultureInfo.InvariantCulture)
                 + ".";
         return Success(data, message, correlationId);
     }

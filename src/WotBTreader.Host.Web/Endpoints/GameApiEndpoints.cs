@@ -1020,6 +1020,21 @@ internal static class GameApiEndpoints
             PenSemanticMuzzleDistanceHalfHorizontalMeters = read.PenSemanticMuzzleDistanceHalfHorizontalMeters,
             PenSemanticMuzzleDistanceScalarHeightMeters = read.PenSemanticMuzzleDistanceScalarHeightMeters,
             PenSemanticMuzzleDistanceScalarHorizontalMeters = read.PenSemanticMuzzleDistanceScalarHorizontalMeters,
+            PenSemanticMatrixOriginHeightMeters = read.PenSemanticMatrixOriginHeightMeters,
+            PenSemanticMatrixOriginHorizontalMeters = read.PenSemanticMatrixOriginHorizontalMeters,
+            PenSemanticMatrixOriginInBand = read.PenSemanticMatrixOriginInBand,
+            PenSemanticAmmoShellIndex = read.PenSemanticAmmoShellIndex,
+            PenSemanticAmmoShellIndexInRange = read.PenSemanticAmmoShellIndexInRange,
+            PenSemanticAmmoDescrRoundTripConfirmed = read.PenSemanticAmmoDescrRoundTripConfirmed,
+            PenSemanticAmmoShellNation = read.PenSemanticAmmoShellNation,
+            PenSemanticAmmoShellItemId = read.PenSemanticAmmoShellItemId,
+            PenSemanticAmmoShellIdentReadable = read.PenSemanticAmmoShellIdentReadable,
+            PenSemanticAmmoShellNationInRange = read.PenSemanticAmmoShellNationInRange,
+            PenSemanticAmmoShellKind = read.PenSemanticAmmoShellKind,
+            PenSemanticAmmoShellKindInRange = read.PenSemanticAmmoShellKindInRange,
+            PenSemanticAmmoMagazineCount = read.PenSemanticAmmoMagazineCount,
+            PenSemanticAmmoMagazineKindMask = read.PenSemanticAmmoMagazineKindMask,
+            PenSemanticAmmoMagazineKindReadableSlots = read.PenSemanticAmmoMagazineKindReadableSlots,
         });
     }
 

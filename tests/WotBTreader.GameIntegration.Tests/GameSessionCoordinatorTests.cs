@@ -2128,6 +2128,7 @@ public sealed class GameSessionCoordinatorTests
             [gunAddress + 0x3C] = reload,
             [entityAddress + 0x50] = BitConverter.GetBytes(0.25f),
             [entityAddress + 0x3C] = HullPositionBytes(10f, 2.5f, 2f),
+            [rotatorAddress + 0x11C] = HullPositionBytes(0f, 0f, 0f),
         });
         var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
         var (coordinator, _) = CreateCoordinator(
@@ -2164,6 +2165,7 @@ public sealed class GameSessionCoordinatorTests
         Assert.AreEqual(1.5, result.Value?.PenSemanticOriginHeightMeters);
         Assert.AreEqual(0.0, result.Value?.PenSemanticOriginHorizontalMeters);
         Assert.IsTrue(result.Value?.PenSemanticOriginInBand);
+        Assert.IsFalse(result.Value?.PenSemanticMatrixOriginInBand);
         Assert.IsNull(result.Value?.RegionBytes);
     }
 
@@ -2200,6 +2202,7 @@ public sealed class GameSessionCoordinatorTests
             [gunAddress + 0x3C] = reload,
             [entityAddress + 0x50] = BitConverter.GetBytes(0f),
             [entityAddress + 0x3C] = HullPositionBytes(10f, 2.5f, 0f),
+            [rotatorAddress + 0x11C] = HullPositionBytes(0f, 0f, 0f),
         });
         var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
         var (coordinator, _) = CreateCoordinator(
@@ -2232,6 +2235,160 @@ public sealed class GameSessionCoordinatorTests
     }
 
     [TestMethod]
+    public async Task EntityRegionRead_PenSemanticFields_ReportsMatrixTranslationOrigin()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long rotatorAddress = 0x25001000;
+        const uint ownerAddress = 0x25002000;
+        const uint gunAddress = 0x25003000;
+        const uint entityAddress = 0x25004000;
+        byte[] marker = new byte[28];
+        // Published +0x50 pos stays far. Matrix translation at +0x11C is the
+        // candidate start: engine (10, 2, 4) -> decoded (10, 4, 2).
+        BinaryPrimitives.WriteSingleLittleEndian(marker.AsSpan(0, 4), 100f);
+        BinaryPrimitives.WriteSingleLittleEndian(marker.AsSpan(4, 4), 80f);
+        BinaryPrimitives.WriteSingleLittleEndian(marker.AsSpan(8, 4), 50f);
+        BinaryPrimitives.WriteSingleLittleEndian(marker.AsSpan(12, 4), 0f);
+        BinaryPrimitives.WriteSingleLittleEndian(marker.AsSpan(16, 4), 1f);
+        BinaryPrimitives.WriteSingleLittleEndian(marker.AsSpan(20, 4), 0f);
+        BinaryPrimitives.WriteSingleLittleEndian(marker.AsSpan(24, 4), 100f);
+        byte[] reload = new byte[20];
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            [rotatorAddress] = BitConverter.GetBytes(TestVehicleGunRotatorVftable),
+            [rotatorAddress + 0x10] = BitConverter.GetBytes(ownerAddress),
+            [ownerAddress + 0x1fc] = BitConverter.GetBytes((uint)rotatorAddress),
+            [ownerAddress + 0x204] = BitConverter.GetBytes(gunAddress),
+            [gunAddress] = BitConverter.GetBytes(TestVehicleGunVftable),
+            [ownerAddress + 0x04] = BitConverter.GetBytes(entityAddress),
+            [entityAddress + 0xB8] = BitConverter.GetBytes((short)1234),
+            [rotatorAddress + 0x50] = marker,
+            [gunAddress + 0x3C] = reload,
+            [entityAddress + 0x50] = BitConverter.GetBytes(0f),
+            [entityAddress + 0x3C] = HullPositionBytes(10f, 2.5f, 2f),
+            [rotatorAddress + 0x11C] = HullPositionBytes(10f, 2f, 4f),
+        });
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.PenSemanticFields),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, result.Value?.Status);
+        Assert.IsFalse(result.Value?.PenSemanticOriginInBand);
+        Assert.AreEqual(1.5, result.Value?.PenSemanticMatrixOriginHeightMeters);
+        Assert.AreEqual(0.0, result.Value?.PenSemanticMatrixOriginHorizontalMeters);
+        Assert.IsTrue(result.Value?.PenSemanticMatrixOriginInBand);
+        Assert.IsNull(result.Value?.RegionBytes);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_PenSemanticFields_ReportsAmmoShellIndex()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long rotatorAddress = 0x25001000;
+        const uint ownerAddress = 0x25002000;
+        const uint gunAddress = 0x25003000;
+        const uint entityAddress = 0x25004000;
+        const uint descrAddress = 0x25005000;
+        const uint weaponsAddress = 0x25006000;
+        const uint arrayBegin = 0x25007000;
+        const uint item0 = 0x25008000;
+        const uint item1 = 0x25008100;
+        const uint item2 = 0x25008200;
+        const uint ident0 = 0x25009100;
+        const uint ident1 = 0x25009200;
+        const uint ident2 = 0x25009000;
+        byte[] marker = new byte[28];
+        BinaryPrimitives.WriteSingleLittleEndian(marker.AsSpan(20, 4), 1f);
+        byte[] reload = new byte[20];
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            [rotatorAddress] = BitConverter.GetBytes(TestVehicleGunRotatorVftable),
+            [rotatorAddress + 0x10] = BitConverter.GetBytes(ownerAddress),
+            [ownerAddress + 0x1fc] = BitConverter.GetBytes((uint)rotatorAddress),
+            [ownerAddress + 0x204] = BitConverter.GetBytes(gunAddress),
+            [gunAddress] = BitConverter.GetBytes(TestVehicleGunVftable),
+            [ownerAddress + 0x04] = BitConverter.GetBytes(entityAddress),
+            [entityAddress + 0xB8] = BitConverter.GetBytes((short)1234),
+            [rotatorAddress + 0x50] = marker,
+            [gunAddress + 0x3C] = reload,
+            [entityAddress + 0x50] = BitConverter.GetBytes(0f),
+            [entityAddress + 0x3C] = HullPositionBytes(0f, 0f, 0f),
+            [rotatorAddress + 0x11C] = HullPositionBytes(0f, 0f, 0f),
+            [ownerAddress + 0x4EC] = BitConverter.GetBytes(2),
+            [ownerAddress + 0x4F4] = BitConverter.GetBytes(descrAddress),
+            [rotatorAddress + 0x130] = BitConverter.GetBytes(descrAddress),
+            [descrAddress + 0x20] = BitConverter.GetBytes(weaponsAddress),
+            [weaponsAddress + 0x1B0] = BitConverter.GetBytes(arrayBegin),
+            [weaponsAddress + 0x1B4] = BitConverter.GetBytes(arrayBegin + 12),
+            [arrayBegin] = BitConverter.GetBytes(item0),
+            [arrayBegin + 4] = BitConverter.GetBytes(item1),
+            [arrayBegin + 8] = BitConverter.GetBytes(item2),
+            [item0 + 0x1C] = BitConverter.GetBytes(ident0),
+            [item1 + 0x1C] = BitConverter.GetBytes(ident1),
+            [item2 + 0x1C] = BitConverter.GetBytes(ident2),
+            [ident0 + 0x114] = BitConverter.GetBytes(2),
+            [ident1 + 0x114] = BitConverter.GetBytes(1),
+            [ident2 + 0x20] = BitConverter.GetBytes(1),
+            [ident2 + 0x24] = BitConverter.GetBytes(12345),
+            [ident2 + 0x114] = BitConverter.GetBytes(3),
+        });
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.PenSemanticFields),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, result.Value?.Status);
+        Assert.AreEqual(2, result.Value?.PenSemanticAmmoShellIndex);
+        Assert.IsTrue(result.Value?.PenSemanticAmmoShellIndexInRange);
+        Assert.IsTrue(result.Value?.PenSemanticAmmoDescrRoundTripConfirmed);
+        Assert.AreEqual(1, result.Value?.PenSemanticAmmoShellNation);
+        Assert.AreEqual(12345, result.Value?.PenSemanticAmmoShellItemId);
+        Assert.IsTrue(result.Value?.PenSemanticAmmoShellIdentReadable);
+        Assert.IsTrue(result.Value?.PenSemanticAmmoShellNationInRange);
+        Assert.AreEqual(3, result.Value?.PenSemanticAmmoShellKind);
+        Assert.IsTrue(result.Value?.PenSemanticAmmoShellKindInRange);
+        Assert.AreEqual(3, result.Value?.PenSemanticAmmoMagazineCount);
+        Assert.AreEqual(14, result.Value?.PenSemanticAmmoMagazineKindMask);
+        Assert.AreEqual(3, result.Value?.PenSemanticAmmoMagazineKindReadableSlots);
+        Assert.IsNull(result.Value?.RegionBytes);
+    }
+
+    [TestMethod]
     public async Task EntityRegionRead_PenSemanticFields_NonUnitDirectionStaysHonest()
     {
         Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
@@ -2258,6 +2415,7 @@ public sealed class GameSessionCoordinatorTests
             [gunAddress + 0x3C] = reload,
             [entityAddress + 0x50] = BitConverter.GetBytes(0f),
             [entityAddress + 0x3C] = HullPositionBytes(0f, 0f, 0f),
+            [rotatorAddress + 0x11C] = HullPositionBytes(0f, 0f, 0f),
         });
         var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
         var (coordinator, _) = CreateCoordinator(
@@ -2314,6 +2472,7 @@ public sealed class GameSessionCoordinatorTests
             [gunAddress + 0x3C] = reload,
             [entityAddress + 0x50] = BitConverter.GetBytes(0.25f),
             [entityAddress + 0x3C] = HullPositionBytes(0f, 0f, 0f),
+            [rotatorAddress + 0x11C] = HullPositionBytes(0f, 0f, 0f),
         });
         var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
         var (coordinator, _) = CreateCoordinator(
@@ -2370,6 +2529,7 @@ public sealed class GameSessionCoordinatorTests
             [gunAddress + 0x3C] = reload,
             [entityAddress + 0x50] = BitConverter.GetBytes(0.25f),
             [entityAddress + 0x3C] = HullPositionBytes(0f, 0f, 0f),
+            [rotatorAddress + 0x11C] = HullPositionBytes(0f, 0f, 0f),
         };
         var factory = new ScriptedCameraReaderFactory(pages);
         var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));

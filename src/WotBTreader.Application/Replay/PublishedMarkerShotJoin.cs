@@ -55,6 +55,8 @@ public sealed record PublishedMarkerJoinDiagnostics(
 /// viewpoint-attacker ShotImpact events. Angular/clock join only - not
 /// ExactGunRay and not CAM-013.
 /// </summary>
+public sealed record ViewpointShellSignatureCount(string Hex, int Count);
+
 public static class PublishedMarkerShotJoin
 {
     private const double AimHeightMeters = 1.5;
@@ -97,6 +99,55 @@ public static class PublishedMarkerShotJoin
 
         times.Sort();
         return times;
+    }
+
+    /// <summary>
+    /// Distinct 6-byte type-32 shell signatures on viewpoint-attacker
+    /// ShotImpact events. Hex + counts only; not a loaded-shell identity.
+    /// </summary>
+    public static IReadOnlyList<ViewpointShellSignatureCount> ListViewpointShellSignatures(
+        ReplayDecodeProjection projection)
+    {
+        ArgumentNullException.ThrowIfNull(projection);
+        long? viewpointEntityId = ResolveViewpointEntityId(projection);
+        if (viewpointEntityId is not { } viewpointId)
+        {
+            return [];
+        }
+
+        Dictionary<string, int> counts = new(StringComparer.Ordinal);
+        foreach (CanonicalEvent ev in projection.Events)
+        {
+            if (ev.Kind != CanonicalEventKind.ShotImpact)
+            {
+                continue;
+            }
+
+            if (!TryReadShot(ev.ValuesJson, out long attackerId, out _, out _))
+            {
+                continue;
+            }
+
+            if (attackerId != viewpointId)
+            {
+                continue;
+            }
+
+            if (!TryReadShellSignatureHex(ev.ValuesJson, out string hex))
+            {
+                continue;
+            }
+
+            counts[hex] = counts.TryGetValue(hex, out int seen) ? seen + 1 : 1;
+        }
+
+        List<ViewpointShellSignatureCount> rows = [];
+        foreach (KeyValuePair<string, int> pair in counts.OrderBy(entry => entry.Key, StringComparer.Ordinal))
+        {
+            rows.Add(new ViewpointShellSignatureCount(pair.Key, pair.Value));
+        }
+
+        return rows;
     }
 
     public static PublishedMarkerJoinSummary Evaluate(
@@ -471,6 +522,44 @@ public static class PublishedMarkerShotJoin
             attackerId = attacker.GetInt64();
             penetrated = pen.GetBoolean();
             return attackerId > 0 && victimId > 0;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryReadShellSignatureHex(string valuesJson, out string hex)
+    {
+        hex = string.Empty;
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(valuesJson);
+            if (!document.RootElement.TryGetProperty(
+                    "shellSignatureHex",
+                    out JsonElement signature) ||
+                signature.ValueKind != JsonValueKind.String)
+            {
+                return false;
+            }
+
+            string? value = signature.GetString();
+            if (string.IsNullOrWhiteSpace(value) || value.Length != 12)
+            {
+                return false;
+            }
+
+            foreach (char c in value)
+            {
+                bool hexDigit = c is >= '0' and <= '9' or >= 'a' and <= 'f';
+                if (!hexDigit)
+                {
+                    return false;
+                }
+            }
+
+            hex = value;
+            return true;
         }
         catch (JsonException)
         {

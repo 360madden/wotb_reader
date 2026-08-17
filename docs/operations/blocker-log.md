@@ -1090,3 +1090,58 @@ folder for the full numbering convention and document map.
   Rail `01a00d53` 0/24 in-band for param3=1 and 0.5; reconstructed
   start sat centimeters from the published hit. Scalar is not a long
   range. Next is `FUN_0133a410` static. BLK-0027 stays open.
+
+- Rotator+0x11C matrix T live no-go (`2026-08-17`): `FUN_0133a410`
+  start pos is output+0 (transformed point), not matrix T. Oasis
+  `01a00d60` 0/32 matrix_origin_in_band (height −145.08 m, horizontal
+  226.88 m, constant). T is not a muzzle. Start stays stack-only
+  (`FUN_01ed2040` / `FUN_01ec1030` caller buffer). Next is the
+  `rotator+0x130` point graph. Loaded shell and exact armor remain.
+  BLK-0027 stays open.
+
+- Rotator+0x130 is vehicleTypeDescriptor (`2026-08-17`): ctor param_4
+  / vehicle+0x68 / AmmoController+0x40. Descr+0x1c+0x140 is XML
+  `gunPosition` (static). Start stays stack-only. AmmoController is
+  embedded at AvatarGameLogic+0x4B4; ProcessCurrentShells writes a
+  current-shell **index** at +0x38 (0 = also no-match). Index is
+  named, not identity. Exact armor remains. BLK-0027 stays open.
+
+- AmmoController index live (`2026-08-17`): Dead Rail `01a00d6f`
+  32/32 walk, 32/32 descr round-trip, 32/32 index in-range, values
+  `{0}` only. Round-trip is live-proven; 0 is ambiguous (first shell
+  vs no-match). `+0x11C` 0/32 again. Next is compact-shell +0x20/+0x24
+  static. Exact armor remains. BLK-0027 stays open.
+
+- Compact-item nation/id (`2026-08-17`): ProcessCurrentShells compare
+  keys are nation (`+0x20`) and id (`+0x24`), not eShellKind. Oasis
+  `01a00d7a` 32/32 ident readable, nation 5, id 71, index `{0}`. Slot 0
+  is populated. Not ExactLoadedShell. Next is kind mapping. Exact
+  armor remains. BLK-0027 stays open.
+
+- eShellKind at Shell+0x114 (`2026-08-17`): XML `kind` store named
+  (0..5). Dead Rail `01a00d86` 32/32 kind=3 (kArmorPiercing) on slot 0
+  (nation 5 / id 71, same first-slot pair as Oasis). First-slot XML
+  kind, not a proven selection. Not ExactLoadedShell. Exact armor
+  remains. BLK-0027 stays open.
+
+- Magazine count live (`2026-08-17`): weapons `+0x1B0..+0x1B4`
+  pointer-array length. Dead Rail `01a00d92` 32/32 count=3, index
+  `{0}`, kind=3. Not a single-shell loadout. Not ExactLoadedShell.
+  Exact armor remains. BLK-0027 stays open.
+
+- Mixed magazine occupancy (`2026-08-17`): Oasis `01a00d96` walks
+  all three slots: kind mask 44 = kinds 2/3/5 (HE, AP, APCR),
+  readable 3/3, across early and mid-battle bursts. Current index
+  stayed `{0}` / kind 3. Count=3 now has two-replay repeatability
+  (Dead Rail + Oasis). Occupancy is not selection. Next is A->B->A
+  on this mixed magazine. Exact armor remains. BLK-0027 stays open.
+
+- Type-32 6-byte field is per-shot (`2026-08-17`): both Churchill
+  originals have 7/7 and 5/5 unique `shellSignatureHex` values. Not
+  eShellKind. Not a decoded shell type. BLK-0027 stays open.
+
+- Oasis full-battle index hunt (`2026-08-17`): `01a00e21` 932 samples
+  / 926 G2, index `{0}` / kind 3 only, magazine 3 / mask 44, reload
+  0 and 3 (122 samples firing). Clock 14.1–219.2 s; late shots
+  ~245–274 s not covered. No A->B->A on this window. Exact armor
+  remains. BLK-0027 stays open.

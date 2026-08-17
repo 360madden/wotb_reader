@@ -2778,7 +2778,22 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     PenSemanticMuzzleDistanceHalfHeightMeters: fields.MuzzleDistanceHalfHeightMeters,
                     PenSemanticMuzzleDistanceHalfHorizontalMeters: fields.MuzzleDistanceHalfHorizontalMeters,
                     PenSemanticMuzzleDistanceScalarHeightMeters: fields.MuzzleDistanceScalarHeightMeters,
-                    PenSemanticMuzzleDistanceScalarHorizontalMeters: fields.MuzzleDistanceScalarHorizontalMeters));
+                    PenSemanticMuzzleDistanceScalarHorizontalMeters: fields.MuzzleDistanceScalarHorizontalMeters,
+                    PenSemanticMatrixOriginHeightMeters: fields.MatrixOriginHeightMeters,
+                    PenSemanticMatrixOriginHorizontalMeters: fields.MatrixOriginHorizontalMeters,
+                    PenSemanticMatrixOriginInBand: fields.MatrixOriginInBand,
+                    PenSemanticAmmoShellIndex: fields.AmmoShellIndex,
+                    PenSemanticAmmoShellIndexInRange: fields.AmmoShellIndexInRange,
+                    PenSemanticAmmoDescrRoundTripConfirmed: fields.AmmoDescrRoundTripConfirmed,
+                    PenSemanticAmmoShellNation: fields.AmmoShellNation,
+                    PenSemanticAmmoShellItemId: fields.AmmoShellItemId,
+                    PenSemanticAmmoShellIdentReadable: fields.AmmoShellIdentReadable,
+                    PenSemanticAmmoShellNationInRange: fields.AmmoShellNationInRange,
+                    PenSemanticAmmoShellKind: fields.AmmoShellKind,
+                    PenSemanticAmmoShellKindInRange: fields.AmmoShellKindInRange,
+                    PenSemanticAmmoMagazineCount: fields.AmmoMagazineCount,
+                    PenSemanticAmmoMagazineKindMask: fields.AmmoMagazineKindMask,
+                    PenSemanticAmmoMagazineKindReadableSlots: fields.AmmoMagazineKindReadableSlots));
             }
             else
             {
@@ -4436,13 +4451,29 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         double? MuzzleDistanceHalfHeightMeters = null,
         double? MuzzleDistanceHalfHorizontalMeters = null,
         double? MuzzleDistanceScalarHeightMeters = null,
-        double? MuzzleDistanceScalarHorizontalMeters = null);
+        double? MuzzleDistanceScalarHorizontalMeters = null,
+        double? MatrixOriginHeightMeters = null,
+        double? MatrixOriginHorizontalMeters = null,
+        bool MatrixOriginInBand = false,
+        int? AmmoShellIndex = null,
+        bool AmmoShellIndexInRange = false,
+        bool AmmoDescrRoundTripConfirmed = false,
+        int? AmmoShellNation = null,
+        int? AmmoShellItemId = null,
+        bool AmmoShellIdentReadable = false,
+        bool AmmoShellNationInRange = false,
+        int? AmmoShellKind = null,
+        bool AmmoShellKindInRange = false,
+        int? AmmoMagazineCount = null,
+        int? AmmoMagazineKindMask = null,
+        int? AmmoMagazineKindReadableSlots = null);
 
     /// <summary>
     /// Phase 2–4 snapshot: ownership walk, then two-pass reads of the
-    /// published gun-marker, VehicleGun reload/state, and entity hull yaw.
-    /// Addresses stay coordinator-owned. Investigation yaw/pitch/enum may
-    /// leave as diagnostics; raw region bytes do not.
+    /// published gun-marker, VehicleGun reload/state, entity hull yaw/pos,
+    /// and rotator+0x11C matrix translation. Addresses stay
+    /// coordinator-owned. Investigation yaw/pitch/enum and hull-relative
+    /// scalars may leave as diagnostics; raw region bytes do not.
     /// </summary>
     private async ValueTask<PenSemanticFieldsResolution> ResolvePenSemanticFieldsAsync(
         IAuthorizedMemoryReader reader,
@@ -4503,6 +4534,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             walk.EntityAddress + EntityRecordRegionReadRequest.EntityHullPositionOffset,
             EntityRecordRegionReadRequest.EntityHullPositionLength,
             cancellationToken).ConfigureAwait(false);
+        byte[]? matrix1 = await ReadExactAsync(
+            reader,
+            walk.RotatorAddress + EntityRecordRegionReadRequest.PenRotatorMatrixTranslationOffset,
+            EntityRecordRegionReadRequest.PenRotatorMatrixTranslationLength,
+            cancellationToken).ConfigureAwait(false);
         byte[]? marker2 = await ReadExactAsync(
             reader,
             walk.RotatorAddress + EntityRecordRegionReadRequest.PenMarkerPublishedOffset,
@@ -4523,9 +4559,16 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             walk.EntityAddress + EntityRecordRegionReadRequest.EntityHullPositionOffset,
             EntityRecordRegionReadRequest.EntityHullPositionLength,
             cancellationToken).ConfigureAwait(false);
+        byte[]? matrix2 = await ReadExactAsync(
+            reader,
+            walk.RotatorAddress + EntityRecordRegionReadRequest.PenRotatorMatrixTranslationOffset,
+            EntityRecordRegionReadRequest.PenRotatorMatrixTranslationLength,
+            cancellationToken).ConfigureAwait(false);
 
         if (marker1 is null || reload1 is null || hull1 is null || hullPos1 is null ||
-            marker2 is null || reload2 is null || hull2 is null || hullPos2 is null)
+            matrix1 is null ||
+            marker2 is null || reload2 is null || hull2 is null || hullPos2 is null ||
+            matrix2 is null)
         {
             return new PenSemanticFieldsResolution(
                 Type10EntityPositionStatus.ReadFailed,
@@ -4550,7 +4593,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         bool stable = marker1.AsSpan().SequenceEqual(marker2)
             && reload1.AsSpan().SequenceEqual(reload2)
             && hull1.AsSpan().SequenceEqual(hull2)
-            && hullPos1.AsSpan().SequenceEqual(hullPos2);
+            && hullPos1.AsSpan().SequenceEqual(hullPos2)
+            && matrix1.AsSpan().SequenceEqual(matrix2);
 
         int reloadEnum = BinaryPrimitives.ReadInt32LittleEndian(reload1);
         bool reloadInRange = reloadEnum >= 0 && reloadEnum <= 9;
@@ -4631,6 +4675,140 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 out muzzleScalarHeight, out muzzleScalarHorizontal, out muzzleScalarInBand);
         }
 
+        // FUN_01ed2040 copies FUN_0133a410's 64-byte matrix to rotator+0xEC.
+        // FUN_0271a330 treats matrix+0x30 as translation => rotator+0x11C.
+        // Same engine (x, z, y-up) as the published marker. Unpromoted.
+        double? matrixHeight = null;
+        double? matrixHorizontal = null;
+        bool matrixInBand = false;
+        if (float.IsFinite(hullX) && float.IsFinite(hullY) && float.IsFinite(hullZ))
+        {
+            float engineMx = BinaryPrimitives.ReadSingleLittleEndian(matrix1.AsSpan(0, 4));
+            float engineMz = BinaryPrimitives.ReadSingleLittleEndian(matrix1.AsSpan(4, 4));
+            float engineMy = BinaryPrimitives.ReadSingleLittleEndian(matrix1.AsSpan(8, 4));
+            float mx = engineMx;
+            float my = engineMy;
+            float mz = engineMz;
+            if (float.IsFinite(mx) && float.IsFinite(my) && float.IsFinite(mz))
+            {
+                double relX = mx - (double)hullX;
+                double relY = my - (double)hullY;
+                double relZ = mz - (double)hullZ;
+                matrixHeight = relY;
+                matrixHorizontal = Math.Sqrt((relX * relX) + (relZ * relZ));
+                matrixInBand = matrixHeight >= EntityRecordRegionReadRequest.PenOriginHeightMinMeters
+                    && matrixHeight <= EntityRecordRegionReadRequest.PenOriginHeightMaxMeters
+                    && matrixHorizontal <= EntityRecordRegionReadRequest.PenOriginHorizontalMaxMeters;
+            }
+        }
+
+        int? ammoIndex = null;
+        bool ammoInRange = false;
+        bool ammoDescrRoundTrip = false;
+        int? ammoNation = null;
+        int? ammoItemId = null;
+        bool ammoIdentReadable = false;
+        bool ammoNationInRange = false;
+        int? ammoKind = null;
+        bool ammoKindInRange = false;
+        int? ammoMagazineCount = null;
+        int? ammoMagazineKindMask = null;
+        int? ammoMagazineKindReadableSlots = null;
+        byte[]? ownerPtr1 = await ReadExactAsync(
+            reader,
+            walk.RotatorAddress + EntityRecordRegionReadRequest.PenOwnershipRotatorOwnerOffset,
+            sizeof(uint),
+            cancellationToken).ConfigureAwait(false);
+        byte[]? ownerPtr2 = await ReadExactAsync(
+            reader,
+            walk.RotatorAddress + EntityRecordRegionReadRequest.PenOwnershipRotatorOwnerOffset,
+            sizeof(uint),
+            cancellationToken).ConfigureAwait(false);
+        if (ownerPtr1 is not null &&
+            ownerPtr2 is not null &&
+            ownerPtr1.AsSpan().SequenceEqual(ownerPtr2))
+        {
+            uint owner = BinaryPrimitives.ReadUInt32LittleEndian(ownerPtr1);
+            if (owner != 0)
+            {
+                long ammoBase = owner + EntityRecordRegionReadRequest.PenAmmoControllerEmbeddedOffset;
+                byte[]? ammoIdx1 = await ReadExactAsync(
+                    reader,
+                    ammoBase + EntityRecordRegionReadRequest.PenAmmoCurrentShellIndexOffset,
+                    sizeof(int),
+                    cancellationToken).ConfigureAwait(false);
+                byte[]? ammoIdx2 = await ReadExactAsync(
+                    reader,
+                    ammoBase + EntityRecordRegionReadRequest.PenAmmoCurrentShellIndexOffset,
+                    sizeof(int),
+                    cancellationToken).ConfigureAwait(false);
+                if (ammoIdx1 is not null &&
+                    ammoIdx2 is not null &&
+                    ammoIdx1.AsSpan().SequenceEqual(ammoIdx2))
+                {
+                    int idx = BinaryPrimitives.ReadInt32LittleEndian(ammoIdx1);
+                    ammoIndex = idx;
+                    ammoInRange = idx >= 0
+                        && idx <= EntityRecordRegionReadRequest.PenAmmoShellIndexMaxInclusive;
+                }
+
+                byte[]? descrAmmo1 = await ReadExactAsync(
+                    reader,
+                    ammoBase + EntityRecordRegionReadRequest.PenAmmoVehicleTypeDescriptorOffset,
+                    sizeof(uint),
+                    cancellationToken).ConfigureAwait(false);
+                byte[]? descrAmmo2 = await ReadExactAsync(
+                    reader,
+                    ammoBase + EntityRecordRegionReadRequest.PenAmmoVehicleTypeDescriptorOffset,
+                    sizeof(uint),
+                    cancellationToken).ConfigureAwait(false);
+                byte[]? descrRot1 = await ReadExactAsync(
+                    reader,
+                    walk.RotatorAddress
+                        + EntityRecordRegionReadRequest.PenRotatorVehicleTypeDescriptorOffset,
+                    sizeof(uint),
+                    cancellationToken).ConfigureAwait(false);
+                byte[]? descrRot2 = await ReadExactAsync(
+                    reader,
+                    walk.RotatorAddress
+                        + EntityRecordRegionReadRequest.PenRotatorVehicleTypeDescriptorOffset,
+                    sizeof(uint),
+                    cancellationToken).ConfigureAwait(false);
+                uint descrRot = 0;
+                if (descrAmmo1 is not null &&
+                    descrAmmo2 is not null &&
+                    descrRot1 is not null &&
+                    descrRot2 is not null &&
+                    descrAmmo1.AsSpan().SequenceEqual(descrAmmo2) &&
+                    descrRot1.AsSpan().SequenceEqual(descrRot2))
+                {
+                    uint descrAmmo = BinaryPrimitives.ReadUInt32LittleEndian(descrAmmo1);
+                    descrRot = BinaryPrimitives.ReadUInt32LittleEndian(descrRot1);
+                    ammoDescrRoundTrip = descrAmmo != 0 && descrAmmo == descrRot;
+                }
+
+                if (ammoIndex is int shellIndex &&
+                    descrRot != 0 &&
+                    shellIndex >= 0)
+                {
+                    CompactShellIdentityRead ident = await TryReadCompactShellIdentityAsync(
+                        reader,
+                        descrRot,
+                        shellIndex,
+                        cancellationToken).ConfigureAwait(false);
+                    ammoNation = ident.Nation;
+                    ammoItemId = ident.ItemId;
+                    ammoIdentReadable = ident.Readable;
+                    ammoNationInRange = ident.NationInRange;
+                    ammoKind = ident.Kind;
+                    ammoKindInRange = ident.KindInRange;
+                    ammoMagazineCount = ident.MagazineCount;
+                    ammoMagazineKindMask = ident.KindMask;
+                    ammoMagazineKindReadableSlots = ident.KindReadableSlots;
+                }
+            }
+        }
+
         Type10EntityPositionStatus status = !stable
             ? Type10EntityPositionStatus.PenOwnershipWalkUnstable
             : Type10EntityPositionStatus.Resolved;
@@ -4663,7 +4841,160 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             muzzleHalfHeight,
             muzzleHalfHorizontal,
             muzzleScalarHeight,
-            muzzleScalarHorizontal);
+            muzzleScalarHorizontal,
+            matrixHeight,
+            matrixHorizontal,
+            matrixInBand,
+            ammoIndex,
+            ammoInRange,
+            ammoDescrRoundTrip,
+            ammoNation,
+            ammoItemId,
+            ammoIdentReadable,
+            ammoNationInRange,
+            ammoKind,
+            ammoKindInRange,
+            ammoMagazineCount,
+            ammoMagazineKindMask,
+            ammoMagazineKindReadableSlots);
+    }
+
+    private readonly record struct CompactShellIdentityRead(
+        int? Nation,
+        int? ItemId,
+        bool Readable,
+        bool NationInRange,
+        int? Kind,
+        bool KindInRange,
+        int? MagazineCount,
+        int? KindMask,
+        int? KindReadableSlots);
+
+    private static async ValueTask<CompactShellIdentityRead> TryReadCompactShellIdentityAsync(
+        IAuthorizedMemoryReader reader,
+        uint descriptorAddress,
+        int shellIndex,
+        CancellationToken cancellationToken)
+    {
+        CompactShellIdentityRead unread = new(
+            null, null, false, false, null, false, null, null, null);
+        uint? weapons = await ReadStableUInt32Async(
+            reader,
+            descriptorAddress + EntityRecordRegionReadRequest.PenVehicleTypeDescriptorWeaponsOffset,
+            cancellationToken).ConfigureAwait(false);
+        if (weapons is null or 0)
+        {
+            return unread;
+        }
+
+        uint? begin = await ReadStableUInt32Async(
+            reader,
+            weapons.Value + EntityRecordRegionReadRequest.PenWeaponsCompactShellArrayBeginOffset,
+            cancellationToken).ConfigureAwait(false);
+        uint? end = await ReadStableUInt32Async(
+            reader,
+            weapons.Value + EntityRecordRegionReadRequest.PenWeaponsCompactShellArrayEndOffset,
+            cancellationToken).ConfigureAwait(false);
+        if (begin is null or 0 ||
+            end is null ||
+            end.Value < begin.Value)
+        {
+            return unread;
+        }
+
+        int count = (int)((end.Value - begin.Value) / sizeof(uint));
+        if (count < 0 ||
+            count > EntityRecordRegionReadRequest.PenAmmoShellIndexMaxInclusive + 1)
+        {
+            return unread;
+        }
+
+        int? nation = null;
+        int? itemId = null;
+        bool identReadable = false;
+        bool nationInRange = false;
+        int? currentKind = null;
+        bool currentKindInRange = false;
+        int kindMask = 0;
+        int kindReadableSlots = 0;
+
+        for (int slot = 0; slot < count; slot++)
+        {
+            uint? item = await ReadStableUInt32Async(
+                reader,
+                begin.Value + (uint)(slot * sizeof(uint)),
+                cancellationToken).ConfigureAwait(false);
+            if (item is null or 0)
+            {
+                continue;
+            }
+
+            uint? ident = await ReadStableUInt32Async(
+                reader,
+                item.Value + EntityRecordRegionReadRequest.PenCompactShellIdentOffset,
+                cancellationToken).ConfigureAwait(false);
+            if (ident is null or 0)
+            {
+                continue;
+            }
+
+            uint? kindRaw = await ReadStableUInt32Async(
+                reader,
+                ident.Value + EntityRecordRegionReadRequest.PenCompactItemShellKindOffset,
+                cancellationToken).ConfigureAwait(false);
+            if (kindRaw is not null)
+            {
+                int slotKind = (int)kindRaw.Value;
+                if (slotKind >= 0 &&
+                    slotKind <= EntityRecordRegionReadRequest.PenCompactItemShellKindMaxInclusive)
+                {
+                    kindReadableSlots++;
+                    kindMask |= 1 << slotKind;
+                }
+
+                if (slot == shellIndex)
+                {
+                    currentKind = slotKind;
+                    currentKindInRange = slotKind >= 0
+                        && slotKind <= EntityRecordRegionReadRequest.PenCompactItemShellKindMaxInclusive;
+                }
+            }
+
+            if (slot != shellIndex)
+            {
+                continue;
+            }
+
+            uint? nationRaw = await ReadStableUInt32Async(
+                reader,
+                ident.Value + EntityRecordRegionReadRequest.PenCompactItemNationOffset,
+                cancellationToken).ConfigureAwait(false);
+            uint? itemIdRaw = await ReadStableUInt32Async(
+                reader,
+                ident.Value + EntityRecordRegionReadRequest.PenCompactItemIdOffset,
+                cancellationToken).ConfigureAwait(false);
+            if (nationRaw is null || itemIdRaw is null)
+            {
+                continue;
+            }
+
+            nation = (int)nationRaw.Value;
+            itemId = (int)itemIdRaw.Value;
+            identReadable = true;
+            nationInRange = nation >= 0
+                && nation <= EntityRecordRegionReadRequest.PenCompactItemNationMaxInclusive;
+        }
+
+        return new CompactShellIdentityRead(
+            nation,
+            itemId,
+            identReadable,
+            nationInRange,
+            currentKind,
+            currentKindInRange,
+            count,
+            kindMask,
+            kindReadableSlots);
     }
 
     private static void ScoreMuzzleReconstruction(
@@ -4718,6 +5049,31 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         }
 
         return result.Value;
+    }
+
+    private static async ValueTask<uint?> ReadStableUInt32Async(
+        IAuthorizedMemoryReader reader,
+        long address,
+        CancellationToken cancellationToken)
+    {
+        byte[]? first = await ReadExactAsync(
+            reader,
+            address,
+            sizeof(uint),
+            cancellationToken).ConfigureAwait(false);
+        byte[]? second = await ReadExactAsync(
+            reader,
+            address,
+            sizeof(uint),
+            cancellationToken).ConfigureAwait(false);
+        if (first is null ||
+            second is null ||
+            !first.AsSpan().SequenceEqual(second))
+        {
+            return null;
+        }
+
+        return BinaryPrimitives.ReadUInt32LittleEndian(first);
     }
 
     /// <summary>

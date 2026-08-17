@@ -1142,6 +1142,7 @@ public sealed class WotbReplayDecoder : IReplayDecoder
                     hitResult = (int)impact.HitResult,
                     penetrated = impact.Penetrated,
                     attackerEntityId,
+                    shellSignatureHex = impact.ShellSignatureHex,
                 }),
                 EvidenceConfidence.Exact,
                 ToEvidence(request, impact.Evidence)));

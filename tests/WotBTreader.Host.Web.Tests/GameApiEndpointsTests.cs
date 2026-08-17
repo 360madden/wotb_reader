@@ -1362,7 +1362,22 @@ public sealed class GameApiEndpointsTests
                     PenSemanticOriginInBand: true,
                     PenSemanticOriginRelX: 0.1,
                     PenSemanticOriginRelY: 1.5,
-                    PenSemanticOriginRelZ: -0.2)),
+                    PenSemanticOriginRelZ: -0.2,
+                    PenSemanticMatrixOriginHeightMeters: 1.4,
+                    PenSemanticMatrixOriginHorizontalMeters: 0.3,
+                    PenSemanticMatrixOriginInBand: true,
+                    PenSemanticAmmoShellIndex: 2,
+                    PenSemanticAmmoShellIndexInRange: true,
+                    PenSemanticAmmoDescrRoundTripConfirmed: true,
+                    PenSemanticAmmoShellNation: 1,
+                    PenSemanticAmmoShellItemId: 12345,
+                    PenSemanticAmmoShellIdentReadable: true,
+                    PenSemanticAmmoShellNationInRange: true,
+                    PenSemanticAmmoShellKind: 3,
+                    PenSemanticAmmoShellKindInRange: true,
+                    PenSemanticAmmoMagazineCount: 3,
+                    PenSemanticAmmoMagazineKindMask: 14,
+                    PenSemanticAmmoMagazineKindReadableSlots: 3)),
         };
 
         IResult result = await GameApiEndpoints.ReadEntityRegionAsync(
@@ -1391,6 +1406,21 @@ public sealed class GameApiEndpointsTests
         Assert.AreEqual(1.5, response.PenSemanticOriginHeightMeters);
         Assert.AreEqual(0.4, response.PenSemanticOriginHorizontalMeters);
         Assert.IsTrue(response.PenSemanticOriginInBand);
+        Assert.AreEqual(1.4, response.PenSemanticMatrixOriginHeightMeters);
+        Assert.AreEqual(0.3, response.PenSemanticMatrixOriginHorizontalMeters);
+        Assert.IsTrue(response.PenSemanticMatrixOriginInBand);
+        Assert.AreEqual(2, response.PenSemanticAmmoShellIndex);
+        Assert.IsTrue(response.PenSemanticAmmoShellIndexInRange);
+        Assert.IsTrue(response.PenSemanticAmmoDescrRoundTripConfirmed);
+        Assert.AreEqual(1, response.PenSemanticAmmoShellNation);
+        Assert.AreEqual(12345, response.PenSemanticAmmoShellItemId);
+        Assert.IsTrue(response.PenSemanticAmmoShellIdentReadable);
+        Assert.IsTrue(response.PenSemanticAmmoShellNationInRange);
+        Assert.AreEqual(3, response.PenSemanticAmmoShellKind);
+        Assert.IsTrue(response.PenSemanticAmmoShellKindInRange);
+        Assert.AreEqual(3, response.PenSemanticAmmoMagazineCount);
+        Assert.AreEqual(14, response.PenSemanticAmmoMagazineKindMask);
+        Assert.AreEqual(3, response.PenSemanticAmmoMagazineKindReadableSlots);
         Assert.IsNull(response.RegionBase64);
     }
 

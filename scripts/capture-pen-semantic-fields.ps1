@@ -53,7 +53,15 @@ param(
     [int]$OwnershipCandidateIndex = 0,
 
     [ValidateRange(1, 4096)]
-    [int]$RegionLength = 16
+    [int]$RegionLength = 16,
+
+    [switch]$HuntIndexChange,
+
+    [ValidateRange(32, 2048)]
+    [int]$HuntMaxSamples = 900,
+
+    [ValidateRange(5, 120)]
+    [int]$HuntStallSeconds = 20
 )
 
 Set-StrictMode -Version Latest
@@ -343,6 +351,20 @@ $script:g2ClockSamples = 0
 $script:originInBand = 0
 $script:muzzleHalfInBand = 0
 $script:muzzleScalarInBand = 0
+$script:matrixOriginInBand = 0
+$script:ammoInRange = 0
+$script:ammoDescrRoundTrip = 0
+$script:ammoIndexSeen = New-Object 'System.Collections.Generic.HashSet[int]'
+$script:ammoIdentReadable = 0
+$script:ammoNationInRange = 0
+$script:ammoNationSeen = New-Object 'System.Collections.Generic.HashSet[int]'
+$script:ammoIdNonzero = 0
+$script:ammoKindInRange = 0
+$script:ammoKindSeen = New-Object 'System.Collections.Generic.HashSet[int]'
+$script:ammoKindKnown = 0
+$script:ammoMagazineCountSeen = New-Object 'System.Collections.Generic.HashSet[int]'
+$script:ammoMagazineKindMaskSeen = New-Object 'System.Collections.Generic.HashSet[int]'
+$script:ammoMagazineKindReadableSeen = New-Object 'System.Collections.Generic.HashSet[int]'
 $script:lastHullBin = $null
 $script:lastMarkerBin = $null
 $script:lastMarkerPitchBin = $null
@@ -422,6 +444,50 @@ function Invoke-PenSemanticSample {
         if ($response.PenSemanticMuzzleDistanceScalarInBand -eq $true) {
             $script:muzzleScalarInBand++
         }
+        if ($response.PenSemanticMatrixOriginInBand -eq $true) {
+            $script:matrixOriginInBand++
+        }
+        if ($response.PenSemanticAmmoShellIndexInRange -eq $true) {
+            $script:ammoInRange++
+        }
+        if ($response.PenSemanticAmmoDescrRoundTripConfirmed -eq $true) {
+            $script:ammoDescrRoundTrip++
+        }
+        if ($null -ne $response.PenSemanticAmmoShellIndex) {
+            [void]$script:ammoIndexSeen.Add([int]$response.PenSemanticAmmoShellIndex)
+        }
+        if ($response.PenSemanticAmmoShellIdentReadable -eq $true) {
+            $script:ammoIdentReadable++
+        }
+        if ($response.PenSemanticAmmoShellNationInRange -eq $true) {
+            $script:ammoNationInRange++
+        }
+        if ($null -ne $response.PenSemanticAmmoShellNation) {
+            [void]$script:ammoNationSeen.Add([int]$response.PenSemanticAmmoShellNation)
+        }
+        if ($null -ne $response.PenSemanticAmmoShellItemId -and
+            [int]$response.PenSemanticAmmoShellItemId -ne 0) {
+            $script:ammoIdNonzero++
+        }
+        if ($response.PenSemanticAmmoShellKindInRange -eq $true) {
+            $script:ammoKindInRange++
+        }
+        if ($null -ne $response.PenSemanticAmmoShellKind) {
+            $kindValue = [int]$response.PenSemanticAmmoShellKind
+            [void]$script:ammoKindSeen.Add($kindValue)
+            if ($kindValue -ge 1) {
+                $script:ammoKindKnown++
+            }
+        }
+        if ($null -ne $response.PenSemanticAmmoMagazineCount) {
+            [void]$script:ammoMagazineCountSeen.Add([int]$response.PenSemanticAmmoMagazineCount)
+        }
+        if ($null -ne $response.PenSemanticAmmoMagazineKindMask) {
+            [void]$script:ammoMagazineKindMaskSeen.Add([int]$response.PenSemanticAmmoMagazineKindMask)
+        }
+        if ($null -ne $response.PenSemanticAmmoMagazineKindReadableSlots) {
+            [void]$script:ammoMagazineKindReadableSeen.Add([int]$response.PenSemanticAmmoMagazineKindReadableSlots)
+        }
 
         if ($walkOk -and $sameClock -and $replayTimeFinite) {
             $reloadEnum = $null
@@ -452,6 +518,18 @@ function Invoke-PenSemanticSample {
             if (Test-FiniteNumber $response.PenSemanticOriginRelZ) {
                 $originRelZ = [double]$response.PenSemanticOriginRelZ
             }
+            $matrixHeight = $null
+            $matrixHorizontal = $null
+            $matrixInBand = $false
+            if (Test-FiniteNumber $response.PenSemanticMatrixOriginHeightMeters) {
+                $matrixHeight = [double]$response.PenSemanticMatrixOriginHeightMeters
+            }
+            if (Test-FiniteNumber $response.PenSemanticMatrixOriginHorizontalMeters) {
+                $matrixHorizontal = [double]$response.PenSemanticMatrixOriginHorizontalMeters
+            }
+            if ($response.PenSemanticMatrixOriginInBand -eq $true) {
+                $matrixInBand = $true
+            }
             [void]$script:persistedSamples.Add([ordered]@{
                     replayTimeSeconds      = [double]$response.ReplayTimeSeconds
                     markerYawRadians       = $markerYawValue
@@ -462,6 +540,17 @@ function Invoke-PenSemanticSample {
                     originRelX             = $originRelX
                     originRelY             = $originRelY
                     originRelZ             = $originRelZ
+                    matrixOriginHeightMeters = $matrixHeight
+                    matrixOriginHorizontalMeters = $matrixHorizontal
+                    matrixOriginInBand     = $matrixInBand
+                    ammoShellIndex         = $(if ($null -ne $response.PenSemanticAmmoShellIndex) { [int]$response.PenSemanticAmmoShellIndex } else { $null })
+                    ammoDescrRoundTrip     = ($response.PenSemanticAmmoDescrRoundTripConfirmed -eq $true)
+                    ammoShellNation        = $(if ($null -ne $response.PenSemanticAmmoShellNation) { [int]$response.PenSemanticAmmoShellNation } else { $null })
+                    ammoShellItemId        = $(if ($null -ne $response.PenSemanticAmmoShellItemId) { [int]$response.PenSemanticAmmoShellItemId } else { $null })
+                    ammoShellKind          = $(if ($null -ne $response.PenSemanticAmmoShellKind) { [int]$response.PenSemanticAmmoShellKind } else { $null })
+                    ammoMagazineCount      = $(if ($null -ne $response.PenSemanticAmmoMagazineCount) { [int]$response.PenSemanticAmmoMagazineCount } else { $null })
+                    ammoMagazineKindMask   = $(if ($null -ne $response.PenSemanticAmmoMagazineKindMask) { [int]$response.PenSemanticAmmoMagazineKindMask } else { $null })
+                    ammoMagazineKindReadableSlots = $(if ($null -ne $response.PenSemanticAmmoMagazineKindReadableSlots) { [int]$response.PenSemanticAmmoMagazineKindReadableSlots } else { $null })
                 })
         }
 
@@ -619,6 +708,35 @@ elseif ($remaining -gt 0 -and -not $script:stopRequested) {
     Invoke-PenSemanticBurst -Count $remaining
 }
 
+if ($HuntIndexChange -and -not $script:stopRequested) {
+    Write-Host ('pen_fields: hunt_index_change max=' + $HuntMaxSamples)
+    $lastClock = $script:lastReplayTimeSeconds
+    $lastClockChange = [DateTime]::UtcNow
+    for ($hunt = 0; $hunt -lt $HuntMaxSamples; $hunt++) {
+        if ($script:stopRequested) { break }
+        if ($script:ammoIndexSeen.Count -ge 2) {
+            $huntValues = ($script:ammoIndexSeen | Sort-Object) -join ','
+            Write-Host ('pen_fields: hunt_index_changed values=' + $huntValues)
+            break
+        }
+
+        [void](Invoke-PenSemanticSample -Index (10000 + $hunt))
+        $nowClock = $script:lastReplayTimeSeconds
+        if ($null -ne $nowClock -and
+            ($null -eq $lastClock -or
+             [math]::Abs([double]$nowClock - [double]$lastClock) -gt 0.05)) {
+            $lastClock = $nowClock
+            $lastClockChange = [DateTime]::UtcNow
+        }
+        elseif (([DateTime]::UtcNow - $lastClockChange).TotalSeconds -ge $HuntStallSeconds) {
+            Write-Host 'pen_fields: hunt_clock_stalled'
+            break
+        }
+
+        Start-Sleep -Milliseconds $CadenceMs
+    }
+}
+
 $ok = $script:ok
 $errors = $script:errors
 $walkConfirmed = $script:walkConfirmed
@@ -636,6 +754,20 @@ $g2ClockSamples = $script:g2ClockSamples
 $originInBand = $script:originInBand
 $muzzleHalfInBand = $script:muzzleHalfInBand
 $muzzleScalarInBand = $script:muzzleScalarInBand
+$matrixOriginInBand = $script:matrixOriginInBand
+$ammoInRange = $script:ammoInRange
+$ammoDescrRoundTrip = $script:ammoDescrRoundTrip
+$ammoIndexSeen = $script:ammoIndexSeen
+$ammoIdentReadable = $script:ammoIdentReadable
+$ammoNationInRange = $script:ammoNationInRange
+$ammoNationSeen = $script:ammoNationSeen
+$ammoIdNonzero = $script:ammoIdNonzero
+$ammoKindInRange = $script:ammoKindInRange
+$ammoKindSeen = $script:ammoKindSeen
+$ammoKindKnown = $script:ammoKindKnown
+$ammoMagazineCountSeen = $script:ammoMagazineCountSeen
+$ammoMagazineKindMaskSeen = $script:ammoMagazineKindMaskSeen
+$ammoMagazineKindReadableSeen = $script:ammoMagazineKindReadableSeen
 $persistedSamples = $script:persistedSamples
 
 $enumList = ($enumSeen | Sort-Object) -join ','
@@ -658,6 +790,43 @@ Write-Host ('pen_fields: g2_clock_samples=' + $g2ClockSamples)
 Write-Host ('pen_fields: origin_in_band=' + $originInBand)
 Write-Host ('pen_fields: muzzle_dhalf_in_band=' + $muzzleHalfInBand)
 Write-Host ('pen_fields: muzzle_dscalar_in_band=' + $muzzleScalarInBand)
+Write-Host ('pen_fields: matrix_origin_in_band=' + $matrixOriginInBand)
+$ammoList = ($ammoIndexSeen | Sort-Object) -join ','
+if ([string]::IsNullOrWhiteSpace($ammoList)) { $ammoList = 'none' }
+Write-Host ('pen_fields: ammo_index_in_range=' + $ammoInRange)
+Write-Host ('pen_fields: ammo_descr_round_trip=' + $ammoDescrRoundTrip)
+Write-Host ('pen_fields: ammo_index_values=' + $ammoList)
+$nationList = ($ammoNationSeen | Sort-Object) -join ','
+if ([string]::IsNullOrWhiteSpace($nationList)) { $nationList = 'none' }
+Write-Host ('pen_fields: ammo_ident_readable=' + $ammoIdentReadable)
+Write-Host ('pen_fields: ammo_nation_in_range=' + $ammoNationInRange)
+Write-Host ('pen_fields: ammo_nation_values=' + $nationList)
+Write-Host ('pen_fields: ammo_id_nonzero=' + $ammoIdNonzero)
+$kindList = ($ammoKindSeen | Sort-Object) -join ','
+if ([string]::IsNullOrWhiteSpace($kindList)) { $kindList = 'none' }
+Write-Host ('pen_fields: ammo_kind_in_range=' + $ammoKindInRange)
+Write-Host ('pen_fields: ammo_kind_known=' + $ammoKindKnown)
+Write-Host ('pen_fields: ammo_kind_values=' + $kindList)
+$countList = ($ammoMagazineCountSeen | Sort-Object) -join ','
+if ([string]::IsNullOrWhiteSpace($countList)) { $countList = 'none' }
+Write-Host ('pen_fields: ammo_magazine_count=' + $countList)
+$maskList = ($ammoMagazineKindMaskSeen | Sort-Object) -join ','
+if ([string]::IsNullOrWhiteSpace($maskList)) { $maskList = 'none' }
+Write-Host ('pen_fields: ammo_magazine_kind_mask=' + $maskList)
+$readableList = ($ammoMagazineKindReadableSeen | Sort-Object) -join ','
+if ([string]::IsNullOrWhiteSpace($readableList)) { $readableList = 'none' }
+Write-Host ('pen_fields: ammo_magazine_kind_slots=' + $readableList)
+$maskKinds = New-Object System.Collections.ArrayList
+foreach ($maskValue in ($ammoMagazineKindMaskSeen | Sort-Object)) {
+    for ($kindBit = 0; $kindBit -le 5; $kindBit++) {
+        if (([int]$maskValue -band (1 -shl $kindBit)) -ne 0) {
+            [void]$maskKinds.Add($kindBit)
+        }
+    }
+}
+$maskKindList = ($maskKinds | Select-Object -Unique | Sort-Object) -join ','
+if ([string]::IsNullOrWhiteSpace($maskKindList)) { $maskKindList = 'none' }
+Write-Host ('pen_fields: ammo_magazine_kinds_present=' + $maskKindList)
 
 $samplesJson = ConvertTo-JsonArray $persistedSamples
 [IO.File]::WriteAllText(
