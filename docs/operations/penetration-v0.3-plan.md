@@ -243,3 +243,27 @@ bounded five-read live-validation protocol (unique rotator → owner → forward
 round-trip → gun vtable → entity HP, two passes, fail closed) remains to be
 run before the phase 2–4 semantic field offsets (configured gun, loaded shell,
 turret yaw, gun elevation, muzzle ray) are derived.
+
+### Ownership walk live-validated (H1) — 2026-08-16
+
+The five-read protocol was run on one exact-build managed offline replay
+(Churchill I / Oasis Palms, `1cda5c31…`) and returned `Resolved`:
+`rotator_candidate_count=1`, all four chain booleans true across both passes
+(`two_pass_stable`). The chain `AvatarGameLogic +0x1fc → VehicleGunRotator` /
+`+0x204 → VehicleGun` / `rotator+0x10 → owner` / `+0x04 → entity` is now
+live-proven. Nothing was promoted; the optional same-decoded-clock label did
+not fire (honest gap, not part of H1). See
+`pen-ownership-walk-proof-protocol.md` and the 2026-08-16 handoff.
+
+### Shell/gun semantic field static derivation — 2026-08-17
+
+Hash-bound static passes refuted the naive `VehicleGun` candidates and named
+the descriptor fields (no promotion): `VehicleGun +0x38/+0x3C/+0x40` are class
+defaults (ctor/factory hardcode `100.0f/9/1.0f`), not per-instance config; the
+configured gun/shell live in the `Gun`/`Shell`/`VehicleDescr` descriptors
+parsed by `GunsReader`/`ShellsReader`. The `Shell` damage fields are named
+(`+0x11c` = `damage.armor` HP damage, `+0x120` = `damage.devices` module
+damage) and the `Gun` `vector<Shot>` ballistic entries are named; penetration
+(`piercingPower`) is a curve parsed in the `Gun` handler, not a `Shell` field,
+and its destination offset plus the runtime shell-index link remain open — the
+remaining phase-2 gaps before any exact-input promotion.

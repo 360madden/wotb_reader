@@ -8,7 +8,7 @@ handoffs, offset-discovery evidence, and the offset-discovery operating guide.
 
 | Document | Purpose |
 |---|---|
-| [`blocker-log.md`](blocker-log.md) | Main immutable blocker register (BLK-0001…0025). Append-only; correct with dated amendments. |
+| [`blocker-log.md`](blocker-log.md) | Main immutable blocker register (BLK-0001…0027). Append-only; correct with dated amendments. |
 | [`blockers/`](blockers/README.md) | Deep-dive records for major blockers. Holds BLK-0008–0011 (replay-decoder) and a companion record for BLK-0007 (command-execution-gate). |
 | [`cmd-wrapper-gotchas.md`](cmd-wrapper-gotchas.md) | Canonical catalogue of cmd.exe wrapper failure modes and the review checklist. |
 | [`offset-discovery-workflow.md`](offset-discovery-workflow.md) | Timeboxed operating protocol: identity/safety gate, pivots, address-kind classification, next-session plan. |
@@ -26,7 +26,7 @@ handoffs, offset-discovery evidence, and the offset-discovery operating guide.
 BLK numbers are assigned sequentially and are contiguous across the main log
 **and** the `blockers/` deep-dives:
 
-- `blocker-log.md` holds BLK-0001…0007 and BLK-0012…0025.
+- `blocker-log.md` holds BLK-0001…0007 and BLK-0012…0027.
 - `blockers/2026-07-26-replay-decoder.md` holds BLK-0008…0011 (the decoder
   deep-dive continues the main numbering).
 - `blockers/2026-07-26-command-execution-gate.md` is a companion record for

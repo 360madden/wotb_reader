@@ -16,6 +16,13 @@
 > `replayTime` (rolling-survivor candidates OD-012..038, live work needed),
 > then `playerHP` (offline side complete — ground truth + correlation core;
 > live trusted reader pre-staged in `docs/operations/record-diffing-groundwork.md`).
+>
+> **STATUS (2026-08-17):** the preference list is now largely closed — since
+> 2026-08-12 `playerHP`, `playerYaw`, `playerPitch`/`playerRoll`, and
+> `damageDealt` are all published `Verified` via chains (see
+> `offset-discovery-ledger.md`); only `replayTime`, velocity, `cameraPitch`,
+> and `aliveTankCount` remain unpublished. The product plan is now
+> `docs/operations/product-roadmap.md`.
 
 **Definition of done:** the candidate is reproducible across **2 launches × 2
 replays** with member-displacement or pointer-chain classification, and is

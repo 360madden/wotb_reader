@@ -1026,3 +1026,34 @@ folder for the full numbering convention and document map.
   honest gap (it is not part of H1). The ownership-walk discriminator is now
   closed; BLK-0027 stays open until the phase 2–4 shell/aim/ray fields are
   derived and the capture verdict can be adjudicated.
+
+- Field-trace refutation (`2026-08-17`, hash-bound `1cda5c31…`): the phase
+  2–4 candidate block `VehicleGun +0x38/+0x3C/+0x40` is REFUTED as
+  configured-gun/loaded-shell identity. Both the in-place ctor `FUN_01da8bb0`
+  and the allocating factory `FUN_01d9cc30` hardcode the same `100.0f / 9 /
+  1.0f` for every instance — class defaults, not per-instance state; the
+  `AvatarGameLogic` ctor stores the gun at `+0x204` but never reconfigures its
+  field block. The earlier "possibly reload/rate / shell count" guesses are
+  corrected.
+
+- Descriptor producer trace (`2026-08-17`, hash-bound): there is NO equip-time
+  write into `VehicleGun` — the 9 gun-aware functions never overwrite
+  `+0x38/+0x3C/+0x40`. The configured gun / loaded shell live in descriptor
+  classes parsed by `GunsReader`/`ShellsReader`, not copied into `VehicleGun`:
+  `Gun` (vftable `0x31a7080`), `Shell` (vftable `0x31a1e14` + `eShellKind`),
+  `VehicleDescr` (vftable `0x31a3510`, `.gun`/`.turret` sections). Aim angles
+  are a separate concern (`CurrentGunAnglesComponent` /
+  `DestinationGunAnglesComponent`).
+
+- Descriptor field layout (`2026-08-17`, hash-bound, nothing promoted): the
+  `Shell` descriptor's damage fields are named — `+0x11c` = `damage.armor` (HP
+  damage), `+0x120` = `damage.devices` (module damage), plus kind/caliber/
+  isTracer/ricochet/normalization/explosionRadius/piercingPowerLossFactorBy-
+  Distance. The `Gun` `vector<Shot>` ballistic entries are named
+  (`defaultPortion +0x24`, `speed +0x28`, `gravity +0x2c`, `maxDistance
+  +0x30`, `isATGM +0x40`). Penetration (`piercingPower`) is NOT a `Shell`
+  field — it is parsed as a space-separated curve in
+  `GunsReader::ParseBaseGunInfo` and its destination offset is UNCONFIRMED.
+  BLK-0027 stays open until the runtime shell-index link (which `Shell`/`Shot`
+  loads at fire time) and the `piercingPower` destination offset are derived,
+  or the live controlled shell-swap runs.

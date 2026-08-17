@@ -338,7 +338,7 @@ Test counts current as of 2026-08-09.
 | [`docs/architecture/roadmap.md`](docs/architecture/roadmap.md) | **Active** M0–M7 hardening plan with exit criteria |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | Historical feature-delivery ledger |
 | [`docs/decisions/`](docs/decisions/) | ADRs — modular monolith, evidence and offline safety |
-| [`docs/operations/blocker-log.md`](docs/operations/blocker-log.md) | Immutable blocker record (BLK-0001 … BLK-0026) |
+| [`docs/operations/blocker-log.md`](docs/operations/blocker-log.md) | Immutable blocker record (BLK-0001 … BLK-0027) |
 | [`docs/operations/handoffs/`](docs/operations/handoffs/) | Append-only session handoffs |
 | [`docs/testing/fixture-policy.md`](docs/testing/fixture-policy.md) | Fixture sanitization rules |
 | [`docs/formats/`](docs/formats/) | Telemetry capture NDJSON v1 format |
