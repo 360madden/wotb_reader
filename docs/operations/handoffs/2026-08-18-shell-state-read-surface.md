@@ -70,11 +70,13 @@ session `01a015b9-189f-7f42-a5d7-d3240ae64a99`) resolved the anchor live:
 
 The six-dereference chain resolves against the real game, so the read surface
 is live-proven (the synthetic tests verified the logic; this proves the
-offsets). **Decoded (2026-08-18):** `identity0` is `eShellKind`; `5` =
-`kArmorPiercingCr` (APCR) — the loaded shell was APCR. `identity1=71` remains
-undecoded (likely a caliber component or shell resource id; the
-identity-holder writer is the remaining bounded trace). See
-`2026-08-18-shell-descriptor-link.md`.
+offsets). **Decoded (2026-08-18, corrected by
+`2026-08-18-shell-identity-holder-writer.md`):** `identity1` = `71` is the
+component **id** (`Shell+0x24`); `identity0` = `5` is a per-component
+**status/tier** discriminator (`Shell+0x20`), **not** `eShellKind` — the kind
+lives at `Shell+0x114` and was never read live. (The earlier "identity0 = APCR"
+reading here and in `2026-08-18-shell-descriptor-link.md` was a coincidence
+and is retracted.)
 
 **0 transitions means this replay did not exercise a shell swap**, so the
 controlled-transition correlation still needs a replay whose player swaps

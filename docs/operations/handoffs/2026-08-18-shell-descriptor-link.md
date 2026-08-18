@@ -60,13 +60,16 @@ shell list via the **identity holder** (two dwords `+0x20`/`+0x24`). The live
 capture returned `identity0=5`. Given `eShellKind` value `5` =
 `kArmorPiercingCr`, **the loaded shell was APCR** (Churchill I / Oasis).
 
-- `identity0` (`ShellStateIdentity0`) = `eShellKind` = `5` = APCR. This is now
-  a *decoded* semantic, not a bare fingerprint — the enum is explicit, the
-  field is an int32, and `5` is a valid in-range value.
-- `identity1` (`ShellStateIdentity1`) = `71` remains **undecoded**. Most likely
-  a caliber component or a shell resource id, but the identity-holder writer
-  (the function that populates `+0x20`/`+0x24`) has not been traced to its
-  source. This is the only remaining bounded static item.
+- ~~`identity0` = `eShellKind` = `5` = APCR~~ — **CORRECTED (2026-08-18, see
+  `2026-08-18-shell-identity-holder-writer.md`).** `Shell+0x20` is a
+  per-component **status/tier** discriminator (sentinel `10`), not the kind.
+  The actual kind lives at `Shell+0x114` and was never read live. The
+  `identity0=5` value coincidentally equals `kArmorPiercingCr` but does not
+  decode to it.
+- `identity1` (`ShellStateIdentity1`) = `71` — **RESOLVED (2026-08-18, see
+  `2026-08-18-shell-identity-holder-writer.md`): it is the component `id`**
+  (`Shell+0x24`, sentinel `0x7fffffff` = "no id"). The identity-holder writer
+  is `ComponentsReader::OnReadComponents` (`FUN_00811070`).
 
 ## Additional static findings (same session)
 
@@ -85,12 +88,12 @@ capture returned `identity0=5`. Given `eShellKind` value `5` =
 
 ## Remaining bounded item
 
-Trace the **identity-holder writer** — the function that stores the two dwords
-at `identity_holder +0x20`/`+0x24`. The holder is `[shell_slot +0x1c]`; the
-shell list is the vector at `[[ammo+0x40] +0x20] +0x1b0`. Confirming the writer
-names both dwords (and settles `identity1=71`). This is static, cheap, and does
-not block the G1 item 2 promotion gate (which only needs a controlled
-shell-swap flip of the index + fingerprint).
+~~Trace the identity-holder writer.~~ **DONE (2026-08-18, see
+`2026-08-18-shell-identity-holder-writer.md`):** the writer is
+`ComponentsReader::OnReadComponents` (`FUN_00811070`), which stores the status
+argument at `+0x20` and the descriptor `id` at `+0x24`. Only the exact source
+of the id value `71` (XML `<id>` attribute vs. a computed/global id) remains
+unpinned; it does not change the field semantics.
 
 ## Evidence
 

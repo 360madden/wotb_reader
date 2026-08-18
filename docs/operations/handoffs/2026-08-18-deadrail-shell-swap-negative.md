@@ -21,12 +21,12 @@ Battle session: `01a01610-b9f0-7f3e-892a-35f2a7bddf32`.
 - **Shell-state read resolved stably** across the whole battle window
   (`18:11:21Z → 18:15:54Z`):
   - `index=0`, `identity0=5`, `identity1=71`, two-pass `stable=True`.
-  - `identity0=5` = `kArmorPiercingCr` (APCR) per the decoded `eShellKind`
-    (handoff `2026-08-18-shell-descriptor-link.md`) — the same fingerprint the
+  - `identity0=5` = a status/tier discriminator, `identity1=71` = the component
+    id (per the corrected decoding in handoff
+    `2026-08-18-shell-identity-holder-writer.md`) — the same fingerprint the
     Churchill I / Oasis session returned, consistent with the same vehicle/loadout.
   - **0 transitions** (`samples=147, distinct_states=1, transitions=0`):
-    the index and identity fingerprint never changed. The player fired APCR
-    the whole battle and never swapped shells.
+    the index and identity fingerprint never changed, so no shell swap occurred.
 - **Playback did not end cleanly.** The player's vehicle left the world at
   `18:15:54Z` (frame 25947, `AvatarGameLogic::onBecomeNonPlayer`), and the game
   then hit the known `ListenerHolderBase` `!listeners.size()` assert

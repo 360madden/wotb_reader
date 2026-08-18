@@ -1122,21 +1122,24 @@ folder for the full numbering convention and document map.
   VALIDATED (2026-08-18):** one exact-build managed offline replay (Churchill I /
   Oasis, session `01a015b9-…`) resolved the anchor — `index=0`, `identity0=5`,
   `identity1=71`, two-pass stable, 87 samples / 1 distinct state / **0
-  transitions**. The read surface is live-proven; `identity0` is now DECODED
-  (2026-08-18, `2026-08-18-shell-descriptor-link.md`): it is `eShellKind` and
-  `5` = `kArmorPiercingCr` (APCR) — the loaded shell was APCR; `identity1=71`
-  stays undecoded (likely caliber or shell id; the identity-holder writer is
-  the remaining bounded trace). This replay did not swap shells, so the
-  controlled shell-swap correlation (two content-distinct repeats) is the
-  remaining G1 item 2 gate per `pen-promotion-gates.md`. Nothing promoted.
+  transitions**. The read surface is live-proven; the identity dwords are now
+  DECODED and CORRECTED (2026-08-18, `2026-08-18-shell-identity-holder-writer.md`):
+  `identity1=71` is the component **id** (`Shell+0x24`), and `identity0=5` is a
+  per-component **status/tier** discriminator (`Shell+0x20`) — NOT `eShellKind`
+  (the kind lives at `Shell+0x114`, unread live; the earlier "identity0 = APCR"
+  reading was a coincidence and is retracted). The identity-holder writer is
+  `ComponentsReader::OnReadComponents` (`FUN_00811070`). This replay did not
+  swap shells, so the controlled shell-swap correlation (two content-distinct
+  repeats) is the remaining G1 item 2 gate per `pen-promotion-gates.md`.
+  Nothing promoted.
 
 - Dead Rail shell-swap attempt HONEST-NEGATIVE (`2026-08-18`, handoff
   `2026-08-18-deadrail-shell-swap-negative.md`): the second content-distinct
   replay (Dead Rail, map `medvedkovo`, session `01a01610-…`) was launched and
   the `shell-state` anchor polled for the full battle — `index=0`,
-  `identity0=5` (APCR), `identity1=71`, two-pass stable, 147 samples / 1
-  distinct state / **0 transitions** (the player fired APCR the whole battle
-  and never swapped). Playback did not end cleanly: the player's vehicle left
+  `identity0=5` (status/tier), `identity1=71` (id), two-pass stable, 147
+  samples / 1 distinct state / **0 transitions** (the shell fingerprint
+  never changed, so no swap occurred). Playback did not end cleanly: the player's vehicle left
   the world at frame 25947 (`18:15:54Z`) and the game then hit the known
   `ListenerHolderBase` `!listeners.size()` assert (`18:15:57Z`), reverting the
   gate to `Denied / evidence.monitor_unhealthy`; the remaining poll returned
