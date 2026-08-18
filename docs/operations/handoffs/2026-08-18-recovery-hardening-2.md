@@ -55,9 +55,27 @@ RECOVERY docs are now part of the offline gate
 - Exit-code contract is now pinned by tests, so a future refactor cannot
   silently regress it.
 
+## Amendment (same day): tool inventory + Step 0 drills verified
+
+- Every tool the playbook's route table cites exists and resolves:
+  `ConfirmHealthFieldStores.java`, `FindVftableViaCol.java`,
+  `FindVftableForType.java`, `DumpDescriptorVtables.java`,
+  `TraceShellGunProducers.java` (all in `tools/ghidra-scripts/`),
+  `scripts/invoke-replay-crosscheck.ps1` (`-GoldenVector` present),
+  `tools/compute-exe-hash.ps1`, `scripts/python/offset_check.py`,
+  `scripts/python/offline_check.py`, `scripts/validate.ps1`, and the CLI
+  verbs `hp-diff` / `yaw-diff` (registered in
+  `src/WotBTreader.Host.Cli/Cli/CliCommandRouter.cs`). No dead citations.
+- Synthetic Step 0 drill (read-only, temp dirs, real tables untouched):
+  a fake same-hash table -> exit 0 same-build with anchors extracted; a
+  hypothetical `11.20.0.0` executable against the real `memory-offsets/`
+  -> all tables DRIFT, exit 1, playbook pointer printed. The playbook's
+  trigger path works end-to-end without touching evidence.
+
 ## Next steps
 
 - Drill the playbook end-to-end when the first real game update lands.
 - Otherwise `RECOVERY/` is the standing answer to "the game updated, what
-  now?" — triage is now fail-closed in every mode and its contract is
-  regression-tested.
+  now?" — triage is now fail-closed in every mode, its contract is
+  regression-tested, and Step 0 is verified against both outcomes and the
+  real table set.
