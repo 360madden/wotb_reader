@@ -1070,3 +1070,18 @@ folder for the full numbering convention and document map.
   to: (a) trace the equip-time setter of `[AmmoController+0x40]`, and (b) the
   live controlled shell-swap correlation of `+0x38` — the promotion gate per
   `pen-promotion-gates.md`. Nothing promoted.
+
+- `AmmoController +0x40` setter FOUND (`2026-08-18`, static, byte-verified
+  hash-bound `1cda5c31…`; handoff `2026-08-18-ammo40-setter-found.md`):
+  the refcounted setter is `AmmoController::ResetAmmo` (`FUN_015eff70`) —
+  save-old → `MOV [this+0x40],new` at `015effb3` → helper(new)/helper(old) —
+  called at equip time from the `AvatarGameLogic` equip method
+  (`FUN_016d1b60`, call at `016d1bbe`) with `this = &avatar[0x4B4]` and the
+  new gun/ammo ref from `[vehicleInfo+0x68]`. Only one vftable construction
+  site exists (the `AvatarGameLogic` ctor), confirming the setter is a method
+  call, not a construction site. **The static shell-index chain is complete
+  end-to-end** (`+0x4B4` AmmoController → `+0x40` ref → `+0x20` → `+0x1b0`
+  shell vector → `+0x1c` Shell → damage `+0x11c`). BLK-0027's remaining item
+  is only (b): the **live controlled shell-swap correlation** of `+0x38` and
+  the `+0x40` chain in an exact-build managed offline replay — the promotion
+  gate per `pen-promotion-gates.md`. Nothing promoted.
