@@ -68,6 +68,21 @@ capture returned `identity0=5`. Given `eShellKind` value `5` =
   (the function that populates `+0x20`/`+0x24`) has not been traced to its
   source. This is the only remaining bounded static item.
 
+## Additional static findings (same session)
+
+- **`Shot` ctor** `FUN_00808430` (RVA `0x408430`, 0x44 bytes, `Shot::vftable`
+  `0x35a1a30`) byte-confirms the gun-descriptor `vector<Shot>` ballistic
+  layout: `defaultPortion +0x24` (init `-100000.0f`), `speed +0x28`,
+  `gravity +0x2c`, `maxDistance +0x30`, `isATGM +0x40`, name string at `+0x4`,
+  and a **pointer at `+0x1c`** (init `0`).
+- The shell list that `ProcessCurrentShells` walks is the vector at
+  `[[ammo+0x40] +0x20] +0x1b0`; its element `P` dereferences `[P+0x1c]` to the
+  identity holder `Q` whose two dwords are compared (`+0x20`/`+0x24`). A
+  shell-adjacent struct (constructed by `FUN_008084e0`) carries the **same
+  `0x7fffffff` sentinel at `+0x24`** that `Shell.caliber@+0x118` uses, so
+  `identity1` is most plausibly a caliber component — still unproven until the
+  writer is traced.
+
 ## Remaining bounded item
 
 Trace the **identity-holder writer** — the function that stores the two dwords
