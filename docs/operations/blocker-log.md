@@ -1097,3 +1097,14 @@ folder for the full numbering convention and document map.
   the muzzle-ray role) is NOT statically resolvable — confirming the
   2026-08-16 conclusion. The live controlled turret/gun + shell-swap
   correlation is the shared promotion gate. Nothing promoted.
+
+- Armor producer trace DECISION (`2026-08-18`, hash-bound `1cda5c31…`):
+  **explicit no-go.** The 2026-08-15 bounded RTTI triage
+  (`pen-v03-alternative-armor-owner-triage.md`) plus a follow-up symbol
+  check found RTTI identities for `ArmorComponent`/`ArmorConfiguration`/
+  `PushNormalsArmorConfiguration`/`ArmorVisualizationSystem` but zero
+  producer method-name anchors (`s_…::…` strings) — no parse/load/build
+  producer is visible, so a deeper trace is an open-ended hunt without a
+  hypothesis. Revisit only if a concrete producer (surface identity +
+  thickness/units + order + interaction kind) emerges; the rejected
+  hard-joint path stays closed. Armor remains honest `NotReady`.
