@@ -4,7 +4,7 @@
 
 1. **Replay-tick unit bug found and fixed (`replay-delta-extractor.py`).**
    The decoded DB stores replay ticks as .NET ticks (10⁷/s): `position_samples`
-   max tick ≈ `battle_sessions.duration_ticks` (Oasis Palms 2,798,934,300
+   max tick ≈ `battle_sessions.duration_ticks` (savanna 2,798,934,300
    ticks = **279.9 s** battle, not 2798 s), and the decoder writes
    `TimeSpan.FromSeconds(...).Ticks`. The extractor's `TICKS_PER_SECOND`
    was 10⁶, so every "seconds" output and the hit-window bucketing were
@@ -14,10 +14,10 @@
    against raw event ticks.
 
    **Corrected schedules (real replay seconds):**
-   - Oasis Palms (≈280 s): victim **3760578**, 9 hits / 4,028 dmg at
+   - savanna (≈280 s): victim **3760578**, 9 hits / 4,028 dmg at
      90.4–167.4 s → six 10 s windows **90–100, 100–110, 130–140,
      140–150, 150–160, 160–170 s** (sums 256/1278/664/386/933/511).
-   - Dead Rail (≈271 s): victim **2549399**, 18 hits / 4,647 dmg at
+   - medvedkovo (≈271 s): victim **2549399**, 18 hits / 4,647 dmg at
      114.4–152.4 s → five 10 s windows **110–120 … 150–160 s**.
    The earlier draft's 900–1680 s / ~2798 s numbers in the groundwork doc
    and the qualification handoff were corrected (with a unit note).
@@ -71,7 +71,7 @@ and is consistent at 10⁷/s — no other offenders:
 Re-verified under the corrected constant: the README's "Double replayTime
 **delta marker deterministic (pass-rate 1.0, survival 1.0/15 rounds)**"
 (OD-045-STATIC) still holds — `--simulate` reports pass-rate 1.0 at every
-swept tolerance for the Oasis Palms session, so the delta-pilot-first
+swept tolerance for the savanna session, so the delta-pilot-first
 ordering conclusion is not invalidated.
 
 ## Gates
@@ -84,6 +84,6 @@ ordering conclusion is not invalidated.
 
 ## Next
 
-The gated live session (region-read addition + one Oasis Palms run on
-victim 3760578, dumps on the six windows above + Dead Rail 2549399 for
+The gated live session (region-read addition + one savanna run on
+victim 3760578, dumps on the six windows above + medvedkovo 2549399 for
 repeatability), or the `replayTime` live attempt (OD-044).

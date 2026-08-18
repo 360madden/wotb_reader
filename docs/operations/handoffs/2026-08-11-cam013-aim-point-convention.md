@@ -13,7 +13,7 @@ stays non-chase.
 
 ## The live session (CAM-007's "one live session for real evidence")
 
-Two launches / three captures on the Oasis Palms replay (launcher gates OK,
+Two launches / three captures on the savanna replay (launcher gates OK,
 second-monitor placement live-verified, `resize_window second_monitor`
 observed):
 
@@ -27,7 +27,7 @@ Every round: camera identity gates PASS (3/3, `0x03D8AFA0` = base +
 `0x32dafa0`), basis coherent (stride-4 orthonormal, forward = −row1,
 CAM-012), **eye (yz-swap of posA +0x38) 2–3 m from the memory tank**, yaw
 stable and tank-following, **memory pitch level (−1.4…+4.2°)**, screen
-scalars inconclusive (Oasis dusk sky test never fires; horizon detection
+scalars inconclusive (savanna dusk sky test never fires; horizon detection
 noisy at the 16×9 grid).
 
 ## Root cause: hull center vs turret-level aim point
@@ -103,7 +103,7 @@ reported as `tankFramingByFov`).
 - The exact aim-point height is pinned to 1.9 m by the chase-consistency
   bound (± ~0.7 m at the 1–2 m read ranges). Pin it to the tank's actual
   turret height when the overlay nameplate/beacon Y-offset work starts
-  (a screen-accurate capture with a cleaner sky/terrain scene than Oasis
+  (a screen-accurate capture with a cleaner sky/terrain scene than savanna
   dusk would also settle the render-mode sky test).
 - The v7b battle-intro state (+88° pitch) confirms the discriminator
   correctly flags cinematics — no read-surface change.

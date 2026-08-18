@@ -34,7 +34,7 @@ LAST. The full historical record is below.
 Session ID (historical): `OD-RECOVERY-091`.
 
 **OD-RECOVERY-087 is DONE (2026-08-11) — L1 HP HIT live.** The entity-base
-current-health signed int16 is **confirmed at `+0xB8`** on Oasis Palms
+current-health signed int16 is **confirmed at `+0xB8`** on savanna
 (victim 3760578, 9 events / 1,183 damage, 74 dense-span dumps): every one
 of the 8 health drops equals its damage sum exactly (149, 173, 174, 164,
 168, 142, 198 = 41+157, 15), max `+0x11C` 1550 constant, alive `+0xBA` 1,
@@ -54,7 +54,7 @@ carries `hpCurrent`/`hpMax`/`alive` — the live frame's HP is real (see
 
 **DONE (2026-08-11, OD-RECOVERY-088): L2 facing — HIT at ring-record
 `+0x30`.** The ring-record tail is a live-verified rotation triple: roll
-`+0x28`, pitch `+0x2C`, yaw `+0x30` (48 Oasis Palms region dumps, sub-0.1 deg
+`+0x28`, pitch `+0x2C`, yaw `+0x30` (48 savanna region dumps, sub-0.1 deg
 alignment at the ~5 s memory-apply lag). The rehearsal's +0x2C yaw
 prediction was self-constructed (its synthetic dumps placed yaw at +0x2C by
 design — correlator mechanics, not layout); the live read corrects it.
@@ -68,7 +68,7 @@ constants and readers). Evidence:
 `OD-RECOVERY-088` result section.
 
 **DONE (2026-08-11, OD-RECOVERY-091): HP Phase-4 repeat — CLOSED HIT at
-entity-base `+0xB8` on Dead Rail.** The victim was RE-SCOPED to the
+entity-base `+0xB8` on medvedkovo.** The victim was RE-SCOPED to the
 qualified team-1 **2549395 (dudster_2015)** — the original 2549399
 (vandal13) is TEAM 2 and can never resolve (the resolver's entity-map
 trees are the movement-filter family, player's own team only; the
@@ -77,12 +77,12 @@ dumps / 4 windows / 520 dmg / 92.7–104.7 s: byte-level exact track 520 →
 443 → 303 → 227 → 55 → 0 with every drop an exact damage subset (140 =
 36+104, 76 = 76, 172 = 94+78, 55 = 55), max `+0x11C` 520 constant, alive
 `+0xBA` flips exactly at 0. At-session verdict honest-negative (Strict
-0x4E vs 0xB8) — Dead Rail's memory clock LEADS the decoded clock by ~2.5 s
+0x4E vs 0xB8) — medvedkovo's memory clock LEADS the decoded clock by ~2.5 s
 (the OD-089 finding reproduced), invisible to the one-directional
 (From − lag, To] attribution. Additive lead-side window
 (`hp-diff --lag-lead-seconds`, default 0 = unchanged, 3 new tests) re-
 verdicts the SAME immutable dumps to **HIT: score 1.0, flatness 1.0,
-Strict 4/4 exact sums**; Oasis re-verifies unchanged. `twoReplayRepeatability =
+Strict 4/4 exact sums**; savanna re-verifies unchanged. `twoReplayRepeatability =
 true` for HP — the Phase-4 two-replay rule CLOSES; HP publication APPLIED 2026-08-12 (OD-RECOVERY-092):
 `docs/operations/g1-hp-publication-draft.md` (historical pre-apply record). Evidence:
 `docs/operations/od-recovery-091-evidence-template.md` (filled) + ledger
@@ -122,10 +122,10 @@ prediction was self-constructed). The published table keeps yaw at
 `0`/Stale; a future publication would be a `chains` entry.
 
 Next anchors after position: the pre-staged live gates in order — **HP
-Phase-4 repeat** (OD-RECOVERY-091, entity-base `+0xB8` on Dead Rail,
+Phase-4 repeat** (OD-RECOVERY-091, entity-base `+0xB8` on medvedkovo,
 victim 2549395 — the planned 2549399 is team 2 and can never resolve;
 `invoke-hp-diffing-session.ps1 -ControlTimes 130,200`) — **DONE 2026-08-11,
-CLOSED HIT**: `+0xB8` agrees on Dead Rail (score 1.0, flatness 1.0, Strict
+CLOSED HIT**: `+0xB8` agrees on medvedkovo (score 1.0, flatness 1.0, Strict
 4/4 exact sums via the additive lead-side window `--lag-lead-seconds`),
 `twoReplayRepeatability = true`; HP publication READY (operator approval
 only, `g1-hp-publication-draft.md`). CAM-001 v7's W2S acceptance gate is
@@ -134,7 +134,7 @@ CAM-010/011/012). **L1 HP is
 DONE (OD-RECOVERY-087, HIT at `+0xB8`) and L2 facing is DONE
 (OD-RECOVERY-088, HIT at `+0x30`)** — the live-frame HP bar and hull-yaw row
 can become real (additive contract changes); the Phase-4 two-replay rules
-(Dead Rail for both HP and yaw) are now CLOSED and both publication packages
+(medvedkovo for both HP and yaw) are now CLOSED and both publication packages
 (HP + yaw) are APPLIED (OD-RECOVERY-092).
 `replayTime` retains
 its rolling increased-Double evidence (OD-012..038) and `playerHP` has the
@@ -480,7 +480,7 @@ entry says what was ruled out.
 
 > **Amended 2026-08-11 (composed X2+X3 rehearsal is next; OD-RECOVERY-086).**
 > The next approved session runs `scripts/invoke-batch-rehearsal.ps1
-> -EnumerateLive -LiveAcquire -Times 90,150,220 -FailOnMiss` on Oasis Palms —
+> -EnumerateLive -LiveAcquire -Times 90,150,220 -FailOnMiss` on savanna —
 > (1) the X3 live-roster enumeration through `/discover/entity-roster`
 > (design `docs/operations/live-roster-read-design.md`) verdict against the
 > decoded participants roster (matched/missing/extra + movement-filter
@@ -689,7 +689,7 @@ value-bound rejection also sheds the kernel clock (its 100ns increments fall
 outside a 4.0±0.4s delta), removing the dying-game false positive outright.
 Measure survivor collapse vs "increased" (11 → predicted ≤2–4), then the Float
 position pilot **on a movement-only span** (`--movement`: only 32.3% of the
-Dead Rail replay is moving — 891/2,756 windows), then **automated x64dbg
+medvedkovo replay is moving — 891/2,756 windows), then **automated x64dbg
 write-trace** on the staged set via `scripts/x64dbg-write-trace.ps1`
 (`-AutoWriteTrace`; bphw write breakpoints by command-bar injection; writing
 RIP captured via `{rip}`-named `savedata` evidence files — the operator step
@@ -1016,7 +1016,7 @@ work.
 
 **Pre-flight.** Exact-build binaries present (a `scripts/validate.ps1` green
 run); no stale `wotblitz.exe` / Host.Web / interceptor processes; the
-content-distinct replay (Oasis Palms, 1,045,525 B) in place; disk space for
+content-distinct replay (savanna, 1,045,525 B) in place; disk space for
 the evidence dir (`.data/diagnostics/g1-live-<stamp>/`). (The x86
 interceptor publish is not needed in the corrected mode; it is only for the
 legacy armed evidence mode.)

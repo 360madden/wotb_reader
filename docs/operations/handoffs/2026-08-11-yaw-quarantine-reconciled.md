@@ -24,7 +24,7 @@ wrong address kind for this field by construction.
 Status: legacy static candidates **retired**; the yaw anchor becomes the
 ring-record chain field, predicted and rehearsed by the facing correlator
 against packet-derived yaw ground truth (`position_samples.yaw`): 27/27
-turn windows on Oasis Palms, 35/35 on Dead Rail, score 1.0, flatness 1.0
+turn windows on savanna, 35/35 on medvedkovo, score 1.0, flatness 1.0
 (synthetic dumps). **Live update 2026-08-11 (OD-RECOVERY-088): the live L2
 facing session corrected the prediction — the ring-record tail is a
 rotation triple roll `+0x28` / pitch `+0x2C` / yaw `+0x30` (the rehearsal's
@@ -64,7 +64,7 @@ FailOnMiss), 3 (no dumps/no acquire).
 - ~~The live L2 facing session~~ — DONE 2026-08-11 (OD-RECOVERY-088): the
   live read corrected the rehearsal — yaw is at ring-record `+0x30` (roll
   `+0x28`, pitch `+0x2C`), HIT score 1.0, flatness 1.0, 48/48 dumps. The
-  Phase-4 repeat on Dead Rail (OD-RECOVERY-089, same approval gate) still
+  Phase-4 repeat on medvedkovo (OD-RECOVERY-089, same approval gate) still
   gates facing/yaw publication.
 - Everything else on the consolidation checklist stays as recorded: items
   1-4 done, item 6 staged, item 7 LAST.

@@ -12,7 +12,7 @@ namespace WotBTreader.Host.Cli.Tests;
 /// value-match lag correlation → the hardened verdict. Covers the
 /// OD-RECOVERY-089 path: the per-dump bounded BIDIRECTIONAL lag search
 /// (<c>--memory-lead-seconds --per-dump-lag</c>) that finds +0x30 when the
-/// G2 label skew makes the memory LEAD the label (Dead Rail sign) — the
+/// G2 label skew makes the memory LEAD the label (medvedkovo sign) — the
 /// direction the one-directional shared path structurally cannot see.
 /// </summary>
 [TestClass]
@@ -33,7 +33,7 @@ public sealed class CliYawDiffTests
 
         // The packet yaw is 0 rad until t=10s then 1.2 rad; the memory at
         // label-time t carries the packet from t + 2 s (memory LEADS the
-        // label — the Dead Rail sign). Every non-yaw 4-byte offset carries
+        // label — the medvedkovo sign). Every non-yaw 4-byte offset carries
         // the constant 0.7 (a value the packet timeline never contains), so
         // no zero-filled decoy can degenerate-match.
         string snapshotsPath = await WriteSnapshotsAsync(
@@ -304,7 +304,7 @@ public sealed class CliYawDiffTests
                 INSERT INTO battle_sessions
                     (id, decode_run_id, game_version, map_name, duration_ticks, schema_version)
                 VALUES
-                    ($session, $run, '11.19.0', 'Dead Rail', 200000000, '1');
+                    ($session, $run, '11.19.0', 'medvedkovo', 200000000, '1');
                 """;
             command.Parameters.AddWithValue("$artifact", "019fdff8-aaaa-7426-8547-9fb8cc3eb07b");
             command.Parameters.AddWithValue("$run", "019fdff8-bbbb-7426-8547-9fb8cc3eb07b");

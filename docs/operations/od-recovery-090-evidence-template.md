@@ -37,17 +37,17 @@ offset table are untouched.
 
 **Next step (if re-attempted):** widen the region (the batch surface cap
 allows ~0x1000) and/or scan sibling records; apply the SAME
-increment-correlator with strict-exact-sum ≥ 2 and flatness 1.0. Dead Rail
+increment-correlator with strict-exact-sum ≥ 2 and flatness 1.0. medvedkovo
 repeat (attacker 2549401) remains the Phase-4 gate for any future hit.
 
 ## What we know (do not assume the offset)
 
 - The counter is an **int32 that RISES by the exact damage of each event
   the target DEALT** (attacker-side; increment direction). Ground truth
-  (CURRENT decode, re-measured 2026-08-11): Oasis viewpoint 3760577 dealt
+  (CURRENT decode, re-measured 2026-08-11): savanna viewpoint 3760577 dealt
   **6 events / 752 damage** (134+152+144+151+170+1 at 177.8/245.4/253.2/
   260.3/267.1/274.0 s — the pre-staged "5/2184" was stale and is
-  superseded); Dead Rail viewpoint 2549401 dealt 5 / 1569 (4 windows,
+  superseded); medvedkovo viewpoint 2549401 dealt 5 / 1569 (4 windows,
   154.5–257.9 s).
 - The counter increments **synchronously with the packets** (no
   memory-apply lag — the driver keeps `--lag-tolerance 0` for this track;
@@ -102,14 +102,14 @@ player's own stat).
 |---|---|
 | Target build | 11.19.0.10 |
 | Executable SHA-256 | `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d` |
-| Replay 1 (THIS session) | Oasis Palms — viewpoint attacker **3760577** (**6 dealt, 752 damage** — corrected 2026-08-11) |
-| Replay 2 (Phase-4 repeat) | Dead Rail — viewpoint attacker **2549401** (5 dealt, 1569 damage, 4 nonzero windows) |
+| Replay 1 (THIS session) | savanna — viewpoint attacker **3760577** (**6 dealt, 752 damage** — corrected 2026-08-11) |
+| Replay 2 (Phase-4 repeat) | medvedkovo — viewpoint attacker **2549401** (5 dealt, 1569 damage, 4 nonzero windows) |
 | Region anchor | `entity-base` (the record HP lives on; the counter is expected on the same record) |
 | Region length | 320 (covers the statically-verified HP block + headroom) |
 | Direction | increment (`hp-diff --direction increment`); event sum keyed on attacker |
 | Lag tolerance | 0 (counter rises synchronously with the packets — unlike HP) |
 | Rehearsal | synthetic int32 at `+0x48`, 5/5 both replays — **fixture, NOT a prediction** |
-| Verdict contract | score 1.0, flatness 1.0, ≥ 2 exact-sum Strict matches, matched windows 5/5 (first hit must be found); Phase-4: same offset on Dead Rail |
+| Verdict contract | score 1.0, flatness 1.0, ≥ 2 exact-sum Strict matches, matched windows 5/5 (first hit must be found); Phase-4: same offset on medvedkovo |
 
 ## Ledger section — `OD-RECOVERY-090` (2026-08-11 result)
 
@@ -117,13 +117,13 @@ player's own stat).
 sessionId: OD-RECOVERY-090
 status: DONE (honest-negative)
 track: damage-dealt (increment, viewpoint counter)
-replay: Oasis Palms (attacker 3760577, 6 dealt / 752 dmg)
+replay: savanna (attacker 3760577, 6 dealt / 752 dmg)
 verdict: no hit in 320-byte entity-base region
 score: 0.833 (top candidate +0x3C — the position-copy float, demoted)
 matchedWindows: 5/6 (lenient coincidence on a moving float)
 strictExactSumMatches: 0
 flatness: 0.091 (control-demoted — counter must be flat when inactive)
-phase4Repeat: N/A (no hit to repeat; Dead Rail 2549401 still gates any future hit)
+phase4Repeat: N/A (no hit to repeat; medvedkovo 2549401 still gates any future hit)
 ```
 
 ## After this session
@@ -132,7 +132,7 @@ phase4Repeat: N/A (no hit to repeat; Dead Rail 2549401 still gates any future hi
   damage-dealt read for the live frame's scoreboard column becomes
   memory-backed (currently a decode-projection feature). The Phase-4 Dead
   Rail agreement (2549401) still gates any publication.
-- HP publication keeps its OWN Phase-4 rule (Dead Rail victim 2549399);
+- HP publication keeps its OWN Phase-4 rule (medvedkovo victim 2549399);
   yaw publication keeps 089. Item 7 (hardware atomicity) stays LAST.
 
 ## After this session
@@ -141,5 +141,5 @@ phase4Repeat: N/A (no hit to repeat; Dead Rail 2549401 still gates any future hi
   damage-dealt read for the live frame's scoreboard column becomes
   memory-backed (currently a decode-projection feature). The Phase-4 Dead
   Rail agreement (2549401) still gates any publication.
-- HP publication keeps its OWN Phase-4 rule (Dead Rail victim 2549399);
+- HP publication keeps its OWN Phase-4 rule (medvedkovo victim 2549399);
   yaw publication keeps 089. Item 7 (hardware atomicity) stays LAST.

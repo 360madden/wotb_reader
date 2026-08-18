@@ -15,8 +15,8 @@ the resolver, not the observation path).
 
 | Field | Chain | Final hop | Live evidence |
 |---|---|---|---|
-| `playerHP` | entity-base: position hops 1..8 (through `entityLookup`) + `recordOffset 184` — the health field lives on the ENTITY BASE record, NOT the ring path (9 hops) | `[entity+0xB8]` signed int16 | OD-RECOVERY-087 (Oasis, 74 dumps, Strict 8/8) + OD-RECOVERY-091 (Dead Rail, 58 dumps, Strict 4/4 lead-side) — `twoReplayRepeatability = true`; siblings max `+0x11C` / alive `+0xBA` / healing `+0x11E` |
-| `playerYaw` | ring-record: IDENTICAL position walk (position `+0x10` and yaw `+0x30` proven on the SAME record) + `recordOffset 48` (12 hops) | `+0x30` float32 hull yaw | OD-RECOVERY-088 (Oasis, 48/48) + OD-RECOVERY-089 (Dead Rail, 56/56 per-dump bidirectional lag) — `twoReplayRepeatability = true`; rotation triple roll `+0x28` / pitch `+0x2C` / yaw `+0x30` |
+| `playerHP` | entity-base: position hops 1..8 (through `entityLookup`) + `recordOffset 184` — the health field lives on the ENTITY BASE record, NOT the ring path (9 hops) | `[entity+0xB8]` signed int16 | OD-RECOVERY-087 (savanna, 74 dumps, Strict 8/8) + OD-RECOVERY-091 (medvedkovo, 58 dumps, Strict 4/4 lead-side) — `twoReplayRepeatability = true`; siblings max `+0x11C` / alive `+0xBA` / healing `+0x11E` |
+| `playerYaw` | ring-record: IDENTICAL position walk (position `+0x10` and yaw `+0x30` proven on the SAME record) + `recordOffset 48` (12 hops) | `+0x30` float32 hull yaw | OD-RECOVERY-088 (savanna, 48/48) + OD-RECOVERY-089 (medvedkovo, 56/56 per-dump bidirectional lag) — `twoReplayRepeatability = true`; rotation triple roll `+0x28` / pitch `+0x2C` / yaw `+0x30` |
 
 Both canonical chains were published **verbatim from
 `docs/operations/g0-walkable-position-chains.draft.json`** (pre-staged

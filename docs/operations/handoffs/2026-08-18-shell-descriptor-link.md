@@ -58,7 +58,7 @@ the explosion radius — the classic HE radius formula — so the field order is
 `ProcessCurrentShells` compares the loaded-shell map lookup against the gun's
 shell list via the **identity holder** (two dwords `+0x20`/`+0x24`). The live
 capture returned `identity0=5`. Given `eShellKind` value `5` =
-`kArmorPiercingCr`, **the loaded shell was APCR** (Churchill I / Oasis).
+`kArmorPiercingCr`, **the loaded shell was APCR** (Churchill I / savanna).
 
 - ~~`identity0` = `eShellKind` = `5` = APCR~~ — **CORRECTED (2026-08-18, see
   `2026-08-18-shell-identity-holder-writer.md`).** `Shell+0x20` is a

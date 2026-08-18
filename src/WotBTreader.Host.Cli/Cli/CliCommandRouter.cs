@@ -227,7 +227,7 @@ public sealed class CliCommandRouter
         // bracket the memory write. A bounded --lag-tolerance (default 0 =
         // exact, unchanged) lets each event attribute to the change window
         // that actually contains its memory write; the HP driver passes the
-        // measured bound. Some replays show the OPPOSITE skew (Dead Rail
+        // measured bound. Some replays show the OPPOSITE skew (medvedkovo
         // memory LEADS the decoded clock by ~2.5 s — OD-RECOVERY-089): the
         // write lands BEFORE the decoded event time, so the event's decoded
         // time postdates the window containing its write. --lag-lead-seconds
@@ -437,8 +437,8 @@ public sealed class CliCommandRouter
         // value-match lag path (bounded shared-lag search); default 0 keeps
         // the exact window-delta behavior.
         // OD-RECOVERY-089: the G2 replay-clock LABEL itself carries a
-        // per-session skew OPPOSITE in sign between replays (Oasis memory
-        // lags ~3-5 s; Dead Rail memory leads ~2-5 s), so --memory-lead-seconds
+        // per-session skew OPPOSITE in sign between replays (savanna memory
+        // lags ~3-5 s; medvedkovo memory leads ~2-5 s), so --memory-lead-seconds
         // extends the search to memory-leading lags and --per-dump-lag lets
         // each dump pick its own bounded best lag (median + spread reported).
         double maxLagSeconds = 0;

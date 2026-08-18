@@ -40,7 +40,7 @@ unchanged; the verdict step adds the Strict re-run.
 - HP offline side: **complete and hardened** — ground truth, correlator
   (Strict/Lenient + flatness), compose proof, entity-base exposure,
   mechanism proven on the published table, victims qualified for both
-  replays (Oasis Palms 3760578, Dead Rail 2549399), and a
+  replays (savanna 3760578, medvedkovo 2549399), and a
   false-positive-hardened verdict contract.
 - Remaining: the gated live session (one bounded
   `EntityRecordRegionReadRequest` addition + one run), fully pre-staged.

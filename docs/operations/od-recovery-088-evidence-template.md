@@ -1,6 +1,6 @@
 # OD-RECOVERY-088 live-run evidence — L2 facing/yaw (FILLED 2026-08-11)
 
-The approved Oasis Palms L2 facing session is DONE. **Verdict: HIT — but at a
+The approved savanna L2 facing session is DONE. **Verdict: HIT — but at a
 DIFFERENT ring offset than the rehearsal predicted.** The ring-record tail is
 a rotation triple, live-verified: **roll `+0x28`, pitch `+0x2C`, yaw `+0x30`**
 (48 region dumps, all three align to packet ground truth within 0.5 deg at
@@ -42,8 +42,8 @@ Evidence landed in `.data/`:
 |---|---|
 | Target build | 11.19.0.10 |
 | Executable SHA-256 | `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d` |
-| Replay 1 | Oasis Palms (1 644 turn windows, yaw Δ p90 24.4°, 0 seam crossings) |
-| Replay 2 (Phase-4 repeatability) | Dead Rail (1 728 turn windows, yaw Δ p90 48.5°, **5 seam crossings** — wrap-awareness evidence) |
+| Replay 1 | savanna (1 644 turn windows, yaw Δ p90 24.4°, 0 seam crossings) |
+| Replay 2 (Phase-4 repeatability) | medvedkovo (1 728 turn windows, yaw Δ p90 48.5°, **5 seam crossings** — wrap-awareness evidence) |
 | Region anchor | `ring-record` (the movement ring record the position resolver reads; stride 0x38) |
 | Region length | 256 (covers the full record + headroom) |
 | **Live-verified layout** | **roll `+0x28`, pitch `+0x2C`, yaw `+0x30`** (OD-RECOVERY-088; rehearsal's +0x2C yaw was self-constructed) |
@@ -60,7 +60,7 @@ status: Hit (L2 facing live session, ring-record yaw at +0x30 — the
   live-verified as a bonus)
 mode: invoke-facing-session.ps1 -SessionId 019ff1d1-b835-7ac5-bf63-e528506ef561
   -LiveAcquire -ControlTimes 20,240 -DataRoot "$env:LOCALAPPDATA\WotBTreader"
-  on Oasis Palms: launcher to OfflineReplayVerified, then
+  on savanna: launcher to OfflineReplayVerified, then
   /discover/entity-region ring-record dumps (region 256, replay-clock
   labeled, sameDecodedClockProven required) per turn segment + flat
   controls -> yaw-diff verdict (value-match lag path, wrap-aware)
@@ -91,7 +91,7 @@ proof:
     prediction was self-constructed: its synthetic dumps placed yaw at +0x2C
     by design, validating the correlator, not the layout; the live read
     corrects the ring tail to roll +0x28 / pitch +0x2C / yaw +0x30)
-  twoReplayRepeatability: claimable after the identical flow on Dead Rail
+  twoReplayRepeatability: claimable after the identical flow on medvedkovo
     agrees on the offset (seam-crossing wrap-awareness included) - Phase-4
   liveFrameYawBecomesLive: claimable after yawLiveAtRingOffset: the X4 live
     frame's hull-yaw row flips from rehearsal-only to live-verified (the

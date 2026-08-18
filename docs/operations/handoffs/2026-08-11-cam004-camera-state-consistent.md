@@ -10,7 +10,7 @@
 # CAM-004 — camera-state-consistent: the GameCamera pose is the true W2S camera
 
 Date: 2026-08-11. Binary: wotblitz.exe 11.19.0.10 (hash `1cda5c31…1760307d`).
-Approved offline replay launch (Oasis Palms) + `scripts/invoke-camera-state-verify.ps1`
+Approved offline replay launch (savanna) + `scripts/invoke-camera-state-verify.ps1`
 v6. Read-only; nothing promoted, resolver/read surface untouched.
 
 ## Verdict: `camera-state-consistent` (schema v6, `cam001-…-093701`)

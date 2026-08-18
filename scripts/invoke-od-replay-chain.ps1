@@ -6,7 +6,7 @@
     Runs the offline-replay launch protocol (scripts/launch-offline-replay-for-od.ps1)
     and then the capture driver (scripts/invoke-hp-diffing-session.ps1) against the
     live battle session, in ONE command. Generalized from the .data scratch chains
-    that ran the OD-RECOVERY-096 Dead Rail capture.
+    that ran the OD-RECOVERY-096 medvedkovo capture.
 
     The launch is DEADLOCK-FREE (2026-08-12 lesson): Start-Process
     -RedirectStandardOutput instead of `& launcher *> log`. PowerShell's `*>`

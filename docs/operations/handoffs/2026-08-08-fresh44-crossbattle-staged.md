@@ -50,7 +50,7 @@ battles**: 16 are re-recordings of the FRESH43 medvedkovo payload (identical sha
 battle from 2026-08-02** — the game-named save
 `20260802_1615__mrkool1138_GB08_Churchill_I`. Imported via the CLI
 (`WotBTreader.Host.Cli`) as session **`019fdff7-8dcf-7426-8547-9fb8cc3eb07b`**
-(sha `0fae5612…`, map Oasis Palms, 14 participants, 26 822 position samples).
+(sha `0fae5612…`, map savanna, 14 participants, 26 822 position samples).
 
 - **Same player (mrkool1138) and same tank (GB08_Churchill_I) as FRESH43** —
   ideal for cross-battle M3 validation; viewpoint confirmed real

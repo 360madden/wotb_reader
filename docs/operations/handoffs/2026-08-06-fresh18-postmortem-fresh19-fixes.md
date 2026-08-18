@@ -1,7 +1,7 @@
 # Handoff — FRESH18 post-mortem + FRESH19 fixes (2026-08-06)
 
 **Campaign:** FRESH18 live (od-049-autoloop -AttachSmokeOnFirstRound -StageViewpointOnly),
-Dead Rail replay `a9aed046…`, commit prior to this handoff: `8e669a2`.
+medvedkovo replay `a9aed046…`, commit prior to this handoff: `8e669a2`.
 
 ## What FRESH18 proved (the launch stack is now reliable)
 

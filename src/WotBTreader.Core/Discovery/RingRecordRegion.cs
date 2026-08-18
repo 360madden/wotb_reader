@@ -8,7 +8,7 @@ namespace WotBTreader.Core.Discovery;
 /// the world position float32 triple at <c>+0x10</c> (the published
 /// position-chain read) and the rotation triple at the record tail — roll
 /// <c>+0x28</c>, pitch <c>+0x2C</c>, yaw <c>+0x30</c> — live-verified by the
-/// OD-RECOVERY-088 L2 facing session (Oasis Palms, 48 region dumps, all
+/// OD-RECOVERY-088 L2 facing session (savanna, 48 region dumps, all
 /// three fields align to packet ground truth within 0.5 deg at the ~5 s
 /// memory-apply lag). The earlier +0x2C yaw rehearsal hit was an artifact
 /// of the rehearsal constructing its synthetic dumps with yaw placed at

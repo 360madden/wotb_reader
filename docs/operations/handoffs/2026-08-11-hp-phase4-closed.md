@@ -1,7 +1,7 @@
 # 2026-08-11 — HP Phase-4 repeat CLOSED HIT (OD-091); lead-side matcher fix shipped
 
-Binary: wotblitz.exe 11.19.0.10 (hash `1cda5c31…1760307d`). Replays: Oasis
-Palms + Dead Rail. Read-only; resolver, read surface, and
+Binary: wotblitz.exe 11.19.0.10 (hash `1cda5c31…1760307d`). Replays: savanna
+Palms + medvedkovo. Read-only; resolver, read surface, and
 `memory-offsets/11.19.0.10.json` untouched (HP/yaw publications remain
 operator-gated). Evidence: ledger row + result section `OD-RECOVERY-091`,
 `docs/operations/od-recovery-091-evidence-template.md` (filled),
@@ -10,14 +10,14 @@ at end: branch `main`, changes below uncommitted (commit on request).
 
 ## Outcome — Phase-4 two-replay HP rule CLOSED
 
-`[entity+0xB8]` (current-health signed int16) agrees on Dead Rail with the
-Oasis Palms live hit (OD-RECOVERY-087): **score 1.0, flatness 1.0, Strict
+`[entity+0xB8]` (current-health signed int16) agrees on medvedkovo with the
+savanna live hit (OD-RECOVERY-087): **score 1.0, flatness 1.0, Strict
 4/4 exact-sum matches, `twoReplayRepeatability = true`.** HP publication
 is READY (operator approval + gate run only) — same standing as yaw.
 
 ### Session facts
 
-- 4 approved live launches on Dead Rail; the first 3 were honest aborts on
+- 4 approved live launches on medvedkovo; the first 3 were honest aborts on
   the planned victim 2549399 (`EntityNotFound` at 30/60/113 s) — root cause
   STRUCTURAL: 2549399 (vandal13) is team 2 and the resolver's entity-map
   trees are the movement-filter family (player's own team only). Probes:
@@ -38,7 +38,7 @@ is READY (operator approval + gate run only) — same standing as yaw.
 At-session verdict `hit=False` — lenient top `+0xB8` score 1.0 flatness 1.0
 (4/4; the int32-at-0xB8 candidate subsumes the killing window's alive-byte
 flip), but the Strict pass nominated 0x4E (1/8 — byte-level noise at
-15.6–15.9k, no pattern). Root cause: Dead Rail's memory clock **LEADS** the
+15.6–15.9k, no pattern). Root cause: medvedkovo's memory clock **LEADS** the
 decoded clock by ~2.5 s (the OD-089 yaw finding, reproduced on the HP
 field). The destroying hit is exactly 55 (no overkill); every drop IS an
 exact subset sum — but an event whose WRITE landed in a dump pair has a
@@ -53,12 +53,12 @@ decoded time POSTDATING that pair's `To`, which the one-directional
   `--lag-tolerance > 0`; added to `CliInvocation.OptionRequiresValue`;
   JSON echoes `lagToleranceSeconds`/`lagLeadSeconds`).
 - Driver `invoke-hp-diffing-session.ps1` `-LagLeadSeconds` (default 4 — the
-  measured Dead Rail lead + margin), threaded through the verdict command.
+  measured medvedkovo lead + margin), threaded through the verdict command.
 - 3 new correlator tests: lead exact match in Strict, default-zero
   unchanged, no fabricated match for a larger event.
 - Re-verdict on the SAME immutable dumps: `--lag-tolerance 4
   --lag-lead-seconds 4` → **hit=True, top 0xB8 score 1.0 flatness 1.0,
-  Strict 0xB8 4/4**. Oasis regression on the same parameters: unchanged
+  Strict 0xB8 4/4**. savanna regression on the same parameters: unchanged
   HIT (8/8, Strict 8/8, flatness 1.0 with 9 control windows).
 
 ## Changed files (uncommitted)
@@ -81,8 +81,8 @@ decoded time POSTDATING that pair's `To`, which the one-directional
 - `dotnet build src/WotBTreader.Host.Cli -c Debug` — 0 errors.
 - `dotnet test tests/WotBTreader.Core.Tests -c Release --filter
   "FullyQualifiedName~RecordDiffingTests"` — 32/32 passed (29 + 3 new).
-- Offline re-verdicts on both replays' immutable dumps — Dead Rail HIT,
-  Oasis HIT (regression-free).
+- Offline re-verdicts on both replays' immutable dumps — medvedkovo HIT,
+  savanna HIT (regression-free).
 - PSScriptAnalyzer on the edited ps1: run in the validate.ps1 gate.
 
 ## Next steps

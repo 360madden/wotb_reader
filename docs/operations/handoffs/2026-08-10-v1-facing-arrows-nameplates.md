@@ -42,7 +42,7 @@ the projection layer. The fix threads it end-to-end and renders it.
   without); 1 view-model test extended (nameplate carries −35°).
 - Full solution: 0 warnings; all 13 test projects pass (Core 153,
   Application 44, Overlay 77, Web 133, CLI 35, …).
-- Real-data sanity: `overlay-frame` at t=150 s on Oasis Palms emits
+- Real-data sanity: `overlay-frame` at t=150 s on savanna emits
   `screenHeadingDegrees` for 12/13 tanks — ±90° for tanks crossing the
   camera's view in opposite directions, matching the map geometry.
 

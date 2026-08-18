@@ -6,7 +6,7 @@ attempt-1); G2 re-proven live (3rd confirmation); verdict label blocked by a
 verdict-contract conflict, now fixed in the poll (schema v4); gates not
 closed on a re-derived label
 Scope: one approved live session via `scripts/invoke-g1-live-poll.ps1`
-`-SkipInterceptorArm` + `-PriorResultPaths` (OD-075 + OD-076) on the Oasis
+`-SkipInterceptorArm` + `-PriorResultPaths` (OD-075 + OD-076) on the savanna
 Palms replay; resolver, read surface, and offset table untouched
 
 ## Session summary

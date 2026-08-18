@@ -76,5 +76,5 @@ ticks/sec)" and the JSON emitted `replay_time_delta_unit_variants.ticks_1e6`
   replayTime session actually capable of capturing the target field.
 
 Next: the pre-staged live sessions remain the two approval-gated options —
-replayTime (OD-044, now with a working Double discriminator) or HP (Oasis
-Palms victim 3760578 + Dead Rail 2549399).
+replayTime (OD-044, now with a working Double discriminator) or HP (savanna
+Palms victim 3760578 + medvedkovo 2549399).

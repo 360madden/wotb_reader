@@ -35,7 +35,7 @@ and reads through `$TopCandidate.Value`.
 
 ## Validation (offline, real data)
 
-Full end-to-end rehearsal against the real Oasis Palms session
+Full end-to-end rehearsal against the real savanna session
 (`019fdff7-8dcf-7426-8547-9fb8cc3eb07b`, victim `3760578`):
 
 - **Qualify** → 9-hit dump schedule from `replay-delta-extractor.py`.

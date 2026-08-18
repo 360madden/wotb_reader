@@ -20,18 +20,18 @@ against their real decoded event timelines, via
 
 | Replay | Session | Victim | Verdict | Offset | Score / Flatness | Matched |
 |---|---|---|---|---|---|---|
-| Oasis Palms | `019fdff7-…3eb07b` | 3760578 | HIT | `+0x48` | 1.0 / 1.0 | 2/2 |
-| Dead Rail | `019fb86c-…a7835b` | 2549399 | HIT | `+0x48` | 1.0 / 1.0 | 13/13 |
+| savanna | `019fdff7-…3eb07b` | 3760578 | HIT | `+0x48` | 1.0 / 1.0 | 2/2 |
+| medvedkovo | `019fb86c-…a7835b` | 2549399 | HIT | `+0x48` | 1.0 / 1.0 | 13/13 |
 
 The **Phase-4 repeatability rule is proven offline**: both independent
-replays agree on the matched offset `+0x48` (Dead Rail 13/13 matched
+replays agree on the matched offset `+0x48` (medvedkovo 13/13 matched
 windows, including merged multi-hit windows like 125.18+125.38 → 710 and
 130.58+130.78 → 755 and the Lenient overkill case 130.78+131.09 → 1022
 vs. window sums).
 
 ## Construction lesson (important for the live reader)
 
-The first Dead Rail attempt failed (score 0.818, flatness 0, 9/11 matched)
+The first medvedkovo attempt failed (score 0.818, flatness 0, 9/11 matched)
 because the snapshot builder set the "before hit" HP incorrectly for
 closely-spaced events: a dump landing exactly on an event tick (e.g. the
 after-dump of the 120.19 s hit at 120.39 s, which IS the next hit's time)

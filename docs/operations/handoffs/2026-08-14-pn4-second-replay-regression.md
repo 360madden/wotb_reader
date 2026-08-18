@@ -3,15 +3,15 @@
 **Date:** 2026-08-14 (UTC)
 **Roadmap:** Phase 6 (`docs/operations/product-roadmap.md`)
 **Feature:** armor-penetration chance badge
-**Live session:** Oasis Palms / Churchill ground-truth replay; battle session `01a00168-8dad-7e23-a1fd-e23b3e712b37`
+**Live session:** savanna / Churchill ground-truth replay; battle session `01a00168-8dad-7e23-a1fd-e23b3e712b37`
 **Related evidence:** `2026-08-14-pn4-live-aim-validation.md`
 
 ## Result
 
 The second content-distinct live smoke passed. It exercised the same managed
 launcher, verified Watch Offline gate, CAM-013 capture, terminal completion
-recognition, aim feed, and scorer against the Oasis/Churchill session after the
-Dead Rail proof. This removes the concern that the first result was specific
+recognition, aim feed, and scorer against the savanna/Churchill session after the
+medvedkovo proof. This removes the concern that the first result was specific
 to one roster or one replay.
 
 | Input | Total shots | Classified | Skipped | Band accuracy | Ricochet precision | Predicted ricochets |
@@ -41,7 +41,7 @@ which remain Unknown instead of being guessed.
 
 ## Ship-readiness conclusion
 
-Together with the Dead Rail live proof, this confirms the PN prototype's
+Together with the medvedkovo live proof, this confirms the PN prototype's
 replay/live aim seam is repeatable across two content-distinct replays. The
 remaining accuracy limits are the documented product tradeoffs: nominal
 armor-face thickness, manual stock-shell selection, and deterministic rather

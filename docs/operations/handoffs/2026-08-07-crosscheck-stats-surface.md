@@ -4,7 +4,7 @@
 bug-hunt campaign (decoder still agrees with the oracle), then extended the
 cross-check surface with per-player battle stats (damage / base XP /
 credits / assisted damage / damage blocked / victory points / mm_rating /
-tank_id) — verified exact-match on the Dead Rail replay, committed and
+tank_id) — verified exact-match on the medvedkovo replay, committed and
 pushed as `a38c32e`.
 
 ## Repository state
@@ -39,7 +39,7 @@ campaign (it is operator-run, not CI — correctly dormant).
   the sentinel as truncated uint32); C# deliberately rejects sentinel
   identities (evidence-first), so bot participants have `battleStats: null`
   and their stats are **not compared** — counted as `sentinel_stats_skipped`,
-  never a failure. On Dead Rail: 10 sentinels skipped.
+  never a failure. On medvedkovo: 10 sentinels skipped.
 - **`rust=0` vs `cs=null`:** prost serializes a wire-absent uint32 stat as
   default `0` and cannot distinguish "absent" from "genuinely zero"; C#
   keeps absent = null. Counted as an `absent_zero_note`, not a failure.
@@ -52,7 +52,7 @@ campaign (it is operator-run, not CI — correctly dormant).
 
 ## Tests and validation run (all pass)
 
-- `invoke-replay-crosscheck.ps1 -Replay <Dead Rail>` → exit 0,
+- `invoke-replay-crosscheck.ps1 -Replay <medvedkovo>` → exit 0,
   `disagreements: []`, `stats_surface: players_compared=4,
   sentinel_stats_skipped=10, absent_zero_notes=16, disagreements=0`,
   `field_failures={}`.
@@ -71,12 +71,12 @@ campaign (it is operator-run, not CI — correctly dormant).
 
 ## Assumptions and unknowns
 
-- **mm_rating not exercised live:** every player on Dead Rail has
+- **mm_rating not exercised live:** every player on medvedkovo has
   `mm_rating: null` (Rating Battles only). The float branch is unit-proven
   by inspection but not by a real non-null rating value; a Rating Battles
   replay would close this gap.
 - **Single-battle proof:** the stats surface is verified on one real battle
-  (Dead Rail). The earlier surfaces were proven on 4 real replays at
+  (medvedkovo). The earlier surfaces were proven on 4 real replays at
   integration; the stats surface should be swept across the remaining real
   `.data/launch` replays.
 - **No decoder divergence found** — the campaign's Replays commits

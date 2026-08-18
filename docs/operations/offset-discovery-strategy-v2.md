@@ -224,7 +224,7 @@ PassesDelta`, Float/Double/Int, tested) and the rolling driver now takes
 `-ValueKind Double|Float` (default Double; Float sets valueSize 4 /
 alignment 4). `scripts/python/replay-delta-extractor.py` derives the marker
 values from a decoded session via sliding-window interpolation — for the
-11.19.0 Dead Rail session (most-moving participant, 4s window): **2,779
+11.19.0 medvedkovo session (most-moving participant, 4s window): **2,779
 measurements, median 2D displacement 0.6935 m/4s, p90 3.1927, max 6.1432**
 → ready command: `-CompareMode delta -DeltaTarget 0.6935 -DeltaTolerance
 2.4992 -ValueKind Float` (or the Double replayTime variant `-DeltaTarget
@@ -234,7 +234,7 @@ speed (|Δpos|/Δt), HP (damage-delta series).
 **Pilot-order simulation (OD-045-STATIC, 2026-08-03):**
 `replay-delta-extractor.py --simulate` projects the rolling pass-rate for
 each marker (pass_rate^N survival over N rounds) BEFORE lease is spent. On
-the 11.19.0 Dead Rail session the **replayTime delta marker is deterministic
+the 11.19.0 medvedkovo session the **replayTime delta marker is deterministic
 (pass-rate 1.0 at every tolerance 0.2–4.0s → survival 1.0 even over 15
 rounds)** — the ideal filter — while the **position marker is bursty →
 HOLLOW collapse** (pass-rate 0.8996 at the recommended tolerance → survival
@@ -250,7 +250,7 @@ via `savedata` evidence files — operator step optional).**
 
 **Movement + HP markers (OD-046-STATIC, 2026-08-03):**
 `replay-delta-extractor.py --movement` segments the replay into
-moving/stationary phases — for Dead Rail **only 32.3% of windows are moving
+moving/stationary phases — for medvedkovo **only 32.3% of windows are moving
 (891/2,756 @ 0.5 m/s), moving-window 1s displacement median 0.712 m, p90
 0.992, max 1.489** — the Float position pilot should scan a movement-only
 span so the position marker is selective (fixing the OD-045 hollow-collapse

@@ -43,7 +43,7 @@ the projected frame can be eyeballed against any decoded replay, no game.
 - **Minimap inset** (`dafa6d2`): `overlay-frame --png` renders a god-view
   180x180 panel top-right — team-colored tank dots, beacon dots, camera
   crosshair — normalized to the session's map boundary (session MapId →
-  `GetMapBoundariesAsync`, zero new DI). Verified on Oasis Palms: 13 tank
+  `GetMapBoundariesAsync`, zero new DI). Verified on savanna: 13 tank
   dots + camera. Fail-open when the boundary is degenerate/absent.
 - **`overlay-strip <start> <end> <count>`** (`6afd4af`): contact sheet of
   `count` evenly spaced frames (640x360 cells, as-square grid, shared

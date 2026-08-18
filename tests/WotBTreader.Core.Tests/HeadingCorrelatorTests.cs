@@ -401,7 +401,7 @@ public sealed class HeadingCorrelatorTests
     [TestMethod]
     public void CorrelateWithLag_PerDumpLag_FindsYawWhenMemoryLeadsLabel()
     {
-        // OD-RECOVERY-089 (Dead Rail): the G2 replay-clock LABEL skew makes
+        // OD-RECOVERY-089 (medvedkovo): the G2 replay-clock LABEL skew makes
         // the memory value at label-time t equal the packet yaw at t + lead
         // (memory LEADS the label). The shared-lag path only searches
         // memory-behind-packet, so the per-dump path with a bounded memory
@@ -475,7 +475,7 @@ public sealed class HeadingCorrelatorTests
     [TestMethod]
     public void CorrelateWithLag_PerDumpLag_MatchesPerDumpVariableSkew_WhenSharedCaps()
     {
-        // OD-RECOVERY-089 (Dead Rail, refined): the label skew is PER-DUMP
+        // OD-RECOVERY-089 (medvedkovo, refined): the label skew is PER-DUMP
         // variable (0..2.5 s, OPPOSITE sign per replay). A shared lag cannot
         // align a mix of +2 s and -2 s per-dump skews (caps at 0.5); the
         // per-dump path must still hit 1.0 with the spread reported.

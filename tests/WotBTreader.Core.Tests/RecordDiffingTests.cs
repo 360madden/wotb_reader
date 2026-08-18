@@ -1009,7 +1009,7 @@ public sealed class RecordDiffingTests
     [TestMethod]
     public void Correlate_LagLeadToleranceDefaultZero_DoesNotMatchLeadEvent()
     {
-        // Dead Rail memory LEADS the decoded clock by ~2.5 s (OD-RECOVERY-089
+        // medvedkovo memory LEADS the decoded clock by ~2.5 s (OD-RECOVERY-089
         // measured it for yaw): the health write lands BEFORE the decoded
         // damage time, so the event's decoded time postdates the window that
         // contains its write. The one-directional attribution window

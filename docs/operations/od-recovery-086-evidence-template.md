@@ -8,7 +8,7 @@ BOM-less evidence writes + bounded window matching in the cross-check).**
 
 ## Session summary
 
-Run on Oasis Palms (the content-distinct 11.19.0.10 replay, battle
+Run on savanna (the content-distinct 11.19.0.10 replay, battle
 2026-08-02T21:15:07). The session needed several launches:
 
 1. Launch 1 — CAM-003 `0x325ad2c` controller phase: enumeration blocked
@@ -36,7 +36,7 @@ Run on Oasis Palms (the content-distinct 11.19.0.10 replay, battle
 
 ```text
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/launch-offline-replay-for-od.ps1 `
-  -ReplayPath <oasis.wotbreplay> -RepoRoot <root>   # anchor logged as battleSession=<guid>
+  -ReplayPath <savanna.wotbreplay> -RepoRoot <root>   # anchor logged as battleSession=<guid>
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-batch-rehearsal.ps1 `
   -SessionId <launch-matched host-store session> -DbPath "$env:LOCALAPPDATA\WotBTreader\treader.db" `
   -LiveAcquire -Times 90,150,220 -FailOnMiss
@@ -56,7 +56,7 @@ otherwise unchanged.
 |---|---|
 | Launches | 5 (1 CAM-003-blocked, 4 gated OK) |
 | Executable SHA-256 | `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d` |
-| Replay | Oasis Palms (savanna), 1,045,525 B, battle 2026-08-02T21:15:07 |
+| Replay | savanna (savanna), 1,045,525 B, battle 2026-08-02T21:15:07 |
 | X3 enumeration | 7/14 — precision 1.000, recall 0.500, 0 extra |
 | Found ids (all team 1) | 3760565, 3760566, 3760568, 3760572, 3760573, 3760577, 3760578 |
 | Missing ids (all team 2) | 3760567, 3760569, 3760570, 3760571, 3760574, 3760575, 3760576 |
@@ -100,7 +100,7 @@ Evidence lands in `.data/`:
 |---|---|
 | Target build | 11.19.0.10 |
 | Executable SHA-256 | `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d` |
-| Replay | Oasis Palms (savanna), 1,045,525 B, battle 2026-08-02T21:15:07 (content-distinct; one of the two proven 11.19.0 replays) |
+| Replay | savanna (savanna), 1,045,525 B, battle 2026-08-02T21:15:07 (content-distinct; one of the two proven 11.19.0 replays) |
 | Batch caps | ≤ 16 entities / ≤ 16 KB total per batch (`EntityRegionsReadRequest`) |
 | Region anchor / length | `ring-record`, 64 B (covers the 0x38 ring record + position float32 triple at +0x10) |
 | Tolerance | 2.0 m (position cross-check) |
@@ -118,7 +118,7 @@ sessionId: OD-RECOVERY-086
 status: Partial (X3 team-based enumeration; X2 batch surface PASS with the
   G2-window cross-check; three harness fixes shipped)
 mode: launcher (G2 anchor at the blitz-log marker) -> invoke-batch-rehearsal.ps1
-  -LiveAcquire -Times 90,150,220 on Oasis Palms; X3 enumeration via
+  -LiveAcquire -Times 90,150,220 on savanna; X3 enumeration via
   /discover/entity-roster (team-based partial), X2 batch dumps via
   /discover/entity-regions per replay time (one G2 attestation per batch),
   decoded cross-check with 2 s window matching

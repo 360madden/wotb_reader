@@ -107,7 +107,7 @@ sites.
 
 ```powershell
 # 1. Launch the offline replay (canonical pipeline, one content-distinct
-#    replay — same Churchill/Oasis Palms artifacts as the OD campaign).
+#    replay — same Churchill/savanna artifacts as the OD campaign).
 scripts/launch-offline-replay-for-od.ps1
 
 # 2. As soon as the gate is OfflineReplayVerified, run the driver:
@@ -172,7 +172,7 @@ A `replayTime` HIT requires:
    8-byte patterns on a 0.016 s/frame replayTime-mimic).
 3. Repeatability **across the 2-launch × 2-replay rule** only after the first
    HIT: the matched offset/RVA repeats on the second content-distinct replay
-   (BLK-0019 is resolved — both Churchill and Oasis Palms decode).
+   (BLK-0019 is resolved — both Churchill and savanna decode).
 4. The evidence record keeps `publicProcessAddressesOrRawBytes: false`;
    publish only the module-RVA + instruction form through the operator gate.
 

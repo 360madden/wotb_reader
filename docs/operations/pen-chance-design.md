@@ -1,6 +1,6 @@
 # PN — Armor penetration chance HUD (design)
 
-**Status: SHIP-READY PROTOTYPE — the badge renders in BOTH replay and live frames (live aim = the CAM-013 chase-camera pose); per-part armor + mesh raycast + `.sc2` parser landed. PN-4 live validation PASSED twice on 2026-08-14: CAM-013 aim overrides improved Dead Rail band accuracy from 69.565% to 72.727% and Oasis/Churchill band accuracy from 38.889% to 46.667% through the same scorer.**
+**Status: SHIP-READY PROTOTYPE — the badge renders in BOTH replay and live frames (live aim = the CAM-013 chase-camera pose); per-part armor + mesh raycast + `.sc2` parser landed. PN-4 live validation PASSED twice on 2026-08-14: CAM-013 aim overrides improved medvedkovo band accuracy from 69.565% to 72.727% and savanna/Churchill band accuracy from 38.889% to 46.667% through the same scorer.**
 **Date:** 2026-08-14
 **Roadmap:** Phase 6 (`docs/operations/product-roadmap.md`)
 
@@ -33,8 +33,8 @@ The decoded replay stream carries **shot-outcome ground truth**:
 - **type-8 / subtype-1 (damage events)** — victim, post-hit HP, attacker,
   flag byte `+0x12`. A damaging hit = a penetrating shot.
 - **type-32 (impact mirror)** — fires at the same instants as type-8 for the
-  same victim; "every miss is an amt=0/no-damage event" (81/85 Oasis,
-  107/120 Dead Rail). Non-damage hits = bounces/absorbs.
+  same victim; "every miss is an amt=0/no-damage event" (81/85 savanna,
+  107/120 medvedkovo). Non-damage hits = bounces/absorbs.
 
 So the pen model is not *believed* correct — it is **scored against the
 decoded pen-vs-bounce outcomes** of every viewer shot, the same evidence-first
@@ -244,23 +244,23 @@ two-caliber, pen-at-range).
    country-id table (57bf929); the store's sessions were simply decoded
    before that fix. Re-decoding the two ground-truth source artifacts
    (`reprocess`) yields FULLY enriched `nation:tank` ids for every nation
-   (Oasis Palms 14/14; Dead Rail 13/14 — the one holdout is premium
+   (savanna 14/14; medvedkovo 13/14 — the one holdout is premium
    `17425`, absent from the base `list.xml`, a known DLC-vehicle limit).
    The scorer's raw-descriptor lane is now a legacy fallback for old
    sessions, not a requirement for new decodes. **Two-replay scorer result:**
-   Oasis Palms `019ffdcd` 67 scored / 46 Unknown / **18 classified → 38.9%
-   band accuracy**, ricochetPrecision 0/6; Dead Rail (re-decode
+   savanna `019ffdcd` 67 scored / 46 Unknown / **18 classified → 38.9%
+   band accuracy**, ricochetPrecision 0/6; medvedkovo (re-decode
    `01a00028-ddb0…`) 78 scored / 8 skipped / **23 classified → 69.6% band
    accuracy**, ricochetPrecision 4/6. The spread is the documented offline
-   limit in action: Oasis Palms is a single Churchill-vs-IS-7 match-up with
-   steep glacis hits the center-line proxy misreads, while Dead Rail's
+   limit in action: savanna is a single Churchill-vs-IS-7 match-up with
+   steep glacis hits the center-line proxy misreads, while medvedkovo's
    varied roster (Vz. 55, BDR G1 B, M5A1 Stuart, …) lands more shots in
    the model's front-arc regime. The scoring PIPELINE now runs
    repeatably across two content-distinct replays; model ACCURACY still
    varies with aim-source fidelity, so the live CAM-013 aim remains the
    decisive PN-4 step.
    **THIRD-REPLAY result + aim-override seam + closures (2026-08-14):**
-   (a) the Copperfield artifact (`019fc447`) was re-decoded (`01a0007f`):
+   (a) the karieri artifact (`019fc447`) was re-decoded (`01a0007f`):
    100 `ShotImpact` events, 13/14 participants enriched (the same premium
    `17425` holdout), and the scorer reports **71.9% band accuracy** (32
    classified / 23 agree, ricochetPrecision 0/3) — three content-distinct
@@ -272,7 +272,7 @@ two-caliber, pen-at-range).
    (the CAM-013 chase-camera aim captured live), every other shot keeps
    the center-line proxy — so the live PN-4 session only has to supply
    the captured aim rays, nothing else. 2 new tests. (c) the 87.5°
-   Oasis / 72.5° Copperfield predicted-ricochet outliers are CONFIRMED
+   savanna / 72.5° karieri predicted-ricochet outliers are CONFIRMED
    center-line artifacts, not mesh-face misclassification: the mesh
    raycast hits those faces correctly (the side-hit Unknowns prove it),
    the center-line incidence is simply not the true shot angle — the
@@ -292,7 +292,7 @@ two-caliber, pen-at-range).
    poll `/discover/camera-pose` (eye = (X,Z,Y) yz-swap, forward = −row1,
    the same `BuildCamera` path the live badge uses), key each by the
    G2-anchored live-frame clock, and POST them after the battle. **Live PN-4
-   PASS (2026-08-14, Dead Rail):** 150 G2-proven aim samples spanning
+   PASS (2026-08-14, medvedkovo):** 150 G2-proven aim samples spanning
    9.4–278.9 s; 78 total / 8 skipped; center-line baseline 69.565% band
    accuracy and 66.667% ricochet precision (4/6); CAM-013 overrides 72.727%
    and 80.000% (4/5). Two classified rows changed, including the former
@@ -302,7 +302,7 @@ two-caliber, pen-at-range).
    minimal implementation and its decisive validation proof are complete;
    remaining work is optional regression/discovery, not a ship blocker.
    **SECOND-REPLAY REGRESSION PASS (2026-08-14):** the same hardened live
-   capture/feed path was re-run on the Oasis/Churchill ground-truth session
+   capture/feed path was re-run on the savanna/Churchill ground-truth session
    (`01a00168-8dad-7e23-a1fd-e23b3e712b37`): 161 G2-proven aim samples over
    7.2–287.4 s, 67 shots / 2 skipped; center-line 38.889% band accuracy
    with six predicted ricochets, CAM-013 aim 46.667% with zero predicted
@@ -369,7 +369,7 @@ armor is a better approximation than hull-only, never exact offline.
 | **PN-1** | Static-data extraction: tank armor models + hull geometry + gun/shell tables from the install's data files (read-only, evidence-first, CAM-009 style); a static store + verify script. **PROBED 2026-08-13 — the data is present and readable** (vehicle XML armor groups, shells.xml caliber/kind/normalization/ricochet, guns.xml piercingPower). Collision geometry **PARSED 2026-08-13** (`CollisionMeshParser` + `CollisionRaycast`, verified on the real Churchill mesh) — the per-plate NORMAL is now available. **Per-plate THICKNESS mapping is RESOLVED 2026-08-13: NOT FEASIBLE** — the armor XML groups carry thickness but no face geometry; the collision `.scg` ships only 2–11 PHYSICS parts (hull/turret/gun, not armor plates); and the per-plate `Hull.model`/`Turret.model` hit-test models are not shipped loose in the install (see Risks + Open question 1). The badge stays honest-nominal (front via `primaryArmor`, side/rear fail-closed Unknown) | Offline |
 | **PN-2** | Pen math module: raycast, incidence, effective armor, ricochet/overmatch, pen-at-range, banded verdict — pure, unit-tested, synthetic fixtures. **DONE 2026-08-13** (`Core/Overlay/ArmorPenetration.cs`, 18 tests). Both probe findings are MODELED and wired: `normalizationAngle` → `ShellSpec.NormalizationDegrees` (applied AFTER the raw-angle ricochet check, amplified by the two-caliber rule) and `piercingPower`'s 2-point range pair → `ShellSpec.FromPiercingPower` (pen0 + linear drop over `maxDistance`). **Mechanics corrected 2026-08-13** against the official support article: ricochet on the RAW angle (normalization never prevents a bounce) and penetration RNG is ±5% (not ±25%) | Offline |
 | **PN-3** | Replay-mode HUD: aim = camera pose (verified); pen badge (colored + numeric) on the aimed enemy's nameplate. **DONE 2026-08-13** — `PenetrationBadge`/`StruckFace`/`PenetrationAim.ResolveBadge` (Core), `IOverlayPenetrationData` + `PenetrationContext` (Application), `PenetrationDataService` (GameIntegration, reads the install armor/shell/gun + collision-mesh data), badge threaded through the frame → projection → response, and rendered by the WPF HUD (green/yellow/red + numeric, struck face FRONT/SIDE/REAR shown, anchored to the aimed tank's nameplate with a reticle fallback). **Per-part armor landed 2026-08-13:** `CollisionMeshParser.ParseAll` + `SceneFileParser` read all three `.scg` groups (hull/turret/gun, identity transforms → one shared space) and `EvaluateAgainstMesh` raycasts them as a union, scoring turret/gun hits against the turret's frontal `primaryArmor`. **Shell selector landed 2026-08-13:** the badge offers a MANUAL shell choice — `PenetrationContext` carries every shot of the viewer's stock gun (`ShellOption` name+kind+spec), the frame scores with the `?shell=`-selected shell, the response surfaces `PenShells`/`PenShell`, and the overlay hotkey <c>Q</c> or the sidebar ComboBox selects AP/APCR/HE/HEAT (short label on the badge). **Shell kind threaded 2026-08-13:** `ShellSpec.Kind` excludes HEAT from the 3-caliber overmatch rule. **Enemy-only filter landed 2026-08-13:** the badge scores only ENEMY tanks — both paths (replay `ReplayFrameSource`, live `LiveFrameProjector`) exclude the own tank AND same-team allies, scoping the aim to the viewpoint team's opponents; a tank with an unknown team stays eligible (fail-open toward showing, never hiding a real enemy behind a decode gap). **Alive-only filter landed 2026-08-13:** a destroyed tank is a wreck and never a penetration target — the replay path drops non-alive tanks and the live path drops a definitively-dead tank (alive byte 0, unknown/true stays eligible). Honest limits: nominal thickness per part (hull front/side/rear + turret front; side/rear of the turret/gun = 0 → Unknown, never guessed), the loaded shell is not decodable (the selector covers the stock gun's ammo, not the in-battle selection), thickness still nominal (the mesh surface NORMAL drives the incidence angle — the true plate normal; per-face thickness mapping is the remaining gap) | Offline, no launch |
-| **PN-4** | **DONE 2026-08-14** — offline scorer plus repeat live CAM-013 aim proof across Dead Rail and Oasis/Churchill; 150 + 161 G2-proven aim samples, band accuracy improved 69.565% -> 72.727% and 38.889% -> 46.667%; per-shot deltas recorded in the PN-4 handoffs | Offline + 2 approved launches |
+| **PN-4** | **DONE 2026-08-14** — offline scorer plus repeat live CAM-013 aim proof across medvedkovo and savanna/Churchill; 150 + 161 G2-proven aim samples, band accuracy improved 69.565% -> 72.727% and 38.889% -> 46.667%; per-shot deltas recorded in the PN-4 handoffs | Offline + 2 approved launches |
 | **PN-5** | **DONE for the ship-ready prototype 2026-08-14** — live badge and scorer consume the CAM-013 chase-camera aim; T1 turret/gun traversal remains optional exact lock-on research | Live proof complete; T1 optional |
 
 ## Dependencies

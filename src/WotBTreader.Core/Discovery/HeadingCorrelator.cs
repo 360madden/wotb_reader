@@ -224,9 +224,9 @@ public static class HeadingCorrelator
     /// (dump time - lag).
     /// (2) OD-RECOVERY-089 — the G2 replay-clock LABEL itself carries a
     /// per-session, per-dump-varying skew that is OPPOSITE in sign between
-    /// replays (Oasis: memory LAGS the label by ~3-5 s; Dead Rail: memory
+    /// replays (savanna: memory LAGS the label by ~3-5 s; medvedkovo: memory
     /// LEADS the label by ~2-5 s). A one-directional shared lag therefore
-    /// caps below 1.0 on Dead Rail even though +0x30 is byte-exact
+    /// caps below 1.0 on medvedkovo even though +0x30 is byte-exact
     /// (56/56). When <paramref name="perDumpLag"/> is set, each dump
     /// independently picks its best lag in
     /// [-<paramref name="maxMemoryLeadSeconds"/>, +<paramref name="maxLagSeconds"/>]

@@ -25,7 +25,7 @@ fresh session id), so the reload was pure waste.
 - Unit tests (`ProjectionCacheTests`): miss→store→hit, same-session refresh,
   over-capacity eviction (2 cap and 4-cap orderings). 57/57 Application tests.
 - Full suite: 12 test projects, ~860 tests, 0 warnings, green.
-- Real-data benchmark (web host on the `.data` DB, Oasis Palms
+- Real-data benchmark (web host on the `.data` DB, savanna
   `019fee20-9315-70b7-a92c-379f41f69532`): cold first frame 367 ms (loads the
   cache), warm frames **8–34 ms (avg ~10 ms)** — a ~25× improvement. Content
   intact: 14 tanks, 8 kills at t=250, death pip at t=190, world coords +
@@ -35,7 +35,7 @@ fresh session id), so the reload was pure waste.
 
 ## Playback-speed rehearsal (2026-08-10, appended)
 
-Full-battle walk of the Oasis Palms session against the live endpoint at the
+Full-battle walk of the savanna session against the live endpoint at the
 HUD's real 20 fps tick (t step 0.05 s, 252 s battle → 5040 frames):
 
 - **5040/5040 frames resolved, 0 failures.**

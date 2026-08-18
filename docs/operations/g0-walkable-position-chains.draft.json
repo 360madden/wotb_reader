@@ -470,7 +470,7 @@
    {
     "kind": "recordOffset",
     "value": 44,
-    "note": "float32 hull pitch at ring-record +0x2c (2026-08-12 rotation-triple reconciliation, Phase-4 two-replay: Oasis 48/48 + Dead Rail 56/56, score 1.0, flatness 1.0)"
+    "note": "float32 hull pitch at ring-record +0x2c (2026-08-12 rotation-triple reconciliation, Phase-4 two-replay: savanna 48/48 + medvedkovo 56/56, score 1.0, flatness 1.0)"
    }
   ],
   "playerRoll": [
@@ -549,7 +549,7 @@
    {
     "kind": "recordOffset",
     "value": 40,
-    "note": "float32 hull roll at ring-record +0x28 (2026-08-12 rotation-triple reconciliation, Phase-4 two-replay: Oasis 48/48 + Dead Rail 56/56, score 1.0, flatness 1.0)"
+    "note": "float32 hull roll at ring-record +0x28 (2026-08-12 rotation-triple reconciliation, Phase-4 two-replay: savanna 48/48 + medvedkovo 56/56, score 1.0, flatness 1.0)"
    }
   ],
   "damageDealt": [

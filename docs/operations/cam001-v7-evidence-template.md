@@ -113,7 +113,7 @@ screen center under the overlay's analytic pinhole model, and the existing
 ## Run (one command + the offline validator)
 
 ```text
-# Launch the Oasis Palms replay to OK OfflineReplayVerified (launcher,
+# Launch the savanna replay to OK OfflineReplayVerified (launcher,
 # battleSession= anchored), then mid-replay. Add -CaptureWindow to also
 # capture the shrunk game window in-memory each round and persist ONLY
 # derived sky/terrain scalars (never raw pixels) — the render-mode hint
@@ -183,7 +183,7 @@ failures. This additive witness does not change the established CAM verdict.
    ~0), **non-chase** (look-at large AND memory pitch far from
    pitch-to-tank; scene-independent, fires before the sky test), **high**
    (sky band visible), **unknown**. The sky-luminance branch alone is not
-   scene-robust (Oasis dusk skies never pass the >0.5 row-luminance sky
+   scene-robust (savanna dusk skies never pass the >0.5 row-luminance sky
    test — skyFraction stays 0–0.11), so the pitch-gap branch is the
    primary non-chase signal.
 
@@ -241,7 +241,7 @@ Remaining question: the orientation convention and the true render eye
 |---|---|
 | Target build | 11.19.0.10 |
 | Executable SHA-256 | `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d` |
-| Replay | Oasis Palms (the CAM-001 verified replay) |
+| Replay | savanna (the CAM-001 verified replay) |
 | Camera member path | ReplayCameraController `base+0x326dd0c` / GameCamera `base+0x32dafa0` (identity gates pass) |
 | Live pose | GameCamera position `+0x38`, yaw cos/sin `+0x50/+0x54`, pitch `+0x58`, basis `+0x80..0xB0` stride-4 (CAM-001 v6 walk; basis layout verified 2026-08-11) |
 | Prior verdict | CAM-001 `camera-state-consistent` (2026-08-11, CAM-004: GameCamera posA `+0x38` is the true world camera — 23.57 m third-person offset, 7/8 rounds) |
@@ -262,7 +262,7 @@ Remaining question: the orientation convention and the true render eye
 - CAM-001 v7 closes the camera track's W2S acceptance gate; the overlay
   world-space features (nameplates, beacons, POI markers) consume the
   proven pose via the already-served frame endpoint.
-- Next live gates in order: OD-RECOVERY-090 (L3 damage-dealt, Oasis
-  attacker 3760577) + its Dead Rail Phase-4 repeat; yaw publication is
-  READY (operator approval); the Phase-4 two-replay HP rule (Dead Rail
+- Next live gates in order: OD-RECOVERY-090 (L3 damage-dealt, savanna
+  attacker 3760577) + its medvedkovo Phase-4 repeat; yaw publication is
+  READY (operator approval); the Phase-4 two-replay HP rule (medvedkovo
   victim 2549399) gates HP publication; item 7 (hardware atomicity) LAST.

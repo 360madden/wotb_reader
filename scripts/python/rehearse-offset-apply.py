@@ -59,12 +59,12 @@ G2_FV = {
         {
             "provenanceKind": "DynamicScan",
             "sourceTool": "GameHarness loopback hp-diff live correlator (increment + bounded lag window)",
-            "notes": "OD-RECOVERY-095 (2026-08-12, Oasis Palms, session 019ff5f1, 20 region dumps): avatar-stats quad dword0 increments 1:1 with the decoded own-attacker events - re-verdict with the bounded lag path (--lag-tolerance): offset 0x0, score 1.0, matched 5/5 damage windows with EXACT sums (152/144/151/170/1), flatness 1.0, Strict 5/5 -> HIT; d0 final 752 = decoded damageDealt 752; the at-session lag-0 honest-negative was the OD-087 memory-apply lag class (+2.3-4.1 s).",
+            "notes": "OD-RECOVERY-095 (2026-08-12, savanna, session 019ff5f1, 20 region dumps): avatar-stats quad dword0 increments 1:1 with the decoded own-attacker events - re-verdict with the bounded lag path (--lag-tolerance): offset 0x0, score 1.0, matched 5/5 damage windows with EXACT sums (152/144/151/170/1), flatness 1.0, Strict 5/5 -> HIT; d0 final 752 = decoded damageDealt 752; the at-session lag-0 honest-negative was the OD-087 memory-apply lag class (+2.3-4.1 s).",
         },
         {
             "provenanceKind": "DynamicScan",
             "sourceTool": "GameHarness loopback hp-diff live correlator (increment + bounded lag window)",
-            "notes": "OD-RECOVERY-096 (2026-08-12, Dead Rail, session 019ff6f0, 38 dumps, clock labels 158.0-276.9 s): offset 0x0, score 1.0, matched 9/9 windows with EXACT sums (146/162/145/162/140/178/181/171/168), flatness 1.0, Strict >= 2 -> HIT; d0 final 1598 = decoded damageDealt 1598 (all 10 decoded own-attacker events map 1:1; the first 145 at 154.5 s predates the earliest dump label); offsets agree with Oasis (0x0) -> twoReplayRepeatability = true.",
+            "notes": "OD-RECOVERY-096 (2026-08-12, medvedkovo, session 019ff6f0, 38 dumps, clock labels 158.0-276.9 s): offset 0x0, score 1.0, matched 9/9 windows with EXACT sums (146/162/145/162/140/178/181/171/168), flatness 1.0, Strict >= 2 -> HIT; d0 final 1598 = decoded damageDealt 1598 (all 10 decoded own-attacker events map 1:1; the first 145 at 154.5 s predates the earliest dump label); offsets agree with savanna (0x0) -> twoReplayRepeatability = true.",
         },
     ],
     "independentProcessLaunches": 2,

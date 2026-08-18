@@ -15,14 +15,14 @@
    `IgnoresAimOverrideForNonViewpointShot`); endpoint keeps passing `null`
    (unchanged surface).
 
-2. **Third-replay validation** — the Copperfield artifact (`019fc447`) was
+2. **Third-replay validation** — the karieri artifact (`019fc447`) was
    re-decoded (`01a0007f`, 100 `ShotImpact`, 13/14 enriched) and scored:
    **71.9% band accuracy** (32 classified / 23 agree, ricochetPrecision 0/3).
    Three content-distinct replays now span 38.9% → 69.6% → 71.9%, all
    pointing at the same conclusion: the center-line aim is the confound,
    not the pen model.
 
-3. **Outlier verdict (#7)** — the 87.5° (Oasis) / 72.5° (Copperfield)
+3. **Outlier verdict (#7)** — the 87.5° (savanna) / 72.5° (karieri)
    predicted-ricochet hits are CONFIRMED center-line artifacts, not mesh-face
    misclassification: the mesh raycast hits the right faces (the side-hit
    Unknowns prove the geometry), the center-line incidence is simply not the

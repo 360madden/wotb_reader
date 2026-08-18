@@ -14,7 +14,7 @@ field zeroes at the death instant. Verified on both 11.19 replays:
   survivors** have any (perfect classifier, no false negatives/positives).
 - The position stream **freezes at the marker** — the death instant. The
   wreck then re-broadcasts the frozen position for tens of seconds and can
-  re-carry the marker byte pattern (Dead Rail 2549399 showed 3 markers),
+  re-carry the marker byte pattern (medvedkovo 2549399 showed 3 markers),
   so **only the first marker per entity is a death**.
 - Ruled out en route: type 4's entity markers (fire mid-battle for entities
   that keep streaming), amt=0 direct-damage events (last *damage* events,
@@ -43,13 +43,13 @@ field zeroes at the death instant. Verified on both 11.19 replays:
 
 - Full suite green (all 13 test projects, ~890 tests, 0 warnings).
 - Two-replay rehearsal on real data (`--data-root .data` imports):
-  - Oasis Palms: 8 Destroyed events — 3760569@95.22, 3760574@161.81,
+  - savanna: 8 Destroyed events — 3760569@95.22, 3760574@161.81,
     3760573@172.12, 3760571@179.83, 3760568@186.52, 3760567@186.82,
     3760570@207.23, 3760576@245.10 — exactly the death instants.
-  - Dead Rail: 7 Destroyed events — 2549395@109.09, 2549399@156.49,
+  - medvedkovo: 7 Destroyed events — 2549395@109.09, 2549399@156.49,
     2549396@164.49, 2549398@175.99, 2549404@192.28, 2549400@215.48,
     2549407@232.08 (2549399 deduped from 3 markers to 1).
-- CLI `overlay-frame --json` on the re-decoded Oasis session:
+- CLI `overlay-frame --json` on the re-decoded savanna session:
   - `alive=false` lands at the right frames (3760569 dead by t=100,
     3760574 by t=165, six dead by t=190; 3760570 alive until 207.23).
   - Death pip renders: `Destroyed` pip for 3760567 at t=187–188 with

@@ -1,7 +1,7 @@
-# Penetration v0.3 — Dead Rail shell-swap live attempt (G1 item 2)
+# Penetration v0.3 — medvedkovo shell-swap live attempt (G1 item 2)
 
 **Date:** 2026-08-18 (UTC)
-**Result:** honest negative — no shell-swap transition in the Dead Rail replay.
+**Result:** honest negative — no shell-swap transition in the medvedkovo replay.
 **Build:** hash-bound `1cda5c31…` (exact-build, re-verified by the launcher probe).
 
 ## What ran
@@ -16,7 +16,7 @@ Battle session: `01a01610-b9f0-7f3e-892a-35f2a7bddf32`.
 
 ## Live observations
 
-- **Map:** `medvedkovo` (Dead Rail's internal arena id), battle started
+- **Map:** `medvedkovo` (the `deadrail-*.wotbreplay` filename is a mislabel — the real Dead Rail map is `desert_train`), battle started
   `18:11:21Z`, game mode regular. Player vehicle `2549401`.
 - **Shell-state read resolved stably** across the whole battle window
   (`18:11:21Z → 18:15:54Z`):
@@ -24,7 +24,7 @@ Battle session: `01a01610-b9f0-7f3e-892a-35f2a7bddf32`.
   - `identity0=5` = a status/tier discriminator, `identity1=71` = the component
     id (per the corrected decoding in handoff
     `2026-08-18-shell-identity-holder-writer.md`) — the same fingerprint the
-    Churchill I / Oasis session returned, consistent with the same vehicle/loadout.
+    Churchill I / savanna session returned, consistent with the same vehicle/loadout.
   - **0 transitions** (`samples=147, distinct_states=1, transitions=0`):
     the index and identity fingerprint never changed, so no shell swap occurred.
 - **Playback did not end cleanly.** The player's vehicle left the world at
@@ -37,8 +37,8 @@ Battle session: `01a01610-b9f0-7f3e-892a-35f2a7bddf32`.
 
 ## Conclusion
 
-**Dead Rail contains no shell-swap transition.** Both available replays —
-Churchill I / Oasis (2026-08-18, 87 samples / 0 transitions) and Dead Rail
+**The medvedkovo replay contains no shell-swap transition.** Both available replays —
+Churchill I / savanna (2026-08-18, 87 samples / 0 transitions) and medvedkovo
 (this run, 147 samples / 0 transitions) — are swap-free. The G1 item 2
 promotion gate is therefore **not closed**: it requires a controlled
 shell-swap with a known transition order, which neither replay provides and

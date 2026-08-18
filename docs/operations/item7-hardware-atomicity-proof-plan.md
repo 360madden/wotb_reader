@@ -217,7 +217,7 @@ Extend the resolver's proven discipline to the batch surface:
    true; `RegionReadAttempts`, `RegionTearObserved`, and
    `EntityBaseTearObserved` expose the bounded retry witness. Exhaustion stays
    fail-closed and false; the single-read surface remains false.
-3. Bounded live sessions (approved launches, Oasis + Dead Rail, Phase-4
+3. Bounded live sessions (approved launches, savanna + medvedkovo, Phase-4
    standard): N read passes over the batch surface; record the read-pass
    window per pass (`EntityRegionsReadMeasurement`); acceptance = 100%
    byte-identical double-reads, zero torn reads, zero index/chain instability
@@ -225,8 +225,8 @@ Extend the resolver's proven discipline to the batch surface:
    persists a validated timestamp-only measurement for every dump, including
    `readPassMilliseconds` and `clockSnapshotLagMilliseconds`; missing or
    temporally inconsistent measurements abort before evidence is written.
-   **TWO-REPLAY TIMING CAPTURED 2026-08-14:** Dead Rail persisted three
-   7-entity passes (8.796 / 7.889 / 13.372 ms; 21/21 resolved) and Oasis
+   **TWO-REPLAY TIMING CAPTURED 2026-08-14:** medvedkovo persisted three
+   7-entity passes (8.796 / 7.889 / 13.372 ms; 21/21 resolved) and savanna
    persisted three full-roster requests (24.054 / 21.448 / 23.808 ms;
    41/42 resolved, one `EntityNotFound`), every pass clock-attested and zero
    unstable-snapshot exhaustion. These captures PRECEDED step 2 by minutes,
@@ -248,7 +248,7 @@ Extend the resolver's proven discipline to the batch surface:
    pose coordinates). Acceptance is every scheduled probe `Resolved`, all
    identity gates true, every `ConsistentDoubleRead` true, and zero
    `pose-double-read` failures. **TWO-REPLAY LIVE MEASUREMENT COMPLETE
-   2026-08-14:** Dead Rail and Oasis each delivered 6/6 resolved probes,
+   2026-08-14:** medvedkovo and savanna each delivered 6/6 resolved probes,
    module-rooted with all three identity gates true, 6/6 byte-identical, and
    zero `pose-double-read` failures. Branch B camera step 4 is closed.
 

@@ -2,8 +2,8 @@
 // packet (28 bytes = 7 float32, per-frame ~60 Hz) via its bit-exact
 // trailing constant.
 //
-// The type-39 payload observed on 11.19.0 replays (2026-08-10, both Oasis
-// Palms and Dead Rail) is 7 float32. The last two floats are often
+// The type-39 payload observed on 11.19.0 replays (2026-08-10, both savanna
+// Palms and medvedkovo) is 7 float32. The last two floats are often
 // (0.0, -0.0011081547) — the -0.0011081547 value is bit-exact stable as
 // 0xBA913F80 across many packets, which makes it a strong static anchor.
 // A function that (a) references this constant, (b) writes 7 consecutive

@@ -118,7 +118,7 @@ both decoders:
 
 The C# inspector emits these as `participant.battleStats` (camelCase) plus
 `vehicleCompactDescriptor`; the Rust oracle emits them as
-`player_results[].info`. Verified exact-match on the Dead Rail replay:
+`player_results[].info`. Verified exact-match on the medvedkovo replay:
 4 real accounts compared, 10 bot sentinels skipped, 0 disagreements
 (e.g. author: damage 1598, base_xp 759, credits 13220, tank_id 2897 on
 both sides).

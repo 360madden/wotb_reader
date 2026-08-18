@@ -82,12 +82,12 @@ Acceptance: the index flips exactly when the transition flips, the resolved
 mismatches the known shell, or the control window moves — no promotion.
 
 **Status (2026-08-18):** the `shell-state` read surface is live-validated on
-both available replays (Churchill I / Oasis, Dead Rail) — `index=0`,
-`identity0=5` = `kArmorPiercingCr` (APCR), `identity1=71`, two-pass stable,
+both available replays (Churchill I / savanna, medvedkovo) — `index=0`,
+`identity0=5` (status/tier discriminator), `identity1=71` (component id), two-pass stable,
 **0 transitions in both**. Neither replay swaps shells, and a passive replay
 cannot supply a known transition order, so this gate is **not closed** — it
 needs a freshly recorded controlled swap (manual gameplay), which is an
-owner-run scenario. See `2026-08-18-deadrail-shell-swap-negative.md`.
+owner-run scenario. See `2026-08-18-medvedkovo-shell-swap-negative.md`.
 
 ### G1.5 — turret/gun transition correlation (shot ray)
 

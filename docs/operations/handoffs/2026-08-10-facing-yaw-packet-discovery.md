@@ -12,8 +12,8 @@ payload +36/+40/+44 (radians)** — the earlier replay-format claim that the
 triple was a physics velocity with "no orientation field in any packet" was
 WRONG. Decisive evidence (both 11.19.0 replays, viewpoint entity):
 
-- **Yaw = facing, 1:1 in radians**: 144/157 (Oasis Palms) and 109/122
-  (Dead Rail) moving windows within 15° of the position-derived heading;
+- **Yaw = facing, 1:1 in radians**: 144/157 (savanna) and 109/122
+  (medvedkovo) moving windows within 15° of the position-derived heading;
   every "miss" is a reversal (motion heading exactly 180° from facing — the
   tank backing up), where a velocity would flip but yaw stays.
 - **Constant when stationary**: `+0.1270` unchanged across the full 10 s
@@ -43,8 +43,8 @@ WRONG. Decisive evidence (both 11.19.0 replays, viewpoint entity):
 ## Validation
 
 - Both artifacts re-imported with the rebuilt CLI: migration 5 applied,
-  yaw/pitch/roll persisted — Oasis Palms 2812/2812 viewpoint samples,
-  Dead Rail 2784/2784.
+  yaw/pitch/roll persisted — savanna 2812/2812 viewpoint samples,
+  medvedkovo 2784/2784.
 - DB-level re-validation of the persisted yaw reproduces the probe signature
   (144/157 and 109/122 within 15°, reversals exactly 180°).
 - Suites green: Replays 20+1 skipped (the env-gated packet-tail probe),

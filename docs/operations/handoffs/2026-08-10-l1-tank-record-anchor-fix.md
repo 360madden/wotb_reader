@@ -1,4 +1,4 @@
-# Handoff — 2026-08-10: L1 region anchor corrected (tank record) + Dead Rail repeatability rehearsals
+# Handoff — 2026-08-10: L1 region anchor corrected (tank record) + medvedkovo repeatability rehearsals
 
 **Branch:** `main` — gate green after, tree clean.
 
@@ -46,7 +46,7 @@ and produced a confusing no-hit.
 - Web: 132/132 (2 new — anchor forwarding; invalid anchor fails closed).
 - Full solution builds 0 warnings / 0 errors.
 
-## Dead Rail repeatability rehearsals (offline)
+## medvedkovo repeatability rehearsals (offline)
 
 The second independent replay is now fully rehearsed for BOTH tracks with the
 physically-correct dump shape (real sub-centisecond event ticks, dumps at the
@@ -54,10 +54,10 @@ schedule's ±0.2 s offsets):
 
 | Track | Replay | Session | Target | Verdict | Offset | Score/Flatness | Matched |
 |---|---|---|---|---|---|---|---|
-| HP (decrement) | Dead Rail | `019fecb0-…a7835b` | 2549399 | HIT | `+0x48` | 1.0 / 1.0 | 14/14 |
-| Damage-dealt (increment) | Dead Rail | `019fecb0-…a7835b` | 2549401 | HIT | `+0x48` | 1.0 / 1.0 | 5/5 |
+| HP (decrement) | medvedkovo | `019fecb0-…a7835b` | 2549399 | HIT | `+0x48` | 1.0 / 1.0 | 14/14 |
+| Damage-dealt (increment) | medvedkovo | `019fecb0-…a7835b` | 2549401 | HIT | `+0x48` | 1.0 / 1.0 | 5/5 |
 
-Combined with the earlier Oasis rehearsals, both replays agree on `+0x48` for
+Combined with the earlier savanna rehearsals, both replays agree on `+0x48` for
 both directions — the Phase-4 two-replay repeatability rule holds at the
 synthetic level for every live-planned track. (Note: this confirms the
 correlator machinery on real event timelines; whether the in-memory HP /

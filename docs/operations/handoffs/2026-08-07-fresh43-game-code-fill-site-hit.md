@@ -262,7 +262,7 @@ returns is BattleResources.
 ### What was verified
 
 Cross-checked the FRESH43 capture against the decoded DB ground truth for the
-same replay (session `019fb86c-…`, sha `59c3b92e…`, map Dead Rail, player
+same replay (session `019fb86c-…`, sha `59c3b92e…`, map medvedkovo, player
 `mrkool1138` / GB08_Churchill_I, 2784 position samples):
 
 | Source | Values |

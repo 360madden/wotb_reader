@@ -60,7 +60,7 @@ loaded-shell tracking without the descriptor link.
 
 ## Live validation (2026-08-18, exact-build managed offline replay)
 
-One managed offline replay (Churchill I / Oasis Palms, `1cda5c31…`, battle
+One managed offline replay (Churchill I / savanna, `1cda5c31…`, battle
 session `01a015b9-189f-7f42-a5d7-d3240ae64a99`) resolved the anchor live:
 
 - `status=Resolved`, `index=0`, `identity0=5`, `identity1=71`,

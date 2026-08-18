@@ -19,8 +19,8 @@ non-tracking decoy at +0x20):
 
 | Replay | Target | Verdict | Offset | Score / Flatness | Matched |
 |---|---|---|---|---|---|
-| Oasis Palms | 3760577 | HIT | `+0x48` | 1.0 / 1.0 | 5/5 |
-| Dead Rail | 2549401 | HIT | `+0x48` | 1.0 / 1.0 | 5/5 |
+| savanna | 3760577 | HIT | `+0x48` | 1.0 / 1.0 | 5/5 |
+| medvedkovo | 2549401 | HIT | `+0x48` | 1.0 / 1.0 | 5/5 |
 
 Exit paths for the damage-dealt track, all confirmed:
 
@@ -39,6 +39,6 @@ Exit paths for the damage-dealt track, all confirmed:
 Same gate as L1/L2: when the operator approves a live window, L1 (HP,
 tank-record anchor), L2 (yaw, ring-record anchor), and L3 (damage-dealt,
 tank-record anchor) all run through the same region seam. One approved
-session on the Oasis replay can cover L1+L2+L3 in a single web-host run
+session on the savanna replay can cover L1+L2+L3 in a single web-host run
 (the L1 and L3 targets are different entities — 3760578 vs 3760577 — so
 the drivers run separately but against the same verified replay).

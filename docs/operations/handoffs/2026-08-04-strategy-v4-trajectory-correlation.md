@@ -53,7 +53,7 @@ scripts/od-048-monitor-correlate-session.ps1    # stage -> monitor -> correlate
 #   .data\od-048-<timestamp>.json  -> strongSurvivors (score >= 0.7)
 ```
 
-Dead Rail session `019fb86c-c8e7-7004-9df6-a574f5a7835b` (duration_ticks
+medvedkovo session `019fb86c-c8e7-7004-9df6-a574f5a7835b` (duration_ticks
 2,713,761,600 ≈ 271s) is the ground-truth source; the driver auto-picks the
 most recent decoded session when `-SessionId` is empty.
 
@@ -77,7 +77,7 @@ most recent decoded session when `-SessionId` is empty.
 - The staging scan uses `FloatTolerance` 8 — deliberately loose. Absolute
   coordinate bands are rare in memory, so the staged set stays small; a
   tighter tolerance would reintroduce the timing-precision problem.
-- `-MaxReadRounds` default 90 (≈ 3 min at 2s). Dead Rail is ~271s; raise it
+- `-MaxReadRounds` default 90 (≈ 3 min at 2s). medvedkovo is ~271s; raise it
   for longer battles (`-MaxReadRounds 150`).
 - The correlate request carries `replayStartWallTimeUtc` = the moment the
   gate flipped verified; the ±8s sweep absorbs the residual skew.

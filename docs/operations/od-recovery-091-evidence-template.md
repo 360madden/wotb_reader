@@ -1,21 +1,21 @@
-# OD-RECOVERY-091 live-run evidence — HP Phase-4 repeat on Dead Rail (COMPLETE)
+# OD-RECOVERY-091 live-run evidence — HP Phase-4 repeat on medvedkovo (COMPLETE)
 
 **Status: COMPLETE (2026-08-11) — `twoReplayRepeatability = true` for HP.**
 
 The Phase-4 rule requires the entity-base current-health signed int16 found
-live on Oasis Palms (OD-RECOVERY-087, `[entity+0xB8]`) to agree on a second
-content-distinct 11.19.0.10 replay (Dead Rail). It now does: the automated
+live on savanna (OD-RECOVERY-087, `[entity+0xB8]`) to agree on a second
+content-distinct 11.19.0.10 replay (medvedkovo). It now does: the automated
 contract re-verdicts the session's immutable dumps to **HIT** — score 1.0,
 flatness 1.0, **Strict 4/4 exact-sum matches at `+0xB8`** — via the
 bounded **lead-side** attribution window shipped this session
 (`hp-diff --lag-lead-seconds`). The at-session verdict was an honest
-negative (Strict top candidate 0x4E ≠ 0xB8); root cause = the Dead Rail
+negative (Strict top candidate 0x4E ≠ 0xB8); root cause = the medvedkovo
 G2 label skew (memory clock LEADS the decoded clock by ~2.5 s —
 OD-RECOVERY-089 measured the identical sign for yaw), which the
 one-directional (From − lag, To] attribution window structurally cannot see
 (an event whose WRITE landed in a window has a decoded time POSTDATING that
 window's `To`). Fixed additively (default 0 = unchanged), re-verdict on the
-SAME immutable dumps → HIT; the Oasis dumps re-verify unchanged
+SAME immutable dumps → HIT; the savanna dumps re-verify unchanged
 (regression-free). HP publication is now READY (operator approval only) via
 `docs/operations/g1-hp-publication-draft.md`.
 
@@ -31,7 +31,7 @@ at 104.69 s, inside the ~271 s battle).
 
 ## Session summary
 
-Approved live session on Dead Rail (content-distinct 11.19.0.10 replay),
+Approved live session on medvedkovo (content-distinct 11.19.0.10 replay),
 victim **2549395** (team 1, dudster_2015). Four launches: three were the
 2549399 team-2 dead ends (30 s / 60 s / 113 s `EntityNotFound` — structural,
 correctly failing closed), the fourth carried the re-scoped victim to
@@ -51,7 +51,7 @@ completion.
   76 = 76, 172 = 94+78, 55 = 55 — every drop equals its damage subset
   EXACTLY (443 = 520 − 77 pre-window); max `+0x11C` 520 constant, alive
   `+0xBA` flips exactly at 0, healing `+0x11E` 0 constant
-- Measured memory-apply skew: Dead Rail LEADS the decoded clock by ~2.5 s
+- Measured memory-apply skew: medvedkovo LEADS the decoded clock by ~2.5 s
   (per-dump, spread ~5.6 s — the OD-089 yaw finding, now reproduced on the
   HP field)
 - G2 anchor: launcher-owned, blitz-log marker moment (every dump
@@ -82,7 +82,7 @@ IMPORTANT (087 class): `-DataRoot` must be the HOST store (the repo-local
 game window at the second monitor's top-left when one is attached
 (`resize_window second_monitor` — verified live on this session's
 launches, 2026-08-11). The driver's `-LagLeadSeconds` (default 4) covers
-the Dead Rail lead; `-LagToleranceSeconds` default 12 covers the Oasis-side
+the medvedkovo lead; `-LagToleranceSeconds` default 12 covers the savanna-side
 lag.
 
 ## Verdict contract (unchanged from 087 + additive lead side)
@@ -95,7 +95,7 @@ lag.
   1.0, >= 2 exact-sum Strict matches; control windows from the flat control
   times (130, 200). **Lead side (NEW):** `--lag-lead-seconds` extends the
   attribution window forward to (From − lag, To + lead] for replays whose
-  memory clock LEADS the decoded clock (Dead Rail −2.5 s); default 0 =
+  memory clock LEADS the decoded clock (medvedkovo −2.5 s); default 0 =
   exact, unchanged; validated to require `--lag-tolerance > 0`; 3 new
   correlator tests (lead exact match in Strict, default-zero unchanged,
   no fabricated match for a larger event).
@@ -103,7 +103,7 @@ lag.
 ## Success definition (met)
 
 `twoReplayRepeatability: true` for HP at `+0xB8` (agrees with
-OD-RECOVERY-087 on Oasis Palms) — the Phase-4 two-replay HP rule CLOSES and
+OD-RECOVERY-087 on savanna) — the Phase-4 two-replay HP rule CLOSES and
 the HP publication package (`entity-base +0xB8` current / `+0x11C` max
 chains) is pre-staged at `docs/operations/g1-hp-publication-draft.md` for
 the operator gate. Honest-negative lessons preserved: a non-team-1 Dead
@@ -118,7 +118,7 @@ memory-LEAD replay — the bounded bidirectional window is required.
 |---|---|
 | Launches | 4 (3 team-2 aborts + 1 completed) |
 | Executable SHA-256 | `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d` |
-| Replay | Dead Rail |
+| Replay | medvedkovo |
 | Victim | 2549395 (team 1, dudster_2015) |
 | Battle session (completed) | `019ff2f7-b958-7cc4-8a9d-5761ba4a55f9` |
 | Dumps | `hp-phase4-091-snapshots.json` (58) |
@@ -128,7 +128,7 @@ memory-LEAD replay — the bounded bidirectional window is required.
 | Max HP `+0x11C` | 520, constant |
 | Alive byte `+0xBA` | 1 → 0 exactly at 0 |
 | Healing `+0x11E` | 0, constant |
-| Measured memory-apply skew | Dead Rail leads decoded clock ~2.5 s (OD-089-class; per-dump spread 5.6 s) |
+| Measured memory-apply skew | medvedkovo leads decoded clock ~2.5 s (OD-089-class; per-dump spread 5.6 s) |
 | G2 anchor | launcher-owned, blitz-log marker moment |
 | Region | entity-base, 320 B (covers +0x11E) |
 

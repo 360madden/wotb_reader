@@ -8,7 +8,7 @@ namespace WotBTreader.Core.Discovery;
 /// needs: current health as signed int16 at <c>+0xB8</c>, the alive byte at
 /// <c>+0xBA</c>, and max health as signed int16 at <c>+0x11C</c> — pinned by
 /// the static <c>VerifyPlayerHpChain</c> evidence on the 11.19.0.10 build
-/// and confirmed live by the OD-RECOVERY-087 L1 HP session (Oasis Palms:
+/// and confirmed live by the OD-RECOVERY-087 L1 HP session (savanna:
 /// every health drop equaled its damage sum exactly; max HP constant at
 /// 1550). The healing int16 at <c>+0x11E</c> is pinned by the same chain but
 /// not read by the live frame (no live consumption yet). Pure — no IO, no

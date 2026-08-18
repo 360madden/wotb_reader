@@ -946,7 +946,7 @@ public sealed class WotbReplayDecoder : IReplayDecoder
         // position destroy-marker packet — and a wreck can re-broadcast
         // either, so the FIRST occurrence per entity (by sequence) wins and
         // both feeds share one dedupe set. Verified on both replays: the
-        // ledger is the more complete signal (Dead Rail 2549397 died per its
+        // ledger is the more complete signal (medvedkovo 2549397 died per its
         // HP ledger at t=183.8 but carried no position destroy marker).
         HashSet<long> destroyedEntities = [];
 

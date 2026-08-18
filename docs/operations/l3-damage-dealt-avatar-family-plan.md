@@ -180,9 +180,9 @@ reuses. The script fails closed (exit 1) if the incrementer misses or any
 flat candidate hits — the protocol must be right before the first launch.
 
 **PHASE-4 SIMULATION — PASSED (same day, offline):** with
-`-Phase4SessionId 019fb86c-…` (Dead Rail, attacker 2549401, 4 hit windows /
+`-Phase4SessionId 019fb86c-…` (medvedkovo, attacker 2549401, 4 hit windows /
 1569 damage) the same QUALIFY → SYNTHESIZE → VERDICT flow runs on the second
-replay and requires the matched offset to AGREE. Result: Dead Rail
+replay and requires the matched offset to AGREE. Result: medvedkovo
 incrementer HIT (score 1.0, flatness 1.0, matched 5/5, offset 0x0), flat
 candidates NOT hit, and **matched offset 0x0 agrees across both replays** —
 the two-replay repeat rule proven offline before any launch. (The rehearsal
@@ -204,8 +204,8 @@ INCREMENTS. The correlator family is the same attribution machinery
   (`OwnEntityId`, name-join step 4).
 - Hypothesis: `counter(t)` == cumulative Σ(own attacker damage events applied
   by t), within the bounded bidirectional lag window (`--lag-tolerance` /
-  `--lag-lead-seconds`, default 0 = exact; the OD-089/091 finding: Dead Rail's
-  memory clock LEADS the decoded clock ~2.5 s while Oasis LAGS ~4.8 s — the
+  `--lag-lead-seconds`, default 0 = exact; the OD-089/091 finding: medvedkovo's
+  memory clock LEADS the decoded clock ~2.5 s while savanna LAGS ~4.8 s — the
   window family must stay additive and per-replay).
 - Score: same contract as HP (score 1.0, flatness 1.0, strict exact sums per
   window; control windows flat).
@@ -227,7 +227,7 @@ INCREMENTS. The correlator family is the same attribution machinery
 
 ## Live session attempts — 2026-08-12 (recorded; environment-blocked after sweep 1)
 
-**Sweep 1 (Oasis/Copperfield battle, launched 10:47 UTC, monitor-2
+**Sweep 1 (savanna/karieri battle, launched 10:47 UTC, monitor-2
 placement verified live):** launch reached OfflineReplayVerified + G2 anchor;
 the driver QUALIFIED (7 windows / 2835 dmg / attacker 2852449) and its
 FIRST `avatar-stats` probe 400'd mid-battle (70 s in, gate verified). The
@@ -274,7 +274,7 @@ is therefore: launch → read `battleSession=` from the anchor →
 session's viewpoint entity, 2852449 for this battle).
 
 **Sweep 4 — the live lane RESOLVED (2026-08-12, launches 6/7/9; sessions
-`019ff5cc` / `019ff5dc` / `019ff5f1`, Oasis Palms).** The playback mechanism
+`019ff5cc` / `019ff5dc` / `019ff5f1`, savanna).** The playback mechanism
 changed and is now PROVEN: with the Wargaming Game Center running +
 authenticated, the launcher (full protocol — window move/resize + orange
 Watch Offline click) reaches `OfflineReplayVerified` reliably (3/3
@@ -282,7 +282,7 @@ launches) when given the **top-level original replay in the game's replays
 folder** (`…\replays\20260802_1615__…_Churchill_I_….wotbreplay`, the
 OD-075/076 ground truth). The earlier "Error 126 = staging copy"
 attribution was REFINED 2026-08-12: the discriminator is the replay's
-CLIENT VERSION, not its location — the `.data/launch` Copperfield copy was
+CLIENT VERSION, not its location — the `.data/launch` karieri copy was
 an **11.18.0** replay and the 11.19.0.10 game refuses that family with
 "Replay Error code: 126" (the 11.19.0 `savanna-…` copy in the same folder
 plays fine). The launcher now probes pre-flight (`$cli probe` family
@@ -316,12 +316,12 @@ at the lag-0 default because the driver gated the lag args behind
 `damageDealt` 752; d2 (offset `+0x8`) final 126 = decoded
 `damageAssisted1` 126 (the quad is the battle-stats block). Driver fixed:
 `invoke-hp-diffing-session.ps1` passes the lag args on BOTH directions.
-**Phase-4 CLOSED (2026-08-12, OD-RECOVERY-096): the Dead Rail live
+**Phase-4 CLOSED (2026-08-12, OD-RECOVERY-096): the medvedkovo live
 avatar-stats capture re-verdicts HIT at offset 0x0 (9/9 exact sums
 146/162/145/162/140/178/181/171/168, score 1.0, flatness 1.0, Strict >= 2;
-final d0 1598 = decoded `damageDealt` 1598) — offsets agree with Oasis
+final d0 1598 = decoded `damageDealt` 1598) — offsets agree with savanna
 (0x0) → `twoReplayRepeatability = true`; quad layout refined to
-`[damageDealt, damageBlocked, damageAssisted1, damageAssisted2]` (Dead Rail
+`[damageDealt, damageBlocked, damageAssisted1, damageAssisted2]` (medvedkovo
 finals d1 140 = `damageBlocked`, d3 228 = `damageAssisted2`; `damageAssisted1`
 null == d2 0). The L3 damage-dealt lane is CLOSED.** Capture notes: the
 deadlock-free chain (Start-Process + log polling) launched 4 sessions
@@ -333,7 +333,7 @@ lead still bracketed the last events; the first damage event (145 at
 154.5 s) predates the earliest dump label, so its window was not formable
 (the counter already held it at capture start).
 
-**Driver fixes shipped with the Dead Rail session (2026-08-12, OD-096):**
+**Driver fixes shipped with the medvedkovo session (2026-08-12, OD-096):**
 (a) PS 5.1 `break :label` from a NESTED loop does NOT exit the labeled
 foreach — replaced with the flag + guard pattern (the labeled break made
 the schedule continue after teardown and throw on the next probe);
@@ -427,8 +427,8 @@ the semantics live (OD-095/096).
 
 ## Definition of done (Phase-4 standard)
 
-`twoReplayRepeatability = true`: the same counter agrees on BOTH Oasis Palms
-and Dead Rail (strict exact sums, score 1.0, flatness 1.0, controls flat).
+`twoReplayRepeatability = true`: the same counter agrees on BOTH savanna
+and medvedkovo (strict exact sums, score 1.0, flatness 1.0, controls flat).
 Then a publication package (`g2-damage-dealt-publication-draft.md`) +
 operator-gated apply, mirroring HP/yaw. The live scoreboard's own row and the
 frame's `DamageDealt` field are the consumers; enemy/teammate per-row damage
@@ -439,7 +439,7 @@ map) — the live scoreboard is own-row-only, documented as such.
 
 1. Operator-approved publication applies (HP then yaw) — pre-requisite order. **DONE 2026-08-12 (OD-RECOVERY-092).**
 2. Static candidate search (avatar/player-stats family). **DONE 2026-08-12** (above).
-3. Bounded live sessions + increment correlation (this plan) — seam PRE-STAGED + REHEARSED 2026-08-12 (`-RegionAnchor avatar-stats` + per-candidate driver + 6 tests + offline rehearsal PASSED on a real decoded session, incl. the PHASE-4 two-replay simulation with offsets agreeing across Oasis + Dead Rail, `invoke-avatar-stats-rehearsal.ps1`); next is the approved launch run (monitor-2 placement, gate, G2 anchor all reused).
+3. Bounded live sessions + increment correlation (this plan) — seam PRE-STAGED + REHEARSED 2026-08-12 (`-RegionAnchor avatar-stats` + per-candidate driver + 6 tests + offline rehearsal PASSED on a real decoded session, incl. the PHASE-4 two-replay simulation with offsets agreeing across savanna + medvedkovo, `invoke-avatar-stats-rehearsal.ps1`); next is the approved launch run (monitor-2 placement, gate, G2 anchor all reused).
 4. Phase-4 repeat on the second replay.
 5. Publication package (operator-gated).
 6. Item 7 (hardware atomicity) remains LAST regardless.

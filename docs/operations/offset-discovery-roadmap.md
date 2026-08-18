@@ -90,7 +90,7 @@ whole-second shift sweep rejecting fast movers, unvalidated wall anchor,
 staging timing — all fixed with regression tests; see the strategy-v4 doc and
 handoff amendment. Replay clock verified at
 **10,000,000 ticks/s** (synthetic fixture exactly 1.2e9 ticks / 120s; real
-decode 599,839,248 ticks ≈ 59.98s). Dead Rail session
+decode 599,839,248 ticks ≈ 59.98s). medvedkovo session
 `019fb86c-c8e7-7004-9df6-a574f5a7835b` (`duration_ticks` 2,713,761,600 ≈
 271s) is the ground-truth source.
 
@@ -322,7 +322,7 @@ else descope per the archive action.
 > and no replay hot-swap (seek-forward-only; selecting a replay reinitializes
 > the scenario), and `roll-replay-time-increased.ps1` is a memory-scan roll,
 > not a replay rewind. M2 therefore runs in the **tail of the SAME playback**:
-> with `-MaxReadRounds 90` on the 271s Dead Rail session the final correlate
+> with `-MaxReadRounds 90` on the 271s medvedkovo session the final correlate
 > fires ~200s in with ~60s of battle left, and the write-trace is started
 > IMMEDIATELY on the verdict with `-TraceSeconds` budgeted under battle end.
 > Full operator sequence, timing table, and edge-case guards:

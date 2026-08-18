@@ -92,11 +92,11 @@ entity ID, coordinates, process addresses, raw bytes, capability, replay path,
 or player/account data. OD-075 resolved 24/24 positions with 24 distinct
 triples, 5 exact retained-trajectory matches, and 21/24 within three units in
 one fresh process. BLK-0026 is resolved and validated (2026-08-09: launcher
-`Set-Acl` → `icacls` ACL fix; the content-distinct Oasis Palms replay then
+`Set-Acl` → `icacls` ACL fix; the content-distinct savanna replay then
 polled positive — 24/24 resolved, stable-resolver-positive — see
 `docs/operations/blk-0026-diagnosis-plan.md` and ledger `OD-RECOVERY-076`).
 Cross-replay continuous polling is now proven across two distinct 11.19.0
-replays (Dead Rail + Oasis Palms). The double-collected record is consistency
+replays (medvedkovo + savanna). The double-collected record is consistency
 evidence, not hardware atomicity or same-decoded-clock proof, and no offset is
 promoted.
 

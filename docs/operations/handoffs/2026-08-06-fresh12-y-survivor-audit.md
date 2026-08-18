@@ -12,7 +12,7 @@ true alignment is beyond the bound), or is the address real evidence?
 ## Answer: the address is real evidence. The FRESH10 label was a misreading.
 
 The decisive facts, from the FRESH10 report and the live host DB (session
-`019fd4c1`, entity 2549406, Dead Rail):
+`019fd4c1`, entity 2549406, medvedkovo):
 
 | Address | Axis | Score | ObsSpan | Shift | Ambiguity band | EdgeAligned |
 |---|---|---|---|---|---|---|

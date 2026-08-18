@@ -4,7 +4,7 @@ Date: 2026-08-09
 Status: milestone partial — G2 same-decoded-clock proven live; G1 first live
 run complete (honest negative); one-command session proven end-to-end
 Scope: one approved live session via `scripts/invoke-g1-live-poll.ps1` on the
-content-distinct Oasis Palms replay; resolver, read surface, and offset table
+content-distinct savanna replay; resolver, read surface, and offset table
 untouched
 
 > **CORRECTION (2026-08-09, OD-RECOVERY-080):** the `avatar-helper`

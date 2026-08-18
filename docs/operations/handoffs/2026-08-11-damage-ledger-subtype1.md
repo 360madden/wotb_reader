@@ -24,7 +24,7 @@ matches battle_results damage accounting exactly.
 
 1. Type-5 broadcasts give per-tank HP at multiple clocks, so damage packets
    between two broadcasts must sum to the HP difference. One perfect window:
-   Dead Rail 2549397 dropped exactly 39 HP with one damage packet.
+   medvedkovo 2549397 dropped exactly 39 HP with one damage packet.
 2. Brute-forcing the subtype-8 layout found candidates (u16 BE@29 / LE@30)
    that did NOT match the 39-HP ground truth — the packet wasn't a hit at
    all.
@@ -41,9 +41,9 @@ matches battle_results damage accounting exactly.
 
 | Check | Result |
 |---|---|
-| Per-attacker sums vs battle_results | **Exact for every player WITH battle results — 9/9**: Oasis 1719 / 1158 / 56 / 959 / **752** (author), Dead Rail 1598 / 326 / 489 / **905** (JOY, with destroy credit) |
-| Players without battle results | 10/14 Dead Rail + 8/14 Oasis have NULL `battle_stats_json` (they left the battle — WoT only records results for players present at the end). Their decoded damage is still true and satisfies HP conservation |
-| HP-pool conservation | Decoded totals equal the type-5-verified damage totals exactly: Oasis 8964 ≤ 12140, Dead Rail 6227 ≤ 8500 (same numbers the previous handoff verified from raw packets) |
+| Per-attacker sums vs battle_results | **Exact for every player WITH battle results — 9/9**: savanna 1719 / 1158 / 56 / 959 / **752** (author), medvedkovo 1598 / 326 / 489 / **905** (JOY, with destroy credit) |
+| Players without battle results | 10/14 medvedkovo + 8/14 savanna have NULL `battle_stats_json` (they left the battle — WoT only records results for players present at the end). Their decoded damage is still true and satisfies HP conservation |
+| HP-pool conservation | Decoded totals equal the type-5-verified damage totals exactly: savanna 8964 ≤ 12140, medvedkovo 6227 ≤ 8500 (same numbers the previous handoff verified from raw packets) |
 | Destroy credit | 0xFFFD marker credits remaining HP to the killer; without it JOY = 879 ≠ 905 |
 | Regression tests | Synthetic subtype-1 fixture: 3 damage events (100, 50, 600-destroy-credit), per-attacker sum 700, typed `healthChange` raw records, no malformed warnings — all pass |
 

@@ -87,7 +87,7 @@ the shell/aim/ray field offsets for phases 2–4.
 
 ## Live attempt — honest negative (2026-08-16)
 
-The first live census attempt did not reach the capture. The Dead Rail replay
+The first live census attempt did not reach the capture. The medvedkovo replay
 was re-launched (its OD completion marker was preserved under a `.bak` suffix
 for the re-launch and restored afterward), and the managed launch reached
 `lifecycle_evidence outcome=verified` in the host log — but the game then
@@ -103,7 +103,7 @@ completion marker restored, no stray game/host processes.
 This is an environment negative, not a code negative: the census source and
 endpoint remain verified offline, and no census aggregate was produced or
 promoted. The next live attempt should either retry after a clean game restart
-(try the Oasis replay as the alternate battle) or first diagnose the
+(try the savanna replay as the alternate battle) or first diagnose the
 `ListenerHolderBase` assert.
 
 ## Launcher robustness fix (2026-08-16)
@@ -120,7 +120,7 @@ remains as the outer safety net. Full `scripts/validate.ps1` gate green.
 ## Live census capture — SUCCESS (2026-08-16)
 
 The first REAL census result was produced end to end (Churchill I replay,
-map Oasis Palms, exact build `11.19.0.10` hash `1cda5c31…`):
+map savanna, exact build `11.19.0.10` hash `1cda5c31…`):
 
 ```
 status=Rejected
@@ -152,8 +152,7 @@ The two census passes agreed (`stable=True`), so the vftable RVAs
 (`VehicleGun 0x32dacf4`, `VehicleGunRotator 0x32eeb40`, `AvatarGunAgent
 0x324dae8`) are now LIVE-proven against the real battle heap.
 
-**Reproducibility (same day, second content-distinct battle).** The Dead
-Rail replay (Dead Rail map) produced the identical census:
+**Reproducibility (same day, second content-distinct battle).** The medvedkovo replay (file `deadrail-20260802.wotbreplay`, mislabeled — the real Dead Rail map is `desert_train`) produced the identical census:
 `vehicleGun=42, vehicleGunRotator=1, avatarGunAgent=1, stable=True`,
 `OwnerCandidateCount=43`, `Rejected / BoundsExceeded`. The exact 42/1/1
 pattern across two battles strongly supports the interpretation that the

@@ -1,7 +1,7 @@
 # OD-049 session-prep handoff (2026-08-05)
 
 **Purpose:** pin every fact the OD-049 live round needs so the session is a
-checklist, not an exploration. Covers the Dead Rail session id, the replay
+checklist, not an exploration. Covers the medvedkovo session id, the replay
 file mapping, the exact M1 command (with `-SessionId`), the M2 command, and
 the P1/P2 hazard runbook. Companion docs: the
 [`offset-discovery-m1-m2-choreography.md`](../offset-discovery-m1-m2-choreography.md)
@@ -21,9 +21,9 @@ runbook (phase sequence + timing budget) and
 
 | Fact | Value |
 |---|---|
-| Session id (Dead Rail, `.data` reference) | `019fb86c-c8e7-7004-9df6-a574f5a7835b` |
-| Session id (LIVE host, per-import) | **auto-pick** — the OD launch host serves `%LocalAppData%\WotBTreader\treader.db`, and every import creates a NEW Dead Rail session id (e.g. `019fd261-721b-7171-a15e-7cfa6675931c` on 08-05). Hardcoding a `.data` session id 404s the trajectory fetch (live-round blocker, 2026-08-05). |
-| Map / duration | Dead Rail, `duration_ticks 2,713,761,600` ≈ **271.4 s** |
+| Session id (medvedkovo, `.data` reference) | `019fb86c-c8e7-7004-9df6-a574f5a7835b` |
+| Session id (LIVE host, per-import) | **auto-pick** — the OD launch host serves `%LocalAppData%\WotBTreader\treader.db`, and every import creates a NEW medvedkovo session id (e.g. `019fd261-721b-7171-a15e-7cfa6675931c` on 08-05). Hardcoding a `.data` session id 404s the trajectory fetch (live-round blocker, 2026-08-05). |
+| Map / duration | medvedkovo, `duration_ticks 2,713,761,600` ≈ **271.4 s** |
 | Battle time (UTC) | 2026-07-29T17:35:16Z |
 | Game version | 11.19.0 (decoder `wotb-11.x-strict`, run status 2/complete) |
 | Ground truth samples | 33,281 position samples, 14 participants |
@@ -38,12 +38,12 @@ runbook (phase sequence + timing budget) and
 | What the launch script picks | Newest **original** `.wotbreplay` in `%LOCALAPPDATA%\wotblitz\DAVAProject\replays\` (top-level only; skips GUID leftovers and `wotbtreader-staging\`), or `-ReplayPath` |
 
 **Verification step (do not skip):** after import, confirm the host's
-`GET /api/v1/sessions?limit=1` newest item is the Dead Rail battle just
+`GET /api/v1/sessions?limit=1` newest item is the medvedkovo battle just
 launched (a NEW per-import session id — the `.data` reference id
 `019fb86c-…` will NOT be present on the live host, which serves
 `%LocalAppData%\WotBTreader\treader.db`) and that
 `GET /api/v1/game/discover/trajectory/{newestId}` returns the Churchill_I
-series. If the newest game-folder replay is NOT the Dead Rail battle, pass
+series. If the newest game-folder replay is NOT the medvedkovo battle, pass
 `-ReplayPath` to the launch script explicitly — the *played battle* must be
 the one auto-picked, or the correlation has no signal.
 
@@ -57,7 +57,7 @@ the one auto-picked, or the correlation has no signal.
    (`FAILED_host_stale_build`) if `bin\Release` is older than the newest
    `src\*.cs`.
 2. **Trajectory check (live host):** `GET /api/v1/sessions?limit=1` → newest
-   item is Dead Rail (a per-import id), then `GET
+   item is medvedkovo (a per-import id), then `GET
    /api/v1/game/discover/trajectory/{newestId}` → 200 with 14 entities,
    viewpoint Churchill_I, real x/y/z samples. (The `.data` reference id
    `019fb86c-…` is NOT served by the OD launch host — see the live-session
@@ -101,7 +101,7 @@ powershell -File scripts/launch-offline-replay-for-od.ps1
 ```
 
 (Add `-ReplayPath .data\launch\a9aed0467d7843efb06bb3319bb52ded.wotbreplay`
-if the newest game-folder replay is not Dead Rail.) Managed launch → game up
+if the newest game-folder replay is not medvedkovo.) Managed launch → game up
 → `click-watch-offline.ps1` dismisses the dialog on `START_REPLAY_LOCAL` →
 gate flips `OfflineReplayVerified`.
 
@@ -178,7 +178,7 @@ powershell -File scripts/x64dbg-write-trace.ps1 `
 | P1-1 | Stale host build/publish 404s newer endpoints | Freshness gate (Phase 0-1) + launch-script `FAILED_host_stale_build` | Run `serve.cmd` (republish) before every session |
 | P1-2 | Debugger attach mid-monitor stalls replay | Pre-arm in Phase 1.5 (load window) | Never let `-AutoWriteTrace` pre-arm lazily |
 | P1-3 | M1 anchors after battle start (wrong wall anchor) | Driver WARNING + edge-aligned survivor demotion | Start M1 before battle start; else `-ReplayStartWallTimeUtc` |
-| P1-4 | Wrong replay played vs pinned ground truth | Sessions + trajectory 200 check | Pass `-ReplayPath` if the newest folder replay is not Dead Rail |
+| P1-4 | Wrong replay played vs pinned ground truth | Sessions + trajectory 200 check | Pass `-ReplayPath` if the newest folder replay is not medvedkovo |
 | P2-1 | Rounds run slow (large staged set) → correlate past battle end | Watch `round=N/M`; budget 3s/round | `-MaxReadRounds 70` or shrink staged set (`-StageTopN 2`, `-ScanTolerance 8`) |
 | P2-2 | No family from survivors | `family_mapping_failed` + M2 stop rule | Stop; recheck staging; do not burn the trace attempt |
 | P2-3 | Replay paused at M2 start | Write-trace play-state probe, exit 7 | Press SPACE; rerun within the window |
@@ -204,7 +204,7 @@ not a replay rewind.
 
 ## Assumptions and unknowns
 
-- The newest original replay in the game replays folder is the Dead Rail
+- The newest original replay in the game replays folder is the medvedkovo
   battle (imported Jul 31 as artifact `59c3b92e…`); the launch script's
   "newest" pick has not been re-verified against the folder's current
   contents since Jul 31.

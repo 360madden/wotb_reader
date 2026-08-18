@@ -1,7 +1,7 @@
 # 2026-08-12 — item-7 Branch A COMPLETE + Branch B step 1; own-tank edge marker shipped
 
-Binary: wotblitz.exe 11.19.0.10 (hash `1cda5c31…1760307d`). Replays: Oasis
-Palms + Dead Rail. Read-only; resolver, read surface, and
+Binary: wotblitz.exe 11.19.0.10 (hash `1cda5c31…1760307d`). Replays: savanna
+Palms + medvedkovo. Read-only; resolver, read surface, and
 `memory-offsets/11.19.0.10.json` untouched (HP/yaw publications remain
 operator-gated). Evidence: ledger rows, item-7 plan
 `docs/operations/item7-hardware-atomicity-proof-plan.md` (Branch A
@@ -144,7 +144,7 @@ counts updated in AGENTS.md / knowledge.md / offline pack.
   measurement fields) — owner-gated shared-contract proposal.
 - **L3 damage-dealt** — needs a NEW object family (avatar/player-stats),
   not the entity records; discovery plan pre-staged.
-- **V4 minimap texture** — data-blocked (only Oasis/Dead Rail replays and
+- **V4 minimap texture** — data-blocked (only savanna/medvedkovo replays and
   no usable texture in the install).
 
 ## Next planned (ledger)

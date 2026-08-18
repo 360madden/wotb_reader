@@ -43,7 +43,7 @@
   powershell -File scripts/invoke-avatar-stats-rehearsal.ps1 `
       -SessionId 019fa44a-b226-77ae-94de-a27419f23204 -FailOnNoHit
 
-  # Phase-4 two-replay simulation (Oasis + Dead Rail, offsets must agree):
+  # Phase-4 two-replay simulation (savanna + medvedkovo, offsets must agree):
   powershell -File scripts/invoke-avatar-stats-rehearsal.ps1 `
       -SessionId 019fa44a-b226-77ae-94de-a27419f23204 `
       -Phase4SessionId 019fb86c-c8e7-7004-9df6-a574f5a7835b -FailOnNoHit

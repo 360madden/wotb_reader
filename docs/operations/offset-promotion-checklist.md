@@ -18,13 +18,13 @@ resolver, the read surface, or `memory-offsets/11.19.0.10.json`.
 Two distinct 11.19.0 replays/fresh processes have produced 24/24
 `stable-resolver-positive` polls with the unchanged module-rooted resolver:
 
-- `OD-RECOVERY-075` — Dead Rail replay (battle 2026-07-29), 24/24, 24 distinct,
+- `OD-RECOVERY-075` — medvedkovo replay (battle 2026-07-29), 24/24, 24 distinct,
   5 exact retained matches, 21/24 within three units.
-- `OD-RECOVERY-076` — Oasis Palms replay (battle 2026-08-02), 24/24, 24 distinct,
+- `OD-RECOVERY-076` — savanna replay (battle 2026-08-02), 24/24, 24 distinct,
   12 within one unit, 21/24 within three.
 
 Replay distinctness was verified against the decoded-sessions store (the two
-11.19.0 `battle_sessions` rows: Dead Rail vs Oasis Palms). **Cross-replay
+11.19.0 `battle_sessions` rows: medvedkovo vs savanna). **Cross-replay
 continuous-polling repeatability is therefore proven at the ledger level.**
 
 ## Framework flag map (source-verified 2026-08-09)
@@ -131,12 +131,12 @@ Status as of 2026-08-12:
 
 | Field | Live agreement | Evidence | Publication state |
 |---|---|---|---|
-| `playerPositionX/Y/Z` | two replays, 24/24 polls (Dead Rail OD-075 + Oasis OD-076) | OD-RECOVERY-083 | **PUBLISHED 2026-08-10** (`Verified`, chains, offsets 0) |
-| Facing/yaw (ring record `+0x30`) | **HIT both replays** — Oasis 088 (48/48), Dead Rail 089 Phase-4 (56/56, score 1.0, flatness 1.0) | OD-RECOVERY-088/089 | **PUBLISHED 2026-08-12 (OD-RECOVERY-092)** — `Verified`, chains (position walk + `recordOffset 48`), offsets 0 |
-| HP (entity base `+0xB8`, signed int16) | **HIT both replays** — Oasis 087 (8/8 strict), Dead Rail 091 Phase-4 (4/4 strict, 58 dumps) | OD-RECOVERY-087/091 | **PUBLISHED 2026-08-12 (OD-RECOVERY-092)** — `Verified`, chains (entity-lookup prefix + `recordOffset 184`), offsets 0. Item-7 static support: hash-bound listing-confirmed 16-bit health setters (`FUN_0166b9f0`/`FUN_01675f60` write `+0xB8`/`+0x11E` as `MOV word`), zero 64/128-bit stores to the fields — `item7-hardware-atomicity-proof-plan.md` Branch A |
+| `playerPositionX/Y/Z` | two replays, 24/24 polls (medvedkovo OD-075 + savanna OD-076) | OD-RECOVERY-083 | **PUBLISHED 2026-08-10** (`Verified`, chains, offsets 0) |
+| Facing/yaw (ring record `+0x30`) | **HIT both replays** — savanna 088 (48/48), medvedkovo 089 Phase-4 (56/56, score 1.0, flatness 1.0) | OD-RECOVERY-088/089 | **PUBLISHED 2026-08-12 (OD-RECOVERY-092)** — `Verified`, chains (position walk + `recordOffset 48`), offsets 0 |
+| HP (entity base `+0xB8`, signed int16) | **HIT both replays** — savanna 087 (8/8 strict), medvedkovo 091 Phase-4 (4/4 strict, 58 dumps) | OD-RECOVERY-087/091 | **PUBLISHED 2026-08-12 (OD-RECOVERY-092)** — `Verified`, chains (entity-lookup prefix + `recordOffset 184`), offsets 0. Item-7 static support: hash-bound listing-confirmed 16-bit health setters (`FUN_0166b9f0`/`FUN_01675f60` write `+0xB8`/`+0x11E` as `MOV word`), zero 64/128-bit stores to the fields — `item7-hardware-atomicity-proof-plan.md` Branch A |
 | Velocity, replayTime, playerHP-as-offset, aliveTankCount | not promoted | G0 record | untouched |
-| Pitch/roll (ring `+0x2C`/`+0x28`) | **HIT both replays** — rotation-triple reconciliation: `yaw-diff --field pitch\|roll` re-verdicts the SAME OD-088/089 dumps (Oasis 48/48 + Dead Rail 56/56 each, score 1.0, flatness 1.0, record-span 0x38-trimmed) | OD-RECOVERY-088/089 | **PUBLISHED 2026-08-12 (OD-RECOVERY-098)** — `Verified`, chains (position walk + `recordOffset 44`/`40`), offsets 0; rotation triple fully published |
-| Damage-dealt (Avatar stats quad `+0x0`, uint32) | **HIT both replays** — Oasis 095 (5/5 exact sums, lag-corrected), Dead Rail 096 Phase-4 (9/9 exact sums, score 1.0, flatness 1.0, Strict ≥ 2), re-proven live in-session OD-099 (5/5 exact sums, default lag); offsets agree at `0x0` → `twoReplayRepeatability = true` | OD-RECOVERY-095/096/099 | **PUBLISHED 2026-08-12 (OD-RECOVERY-097)** — `Verified`, chains (`vftableScan` 0x032752a4 → `recordOffset 280`), offsets 0; new hop kind; CONSUMPTION committed 2026-08-12 (live frame's own-row `DamageDealt` via the avatar-stats anchor; fail-closed null) |
+| Pitch/roll (ring `+0x2C`/`+0x28`) | **HIT both replays** — rotation-triple reconciliation: `yaw-diff --field pitch\|roll` re-verdicts the SAME OD-088/089 dumps (savanna 48/48 + medvedkovo 56/56 each, score 1.0, flatness 1.0, record-span 0x38-trimmed) | OD-RECOVERY-088/089 | **PUBLISHED 2026-08-12 (OD-RECOVERY-098)** — `Verified`, chains (position walk + `recordOffset 44`/`40`), offsets 0; rotation triple fully published |
+| Damage-dealt (Avatar stats quad `+0x0`, uint32) | **HIT both replays** — savanna 095 (5/5 exact sums, lag-corrected), medvedkovo 096 Phase-4 (9/9 exact sums, score 1.0, flatness 1.0, Strict ≥ 2), re-proven live in-session OD-099 (5/5 exact sums, default lag); offsets agree at `0x0` → `twoReplayRepeatability = true` | OD-RECOVERY-095/096/099 | **PUBLISHED 2026-08-12 (OD-RECOVERY-097)** — `Verified`, chains (`vftableScan` 0x032752a4 → `recordOffset 280`), offsets 0; new hop kind; CONSUMPTION committed 2026-08-12 (live frame's own-row `DamageDealt` via the avatar-stats anchor; fail-closed null) |
 | Camera pose (posA yz-swap + basis) | CAM-013 verified the W2S seam live (091/091b/092 chase, `w2sProjectionVerified: true`) | CAM-013 | overlay consumption only — no offset promotion (the camera track is a separate workstream, read surface untouched) |
 
 Applied: `g1-yaw-publication-draft.md` + `g1-hp-publication-draft.md`
@@ -371,7 +371,7 @@ comma-joined `-PriorResultPaths 'a,b'` invocation was bound by `-File` as a
 single path (mechanical bug, fixed in the wrapper — comma elements are now
 split/trimmed); it is not an evidence deficiency. The G0 review's G3
 definition — ledger attestation of two distinct replays with fresh
-processes (Dead Rail OD-075 + Oasis Palms OD-076) — is satisfied.
+processes (medvedkovo OD-075 + savanna OD-076) — is satisfied.
 
 ## Sequencing recommendation
 
@@ -388,10 +388,10 @@ processes (Dead Rail OD-075 + Oasis Palms OD-076) — is satisfied.
 | ~~G1 live poll (G1 closed)~~ | ~~Live (done 2026-08-09)~~ | **done — OD-RECOVERY-082:** stored v4 aggregate 24/24 `stable-resolver-positive` with `allConsistentDoubleRead=true` (per-read byte-identical branch). Armed runs 19/24 + 22/24 were harness artifacts (OD-RECOVERY-080); run 081 hit 24/24 clean read evidence but the verdict label was blocked by a verdict-contract conflict (fixed, schema v4); run 082 delivered the stored positive aggregate |
 | G0 publication review | Offline (verdict delivered) | **done 2026-08-09 (OD-RECOVERY-082): PROMOTE-READY (conditional)** — exe identity exact, RVA chain verified, field identity set, repeatability attested, read-only gates PASS; the table edit is a separate operator-approved change |
 | G0 offset-table publication | Offline (operator-approved gate) | **done 2026-08-10 (OD-RECOVERY-083):** `playerPositionX/Y/Z` → `Verified` via the module-rooted position-ring chain (additive `chains` section; offsets stay 0), evidence appended (4 launches / 2 replays), approvals set, `numericOffsetPublication: true`; post-edit gates all green (`offset_check.py` chains-validated 3 fields, `validate.ps1` exit 0). Resolver + read surface untouched; NOT promoted: velocity, playerYaw, replayTime, playerHP, cameraPitch, aliveTankCount |
-| Phase-4 facing/yaw repeat | Live | **done 2026-08-11 (OD-RECOVERY-089): HIT** — ring `+0x30` agrees on Dead Rail (56/56, score 1.0, flatness 1.0, per-dump bounded bidirectional lag). `twoReplayRepeatability = true`; yaw publication **READY** (`g1-yaw-publication-draft.md`) |
-| Phase-4 HP repeat | Live | **done 2026-08-11 (OD-RECOVERY-091): HIT** — entity `+0xB8` agrees on Dead Rail (score 1.0, flatness 1.0, Strict 4/4 exact sums via `--lag-lead-seconds`). `twoReplayRepeatability = true`; HP publication **READY** (`g1-hp-publication-draft.md`) |
+| Phase-4 facing/yaw repeat | Live | **done 2026-08-11 (OD-RECOVERY-089): HIT** — ring `+0x30` agrees on medvedkovo (56/56, score 1.0, flatness 1.0, per-dump bounded bidirectional lag). `twoReplayRepeatability = true`; yaw publication **READY** (`g1-yaw-publication-draft.md`) |
+| Phase-4 HP repeat | Live | **done 2026-08-11 (OD-RECOVERY-091): HIT** — entity `+0xB8` agrees on medvedkovo (score 1.0, flatness 1.0, Strict 4/4 exact sums via `--lag-lead-seconds`). `twoReplayRepeatability = true`; HP publication **READY** (`g1-hp-publication-draft.md`) |
 | Publication applies (HP then yaw) | Operator-gated | **DONE 2026-08-12 (OD-RECOVERY-092)** — both packages applied, all post-edit gates green (`offset_check.py` chains-validated 5 fields + fidelity 5/5, `offline_check.py --refresh`, `ChainedFields_AreExcludedFromObservationReads`, `validate.ps1` exit 0) |
-| Rotation-triple Phase-4 reconciliation (pitch +0x2C / roll +0x28) | Offline re-verdict | **done 2026-08-12** — `yaw-diff --field pitch\|roll` re-verdicts the SAME immutable OD-088/089 dumps: pitch `+0x2C` and roll `+0x28` AGREE on both replays (Oasis 48/48 + Dead Rail 56/56 each, score 1.0, flatness 1.0; record-span 0x38-trimmed verdicts — ring-sibling decoy `0x60` removed). `twoReplayRepeatability = true` for the full rotation triple; pitch/roll publication package **PRE-STAGED** (`g1-pitch-roll-publication-draft.md` — schema slots + draft chains + checker already staged, operator approval only) |
+| Rotation-triple Phase-4 reconciliation (pitch +0x2C / roll +0x28) | Offline re-verdict | **done 2026-08-12** — `yaw-diff --field pitch\|roll` re-verdicts the SAME immutable OD-088/089 dumps: pitch `+0x2C` and roll `+0x28` AGREE on both replays (savanna 48/48 + medvedkovo 56/56 each, score 1.0, flatness 1.0; record-span 0x38-trimmed verdicts — ring-sibling decoy `0x60` removed). `twoReplayRepeatability = true` for the full rotation triple; pitch/roll publication package **PRE-STAGED** (`g1-pitch-roll-publication-draft.md` — schema slots + draft chains + checker already staged, operator approval only) |
 
 ## Frozen surfaces (unchanged)
 

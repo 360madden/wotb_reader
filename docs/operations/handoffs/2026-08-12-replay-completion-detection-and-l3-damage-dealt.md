@@ -72,7 +72,7 @@ log-based, terminal, fail-closed, and distinguishable:
   handle-inheritance trap — the launched host/game grandchildren inherit the
   redirect handle so the redirect-wait never sees EOF and the chain hangs
   while the replay plays out unwatched. Rule: never block on it; poll the
-  log/state instead (the Dead Rail chains now use `Start-Process
+  log/state instead (the medvedkovo chains now use `Start-Process
   -RedirectStandardOutput` + log polling).
 
 Tests: parser suite +3 (2 DataRows + 1 completion-line test), lifecycle feed
@@ -85,21 +85,21 @@ GameIntegration green in the gate.
 The avatar-stats quad dword0 IS the own damage-dealt counter, proven to the
 Phase-4 standard:
 
-- **OD-RECOVERY-095 (Oasis)**: the at-session lag-0 verdict was an
+- **OD-RECOVERY-095 (savanna)**: the at-session lag-0 verdict was an
   honest-negative from the OD-087 memory-apply lag class (+2.3–4.1 s —
   "control-window" changes were real events). Re-verdict with the bounded lag
   path: offset 0x0, 5/5 exact sums (152/144/151/170/1), flatness 1.0, Strict
   5/5; d0 final 752 = decoded `damageDealt`.
-- **OD-RECOVERY-096 (Dead Rail)**: live capture (deadlock-free chain, 4
+- **OD-RECOVERY-096 (medvedkovo)**: live capture (deadlock-free chain, 4
   launches 019ff6d6/019ff6de/019ff6ea/019ff6f0; run-4 persisted 38 dumps,
   labels 158.0–276.9 s) re-verdicts offset 0x0, 9/9 exact sums
   (146/162/145/162/140/178/181/171/168), score 1.0, flatness 1.0, Strict ≥ 2;
   d0 final 1598 = decoded `damageDealt`. **Offsets agree across both replays →
   `twoReplayRepeatability = true`.**
 - **Quad layout refined**: `[damageDealt, damageBlocked, damageAssisted1,
-  damageAssisted2]` at `[avatar+0x118]` (property indices 0xA–0xD) — Dead Rail
+  damageAssisted2]` at `[avatar+0x118]` (property indices 0xA–0xD) — medvedkovo
   finals d0 1598 / d1 140 / d3 228 == decoded `damageDealt` / `damageBlocked`
-  / `damageAssisted2`; Oasis d2 126 == `damageAssisted1`.
+  / `damageAssisted2`; savanna d2 126 == `damageAssisted1`.
 - **Driver fixes shipped with the session** (all evidence-backed): PS 5.1
   `break :label` from a NESTED loop does NOT exit the labeled foreach (flag +
   guard pattern); new teardown status `AvatarIdentityMismatch`; probe status
@@ -262,7 +262,7 @@ the consumption workstream).
 `playerPitch` / `playerRoll` published `Verified` via the ring-record chain
 (the identical position walk, `recordOffset 44` / `40`); offsets 0.
 Evidence: the rotation-triple reconciliation (`yaw-diff --field pitch|roll`
-re-verdicts the SAME OD-088/089 dumps — Oasis 48/48 + Dead Rail 56/56,
+re-verdicts the SAME OD-088/089 dumps — savanna 48/48 + medvedkovo 56/56,
 score 1.0, flatness 1.0, record-span trimmed) + the item-7 Branch A
 rotation sub-proof as StaticAnalysis evidence. Post-apply: `offset_check
 --check-schema` 8 chains + fidelity 8/8 (the draft's "7" expectation
@@ -291,7 +291,7 @@ The live frame's own-row `DamageDealt` is no longer honest-0:
 Operator go-ahead executed the remaining live items. The chain launch
 (`scripts/invoke-od-replay-chain.ps1` → launcher → clicker → hp-diffing
 driver `-LiveAcquire -Track damage-dealt -RegionAnchor avatar-stats`)
-played the ground-truth Oasis replay (session `019ff74f-fd4c-7a30-8686-
+played the ground-truth savanna replay (session `019ff74f-fd4c-7a30-8686-
 f71c18db4b22`, own viewpoint 3760577) end-to-end:
 
 - **Damage-dealt lane re-proven live IN-SESSION at DEFAULT lag (no explicit

@@ -19,7 +19,7 @@ cited as penetration-feature progress.
 
 ## Result
 
-The Oasis live batch schedule in OD-RECOVERY-100 lost one run when the host's
+The savanna live batch schedule in OD-RECOVERY-100 lost one run when the host's
 rendezvous publisher briefly replaced its JSON file. The driver treated that
 single missing read as definitive and threw `rendezvous_unavailable` even
 though the same host and game were still healthy immediately afterward.
@@ -65,7 +65,7 @@ Milestone gate:
 
 Resume with the PN owner ship review, which is now first in the durable action
 list. When Item 7 resumes, run the post-contract two-replay batch pass only
-after the PowerShell 7 marker normalization and stored Oasis clock-window
+after the PowerShell 7 marker normalization and stored savanna clock-window
 re-verdict. Require the retained witness aggregates to show attempts one and
 zero tears for every resolved item before changing
 `HardwareAtomicReadProven`.

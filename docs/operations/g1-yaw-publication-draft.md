@@ -4,7 +4,7 @@
 > `playerYaw` is published `Verified` via the module-rooted ring-record
 > chain (12 hops: the identical position walk + `recordOffset 48` = float32
 > hull yaw at `+0x30`); `offsets.playerYaw` stays 0 by design. Gates were:
-> **OD-RECOVERY-089** CLOSED HIT 2026-08-11 (`+0x30` on Dead Rail, 56/56,
+> **OD-RECOVERY-089** CLOSED HIT 2026-08-11 (`+0x30` on medvedkovo, 56/56,
 > score 1.0, flatness 1.0 — `twoReplayRepeatability = true`) + operator
 > approval. `fieldValidation.playerYaw` is now `Verified` (the quarantined
 > Ghidra hypothesis is retained as the first evidence entry, superseded).
@@ -16,7 +16,7 @@
 
 | Field | Live evidence | Chain | offsets |
 |---|---|---|---|
-| `playerYaw` | OD-RECOVERY-088 (Oasis Palms, 48 dumps): ring-record **`+0x30`** hull-yaw float32, score 1.0, flatness 1.0, 48/48 matched, median per-dump lag +4.8 s, median per-dump error 0.000°; OD-RECOVERY-089 (Dead Rail, 56 dumps): **`+0x30` AGREES** — score 1.0, flatness 1.0, 56/56 matched, median per-dump lag −2.5 s (spread 5.6 s; per-dump bounded bidirectional path — the G2 label skew is opposite in sign per replay) | The **identical module-rooted walk as `playerPositionX`** (same root RVA, same entity lookup, same ring-index hop — position `+0x10` and yaw `+0x30` were proven on the SAME record) with the final hop `recordOffset 48` (`0x30`) instead of `recordOffset 16` (`0x10`) | `offsets.playerYaw` stays **0** (chained field — the runtime computes `moduleBase + offset` and the ring record is battle-scoped heap) |
+| `playerYaw` | OD-RECOVERY-088 (savanna, 48 dumps): ring-record **`+0x30`** hull-yaw float32, score 1.0, flatness 1.0, 48/48 matched, median per-dump lag +4.8 s, median per-dump error 0.000°; OD-RECOVERY-089 (medvedkovo, 56 dumps): **`+0x30` AGREES** — score 1.0, flatness 1.0, 56/56 matched, median per-dump lag −2.5 s (spread 5.6 s; per-dump bounded bidirectional path — the G2 label skew is opposite in sign per replay) | The **identical module-rooted walk as `playerPositionX`** (same root RVA, same entity lookup, same ring-index hop — position `+0x10` and yaw `+0x30` were proven on the SAME record) with the final hop `recordOffset 48` (`0x30`) instead of `recordOffset 16` (`0x10`) | `offsets.playerYaw` stays **0** (chained field — the runtime computes `moduleBase + offset` and the ring record is battle-scoped heap) |
 
 The chain is NOT duplicated here: the canonical walkable form lives in
 `docs/operations/g0-walkable-position-chains.draft.json` (`playerPositionX`

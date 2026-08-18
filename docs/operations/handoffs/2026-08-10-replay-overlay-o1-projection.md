@@ -27,7 +27,7 @@ swap-in) will share.
    name/team/HP/alive/distance plus projected screen X/Y/depth +
    inViewport (or behind-camera), sorted by distance. Pure offline preview
    of the replay-overlay data seam; no UI, no process access.
-3. **Real-data fixes surfaced by previewing Oasis Palms at 200s**:
+3. **Real-data fixes surfaced by previewing savanna at 200s**:
    - The position stream carries non-participant entities (a duplicate
      "self" stream that starts at the viewpoint's spawn then teleports to
      origin, plus projectiles/debris). `ReplayFrameSource` now renders

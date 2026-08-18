@@ -19,11 +19,11 @@ entity — the *first* broadcast only — with `{"maxHealth": n}`, plus a typed
 | Check | Result |
 |---|---|
 | Author cross-check | 3760577 / 2549401 (tank_id 2897, Churchill I, same account) = **700 on both replays**, exactly `battle_results.hitpoints_left: 700` |
-| Monotonicity | u16@+0x33 is monotonic non-increasing per tank across broadcasts (Dead Rail 2549397: 540 → 501 after damage) → it's current HP, and the first value is the max |
+| Monotonicity | u16@+0x33 is monotonic non-increasing per tank across broadcasts (medvedkovo 2549397: 540 → 501 after damage) → it's current HP, and the first value is the max |
 | First-broadcast-before-damage | **28/28 tanks** across both replays: the first type-5 packet for each entity precedes its first damage packet |
-| Aggregate bound | total `damage_dealt` ≤ Σ first-broadcast values: Oasis 8964 ≤ 12140, Dead Rail 6227 ≤ 8500 |
+| Aggregate bound | total `damage_dealt` ≤ Σ first-broadcast values: savanna 8964 ≤ 12140, medvedkovo 6227 ≤ 8500 |
 | Cross-replay identity | same tank_id → same value (700 twice) |
-| Real-replay decode | **14/14 Oasis + 14/14 Dead Rail** `MaxHealthObserved` events, values byte-exact vs the raw scan (Oasis: 680…1550, Dead Rail: 520…780) |
+| Real-replay decode | **14/14 savanna + 14/14 medvedkovo** `MaxHealthObserved` events, values byte-exact vs the raw scan (savanna: 680…1550, medvedkovo: 520…780) |
 
 ## Product changes
 
@@ -63,6 +63,6 @@ dsub=1 packet layout), then wire `ReplayFrameSource` to compute
 
 - Manual scan + validation scripts (inline Python over `data.wotreplay`
   framing: u32 len / u32 type / f32 clock headers).
-- Real-replay decodes written to the local host DB: Oasis decode run
-  `019fef3e-dabc-7146-bd18-71cba0c80d2e`, Dead Rail
+- Real-replay decodes written to the local host DB: savanna decode run
+  `019fef3e-dabc-7146-bd18-71cba0c80d2e`, medvedkovo
   `019fef3f-c72d-716b-880d-d126d691f355` (14 `MaxHealthObserved` each).

@@ -49,7 +49,7 @@ was returned. No game file was modified or copied into the repository.
 
 ## Honest limits
 
-- This exact install contains no Oasis Palms (arena `11`) or Dead Rail (arena
+- This exact install contains no savanna (arena `11`) or medvedkovo (arena
   `7`) texture, so the two current ground-truth replays still render the
   intentional dots-only panel.
 - The texture transport is install-verified, but dot-versus-terrain alignment

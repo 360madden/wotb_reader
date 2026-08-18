@@ -1,6 +1,6 @@
 # 2026-08-11 — CAM-010/CAM-011: the camera truth (posA yz-swapped; eye located)
 
-Binary: wotblitz.exe 11.19.0.10 (hash `1cda5c31…1760307d`). Replays: Oasis
+Binary: wotblitz.exe 11.19.0.10 (hash `1cda5c31…1760307d`). Replays: savanna
 Palms (sessions `019ff26b` v7b, `019ff276` v7c, `019ff28a` eye-probe).
 Read-only; resolver, read surface, and `memory-offsets/11.19.0.10.json`
 untouched. Full evidence: `cam010-yz-swap-position-convention.md` +
@@ -30,7 +30,7 @@ behind posA); posC `+0xB0` is unrelated.
 ## Session procedure that works
 
 1. Launcher: `scripts/launch-offline-replay-for-od.ps1 -ReplayPath
-   .data/reimport-oasis.wotbreplay -WindowWaitSeconds 240`, poll the log
+   .data/reimport-savanna.wotbreplay -WindowWaitSeconds 240`, poll the log
    for `OK OfflineReplayVerified` + the `battleSession=` anchor.
 2. **The anchor scan only works while the replay is in its readable
    window** — run any probe right at the gate; a late probe finds 0
@@ -45,6 +45,6 @@ behind posA); posC `+0xB0` is unrelated.
 
 CAM-012 — lock the orientation convention via the intro-orbit two-sample
 sweep. Then: OD-090 wider-region damage-dealt sweep, the HP Phase-4 rule
-(Dead Rail victim 2549399), yaw publication apply (operator approval
+(medvedkovo victim 2549399), yaw publication apply (operator approval
 only), item 7 (hardware atomicity) LAST. The overlay `cameraOverride`
 seam can ship the yz-swap once CAM-012 lands.

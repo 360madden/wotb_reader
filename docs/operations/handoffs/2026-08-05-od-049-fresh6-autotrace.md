@@ -1,7 +1,7 @@
 # OD-049 FRESH6: M2 family mapping works; auto-trace arg-splat + selection fixed
 
 Date: 2026-08-05 · Campaign: OD-049 · Session: `019fd32e-b167-78fc-97c9-47417a2e9081`
-Replay: Dead Rail (surviving battle B), replay start 18:28:22Z, battle end ~18:32:53Z
+Replay: medvedkovo (surviving battle B), replay start 18:28:22Z, battle end ~18:32:53Z
 Report: `.data/od-049-fresh-result.json` (immutable; written 2026-08-05T18:31:22Z)
 
 ## What FRESH6 proved (the bug-hunt payoff)

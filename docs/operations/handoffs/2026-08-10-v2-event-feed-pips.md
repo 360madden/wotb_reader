@@ -38,7 +38,7 @@ data is the decoded canonical event stream.
   1 view-model test (pips populated from the frame JSON).
 - Full solution: 0 warnings; all 13 test projects pass (Core 153,
   Application 47, Overlay 78, Web 134, CLI 35, …).
-- Real-data sanity on Oasis Palms: `overlay-frame` at t=178 s emits two
+- Real-data sanity on savanna: `overlay-frame` at t=178 s emits two
   damage pips (511 + 256 on entity 3760567 — the real hit timeline), and the
   2 s window expires them by t=180 s. This is the first HUD element whose
   data came from the actual decoded battle, not a fixture.

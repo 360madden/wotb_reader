@@ -92,7 +92,7 @@ history (7 evidence entries documenting the non-promoted candidate paths)
 and ADDS the three verification entries below. Second-opinion pass
 (2026-08-09) corrected the draft: a replace would discard valuable
 negative-scan provenance. `independentProcessLaunches` is 4 (OD-075 Dead
-Rail + OD-076/081/082 Oasis Palms — four fresh processes with positive
+Rail + OD-076/081/082 savanna — four fresh processes with positive
 polls), `independentReplays` 2 (the two content-distinct replays).
 
 ```json
@@ -109,7 +109,7 @@ polls), `independentReplays` 2 (the two content-distinct replays).
     {
       "provenanceKind": "GameHarness",
       "sourceTool": "WotBTreader.Host.Web gated discover/entity-position (loopback)",
-      "notes": "24/24 stable-resolver-positive polls with allConsistentDoubleRead=true across OD-075 (Dead Rail), OD-076 (Oasis Palms), OD-081/082 (Oasis Palms live, un-armed corrected procedure); resolver reads the position triple through the verified chain."
+      "notes": "24/24 stable-resolver-positive polls with allConsistentDoubleRead=true across OD-075 (medvedkovo), OD-076 (savanna), OD-081/082 (savanna live, un-armed corrected procedure); resolver reads the position triple through the verified chain."
     },
     {
       "provenanceKind": "StaticAnalysis",

@@ -40,7 +40,7 @@
        the verdict is not a HIT.
 
   Repeatability: run the identical flow on the second independent replay
-  (Dead Rail) and require the matched offset to agree - the Phase-4 rule,
+  (medvedkovo) and require the matched offset to agree - the Phase-4 rule,
   applied by the operator after the two sessions.
 
 .EXAMPLE
@@ -76,7 +76,7 @@ param(
     [ValidateRange(4, 4096)]
     [int]$RegionLength = 256,
     # Comma-separated replay-clock seconds for flat CONTROL dumps in the
-    # stationary segments (e.g. '20,240' for Oasis Palms). Optional in live
+    # stationary segments (e.g. '20,240' for savanna). Optional in live
     # mode; the verdict's flatness check needs >= 2 control windows.
     [string]$ControlTimes = '',
     # Radians threshold for a turn segment in --yaw-dump (0.1 = 2x the 0.05
@@ -88,7 +88,7 @@ param(
     # bounded lag search); 0 keeps the exact window-delta behavior.
     [double]$MaxLagSeconds = 8,
     # OD-RECOVERY-089: the G2 replay-clock LABEL skew is opposite in sign
-    # between replays (Oasis memory lags ~3-5 s; Dead Rail memory leads
+    # between replays (savanna memory lags ~3-5 s; medvedkovo memory leads
     # ~2-5 s), so the verdict also searches memory-leading lags up to this
     # many seconds.
     [double]$MemoryLeadSeconds = 8,
@@ -96,7 +96,7 @@ param(
     # [-MemoryLeadSeconds, +MaxLagSeconds] (median + spread reported).
     # Handles per-dump-varying label skew; off = one shared lag.
     # DEFAULT ON since OD-RECOVERY-089: the one-directional shared path
-    # produced an honest-negative on Dead Rail (label skew is opposite in
+    # produced an honest-negative on medvedkovo (label skew is opposite in
     # sign per replay); per-dump is proven on both replays (088 +48/48,
     # 089 56/56 at +0x30). Pass -PerDumpLag:$false to force the shared path.
     [switch]$PerDumpLag = $true,
@@ -169,7 +169,7 @@ $Schedule | ForEach-Object {
     Write-Host ("facing_session:   turn {0,7}s expected {1,7}deg -> dump {2,7}s and {3,7}s" -f `
         $_.turn_replay_s, $_.expected_delta_deg, $_.dump_before_s, $_.dump_after_s)
 }
-Write-Host "facing_session:   + 2-3 flat control dumps in the stationary segments (e.g. ~20s and ~240s for Oasis Palms)."
+Write-Host "facing_session:   + 2-3 flat control dumps in the stationary segments (e.g. ~20s and ~240s for savanna)."
 Write-Host ("facing_session: verdict command: " + $Qualification.commands.yaw_diff)
 
 # ---- 2. DUMP (live, gated seam) ------------------------------------------

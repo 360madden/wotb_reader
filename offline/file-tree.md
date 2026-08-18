@@ -353,7 +353,7 @@ docs/operations/handoffs/2026-08-15-penetration-v03-evaluator-and-armor-triage.m
 docs/operations/handoffs/2026-08-15-penetration-v03-safety-and-blockers.md
 docs/operations/handoffs/2026-08-15-penetration-v03-source-verdict-and-capture-contract.md
 docs/operations/handoffs/2026-08-16-hud-visual-and-interaction-ship.md
-docs/operations/handoffs/2026-08-16-od-recovery-102-oasis-batch-reverdict.md
+docs/operations/handoffs/2026-08-16-od-recovery-102-savanna-batch-reverdict.md
 docs/operations/handoffs/2026-08-16-pen-capture-owner-census-source.md
 docs/operations/handoffs/2026-08-16-pen-ownership-walk-live-validation.md
 docs/operations/handoffs/2026-08-16-pen-ownership-walk-live.md
@@ -375,10 +375,12 @@ docs/operations/handoffs/2026-08-17-recovery-hardening.md
 docs/operations/handoffs/2026-08-17-recovery-module.md
 docs/operations/handoffs/2026-08-17-scan-lease-bughunt.md
 docs/operations/handoffs/2026-08-18-ammo40-setter-found.md
-docs/operations/handoffs/2026-08-18-deadrail-shell-swap-negative.md
+docs/operations/handoffs/2026-08-18-medvedkovo-shell-swap-negative.md
 docs/operations/handoffs/2026-08-18-recovery-hardening-2.md
+docs/operations/handoffs/2026-08-18-replay-label-reconciliation.md
 docs/operations/handoffs/2026-08-18-rotator-static-structure.md
 docs/operations/handoffs/2026-08-18-shell-descriptor-link.md
+docs/operations/handoffs/2026-08-18-shell-identity-holder-writer.md
 docs/operations/handoffs/2026-08-18-shell-index-link-found.md
 docs/operations/handoffs/2026-08-18-shell-state-read-surface.md
 docs/operations/handoffs/README.md

@@ -44,4 +44,4 @@ race is structurally removed rather than timed around.
 The HUD code ship and this test-infrastructure fix are both merged. Remaining
 forward work is the live/owner-gated penetration capture and HUD visual review
 (next-10 actions 1-6 and 10), plus offline items 7 (rendezvous ACL hardening)
-and 8 (Oasis batch re-verdict) — none of which this scope admitted.
+and 8 (savanna batch re-verdict) — none of which this scope admitted.

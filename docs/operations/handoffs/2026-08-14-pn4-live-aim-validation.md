@@ -3,7 +3,7 @@
 **Date:** 2026-08-14 (UTC)
 **Roadmap:** Phase 6 (`docs/operations/product-roadmap.md`)
 **Feature:** armor-penetration chance badge
-**Live session:** Dead Rail, installed-client-compatible 11.19.0 replay; battle session `01a0015b-0005-72b5-beaa-c4d5a1b73157`
+**Live session:** medvedkovo, installed-client-compatible 11.19.0 replay; battle session `01a0015b-0005-72b5-beaa-c4d5a1b73157`
 
 ## Decision
 
@@ -83,7 +83,7 @@ not converted into a guessed verdict.
 ## Next step
 
 A second-replay PN smoke check was the planned regression task. It subsequently
-passed on Oasis/Churchill and is recorded in
+passed on savanna/Churchill and is recorded in
 `handoffs/2026-08-14-pn4-second-replay-regression.md`; the roadmap and top-10
 list now reflect that result. The full repository gate also passed after the
 second-replay documentation and capture hardening changes. PN remains
@@ -92,7 +92,7 @@ research remain.
 
 ## Postscript — second-replay and final gate (2026-08-14)
 
-The content-distinct Oasis/Churchill regression exercised the same managed
+The content-distinct savanna/Churchill regression exercised the same managed
 launcher, CAM-013 capture, completion detection, aim feed, and scorer. It
 recorded 161 G2-proven samples and improved band accuracy from 38.889% to
 46.667%; its six baseline ricochet predictions were all removed by the true

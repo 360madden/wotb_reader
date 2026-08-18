@@ -12,7 +12,7 @@ claimable; the X4 live frame's `hp: null` can become real (additive).
 
 ## Session summary
 
-Approved live session on Oasis Palms (content-distinct 11.19.0.10 replay,
+Approved live session on savanna (content-distinct 11.19.0.10 replay,
 battle 2026-08-02T21:15:07), victim **3760578** (takes real damage; the
 viewpoint player took 0 in both replays). Four launches were needed:
 
@@ -45,7 +45,7 @@ viewpoint player took 0 in both replays). Four launches were needed:
 
 ```text
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/launch-offline-replay-for-od.ps1 `
-  -ReplayPath <oasis.wotbreplay> -RepoRoot <root>   # logs battleSession=<guid>
+  -ReplayPath <savanna.wotbreplay> -RepoRoot <root>   # logs battleSession=<guid>
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-hp-diffing-session.ps1 `
   -SessionId <launch-matched host-store session> -VictimEntityId 3760578 `
   -LiveAcquire -ControlTimes 30,230 -SnapshotsPath .data/hp-snapshots.json `
@@ -66,7 +66,7 @@ score.
 |---|---|
 | Launches | 4 (3 gated OK, 1 rendezvous-fragility abort on the pre-fix driver) |
 | Executable SHA-256 | `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d` |
-| Replay | Oasis Palms (savanna), 1,045,525 B, battle 2026-08-02T21:15:07 |
+| Replay | savanna (savanna), 1,045,525 B, battle 2026-08-02T21:15:07 |
 | Victim | 3760578 (Churchill I, team 1) — 9 damage events, 1,183 total damage |
 | Dumps (confirmation run) | 74 (`hp-snapshots4.json`, dense span hit−1…hit+13 + 30/230 s controls) |
 | Candidate offset | **0xB8** (entity-base current-health signed int16) |
@@ -107,8 +107,8 @@ Evidence lands in `.data/`:
 |---|---|
 | Target build | 11.19.0.10 |
 | Executable SHA-256 | `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d` |
-| Replay 1 | Oasis Palms, victim **3760578** (takes real damage — viewpoint player took 0 in both replays) |
-| Replay 2 (Phase-4 repeatability) | Dead Rail, victim **2549399** (18 events / 4,647 damage) |
+| Replay 1 | savanna, victim **3760578** (takes real damage — viewpoint player took 0 in both replays) |
+| Replay 2 (Phase-4 repeatability) | medvedkovo, victim **2549399** (18 events / 4,647 damage) |
 | Region anchor | `entity-base` (HP lives on the entity base record, NOT the tank record `[entity+0x3C]` transform) |
 | Region length | ≥ 0x120 (driver default 320 = 0x140, covers healing `+0x11E`) |
 | Correlate | **signed int16** (`hp-diff --int16 true`, on by default for the HP/decrement direction) |
@@ -128,7 +128,7 @@ status: Hit - the entity-base current-health int16 is CONFIRMED LIVE at
   +0xB8 (byte-level exact track + automated contract HIT with the subset-sum
   lag attribution); the X4 live frame hp: null can become real
 mode: invoke-hp-diffing-session.ps1 -SessionId <launch-matched> -VictimEntityId
-  3760578 -LiveAcquire -ControlTimes 30,230 on Oasis Palms (4 launches, 3 gated
+  3760578 -LiveAcquire -ControlTimes 30,230 on savanna (4 launches, 3 gated
   OK): launcher to OfflineReplayVerified (G2 anchor at the blitz-log marker),
   /discover/entity-region entity-base dumps (region 320, replay-clock labeled,
   sameDecodedClockProven required) on a DENSE SPAN around each hit (hit-1 to
@@ -160,7 +160,7 @@ liveRun:
 proof:
   hpLiveAtEntityBaseOffset: true (candidate = +0xB8 with flatness 1.0,
     Strict 8/8 exact-sum windows, plus the exhaustive byte-level track)
-  twoReplayRepeatability: false - pending the identical flow on Dead Rail
+  twoReplayRepeatability: false - pending the identical flow on medvedkovo
     victim 2549399 (Phase-4 rule; the harness fixes from this session make
     the identical flow work there)
   liveFrameHpBecomesReal: true - the X4 live frame can fill hpCurrent/hpMax
@@ -185,12 +185,12 @@ proof:
   applies decoded damage events to the health field with a variable
   ~1–3.4 s lag, so time-window attribution alone could never match the live
   writes; the subset model matches each drop against the sum of its event
-  group (each event consumed once), which is also what makes the Dead Rail
+  group (each event consumed once), which is also what makes the medvedkovo
   repeatability session work; (3) `-DataRoot` now feeds BOTH the QUALIFY
   extractor `--db` and `hp-diff --data-root` (the repo-local DB 404s in the
   host store — same class as 086).
 - **Two-replay agreement (Phase-4 rule)** → still pending: the identical flow
-  on Dead Rail (victim 2549399, 18 events / 4,647 damage) must agree on
+  on medvedkovo (victim 2549399, 18 events / 4,647 damage) must agree on
   `+0xB8` before the HP publication (roadmap P2) proceeds through the
   operator gate.
 

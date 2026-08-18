@@ -10,7 +10,7 @@
 
 ## Session summary
 
-Ran the one-command chain (`scripts/invoke-g1-live-poll.ps1` on the Oasis
+Ran the one-command chain (`scripts/invoke-g1-live-poll.ps1` on the savanna
 Palms replay, `-WindowWaitSeconds 240`) end-to-end a second time. Everything
 held except the one known open variable:
 

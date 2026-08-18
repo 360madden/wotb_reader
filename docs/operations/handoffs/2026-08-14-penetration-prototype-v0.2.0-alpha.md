@@ -33,9 +33,9 @@ and `v0.2.0-alpha` tag include the later repository hardening through
 
 ## Evidence at assignment
 
-- Dead Rail: 150 G2-proven aim samples; classified band accuracy improved
+- medvedkovo: 150 G2-proven aim samples; classified band accuracy improved
   from 69.565% to 72.727%, and ricochet precision from 66.667% to 80.000%.
-- Oasis Palms / Churchill: 161 G2-proven aim samples; classified band accuracy
+- savanna / Churchill: 161 G2-proven aim samples; classified band accuracy
   improved from 38.889% to 46.667%, removing six false center-line ricochet
   predictions.
 - Both managed launches reached `OfflineReplayVerified`; unsupported inputs

@@ -28,7 +28,7 @@
 - `W2sHudView` renders colored pins + labels under the nameplates; FOV slider
   added to the toolbar (feeds the existing `HudFovDegrees` property).
 - 13 new tests (Application 4, Web 1, CLI 3, Storage 4 incl. migration-count
-  bumps 5→6, Overlay 2); smoke-tested against the real Oasis Palms session
+  bumps 5→6, Overlay 2); smoke-tested against the real savanna session
   (add → projected → remove).
 
 ### 3. First targeted Ghidra pass (Workstream B) — a real static finding

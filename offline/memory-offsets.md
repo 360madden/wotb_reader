@@ -175,7 +175,7 @@ Two more fields joined the walkable `chains` family under G1
   ONLY (`GameCoreRootRva` → … → `entityLookup`, the position chain's hops
   1..8 — HP does NOT take the movement-filter/ring path) with final hop
   `recordOffset 184` = signed int16 current health at `[entity+0xB8]`
-  (OD-RECOVERY-087 Oasis Palms 74 dumps Strict 8/8 + OD-RECOVERY-091 Dead
+  (OD-RECOVERY-087 savanna 74 dumps Strict 8/8 + OD-RECOVERY-091 Dead
   Rail 58 dumps Strict 4/4 via the lead-side window —
   `twoReplayRepeatability = true`). Sibling fields on the same entity-base
   record: max `+0x11C`, alive `+0xBA`, healing `+0x11E` (decoded by the pure
@@ -183,8 +183,8 @@ Two more fields joined the walkable `chains` family under G1
 - **`playerYaw`** — `Verified` via the ring-record chain: the IDENTICAL
   module-rooted walk as `playerPositionX` (position `+0x10` and yaw `+0x30`
   were proven on the SAME ring record) with final hop `recordOffset 48` =
-  float32 hull yaw at `+0x30` (OD-RECOVERY-088 Oasis 48/48 + OD-RECOVERY-089
-  Dead Rail 56/56 per-dump bidirectional lag — `twoReplayRepeatability =
+  float32 hull yaw at `+0x30` (OD-RECOVERY-088 savanna 48/48 + OD-RECOVERY-089
+  medvedkovo 56/56 per-dump bidirectional lag — `twoReplayRepeatability =
   true`). The rotation triple is roll `+0x28` / pitch `+0x2C` / yaw `+0x30`;
   this resolves-by-supersession the quarantined static yaw candidate
   (ring-record `RingRecordRegion.YawOffset = 0x30` is live-verified).
@@ -192,7 +192,7 @@ Two more fields joined the walkable `chains` family under G1
   via the SAME ring-record chain with final hops `recordOffset 44`
   (float32 hull pitch at `+0x2C`) / `recordOffset 40` (float32 hull roll at
   `+0x28`). Rotation-triple reconciliation: `yaw-diff --field pitch|roll`
-  re-verdicts the SAME immutable OD-088/089 dumps — Oasis 48/48 + Dead Rail
+  re-verdicts the SAME immutable OD-088/089 dumps — savanna 48/48 + medvedkovo
   56/56 each, score 1.0, flatness 1.0 (record-span 0x38-trimmed;
   `--record-span` excludes the next ring entry's byte-near-identical
   sibling decoy), `twoReplayRepeatability = true`. With this apply the
@@ -213,8 +213,8 @@ published table (fidelity-enforced by `offset_check.py`).
   candidate's vftable dword must equal the target; scan bounds max 4
   candidates / alignment 4 ride the hop note) with final hop
   `recordOffset 280` = uint32 battle-stats quad base `[avatar+0x118]`,
-  **dword0 = cumulative own `damageDealt`** (OD-RECOVERY-095 Oasis 5/5
-  exact sums via the bounded lag path + OD-RECOVERY-096 Dead Rail 9/9 —
+  **dword0 = cumulative own `damageDealt`** (OD-RECOVERY-095 savanna 5/5
+  exact sums via the bounded lag path + OD-RECOVERY-096 medvedkovo 9/9 —
   `twoReplayRepeatability = true`, finals 752 / 1598 = decoded
   `damageDealt`). Quad layout: `[damageDealt, damageBlocked,
   damageAssisted1, damageAssisted2]` (property indices 0xA-0xD via the

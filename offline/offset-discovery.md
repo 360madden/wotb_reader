@@ -399,7 +399,7 @@ by `scripts/invoke-hp-diffing-session.ps1` / `invoke-facing-session.ps1`):
     byte-near-identical, a tie-break decoy under the lag path).
   - `--max-lag-seconds` / `--memory-lead-seconds` / `--per-dump-lag` — the
     bounded bidirectional per-dump lag path: the G2 replay-clock LABEL skew
-    is opposite in sign per replay (Oasis memory lags ~+4.8 s; Dead Rail
+    is opposite in sign per replay (savanna memory lags ~+4.8 s; medvedkovo
     leads ~−2.5 s), so the per-dump search must see both directions.
 - Both verdicts apply the hardened contract (score 1.0 + flatness 1.0 +
   ≥ 2 matched windows); the Phase-4 two-replay rule requires the matched

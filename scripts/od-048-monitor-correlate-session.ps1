@@ -130,7 +130,7 @@ param(
     [int]$MaxStagingAttempts = 3,
     [double]$ReadIntervalSeconds = 2.0,
     # Read rounds; the battle length (duration_ticks / 10MHz) bounds the useful
-    # window. Dead Rail is ~271s; default 90 rounds at 2s covers ~180s.
+    # window. medvedkovo is ~271s; default 90 rounds at 2s covers ~180s.
     [int]$MaxReadRounds = 90,
     # Per-axis correlation tolerance (world units).
     [double]$TolerancePerAxis = 6.0,
@@ -200,7 +200,7 @@ param(
     [ValidateSet('csharp', 'x64dbg')]
     [string]$TraceEngine = 'csharp',
     # How long the auto-invoked write-trace keeps its window. Budget from the
-    # choreography timing table: -MaxReadRounds 70 on Dead Rail leaves ~31s
+    # choreography timing table: -MaxReadRounds 70 on medvedkovo leaves ~31s
     # of battle; 25 is the recommended first attempt. The operator may pass a
     # higher value on a later attempt once per-round timing is observed.
     [int]$AutoTraceSeconds = 25,
@@ -1357,7 +1357,7 @@ $battleStartUtc = $anchorUtc.AddSeconds([double]$AttendanceLatencySeconds)
 # -- Battle-time budget --
 # Staging is the expensive step: up to MaxStagingAttempts x StageTopN entities
 # x 3 axes = 27 full-memory scans, each taking tens of seconds. Unguarded, a
-# slow first attempt plus retries can consume the ENTIRE battle (Dead Rail is
+# slow first attempt plus retries can consume the ENTIRE battle (medvedkovo is
 # ~271s; the real decoded sessions average ~250s) and leave the monitor with
 # an empty world. Derive a hard staging deadline from the decoded duration:
 # staging must never run past (battle end - minimum monitor window). All

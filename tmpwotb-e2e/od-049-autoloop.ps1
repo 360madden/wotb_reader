@@ -53,7 +53,7 @@ param(
     [switch]$AttachSmokeOnFirstRound,
     # Auto-trace green-window seconds (passed through to the auto-invoked
     # x64dbg-write-trace.ps1). Budget from the choreography table: 70 rounds
-    # leaves ~31s on Dead Rail; 25 is the recommended first attempt.
+    # leaves ~31s on medvedkovo; 25 is the recommended first attempt.
     [int]$AutoTraceSeconds = 25,
     # FRESH38+ source-arm: arm the esi copy-source page at first hit during
     # the auto write-trace (passed through to od-048 / invoke-csharp).

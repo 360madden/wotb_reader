@@ -44,7 +44,7 @@ spotting data exists in replays, so the whole battle is visible).
 
 ## Real-data verification (web host, `.data` DB)
 
-Oasis Palms frame at t=190: 14 tanks all carry world coords; normalized
+savanna frame at t=190: 14 tanks all carry world coords; normalized
 against the map-11 boundary (x[−254,198] z[−248,186]) the dots spread
 sensibly (e.g. 3760565 → (0.42, 0.40) team 1 alive; 3760567 → (0.40,
 0.75) team 2 wreck).

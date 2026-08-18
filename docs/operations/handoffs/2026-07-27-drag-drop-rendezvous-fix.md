@@ -41,4 +41,4 @@ Added optional `Func<SessionRow?, bool>? launchGame` delegate parameter and `Lau
 
 ## Imported data
 
-10 real replays imported into `.data/` — all decoded successfully (14 participants each, maps: Copperfield, Yamato Harbor, Falls Creek, Desert Sands, Normandy, Mines). Web host verified at http://127.0.0.1:9182.
+10 real replays imported into `.data/` — all decoded successfully (14 participants each, maps: karieri, Yamato Harbor, Falls Creek, Desert Sands, Normandy, Mines). Web host verified at http://127.0.0.1:9182.

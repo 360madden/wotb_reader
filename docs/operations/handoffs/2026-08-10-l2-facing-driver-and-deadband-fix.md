@@ -47,8 +47,8 @@ at **+0x2C** and a constant (non-tracking) decoy at +0x20:
 
 | Replay | Verdict | Offset | Score | Flatness | Matched |
 |---|---|---|---|---|---|
-| Oasis Palms | HIT | `+0x2C` | 1.0 | 1.0 | 27/27 |
-| Dead Rail | HIT | `+0x2C` | 1.0 | 1.0 | 35/35 |
+| savanna | HIT | `+0x2C` | 1.0 | 1.0 | 27/27 |
+| medvedkovo | HIT | `+0x2C` | 1.0 | 1.0 | 35/35 |
 
 The Phase-4 two-replay agreement now holds for the facing track at the
 synthetic level, matching the HP (14/14) and damage-dealt (5/5) tracks.
@@ -78,7 +78,7 @@ NOT track yaw; the live session needs no decoy at all.
 ## Next
 
 The L2 live session is now code-ready (same gate as L1): the moment the
-operator approves, start the web host on the verified Oasis replay and run
+operator approves, start the web host on the verified savanna replay and run
 `invoke-facing-session.ps1 -SessionId 019fecb0-... -LiveAcquire
 -ControlTimes 20,240`. Both L1 (tank-record anchor, HP) and L2 (ring-record
 anchor, yaw) share the same seam — one approved live window can cover both

@@ -18,7 +18,7 @@ pass remains
   158.9 s the own row carried `DamageDealt=145`; all 13 decoded roster rows
   present in the frame joined exactly and there were zero join mismatches.
 - Camera Branch B is closed at the Phase-4 two-replay standard: 12/12 probes
-  resolved across Dead Rail + Oasis, every probe module-rooted, all three
+  resolved across medvedkovo + savanna, every probe module-rooted, all three
   identity gates true, byte-identical, and zero `pose-double-read` failures.
 - Batch read-pass timing now exists on both content-distinct replays: six
   validated, clock-attested passes, 62/63 requested entities resolved, and no
@@ -29,18 +29,18 @@ pass remains
 
 | Replay / session | Camera witness | Batch witness | Other |
 |---|---|---|---|
-| Dead Rail / `01a0021f-e7f3-7434-9286-d9ea0a3eaca1` | 6/6 resolved, identity 6/6, module-rooted 6/6, consistent 6/6, failures 0 | 3 passes at 61.86 / 149.29 / 221.62 s; 7/7 resolved each; 8.796 / 7.889 / 13.372 ms; clock lag 0 ms; decoded position cross-check 21/21 | Damage HIT (score 1.0, flatness 1.0); completion marker persisted; live-frame own damage 145 |
-| Oasis / `01a00228-024c-7e6e-afb0-2dc12e52b061` | 6/6 resolved, identity 6/6, module-rooted 6/6, consistent 6/6, failures 0 | 3 passes at 199.53 / 220.70 / 250.88 s; resolved 14/14, 13/14, 14/14; 24.054 / 21.448 / 23.808 ms; clock lag 0.001 / 0 / 0 ms; unstable exhaustion 0 | Damage HIT (score 1.0, flatness 1.0); completion marker persisted |
+| medvedkovo / `01a0021f-e7f3-7434-9286-d9ea0a3eaca1` | 6/6 resolved, identity 6/6, module-rooted 6/6, consistent 6/6, failures 0 | 3 passes at 61.86 / 149.29 / 221.62 s; 7/7 resolved each; 8.796 / 7.889 / 13.372 ms; clock lag 0 ms; decoded position cross-check 21/21 | Damage HIT (score 1.0, flatness 1.0); completion marker persisted; live-frame own damage 145 |
+| savanna / `01a00228-024c-7e6e-afb0-2dc12e52b061` | 6/6 resolved, identity 6/6, module-rooted 6/6, consistent 6/6, failures 0 | 3 passes at 199.53 / 220.70 / 250.88 s; resolved 14/14, 13/14, 14/14; 24.054 / 21.448 / 23.808 ms; clock lag 0.001 / 0 / 0 ms; unstable exhaustion 0 | Damage HIT (score 1.0, flatness 1.0); completion marker persisted |
 
 ## Honest negatives and limits
 
-- Dead Rail mid-battle enumeration was 7/14 (precision 1.0, recall 0.5).
+- medvedkovo mid-battle enumeration was 7/14 (precision 1.0, recall 0.5).
   The fail-fast run stopped before memory reads; the retained run used those
   seven enumerated ids and did not claim full-roster enumeration.
-- Oasis's first batch schedule lost rendezvous transiently before the third
+- savanna's first batch schedule lost rendezvous transiently before the third
   target and wrote no artifact. The same live session was retried; only the
   complete three-pass retry is retained.
-- Oasis position matching was 33/41 inside the existing +/-2 s decoded-clock
+- savanna position matching was 33/41 inside the existing +/-2 s decoded-clock
   window (one unresolved entity). Eight moving samples fell outside that
   window. This is an honest cross-check negative, separate from the read-pass
   stability witness; no position verdict is promoted from it.

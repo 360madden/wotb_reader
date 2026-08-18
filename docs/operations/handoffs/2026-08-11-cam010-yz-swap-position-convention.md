@@ -1,7 +1,7 @@
 # CAM-010 — GameCamera posA is stored (x, z, y): CAM-004's 23.57 m verdict is an artifact
 
 Date: 2026-08-11. Binary: wotblitz.exe 11.19.0.10 (hash `1cda5c31…1760307d`).
-Replays: Oasis Palms (sessions `019ff276` [v7c] and `019ff26b` [v7b], both
+Replays: savanna (sessions `019ff276` [v7c] and `019ff26b` [v7b], both
 launched by the canonical launcher; CAM-003 flipped session-controller
 phase on both). Read-only offline analysis of the persisted v7b/v7c
 aggregates against the decoded store. Nothing promoted; resolver and read

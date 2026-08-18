@@ -38,7 +38,7 @@ replay-time window (the frame's existing visibility filter) are shown.
 
 ## Real-data verification (web host, `.data` DB)
 
-Added `CenterPOI` at world (0, 35, 0) to the Oasis Palms session via the
+Added `CenterPOI` at world (0, 35, 0) to the savanna session via the
 CLI `beacon add`; the frame API returned it with `worldX=0.0, worldZ=0.0`
 and the boundary normalization landed at (0.56, 0.57) on map 11 — near map
 center, as expected. Removed the test beacon afterward.

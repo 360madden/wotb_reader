@@ -23,7 +23,7 @@ OD-RECOVERY-075/076/077/078.
 - [ ] **G3 — stable-root live repeatability** (closed 2026-08-09): the
   `-PriorResultPaths` wiring is done; the flag flips on a positive poll that
   supplies the prior positive aggregate(s). Verify the ledger rows attest two
-  distinct replays (Dead Rail + Oasis Palms) with fresh processes.
+  distinct replays (medvedkovo + savanna) with fresh processes.
 - [ ] **G1 — hardware-atomic read proof** (CLOSED 2026-08-09,
   OD-RECOVERY-082): corrected acceptance — poll aggregate
   `stable-resolver-positive` 24/24 with `allConsistentDoubleRead=true` (the
@@ -52,7 +52,7 @@ All gate prerequisites closed; every verification step below PASSED:
 - Field identity: playerPositionX/Y/Z (float32 triple at record `+0x10`)
   are the promotion candidates; velocity `+0x28` NOT promoted (the poll
   reads position only); playerYaw stays Stale/Quarantined (untouched).
-- Repeatability: 2 launches (Dead Rail + Oasis Palms), 2 content-distinct
+- Repeatability: 2 launches (medvedkovo + savanna), 2 content-distinct
   replays, harness invariants (24/24, all module-rooted, all
   identity-revalidated, all consistent-double-read), provenance kinds
   StaticAnalysis (hash-bound Ghidra) + GameHarness (loopback discover) +
@@ -124,7 +124,7 @@ addresses (ASLR).
 
 For each field promoted, the table's `fieldValidation` requires:
 
-- [ ] `independentProcessLaunches` = 2 (Dead Rail process + Oasis Palms
+- [ ] `independentProcessLaunches` = 2 (medvedkovo process + savanna
   process — fresh processes, ledger-attested).
 - [ ] `independentReplays` = 2 (the two content-distinct 11.19.0 replays).
 - [ ] `harnessInvariantsPassed` = true (the poll's invariants: 24/24

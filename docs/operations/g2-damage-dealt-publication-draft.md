@@ -31,7 +31,7 @@
 > as `Verified`, mirroring the G1 HP/yaw packages
 > (`docs/operations/g1-hp-publication-draft.md` /
 > `g1-yaw-publication-draft.md`). The Phase-4 gates are CLOSED
-> (**OD-RECOVERY-095** Oasis + **OD-RECOVERY-096** Dead Rail,
+> (**OD-RECOVERY-095** savanna + **OD-RECOVERY-096** medvedkovo,
 > `twoReplayRepeatability = true`, offset agrees at `0x0` on both replays).
 > **One material difference from G1:** this publication adds `damageDealt`
 > to the offset-table schema AND introduces a new chain hop kind
@@ -45,13 +45,13 @@
 
 | Field | Live evidence | Chain | offsets |
 |---|---|---|---|
-| `damageDealt` (cumulative own damage dealt, uint32) | OD-RECOVERY-095 (Oasis Palms, session `019ff5f1`, 20 region dumps): the avatar-stats quad dword0 increments 1:1 with the decoded own-attacker events — re-verdict with the bounded lag path (`hp-diff --lag-tolerance`, the OD-087-established class): **offset 0x0, score 1.0, matched 5/5 damage windows with EXACT sums (152/144/151/170/1), flatness 1.0 (0/0 control windows), Strict 5/5 → HIT**; d0 final **752 = decoded `damageDealt` 752**; the at-session lag-0 verdict was an honest-negative from the +2.3–4.1 s memory-apply lag (control-window changes were real events). OD-RECOVERY-096 (Dead Rail, session `019ff6f0`, 38 dumps, clock labels 158.0–276.9 s): **offset 0x0, score 1.0, matched 9/9 windows with EXACT sums (146/162/145/162/140/178/181/171/168), flatness 1.0, Strict ≥ 2 → HIT**; d0 final **1598 = decoded `damageDealt` 1598** (all 10 decoded own-attacker events map 1:1; the first 145 at 154.5 s predates the earliest dump label). **Offsets agree across both replays (0x0) → `twoReplayRepeatability = true`** | The **gated vftable AOB scan for the entity-factory Avatar** (the reach path CORRECTED 2026-08-12: the camera chain's `avatarAddress` anchors `AvatarControllerReplay` vftable `0x3677e8c` — a DIFFERENT object; the stats quad lives on the entity-factory Avatar, vftable `0x36752a4` = RVA `0x032752a4`, 0x128-byte object) with the terminal hop `recordOffset 280` (`0x118`) = the uint32 battle-stats quad base, **dword0 = `damageDealt`**. The scan rides the existing guarded reader lease + ONE G2 attestation, identity re-gates the chosen candidate's vftable dword, max 4 candidates, alignment 4 (the `avatar-stats` region anchor, `EntityRecordRegionAnchor.AvatarStats`, already shipped + 6 tests) | `offsets.damageDealt` stays **0** (chained field — the runtime computes `moduleBase + offset` and the Avatar object is battle-scoped heap) |
+| `damageDealt` (cumulative own damage dealt, uint32) | OD-RECOVERY-095 (savanna, session `019ff5f1`, 20 region dumps): the avatar-stats quad dword0 increments 1:1 with the decoded own-attacker events — re-verdict with the bounded lag path (`hp-diff --lag-tolerance`, the OD-087-established class): **offset 0x0, score 1.0, matched 5/5 damage windows with EXACT sums (152/144/151/170/1), flatness 1.0 (0/0 control windows), Strict 5/5 → HIT**; d0 final **752 = decoded `damageDealt` 752**; the at-session lag-0 verdict was an honest-negative from the +2.3–4.1 s memory-apply lag (control-window changes were real events). OD-RECOVERY-096 (medvedkovo, session `019ff6f0`, 38 dumps, clock labels 158.0–276.9 s): **offset 0x0, score 1.0, matched 9/9 windows with EXACT sums (146/162/145/162/140/178/181/171/168), flatness 1.0, Strict ≥ 2 → HIT**; d0 final **1598 = decoded `damageDealt` 1598** (all 10 decoded own-attacker events map 1:1; the first 145 at 154.5 s predates the earliest dump label). **Offsets agree across both replays (0x0) → `twoReplayRepeatability = true`** | The **gated vftable AOB scan for the entity-factory Avatar** (the reach path CORRECTED 2026-08-12: the camera chain's `avatarAddress` anchors `AvatarControllerReplay` vftable `0x3677e8c` — a DIFFERENT object; the stats quad lives on the entity-factory Avatar, vftable `0x36752a4` = RVA `0x032752a4`, 0x128-byte object) with the terminal hop `recordOffset 280` (`0x118`) = the uint32 battle-stats quad base, **dword0 = `damageDealt`**. The scan rides the existing guarded reader lease + ONE G2 attestation, identity re-gates the chosen candidate's vftable dword, max 4 candidates, alignment 4 (the `avatar-stats` region anchor, `EntityRecordRegionAnchor.AvatarStats`, already shipped + 6 tests) | `offsets.damageDealt` stays **0** (chained field — the runtime computes `moduleBase + offset` and the Avatar object is battle-scoped heap) |
 
 The quad at `[avatar+0x118]` is, in order (property indices 0xA–0xD via the
 property-change dispatcher `FUN_01670de0`):
 `[damageDealt, damageBlocked, damageAssisted1, damageAssisted2]` — layout
-refined 2026-08-12: Dead Rail finals d0 1598 / d1 140 / d3 228 == decoded
-`damageDealt` 1598 / `damageBlocked` 140 / `damageAssisted2` 228; Oasis
+refined 2026-08-12: medvedkovo finals d0 1598 / d1 140 / d3 228 == decoded
+`damageDealt` 1598 / `damageBlocked` 140 / `damageAssisted2` 228; savanna
 (OD-095) d2 126 == `damageAssisted1`. Only dword0 (`damageDealt`) is
 published here; the other three dwords stay honest-unknown in the table
 (measured, not gate-closed to the Phase-4 standard for THEIR consumers —
@@ -95,7 +95,7 @@ keep `damageDealt` out of the published table (evidence stays in the ledger
 | Executable identity | `wotblitz.exe` v11.19.0.10 = `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d` (re-measured, G0) |
 | G1 (hardware-atomic read) | CLOSED — stored v4 aggregate 24/24 `stable-resolver-positive`, `allConsistentDoubleRead=true` |
 | G2 (same-decoded-clock) | CLOSED — `sameDecodedClockProven=true`, live confirmations (every 095/096 dump attested via the guarded lease + ONE G2 attestation) |
-| G3 (repeatability) | position-family closed (OD-075/076/078/081/082); damage-dealt repeatability = **OD-RECOVERY-096 CLOSED HIT** (`twoReplayRepeatability = true`, offset 0x0 on Oasis 5/5 + Dead Rail 9/9, score 1.0 / flatness 1.0 each) |
+| G3 (repeatability) | position-family closed (OD-075/076/078/081/082); damage-dealt repeatability = **OD-RECOVERY-096 CLOSED HIT** (`twoReplayRepeatability = true`, offset 0x0 on savanna 5/5 + medvedkovo 9/9, score 1.0 / flatness 1.0 each) |
 | Live evidence | OD-RECOVERY-095 + OD-RECOVERY-096 ledger rows (both replays, opposite-sign memory-clock skew handled by the bounded bidirectional lag path), rehearsal `invoke-avatar-stats-rehearsal.ps1` (offline, real decoded session — candidate-0 HIT, flat candidates NOT hit, PHASE-4 two-replay simulation offsets agree) |
 | Static map | Avatar object vftable `0x36752a4` (RVA `0x032752a4`, 0x128 bytes, entity-factory case 1 `FUN_01669c90`); stats quad `+0x118..+0x124` (indices 0xA–0xD, dispatcher `FUN_01670de0`); reachability CORRECTED — do NOT reuse the camera anchor (`AvatarControllerReplay`) |
 | Read seam | `/discover/entity-region` `avatar-stats` anchor (gated AOB scan + identity re-gate + quad at candidate+0x118, `avatarCandidateIndex` 0..3, `avatarCandidateCount`, fail-closed `AvatarAnchorNotFound`/`AvatarIdentityMismatch`) — shipped + rehearsed + live-proven 2026-08-12 (sweep 4: `status='Resolved' candidates=1` every probe, sessions 019ff5cc/019ff5dc/019ff5f1) |
@@ -195,7 +195,7 @@ wiring, or any resolver/read-surface change in the same change.
   objects are not in the player's memory map); the live scoreboard is
   own-row-only.
 - **The other three quad dwords** (`damageBlocked`, `damageAssisted1/2`) —
-  measured (Dead Rail finals 140 / 0 / 228 == decoded), NOT published
+  measured (medvedkovo finals 140 / 0 / 228 == decoded), NOT published
   (their consumers lack Phase-4 gate-closed evidence).
 - **Pitch/roll publication** — READY in parallel
   (`docs/operations/g1-pitch-roll-publication-draft.md`), operator approval

@@ -31,10 +31,10 @@ investigated the map-texture path — which turned up an honest, documented gap.
 
 3. **Minimap texture resolution gap pinned** (`a24ca54`): investigating the
    dot-vs-terrain alignment invariant surfaced that decoded map IDs are
-   numeric arena identities (Oasis = `11`, Dead Rail = `7`) which
+   numeric arena identities (savanna = `11`, medvedkovo = `7`) which
    `MapMinimapFolder` passes through unchanged — never matching the
    install's name-based minimap folders. This install also ships **no
-   Oasis Palms or Dead Rail texture at all** (55 folders enumerated, no
+   savanna or medvedkovo texture at all** (55 folders enumerated, no
    config references in decodable DVPLs), and variant folders
    (`desert_train_02`) are stripped too. The texture therefore fails closed
    for real replays (blank panel, dots only), and the alignment invariant
@@ -46,13 +46,13 @@ investigated the map-texture path — which turned up an honest, documented gap.
 
 - Full `scripts/validate.ps1` gate green: 925 passed, 3 skipped, 0 warnings
   (Architecture 19/19, Overlay 99/99, CLI 52/52, Web 144+3).
-- Real-data renders: Oasis Palms previews with minimap inset (13 tank dots +
+- Real-data renders: savanna previews with minimap inset (13 tank dots +
   camera crosshair) and a 12-frame contact sheet with per-cell time labels.
 
 ## Remaining
 
 - **Arena-id → minimap-folder mapping**: blocked on data this install
-  doesn't contain (no config references, no Oasis/Dead Rail textures).
+  doesn't contain (no config references, no savanna/medvedkovo textures).
   Possible leads: larger DVPL packs, the replay's own battle info, or an
   alternate resource root.
 - The live CAM-001 v7 session → projection verdict (FOV convention + pitch

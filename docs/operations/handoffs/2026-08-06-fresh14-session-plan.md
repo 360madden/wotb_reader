@@ -121,7 +121,7 @@ Per the session-prep Phase 0 — republish is **mandatory** before every session
 
 1. `serve.cmd` (republishes) — or verify `launch-offline-replay-for-od.ps1`'s
    stale-build guard passes (`bin\Release` newer than `src\*.cs`).
-2. `GET /api/v1/sessions?limit=1` → newest item is Dead Rail (per-import id).
+2. `GET /api/v1/sessions?limit=1` → newest item is medvedkovo (per-import id).
 3. `GET /api/v1/game/discover/trajectory/{newestId}` → 200, 14 entities,
    viewpoint Churchill_I, real x/y/z samples.
 4. Rendezvous `%LocalAPPDATA%\WotBTreader\rendezvous\web.json` present.

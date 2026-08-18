@@ -10,7 +10,7 @@ Predecessor: `2026-08-06-fresh18-postmortem-fresh19-fixes.md` (full post-mortem)
   on 9182 — the launch script kills stale hosts itself, but for a clean slate
   kill it first (stale-publish rule: **republish the host before every live
   session**).
-- Replay: `.data\launch\a9aed0467d7843efb06bb3319bb52ded.wotbreplay` (Dead Rail,
+- Replay: `.data\launch\a9aed0467d7843efb06bb3319bb52ded.wotbreplay` (medvedkovo,
   viewpoint = entity 2549401 mrkool1138 / Churchill I).
 
 ## The three fixes to verify live (this is the round's thesis)

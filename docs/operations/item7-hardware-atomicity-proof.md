@@ -48,7 +48,7 @@ of a 12-byte triple is unlikely to be provable. What IS provable is the
 ### Step A — measure the read windows (one live session)
 
 Run the batch rehearsal driver (`scripts/invoke-batch-rehearsal.ps1
--EnumerateLive -LiveAcquire`, Oasis Palms) and record, per batch:
+-EnumerateLive -LiveAcquire`, savanna) and record, per batch:
 
 - `BatchStartedAtUtc` → `BatchEndedAtUtc` (the whole-roster read window).
 - The G2 clock snapshot span (`ClockSnapshotAtUtc` vs the read window).
@@ -91,7 +91,7 @@ Declare the consumer contract that makes strict atomicity unnecessary:
 
 - [ ] Earlier gates closed: G0 publication, G1, G2, G3, L2 facing, HP
       Phase-4, yaw publication (all pre-item-7 by design).
-- [ ] Step A: one approved batch-rehearsal live session (Oasis Palms),
+- [ ] Step A: one approved batch-rehearsal live session (savanna),
       `Measurement` recorded + appended to the ledger as an item-7 section.
 - [ ] Step B: offline torn-read analysis written to this doc (write-order
       evidence + bound).

@@ -38,7 +38,7 @@ for evidence continuity.
 |---|---|
 | Target build | 11.19.0.10 |
 | Executable SHA-256 | `1cda5c31919c9784a41bee7f3270ec1b4536b124c51e8b36f2221b381760307d` |
-| Replay | Oasis Palms (savanna), 1,045,525 B, battle 2026-08-02T21:15:07 (content-distinct; the two proven 11.19.0 replays are Dead Rail + Oasis Palms) |
+| Replay | savanna (savanna), 1,045,525 B, battle 2026-08-02T21:15:07 (content-distinct; the two proven 11.19.0 replays are medvedkovo + savanna) |
 | G2 anchor | sequence 0, replay anchor 0, speed 1.0, source `CaptureLog`, uncertainty 1 s (gate-loop cadence, within the 2 s coordinator bound) |
 | Coordinator bound | `SameDecodedClockUncertaintyLimit` = 2 s |
 | G3 prior positives | `.data/od-073-entity-position-poll-20260809-021445.json` (OD-075) and `-165144.json` (OD-076) — both `stable-resolver-positive` 24/24 |

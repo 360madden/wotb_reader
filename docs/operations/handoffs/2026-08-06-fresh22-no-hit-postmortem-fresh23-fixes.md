@@ -23,7 +23,7 @@ Status: **fixed + validated offline; FRESH23 = consensus-class arming**
 
 ## Diagnosis (evidence-backed, not a timing artifact)
 
-- The decoded replay (Dead Rail session 019fb86c, entity 2549401) shows the
+- The decoded replay (medvedkovo session 019fb86c, entity 2549401) shows the
   viewpoint tank **alive and moving through the ENTIRE battle**: last movement
   t=266s of 279s; z goes 23.3 → −10.1 → −28.3 at t≈190–240s — exactly the
   trace window. A per-frame position field MUST be written while the tank

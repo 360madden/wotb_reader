@@ -2,7 +2,7 @@
 
 > **STATUS: PRE-STAGED 2026-08-12 — operator approval pending.** The
 > rotation-triple Phase-4 reconciliation is CLOSED: pitch `+0x2C` and roll
-> `+0x28` agree on both replays (Oasis 48/48 + Dead Rail 56/56, score 1.0,
+> `+0x28` agree on both replays (savanna 48/48 + medvedkovo 56/56, score 1.0,
 > flatness 1.0) via `yaw-diff --field pitch|roll` over the SAME immutable
 > OD-088/089 dumps. `twoReplayRepeatability = true` for the full rotation
 > triple roll `+0x28` / pitch `+0x2C` / yaw `+0x30`. Applying publishes
@@ -32,8 +32,8 @@
 
 | Field | Live evidence | Chain | offsets |
 |---|---|---|---|
-| `playerPitch` | **2026-08-12 rotation-triple reconciliation** (offline, same immutable OD-088/089 dumps): `yaw-diff --field pitch` → ring-record **`+0x2C`** float32, Oasis 48/48 + Dead Rail 56/56, score 1.0, flatness 1.0, `twoReplayRepeatability = true` | The **identical module-rooted walk as `playerPositionX`** (same root RVA, same entity lookup, same ring-index hop — the rotation triple was proven on the SAME record as position `+0x10`) with the final hop `recordOffset 44` (`0x2C`) instead of `recordOffset 16` (`0x10`) | `offsets.playerPitch` stays **0** (chained field) |
-| `playerRoll` | Same reconciliation: `yaw-diff --field roll` → ring-record **`+0x28`** float32, Oasis 48/48 + Dead Rail 56/56, score 1.0, flatness 1.0, `twoReplayRepeatability = true` (record-span 0x38-trimmed verdicts — see §2 methodology) | Same prefix + final hop `recordOffset 40` (`0x28`) | `offsets.playerRoll` stays **0** (chained field) |
+| `playerPitch` | **2026-08-12 rotation-triple reconciliation** (offline, same immutable OD-088/089 dumps): `yaw-diff --field pitch` → ring-record **`+0x2C`** float32, savanna 48/48 + medvedkovo 56/56, score 1.0, flatness 1.0, `twoReplayRepeatability = true` | The **identical module-rooted walk as `playerPositionX`** (same root RVA, same entity lookup, same ring-index hop — the rotation triple was proven on the SAME record as position `+0x10`) with the final hop `recordOffset 44` (`0x2C`) instead of `recordOffset 16` (`0x10`) | `offsets.playerPitch` stays **0** (chained field) |
+| `playerRoll` | Same reconciliation: `yaw-diff --field roll` → ring-record **`+0x28`** float32, savanna 48/48 + medvedkovo 56/56, score 1.0, flatness 1.0, `twoReplayRepeatability = true` (record-span 0x38-trimmed verdicts — see §2 methodology) | Same prefix + final hop `recordOffset 40` (`0x28`) | `offsets.playerRoll` stays **0** (chained field) |
 
 The chains are NOT duplicated here: the canonical walkable form lives in
 `docs/operations/g0-walkable-position-chains.draft.json`
@@ -51,11 +51,11 @@ check) must prove both chains walk to the resolver's ring-record record.
 | G1 (hardware-atomic read) | CLOSED — stored v4 aggregate 24/24 `stable-resolver-positive`, `allConsistentDoubleRead=true` |
 | G2 (same-decoded-clock) | CLOSED — `sameDecodedClockProven=true`, 4+ live confirmations (every 088 dump attested) |
 | G3 (repeatability) | rotation-triple Phase-4 **CLOSED 2026-08-12** — pitch/roll re-verdict the SAME immutable OD-088/089 dumps with `yaw-diff --field pitch\|roll` (`twoReplayRepeatability = true` for roll `+0x28` / pitch `+0x2C` / yaw `+0x30`) |
-| Live evidence | OD-RECOVERY-088 (Oasis 48 dumps) + OD-RECOVERY-089 (Dead Rail 56 dumps) — the dumps themselves are the pitch/roll evidence (each 256-byte region covers the triple) |
+| Live evidence | OD-RECOVERY-088 (savanna 48 dumps) + OD-RECOVERY-089 (medvedkovo 56 dumps) — the dumps themselves are the pitch/roll evidence (each 256-byte region covers the triple) |
 | Static map | `RingRecordRegion` — `RollOffset 0x28` / `PitchOffset 0x2C` / `YawOffset 0x30` (already corrected and live-frame wired) |
 | Schema | `memory-offsets/schema.json` already carries OPTIONAL `playerPitch`/`playerRoll` offset slots + chains/fieldValidation enums (pre-staged 2026-08-12) |
 
-**Methodology lesson (recorded 2026-08-12):** Oasis's first roll verdict
+**Methodology lesson (recorded 2026-08-12):** savanna's first roll verdict
 matched `0x60` instead of `0x28`. Byte inspection proved region `0x60` is
 the **next ring entry's `+0x28`** (stride 0x38) — the ring holds consecutive
 position updates, so the sibling carries byte-near-identical values and

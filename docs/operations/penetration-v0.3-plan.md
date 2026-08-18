@@ -247,7 +247,7 @@ turret yaw, gun elevation, muzzle ray) are derived.
 ### Ownership walk live-validated (H1) — 2026-08-16
 
 The five-read protocol was run on one exact-build managed offline replay
-(Churchill I / Oasis Palms, `1cda5c31…`) and returned `Resolved`:
+(Churchill I / savanna, `1cda5c31…`) and returned `Resolved`:
 `rotator_candidate_count=1`, all four chain booleans true across both passes
 (`two_pass_stable`). The chain `AvatarGameLogic +0x1fc → VehicleGunRotator` /
 `+0x204 → VehicleGun` / `rotator+0x10 → owner` / `+0x04 → entity` is now

@@ -29,7 +29,7 @@ minimap.
   (panel-up); the god-view minimap view-model test now asserts
   `MinimapCameraYawRadians == 0.5` flows through. Overlay suite 89/89; full
   suite 12 projects green, 0 warnings.
-- Real data (Oasis Palms at t=100): frame carries `cameraYawRadians = 0.564`
+- Real data (savanna at t=100): frame carries `cameraYawRadians = 0.564`
   → tick apex delta (7.5, 11.8) px on the 150 px panel (right-down, an
   east-ish heading — sensible). Endpoint → view model → HUD all wired.
 - `scripts/python/offline_check.py`: links, blocker numbering, ledger OK.

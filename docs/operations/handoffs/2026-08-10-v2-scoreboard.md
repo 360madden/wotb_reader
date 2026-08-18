@@ -31,7 +31,7 @@ consumer of the damage events the decode already produces.
   view-model test proving damage-desc sort + name resolution + dead-listed
   rows. Application 60/60, Overlay 93/93, Web 138/138; full suite 12
   projects green, 0 warnings.
-- Real data (Oasis Palms t=250): 14 rows, moldeytoezzz leads with 5201 dmg,
+- Real data (savanna t=250): 14 rows, moldeytoezzz leads with 5201 dmg,
   **kills sum (8) == kill-feed size**, dead tanks listed with final totals.
 - The consistency checker now guards the invariants on every frame of both
   replays: damage dealt non-negative int, kills non-negative, and
@@ -45,7 +45,7 @@ consumer of the damage events the decode already produces.
   render a compact totals line under the HP bar — "1,200 dmg · 2 kills"
   (`NameplateTotalsLabel` pure helper) — so the carry follows each tank
   in-world.
-- Verified on Oasis Palms t=250: **total damage dealt (22094) == total
+- Verified on savanna t=250: **total damage dealt (22094) == total
   damage taken (22094)** — every damage event balanced, a strong
   end-to-end consistency signal. The consistency checker now also requires
   `damageTaken` non-negative on both replays; both PASS.

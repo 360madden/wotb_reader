@@ -240,8 +240,8 @@ The L0 seam is now IMPLEMENTED (2026-08-10):
 
 The session must track an entity that **actually takes damage**. Verified
 from `.data/treader.db` (11.19.0 decode runs): **the player's own entity
-(`mrkool1138`) took ZERO damage in both 11.19.0 replays** (Oasis Palms 0
-events, Dead Rail 0 events — the viewpoint tank survives unhit), so a
+(`mrkool1138`) took ZERO damage in both 11.19.0 replays** (savanna 0
+events, medvedkovo 0 events — the viewpoint tank survives unhit), so a
 session tracking the player would hand the correlator an all-flat series
 and zero windows to match. Qualify the victim before the session with one
 command:
@@ -260,14 +260,14 @@ cross-checked against direct SQL on 2026-08-10.)
 > plan quoted 10×-too-large times (e.g. "900–1680s of a ~2798s replay").
 > The decoded DB stores replay ticks as .NET ticks (10⁷/s —
 > `position_samples` max tick ≈ `battle_sessions.duration_ticks` and the
-> Oasis Palms battle is 279.9s, not 2798s), but the extractor's
+> savanna battle is 279.9s, not 2798s), but the extractor's
 > `TICKS_PER_SECOND` was 10⁶. Fixed to 10⁷; all schedules above are in
 > real replay seconds, and the hit-window bucketing now uses true 10s
 > windows (verified window-by-window against the raw event ticks). The
 > movement-proxy participant ranking (a separate dead-code bug — it only
 > compared consecutive samples) was also fixed to scan ~1s-apart pairs.
 
-**Oasis Palms** (session `019fdff7-8dcf-7426-8547-9fb8cc3eb07b`, 11.19.0,
+**savanna** (session `019fdff7-8dcf-7426-8547-9fb8cc3eb07b`, 11.19.0,
 battle ≈ 280s) — victim **3760578** is the strongest candidate: 9 events /
 4,028 damage, hits at t = 90.4–167.4s, in six ten-second windows
 **90–100, 100–110, 130–140, 140–150, 150–160, 160–170s** (window sums
@@ -279,12 +279,12 @@ unchanged. Alternative victims in the same replay: 3760571 (7 hits,
 118.8–175.4s), 3760574 (6 hits, 114.3–157.5s), 3760575 (6 hits, late,
 245.4–274.0s).
 
-**Dead Rail** (session `019fb86c-c8e7-7004-9df6-a574f5a7835b`, 11.19.0,
+**medvedkovo** (session `019fb86c-c8e7-7004-9df6-a574f5a7835b`, 11.19.0,
 battle ≈ 271s) — the second independent replay for the Phase-4
 repeatability rule: victim **2549399** — 18 events / 4,647 damage,
 hits at t = 114.4–152.4s, in five ten-second windows **110–120,
 120–130, 130–140, 140–150, 150–160s**. So the two-replay verdict
-contract is fully pre-staged: Oasis Palms victim 3760578 + Dead Rail
+contract is fully pre-staged: savanna victim 3760578 + medvedkovo
 victim 2549399, both with ≥ 2 damage windows, schedules above.
 
 The walker resolves **any** entity id through `entityLookup` (the
@@ -314,8 +314,8 @@ verdict, via `scripts/invoke-hp-diffing-session.ps1 -SnapshotsPath`:
 
 | Replay | Victim | Verdict | Offset | Score / Flatness | Matched |
 |---|---|---|---|---|---|
-| Oasis Palms | 3760578 | HIT | `+0x48` | 1.0 / 1.0 | 2/2 |
-| Dead Rail | 2549399 | HIT | `+0x48` | 1.0 / 1.0 | 13/13 |
+| savanna | 3760578 | HIT | `+0x48` | 1.0 / 1.0 | 2/2 |
+| medvedkovo | 2549399 | HIT | `+0x48` | 1.0 / 1.0 | 13/13 |
 
 Both verdicts satisfy the contract (score 1.0 + flatness 1.0 + ≥ 2 exact-sum
 Strict matches) and **agree on the matched offset `+0x48`** — the Phase-4
@@ -367,8 +367,8 @@ landed hits in both replays:
 
 | Replay | Player entity | Dealt events | Damage | Nonzero 10s windows |
 |---|---|---|---|---|
-| Oasis Palms | 3760577 | 5 | 2184 | 4 (177.8–274.0s) |
-| Dead Rail | 2549401 | 5 | 1569 | 4 (154.5–257.9s) |
+| savanna | 3760577 | 5 | 2184 | 4 (177.8–274.0s) |
+| medvedkovo | 2549401 | 5 | 1569 | 4 (154.5–257.9s) |
 
 Tooling (all offline, verified 2026-08-10):
 
@@ -396,8 +396,8 @@ real hit tick, step function):
 
 | Replay | Target | Verdict | Offset | Score / Flatness | Matched |
 |---|---|---|---|---|---|
-| Oasis Palms | 3760577 | HIT | `+0x48` | 1.0 / 1.0 | 5/5 |
-| Dead Rail | 2549401 | HIT | `+0x48` | 1.0 / 1.0 | 5/5 |
+| savanna | 3760577 | HIT | `+0x48` | 1.0 / 1.0 | 5/5 |
+| medvedkovo | 2549401 | HIT | `+0x48` | 1.0 / 1.0 | 5/5 |
 
 Both verdicts satisfy the contract and agree on `+0x48` — the Phase-4
 repeatability rule proven for the increment direction too. Re-verified
@@ -412,7 +412,7 @@ note (same trap as HP, caught in rehearsal): trailing control dumps must
 carry the step-function value at their time, not the final cumulative —
 a control dump after a hit but before the next must show the value as of
 that time, or the control window falsely counts as a field change and
-flatness drops to 0 (the first Oasis Palms build failed exactly this way).
+flatness drops to 0 (the first savanna build failed exactly this way).
 
 Same caveat as HP — and the same fixture caution (see the HP rehearsal note
 above): `+0x48` is the planted test offset, not a verified location; the
@@ -429,8 +429,8 @@ re-scanned from the stored artifacts at decode time (the persisted evidence
 is ciphertext; the plaintext tail is only visible during decoding) and the
 tail decoded: **yaw float32 at payload +36, pitch +40, roll +44** (all
 radians). The yaw is validated 1:1 against the position-derived heading on
-BOTH 11.19.0 replays while moving forward (Oasis Palms 144/157 moving
-windows within 15°, Dead Rail 109/122), is exactly constant through long
+BOTH 11.19.0 replays while moving forward (savanna 144/157 moving
+windows within 15°, medvedkovo 109/122), is exactly constant through long
 stationary stretches, and stays unchanged during reversals (the tank's
 facing, not its velocity — the velocity-vector reading matches only 14% of
 moving windows vs 79% for yaw). This corrects the earlier replay-format
@@ -486,8 +486,8 @@ semantics), with a constant decoy at +0x20:
 
 | Replay | Verdict | Offset | Score | Flatness | Matched / Controls |
 |---|---|---|---|---|---|
-| Oasis Palms | HIT | `+0x2C` | 1.0 | 1.0 | 27/27 turns, 0 control changed |
-| Dead Rail | HIT | `+0x2C` | 1.0 | 1.0 | 35/35 turns, 0 control changed |
+| savanna | HIT | `+0x2C` | 1.0 | 1.0 | 27/27 turns, 0 control changed |
+| medvedkovo | HIT | `+0x2C` | 1.0 | 1.0 | 35/35 turns, 0 control changed |
 
 (Decoy note: a decoy that is a CONSTANT OFFSET of the real yaw — e.g. yaw +
 1.7 — reproduces every delta and legitimately ties the true field; the
@@ -521,8 +521,8 @@ G2) and shares the O5 rehearsed target:
 
    | Replay | Windows | Yaw Δ median | Yaw Δ p90 | Yaw Δ max | Seam crossings |
    |---|---|---|---|---|---|
-   | Oasis Palms | 1 644 | 0.011° | 24.4° | 47.1° | 0 |
-   | Dead Rail | 1 728 | 2.92° | 48.5° | 118.2° | **5** |
+   | savanna | 1 644 | 0.011° | 24.4° | 47.1° | 0 |
+   | medvedkovo | 1 728 | 2.92° | 48.5° | 118.2° | **5** |
 
    The live driver is `scripts/invoke-facing-session.ps1` (2026-08-10):
    step 1 runs `--yaw-dump` (the dump-pair schedule, one pair per turn
@@ -533,7 +533,7 @@ G2) and shares the O5 rehearsed target:
    full-schedule rehearsal on both replays is in the correlator section
    above (27/27 and 35/35, both HIT at `+0x2C`).
 
-   The seam-crossing count is the wrap-awareness evidence: Dead Rail's 5
+   The seam-crossing count is the wrap-awareness evidence: medvedkovo's 5
    crossings are windows where a naive (non-wrap-aware) delta would read
    ~2π wrong, and the correlator's wrap-aware matcher is exactly what
    handles them.
@@ -555,11 +555,11 @@ G2) and shares the O5 rehearsed target:
    lag path (`--max-lag-seconds`) because the ring record applies decoded
    packet state with a ~5 s memory-apply lag.** **Live update 2026-08-11
    (OD-RECOVERY-089): the Phase-4 repeat is CLOSED HIT — `+0x30` agrees on
-   Dead Rail (56/56, score 1.0, flatness 1.0; `twoReplayRepeatability =
+   medvedkovo (56/56, score 1.0, flatness 1.0; `twoReplayRepeatability =
    true`). New measured finding: the G2 replay-clock LABEL skew is
-   per-dump variable and OPPOSITE in sign between replays (Oasis memory
-   LAGS the label +4.8 s; Dead Rail LEADS −2.5 s, spread 5.6 s) — the
-   one-directional shared lag path cannot see the Dead Rail sign (honest
+   per-dump variable and OPPOSITE in sign between replays (savanna memory
+   LAGS the label +4.8 s; medvedkovo LEADS −2.5 s, spread 5.6 s) — the
+   one-directional shared lag path cannot see the medvedkovo sign (honest
    negative at the session), so the verdict now runs the additive per-dump
    bounded bidirectional path (`--per-dump-lag --memory-lead-seconds`,
    median lag + spread reported; shared path unchanged).**
@@ -569,7 +569,7 @@ G2) and shares the O5 rehearsed target:
 
 ### Type-39 scene-point packet — static + behavioral triage (2026-08-10)
 
-Behavioral evidence (Oasis Palms, both replays consistent): per-frame
+Behavioral evidence (savanna, both replays consistent): per-frame
 (~60 Hz) 28-byte / 7-float32 record; smooth drift; NEVER matches the
 viewpoint tank, any entity, the team centroid, or the bounding-box anchor;
 NOT a third-person camera (offset from the tank varies 30→507 m and sits
@@ -769,10 +769,10 @@ full-state broadcast carries `u32 eid @ +0x00` and `u16 currentHP @ +0x33`
 (LE), fired 1–3× per tank at spawn. Validated four ways: (1) the author's
 value (700) equals `battle_results.hitpoints_left` exactly on both replays
 (Churchill I, tank_id 2897, same account); (2) the value is monotonic
-non-increasing per tank across its broadcasts (Dead Rail 2549397: 540 → 501
+non-increasing per tank across its broadcasts (medvedkovo 2549397: 540 → 501
 after damage), so the **first broadcast per tank = max HP**; (3) aggregate
 bounds hold — total `damage_dealt` ≤ Σ first-broadcast values (8964 ≤ 12140
-Oasis, 6227 ≤ 8500 Dead Rail); (4) the same tank_id reads the same value
+savanna, 6227 ≤ 8500 medvedkovo); (4) the same tank_id reads the same value
 across replays. So `ReplayFrameSource` can emit a true HP fraction:
 maxHP from the tank's first type-5 broadcast, current HP from the damage
 ledger, instead of clamping to 1.0. The overlay renders only `OverlayFrame`, so
@@ -785,7 +785,7 @@ the HP arc + destroy, origin camera, and the missing-session guard.
 `scripts/python/velocity-pitch-validation.py` validates the rotation axes
 against geometry on both replays (viewpoint entity):
 
-| Metric | Oasis Palms | Dead Rail |
+| Metric | savanna | medvedkovo |
 |---|---|---|
 | Yaw vs motion heading (incl. reversals) | 1634/1634 (100%) | 1307/1307 (100%) |
 | Pitch = −slope (multi-second moving windows) | 155/155, residual −0.001 ± 1.3° | 113/113, residual −0.002 ± 0.8° |
@@ -826,7 +826,7 @@ beacon dots, and a camera crosshair normalized to the session's map
 boundary) via a pure-BCL encoder + 5x5 bitmap-font rasterizer
 (`Host.Cli/Rendering`), so the HUD layout can be eyeballed against real
 replays without the game. Two
-real-data findings while previewing Oasis Palms: (1) the position stream
+real-data findings while previewing savanna: (1) the position stream
 carries non-participant entities (a duplicate "self" stream that starts at
 the viewpoint's spawn then teleports to origin, plus projectiles/debris) —
 the frame source now renders ONLY roster entities, so nameplates never
@@ -898,7 +898,7 @@ The overlay gained persistent world-space POIs ("beacons"):
   nameplates); a FOV slider was added to the toolbar, feeding the existing
   `HudFovDegrees` property into the frame request.
 
-Verified end-to-end on the real Oasis Palms session (add → projected in
+Verified end-to-end on the real savanna session (add → projected in
 `overlay-frame` → remove) plus 13 new tests across Application/Web/CLI/
 Storage/Overlay.
 
@@ -918,7 +918,7 @@ the decoded type-10 payload layout:
 either structure: the ring record has no room past the triple (+0x34
 padding, +0x38 = next record), and the entity base's remaining int fields
 are constants/pointers. The negative is now THREE-WAY (2026-08-11,
-scratch scan of the Oasis stream, 73 994 packets): the type-10 packet
+scratch scan of the savanna stream, 73 994 packets): the type-10 packet
 carries hull rotation only (cross-validated), the type-5 spawn broadcasts
 (52) carry no rotation floats (short variants are packed ints/zeros — not
 even a position triple reproduces the doc's x/y/z row; long variants are

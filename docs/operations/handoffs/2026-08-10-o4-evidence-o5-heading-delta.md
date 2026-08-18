@@ -15,7 +15,7 @@ Evidence produced (all recorded in `offline/replay-format.md`):
   unwrapped at offset 16 — the envelope is `(8-byte arena id, protobuf)`):
   a 24-row field table covering 1/2/3/4/5/8/11/137/150/181/182/183/
   184/185/201/301/302/303/999. Notable: field 8.3 = **client map-config id**
-  (3235 Oasis / 2277 Dead Rail — NOT the DB `map_id` 11/7); fields 11/150
+  (3235 savanna / 2277 medvedkovo — NOT the DB `map_id` 11/7); fields 11/150
   carry 3:2-aspect map-space descriptor pairs; 302/303 are team records
   whose semantics are unproven (303.1/303.2 are NOT scores/victory points).
 - **Type-31** (6 777 packets): 4-byte float, **combat-only** (t≈71–275 s),
@@ -24,7 +24,7 @@ Evidence produced (all recorded in `offline/replay-format.md`):
 - **Type-35** (2 814 packets): 1 byte per 0.1 s tick, **mod-256 tick counter**.
 - **Type-39** (16 984 packets): 28 bytes = 7 float32, **per-frame ~60 Hz**,
   smooth drift, matches NO entity position; settles on fixed anchors
-  (spawn corner t≈1.7–68 s, then a victory point t≈245–281 s on Oasis) —
+  (spawn corner t≈1.7–68 s, then a victory point t≈245–281 s on savanna) —
   a **camera/attention point**, not zone geometry. Recorded as the live
   camera/VP-track candidate: the packet camera may be cross-validable
   against the `FUN_00d29ea0(0)` object's `+0x60` matrix.
@@ -54,10 +54,10 @@ Validation (two-replay rule):
 
 | Replay | Windows | Yaw Δ median | Yaw Δ max | Seam crossings |
 |---|---|---|---|---|
-| Oasis Palms | 1 644 | 0.011° | 47.1° | 0 |
-| Dead Rail | 1 728 | 2.92° | 118.2° | **5** |
+| savanna | 1 644 | 0.011° | 47.1° | 0 |
+| medvedkovo | 1 728 | 2.92° | 118.2° | **5** |
 
-Semantics check: yaw (facing) max 47° vs motion-heading max 180° on Oasis —
+Semantics check: yaw (facing) max 47° vs motion-heading max 180° on savanna —
 the motion heading flips on reversal while facing turns smoothly, exactly
 the yaw-vs-velocity distinction the facing campaign relies on. Synthetic
 tests prove the seam detector fires on a 179→-177° crossing (1 crossing,

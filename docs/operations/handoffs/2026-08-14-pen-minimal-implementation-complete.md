@@ -41,7 +41,7 @@ runbook is pre-staged.
 - The badge renders in BOTH replay and live frames (PN-3/PN-5).
 - The pen math + install-data parsers are done and unit/opt-in-tested (PN-1/PN-2).
 - The offline scorer already produced the first model-vs-ground-truth numbers
-  (38.9% / 69.6% / 71.9% across Oasis / Dead Rail / Copperfield), quantifying
+  (38.9% / 69.6% / 71.9% across savanna / medvedkovo / karieri), quantifying
   the documented center-line aim limit instead of asserting it.
 - The ONLY remaining proof (true-aim validation) now has its feed path wired
   and its runbook pre-staged — a live session needs no code change.

@@ -5,12 +5,12 @@
 1. **Real-data finding (the important one):** queried `.data/treader.db`
    (the 11.19.0 decode runs) for kind-3 damage events per victim. **The
    player's own entity (`mrkool1138`) took ZERO damage in both 11.19.0
-   replays** — Oasis Palms 0 events, Dead Rail 0 events; the viewpoint
+   replays** — savanna 0 events, medvedkovo 0 events; the viewpoint
    Churchill survives unhit. The pre-staged HP-diffing live plan assumed
-   "one run on the Oasis Palms replay" with the player as the tracked
+   "one run on the savanna replay" with the player as the tracked
    entity, which would have handed the correlator an all-flat series and
    zero windows to match — a plan flaw caught offline, before any live
-   session. (11.18.0 sessions do have player damage — Copperfield 19
+   session. (11.18.0 sessions do have player damage — karieri 19
    events / 9,681 dmg — but the walkable chains and resolver are
    11.19.0.10-bound.)
 
@@ -27,13 +27,13 @@
      first ("do NOT default to the player's own entity").
    - New "Victim selection" subsection: the two-command qualification
      (top-victims → hp-delta), the ≥ 2 damage-window requirement, and the
-     concrete Oasis Palms schedule.
-   - **Oasis Palms victim 3760578** — 9 events / 4,028 damage in six
+     concrete savanna schedule.
+   - **savanna victim 3760578** — 9 events / 4,028 damage in six
      ten-second windows **90–100, 100–110, 130–140, 140–150, 150–160,
      160–170 s** of the ~280 s battle (hits at 90.4–167.4 s), plus 2–3
      flat-window control dumps (~30 s, ~230 s). Alternatives: 3760571
      (7 hits), 3760574 (6 hits), 3760575 (6 hits, late 245–274 s).
-   - **Dead Rail victim 2549399** — 18 events / 4,647 damage in five
+   - **medvedkovo victim 2549399** — 18 events / 4,647 damage in five
      ten-second windows **110–120, 120–130, 130–140, 140–150,
      150–160 s** of the ~271 s battle (hits at 114.4–152.4 s).
    - **Simulation reading:** the extractor's `--hp-delta` survival sim at
@@ -47,7 +47,7 @@
    first draft quoted 10×-too-large times ("~2798 s replay", windows
    900–1680 s) because `replay-delta-extractor.py`'s `TICKS_PER_SECOND`
    was 10⁶ while the decoded DB stores .NET ticks (10⁷/s — proven by
-   `position_samples` max tick ≈ `duration_ticks` and the 279.9 s Oasis
+   `position_samples` max tick ≈ `duration_ticks` and the 279.9 s savanna
    Palms battle). Fixed to 10⁷ (hit-window bucketing + all seconds
    outputs), and the movement-proxy ranking (consecutive-only scan, dead
    at ~100 samples/s) now scans ~1s-apart pairs. All schedules above are
@@ -60,10 +60,10 @@
   Strict/Lenient, compose proof, entity-base exposure, entity-record
   chain mechanism) and now with a **real-data-qualified live plan**.
 - Remaining step is still the gated live session: one bounded
-  `EntityRecordRegionReadRequest` addition + one session on Oasis Palms
+  `EntityRecordRegionReadRequest` addition + one session on savanna
   tracking victim **3760578**, dumps concentrated on the six hit
   windows (90–170 s) above. Second independent replay for the Phase-4
-  repeatability rule also qualified: **Dead Rail** victim **2549399**
+  repeatability rule also qualified: **medvedkovo** victim **2549399**
   (18 events / 4,647 dmg, five windows at 110–160 s). Both victims ≥ 2
   damage windows, so the two-replay verdict contract is fully pre-staged.
 - Published tables untouched; resolver + read surface untouched;

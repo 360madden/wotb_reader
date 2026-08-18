@@ -5,7 +5,7 @@
 > (9 hops: position hops 1..8 through the entity lookup + `recordOffset 184`
 > = signed int16 current health at `[entity+0xB8]`); `offsets.playerHP`
 > stays 0 by design. Gates were: **OD-RECOVERY-091** CLOSED HIT 2026-08-11
-> (`+0xB8` on Dead Rail, score 1.0, flatness 1.0, Strict 4/4 exact sums —
+> (`+0xB8` on medvedkovo, score 1.0, flatness 1.0, Strict 4/4 exact sums —
 > `twoReplayRepeatability = true`) + operator approval. This file was the
 > operator-facing spec + checklist; the apply followed the G0 procedure
 > (`docs/operations/g0-operator-checklist.md`). Section 3 below documents
@@ -15,7 +15,7 @@
 
 | Field | Live evidence | Chain | offsets |
 |---|---|---|---|
-| `playerHP` (current health) | OD-RECOVERY-087 (Oasis Palms, victim 3760578, 74 dumps): entity-base **`+0xB8`** signed int16, score 1.0, flatness 1.0, Strict 8/8 exact sums (drops == damage sums, max `+0x11C` 1550 constant, alive `+0xBA` 1, healing `+0x11E` 0; variable ~1–3.4 s memory-apply lag measured); OD-RECOVERY-091 (Dead Rail, victim 2549395, 58 dumps): **`+0xB8` AGREES** — score 1.0, flatness 1.0, Strict 4/4 exact sums (drops 140 = 36+104, 76 = 76, 172 = 94+78, 55 = 55; max `+0x11C` 520 constant; Dead Rail memory LEADS the decoded clock ~2.5 s — the bounded lead-side window `--lag-lead-seconds`, default 0 = unchanged) | The **module-rooted walk of the resolver's entity-map family through the entity lookup** (the `playerPositionX` chain hops 1..8: GameCoreRootRva → … → entityLookup — hop 9+ in the position chain is the movement-filter/ring path, which HP does NOT take) with the final hop `{ "kind": "recordOffset", "value": 184, "note": "signed int16 current health at [entity+0xB8] (OD-RECOVERY-087/091 live-verified; max +0x11C, alive +0xBA siblings)" }` — the health field lives on the ENTITY BASE record itself, not the ring record | `offsets.playerHP` stays **0** (chained field — the runtime computes `moduleBase + offset` and the entity record is battle-scoped heap) |
+| `playerHP` (current health) | OD-RECOVERY-087 (savanna, victim 3760578, 74 dumps): entity-base **`+0xB8`** signed int16, score 1.0, flatness 1.0, Strict 8/8 exact sums (drops == damage sums, max `+0x11C` 1550 constant, alive `+0xBA` 1, healing `+0x11E` 0; variable ~1–3.4 s memory-apply lag measured); OD-RECOVERY-091 (medvedkovo, victim 2549395, 58 dumps): **`+0xB8` AGREES** — score 1.0, flatness 1.0, Strict 4/4 exact sums (drops 140 = 36+104, 76 = 76, 172 = 94+78, 55 = 55; max `+0x11C` 520 constant; medvedkovo memory LEADS the decoded clock ~2.5 s — the bounded lead-side window `--lag-lead-seconds`, default 0 = unchanged) | The **module-rooted walk of the resolver's entity-map family through the entity lookup** (the `playerPositionX` chain hops 1..8: GameCoreRootRva → … → entityLookup — hop 9+ in the position chain is the movement-filter/ring path, which HP does NOT take) with the final hop `{ "kind": "recordOffset", "value": 184, "note": "signed int16 current health at [entity+0xB8] (OD-RECOVERY-087/091 live-verified; max +0x11C, alive +0xBA siblings)" }` — the health field lives on the ENTITY BASE record itself, not the ring record | `offsets.playerHP` stays **0** (chained field — the runtime computes `moduleBase + offset` and the entity record is battle-scoped heap) |
 
 The chain is NOT duplicated here: the canonical walkable form lives in
 `docs/operations/g0-walkable-position-chains.draft.json` (hops 1..8 through

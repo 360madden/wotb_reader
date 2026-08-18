@@ -131,7 +131,7 @@ public static class HpDamageCorrelator
     /// (From - <paramref name="eventLagToleranceSeconds"/>, To]. That models
     /// a memory clock that LAGS the decoded clock (the health write lands a
     /// few seconds after the decoded damage time — OD-RECOVERY-087). Some
-    /// replays show the opposite skew (Dead Rail memory LEADS the decoded
+    /// replays show the opposite skew (medvedkovo memory LEADS the decoded
     /// clock by ~2.5 s — OD-RECOVERY-089 measured it for yaw): the write
     /// lands BEFORE the decoded event time, so the event's decoded time
     /// postdates the window that contains its write and the one-directional
@@ -215,7 +215,7 @@ public static class HpDamageCorrelator
                 // attribute to the change window that actually contains its
                 // memory write. The bounded LEAD side (default 0 = unchanged)
                 // admits events whose decoded time POSTDATES the window — the
-                // memory clock can also lead the decoded clock (Dead Rail
+                // memory clock can also lead the decoded clock (medvedkovo
                 // leads by ~2.5 s, OD-RECOVERY-089), so the write for such an
                 // event lands in an EARLIER window than its decoded time.
                 if (damageEvent.ReplayTime

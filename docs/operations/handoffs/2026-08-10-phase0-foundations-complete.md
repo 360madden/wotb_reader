@@ -31,8 +31,8 @@ approval-gated steps (facing live session, replay-overlay Phase 1, velocity
 
 | Replay | Verdict | Offset | Score | Flatness | Matched / Controls |
 |---|---|---|---|---|---|
-| Oasis Palms | HIT | `+0x2C` | 1.0 | 1.0 | 8/8 turns, 0/9 control changed |
-| Dead Rail | HIT | `+0x2C` | 1.0 | 1.0 | 8/8 turns, 0/9 control changed |
+| savanna | HIT | `+0x2C` | 1.0 | 1.0 | 8/8 turns, 0/9 control changed |
+| medvedkovo | HIT | `+0x2C` | 1.0 | 1.0 | 8/8 turns, 0/9 control changed |
 
 Construction rule (rehearsal-caught, same class as the HP flatness trap):
 turn windows whose expected delta is below the 0.05 rad tolerance are
@@ -67,7 +67,7 @@ confirms the +0x2C..+0x37 tail.
    reported separately), windowed pitch-vs-slope, stationary-constancy
    checks, `--self-test` fixture. Results on both replays:
 
-| Metric | Oasis Palms | Dead Rail |
+| Metric | savanna | medvedkovo |
 |---|---|---|
 | Yaw vs heading (incl. reversals) | 1634/1634 (100%) | 1307/1307 (100%) |
 | Pitch = −slope | 155/155, residual −0.001 ± 1.3° | 113/113, residual −0.002 ± 0.8° |

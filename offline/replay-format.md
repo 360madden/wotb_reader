@@ -76,12 +76,12 @@ decoder; errors are `ReplayFormatException` with `replay.*` codes.
 
 | Field | Wire | Observed | Notes |
 |---|---|---|---|
-| 1 | varint | 65547 (Oasis) / 7 (Dead Rail) | arena id (matches root.2 in the packet header) |
+| 1 | varint | 65547 (savanna) / 7 (medvedkovo) | arena id (matches root.2 in the packet header) |
 | 2 | varint | 1785705303 / 1785346505 | arena unique id |
 | 3, 4 | varint | 1 / 1 | constant across both replays |
 | 5 | varint | 244 / 209 | battle-length-ish counter (seconds?) |
 | 8 | len | 92 / 91 B | arena descriptor: fields 3 = 3235 / 2277 (**client map-config id** — NOT the DB `map_id` 11/7), 101 = player mmr-ish, 105 = uint64 sentinel |
-| 11 | len | 63 B | coordinate pairs with a constant 3:2 aspect (e.g. 3235×4853 Oasis, 2277×3416 Dead Rail) — map-space descriptors |
+| 11 | len | 63 B | coordinate pairs with a constant 3:2 aspect (e.g. 3235×4853 savanna, 2277×3416 medvedkovo) — map-space descriptors |
 | 137 | varint | 160 / 111 | matches roster count × map scale (160 = 10 × 16?) |
 | 150 | len | 4.3 KB | per-team arena data (fields 20–23 are large blobs, 27 = `(tank_id, count)` pairs, 114 = per-entity records) |
 | 181, 182, 183 | varint | 647/32/8404 vs 759/37/13220 | battle-specific counters |
@@ -89,8 +89,8 @@ decoder; errors are `ReplayFormatException` with `replay.*` codes.
 | 185 | len | 34 B | team result record (field 2.27 = `(tank_id, count)` pairs) |
 | 201 | len ×14 | 29–242 B | roster entries (field 1 = account id or sentinel) |
 | 301 | len ×14 | 58–199 B | per-player stats (field 1 = entity id, field 2 = stats) |
-| 302 | len | 53 B | team records: `.1` repeats per team (2 on Oasis, 4 on Dead Rail), field 1 = top player entity id, field 2 = team mini-stats |
-| 303 | len | 8 B | team-level varints (32759/29118 Oasis, 29736/26593 Dead Rail) — semantics unproven; NOT scores/victory points |
+| 302 | len | 53 B | team records: `.1` repeats per team (2 on savanna, 4 on medvedkovo), field 1 = top player entity id, field 2 = team mini-stats |
+| 303 | len | 8 B | team-level varints (32759/29118 savanna, 29736/26593 medvedkovo) — semantics unproven; NOT scores/victory points |
 | 999 | varint | 3 | rare |
 
 **Negative finding (O4):** the replay contains **no capture-zone / base
@@ -105,7 +105,7 @@ unproven; they are recorded as unknown-field evidence, never guessed.
 ## Event packets → canonical events (`EventPacketDecoders`)
 
 **Position packet (type 10, `0x0A`) — 49-byte fixed layout (cross-validated
-byte-identical against the decoded DB ground truth on the 11.19.0 Dead Rail
+byte-identical against the decoded DB ground truth on the 11.19.0 medvedkovo
 replay, 33 281 packets, all 49 bytes):**
 
 | Offset | Size | Field | Notes |
@@ -117,7 +117,7 @@ replay, 33 281 packets, all 49 bytes):**
 | 16 | 4 | y (float32 LE) | same for `raw_y` |
 | 20 | 4 | z (float32 LE) | same for `raw_z` |
 | 24 | 12 | per-entity constant (NOT zero) | entity-specific bytes, constant per entity across the stream (e.g. `3679FB37 00000036 3679FB37`); one observed entity all-zero. Unclassified — not padding. |
-| 36 | 4 | **yaw (float32 LE, radians)** | the entity's facing. Validated 2026-08-10 on both 11.19.0 replays: matches the position-derived heading 1:1 in radians while moving forward (Oasis Palms 144/157 moving windows within 15°, Dead Rail 109/122), is EXACTLY constant during stationary stretches (spawn `+0.1270` unchanged for 10 s — a velocity would ease to 0), and stays unchanged during off-axis reversals (motion heading flips 180° while the tank faces the same way) — the facing, not the velocity. Persisted as `position_samples.yaw` (migration 5). |
+| 36 | 4 | **yaw (float32 LE, radians)** | the entity's facing. Validated 2026-08-10 on both 11.19.0 replays: matches the position-derived heading 1:1 in radians while moving forward (savanna 144/157 moving windows within 15°, medvedkovo 109/122), is EXACTLY constant during stationary stretches (spawn `+0.1270` unchanged for 10 s — a velocity would ease to 0), and stays unchanged during off-axis reversals (motion heading flips 180° while the tank faces the same way) — the facing, not the velocity. Persisted as `position_samples.yaw` (migration 5). |
 | 40 | 4 | pitch (float32 LE, radians) | small residual (observed ±0.24); persisted as `position_samples.pitch`. |
 | 44 | 4 | roll (float32 LE, radians) | small residual (observed ±0.40); persisted as `position_samples.roll`. |
 | 48 | 1 | flags byte | 1 for the observed stream |
@@ -154,7 +154,7 @@ Known packet types (decoded by `WotbReplayDecoder`):
 |-------------|--------|
 | Arena participants (`updateArena2` wrapper, type 8) | `CanonicalEventKind.ParticipantObserved` roster entries |
 | Position (type 10) | `CanonicalEventKind.Position` → `PositionSample` (raw + normalized coords) |
-| Health change (type 8/subtype 1, 19 B) | `CanonicalEventKind.Damage` — victim u32 at +0x00, subtype 1 at +0x04, declared length 7 at +0x08, post-hit HP u16 at +0x0C, attacker i32 at +0x0E, flag byte at +0x12. The packet holds the victim's CURRENT HP, not the amount; damage = HP delta from the ledger seeded by the type-5 max-HP broadcast. 0xFFFD post-hit HP is the destroy marker carrying the killer (remaining HP credited to the killer, matching battle_results accounting). The 0xFFFD marker ALSO emits `CanonicalEventKind.Destroyed` (deduped with the position destroy marker, first by sequence wins) — it is the more complete death signal: on both replays it caught 3 tanks the position markers missed (Dead Rail 2549397 @183.8s + 2549402 @271.5s, Oasis 3760576 @245.1s), leaving alive flags exactly aligned with the HP ledger. Validated 2026-08-11: per-attacker sums equal battle_results damage_dealt exactly on both replays for every player WITH battle results (left players have none but their decoded damage is still true); the old subtype-8 amount field was never the HP damage |
+| Health change (type 8/subtype 1, 19 B) | `CanonicalEventKind.Damage` — victim u32 at +0x00, subtype 1 at +0x04, declared length 7 at +0x08, post-hit HP u16 at +0x0C, attacker i32 at +0x0E, flag byte at +0x12. The packet holds the victim's CURRENT HP, not the amount; damage = HP delta from the ledger seeded by the type-5 max-HP broadcast. 0xFFFD post-hit HP is the destroy marker carrying the killer (remaining HP credited to the killer, matching battle_results accounting). The 0xFFFD marker ALSO emits `CanonicalEventKind.Destroyed` (deduped with the position destroy marker, first by sequence wins) — it is the more complete death signal: on both replays it caught 3 tanks the position markers missed (medvedkovo 2549397 @183.8s + 2549402 @271.5s, savanna 3760576 @245.1s), leaving alive flags exactly aligned with the HP ledger. Validated 2026-08-11: per-attacker sums equal battle_results damage_dealt exactly on both replays for every player WITH battle results (left players have none but their decoded damage is still true); the old subtype-8 amount field was never the HP damage |
 | Spawn full-state (type 5) | `CanonicalEventKind.MaxHealthObserved` (first broadcast per roster entity; u32 eid at +0x00, u16 current HP at +0x33 — the first broadcast precedes any damage, so it equals max HP) |
 | Shot impact (type 32, `01 11`/`01 12`) | `CanonicalEventKind.ShotImpact` — victim u32 at +0x00, flag u16 at +0x04, hit-result byte at +0x13 (`01 12`) / +0x12 (`01 11`): `0x03` = penetrating, `0x00/0x01/0x02/0x04` = non-penetrating (pinned on three replays, ~98% agreement with the type-8 ledger). Values json: `{"victimEntityId", "hitResult", "penetrated"}`. The short companions (`01 02`/`01 03`) and shell/effect entities (`01 05`/`01 06`) stay raw |
 | Lifecycle (type 14) | `CanonicalEventKind.BattleEnded` |
@@ -169,16 +169,16 @@ shell signatures match the type-32 mirror) but is NOT complete — in the
 sample run 28 packets vs 69 type-32 shots, none before t≈79.9 s. It is
 captured raw (`packetType=8`, `entityMethodSubtype=8`), not yet decoded.
 
-**Packet-type inventory — structure evidence (2026-08-10, Oasis Palms
-11.19.0, 73 993 packets; counts are Oasis-only):**
+**Packet-type inventory — structure evidence (2026-08-10, savanna
+11.19.0, 73 993 packets; counts are savanna-only):**
 
 | Type | Count | Structure | Semantics |
 |---|---|---|---|
 | 31 | 6 777 | 4-byte float, **combat-only** (first at t≈71 s = battle start, last at t≈275 s) | unknown; NOT distance-to-nearest-enemy (tested, no correlation); value toggles between ~27.009 (repeated default) and 6.7–8.8 minima; ~30 Hz during combat |
 | 35 | 2 814 | 1 byte, exactly one per 0.1 s tick, values 0x5f→0xbc→0x19→… | **mod-256 tick counter** (wraps every 25.6 s; 10 Hz) |
-| 39 | 16 984 | 28 bytes = 7 float32, **per-frame (~60 Hz)** | **scene point, semantics UNRESOLVED**: smooth drift, matches NO entity position, team centroid, or bbox anchor; NOT a third-person camera (offset 30→507 m, ~38 m below the tank); settles on fixed anchors (spawn corner t≈1.7–68 s, victory point t≈245–281 s on Oasis). Static pass `FindScenePointWriter` (2026-08-10): its bit-exact constant -0.0011081547 (f32 0xBA913F80) has **0 hits** — computed at runtime, writer not locatable by that anchor; Rust oracle also reports type 39 unknown. Not zone geometry; camera/VP-track candidate remains open (see `record-diffing-groundwork.md` triage). |
+| 39 | 16 984 | 28 bytes = 7 float32, **per-frame (~60 Hz)** | **scene point, semantics UNRESOLVED**: smooth drift, matches NO entity position, team centroid, or bbox anchor; NOT a third-person camera (offset 30→507 m, ~38 m below the tank); settles on fixed anchors (spawn corner t≈1.7–68 s, victory point t≈245–281 s on savanna). Static pass `FindScenePointWriter` (2026-08-10): its bit-exact constant -0.0011081547 (f32 0xBA913F80) has **0 hits** — computed at runtime, writer not locatable by that anchor; Rust oracle also reports type 39 unknown. Not zone geometry; camera/VP-track candidate remains open (see `record-diffing-groundwork.md` triage). |
 | 10 | 60 103 | 49 B = entity-id + space + vehicle + x/y/z + per-entity constant + yaw/pitch/roll + flags byte | **position stream** (decoder `TryReadPosition`; 0.1 s cadence per entity; rotation tail verified 2026-08-10). **Destroy marker**: the same 49 B with the per-entity constant (payload +24..+35) zeroed AND flags byte (+48) cleared — fires at the death instant (position freezes), first marker per roster entity = `Destroyed` (2026-08-10) |
-| 32 | 258 | entity-id + event flag + payload, 3 layouts (11 B, 25–27 B, 14 B) | **damage/impact event mirror (2026-08-10)**: fires at the same instants as the type-8 direct-damage events for the same victim (81/85 alignment on Oasis, 107/120 on Dead Rail — every miss is an amt=0/no-damage event) and embeds the SAME 6-byte shell signature as its matching type-8 packet (e.g. `a6 a5 e0 a2 a8 b1` at t=69.13, `ff e0 b9 d7 d8 98` at t=69.62). Flag prefixes distinguish the event (`01 11`/`01 12` = damage-with-payload, `01 02`/`01 03` = short companion, `00 10` = state snapshot at spawn and at the end of the victim's event chain); shell/effect entities (0x30xxxx range) carry `01 05`/`01 06`. NOT spotting: no reveal/visibility data in any payload. **Layout pinned + decoded (2026-08-13):** the prefix does NOT separate pen from bounce (the same `01 12` fires for both); the payload's HIT-RESULT byte (offset 19 for `01 12`, 18 for `01 11`) does — `0x03` = pen, `0x00/0x01/0x02/0x04` = non-pen, ~98% agreement with the type-8 ledger on three replays. Shipped as `CanonicalEventKind.ShotImpact` (victim + hitResult + penetrated); the non-0x03 bounce-vs-absorb mapping is not yet pinned. |
+| 32 | 258 | entity-id + event flag + payload, 3 layouts (11 B, 25–27 B, 14 B) | **damage/impact event mirror (2026-08-10)**: fires at the same instants as the type-8 direct-damage events for the same victim (81/85 alignment on savanna, 107/120 on medvedkovo — every miss is an amt=0/no-damage event) and embeds the SAME 6-byte shell signature as its matching type-8 packet (e.g. `a6 a5 e0 a2 a8 b1` at t=69.13, `ff e0 b9 d7 d8 98` at t=69.62). Flag prefixes distinguish the event (`01 11`/`01 12` = damage-with-payload, `01 02`/`01 03` = short companion, `00 10` = state snapshot at spawn and at the end of the victim's event chain); shell/effect entities (0x30xxxx range) carry `01 05`/`01 06`. NOT spotting: no reveal/visibility data in any payload. **Layout pinned + decoded (2026-08-13):** the prefix does NOT separate pen from bounce (the same `01 12` fires for both); the payload's HIT-RESULT byte (offset 19 for `01 12`, 18 for `01 11`) does — `0x03` = pen, `0x00/0x01/0x02/0x04` = non-pen, ~98% agreement with the type-8 ledger on three replays. Shipped as `CanonicalEventKind.ShotImpact` (victim + hitResult + penetrated); the non-0x03 bounce-vs-absorb mapping is not yet pinned. |
 | 33 | 52 | 8 B = entity-id + 4 zero bytes | per-entity stream-open marker (1× per entity, at spawn t≈0.11) |
 | 5 | 52 | 48–173 B = entity-id (u32 +0x00) + current HP (u16 +0x33) + unclassified tail | per-entity full-state broadcast at spawn (1–3 per tank). CAVEAT (2026-08-11 scan): the older "48–173 B = … + x/y/z + tail" row did NOT reproduce — the 48/51-byte variants carry no 4-byte float triple matching decoded position at the same clock (not even lag-tolerant), their tails are packed ints/zeros with no rotation-like floats; the long variants are serialized name/id blobs. The tail beyond eid/HP is UNCLASSIFIED; no turret/aim rotation exists in type-5 |
 | 4 | 4 | 4 B = entity-id | sparse entity marker; does NOT match the destroy timeline (fires mid-battle for entities that keep streaming positions) — semantics unresolved |
@@ -193,7 +193,7 @@ captured raw (`packetType=8`, `entityMethodSubtype=8`), not yet decoded.
 | 36 | 1 | 4 B | spawn marker |
 | 17 | 1 | 0 B | empty packet at t≈1.61 |
 | 38 | 1 | 1 B | single byte |
-| 7 | 19 040 | entity-id + packed int32s (13–16 B) | entity-status stream. **Surveyed 2026-08-11 (Oasis 11.19.0, payload bytes vs canonicalized hull yaw):** layout = entity-id u32 + 2 entity-specific state int32s (e.g. `2,2` for most tanks, `9,4` for one effect entity) + a fast-rotating 16-bit tail that sweeps the full circle at 2 000–3 600°/s — a tick counter/bitfield, NOT an angle (a real turret traverse is ~20–60°/s). One effect entity carries a 16-byte layout with a third rotating float X (moves while hull yaw is static, but X ≠ yaw, X ≠ pitch — an effect parameter, not a tank field). **No turret angle and no lock/target field exist in type-7** |
+| 7 | 19 040 | entity-id + packed int32s (13–16 B) | entity-status stream. **Surveyed 2026-08-11 (savanna 11.19.0, payload bytes vs canonicalized hull yaw):** layout = entity-id u32 + 2 entity-specific state int32s (e.g. `2,2` for most tanks, `9,4` for one effect entity) + a fast-rotating 16-bit tail that sweeps the full circle at 2 000–3 600°/s — a tick counter/bitfield, NOT an angle (a real turret traverse is ~20–60°/s). One effect entity carries a 16-byte layout with a third rotating float X (moves while hull yaw is static, but X ≠ yaw, X ≠ pitch — an effect parameter, not a tank field). **No turret angle and no lock/target field exist in type-7** |
 
 **NO spotting/reveal packet exists** — the full type inventory above covers
 100% of the stream and none carries reveal/visibility data. This is the V3

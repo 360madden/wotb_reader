@@ -59,7 +59,7 @@ now work) — not an evidence deficiency:
 - The priors pass the poll's exact fail-closed validation (schema
   `wotbtreader.od073*` + `stable-resolver-positive`), verified directly.
 - The G0 review's G3 definition — ledger attestation of two distinct replays
-  with fresh processes (Dead Rail OD-075 + Oasis Palms OD-076) — is
+  with fresh processes (medvedkovo OD-075 + savanna OD-076) — is
   satisfied.
 
 Correction applied: run 081's record claimed the priors were "accepted by
@@ -86,7 +86,7 @@ gates:
 - **Field identity:** playerPositionX/Y/Z (float32 triple at record `+0x10`)
   are the promotion candidates; velocity `+0x28` NOT promoted (the poll
   reads position only); playerYaw stays Stale/Quarantined.
-- **Repeatability:** 2 launches (Dead Rail + Oasis Palms), 2 content-distinct
+- **Repeatability:** 2 launches (medvedkovo + savanna), 2 content-distinct
   replays, harness invariants (24/24, all module-rooted, all
   identity-revalidated, all consistent-double-read), provenance kinds
   StaticAnalysis + GameHarness + live od073.

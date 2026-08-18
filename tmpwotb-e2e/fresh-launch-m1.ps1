@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$RepoRoot = '',
-    # Dead Rail content hash 59c3b92eb221 (same battle FRESH9 played); the
+    # medvedkovo content hash 59c3b92eb221 (same battle FRESH9 played); the
     # old .data\launch\a9aed... staging copy is gone, and the picker would
     # otherwise choose the human-named Churchill I replay (different battle).
     [string]$ReplayPath = "$env:LOCALAPPDATA\wotblitz\DAVAProject\replays\36f5abcfa07e4763adcd31af50300fd0.wotbreplay",

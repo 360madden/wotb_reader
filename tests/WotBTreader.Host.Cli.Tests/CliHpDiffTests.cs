@@ -198,7 +198,7 @@ public sealed class CliHpDiffTests
                 INSERT INTO battle_sessions
                     (id, decode_run_id, game_version, map_name, duration_ticks, schema_version)
                 VALUES
-                    ($session, $run, '11.19.0', 'Oasis Palms', 600000000, '1');
+                    ($session, $run, '11.19.0', 'savanna', 600000000, '1');
                 INSERT INTO canonical_events
                     (id, decode_run_id, battle_session_id, sequence, kind, replay_time_ticks,
                      entity_id, values_json, confidence, evidence_source_artifact_id,

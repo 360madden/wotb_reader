@@ -1,7 +1,7 @@
 # 2026-08-11 — W2S overlay consumption shipped (CAM-012 locked; OD-090 closed; item 7 staged)
 
-Binary: wotblitz.exe 11.19.0.10 (hash `1cda5c31…1760307d`). Replays: Oasis
-Palms + Dead Rail. Read-only; resolver, read surface, and
+Binary: wotblitz.exe 11.19.0.10 (hash `1cda5c31…1760307d`). Replays: savanna
+Palms + medvedkovo. Read-only; resolver, read surface, and
 `memory-offsets/11.19.0.10.json` untouched (yaw/HP publications remain
 operator-gated). Evidence: ledger rows `CAM-012` + `OD-RECOVERY-090
 re-attempt` + `item7-hardware-atomicity-proof.md`; commits `b6f560c`.
@@ -71,7 +71,7 @@ gate.
 
 ## HP Phase-4 — BLOCKED on one relaunch (parameter, not bug)
 
-Dead Rail session `019ff2be` launched, gate OK, qualified (victim
+medvedkovo session `019ff2be` launched, gate OK, qualified (victim
 2549399, 5 hit windows / 520 dmg / 19 dump targets), but the **30 s
 control probe returned `EntityNotFound`** and the driver failed closed
 (correctly — the victim is not resolvable that early in this replay).
@@ -93,7 +93,7 @@ the qualified hit windows.
 
 ## Next planned (ledger)
 
-HP Phase-4 relaunch (Dead Rail victim 2549399, later control times) →
+HP Phase-4 relaunch (medvedkovo victim 2549399, later control times) →
 yaw publication apply (operator approval) → item 7 (LAST). The overlay
 can now ship the W2S consumption end-to-end; the CAM-007 screen
 cross-check validates it at ship time.

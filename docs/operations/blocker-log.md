@@ -505,8 +505,8 @@ folder for the full numbering convention and document map.
   (`AppData/Local/wotblitz/DAVAProject/replays/`) holds a second
   independently recorded 11.19.0 replay — the game-named save
   `20260802_1615__mrkool1138_GB08_Churchill_I_8565111466734423.wotbreplay`
-  (sha `0fae5612…`, savanna/Oasis Palms, battle 2026-08-02T21:15:07) — which
-  is distinct from the FRESH43 Dead Rail payload (sha `59c3b92e…`). It decoded
+  (sha `0fae5612…`, savanna/savanna, battle 2026-08-02T21:15:07) — which
+  is distinct from the FRESH43 medvedkovo payload (sha `59c3b92e…`). It decoded
   cleanly as session `019fdff7-8dcf-7426-8547-9fb8cc3eb07b` (same player and
     tank as FRESH43). Cross-battle M3 validation can now run the correlate +
     interceptor on this second battle in a fresh managed launch.
@@ -522,7 +522,7 @@ folder for the full numbering convention and document map.
   count, file name, or repeated launches, and never promote a candidate while
   this blocker remains open.
 - Superseded (2026-08-11): two-replay promotion is now PROVEN for every
-  published/live family — position (OD-075/076/078/081/082, Dead Rail + Oasis
+  published/live family — position (OD-075/076/078/081/082, medvedkovo + savanna
   continuous polls; G0 publication applied 2026-08-10), yaw (OD-089:
   ring-record `+0x30` on BOTH replays, `twoReplayRepeatability = true`), and
   HP (OD-091: entity-base `+0xB8` on BOTH replays, Strict 4/4 exact sums,
@@ -930,7 +930,7 @@ folder for the full numbering convention and document map.
   aim/ray field proofs are still outstanding.
 
 - Live attempt (`2026-08-16`, honest negative): the first census launch
-  (Dead Rail re-launch) reached `lifecycle_evidence outcome=verified` but the
+  (medvedkovo re-launch) reached `lifecycle_evidence outcome=verified` but the
   game then assert-crashed during replay playback (`ListenerHolderBase.cpp:15`,
   AkAudio write stack in the newest blitz log) and the coordinator denied
   `evidence.monitor_unhealthy`; no census aggregate was produced. The launcher
@@ -947,7 +947,7 @@ folder for the full numbering convention and document map.
 
 - Live census result (`2026-08-16`, first real capture): the owner-census
   discriminator is now LIVE-proven. A managed offline launch (Churchill I,
-  map Oasis Palms, exact build `11.19.0.10` hash `1cda5c31…`) reached
+  map savanna, exact build `11.19.0.10` hash `1cda5c31…`) reached
   `OfflineReplayVerified` and the capture endpoint returned
   `Rejected / BoundsExceeded` with `OwnerCandidateCount=43` and all
   weapon/shell/ray flags false. The two census passes agreed
@@ -962,8 +962,8 @@ folder for the full numbering convention and document map.
   prefix of the process version (was `capture.decode_build_mismatch`), and the
   launcher's HTTP calls are bounded with 30s timeouts.
 
-- Reproducibility (`2026-08-16`, second content-distinct battle): the Dead
-  Rail replay (Dead Rail map) returned the identical census —
+- Reproducibility (`2026-08-16`, second content-distinct battle): the medvedkovo replay (file `deadrail-20260802.wotbreplay`, mislabeled — the
+  real Dead Rail map is `desert_train`) returned the identical census —
   `vehicleGun=42, vehicleGunRotator=1, avatarGunAgent=1, stable=True`,
   `OwnerCandidateCount=43`, `Rejected / BoundsExceeded`. The exact 42/1/1
   pattern across two battles strongly supports reading the single
@@ -1013,7 +1013,7 @@ folder for the full numbering convention and document map.
   shell/aim/ray field derivation.
 
 - Live validation RESULT (`2026-08-16`, H1 CONFIRMED): one exact-build
-  managed offline replay (Churchill I, Oasis Palms, `1cda5c31…`; battle
+  managed offline replay (Churchill I, savanna, `1cda5c31…`; battle
   session `01a00ba4-91b8-783a-a894-b800cb35407e`) reached
   `OfflineReplayVerified` and the `pen-ownership-walk` anchor returned
   `Resolved` with `rotator_candidate_count=1` and all four chain booleans
@@ -1120,7 +1120,7 @@ folder for the full numbering convention and document map.
   open and is not required for the G1 item 2 gate. 7 coordinator + 1
   endpoint tests; driver `scripts/capture-pen-shell-state.ps1`. **LIVE-
   VALIDATED (2026-08-18):** one exact-build managed offline replay (Churchill I /
-  Oasis, session `01a015b9-…`) resolved the anchor — `index=0`, `identity0=5`,
+  savanna, session `01a015b9-…`) resolved the anchor — `index=0`, `identity0=5`,
   `identity1=71`, two-pass stable, 87 samples / 1 distinct state / **0
   transitions**. The read surface is live-proven; the identity dwords are now
   DECODED and CORRECTED (2026-08-18, `2026-08-18-shell-identity-holder-writer.md`):
@@ -1133,9 +1133,9 @@ folder for the full numbering convention and document map.
   repeats) is the remaining G1 item 2 gate per `pen-promotion-gates.md`.
   Nothing promoted.
 
-- Dead Rail shell-swap attempt HONEST-NEGATIVE (`2026-08-18`, handoff
-  `2026-08-18-deadrail-shell-swap-negative.md`): the second content-distinct
-  replay (Dead Rail, map `medvedkovo`, session `01a01610-…`) was launched and
+- medvedkovo shell-swap attempt HONEST-NEGATIVE (`2026-08-18`, handoff
+  `2026-08-18-medvedkovo-shell-swap-negative.md`): the second content-distinct
+  replay (medvedkovo, session `01a01610-…`) was launched and
   the `shell-state` anchor polled for the full battle — `index=0`,
   `identity0=5` (status/tier), `identity1=71` (id), two-pass stable, 147
   samples / 1 distinct state / **0 transitions** (the shell fingerprint

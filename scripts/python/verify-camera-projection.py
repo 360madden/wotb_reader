@@ -283,7 +283,7 @@ def classify_mode(screen, look_at, expected_pitch, memory_pitch):
 
     Order matters: the memory-side pitch-to-aim gap branch (no pixel
     dependence) fires first, because the sky-luminance branch is
-    scene-dependent (Oasis dusk skies never pass the >0.5 row-luminance
+    scene-dependent (savanna dusk skies never pass the >0.5 row-luminance
     sky test). CAM-013 (2026-08-11): a chase camera aims at the
     TURRET-LEVEL AIM POINT (~1.9 m above the hull center), so look-at ~0 /
     memory pitch ~= pitch-to-aim; the non-chase state aims elsewhere

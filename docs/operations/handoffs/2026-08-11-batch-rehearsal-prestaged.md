@@ -14,7 +14,7 @@ against decoded ground truth.
 
 **`scripts/python/batch-rehearsal-crosscheck.py`** (stdlib only):
 - `--roster`: the decoded roster (participant entity ids in team order) +
-  session duration from the treader SQLite store — proven on Oasis Palms:
+  session duration from the treader SQLite store — proven on savanna:
   14 entities, 279.9 s.
 - `--compare`: reads a dumps file (schema
   `wotbtreader.od.batch-rehearsal.dumps.v1`), decodes each ring-record
@@ -60,7 +60,7 @@ driver's rendezvous/API pattern):
 ## Remaining
 
 - One approved live session: start the web host, verify the offline replay
-  (Oasis Palms session `019fdff7-8dcf-7426-8547-9fb8cc3eb07b`), then
+  (savanna session `019fdff7-8dcf-7426-8547-9fb8cc3eb07b`), then
   `pwsh -File scripts/invoke-batch-rehearsal.ps1 -SessionId
   019fdff7-8dcf-7426-8547-9fb8cc3eb07b -LiveAcquire -Times 90,150,220
   -FailOnMiss` — the verdict closes item 3 and measures the batch window for

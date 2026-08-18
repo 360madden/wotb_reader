@@ -1,7 +1,7 @@
 # CAM-002 — live pose layout: the GameCamera owns the pose (live-verified)
 
 Date: 2026-08-11. Binary: wotblitz.exe 11.19.0.10 (hash `1cda5c31…1760307d`).
-Two approved offline replay launches (Oasis Palms) with read-only probes
+Two approved offline replay launches (savanna) with read-only probes
 against the server-owned endpoints. Nothing promoted; resolver, read
 surface, and offset table untouched. Console-only probes persisted no raw
 data.

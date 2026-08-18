@@ -97,7 +97,7 @@ int32-in-tank-record expectation (`[entity+0x3C]`, the `+0x48` rehearsal
 fixture): HP is int16 and lives 0x7C bytes past the transform pointer on
 the entity record itself. The static proof became the G1 `playerHP`
 fieldValidation StaticAnalysis entry; live verification followed
-(OD-RECOVERY-087 Oasis + OD-RECOVERY-091 Dead Rail,
+(OD-RECOVERY-087 savanna + OD-RECOVERY-091 medvedkovo,
 `twoReplayRepeatability = true`) and the field is `Verified` via the
 entity-base chain (final hop `recordOffset 184`).
 

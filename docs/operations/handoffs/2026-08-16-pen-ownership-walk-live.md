@@ -8,7 +8,7 @@ are derived; the ownership-walk discriminator itself is now closed)
 
 ## What ran
 
-One exact-build managed offline replay (Churchill I, Oasis Palms, build
+One exact-build managed offline replay (Churchill I, savanna, build
 `11.19.0.10` hash `1cda5c31…`; battle session
 `01a00ba4-91b8-783a-a894-b800cb35407e`) reached `OfflineReplayVerified`, and
 `scripts/capture-pen-ownership-walk.ps1` drove the new `pen-ownership-walk`

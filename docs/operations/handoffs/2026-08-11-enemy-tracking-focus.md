@@ -33,7 +33,7 @@ is the pre-staged read mechanism.
 
 ## Type-7 entity-status survey (new evidence, 2026-08-11)
 
-Ran a payload-level survey of the 19 040 type-7 packets on Oasis Palms
+Ran a payload-level survey of the 19 040 type-7 packets on savanna
 11.19.0 (raw evidence bytes vs canonicalized hull yaw):
 
 - Layout: entity-id u32 + 2 entity-specific state int32s + fast-rotating
@@ -75,7 +75,7 @@ player must share the file.
   tolerance. The enemy-track frame ALREADY carried position + hull yaw +
   HP per tank (`OverlayTankState`), so the aim-line was the only missing
   piece; it stays client-computable (no shared-contract change).
-- **Real-data validation (78 shots, Oasis Palms):** at fire instants the
+- **Real-data validation (78 shots, savanna):** at fire instants the
   attacker's hull is 48–68° off the bearing to the victim on average
   (moving attackers med 48°, static med 68°); only 15–20% of shots land
   within a 15° hull arc. Convention itself re-verified (hull yaw vs motion
@@ -99,7 +99,7 @@ player must share the file.
     pitch +0x2C / yaw +0x30; the rehearsal's +0x2C prediction corrected —
     it was self-constructed). Automated contract HIT score 1.0, flatness
     1.0, 48/48 at the 5 s shared lag via the new value-match lag path.
-    Phase-4 repeat on Dead Rail (OD-RECOVERY-089) still gates publication.
+    Phase-4 repeat on medvedkovo (OD-RECOVERY-089) still gates publication.
 3. ~~Live enemy-roster read design~~ — DESIGNED AND IMPLEMENTED 2026-08-11:
    `docs/operations/live-roster-read-design.md` (X3, status ADOPTED).
    Closes the one gap between the batch rehearsal and live frames: the
@@ -201,7 +201,7 @@ measurement shape + endpoint DTO flow).
 live session the same way OD-RECOVERY-086 was pre-staged: static values
 pinned (entity-base anchor, region ≥ 0x120, signed-int16 correlate,
 VerifyPlayerHpChain 26/26 map: current `+0xB8`, alive `+0xBA`, max
-`+0x11C`, healing `+0x11E`; Oasis Palms victim 3760578, Dead Rail victim
+`+0x11C`, healing `+0x11E`; savanna victim 3760578, medvedkovo victim
 2549399 for the Phase-4 two-replay rule), the runnable one-command
 `invoke-hp-diffing-session.ps1` invocation, the ledger YAML skeleton, and
 branch-on-evidence rules (hit at `+0xB8` → live frame HP becomes real;
@@ -212,7 +212,7 @@ ring-record dumps (region ≥ 0x40, `+0x2C..+0x37` probe first), the
 runnable `invoke-facing-session.ps1` invocation, ledger YAML skeleton,
 and branch-on-evidence rules (hit at `+0x2C` → live frame yaw
 live-verified; different offset → live finding wins; no-hit → widen the
-probe; Dead Rail's 5 seam crossings exercise the wrap-aware matcher).
+probe; medvedkovo's 5 seam crossings exercise the wrap-aware matcher).
 
 ## X1 policy memo APPROVED (2026-08-11)
 
@@ -248,7 +248,7 @@ updated to reference the draft.
 
 ## OD-RECOVERY-087 live session — L1 HP HIT at +0xB8 (2026-08-11)
 
-Approved live session on Oasis Palms (victim 3760578, 9 events / 1,183
+Approved live session on savanna (victim 3760578, 9 events / 1,183
 damage). Full evidence: `docs/operations/od-recovery-087-evidence-template.md`
 (filled) + ledger section. **Verdict: HIT** — the entity-base current-health
 signed int16 is CONFIRMED LIVE at **`+0xB8`**:
@@ -278,11 +278,11 @@ time cannot bracket the memory write. Two harness/tooling fixes shipped:
 
 `hpLiveAtEntityBaseOffset` claimable; the X4 frame's `hp: null` can become
 real additively (live-frame design honest-limits row flipped to ✅). Phase-4
-repeatability (Dead Rail victim 2549399) still gates any HP publication.
+repeatability (medvedkovo victim 2549399) still gates any HP publication.
 
 ## OD-RECOVERY-088 live session — L2 facing HIT at +0x30, rehearsal corrected (2026-08-11)
 
-Approved live session on Oasis Palms (victim 3760577, 24 turn segments,
+Approved live session on savanna (victim 3760577, 24 turn segments,
 48 region dumps, every dump `sameDecodedClockProven=true`, gate
 `OK OfflineReplayVerified`). Full evidence:
 `docs/operations/od-recovery-088-evidence-template.md` (filled) + ledger
@@ -323,7 +323,7 @@ predicted: yaw is live-confirmed at ring-record `+0x30`.**
    `GameSessionCoordinator`.
 
 `yawLiveAtRingOffset` claimable at +0x30; `liveFrameYawBecomesLive` true;
-`twoReplayRepeatability` still false — Phase-4 repeat on Dead Rail
+`twoReplayRepeatability` still false — Phase-4 repeat on medvedkovo
 (OD-RECOVERY-089, 5 seam crossings) gates any facing/yaw publication.
 
 ## X4 L1 wiring — live-frame HP becomes real (2026-08-11)
@@ -363,7 +363,7 @@ frame HP decode, endpoint batch round-trip + live-frame mapping, projector
 HP mapping. All touched suites green (Core 205, Application 73,
 GameIntegration 294, Host.Web 159).
 
-Next in the pre-staged order: the Phase-4 two-replay HP rule (Dead Rail
+Next in the pre-staged order: the Phase-4 two-replay HP rule (medvedkovo
 victim 2549399) gates any HP publication; OD-RECOVERY-089 (L2 facing
 repeat, 5 seam crossings) gates facing/yaw publication.
 
@@ -389,14 +389,14 @@ repeat, 5 seam crossings) gates facing/yaw publication.
 
 `docs/operations/od-recovery-090-evidence-template.md` PRE-STAGED (the
 roadmap L3 fill-in contract): `invoke-hp-diffing-session.ps1 -Track
-damage-dealt -VictimEntityId 3760577 -LiveAcquire` on Oasis Palms
+damage-dealt -VictimEntityId 3760577 -LiveAcquire` on savanna
 (viewpoint attacker; 5 dealt events / 2184 damage / 4 nonzero windows),
 entity-base anchor (320 B — the driver default), increment direction, lag
 0 (counter rises synchronously with the packets). **Honest framing: the
 rehearsal's `+0x48` is a synthetic fixture, NOT a prediction** (same class
 as the yaw +0x2C — it proved the correlator machinery); the live session
 discovers the counter empirically, with the template's different-offset /
-no-hit branch. Phase-4 Dead Rail agreement (attacker 2549401) gates any
+no-hit branch. Phase-4 medvedkovo agreement (attacker 2549401) gates any
 publication; HP publication keeps its own rule (victim 2549399).
 
 ## Docs freshness + X2b join-gate outcome recorded (2026-08-11)
@@ -410,7 +410,7 @@ publication; HP publication keeps its own rule (victim 2549399).
   enemy ids stay unnamed until an enemy discriminator lands. No join code
   written (evidence-first).
 - **Ledger Next-planned row completed:** 089 → CAM-001 v7 → OD-RECOVERY-090
-  (L3) + its Dead Rail repeat; yaw publication package referenced as
+  (L3) + its medvedkovo repeat; yaw publication package referenced as
   PENDING.
 
 ## Live-frame HP hardening — HpFailureStage surfaced + endpoint flow pinned (2026-08-11)
@@ -430,7 +430,7 @@ publication; HP publication keeps its own rule (victim 2549399).
 
 ## OD-RECOVERY-086 live session — X2 PASS live + X3 team-based partial (2026-08-11)
 
-Approved live session on Oasis Palms (the content-distinct 11.19.0.10
+Approved live session on savanna (the content-distinct 11.19.0.10
 replay). Full evidence: `docs/operations/od-recovery-086-evidence-template.md`
 (filled) + ledger section. Verdicts:
 
@@ -481,14 +481,14 @@ surface changed. Next live gates in pre-staged order: OD-RECOVERY-087
 ## OD-RECOVERY-089 closed — L2 facing Phase-4 HIT; per-dump bidirectional lag path (2026-08-11)
 
 **Phase-4 repeatability proven for yaw: `twoReplayRepeatability = true`.**
-The approved Dead Rail session (victim 2549408, 56 ring-record dumps, every
+The approved medvedkovo session (victim 2549408, 56 ring-record dumps, every
 `sameDecodedClockProven=true`) initially returned an **honest-negative**
 (top `0xA0`, score 0.304) from the then-current one-directional shared lag
 path. Offline root-cause on the SAME immutable dumps: the G2 replay-clock
 LABEL skew is per-dump variable and **opposite in sign between replays** —
-Oasis memory LAGS the label (+4.8 s median), Dead Rail memory LEADS it
+savanna memory LAGS the label (+4.8 s median), medvedkovo memory LEADS it
 (−2.5 s median, 5.6 s spread) — and the one-directional memory-behind
-search structurally cannot see the Dead Rail sign.
+search structurally cannot see the medvedkovo sign.
 
 The additive fix (defaults unchanged; shared path untouched):
 `HeadingCorrelator.CorrelateWithLag` gained a **per-dump bounded
@@ -499,8 +499,8 @@ evidence, never silent per-dump fitting. Re-verdict of the stored evidence:
 
 | Evidence | Offset | Score | Flatness | Matched | Median lag | Spread |
 |---|---|---|---|---|---|---|
-| Dead Rail 089 | `+0x30` | 1.0 | 1.0 | **56/56** | −2.5 s | 5.6 s |
-| Oasis 088 (re-run) | `+0x30` | 1.0 | 1.0 | **48/48** | +4.8 s | 13.1 s |
+| medvedkovo 089 | `+0x30` | 1.0 | 1.0 | **56/56** | −2.5 s | 5.6 s |
+| savanna 088 (re-run) | `+0x30` | 1.0 | 1.0 | **48/48** | +4.8 s | 13.1 s |
 
 Median per-dump error 0.000° on both — the SAME offset agrees on two
 content-distinct replays with opposite-sign skew. 3 new unit tests (lead
@@ -518,7 +518,7 @@ until then. Evidence recorded: 089 evidence template filled (the
 at-session negative + corrected verdict both documented), ledger index row
 + full 089 section, roadmap L2 row closed + X4 row updated, groundwork
 label-skew finding. Next live gates in order: CAM-001 v7 → OD-RECOVERY-090
-(L3 damage-dealt) + its Dead Rail repeat; HP Phase-4 rule (victim
+(L3 damage-dealt) + its medvedkovo repeat; HP Phase-4 rule (victim
 2549399) separate; item 7 LAST.
 
 ## Post-089 hardening: yaw-diff CLI tests + uniqueness audit + CAM-001 v7 pre-stage (2026-08-11)
@@ -527,7 +527,7 @@ label-skew finding. Next live gates in order: CAM-001 v7 → OD-RECOVERY-090
 (new): end-to-end `yaw-diff` with a seeded `position_samples` yaw timeline
 (dead-reliable step ground truth) proves the memory-LEADING per-dump path
 lands HIT at `+0x30` with a negative median lag + reported spread — the
-Dead Rail sign, end-to-end through the real CLI. Plus the validation
+medvedkovo sign, end-to-end through the real CLI. Plus the validation
 branches (`--memory-lead-seconds -1` / non-numeric → InvalidArguments) and
 `CliInvocation` flag-vs-value semantics (`--per-dump-lag` must NOT consume
 the next token).
@@ -537,7 +537,7 @@ Independent Python replica of the per-dump lag scan over ALL 4-byte offsets
 of the stored 088/089 dumps against the decoded per-entity yaw:
 **`+0x30` is the UNIQUE offset matching all dumps at ≤ 0.05 rad on both
 replays; nearest competitor > 0.5 rad off on at least one dump** — despite
-7.8 % (Oasis) / 14.1 % (Dead Rail) zero-filled float32 slots. The
+7.8 % (savanna) / 14.1 % (medvedkovo) zero-filled float32 slots. The
 unit-test lesson (a zero-filled field can degenerate-match a stationary
 0.0 yaw by sliding its lag) cannot occur here: the tank's yaw never sits
 at 0.0 in the stationary stretches. Recorded in the 089 evidence template.
@@ -589,7 +589,7 @@ type-10 ground truth:
   walk's `[ECX+0x3C]` deref is recorded (L1 anchor reads the entity base
   directly).
 - **No turret rotation field and no lock-on/target-id state** in either
-  structure — the negative is now THREE-WAY (scratch scan of the Oasis
+  structure — the negative is now THREE-WAY (scratch scan of the savanna
   stream, 73 994 packets): type-10 hull-only, type-5 spawn broadcasts
   carry NO rotation floats (48/51-byte variants: packed ints/zeros, no
   position triple either — the doc's type-5 x/y/z row did NOT reproduce;
@@ -850,7 +850,7 @@ destroyed, decoded alive to 281 s). Launch 2 captured all 6 event windows
   `+0x140`, on a sibling record, or isn't a plain per-event int32 here. No
   guess made; nothing promoted.
 - **Corrections:** the pre-staged ground truth was stale — current decode
-  shows **6 events / 752 damage** (not 5/2184) for Oasis 3760577; the
+  shows **6 events / 752 damage** (not 5/2184) for savanna 3760577; the
   template + ledger now carry the measured numbers.
 - **Re-attempt path (if pursued):** wider region (~0x1000 cap) and/or
   sibling-record sweep with the same increment-correlator contract; Dead
@@ -862,7 +862,7 @@ ledger 090 section + Next-planned, and the roadmap L3 row.
 
 ## CAM-001 v7 live session — HONEST-NEGATIVE, camera not aimed at tank (2026-08-11)
 
-Two approved launches (Oasis Palms; `019ff23a` then the one-relaunch
+Two approved launches (savanna; `019ff23a` then the one-relaunch
 allowance `019ff243`) both returned `camera-state-found-unverified-offset`:
 
 - **PASS:** camera chain 3/3 + identity gates (ReplayCameraController /
@@ -916,7 +916,7 @@ convention-tolerant sign-flip forward match and NaN-tolerant legacy
 reports stride-4 orthonormality + forward-row match + cross-product
 identity; `renderMode` gains a scene-independent **non-chase** branch
 (look-at large AND memory pitch far from pitch-to-tank — fires before the
-sky test, which Oasis dusk skies never pass: skyFraction 0–0.11).
+sky test, which savanna dusk skies never pass: skyFraction 0–0.11).
 Re-validated on the real v7b aggregate: **6/6 rounds coherent=True,
 mode=non-chase** — the honest-negative signature is now labeled
 automatically. Self-test extended (stride-4 fixture, legacy partial,

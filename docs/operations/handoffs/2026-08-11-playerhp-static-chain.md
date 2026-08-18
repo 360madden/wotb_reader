@@ -121,7 +121,7 @@ note superseded), `product-roadmap.md` (L0/L1 rows).
 
 ## Next step (approval-gated)
 
-The L1 live session: qualify the victim (Oasis Palms 3760578 / Dead Rail
+The L1 live session: qualify the victim (savanna 3760578 / medvedkovo
 2549399), dump the **entity-base** region at the event-bound schedule,
 `hp-diff --int16 true` → expect the verdict HIT at **+0xB8 int16** on both
 replays, then publish the offset + chain through the operator gate.

@@ -186,7 +186,7 @@ public sealed class CliOverlayFrameTests
             INSERT INTO battle_sessions
                 (id, decode_run_id, game_version, map_name, duration_ticks, schema_version)
             VALUES
-                ($session, $run, '11.19.0', 'Oasis Palms', 1000000000, '1');
+                ($session, $run, '11.19.0', 'savanna', 1000000000, '1');
             INSERT INTO participants
                 (id, battle_session_id, entity_id, team_number, player_name, tank_name,
                  tank_class, bot_status, bot_status_confidence,

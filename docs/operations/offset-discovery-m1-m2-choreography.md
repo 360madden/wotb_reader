@@ -30,7 +30,7 @@ only ever run inside the M1 launch's own window.
   the final correlate at monitor end returns the family (x/y/z triple).
 - The monitor ends early on **rounds-exhausted** (MaxReadRounds) or
   **battle-ended** (anchor + duration + MaxTimeShift + 10). The battle is 271s
-  (Dead Rail), so the final correlate must fire with battle time left. The green
+  (medvedkovo), so the final correlate must fire with battle time left. The green
   window is the difference (see §4 for the budget — rounds cost ~3s, not 2s, so
   `MaxReadRounds 70` is the first-attempt default, not the 90 default). The
   write-trace's `-TraceSeconds` is capped to fit the remaining window.
@@ -47,7 +47,7 @@ only ever run inside the M1 launch's own window.
   CAP-2 session).
 - Host up on `http://127.0.0.1:9182`; rendezvous `web.json` present under
   `%LocalAPPDATA%\WotBTreader\rendezvous\`.
-- `GET /api/v1/game/discover/trajectory/{battleSessionId}` returns the Dead Rail
+- `GET /api/v1/game/discover/trajectory/{battleSessionId}` returns the medvedkovo
   session with real samples (verified 200, 14 entities, viewpoint Churchill_I,
   251 samples).
 - od-048 fail-closed smoke: no game → `FAILED_gate_never_verified`, exit 1, no
@@ -143,7 +143,7 @@ see §6 for why this should be automated before the live round. The driver:
   → the member's offset expression.
 - Record per the workflow Phase 5 (M3 repeatability: 2 launches × 2 replays).
 
-## 4. Timing budget (Dead Rail, 271.4s)
+## 4. Timing budget (medvedkovo, 271.4s)
 
 | `MaxReadRounds` | Verdict ~ (rounds at 3s) | Green window ~ | Recommend `-TraceSeconds` |
 |---|---|---|---|

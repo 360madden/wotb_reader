@@ -42,7 +42,7 @@
   the session's viewpoint entity when -VictimEntityId is 0).
 
   Repeatability: run the identical flow on the second independent replay
-  (Dead Rail victim 2549399) and require the matched offsets to agree - the
+  (medvedkovo victim 2549399) and require the matched offsets to agree - the
   Phase-4 rule, applied by the operator after the two sessions.
 
   L3 avatar-stats anchor (2026-08-12 pre-stage): -Track damage-dealt
@@ -112,7 +112,7 @@ param(
     [ValidateSet('ring-record', 'entity-tank-record', 'entity-base', 'avatar-stats')]
     [string]$RegionAnchor = 'entity-base',
     # Comma-separated replay-clock seconds for flat CONTROL dumps in the
-    # no-damage segments (e.g. '30,230' for Oasis Palms). Optional in live
+    # no-damage segments (e.g. '30,230' for savanna). Optional in live
     # mode; the verdict's flatness check needs >= 2 control windows.
     [string]$ControlTimes = '',
     [int]$WindowSeconds = 10,
@@ -123,16 +123,16 @@ param(
     # the change window that contains its memory write. Live evidence
     # (OD-RECOVERY-087) measured a VARIABLE memory-apply lag of ~1-10 s vs
     # the decoded event time for HP; the damage-dealt lane measured the SAME
-    # class of lag live (OD-RECOVERY-095: +2.3-4.1 s on Oasis, the counter
+    # class of lag live (OD-RECOVERY-095: +2.3-4.1 s on savanna, the counter
     # does NOT increment synchronously with the packets), so BOTH directions
     # default to 12 s (the measured bound plus margin).
     [double]$LagToleranceSeconds = 12,
     # Bounded LEAD window (seconds) extending the attribution window FORWARD
     # to (From - lag, To + lead]. Some replays show the memory clock LEADING
-    # the decoded clock (Dead Rail by ~2.5 s, OD-RECOVERY-089 measured it for
+    # the decoded clock (medvedkovo by ~2.5 s, OD-RECOVERY-089 measured it for
     # yaw), so a memory-lead event's decoded time postdates the window that
     # contains its write and the one-directional window cannot see it. The
-    # driver defaults to 4 s (the measured Dead Rail lead plus margin);
+    # driver defaults to 4 s (the measured medvedkovo lead plus margin);
     # requires LagToleranceSeconds > 0. Applied to both directions.
     [double]$LagLeadSeconds = 4,
     # Persisted completion marker (OD-099 durable fix): when the in-session
@@ -250,7 +250,7 @@ $HpDelta.dump_schedule | ForEach-Object {
     Write-Host ("hp_session:   hit at {0,7}s dmg {1,5} -> dump {2,7}s and {3,7}s" -f `
         $_.hit_replay_s, $_.damage, $_.dump_before_s, $_.dump_after_s)
 }
-Write-Host "hp_session:   + 2-3 flat control dumps in the no-damage segments (e.g. ~30s and ~230s for Oasis Palms)."
+Write-Host "hp_session:   + 2-3 flat control dumps in the no-damage segments (e.g. ~30s and ~230s for savanna)."
 Write-Host ("hp_session: verdict command: " + $HpDelta.commands.hp_diff)
 
 # ---- 2. DUMP (live, gated seam) ------------------------------------------
@@ -764,7 +764,7 @@ $DirectionArgs = if ($IsIncrement) { @('--direction', 'increment') } else { @() 
 # (damage-dealt, int32 counter) path stays int32-only.
 $Int16Args = if (-not $IsIncrement) { @('--int16', 'true') } else { @() }
 # BOTH directions get the bounded lag window. OD-RECOVERY-095 measured the
-# damage-dealt lane lagging +2.3-4.1 s on Oasis (the same variable
+# damage-dealt lane lagging +2.3-4.1 s on savanna (the same variable
 # memory-apply lag class as HP); gating these behind -not $IsIncrement
 # silently ran the increment verdict at lag 0 and misread real damage
 # windows as control-window changes.

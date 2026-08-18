@@ -4,7 +4,7 @@
 
 ## What and why
 
-Every overlay feature was verified ad-hoc on Oasis Palms, but nothing walked
+Every overlay feature was verified ad-hoc on savanna, but nothing walked
 the whole overlay contract on **both** replays and failed loudly when a field
 went bad. This adds a reusable headless checker that proves the pipeline on
 real data and can be re-run after any future change to the frame path.
@@ -33,8 +33,8 @@ Exit code 1 on any failure, with the first 12 errors per session printed.
 
 ## Verification
 
-- **Oasis Palms** (`019fee20-9315-70b7-a92c-379f41f69532`): PASS.
-- **Dead Rail** (`019fee20-a2a5-7a04-8612-9cee3aaf7b1f`): PASS.
+- **savanna** (`019fee20-9315-70b7-a92c-379f41f69532`): PASS.
+- **medvedkovo** (`019fee20-a2a5-7a04-8612-9cee3aaf7b1f`): PASS.
 - Each walked 320 frames (t=0..319 at 1 s), every contract check green, kill
   logs 8 and 7 entries respectively, stable across every subsequent frame.
 - The checker is self-tested: its first run caught its own wrong assumption
