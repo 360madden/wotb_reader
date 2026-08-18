@@ -1122,7 +1122,10 @@ folder for the full numbering convention and document map.
   VALIDATED (2026-08-18):** one exact-build managed offline replay (Churchill I /
   Oasis, session `01a015b9-…`) resolved the anchor — `index=0`, `identity0=5`,
   `identity1=71`, two-pass stable, 87 samples / 1 distinct state / **0
-  transitions**. The read surface is live-proven; `identity0=5` is hypothesized
-  (unproven) to be `eShellKind` APCR. This replay did not swap shells, so the
+  transitions**. The read surface is live-proven; `identity0` is now DECODED
+  (2026-08-18, `2026-08-18-shell-descriptor-link.md`): it is `eShellKind` and
+  `5` = `kArmorPiercingCr` (APCR) — the loaded shell was APCR; `identity1=71`
+  stays undecoded (likely caliber or shell id; the identity-holder writer is
+  the remaining bounded trace). This replay did not swap shells, so the
   controlled shell-swap correlation (two content-distinct repeats) is the
   remaining G1 item 2 gate per `pen-promotion-gates.md`. Nothing promoted.

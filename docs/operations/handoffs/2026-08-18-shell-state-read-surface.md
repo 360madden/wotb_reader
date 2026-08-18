@@ -37,9 +37,10 @@ The 2026-08-18 shell-index handoffs summarized the chain as ending at
 `Shell → damage +0x11c`. The `ProcessCurrentShells` decompile shows the
 terminal object is a **shell identity holder** (two compared dwords at
 `+0x20`/`+0x24`), **not** the `Shell` *descriptor* (kind `+0x114`, caliber
-`+0x118`, damage `+0x11c`, vftable `0x31a1e14`). The descriptor link is still
-open and is recorded as such in `pen-shell-state-read-proposal.md`; it is not
-required for the G1 item 2 *gate* (see below).
+`+0x118`, damage `+0x11c`, vftable `0x31a1e14`). The descriptor link was
+subsequently resolved (2026-08-18) — see
+`2026-08-18-shell-descriptor-link.md`; it is not required for the G1 item 2
+*gate* (see below).
 
 ## Why this satisfies the G1 item 2 gate
 
@@ -69,10 +70,11 @@ session `01a015b9-189f-7f42-a5d7-d3240ae64a99`) resolved the anchor live:
 
 The six-dereference chain resolves against the real game, so the read surface
 is live-proven (the synthetic tests verified the logic; this proves the
-offsets). **Hypothesis (unproven):** `identity0=5` matches `eShellKind`
-`kArmorPiercingCr` (APCR) and `identity1=71` may be a caliber/identity
-component — this needs a controlled swap or a descriptor-link trace before it
-is claimed.
+offsets). **Decoded (2026-08-18):** `identity0` is `eShellKind`; `5` =
+`kArmorPiercingCr` (APCR) — the loaded shell was APCR. `identity1=71` remains
+undecoded (likely a caliber component or shell resource id; the
+identity-holder writer is the remaining bounded trace). See
+`2026-08-18-shell-descriptor-link.md`.
 
 **0 transitions means this replay did not exercise a shell swap**, so the
 controlled-transition correlation still needs a replay whose player swaps
