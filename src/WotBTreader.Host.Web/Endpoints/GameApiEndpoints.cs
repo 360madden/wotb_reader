@@ -1329,9 +1329,17 @@ internal static class GameApiEndpoints
 
         if (!result.IsSuccess || result.Value is null)
         {
+            string? code = result.Error?.Code ?? "pen_capture.failed";
             return Results.BadRequest(new
             {
-                error = result.Error?.Code ?? "pen_capture.failed",
+                error = code,
+                // A decoded-session build that cannot match the authorized
+                // process build is the managed-launch build-drift signal:
+                // point the caller at the RECOVERY module instead of leaving
+                // them with a bare mismatch code.
+                reason = code == "capture.decode_build_mismatch"
+                    ? "build drift: the game build changed - re-verify per RECOVERY/README.md"
+                    : (string?)null,
             });
         }
 

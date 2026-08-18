@@ -2817,6 +2817,30 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task CapturePenetrationAsync_BuildMismatch_PointsAtRecoveryModule()
+    {
+        var capture = new FakePenetrationCapture(
+            OperationResult.Failure<PenetrationCaptureEvaluation>(
+                new ApplicationError(
+                    "capture.decode_build_mismatch",
+                    "The decoded session build does not match the authorized process build.",
+                    Retryable: false)));
+
+        IResult result = await GameApiEndpoints.CapturePenetrationAsync(
+            capture,
+            new WotBTreader.ApiContracts.PenetrationCaptureRequest
+            {
+                DecodeRunId = Guid.NewGuid().ToString(),
+            },
+            TestContext.CancellationToken);
+
+        JsonElement body = BadRequestAnonymous(result);
+        Assert.AreEqual("capture.decode_build_mismatch", body.GetProperty("error").GetString());
+        Assert.IsTrue(
+            body.GetProperty("reason").GetString()!.Contains("RECOVERY/README.md", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
     public async Task CapturePenetrationAsync_SourceFailure_ReturnsError()
     {
         var capture = new FakePenetrationCapture(

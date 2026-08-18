@@ -36,7 +36,8 @@ If both --refresh and --check-fresh are passed, --refresh wins (regenerate
 first, then the stale check passes by construction).
 
 Exit code: 0 = all checks pass, 1 = broken links, a stale file-tree snapshot,
-or a blocker-numbering / ledger-consistency problem.
+a blocker-numbering / ledger-consistency problem, or RECOVERY doc path
+references that do not resolve.
 """
 
 from __future__ import annotations
@@ -55,6 +56,7 @@ BLOCKER_LOG_PATH = OPERATIONS_DIR / "blocker-log.md"
 BLOCKERS_DIR = OPERATIONS_DIR / "blockers"
 LEDGER_PATH = OPERATIONS_DIR / "offset-discovery-ledger.md"
 WORKFLOW_PATH = OPERATIONS_DIR / "offset-discovery-workflow.md"
+RECOVERY_DIR = REPO_ROOT / "RECOVERY"
 LOG_DIR = REPO_ROOT / ".build"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_PATH = LOG_DIR / f"offline-check-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.log"
@@ -410,6 +412,70 @@ def check_links() -> int:
     return 0
 
 
+# Backticked repo-relative paths in RECOVERY/*.md must resolve. The
+# module's docs use code spans rather than markdown links, so the link
+# checker above would miss a renamed/moved path; this closes that gap.
+RECOVERY_PATH_SKIP_PREFIXES = (".build/", ".data/", ".freebuff/", "http:", "https:", "C:", "\\\\")
+RECOVERY_PATH_PLACEHOLDERS = "<>*?$\""
+
+
+def check_recovery_paths() -> int:
+    """Verify backticked repo-relative paths in RECOVERY/*.md exist."""
+    broken: list[tuple[str, int, str]] = []
+    in_fence = False
+    for md_file in sorted(RECOVERY_DIR.glob("*.md")):
+        for line_number, line in enumerate(
+            md_file.read_text(encoding="utf-8").splitlines(), start=1
+        ):
+            if FENCE.match(line.strip()):
+                in_fence = not in_fence
+                continue
+            if in_fence:
+                continue
+            for token in re.findall(r"`([^`]+)`", line):
+                token = token.strip()
+                if not token or token.startswith(RECOVERY_PATH_SKIP_PREFIXES):
+                    continue
+                if any(ch in token for ch in RECOVERY_PATH_PLACEHOLDERS):
+                    continue
+                # Shell commands (contain spaces) and API endpoints
+                # (root-absolute, e.g. /discover/...) are not repo paths.
+                if " " in token or token.startswith("/"):
+                    continue
+                # Only path-like tokens are checked: markdown filenames, or
+                # tokens that carry a path separator AND look like a path (an
+                # extension on the basename, or a known repo-directory
+                # prefix). Field names with slashes (playerPositionX/Y/Z),
+                # bare .json/.ps1/.exe names, and shell commands are skipped.
+                has_sep = "/" in token or "\\" in token
+                basename = token.split("/")[-1].split("\\")[-1]
+                known_dir_prefix = token.startswith(
+                    (
+                        "docs/", "scripts/", "tools/", "memory-offsets/",
+                        "offline/", "RECOVERY/", "research/", "src/",
+                        "tests/", ".codex/", ".opencode/", ".grok/",
+                        ".agents/", ".github/",
+                    )
+                )
+                if not (token.endswith(".md")
+                        or (has_sep and ("." in basename or known_dir_prefix))):
+                    continue
+                candidates = (md_file.parent / token, REPO_ROOT / token)
+                if not any(
+                    candidate.is_file() or candidate.is_dir()
+                    for candidate in candidates
+                ):
+                    broken.append(
+                        (md_file.relative_to(REPO_ROOT).as_posix(), line_number, token)
+                    )
+    if broken:
+        print("ERROR: RECOVERY docs reference missing paths:")
+        for name, line, target in broken:
+            print(f"  {name}:{line} -> `{target}`")
+        return 1
+    return 0
+
+
 def main(argv: list[str]) -> int:
     mode = "check"
     if "--refresh" in argv:
@@ -443,9 +509,10 @@ def main(argv: list[str]) -> int:
         print("file-tree.md is up to date.")
 
     link_exit = check_links()
+    recovery_exit = check_recovery_paths()
     numbering_exit = check_blocker_numbering()
     ledger_exit = check_ledger_consistency()
-    return link_exit or numbering_exit or ledger_exit
+    return link_exit or recovery_exit or numbering_exit or ledger_exit
 
 
 if __name__ == "__main__":

@@ -10,7 +10,9 @@ one exists beforehand. This module is that path.
 **Trigger:** any of
 
 - the game updates (new version / new executable),
-- a managed launch fails with `capture.decode_build_mismatch`,
+- a managed launch fails with `capture.decode_build_mismatch` (the
+  `/discover/pen-capture` endpoint answers it with a `reason` pointing
+  here),
 - a live session refuses reads although the game is running.
 
 **The one rule:** evidence-first. Nothing is migrated, copied, or estimated
@@ -22,7 +24,7 @@ precedent for per-version tables).
 
 | File | Purpose |
 |---|---|
-| `invoke-build-drift-triage.ps1` | Read-only triage: compares the installed `wotblitz.exe` against every versioned offset table and reports drift, published fields, and the module-relative anchor RVAs that must be re-derived. Never mutates evidence. Exit codes: 0 same build, 1 drifted, 2 exe not found, 3 failure. |
+| `invoke-build-drift-triage.ps1` | Read-only triage: compares the installed `wotblitz.exe` against every versioned offset table and reports drift, published fields, and the module-relative anchor RVAs that must be re-derived. Never mutates evidence. Exit codes: 0 same build, 1 drifted (tables readable, no hash match), 2 exe not found, 3 failure (including unreadable or missing offset tables — fail-closed, not a verdict). |
 | `build-drift-recovery.md` | The playbook: freeze/ratchet, replay-format check, ordered per-field re-verification, re-publication. |
 
 Reports land in `.build/reports/` (git-ignored), never in the committed
@@ -41,6 +43,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File RECOVERY\invoke-build-drift-
   playbook's re-verification is done for the fields you consume.
 - Exit 2 → pass `-GameExePath` (same install discovery as
   `tools/compute-exe-hash.ps1`).
+- Exit 3 → the comparison could not be made (unreadable/missing offset
+  tables, or any other failure); treat it as "cannot assess", never as
+  same-build.
 
 ## How it fits
 

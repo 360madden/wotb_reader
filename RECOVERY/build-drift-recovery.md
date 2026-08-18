@@ -20,9 +20,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File RECOVERY\invoke-build-drift-
 
 Reads the installed exe hash and every `memory-offsets/*.json`; writes a
 report to `.build/reports/`. Exit 0 = same build (nothing to do). Exit 1 =
-drift. The report lists, per table: game version, recorded hash, match
-status, published fields, and the anchor hops (kind `rootRva` /
-`vftableScan`, i.e. the module-relative RVAs the chains start from).
+drift (tables readable, installed hash matches none). Exit 3 = failure
+(unreadable or missing offset tables, or any other error) — treat that as
+"cannot assess", never as same-build. The report lists, per table: game
+version, recorded hash, match status, published fields, and the anchor hops
+(kind `rootRva` / `vftableScan`, i.e. the module-relative RVAs the chains
+start from).
 
 If the exe is not found (exit 2), pass `-GameExePath`.
 
@@ -69,8 +72,8 @@ that produced the original evidence; never trust a heuristic carry-over.
 | `playerHP` | `rootRva` chain + `recordOffset` 184 | Re-run `ConfirmHealthFieldStores.java` / health-write census | HP live session on 2 replays (OD-087/091 contract, `hp-diff`) |
 | `damageDealt` | `vftableScan` hop (`0x032752a4` entity-Avatar vftable) | Re-derive the avatar vftable RVA via `FindVftableViaCol.java` (RTTI COL chain) | Avatar-stats live increment session (OD-095/096 contract) |
 | Camera pose / W2S | avatar/BattleResources/camera vftable set (see `docs/operations/offset-discovery-ledger.md`) | Re-run `FindVftableForType.java` / RTTI hierarchy tools | CAM-013-style pose live check |
-| Pen ownership walk + census (`OwnershipCandidate`) | `0x32dacf4` / `0x32eeb40` / `0x324dae8` vftables (in `GameSessionCoordinator.cs` + `pen-ownership-walk-proof-protocol.md`) | Re-run the same `FindVftableViaCol.java` derivations | One exact-build managed launch + `pen-capture` census (43/1/1 repeatability) |
-| Gun/Shell descriptor fields (research, un-promoted) | RVAs in `pen-ownership-walk-proof-protocol.md` (2026-08-17 layout) | Re-run `DumpDescriptorVtables.java` / `TraceShellGunProducers.java` | Only ever via the controlled shell-swap experiment |
+| Pen ownership walk + census (`OwnershipCandidate`) | `0x32dacf4` / `0x32eeb40` / `0x324dae8` vftables (in `GameSessionCoordinator.cs` + `docs/operations/pen-ownership-walk-proof-protocol.md`) | Re-run the same `FindVftableViaCol.java` derivations | One exact-build managed launch + `pen-capture` census (43/1/1 repeatability) |
+| Gun/Shell descriptor fields (research, un-promoted) | `Gun` vftable `0x31a7080` / `Shell` vftable `0x31a1e14`; `piercingPower` curve at `Gun +0x34` (layout `docs/operations/handoffs/2026-08-17-pen-gun-shell-descriptor-layout.md`, destination `docs/operations/handoffs/2026-08-17-pen-piercing-power-destination.md`) | Re-run `DumpDescriptorVtables.java` / `TraceShellGunProducers.java` | Only ever via the controlled shell-swap experiment |
 
 The general form for every field:
 
@@ -107,9 +110,8 @@ Only after every consumed field re-verified on both replays:
 ## Stop conditions
 
 - Any field that cannot re-derive statically AND pass the live contract
-  after its budget → record as honest unknown for the new build; never
-  carry it over. Promotion stays gated on the same criteria as before
-  (`offset-promotion-checklist.md`).
+  after its budget → record as honest unknown for the new build;  never carry it over. Promotion stays gated on the same criteria as before
+  (`docs/operations/offset-promotion-checklist.md`).
 - If the new build's replay format differs (Step 2 failed), all replay-mode
   work is blocked first; do not start live re-verification until the format
   ladder is green.

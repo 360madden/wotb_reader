@@ -54,6 +54,7 @@ NuGet.Config
 README.md
 RECOVERY/README.md
 RECOVERY/build-drift-recovery.md
+RECOVERY/invoke-build-drift-triage.Tests.ps1
 RECOVERY/invoke-build-drift-triage.ps1
 THIRD-PARTY-NOTICES.md
 WotBTreader.sln
@@ -370,8 +371,10 @@ docs/operations/handoffs/2026-08-17-pen-gun-descriptor-trace.md
 docs/operations/handoffs/2026-08-17-pen-gun-shell-descriptor-layout.md
 docs/operations/handoffs/2026-08-17-pen-gun-shell-static.md
 docs/operations/handoffs/2026-08-17-pen-piercing-power-destination.md
+docs/operations/handoffs/2026-08-17-recovery-hardening.md
 docs/operations/handoffs/2026-08-17-recovery-module.md
 docs/operations/handoffs/2026-08-17-scan-lease-bughunt.md
+docs/operations/handoffs/2026-08-18-recovery-hardening-2.md
 docs/operations/handoffs/README.md
 docs/operations/item7-branch-b-step2-consistent-double-read-proposal.md
 docs/operations/item7-hardware-atomicity-proof-plan.md
@@ -477,6 +480,7 @@ scripts/install-psscriptanalyzer.ps1
 scripts/invoke-avatar-stats-rehearsal.ps1
 scripts/invoke-batch-read-measurement-tests.ps1
 scripts/invoke-batch-rehearsal.ps1
+scripts/invoke-build-drift-triage-tests.ps1
 scripts/invoke-camera-double-read-measurement-tests.ps1
 scripts/invoke-camera-state-verify.ps1
 scripts/invoke-codex-agent-policy-tests.ps1

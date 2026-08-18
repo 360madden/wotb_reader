@@ -112,14 +112,20 @@ function Get-AnchorHops {
         $fieldName = $prop.Name
         if ($null -eq $prop.Value) { continue }
         foreach ($hop in $prop.Value) {
-            $kind = [string] $hop.kind
-            if ($kind -eq 'rootRva' -or $kind -eq 'vftableScan') {
-                $results += [pscustomobject]@{
-                    field = $fieldName
-                    kind  = $kind
-                    value = $hop.value
-                    note  = [string] $hop.note
-                }
+            # Strict-mode-safe property reads: a hop may omit kind/value/note
+            # (e.g. a minimal synthetic table) without crashing the triage.
+            $kindProp = $hop.PSObject.Properties['kind']
+            $kind = if ($null -ne $kindProp) { [string] $kindProp.Value } else { '' }
+            if ($kind -ne 'rootRva' -and $kind -ne 'vftableScan') { continue }
+            $valueProp = $hop.PSObject.Properties['value']
+            $value = if ($null -ne $valueProp) { $valueProp.Value } else { $null }
+            $noteProp = $hop.PSObject.Properties['note']
+            $note = if ($null -ne $noteProp) { [string] $noteProp.Value } else { '' }
+            $results += [pscustomobject]@{
+                field = $fieldName
+                kind  = $kind
+                value = $value
+                note  = $note
             }
         }
     }
@@ -132,7 +138,7 @@ $exeVersion = ''
 $exeHash = ''
 if ($GameExePath) {
     if (-not (Test-Path -LiteralPath $GameExePath)) {
-        throw "GameExePath not found: $GameExePath"
+        Exit-With 2 "Executable not found: $GameExePath (exit 2 = executable not found; supply a valid -GameExePath or omit it)"
     }
     $exePath = $GameExePath
 }
@@ -140,6 +146,7 @@ else {
     $exePath = Find-WotBlitzExe
 }
 
+try {
 if ($exePath) {
     $exeVersion = [string] (Get-Item -LiteralPath $exePath).VersionInfo.ProductVersion
     $exeSha256 = (Get-FileHash -LiteralPath $exePath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -204,15 +211,23 @@ foreach ($jsonFile in @(Get-ChildItem -LiteralPath $OffsetDir -Filter '*.json' |
 }
 
 # ---- verdict ----
+# Fail-closed: drift (exit 1) means the tables are readable and the installed
+# hash matches none of them. Anything that prevents a trustworthy comparison
+# (unreadable table, no tables at all) is a failure (exit 3), not a verdict.
 $verdict = ''
 $exit = 3
+$hadReadError = @($tableRows | Where-Object { $_.readError })
 if (-not $exePath) {
     $verdict = 'exe-not-found'
     $exit = 2
 }
+elseif ($hadReadError.Count -gt 0) {
+    $verdict = 'read-error'
+    $exit = 3
+}
 elseif ($null -eq $newestRow) {
     $verdict = 'no-readable-table'
-    $exit = 1
+    $exit = 3
 }
 elseif ($newestRow.matchesInstalled -eq $true) {
     $verdict = 'same-build'
@@ -243,7 +258,11 @@ $reportDir = Split-Path -Parent $ReportPath
 if (-not (Test-Path -LiteralPath $reportDir)) {
     New-Item -ItemType Directory -Path $reportDir -Force | Out-Null
 }
-$report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $ReportPath -Encoding UTF8
+    $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $ReportPath -Encoding UTF8
+}
+catch {
+    Exit-With 3 "Failure: $($_.Exception.Message) (exit 3 = failure)"
+}
 
 # ---- console summary ----
 if (-not $Quiet) {
