@@ -23,7 +23,7 @@ reasons in `PenetrationReadinessReason`).
 
 | `G1` item | Required result | Static state | Live state |
 |---|---|---|---|
-| 2 | Fresh configured gun + loaded shell via controlled transitions | **Resolved end-to-end** — see "Static chain" below | **Unproven** — no live read of the chain yet |
+| 2 | Fresh configured gun + loaded shell via controlled transitions | **Resolved end-to-end** — see "Static chain" below | **Read live, not promoted** — `shell-state` anchor resolves on two replays, but neither contains a shell swap (see G1.2) |
 | 5 | Shot-synchronous muzzle origin + gun direction (turret yaw, gun elevation) | **Bounded** — aim struct located; per-field naming not statically resolvable | **Unproven** — no live controlled-transition correlation yet |
 
 The ownership walk that both items build on is **live-proven**
@@ -80,6 +80,14 @@ Acceptance: the index flips exactly when the transition flips, the resolved
 `Shell` identity matches the known shell, and the control window is stable.
 **Stop / fail closed:** index doesn't change on transition, resolved identity
 mismatches the known shell, or the control window moves — no promotion.
+
+**Status (2026-08-18):** the `shell-state` read surface is live-validated on
+both available replays (Churchill I / Oasis, Dead Rail) — `index=0`,
+`identity0=5` = `kArmorPiercingCr` (APCR), `identity1=71`, two-pass stable,
+**0 transitions in both**. Neither replay swaps shells, and a passive replay
+cannot supply a known transition order, so this gate is **not closed** — it
+needs a freshly recorded controlled swap (manual gameplay), which is an
+owner-run scenario. See `2026-08-18-deadrail-shell-swap-negative.md`.
 
 ### G1.5 — turret/gun transition correlation (shot ray)
 

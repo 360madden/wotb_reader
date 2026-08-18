@@ -1129,3 +1129,18 @@ folder for the full numbering convention and document map.
   the remaining bounded trace). This replay did not swap shells, so the
   controlled shell-swap correlation (two content-distinct repeats) is the
   remaining G1 item 2 gate per `pen-promotion-gates.md`. Nothing promoted.
+
+- Dead Rail shell-swap attempt HONEST-NEGATIVE (`2026-08-18`, handoff
+  `2026-08-18-deadrail-shell-swap-negative.md`): the second content-distinct
+  replay (Dead Rail, map `medvedkovo`, session `01a01610-…`) was launched and
+  the `shell-state` anchor polled for the full battle — `index=0`,
+  `identity0=5` (APCR), `identity1=71`, two-pass stable, 147 samples / 1
+  distinct state / **0 transitions** (the player fired APCR the whole battle
+  and never swapped). Playback did not end cleanly: the player's vehicle left
+  the world at frame 25947 (`18:15:54Z`) and the game then hit the known
+  `ListenerHolderBase` `!listeners.size()` assert (`18:15:57Z`), reverting the
+  gate to `Denied / evidence.monitor_unhealthy`; the remaining poll returned
+  `discover.gate_not_satisfied` (expected, not a read fault). **Both available
+  replays are swap-free**, so the G1 item 2 promotion gate is NOT closed — it
+  requires a freshly recorded controlled swap (manual gameplay), which is an
+  owner-run scenario, not an offline step. Nothing promoted.
