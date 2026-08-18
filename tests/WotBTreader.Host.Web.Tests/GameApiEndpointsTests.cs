@@ -1376,6 +1376,73 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task EntityRegion_GunAimAnchor_EchoesInputsAndAimStructOnly()
+    {
+        // The gun-aim anchor (penetration v0.3 G1 item 5) parses and echoes
+        // only the aim inputs + aim struct — no raw region bytes may leave.
+        var scanner = new FakeGameMemoryScanner
+        {
+            EntityRegionResult = OperationResult.Success(
+                new EntityRecordRegionReadResult(
+                    DateTimeOffset.UnixEpoch.AddSeconds(1),
+                    "11.19.0.10",
+                    Type10EntityPositionStatus.Resolved,
+                    4242,
+                    ReplayTimeSeconds: 1.5,
+                    RegionBytes: null,
+                    FailureStage: null,
+                    Attempts: 2,
+                    NodesVisited: 0,
+                    ModuleRooted: true,
+                    EntityIdentityRevalidated: false,
+                    ConsistentDoubleRead: false,
+                    SameDecodedClockProven: false,
+                    GunAimRotatorCandidateCount: 1,
+                    GunAimOwnerRoundTripConfirmed: true,
+                    GunAimInput0: 0.5f,
+                    GunAimInput1: -0.25f,
+                    GunAimHitX: 10f,
+                    GunAimHitY: 20f,
+                    GunAimHitZ: 30f,
+                    GunAimDirX: 1f,
+                    GunAimDirY: 0f,
+                    GunAimDirZ: 0f,
+                    GunAimDistance: 100f,
+                    GunAimTwoPassStable: true)),
+        };
+
+        IResult result = await GameApiEndpoints.ReadEntityRegionAsync(
+            scanner,
+            new WotBTreader.ApiContracts.EntityRecordRegionReadRequest
+            {
+                EntityId = 4242,
+                RegionLength = 16,
+                RegionAnchor = "gun-aim",
+            },
+            TestContext.CancellationToken);
+
+        EntityRecordRegionReadResponse response = Value<EntityRecordRegionReadResponse>(result);
+        Assert.AreEqual("Resolved", response.Status);
+        Assert.AreEqual(
+            EntityRecordRegionAnchor.GunAim,
+            scanner.LastEntityRegionRequest?.RegionAnchor);
+        Assert.AreEqual(1, response.GunAimRotatorCandidateCount);
+        Assert.IsTrue(response.GunAimOwnerRoundTripConfirmed);
+        Assert.AreEqual(0.5f, response.GunAimInput0);
+        Assert.AreEqual(-0.25f, response.GunAimInput1);
+        Assert.AreEqual(10f, response.GunAimHitX);
+        Assert.AreEqual(20f, response.GunAimHitY);
+        Assert.AreEqual(30f, response.GunAimHitZ);
+        Assert.AreEqual(1f, response.GunAimDirX);
+        Assert.AreEqual(0f, response.GunAimDirY);
+        Assert.AreEqual(0f, response.GunAimDirZ);
+        Assert.AreEqual(100f, response.GunAimDistance);
+        Assert.IsTrue(response.GunAimTwoPassStable);
+        // Privacy: the gun-aim read never carries raw region bytes.
+        Assert.IsNull(response.RegionBase64);
+    }
+
+    [TestMethod]
     public async Task CameraPose_ResolvedReturnsPoseWithIdentityFlags()
     {
         var scanner = new FakeGameMemoryScanner

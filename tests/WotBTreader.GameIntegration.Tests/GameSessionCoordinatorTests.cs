@@ -2474,6 +2474,317 @@ public sealed class GameSessionCoordinatorTests
         Assert.IsNull(result.Value?.ShellStateIndex);
     }
 
+    // ---- gun-aim anchor (penetration v0.3 G1 item 5, 2026-08-18) ----
+
+    [TestMethod]
+    public async Task EntityRegionRead_GunAim_ResolvesInputsAndAimStructTwoPasses()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long rotatorAddress = 0x25001000;
+        const uint ownerAddress = 0x25002000;
+        const float input0 = 0.5f;
+        const float input1 = -0.25f;
+        const float hitX = 10f;
+        const float hitY = 20f;
+        const float hitZ = 30f;
+        const float dirX = 1f;
+        const float dirY = 0f;
+        const float dirZ = 0f;
+        const float distance = 100f;
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            [rotatorAddress] = BitConverter.GetBytes(TestVehicleGunRotatorVftable),
+            [rotatorAddress + 0x10] = BitConverter.GetBytes(ownerAddress),
+            [ownerAddress + 0x1fc] = BitConverter.GetBytes((uint)rotatorAddress),
+            [rotatorAddress + 0xe0] = BitConverter.GetBytes(input0),
+            [rotatorAddress + 0xe4] = BitConverter.GetBytes(input1),
+            [rotatorAddress + 0x28] = BitConverter.GetBytes(hitX),
+            [rotatorAddress + 0x2c] = BitConverter.GetBytes(hitY),
+            [rotatorAddress + 0x30] = BitConverter.GetBytes(hitZ),
+            [rotatorAddress + 0x34] = BitConverter.GetBytes(dirX),
+            [rotatorAddress + 0x38] = BitConverter.GetBytes(dirY),
+            [rotatorAddress + 0x3c] = BitConverter.GetBytes(dirZ),
+            [rotatorAddress + 0x40] = BitConverter.GetBytes(distance),
+        });
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.GunAim),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, result.Value?.Status);
+        Assert.AreEqual(1, result.Value?.GunAimRotatorCandidateCount);
+        Assert.IsTrue(result.Value?.GunAimOwnerRoundTripConfirmed);
+        Assert.AreEqual(input0, result.Value?.GunAimInput0);
+        Assert.AreEqual(input1, result.Value?.GunAimInput1);
+        Assert.AreEqual(hitX, result.Value?.GunAimHitX);
+        Assert.AreEqual(hitY, result.Value?.GunAimHitY);
+        Assert.AreEqual(hitZ, result.Value?.GunAimHitZ);
+        Assert.AreEqual(dirX, result.Value?.GunAimDirX);
+        Assert.AreEqual(dirY, result.Value?.GunAimDirY);
+        Assert.AreEqual(dirZ, result.Value?.GunAimDirZ);
+        Assert.AreEqual(distance, result.Value?.GunAimDistance);
+        Assert.IsTrue(result.Value?.GunAimTwoPassStable);
+        Assert.IsNull(result.Value?.RegionBytes);
+        Assert.AreEqual("gun-aim-rotator-vftable", scan.LastRequest?.FieldName);
+        // Identity re-read + owner + round-trip + two passes x nine floats.
+        Assert.HasCount(21, factory.Reader.Reads);
+        Assert.AreEqual(rotatorAddress, factory.Reader.Reads[0].Address);
+        Assert.AreEqual(rotatorAddress + 0x10, factory.Reader.Reads[1].Address);
+        Assert.AreEqual(rotatorAddress + 0xe0, factory.Reader.Reads[3].Address);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_GunAim_NoRotatorFailsClosed()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>());
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult());
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.GunAim),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.GunAimNotFound, result.Value?.Status);
+        Assert.AreEqual("gun-aim-not-found", result.Value?.FailureStage);
+        Assert.IsNull(result.Value?.GunAimInput0);
+        Assert.IsEmpty(factory.Reader.Reads);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_GunAim_CandidateOutOfRangeFailsClosed()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long rotatorAddress = 0x25001000;
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>());
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.GunAim,
+                    OwnershipCandidateIndex: 5),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.GunAimNotFound, result.Value?.Status);
+        Assert.AreEqual("gun-aim-candidate-out-of-range", result.Value?.FailureStage);
+        Assert.IsEmpty(factory.Reader.Reads);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_GunAim_IdentityMismatchFailsClosed()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long rotatorAddress = 0x25001000;
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            [rotatorAddress] = BitConverter.GetBytes(0xDEADBEEFu),
+        });
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.GunAim),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.GunAimMismatch, result.Value?.Status);
+        Assert.AreEqual("gun-aim-identity-mismatch", result.Value?.FailureStage);
+        Assert.IsNull(result.Value?.GunAimInput0);
+        Assert.HasCount(1, factory.Reader.Reads);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_GunAim_RoundTripMismatchFailsClosed()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long rotatorAddress = 0x25001000;
+        const uint ownerAddress = 0x25002000;
+        // The owner's +0x1fc points somewhere else -> round-trip fails closed.
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            [rotatorAddress] = BitConverter.GetBytes(TestVehicleGunRotatorVftable),
+            [rotatorAddress + 0x10] = BitConverter.GetBytes(ownerAddress),
+            [ownerAddress + 0x1fc] = BitConverter.GetBytes(0x25009999u),
+        });
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.GunAim),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.GunAimMismatch, result.Value?.Status);
+        Assert.AreEqual("gun-aim-roundtrip-mismatch", result.Value?.FailureStage);
+        Assert.IsFalse(result.Value?.GunAimOwnerRoundTripConfirmed);
+        Assert.IsNull(result.Value?.GunAimDistance);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_GunAim_NonFiniteFloatFailsClosed()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long rotatorAddress = 0x25001000;
+        const uint ownerAddress = 0x25002000;
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            [rotatorAddress] = BitConverter.GetBytes(TestVehicleGunRotatorVftable),
+            [rotatorAddress + 0x10] = BitConverter.GetBytes(ownerAddress),
+            [ownerAddress + 0x1fc] = BitConverter.GetBytes((uint)rotatorAddress),
+            [rotatorAddress + 0xe0] = BitConverter.GetBytes(float.NaN),
+            [rotatorAddress + 0xe4] = BitConverter.GetBytes(0.5f),
+            [rotatorAddress + 0x28] = BitConverter.GetBytes(10f),
+            [rotatorAddress + 0x2c] = BitConverter.GetBytes(20f),
+            [rotatorAddress + 0x30] = BitConverter.GetBytes(30f),
+            [rotatorAddress + 0x34] = BitConverter.GetBytes(1f),
+            [rotatorAddress + 0x38] = BitConverter.GetBytes(0f),
+            [rotatorAddress + 0x3c] = BitConverter.GetBytes(0f),
+            [rotatorAddress + 0x40] = BitConverter.GetBytes(100f),
+        });
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.GunAim),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.GunAimMismatch, result.Value?.Status);
+        Assert.AreEqual("gun-aim-non-finite", result.Value?.FailureStage);
+        Assert.IsNull(result.Value?.GunAimInput0);
+        Assert.IsTrue(result.Value?.GunAimTwoPassStable);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_GunAim_ReadFailureFailsClosed()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long rotatorAddress = 0x25001000;
+        const uint ownerAddress = 0x25002000;
+        // The aim-input read misses (not in the pages) -> fail closed as a
+        // read failure; never fabricate an aim state.
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            [rotatorAddress] = BitConverter.GetBytes(TestVehicleGunRotatorVftable),
+            [rotatorAddress + 0x10] = BitConverter.GetBytes(ownerAddress),
+            [ownerAddress + 0x1fc] = BitConverter.GetBytes((uint)rotatorAddress),
+        });
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.GunAim),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.ReadFailed, result.Value?.Status);
+        Assert.AreEqual("gun-aim-pass1-read", result.Value?.FailureStage);
+        Assert.IsNull(result.Value?.GunAimInput0);
+    }
+
     [TestMethod]
     public async Task EntityRegionsRead_ExactBuildReturnsBytesInRequestOrder()
     {

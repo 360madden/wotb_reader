@@ -91,6 +91,13 @@ owner-run scenario. See `2026-08-18-medvedkovo-shell-swap-negative.md`.
 
 ### G1.5 — turret/gun transition correlation (shot ray)
 
+Read surface: `docs/operations/pen-shot-ray-read-proposal.md` (proposal,
+2026-08-18) — an additive `GunAim` anchor reading the rotator's two `Update`
+inputs (`+0xe0`/`+0xe4`) and the gun-marker aim struct (`+0x28..0x40`), with
+hull yaw (`ring +0x30`, Verified) held by the existing live-frame surface as
+the discriminator. Implemented + tested (2026-08-18); not yet live-validated
+or promoted.
+
 Prove **which of the rotator's aim inputs is turret yaw vs gun elevation** and
 that the aim struct is a shot-synchronous (not camera) direction:
 
@@ -140,7 +147,10 @@ records evidence but does not flip the gate.
 
 ## Sequencing
 
-The offline half is complete. The next step is the **live controlled-transition
+The offline half is complete: the G1.5 shot-ray read surface is **designed and
+implemented** (`pen-shot-ray-read-proposal.md`, 2026-08-18; the `GunAim` anchor
++ coordinator/endpoint tests + `scripts/capture-pen-shot-ray.ps1` mirror the
+shipped `shell-state` anchor). The next step is the **live controlled-transition
 session** (shell-swap + turret/gun traverse), which is a consequential live
 operation requiring owner approval and a controlled scenario. Until that runs,
 BLK-0027 stays open and the badge stays honest `NotReady`.

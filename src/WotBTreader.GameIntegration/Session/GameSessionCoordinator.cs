@@ -2549,7 +2549,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             Type10EntityPositionAddressResult? resolved = null;
             if (request.RegionAnchor != EntityRecordRegionAnchor.AvatarStats
                 && request.RegionAnchor != EntityRecordRegionAnchor.PenOwnershipWalk
-                && request.RegionAnchor != EntityRecordRegionAnchor.ShellState)
+                && request.RegionAnchor != EntityRecordRegionAnchor.ShellState
+                && request.RegionAnchor != EntityRecordRegionAnchor.GunAim)
             {
                 OperationResult<Type10EntityPositionAddressResult> resolveResult =
                     await readerResult.Value.ResolveEntityPositionAddressAsync(
@@ -2740,6 +2741,48 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     ShellStateIdentity0: shell.Identity0,
                     ShellStateIdentity1: shell.Identity1,
                     ShellStateTwoPassStable: shell.TwoPassStable));
+            }
+            else if (request.RegionAnchor == EntityRecordRegionAnchor.GunAim)
+            {
+                GunAimResolution aim = await ResolveGunAimAsync(
+                    readerResult.Value,
+                    observation!,
+                    baseAddress,
+                    request.OwnershipCandidateIndex,
+                    readCancellation.Token).ConfigureAwait(false);
+                if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+                {
+                    return GateCheck<EntityRecordRegionReadResult>(
+                        "discover.gate_not_satisfied",
+                        "The offline-session gate is no longer satisfied.");
+                }
+
+                return OperationResult.Success(new EntityRecordRegionReadResult(
+                    _timeProvider.GetUtcNow(),
+                    layout.GameVersion,
+                    aim.Status,
+                    request.EntityId,
+                    replayTimeSeconds,
+                    null,
+                    aim.FailureStage,
+                    aim.Attempts,
+                    0,
+                    true,
+                    EntityIdentityRevalidated: false,
+                    ConsistentDoubleRead: false,
+                    SameDecodedClockProven: sameDecodedClockProven,
+                    GunAimRotatorCandidateCount: aim.RotatorCandidateCount,
+                    GunAimOwnerRoundTripConfirmed: aim.OwnerRoundTripConfirmed,
+                    GunAimInput0: aim.Input0,
+                    GunAimInput1: aim.Input1,
+                    GunAimHitX: aim.HitX,
+                    GunAimHitY: aim.HitY,
+                    GunAimHitZ: aim.HitZ,
+                    GunAimDirX: aim.DirX,
+                    GunAimDirY: aim.DirY,
+                    GunAimDirZ: aim.DirZ,
+                    GunAimDistance: aim.Distance,
+                    GunAimTwoPassStable: aim.TwoPassStable));
             }
             else
             {
@@ -4584,6 +4627,369 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             shellIndex,
             BinaryPrimitives.ReadInt32LittleEndian(id0Read.Value),
             BinaryPrimitives.ReadInt32LittleEndian(id1Read.Value));
+    }
+
+    private sealed record GunAimResolution(
+        Type10EntityPositionStatus Status,
+        string? FailureStage,
+        int Attempts,
+        int RotatorCandidateCount,
+        bool OwnerRoundTripConfirmed,
+        float? Input0,
+        float? Input1,
+        float? HitX,
+        float? HitY,
+        float? HitZ,
+        float? DirX,
+        float? DirY,
+        float? DirZ,
+        float? Distance,
+        bool TwoPassStable);
+
+    private enum GunAimPassStatus
+    {
+        Resolved,
+        Mismatch,
+    }
+
+    private readonly record struct GunAimPassVerdict(
+        GunAimPassStatus PassStatus,
+        float Input0,
+        float Input1,
+        float HitX,
+        float HitY,
+        float HitZ,
+        float DirX,
+        float DirY,
+        float DirZ,
+        float Distance);
+
+    /// <summary>
+    /// The <c>gun-aim</c> anchor resolution (penetration v0.3 G1 item 5).
+    /// Reuses the pen-ownership-walk rotator scan, re-gates the rotator's
+    /// vftable, confirms the owner round-trip, then reads the two per-frame
+    /// <c>Update</c> aim inputs (+0xe0/+0xe4) and the gun-marker aim struct
+    /// (+0x28..0x40). Two passes, fail-closed, aggregate-only (no address,
+    /// pointer, id, or raw bytes leave this method). See
+    /// docs/operations/pen-shot-ray-read-proposal.md.
+    /// </summary>
+    private async ValueTask<GunAimResolution> ResolveGunAimAsync(
+        IAuthorizedMemoryReader reader,
+        AuthorizedMemoryObservation observation,
+        long baseAddress,
+        int? candidateIndex,
+        CancellationToken cancellationToken)
+    {
+        uint expectedRotatorVftable = (uint)(baseAddress + EntityRecordRegionReadRequest.VehicleGunRotatorVftableRva);
+
+        byte[] expected = new byte[sizeof(uint)];
+        BinaryPrimitives.WriteUInt32LittleEndian(expected, expectedRotatorVftable);
+        MemoryScanRequest request = new(
+            FieldName: "gun-aim-rotator-vftable",
+            FieldType: "Bytes",
+            ExpectedValue: expected,
+            ToleranceMask: null,
+            MaxCandidates: EntityRecordRegionReadRequest.MaxOwnershipCandidates,
+            MinRegionSize: 4096,
+            Alignment: 4);
+        OperationResult<MemoryScanResult> scanResult = await Task.Run(
+            () => _scanDiscoverer.Scan(
+                observation,
+                baseAddress,
+                request,
+                cancellationToken,
+                "aob"),
+            cancellationToken).ConfigureAwait(false);
+        if (!scanResult.IsSuccess || scanResult.Value is null)
+        {
+            return GunAimFailure(
+                Type10EntityPositionStatus.ReadFailed,
+                "gun-aim-scan",
+                1,
+                0,
+                false);
+        }
+
+        IReadOnlyList<MemoryScanCandidate> candidates = scanResult.Value.Candidates;
+        if (candidates.Count == 0)
+        {
+            return GunAimFailure(
+                Type10EntityPositionStatus.GunAimNotFound,
+                "gun-aim-not-found",
+                1,
+                0,
+                false);
+        }
+
+        int index = candidateIndex ?? 0;
+        if (index < 0 || index >= candidates.Count)
+        {
+            return GunAimFailure(
+                Type10EntityPositionStatus.GunAimNotFound,
+                "gun-aim-candidate-out-of-range",
+                1,
+                candidates.Count,
+                false);
+        }
+
+        long rotatorAddress = candidates[index].AbsoluteAddress;
+
+        // Identity re-gate (same discipline as the ownership walk / shell
+        // state): never read aim fields off an unauthenticated object.
+        uint? rotatorVftable = await ReadPointerAsync(
+            reader,
+            rotatorAddress,
+            cancellationToken).ConfigureAwait(false);
+        if (rotatorVftable is null)
+        {
+            return GunAimFailure(
+                Type10EntityPositionStatus.ReadFailed,
+                "gun-aim-identity-read",
+                1,
+                candidates.Count,
+                false);
+        }
+
+        if (rotatorVftable.Value != expectedRotatorVftable)
+        {
+            return GunAimFailure(
+                Type10EntityPositionStatus.GunAimMismatch,
+                "gun-aim-identity-mismatch",
+                1,
+                candidates.Count,
+                false);
+        }
+
+        // Owner round-trip (lightweight, reuses the ownership-walk constants):
+        // [rotator+0x10] -> owner and [owner+0x1fc] == rotator confirm this is
+        // the VIEWPOINT vehicle's rotator when the scan is ambiguous.
+        uint? owner = await ReadPointerAsync(
+            reader,
+            rotatorAddress + EntityRecordRegionReadRequest.PenOwnershipRotatorOwnerOffset,
+            cancellationToken).ConfigureAwait(false);
+        if (owner is null)
+        {
+            return GunAimFailure(
+                Type10EntityPositionStatus.ReadFailed,
+                "gun-aim-owner-read",
+                1,
+                candidates.Count,
+                false);
+        }
+
+        bool roundTripConfirmed = false;
+        if (owner.Value != 0)
+        {
+            uint? ownerRotator = await ReadPointerAsync(
+                reader,
+                owner.Value + EntityRecordRegionReadRequest.PenOwnershipOwnerRotatorOffset,
+                cancellationToken).ConfigureAwait(false);
+            if (ownerRotator is null)
+            {
+                return GunAimFailure(
+                    Type10EntityPositionStatus.ReadFailed,
+                    "gun-aim-roundtrip-read",
+                    1,
+                    candidates.Count,
+                    false);
+            }
+            roundTripConfirmed = ownerRotator.Value == (uint)rotatorAddress;
+        }
+
+        if (!roundTripConfirmed)
+        {
+            return GunAimFailure(
+                Type10EntityPositionStatus.GunAimMismatch,
+                "gun-aim-roundtrip-mismatch",
+                1,
+                candidates.Count,
+                false);
+        }
+
+        GunAimPassVerdict? first = await RunGunAimPassAsync(
+            reader,
+            rotatorAddress,
+            cancellationToken).ConfigureAwait(false);
+        if (first is null)
+        {
+            return GunAimFailure(
+                Type10EntityPositionStatus.ReadFailed,
+                "gun-aim-pass1-read",
+                2,
+                candidates.Count,
+                true);
+        }
+
+        GunAimPassVerdict? second = await RunGunAimPassAsync(
+            reader,
+            rotatorAddress,
+            cancellationToken).ConfigureAwait(false);
+        if (second is null)
+        {
+            return GunAimFailure(
+                Type10EntityPositionStatus.ReadFailed,
+                "gun-aim-pass2-read",
+                2,
+                candidates.Count,
+                true);
+        }
+
+        bool stable = first.Value == second.Value;
+        GunAimPassVerdict verdict = first.Value;
+        bool resolved = verdict.PassStatus == GunAimPassStatus.Resolved;
+        Type10EntityPositionStatus status = !stable
+            ? Type10EntityPositionStatus.GunAimUnstable
+            : resolved
+                ? Type10EntityPositionStatus.Resolved
+                : Type10EntityPositionStatus.GunAimMismatch;
+        string? failureStage = !stable
+            ? "gun-aim-unstable"
+            : resolved
+                ? null
+                : "gun-aim-non-finite";
+        return new GunAimResolution(
+            Status: status,
+            FailureStage: failureStage,
+            Attempts: 2,
+            RotatorCandidateCount: candidates.Count,
+            OwnerRoundTripConfirmed: true,
+            Input0: resolved ? verdict.Input0 : null,
+            Input1: resolved ? verdict.Input1 : null,
+            HitX: resolved ? verdict.HitX : null,
+            HitY: resolved ? verdict.HitY : null,
+            HitZ: resolved ? verdict.HitZ : null,
+            DirX: resolved ? verdict.DirX : null,
+            DirY: resolved ? verdict.DirY : null,
+            DirZ: resolved ? verdict.DirZ : null,
+            Distance: resolved ? verdict.Distance : null,
+            TwoPassStable: stable);
+    }
+
+    /// <summary>
+    /// One gun-aim pass: the two <c>Update</c> inputs and the gun-marker aim
+    /// struct. Returns null only when a guarded read cannot complete (never
+    /// fabricates an aim state); a completed read whose floats are non-finite
+    /// is a fail-closed <see cref="GunAimPassStatus.Mismatch"/> verdict.
+    /// </summary>
+    private static async ValueTask<GunAimPassVerdict?> RunGunAimPassAsync(
+        IAuthorizedMemoryReader reader,
+        long rotatorAddress,
+        CancellationToken cancellationToken)
+    {
+        float? input0 = await ReadFloatAsync(
+            reader,
+            rotatorAddress + EntityRecordRegionReadRequest.RotatorAimInput0Offset,
+            cancellationToken).ConfigureAwait(false);
+        float? input1 = await ReadFloatAsync(
+            reader,
+            rotatorAddress + EntityRecordRegionReadRequest.RotatorAimInput1Offset,
+            cancellationToken).ConfigureAwait(false);
+        float? hitX = await ReadFloatAsync(
+            reader,
+            rotatorAddress + EntityRecordRegionReadRequest.RotatorAimHitOffset,
+            cancellationToken).ConfigureAwait(false);
+        float? hitY = await ReadFloatAsync(
+            reader,
+            rotatorAddress + EntityRecordRegionReadRequest.RotatorAimHitOffset + sizeof(float),
+            cancellationToken).ConfigureAwait(false);
+        float? hitZ = await ReadFloatAsync(
+            reader,
+            rotatorAddress + EntityRecordRegionReadRequest.RotatorAimHitOffset + (2 * sizeof(float)),
+            cancellationToken).ConfigureAwait(false);
+        float? dirX = await ReadFloatAsync(
+            reader,
+            rotatorAddress + EntityRecordRegionReadRequest.RotatorAimDirOffset,
+            cancellationToken).ConfigureAwait(false);
+        float? dirY = await ReadFloatAsync(
+            reader,
+            rotatorAddress + EntityRecordRegionReadRequest.RotatorAimDirOffset + sizeof(float),
+            cancellationToken).ConfigureAwait(false);
+        float? dirZ = await ReadFloatAsync(
+            reader,
+            rotatorAddress + EntityRecordRegionReadRequest.RotatorAimDirOffset + (2 * sizeof(float)),
+            cancellationToken).ConfigureAwait(false);
+        float? distance = await ReadFloatAsync(
+            reader,
+            rotatorAddress + EntityRecordRegionReadRequest.RotatorAimDistanceOffset,
+            cancellationToken).ConfigureAwait(false);
+        if (input0 is null || input1 is null ||
+            hitX is null || hitY is null || hitZ is null ||
+            dirX is null || dirY is null || dirZ is null ||
+            distance is null)
+        {
+            return null;
+        }
+
+        // A non-finite aim float is not a resolvable state; carry a zeroed
+        // Mismatch verdict so two identical mismatches compare equal (stable)
+        // and map to GunAimMismatch rather than GunAimUnstable.
+        if (!float.IsFinite(input0.Value) || !float.IsFinite(input1.Value) ||
+            !float.IsFinite(hitX.Value) || !float.IsFinite(hitY.Value) || !float.IsFinite(hitZ.Value) ||
+            !float.IsFinite(dirX.Value) || !float.IsFinite(dirY.Value) || !float.IsFinite(dirZ.Value) ||
+            !float.IsFinite(distance.Value))
+        {
+            return new GunAimPassVerdict(
+                GunAimPassStatus.Mismatch,
+                0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f);
+        }
+
+        return new GunAimPassVerdict(
+            GunAimPassStatus.Resolved,
+            input0.Value,
+            input1.Value,
+            hitX.Value,
+            hitY.Value,
+            hitZ.Value,
+            dirX.Value,
+            dirY.Value,
+            dirZ.Value,
+            distance.Value);
+    }
+
+    /// <summary>
+    /// Builds a fail-closed <see cref="GunAimResolution"/> (no aim floats).
+    /// </summary>
+    private static GunAimResolution GunAimFailure(
+        Type10EntityPositionStatus status,
+        string failureStage,
+        int attempts,
+        int rotatorCandidateCount,
+        bool ownerRoundTripConfirmed) => new(
+        Status: status,
+        FailureStage: failureStage,
+        Attempts: attempts,
+        RotatorCandidateCount: rotatorCandidateCount,
+        OwnerRoundTripConfirmed: ownerRoundTripConfirmed,
+        Input0: null,
+        Input1: null,
+        HitX: null,
+        HitY: null,
+        HitZ: null,
+        DirX: null,
+        DirY: null,
+        DirZ: null,
+        Distance: null,
+        TwoPassStable: false);
+
+    /// <summary>
+    /// Reads one float32 under the guarded lease; null on read failure (the
+    /// caller fails closed). Non-finite is a caller-side mismatch, not a
+    /// read failure.
+    /// </summary>
+    private static async ValueTask<float?> ReadFloatAsync(
+        IAuthorizedMemoryReader reader,
+        long address,
+        CancellationToken cancellationToken)
+    {
+        OperationResult<byte[]> result = await reader.ReadAsync(
+            (nint)address,
+            sizeof(float),
+            cancellationToken).ConfigureAwait(false);
+        if (!result.IsSuccess || result.Value is null || result.Value.Length != sizeof(float))
+        {
+            return null;
+        }
+        return BinaryPrimitives.ReadSingleLittleEndian(result.Value);
     }
 
     /// <summary>

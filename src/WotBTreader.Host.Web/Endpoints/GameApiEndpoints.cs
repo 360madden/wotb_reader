@@ -1004,6 +1004,18 @@ internal static class GameApiEndpoints
             ShellStateIdentity0 = read.ShellStateIdentity0,
             ShellStateIdentity1 = read.ShellStateIdentity1,
             ShellStateTwoPassStable = read.ShellStateTwoPassStable,
+            GunAimRotatorCandidateCount = read.GunAimRotatorCandidateCount,
+            GunAimOwnerRoundTripConfirmed = read.GunAimOwnerRoundTripConfirmed,
+            GunAimInput0 = read.GunAimInput0,
+            GunAimInput1 = read.GunAimInput1,
+            GunAimHitX = read.GunAimHitX,
+            GunAimHitY = read.GunAimHitY,
+            GunAimHitZ = read.GunAimHitZ,
+            GunAimDirX = read.GunAimDirX,
+            GunAimDirY = read.GunAimDirY,
+            GunAimDirZ = read.GunAimDirZ,
+            GunAimDistance = read.GunAimDistance,
+            GunAimTwoPassStable = read.GunAimTwoPassStable,
         });
     }
 
@@ -1392,6 +1404,9 @@ internal static class GameApiEndpoints
                 return true;
             case "shell-state":
                 anchor = EntityRecordRegionAnchor.ShellState;
+                return true;
+            case "gun-aim":
+                anchor = EntityRecordRegionAnchor.GunAim;
                 return true;
             default:
                 anchor = EntityRecordRegionAnchor.RingRecord;

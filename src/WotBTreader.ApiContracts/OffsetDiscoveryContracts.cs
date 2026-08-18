@@ -501,6 +501,74 @@ public sealed record EntityRecordRegionReadResponse
     /// index + identity verdicts.
     /// </summary>
     public bool ShellStateTwoPassStable { get; init; }
+
+    /// <summary>
+    /// For <c>gun-aim</c> probes: how many VehicleGunRotator scan candidates
+    /// the scan found (0 for other anchors).
+    /// </summary>
+    public int GunAimRotatorCandidateCount { get; init; }
+
+    /// <summary>
+    /// For <c>gun-aim</c> probes: the rotator's +0x10 owner round-trips via
+    /// the owner's +0x1fc back to the same rotator.
+    /// </summary>
+    public bool GunAimOwnerRoundTripConfirmed { get; init; }
+
+    /// <summary>
+    /// For <c>gun-aim</c> probes: the first per-frame <c>Update</c> aim input
+    /// (+0xe0). Null for other anchors or when the read did not resolve.
+    /// </summary>
+    public float? GunAimInput0 { get; init; }
+
+    /// <summary>
+    /// For <c>gun-aim</c> probes: the second per-frame <c>Update</c> aim input
+    /// (+0xe4).
+    /// </summary>
+    public float? GunAimInput1 { get; init; }
+
+    /// <summary>
+    /// For <c>gun-aim</c> probes: the gun-marker aim hit point X (+0x28).
+    /// </summary>
+    public float? GunAimHitX { get; init; }
+
+    /// <summary>
+    /// For <c>gun-aim</c> probes: the gun-marker aim hit point Y (+0x2c).
+    /// </summary>
+    public float? GunAimHitY { get; init; }
+
+    /// <summary>
+    /// For <c>gun-aim</c> probes: the gun-marker aim hit point Z (+0x30).
+    /// </summary>
+    public float? GunAimHitZ { get; init; }
+
+    /// <summary>
+    /// For <c>gun-aim</c> probes: the gun-marker aim normalized direction X
+    /// (+0x34).
+    /// </summary>
+    public float? GunAimDirX { get; init; }
+
+    /// <summary>
+    /// For <c>gun-aim</c> probes: the gun-marker aim normalized direction Y
+    /// (+0x38).
+    /// </summary>
+    public float? GunAimDirY { get; init; }
+
+    /// <summary>
+    /// For <c>gun-aim</c> probes: the gun-marker aim normalized direction Z
+    /// (+0x3c).
+    /// </summary>
+    public float? GunAimDirZ { get; init; }
+
+    /// <summary>
+    /// For <c>gun-aim</c> probes: the gun-marker aim distance (+0x40).
+    /// </summary>
+    public float? GunAimDistance { get; init; }
+
+    /// <summary>
+    /// For <c>gun-aim</c> probes: the two passes produced identical input +
+    /// aim-struct verdicts.
+    /// </summary>
+    public bool GunAimTwoPassStable { get; init; }
 }
 
 /// <summary>

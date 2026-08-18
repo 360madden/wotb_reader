@@ -415,6 +415,7 @@ docs/operations/pen-ownership-walk-live-validation-proposal.md
 docs/operations/pen-ownership-walk-proof-protocol.md
 docs/operations/pen-promotion-gates.md
 docs/operations/pen-shell-state-read-proposal.md
+docs/operations/pen-shot-ray-read-proposal.md
 docs/operations/pen-v03-alternative-armor-owner-triage.md
 docs/operations/penetration-v0.3-plan.md
 docs/operations/penetration-v03-managed-capture-contract.md
@@ -482,6 +483,7 @@ scripts/capture-pen-aims.ps1
 scripts/capture-pen-census.ps1
 scripts/capture-pen-ownership-walk.ps1
 scripts/capture-pen-shell-state.ps1
+scripts/capture-pen-shot-ray.ps1
 scripts/click-hangar-replay.ps1
 scripts/click-watch-offline.ps1
 scripts/codex-agent-config-check.ps1

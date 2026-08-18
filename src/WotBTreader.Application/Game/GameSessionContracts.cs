@@ -527,6 +527,20 @@ public enum EntityRecordRegionAnchor
     /// aggregate-only). See docs/operations/pen-shell-state-read-proposal.md.
     /// </summary>
     ShellState = 5,
+
+    /// <summary>
+    /// The gun-marker aim state (penetration v0.3, G1 item 5 — the shot ray).
+    /// Ignores <see cref="EntityRecordRegionReadRequest.EntityId"/>: reuses
+    /// the <c>pen-ownership-walk</c> rotator scan, then reads the rotator's
+    /// two per-frame <c>Update</c> inputs at <c>+0xe0</c>/<c>+0xe4</c> (the
+    /// candidate turret-yaw / gun-elevation pair) and the gun-marker aim
+    /// struct at <c>+0x28..0x40</c> (hit xyz, normalized direction, distance)
+    /// written by <c>GetGunMarkerPosition</c>. Only the inputs + aim floats
+    /// leave the coordinator (two-pass, aggregate-only). Hull yaw is the
+    /// discriminator and is read by the existing live-frame surface, NOT here.
+    /// See docs/operations/pen-shot-ray-read-proposal.md.
+    /// </summary>
+    GunAim = 6,
 }
 
 /// <summary>
@@ -675,6 +689,35 @@ public sealed record EntityRecordRegionReadRequest(
     /// The shell identity holder's second identity dword.
     /// </summary>
     public const int ShellIdentityDword1Offset = 0x24;
+
+    /// <summary>
+    /// VehicleGunRotator +0xe0 stores the first of the two per-frame
+    /// <c>Update</c> aim inputs (candidate turret yaw / gun elevation).
+    /// </summary>
+    public const int RotatorAimInput0Offset = 0xe0;
+
+    /// <summary>
+    /// VehicleGunRotator +0xe4 stores the second of the two per-frame
+    /// <c>Update</c> aim inputs.
+    /// </summary>
+    public const int RotatorAimInput1Offset = 0xe4;
+
+    /// <summary>
+    /// VehicleGunRotator +0x28/+0x2c/+0x30 store the gun-marker aim hit
+    /// point (float32 xyz), written by <c>GetGunMarkerPosition</c>.
+    /// </summary>
+    public const int RotatorAimHitOffset = 0x28;
+
+    /// <summary>
+    /// VehicleGunRotator +0x34/+0x38/+0x3c store the gun-marker aim
+    /// normalized direction (float32 xyz, muzzle → hit).
+    /// </summary>
+    public const int RotatorAimDirOffset = 0x34;
+
+    /// <summary>
+    /// VehicleGunRotator +0x40 stores the gun-marker aim distance (float32).
+    /// </summary>
+    public const int RotatorAimDistanceOffset = 0x40;
 }
 
 /// <summary>
@@ -706,7 +749,19 @@ public sealed record EntityRecordRegionReadResult(
     int? ShellStateIndex = null,
     int? ShellStateIdentity0 = null,
     int? ShellStateIdentity1 = null,
-    bool ShellStateTwoPassStable = false);
+    bool ShellStateTwoPassStable = false,
+    int GunAimRotatorCandidateCount = 0,
+    bool GunAimOwnerRoundTripConfirmed = false,
+    float? GunAimInput0 = null,
+    float? GunAimInput1 = null,
+    float? GunAimHitX = null,
+    float? GunAimHitY = null,
+    float? GunAimHitZ = null,
+    float? GunAimDirX = null,
+    float? GunAimDirY = null,
+    float? GunAimDirZ = null,
+    float? GunAimDistance = null,
+    bool GunAimTwoPassStable = false);
 
 /// <summary>
 /// One entity region in a batch read (mirrors the single-read fields).

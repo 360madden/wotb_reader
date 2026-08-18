@@ -152,6 +152,27 @@ public enum Type10EntityPositionStatus
     /// identity is withheld (fail-closed).
     /// </summary>
     ShellStateUnstable,
+
+    /// <summary>
+    /// The <c>gun-aim</c> anchor scan found no VehicleGunRotator candidate,
+    /// or the requested candidate index is out of range. Fail-closed: no aim
+    /// state is fabricated.
+    /// </summary>
+    GunAimNotFound,
+
+    /// <summary>
+    /// The <c>gun-aim</c> anchor's walk could not confirm the rotator (a
+    /// pointer did not resolve, the owner round-trip failed, or an aim float
+    /// was non-finite). Fail-closed: a non-confirming read never becomes an
+    /// aim state.
+    /// </summary>
+    GunAimMismatch,
+
+    /// <summary>
+    /// The <c>gun-aim</c> anchor's two passes disagreed, so the aim state is
+    /// withheld (fail-closed).
+    /// </summary>
+    GunAimUnstable,
 }
 
 /// <summary>
