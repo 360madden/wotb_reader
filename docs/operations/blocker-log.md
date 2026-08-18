@@ -1057,3 +1057,16 @@ folder for the full numbering convention and document map.
   BLK-0027 stays open until the runtime shell-index link (which `Shell`/`Shot`
   loads at fire time) and the `piercingPower` destination offset are derived,
   or the live controlled shell-swap runs.
+
+- Shell-index link FOUND (`2026-08-18`, static, byte-verified hash-bound
+  `1cda5c31…`; handoff `2026-08-18-shell-index-link-found.md`):
+  `AmmoController::ProcessCurrentShells` (`FUN_015ef402`, RVA `0x11ef402`)
+  writes the current shell index to **`AmmoController + 0x38`** (int32, reset
+  to 0 when not found), caches the last-processed shell at `+0x34`, and walks
+  the shell list via `[this+0x40] → +0x20 → vector<ptr> at +0x1b0`;
+  `AmmoController` is embedded at **`AvatarGameLogic + 0x4B4`** (ctor
+  `FUN_01683b00`, `MOV [EDI],0x367d3e0`). `piercingPower` destination resolved
+  `2026-08-17` (`Gun +0x34`). With both static gaps closed, BLK-0027 narrows
+  to: (a) trace the equip-time setter of `[AmmoController+0x40]`, and (b) the
+  live controlled shell-swap correlation of `+0x38` — the promotion gate per
+  `pen-promotion-gates.md`. Nothing promoted.
