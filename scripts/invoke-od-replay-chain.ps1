@@ -63,7 +63,7 @@
 
 .EXAMPLE
     powershell -NoProfile -ExecutionPolicy Bypass -File scripts/invoke-od-replay-chain.ps1 `
-        -ReplayPath "$env:LOCALAPPDATA\wotblitz\DAVAProject\replays\deadrail-20260802.wotbreplay" `
+        -ReplayPath "$env:LOCALAPPDATA\wotblitz\DAVAProject\replays\medvedkovo-20260802.wotbreplay" `
         -Track damage-dealt -RegionAnchor avatar-stats -FailOnNoHit
 #>
 param(

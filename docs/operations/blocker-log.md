@@ -962,7 +962,7 @@ folder for the full numbering convention and document map.
   prefix of the process version (was `capture.decode_build_mismatch`), and the
   launcher's HTTP calls are bounded with 30s timeouts.
 
-- Reproducibility (`2026-08-16`, second content-distinct battle): the medvedkovo replay (file `deadrail-20260802.wotbreplay`, mislabeled — the
+- Reproducibility (`2026-08-16`, second content-distinct battle): the medvedkovo replay (file `medvedkovo-20260802.wotbreplay`, renamed from `deadrail-20260802.wotbreplay` — the
   real Dead Rail map is `desert_train`) returned the identical census —
   `vehicleGun=42, vehicleGunRotator=1, avatarGunAgent=1, stable=True`,
   `OwnerCandidateCount=43`, `Rejected / BoundsExceeded`. The exact 42/1/1

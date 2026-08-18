@@ -57,7 +57,7 @@ WRONG. Decisive evidence (both 11.19.0 replays, viewpoint entity):
   dumps plaintext type-10 tails from stored artifacts (the persisted
   evidence is ciphertext; the tail is only visible at decode time). Skips
   (Inconclusive) without the env var.
-- `.data/position-packet-tails.json` / `-deadrail.json` (gitignored) — the
+- `.data/position-packet-tails.json` / `-medvedkovo.json` (gitignored) — the
   probe outputs used for this analysis.
 
 ## Next (approval-gated)

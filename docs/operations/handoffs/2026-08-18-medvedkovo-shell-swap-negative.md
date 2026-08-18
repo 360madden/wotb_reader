@@ -6,7 +6,7 @@
 
 ## What ran
 
-Launched `deadrail-20260802.wotbreplay` through the canonical
+Launched `medvedkovo-20260802.wotbreplay` (formerly `deadrail-20260802.wotbreplay`) through the canonical
 `launch-offline-replay-for-od.ps1` (first attempt — no Watch Offline flake),
 reached `OfflineReplayVerified` / `session.offline_replay_verified`, then
 polled the `shell-state` entity-region anchor with
@@ -16,7 +16,7 @@ Battle session: `01a01610-b9f0-7f3e-892a-35f2a7bddf32`.
 
 ## Live observations
 
-- **Map:** `medvedkovo` (the `deadrail-*.wotbreplay` filename is a mislabel — the real Dead Rail map is `desert_train`), battle started
+- **Map:** `medvedkovo` (the file was formerly the mislabeled `deadrail-*.wotbreplay`; the real Dead Rail map is `desert_train`), battle started
   `18:11:21Z`, game mode regular. Player vehicle `2549401`.
 - **Shell-state read resolved stably** across the whole battle window
   (`18:11:21Z → 18:15:54Z`):

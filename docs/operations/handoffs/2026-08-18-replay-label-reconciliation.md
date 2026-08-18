@@ -21,7 +21,7 @@ correct** everywhere the record said "Churchill I".
 | Record nickname | Actual map | Correction |
 |---|---|---|
 | "Oasis" / "Oasis Palms" | savanna | → **savanna** |
-| "Dead Rail" (the `deadrail-*.wotbreplay` file) | medvedkovo | → **medvedkovo** (the real Dead Rail map is `desert_train`, unused by any replay) |
+| "Dead Rail" (the file formerly `deadrail-*.wotbreplay`, now `medvedkovo-20260802.wotbreplay`) | medvedkovo | → **medvedkovo** (the real Dead Rail map is `desert_train`, unused by any replay) |
 | "Copperfield" (the 11.18.0 artifact) | karieri | → **karieri** |
 
 Applied across tracked documentation, the published `memory-offsets` notes,
@@ -30,12 +30,16 @@ source comments, test fixtures, and scripts. Two handoffs renamed:
 and `…-deadrail-shell-swap-negative.md` → `…-medvedkovo-shell-swap-negative.md`.
 
 The three "real Dead Rail map is `desert_train`" clarifications are kept — they
-are correct (the mislabeled on-disk filename `deadrail-20260802.wotbreplay` is
-medvedkovo, not the `desert_train` "Dead Rail" map).
+are correct (the on-disk file, formerly `deadrail-20260802.wotbreplay`, is
+medvedkovo — not the `desert_train` "Dead Rail" map — and is now renamed
+`medvedkovo-20260802.wotbreplay`).
 
-## Open item (not a map/tank/arena mislabel)
+## Hash citation resolved (2026-08-18)
 
-The record twice cites the 11.18.0 artifact as sha `66703f50…`. The surviving
-11.18.0 copies on disk hash to `f90ef17f…` (same 829 216 B size). The
-`.data/launch` copy that `66703f50…` referred to was deleted, so the old hash
-cannot be re-verified; the surviving karieri copies are the ground truth.
+The record twice cited the 11.18.0 artifact as sha `66703f50…`. The surviving
+karieri copies re-verify to `f90ef17f…` (sha256 of the outer `.wotbreplay`,
+same 829 216 B size); the inner `data.wotreplay` hashes to `612c30ea…` and
+`battle_results.dat` to `7a7bbf00…`, so no current component carries
+`66703f50`. The OD-094 ledger row and the FRESH39 handoff now cite `f90ef17f…`
+(the verifiable content hash); `66703f50…` was the now-deleted `.data/launch`
+copy's hash and cannot be re-verified.

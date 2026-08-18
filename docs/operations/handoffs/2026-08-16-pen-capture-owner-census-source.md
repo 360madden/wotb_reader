@@ -152,7 +152,7 @@ The two census passes agreed (`stable=True`), so the vftable RVAs
 (`VehicleGun 0x32dacf4`, `VehicleGunRotator 0x32eeb40`, `AvatarGunAgent
 0x324dae8`) are now LIVE-proven against the real battle heap.
 
-**Reproducibility (same day, second content-distinct battle).** The medvedkovo replay (file `deadrail-20260802.wotbreplay`, mislabeled — the real Dead Rail map is `desert_train`) produced the identical census:
+**Reproducibility (same day, second content-distinct battle).** The medvedkovo replay (file `medvedkovo-20260802.wotbreplay`, renamed from `deadrail-20260802.wotbreplay` — the real Dead Rail map is `desert_train`) produced the identical census:
 `vehicleGun=42, vehicleGunRotator=1, avatarGunAgent=1, stable=True`,
 `OwnerCandidateCount=43`, `Rejected / BoundsExceeded`. The exact 42/1/1
 pattern across two battles strongly supports the interpretation that the

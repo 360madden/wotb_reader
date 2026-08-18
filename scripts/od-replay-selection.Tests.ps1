@@ -112,14 +112,14 @@ Describe 'od-replay-selection smoke tests' {
         It 'never selects a staging copy even when it is newer' {
             New-Item -ItemType Directory -Path $script:staging -Force | Out-Null
             $staged = Join-Path $script:staging 'cccccccccccccccccccccccccccccccc.wotbreplay'
-            $human = Join-Path $script:replays '20260802_1615_DeadRail.wotbreplay'
+            $human = Join-Path $script:replays '20260802_1615_Medvedkovo.wotbreplay'
             [IO.File]::WriteAllBytes($staged, [byte[]](1..8))
             [IO.File]::WriteAllBytes($human, [byte[]](1..8))
             (Get-Item -LiteralPath $staged).LastWriteTime = (Get-Date)
             (Get-Item -LiteralPath $human).LastWriteTime = (Get-Date).AddMinutes(-1)
 
             (Select-OdReplay -ReplaysDir $script:replays).Name |
-                Should Be '20260802_1615_DeadRail.wotbreplay'
+                Should Be '20260802_1615_Medvedkovo.wotbreplay'
         }
     }
 

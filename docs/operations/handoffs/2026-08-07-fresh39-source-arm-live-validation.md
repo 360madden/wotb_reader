@@ -77,7 +77,7 @@ arms dynamically.
 | R1 (12:12) | proven + `-ArmSourceOnFirstHit` | `evidence-strong`, 20 strong survivors, top 0.867 → no family → no trace (correct) |
 | R1 retry (12:16) | same | `evidence-strong`, 13 survivors, top 0.867 → no family (correct) |
 | R1 attempt 3 (12:28) | same | `evidence-strong`, 20 survivors, top 0.8 → no family (correct) |
-| R2 (12:20) | same, **second replay** `66703f50…` | **launch-path negative**: replay is **11.18.0** → game opened ReplayList browser (`Controller activated: ReplayList`), no direct playback, `watch_exit=3` |
+| R2 (12:20) | same, **second replay** `f90ef17f…` | **launch-path negative**: replay is **11.18.0** → game opened ReplayList browser (`Controller activated: ReplayList`), no direct playback, `watch_exit=3` |
 
 - The primary replay's correlation scores today (0.8–0.867) sit just under the
   0.9 floor; FRESH37 run-4 scored 0.933 with the identical invocation, so this
