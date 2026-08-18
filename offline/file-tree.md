@@ -377,6 +377,7 @@ docs/operations/handoffs/2026-08-17-scan-lease-bughunt.md
 docs/operations/handoffs/2026-08-18-ammo40-setter-found.md
 docs/operations/handoffs/2026-08-18-recovery-hardening-2.md
 docs/operations/handoffs/2026-08-18-rotator-static-structure.md
+docs/operations/handoffs/2026-08-18-shell-descriptor-link.md
 docs/operations/handoffs/2026-08-18-shell-index-link-found.md
 docs/operations/handoffs/2026-08-18-shell-state-read-surface.md
 docs/operations/handoffs/README.md
