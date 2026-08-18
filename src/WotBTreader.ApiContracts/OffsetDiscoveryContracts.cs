@@ -385,8 +385,11 @@ public sealed record EntityRecordRegionReadRequest
     /// the gated vftable AOB scan for the entity-Avatar instead), or
     /// <c>pen-ownership-walk</c> (the viewpoint-vehicle ownership walk: the
     /// coordinator scans for the unique VehicleGunRotator and runs the fixed
-    /// five-read chain, returning only aggregate booleans/counts). Unknown
-    /// values fail closed (no dump).
+    /// five-read chain, returning only aggregate booleans/counts), or
+    /// <c>shell-state</c> (the loaded-shell index + identity fingerprint:
+    /// reuses the rotator scan to reach the owner, then reads the embedded
+    /// AmmoController's index and the resolved shell identity dwords,
+    /// aggregate-only). Unknown values fail closed (no dump).
     /// </summary>
     public string? RegionAnchor { get; init; }
 
@@ -471,6 +474,33 @@ public sealed record EntityRecordRegionReadResponse
     /// identical verdicts.
     /// </summary>
     public bool PenOwnershipTwoPassStable { get; init; }
+
+    /// <summary>
+    /// For <c>shell-state</c> probes: the current-shell index read from the
+    /// embedded AmmoController (+0x38). Null for other anchors or when the
+    /// walk did not resolve.
+    /// </summary>
+    public int? ShellStateIndex { get; init; }
+
+    /// <summary>
+    /// For <c>shell-state</c> probes: the resolved shell identity holder's
+    /// first identity dword (+0x20). Null for other anchors or when the
+    /// walk did not resolve.
+    /// </summary>
+    public int? ShellStateIdentity0 { get; init; }
+
+    /// <summary>
+    /// For <c>shell-state</c> probes: the resolved shell identity holder's
+    /// second identity dword (+0x24). Null for other anchors or when the
+    /// walk did not resolve.
+    /// </summary>
+    public int? ShellStateIdentity1 { get; init; }
+
+    /// <summary>
+    /// For <c>shell-state</c> probes: the two passes produced identical
+    /// index + identity verdicts.
+    /// </summary>
+    public bool ShellStateTwoPassStable { get; init; }
 }
 
 /// <summary>

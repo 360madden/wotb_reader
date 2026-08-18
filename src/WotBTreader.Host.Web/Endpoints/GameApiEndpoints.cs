@@ -1000,6 +1000,10 @@ internal static class GameApiEndpoints
             PenOwnershipGunVtableConfirmed = read.PenOwnershipGunVtableConfirmed,
             PenOwnershipEntityHpPlausible = read.PenOwnershipEntityHpPlausible,
             PenOwnershipTwoPassStable = read.PenOwnershipTwoPassStable,
+            ShellStateIndex = read.ShellStateIndex,
+            ShellStateIdentity0 = read.ShellStateIdentity0,
+            ShellStateIdentity1 = read.ShellStateIdentity1,
+            ShellStateTwoPassStable = read.ShellStateTwoPassStable,
         });
     }
 
@@ -1385,6 +1389,9 @@ internal static class GameApiEndpoints
                 return true;
             case "pen-ownership-walk":
                 anchor = EntityRecordRegionAnchor.PenOwnershipWalk;
+                return true;
+            case "shell-state":
+                anchor = EntityRecordRegionAnchor.ShellState;
                 return true;
             default:
                 anchor = EntityRecordRegionAnchor.RingRecord;

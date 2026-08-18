@@ -1324,6 +1324,58 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task EntityRegion_ShellStateAnchor_EchoesIndexAndIdentityOnly()
+    {
+        // The shell-state anchor (penetration v0.3 G1 item 2) parses and
+        // echoes only the index + identity dwords — no raw region bytes may
+        // leave the endpoint.
+        var scanner = new FakeGameMemoryScanner
+        {
+            EntityRegionResult = OperationResult.Success(
+                new EntityRecordRegionReadResult(
+                    DateTimeOffset.UnixEpoch.AddSeconds(1),
+                    "11.19.0.10",
+                    Type10EntityPositionStatus.Resolved,
+                    4242,
+                    ReplayTimeSeconds: 1.5,
+                    RegionBytes: null,
+                    FailureStage: null,
+                    Attempts: 2,
+                    NodesVisited: 0,
+                    ModuleRooted: true,
+                    EntityIdentityRevalidated: false,
+                    ConsistentDoubleRead: false,
+                    SameDecodedClockProven: false,
+                    ShellStateIndex: 2,
+                    ShellStateIdentity0: 0x11111111,
+                    ShellStateIdentity1: 0x22222222,
+                    ShellStateTwoPassStable: true)),
+        };
+
+        IResult result = await GameApiEndpoints.ReadEntityRegionAsync(
+            scanner,
+            new WotBTreader.ApiContracts.EntityRecordRegionReadRequest
+            {
+                EntityId = 4242,
+                RegionLength = 16,
+                RegionAnchor = "shell-state",
+            },
+            TestContext.CancellationToken);
+
+        EntityRecordRegionReadResponse response = Value<EntityRecordRegionReadResponse>(result);
+        Assert.AreEqual("Resolved", response.Status);
+        Assert.AreEqual(
+            EntityRecordRegionAnchor.ShellState,
+            scanner.LastEntityRegionRequest?.RegionAnchor);
+        Assert.AreEqual(2, response.ShellStateIndex);
+        Assert.AreEqual(0x11111111, response.ShellStateIdentity0);
+        Assert.AreEqual(0x22222222, response.ShellStateIdentity1);
+        Assert.IsTrue(response.ShellStateTwoPassStable);
+        // Privacy: the shell-state read never carries raw region bytes.
+        Assert.IsNull(response.RegionBase64);
+    }
+
+    [TestMethod]
     public async Task CameraPose_ResolvedReturnsPoseWithIdentityFlags()
     {
         var scanner = new FakeGameMemoryScanner

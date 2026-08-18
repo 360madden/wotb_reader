@@ -131,6 +131,27 @@ public enum Type10EntityPositionStatus
     /// ownership verdict is withheld (fail-closed).
     /// </summary>
     PenOwnershipWalkUnstable,
+
+    /// <summary>
+    /// The <c>shell-state</c> anchor scan found no VehicleGunRotator, or the
+    /// loaded-shell index is outside the shell-vector bounds. Fail-closed:
+    /// no shell identity is fabricated.
+    /// </summary>
+    ShellStateNotFound,
+
+    /// <summary>
+    /// The <c>shell-state</c> anchor's walk could not confirm the loaded
+    /// shell (a pointer did not resolve, or the two passes disagreed on the
+    /// identity). Fail-closed: a non-confirming read never becomes a shell
+    /// identity.
+    /// </summary>
+    ShellStateMismatch,
+
+    /// <summary>
+    /// The <c>shell-state</c> anchor's two passes disagreed, so the shell
+    /// identity is withheld (fail-closed).
+    /// </summary>
+    ShellStateUnstable,
 }
 
 /// <summary>

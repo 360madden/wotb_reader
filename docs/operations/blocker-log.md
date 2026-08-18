@@ -1108,3 +1108,16 @@ folder for the full numbering convention and document map.
   hypothesis. Revisit only if a concrete producer (surface identity +
   thickness/units + order + interaction kind) emerges; the rejected
   hard-joint path stays closed. Armor remains honest `NotReady`.
+
+- Loaded-shell read surface SHIPPED (`2026-08-18`, handoff
+  `2026-08-18-shell-state-read-surface.md`): the coordinator-owned
+  `shell-state` entity-region anchor reuses the `pen-ownership-walk` rotator
+  scan, walks the embedded `AmmoController` (`owner + 0x4B4`), and reads the
+  current-shell index (`+0x38`) + the resolved shell identity dwords
+  (`+0x20`/`+0x24`), two-pass and aggregate-only. **Correction**: the
+  terminal object is a shell identity holder, NOT the `Shell` descriptor
+  (kind/caliber/damage at `+0x114..+0x120`) — the descriptor link stays
+  open and is not required for the G1 item 2 gate. 7 coordinator + 1
+  endpoint tests; driver `scripts/capture-pen-shell-state.ps1`. Nothing
+  promoted; the live controlled shell-swap correlation (two content-distinct
+  repeats) is the remaining G1 item 2 gate per `pen-promotion-gates.md`.

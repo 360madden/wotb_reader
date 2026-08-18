@@ -514,6 +514,19 @@ public enum EntityRecordRegionAnchor
     /// coordinator. See docs/operations/pen-ownership-walk-proof-protocol.md.
     /// </summary>
     PenOwnershipWalk = 4,
+
+    /// <summary>
+    /// The loaded-shell identity (penetration v0.3, G1 item 2). Ignores
+    /// <see cref="EntityRecordRegionReadRequest.EntityId"/>: reuses the
+    /// <c>pen-ownership-walk</c> rotator scan to reach the owner, then reads
+    /// the embedded AmmoController at <c>owner + 0x4B4</c>, its current-shell
+    /// index at <c>+0x38</c>, and the resolved shell identity holder's two
+    /// dwords at <c>+0x20</c>/<c>+0x24</c> (the chain
+    /// <c>[+0x40] → [+0x20] → vector at +0x1b0 → [index] → +0x1c → Shell*</c>).
+    /// Only the index + identity dwords leave the coordinator (two-pass,
+    /// aggregate-only). See docs/operations/pen-shell-state-read-proposal.md.
+    /// </summary>
+    ShellState = 5,
 }
 
 /// <summary>
@@ -612,6 +625,56 @@ public sealed record EntityRecordRegionReadRequest(
     /// Entity +0xB8 stores current HP as a signed int16 (OD-087/091, Verified).
     /// </summary>
     public const int EntityHealthOffset = 0xB8;
+
+    /// <summary>
+    /// AvatarGameLogic +0x4B4 embeds the AmmoController object (ctor
+    /// <c>LEA EDI,[EBX+0x4b4]; MOV [EDI],0x367d3e0</c>, 11.19.0.10 build).
+    /// </summary>
+    public const int AmmoControllerEmbedOffset = 0x4B4;
+
+    /// <summary>
+    /// AmmoController +0x38 stores the current-shell index (int32, written
+    /// by ProcessCurrentShells, reset to 0 when no match).
+    /// </summary>
+    public const int AmmoCurrentShellIndexOffset = 0x38;
+
+    /// <summary>
+    /// AmmoController +0x40 stores the gun/ammo ref whose +0x20 → +0x1b0 is
+    /// the shell vector (set by ResetAmmo).
+    /// </summary>
+    public const int AmmoGunRefOffset = 0x40;
+
+    /// <summary>
+    /// The gun ref's +0x20 points at the shell-vector holder.
+    /// </summary>
+    public const int ShellRefListOffset = 0x20;
+
+    /// <summary>
+    /// The shell-vector holder's +0x1b0/+0x1b4 are the begin/end of a
+    /// <c>std::vector&lt;ptr&gt;</c> (count = (end - begin) &gt;&gt; 2).
+    /// </summary>
+    public const int ShellVectorBeginOffset = 0x1b0;
+
+    /// <summary>
+    /// The shell-vector holder's +0x1b4 is the vector end pointer.
+    /// </summary>
+    public const int ShellVectorEndOffset = 0x1b4;
+
+    /// <summary>
+    /// Each shell-vector element's +0x1c points at the shell identity holder.
+    /// </summary>
+    public const int ShellElementIdentityHolderOffset = 0x1c;
+
+    /// <summary>
+    /// The shell identity holder's +0x20/+0x24 are the two identity dwords
+    /// ProcessCurrentShells compares.
+    /// </summary>
+    public const int ShellIdentityDword0Offset = 0x20;
+
+    /// <summary>
+    /// The shell identity holder's second identity dword.
+    /// </summary>
+    public const int ShellIdentityDword1Offset = 0x24;
 }
 
 /// <summary>
@@ -639,7 +702,11 @@ public sealed record EntityRecordRegionReadResult(
     bool PenOwnershipForwardRoundTripConfirmed = false,
     bool PenOwnershipGunVtableConfirmed = false,
     bool PenOwnershipEntityHpPlausible = false,
-    bool PenOwnershipTwoPassStable = false);
+    bool PenOwnershipTwoPassStable = false,
+    int? ShellStateIndex = null,
+    int? ShellStateIdentity0 = null,
+    int? ShellStateIdentity1 = null,
+    bool ShellStateTwoPassStable = false);
 
 /// <summary>
 /// One entity region in a batch read (mirrors the single-read fields).

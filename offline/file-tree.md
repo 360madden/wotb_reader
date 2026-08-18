@@ -374,7 +374,11 @@ docs/operations/handoffs/2026-08-17-pen-piercing-power-destination.md
 docs/operations/handoffs/2026-08-17-recovery-hardening.md
 docs/operations/handoffs/2026-08-17-recovery-module.md
 docs/operations/handoffs/2026-08-17-scan-lease-bughunt.md
+docs/operations/handoffs/2026-08-18-ammo40-setter-found.md
 docs/operations/handoffs/2026-08-18-recovery-hardening-2.md
+docs/operations/handoffs/2026-08-18-rotator-static-structure.md
+docs/operations/handoffs/2026-08-18-shell-index-link-found.md
+docs/operations/handoffs/2026-08-18-shell-state-read-surface.md
 docs/operations/handoffs/README.md
 docs/operations/item7-branch-b-step2-consistent-double-read-proposal.md
 docs/operations/item7-hardware-atomicity-proof-plan.md
@@ -405,6 +409,8 @@ docs/operations/parallel-workstreams.md
 docs/operations/pen-chance-design.md
 docs/operations/pen-ownership-walk-live-validation-proposal.md
 docs/operations/pen-ownership-walk-proof-protocol.md
+docs/operations/pen-promotion-gates.md
+docs/operations/pen-shell-state-read-proposal.md
 docs/operations/pen-v03-alternative-armor-owner-triage.md
 docs/operations/penetration-v0.3-plan.md
 docs/operations/penetration-v03-managed-capture-contract.md
@@ -471,6 +477,7 @@ scripts/camera-double-read-measurement.ps1
 scripts/capture-pen-aims.ps1
 scripts/capture-pen-census.ps1
 scripts/capture-pen-ownership-walk.ps1
+scripts/capture-pen-shell-state.ps1
 scripts/click-hangar-replay.ps1
 scripts/click-watch-offline.ps1
 scripts/codex-agent-config-check.ps1

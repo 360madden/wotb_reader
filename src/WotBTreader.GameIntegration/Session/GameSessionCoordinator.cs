@@ -2548,7 +2548,8 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             // entity record).
             Type10EntityPositionAddressResult? resolved = null;
             if (request.RegionAnchor != EntityRecordRegionAnchor.AvatarStats
-                && request.RegionAnchor != EntityRecordRegionAnchor.PenOwnershipWalk)
+                && request.RegionAnchor != EntityRecordRegionAnchor.PenOwnershipWalk
+                && request.RegionAnchor != EntityRecordRegionAnchor.ShellState)
             {
                 OperationResult<Type10EntityPositionAddressResult> resolveResult =
                     await readerResult.Value.ResolveEntityPositionAddressAsync(
@@ -2705,6 +2706,40 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     PenOwnershipGunVtableConfirmed: walk.GunVtableConfirmed,
                     PenOwnershipEntityHpPlausible: walk.EntityHpPlausible,
                     PenOwnershipTwoPassStable: walk.TwoPassStable));
+            }
+            else if (request.RegionAnchor == EntityRecordRegionAnchor.ShellState)
+            {
+                ShellStateResolution shell = await ResolveShellStateAsync(
+                    readerResult.Value,
+                    observation!,
+                    baseAddress,
+                    request.OwnershipCandidateIndex,
+                    readCancellation.Token).ConfigureAwait(false);
+                if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+                {
+                    return GateCheck<EntityRecordRegionReadResult>(
+                        "discover.gate_not_satisfied",
+                        "The offline-session gate is no longer satisfied.");
+                }
+
+                return OperationResult.Success(new EntityRecordRegionReadResult(
+                    _timeProvider.GetUtcNow(),
+                    layout.GameVersion,
+                    shell.Status,
+                    request.EntityId,
+                    replayTimeSeconds,
+                    null,
+                    shell.FailureStage,
+                    shell.Attempts,
+                    0,
+                    true,
+                    EntityIdentityRevalidated: false,
+                    ConsistentDoubleRead: false,
+                    SameDecodedClockProven: sameDecodedClockProven,
+                    ShellStateIndex: shell.Index,
+                    ShellStateIdentity0: shell.Identity0,
+                    ShellStateIdentity1: shell.Identity1,
+                    ShellStateTwoPassStable: shell.TwoPassStable));
             }
             else
             {
@@ -4212,6 +4247,343 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         }
 
         return new OwnershipWalkPassVerdict(true, forwardConfirmed, gunConfirmed, hpPlausible);
+    }
+
+    private sealed record ShellStateResolution(
+        Type10EntityPositionStatus Status,
+        string? FailureStage,
+        int Attempts,
+        int? Index,
+        int? Identity0,
+        int? Identity1,
+        bool TwoPassStable);
+
+    private enum ShellStatePassStatus
+    {
+        Resolved,
+        OutOfRange,
+        Mismatch,
+    }
+
+    private readonly record struct ShellStatePassVerdict(
+        ShellStatePassStatus PassStatus,
+        int Index,
+        int Identity0,
+        int Identity1);
+
+    /// <summary>
+    /// The <c>shell-state</c> anchor resolution (penetration v0.3 G1 item 2).
+    /// Reuses the pen-ownership-walk rotator scan to reach the owner, then
+    /// walks the embedded AmmoController (owner + 0x4B4) to the loaded-shell
+    /// index and the resolved shell identity holder's two dwords. Two passes,
+    /// fail-closed, aggregate-only (no address, pointer, id, or raw bytes
+    /// leave this method). See docs/operations/pen-shell-state-read-proposal.md.
+    /// </summary>
+    private async ValueTask<ShellStateResolution> ResolveShellStateAsync(
+        IAuthorizedMemoryReader reader,
+        AuthorizedMemoryObservation observation,
+        long baseAddress,
+        int? candidateIndex,
+        CancellationToken cancellationToken)
+    {
+        uint expectedRotatorVftable = (uint)(baseAddress + EntityRecordRegionReadRequest.VehicleGunRotatorVftableRva);
+
+        byte[] expected = new byte[sizeof(uint)];
+        BinaryPrimitives.WriteUInt32LittleEndian(expected, expectedRotatorVftable);
+        MemoryScanRequest request = new(
+            FieldName: "shell-state-rotator-vftable",
+            FieldType: "Bytes",
+            ExpectedValue: expected,
+            ToleranceMask: null,
+            MaxCandidates: EntityRecordRegionReadRequest.MaxOwnershipCandidates,
+            MinRegionSize: 4096,
+            Alignment: 4);
+        OperationResult<MemoryScanResult> scanResult = await Task.Run(
+            () => _scanDiscoverer.Scan(
+                observation,
+                baseAddress,
+                request,
+                cancellationToken,
+                "aob"),
+            cancellationToken).ConfigureAwait(false);
+        if (!scanResult.IsSuccess || scanResult.Value is null)
+        {
+            return new ShellStateResolution(
+                Type10EntityPositionStatus.ReadFailed,
+                "shell-scan",
+                1,
+                null,
+                null,
+                null,
+                false);
+        }
+
+        IReadOnlyList<MemoryScanCandidate> candidates = scanResult.Value.Candidates;
+        if (candidates.Count == 0)
+        {
+            return new ShellStateResolution(
+                Type10EntityPositionStatus.ShellStateNotFound,
+                "shell-not-found",
+                1,
+                null,
+                null,
+                null,
+                false);
+        }
+
+        int index = candidateIndex ?? 0;
+        if (index < 0 || index >= candidates.Count)
+        {
+            return new ShellStateResolution(
+                Type10EntityPositionStatus.ShellStateNotFound,
+                "shell-candidate-out-of-range",
+                1,
+                null,
+                null,
+                null,
+                false);
+        }
+
+        long rotatorAddress = candidates[index].AbsoluteAddress;
+
+        // Identity re-gate (same discipline as the ownership walk): never
+        // walk off an unauthenticated object.
+        uint? rotatorVftable = await ReadPointerAsync(
+            reader,
+            rotatorAddress,
+            cancellationToken).ConfigureAwait(false);
+        if (rotatorVftable is null)
+        {
+            return new ShellStateResolution(
+                Type10EntityPositionStatus.ReadFailed,
+                "shell-identity-read",
+                1,
+                null,
+                null,
+                null,
+                false);
+        }
+
+        if (rotatorVftable.Value != expectedRotatorVftable)
+        {
+            return new ShellStateResolution(
+                Type10EntityPositionStatus.ShellStateMismatch,
+                "shell-identity-mismatch",
+                1,
+                null,
+                null,
+                null,
+                false);
+        }
+
+        // rotator +0x10 -> owner (AvatarGameLogic).
+        uint? owner = await ReadPointerAsync(
+            reader,
+            rotatorAddress + EntityRecordRegionReadRequest.PenOwnershipRotatorOwnerOffset,
+            cancellationToken).ConfigureAwait(false);
+        if (owner is null)
+        {
+            return new ShellStateResolution(
+                Type10EntityPositionStatus.ReadFailed,
+                "shell-owner-read",
+                1,
+                null,
+                null,
+                null,
+                false);
+        }
+
+        if (owner.Value == 0)
+        {
+            return new ShellStateResolution(
+                Type10EntityPositionStatus.ShellStateMismatch,
+                "shell-owner-null",
+                1,
+                null,
+                null,
+                null,
+                false);
+        }
+
+        long ammoAddress = owner.Value + EntityRecordRegionReadRequest.AmmoControllerEmbedOffset;
+
+        ShellStatePassVerdict? first = await RunShellStatePassAsync(
+            reader,
+            ammoAddress,
+            cancellationToken).ConfigureAwait(false);
+        if (first is null)
+        {
+            return new ShellStateResolution(
+                Type10EntityPositionStatus.ReadFailed,
+                "shell-pass1-read",
+                2,
+                null,
+                null,
+                null,
+                false);
+        }
+
+        ShellStatePassVerdict? second = await RunShellStatePassAsync(
+            reader,
+            ammoAddress,
+            cancellationToken).ConfigureAwait(false);
+        if (second is null)
+        {
+            return new ShellStateResolution(
+                Type10EntityPositionStatus.ReadFailed,
+                "shell-pass2-read",
+                2,
+                null,
+                null,
+                null,
+                false);
+        }
+
+        bool stable = first.Value == second.Value;
+        ShellStatePassVerdict verdict = first.Value;
+        Type10EntityPositionStatus status = !stable
+            ? Type10EntityPositionStatus.ShellStateUnstable
+            : verdict.PassStatus switch
+            {
+                ShellStatePassStatus.OutOfRange => Type10EntityPositionStatus.ShellStateNotFound,
+                ShellStatePassStatus.Mismatch => Type10EntityPositionStatus.ShellStateMismatch,
+                _ => Type10EntityPositionStatus.Resolved,
+            };
+        string? failureStage = !stable
+            ? "shell-unstable"
+            : verdict.PassStatus switch
+            {
+                ShellStatePassStatus.OutOfRange => "shell-index-out-of-range",
+                ShellStatePassStatus.Mismatch => "shell-mismatch",
+                _ => null,
+            };
+        return new ShellStateResolution(
+            status,
+            failureStage,
+            2,
+            verdict.PassStatus == ShellStatePassStatus.Resolved ? verdict.Index : null,
+            verdict.PassStatus == ShellStatePassStatus.Resolved ? verdict.Identity0 : null,
+            verdict.PassStatus == ShellStatePassStatus.Resolved ? verdict.Identity1 : null,
+            stable);
+    }
+
+    /// <summary>
+    /// One shell-state pass: read the embedded AmmoController's current-shell
+    /// index and the resolved shell identity holder's two dwords. Returns null
+    /// only when a guarded read cannot complete (never fabricates a shell);
+    /// otherwise an OutOfRange/Mismatch/Resolved verdict, where non-Resolved
+    /// is fail-closed.
+    /// </summary>
+    private static async ValueTask<ShellStatePassVerdict?> RunShellStatePassAsync(
+        IAuthorizedMemoryReader reader,
+        long ammoAddress,
+        CancellationToken cancellationToken)
+    {
+        // 1. ammo +0x38 -> current-shell index (int32).
+        OperationResult<byte[]> indexRead = await reader.ReadAsync(
+            (nint)(ammoAddress + EntityRecordRegionReadRequest.AmmoCurrentShellIndexOffset),
+            sizeof(int),
+            cancellationToken).ConfigureAwait(false);
+        if (!indexRead.IsSuccess || indexRead.Value is null || indexRead.Value.Length != sizeof(int))
+        {
+            return null;
+        }
+        int shellIndex = BinaryPrimitives.ReadInt32LittleEndian(indexRead.Value);
+
+        // 2. ammo +0x40 -> gun ref; gun ref +0x20 -> list holder.
+        uint? gunRef = await ReadPointerAsync(
+            reader,
+            ammoAddress + EntityRecordRegionReadRequest.AmmoGunRefOffset,
+            cancellationToken).ConfigureAwait(false);
+        if (gunRef is null)
+        {
+            return null;
+        }
+        if (gunRef.Value == 0)
+        {
+            return new ShellStatePassVerdict(ShellStatePassStatus.Mismatch, shellIndex, 0, 0);
+        }
+
+        uint? list = await ReadPointerAsync(
+            reader,
+            gunRef.Value + EntityRecordRegionReadRequest.ShellRefListOffset,
+            cancellationToken).ConfigureAwait(false);
+        if (list is null)
+        {
+            return null;
+        }
+        if (list.Value == 0)
+        {
+            return new ShellStatePassVerdict(ShellStatePassStatus.Mismatch, shellIndex, 0, 0);
+        }
+
+        // 3. list +0x1b0/+0x1b4 -> vector begin/end; count = (end - begin) >> 2.
+        uint? begin = await ReadPointerAsync(
+            reader,
+            list.Value + EntityRecordRegionReadRequest.ShellVectorBeginOffset,
+            cancellationToken).ConfigureAwait(false);
+        uint? end = await ReadPointerAsync(
+            reader,
+            list.Value + EntityRecordRegionReadRequest.ShellVectorEndOffset,
+            cancellationToken).ConfigureAwait(false);
+        if (begin is null || end is null)
+        {
+            return null;
+        }
+
+        long count = ((long)end.Value - begin.Value) >> 2;
+        if (shellIndex < 0 || count <= 0 || shellIndex >= count)
+        {
+            return new ShellStatePassVerdict(ShellStatePassStatus.OutOfRange, shellIndex, 0, 0);
+        }
+
+        // 4. begin + index*4 -> element; element +0x1c -> shell identity holder.
+        uint? element = await ReadPointerAsync(
+            reader,
+            begin.Value + (shellIndex * sizeof(uint)),
+            cancellationToken).ConfigureAwait(false);
+        if (element is null)
+        {
+            return null;
+        }
+        if (element.Value == 0)
+        {
+            return new ShellStatePassVerdict(ShellStatePassStatus.Mismatch, shellIndex, 0, 0);
+        }
+
+        uint? shellId = await ReadPointerAsync(
+            reader,
+            element.Value + EntityRecordRegionReadRequest.ShellElementIdentityHolderOffset,
+            cancellationToken).ConfigureAwait(false);
+        if (shellId is null)
+        {
+            return null;
+        }
+        if (shellId.Value == 0)
+        {
+            return new ShellStatePassVerdict(ShellStatePassStatus.Mismatch, shellIndex, 0, 0);
+        }
+
+        // 5. shell identity holder +0x20/+0x24 -> identity dwords.
+        OperationResult<byte[]> id0Read = await reader.ReadAsync(
+            (nint)(shellId.Value + EntityRecordRegionReadRequest.ShellIdentityDword0Offset),
+            sizeof(int),
+            cancellationToken).ConfigureAwait(false);
+        OperationResult<byte[]> id1Read = await reader.ReadAsync(
+            (nint)(shellId.Value + EntityRecordRegionReadRequest.ShellIdentityDword1Offset),
+            sizeof(int),
+            cancellationToken).ConfigureAwait(false);
+        if (!id0Read.IsSuccess || id0Read.Value is null || id0Read.Value.Length != sizeof(int) ||
+            !id1Read.IsSuccess || id1Read.Value is null || id1Read.Value.Length != sizeof(int))
+        {
+            return null;
+        }
+
+        return new ShellStatePassVerdict(
+            ShellStatePassStatus.Resolved,
+            shellIndex,
+            BinaryPrimitives.ReadInt32LittleEndian(id0Read.Value),
+            BinaryPrimitives.ReadInt32LittleEndian(id1Read.Value));
     }
 
     /// <summary>

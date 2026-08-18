@@ -2172,6 +2172,308 @@ public sealed class GameSessionCoordinatorTests
         Assert.AreEqual("discover.entity_region.invalid_ownership_candidate", result.Error?.Code);
     }
 
+    // ---- shell-state anchor (penetration v0.3 G1 item 2, 2026-08-18) ----
+
+    [TestMethod]
+    public async Task EntityRegionRead_ShellState_ResolvesIndexAndIdentityTwoPasses()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long rotatorAddress = 0x25001000;
+        const uint ownerAddress = 0x25002000;
+        const uint ammoAddress = ownerAddress + 0x4B4;
+        const uint gunRef = 0x25005000;
+        const uint list = 0x25006000;
+        const uint begin = 0x25007000;
+        const uint end = begin + 8; // two shell entries
+        const uint element = 0x25008000;
+        const uint shellId = 0x25009000;
+        const int identity0 = 0x11111111;
+        const int identity1 = 0x22222222;
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            [rotatorAddress] = BitConverter.GetBytes(TestVehicleGunRotatorVftable),
+            [rotatorAddress + 0x10] = BitConverter.GetBytes(ownerAddress),
+            [ammoAddress + 0x38] = BitConverter.GetBytes(1), // current-shell index
+            [ammoAddress + 0x40] = BitConverter.GetBytes(gunRef),
+            [gunRef + 0x20] = BitConverter.GetBytes(list),
+            [list + 0x1b0] = BitConverter.GetBytes(begin),
+            [list + 0x1b4] = BitConverter.GetBytes(end),
+            [begin + 4] = BitConverter.GetBytes(element), // index 1 -> second entry
+            [element + 0x1c] = BitConverter.GetBytes(shellId),
+            [shellId + 0x20] = BitConverter.GetBytes(identity0),
+            [shellId + 0x24] = BitConverter.GetBytes(identity1),
+        });
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.ShellState),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, result.Value?.Status);
+        Assert.AreEqual(1, result.Value?.ShellStateIndex);
+        Assert.AreEqual(identity0, result.Value?.ShellStateIdentity0);
+        Assert.AreEqual(identity1, result.Value?.ShellStateIdentity1);
+        Assert.IsTrue(result.Value?.ShellStateTwoPassStable);
+        Assert.IsNull(result.Value?.RegionBytes);
+        Assert.AreEqual("shell-state-rotator-vftable", scan.LastRequest?.FieldName);
+        // Identity re-read + owner + two passes × nine reads.
+        Assert.HasCount(20, factory.Reader.Reads);
+        Assert.AreEqual(rotatorAddress, factory.Reader.Reads[0].Address);
+        Assert.AreEqual(rotatorAddress + 0x10, factory.Reader.Reads[1].Address);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_ShellState_NoRotatorFailsClosed()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>());
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult());
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.ShellState),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.ShellStateNotFound, result.Value?.Status);
+        Assert.AreEqual("shell-not-found", result.Value?.FailureStage);
+        Assert.IsNull(result.Value?.ShellStateIndex);
+        Assert.IsEmpty(factory.Reader.Reads);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_ShellState_IndexOutOfRangeFailsClosed()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long rotatorAddress = 0x25001000;
+        const uint ownerAddress = 0x25002000;
+        const uint ammoAddress = ownerAddress + 0x4B4;
+        const uint gunRef = 0x25005000;
+        const uint list = 0x25006000;
+        const uint begin = 0x25007000;
+        const uint end = begin + 8; // two entries
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            [rotatorAddress] = BitConverter.GetBytes(TestVehicleGunRotatorVftable),
+            [rotatorAddress + 0x10] = BitConverter.GetBytes(ownerAddress),
+            [ammoAddress + 0x38] = BitConverter.GetBytes(5), // index 5 >= count 2
+            [ammoAddress + 0x40] = BitConverter.GetBytes(gunRef),
+            [gunRef + 0x20] = BitConverter.GetBytes(list),
+            [list + 0x1b0] = BitConverter.GetBytes(begin),
+            [list + 0x1b4] = BitConverter.GetBytes(end),
+        });
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.ShellState),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.ShellStateNotFound, result.Value?.Status);
+        Assert.AreEqual("shell-index-out-of-range", result.Value?.FailureStage);
+        Assert.IsNull(result.Value?.ShellStateIdentity0);
+        Assert.IsTrue(result.Value?.ShellStateTwoPassStable);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_ShellState_IdentityMismatchFailsClosed()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long rotatorAddress = 0x25001000;
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            [rotatorAddress] = BitConverter.GetBytes(0xDEADBEEFu),
+        });
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.ShellState),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.ShellStateMismatch, result.Value?.Status);
+        Assert.AreEqual("shell-identity-mismatch", result.Value?.FailureStage);
+        Assert.IsNull(result.Value?.ShellStateIndex);
+        Assert.HasCount(1, factory.Reader.Reads);
+        Assert.AreEqual(rotatorAddress, factory.Reader.Reads[0].Address);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_ShellState_UnequippedGunFailsClosed()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long rotatorAddress = 0x25001000;
+        const uint ownerAddress = 0x25002000;
+        const uint ammoAddress = ownerAddress + 0x4B4;
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            [rotatorAddress] = BitConverter.GetBytes(TestVehicleGunRotatorVftable),
+            [rotatorAddress + 0x10] = BitConverter.GetBytes(ownerAddress),
+            [ammoAddress + 0x38] = BitConverter.GetBytes(0), // index
+            [ammoAddress + 0x40] = BitConverter.GetBytes(0u), // no gun ref
+        });
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.ShellState),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.ShellStateMismatch, result.Value?.Status);
+        Assert.AreEqual("shell-mismatch", result.Value?.FailureStage);
+        Assert.IsTrue(result.Value?.ShellStateTwoPassStable);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_ShellState_NullOwnerFailsClosed()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long rotatorAddress = 0x25001000;
+        // The owner pointer is readable but null -> fail closed as a mismatch.
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            [rotatorAddress] = BitConverter.GetBytes(TestVehicleGunRotatorVftable),
+            [rotatorAddress + 0x10] = BitConverter.GetBytes(0u),
+        });
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.ShellState),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.ShellStateMismatch, result.Value?.Status);
+        Assert.AreEqual("shell-owner-null", result.Value?.FailureStage);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_ShellState_ReadFailureFailsClosed()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long rotatorAddress = 0x25001000;
+        // The owner pointer read misses (owner is not in the pages) -> the
+        // guarded read cannot complete, fail closed as a read failure.
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            [rotatorAddress] = BitConverter.GetBytes(TestVehicleGunRotatorVftable),
+        });
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.ShellState),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.ReadFailed, result.Value?.Status);
+        Assert.AreEqual("shell-owner-read", result.Value?.FailureStage);
+        Assert.IsNull(result.Value?.ShellStateIndex);
+    }
+
     [TestMethod]
     public async Task EntityRegionsRead_ExactBuildReturnsBytesInRequestOrder()
     {
