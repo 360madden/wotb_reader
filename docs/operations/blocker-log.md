@@ -1085,3 +1085,15 @@ folder for the full numbering convention and document map.
   is only (b): the **live controlled shell-swap correlation** of `+0x38` and
   the `+0x40` chain in an exact-build managed offline replay — the promotion
   gate per `pen-promotion-gates.md`. Nothing promoted.
+
+- Aim/ray static pass DONE (`2026-08-18`, hash-bound `1cda5c31…`; handoff
+  `2026-08-18-rotator-static-structure.md`): the `VehicleGunRotator`
+  vtable methods are event/UI plumbing plus the gun-marker target refs at
+  `+0x1d4/+0x1d8`; `GetGunMarkerPosition` (`FUN_01ec12b0`) computes the
+  gun-marker aim struct at `[rot+0x28..0x40]` (hit pos + normalized
+  direction + distance); `Update` (`FUN_01ed1df0`) receives 4
+  angle/state-shaped floats per frame from `AvatarGameLogic` (`016f303d`)
+  and stores two at `+0xe0/+0xe4`. Naming turret yaw vs gun elevation (and
+  the muzzle-ray role) is NOT statically resolvable — confirming the
+  2026-08-16 conclusion. The live controlled turret/gun + shell-swap
+  correlation is the shared promotion gate. Nothing promoted.
