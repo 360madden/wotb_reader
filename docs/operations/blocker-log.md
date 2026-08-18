@@ -1118,6 +1118,11 @@ folder for the full numbering convention and document map.
   terminal object is a shell identity holder, NOT the `Shell` descriptor
   (kind/caliber/damage at `+0x114..+0x120`) — the descriptor link stays
   open and is not required for the G1 item 2 gate. 7 coordinator + 1
-  endpoint tests; driver `scripts/capture-pen-shell-state.ps1`. Nothing
-  promoted; the live controlled shell-swap correlation (two content-distinct
-  repeats) is the remaining G1 item 2 gate per `pen-promotion-gates.md`.
+  endpoint tests; driver `scripts/capture-pen-shell-state.ps1`. **LIVE-
+  VALIDATED (2026-08-18):** one exact-build managed offline replay (Churchill I /
+  Oasis, session `01a015b9-…`) resolved the anchor — `index=0`, `identity0=5`,
+  `identity1=71`, two-pass stable, 87 samples / 1 distinct state / **0
+  transitions**. The read surface is live-proven; `identity0=5` is hypothesized
+  (unproven) to be `eShellKind` APCR. This replay did not swap shells, so the
+  controlled shell-swap correlation (two content-distinct repeats) is the
+  remaining G1 item 2 gate per `pen-promotion-gates.md`. Nothing promoted.

@@ -2,8 +2,8 @@
 
 **Date:** 2026-08-18 (UTC)
 **Status:** coordinator-owned `shell-state` entity-region anchor implemented,
-tested, and merged; live correlation remains the promotion gate. Nothing
-promoted.
+tested, merged, and **live-validated** (2026-08-18). The controlled
+shell-swap correlation remains the promotion gate. Nothing promoted.
 **Blocker:** `BLK-0027` (narrowed — the read surface is ready; the live
 controlled shell-swap correlation is next).
 
@@ -57,11 +57,31 @@ loaded-shell tracking without the descriptor link.
   tests).
 - New script parses clean and is ASCII-only.
 
+## Live validation (2026-08-18, exact-build managed offline replay)
+
+One managed offline replay (Churchill I / Oasis Palms, `1cda5c31…`, battle
+session `01a015b9-189f-7f42-a5d7-d3240ae64a99`) resolved the anchor live:
+
+- `status=Resolved`, `index=0`, `identity0=5`, `identity1=71`,
+  `two_pass_stable=true`.
+- 87 samples over ~150 s: **1 distinct state, 0 transitions** — the loaded
+  shell stayed `(0, 5, 71)` for the whole capture window.
+
+The six-dereference chain resolves against the real game, so the read surface
+is live-proven (the synthetic tests verified the logic; this proves the
+offsets). **Hypothesis (unproven):** `identity0=5` matches `eShellKind`
+`kArmorPiercingCr` (APCR) and `identity1=71` may be a caliber/identity
+component — this needs a controlled swap or a descriptor-link trace before it
+is claimed.
+
+**0 transitions means this replay did not exercise a shell swap**, so the
+controlled-transition correlation still needs a replay whose player swaps
+shells (or a freshly recorded controlled replay). The descriptor
+(kind/caliber/damage) link and G1 item 5 (shot ray) remain open.
+
 ## Next step
 
-Run `scripts/invoke-od-replay-chain.ps1` (or the launcher + this driver)
-against an exact-build managed offline replay and observe the shell state.
-The **promotion gate** still requires the live controlled shell-swap with two
-content-distinct positive repeats, per `pen-promotion-gates.md` — nothing is
-promoted by this change. The `Shell` descriptor (kind/caliber/damage) link and
-G1 item 5 (shot ray) remain open.
+The **promotion gate** requires the live controlled shell-swap with two
+content-distinct positive repeats, per `pen-promotion-gates.md` — the current
+replay did not swap shells (0 transitions), so a swap-bearing replay or a
+controlled recorded scenario is the remaining input. Nothing is promoted.

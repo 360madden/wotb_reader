@@ -226,10 +226,10 @@ $body = @{
     battleSessionId         = $battleSessionId
 }
 
-$distinct = New-Object System.Collections.Generic.HashSet[string]
-$transitionCount = 0
-$previousKey = $null
-$samples = 0
+$script:distinct = New-Object System.Collections.Generic.HashSet[string]
+$script:transitionCount = 0
+$script:previousKey = $null
+$script:samples = 0
 
 function Read-ShellState {
     $response = Invoke-PenApi -Method 'Post' `
@@ -276,11 +276,11 @@ else {
     }
 }
 
-Write-Host ('pen_shell: samples=' + $samples +
-    ' distinct_states=' + $distinct.Count +
-    ' transitions=' + $transitionCount)
+Write-Host ('pen_shell: samples=' + $script:samples +
+    ' distinct_states=' + $script:distinct.Count +
+    ' transitions=' + $script:transitionCount)
 
-if ($distinct.Count -ge 1) {
+if ($script:distinct.Count -ge 1) {
     Write-Host 'pen_shell: SHELL_STATE_OBSERVED (index + identity fingerprint read live)'
 }
 else {
