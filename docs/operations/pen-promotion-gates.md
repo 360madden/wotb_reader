@@ -84,19 +84,40 @@ mismatches the known shell, or the control window moves — no promotion.
 **Status (2026-08-18):** the `shell-state` read surface is live-validated on
 both available replays (Churchill I / savanna, medvedkovo) — `index=0`,
 `identity0=5` (status/tier discriminator), `identity1=71` (component id), two-pass stable,
-**0 transitions in both**. Neither replay swaps shells, and a passive replay
-cannot supply a known transition order, so this gate is **not closed** — it
-needs a freshly recorded controlled swap (manual gameplay), which is an
-owner-run scenario. See `2026-08-18-medvedkovo-shell-swap-negative.md`.
+**0 transitions in both**. The surface now ALSO reads the resolved `Shell`
+descriptor's kind/caliber/damage (`+0x114`/`+0x118`/`+0x11c`/`+0x120`, the G1.2
+acceptance fields) — implemented 2026-08-18 (handoff
+`2026-08-18-shell-descriptor-read-extension.md`), so a controlled swap can be
+correlated to the actual loaded shell, not just the identity fingerprint.
+Neither replay swaps shells, and a passive replay cannot supply a known
+transition order, so this gate is **not closed** — it needs a freshly recorded
+controlled swap (manual gameplay), which is an owner-run scenario. See
+`2026-08-18-medvedkovo-shell-swap-negative.md`.
 
 ### G1.5 — turret/gun transition correlation (shot ray)
 
 Read surface: `docs/operations/pen-shot-ray-read-proposal.md` (proposal,
 2026-08-18) — an additive `GunAim` anchor reading the rotator's two `Update`
 inputs (`+0xe0`/`+0xe4`) and the gun-marker aim struct (`+0x28..0x40`), with
-hull yaw (`ring +0x30`, Verified) held by the existing live-frame surface as
-the discriminator. Implemented + tested (2026-08-18); not yet live-validated
-or promoted.
+static refinement `2026-08-18-gun-angles-vocabulary.md`: the two inputs are the
+**turret-yaw / gun-pitch** pair (WoTB's term for the elevation axis is "gun
+pitch", not "gun elevation"), stored as arg3→`+0xe0`/arg4→`+0xe4` by
+`VehicleGunRotator::Update`, called from `AvatarGameLogic::updateTargetingInfo`;
+which offset is yaw vs pitch still needs the live traverse. A second refinement
+(`2026-08-18-gun-axis-component-layout.md`) names the *component-level* axes
+byte-verified: `CurrentGunAnglesComponent` stores `turretYaw@+0x10` and
+`gunPitch@+0x14` (getters `FUN_00740cd0`/`FUN_00740cc0`), while the rotator's
+inputs come from the targeting protobuf — so the two are different pipeline
+stages and the rotator order is still not statically nameable. A second,
+NAMING read surface shipped 2026-08-18 (handoff
+`2026-08-18-gun-angle-read-surface-shipped.md`): the additive `gun-angle`
+anchor reads the named `turretYaw@+0x10`/`gunPitch@+0x14` directly from
+`CurrentGunAnglesComponent` (via the `entity+0x2c` component-array vftable
+scan), so the owner-run traverse can correlate the named axes against the
+rotator's `+0xe0/+0xe4` to name them. Hull yaw (`ring
++0x30`, Verified) is held by the existing live-frame surface as the
+discriminator. Implemented + tested (2026-08-18); not yet live-validated or
+promoted.
 
 Prove **which of the rotator's aim inputs is turret yaw vs gun elevation** and
 that the aim struct is a shot-synchronous (not camera) direction:
@@ -150,7 +171,10 @@ records evidence but does not flip the gate.
 The offline half is complete: the G1.5 shot-ray read surface is **designed and
 implemented** (`pen-shot-ray-read-proposal.md`, 2026-08-18; the `GunAim` anchor
 + coordinator/endpoint tests + `scripts/capture-pen-shot-ray.ps1` mirror the
-shipped `shell-state` anchor). The next step is the **live controlled-transition
-session** (shell-swap + turret/gun traverse), which is a consequential live
-operation requiring owner approval and a controlled scenario. Until that runs,
-BLK-0027 stays open and the badge stays honest `NotReady`.
+shipped `shell-state` anchor). The step-by-step owner-run scenario (record →
+launch → capture → correlate, with per-gate pass/stop conditions and the
+two-repeat rule) is `docs/operations/pen-promotion-runbook.md`. The next step is
+the **live controlled-transition session** (shell-swap + turret/gun traverse),
+which is a consequential live operation requiring owner approval and a
+controlled scenario. Until that runs, BLK-0027 stays open and the badge stays
+honest `NotReady`.

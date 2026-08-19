@@ -375,11 +375,16 @@ docs/operations/handoffs/2026-08-17-recovery-hardening.md
 docs/operations/handoffs/2026-08-17-recovery-module.md
 docs/operations/handoffs/2026-08-17-scan-lease-bughunt.md
 docs/operations/handoffs/2026-08-18-ammo40-setter-found.md
+docs/operations/handoffs/2026-08-18-gun-aim-read-surface-shipped.md
+docs/operations/handoffs/2026-08-18-gun-angle-read-surface-shipped.md
+docs/operations/handoffs/2026-08-18-gun-angles-vocabulary.md
+docs/operations/handoffs/2026-08-18-gun-axis-component-layout.md
 docs/operations/handoffs/2026-08-18-medvedkovo-shell-swap-negative.md
 docs/operations/handoffs/2026-08-18-recovery-hardening-2.md
 docs/operations/handoffs/2026-08-18-replay-label-reconciliation.md
 docs/operations/handoffs/2026-08-18-rotator-static-structure.md
 docs/operations/handoffs/2026-08-18-shell-descriptor-link.md
+docs/operations/handoffs/2026-08-18-shell-descriptor-read-extension.md
 docs/operations/handoffs/2026-08-18-shell-identity-holder-writer.md
 docs/operations/handoffs/2026-08-18-shell-index-link-found.md
 docs/operations/handoffs/2026-08-18-shell-state-read-surface.md
@@ -414,6 +419,7 @@ docs/operations/pen-chance-design.md
 docs/operations/pen-ownership-walk-live-validation-proposal.md
 docs/operations/pen-ownership-walk-proof-protocol.md
 docs/operations/pen-promotion-gates.md
+docs/operations/pen-promotion-runbook.md
 docs/operations/pen-shell-state-read-proposal.md
 docs/operations/pen-shot-ray-read-proposal.md
 docs/operations/pen-v03-alternative-armor-owner-triage.md
@@ -481,6 +487,7 @@ scripts/camera-double-read-measurement.Tests.ps1
 scripts/camera-double-read-measurement.ps1
 scripts/capture-pen-aims.ps1
 scripts/capture-pen-census.ps1
+scripts/capture-pen-gun-angle.ps1
 scripts/capture-pen-ownership-walk.ps1
 scripts/capture-pen-shell-state.ps1
 scripts/capture-pen-shot-ray.ps1

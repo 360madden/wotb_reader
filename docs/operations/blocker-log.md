@@ -1147,3 +1147,24 @@ folder for the full numbering convention and document map.
   replays are swap-free**, so the G1 item 2 promotion gate is NOT closed — it
   requires a freshly recorded controlled swap (manual gameplay), which is an
   owner-run scenario, not an offline step. Nothing promoted.
+
+- Amendment (`2026-08-18`): the shell descriptor link is now CLOSED and the
+  gun-axis naming is RESOLVED at the component level. (1)
+  `shell-descriptor-read-extension` (handoff
+  `2026-08-18-shell-descriptor-read-extension.md`) extends the `shell-state`
+  anchor to ALSO read the resolved `Shell` descriptor's kind/caliber/damage
+  (`+0x114`/`+0x118`/`+0x11c`/`+0x120`) live, so "unread live" and "descriptor
+  link stays open" above are superseded — the controlled swap can now be
+  correlated to the actual loaded shell. (2) `gun-axis-component-layout`
+  (handoff `2026-08-18-gun-axis-component-layout.md`, hash-bound `1cda5c31…`)
+  pins `CurrentGunAnglesComponent` as `turretYaw@+0x10` / `gunPitch@+0x14`
+  (getters `FUN_00740cd0`/`FUN_00740cc0`), and the rotator's `+0xe0/+0xe4`
+  come from the targeting protobuf, so the rotator order is the only part
+  still live-gated. (3) `gun-angle-read-surface-shipped` (handoff
+  `2026-08-18-gun-angle-read-surface-shipped.md`) ships the additive
+  `gun-angle` anchor reading those NAMED axes (rotator scan → owner round-trip
+  → `[owner+0x04]` entity → `+0x2c` component array → vftable scan for
+  `0x31a4868`); 4 coordinator + 1 endpoint tests, driver
+  `scripts/capture-pen-gun-angle.ps1`, GameIntegration 396 passed. BLK-0027's
+  remaining item is still only the OWNER-RUN controlled shell-swap (G1 item 2)
+  and turret/gun traverse (G1 item 5) correlation. Nothing promoted.
