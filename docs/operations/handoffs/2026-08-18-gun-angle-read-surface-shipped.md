@@ -24,7 +24,7 @@ than the rotator's still-unlabelled `+0xe0/+0xe4` targeting inputs:
 - **Fields read**: `turretYaw@+0x10` and `gunPitch@+0x14` (float32), two-pass,
   fail-closed (read miss → `ReadFailed`/`GunAngleMismatch`, non-finite →
   `GunAngleMismatch`, two-pass disagreement → `GunAngleUnstable`).
-- **Contracts/statuses/fields**: `GunAngleComponentCandidateCount` /
+- **Contracts/statuses/fields**: `GunAngleRotatorCandidateCount` /
   `GunAngleTurretYaw` / `GunAngleGunPitch` / `GunAngleTwoPassStable`, plus
   `GunAngleNotFound` / `GunAngleMismatch` / `GunAngleUnstable`; `"gun-angle"`
   endpoint parser case; no address, pointer, id, or raw bytes leave the

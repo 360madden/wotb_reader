@@ -831,7 +831,7 @@ public sealed record EntityRecordRegionReadResult(
     float? GunAimDirZ = null,
     float? GunAimDistance = null,
     bool GunAimTwoPassStable = false,
-    int GunAngleComponentCandidateCount = 0,
+    int GunAngleRotatorCandidateCount = 0,
     float? GunAngleTurretYaw = null,
     float? GunAngleGunPitch = null,
     bool GunAngleTwoPassStable = false);

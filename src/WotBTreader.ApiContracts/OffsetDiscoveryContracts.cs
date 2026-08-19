@@ -599,7 +599,7 @@ public sealed record EntityRecordRegionReadResponse
     /// For <c>gun-angle</c> probes: how many VehicleGunRotator scan candidates
     /// the scan found (0 for other anchors).
     /// </summary>
-    public int GunAngleComponentCandidateCount { get; init; }
+    public int GunAngleRotatorCandidateCount { get; init; }
 
     /// <summary>
     /// For <c>gun-angle</c> probes: the named turret yaw (radians,

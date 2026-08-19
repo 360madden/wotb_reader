@@ -1473,7 +1473,7 @@ public sealed class GameApiEndpointsTests
                     EntityIdentityRevalidated: false,
                     ConsistentDoubleRead: false,
                     SameDecodedClockProven: false,
-                    GunAngleComponentCandidateCount: 1,
+                    GunAngleRotatorCandidateCount: 1,
                     GunAngleTurretYaw: 0.35f,
                     GunAngleGunPitch: -0.1f,
                     GunAngleTwoPassStable: true)),
@@ -1494,7 +1494,7 @@ public sealed class GameApiEndpointsTests
         Assert.AreEqual(
             EntityRecordRegionAnchor.GunAngle,
             scanner.LastEntityRegionRequest?.RegionAnchor);
-        Assert.AreEqual(1, response.GunAngleComponentCandidateCount);
+        Assert.AreEqual(1, response.GunAngleRotatorCandidateCount);
         Assert.AreEqual(0.35f, response.GunAngleTurretYaw);
         Assert.AreEqual(-0.1f, response.GunAngleGunPitch);
         Assert.IsTrue(response.GunAngleTwoPassStable);

@@ -2870,7 +2870,7 @@ public sealed class GameSessionCoordinatorTests
 
         Assert.IsTrue(result.IsSuccess);
         Assert.AreEqual(Type10EntityPositionStatus.Resolved, result.Value?.Status);
-        Assert.AreEqual(1, result.Value?.GunAngleComponentCandidateCount);
+        Assert.AreEqual(1, result.Value?.GunAngleRotatorCandidateCount);
         Assert.AreEqual(turretYaw, result.Value?.GunAngleTurretYaw);
         Assert.AreEqual(gunPitch, result.Value?.GunAngleGunPitch);
         Assert.IsTrue(result.Value?.GunAngleTwoPassStable);

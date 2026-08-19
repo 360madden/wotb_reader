@@ -1020,7 +1020,7 @@ internal static class GameApiEndpoints
             GunAimDirZ = read.GunAimDirZ,
             GunAimDistance = read.GunAimDistance,
             GunAimTwoPassStable = read.GunAimTwoPassStable,
-            GunAngleComponentCandidateCount = read.GunAngleComponentCandidateCount,
+            GunAngleRotatorCandidateCount = read.GunAngleRotatorCandidateCount,
             GunAngleTurretYaw = read.GunAngleTurretYaw,
             GunAngleGunPitch = read.GunAngleGunPitch,
             GunAngleTwoPassStable = read.GunAngleTwoPassStable,
