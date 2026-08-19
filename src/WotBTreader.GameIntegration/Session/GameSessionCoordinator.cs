@@ -2542,15 +2542,18 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
 
             // Resolve the entity's ring-record address under the same lease
             // (the address stays coordinator-owned; only bytes leave). The
-            // avatar-stats anchor SKIPS the entity-ID resolver entirely: it
-            // ignores EntityId and scans for the entity-Avatar vftable
-            // instead (the L3 damage-dealt family is on that object, not the
-            // entity record).
+            // avatar-stats, pen-ownership-walk, shell-state, gun-aim and
+            // gun-angle anchors SKIP the entity-ID resolver entirely: they
+            // ignore EntityId and anchor through their own gated scans/walks
+            // instead (the L3 damage-dealt family is on the avatar object,
+            // not the entity record; the pen anchors reach the viewpoint
+            // vehicle through the rotator scan and owner round-trip).
             Type10EntityPositionAddressResult? resolved = null;
             if (request.RegionAnchor != EntityRecordRegionAnchor.AvatarStats
                 && request.RegionAnchor != EntityRecordRegionAnchor.PenOwnershipWalk
                 && request.RegionAnchor != EntityRecordRegionAnchor.ShellState
-                && request.RegionAnchor != EntityRecordRegionAnchor.GunAim)
+                && request.RegionAnchor != EntityRecordRegionAnchor.GunAim
+                && request.RegionAnchor != EntityRecordRegionAnchor.GunAngle)
             {
                 OperationResult<Type10EntityPositionAddressResult> resolveResult =
                     await readerResult.Value.ResolveEntityPositionAddressAsync(
@@ -5286,6 +5289,14 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             return GunAngleFailure(
                 Type10EntityPositionStatus.ReadFailed,
                 "gun-angle-component-array-read",
+                1,
+                candidates.Count);
+        }
+        if (arrayBase.Value == 0)
+        {
+            return GunAngleFailure(
+                Type10EntityPositionStatus.GunAngleMismatch,
+                "gun-angle-component-array-null",
                 1,
                 candidates.Count);
         }

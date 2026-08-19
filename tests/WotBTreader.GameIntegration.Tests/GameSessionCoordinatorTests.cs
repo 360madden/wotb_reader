@@ -2680,6 +2680,18 @@ public sealed class GameSessionCoordinatorTests
             [rotatorAddress + 0x10] = BitConverter.GetBytes(ownerAddress),
             [ownerAddress + 0x1fc] = BitConverter.GetBytes(0x25009999u),
         });
+        // The pen anchors must never consult the entity-ID resolver (they
+        // reach the owner/entity through the rotator walk); force that
+        // resolver to fail so a regression in the skip list is caught.
+        factory.Reader.AddressResult = new Type10EntityPositionAddressResult(
+            Type10EntityPositionStatus.EntityNotFound,
+            RecordAddress: null,
+            PageAddress: null,
+            EntityAddress: null,
+            FailureStage: "entity-not-found",
+            Attempts: 3,
+            NodesVisited: 2,
+            ModuleRooted: true);
         var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
         var (coordinator, _) = CreateCoordinator(
             memoryReaderFactory: factory,
@@ -2823,6 +2835,18 @@ public sealed class GameSessionCoordinatorTests
             [componentAddress + 0x10] = BitConverter.GetBytes(turretYaw),
             [componentAddress + 0x14] = BitConverter.GetBytes(gunPitch),
         });
+        // The gun-angle anchor must never consult the entity-ID resolver (it
+        // reaches the entity through [owner+0x04]); force that resolver to
+        // fail so a regression in the skip list is caught.
+        factory.Reader.AddressResult = new Type10EntityPositionAddressResult(
+            Type10EntityPositionStatus.EntityNotFound,
+            RecordAddress: null,
+            PageAddress: null,
+            EntityAddress: null,
+            FailureStage: "entity-not-found",
+            Attempts: 3,
+            NodesVisited: 2,
+            ModuleRooted: true);
         var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
         var (coordinator, _) = CreateCoordinator(
             memoryReaderFactory: factory,
@@ -2877,6 +2901,18 @@ public sealed class GameSessionCoordinatorTests
             [arrayBase] = BitConverter.GetBytes(otherComponent),
             [otherComponent] = BitConverter.GetBytes(0x11111111u),
         });
+        // The gun-angle anchor must never consult the entity-ID resolver (it
+        // reaches the entity through [owner+0x04]); force that resolver to
+        // fail so a regression in the skip list is caught.
+        factory.Reader.AddressResult = new Type10EntityPositionAddressResult(
+            Type10EntityPositionStatus.EntityNotFound,
+            RecordAddress: null,
+            PageAddress: null,
+            EntityAddress: null,
+            FailureStage: "entity-not-found",
+            Attempts: 3,
+            NodesVisited: 2,
+            ModuleRooted: true);
         var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
         var (coordinator, _) = CreateCoordinator(
             memoryReaderFactory: factory,
@@ -2906,6 +2942,63 @@ public sealed class GameSessionCoordinatorTests
     }
 
     [TestMethod]
+    public async Task EntityRegionRead_GunAngle_NullComponentArrayFailsClosed()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long rotatorAddress = 0x25001000;
+        const uint ownerAddress = 0x25002000;
+        const uint entityAddress = 0x25004000;
+        // The entity's +0x2c component-array pointer is null -> fail closed
+        // before the bounded scan can read from address zero.
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            [rotatorAddress] = BitConverter.GetBytes(TestVehicleGunRotatorVftable),
+            [rotatorAddress + 0x10] = BitConverter.GetBytes(ownerAddress),
+            [ownerAddress + 0x1fc] = BitConverter.GetBytes((uint)rotatorAddress),
+            [ownerAddress + 0x04] = BitConverter.GetBytes(entityAddress),
+            [entityAddress + 0x2c] = BitConverter.GetBytes(0u),
+        });
+        // The gun-angle anchor must never consult the entity-ID resolver (it
+        // reaches the entity through [owner+0x04]); force that resolver to
+        // fail so a regression in the skip list is caught.
+        factory.Reader.AddressResult = new Type10EntityPositionAddressResult(
+            Type10EntityPositionStatus.EntityNotFound,
+            RecordAddress: null,
+            PageAddress: null,
+            EntityAddress: null,
+            FailureStage: "entity-not-found",
+            Attempts: 3,
+            NodesVisited: 2,
+            ModuleRooted: true);
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.GunAngle),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.GunAngleMismatch, result.Value?.Status);
+        Assert.AreEqual("gun-angle-component-array-null", result.Value?.FailureStage);
+        Assert.IsNull(result.Value?.GunAngleTurretYaw);
+        Assert.IsNull(result.Value?.GunAngleGunPitch);
+    }
+
+    [TestMethod]
     public async Task EntityRegionRead_GunAngle_RoundTripMismatchFailsClosed()
     {
         Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
@@ -2918,6 +3011,18 @@ public sealed class GameSessionCoordinatorTests
             [rotatorAddress + 0x10] = BitConverter.GetBytes(ownerAddress),
             [ownerAddress + 0x1fc] = BitConverter.GetBytes(0x25009999u),
         });
+        // The pen anchors must never consult the entity-ID resolver (they
+        // reach the owner/entity through the rotator walk); force that
+        // resolver to fail so a regression in the skip list is caught.
+        factory.Reader.AddressResult = new Type10EntityPositionAddressResult(
+            Type10EntityPositionStatus.EntityNotFound,
+            RecordAddress: null,
+            PageAddress: null,
+            EntityAddress: null,
+            FailureStage: "entity-not-found",
+            Attempts: 3,
+            NodesVisited: 2,
+            ModuleRooted: true);
         var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
         var (coordinator, _) = CreateCoordinator(
             memoryReaderFactory: factory,
@@ -2966,6 +3071,18 @@ public sealed class GameSessionCoordinatorTests
             [componentAddress + 0x10] = BitConverter.GetBytes(float.NaN),
             [componentAddress + 0x14] = BitConverter.GetBytes(0f),
         });
+        // The gun-angle anchor must never consult the entity-ID resolver (it
+        // reaches the entity through [owner+0x04]); force that resolver to
+        // fail so a regression in the skip list is caught.
+        factory.Reader.AddressResult = new Type10EntityPositionAddressResult(
+            Type10EntityPositionStatus.EntityNotFound,
+            RecordAddress: null,
+            PageAddress: null,
+            EntityAddress: null,
+            FailureStage: "entity-not-found",
+            Attempts: 3,
+            NodesVisited: 2,
+            ModuleRooted: true);
         var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
         var (coordinator, _) = CreateCoordinator(
             memoryReaderFactory: factory,
@@ -5526,15 +5643,19 @@ public sealed class GameSessionCoordinatorTests
                             ModuleRooted: true)));
             }
 
+            // Fail-closed default: the entity-ID resolver must never silently
+            // succeed for anchors that are supposed to skip it. A skip-list
+            // regression (like the gun-angle gate bug) now fails the anchor's
+            // tests loudly instead of being masked by a permissive fake.
             return ValueTask.FromResult(OperationResult.Success(
                 AddressResult ?? new Type10EntityPositionAddressResult(
-                    Type10EntityPositionStatus.Resolved,
-                    RecordAddress: 0x25000038,
-                    PageAddress: 0x25000000,
-                    EntityAddress: 0x25000028,
-                    FailureStage: null,
-                    Attempts: 1,
-                    NodesVisited: 0,
+                    Type10EntityPositionStatus.EntityNotFound,
+                    RecordAddress: null,
+                    PageAddress: null,
+                    EntityAddress: null,
+                    FailureStage: "entity-not-found",
+                    Attempts: 3,
+                    NodesVisited: 2,
                     ModuleRooted: true)));
         }
 
