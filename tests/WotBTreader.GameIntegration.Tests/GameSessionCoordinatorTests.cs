@@ -2189,6 +2189,10 @@ public sealed class GameSessionCoordinatorTests
         const uint shellId = 0x25009000;
         const int identity0 = 0x11111111;
         const int identity1 = 0x22222222;
+        const int kind = 5; // kArmorPiercingCr
+        const int caliber = 171;
+        const float damageArmor = 135f;
+        const float damageDevices = 150f;
         var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
         {
             [rotatorAddress] = BitConverter.GetBytes(TestVehicleGunRotatorVftable),
@@ -2202,6 +2206,10 @@ public sealed class GameSessionCoordinatorTests
             [element + 0x1c] = BitConverter.GetBytes(shellId),
             [shellId + 0x20] = BitConverter.GetBytes(identity0),
             [shellId + 0x24] = BitConverter.GetBytes(identity1),
+            [shellId + 0x114] = BitConverter.GetBytes(kind),
+            [shellId + 0x118] = BitConverter.GetBytes(caliber),
+            [shellId + 0x11c] = BitConverter.GetBytes(damageArmor),
+            [shellId + 0x120] = BitConverter.GetBytes(damageDevices),
         });
         var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
         var (coordinator, _) = CreateCoordinator(
@@ -2230,10 +2238,14 @@ public sealed class GameSessionCoordinatorTests
         Assert.AreEqual(identity0, result.Value?.ShellStateIdentity0);
         Assert.AreEqual(identity1, result.Value?.ShellStateIdentity1);
         Assert.IsTrue(result.Value?.ShellStateTwoPassStable);
+        Assert.AreEqual(kind, result.Value?.ShellKind);
+        Assert.AreEqual(caliber, result.Value?.ShellCaliber);
+        Assert.AreEqual(damageArmor, result.Value?.ShellDamageArmor);
+        Assert.AreEqual(damageDevices, result.Value?.ShellDamageDevices);
         Assert.IsNull(result.Value?.RegionBytes);
         Assert.AreEqual("shell-state-rotator-vftable", scan.LastRequest?.FieldName);
-        // Identity re-read + owner + two passes × nine reads.
-        Assert.HasCount(20, factory.Reader.Reads);
+        // Identity re-read + owner + two passes x thirteen reads.
+        Assert.HasCount(28, factory.Reader.Reads);
         Assert.AreEqual(rotatorAddress, factory.Reader.Reads[0].Address);
         Assert.AreEqual(rotatorAddress + 0x10, factory.Reader.Reads[1].Address);
     }

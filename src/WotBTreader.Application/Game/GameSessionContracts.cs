@@ -691,6 +691,26 @@ public sealed record EntityRecordRegionReadRequest(
     public const int ShellIdentityDword1Offset = 0x24;
 
     /// <summary>
+    /// The resolved Shell descriptor's kind (int32 <c>eShellKind</c>, 0..5).
+    /// </summary>
+    public const int ShellKindOffset = 0x114;
+
+    /// <summary>
+    /// The resolved Shell descriptor's caliber (int32, sentinel <c>0x7fffffff</c>).
+    /// </summary>
+    public const int ShellCaliberOffset = 0x118;
+
+    /// <summary>
+    /// The resolved Shell descriptor's <c>damage.armor</c> (float32 HP damage).
+    /// </summary>
+    public const int ShellDamageArmorOffset = 0x11c;
+
+    /// <summary>
+    /// The resolved Shell descriptor's <c>damage.devices</c> (float32 module damage).
+    /// </summary>
+    public const int ShellDamageDevicesOffset = 0x120;
+
+    /// <summary>
     /// VehicleGunRotator +0xe0 stores the first of the two per-frame
     /// <c>Update</c> aim inputs (candidate turret yaw / gun elevation).
     /// </summary>
@@ -750,6 +770,10 @@ public sealed record EntityRecordRegionReadResult(
     int? ShellStateIdentity0 = null,
     int? ShellStateIdentity1 = null,
     bool ShellStateTwoPassStable = false,
+    int? ShellKind = null,
+    int? ShellCaliber = null,
+    float? ShellDamageArmor = null,
+    float? ShellDamageDevices = null,
     int GunAimRotatorCandidateCount = 0,
     bool GunAimOwnerRoundTripConfirmed = false,
     float? GunAimInput0 = null,

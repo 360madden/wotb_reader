@@ -503,6 +503,31 @@ public sealed record EntityRecordRegionReadResponse
     public bool ShellStateTwoPassStable { get; init; }
 
     /// <summary>
+    /// For <c>shell-state</c> probes: the resolved Shell descriptor's kind
+    /// (int32 <c>eShellKind</c>, 0..5). Null for other anchors or when the
+    /// walk did not resolve.
+    /// </summary>
+    public int? ShellKind { get; init; }
+
+    /// <summary>
+    /// For <c>shell-state</c> probes: the resolved Shell descriptor's caliber
+    /// (int32, sentinel <c>0x7fffffff</c>).
+    /// </summary>
+    public int? ShellCaliber { get; init; }
+
+    /// <summary>
+    /// For <c>shell-state</c> probes: the resolved Shell descriptor's
+    /// <c>damage.armor</c> (float32 HP damage).
+    /// </summary>
+    public float? ShellDamageArmor { get; init; }
+
+    /// <summary>
+    /// For <c>shell-state</c> probes: the resolved Shell descriptor's
+    /// <c>damage.devices</c> (float32 module damage).
+    /// </summary>
+    public float? ShellDamageDevices { get; init; }
+
+    /// <summary>
     /// For <c>gun-aim</c> probes: how many VehicleGunRotator scan candidates
     /// the scan found (0 for other anchors).
     /// </summary>

@@ -2740,7 +2740,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     ShellStateIndex: shell.Index,
                     ShellStateIdentity0: shell.Identity0,
                     ShellStateIdentity1: shell.Identity1,
-                    ShellStateTwoPassStable: shell.TwoPassStable));
+                    ShellStateTwoPassStable: shell.TwoPassStable,
+                    ShellKind: shell.Kind,
+                    ShellCaliber: shell.Caliber,
+                    ShellDamageArmor: shell.DamageArmor,
+                    ShellDamageDevices: shell.DamageDevices));
             }
             else if (request.RegionAnchor == EntityRecordRegionAnchor.GunAim)
             {
@@ -4299,7 +4303,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         int? Index,
         int? Identity0,
         int? Identity1,
-        bool TwoPassStable);
+        bool TwoPassStable,
+        int? Kind,
+        int? Caliber,
+        float? DamageArmor,
+        float? DamageDevices);
 
     private enum ShellStatePassStatus
     {
@@ -4312,7 +4320,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         ShellStatePassStatus PassStatus,
         int Index,
         int Identity0,
-        int Identity1);
+        int Identity1,
+        int Kind,
+        int Caliber,
+        float DamageArmor,
+        float DamageDevices);
 
     /// <summary>
     /// The <c>shell-state</c> anchor resolution (penetration v0.3 G1 item 2).
@@ -4358,7 +4370,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 null,
                 null,
                 null,
-                false);
+                false,
+                null,
+                null,
+                null,
+                null);
         }
 
         IReadOnlyList<MemoryScanCandidate> candidates = scanResult.Value.Candidates;
@@ -4371,7 +4387,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 null,
                 null,
                 null,
-                false);
+                false,
+                null,
+                null,
+                null,
+                null);
         }
 
         int index = candidateIndex ?? 0;
@@ -4384,7 +4404,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 null,
                 null,
                 null,
-                false);
+                false,
+                null,
+                null,
+                null,
+                null);
         }
 
         long rotatorAddress = candidates[index].AbsoluteAddress;
@@ -4404,7 +4428,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 null,
                 null,
                 null,
-                false);
+                false,
+                null,
+                null,
+                null,
+                null);
         }
 
         if (rotatorVftable.Value != expectedRotatorVftable)
@@ -4416,7 +4444,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 null,
                 null,
                 null,
-                false);
+                false,
+                null,
+                null,
+                null,
+                null);
         }
 
         // rotator +0x10 -> owner (AvatarGameLogic).
@@ -4433,7 +4465,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 null,
                 null,
                 null,
-                false);
+                false,
+                null,
+                null,
+                null,
+                null);
         }
 
         if (owner.Value == 0)
@@ -4445,7 +4481,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 null,
                 null,
                 null,
-                false);
+                false,
+                null,
+                null,
+                null,
+                null);
         }
 
         long ammoAddress = owner.Value + EntityRecordRegionReadRequest.AmmoControllerEmbedOffset;
@@ -4463,7 +4503,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 null,
                 null,
                 null,
-                false);
+                false,
+                null,
+                null,
+                null,
+                null);
         }
 
         ShellStatePassVerdict? second = await RunShellStatePassAsync(
@@ -4479,7 +4523,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                 null,
                 null,
                 null,
-                false);
+                false,
+                null,
+                null,
+                null,
+                null);
         }
 
         bool stable = first.Value == second.Value;
@@ -4507,7 +4555,11 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             verdict.PassStatus == ShellStatePassStatus.Resolved ? verdict.Index : null,
             verdict.PassStatus == ShellStatePassStatus.Resolved ? verdict.Identity0 : null,
             verdict.PassStatus == ShellStatePassStatus.Resolved ? verdict.Identity1 : null,
-            stable);
+            stable,
+            verdict.PassStatus == ShellStatePassStatus.Resolved ? verdict.Kind : null,
+            verdict.PassStatus == ShellStatePassStatus.Resolved ? verdict.Caliber : null,
+            verdict.PassStatus == ShellStatePassStatus.Resolved ? verdict.DamageArmor : null,
+            verdict.PassStatus == ShellStatePassStatus.Resolved ? verdict.DamageDevices : null);
     }
 
     /// <summary>
@@ -4544,7 +4596,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         }
         if (gunRef.Value == 0)
         {
-            return new ShellStatePassVerdict(ShellStatePassStatus.Mismatch, shellIndex, 0, 0);
+            return new ShellStatePassVerdict(ShellStatePassStatus.Mismatch, shellIndex, 0, 0, 0, 0, 0f, 0f);
         }
 
         uint? list = await ReadPointerAsync(
@@ -4557,7 +4609,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         }
         if (list.Value == 0)
         {
-            return new ShellStatePassVerdict(ShellStatePassStatus.Mismatch, shellIndex, 0, 0);
+            return new ShellStatePassVerdict(ShellStatePassStatus.Mismatch, shellIndex, 0, 0, 0, 0, 0f, 0f);
         }
 
         // 3. list +0x1b0/+0x1b4 -> vector begin/end; count = (end - begin) >> 2.
@@ -4577,7 +4629,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         long count = ((long)end.Value - begin.Value) >> 2;
         if (shellIndex < 0 || count <= 0 || shellIndex >= count)
         {
-            return new ShellStatePassVerdict(ShellStatePassStatus.OutOfRange, shellIndex, 0, 0);
+            return new ShellStatePassVerdict(ShellStatePassStatus.OutOfRange, shellIndex, 0, 0, 0, 0, 0f, 0f);
         }
 
         // 4. begin + index*4 -> element; element +0x1c -> shell identity holder.
@@ -4591,7 +4643,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         }
         if (element.Value == 0)
         {
-            return new ShellStatePassVerdict(ShellStatePassStatus.Mismatch, shellIndex, 0, 0);
+            return new ShellStatePassVerdict(ShellStatePassStatus.Mismatch, shellIndex, 0, 0, 0, 0, 0f, 0f);
         }
 
         uint? shellId = await ReadPointerAsync(
@@ -4604,7 +4656,7 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         }
         if (shellId.Value == 0)
         {
-            return new ShellStatePassVerdict(ShellStatePassStatus.Mismatch, shellIndex, 0, 0);
+            return new ShellStatePassVerdict(ShellStatePassStatus.Mismatch, shellIndex, 0, 0, 0, 0, 0f, 0f);
         }
 
         // 5. shell identity holder +0x20/+0x24 -> identity dwords.
@@ -4622,11 +4674,63 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
             return null;
         }
 
+        // 6. the SAME Shell object carries the descriptor fields: kind +0x114,
+        //    caliber +0x118 (int32), damage.armor +0x11c, damage.devices +0x120
+        //    (float32). These close the G1.2 gate's descriptor correlation.
+        OperationResult<byte[]> kindRead = await reader.ReadAsync(
+            (nint)(shellId.Value + EntityRecordRegionReadRequest.ShellKindOffset),
+            sizeof(int),
+            cancellationToken).ConfigureAwait(false);
+        OperationResult<byte[]> caliberRead = await reader.ReadAsync(
+            (nint)(shellId.Value + EntityRecordRegionReadRequest.ShellCaliberOffset),
+            sizeof(int),
+            cancellationToken).ConfigureAwait(false);
+        OperationResult<byte[]> damageArmorRead = await reader.ReadAsync(
+            (nint)(shellId.Value + EntityRecordRegionReadRequest.ShellDamageArmorOffset),
+            sizeof(float),
+            cancellationToken).ConfigureAwait(false);
+        OperationResult<byte[]> damageDevicesRead = await reader.ReadAsync(
+            (nint)(shellId.Value + EntityRecordRegionReadRequest.ShellDamageDevicesOffset),
+            sizeof(float),
+            cancellationToken).ConfigureAwait(false);
+        if (!kindRead.IsSuccess || kindRead.Value is null || kindRead.Value.Length != sizeof(int) ||
+            !caliberRead.IsSuccess || caliberRead.Value is null || caliberRead.Value.Length != sizeof(int) ||
+            !damageArmorRead.IsSuccess || damageArmorRead.Value is null || damageArmorRead.Value.Length != sizeof(float) ||
+            !damageDevicesRead.IsSuccess || damageDevicesRead.Value is null || damageDevicesRead.Value.Length != sizeof(float))
+        {
+            return null;
+        }
+
+        int kind = BinaryPrimitives.ReadInt32LittleEndian(kindRead.Value);
+        int caliber = BinaryPrimitives.ReadInt32LittleEndian(caliberRead.Value);
+        float damageArmor = BinaryPrimitives.ReadSingleLittleEndian(damageArmorRead.Value);
+        float damageDevices = BinaryPrimitives.ReadSingleLittleEndian(damageDevicesRead.Value);
+
+        // A non-finite damage float is not a resolvable descriptor; carry a
+        // zeroed Mismatch verdict so two identical mismatches compare equal
+        // (stable) and map to ShellStateMismatch rather than Unstable.
+        if (!float.IsFinite(damageArmor) || !float.IsFinite(damageDevices))
+        {
+            return new ShellStatePassVerdict(
+                ShellStatePassStatus.Mismatch,
+                shellIndex,
+                0,
+                0,
+                0,
+                0,
+                0f,
+                0f);
+        }
+
         return new ShellStatePassVerdict(
             ShellStatePassStatus.Resolved,
             shellIndex,
             BinaryPrimitives.ReadInt32LittleEndian(id0Read.Value),
-            BinaryPrimitives.ReadInt32LittleEndian(id1Read.Value));
+            BinaryPrimitives.ReadInt32LittleEndian(id1Read.Value),
+            kind,
+            caliber,
+            damageArmor,
+            damageDevices);
     }
 
     private sealed record GunAimResolution(

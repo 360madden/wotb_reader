@@ -1327,8 +1327,8 @@ public sealed class GameApiEndpointsTests
     public async Task EntityRegion_ShellStateAnchor_EchoesIndexAndIdentityOnly()
     {
         // The shell-state anchor (penetration v0.3 G1 item 2) parses and
-        // echoes only the index + identity dwords — no raw region bytes may
-        // leave the endpoint.
+        // echoes only the index + identity dwords + descriptor fields — no raw
+        // region bytes may leave the endpoint.
         var scanner = new FakeGameMemoryScanner
         {
             EntityRegionResult = OperationResult.Success(
@@ -1349,7 +1349,11 @@ public sealed class GameApiEndpointsTests
                     ShellStateIndex: 2,
                     ShellStateIdentity0: 0x11111111,
                     ShellStateIdentity1: 0x22222222,
-                    ShellStateTwoPassStable: true)),
+                    ShellStateTwoPassStable: true,
+                    ShellKind: 5,
+                    ShellCaliber: 171,
+                    ShellDamageArmor: 135f,
+                    ShellDamageDevices: 150f)),
         };
 
         IResult result = await GameApiEndpoints.ReadEntityRegionAsync(
@@ -1371,6 +1375,10 @@ public sealed class GameApiEndpointsTests
         Assert.AreEqual(0x11111111, response.ShellStateIdentity0);
         Assert.AreEqual(0x22222222, response.ShellStateIdentity1);
         Assert.IsTrue(response.ShellStateTwoPassStable);
+        Assert.AreEqual(5, response.ShellKind);
+        Assert.AreEqual(171, response.ShellCaliber);
+        Assert.AreEqual(135f, response.ShellDamageArmor);
+        Assert.AreEqual(150f, response.ShellDamageDevices);
         // Privacy: the shell-state read never carries raw region bytes.
         Assert.IsNull(response.RegionBase64);
     }

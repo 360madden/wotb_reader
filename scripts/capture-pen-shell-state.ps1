@@ -11,17 +11,20 @@
   binds the launch artifact to its decoded run, and POSTs
   /api/v1/game/discover/entity-region with regionAnchor=shell-state. The
   coordinator owns every read location (the pen-ownership-walk rotator scan,
-  then the embedded AmmoController walk to the current-shell index + the
-  resolved shell identity dwords), so this script carries no address, offset,
-  or pointer and prints only the index + identity fingerprints.
+  then the embedded AmmoController walk to the current-shell index, the
+  resolved shell identity dwords, and the same Shell object's descriptor
+  kind/caliber/damage fields), so this script carries no address, offset, or
+  pointer and prints only the index + identity + descriptor fingerprint.
 
   With -PollSeconds > 0 the script re-reads the anchor at a 100 ms cadence
   for that many seconds and reports every DISTINCT resolved (index, identity0,
-  identity1) tuple plus the number of transitions observed. A controlled
-  shell-swap shows up as a distinct tuple change with a stable two-pass read.
+  identity1, kind, caliber) tuple plus the number of transitions observed. A
+  controlled shell-swap shows up as a distinct tuple change with a stable
+  two-pass read; the kind/caliber/damage fields decode WHICH shell is loaded.
 
   This is a discovery read, not a promotion: nothing here publishes or
-  promotes any field. The descriptor (kind/caliber/damage) link is still open.
+  promotes any field. The kind/caliber/damage descriptor link is now read
+  live from the same resolved Shell object.
 
 .EXITCODES
   0  Read completed and the verdict was printed.
@@ -245,11 +248,18 @@ function Read-ShellState {
     $index = $response.ShellStateIndex
     $id0 = $response.ShellStateIdentity0
     $id1 = $response.ShellStateIdentity1
+    $kind = $response.ShellKind
+    $caliber = $response.ShellCaliber
+    $dmgArmor = $response.ShellDamageArmor
+    $dmgDevices = $response.ShellDamageDevices
     $stable = $response.ShellStateTwoPassStable
-    $key = ('index=' + $index + ' id0=' + $id0 + ' id1=' + $id1)
+    $key = ('index=' + $index + ' id0=' + $id0 + ' id1=' + $id1 +
+        ' kind=' + $kind + ' caliber=' + $caliber)
 
     if ($script:distinct.Add($key)) {
-        Write-Host ('pen_shell: state=' + $key + ' stable=' + $stable)
+        Write-Host ('pen_shell: state=' + $key +
+            ' dmg_armor=' + $dmgArmor + ' dmg_devices=' + $dmgDevices +
+            ' stable=' + $stable)
     }
     if ($null -ne $script:previousKey -and $script:previousKey -ne $key) {
         $script:transitionCount += 1
