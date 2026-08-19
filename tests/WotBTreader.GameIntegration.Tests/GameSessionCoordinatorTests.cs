@@ -1669,6 +1669,7 @@ public sealed class GameSessionCoordinatorTests
     // the weapon-family vftable RVAs are hash-bound 11.19.0.10 findings.
     private const uint TestVehicleGunRotatorVftable = 0x10000000 + 0x32eeb40;
     private const uint TestVehicleGunVftable = 0x10000000 + 0x32dacf4;
+    private const uint TestCurrentGunAnglesComponentVftable = 0x10000000 + 0x31a4868;
 
     private static MemoryScanResult CreateOwnershipWalkScanResult(params long[] candidateAddresses) => new(
         DateTimeOffset.UnixEpoch,
@@ -2795,6 +2796,202 @@ public sealed class GameSessionCoordinatorTests
         Assert.AreEqual(Type10EntityPositionStatus.ReadFailed, result.Value?.Status);
         Assert.AreEqual("gun-aim-pass1-read", result.Value?.FailureStage);
         Assert.IsNull(result.Value?.GunAimInput0);
+    }
+
+    // ---- gun-angle anchor (penetration v0.3 G1 item 5, 2026-08-18) ----
+
+    [TestMethod]
+    public async Task EntityRegionRead_GunAngle_ResolvesNamedTurretYawAndGunPitch()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long rotatorAddress = 0x25001000;
+        const uint ownerAddress = 0x25002000;
+        const uint entityAddress = 0x25004000;
+        const uint arrayBase = 0x25005000;
+        const uint componentAddress = 0x25006000;
+        const float turretYaw = 0.35f;
+        const float gunPitch = -0.1f;
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            [rotatorAddress] = BitConverter.GetBytes(TestVehicleGunRotatorVftable),
+            [rotatorAddress + 0x10] = BitConverter.GetBytes(ownerAddress),
+            [ownerAddress + 0x1fc] = BitConverter.GetBytes((uint)rotatorAddress),
+            [ownerAddress + 0x04] = BitConverter.GetBytes(entityAddress),
+            [entityAddress + 0x2c] = BitConverter.GetBytes(arrayBase),
+            [arrayBase] = BitConverter.GetBytes(componentAddress),
+            [componentAddress] = BitConverter.GetBytes(TestCurrentGunAnglesComponentVftable),
+            [componentAddress + 0x10] = BitConverter.GetBytes(turretYaw),
+            [componentAddress + 0x14] = BitConverter.GetBytes(gunPitch),
+        });
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.GunAngle),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.Resolved, result.Value?.Status);
+        Assert.AreEqual(1, result.Value?.GunAngleComponentCandidateCount);
+        Assert.AreEqual(turretYaw, result.Value?.GunAngleTurretYaw);
+        Assert.AreEqual(gunPitch, result.Value?.GunAngleGunPitch);
+        Assert.IsTrue(result.Value?.GunAngleTwoPassStable);
+        Assert.IsNull(result.Value?.RegionBytes);
+        Assert.AreEqual("gun-angle-rotator-vftable", scan.LastRequest?.FieldName);
+        // Identity + owner + round-trip + entity + array + slot + vftable +
+        // two passes x two floats.
+        Assert.HasCount(11, factory.Reader.Reads);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_GunAngle_NoComponentFailsClosed()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long rotatorAddress = 0x25001000;
+        const uint ownerAddress = 0x25002000;
+        const uint entityAddress = 0x25004000;
+        const uint arrayBase = 0x25005000;
+        // The array's only slot is a different component -> not found.
+        const uint otherComponent = 0x25006000;
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            [rotatorAddress] = BitConverter.GetBytes(TestVehicleGunRotatorVftable),
+            [rotatorAddress + 0x10] = BitConverter.GetBytes(ownerAddress),
+            [ownerAddress + 0x1fc] = BitConverter.GetBytes((uint)rotatorAddress),
+            [ownerAddress + 0x04] = BitConverter.GetBytes(entityAddress),
+            [entityAddress + 0x2c] = BitConverter.GetBytes(arrayBase),
+            [arrayBase] = BitConverter.GetBytes(otherComponent),
+            [otherComponent] = BitConverter.GetBytes(0x11111111u),
+        });
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.GunAngle),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.GunAngleNotFound, result.Value?.Status);
+        Assert.AreEqual("gun-angle-component-not-found", result.Value?.FailureStage);
+        Assert.IsNull(result.Value?.GunAngleTurretYaw);
+        Assert.IsNull(result.Value?.GunAngleGunPitch);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_GunAngle_RoundTripMismatchFailsClosed()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long rotatorAddress = 0x25001000;
+        const uint ownerAddress = 0x25002000;
+        // The owner's +0x1fc points elsewhere -> round-trip fails closed.
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            [rotatorAddress] = BitConverter.GetBytes(TestVehicleGunRotatorVftable),
+            [rotatorAddress + 0x10] = BitConverter.GetBytes(ownerAddress),
+            [ownerAddress + 0x1fc] = BitConverter.GetBytes(0x25009999u),
+        });
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.GunAngle),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.GunAngleMismatch, result.Value?.Status);
+        Assert.AreEqual("gun-angle-roundtrip-mismatch", result.Value?.FailureStage);
+        Assert.IsNull(result.Value?.GunAngleTurretYaw);
+    }
+
+    [TestMethod]
+    public async Task EntityRegionRead_GunAngle_NonFiniteFloatFailsClosed()
+    {
+        Type10EntityPositionLayout layout = Type10EntityPositionLayout.WotBlitz1119010;
+        const long rotatorAddress = 0x25001000;
+        const uint ownerAddress = 0x25002000;
+        const uint entityAddress = 0x25004000;
+        const uint arrayBase = 0x25005000;
+        const uint componentAddress = 0x25006000;
+        var factory = new ScriptedCameraReaderFactory(new Dictionary<long, byte[]>
+        {
+            [rotatorAddress] = BitConverter.GetBytes(TestVehicleGunRotatorVftable),
+            [rotatorAddress + 0x10] = BitConverter.GetBytes(ownerAddress),
+            [ownerAddress + 0x1fc] = BitConverter.GetBytes((uint)rotatorAddress),
+            [ownerAddress + 0x04] = BitConverter.GetBytes(entityAddress),
+            [entityAddress + 0x2c] = BitConverter.GetBytes(arrayBase),
+            [arrayBase] = BitConverter.GetBytes(componentAddress),
+            [componentAddress] = BitConverter.GetBytes(TestCurrentGunAnglesComponentVftable),
+            [componentAddress + 0x10] = BitConverter.GetBytes(float.NaN),
+            [componentAddress + 0x14] = BitConverter.GetBytes(0f),
+        });
+        var scan = new FakeScanDiscoverer(CreateOwnershipWalkScanResult(rotatorAddress));
+        var (coordinator, _) = CreateCoordinator(
+            memoryReaderFactory: factory,
+            scanDiscoverer: scan);
+        ContentHash executableHash = new(layout.ExecutableSha256);
+        coordinator.RecordManagedLaunch(CreateManagedLaunch(
+            productVersion: layout.GameVersion,
+            executableSha256: executableHash));
+        coordinator.ApplyEvidence(CreateValidEvidence() with
+        {
+            Process = CreateValidProcess(layout.GameVersion, executableHash),
+        });
+
+        OperationResult<EntityRecordRegionReadResult> result = await coordinator
+            .ReadEntityRegionAsync(
+                new EntityRecordRegionReadRequest(
+                    4242,
+                    RegionLength: 16,
+                    RegionAnchor: EntityRecordRegionAnchor.GunAngle),
+                CancellationToken.None);
+
+        Assert.IsTrue(result.IsSuccess);
+        Assert.AreEqual(Type10EntityPositionStatus.GunAngleMismatch, result.Value?.Status);
+        Assert.AreEqual("gun-angle-non-finite", result.Value?.FailureStage);
+        Assert.IsNull(result.Value?.GunAngleTurretYaw);
+        Assert.IsNull(result.Value?.GunAngleGunPitch);
     }
 
     [TestMethod]

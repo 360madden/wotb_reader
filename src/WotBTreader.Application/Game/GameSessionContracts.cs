@@ -541,6 +541,19 @@ public enum EntityRecordRegionAnchor
     /// See docs/operations/pen-shot-ray-read-proposal.md.
     /// </summary>
     GunAim = 6,
+
+    /// <summary>
+    /// The NAMED current gun angles (penetration v0.3, G1 item 5). Ignores
+    /// <see cref="EntityRecordRegionReadRequest.EntityId"/>: reuses the
+    /// <c>pen-ownership-walk</c> rotator scan and owner round-trip, then walks
+    /// <c>[owner+0x04] → entity → +0x2c</c> (the DAVA component array) and
+    /// vftable-scans it for <c>CurrentGunAnglesComponent</c> (RVA
+    /// <c>0x31a4868</c>). Its two float fields are the named axes:
+    /// <c>turretYaw@+0x10</c> and <c>gunPitch@+0x14</c>. Only the two angles
+    /// leave the coordinator (two-pass, aggregate-only). See
+    /// docs/operations/handoffs/2026-08-18-gun-axis-component-layout.md.
+    /// </summary>
+    GunAngle = 7,
 }
 
 /// <summary>
@@ -738,6 +751,38 @@ public sealed record EntityRecordRegionReadRequest(
     /// VehicleGunRotator +0x40 stores the gun-marker aim distance (float32).
     /// </summary>
     public const int RotatorAimDistanceOffset = 0x40;
+
+    /// <summary>
+    /// CurrentGunAnglesComponent primary vftable RVA (11.19.0.10, hash-bound
+    /// <c>1cda5c31…</c>; the two float fields are <c>turretYaw@+0x10</c> and
+    /// <c>gunPitch@+0x14</c>).
+    /// </summary>
+    public const uint GunAngleComponentVftableRva = 0x31a4868;
+
+    /// <summary>
+    /// DAVA entity +0x2c stores the flat component-pointer array
+    /// (<c>[[entity+0x2c] + index*4]</c> is a component, byte-verified from
+    /// the <c>GetComponent</c> dereference).
+    /// </summary>
+    public const int GunAngleEntityComponentArrayOffset = 0x2c;
+
+    /// <summary>
+    /// CurrentGunAnglesComponent +0x10 stores the turret yaw (float32).
+    /// </summary>
+    public const int GunAngleComponentTurretYawOffset = 0x10;
+
+    /// <summary>
+    /// CurrentGunAnglesComponent +0x14 stores the gun pitch (float32).
+    /// </summary>
+    public const int GunAngleComponentGunPitchOffset = 0x14;
+
+    /// <summary>
+    /// Bounded component-array scan length for the <c>gun-angle</c> anchor.
+    /// A tank entity carries far fewer DAVA components than this cap; each
+    /// read is guarded, so scanning past the live tail fails closed rather
+    /// than dereferencing an out-of-bounds pointer.
+    /// </summary>
+    public const int GunAngleMaxComponentScan = 64;
 }
 
 /// <summary>
@@ -785,7 +830,11 @@ public sealed record EntityRecordRegionReadResult(
     float? GunAimDirY = null,
     float? GunAimDirZ = null,
     float? GunAimDistance = null,
-    bool GunAimTwoPassStable = false);
+    bool GunAimTwoPassStable = false,
+    int GunAngleComponentCandidateCount = 0,
+    float? GunAngleTurretYaw = null,
+    float? GunAngleGunPitch = null,
+    bool GunAngleTwoPassStable = false);
 
 /// <summary>
 /// One entity region in a batch read (mirrors the single-read fields).

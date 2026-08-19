@@ -594,6 +594,32 @@ public sealed record EntityRecordRegionReadResponse
     /// aim-struct verdicts.
     /// </summary>
     public bool GunAimTwoPassStable { get; init; }
+
+    /// <summary>
+    /// For <c>gun-angle</c> probes: how many VehicleGunRotator scan candidates
+    /// the scan found (0 for other anchors).
+    /// </summary>
+    public int GunAngleComponentCandidateCount { get; init; }
+
+    /// <summary>
+    /// For <c>gun-angle</c> probes: the named turret yaw (radians,
+    /// <c>CurrentGunAnglesComponent+0x10</c>). Null when the walk did not
+    /// resolve.
+    /// </summary>
+    public float? GunAngleTurretYaw { get; init; }
+
+    /// <summary>
+    /// For <c>gun-angle</c> probes: the named gun pitch (radians,
+    /// <c>CurrentGunAnglesComponent+0x14</c>). Null when the walk did not
+    /// resolve.
+    /// </summary>
+    public float? GunAngleGunPitch { get; init; }
+
+    /// <summary>
+    /// For <c>gun-angle</c> probes: the two passes produced identical
+    /// turret-yaw / gun-pitch verdicts.
+    /// </summary>
+    public bool GunAngleTwoPassStable { get; init; }
 }
 
 /// <summary>

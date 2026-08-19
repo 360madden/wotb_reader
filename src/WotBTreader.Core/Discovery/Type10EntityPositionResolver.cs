@@ -173,6 +173,25 @@ public enum Type10EntityPositionStatus
     /// withheld (fail-closed).
     /// </summary>
     GunAimUnstable,
+
+    /// <summary>
+    /// The <c>gun-angle</c> anchor's component scan found no
+    /// CurrentGunAnglesComponent (no candidate, or the component pointer/vftable
+    /// could not be read). Fail-closed: no angle is fabricated.
+    /// </summary>
+    GunAngleNotFound,
+
+    /// <summary>
+    /// The <c>gun-angle</c> anchor's walk could not confirm the component or
+    /// an angle float was non-finite. Fail-closed.
+    /// </summary>
+    GunAngleMismatch,
+
+    /// <summary>
+    /// The <c>gun-angle</c> anchor's two passes disagreed, so the angles are
+    /// withheld (fail-closed).
+    /// </summary>
+    GunAngleUnstable,
 }
 
 /// <summary>

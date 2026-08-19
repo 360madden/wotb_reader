@@ -1020,6 +1020,10 @@ internal static class GameApiEndpoints
             GunAimDirZ = read.GunAimDirZ,
             GunAimDistance = read.GunAimDistance,
             GunAimTwoPassStable = read.GunAimTwoPassStable,
+            GunAngleComponentCandidateCount = read.GunAngleComponentCandidateCount,
+            GunAngleTurretYaw = read.GunAngleTurretYaw,
+            GunAngleGunPitch = read.GunAngleGunPitch,
+            GunAngleTwoPassStable = read.GunAngleTwoPassStable,
         });
     }
 
@@ -1411,6 +1415,9 @@ internal static class GameApiEndpoints
                 return true;
             case "gun-aim":
                 anchor = EntityRecordRegionAnchor.GunAim;
+                return true;
+            case "gun-angle":
+                anchor = EntityRecordRegionAnchor.GunAngle;
                 return true;
             default:
                 anchor = EntityRecordRegionAnchor.RingRecord;

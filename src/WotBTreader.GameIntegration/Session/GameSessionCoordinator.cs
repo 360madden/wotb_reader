@@ -2788,6 +2788,40 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
                     GunAimDistance: aim.Distance,
                     GunAimTwoPassStable: aim.TwoPassStable));
             }
+            else if (request.RegionAnchor == EntityRecordRegionAnchor.GunAngle)
+            {
+                GunAngleResolution angle = await ResolveGunAngleAsync(
+                    readerResult.Value,
+                    observation!,
+                    baseAddress,
+                    request.OwnershipCandidateIndex,
+                    readCancellation.Token).ConfigureAwait(false);
+                if (!IsScanAuthorizationCurrent(observation, authorizationToken))
+                {
+                    return GateCheck<EntityRecordRegionReadResult>(
+                        "discover.gate_not_satisfied",
+                        "The offline-session gate is no longer satisfied.");
+                }
+
+                return OperationResult.Success(new EntityRecordRegionReadResult(
+                    _timeProvider.GetUtcNow(),
+                    layout.GameVersion,
+                    angle.Status,
+                    request.EntityId,
+                    replayTimeSeconds,
+                    null,
+                    angle.FailureStage,
+                    angle.Attempts,
+                    0,
+                    true,
+                    EntityIdentityRevalidated: false,
+                    ConsistentDoubleRead: false,
+                    SameDecodedClockProven: sameDecodedClockProven,
+                    GunAngleComponentCandidateCount: angle.ComponentCandidateCount,
+                    GunAngleTurretYaw: angle.TurretYaw,
+                    GunAngleGunPitch: angle.GunPitch,
+                    GunAngleTwoPassStable: angle.TwoPassStable));
+            }
             else
             {
                 regionBaseAddress = request.RegionAnchor switch
@@ -5073,6 +5107,331 @@ internal sealed class GameSessionCoordinator : IGameSessionState,
         DirY: null,
         DirZ: null,
         Distance: null,
+        TwoPassStable: false);
+
+    private sealed record GunAngleResolution(
+        Type10EntityPositionStatus Status,
+        string? FailureStage,
+        int Attempts,
+        int ComponentCandidateCount,
+        float? TurretYaw,
+        float? GunPitch,
+        bool TwoPassStable);
+
+    private enum GunAnglePassStatus
+    {
+        Resolved,
+        Mismatch,
+    }
+
+    private readonly record struct GunAnglePassVerdict(
+        GunAnglePassStatus PassStatus,
+        float TurretYaw,
+        float GunPitch);
+
+    /// <summary>
+    /// The <c>gun-angle</c> anchor resolution (penetration v0.3 G1 item 5).
+    /// Reuses the pen-ownership-walk rotator scan and owner round-trip, then
+    /// walks <c>[owner+0x04] → entity → +0x2c</c> (the DAVA component array)
+    /// and vftable-scans it for <c>CurrentGunAnglesComponent</c> (RVA
+    /// <c>0x31a4868</c>). Its two float fields are the named axes:
+    /// <c>turretYaw@+0x10</c> and <c>gunPitch@+0x14</c>. Two passes,
+    /// fail-closed, aggregate-only (no address, pointer, id, or raw bytes
+    /// leave this method). See
+    /// docs/operations/handoffs/2026-08-18-gun-axis-component-layout.md.
+    /// </summary>
+    private async ValueTask<GunAngleResolution> ResolveGunAngleAsync(
+        IAuthorizedMemoryReader reader,
+        AuthorizedMemoryObservation observation,
+        long baseAddress,
+        int? candidateIndex,
+        CancellationToken cancellationToken)
+    {
+        uint expectedRotatorVftable = (uint)(baseAddress + EntityRecordRegionReadRequest.VehicleGunRotatorVftableRva);
+        uint expectedComponentVftable = (uint)(baseAddress + EntityRecordRegionReadRequest.GunAngleComponentVftableRva);
+
+        byte[] expected = new byte[sizeof(uint)];
+        BinaryPrimitives.WriteUInt32LittleEndian(expected, expectedRotatorVftable);
+        MemoryScanRequest request = new(
+            FieldName: "gun-angle-rotator-vftable",
+            FieldType: "Bytes",
+            ExpectedValue: expected,
+            ToleranceMask: null,
+            MaxCandidates: EntityRecordRegionReadRequest.MaxOwnershipCandidates,
+            MinRegionSize: 4096,
+            Alignment: 4);
+        OperationResult<MemoryScanResult> scanResult = await Task.Run(
+            () => _scanDiscoverer.Scan(
+                observation,
+                baseAddress,
+                request,
+                cancellationToken,
+                "aob"),
+            cancellationToken).ConfigureAwait(false);
+        if (!scanResult.IsSuccess || scanResult.Value is null)
+        {
+            return GunAngleFailure(
+                Type10EntityPositionStatus.ReadFailed,
+                "gun-angle-scan",
+                1,
+                0);
+        }
+
+        IReadOnlyList<MemoryScanCandidate> candidates = scanResult.Value.Candidates;
+        if (candidates.Count == 0)
+        {
+            return GunAngleFailure(
+                Type10EntityPositionStatus.GunAngleNotFound,
+                "gun-angle-rotator-not-found",
+                1,
+                0);
+        }
+
+        int index = candidateIndex ?? 0;
+        if (index < 0 || index >= candidates.Count)
+        {
+            return GunAngleFailure(
+                Type10EntityPositionStatus.GunAngleNotFound,
+                "gun-angle-rotator-candidate-out-of-range",
+                1,
+                candidates.Count);
+        }
+
+        long rotatorAddress = candidates[index].AbsoluteAddress;
+
+        // Identity re-gate, then owner round-trip (same discipline as the
+        // ownership walk / shell state / gun aim).
+        uint? rotatorVftable = await ReadPointerAsync(
+            reader,
+            rotatorAddress,
+            cancellationToken).ConfigureAwait(false);
+        if (rotatorVftable is null)
+        {
+            return GunAngleFailure(
+                Type10EntityPositionStatus.ReadFailed,
+                "gun-angle-identity-read",
+                1,
+                candidates.Count);
+        }
+        if (rotatorVftable.Value != expectedRotatorVftable)
+        {
+            return GunAngleFailure(
+                Type10EntityPositionStatus.GunAngleMismatch,
+                "gun-angle-identity-mismatch",
+                1,
+                candidates.Count);
+        }
+
+        uint? owner = await ReadPointerAsync(
+            reader,
+            rotatorAddress + EntityRecordRegionReadRequest.PenOwnershipRotatorOwnerOffset,
+            cancellationToken).ConfigureAwait(false);
+        if (owner is null)
+        {
+            return GunAngleFailure(
+                Type10EntityPositionStatus.ReadFailed,
+                "gun-angle-owner-read",
+                1,
+                candidates.Count);
+        }
+
+        bool roundTripConfirmed = false;
+        if (owner.Value != 0)
+        {
+            uint? ownerRotator = await ReadPointerAsync(
+                reader,
+                owner.Value + EntityRecordRegionReadRequest.PenOwnershipOwnerRotatorOffset,
+                cancellationToken).ConfigureAwait(false);
+            if (ownerRotator is null)
+            {
+                return GunAngleFailure(
+                    Type10EntityPositionStatus.ReadFailed,
+                    "gun-angle-roundtrip-read",
+                    1,
+                    candidates.Count);
+            }
+            roundTripConfirmed = ownerRotator.Value == (uint)rotatorAddress;
+        }
+        if (!roundTripConfirmed)
+        {
+            return GunAngleFailure(
+                Type10EntityPositionStatus.GunAngleMismatch,
+                "gun-angle-roundtrip-mismatch",
+                1,
+                candidates.Count);
+        }
+
+        // [owner+0x04] -> entity; [entity+0x2c] -> component array.
+        uint? entity = await ReadPointerAsync(
+            reader,
+            owner.Value + EntityRecordRegionReadRequest.PenOwnershipOwnerEntityOffset,
+            cancellationToken).ConfigureAwait(false);
+        if (entity is null || entity.Value == 0)
+        {
+            return GunAngleFailure(
+                entity is null
+                    ? Type10EntityPositionStatus.ReadFailed
+                    : Type10EntityPositionStatus.GunAngleMismatch,
+                entity is null ? "gun-angle-entity-read" : "gun-angle-entity-null",
+                1,
+                candidates.Count);
+        }
+
+        uint? arrayBase = await ReadPointerAsync(
+            reader,
+            entity.Value + EntityRecordRegionReadRequest.GunAngleEntityComponentArrayOffset,
+            cancellationToken).ConfigureAwait(false);
+        if (arrayBase is null)
+        {
+            return GunAngleFailure(
+                Type10EntityPositionStatus.ReadFailed,
+                "gun-angle-component-array-read",
+                1,
+                candidates.Count);
+        }
+
+        // Bounded vftable scan of the flat component array. Every read is
+        // guarded, so a short array fails closed instead of dereferencing an
+        // out-of-bounds pointer.
+        long? componentAddress = null;
+        for (int i = 0; i < EntityRecordRegionReadRequest.GunAngleMaxComponentScan; i++)
+        {
+            uint? slot = await ReadPointerAsync(
+                reader,
+                arrayBase.Value + (i * sizeof(uint)),
+                cancellationToken).ConfigureAwait(false);
+            if (slot is null)
+            {
+                // End of a short array (or an unreadable slot): stop and fail
+                // closed as not-found. A sparse tail is normal, not a read
+                // failure.
+                break;
+            }
+            if (slot.Value == 0)
+            {
+                continue;
+            }
+            uint? vftable = await ReadPointerAsync(
+                reader,
+                slot.Value,
+                cancellationToken).ConfigureAwait(false);
+            if (vftable is null)
+            {
+                // Garbage slot pointer: skip it (fail closed on the scan).
+                continue;
+            }
+            if (vftable.Value == expectedComponentVftable)
+            {
+                componentAddress = slot.Value;
+                break;
+            }
+        }
+
+        if (componentAddress is null)
+        {
+            return GunAngleFailure(
+                Type10EntityPositionStatus.GunAngleNotFound,
+                "gun-angle-component-not-found",
+                1,
+                candidates.Count);
+        }
+
+        GunAnglePassVerdict? first = await RunGunAnglePassAsync(
+            reader,
+            componentAddress.Value,
+            cancellationToken).ConfigureAwait(false);
+        if (first is null)
+        {
+            return GunAngleFailure(
+                Type10EntityPositionStatus.ReadFailed,
+                "gun-angle-pass1-read",
+                2,
+                candidates.Count);
+        }
+
+        GunAnglePassVerdict? second = await RunGunAnglePassAsync(
+            reader,
+            componentAddress.Value,
+            cancellationToken).ConfigureAwait(false);
+        if (second is null)
+        {
+            return GunAngleFailure(
+                Type10EntityPositionStatus.ReadFailed,
+                "gun-angle-pass2-read",
+                2,
+                candidates.Count);
+        }
+
+        bool stable = first.Value == second.Value;
+        GunAnglePassVerdict verdict = first.Value;
+        bool resolved = verdict.PassStatus == GunAnglePassStatus.Resolved;
+        Type10EntityPositionStatus status = !stable
+            ? Type10EntityPositionStatus.GunAngleUnstable
+            : resolved
+                ? Type10EntityPositionStatus.Resolved
+                : Type10EntityPositionStatus.GunAngleMismatch;
+        string? failureStage = !stable
+            ? "gun-angle-unstable"
+            : resolved
+                ? null
+                : "gun-angle-non-finite";
+        return new GunAngleResolution(
+            Status: status,
+            FailureStage: failureStage,
+            Attempts: 2,
+            ComponentCandidateCount: candidates.Count,
+            TurretYaw: resolved ? verdict.TurretYaw : null,
+            GunPitch: resolved ? verdict.GunPitch : null,
+            TwoPassStable: stable);
+    }
+
+    /// <summary>
+    /// One gun-angle pass: the two named <c>CurrentGunAnglesComponent</c>
+    /// floats. Returns null only when a guarded read cannot complete (never
+    /// fabricates an angle); a completed read whose floats are non-finite is a
+    /// fail-closed <see cref="GunAnglePassStatus.Mismatch"/> verdict.
+    /// </summary>
+    private static async ValueTask<GunAnglePassVerdict?> RunGunAnglePassAsync(
+        IAuthorizedMemoryReader reader,
+        long componentAddress,
+        CancellationToken cancellationToken)
+    {
+        float? turretYaw = await ReadFloatAsync(
+            reader,
+            componentAddress + EntityRecordRegionReadRequest.GunAngleComponentTurretYawOffset,
+            cancellationToken).ConfigureAwait(false);
+        float? gunPitch = await ReadFloatAsync(
+            reader,
+            componentAddress + EntityRecordRegionReadRequest.GunAngleComponentGunPitchOffset,
+            cancellationToken).ConfigureAwait(false);
+        if (turretYaw is null || gunPitch is null)
+        {
+            return null;
+        }
+        if (!float.IsFinite(turretYaw.Value) || !float.IsFinite(gunPitch.Value))
+        {
+            return new GunAnglePassVerdict(
+                GunAnglePassStatus.Mismatch,
+                0f,
+                0f);
+        }
+        return new GunAnglePassVerdict(
+            GunAnglePassStatus.Resolved,
+            turretYaw.Value,
+            gunPitch.Value);
+    }
+
+    private static GunAngleResolution GunAngleFailure(
+        Type10EntityPositionStatus status,
+        string failureStage,
+        int attempts,
+        int componentCandidateCount) => new(
+        Status: status,
+        FailureStage: failureStage,
+        Attempts: attempts,
+        ComponentCandidateCount: componentCandidateCount,
+        TurretYaw: null,
+        GunPitch: null,
         TwoPassStable: false);
 
     /// <summary>

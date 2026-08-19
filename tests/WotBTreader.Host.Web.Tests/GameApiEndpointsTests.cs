@@ -1451,6 +1451,58 @@ public sealed class GameApiEndpointsTests
     }
 
     [TestMethod]
+    public async Task EntityRegion_GunAngleAnchor_EchoesNamedAnglesOnly()
+    {
+        // The gun-angle anchor (penetration v0.3 G1 item 5) parses and echoes
+        // only the named turret-yaw / gun-pitch floats — no raw region bytes
+        // may leave.
+        var scanner = new FakeGameMemoryScanner
+        {
+            EntityRegionResult = OperationResult.Success(
+                new EntityRecordRegionReadResult(
+                    DateTimeOffset.UnixEpoch.AddSeconds(1),
+                    "11.19.0.10",
+                    Type10EntityPositionStatus.Resolved,
+                    4242,
+                    ReplayTimeSeconds: 1.5,
+                    RegionBytes: null,
+                    FailureStage: null,
+                    Attempts: 2,
+                    NodesVisited: 0,
+                    ModuleRooted: true,
+                    EntityIdentityRevalidated: false,
+                    ConsistentDoubleRead: false,
+                    SameDecodedClockProven: false,
+                    GunAngleComponentCandidateCount: 1,
+                    GunAngleTurretYaw: 0.35f,
+                    GunAngleGunPitch: -0.1f,
+                    GunAngleTwoPassStable: true)),
+        };
+
+        IResult result = await GameApiEndpoints.ReadEntityRegionAsync(
+            scanner,
+            new WotBTreader.ApiContracts.EntityRecordRegionReadRequest
+            {
+                EntityId = 4242,
+                RegionLength = 16,
+                RegionAnchor = "gun-angle",
+            },
+            TestContext.CancellationToken);
+
+        EntityRecordRegionReadResponse response = Value<EntityRecordRegionReadResponse>(result);
+        Assert.AreEqual("Resolved", response.Status);
+        Assert.AreEqual(
+            EntityRecordRegionAnchor.GunAngle,
+            scanner.LastEntityRegionRequest?.RegionAnchor);
+        Assert.AreEqual(1, response.GunAngleComponentCandidateCount);
+        Assert.AreEqual(0.35f, response.GunAngleTurretYaw);
+        Assert.AreEqual(-0.1f, response.GunAngleGunPitch);
+        Assert.IsTrue(response.GunAngleTwoPassStable);
+        // Privacy: the gun-angle read never carries raw region bytes.
+        Assert.IsNull(response.RegionBase64);
+    }
+
+    [TestMethod]
     public async Task CameraPose_ResolvedReturnsPoseWithIdentityFlags()
     {
         var scanner = new FakeGameMemoryScanner
