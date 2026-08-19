@@ -234,6 +234,7 @@ $script:distinct = New-Object System.Collections.Generic.HashSet[string]
 $script:transitionCount = 0
 $script:previousKey = $null
 $script:samples = 0
+$script:errorCount = 0
 
 function Read-GunAim {
     $response = Invoke-PenApi -Method 'Post' `
@@ -273,7 +274,14 @@ function Read-GunAim {
 }
 
 if ($PollSeconds -le 0) {
-    Read-GunAim
+    try {
+        Read-GunAim
+    }
+    catch {
+        # A single-read failure is fatal: honor the documented exit code 3.
+        Write-Host ('pen_aim: FAILED_endpoint_or_read=' + $_.Exception.Message)
+        exit 3
+    }
 }
 else {
     Write-Host ('pen_aim: polling=' + $PollSeconds + 's')
@@ -285,6 +293,7 @@ else {
         catch {
             # A transient read failure during polling is reported, not fatal;
             # the distinct-state set already captured keeps the verdict honest.
+            $script:errorCount += 1
             Write-Host ('pen_aim: transient_read_error=' + $_.Exception.Message)
         }
         Start-Sleep -Milliseconds 100
@@ -297,6 +306,12 @@ Write-Host ('pen_aim: samples=' + $script:samples +
 
 if ($script:distinct.Count -ge 1) {
     Write-Host 'pen_aim: GUN_AIM_OBSERVED (Update inputs + aim struct read live)'
+}
+elseif ($script:samples -gt 0 -and $script:errorCount -eq $script:samples) {
+    # Every sample errored: an infrastructure failure, not a fail-closed
+    # discovery. Honor the documented exit code 3 so the gate stays honest.
+    Write-Host ('pen_aim: FAILED_all_samples_errored samples=' + $script:samples)
+    exit 3
 }
 else {
     Write-Host 'pen_aim: honest_negative_or_fail_closed (no resolved gun-aim state)'
