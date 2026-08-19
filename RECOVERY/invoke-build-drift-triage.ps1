@@ -258,7 +258,13 @@ $reportDir = Split-Path -Parent $ReportPath
 if (-not (Test-Path -LiteralPath $reportDir)) {
     New-Item -ItemType Directory -Path $reportDir -Force | Out-Null
 }
-    $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $ReportPath -Encoding UTF8
+    # BOM-less UTF-8: PowerShell 5.1's -Encoding UTF8 writes a BOM, which
+    # breaks BOM-strict JSON consumers (e.g. Python's json.load). The report
+    # is machine-readable JSON; write it without a byte-order mark.
+    [System.IO.File]::WriteAllText(
+        $ReportPath,
+        ($report | ConvertTo-Json -Depth 8),
+        [System.Text.UTF8Encoding]::new($false))
 }
 catch {
     Exit-With 3 "Failure: $($_.Exception.Message) (exit 3 = failure)"

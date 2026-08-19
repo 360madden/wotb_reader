@@ -143,4 +143,18 @@ Describe 'build-drift triage exit-code contract' {
             Remove-Item -LiteralPath $fixture.Dir -Recurse -Force
         }
     }
+
+    It 'writes the report as BOM-less UTF-8 (machine-readable JSON)' {
+        $fixture = New-TriageFixture -MatchingHash $true
+        try {
+            $null = Invoke-Triage -Exe $fixture.Exe -OffsetDir $fixture.Dir -ReportPath $fixture.Report
+            $bytes = [System.IO.File]::ReadAllBytes($fixture.Report)
+            if ($bytes.Length -ge 3) {
+                ($bytes[0] -ne 0xEF -or $bytes[1] -ne 0xBB -or $bytes[2] -ne 0xBF) | Should Be $true
+            }
+        }
+        finally {
+            Remove-Item -LiteralPath $fixture.Dir -Recurse -Force
+        }
+    }
 }
